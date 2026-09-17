@@ -99,6 +99,14 @@ describe('N11', () => {
     '@types/shell-quote': '1.7.5',
     'fast-check': '4.10.1',
     esbuild: '0.28.2',
+    // Deps de lint/format do plano de quality-tooling (fora do manifesto de §2.2).
+    eslint: '10.10.0',
+    '@eslint/js': '10.0.1',
+    'typescript-eslint': '8.70.0',
+    prettier: '3.9.7',
+    'eslint-config-prettier': '10.1.8',
+    husky: '9.1.7',
+    'lint-staged': '17.5.1',
   };
 
   test('dependencies bate exatamente com o manifesto de §2.2 (sem ^/~/faixas)', () => {
