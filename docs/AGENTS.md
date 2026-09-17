@@ -10,6 +10,7 @@ Registro histórico das decisões do MVP do hexlog (ADR) e a pesquisa de libs/pa
 | File | Description |
 |---|---|
 | `adr-0001-hexlog-mvp.md` | ADR 0001, status Aceito: decide construir o hexlog como servidor MCP stdio único em TypeScript (Node ≥ 24.18.1), com núcleo puro, store JSONL com lock `mkdir`+token+`mtime`, cadeia sha256+JCS via `canonicalize`, 10 tools com Zod, busca via MiniSearch, e instalação como bundle esbuild em `~/.local/lib/hexlog/<versão>/` fora da working tree. Registra alternativas descartadas, consequências, testes portados da POC (`5703a53`) e decisões de execução (DE-01 a DE-19). |
+| `qualidade-ci.md` | Estudo (nada instalado) de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17. |
 
 ## Subdirectories
 | Directory | Description |
