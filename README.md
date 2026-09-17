@@ -215,6 +215,14 @@ repetir ou omitir itens na fronteira — comportamento documentado, não erro.
 `nextCursor` é `null` no fim (índice físico no modo cru; posição no
 ranking no modo busca).
 
+O teto por página é fixo em caracteres do JSON serializado
+(`PAGE_CHARS_CAP = 24_000`), não em quantidade de eventos: cada linha entra
+nesse orçamento pelo tamanho da sua serialização canônica (JCS), que varia
+com os nomes de campo e o conteúdo de `data`. Por isso o número de páginas
+para um mesmo corpus de eventos muda quando o formato em disco muda — por
+exemplo, ao renomear campos —, mesmo com o teto de 24.000 caracteres
+inalterado.
+
 ### `chain`
 
 Verifica a sequência, o encadeamento de hash a partir da âncora fixada em
