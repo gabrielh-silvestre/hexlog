@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isNil } from 'es-toolkit';
-import { ErroHexlog } from './errors.ts';
+import { HexlogError } from './errors.ts';
 
 /** §4.2: nomes de processo reservados para as definições do projeto. */
 export const PROCESSOS_RESERVADOS = ['schemas', 'vocabulario', 'gates'] as const;
@@ -19,58 +19,56 @@ export const GATES_EMBUTIDOS_NOMES = [
 ] as const;
 
 /**
- * Resolve `dir/...partes` e afirma, em defesa de profundidade, que o resultado não escapou
+ * Resolve `dir/...parts` e afirma, em defesa de profundidade, que o resultado não escapou
  * de `dir` (§4.2). Nomes já são validados por `Nome` antes de chegar aqui; este é o último gate.
  */
-export function caminho(dir: string, ...partes: string[]): string {
-  const resolvido = path.resolve(dir, ...partes);
-  if (resolvido !== dir && !resolvido.startsWith(dir + path.sep)) {
-    throw new ErroHexlog('INTERNO', 'caminho resolvido escapa do diretório de dados');
+export function resolveSafePath(dir: string, ...parts: string[]): string {
+  const resolved = path.resolve(dir, ...parts);
+  if (resolved !== dir && !resolved.startsWith(dir + path.sep)) {
+    throw new HexlogError('INTERNAL', 'resolved path escapes the data directory');
   }
-  return resolvido;
+  return resolved;
 }
 
-/** Grava `valor` como JSON em `arquivo` atomicamente: tmp no mesmo diretório + fsync + rename. */
-export function escreverJsonAtomico(arquivo: string, valor: unknown): void {
-  const dir = path.dirname(arquivo);
+/** Grava `value` como JSON em `file` atomicamente: tmp no mesmo diretório + fsync + rename. */
+export function writeJsonAtomic(file: string, value: unknown): void {
+  const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   const tmp = path.join(
     dir,
-    `.${path.basename(arquivo)}.${process.pid}.${randomBytes(4).toString('hex')}`,
+    `.${path.basename(file)}.${process.pid}.${randomBytes(4).toString('hex')}`,
   );
   const fd = fs.openSync(tmp, 'w');
   try {
-    fs.writeSync(fd, JSON.stringify(valor, null, 2));
+    fs.writeSync(fd, JSON.stringify(value, null, 2));
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
   }
-  fs.renameSync(tmp, arquivo);
+  fs.renameSync(tmp, file);
 }
 
-/** Lê `arquivo` como JSON. Inexistente → `null`. Ilegível (fs ou parse) → `ErroHexlog('ERRO_IO')`. */
-export function lerJson(arquivo: string): unknown {
-  let texto: string;
+/** Lê `file` como JSON. Inexistente → `null`. Ilegível (fs ou parse) → `HexlogError('IO_ERROR')`. */
+export function readJson(file: string): unknown {
+  let text: string;
   try {
-    texto = fs.readFileSync(arquivo, 'utf8');
+    text = fs.readFileSync(file, 'utf8');
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw erroIo(e);
+    throw ioError(e);
   }
 
   try {
-    return JSON.parse(texto);
+    return JSON.parse(text);
   } catch (e) {
-    throw erroIo(e);
+    throw ioError(e);
   }
 }
 
-/** Mapeia uma exceção de I/O (errno de fs, ou de parse) para `ErroHexlog('ERRO_IO')` (§4.13). */
-export function erroIo(e: unknown): ErroHexlog {
-  const erro = e as NodeJS.ErrnoException;
-  const codigo = isNil(erro.code) ? 'desconhecido' : erro.code;
-  return new ErroHexlog('ERRO_IO', 'falha de I/O', [
-    { caminho: '', codigo, mensagem: erro.message },
-  ]);
+/** Mapeia uma exceção de I/O (errno de fs, ou de parse) para `HexlogError('IO_ERROR')` (§4.13). */
+export function ioError(e: unknown): HexlogError {
+  const error = e as NodeJS.ErrnoException;
+  const code = isNil(error.code) ? 'unknown' : error.code;
+  return new HexlogError('IO_ERROR', 'I/O failure', [{ path: '', code, message: error.message }]);
 }

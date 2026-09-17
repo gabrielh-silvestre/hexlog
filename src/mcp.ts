@@ -2,12 +2,12 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { isNil } from 'es-toolkit';
 import { z } from 'zod';
 import type { Logger as LoggerAjv } from './definitions.ts';
-import { type Detalhe, ErroHexlog } from './errors.ts';
+import { type Detail, HexlogError } from './errors.ts';
 import { registrarFerramentasDefinicoes } from './definition-tools.ts';
 import { registrarFerramentasEventos } from './event-tools.ts';
 import { VocabSchema, VocabularioSchema } from './state.ts';
 import { Agente, Hash, Instante, Nome } from './events.ts';
-import type { Logger, Registro } from './log.ts';
+import type { Logger, LogRecord } from './log.ts';
 import { VERSAO } from './version.ts';
 
 /** Contexto compartilhado por todas as tools MCP do hexlog. */
@@ -19,19 +19,19 @@ export type Contexto = {
 
 /** Cria um logger de linha JSON para `saida` (§4.15): nenhuma linha é filtrada, `debug` incluso. */
 export function criarLoggerStderr(saida: NodeJS.WritableStream = process.stderr): Logger {
-  return (registro: Registro) => {
-    saida.write(`${JSON.stringify({ ts: new Date().toISOString(), ...registro })}\n`);
+  return (record: LogRecord) => {
+    saida.write(`${JSON.stringify({ ts: new Date().toISOString(), ...record })}\n`);
   };
 }
 
 /** Adapta o `Logger` de linha (§4.15) para a forma `{log, warn, error}` que o Ajv espera (`definitions.ts`). */
 export function adaptarLoggerAjv(log: Logger): LoggerAjv {
   const emitir =
-    (nivel: 'debug' | 'aviso' | 'erro') =>
+    (level: 'debug' | 'warn' | 'error') =>
     (...args: unknown[]) => {
-      log({ nivel, evento: 'ajv', mensagem: args.map(String).join(' ') });
+      log({ level, event: 'ajv', message: args.map(String).join(' ') });
     };
-  return { log: emitir('debug'), warn: emitir('aviso'), error: emitir('erro') };
+  return { log: emitir('debug'), warn: emitir('warn'), error: emitir('error') };
 }
 
 // §4.16: tetos de saída, compartilhados pelas tools de eventos.
@@ -86,13 +86,13 @@ type ResultadoTool<T> =
   | { structuredContent: T; content: [{ type: 'text'; text: string }] }
   | {
       isError: true;
-      structuredContent: { codigo: string; mensagem: string; detalhes: Detalhe[] };
+      structuredContent: { codigo: string; mensagem: string; detalhes: Detail[] };
       content: [{ type: 'text'; text: string }];
     };
 
 /**
  * Roda `fn` dentro do envelope de erro de domínio (§4.13) e sempre devolve, nunca lança para o SDK.
- * `ErroHexlog` vira `{codigo, mensagem, detalhes}`; qualquer outra exceção vira `INTERNO`, com stack
+ * `HexlogError` vira `{codigo, mensagem, detalhes}`; qualquer outra exceção vira `INTERNAL`, com stack
  * só no log `erro-interno`. Emite sempre um log `tool` com `nome`, `projeto`, `processo`, `ms` e
  * `codigo?` (nunca o conteúdo de `dados`). `extraLog`, quando informado, é lido depois de `fn()`
  * rodar e mesclado no log `tool` (§4.15: usado por `eventos` para `modo`/`candidatos`/`msIndice`/
@@ -106,10 +106,10 @@ export async function executar<T>(
   extraLog?: () => Record<string, unknown>,
 ): Promise<ResultadoTool<T>> {
   const inicio = Date.now();
-  const logTool = (nivel: 'info' | 'erro', codigo?: string) => {
+  const logTool = (level: 'info' | 'error', codigo?: string) => {
     ctx.log({
-      nivel,
-      evento: 'tool',
+      level,
+      event: 'tool',
       nome,
       projeto: args.projeto,
       processo: args.processo,
@@ -128,8 +128,8 @@ export async function executar<T>(
     };
   } catch (e) {
     const erro = paraErroHexlog(e, ctx);
-    const corpo = { codigo: erro.codigo, mensagem: erro.message, detalhes: erro.detalhes };
-    logTool('erro', erro.codigo);
+    const corpo = { codigo: erro.code, mensagem: erro.message, detalhes: erro.details };
+    logTool('error', erro.code);
     return {
       isError: true,
       structuredContent: corpo,
@@ -138,12 +138,12 @@ export async function executar<T>(
   }
 }
 
-/** `ErroHexlog` passa direto; qualquer outra exceção vira `INTERNO`, logando a stack em `erro-interno`. */
-function paraErroHexlog(e: unknown, ctx: Contexto): ErroHexlog {
-  if (e instanceof ErroHexlog) return e;
+/** `HexlogError` passa direto; qualquer outra exceção vira `INTERNAL`, logando a stack em `erro-interno`. */
+function paraErroHexlog(e: unknown, ctx: Contexto): HexlogError {
+  if (e instanceof HexlogError) return e;
   const stack = e instanceof Error ? e.stack : String(e);
-  ctx.log({ nivel: 'erro', evento: 'erro-interno', stack });
-  return new ErroHexlog('INTERNO', 'erro interno');
+  ctx.log({ level: 'error', event: 'erro-interno', stack });
+  return new HexlogError('INTERNAL', 'erro interno');
 }
 
 /** Monta o servidor MCP `hexlog`: nome fixo, versão de `version.ts`, tools de definição e de eventos. */
@@ -151,6 +151,6 @@ export function criarServidor(ctx: Contexto): McpServer {
   const servidor = new McpServer({ name: 'hexlog', version: VERSAO });
   registrarFerramentasDefinicoes(servidor, ctx);
   registrarFerramentasEventos(servidor, ctx);
-  ctx.log({ nivel: 'info', evento: 'inicio', dirDados: ctx.dirDados, versao: VERSAO });
+  ctx.log({ level: 'info', event: 'inicio', dirDados: ctx.dirDados, versao: VERSAO });
   return servidor;
 }

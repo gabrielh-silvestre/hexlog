@@ -1,6 +1,6 @@
 import { groupBy, isNil, keyBy, pick, uniqBy } from 'es-toolkit';
 import { z } from 'zod';
-import type { Cadeia } from './chain.ts';
+import type { Chain } from './chain.ts';
 import { Nome } from './events.ts';
 import type { Linha } from './events.ts';
 
@@ -43,7 +43,7 @@ export type Projecao = {
   }[];
 };
 
-export type Estado = Projecao & { cadeia: Cadeia };
+export type Estado = Projecao & { cadeia: Chain };
 
 /** `agora` efetivo da projeção (Q10): o mais recente entre o relógio injetado e o último elo do log. */
 export function agoraEfetivo(relogio: string, elos: Linha[]): string {

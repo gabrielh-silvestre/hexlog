@@ -12,7 +12,7 @@ import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { dirDados } from '../src/directory.ts';
-import type { Registro } from '../src/log.ts';
+import type { LogRecord } from '../src/log.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
 const caminhoDoBuild = path.join(raizDoRepo, 'scripts/build.ts');
@@ -63,12 +63,12 @@ function coletorDeLinhas(fonte: NodeJS.EventEmitter | null) {
   };
 }
 
-/** Parseia cada linha do stderr estruturado (§4.15) como um `Registro`. */
-function registrosDeStderr(texto: string): Registro[] {
+/** Parseia cada linha do stderr estruturado (§4.15) como um `LogRecord`. */
+function registrosDeStderr(texto: string): LogRecord[] {
   return texto
     .split('\n')
     .filter((linha) => !isEmpty(linha))
-    .map((linha) => JSON.parse(linha) as Registro);
+    .map((linha) => JSON.parse(linha) as LogRecord);
 }
 
 function aguardar(condicao: () => boolean, intervaloMs = 20): Promise<void> {
@@ -177,7 +177,7 @@ describe('M6', () => {
     expect((JSON.parse(linhas[3]) as { result: { isError?: boolean } }).result.isError).toBe(true);
 
     for (const registro of registrosDeStderr(stderr.texto())) {
-      expect(registro.evento).toBeDefined();
+      expect(registro.event).toBeDefined();
     }
 
     filho.kill();
@@ -298,7 +298,7 @@ describe('B1', () => {
       }
 
       const textoStderr = stderr.texto();
-      expect(textoStderr).not.toContain('"codigo":"INTERNO"');
+      expect(textoStderr).not.toContain('"codigo":"INTERNAL"');
       expect(textoStderr).not.toContain('Dynamic require');
     }, 20_000);
   });
@@ -400,11 +400,11 @@ describe('C1', () => {
     }
     await semente.cliente.close();
 
-    // 2) lock artificial: qualquer `anexar` real colide já na primeira tentativa.
+    // 2) lock artificial: qualquer `append` real colide já na primeira tentativa.
     const arquivoEventos = path.join(dirDados(env), projeto, processo, 'eventos.jsonl');
     const dirLock = `${arquivoEventos}.lock`;
     fs.mkdirSync(dirLock);
-    fs.writeFileSync(path.join(dirLock, 'owner'), 'token-alheio');
+    fs.writeFileSync(path.join(dirLock, 'holder'), 'token-alheio');
 
     // 3) 4 servidores concorrentes, mesmo `env`.
     const clientes = await Promise.all(
@@ -413,7 +413,7 @@ describe('C1', () => {
     const contarLockEspera = () =>
       clientes
         .flatMap((c) => registrosDeStderr(c.stderr.texto()))
-        .filter((registro) => registro.evento === 'lock-espera').length;
+        .filter((registro) => registro.event === 'lock-wait').length;
 
     const inicioBarreira = Date.now();
     const disparos = clientes.map((cliente, indice) =>
@@ -459,17 +459,15 @@ describe('C1', () => {
     expect(totalDeduplicados).toBe(20);
 
     const registrosTodos = clientes.flatMap((c) => registrosDeStderr(c.stderr.texto()));
-    expect(registrosTodos.some((registro) => registro.evento === 'lock-orfao-removido')).toBe(
-      false,
-    );
+    expect(registrosTodos.some((registro) => registro.event === 'lock-orphan-removed')).toBe(false);
     expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_TIMEOUT')).toBe(false);
-    expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_PERDIDO')).toBe(false);
+    expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_LOST')).toBe(false);
 
     const msDeRegistrar = registrosTodos
-      .filter((registro) => registro.evento === 'tool' && registro.nome === 'registrar')
+      .filter((registro) => registro.event === 'tool' && registro.nome === 'registrar')
       .map((registro) => registro.ms as number);
     const totalLockEspera = registrosTodos.filter(
-      (registro) => registro.evento === 'lock-espera',
+      (registro) => registro.event === 'lock-wait',
     ).length;
     process.stdout.write(
       `C1: barreira=${msBarreira}ms maiorMsRegistrar=${Math.max(...msDeRegistrar)}ms totalLockEspera=${totalLockEspera} (min. garantido 80)\n`,

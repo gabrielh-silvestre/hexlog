@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
 import { buscar } from '../src/search.ts';
-import { ancora, prevHashEsperado, proximoSeq, sha256hex, type Cadeia } from '../src/chain.ts';
+import { anchor, expectedPrevHash, nextSeq, sha256hex, type Chain } from '../src/chain.ts';
 import type { Manifesto } from '../src/definitions.ts';
 import type { Linha } from '../src/events.ts';
 import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
@@ -81,12 +81,12 @@ function escreverLog(
 
 function construirElo(manifesto: unknown, ultimoElo: Linha | null, indice: number): Linha {
   return {
-    seq: proximoSeq(ultimoElo, 0),
+    seq: nextSeq(ultimoElo, 0),
     id: `${PROJ}:${PROC}:marco:${randomUUIDv7()}`,
     tipo: 'marco',
     timestamp: new Date(Date.UTC(2026, 0, 1 + indice)).toISOString(),
     agente: AGENTE,
-    prevHash: prevHashEsperado(ultimoElo, manifesto),
+    prevHash: expectedPrevHash(ultimoElo, manifesto),
     dados: { marcoTipo: 'aprovado', alvo: 'hex:alvo:u1' },
   };
 }
@@ -241,7 +241,7 @@ describe('M3', () => {
   for (const { tool, args } of CASOS) {
     test(`${tool} em processo inexistente → PROCESSO_INEXISTENTE, sem criar diretório`, async () => {
       const resultado = await ambiente.chamar(tool, args);
-      esperarErro(resultado, 'PROCESSO_INEXISTENTE');
+      esperarErro(resultado, 'PROCESS_NOT_FOUND');
       expect(fs.existsSync(path.join(ambiente.dir, PROJ, 'fantasma'))).toBe(false);
     });
   }
@@ -270,8 +270,8 @@ describe('M7', () => {
       agente: AGENTE,
       dados: dadosMarco(),
     });
-    const corpo = esperarErro(resultado, 'ID_INVALIDO');
-    expect(corpo.detalhes[0]?.caminho).toBe('/id');
+    const corpo = esperarErro(resultado, 'INVALID_ID');
+    expect(corpo.detalhes[0]?.path).toBe('/id');
   });
 });
 
@@ -328,8 +328,8 @@ describe('M8', () => {
       agente: AGENTE,
       dados: { nota: 'x'.repeat(17_000) },
     });
-    const corpo = esperarErro(resultado, 'EVENTO_INVALIDO');
-    expect(corpo.detalhes.some((detalhe) => detalhe.codigo === 'too_big')).toBe(true);
+    const corpo = esperarErro(resultado, 'INVALID_EVENT');
+    expect(corpo.detalhes.some((detalhe) => detalhe.code === 'too_big')).toBe(true);
   });
 
   test('estado com 150 vigentes → 100 itens na lista e totais.vigentes = 150', async () => {
@@ -443,8 +443,8 @@ describe('M11', () => {
       processo: PROC,
       ate: corpus.linhas.length + 1000,
     });
-    const corpoAlem = esperarErro(alem, 'FILTRO_INVALIDO');
-    expect(corpoAlem.detalhes.some((detalhe) => detalhe.caminho === '/ate')).toBe(true);
+    const corpoAlem = esperarErro(alem, 'INVALID_FILTER');
+    expect(corpoAlem.detalhes.some((detalhe) => detalhe.path === '/ate')).toBe(true);
   });
 
   test('h) regressão do modo cru: sem busca e sem filtros novos, a resposta é igual ao contrato anterior (M8) mais modo e ate', async () => {
@@ -538,10 +538,10 @@ describe('M12', () => {
       processo: PROC,
       marcoTipo: 'nao-existe',
     });
-    const corpoErro = esperarErro(invalido, 'FILTRO_INVALIDO');
-    expect(corpoErro.detalhes.some((detalhe) => detalhe.caminho === '/marcoTipo')).toBe(true);
+    const corpoErro = esperarErro(invalido, 'INVALID_FILTER');
+    expect(corpoErro.detalhes.some((detalhe) => detalhe.path === '/marcoTipo')).toBe(true);
     const ultimoLogDeEventos = ambiente.registros
-      .filter((registro) => registro.evento === 'tool' && registro.nome === 'eventos')
+      .filter((registro) => registro.event === 'tool' && registro.nome === 'eventos')
       .at(-1);
     expect(ultimoLogDeEventos?.candidatos).toBeUndefined();
 
@@ -574,8 +574,8 @@ describe('M12', () => {
       apos: '2026-06-01T00:00:00.000Z',
       antes: '2026-01-01T00:00:00.000Z',
     });
-    const corpoIntervalo = esperarErro(intervaloInvalido, 'FILTRO_INVALIDO');
-    expect(corpoIntervalo.detalhes.some((detalhe) => detalhe.caminho === '/apos')).toBe(true);
+    const corpoIntervalo = esperarErro(intervaloInvalido, 'INVALID_FILTER');
+    expect(corpoIntervalo.detalhes.some((detalhe) => detalhe.path === '/apos')).toBe(true);
   });
 
   test('e) alvo sem "hex:alvo:" → Input validation error', async () => {
@@ -599,9 +599,9 @@ describe('N1', () => {
     return linhas;
   }
 
-  async function chamarCadeia(): Promise<Cadeia> {
+  async function chamarCadeia(): Promise<Chain> {
     const resultado = await ambiente.chamar('cadeia', { projeto: PROJ, processo: PROC });
-    return resultado.structuredContent as Cadeia;
+    return resultado.structuredContent as Chain;
   }
 
   test('(a) JSON inválido na linha 1', async () => {
@@ -807,7 +807,7 @@ describe('N2', () => {
       agente: AGENTE,
       dados: dadosMarco({ alvo: 'hex:alvo:outro' }),
     });
-    esperarErro(conflitante, 'ID_CONFLITANTE');
+    esperarErro(conflitante, 'CONFLICTING_ID');
   });
 });
 
@@ -822,7 +822,7 @@ describe('N4', () => {
       agente: AGENTE,
       dados: dadosMarco({ marcoTipo: 'desconhecido' }),
     });
-    esperarErro(resultado, 'VOCABULARIO_VIOLADO');
+    esperarErro(resultado, 'VOCABULARY_VIOLATED');
     expect(ambiente.arvore()).toEqual(antes);
   });
 
@@ -836,7 +836,7 @@ describe('N4', () => {
       agente: AGENTE,
       dados: dadosMarco({ decisoes: [{ item: 'i', acao: 'fora-do-vocab', texto: 't' }] }),
     });
-    esperarErro(resultado, 'VOCABULARIO_VIOLADO');
+    esperarErro(resultado, 'VOCABULARY_VIOLATED');
     expect(ambiente.arvore()).toEqual(antes);
   });
 
@@ -915,7 +915,7 @@ describe('N6', () => {
       agente: AGENTE,
       alvo: 'hex:alvo:u1',
     });
-    esperarErro(resultado, 'AVALIACAO_INVALIDA');
+    esperarErro(resultado, 'INVALID_EVALUATION');
   });
 
   test('gate embutido com resultado informado → AVALIACAO_INVALIDA', async () => {
@@ -928,7 +928,7 @@ describe('N6', () => {
       alvo: 'hex:alvo:u1',
       resultado: { passou: true, prova: 'ok' },
     });
-    esperarErro(resultado, 'AVALIACAO_INVALIDA');
+    esperarErro(resultado, 'INVALID_EVALUATION');
   });
 
   test('gate não fixado, nem embutido nem no snapshot → GATE_NAO_REGISTRADO', async () => {
@@ -941,7 +941,7 @@ describe('N6', () => {
       alvo: 'hex:alvo:u1',
       resultado: { passou: true, prova: 'ok' },
     });
-    esperarErro(resultado, 'GATE_NAO_REGISTRADO');
+    esperarErro(resultado, 'GATE_NOT_REGISTERED');
   });
 
   test('gate registrado depois de criar_processo → GATE_NAO_REGISTRADO', async () => {
@@ -959,7 +959,7 @@ describe('N6', () => {
       alvo: 'hex:alvo:u1',
       resultado: { passou: true, prova: 'ok' },
     });
-    esperarErro(resultado, 'GATE_NAO_REGISTRADO');
+    esperarErro(resultado, 'GATE_NOT_REGISTERED');
   });
 
   test('gate custom aceito → Marco de gate com criterio do snapshot e origem custom', async () => {
@@ -1026,7 +1026,7 @@ describe('N9', () => {
       agente: AGENTE,
       dados: dadosMarco(),
     });
-    esperarErro(resultado, 'ID_INVALIDO');
+    esperarErro(resultado, 'INVALID_ID');
   });
 
   test('tipo não fixado no processo → TIPO_NAO_FIXADO', async () => {
@@ -1038,7 +1038,7 @@ describe('N9', () => {
       agente: AGENTE,
       dados: { x: 1 },
     });
-    esperarErro(resultado, 'TIPO_NAO_FIXADO');
+    esperarErro(resultado, 'TYPE_NOT_PINNED');
   });
 
   test('id completo inexistente → ID_DESCONHECIDO', async () => {
@@ -1050,7 +1050,7 @@ describe('N9', () => {
       agente: AGENTE,
       dados: dadosMarco(),
     });
-    esperarErro(resultado, 'ID_DESCONHECIDO');
+    esperarErro(resultado, 'UNKNOWN_ID');
   });
 });
 
@@ -1067,8 +1067,8 @@ describe('N12', () => {
         agente: AGENTE,
         dados: dadosMarco({ alvo: alvoInvalido }),
       });
-      const corpo = esperarErro(resultado, 'EVENTO_INVALIDO');
-      expect(corpo.detalhes).toContainEqual(expect.objectContaining({ caminho: '/dados/alvo' }));
+      const corpo = esperarErro(resultado, 'INVALID_EVENT');
+      expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/dados/alvo' }));
       expect(ambiente.arvore()).toEqual(antes);
     },
   );
@@ -1082,8 +1082,8 @@ describe('N12', () => {
       agente: AGENTE,
       dados: dadosVeredito({ destino: 'hex:outro:x' }),
     });
-    const corpo = esperarErro(resultado, 'EVENTO_INVALIDO');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ caminho: '/dados/destino' }));
+    const corpo = esperarErro(resultado, 'INVALID_EVENT');
+    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/dados/destino' }));
   });
 
   test('hex:alvo:u1 é aceito', async () => {
@@ -1182,7 +1182,7 @@ describe('N14', () => {
       dados: dadosMarco(),
     });
     const evento = (registrado.structuredContent as { evento: Linha }).evento;
-    expect(evento.prevHash).toBe(ancora(lerManifesto(ambiente, PROJ, PROC)));
+    expect(evento.prevHash).toBe(anchor(lerManifesto(ambiente, PROJ, PROC)));
   });
 
   test('fixado alterado com hashes recalculados → cadeia.quebras inclui {0, hash-nao-bate}', async () => {
@@ -1205,7 +1205,7 @@ describe('N14', () => {
     fs.writeFileSync(caminhoManifesto, JSON.stringify(manifesto, null, 2));
 
     const cadeia = (await ambiente.chamar('cadeia', { projeto: PROJ, processo: PROC }))
-      .structuredContent as Cadeia;
+      .structuredContent as Chain;
     expect(cadeia.quebras).toEqual(
       expect.arrayContaining([{ indice: 0, motivo: 'hash-nao-bate' }]),
     );
@@ -1235,8 +1235,8 @@ describe('S2', () => {
       agente: AGENTE,
       dados: { nota: 'ok', extra: 1 },
     });
-    const corpo = esperarErro(resultado, 'EVENTO_INVALIDO');
-    expect(corpo.detalhes[0]?.caminho.startsWith('/dados')).toBe(true);
+    const corpo = esperarErro(resultado, 'INVALID_EVENT');
+    expect(corpo.detalhes[0]?.path.startsWith('/dados')).toBe(true);
     expect(ambiente.arvore()).toEqual(antes);
   });
 
@@ -1249,8 +1249,8 @@ describe('S2', () => {
       agente: AGENTE,
       dados: { nota: 'ok', categoria: 'fora' },
     });
-    const corpo = esperarErro(resultado, 'EVENTO_INVALIDO');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ caminho: '/dados/categoria' }));
+    const corpo = esperarErro(resultado, 'INVALID_EVENT');
+    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/dados/categoria' }));
   });
 
   test('format date-time inválido → EVENTO_INVALIDO em /dados/quando', async () => {
@@ -1262,8 +1262,8 @@ describe('S2', () => {
       agente: AGENTE,
       dados: { nota: 'ok', quando: 'não-é-data' },
     });
-    const corpo = esperarErro(resultado, 'EVENTO_INVALIDO');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ caminho: '/dados/quando' }));
+    const corpo = esperarErro(resultado, 'INVALID_EVENT');
+    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/dados/quando' }));
   });
 });
 
@@ -1368,7 +1368,7 @@ describe('S5', () => {
       agente: AGENTE,
       dados: { marcoTipo: 'v2', alvo: 'hex:alvo:u1' },
     });
-    esperarErro(antigoV2, 'VOCABULARIO_VIOLADO');
+    esperarErro(antigoV2, 'VOCABULARY_VIOLATED');
 
     const novoV2 = await ambiente.chamar('registrar', {
       projeto,
@@ -1395,7 +1395,7 @@ describe('S5', () => {
       agente: AGENTE,
       dados: { nota: 'x', extra: 'y' },
     });
-    esperarErro(antigoExtra, 'EVENTO_INVALIDO');
+    esperarErro(antigoExtra, 'INVALID_EVENT');
 
     const gateAntigo = (
       await ambiente.chamar('avaliar_gate', {
@@ -1423,7 +1423,7 @@ describe('S5', () => {
   });
 });
 
-describe('CAMPO_RESERVADO', () => {
+describe('RESERVED_FIELD', () => {
   test('Marco com marcoTipo "gate" → CAMPO_RESERVADO, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
@@ -1434,7 +1434,7 @@ describe('CAMPO_RESERVADO', () => {
       agente: AGENTE,
       dados: { marcoTipo: 'gate', alvo: 'hex:alvo:u1', gate: { nome: 'x' } },
     });
-    esperarErro(resultado, 'CAMPO_RESERVADO');
+    esperarErro(resultado, 'RESERVED_FIELD');
     expect(ambiente.arvore()).toEqual(antes);
   });
 
@@ -1447,6 +1447,6 @@ describe('CAMPO_RESERVADO', () => {
       agente: AGENTE,
       dados: { marcoTipo: 'aprovado', alvo: 'hex:alvo:u1', gate: 'qualquer' },
     });
-    esperarErro(resultado, 'CAMPO_RESERVADO');
+    esperarErro(resultado, 'RESERVED_FIELD');
   });
 });

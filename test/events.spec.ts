@@ -2,7 +2,7 @@ import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import { z } from 'zod';
-import { ErroHexlog } from '../src/errors.ts';
+import { HexlogError } from '../src/errors.ts';
 import { Alvo, Nome, analisarId, normalizarDados } from '../src/events.ts';
 
 describe('Nome', () => {
@@ -33,10 +33,10 @@ describe('Alvo (N12)', () => {
     try {
       normalizarDados('marco', dados);
     } catch (erro) {
-      expect(erro).toBeInstanceOf(ErroHexlog);
-      expect((erro as ErroHexlog).codigo).toBe('EVENTO_INVALIDO');
-      expect((erro as ErroHexlog).detalhes).toContainEqual(
-        expect.objectContaining({ caminho: '/dados/alvo' }),
+      expect(erro).toBeInstanceOf(HexlogError);
+      expect((erro as HexlogError).code).toBe('INVALID_EVENT');
+      expect((erro as HexlogError).details).toContainEqual(
+        expect.objectContaining({ path: '/dados/alvo' }),
       );
     }
   });
@@ -55,10 +55,10 @@ describe('Alvo (N12)', () => {
     try {
       normalizarDados('veredito', dados);
     } catch (erro) {
-      expect(erro).toBeInstanceOf(ErroHexlog);
-      expect((erro as ErroHexlog).codigo).toBe('EVENTO_INVALIDO');
-      expect((erro as ErroHexlog).detalhes).toContainEqual(
-        expect.objectContaining({ caminho: '/dados/destino' }),
+      expect(erro).toBeInstanceOf(HexlogError);
+      expect((erro as HexlogError).code).toBe('INVALID_EVENT');
+      expect((erro as HexlogError).details).toContainEqual(
+        expect.objectContaining({ path: '/dados/destino' }),
       );
     }
   });

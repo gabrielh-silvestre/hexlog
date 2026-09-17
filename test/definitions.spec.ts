@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { z } from 'zod';
 import { sha256hex } from '../src/chain.ts';
-import { caminho, PROCESSOS_RESERVADOS } from '../src/storage.ts';
+import { resolveSafePath, PROCESSOS_RESERVADOS } from '../src/storage.ts';
 import type { Manifesto } from '../src/definitions.ts';
 import {
   carregarProcesso,
@@ -15,7 +15,7 @@ import {
   registrarTipo,
   registrarVocabulario,
 } from '../src/definitions.ts';
-import { ErroHexlog } from '../src/errors.ts';
+import { HexlogError } from '../src/errors.ts';
 import { parseJson } from './helpers.ts';
 
 const PROJETO = 'projeto-teste';
@@ -44,15 +44,15 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** Executa `fn`, afirma que lançou `ErroHexlog` e devolve o erro para asserções específicas. */
-function capturarErro(fn: () => unknown): ErroHexlog {
+/** Executa `fn`, afirma que lançou `HexlogError` e devolve o erro para asserções específicas. */
+function capturarErro(fn: () => unknown): HexlogError {
   try {
     fn();
   } catch (erro) {
-    expect(erro).toBeInstanceOf(ErroHexlog);
-    return erro as ErroHexlog;
+    expect(erro).toBeInstanceOf(HexlogError);
+    return erro as HexlogError;
   }
-  throw new Error('esperava que a função lançasse ErroHexlog');
+  throw new Error('esperava que a função lançasse HexlogError');
 }
 
 /** Registra um núcleo de vocabulário mínimo e um schema custom, pré-requisito de `criarProcesso`. */
@@ -72,7 +72,7 @@ describe('registrarTipo (S1)', () => {
     const resultado = registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
     const gravado = parseJson(
       RegistroTipoSchema,
-      fs.readFileSync(caminho(dir, PROJETO, 'schemas', 'decisao.json'), 'utf8'),
+      fs.readFileSync(resolveSafePath(dir, PROJETO, 'schemas', 'decisao.json'), 'utf8'),
     );
     expect(gravado).toEqual({
       nome: 'decisao',
@@ -84,14 +84,14 @@ describe('registrarTipo (S1)', () => {
 
   test('rejeita $ref externo, sem gravar arquivo', () => {
     const erro = capturarErro(() => registrarTipo(dir, PROJETO, 'com-ref', { $ref: 'http://x/y' }));
-    expect(erro.codigo).toBe('SCHEMA_INVALIDO');
-    expect(fs.existsSync(caminho(dir, PROJETO, 'schemas', 'com-ref.json'))).toBe(false);
+    expect(erro.code).toBe('INVALID_SCHEMA');
+    expect(fs.existsSync(resolveSafePath(dir, PROJETO, 'schemas', 'com-ref.json'))).toBe(false);
   });
 
   test.each(['marco', 'veredito'])('rejeita nome reservado "%s", sem gravar arquivo', (nome) => {
     const erro = capturarErro(() => registrarTipo(dir, PROJETO, nome, SCHEMA_VALIDO));
-    expect(erro.codigo).toBe('NOME_RESERVADO');
-    expect(fs.existsSync(caminho(dir, PROJETO, 'schemas', `${nome}.json`))).toBe(false);
+    expect(erro.code).toBe('RESERVED_NAME');
+    expect(fs.existsSync(resolveSafePath(dir, PROJETO, 'schemas', `${nome}.json`))).toBe(false);
   });
 });
 
@@ -113,8 +113,10 @@ describe('registrarTipo — SCHEMA_INVALIDO sem gravar arquivo (S7)', () => {
 
   test.each(CASOS)('%s → SCHEMA_INVALIDO', (_descricao, schema) => {
     const erro = capturarErro(() => registrarTipo(dir, PROJETO, 'tipo-invalido', schema));
-    expect(erro.codigo).toBe('SCHEMA_INVALIDO');
-    expect(fs.existsSync(caminho(dir, PROJETO, 'schemas', 'tipo-invalido.json'))).toBe(false);
+    expect(erro.code).toBe('INVALID_SCHEMA');
+    expect(fs.existsSync(resolveSafePath(dir, PROJETO, 'schemas', 'tipo-invalido.json'))).toBe(
+      false,
+    );
   });
 
   test('schema com mais de 16 000 caracteres canônicos → SCHEMA_INVALIDO com detalhe too_big', () => {
@@ -123,9 +125,11 @@ describe('registrarTipo — SCHEMA_INVALIDO sem gravar arquivo (S7)', () => {
       properties: { texto: { type: 'string', description: 'x'.repeat(16_500) } },
     };
     const erro = capturarErro(() => registrarTipo(dir, PROJETO, 'tipo-gigante', schemaGigante));
-    expect(erro.codigo).toBe('SCHEMA_INVALIDO');
-    expect(erro.detalhes).toContainEqual(expect.objectContaining({ codigo: 'too_big' }));
-    expect(fs.existsSync(caminho(dir, PROJETO, 'schemas', 'tipo-gigante.json'))).toBe(false);
+    expect(erro.code).toBe('INVALID_SCHEMA');
+    expect(erro.details).toContainEqual(expect.objectContaining({ code: 'too_big' }));
+    expect(fs.existsSync(resolveSafePath(dir, PROJETO, 'schemas', 'tipo-gigante.json'))).toBe(
+      false,
+    );
   });
 });
 
@@ -134,13 +138,13 @@ describe('criarProcesso / registrarGate — nomes reservados (S8)', () => {
     'criarProcesso com processo="%s" → NOME_RESERVADO',
     (processo) => {
       const erro = capturarErro(() => criarProcesso(dir, PROJETO, processo, () => new Date()));
-      expect(erro.codigo).toBe('NOME_RESERVADO');
+      expect(erro.code).toBe('RESERVED_NAME');
     },
   );
 
   test('registrarGate com nome de gate embutido (sem-orfaos) → NOME_RESERVADO', () => {
     const erro = capturarErro(() => registrarGate(dir, PROJETO, 'sem-orfaos', 'critério qualquer'));
-    expect(erro.codigo).toBe('NOME_RESERVADO');
+    expect(erro.code).toBe('RESERVED_NAME');
   });
 });
 
@@ -167,8 +171,8 @@ describe('criarProcesso / carregarProcesso — hashes por parte (S4)', () => {
     fs.writeFileSync(arquivo, JSON.stringify(manifesto));
 
     const erro = capturarErro(() => carregarProcesso(dir, PROJETO, 'p1'));
-    expect(erro.codigo).toBe('PROCESSO_CORROMPIDO');
-    expect(erro.detalhes).toContainEqual(expect.objectContaining({ caminho: '/hashes/schemas' }));
+    expect(erro.code).toBe('PROCESS_CORRUPTED');
+    expect(erro.details).toContainEqual(expect.objectContaining({ path: '/hashes/schemas' }));
   });
 });
 
@@ -193,7 +197,7 @@ describe('criarProcesso / carregarProcesso (N14)', () => {
     prepararNucleoEUmSchema();
     criarProcesso(dir, PROJETO, 'p1', () => new Date());
     const erro = capturarErro(() => criarProcesso(dir, PROJETO, 'p1', () => new Date()));
-    expect(erro.codigo).toBe('PROCESSO_JA_EXISTE');
+    expect(erro.code).toBe('PROCESS_ALREADY_EXISTS');
   });
 
   test('alterar fixado e recalcular hashes → carga ok, mas âncora muda', () => {
@@ -235,7 +239,7 @@ describe('vocabulário', () => {
   test('sem nenhum arquivo de vocabulário → VOCABULARIO_AUSENTE', () => {
     registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
     const erro = capturarErro(() => criarProcesso(dir, PROJETO, 'p1', () => new Date()));
-    expect(erro.codigo).toBe('VOCABULARIO_AUSENTE');
+    expect(erro.code).toBe('VOCABULARY_MISSING');
   });
 
   test('dono "nucleo" vira fixado.vocabulario.nucleo; demais donos viram porDono', () => {
@@ -265,12 +269,12 @@ describe('vocabulário', () => {
 
 describe('caminho', () => {
   test('resolve um caminho dentro do diretório de dados', () => {
-    expect(caminho(dir, PROJETO)).toBe(path.join(dir, PROJETO));
+    expect(resolveSafePath(dir, PROJETO)).toBe(path.join(dir, PROJETO));
   });
 
   test('lança ErroHexlog INTERNO ao tentar escapar do diretório com ".."', () => {
-    const erro = capturarErro(() => caminho(dir, '..', 'fora'));
-    expect(erro.codigo).toBe('INTERNO');
+    const erro = capturarErro(() => resolveSafePath(dir, '..', 'fora'));
+    expect(erro.code).toBe('INTERNAL');
   });
 });
 
@@ -295,7 +299,7 @@ describe('substituiu', () => {
 describe('lerProjeto', () => {
   test('PROJETO_INEXISTENTE quando o diretório do projeto não existe', () => {
     const erro = capturarErro(() => lerProjeto(dir, 'inexistente'));
-    expect(erro.codigo).toBe('PROJETO_INEXISTENTE');
+    expect(erro.code).toBe('PROJECT_NOT_FOUND');
   });
 
   test('ignora nomes reservados e diretórios de processo sem processo.json', () => {

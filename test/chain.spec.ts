@@ -3,24 +3,24 @@ import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import type { Linha } from '../src/events.ts';
 import {
-  ancora,
-  hashLinha,
-  prevHashEsperado,
-  proximoSeq,
+  anchor,
+  hashLine,
+  expectedPrevHash,
+  nextSeq,
   sha256hex,
-  verificarCadeia,
+  verifyChain,
 } from '../src/chain.ts';
 
 const MANIFESTO = { projeto: 'p', processo: 'proc', fixado: { versao: 1 } };
 
 function construirLinha(indice: number, ultimoElo: Linha | null, marcoTipo = 'passo'): Linha {
   return {
-    seq: proximoSeq(ultimoElo, 0),
+    seq: nextSeq(ultimoElo, 0),
     id: `p:proc:marco:${randomUUIDv7()}`,
     tipo: 'marco',
     timestamp: new Date(Date.UTC(2026, 0, 1 + indice)).toISOString(),
     agente: 'agente-teste',
-    prevHash: prevHashEsperado(ultimoElo, MANIFESTO),
+    prevHash: expectedPrevHash(ultimoElo, MANIFESTO),
     dados: { marcoTipo, alvo: 'hex:alvo:u1' },
   };
 }
@@ -59,11 +59,11 @@ describe('hashLinha / ancora (N10, golden)', () => {
   const hashEsperado = '5ce118a3ce3e08d19f468921b45a37a3f06fa4751c3485bdb12fe01844cdd26f';
 
   test('ancora do manifesto é o hex fixo', () => {
-    expect(ancora(manifesto)).toBe(anc);
+    expect(anchor(manifesto)).toBe(anc);
   });
 
   test('hashLinha do elo é o hex fixo', () => {
-    expect(hashLinha(linha)).toBe(hashEsperado);
+    expect(hashLine(linha)).toBe(hashEsperado);
   });
 
   test('reordenar as chaves da linha não muda o hash (JCS ordena)', () => {
@@ -76,7 +76,7 @@ describe('hashLinha / ancora (N10, golden)', () => {
       id: linha.id,
       seq: linha.seq,
     };
-    expect(hashLinha(reordenada)).toBe(hashEsperado);
+    expect(hashLine(reordenada)).toBe(hashEsperado);
   });
 
   test('property: ida e volta por JSON.parse(JSON.stringify(l)) preserva o hash', () => {
@@ -84,7 +84,7 @@ describe('hashLinha / ancora (N10, golden)', () => {
       fc.property(fc.integer({ min: 0, max: 1000 }), (seq) => {
         const l: Linha = { ...linha, seq };
         const clonada = JSON.parse(JSON.stringify(l)) as Linha;
-        expect(hashLinha(clonada)).toBe(hashLinha(l));
+        expect(hashLine(clonada)).toBe(hashLine(l));
       }),
     );
   });
@@ -92,33 +92,33 @@ describe('hashLinha / ancora (N10, golden)', () => {
 
 describe('proximoSeq / prevHashEsperado (relativo)', () => {
   test('proximoSeq sem último elo = número de pendentes', () => {
-    expect(proximoSeq(null, 3)).toBe(3);
+    expect(nextSeq(null, 3)).toBe(3);
   });
 
   test('proximoSeq com último elo = seq + 1 + pendentes', () => {
     const elo = construirLinha(0, null);
     const comSeq5 = { ...elo, seq: 5 };
-    expect(proximoSeq(comSeq5, 2)).toBe(8);
+    expect(nextSeq(comSeq5, 2)).toBe(8);
   });
 
   test('prevHashEsperado sem último elo = âncora do manifesto', () => {
-    expect(prevHashEsperado(null, MANIFESTO)).toBe(ancora(MANIFESTO));
+    expect(expectedPrevHash(null, MANIFESTO)).toBe(anchor(MANIFESTO));
   });
 
   test('prevHashEsperado com último elo = hashLinha desse elo', () => {
     const elo = construirLinha(0, null);
-    expect(prevHashEsperado(elo, MANIFESTO)).toBe(hashLinha(elo));
+    expect(expectedPrevHash(elo, MANIFESTO)).toBe(hashLine(elo));
   });
 });
 
 describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
   test('log íntegro de 5 elos verifica ok', () => {
     const log = construirLog(5);
-    const resultado = verificarCadeia(paraTexto(log), MANIFESTO);
+    const resultado = verifyChain(paraTexto(log), MANIFESTO);
     expect(resultado).toEqual({
       ok: true,
       totalLinhas: 5,
-      cabeca: hashLinha(log[4]),
+      cabeca: hashLine(log[4]),
       quebras: [],
       totalQuebras: 0,
       linhasReparadas: [],
@@ -128,7 +128,7 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
   test('(a) JSON inválido na linha 1 → {1,linha-invalida},{2,hash-nao-bate}', () => {
     const log: Array<Linha | string> = [...construirLog(5)];
     log[1] = '{ isso nao e json valido';
-    const resultado = verificarCadeia(paraTexto(log), MANIFESTO);
+    const resultado = verifyChain(paraTexto(log), MANIFESTO);
     expect(resultado.quebras).toEqual([
       { indice: 1, motivo: 'linha-invalida' },
       { indice: 2, motivo: 'hash-nao-bate' },
@@ -142,7 +142,7 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
     const log = construirLog(5);
     const alterado: Array<Linha | string> = [...log];
     alterado[1] = { ...log[1], dados: { ...log[1].dados, marcoTipo: 'alterado' } };
-    const resultado = verificarCadeia(paraTexto(alterado), MANIFESTO);
+    const resultado = verifyChain(paraTexto(alterado), MANIFESTO);
     expect(resultado.quebras).toEqual([{ indice: 2, motivo: 'hash-nao-bate' }]);
     expect(resultado.totalQuebras).toBe(1);
   });
@@ -150,7 +150,7 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
   test('(c) linha 1 removida → {1,seq-divergente},{1,hash-nao-bate}, sem cascata', () => {
     const log = construirLog(5);
     const semLinha1 = log.filter((_, indice) => indice !== 1);
-    const resultado = verificarCadeia(paraTexto(semLinha1), MANIFESTO);
+    const resultado = verifyChain(paraTexto(semLinha1), MANIFESTO);
     expect(resultado.quebras).toEqual([
       { indice: 1, motivo: 'seq-divergente' },
       { indice: 1, motivo: 'hash-nao-bate' },
@@ -165,16 +165,16 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
     const caudaCompletada = `${textoIntegro}{"seq":5,"cauda":"bytes parciais sem fechamento"}\n`;
     const ultimoElo = log[4];
     const novoElo = construirLinha(5, ultimoElo);
-    novoElo.seq = proximoSeq(ultimoElo, 1);
-    novoElo.prevHash = prevHashEsperado(ultimoElo, MANIFESTO);
+    novoElo.seq = nextSeq(ultimoElo, 1);
+    novoElo.prevHash = expectedPrevHash(ultimoElo, MANIFESTO);
     const textoFinal = caudaCompletada + JSON.stringify(novoElo) + '\n';
 
-    const resultado = verificarCadeia(textoFinal, MANIFESTO);
+    const resultado = verifyChain(textoFinal, MANIFESTO);
     expect(resultado.ok).toBe(true);
     expect(resultado.quebras).toEqual([]);
     expect(resultado.linhasReparadas).toEqual([5]);
     expect(novoElo.seq).toBe(6);
-    expect(resultado.cabeca).toBe(hashLinha(novoElo));
+    expect(resultado.cabeca).toBe(hashLine(novoElo));
   });
 
   test('(e) (a) + prevHash alterado na linha 4 → {1,linha-invalida},{2,hash-nao-bate},{4,hash-nao-bate}', () => {
@@ -182,7 +182,7 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
     const alterado: Array<Linha | string> = [...log];
     alterado[1] = '{ isso nao e json valido';
     alterado[4] = { ...log[4], prevHash: sha256hex('lixo-qualquer') };
-    const resultado = verificarCadeia(paraTexto(alterado), MANIFESTO);
+    const resultado = verifyChain(paraTexto(alterado), MANIFESTO);
     expect(resultado.quebras).toEqual([
       { indice: 1, motivo: 'linha-invalida' },
       { indice: 2, motivo: 'hash-nao-bate' },
@@ -196,11 +196,11 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
     const comLixo = `${paraTexto(log)}isto e lixo puro, nao e json\n`;
     const ultimoElo = log[4];
     const novoElo = construirLinha(5, ultimoElo);
-    novoElo.seq = proximoSeq(ultimoElo, 1);
-    novoElo.prevHash = prevHashEsperado(ultimoElo, MANIFESTO);
+    novoElo.seq = nextSeq(ultimoElo, 1);
+    novoElo.prevHash = expectedPrevHash(ultimoElo, MANIFESTO);
     const textoFinal = comLixo + JSON.stringify(novoElo) + '\n';
 
-    const resultado = verificarCadeia(textoFinal, MANIFESTO);
+    const resultado = verifyChain(textoFinal, MANIFESTO);
     expect(resultado.ok).toBe(true);
     expect(resultado.linhasReparadas).toEqual([5]);
   });
@@ -210,11 +210,11 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
     const semLinha1 = log.filter((_, indice) => indice !== 1);
     const ultimoElo = semLinha1[semLinha1.length - 1];
     const novoElo = construirLinha(9, ultimoElo);
-    novoElo.seq = proximoSeq(ultimoElo, 0);
-    novoElo.prevHash = prevHashEsperado(ultimoElo, MANIFESTO);
+    novoElo.seq = nextSeq(ultimoElo, 0);
+    novoElo.prevHash = expectedPrevHash(ultimoElo, MANIFESTO);
     const textoFinal = paraTexto([...semLinha1, novoElo]);
 
-    const resultado = verificarCadeia(textoFinal, MANIFESTO);
+    const resultado = verifyChain(textoFinal, MANIFESTO);
     expect(resultado.quebras).toEqual([
       { indice: 1, motivo: 'seq-divergente' },
       { indice: 1, motivo: 'hash-nao-bate' },
@@ -229,10 +229,10 @@ describe('verificarCadeia: outros casos', () => {
     const e1 = construirLinha(1, e0, 'ruim');
     const validarDados = (_tipo: string, dados: Record<string, unknown>) =>
       dados.marcoTipo === 'ruim'
-        ? [{ caminho: '/dados/marcoTipo', codigo: 'ruim', mensagem: 'x' }]
+        ? [{ path: '/dados/marcoTipo', code: 'ruim', message: 'x' }]
         : null;
 
-    const resultado = verificarCadeia(paraTexto([e0, e1]), MANIFESTO, validarDados);
+    const resultado = verifyChain(paraTexto([e0, e1]), MANIFESTO, validarDados);
     expect(resultado.quebras).toEqual([{ indice: 1, motivo: 'dados-invalidos' }]);
     expect(resultado.ok).toBe(false);
   });
@@ -242,7 +242,7 @@ describe('verificarCadeia: outros casos', () => {
     const transposto = [...log];
     [transposto[1], transposto[2]] = [transposto[2], transposto[1]];
 
-    const resultado = verificarCadeia(paraTexto(transposto), MANIFESTO);
+    const resultado = verifyChain(paraTexto(transposto), MANIFESTO);
     expect(resultado.quebras).toEqual([
       { indice: 1, motivo: 'seq-divergente' },
       { indice: 1, motivo: 'hash-nao-bate' },
@@ -259,7 +259,7 @@ describe('verificarCadeia: outros casos', () => {
     const log = construirLog(5);
     const comDuplicata = [...log, log[2]];
 
-    const resultado = verificarCadeia(paraTexto(comDuplicata), MANIFESTO);
+    const resultado = verifyChain(paraTexto(comDuplicata), MANIFESTO);
     expect(resultado.quebras).toEqual([
       { indice: 5, motivo: 'seq-divergente' },
       { indice: 5, motivo: 'hash-nao-bate' },
@@ -270,14 +270,14 @@ describe('verificarCadeia: outros casos', () => {
     const log = construirLog(2);
     const texto = `${paraTexto(log)}{"seq":2,"cauda":"sem newline no fim"`;
 
-    const resultado = verificarCadeia(texto, MANIFESTO);
+    const resultado = verifyChain(texto, MANIFESTO);
     expect(resultado.totalLinhas).toBe(2);
     expect(resultado.ok).toBe(true);
-    expect(resultado.cabeca).toBe(hashLinha(log[1]));
+    expect(resultado.cabeca).toBe(hashLine(log[1]));
   });
 
   test('cabeca é "" quando não há nenhum elo válido', () => {
-    const resultado = verificarCadeia('lixo sem json\nmais lixo\n', MANIFESTO);
+    const resultado = verifyChain('lixo sem json\nmais lixo\n', MANIFESTO);
     expect(resultado.cabeca).toBe('');
     expect(resultado.quebras).toEqual([
       { indice: 0, motivo: 'linha-invalida' },

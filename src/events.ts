@@ -2,7 +2,7 @@ import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
 import { get } from 'es-toolkit/compat';
 import { z } from 'zod';
-import { detalhesDeIssues, ErroHexlog } from './errors.ts';
+import { issueDetails, HexlogError } from './errors.ts';
 
 // §4.2: regex única de nome para projeto, processo, tipo, gate e dono.
 const NOME_SRC = '[a-z0-9][a-z0-9-]{0,62}';
@@ -121,10 +121,10 @@ export function normalizarDados(
   const esquema = esquemaDados(tipo, dados, esquemasCustom);
   const resultado = esquema.safeParse(dados);
   if (!resultado.success) {
-    throw new ErroHexlog(
-      'EVENTO_INVALIDO',
+    throw new HexlogError(
+      'INVALID_EVENT',
       'dados do evento reprovados na validação',
-      detalhesDeIssues(resultado.error.issues, '/dados'),
+      issueDetails(resultado.error.issues, '/dados'),
     );
   }
 
@@ -133,10 +133,10 @@ export function normalizarDados(
   // sempre um objeto simples pós-parse do Zod.
   const tamanho = (canonicalize(normalizado) ?? '').length;
   if (tamanho > TETO_DADOS_CHARS) {
-    throw new ErroHexlog(
-      'EVENTO_INVALIDO',
+    throw new HexlogError(
+      'INVALID_EVENT',
       `dados excedem ${TETO_DADOS_CHARS} caracteres canônicos`,
-      [{ caminho: '/dados', codigo: 'too_big', mensagem: `tamanho canônico ${tamanho}` }],
+      [{ path: '/dados', code: 'too_big', message: `tamanho canônico ${tamanho}` }],
     );
   }
   return normalizado;

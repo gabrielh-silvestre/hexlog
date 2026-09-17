@@ -6,15 +6,15 @@ import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { parse as parseJsonBruto } from 'jsonc-parser';
 import { z } from 'zod';
-import type { CodigoErro, Detalhe } from '../src/errors.ts';
-import type { Logger, Registro } from '../src/log.ts';
+import type { ErrorCode, Detail } from '../src/errors.ts';
+import type { Logger, LogRecord } from '../src/log.ts';
 import { criarServidor } from '../src/mcp.ts';
 
 /** Ambiente de teste: servidor `hexlog` real ligado a um `Client` MCP via transporte em memória. */
 export type Ambiente = {
   dir: string;
   cliente: Client;
-  registros: Registro[];
+  registros: LogRecord[];
   chamar: (nome: string, args?: Record<string, unknown>) => Promise<ResultadoChamada>;
   arvore: (raiz?: string) => string[];
   definirRelogio: (data: Date) => void;
@@ -45,7 +45,7 @@ function arvore(raiz: string): string[] {
 /** Cria um `dir` de dados temporário, um servidor `hexlog` real e um `Client` MCP conectados em memória. */
 export async function criarAmbiente(): Promise<Ambiente> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-'));
-  const registros: Registro[] = [];
+  const registros: LogRecord[] = [];
   const log: Logger = (registro) => {
     registros.push(registro);
   };
@@ -111,13 +111,13 @@ export function parseJson<T extends z.ZodType>(schema: T, texto: string): z.infe
 /** Afirma que `resultado` é um erro de domínio (§4.13) com o `codigo` esperado, e devolve o corpo estruturado. */
 export function esperarErro(
   resultado: ResultadoChamada,
-  codigo: CodigoErro,
-): { codigo: CodigoErro; mensagem: string; detalhes: Detalhe[] } {
+  codigo: ErrorCode,
+): { codigo: ErrorCode; mensagem: string; detalhes: Detail[] } {
   expect(resultado.isError).toBe(true);
   const corpo = resultado.structuredContent as {
-    codigo: CodigoErro;
+    codigo: ErrorCode;
     mensagem: string;
-    detalhes: Detalhe[];
+    detalhes: Detail[];
   };
   expect(corpo.codigo).toBe(codigo);
   return corpo;

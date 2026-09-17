@@ -3,9 +3,9 @@ import canonicalize from 'canonicalize';
 import { isNil, isNotNil, omit } from 'es-toolkit';
 import { z } from 'zod';
 import { buscar, ehCandidato, TETO_BUSCA_CHARS, type Filtros } from './search.ts';
-import { eloValido, verificarCadeia, type Cadeia } from './chain.ts';
+import { isValidLink, verifyChain, type Chain } from './chain.ts';
 import { carregarProcesso, type ProcessoCarregado } from './definitions.ts';
-import { detalhesDeIssues, ErroHexlog, type Detalhe } from './errors.ts';
+import { issueDetails, HexlogError, type Detail } from './errors.ts';
 import { analisarId, Alvo, esquemaDados, Linha, normalizarDados, Rotulo } from './events.ts';
 import {
   agoraEfetivo,
@@ -26,7 +26,7 @@ import {
   type NomeGateEmbutido,
   type ResultadoGate,
 } from './gates.ts';
-import { anexar, lerTexto } from './log.ts';
+import { append, readText } from './log.ts';
 import {
   Agente,
   Aviso as AvisoSchema,
@@ -314,7 +314,7 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
 function lerElos(texto: string, esquemasCustom: Record<string, z.ZodType>): Linha[] {
   const elos: Linha[] = [];
   for (const linhaTexto of texto.split('\n').slice(0, -1)) {
-    const elo = eloValido(linhaTexto);
+    const elo = isValidLink(linhaTexto);
     if (isNotNil(elo) && dadosValidos(elo, esquemasCustom)) elos.push(elo);
   }
   return elos;
@@ -325,23 +325,23 @@ function dadosValidos(elo: Linha, esquemasCustom: Record<string, z.ZodType>): bo
   return isNotNil(esquema) && esquema.safeParse(elo.dados).success;
 }
 
-/** `validarDados` de `verificarCadeia` (§4.6): reprova `dados` fora do schema fixado do seu `tipo`. */
+/** `validarDados` de `verifyChain` (§4.6): reprova `dados` fora do schema fixado do seu `tipo`. */
 function validarDadosDoProcesso(
   esquemasCustom: Record<string, z.ZodType>,
-): (tipo: string, dados: Record<string, unknown>) => Detalhe[] | null {
+): (tipo: string, dados: Record<string, unknown>) => Detail[] | null {
   return (tipo, dados) => {
     const esquema = esquemaDados(tipo, dados, esquemasCustom) as z.ZodType | undefined;
     if (isNil(esquema)) {
       return [
         {
-          caminho: '',
-          codigo: 'tipo_desconhecido',
-          mensagem: `tipo '${tipo}' não está fixado no processo`,
+          path: '',
+          code: 'tipo_desconhecido',
+          message: `tipo '${tipo}' não está fixado no processo`,
         },
       ];
     }
     const resultado = esquema.safeParse(dados);
-    return resultado.success ? null : detalhesDeIssues(resultado.error.issues, '');
+    return resultado.success ? null : issueDetails(resultado.error.issues, '');
   };
 }
 
@@ -354,7 +354,7 @@ function montarEstado(
   const elos = lerElos(texto, processo.esquemasCustom);
   const agora = agoraEfetivo(relogio().toISOString(), elos);
   const projecao = projetar(elos, processo.manifesto.fixado.vocabulario, agora);
-  const cadeia = verificarCadeia(
+  const cadeia = verifyChain(
     texto,
     processo.manifesto,
     validarDadosDoProcesso(processo.esquemasCustom),
@@ -379,11 +379,11 @@ async function registrar(
   const { tipo, uuid } = validarIdDoEvento(id, projeto, processo);
 
   if (tipo !== 'marco' && tipo !== 'veredito' && isNil(carregado.esquemasCustom[tipo])) {
-    throw new ErroHexlog('TIPO_NAO_FIXADO', `tipo '${tipo}' não está fixado no processo`);
+    throw new HexlogError('TYPE_NOT_PINNED', `tipo '${tipo}' não está fixado no processo`);
   }
   if (tipo === 'marco' && temCampoReservado(dados)) {
-    throw new ErroHexlog(
-      'CAMPO_RESERVADO',
+    throw new HexlogError(
+      'RESERVED_FIELD',
       'marcoTipo "gate" e a chave "gate" são reservados ao Marco de gate de avaliar_gate',
     );
   }
@@ -395,7 +395,7 @@ async function registrar(
     return { ...retentarComIdCompleto(carregado, id, tipo, agente, normalizados), avisos };
   }
 
-  const linha = await anexar(
+  const linha = await append(
     carregado.arquivoEventos,
     carregado.manifesto,
     (base) => ({
@@ -407,7 +407,7 @@ async function registrar(
       prevHash: base.prevHash,
       dados: normalizados,
     }),
-    { log: ctx.log, relogio: ctx.relogio },
+    { log: ctx.log, clock: ctx.relogio },
   );
   return { evento: linha, deduplicado: false, avisos };
 }
@@ -419,11 +419,11 @@ function validarIdDoEvento(
 ): { tipo: string; uuid?: string } {
   const analisado = analisarId(id);
   if (isNil(analisado) || analisado.projeto !== projeto || analisado.processo !== processo) {
-    throw new ErroHexlog('ID_INVALIDO', 'id inválido para este projeto/processo', [
+    throw new HexlogError('INVALID_ID', 'id inválido para este projeto/processo', [
       {
-        caminho: '/id',
-        codigo: 'id_invalido',
-        mensagem: 'id não casa a gramática esperada ou diverge de projeto/processo',
+        path: '/id',
+        code: 'id_invalido',
+        message: 'id não casa a gramática esperada ou diverge de projeto/processo',
       },
     ]);
   }
@@ -442,17 +442,17 @@ function retentarComIdCompleto(
   agente: string,
   normalizados: Record<string, unknown>,
 ): { evento: Linha; deduplicado: true } {
-  const elos = lerElos(lerTexto(carregado.arquivoEventos), carregado.esquemasCustom);
+  const elos = lerElos(readText(carregado.arquivoEventos), carregado.esquemasCustom);
   const existente = elos.find((elo) => elo.id === id);
   if (isNil(existente)) {
-    throw new ErroHexlog('ID_DESCONHECIDO', `id '${id}' não encontrado`);
+    throw new HexlogError('UNKNOWN_ID', `id '${id}' não encontrado`);
   }
 
   const enviado = canonicalize({ tipo, agente, dados: normalizados }) ?? '';
   const gravado =
     canonicalize({ tipo: existente.tipo, agente: existente.agente, dados: existente.dados }) ?? '';
   if (enviado !== gravado) {
-    throw new ErroHexlog('ID_CONFLITANTE', `id '${id}' já usado com conteúdo diferente`);
+    throw new HexlogError('CONFLICTING_ID', `id '${id}' já usado com conteúdo diferente`);
   }
 
   return { evento: existente, deduplicado: true };
@@ -488,14 +488,14 @@ function garantirVocabulario(
   campo: CampoVocabulario,
   valor: string,
   vocabulario: Vocabulario,
-  caminho: string,
+  path: string,
 ): void {
   if (validarCampo(vocabulario, campo, valor)?.classe === 'erro') {
-    throw new ErroHexlog('VOCABULARIO_VIOLADO', `${campo} '${valor}' fora do vocabulário fixado`, [
+    throw new HexlogError('VOCABULARY_VIOLATED', `${campo} '${valor}' fora do vocabulário fixado`, [
       {
-        caminho,
-        codigo: 'vocabulario_violado',
-        mensagem: `valor '${valor}' fora do vocabulário fixado`,
+        path,
+        code: 'vocabulario_violado',
+        message: `valor '${valor}' fora do vocabulário fixado`,
       },
     ]);
   }
@@ -540,7 +540,7 @@ async function avaliarGate(
   const { projeto, processo, gate, agente, alvo, resultado } = args;
   const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
   const resolucao = resolverGate(gate, resultado, carregado.manifesto.fixado.gates);
-  const estado = montarEstado(carregado, lerTexto(carregado.arquivoEventos), ctx.relogio);
+  const estado = montarEstado(carregado, readText(carregado.arquivoEventos), ctx.relogio);
 
   const { resultadoGate, criterio } =
     resolucao.origem === 'embutido'
@@ -560,7 +560,7 @@ async function avaliarGate(
     alvo,
     resultado: resultadoGate,
   });
-  const linha = await anexar(
+  const linha = await append(
     carregado.arquivoEventos,
     carregado.manifesto,
     (base) => ({
@@ -572,7 +572,7 @@ async function avaliarGate(
       prevHash: base.prevHash,
       dados,
     }),
-    { log: ctx.log, relogio: ctx.relogio },
+    { log: ctx.log, clock: ctx.relogio },
   );
 
   return { evento: linha, ...omit(resultadoGate, ['avaliadoAte']) };
@@ -586,8 +586,8 @@ function resolverGate(
 ): ResolucaoGate {
   if (ehGateEmbutido(gate)) {
     if (isNotNil(resultado)) {
-      throw new ErroHexlog(
-        'AVALIACAO_INVALIDA',
+      throw new HexlogError(
+        'INVALID_EVALUATION',
         'gate embutido não aceita resultado informado pelo agente',
       );
     }
@@ -596,13 +596,16 @@ function resolverGate(
 
   const definicao = gates[gate];
   if (isNil(definicao)) {
-    throw new ErroHexlog(
-      'GATE_NAO_REGISTRADO',
+    throw new HexlogError(
+      'GATE_NOT_REGISTERED',
       `gate '${gate}' não está fixado no processo nem é embutido`,
     );
   }
   if (isNil(resultado)) {
-    throw new ErroHexlog('AVALIACAO_INVALIDA', 'gate custom exige resultado informado pelo agente');
+    throw new HexlogError(
+      'INVALID_EVALUATION',
+      'gate custom exige resultado informado pelo agente',
+    );
   }
   return { origem: 'custom', criterio: definicao.criterio, resultado };
 }
@@ -632,7 +635,7 @@ function resolverEstado(
   { projeto, processo, secoes }: { projeto: string; processo: string; secoes?: NomeSecao[] },
 ) {
   const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
-  const estado = montarEstado(carregado, lerTexto(carregado.arquivoEventos), ctx.relogio);
+  const estado = montarEstado(carregado, readText(carregado.arquivoEventos), ctx.relogio);
   const incluidas = new Set(secoes ?? TODAS_SECOES);
 
   const totais = Object.fromEntries(CAMPOS_LISTA.map((campo) => [campo, estado[campo].length]));
@@ -692,7 +695,7 @@ function resolverEventos(
   const antes = normalizarInstante(args.antes);
   validarIntervalo(apos, antes);
 
-  const linhasFisicas = lerTexto(carregado.arquivoEventos).split('\n').slice(0, -1);
+  const linhasFisicas = readText(carregado.arquivoEventos).split('\n').slice(0, -1);
   validarAte(ate, linhasFisicas.length);
   const limiteAte = ate ?? linhasFisicas.length;
 
@@ -707,11 +710,11 @@ function resolverEventos(
 function validarMarcoTipoDoFiltro(marcoTipo: string | undefined, vocabulario: Vocabulario): void {
   if (isNil(marcoTipo) || marcoTipo === 'gate') return;
   if (validarCampo(vocabulario, 'marcoTipo', marcoTipo)?.classe === 'erro') {
-    throw new ErroHexlog('FILTRO_INVALIDO', `marcoTipo '${marcoTipo}' fora do vocabulário fixado`, [
+    throw new HexlogError('INVALID_FILTER', `marcoTipo '${marcoTipo}' fora do vocabulário fixado`, [
       {
-        caminho: '/marcoTipo',
-        codigo: 'fora_do_vocabulario',
-        mensagem: `valor '${marcoTipo}' fora do vocabulário fixado`,
+        path: '/marcoTipo',
+        code: 'fora_do_vocabulario',
+        message: `valor '${marcoTipo}' fora do vocabulário fixado`,
       },
     ]);
   }
@@ -724,11 +727,11 @@ function normalizarInstante(v: string | undefined): string | undefined {
 
 function validarIntervalo(apos: string | undefined, antes: string | undefined): void {
   if (isNil(apos) || isNil(antes) || apos < antes) return;
-  throw new ErroHexlog('FILTRO_INVALIDO', 'apos deve ser anterior a antes', [
+  throw new HexlogError('INVALID_FILTER', 'apos deve ser anterior a antes', [
     {
-      caminho: '/apos',
-      codigo: 'intervalo_invalido',
-      mensagem: `apos (${apos}) não é anterior a antes (${antes})`,
+      path: '/apos',
+      code: 'intervalo_invalido',
+      message: `apos (${apos}) não é anterior a antes (${antes})`,
     },
   ]);
 }
@@ -736,11 +739,11 @@ function validarIntervalo(apos: string | undefined, antes: string | undefined): 
 /** `ate` além do fim do arquivo: o log tem menos linhas do que a página anterior viu. */
 function validarAte(ate: number | undefined, totalLinhasFisicas: number): void {
   if (isNil(ate) || ate <= totalLinhasFisicas) return;
-  throw new ErroHexlog('FILTRO_INVALIDO', `ate (${ate}) maior que o número de linhas do arquivo`, [
+  throw new HexlogError('INVALID_FILTER', `ate (${ate}) maior que o número de linhas do arquivo`, [
     {
-      caminho: '/ate',
-      codigo: 'ate_alem_do_arquivo',
-      mensagem: `ate (${ate}) maior que ${totalLinhasFisicas} linhas físicas`,
+      path: '/ate',
+      code: 'ate_alem_do_arquivo',
+      message: `ate (${ate}) maior que ${totalLinhasFisicas} linhas físicas`,
     },
   ]);
 }
@@ -764,7 +767,7 @@ function resolverModoCru(
   let tamanho = 2; // '[]'
 
   for (let indice = desde; indice < limiteAte; indice++) {
-    const elo = eloValido(linhasFisicas[indice]);
+    const elo = isValidLink(linhasFisicas[indice]);
     if (isNil(elo)) {
       linhasInvalidas.push(indice);
       continue;
@@ -808,7 +811,7 @@ function candidatosDoArquivo(
   const linhasInvalidas: number[] = [];
 
   linhasFisicas.forEach((linhaTexto, indice) => {
-    const elo = eloValido(linhaTexto);
+    const elo = isValidLink(linhaTexto);
     if (isNil(elo)) {
       linhasInvalidas.push(indice);
       return;
@@ -881,12 +884,8 @@ function resolverModoBusca(
 function resolverCadeia(
   ctx: Contexto,
   { projeto, processo }: { projeto: string; processo: string },
-): Cadeia {
+): Chain {
   const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
-  const texto = lerTexto(carregado.arquivoEventos);
-  return verificarCadeia(
-    texto,
-    carregado.manifesto,
-    validarDadosDoProcesso(carregado.esquemasCustom),
-  );
+  const texto = readText(carregado.arquivoEventos);
+  return verifyChain(texto, carregado.manifesto, validarDadosDoProcesso(carregado.esquemasCustom));
 }

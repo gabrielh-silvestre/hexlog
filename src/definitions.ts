@@ -7,17 +7,17 @@ import canonicalize from 'canonicalize';
 import { isNil, pick } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { z } from 'zod';
-import { ancora, sha256hex } from './chain.ts';
+import { anchor, sha256hex } from './chain.ts';
 import {
-  caminho,
-  erroIo,
-  escreverJsonAtomico,
+  resolveSafePath,
+  ioError,
+  writeJsonAtomic,
   GATES_EMBUTIDOS_NOMES,
-  lerJson,
+  readJson,
   PROCESSOS_RESERVADOS,
   TIPOS_RESERVADOS,
 } from './storage.ts';
-import { ErroHexlog } from './errors.ts';
+import { HexlogError } from './errors.ts';
 import type { Vocab, Vocabulario } from './state.ts';
 
 // Reexportados de state.ts (fonte única do schema de vocabulário, DE-29).
@@ -69,19 +69,19 @@ export function registrarTipo(
   opcoes: { log?: Logger } = {},
 ): Definida {
   if ((TIPOS_RESERVADOS as readonly string[]).includes(nome)) {
-    throw new ErroHexlog('NOME_RESERVADO', `tipo '${nome}' é reservado`);
+    throw new HexlogError('RESERVED_NAME', `tipo '${nome}' é reservado`);
   }
 
   const schemaCanonico = canonicalize(schema) ?? '';
   if (schemaCanonico.length > TETO_SCHEMA_CHARS) {
-    throw new ErroHexlog(
-      'SCHEMA_INVALIDO',
+    throw new HexlogError(
+      'INVALID_SCHEMA',
       `schema excede ${TETO_SCHEMA_CHARS} caracteres canônicos`,
       [
         {
-          caminho: '/schema',
-          codigo: 'too_big',
-          mensagem: `tamanho canônico ${schemaCanonico.length}`,
+          path: '/schema',
+          code: 'too_big',
+          message: `tamanho canônico ${schemaCanonico.length}`,
         },
       ],
     );
@@ -90,8 +90,8 @@ export function registrarTipo(
   validarComAjv(schema, opcoes.log);
 
   if (schema.type !== 'object') {
-    throw new ErroHexlog('SCHEMA_INVALIDO', 'raiz do schema precisa ser "type": "object"', [
-      { caminho: '/schema/type', codigo: 'invalid_type', mensagem: 'esperado "object"' },
+    throw new HexlogError('INVALID_SCHEMA', 'raiz do schema precisa ser "type": "object"', [
+      { path: '/schema/type', code: 'invalid_type', message: 'esperado "object"' },
     ]);
   }
 
@@ -99,19 +99,19 @@ export function registrarTipo(
     z.fromJSONSchema(schema);
   } catch {
     // a mensagem bruta do zod não é exposta (§4.10): só o código de domínio.
-    throw new ErroHexlog('SCHEMA_INVALIDO', 'construção do schema não suportada', [
+    throw new HexlogError('INVALID_SCHEMA', 'construção do schema não suportada', [
       {
-        caminho: '/schema',
-        codigo: 'nao-suportado',
-        mensagem: 'construção de schema não suportada',
+        path: '/schema',
+        code: 'nao-suportado',
+        message: 'construção de schema não suportada',
       },
     ]);
   }
 
-  const arquivo = caminho(dir, projeto, 'schemas', `${nome}.json`);
+  const arquivo = resolveSafePath(dir, projeto, 'schemas', `${nome}.json`);
   const hash = sha256hex(schemaCanonico);
-  const substituiu = !isNil(lerJson(arquivo));
-  escreverJsonAtomico(arquivo, { nome, schema, hash, registradoEm: new Date().toISOString() });
+  const substituiu = !isNil(readJson(arquivo));
+  writeJsonAtomic(arquivo, { nome, schema, hash, registradoEm: new Date().toISOString() });
   return { projeto, nome, hash, substituiu };
 }
 
@@ -124,8 +124,8 @@ function validarComAjv(schema: Record<string, unknown>, log: Logger | undefined)
   } catch (e) {
     const instancePath = (e as { instancePath?: string }).instancePath;
     const caminhoErro = isNil(instancePath) ? '/schema' : `/schema${instancePath}`;
-    throw new ErroHexlog('SCHEMA_INVALIDO', 'schema reprovado pelo Ajv', [
-      { caminho: caminhoErro, codigo: 'ajv_invalido', mensagem: (e as Error).message },
+    throw new HexlogError('INVALID_SCHEMA', 'schema reprovado pelo Ajv', [
+      { path: caminhoErro, code: 'ajv_invalido', message: (e as Error).message },
     ]);
   }
 }
@@ -137,10 +137,10 @@ export function registrarVocabulario(
   dono: string,
   vocab: Vocab,
 ): { projeto: string; dono: string; hash: string; substituiu: boolean } {
-  const arquivo = caminho(dir, projeto, 'vocabulario', `${dono}.json`);
+  const arquivo = resolveSafePath(dir, projeto, 'vocabulario', `${dono}.json`);
   const hash = sha256hex(canonicalize(vocab) ?? '');
-  const substituiu = !isNil(lerJson(arquivo));
-  escreverJsonAtomico(arquivo, { dono, ...vocab, hash, registradoEm: new Date().toISOString() });
+  const substituiu = !isNil(readJson(arquivo));
+  writeJsonAtomic(arquivo, { dono, ...vocab, hash, registradoEm: new Date().toISOString() });
   return { projeto, dono, hash, substituiu };
 }
 
@@ -152,13 +152,13 @@ export function registrarGate(
   criterio: string,
 ): Definida {
   if ((GATES_EMBUTIDOS_NOMES as readonly string[]).includes(nome)) {
-    throw new ErroHexlog('NOME_RESERVADO', `gate '${nome}' é embutido`);
+    throw new HexlogError('RESERVED_NAME', `gate '${nome}' é embutido`);
   }
 
-  const arquivo = caminho(dir, projeto, 'gates', `${nome}.json`);
+  const arquivo = resolveSafePath(dir, projeto, 'gates', `${nome}.json`);
   const hash = sha256hex(canonicalize(criterio) ?? '');
-  const substituiu = !isNil(lerJson(arquivo));
-  escreverJsonAtomico(arquivo, { nome, criterio, hash, registradoEm: new Date().toISOString() });
+  const substituiu = !isNil(readJson(arquivo));
+  writeJsonAtomic(arquivo, { nome, criterio, hash, registradoEm: new Date().toISOString() });
   return { projeto, nome, hash, substituiu };
 }
 
@@ -178,10 +178,10 @@ export function criarProcesso(
   gates: string[];
 } {
   if ((PROCESSOS_RESERVADOS as readonly string[]).includes(processo)) {
-    throw new ErroHexlog('NOME_RESERVADO', `processo '${processo}' é reservado`);
+    throw new HexlogError('RESERVED_NAME', `processo '${processo}' é reservado`);
   }
 
-  const dirProjeto = caminho(dir, projeto);
+  const dirProjeto = resolveSafePath(dir, projeto);
   const fixado = montarSnapshot(dirProjeto);
   const hashes: Manifesto['hashes'] = {
     schemas: sha256hex(canonicalize(fixado.tipos) ?? ''),
@@ -191,7 +191,7 @@ export function criarProcesso(
   const criadoEm = relogio().toISOString();
   const manifesto: Manifesto = { projeto, processo, criadoEm, fixado, hashes };
 
-  criarArquivoExclusivo(caminho(dirProjeto, processo), manifesto, processo);
+  criarArquivoExclusivo(resolveSafePath(dirProjeto, processo), manifesto, processo);
 
   return {
     projeto,
@@ -214,7 +214,7 @@ function montarSnapshot(dirProjeto: string): Manifesto['fixado'] {
 
   const arquivosVocab = listarDefinicoes(path.join(dirProjeto, 'vocabulario'));
   if (isEmpty(arquivosVocab)) {
-    throw new ErroHexlog('VOCABULARIO_AUSENTE', 'nenhum vocabulário registrado no projeto');
+    throw new HexlogError('VOCABULARY_MISSING', 'nenhum vocabulário registrado no projeto');
   }
   const nucleoArquivo = arquivosVocab.find((d) => d.nome === 'nucleo');
   const vocabulario: Vocabulario = {
@@ -261,9 +261,9 @@ function criarArquivoExclusivo(dirProcesso: string, manifesto: Manifesto, proces
     fs.linkSync(tmp, arquivo);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new ErroHexlog('PROCESSO_JA_EXISTE', `processo '${processo}' já existe`);
+      throw new HexlogError('PROCESS_ALREADY_EXISTS', `processo '${processo}' já existe`);
     }
-    throw erroIo(e);
+    throw ioError(e);
   } finally {
     fs.unlinkSync(tmp);
   }
@@ -275,19 +275,19 @@ export function carregarProcesso(
   projeto: string,
   processo: string,
 ): ProcessoCarregado {
-  const dirProcesso = caminho(dir, projeto, processo);
+  const dirProcesso = resolveSafePath(dir, projeto, processo);
   const arquivo = path.join(dirProcesso, 'processo.json');
 
   let manifestoLido: unknown;
   try {
-    manifestoLido = lerJson(arquivo);
+    manifestoLido = readJson(arquivo);
   } catch {
-    throw new ErroHexlog('PROCESSO_CORROMPIDO', 'processo.json ilegível', [
-      { caminho: '', codigo: 'ilegivel', mensagem: 'processo.json não pôde ser lido' },
+    throw new HexlogError('PROCESS_CORRUPTED', 'processo.json ilegível', [
+      { path: '', code: 'ilegivel', message: 'processo.json não pôde ser lido' },
     ]);
   }
   if (isNil(manifestoLido)) {
-    throw new ErroHexlog('PROCESSO_INEXISTENTE', `processo '${processo}' não encontrado`);
+    throw new HexlogError('PROCESS_NOT_FOUND', `processo '${processo}' não encontrado`);
   }
 
   const manifesto = manifestoLido as Manifesto;
@@ -302,7 +302,7 @@ export function carregarProcesso(
 
   return {
     manifesto,
-    ancora: ancora(manifesto),
+    ancora: anchor(manifesto),
     esquemasCustom,
     dirProcesso,
     arquivoEventos: path.join(dirProcesso, 'eventos.jsonl'),
@@ -320,14 +320,14 @@ function verificarHashes(manifesto: Manifesto): void {
   for (const parte of partes) {
     const recalculado = sha256hex(canonicalize(parte.fixado) ?? '');
     if (recalculado !== manifesto.hashes[parte.hash]) {
-      throw new ErroHexlog(
-        'PROCESSO_CORROMPIDO',
+      throw new HexlogError(
+        'PROCESS_CORRUPTED',
         `hash de ${parte.hash} não bate com o snapshot fixado`,
         [
           {
-            caminho: `/hashes/${parte.hash}`,
-            codigo: 'hash_divergente',
-            mensagem: 'hash recalculado difere do gravado',
+            path: `/hashes/${parte.hash}`,
+            code: 'hash_divergente',
+            message: 'hash recalculado difere do gravado',
           },
         ],
       );
@@ -344,7 +344,7 @@ function listarDefinicoes(dirParte: string): ArquivoDefinicao[] {
     (entrada) => entrada.isFile() && entrada.name.endsWith('.json'),
   ).map((arquivo) => ({
     nome: path.basename(arquivo, '.json'),
-    conteudo: lerJson(path.join(dirParte, arquivo)) as Record<string, unknown>,
+    conteudo: readJson(path.join(dirParte, arquivo)) as Record<string, unknown>,
   }));
 }
 
@@ -355,7 +355,7 @@ function listarNomesDiretorio(dirPai: string, filtro: (entrada: fs.Dirent) => bo
     entradas = fs.readdirSync(dirPai, { withFileTypes: true });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw erroIo(e);
+    throw ioError(e);
   }
   return entradas
     .filter((entrada) => !entrada.name.startsWith('.') && filtro(entrada))
@@ -368,14 +368,14 @@ function listarProcessosValidos(dirProjeto: string): string[] {
     dirProjeto,
     (entrada) =>
       entrada.isDirectory() && !(PROCESSOS_RESERVADOS as readonly string[]).includes(entrada.name),
-  ).filter((nome) => !isNil(lerJson(path.join(dirProjeto, nome, 'processo.json'))));
+  ).filter((nome) => !isNil(readJson(path.join(dirProjeto, nome, 'processo.json'))));
 }
 
 /** Projetos existentes e seus processos válidos. */
 export function listarProjetos(dir: string): { nome: string; processos: string[] }[] {
   return listarNomesDiretorio(dir, (entrada) => entrada.isDirectory()).map((nome) => ({
     nome,
-    processos: listarProcessosValidos(caminho(dir, nome)),
+    processos: listarProcessosValidos(resolveSafePath(dir, nome)),
   }));
 }
 
@@ -390,13 +390,13 @@ export function lerProjeto(
   vocabulario: { dono: string; hash: string }[];
   gates: { nome: string; hash: string }[];
 } {
-  const dirProjeto = caminho(dir, projeto);
+  const dirProjeto = resolveSafePath(dir, projeto);
   if (!fs.existsSync(dirProjeto)) {
-    throw new ErroHexlog('PROJETO_INEXISTENTE', `projeto '${projeto}' não encontrado`);
+    throw new HexlogError('PROJECT_NOT_FOUND', `projeto '${projeto}' não encontrado`);
   }
 
   const processos = listarProcessosValidos(dirProjeto).map((nome) => {
-    const manifesto = lerJson(path.join(dirProjeto, nome, 'processo.json')) as Manifesto;
+    const manifesto = readJson(path.join(dirProjeto, nome, 'processo.json')) as Manifesto;
     return { nome, criadoEm: manifesto.criadoEm };
   });
 

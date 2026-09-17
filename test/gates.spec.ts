@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import { DadosMarcoGate } from '../src/events.ts';
 import type { Estado } from '../src/state.ts';
-import type { Cadeia, Quebra } from '../src/chain.ts';
+import type { Chain, Quebra } from '../src/chain.ts';
 import {
   GATES_EMBUTIDOS,
   avaliarEmbutido,
@@ -19,7 +19,7 @@ import { GATES_EMBUTIDOS_NOMES } from '../src/storage.ts';
 const T = (n: number) => new Date(n * 60_000).toISOString();
 const ALVO = 'hex:alvo:u1';
 
-function cadeiaLimpa(): Cadeia {
+function cadeiaLimpa(): Chain {
   return {
     ok: true,
     totalLinhas: 1,

@@ -6,7 +6,7 @@ import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { last } from 'es-toolkit';
 import { z } from 'zod';
 import { executar } from '../src/mcp.ts';
-import type { Registro } from '../src/log.ts';
+import type { LogRecord } from '../src/log.ts';
 import {
   type Ambiente,
   criarAmbiente,
@@ -120,9 +120,9 @@ describe('M7', () => {
       nome: 'ruim',
       schema: { typ: 'object' },
     });
-    const corpo = esperarErro(resultado, 'SCHEMA_INVALIDO');
+    const corpo = esperarErro(resultado, 'INVALID_SCHEMA');
     expect(corpo.detalhes.length).toBeGreaterThan(0);
-    expect(corpo.detalhes[0]?.caminho.startsWith('/')).toBe(true);
+    expect(corpo.detalhes[0]?.path.startsWith('/')).toBe(true);
     expect(corpo.mensagem.length).toBeGreaterThan(0);
   });
 
@@ -139,11 +139,11 @@ describe('M7', () => {
   test('handler que lança exceção interna devolve INTERNO estruturado, nunca a exceção crua', async () => {
     const [transporteServidor, transporteCliente] = InMemoryTransport.createLinkedPair();
     const servidorTeste = new McpServer({ name: 'teste-interno', version: '0.0.0' });
-    const logs: Registro[] = [];
+    const logs: LogRecord[] = [];
     const ctxTeste = {
       dirDados: ambiente.dir,
       relogio: () => new Date(),
-      log: (r: Registro) => logs.push(r),
+      log: (r: LogRecord) => logs.push(r),
     };
 
     servidorTeste.registerTool(
@@ -170,10 +170,10 @@ describe('M7', () => {
     };
 
     expect(resultado.isError).toBe(true);
-    expect(resultado.structuredContent?.codigo).toBe('INTERNO');
+    expect(resultado.structuredContent?.codigo).toBe('INTERNAL');
     expect(
       logs.some(
-        (registro) => registro.evento === 'erro-interno' && typeof registro.stack === 'string',
+        (registro) => registro.event === 'erro-interno' && typeof registro.stack === 'string',
       ),
     ).toBe(true);
     await clienteTeste.close();
@@ -257,7 +257,7 @@ describe('S1', () => {
       nome: 'ruim',
       schema: { typ: 'object' },
     });
-    esperarErro(invalido, 'SCHEMA_INVALIDO');
+    esperarErro(invalido, 'INVALID_SCHEMA');
 
     const refExterno = await ambiente.chamar('registrar_tipo', {
       projeto: 'p1',
@@ -267,21 +267,21 @@ describe('S1', () => {
         properties: { x: { $ref: 'https://exemplo.invalido/schema.json' } },
       },
     });
-    esperarErro(refExterno, 'SCHEMA_INVALIDO');
+    esperarErro(refExterno, 'INVALID_SCHEMA');
 
     const marco = await ambiente.chamar('registrar_tipo', {
       projeto: 'p1',
       nome: 'marco',
       schema: SCHEMA_VALIDO,
     });
-    esperarErro(marco, 'NOME_RESERVADO');
+    esperarErro(marco, 'RESERVED_NAME');
 
     const veredito = await ambiente.chamar('registrar_tipo', {
       projeto: 'p1',
       nome: 'veredito',
       schema: SCHEMA_VALIDO,
     });
-    esperarErro(veredito, 'NOME_RESERVADO');
+    esperarErro(veredito, 'RESERVED_NAME');
 
     expect(ambiente.arvore()).toEqual(antes);
   });
@@ -291,7 +291,7 @@ describe('S8', () => {
   test('criar_processo com processo reservado → NOME_RESERVADO', async () => {
     for (const processo of ['schemas', 'vocabulario', 'gates']) {
       const resultado = await ambiente.chamar('criar_processo', { projeto: 'p1', processo });
-      esperarErro(resultado, 'NOME_RESERVADO');
+      esperarErro(resultado, 'RESERVED_NAME');
     }
   });
 
@@ -307,7 +307,7 @@ describe('S8', () => {
         nome,
         criterio: 'x',
       });
-      esperarErro(resultado, 'NOME_RESERVADO');
+      esperarErro(resultado, 'RESERVED_NAME');
     }
   });
 });
@@ -325,7 +325,9 @@ describe('N14', () => {
     const sucessos = [a, b].filter((r) => r.isError !== true);
     expect(erros).toHaveLength(1);
     expect(sucessos).toHaveLength(1);
-    expect((erros[0]?.structuredContent as { codigo: string }).codigo).toBe('PROCESSO_JA_EXISTE');
+    expect((erros[0]?.structuredContent as { codigo: string }).codigo).toBe(
+      'PROCESS_ALREADY_EXISTS',
+    );
     expect(fs.existsSync(path.join(ambiente.dir, 'p1', 'proc1', 'processo.json'))).toBe(true);
   });
 
@@ -334,7 +336,7 @@ describe('N14', () => {
       projeto: 'sem-vocab',
       processo: 'proc1',
     });
-    esperarErro(resultado, 'VOCABULARIO_AUSENTE');
+    esperarErro(resultado, 'VOCABULARY_MISSING');
   });
 });
 
@@ -352,22 +354,19 @@ describe('listar', () => {
   });
 
   test('processo sem projeto, ou tipo sem processo → ENTRADA_INVALIDA', async () => {
-    esperarErro(await ambiente.chamar('listar', { processo: 'proc1' }), 'ENTRADA_INVALIDA');
-    esperarErro(
-      await ambiente.chamar('listar', { projeto: 'p1', tipo: 'nota' }),
-      'ENTRADA_INVALIDA',
-    );
+    esperarErro(await ambiente.chamar('listar', { processo: 'proc1' }), 'INVALID_INPUT');
+    esperarErro(await ambiente.chamar('listar', { projeto: 'p1', tipo: 'nota' }), 'INVALID_INPUT');
   });
 
   test('projeto inexistente → PROJETO_INEXISTENTE', async () => {
-    esperarErro(await ambiente.chamar('listar', { projeto: 'fantasma' }), 'PROJETO_INEXISTENTE');
+    esperarErro(await ambiente.chamar('listar', { projeto: 'fantasma' }), 'PROJECT_NOT_FOUND');
   });
 
   test('processo inexistente → PROCESSO_INEXISTENTE', async () => {
     await ambiente.chamar('registrar_vocabulario', { projeto: 'p1', dono: 'nucleo' });
     esperarErro(
       await ambiente.chamar('listar', { projeto: 'p1', processo: 'fantasma' }),
-      'PROCESSO_INEXISTENTE',
+      'PROCESS_NOT_FOUND',
     );
   });
 
@@ -375,7 +374,7 @@ describe('listar', () => {
     await prepararProcesso(ambiente, 'p1', 'proc1');
     esperarErro(
       await ambiente.chamar('listar', { projeto: 'p1', processo: 'proc1', tipo: 'fantasma' }),
-      'TIPO_INEXISTENTE',
+      'TYPE_NOT_FOUND',
     );
   });
 
@@ -395,7 +394,7 @@ describe('logger', () => {
   test('toda chamada gera um registro tool com nome e ms; erro também traz codigo', async () => {
     await ambiente.chamar('listar', {});
     const registroSucesso = ambiente.registros.find(
-      (r) => r.evento === 'tool' && r.nome === 'listar',
+      (r) => r.event === 'tool' && r.nome === 'listar',
     );
     expect(registroSucesso).toBeDefined();
     expect(typeof registroSucesso?.ms).toBe('number');
@@ -403,8 +402,8 @@ describe('logger', () => {
 
     await ambiente.chamar('listar', { projeto: 'fantasma' });
     const chamadasListar = ambiente.registros.filter(
-      (r) => r.evento === 'tool' && r.nome === 'listar',
+      (r) => r.event === 'tool' && r.nome === 'listar',
     );
-    expect(last(chamadasListar)?.codigo).toBe('PROJETO_INEXISTENTE');
+    expect(last(chamadasListar)?.codigo).toBe('PROJECT_NOT_FOUND');
   });
 });

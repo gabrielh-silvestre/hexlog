@@ -18,7 +18,7 @@ import {
   type RegrasEsperadas,
   type ItemFaltando,
 } from './guard.ts';
-import { ErroHexlog } from './errors.ts';
+import { HexlogError } from './errors.ts';
 import { dirDados } from './directory.ts';
 
 export type Bundles = { servidor: Buffer; hook: Buffer };
@@ -79,7 +79,7 @@ async function verificarArtefatoPreparado(args: {
 }): Promise<void> {
   const { tmp, bundles, executarHook, verificarServidor } = args;
   if (temDynamicRequire(bundles.servidor) || temDynamicRequire(bundles.hook)) {
-    throw new ErroHexlog('INTERNO', 'bundle contém "Dynamic require of"; instalação abortada');
+    throw new HexlogError('INTERNAL', 'bundle contém "Dynamic require of"; instalação abortada');
   }
 
   // Mesma checagem funcional de `verificarGuard` (nega o diretório de dados, permite o resto),
@@ -87,10 +87,10 @@ async function verificarArtefatoPreparado(args: {
   const arquivoHook = path.join(tmp, 'guarda-bash.mjs');
   const sondas = sondasDoHook(dirDados(process.env));
   if (executarHook(arquivoHook, sondas.nega).status !== 2) {
-    throw new ErroHexlog('INTERNO', 'hook preparado não nega o acesso ao diretório de dados');
+    throw new HexlogError('INTERNAL', 'hook preparado não nega o acesso ao diretório de dados');
   }
   if (executarHook(arquivoHook, sondas.permite).status !== 0) {
-    throw new ErroHexlog('INTERNO', 'hook preparado não permite comandos inofensivos');
+    throw new HexlogError('INTERNAL', 'hook preparado não permite comandos inofensivos');
   }
 
   let quantidadeTools: number;
@@ -98,11 +98,11 @@ async function verificarArtefatoPreparado(args: {
     quantidadeTools = await verificarServidor(path.join(tmp, 'servidor.mjs'));
   } catch (erro) {
     const mensagem = erro instanceof Error ? erro.message : String(erro);
-    throw new ErroHexlog('INTERNO', `servidor preparado falhou ao iniciar: ${mensagem}`);
+    throw new HexlogError('INTERNAL', `servidor preparado falhou ao iniciar: ${mensagem}`);
   }
   if (quantidadeTools !== QUANTIDADE_TOOLS) {
-    throw new ErroHexlog(
-      'INTERNO',
+    throw new HexlogError(
+      'INTERNAL',
       `servidor preparado listou ${quantidadeTools} tools, esperado ${QUANTIDADE_TOOLS}`,
     );
   }
@@ -125,8 +125,8 @@ function resolverConcorrencia(
   if (instaladosAgora.servidor === shaBuild.servidor && instaladosAgora.hook === shaBuild.hook) {
     return { acao: 'nada', avisoExtra: null };
   }
-  throw new ErroHexlog(
-    'INTERNO',
+  throw new HexlogError(
+    'INTERNAL',
     `outra instalação trocou ${versao} ao mesmo tempo; rode o instalador de novo`,
   );
 }
@@ -263,7 +263,7 @@ export function registrarGuard(args: { caminhoSettings: string; esperado: Regras
 } {
   const { caminhoSettings, esperado } = args;
   if (!existsSync(caminhoSettings)) {
-    throw new ErroHexlog('INTERNO', 'instale o harness antes de instalar o hexlog');
+    throw new HexlogError('INTERNAL', 'instale o harness antes de instalar o hexlog');
   }
   const textoAntigo = readFileSync(caminhoSettings, 'utf8');
   const textoNovo = aplicarGuard(textoAntigo, esperado);

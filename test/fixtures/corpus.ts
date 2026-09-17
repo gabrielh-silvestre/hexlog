@@ -3,7 +3,7 @@ import { randomUUIDv7 } from 'node:crypto';
 import { isNil } from 'es-toolkit';
 import * as fc from 'fast-check';
 import MiniSearch from 'minisearch';
-import { prevHashEsperado, proximoSeq } from '../../src/chain.ts';
+import { expectedPrevHash, nextSeq } from '../../src/chain.ts';
 import type { Manifesto, Vocabulario } from '../../src/definitions.ts';
 import { semAcento, textoIndexavel } from '../../src/search.ts';
 import type { Linha } from '../../src/events.ts';
@@ -197,12 +197,12 @@ function montarLinhas(manifesto: Manifesto, intentos: Intento[]): Linha[] {
   intentos.forEach((intento, indice) => {
     const tipo = tipoDoIntento(intento, nomeTipoCustom);
     const linha: Linha = {
-      seq: proximoSeq(ultimoElo, 0),
+      seq: nextSeq(ultimoElo, 0),
       id: `${manifesto.projeto}:${manifesto.processo}:${tipo}:${randomUUIDv7()}`,
       tipo,
       timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, indice)).toISOString(),
       agente: 'agente-corpus',
-      prevHash: prevHashEsperado(ultimoElo, manifesto),
+      prevHash: expectedPrevHash(ultimoElo, manifesto),
       dados: dadosDoIntento(intento),
     };
     linhas.push(linha);

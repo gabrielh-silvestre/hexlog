@@ -12,7 +12,7 @@ import {
   registrarTipo,
   registrarVocabulario,
 } from './definitions.ts';
-import { ErroHexlog } from './errors.ts';
+import { HexlogError } from './errors.ts';
 import { listarGatesEmbutidos, TETO_CRITERIO_CHARS } from './gates.ts';
 import {
   adaptarLoggerAjv,
@@ -193,17 +193,17 @@ function resolverListar(
   { projeto, processo, tipo }: { projeto?: string; processo?: string; tipo?: string },
 ) {
   if (isNil(projeto) && isNotNil(processo)) {
-    throw new ErroHexlog('ENTRADA_INVALIDA', 'processo requer projeto', [
+    throw new HexlogError('INVALID_INPUT', 'processo requer projeto', [
       {
-        caminho: '/processo',
-        codigo: 'requer_projeto',
-        mensagem: 'processo informado sem projeto',
+        path: '/processo',
+        code: 'requer_projeto',
+        message: 'processo informado sem projeto',
       },
     ]);
   }
   if (isNil(processo) && isNotNil(tipo)) {
-    throw new ErroHexlog('ENTRADA_INVALIDA', 'tipo requer processo', [
-      { caminho: '/tipo', codigo: 'requer_processo', mensagem: 'tipo informado sem processo' },
+    throw new HexlogError('INVALID_INPUT', 'tipo requer processo', [
+      { path: '/tipo', code: 'requer_processo', message: 'tipo informado sem processo' },
     ]);
   }
 
@@ -244,8 +244,8 @@ function resolverListar(
 
   const schema = carregado.manifesto.fixado.tipos[tipo];
   if (isNil(schema)) {
-    throw new ErroHexlog(
-      'TIPO_INEXISTENTE',
+    throw new HexlogError(
+      'TYPE_NOT_FOUND',
       `tipo '${tipo}' não está fixado no processo '${processo}'`,
     );
   }
