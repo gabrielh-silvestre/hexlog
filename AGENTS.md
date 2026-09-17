@@ -26,21 +26,21 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 
 ### Working In This Directory
 - O log é estritamente append-only, gravado sob lock por diretório (`mkdirSync` exclusivo + token). Nunca crie código que edite ou remova linhas.
-- A cadeia usa um único predicado (`eloValido` em `src/cadeia.ts`) para escrita e verificação. Não duplique essa lógica.
-- Toda tool passa por `executar()` em `src/mcp.ts`. `ErroHexlog` vira `{codigo, mensagem, detalhes}`, e qualquer outra exceção vira `INTERNO`, sem stack na resposta.
+- A cadeia usa um único predicado (`isValidLink` em `src/chain.ts`) para escrita e verificação. Não duplique essa lógica.
+- Toda tool passa por `execute()` em `src/mcp.ts`. `HexlogError` vira `{code, message, details}`, e qualquer outra exceção vira `INTERNAL`, sem stack na resposta.
 - São exatamente 10 tools. Adicionar ou remover uma quebra testes do instalador e do e2e.
 - Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0001-hexlog-mvp.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`.
-- `node scripts/instalar.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica.
+- `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica.
 
 ### Testing Requirements
 - `npm test` roda tudo. `npx jest test/<arquivo>.spec.ts` roda um spec.
 - `npm run typecheck` antes de concluir.
 - Não precisa de `npm run build` prévio: os specs que dependem de bundle constroem o artefato num processo filho.
-- `test/busca.orcamento.spec.ts` mede tempo (índice ≤500ms, busca ≤2000ms) e pode falhar em máquina lenta.
+- `test/search.budget.spec.ts` mede tempo (índice ≤500ms, busca ≤2000ms) e pode falhar em máquina lenta.
 
 ### Common Patterns
-- Nomes de módulos, funções e códigos de erro em português.
-- Esquemas Zod para eventos e entradas de tools. O núcleo (cadeia, estado, gates) é puro, e o I/O fica em `log.ts` e `definicoes.ts`.
+- Nomes de módulos, funções e códigos de erro em inglês; comentários e descrições de teste continuam em português (ver `CLAUDE.md`).
+- Esquemas Zod para eventos e entradas de tools. O núcleo (chain, state, gates) é puro, e o I/O fica em `log.ts` e `definitions.ts`.
 - IDs nos títulos de teste (M#, N#, S#, B#, I#, C#, Q#, R-#, U-#) remetem a critérios do ADR 0001.
 - Versões de dependências fixadas sem `^`.
 

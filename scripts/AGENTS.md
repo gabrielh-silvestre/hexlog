@@ -5,27 +5,27 @@
 
 ## Purpose
 Entrypoints reais de build e instalação do hexlog. Ligam as funções puras de
-`src/guarda.ts` e `src/instalacao.ts` a I/O de verdade: `esbuild`, `fs`,
+`src/guard.ts` e `src/installation.ts` a I/O de verdade: `esbuild`, `fs`,
 `child_process` e o cliente MCP.
 
 ## Key Files
 | File | Description |
 |---|---|
-| `build.ts` | Builda com `esbuild` os dois entrypoints (`servidor`: `src/servidor.ts`, `guarda-bash`: `hook/guarda-bash.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `construir()` (usado por `instalar.ts` com `write: false` para pegar os bytes em memória) e `temDynamicRequire()` (detecta o shim de `require` dinâmico que o esbuild injeta para dependência CJS não embutida) |
-| `instalar.ts` | Instalador/verificador versionado. `node scripts/instalar.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 10 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifesto.json` (sha256, commit, `sujo`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. `node scripts/instalar.ts --check` só verifica, sem tocar em nada |
+| `build.ts` | Builda com `esbuild` os dois entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `hasDynamicRequire()` (detecta o shim de `require` dinâmico que o esbuild injeta para dependência CJS não embutida) |
+| `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 10 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. `node scripts/install.ts --check` só verifica, sem tocar em nada |
 
 ## For AI Agents
 ### Working In This Directory
-- A lógica de negócio dos dois scripts vive em `src/guarda.ts`
-  (`regrasEsperadas`, `aplicarGuard`, `verificarGuard`, `sondasDoHook`,
-  `sha256`) e `src/instalacao.ts` (`instalarArtefato`, `registrarGuard`,
-  `precisaRegistrarMcp`, `verificarInstalacao`) — esses módulos são puros e
-  testáveis, sem chamar `esbuild`/`claude`/`fs` de verdade. `instalar.ts` é só
-  a fiação: injeta `executarHookReal`, `contarTools` (sobe o servidor num
-  `HOME` descartável e conta `tools.length`) e `registrarMcp` (`claude mcp
-  remove`+`add`, substituível por `HEXLOG_REGISTRAR_MCP=<script>` nos testes).
-- Mudar `hook/guarda-bash.ts` ou `src/servidor.ts` na working tree não afeta
-  nenhuma sessão em andamento nem nova até rodar `node scripts/instalar.ts`
+- A lógica de negócio dos dois scripts vive em `src/guard.ts`
+  (`expectedRules`, `applyGuard`, `verifyGuard`, `hookProbes`,
+  `sha256`) e `src/installation.ts` (`installArtifact`, `registerGuard`,
+  `needsMcpRegistration`, `verifyInstallation`) — esses módulos são puros e
+  testáveis, sem chamar `esbuild`/`claude`/`fs` de verdade. `install.ts` é só
+  a fiação: injeta `runRealHook`, `countTools` (sobe o servidor num
+  `HOME` descartável e conta `tools.length`) e `registerMcp` (`claude mcp
+  remove`+`add`, substituível por `HEXLOG_REGISTER_MCP=<script>` nos testes).
+- Mudar `hook/bash-guard.ts` ou `src/server.ts` na working tree não afeta
+  nenhuma sessão em andamento nem nova até rodar `node scripts/install.ts`
   de novo: sessões sempre executam a cópia versionada em
   `~/.local/lib/hexlog/<versão>/`.
 - Instalação é idempotente pelos bytes instalados (compara sha256 do build
@@ -38,11 +38,11 @@ Entrypoints reais de build e instalação do hexlog. Ligam as funções puras de
   - `test/toolchain.spec.ts`: builda os dois entrypoints com o `esbuild` real
     e confere que nenhum bundle contém o shim `Dynamic require of`, e que o
     hook empacotado (`hook-probe.mjs`) sai com o código esperado.
-  - `test/pacote.spec.ts` (N11): `dependencies`/`devDependencies` do
+  - `test/package.spec.ts` (N11): `dependencies`/`devDependencies` do
     `package.json` batem exatamente com o manifesto do projeto (sem
     `^`/`~`/faixas), `engines.node` é `>=24.18.1`.
-  - `test/guarda.spec.ts` (describes B2/B3): chama `instalarArtefato` e
-    `verificarInstalacao` direto, com `HOME` temporário — nunca o `HOME`
+  - `test/guard.spec.ts` (describes B2/B3): chama `installArtifact` e
+    `verifyInstallation` direto, com `HOME` temporário — nunca o `HOME`
     real.
 - `npm run typecheck` (`tsc --noEmit`) e `npm run build` (`node
   scripts/build.ts`, equivalente ao passo 1 do instalador) também cabem
@@ -51,17 +51,17 @@ Entrypoints reais de build e instalação do hexlog. Ligam as funções puras de
 ### Common Patterns
 - `import.meta.main`/`import.meta.dirname` são usados nos dois scripts para
   o modo executável direto — incompatíveis com o transform CJS do ts-jest,
-  por isso `src/instalacao.ts` duplica `temDynamicRequire` em vez de
+  por isso `src/installation.ts` duplica `hasDynamicRequire` em vez de
   importar de `build.ts`.
-- Toda execução externa (`executarHook`, `verificarServidor`, `agora`, `log`)
+- Toda execução externa (`runHook`, `verifyServer`, `clock`, `log`)
   é passada por parâmetro para as funções de `src/`, nunca chamada direto —
-  é isso que torna `instalarArtefato`/`verificarInstalacao` testáveis sem
+  é isso que torna `installArtifact`/`verifyInstallation` testáveis sem
   processo real.
 
 ## Dependencies
 ### Internal
 - `build.ts`: nenhuma (só resolve caminhos da raiz do repo)
-- `instalar.ts`: `./build.ts`, `../src/diretorio.ts`, `../src/guarda.ts`, `../src/instalacao.ts`
+- `install.ts`: `./build.ts`, `../src/directory.ts`, `../src/guard.ts`, `../src/installation.ts`
 
 ### External
 - `esbuild`

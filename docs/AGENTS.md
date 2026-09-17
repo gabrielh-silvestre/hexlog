@@ -28,6 +28,6 @@ Registro histórico das decisões do MVP do hexlog (ADR) e a pesquisa de libs/pa
 
 ## Dependencies
 ### Internal
-O ADR 0001 é a fonte de verdade para a arquitetura implementada em `src/` (núcleo, store, cadeia, tools, instalação) e para o formato do log (envelope de evento, manifesto `processo.json`, cadeia de hash).
+O ADR 0001 é a fonte de verdade para a arquitetura implementada em `src/` (núcleo, store, cadeia, tools, instalação) e para o formato do log (envelope de evento, manifesto `process.json`, cadeia de hash).
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

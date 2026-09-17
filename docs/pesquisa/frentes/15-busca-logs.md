@@ -30,7 +30,7 @@ Todos fazem `require()` em `.cjs` puro (sem `moduleNameMapper`). Acento nativo (
 
 - Erro de digitação ("atenticação"): resolvido só por fuse, minisearch, orama, ufuzzy, match-sorter. lunr, nativo e flexsearch (tokenizer `forward`) falham.
 - AND de duas palavras: minisearch, flexsearch e lunr limpos; fuse (0,4) e match-sorter (0) com ruído; orama falhou `cache+invalidação` por falta de `components.tokenizer.language: 'portuguese'` no probe (com a opção, passa) → números da Orama subestimados nesse ponto.
-- **Id exato** (`hex:alvo:login` com variantes `login-1..6` no corpus): P@10 baixo em quase todos (0–0,6), porque o tokenizer quebra em `:`. Minisearch foi o melhor (1 / 0,6), mas nenhum acerta 100%. **Conclusão de design:** `alvo`/id exato deve ser filtro estruturado por igualdade, nunca busca textual.
+- **Id exato** (`hex:target:login` com variantes `login-1..6` no corpus): P@10 baixo em quase todos (0–0,6), porque o tokenizer quebra em `:`. Minisearch foi o melhor (1 / 0,6), mas nenhum acerta 100%. **Conclusão de design:** `target`/id exato deve ser filtro estruturado por igualdade, nunca busca textual.
 
 ### Desempenho (10k docs)
 | motor | build (ms, mediana de 5) | consulta (ms, mediana de 100) | heap (MB) |
@@ -47,14 +47,14 @@ Todos fazem `require()` em `.cjs` puro (sem `moduleNameMapper`). Acento nativo (
 Fuse.js varre tudo (Bitap sem índice invertido): ~121 ms por consulta em 10k linhas.
 
 ### Design proposto pelo agente (com correções do orquestrador)
-Estender `in` de `eventos` com campos opcionais, sem nova tool (M1 continua com 10):
-- `busca?: string` (min 1) → índice de texto.
-- `alvo?: Alvo` → filtro estruturado por igualdade, fora do índice.
-- `marcoTipo?: string`, `resultado?: string` → filtros por igualdade. **Correção:** o agente propôs enums fixos (`inicio|checkpoint|fim`, `confirmado|refutado|parcial`), mas o vocabulário é por projeto e fixado no processo; devem ser strings validadas contra o vocabulário fixado.
-- Intervalo de tempo: o agente propôs só `ate` (timestamp). **Correção:** `desde` já existe e é índice físico de linha (não `seq` nem data); intervalo temporal precisa de par próprio (ex.: `apos`/`antes` em `Instante`), a definir no plano.
-- `out`: `relevancia?: number` por linha quando `busca` presente; ordenação por relevância no modo busca, com `proximoCursor` sobre o conjunto ranqueado (semântica diferente do modo cru, documentar); sem `busca`, comportamento atual intocado. Teto de 24k caracteres igual.
+Estender `in` de `events` com campos opcionais, sem nova tool (M1 continua com 10):
+- `search?: string` (min 1) → índice de texto.
+- `target?: Target` → filtro estruturado por igualdade, fora do índice.
+- `milestoneType?: string`, `result?: string` → filtros por igualdade. **Correção:** o agente propôs enums fixos (`inicio|checkpoint|fim`, `confirmado|refutado|parcial`), mas o vocabulário é por projeto e fixado no processo; devem ser strings validadas contra o vocabulário fixado.
+- Intervalo de tempo: o agente propôs só `until` (timestamp). **Correção:** `since` já existe e é índice físico de linha (não `seq` nem data); intervalo temporal precisa de par próprio (ex.: `after`/`before` em `Instant`), a definir no plano.
+- `out`: `relevance?: number` por linha quando `search` presente; ordenação por relevância no modo busca, com `nextCursor` sobre o conjunto ranqueado (semântica diferente do modo cru, documentar); sem `search`, comportamento atual intocado. Teto de 24k caracteres igual.
 - Índice construído por chamada (~140 ms para 10k), sem cache entre chamadas → sem problema de invalidação com N processos MCP gravando; cache em memória por processo com invalidação por contagem de linhas fica como evolução (YAGNI).
-- Escopo: só o `processo` pedido; busca em todos os processos do projeto seria N× o custo medido (não medido) → melhor como tool nova no futuro.
+- Escopo: só o `process` pedido; busca em todos os processos do projeto seria N× o custo medido (não medido) → melhor como tool nova no futuro.
 
 ### Recomendação
 **MiniSearch 7.2.0**, não Fuse.js:
@@ -63,7 +63,7 @@ Estender `in` de `eventos` com campos opcionais, sem nova tool (M1 continua com 
 3. 0 deps, 17,7 KB / 5,9 KB gzip, dual, roda no `.ts` do Node 24 e no jest CJS sem mapper.
 4. AND nativo (`combineWith: 'AND'`).
 5. Determinístico.
-Fora: acento exige `processTerm` de ~3 linhas (testado); `alvo`/id exato sempre filtro estruturado. Alerta: sem release há 1 ano (API estável, 2M+ downloads/semana).
+Fora: acento exige `processTerm` de ~3 linhas (testado); `target`/id exato sempre filtro estruturado. Alerta: sem release há 1 ano (API estável, 2M+ downloads/semana).
 
 ### Riscos e armadilhas
 - 1ª rodada tinha `limit=1000` mascarando recall (gabarito de "autenticação" = 1.530 docs); corrigido para `limit=N`.

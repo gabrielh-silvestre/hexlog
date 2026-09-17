@@ -18,16 +18,16 @@
 | Candidato | Versão/release | Licença | Manutenção | ESM/TS/Node24 | Deps | Encaixe | Veredito |
 |---|---|---|---|---|---|---|---|
 | zod (`fromJSONSchema`) | 4.6.5 / 2026-09-13 | MIT | 209M dl/sem | ESM+CJS | 0 | 12/12 casos OK | **Nativo do Zod** |
-| Ajv (`ajv/dist/2020`) + ajv-formats | 8.20.0 (2026-04-24) / 3.0.1 (2024-03-30) | MIT | 273M + 96M dl/sem | CJS, Node 24 OK | 0 / 1 peer | Gate de validade do schema em `registrar_tipo`; pega os 3 gaps | **Adotar (só gate)** |
+| Ajv (`ajv/dist/2020`) + ajv-formats | 8.20.0 (2026-04-24) / 3.0.1 (2024-03-30) | MIT | 273M + 96M dl/sem | CJS, Node 24 OK | 0 / 1 peer | Gate de validade do schema em `register_type`; pega os 3 gaps | **Adotar (só gate)** |
 | json-schema-to-zod | 2.8.1 (2026-04-01) | ISC | 1.6M dl/sem | ok | 0 | Codegen, não runtime | Descartado |
 | @n8n/json-schema-to-zod | 1.15.0 (2026-09-15) | própria | 54K dl/sem | depende de zod ^3.25 | 1 | Zod v3 | Descartado |
 | zod-from-json-schema | 0.5.6 (2026-07-16) | MIT | 2M dl/sem | zod ^4.0.17 | 1 | Reimplementa o nativo | Descartado |
 
 ### Decisão recomendada
 - **Validação do evento:** nativo `z.fromJSONSchema` (12/12 no probe).
-- **Gate de validade do schema em `registrar_tipo`:** Ajv 2020 em strict mode (default) + ajv-formats; `ajv.compile(schema)` em try/catch antes de converter. Pega typo (`strict mode: unknown keyword: X`), `required` malformado e raiz não-objeto via meta-schema 2020-12. Reimplementar isso à mão seria reinventar o Ajv.
+- **Gate de validade do schema em `register_type`:** Ajv 2020 em strict mode (default) + ajv-formats; `ajv.compile(schema)` em try/catch antes de converter. Pega typo (`strict mode: unknown keyword: X`), `required` malformado e raiz não-objeto via meta-schema 2020-12. Reimplementar isso à mão seria reinventar o Ajv.
 - **`$ref` externo:** nenhum código extra (Ajv e Zod rejeitam).
-- **Colisão com marco/veredito:** regra da aplicação.
+- **Colisão com milestone/verdict:** regra da aplicação.
 
 ### Evidência
 - Probe `scratchpad/jsonschema-zod/probe.mjs` com `zod@4.6.5 ajv@8.20.0 ajv-formats@3.0.1`: 12/12 corretos no `fromJSONSchema` (válido simples, additionalProperties:false, enum inválido, date-time com offset e inválida, $ref local aninhado, $ref externo → throw, type:banana → throw, keyword desconhecido → aceito sem erro, oneOf, recursão, boolean-schema true/false). Ajv: additionalProperties/enum/date-time corretos; $ref externo e type:banana rejeitados no `compile()`; keyword desconhecido rejeitado só em strict.
