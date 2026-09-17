@@ -764,7 +764,7 @@ function resolverModoCru(
   let tamanho = 2; // '[]'
 
   for (let indice = desde; indice < limiteAte; indice++) {
-    const elo = eloValido(linhasFisicas[indice]!);
+    const elo = eloValido(linhasFisicas[indice]);
     if (isNil(elo)) {
       linhasInvalidas.push(indice);
       continue;
@@ -843,7 +843,7 @@ function resolverModoBusca(
   let tamanho = 2; // '[]'
 
   for (let posicao = 0; posicao < pagina.length; posicao++) {
-    const item = pagina[posicao]!;
+    const item = pagina[posicao];
     const evento: LinhaResultado = {
       ...linhaPorIndice.get(item.indice)!,
       relevancia: item.relevancia,

@@ -101,7 +101,7 @@ function prepararContexto(
 /** Primeira linha, de trás pra frente, que passa em `eloValido`; e quantas vêm depois dela. */
 function ultimoEloEDepois(linhas: string[]): { ultimoElo: Linha | null; linhasDepois: number } {
   for (let indice = linhas.length - 1; indice >= 0; indice--) {
-    const elo = eloValido(linhas[indice]!);
+    const elo = eloValido(linhas[indice]);
     if (!isNil(elo)) return { ultimoElo: elo, linhasDepois: linhas.length - 1 - indice };
   }
   return { ultimoElo: null, linhasDepois: linhas.length };

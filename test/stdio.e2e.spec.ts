@@ -174,7 +174,7 @@ describe('M6', () => {
       expect(mensagem.jsonrpc).toBe('2.0');
       expect(mensagem.id !== undefined || mensagem.method !== undefined).toBe(true);
     }
-    expect((JSON.parse(linhas[3]!) as { result: { isError?: boolean } }).result.isError).toBe(true);
+    expect((JSON.parse(linhas[3]) as { result: { isError?: boolean } }).result.isError).toBe(true);
 
     for (const registro of registrosDeStderr(stderr.texto())) {
       expect(registro.evento).toBeDefined();
@@ -430,7 +430,7 @@ describe('C1', () => {
 
     const respostas = (await Promise.all(disparos)).flat();
     const cadeiaResultado = (
-      await clientes[0]!.cliente.callTool({ name: 'cadeia', arguments: { projeto, processo } })
+      await clientes[0].cliente.callTool({ name: 'cadeia', arguments: { projeto, processo } })
     ).structuredContent as {
       ok: boolean;
     };

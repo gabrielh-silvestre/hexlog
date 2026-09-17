@@ -75,7 +75,7 @@ describe('hashLinha / ancora (N10, golden)', () => {
       tipo: linha.tipo,
       id: linha.id,
       seq: linha.seq,
-    } as Linha;
+    };
     expect(hashLinha(reordenada)).toBe(hashEsperado);
   });
 

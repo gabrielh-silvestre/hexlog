@@ -31,9 +31,7 @@ async function prepararProcesso(ambiente: Ambiente): Promise<Manifesto> {
 function mediana(valores: number[]): number {
   const ordenados = [...valores].sort((a, b) => a - b);
   const meio = Math.floor(ordenados.length / 2);
-  return ordenados.length % 2 === 0
-    ? (ordenados[meio - 1]! + ordenados[meio]!) / 2
-    : ordenados[meio]!;
+  return ordenados.length % 2 === 0 ? (ordenados[meio - 1] + ordenados[meio]) / 2 : ordenados[meio];
 }
 
 describe('M13', () => {

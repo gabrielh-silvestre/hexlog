@@ -434,7 +434,7 @@ describe('M11', () => {
     const candidatos = corpus.linhas.map((linha, indice) => ({ indice, linha }));
     const { resultados } = buscar(candidatos, 'webhook');
     expect(paginas.map((evento) => evento.id)).toEqual(
-      resultados.map((resultado) => corpus.linhas[resultado.indice]!.id),
+      resultados.map((resultado) => corpus.linhas[resultado.indice].id),
     );
     expect(paginas.map((evento) => evento.id)).not.toContain(idNovo);
 
@@ -607,11 +607,11 @@ describe('N1', () => {
   test('(a) JSON inválido na linha 1', async () => {
     const linhas = await logDe5();
     escreverLog(ambiente, PROJ, PROC, [
-      linhas[0]!,
+      linhas[0],
       '{ json quebrado',
-      linhas[2]!,
-      linhas[3]!,
-      linhas[4]!,
+      linhas[2],
+      linhas[3],
+      linhas[4],
     ]);
     const cadeia = await chamarCadeia();
     expect(cadeia.totalQuebras).toBe(2);
@@ -626,10 +626,10 @@ describe('N1', () => {
   test('(b) texto livre alterado em dados da linha 1', async () => {
     const linhas = await logDe5();
     const alterada: Linha = {
-      ...linhas[1]!,
-      dados: { ...linhas[1]!.dados, marcoTipo: 'adulterado' },
+      ...linhas[1],
+      dados: { ...linhas[1].dados, marcoTipo: 'adulterado' },
     };
-    escreverLog(ambiente, PROJ, PROC, [linhas[0]!, alterada, linhas[2]!, linhas[3]!, linhas[4]!]);
+    escreverLog(ambiente, PROJ, PROC, [linhas[0], alterada, linhas[2], linhas[3], linhas[4]]);
     const cadeia = await chamarCadeia();
     expect(cadeia.quebras).toEqual([{ indice: 2, motivo: 'hash-nao-bate' }]);
     expect(cadeia.totalQuebras).toBe(1);
@@ -637,7 +637,7 @@ describe('N1', () => {
 
   test('(c) linha 1 removida, sem cascata nos elos seguintes', async () => {
     const linhas = await logDe5();
-    escreverLog(ambiente, PROJ, PROC, [linhas[0]!, linhas[2]!, linhas[3]!, linhas[4]!]);
+    escreverLog(ambiente, PROJ, PROC, [linhas[0], linhas[2], linhas[3], linhas[4]]);
     const cadeia = await chamarCadeia();
     expect(cadeia.totalQuebras).toBe(2);
     expect(cadeia.quebras).toEqual(
@@ -673,12 +673,12 @@ describe('N1', () => {
 
   test('(e) (a) + prevHash alterado na linha 4', async () => {
     const linhas = await logDe5();
-    const linha4Alterada: Linha = { ...linhas[4]!, prevHash: '0'.repeat(64) };
+    const linha4Alterada: Linha = { ...linhas[4], prevHash: '0'.repeat(64) };
     escreverLog(ambiente, PROJ, PROC, [
-      linhas[0]!,
+      linhas[0],
       '{ json quebrado',
-      linhas[2]!,
-      linhas[3]!,
+      linhas[2],
+      linhas[3],
       linha4Alterada,
     ]);
     const cadeia = await chamarCadeia();
@@ -713,7 +713,7 @@ describe('N1', () => {
 
   test('(g) (c) seguido de registrar legítimo → nenhuma quebra além das 2 de (c)', async () => {
     const linhas = await logDe5();
-    escreverLog(ambiente, PROJ, PROC, [linhas[0]!, linhas[2]!, linhas[3]!, linhas[4]!]);
+    escreverLog(ambiente, PROJ, PROC, [linhas[0], linhas[2], linhas[3], linhas[4]]);
 
     await ambiente.chamar('registrar', {
       projeto: PROJ,

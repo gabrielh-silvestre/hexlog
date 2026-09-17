@@ -75,7 +75,7 @@ type IntentoCustom = { categoria: 'custom'; frase: string; tag: string; alvoOcul
 type Intento = IntentoMarco | IntentoVeredito | IntentoCustom;
 
 function escolher<T>(lista: T[], padrao: T, indice: number): T {
-  return lista.length > 0 ? lista[indice % lista.length]! : padrao;
+  return lista.length > 0 ? lista[indice % lista.length] : padrao;
 }
 
 /** Eventos garantidos pelos ACs (M11c, M11i, M12a, M12b): não dependem da amostragem aleatória. */
@@ -100,11 +100,11 @@ function ancoras(vocabulario: Vocabulario): Intento[] {
       categoria: 'veredito',
       destino: 'hex:alvo:conta-1',
       resultado: 'resultado-fora-do-vocabulario',
-      frase: FRASES_GERAIS[0]!,
+      frase: FRASES_GERAIS[0],
     },
-    { categoria: 'veredito', destino: 'hex:alvo:conta-2', resultado, frase: FRASES_WEBHOOK[0]! },
-    { categoria: 'veredito', destino: 'hex:alvo:conta-3', resultado, frase: FRASES_WEBHOOK[1]! },
-    comDecisao('hex:alvo:conta-4', FRASES_WEBHOOK[2]!),
+    { categoria: 'veredito', destino: 'hex:alvo:conta-2', resultado, frase: FRASES_WEBHOOK[0] },
+    { categoria: 'veredito', destino: 'hex:alvo:conta-3', resultado, frase: FRASES_WEBHOOK[1] },
+    comDecisao('hex:alvo:conta-4', FRASES_WEBHOOK[2]),
   ];
 }
 
@@ -129,8 +129,8 @@ const RASCUNHO_ARB: fc.Arbitrary<Rascunho> = fc.record({
 });
 
 function paraIntento(r: Rascunho, vocabulario: Vocabulario, indice: number): Intento {
-  const alvo = ALVOS_DO_CORPUS[r.alvoIndice % ALVOS_DO_CORPUS.length]!;
-  const frase = BANCO_FRASES[r.banco % BANCO_FRASES.length]!;
+  const alvo = ALVOS_DO_CORPUS[r.alvoIndice % ALVOS_DO_CORPUS.length];
+  const frase = BANCO_FRASES[r.banco % BANCO_FRASES.length];
 
   if (r.categoria === 'marco') {
     const marcoTipo = escolher(vocabulario.nucleo.marcoTipo, 'aprovado', r.banco);

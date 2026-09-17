@@ -28,7 +28,7 @@ interface EntradaBruta {
 }
 
 function comoEntradaBruta(input: unknown): EntradaBruta | undefined {
-  return !isNil(input) && typeof input === 'object' ? (input as EntradaBruta) : undefined;
+  return !isNil(input) && typeof input === 'object' ? input : undefined;
 }
 
 function extrairComando(input: unknown): string | undefined {

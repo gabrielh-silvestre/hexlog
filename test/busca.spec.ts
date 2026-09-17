@@ -358,8 +358,8 @@ describe('M12', () => {
   test('c) apos/antes: só timestamp em [apos, antes)', () => {
     const corpus = gerarCorpus({ tamanho: 50, manifesto: MANIFESTO, vocabulario: VOCABULARIO });
     const filtros: Filtros = {
-      apos: corpus.linhas[10]!.timestamp,
-      antes: corpus.linhas[20]!.timestamp,
+      apos: corpus.linhas[10].timestamp,
+      antes: corpus.linhas[20].timestamp,
     };
     const indices = candidatosDe(corpus.linhas)
       .filter(({ linha }) => ehCandidato(linha, filtros))
@@ -377,7 +377,7 @@ describe('M12', () => {
     const { resultados } = buscar(candidatosFiltrados, 'login');
     expect(resultados.length).toBeGreaterThan(0);
     for (const resultado of resultados) {
-      const linha = corpus.linhas[resultado.indice]!;
+      const linha = corpus.linhas[resultado.indice];
       expect(linha.tipo).toBe('veredito');
       expect((linha.dados as { destino: string }).destino).toBe('hex:alvo:login');
     }
