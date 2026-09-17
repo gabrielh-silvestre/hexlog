@@ -1,0 +1,9 @@
+dist/
+coverage/
+graphify-out/
+.gitnexus/
+.omc/
+node_modules/
+package-lock.json
+*.md
+.claude/
