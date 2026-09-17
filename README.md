@@ -280,7 +280,7 @@ o teste automatizado as marque como "passa":
 | ANSI-C quoting | `cat $'/home/…/hex\x6cog/x'` |
 | Alternância de zsh | `cat ~/.local/share/(hexlog\|x)/p/r/events.jsonl` |
 | Hook indisponível | Node removido pelo nvm, `~/.local/lib/hexlog/<versão>/` apagado à mão, ou instalação corrompida por fora |
-| Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/0.1.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"` — o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
+| Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/0.2.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"` — o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
 | Desligar o guard editando a configuração | Editar `~/.claude/settings.json` à mão para remover deny ou hook |
 | Reinstalar a partir de código alterado | Editar `hook/bash-guard.ts` na working tree e rodar o instalador |
 

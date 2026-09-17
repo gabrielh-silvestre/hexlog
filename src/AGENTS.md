@@ -26,7 +26,7 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 10 to
 | `mcp.ts` | Monta o `McpServer`: `createServer`, `execute` (envelope de erro + log de toda tool), esquemas Zod compartilhados |
 | `server.ts` | Ponto de entrada: `serveStdio(() => createServer(...))` |
 | `node-types.d.ts` | Augmentation de `node:crypto` com `randomUUIDv7` (ainda não coberto por `@types/node` 24.8.1) |
-| `version.ts` | `export const VERSION = '0.1.0'` |
+| `version.ts` | `export const VERSION = '0.2.0'` |
 
 ## For AI Agents
 ### Working In This Directory
