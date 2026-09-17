@@ -2,7 +2,7 @@ import { describe, test, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { VERSAO } from '../src/versao.ts';
+import { VERSAO } from '../src/version.ts';
 import { parseJson } from './helpers.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
@@ -135,7 +135,7 @@ describe('N11', () => {
     expect(pkg.engines).toEqual({ node: '>=24.18.1' });
   });
 
-  test('VERSAO de src/versao.ts bate com package.json.version', () => {
+  test('VERSAO de src/version.ts bate com package.json.version', () => {
     expect(VERSAO).toBe(pkg.version);
   });
 
@@ -176,8 +176,8 @@ describe('M6 (estático)', () => {
 });
 
 describe('I1 (parcial)', () => {
-  test('src/diretorio.ts só importa node:* e es-toolkit, nunca zod/canonicalize/minisearch', () => {
-    const conteudo = fs.readFileSync(path.join(raizDoRepo, 'src/diretorio.ts'), 'utf8');
+  test('src/directory.ts só importa node:* e es-toolkit, nunca zod/canonicalize/minisearch', () => {
+    const conteudo = fs.readFileSync(path.join(raizDoRepo, 'src/directory.ts'), 'utf8');
     const violacoes = extrairEspecificadores(conteudo).filter(
       (especificador) =>
         !especificador.startsWith('node:') &&

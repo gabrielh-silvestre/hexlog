@@ -1,6 +1,6 @@
 // Instalador versionado do hexlog (§4.14). Entrypoint real: liga `construir`
 // (esbuild), `Client`/`StdioClientTransport` (devDependency) e `claude mcp` às
-// funções puras de `src/instalacao.ts` e `src/guarda.ts`. Os testes
+// funções puras de `src/installation.ts` e `src/guard.ts`. Os testes
 // (`test/guarda.spec.ts`, describes B2/B3) chamam `instalarArtefato`/
 // `verificarInstalacao` direto com `HOME` temporário, nunca o `HOME` real.
 import * as fs from 'node:fs';
@@ -10,15 +10,15 @@ import { execFileSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { construir } from './build.ts';
-import { dirDados } from '../src/diretorio.ts';
-import { regrasEsperadas, executarHookReal } from '../src/guarda.ts';
+import { dirDados } from '../src/directory.ts';
+import { regrasEsperadas, executarHookReal } from '../src/guard.ts';
 import {
   instalarArtefato,
   registrarGuard,
   precisaRegistrarMcp,
   verificarInstalacao,
   type Bundles,
-} from '../src/instalacao.ts';
+} from '../src/installation.ts';
 
 const raizDoRepo = path.resolve(import.meta.dirname, '..');
 

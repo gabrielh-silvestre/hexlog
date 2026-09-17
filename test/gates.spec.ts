@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
-import { DadosMarcoGate } from '../src/eventos.ts';
-import type { Estado } from '../src/estado.ts';
-import type { Cadeia, Quebra } from '../src/cadeia.ts';
+import { DadosMarcoGate } from '../src/events.ts';
+import type { Estado } from '../src/state.ts';
+import type { Cadeia, Quebra } from '../src/chain.ts';
 import {
   GATES_EMBUTIDOS,
   avaliarEmbutido,
@@ -12,7 +12,7 @@ import {
   type NomeGateEmbutido,
   type ResultadoGate,
 } from '../src/gates.ts';
-import { GATES_EMBUTIDOS_NOMES } from '../src/dados.ts';
+import { GATES_EMBUTIDOS_NOMES } from '../src/storage.ts';
 
 // ---- fixtures locais ----
 

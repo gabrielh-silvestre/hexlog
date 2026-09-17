@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globa
 import fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ancora, hashLinha, verificarCadeia } from '../src/cadeia.ts';
-import type { Linha } from '../src/eventos.ts';
+import { ancora, hashLinha, verificarCadeia } from '../src/chain.ts';
+import type { Linha } from '../src/events.ts';
 import { anexar, lerTexto, type Registro } from '../src/log.ts';
 
 const MANIFESTO = { projeto: 'p', processo: 'proc', fixado: { versao: 1 } };

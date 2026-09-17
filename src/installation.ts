@@ -2,7 +2,7 @@
 // `~/.local/lib/hexlog/<versão>/`, registra o guard em `settings.json` e decide
 // se o MCP precisa ser (re)registrado. Puro e testável: toda execução externa
 // (hook, servidor, relógio, log) é injetada — nada aqui chama `claude` nem builda.
-// Não é importado pelo servidor nem pelo hook, só por `scripts/instalar.ts`.
+// Não é importado pelo servidor nem pelo hook, só por `scripts/install.ts`.
 import * as path from 'node:path';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
@@ -17,9 +17,9 @@ import {
   sondasDoHook,
   type RegrasEsperadas,
   type ItemFaltando,
-} from './guarda.ts';
-import { ErroHexlog } from './erros.ts';
-import { dirDados } from './diretorio.ts';
+} from './guard.ts';
+import { ErroHexlog } from './errors.ts';
+import { dirDados } from './directory.ts';
 
 export type Bundles = { servidor: Buffer; hook: Buffer };
 export type Manifesto = {
@@ -37,7 +37,7 @@ function temDynamicRequire(bytes: Uint8Array): boolean {
   return Buffer.from(bytes).includes('Dynamic require of');
 }
 
-// 5 tools em ferramentas-definicoes.ts + 5 em ferramentas-eventos.ts (§4.12/§4.16).
+// 5 tools em definition-tools.ts + 5 em event-tools.ts (§4.12/§4.16).
 const QUANTIDADE_TOOLS = 10;
 
 export function dirVersaoDe(home: string, versao: string): string {
@@ -293,7 +293,7 @@ function versaoDoHookRegistrado(dadosSettings: unknown, home: string): string | 
   return isNil(encontrada) ? undefined : path.basename(path.dirname(encontrada.arquivo));
 }
 
-/** `instalar.ts --check` (§4.14, §10; QN4): mesmo `verificarGuard` de I5-I7, mais o aviso de artefato desatualizado. */
+/** `install.ts --check` (§4.14, §10; QN4): mesmo `verificarGuard` de I5-I7, mais o aviso de artefato desatualizado. */
 export function verificarInstalacao(args: {
   home: string;
   versao: string;

@@ -7,7 +7,7 @@ import canonicalize from 'canonicalize';
 import { isNil, pick } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { z } from 'zod';
-import { ancora, sha256hex } from './cadeia.ts';
+import { ancora, sha256hex } from './chain.ts';
 import {
   caminho,
   erroIo,
@@ -16,11 +16,11 @@ import {
   lerJson,
   PROCESSOS_RESERVADOS,
   TIPOS_RESERVADOS,
-} from './dados.ts';
-import { ErroHexlog } from './erros.ts';
-import type { Vocab, Vocabulario } from './estado.ts';
+} from './storage.ts';
+import { ErroHexlog } from './errors.ts';
+import type { Vocab, Vocabulario } from './state.ts';
 
-// Reexportados de estado.ts (fonte única do schema de vocabulário, DE-29).
+// Reexportados de state.ts (fonte única do schema de vocabulário, DE-29).
 export type { Vocab, Vocabulario };
 
 /** Teto de caracteres canônicos (JCS) para um schema custom (§4.10). */

@@ -4,10 +4,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
-import { buscar } from '../src/busca.ts';
-import { ancora, prevHashEsperado, proximoSeq, sha256hex, type Cadeia } from '../src/cadeia.ts';
-import type { Manifesto } from '../src/definicoes.ts';
-import type { Linha } from '../src/eventos.ts';
+import { buscar } from '../src/search.ts';
+import { ancora, prevHashEsperado, proximoSeq, sha256hex, type Cadeia } from '../src/chain.ts';
+import type { Manifesto } from '../src/definitions.ts';
+import type { Linha } from '../src/events.ts';
 import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
 import { type Ambiente, criarAmbiente, esperarErro, registrarNucleo } from './helpers.ts';
 

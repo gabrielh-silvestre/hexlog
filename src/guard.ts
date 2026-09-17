@@ -1,7 +1,7 @@
 // Guard de instalação (§4.14): regras de deny + hook PreToolUse em
 // `settings.json`, e verificação de que o guard está de fato ativo e
 // funcionando (I5, I6, I7). Puro e testável; não é importado pelo servidor
-// nem pelo hook — só pelo instalador (`scripts/instalar.ts`).
+// nem pelo hook — só pelo instalador (`scripts/install.ts`).
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -233,7 +233,7 @@ interface ArgsVerificarGuard {
   };
 }
 
-/** Único mecanismo de detecção de guard ausente, alterado ou quebrado (R-1); usado por `instalar.ts --check`. */
+/** Único mecanismo de detecção de guard ausente, alterado ou quebrado (R-1); usado por `install.ts --check`. */
 export function verificarGuard(args: ArgsVerificarGuard): {
   ok: boolean;
   faltando: ItemFaltando[];

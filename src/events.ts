@@ -2,7 +2,7 @@ import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
 import { get } from 'es-toolkit/compat';
 import { z } from 'zod';
-import { detalhesDeIssues, ErroHexlog } from './erros.ts';
+import { detalhesDeIssues, ErroHexlog } from './errors.ts';
 
 // §4.2: regex única de nome para projeto, processo, tipo, gate e dono.
 const NOME_SRC = '[a-z0-9][a-z0-9-]{0,62}';

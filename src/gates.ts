@@ -1,9 +1,9 @@
 import { isString } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat'; // isEmpty só existe em es-toolkit/compat (1.52.0)
 import { z } from 'zod';
-import { GATES_EMBUTIDOS_NOMES } from './dados.ts';
-import { DadosMarcoGate as EsquemaDadosMarcoGate } from './eventos.ts';
-import type { Estado } from './estado.ts';
+import { GATES_EMBUTIDOS_NOMES } from './storage.ts';
+import { DadosMarcoGate as EsquemaDadosMarcoGate } from './events.ts';
+import type { Estado } from './state.ts';
 
 // §4.16: tetos de prova de gate. Custom (TETO_PROVA_CUSTOM/TETO_ITEM_PROVA_CHARS) e
 // TETO_CRITERIO_CHARS são validados no inputSchema da tool, não aqui.

@@ -1,7 +1,7 @@
 import { isNil, isString, orderBy, round } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import MiniSearch from 'minisearch';
-import { ID_COMPLETO_RE, type Linha } from './eventos.ts';
+import { ID_COMPLETO_RE, type Linha } from './events.ts';
 
 /** Teto de caracteres do parâmetro `busca` de `eventos` (§4.16): abaixo de 2, `prefix` casaria quase tudo. */
 export const TETO_BUSCA_CHARS = 200;

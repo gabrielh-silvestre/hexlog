@@ -16,13 +16,13 @@ import { get, isEmpty } from 'es-toolkit/compat';
 import MiniSearch from 'minisearch';
 import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
-import { dirDados } from '../src/diretorio.ts';
+import { dirDados } from '../src/directory.ts';
 import { parseJson } from './helpers.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
 const REGEX_UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// Forma esperada de test/fixtures/filho-probe.ts, campos usados abaixo.
+// Forma esperada de test/fixtures/child-probe.ts, campos usados abaixo.
 const SaidaFilhoProbeSchema = z.object({
   uuidV7Valido: z.boolean(),
   mcpServerCarregado: z.boolean(),
@@ -103,16 +103,16 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
     await cliente.close();
   });
 
-  test('módulo local importado com extensão .ts resolve (src/diretorio.ts)', () => {
+  test('módulo local importado com extensão .ts resolve (src/directory.ts)', () => {
     expect(dirDados({})).toMatch(/[/\\]hexlog$/);
   });
 });
 
 describe('probe no Node ESM real (sub-passo 6, filho-probe)', () => {
-  test('spawn de filho-probe.ts imprime só JSON no stdout, sem warnings no stderr', () => {
+  test('spawn de child-probe.ts imprime só JSON no stdout, sem warnings no stderr', () => {
     const resultado = spawnSync(
       process.execPath,
-      [path.join(raizDoRepo, 'test/fixtures/filho-probe.ts')],
+      [path.join(raizDoRepo, 'test/fixtures/child-probe.ts')],
       {
         encoding: 'utf8',
       },
@@ -137,7 +137,7 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
     outdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-build-probe-'));
     const resultado = spawnSync(
       process.execPath,
-      [path.join(raizDoRepo, 'test/fixtures/construir-fixtures.ts'), outdir],
+      [path.join(raizDoRepo, 'test/fixtures/build-fixtures.ts'), outdir],
       { encoding: 'utf8', cwd: raizDoRepo },
     );
     if (resultado.status !== 0) {

@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
 import { omit } from 'es-toolkit/compat';
-import type { Detalhe } from './erros.ts';
-import { Linha } from './eventos.ts';
+import type { Detalhe } from './errors.ts';
+import { Linha } from './events.ts';
 
 type MotivoQuebra = 'linha-invalida' | 'seq-divergente' | 'hash-nao-bate' | 'dados-invalidos';
 

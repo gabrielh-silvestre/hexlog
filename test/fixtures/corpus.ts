@@ -3,10 +3,10 @@ import { randomUUIDv7 } from 'node:crypto';
 import { isNil } from 'es-toolkit';
 import * as fc from 'fast-check';
 import MiniSearch from 'minisearch';
-import { prevHashEsperado, proximoSeq } from '../../src/cadeia.ts';
-import type { Manifesto, Vocabulario } from '../../src/definicoes.ts';
-import { semAcento, textoIndexavel } from '../../src/busca.ts';
-import type { Linha } from '../../src/eventos.ts';
+import { prevHashEsperado, proximoSeq } from '../../src/chain.ts';
+import type { Manifesto, Vocabulario } from '../../src/definitions.ts';
+import { semAcento, textoIndexavel } from '../../src/search.ts';
+import type { Linha } from '../../src/events.ts';
 
 // Marcadas como "obrigatórias" pelo passo 7c (âncoras que os ACs M11/M12 exigem, sem depender
 // da distribuição aleatória do gerador para aparecerem).
@@ -224,7 +224,7 @@ function gabaritoDeTermo(linhas: Linha[], termo: string): number[] {
 }
 
 /**
- * Gera um corpus determinístico (`fc.sample`, seed fixa) com cadeia de hash válida (`cadeia.ts`),
+ * Gera um corpus determinístico (`fc.sample`, seed fixa) com cadeia de hash válida (`chain.ts`),
  * ~40% Marco, ~40% Veredito, ~20% custom, mais as âncoras exigidas pelos ACs M11/M12 (§4.17, passo 7c).
  */
 export function gerarCorpus(opcoes: {

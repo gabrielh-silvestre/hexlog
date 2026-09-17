@@ -2,8 +2,8 @@ import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import { z } from 'zod';
-import { ErroHexlog } from '../src/erros.ts';
-import { Alvo, Nome, analisarId, normalizarDados } from '../src/eventos.ts';
+import { ErroHexlog } from '../src/errors.ts';
+import { Alvo, Nome, analisarId, normalizarDados } from '../src/events.ts';
 
 describe('Nome', () => {
   test.each(['a', 'a-b1', 'x'.repeat(63)])('%s é válido', (valor) => {

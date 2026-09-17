@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
 import { isNil, isNotNil } from 'es-toolkit';
 import { z } from 'zod';
-import { sha256hex } from './cadeia.ts';
+import { sha256hex } from './chain.ts';
 import {
   carregarProcesso,
   criarProcesso,
@@ -11,8 +11,8 @@ import {
   registrarGate,
   registrarTipo,
   registrarVocabulario,
-} from './definicoes.ts';
-import { ErroHexlog } from './erros.ts';
+} from './definitions.ts';
+import { ErroHexlog } from './errors.ts';
 import { listarGatesEmbutidos, TETO_CRITERIO_CHARS } from './gates.ts';
 import {
   adaptarLoggerAjv,

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isNil } from 'es-toolkit';
-import { ErroHexlog } from './erros.ts';
+import { ErroHexlog } from './errors.ts';
 
 /** §4.2: nomes de processo reservados para as definições do projeto. */
 export const PROCESSOS_RESERVADOS = ['schemas', 'vocabulario', 'gates'] as const;

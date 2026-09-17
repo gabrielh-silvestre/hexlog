@@ -1,8 +1,8 @@
 import { describe, expect, test } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { buscar } from '../src/busca.ts';
-import type { Manifesto } from '../src/definicoes.ts';
+import { buscar } from '../src/search.ts';
+import type { Manifesto } from '../src/definitions.ts';
 import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
 import { type Ambiente, criarAmbiente, registrarNucleo } from './helpers.ts';
 

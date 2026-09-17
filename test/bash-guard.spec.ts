@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 const raizDoRepo = path.resolve(__dirname, '..');
-const caminhoDoHook = path.join(raizDoRepo, 'hook/guarda-bash.ts');
+const caminhoDoHook = path.join(raizDoRepo, 'hook/bash-guard.ts');
 
 // `HOME` temporário: D = <tmpHome>/.local/share/hexlog. Sem `XDG_DATA_HOME`
 // no ambiente base, para os casos com `~` e `**` valerem contra esse D.
@@ -226,7 +226,7 @@ describe('B1(b): hook empacotado pelo esbuild', () => {
 
   const build = spawnSync(
     process.execPath,
-    [path.join(raizDoRepo, 'test/fixtures/construir-hook.ts'), outdirBundle],
+    [path.join(raizDoRepo, 'test/fixtures/build-hook.ts'), outdirBundle],
     { encoding: 'utf8', cwd: raizDoRepo },
   );
   if (build.status !== 0) {
@@ -270,7 +270,7 @@ describe('latência (informativo, sem asserção rígida)', () => {
       tempos.push(performance.now() - inicio);
     }
     const media = tempos.reduce((soma, tempo) => soma + tempo, 0) / tempos.length;
-    console.log(`hook/guarda-bash.ts: média de 10 execuções = ${media.toFixed(1)} ms`);
+    console.log(`hook/bash-guard.ts: média de 10 execuções = ${media.toFixed(1)} ms`);
     expect(tempos).toHaveLength(10);
   });
 });

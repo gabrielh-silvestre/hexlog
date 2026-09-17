@@ -8,7 +8,7 @@ import { matchesGlob } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as shellQuoteParse, type ParseEntry } from 'shell-quote';
 import { isNil, isString } from 'es-toolkit';
-import { dirDados } from '../src/diretorio.ts';
+import { dirDados } from '../src/directory.ts';
 
 // Segmento com `**` ou uma chave `{a/b,c}` com barra dentro: o `path.matchesGlob`
 // não expande `**` até a profundidade de D, e o truncamento por `sep` corta a

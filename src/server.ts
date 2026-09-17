@@ -1,5 +1,5 @@
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { dirDados } from './diretorio.ts';
+import { dirDados } from './directory.ts';
 import { criarLoggerStderr, criarServidor } from './mcp.ts';
 
 serveStdio(() =>

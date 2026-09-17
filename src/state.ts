@@ -1,8 +1,8 @@
 import { groupBy, isNil, keyBy, pick, uniqBy } from 'es-toolkit';
 import { z } from 'zod';
-import type { Cadeia } from './cadeia.ts';
-import { Nome } from './eventos.ts';
-import type { Linha } from './eventos.ts';
+import type { Cadeia } from './chain.ts';
+import { Nome } from './events.ts';
+import type { Linha } from './events.ts';
 
 // §4.9: cada lista do vocabulário tem até 100 valores de até 100 caracteres.
 const ValorVocabulario = z.string().min(1).max(100);

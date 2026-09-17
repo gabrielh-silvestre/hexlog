@@ -6,7 +6,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { parse as parseJsonBruto } from 'jsonc-parser';
 import { z } from 'zod';
-import type { CodigoErro, Detalhe } from '../src/erros.ts';
+import type { CodigoErro, Detalhe } from '../src/errors.ts';
 import type { Logger, Registro } from '../src/log.ts';
 import { criarServidor } from '../src/mcp.ts';
 

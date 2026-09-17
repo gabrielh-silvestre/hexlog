@@ -16,7 +16,7 @@ import {
   sha256,
   type RegrasEsperadas,
   type ItemFaltando,
-} from '../src/guarda.ts';
+} from '../src/guard.ts';
 import {
   dirVersaoDe,
   lerManifesto,
@@ -24,7 +24,7 @@ import {
   registrarGuard,
   verificarInstalacao,
   type Bundles,
-} from '../src/instalacao.ts';
+} from '../src/installation.ts';
 import { parseJson } from './helpers.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
@@ -325,7 +325,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
   const outdirBundle = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-guarda-bundle-'));
   const build = spawnSync(
     process.execPath,
-    [path.join(raizDoRepo, 'test/fixtures/construir-hook.ts'), outdirBundle],
+    [path.join(raizDoRepo, 'test/fixtures/build-hook.ts'), outdirBundle],
     { encoding: 'utf8', cwd: raizDoRepo },
   );
   if (build.status !== 0) {
@@ -512,7 +512,7 @@ afterAll(() => {
   fs.rmSync(outdirBundlesReais, { recursive: true, force: true });
 });
 
-// Roda o hook preparado (real) exatamente como `scripts/instalar.ts` injetaria.
+// Roda o hook preparado (real) exatamente como `scripts/install.ts` injetaria.
 const executarHookReaisDeInstalacao = (
   arquivoHook: string,
   stdin: string,
@@ -550,7 +550,7 @@ function executarFixtureConcorrente(
     const filho = spawn(
       process.execPath,
       [
-        path.join(raizDoRepo, 'test/fixtures/instalar-concorrente.ts'),
+        path.join(raizDoRepo, 'test/fixtures/concurrent-install.ts'),
         home,
         versao,
         variante,
@@ -929,7 +929,7 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
   }, 20_000);
 });
 
-describe('B3: instalar.ts --check (processo real)', () => {
+describe('B3: install.ts --check (processo real)', () => {
   let home: string;
   let versao: string;
 
@@ -943,13 +943,13 @@ describe('B3: instalar.ts --check (processo real)', () => {
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(home, '.claude', 'settings.json'), montarSettingsTemplate(home));
 
-    const instalacao = spawnSync(process.execPath, [path.join(raizDoRepo, 'scripts/instalar.ts')], {
+    const instalacao = spawnSync(process.execPath, [path.join(raizDoRepo, 'scripts/install.ts')], {
       cwd: raizDoRepo,
       encoding: 'utf8',
       env: {
         ...process.env,
         HOME: home,
-        HEXLOG_REGISTRAR_MCP: path.join(raizDoRepo, 'test/fixtures/instalar-mcp-falso.ts'),
+        HEXLOG_REGISTRAR_MCP: path.join(raizDoRepo, 'test/fixtures/fake-mcp-install.ts'),
       },
     });
     if (instalacao.status !== 0) {
@@ -966,7 +966,7 @@ describe('B3: instalar.ts --check (processo real)', () => {
   function rodarCheck(opts: { cwd?: string } = {}): { status: number | null; stdout: string } {
     const resultado = spawnSync(
       process.execPath,
-      [path.join(raizDoRepo, 'scripts/instalar.ts'), '--check'],
+      [path.join(raizDoRepo, 'scripts/install.ts'), '--check'],
       {
         cwd: opts.cwd ?? raizDoRepo,
         encoding: 'utf8',

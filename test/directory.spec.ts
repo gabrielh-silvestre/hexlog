@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { dirDados } from '../src/diretorio.ts';
+import { dirDados } from '../src/directory.ts';
 
 describe('dirDados (I1)', () => {
   test('XDG_DATA_HOME absoluto e não vazio → <XDG_DATA_HOME>/hexlog', () => {

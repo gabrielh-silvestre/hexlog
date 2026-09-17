@@ -1,14 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { isNil } from 'es-toolkit';
 import { z } from 'zod';
-import type { Logger as LoggerAjv } from './definicoes.ts';
-import { type Detalhe, ErroHexlog } from './erros.ts';
-import { registrarFerramentasDefinicoes } from './ferramentas-definicoes.ts';
-import { registrarFerramentasEventos } from './ferramentas-eventos.ts';
-import { VocabSchema, VocabularioSchema } from './estado.ts';
-import { Agente, Hash, Instante, Nome } from './eventos.ts';
+import type { Logger as LoggerAjv } from './definitions.ts';
+import { type Detalhe, ErroHexlog } from './errors.ts';
+import { registrarFerramentasDefinicoes } from './definition-tools.ts';
+import { registrarFerramentasEventos } from './event-tools.ts';
+import { VocabSchema, VocabularioSchema } from './state.ts';
+import { Agente, Hash, Instante, Nome } from './events.ts';
 import type { Logger, Registro } from './log.ts';
-import { VERSAO } from './versao.ts';
+import { VERSAO } from './version.ts';
 
 /** Contexto compartilhado por todas as tools MCP do hexlog. */
 export type Contexto = {
@@ -24,7 +24,7 @@ export function criarLoggerStderr(saida: NodeJS.WritableStream = process.stderr)
   };
 }
 
-/** Adapta o `Logger` de linha (§4.15) para a forma `{log, warn, error}` que o Ajv espera (`definicoes.ts`). */
+/** Adapta o `Logger` de linha (§4.15) para a forma `{log, warn, error}` que o Ajv espera (`definitions.ts`). */
 export function adaptarLoggerAjv(log: Logger): LoggerAjv {
   const emitir =
     (nivel: 'debug' | 'aviso' | 'erro') =>
@@ -44,7 +44,7 @@ export const Aviso = z.object({
   mensagem: z.string(),
   detalhes: z.unknown().optional(),
 });
-// Reexportados de estado.ts (fonte única do schema de vocabulário, DE-29).
+// Reexportados de state.ts (fonte única do schema de vocabulário, DE-29).
 export const Vocab = VocabSchema;
 export const Vocabulario = VocabularioSchema;
 export const Ref = z.object({ id: z.string(), seq: z.number().int(), timestamp: Instante });
@@ -146,7 +146,7 @@ function paraErroHexlog(e: unknown, ctx: Contexto): ErroHexlog {
   return new ErroHexlog('INTERNO', 'erro interno');
 }
 
-/** Monta o servidor MCP `hexlog`: nome fixo, versão de `versao.ts`, tools de definição e de eventos. */
+/** Monta o servidor MCP `hexlog`: nome fixo, versão de `version.ts`, tools de definição e de eventos. */
 export function criarServidor(ctx: Contexto): McpServer {
   const servidor = new McpServer({ name: 'hexlog', version: VERSAO });
   registrarFerramentasDefinicoes(servidor, ctx);

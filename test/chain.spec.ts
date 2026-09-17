@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
-import type { Linha } from '../src/eventos.ts';
+import type { Linha } from '../src/events.ts';
 import {
   ancora,
   hashLinha,
@@ -9,7 +9,7 @@ import {
   proximoSeq,
   sha256hex,
   verificarCadeia,
-} from '../src/cadeia.ts';
+} from '../src/chain.ts';
 
 const MANIFESTO = { projeto: 'p', processo: 'proc', fixado: { versao: 1 } };
 

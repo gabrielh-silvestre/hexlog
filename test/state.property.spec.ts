@@ -1,8 +1,8 @@
 import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
-import type { Linha } from '../src/eventos.ts';
-import { agoraEfetivo, projetar, type Vocabulario } from '../src/estado.ts';
+import type { Linha } from '../src/events.ts';
+import { agoraEfetivo, projetar, type Vocabulario } from '../src/state.ts';
 
 // ---- fixtures locais (duplicadas de estado.spec.ts: 2 arquivos só, sem 3º módulo) ----
 

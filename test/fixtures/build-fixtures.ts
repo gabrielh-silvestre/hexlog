@@ -6,14 +6,14 @@ import { construir } from '../../scripts/build.ts';
 
 const outdir = process.argv[2];
 if (outdir === undefined) {
-  throw new Error('uso: construir-fixtures.ts <outdir>');
+  throw new Error('uso: build-fixtures.ts <outdir>');
 }
 
 await construir({
   write: true,
   outdir,
   entryPoints: {
-    'servidor-probe': 'test/fixtures/servidor-probe.ts',
+    'servidor-probe': 'test/fixtures/server-probe.ts',
     'hook-probe': 'test/fixtures/hook-probe.ts',
   },
 });

@@ -11,7 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
-import { dirDados } from '../src/diretorio.ts';
+import { dirDados } from '../src/directory.ts';
 import type { Registro } from '../src/log.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');

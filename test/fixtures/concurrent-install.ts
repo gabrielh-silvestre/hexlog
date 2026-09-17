@@ -5,12 +5,12 @@
 // vez de torcer pra concorrência real de processo acontecer por sorte.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { instalarArtefato } from '../../src/instalacao.ts';
+import { instalarArtefato } from '../../src/installation.ts';
 
 const [, , home, versao, variante, idProcesso, totalProcessosTexto] = process.argv;
 if ([home, versao, variante, idProcesso, totalProcessosTexto].some((v) => v === undefined)) {
   throw new Error(
-    'uso: instalar-concorrente.ts <home> <versao> <variante> <idProcesso> <totalProcessos>',
+    'uso: concurrent-install.ts <home> <versao> <variante> <idProcesso> <totalProcessos>',
   );
 }
 const totalProcessos = Number(totalProcessosTexto);

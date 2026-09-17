@@ -2,11 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
 import { isNil, isNotNil, omit } from 'es-toolkit';
 import { z } from 'zod';
-import { buscar, ehCandidato, TETO_BUSCA_CHARS, type Filtros } from './busca.ts';
-import { eloValido, verificarCadeia, type Cadeia } from './cadeia.ts';
-import { carregarProcesso, type ProcessoCarregado } from './definicoes.ts';
-import { detalhesDeIssues, ErroHexlog, type Detalhe } from './erros.ts';
-import { analisarId, Alvo, esquemaDados, Linha, normalizarDados, Rotulo } from './eventos.ts';
+import { buscar, ehCandidato, TETO_BUSCA_CHARS, type Filtros } from './search.ts';
+import { eloValido, verificarCadeia, type Cadeia } from './chain.ts';
+import { carregarProcesso, type ProcessoCarregado } from './definitions.ts';
+import { detalhesDeIssues, ErroHexlog, type Detalhe } from './errors.ts';
+import { analisarId, Alvo, esquemaDados, Linha, normalizarDados, Rotulo } from './events.ts';
 import {
   agoraEfetivo,
   projetar,
@@ -14,7 +14,7 @@ import {
   type CampoVocabulario,
   type Estado,
   type Vocabulario,
-} from './estado.ts';
+} from './state.ts';
 import {
   avaliarEmbutido,
   ehGateEmbutido,

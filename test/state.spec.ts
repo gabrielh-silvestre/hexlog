@@ -1,14 +1,14 @@
 import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import { omit } from 'es-toolkit';
-import type { Linha } from '../src/eventos.ts';
+import type { Linha } from '../src/events.ts';
 import {
   agoraEfetivo,
   projetar,
   validarCampo,
   VocabularioSchema,
   type Vocabulario,
-} from '../src/estado.ts';
+} from '../src/state.ts';
 
 // ---- fixtures locais (duplicadas em estado.property.spec.ts: 2 arquivos só, sem 3º módulo) ----
 

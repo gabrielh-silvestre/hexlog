@@ -6,8 +6,8 @@ import * as path from 'node:path';
 export const raizDoRepo = path.resolve(import.meta.dirname, '..');
 
 export const entradas: Record<string, string> = {
-  servidor: 'src/servidor.ts',
-  'guarda-bash': 'hook/guarda-bash.ts',
+  servidor: 'src/server.ts',
+  'guarda-bash': 'hook/bash-guard.ts',
 };
 
 interface OpcoesConstruir {

@@ -4,9 +4,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { z } from 'zod';
-import { sha256hex } from '../src/cadeia.ts';
-import { caminho, PROCESSOS_RESERVADOS } from '../src/dados.ts';
-import type { Manifesto } from '../src/definicoes.ts';
+import { sha256hex } from '../src/chain.ts';
+import { caminho, PROCESSOS_RESERVADOS } from '../src/storage.ts';
+import type { Manifesto } from '../src/definitions.ts';
 import {
   carregarProcesso,
   criarProcesso,
@@ -14,8 +14,8 @@ import {
   registrarGate,
   registrarTipo,
   registrarVocabulario,
-} from '../src/definicoes.ts';
-import { ErroHexlog } from '../src/erros.ts';
+} from '../src/definitions.ts';
+import { ErroHexlog } from '../src/errors.ts';
 import { parseJson } from './helpers.ts';
 
 const PROJETO = 'projeto-teste';

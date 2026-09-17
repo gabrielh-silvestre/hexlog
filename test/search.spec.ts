@@ -7,9 +7,9 @@ import {
   termosDistintos,
   textoIndexavel,
   type Filtros,
-} from '../src/busca.ts';
-import type { Manifesto, Vocabulario } from '../src/definicoes.ts';
-import type { Linha } from '../src/eventos.ts';
+} from '../src/search.ts';
+import type { Manifesto, Vocabulario } from '../src/definitions.ts';
+import type { Linha } from '../src/events.ts';
 import { gerarCorpus } from './fixtures/corpus.ts';
 
 const VOCABULARIO: Vocabulario = {

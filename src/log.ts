@@ -5,9 +5,9 @@ import { randomBytes, randomUUIDv7 } from 'node:crypto';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { isEmpty, isNil } from 'es-toolkit/compat';
-import { eloValido, prevHashEsperado, proximoSeq } from './cadeia.ts';
-import { ErroHexlog } from './erros.ts';
-import type { Linha } from './eventos.ts';
+import { eloValido, prevHashEsperado, proximoSeq } from './chain.ts';
+import { ErroHexlog } from './errors.ts';
+import type { Linha } from './events.ts';
 
 export type Registro = {
   nivel: 'debug' | 'info' | 'aviso' | 'erro';
@@ -84,7 +84,7 @@ function prepararContexto(
   const texto = lerTexto(arquivo);
   const endsWithNewline = isEmpty(texto) || texto.endsWith('\n');
   // A cauda sem '\n' (escrita em andamento ou rasgo ainda não reparado) entra na busca do
-  // último elo (mesma regra de verificarCadeia em cadeia.ts, mas aqui sem descartá-la).
+  // último elo (mesma regra de verificarCadeia em chain.ts, mas aqui sem descartá-la).
   const linhas = isEmpty(texto) ? [] : texto.split('\n').slice(0, endsWithNewline ? -1 : undefined);
   const { ultimoElo, linhasDepois } = ultimoEloEDepois(linhas);
 
