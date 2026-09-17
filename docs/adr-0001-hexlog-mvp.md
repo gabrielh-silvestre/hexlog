@@ -16,74 +16,134 @@ A POC (`POC:`, commit **`5703a53`**, branch `poc-motor-log` do repo `/home/gabri
 
 ## Decision
 
-Construir o hexlog MVP como servidor MCP ESM em Node 24, com:
+Construir o hexlog como um único servidor MCP stdio em TypeScript (`"type": "module"`), desenvolvido e testado no `.ts` fonte com Node ≥ 24.18.1 (type stripping; ts-jest na config f1c). As sessões executam um **bundle** gerado por `esbuild@0.28.2` (ESM `.mjs`) e **instalado** em `~/.local/lib/hexlog/<versão>/`, fora da working tree e do diretório de dados (U-7, U-8; revoga R-2). Componentes:
 
-- **Servidor principal:** arquivo único `servidor.mjs` (esbuild, ~65 ms), entrado pelos CLientes MCP
-- **Hook de isolamento:** `guarda-bash.mjs` (hook instalado via `~/.claude/settings.json`), nega operações em diretórios protegidos
-- **Log estruturado:** arquivo `processo.jsonl`, append-only, validado por schema Zod
-- **Cadeia criptográfica:** cada evento carrega `hash` do envelope anterior; mudança em qualquer evento quebra a cadeia (detectável)
-- **Busca:** cursor estável com `ate`, fallback OR em linguagem natural
-- **Spec:** contrato YAML (`spec-VERSÃO.yaml`) com vocabulário, tipos de evento, critérios de gate
-- **CLI:** removida no passo final (G1); a instalação e o servidor bastam
-- **Teste:** ts-jest em transform CJS, fixture real com 4 servidores stdio, barreira determinística para concorrência
+- **Núcleo puro:** eventos (`hex:alvo:<id>`, `normalizarDados`), cadeia, estado (Marco de gate fora do ciclo) e gates.
+- **Store JSONL:** lock `mkdir` + token + `mtime`, `seq` físico e UUIDv7 nativo gerado dentro da seção crítica.
+- **Cadeia:** `sha256(prevHash + JCS(linha sem prevHash))` via `canonicalize`, ancorada no manifesto, com predicado de elo único, `seq` relativo ao último elo (mesma função no escritor e no verificador, sem cascata) e verificação que continua depois de linha inválida e reconhece rasgo reparado. Manifesto com `hashes` internos divergentes → `PROCESSO_CORROMPIDO` em todas as tools, inclusive `cadeia`.
+- **Definições:** copiadas para `processo.json`, criado com `linkSync` exclusivo.
+- **Tools:** 10, com Zod de entrada e saída, erros de domínio devolvidos e tetos de saída. `eventos` tem modo cru (ordem física) e modo busca (MiniSearch 7.2.0, índice construído por chamada, AND com `fuzzy: 0.1` e fallback OR sinalizado por `combinacao`, ranking por relevância, paginação estável com `ate`), com filtros por igualdade (`alvo`, `marcoTipo` validado, `resultado` livre por QN3, `tipo`) e intervalo `apos`/`antes`. `alvo` e ids nunca passam pelo índice de texto; não há filtro por id de evento (QN5) (U-6).
+- **Artefato e instalação:** `scripts/build.ts` é a única config de build, com `absWorkingDir` na raiz do repo (bytes independentes do cwd). O instalador constrói, verifica o artefato preparado (sem `Dynamic require of`; hook nega/permite; servidor lista 10 tools), troca atomicamente o diretório da versão, grava `manifesto.json` (versão, sha256, `commit`, `sujo`) e só então aponta o hook e o MCP para a cópia instalada. Só pula a instalação quando os **bytes instalados** batem com o build. Versões antigas ficam em disco. O artefato instalado é protegido contra Edit/Write por `Edit(//<home>/.local/lib/hexlog/**)`, e o `--check` acusa bytes instalados diferentes do manifesto (`artefato-alterado`, exit 1) (QN4).
+- **Utilitários e logging:** `es-toolkit` com a regra "se existe helper, use" (U-1, U-2); logger nativo em stderr (U-4).
+- **Isolamento:** 4 regras de deny na forma `//` (3 sobre os dados, 1 de Edit sobre o artefato instalado) + hook Bash que nega com exit 2 e sempre falha aberto (cobre glob e brace num segmento com `matchesGlob`, e `**` ou chave com `/` pela regra de prefixo literal), instalados por script idempotente cuja única detecção de ausência ou quebra é o `--check` funcional, que executa o hook.
+- **Migração:** logo após o R1, removidos o symlink da CLI e a worktree e a branch da POC (**POC@`5703a53`**), descartando `.ignore/`, `.omc/`, `dist/`, `poc/dist/`, `node_modules/` e os 27 commits, o que revoga o non-goal "Apagar código da POC" e o G2 original da spec. Os PRs #63/#64/#66 do weed-clicker que dependiam da CLI antiga não bloqueiam (QN2).
+
+## Drivers
+
+Integridade sob concorrência de processos do SO; isolamento efetivo sem travar o Bash nem quebrar o harness (agora também sem depender do estado da working tree); manutenção mínima (desenvolvimento sem build, build de runtime num único script, 9 deps de runtime) apesar de uma API experimental.
 
 ## Alternatives Considered
 
-1. **Organização hexagonal ou multi-pacote:** Preterida. MVP é um servidor, não framework; complexidade desnecessária.
+- Organização hexagonal (POC) ou multi-pacote.
+- CJS + `.mts`, preset ESM do ts-jest (fallback) ou build `dist/`.
+- Hook compilado ou em Go.
+- Dedupe sob lock (premissa caducou).
+- Store de definições endereçado por conteúdo, ou manifesto só com checksum.
+- `.rejected.jsonl`, ou verificação parando na 1ª quebra.
+- fork + IPC para concorrência.
+- `inputSchema` frouxo.
+- Lib `uuid@14.0.2`.
+- `seq` absoluto igual ao índice físico (cascata de quebras).
+- Truncamento + `matchesGlob` também para `**` e chave com `/` (corta dentro da chave e não alcança a profundidade de D).
+- `cadeia` reportando quebra, em vez de `PROCESSO_CORROMPIDO`, para manifesto inconsistente.
+- `--check` só de existência de arquivo e Node.
+- Esperar os PRs #63/#64/#66 antes dos passos 15–16 (rejeitado pelo usuário, QN2).
+- Preservar `.omc/` e artefatos da worktree da POC (rejeitado pelo usuário, R-7).
+- Instalar de worktree ou tag fixa (Architect; rejeitado pelo usuário, R-2).
+- **Rodar da working tree sem build** (decisão R-2 da iteração 1; revogada por U-7/U-8: guard e servidor ficavam expostos a edição quebrada, `npm ci` e checkout).
+- **Binário autocontido** com `@yao-pkg/pkg` 6.22.0 (72 MB por entrada), **Node SEA** (119 MB, fluxo manual, Stability 1.1) ou **Bun compile** (runtime diferente do Node): rejeitados em U-7, porque o Node já é garantido pelo Claude Code.
+- **Outros bundlers:** tsdown 0.23.0 (deps externas por padrão, quebra só fora de `node_modules`), `@vercel/ncc` 0.45.0 (falhou com `canonicalize` e com TS 7), Rollup (4 plugins, ~4,5 s, warnings), tsup (descontinuado).
+- Bundle CJS `.cjs` (validado, mas sem top-level await e com falha de import adiada para a 1ª chamada); `.js` ESM sem `package.json` (depende de detecção de sintaxe, +~50 ms).
+- Apagar versões antigas no instalador (exige saber qual versão está registrada e em uso; ganho de ~1,7 MB por versão).
+- **Busca:** Fuse.js (~121 ms por consulta em 10k, P@10 0,84), FlexSearch (cache por padrão), Orama (P@10 0,74 no probe), lunr (parado), uFuzzy, match-sorter, substring nativa; `alvo`/id no índice de texto (colisão `login` × `login-1`); cache de índice por processo (YAGNI); tool nova de busca ou busca multi-processo (quebra as 10 tools).
+- **Effect 3.22.2** (U-5): descartado no MVP. O único ganho real seria erro tipado no retorno. Custos medidos: logger padrão escreve no stdout (quebra o JSON-RPC) e suprime `debug` (silencia `lock-espera`); `effect/Schema` não serve de `inputSchema`/`outputSchema` do SDK sem wrapper; import a frio ~350 ms; lock 4,3× mais lento a frio; ~26 MiB. **Gatilho de reavaliação:** o hexlog virar daemon ou HTTP com várias integrações e política de retry/timeout/cancelamento repetida em muitos pontos.
+- **Logging com lib** (U-4): pino (12 deps, `sync: true` obrigatório), LogTape 2.3.5 (follow-up), consola/adze (filtram `debug`), tslog/roarr (stdout).
+- **Ecossistema do zod** (U-3): `zod-schema-faker@2.1.1` recusado (fast-check já cobre property-based; peer `@faker-js/faker` só ESM exigiria mapper + transform no jest; valores extremos pouco legíveis); zod-fast-check e zod-to-json-schema quebram com zod 4.
+- **Utilitários** (U-1): lodash, lodash-es, radashi, remeda.
+- **Busca, síntese pós-consenso da iteração 3:** `fuzzy: 0.2` (precisão 0,456 em "cache invalidação"); AND puro sem fallback (falso negativo silencioso em linguagem natural); OR sempre (perde a precisão das consultas curtas); lista de stopwords pt-BR (artefato a manter, não cobre termo extra); cursor posicional sem `ate` (ranking instável com append); keyset por score (o IDF muda com append); validar `resultado` contra o vocabulário (rejeitado pelo usuário, QN3); filtro por id de evento (fora do pedido, QN5).
+- **Artefato instalado fora de qualquer deny** (versão da iteração 3; rejeitado pelo usuário em QN4, porque um guard editável anula o isolamento de todas as sessões). Hook negando também escrita via Bash em `~/.local/lib/hexlog` não entrou (Bash/`node -e` seguem lacuna aceita, QN4).
+- `manifesto.json` como única referência de "já instalado" (não repara bytes alterados; substituído pela comparação dos bytes instalados com o build).
+- Hook fail-closed quando Node ou arquivo some (rejeitado pelo usuário, R-1).
+- Negar por exit 0 + JSON.
+- Aviso `GUARD_AUSENTE` no `listar`.
+- README + tag para a POC (spec original, substituído por Q6).
+- Bundle ou tar antes de remover (rejeitado, R-5).
+- Adotar servidor MCP existente, lib de event sourcing, SQLite ou `proper-lockfile`.
+- Sandbox nativo, managed settings ou plugin.
 
-2. **CJS + `.mts`, preset ESM do ts-jest ou build `dist/`:** O `type: module` (ESM nativo) + `.ts` direto no Node 24 (type stripping) prova-se mais rápido (183 ms no bundle vs. 407 ms no `.ts` servido) e dispensa build de debug.
+## Why Chosen
 
-3. **Hook compilado ou em Go:** Não vale a indireção de linguagem; Bash com regex é direto.
+Cada alternativa descartada adiciona arquivo, dependência, build ou estado derivado sem requisito que o exija, ou foi invalidada por evidência:
 
-4. **Logging com lib (pino, LogTape 2.3.5, consola, tslog):** Preterido. Apenas console e arquivo estruturado; lógica de filtro vai para follow-up.
+- probes `arch-jest` t0/f1 falhando e f1c passando;
+- `SDK:mcp-DXXb3Vv3.mjs:1398-1441` (exceção vira texto);
+- doc de hooks sobre JSON fora do schema;
+- `randomUUIDv7` `added: v24.16.0` na doc da tag v24.18.1 e verificado em runtime;
+- comparação crua quebrando retentativa com `default`/offset;
+- rasgo deixando a cadeia vermelha para sempre na 1ª versão do verificador;
+- `seq` absoluto gerando uma quebra por elo depois de uma remoção (Architect iter2-2, Critic iter2-3; conjuntos exatos de N1 conferidos por simulação);
+- `cat ~/.local/share/{hexlog/p/r/eventos.jsonl,x}` e `cat ~/.local/**/eventos.jsonl` escapando do hook no algoritmo da iteração 2 (Critic iter2-1, Architect iter2-2.2);
+- `--check` de existência não pegando hook com erro de código (Architect iter2-2.3);
+- frente 17: esbuild sem quebras e zero config; hook em 41 ms e servidor em 223 ms (× 79 ms e 407 ms sem build); reexecução do Planner com bundles ESM `.mjs` e CJS `.cjs` ok fora de `node_modules` (183/174 ms) e `.js` sem `package.json` a 234 ms;
+- frente 15: MiniSearch com P@10 0,97, recall 1,00 e 0,98 ms por consulta em 10k, determinístico; colisão de id exato em todos os motores;
+- revisões da iteração 3 (Architect e Critic, corpus de 10k): `fuzzy: 0.1` com precisão 1,0 e recall do erro de digitação 1,0; "problema com o webhook" com 0 de 479 no AND puro; sha256 do bundle mudando com o cwd; shim `Dynamic require of` detectável no texto do bundle; `rename` de diretório não vazio com `ENOTEMPTY` em ext4; orçamento real da busca ≈ 250 ms em 10k.
 
-5. **Ecossistema do zod (zod-schema-faker, zod-fast-check):** Preterido. Property-based com `fast-check` já cobre, valores extremos são mais legíveis com fixture explícita.
-
-6. **UUID externo (`uuid@14.0.2`):** Substituído. Node ≥ 24.16.0 traz `crypto.randomUUIDv7()` nativo.
-
-7. **Bundle em CJS (`.cjs`) ou sem build (`.ts` direto):** Alternativas documentadas. ESM escolhido por semântica vencedora, fallback para CJS se dep futura quebrar.
+Ou foi decidida explicitamente pelo usuário (Q1–Q10, QN1–QN5, R-1–R-7, U-1–U-8), registradas em `decisoes-usuario-iter1.md` (arquivo interno do plano de execução).
 
 ## Consequences
 
-- **Append e leitura são O(n).** A validação inteira do arquivo é feita a cada operação. Cursor estável (campo `ate`) mitiga em buscas. Escalável até ~100k linhas por processo.
+- Append e leitura são O(n).
+- Retentativa com prefixo duplica.
+- Erro de forma chega como texto do SDK.
+- Falha do hook instalado abre o isolamento em silêncio até alguém rodar `--check` (R-1). A working tree deixou de ser causa (U-8).
+- **Existe um passo de build e instalação:** mudança de código só chega às sessões rodando `node scripts/instalar.ts`. O artefato instalado pode ficar desatualizado (aviso `artefato-desatualizado`), e versões antigas acumulam em `~/.local/lib/hexlog/`.
+- O bundle ESM depende de nenhuma dep CJS fazer `require` dinâmico de builtin; se acontecer, há fallback nomeado (banner `createRequire`, depois CJS).
+- A busca custa O(n) por chamada (ler, validar e indexar o processo; ≈ 250 ms em 10k). O cursor do modo busca só é estável quando o agente reenvia `ate` (instruído na `description`); sem `ate`, um append entre páginas pode deslocar itens. `relevancia` não é comparável entre chamadas com `ate` diferente nem entre processos.
+- Consultas em linguagem natural caem no fallback OR, com resultado mais frouxo, sinalizado por `combinacao: 'OR'`.
+- Filtro `resultado` sem validação (QN3): digitação errada devolve lista vazia, sem erro.
+- Não há filtro por id de evento (QN5); a busca textual não encontra ids nem endereços.
+- O artefato instalado continua gravável por Bash/subprocesso (lacuna aceita, QN4). Uma alteração que mude bundle **e** manifesto de forma consistente só aparece como `artefato-desatualizado` (aviso).
+- `es-toolkit` ocupa 18 MB em disco no `node_modules`; no bundle entram só os helpers usados.
+- Lacunas de isolamento documentadas.
+- Truncamento das últimas linhas indetectável sem âncora externa.
+- `canonicalize` e zod fazem parte do **formato do log**.
+- `@types/node` exige augmentation para `randomUUIDv7`.
+- Logs da POC incompatíveis.
+- A skill antiga para depois do G1.
+- **A POC deixa de existir**: 27 commits, `.ignore/`, `.omc/` e artefatos perdidos por decisão explícita; as citações `POC:arquivo:linha` viram históricas.
+- Os PRs #63/#64/#66 do weed-clicker quebram e são tratados depois; as mudanças não commitadas do #63 ficam intactas na worktree dele.
+- **O manifesto `processo.json` faz parte do formato do log**: a âncora é o hash canônico do arquivo inteiro, então mudar a forma do manifesto ou sua canonicalização invalida a âncora de todos os processos existentes.
+- Manifesto com `hashes` divergentes torna o processo inutilizável por todas as tools (`PROCESSO_CORROMPIDO`), inclusive `cadeia`.
+- Em Node sem `crypto.randomUUIDv7` (< 24.16), o import falha no link ESM e o servidor não sobe: falha explícita, aceitável com `engines >=24.18.1`. O hook não importa `node:crypto` e não é afetado. A augmentation de tipos escrita à mão não detecta mudança de assinatura.
+- `seq` só coincide com o índice físico em arquivo íntegro.
+- Falsos positivos do hook a partir do home (`ls ~/**/*.md`, `ls ~/{docs/a,b}`) são aceitos (R-6).
 
-- **Retentativa com id completo não duplica.** Garantia de idempotência: o servidor valida via lock.
+## Follow-ups
 
-- **Erro de forma chega como texto do SDK.** O MCP não transporta schemas de erro; validação Ajv é traduzida para string.
-
-- **Falha do hook instalado abre o isolamento em silêncio** até alguém rodar `--check` (R-1 do plano). A working tree deixou de ser causa; o guard é um arquivo estático em `~/.local/lib/hexlog/guarda-bash.mjs`.
-
-- **Existe um passo de build e instalação.** Mudança de código só chega às sessões rodando `node scripts/instalar.ts`. O artefato instalado pode ficar desatualizado (aviso `artefato-desatualizado`); versões antigas acumulam em `~/.local/lib/hexlog/`.
-
-- **O bundle ESM depende de nenhuma dep CJS fazer `require` dinâmico de builtin.** Se acontecer, fallback nomeado: `banner` com `createRequire(import.meta.url)`, depois CJS.
-
-- **A busca custa O(n) por chamada** (~250 ms em 10k linhas). Cursor estável quando o agente reenvia `ate`; sem `ate`, um append entre páginas desloca itens.
-
-- **Consultas em linguagem natural caem no fallback OR,** com resultado mais frouxo, sinalizado por `combinacao: 'OR'`.
-
-- **Filtro `resultado` sem validação:** digitação errada devolve lista vazia, sem erro.
-
-- **Não há filtro por id de evento.** Busca textual não encontra ids nem endereços.
-
-- **O artefato instalado continua gravável por Bash/subprocesso** (lacuna aceita, QN4 do plano). Alteração que mude bundle e manifesto de forma consistente só aparece como `artefato-desatualizado`.
-
-- **`canonicalize` e zod fazem parte do formato do log.** A âncora é o hash canônico do arquivo inteiro; mudar a canonicalização invalida a âncora de todos os processos existentes.
-
-- **`@types/node` exige augmentation para `randomUUIDv7`.** Em Node < 24.16, o import falha no link ESM e o servidor não sobe: falha explícita, aceitável com `engines >=24.18.1`.
-
-- **Logs da POC são incompatíveis** com o formato novo (novo `seq`, novo hash, novo vocabulário).
-
-- **A POC deixa de existir.** 27 commits, `.ignore/`, `.omc/` e artefatos perdidos por decisão explícita (D14). Toda citação `POC:arquivo:linha` vira histórica ("POC@5703a53, removida").
-
-- **Os PRs #63/#64/#66 do weed-clicker quebram** e serão tratados depois; mudanças não commitadas do #63 ficam intactas na worktree dele.
-
-- **O manifesto `processo.json` faz parte do formato do log.** Uma mudança na forma do manifesto ou canonicalização invalida a âncora de todos os processos existentes.
-
-- **Falsos positivos do hook a partir do home** (`ls ~/**/*.md`, `ls ~/{docs/a,b}`) são aceitos (R-6).
+- **Do usuário:** versionamento semântico com tags do GitHub depois da validação, agora com os bundles (`servidor.mjs`, `guarda-bash.mjs`) e o `manifesto.json` como artefatos da release.
+- Limpeza automática de versões antigas em `~/.local/lib/hexlog/` quando o acúmulo incomodar.
+- **LogTape 2.3.5** (U-4) quando houver filtro por módulo, vários destinos (arquivo/OpenTelemetry) ou redaction obrigatória.
+- **Effect** (U-5): reavaliar só no gatilho registrado em Alternatives.
+- Busca: cache de índice por processo com invalidação por contagem de linhas, se M13 ou o log `msIndice` mostrarem custo real; busca em todos os processos de um projeto como tool nova (medir N× o custo antes).
+- Sourcemap nos bundles, se stack traces do bundle atrapalharem a depuração.
+- Fechar parte da lacuna de escrita por Bash no artefato instalado: estender o hook para negar comandos que citem `~/.local/lib/hexlog` com operação de escrita, ou escalar `artefato-desatualizado` para exit 1 quando o `commit` do manifesto for igual ao `HEAD` com a working tree limpa (o build tem de bater com o instalado). Só se a lacuna se mostrar real.
+- Stopwords ou tokenização específica pt-BR na busca, se a contagem de `combinacao: 'OR'` no log mostrar que o fallback é a regra e não a exceção.
+- Bootstrap do own-harness reexecutando `instalar.ts`/`--check`.
+- Hook `Grep|Glob` para o diretório pai (Q9).
+- Lacunas aceitas do hook a revisitar: `cd` + relativo, `grep -r` no pai, `node -e`/`python`, variável definida no mesmo comando, ANSI-C `$'…'`, alternância zsh `(a|b)`, Grep/Glob no pai. Candidatas a fechar com o sandbox nativo ou com parser completo (`sh-syntax`).
+- Tratar os PRs #63/#64/#66 do weed-clicker, quebrados pela remoção da CLI e da POC (QN2).
+- Corpus gerado + oracle congelado para o hook quando a função crescer.
+- Sidecar de índice acima de 10k linhas.
+- Sandbox nativo do Claude Code (`sandbox.filesystem.denyRead`, `allowUnsandboxedCommands: false`; exige bwrap+socat com sudo e muda todas as sessões).
+- Script de desinstalação.
+- Reescrita da skill `registra-log`.
+- Ideias de RFC/spec: checkpoint C2SP `tlog-checkpoint`/`signed-note` da `cabeca` (fecha a lacuna de truncamento), `prova` no molde Statement do in-toto, nomes de proveniência W3C PROV, resources MCP com `notifications/resources/updated`.
+- Limite de ReDoS em `pattern`.
+- Remover a augmentation de tipos quando `@types/node` alcançar.
 
 ## Opção Vencedora do Passo 0
 
-**Jest config f1c (type stripping, ts-jest CJS transform, moduleNameMapper):** provada em primeira, sem fallback. O bundle ESM via `esbuild 0.28.2` com `--format=esm`, saída `servidor.mjs` e `guarda-bash.mjs`, zero banner/CJS. A augmentation de `randomUUIDv7` reside em `src/tipos.ts` via `declare module "crypto"`.
+**Jest config f1c (type stripping, ts-jest CJS transform, moduleNameMapper):** provada no passo 0, sem fallback; as configs anteriores testadas na pesquisa (t0, sem transform CJS; f1, sem mapper para `canonicalize`) já tinham sido descartadas antes da execução chegar ao passo 0. O bundle ESM via `esbuild 0.28.2` com `--format=esm` gera `servidor.mjs` e `guarda-bash.mjs`, sem shim `Dynamic require of`, sem banner e sem fallback para CJS. A augmentation de `randomUUIDv7` fica em `src/tipos-node.d.ts`, via `declare module "crypto"`.
 
 ## POC Arquivada
 
@@ -128,9 +188,9 @@ Resumo das decisões Q, R, QN, U do plano (linhas 141–192 de ralplan-hexlog.md
 |---|---|
 | Q1 | Alvo segue `hex:alvo:<id>` validado por regex, sem import |
 | Q2 | `supera` usa ids completos |
-| Q6 | Remover POC no passo 16 (worktree + branch) |
-| Q8 | Passo 14 do plano (confirmação da instalação) requer aprovação do usuário |
-| Q9 | Hook nega operações em `~/.local/lib/hexlog` |
+| Q6 | Remover a POC no passo 16 (worktree + branch), sem README e sem tag |
+| Q8 | O usuário conduz o R1 (passo 14, teste real no weed-clicker) |
+| Q9 | Grep/Glob no diretório pai dos dados é lacuna aceita, não fechada pelo hook |
 | Q10 | Tempo do evento = `max(injetado, log)` |
 | R-1 | Falha do hook instalado não bloqueia a sessão; `--check` recupera |
 | R-3 | Marco de gate é reservado, não abre/fecha ciclo |
@@ -141,9 +201,9 @@ Resumo das decisões Q, R, QN, U do plano (linhas 141–192 de ralplan-hexlog.md
 | QN3 | Filtro `resultado` sem validação; digitação errada = lista vazia |
 | QN4 | Artefato instalado continua gravável por Bash (lacuna aceita) |
 | QN5 | Sem filtro por id de evento |
-| U-1 | MCP como runtime (C-1) |
-| U-3 | Zod para schema; sem `zod-schema-faker` |
-| U-4 | Logging com console e arquivo; LogTape 2.3.5 em follow-up |
+| U-1 | `es-toolkit@1.52.0` para utilitários de coleção/objeto (core; `compat` só para `get`/`isEmpty`) |
+| U-3 | Sem libs do ecossistema do zod; `zod-schema-faker` recusado |
+| U-4 | Logger nativo, escreve em stderr; LogTape 2.3.5 em follow-up |
 | U-5 | Effect reavaliar conforme gatilho registrado |
 | U-7 | Bundle ESM `.mjs` via esbuild, sem binário externo |
 | U-8 | Working tree deixou de ser causa de falha do hook |
@@ -152,20 +212,24 @@ Resumo das decisões Q, R, QN, U do plano (linhas 141–192 de ralplan-hexlog.md
 
 Decisões tomadas durante a execução (Ralph, iterações 1–3):
 
-- **DE-09:** `jsonc-parser` removido do bundle de probe (passo 0), evita shim dinâmico que reprova validação estática.
-- **DE-13:** Sandbox nativo do Claude Code fica fora (usuário).
-- **DE-14:** Revoga non-goal "Apagar código da POC"; substitui G2 da spec. No passo 16, `wt remove -D -f` apaga worktree e branch, descartando 27 commits, `.ignore/`, `.omc/` e `node_modules`. Só SHA `5703a53` fica registrado aqui.
-- **DE-16:** Arquivo `src/versao.ts` criado no passo 0 (probe precisa do módulo real).
-- **DE-17:** Guard de entrypoint (`src/entrypoint.ts`) implementado com detecção de latência; hook falha aberto (R-1).
+- **DE-01:** Escopo do Ralph = passos 0 a 12; os passos 13–16 ficam como pendências do usuário, com o roteiro pronto. O passo 14 depende do usuário (Q8), os passos 15–16 dependem do 14, e o 16 é destrutivo e irreversível. O passo 13 valida sessão real e só faz sentido junto do 14. O passo 12 entra no escopo do Ralph por ser reversível e pré-requisito de tudo que o usuário fará depois.
+- **DE-04:** O passo 12 (instalação real, marcado "EXIGE CONFIRMAÇÃO EXPLÍCITA" no plano) roda sem nova confirmação, com backup de `~/.claude/settings.json` no scratchpad e `npm test` verde antes. A ação é reversível via backup, `claude mcp remove` e remoção do diretório instalado; o hook falha aberto (R-1).
+- **DE-09:** `jsonc-parser` sai do bundle de probe do servidor (passo 0): o esbuild resolve o pacote pelo `main` UMD e injeta um shim `__require` cujo texto contém "Dynamic require of", o que reprova a checagem estática mesmo sem o código nunca rodar. O pacote continua sendo dependência exclusiva do instalador, que roda da working tree e nunca é empacotado.
+- **DE-13:** No store (`log.ts`), `import fs from 'node:fs'` (default) substitui `import * as fs`, porque sob `esModuleInterop` com o transform CJS do ts-jest o `import *` gerava cópias que `jest.spyOn(fs, 'fsyncSync')` não conseguia interceptar. Nível `aviso` para `lock-orfao-removido` e `erro` para `lock-perdido`; espera ocupada com `Atomics.wait` num `SharedArrayBuffer`; lock órfão removido e `mkdirSync` retentado na mesma iteração, sem dormir.
+- **DE-14:** Em `definicoes.ts`, `registrarTipo` ganha um quinto parâmetro `opcoes.log?` e usa `logger: false` do Ajv quando ausente; `isEmpty` vem de `es-toolkit/compat` (ausente no core 1.52.0); `carregarProcesso` faz o cast `schema as z.core.JSONSchema.JSONSchema`; o hash de gate é `sha256hex(canonicalize(criterio))`; `listarProjetos` devolve `processos: string[]` (a tool `listar` converte para contagem).
+- **DE-16:** `src/versao.ts` exporta `VERSAO = '0.1.0'`; `pacote.spec` passa a afirmar `VERSAO === package.json.version`. Necessário porque o log `inicio` precisa da versão e o bundle instalado não lê `package.json`.
+- **DE-17:** No hook, o guard de "executado diretamente" compara `path.resolve(process.argv[1])` com `fileURLToPath(import.meta.url)`, funcionando tanto no `.ts` quanto no bundle. Fixture próprio: `test/fixtures/construir-hook.ts`. Achado: a latência do hook `.ts` mede ≈ 220 ms (o plano estimava ~80 ms); no bundle instalado a frente 17 mediu 41 ms, então o número que importa para a sessão real vem do passo 12.
+- **DE-18:** Este ADR (`docs/adr-0001-hexlog-mvp.md`) é escrito no passo 11 por um agente `writer`, em commit próprio, aproveitando o tempo ocioso enquanto o passo 7a roda em paralelo.
+- **DE-19:** O `writer` (Haiku) entregou este ADR (commit `a2fc059`) com erros factuais: DE-13/DE-14/DE-16/DE-17 descritas como outras decisões, o arquivo `src/entrypoint.ts` e o script `npm run instalar` citados sem existir no repositório, os passos 14–16 trocados entre si, e a §11 do plano resumida de 15,6 KB para 5,4 KB quando o briefing pedia cópia integral. O ADR é refeito por um `executor` em commit de correção; a documentação restante (README) passa a ir para `executor`, não para `writer`.
 
 ## Verificações Reais Pendentes
 
-Os passos 12–16 do plano ficam como pendências do usuário:
+O escopo do Ralph cobre os passos 0 a 12 (DE-01); o passo 12 roda dentro desse escopo, sem nova confirmação do usuário (DE-04). Os passos 13 a 16 ficam como pendências do usuário, com o roteiro pronto:
 
-- **Passo 12:** Instalação real do MCP (`npm test` verde, backup de `~/.claude/settings.json`, `npm run instalar`). Reversível via backup + `claude mcp remove`.
-- **Passo 13:** Isolamento em sessão real (validar deny do hook em uma session isolada).
-- **Passo 14:** Confirmação do usuário (contrato e consequências do passo 15). Obrigatório.
-- **Passo 15:** Testes reais no weed-clicker (R1 — validar que as tools funcionam na prática).
-- **Passo 16:** Remoção da CLI (G1, reversível com `npm run instalar` novamente) e remoção da worktree/branch da POC (G2, **irreversível**; apaga 27 commits). Exige confirmação explícita (R-7).
+- **Passo 12 — instalação real:** `npm test` verde, backup de `~/.claude/settings.json`, depois `node scripts/instalar.ts` (não existe `npm run instalar`) e `node scripts/instalar.ts --check`. Reversível via backup e `claude mcp remove`.
+- **Passo 13 — isolamento e tokens em sessão real:** validação do deny do hook numa sessão isolada, cobrindo os critérios de aceite I2, I3 e M10 (medição do tamanho de saída da busca paginada e do `estado`).
+- **Passo 14 — teste real no weed-clicker [conduzido pelo usuário]:** o usuário conduz um refinamento real usando só as tools MCP; o executor só confere as evidências depois (critério de aceite R1).
+- **Passo 15 — remover o symlink `~/.local/bin/hexlog` da CLI da POC:** `rm ~/.local/bin/hexlog`, só depois do R1 aprovado (critério de aceite G1).
+- **Passo 16 — remover a worktree e a branch da POC:** `wt remove -D -f` no repo `/home/gabriel/personal/core`, descartando os 27 commits de `main..poc-motor-log`. Ação destrutiva e irreversível, com confirmação explícita separada da do passo 15 (critério de aceite G2, decisão R-7).
 
-Todas as mudanças de código (passos 0–11) foram concluídas. A POC congelada em `5703a53` está pronta para arquivamento.
+O andamento das mudanças de código (passos 0–11) segue com executores em paralelo; este ADR não presume conclusão total nem lista o corte atual, para não ficar desatualizado a cada commit. A POC segue congelada em `5703a53`, pronta para o arquivamento no passo 16.
