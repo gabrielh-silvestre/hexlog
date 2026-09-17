@@ -85,7 +85,7 @@ describe('anexar — encadeamento', () => {
 
     const resultado = verifyChain(readText(arquivo), MANIFESTO);
     expect(resultado.ok).toBe(true);
-    expect(resultado.totalLinhas).toBe(2);
+    expect(resultado.totalLines).toBe(2);
   });
 });
 

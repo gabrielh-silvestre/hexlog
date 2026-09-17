@@ -46,9 +46,7 @@ export type ProcessManifest = {
     vocabulary: Vocabulary;
     gates: Record<string, { criteria: string }>;
   };
-  // `vocabulario` (não `vocabulary`): chave do resumo de hashes ainda espelha o `Hashes` de
-  // `mcp.ts` (Fase 4) via a tool `listar`; renomear só aqui quebraria essa validação Zod em runtime.
-  hashes: { schemas: string; vocabulario: string; gates: string };
+  hashes: { schemas: string; vocabulary: string; gates: string };
 };
 
 /** Processo carregado e pronto para uso: manifesto verificado, âncora e schemas Zod dos tipos custom. */
@@ -187,7 +185,7 @@ export function createProcess(
   const fixed = buildSnapshot(projectDir);
   const hashes: ProcessManifest['hashes'] = {
     schemas: sha256hex(canonicalize(fixed.types) ?? ''),
-    vocabulario: sha256hex(canonicalize(fixed.vocabulary) ?? ''),
+    vocabulary: sha256hex(canonicalize(fixed.vocabulary) ?? ''),
     gates: sha256hex(canonicalize(fixed.gates) ?? ''),
   };
   const createdAt = clock().toISOString();
@@ -309,7 +307,7 @@ export function loadProcess(dir: string, project: string, process: string): Load
 function verifyHashes(manifest: ProcessManifest): void {
   const parts: { hash: keyof ProcessManifest['hashes']; fixed: unknown }[] = [
     { hash: 'schemas', fixed: manifest.fixed.types },
-    { hash: 'vocabulario', fixed: manifest.fixed.vocabulary },
+    { hash: 'vocabulary', fixed: manifest.fixed.vocabulary },
     { hash: 'gates', fixed: manifest.fixed.gates },
   ];
 

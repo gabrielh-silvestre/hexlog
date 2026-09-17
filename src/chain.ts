@@ -5,21 +5,21 @@ import { omit } from 'es-toolkit/compat';
 import type { Detail } from './errors.ts';
 import { EventLine } from './events.ts';
 
-type MotivoQuebra = 'linha-invalida' | 'seq-divergente' | 'hash-nao-bate' | 'dados-invalidos';
+type BreakReason = 'invalid-line' | 'diverging-seq' | 'hash-mismatch' | 'invalid-data';
 
-export type Quebra = { indice: number; motivo: MotivoQuebra };
+export type Break = { index: number; reason: BreakReason };
 
 export type Chain = {
   ok: boolean;
-  totalLinhas: number;
-  cabeca: string;
-  quebras: Quebra[];
-  totalQuebras: number;
-  linhasReparadas: number[];
+  totalLines: number;
+  head: string;
+  breaks: Break[];
+  totalBreaks: number;
+  repairedLines: number[];
 };
 
-const TETO_QUEBRAS = 100;
-const TETO_REPARADAS = 100;
+const MAX_BREAKS = 100;
+const MAX_REPAIRED = 100;
 
 export function sha256hex(texto: string): string {
   return createHash('sha256').update(texto).digest('hex');
@@ -64,7 +64,7 @@ export function nextSeq(lastLink: EventLine | null, n: number): number {
 /**
  * Verifica a cadeia de hash de um log JSONL (§4.6). `validateData`, quando informado, roda
  * sobre `{type, data}` de cada elo e retorna `Detail[]` (reprovado) ou `null` (aprovado);
- * um retorno não nulo vira quebra `dados-invalidos`.
+ * um retorno não nulo vira quebra `invalid-data`.
  */
 export function verifyChain(
   texto: string,
@@ -77,14 +77,14 @@ export function verifyChain(
 
   let lastLink: EventLine | null = null;
   let pending: number[] = [];
-  const quebras: Quebra[] = [];
-  const linhasReparadas: number[] = [];
+  const breaks: Break[] = [];
+  const repairedLines: number[] = [];
 
   const resolvePending = (repair: boolean) => {
     if (repair) {
-      linhasReparadas.push(...pending);
+      repairedLines.push(...pending);
     } else {
-      for (const index of pending) quebras.push({ indice: index, motivo: 'linha-invalida' });
+      for (const index of pending) breaks.push({ index, reason: 'invalid-line' });
     }
     pending = [];
   };
@@ -98,26 +98,26 @@ export function verifyChain(
 
     const seqOk = link.seq === nextSeq(lastLink, pending.length);
     const hashOk = link.prevHash === expectedPrevHash(lastLink, manifest);
-    if (!seqOk) quebras.push({ indice: index, motivo: 'seq-divergente' });
-    if (!hashOk) quebras.push({ indice: index, motivo: 'hash-nao-bate' });
+    if (!seqOk) breaks.push({ index, reason: 'diverging-seq' });
+    if (!hashOk) breaks.push({ index, reason: 'hash-mismatch' });
     resolvePending(seqOk && hashOk);
 
     if (!isNil(validateData) && !isNil(validateData(link.type, link.data))) {
-      quebras.push({ indice: index, motivo: 'dados-invalidos' });
+      breaks.push({ index, reason: 'invalid-data' });
     }
 
     lastLink = link;
   });
   resolvePending(false);
 
-  quebras.sort((a, b) => a.indice - b.indice);
+  breaks.sort((a, b) => a.index - b.index);
 
   return {
-    ok: quebras.length === 0,
-    totalLinhas: lines.length,
-    cabeca: isNil(lastLink) ? '' : hashLine(lastLink),
-    quebras: quebras.slice(0, TETO_QUEBRAS),
-    totalQuebras: quebras.length,
-    linhasReparadas: linhasReparadas.slice(0, TETO_REPARADAS),
+    ok: breaks.length === 0,
+    totalLines: lines.length,
+    head: isNil(lastLink) ? '' : hashLine(lastLink),
+    breaks: breaks.slice(0, MAX_BREAKS),
+    totalBreaks: breaks.length,
+    repairedLines: repairedLines.slice(0, MAX_REPAIRED),
   };
 }

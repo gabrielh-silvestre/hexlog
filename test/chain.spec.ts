@@ -121,45 +121,45 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
     const resultado = verifyChain(paraTexto(log), MANIFESTO);
     expect(resultado).toEqual({
       ok: true,
-      totalLinhas: 5,
-      cabeca: hashLine(log[4]),
-      quebras: [],
-      totalQuebras: 0,
-      linhasReparadas: [],
+      totalLines: 5,
+      head: hashLine(log[4]),
+      breaks: [],
+      totalBreaks: 0,
+      repairedLines: [],
     });
   });
 
-  test('(a) JSON inválido na linha 1 → {1,linha-invalida},{2,hash-nao-bate}', () => {
+  test('(a) JSON inválido na linha 1 → {1,invalid-line},{2,hash-mismatch}', () => {
     const log: Array<EventLine | string> = [...construirLog(5)];
     log[1] = '{ isso nao e json valido';
     const resultado = verifyChain(paraTexto(log), MANIFESTO);
-    expect(resultado.quebras).toEqual([
-      { indice: 1, motivo: 'linha-invalida' },
-      { indice: 2, motivo: 'hash-nao-bate' },
+    expect(resultado.breaks).toEqual([
+      { index: 1, reason: 'invalid-line' },
+      { index: 2, reason: 'hash-mismatch' },
     ]);
-    expect(resultado.totalQuebras).toBe(2);
-    expect(resultado.linhasReparadas).toEqual([]);
+    expect(resultado.totalBreaks).toBe(2);
+    expect(resultado.repairedLines).toEqual([]);
     expect(resultado.ok).toBe(false);
   });
 
-  test('(b) dados alterado na linha 1 → {2,hash-nao-bate}', () => {
+  test('(b) dados alterado na linha 1 → {2,hash-mismatch}', () => {
     const log = construirLog(5);
     const alterado: Array<EventLine | string> = [...log];
     alterado[1] = { ...log[1], data: { ...log[1].data, milestoneType: 'alterado' } };
     const resultado = verifyChain(paraTexto(alterado), MANIFESTO);
-    expect(resultado.quebras).toEqual([{ indice: 2, motivo: 'hash-nao-bate' }]);
-    expect(resultado.totalQuebras).toBe(1);
+    expect(resultado.breaks).toEqual([{ index: 2, reason: 'hash-mismatch' }]);
+    expect(resultado.totalBreaks).toBe(1);
   });
 
-  test('(c) linha 1 removida → {1,seq-divergente},{1,hash-nao-bate}, sem cascata', () => {
+  test('(c) linha 1 removida → {1,diverging-seq},{1,hash-mismatch}, sem cascata', () => {
     const log = construirLog(5);
     const semLinha1 = log.filter((_, indice) => indice !== 1);
     const resultado = verifyChain(paraTexto(semLinha1), MANIFESTO);
-    expect(resultado.quebras).toEqual([
-      { indice: 1, motivo: 'seq-divergente' },
-      { indice: 1, motivo: 'hash-nao-bate' },
+    expect(resultado.breaks).toEqual([
+      { index: 1, reason: 'diverging-seq' },
+      { index: 1, reason: 'hash-mismatch' },
     ]);
-    expect(resultado.totalQuebras).toBe(2);
+    expect(resultado.totalBreaks).toBe(2);
   });
 
   test('(d) cauda parcial sem \\n no fim + novo elo legítimo → repara e continua a cadeia', () => {
@@ -175,24 +175,24 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
 
     const resultado = verifyChain(textoFinal, MANIFESTO);
     expect(resultado.ok).toBe(true);
-    expect(resultado.quebras).toEqual([]);
-    expect(resultado.linhasReparadas).toEqual([5]);
+    expect(resultado.breaks).toEqual([]);
+    expect(resultado.repairedLines).toEqual([5]);
     expect(novoElo.seq).toBe(6);
-    expect(resultado.cabeca).toBe(hashLine(novoElo));
+    expect(resultado.head).toBe(hashLine(novoElo));
   });
 
-  test('(e) (a) + prevHash alterado na linha 4 → {1,linha-invalida},{2,hash-nao-bate},{4,hash-nao-bate}', () => {
+  test('(e) (a) + prevHash alterado na linha 4 → {1,invalid-line},{2,hash-mismatch},{4,hash-mismatch}', () => {
     const log = construirLog(5);
     const alterado: Array<EventLine | string> = [...log];
     alterado[1] = '{ isso nao e json valido';
     alterado[4] = { ...log[4], prevHash: sha256hex('lixo-qualquer') };
     const resultado = verifyChain(paraTexto(alterado), MANIFESTO);
-    expect(resultado.quebras).toEqual([
-      { indice: 1, motivo: 'linha-invalida' },
-      { indice: 2, motivo: 'hash-nao-bate' },
-      { indice: 4, motivo: 'hash-nao-bate' },
+    expect(resultado.breaks).toEqual([
+      { index: 1, reason: 'invalid-line' },
+      { index: 2, reason: 'hash-mismatch' },
+      { index: 4, reason: 'hash-mismatch' },
     ]);
-    expect(resultado.totalQuebras).toBe(3);
+    expect(resultado.totalBreaks).toBe(3);
   });
 
   test('(f) limite conhecido: lixo terminado em \\n + registrar legítimo → ok, reparado (indistinguível)', () => {
@@ -206,7 +206,7 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
 
     const resultado = verifyChain(textoFinal, MANIFESTO);
     expect(resultado.ok).toBe(true);
-    expect(resultado.linhasReparadas).toEqual([5]);
+    expect(resultado.repairedLines).toEqual([5]);
   });
 
   test('(g) (c) + registrar legítimo → só as 2 quebras de (c), sem quebras novas', () => {
@@ -219,16 +219,16 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
     const textoFinal = paraTexto([...semLinha1, novoElo]);
 
     const resultado = verifyChain(textoFinal, MANIFESTO);
-    expect(resultado.quebras).toEqual([
-      { indice: 1, motivo: 'seq-divergente' },
-      { indice: 1, motivo: 'hash-nao-bate' },
+    expect(resultado.breaks).toEqual([
+      { index: 1, reason: 'diverging-seq' },
+      { index: 1, reason: 'hash-mismatch' },
     ]);
-    expect(resultado.totalQuebras).toBe(2);
+    expect(resultado.totalBreaks).toBe(2);
   });
 });
 
 describe('verificarCadeia: outros casos', () => {
-  test('dados-invalidos: validarDados reprovando um elo gera a quebra', () => {
+  test('invalid-data: validarDados reprovando um elo gera a quebra', () => {
     const e0 = construirLinha(0, null);
     const e1 = construirLinha(1, e0, 'ruim');
     const validarDados = (_tipo: string, data: Record<string, unknown>) =>
@@ -237,7 +237,7 @@ describe('verificarCadeia: outros casos', () => {
         : null;
 
     const resultado = verifyChain(paraTexto([e0, e1]), MANIFESTO, validarDados);
-    expect(resultado.quebras).toEqual([{ indice: 1, motivo: 'dados-invalidos' }]);
+    expect(resultado.breaks).toEqual([{ index: 1, reason: 'invalid-data' }]);
     expect(resultado.ok).toBe(false);
   });
 
@@ -247,16 +247,16 @@ describe('verificarCadeia: outros casos', () => {
     [transposto[1], transposto[2]] = [transposto[2], transposto[1]];
 
     const resultado = verifyChain(paraTexto(transposto), MANIFESTO);
-    expect(resultado.quebras).toEqual([
-      { indice: 1, motivo: 'seq-divergente' },
-      { indice: 1, motivo: 'hash-nao-bate' },
-      { indice: 2, motivo: 'seq-divergente' },
-      { indice: 2, motivo: 'hash-nao-bate' },
-      { indice: 3, motivo: 'seq-divergente' },
-      { indice: 3, motivo: 'hash-nao-bate' },
+    expect(resultado.breaks).toEqual([
+      { index: 1, reason: 'diverging-seq' },
+      { index: 1, reason: 'hash-mismatch' },
+      { index: 2, reason: 'diverging-seq' },
+      { index: 2, reason: 'hash-mismatch' },
+      { index: 3, reason: 'diverging-seq' },
+      { index: 3, reason: 'hash-mismatch' },
     ]);
     // o elo original (não tocado) volta a verificar: a quebra não cascateia até o fim.
-    expect(resultado.quebras.some((quebra) => quebra.indice === 4)).toBe(false);
+    expect(resultado.breaks.some((quebra) => quebra.index === 4)).toBe(false);
   });
 
   test('duplicata de elo: só a cópia anexada quebra, localizada no seu próprio índice', () => {
@@ -264,28 +264,28 @@ describe('verificarCadeia: outros casos', () => {
     const comDuplicata = [...log, log[2]];
 
     const resultado = verifyChain(paraTexto(comDuplicata), MANIFESTO);
-    expect(resultado.quebras).toEqual([
-      { indice: 5, motivo: 'seq-divergente' },
-      { indice: 5, motivo: 'hash-nao-bate' },
+    expect(resultado.breaks).toEqual([
+      { index: 5, reason: 'diverging-seq' },
+      { index: 5, reason: 'hash-mismatch' },
     ]);
   });
 
-  test('cauda sem \\n é ignorada: nem conta em totalLinhas nem quebra a cadeia', () => {
+  test('cauda sem \\n é ignorada: nem conta em totalLines nem quebra a cadeia', () => {
     const log = construirLog(2);
     const texto = `${paraTexto(log)}{"seq":2,"cauda":"sem newline no fim"`;
 
     const resultado = verifyChain(texto, MANIFESTO);
-    expect(resultado.totalLinhas).toBe(2);
+    expect(resultado.totalLines).toBe(2);
     expect(resultado.ok).toBe(true);
-    expect(resultado.cabeca).toBe(hashLine(log[1]));
+    expect(resultado.head).toBe(hashLine(log[1]));
   });
 
-  test('cabeca é "" quando não há nenhum elo válido', () => {
+  test('head é "" quando não há nenhum elo válido', () => {
     const resultado = verifyChain('lixo sem json\nmais lixo\n', MANIFESTO);
-    expect(resultado.cabeca).toBe('');
-    expect(resultado.quebras).toEqual([
-      { indice: 0, motivo: 'linha-invalida' },
-      { indice: 1, motivo: 'linha-invalida' },
+    expect(resultado.head).toBe('');
+    expect(resultado.breaks).toEqual([
+      { index: 0, reason: 'invalid-line' },
+      { index: 1, reason: 'invalid-line' },
     ]);
   });
 });

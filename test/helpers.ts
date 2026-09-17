@@ -8,7 +8,7 @@ import { parse as parseJsonBruto } from 'jsonc-parser';
 import { z } from 'zod';
 import type { ErrorCode, Detail } from '../src/errors.ts';
 import type { Logger, LogRecord } from '../src/log.ts';
-import { criarServidor } from '../src/mcp.ts';
+import { createServer } from '../src/mcp.ts';
 
 /** Ambiente de teste: servidor `hexlog` real ligado a um `Client` MCP via transporte em memória. */
 export type Ambiente = {
@@ -52,7 +52,7 @@ export async function criarAmbiente(): Promise<Ambiente> {
   let agora = new Date('2026-01-01T00:00:00.000Z');
 
   const [transporteServidor, transporteCliente] = InMemoryTransport.createLinkedPair();
-  const servidor = criarServidor({ dirDados: dir, relogio: () => agora, log });
+  const servidor = createServer({ dataDir: dir, clock: () => agora, log });
   const cliente = new Client({ name: 'hexlog-teste', version: '0.0.0' });
   await Promise.all([servidor.connect(transporteServidor), cliente.connect(transporteCliente)]);
 
@@ -88,7 +88,7 @@ export async function criarAmbiente(): Promise<Ambiente> {
 
 /** Vocabulário núcleo mínimo (`aprovado`/`ok`/`seguir`), base de quase todo processo de teste. */
 export async function registrarNucleo(ambiente: Ambiente, projeto: string): Promise<void> {
-  await ambiente.chamar('registrar_vocabulario', {
+  await ambiente.chamar('register_vocabulary', {
     project: projeto,
     owner: 'core',
     milestoneType: ['aprovado'],
@@ -108,17 +108,17 @@ export function parseJson<T extends z.ZodType>(schema: T, texto: string): z.infe
   return resultado.data;
 }
 
-/** Afirma que `resultado` é um erro de domínio (§4.13) com o `codigo` esperado, e devolve o corpo estruturado. */
+/** Afirma que `resultado` é um erro de domínio (§4.13) com o `code` esperado, e devolve o corpo estruturado. */
 export function esperarErro(
   resultado: ResultadoChamada,
   codigo: ErrorCode,
-): { codigo: ErrorCode; mensagem: string; detalhes: Detail[] } {
+): { code: ErrorCode; message: string; details: Detail[] } {
   expect(resultado.isError).toBe(true);
   const corpo = resultado.structuredContent as {
-    codigo: ErrorCode;
-    mensagem: string;
-    detalhes: Detail[];
+    code: ErrorCode;
+    message: string;
+    details: Detail[];
   };
-  expect(corpo.codigo).toBe(codigo);
+  expect(corpo.code).toBe(codigo);
   return corpo;
 }

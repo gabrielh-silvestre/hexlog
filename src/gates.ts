@@ -39,7 +39,7 @@ export const BUILTIN_GATES: Record<BuiltinGateName, BuiltinGateDefinition> = {
   },
   'chain-intact': {
     criteria: 'chain.ok = true',
-    items: (state) => state.chain.quebras,
+    items: (state) => state.chain.breaks,
   },
   'no-invalid-references': {
     criteria: 'state.invalidReferences empty: every supersedes points to an existing Verdict',

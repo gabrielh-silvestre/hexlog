@@ -13,7 +13,7 @@ const TAMANHO = 10_000;
 /** Fixa vocabulário núcleo + um tipo custom e cria o processo; devolve o manifesto real gravado. */
 async function prepararProcesso(ambiente: Ambiente): Promise<ProcessManifest> {
   await registrarNucleo(ambiente, PROJ);
-  await ambiente.chamar('registrar_tipo', {
+  await ambiente.chamar('register_type', {
     project: PROJ,
     name: 'nota',
     schema: {
@@ -23,7 +23,7 @@ async function prepararProcesso(ambiente: Ambiente): Promise<ProcessManifest> {
       additionalProperties: false,
     },
   });
-  await ambiente.chamar('criar_processo', { project: PROJ, process: PROC });
+  await ambiente.chamar('create_process', { project: PROJ, process: PROC });
   const conteudo = fs.readFileSync(path.join(ambiente.dir, PROJ, PROC, 'process.json'), 'utf8');
   return JSON.parse(conteudo) as ProcessManifest;
 }
@@ -56,7 +56,7 @@ describe('M13', () => {
       const temposChamada: number[] = [];
       for (let i = 0; i < 5; i++) {
         const inicio = performance.now();
-        const resultado = await ambiente.chamar('eventos', {
+        const resultado = await ambiente.chamar('events', {
           project: PROJ,
           process: PROC,
           search: 'webhook',

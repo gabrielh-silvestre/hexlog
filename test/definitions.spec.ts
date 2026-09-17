@@ -155,7 +155,7 @@ describe('criarProcesso / carregarProcesso — hashes por parte (S4)', () => {
     const manifesto = lerManifesto('p1');
 
     expect(manifesto.hashes.schemas).toBe(sha256hex(canonicalize(manifesto.fixed.types) ?? ''));
-    expect(manifesto.hashes.vocabulario).toBe(
+    expect(manifesto.hashes.vocabulary).toBe(
       sha256hex(canonicalize(manifesto.fixed.vocabulary) ?? ''),
     );
     expect(manifesto.hashes.gates).toBe(sha256hex(canonicalize(manifesto.fixed.gates) ?? ''));
@@ -217,7 +217,7 @@ describe('criarProcesso / carregarProcesso (N14)', () => {
 });
 
 describe('vocabulário', () => {
-  test('hash de fixado.vocabulario independe da ordem em que os donos foram registrados', () => {
+  test('hash de fixado.vocabulary independe da ordem em que os donos foram registrados', () => {
     registerVocabulary(dir, PROJETO, 'core', { milestoneType: [], result: [], action: [] });
     registerVocabulary(dir, PROJETO, 'dono-a', { milestoneType: ['a'], result: [], action: [] });
     registerVocabulary(dir, PROJETO, 'dono-b', { milestoneType: ['b'], result: [], action: [] });
@@ -230,7 +230,7 @@ describe('vocabulário', () => {
       registerVocabulary(dir2, PROJETO, 'dono-a', { milestoneType: ['a'], result: [], action: [] });
       const p2 = createProcess(dir2, PROJETO, 'p1', () => new Date());
 
-      expect(p2.hashes.vocabulario).toBe(p1.hashes.vocabulario);
+      expect(p2.hashes.vocabulary).toBe(p1.hashes.vocabulary);
     } finally {
       fs.rmSync(dir2, { recursive: true, force: true });
     }
@@ -242,7 +242,7 @@ describe('vocabulário', () => {
     expect(erro.code).toBe('VOCABULARY_MISSING');
   });
 
-  test('dono "nucleo" vira fixado.vocabulario.nucleo; demais donos viram porDono', () => {
+  test('dono "nucleo" vira fixado.vocabulary.nucleo; demais donos viram porDono', () => {
     registerVocabulary(dir, PROJETO, 'core', {
       milestoneType: ['revisao'],
       result: [],

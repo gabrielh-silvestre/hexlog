@@ -52,13 +52,13 @@ function dadosVeredito(overrides: Record<string, unknown> = {}): Record<string, 
 /** Vocabulário núcleo + tipo custom com `default`/`format: date-time`/`enum` + gate custom, e fixa o process. */
 async function preparar(ambiente: Ambiente, project: string, process: string): Promise<void> {
   await registrarNucleo(ambiente, project);
-  await ambiente.chamar('registrar_tipo', { project, name: 'nota', schema: SCHEMA_CUSTOM });
-  await ambiente.chamar('registrar_gate', {
+  await ambiente.chamar('register_type', { project, name: 'nota', schema: SCHEMA_CUSTOM });
+  await ambiente.chamar('register_gate', {
     project,
     name: 'gate-custom',
     criteria: 'critério custom qualquer',
   });
-  await ambiente.chamar('criar_processo', { project, process });
+  await ambiente.chamar('create_process', { project, process });
 }
 
 function lerManifesto(ambiente: Ambiente, project: string, process: string): unknown {
@@ -123,16 +123,16 @@ describe('M1', () => {
     const { tools } = await ambiente.cliente.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual(
       [
-        'avaliar_gate',
-        'cadeia',
-        'criar_processo',
-        'estado',
-        'eventos',
-        'listar',
-        'registrar',
-        'registrar_gate',
-        'registrar_tipo',
-        'registrar_vocabulario',
+        'evaluate_gate',
+        'chain',
+        'create_process',
+        'state',
+        'events',
+        'list',
+        'register',
+        'register_gate',
+        'register_type',
+        'register_vocabulary',
       ].sort(),
     );
     for (const tool of tools) {
@@ -147,7 +147,7 @@ describe('M2', () => {
 
   const CASOS: { tool: string; field: string; base: Record<string, unknown> }[] = [
     {
-      tool: 'registrar',
+      tool: 'register',
       field: 'project',
       base: {
         project: PROJ,
@@ -158,7 +158,7 @@ describe('M2', () => {
       },
     },
     {
-      tool: 'registrar',
+      tool: 'register',
       field: 'process',
       base: {
         project: PROJ,
@@ -169,7 +169,7 @@ describe('M2', () => {
       },
     },
     {
-      tool: 'avaliar_gate',
+      tool: 'evaluate_gate',
       field: 'project',
       base: {
         project: PROJ,
@@ -180,7 +180,7 @@ describe('M2', () => {
       },
     },
     {
-      tool: 'avaliar_gate',
+      tool: 'evaluate_gate',
       field: 'process',
       base: {
         project: PROJ,
@@ -190,12 +190,12 @@ describe('M2', () => {
         target: 'hex:target:u1',
       },
     },
-    { tool: 'estado', field: 'project', base: { project: PROJ, process: PROC } },
-    { tool: 'estado', field: 'process', base: { project: PROJ, process: PROC } },
-    { tool: 'eventos', field: 'project', base: { project: PROJ, process: PROC } },
-    { tool: 'eventos', field: 'process', base: { project: PROJ, process: PROC } },
-    { tool: 'cadeia', field: 'project', base: { project: PROJ, process: PROC } },
-    { tool: 'cadeia', field: 'process', base: { project: PROJ, process: PROC } },
+    { tool: 'state', field: 'project', base: { project: PROJ, process: PROC } },
+    { tool: 'state', field: 'process', base: { project: PROJ, process: PROC } },
+    { tool: 'events', field: 'project', base: { project: PROJ, process: PROC } },
+    { tool: 'events', field: 'process', base: { project: PROJ, process: PROC } },
+    { tool: 'chain', field: 'project', base: { project: PROJ, process: PROC } },
+    { tool: 'chain', field: 'process', base: { project: PROJ, process: PROC } },
   ];
 
   for (const { tool, field, base } of CASOS) {
@@ -214,7 +214,7 @@ describe('M2', () => {
 describe('M3', () => {
   const CASOS: { tool: string; args: Record<string, unknown> }[] = [
     {
-      tool: 'registrar',
+      tool: 'register',
       args: {
         project: PROJ,
         process: 'fantasma',
@@ -224,7 +224,7 @@ describe('M3', () => {
       },
     },
     {
-      tool: 'avaliar_gate',
+      tool: 'evaluate_gate',
       args: {
         project: PROJ,
         process: 'fantasma',
@@ -233,9 +233,9 @@ describe('M3', () => {
         target: 'hex:target:u1',
       },
     },
-    { tool: 'estado', args: { project: PROJ, process: 'fantasma' } },
-    { tool: 'eventos', args: { project: PROJ, process: 'fantasma' } },
-    { tool: 'cadeia', args: { project: PROJ, process: 'fantasma' } },
+    { tool: 'state', args: { project: PROJ, process: 'fantasma' } },
+    { tool: 'events', args: { project: PROJ, process: 'fantasma' } },
+    { tool: 'chain', args: { project: PROJ, process: 'fantasma' } },
   ];
 
   for (const { tool, args } of CASOS) {
@@ -250,7 +250,7 @@ describe('M3', () => {
 describe('M7', () => {
   test('avaliar_gate com alvo fora do formato hex:target: → Input validation error', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('avaliar_gate', {
+    const result = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'no-orphans',
@@ -263,7 +263,7 @@ describe('M7', () => {
 
   test('registrar com id fora da gramática → ID_INVALIDO estruturado', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: 'lixo',
@@ -271,7 +271,7 @@ describe('M7', () => {
       data: dadosMarco(),
     });
     const corpo = esperarErro(result, 'INVALID_ID');
-    expect(corpo.detalhes[0]?.path).toBe('/id');
+    expect(corpo.details[0]?.path).toBe('/id');
   });
 });
 
@@ -279,7 +279,7 @@ describe('M8', () => {
   test('eventos pagina 250 linhas em 4 páginas (teto de caracteres), em ordem, sem exceder o teto', async () => {
     await preparar(ambiente, PROJ, PROC);
     for (let i = 0; i < 250; i++) {
-      const result = await ambiente.chamar('registrar', {
+      const result = await ambiente.chamar('register', {
         project: PROJ,
         process: PROC,
         id: PREFIXO_MILESTONE,
@@ -292,7 +292,7 @@ describe('M8', () => {
     const paginas: { events: EventLine[]; nextCursor: number | null }[] = [];
     let cursor = 0;
     for (;;) {
-      const result = await ambiente.chamar('eventos', {
+      const result = await ambiente.chamar('events', {
         project: PROJ,
         process: PROC,
         since: cursor,
@@ -321,7 +321,7 @@ describe('M8', () => {
 
   test('data acima de 16 000 caracteres canônicos → EVENTO_INVALIDO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_NOTA,
@@ -329,13 +329,13 @@ describe('M8', () => {
       data: { nota: 'x'.repeat(17_000) },
     });
     const corpo = esperarErro(result, 'INVALID_EVENT');
-    expect(corpo.detalhes.some((detalhe) => detalhe.code === 'too_big')).toBe(true);
+    expect(corpo.details.some((detalhe) => detalhe.code === 'too_big')).toBe(true);
   });
 
-  test('estado com 150 vigentes → 100 itens na lista e totais.vigentes = 150', async () => {
+  test('estado com 150 active → 100 itens na lista e totals.active = 150', async () => {
     await preparar(ambiente, PROJ, PROC);
     for (let i = 0; i < 150; i++) {
-      const result = await ambiente.chamar('registrar', {
+      const result = await ambiente.chamar('register', {
         project: PROJ,
         process: PROC,
         id: PREFIXO_VERDICT,
@@ -344,13 +344,13 @@ describe('M8', () => {
       });
       expect(result.isError).not.toBe(true);
     }
-    const result = await ambiente.chamar('estado', { project: PROJ, process: PROC });
+    const result = await ambiente.chamar('state', { project: PROJ, process: PROC });
     const corpo = result.structuredContent as {
-      vigentes: unknown[];
-      totais: Record<string, number>;
+      active: unknown[];
+      totals: Record<string, number>;
     };
-    expect(corpo.vigentes).toHaveLength(100);
-    expect(corpo.totais.vigentes).toBe(150);
+    expect(corpo.active).toHaveLength(100);
+    expect(corpo.totals.active).toBe(150);
   });
 });
 
@@ -359,7 +359,7 @@ describe('M9', () => {
     const { tools } = await ambiente.cliente.listTools();
     const porNome = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
 
-    for (const nome of ['registrar', 'avaliar_gate']) {
+    for (const nome of ['register', 'evaluate_gate']) {
       expect(porNome[nome]).toMatchObject({
         readOnlyHint: false,
         destructiveHint: false,
@@ -367,7 +367,7 @@ describe('M9', () => {
         openWorldHint: false,
       });
     }
-    for (const nome of ['estado', 'eventos', 'cadeia']) {
+    for (const nome of ['state', 'events', 'chain']) {
       expect(porNome[nome]).toMatchObject({
         readOnlyHint: true,
         destructiveHint: false,
@@ -389,7 +389,7 @@ describe('M11', () => {
     });
     escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), corpus.texto);
 
-    const primeira = await ambiente.chamar('eventos', {
+    const primeira = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       search: 'webhook',
@@ -403,7 +403,7 @@ describe('M11', () => {
     expect(corpoPrimeira.until).toBe(corpus.linhas.length);
 
     // registrado entre páginas: com `until` congelado, não deve aparecer nas páginas seguintes.
-    const novo = await ambiente.chamar('registrar', {
+    const novo = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_VERDICT,
@@ -418,7 +418,7 @@ describe('M11', () => {
     const paginas: EventLine[] = [...corpoPrimeira.events];
     let cursor = corpoPrimeira.nextCursor;
     while (!isNil(cursor)) {
-      const pagina = await ambiente.chamar('eventos', {
+      const pagina = await ambiente.chamar('events', {
         project: PROJ,
         process: PROC,
         search: 'webhook',
@@ -438,19 +438,19 @@ describe('M11', () => {
     );
     expect(paginas.map((event) => event.id)).not.toContain(idNovo);
 
-    const alem = await ambiente.chamar('eventos', {
+    const alem = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       until: corpus.linhas.length + 1000,
     });
     const corpoAlem = esperarErro(alem, 'INVALID_FILTER');
-    expect(corpoAlem.detalhes.some((detalhe) => detalhe.path === '/until')).toBe(true);
+    expect(corpoAlem.details.some((detalhe) => detalhe.path === '/until')).toBe(true);
   });
 
   test('h) regressão do modo cru: sem busca e sem filtros novos, a resposta é igual ao contrato anterior (M8) mais modo e ate', async () => {
     await preparar(ambiente, PROJ, PROC);
     for (let i = 0; i < 250; i++) {
-      const result = await ambiente.chamar('registrar', {
+      const result = await ambiente.chamar('register', {
         project: PROJ,
         process: PROC,
         id: PREFIXO_MILESTONE,
@@ -468,7 +468,7 @@ describe('M11', () => {
     }[] = [];
     let cursor = 0;
     for (;;) {
-      const result = await ambiente.chamar('eventos', {
+      const result = await ambiente.chamar('events', {
         project: PROJ,
         process: PROC,
         since: cursor,
@@ -509,7 +509,7 @@ describe('M11', () => {
     });
     escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), corpus.texto);
 
-    const result = await ambiente.chamar('eventos', {
+    const result = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       search: 'problema com o webhook',
@@ -537,26 +537,26 @@ describe('M12', () => {
     });
     escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), corpus.texto);
 
-    const invalido = await ambiente.chamar('eventos', {
+    const invalido = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       milestoneType: 'nao-existe',
     });
     const corpoErro = esperarErro(invalido, 'INVALID_FILTER');
-    expect(corpoErro.detalhes.some((detalhe) => detalhe.path === '/milestoneType')).toBe(true);
+    expect(corpoErro.details.some((detalhe) => detalhe.path === '/milestoneType')).toBe(true);
     const ultimoLogDeEventos = ambiente.registros
-      .filter((registro) => registro.event === 'tool' && registro.nome === 'eventos')
+      .filter((registro) => registro.event === 'tool' && registro.name === 'events')
       .at(-1);
     expect(ultimoLogDeEventos?.candidatos).toBeUndefined();
 
-    const comGate = await ambiente.chamar('eventos', {
+    const comGate = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       milestoneType: 'gate',
     });
     expect(comGate.isError).not.toBe(true);
 
-    const foraDoVocab = await ambiente.chamar('eventos', {
+    const foraDoVocab = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       result: 'resultado-fora-do-vocabulario',
@@ -564,7 +564,7 @@ describe('M12', () => {
     const corpoFora = foraDoVocab.structuredContent as { events: EventLine[] };
     expect(corpoFora.events.length).toBeGreaterThan(0);
 
-    const semCasamento = await ambiente.chamar('eventos', {
+    const semCasamento = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       result: 'nunca-usado-em-lugar-nenhum',
@@ -572,19 +572,19 @@ describe('M12', () => {
     const corpoSemCasamento = semCasamento.structuredContent as { events: EventLine[] };
     expect(corpoSemCasamento.events).toEqual([]);
 
-    const intervaloInvalido = await ambiente.chamar('eventos', {
+    const intervaloInvalido = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       after: '2026-06-01T00:00:00.000Z',
       before: '2026-01-01T00:00:00.000Z',
     });
     const corpoIntervalo = esperarErro(intervaloInvalido, 'INVALID_FILTER');
-    expect(corpoIntervalo.detalhes.some((detalhe) => detalhe.path === '/after')).toBe(true);
+    expect(corpoIntervalo.details.some((detalhe) => detalhe.path === '/after')).toBe(true);
   });
 
   test('e) alvo sem "hex:target:" → Input validation error', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('eventos', {
+    const result = await ambiente.chamar('events', {
       project: PROJ,
       process: PROC,
       target: 'login',
@@ -604,7 +604,7 @@ describe('N1', () => {
   }
 
   async function chamarCadeia(): Promise<Chain> {
-    const result = await ambiente.chamar('cadeia', { project: PROJ, process: PROC });
+    const result = await ambiente.chamar('chain', { project: PROJ, process: PROC });
     return result.structuredContent as Chain;
   }
 
@@ -618,11 +618,11 @@ describe('N1', () => {
       linhas[4],
     ]);
     const cadeia = await chamarCadeia();
-    expect(cadeia.totalQuebras).toBe(2);
-    expect(cadeia.quebras).toEqual(
+    expect(cadeia.totalBreaks).toBe(2);
+    expect(cadeia.breaks).toEqual(
       expect.arrayContaining([
-        { indice: 1, motivo: 'linha-invalida' },
-        { indice: 2, motivo: 'hash-nao-bate' },
+        { index: 1, reason: 'invalid-line' },
+        { index: 2, reason: 'hash-mismatch' },
       ]),
     );
   });
@@ -635,19 +635,19 @@ describe('N1', () => {
     };
     escreverLog(ambiente, PROJ, PROC, [linhas[0], alterada, linhas[2], linhas[3], linhas[4]]);
     const cadeia = await chamarCadeia();
-    expect(cadeia.quebras).toEqual([{ indice: 2, motivo: 'hash-nao-bate' }]);
-    expect(cadeia.totalQuebras).toBe(1);
+    expect(cadeia.breaks).toEqual([{ index: 2, reason: 'hash-mismatch' }]);
+    expect(cadeia.totalBreaks).toBe(1);
   });
 
   test('(c) linha 1 removida, sem cascata nos elos seguintes', async () => {
     const linhas = await logDe5();
     escreverLog(ambiente, PROJ, PROC, [linhas[0], linhas[2], linhas[3], linhas[4]]);
     const cadeia = await chamarCadeia();
-    expect(cadeia.totalQuebras).toBe(2);
-    expect(cadeia.quebras).toEqual(
+    expect(cadeia.totalBreaks).toBe(2);
+    expect(cadeia.breaks).toEqual(
       expect.arrayContaining([
-        { indice: 1, motivo: 'seq-divergente' },
-        { indice: 1, motivo: 'hash-nao-bate' },
+        { index: 1, reason: 'diverging-seq' },
+        { index: 1, reason: 'hash-mismatch' },
       ]),
     );
   });
@@ -660,7 +660,7 @@ describe('N1', () => {
       JSON.stringify(linhas[0]).slice(0, 10);
     fs.writeFileSync(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), texto);
 
-    const registrado = await ambiente.chamar('registrar', {
+    const registrado = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -671,8 +671,8 @@ describe('N1', () => {
 
     const cadeia = await chamarCadeia();
     expect(cadeia.ok).toBe(true);
-    expect(cadeia.quebras).toEqual([]);
-    expect(cadeia.linhasReparadas).toEqual([5]);
+    expect(cadeia.breaks).toEqual([]);
+    expect(cadeia.repairedLines).toEqual([5]);
   });
 
   test('(e) (a) + prevHash alterado na linha 4', async () => {
@@ -686,12 +686,12 @@ describe('N1', () => {
       linha4Alterada,
     ]);
     const cadeia = await chamarCadeia();
-    expect(cadeia.totalQuebras).toBe(3);
-    expect(cadeia.quebras).toEqual(
+    expect(cadeia.totalBreaks).toBe(3);
+    expect(cadeia.breaks).toEqual(
       expect.arrayContaining([
-        { indice: 1, motivo: 'linha-invalida' },
-        { indice: 2, motivo: 'hash-nao-bate' },
-        { indice: 4, motivo: 'hash-nao-bate' },
+        { index: 1, reason: 'invalid-line' },
+        { index: 2, reason: 'hash-mismatch' },
+        { index: 4, reason: 'hash-mismatch' },
       ]),
     );
   });
@@ -702,7 +702,7 @@ describe('N1', () => {
       linhas.map((linha) => JSON.stringify(linha)).join('\n') + '\n' + 'lixo qualquer\n';
     fs.writeFileSync(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), texto);
 
-    await ambiente.chamar('registrar', {
+    await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -712,14 +712,14 @@ describe('N1', () => {
 
     const cadeia = await chamarCadeia();
     expect(cadeia.ok).toBe(true);
-    expect(cadeia.linhasReparadas).toEqual([5]);
+    expect(cadeia.repairedLines).toEqual([5]);
   });
 
   test('(g) (c) seguido de registrar legítimo → nenhuma quebra além das 2 de (c)', async () => {
     const linhas = await logDe5();
     escreverLog(ambiente, PROJ, PROC, [linhas[0], linhas[2], linhas[3], linhas[4]]);
 
-    await ambiente.chamar('registrar', {
+    await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -728,11 +728,11 @@ describe('N1', () => {
     });
 
     const cadeia = await chamarCadeia();
-    expect(cadeia.totalQuebras).toBe(2);
-    expect(cadeia.quebras).toEqual(
+    expect(cadeia.totalBreaks).toBe(2);
+    expect(cadeia.breaks).toEqual(
       expect.arrayContaining([
-        { indice: 1, motivo: 'seq-divergente' },
-        { indice: 1, motivo: 'hash-nao-bate' },
+        { index: 1, reason: 'diverging-seq' },
+        { index: 1, reason: 'hash-mismatch' },
       ]),
     );
   });
@@ -742,7 +742,7 @@ describe('N2', () => {
   test('(i) Marco com prazoExecucao em offset reenviado igual → deduplicado, mesmo seq, sem nova linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const data = dadosMarco({ dueAt: '2026-09-16T18:00:00-03:00' });
-    const primeiro = await ambiente.chamar('registrar', {
+    const primeiro = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -752,7 +752,7 @@ describe('N2', () => {
     const corpo1 = primeiro.structuredContent as { event: EventLine };
     const antes = ambiente.arvore();
 
-    const segundo = await ambiente.chamar('registrar', {
+    const segundo = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: corpo1.event.id,
@@ -765,7 +765,7 @@ describe('N2', () => {
 
   test('(ii) tipo custom com default omitido, reenviado omitido ou explícito → deduplicado', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const primeiro = await ambiente.chamar('registrar', {
+    const primeiro = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_NOTA,
@@ -774,7 +774,7 @@ describe('N2', () => {
     });
     const corpo1 = primeiro.structuredContent as { event: EventLine };
 
-    const reenviadoOmitido = await ambiente.chamar('registrar', {
+    const reenviadoOmitido = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: corpo1.event.id,
@@ -783,7 +783,7 @@ describe('N2', () => {
     });
     esperarDeduplicado(reenviadoOmitido, corpo1.event.seq);
 
-    const reenviadoExplicito = await ambiente.chamar('registrar', {
+    const reenviadoExplicito = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: corpo1.event.id,
@@ -795,7 +795,7 @@ describe('N2', () => {
 
   test('conteúdo diferente com o mesmo id completo → ID_CONFLITANTE', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const primeiro = await ambiente.chamar('registrar', {
+    const primeiro = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -804,7 +804,7 @@ describe('N2', () => {
     });
     const corpo1 = primeiro.structuredContent as { event: EventLine };
 
-    const conflitante = await ambiente.chamar('registrar', {
+    const conflitante = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: corpo1.event.id,
@@ -819,7 +819,7 @@ describe('N4', () => {
   test('marcoTipo fora do vocabulário fixado → VOCABULARIO_VIOLADO, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -833,7 +833,7 @@ describe('N4', () => {
   test('decisoes[].acao fora do vocabulário fixado → VOCABULARIO_VIOLADO, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -846,7 +846,7 @@ describe('N4', () => {
 
   test('resultado fora do vocabulário → grava e devolve aviso VOCABULARIO_DESCONHECIDO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_VERDICT,
@@ -854,17 +854,17 @@ describe('N4', () => {
       data: dadosVeredito({ result: 'desconhecido' }),
     });
     expect(result.isError).not.toBe(true);
-    const corpo = result.structuredContent as { warnings: { codigo: string }[] };
+    const corpo = result.structuredContent as { warnings: { code: string }[] };
     expect(corpo.warnings).toEqual(
-      expect.arrayContaining([expect.objectContaining({ codigo: 'UNKNOWN_VOCABULARY' })]),
+      expect.arrayContaining([expect.objectContaining({ code: 'UNKNOWN_VOCABULARY' })]),
     );
   });
 });
 
 describe('N5', () => {
-  test('sem-orfaos: estado limpo passa, Marco vencido reprova com prova', async () => {
+  test('sem-orphans: estado limpo passa, Marco vencido reprova com prova', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const limpo = await ambiente.chamar('avaliar_gate', {
+    const limpo = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'no-orphans',
@@ -876,7 +876,7 @@ describe('N5', () => {
     expect(corpoLimpo.evidence).toEqual([]);
 
     ambiente.definirRelogio(new Date('2026-06-01T00:00:00.000Z'));
-    await ambiente.chamar('registrar', {
+    await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -884,7 +884,7 @@ describe('N5', () => {
       data: dadosMarco({ target: 'hex:target:u2', dueAt: '2026-01-01T00:00:00.000Z' }),
     });
 
-    const violado = await ambiente.chamar('avaliar_gate', {
+    const violado = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'no-orphans',
@@ -898,7 +898,7 @@ describe('N5', () => {
 
   test('cadeia-integra passa num log íntegro', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('avaliar_gate', {
+    const result = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'chain-intact',
@@ -912,7 +912,7 @@ describe('N5', () => {
 describe('N6', () => {
   test('gate custom sem resultado → AVALIACAO_INVALIDA', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('avaliar_gate', {
+    const result = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'gate-custom',
@@ -924,7 +924,7 @@ describe('N6', () => {
 
   test('gate embutido com resultado informado → AVALIACAO_INVALIDA', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('avaliar_gate', {
+    const result = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'no-orphans',
@@ -937,7 +937,7 @@ describe('N6', () => {
 
   test('gate não fixado, nem embutido nem no snapshot → GATE_NAO_REGISTRADO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('avaliar_gate', {
+    const result = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'fantasma',
@@ -950,12 +950,12 @@ describe('N6', () => {
 
   test('gate registrado depois de criar_processo → GATE_NAO_REGISTRADO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    await ambiente.chamar('registrar_gate', {
+    await ambiente.chamar('register_gate', {
       project: PROJ,
       name: 'gate-tardio',
       criteria: 'critério tardio',
     });
-    const result = await ambiente.chamar('avaliar_gate', {
+    const result = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'gate-tardio',
@@ -968,7 +968,7 @@ describe('N6', () => {
 
   test('gate custom aceito → Marco de gate com criterio do snapshot e origem custom', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('avaliar_gate', {
+    const result = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'gate-custom',
@@ -992,7 +992,7 @@ describe('N6', () => {
 describe('N8', () => {
   test('timestamp termina em Z; prazoExecucao com offset é normalizado para UTC', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -1008,7 +1008,7 @@ describe('N8', () => {
 describe('N9', () => {
   test('prefixo gera id no formato projeto:processo:tipo:uuidv7', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -1021,7 +1021,7 @@ describe('N9', () => {
 
   test('projeto/processo do id divergente dos parâmetros → ID_INVALIDO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: `outro-project:${PROC}:milestone`,
@@ -1033,7 +1033,7 @@ describe('N9', () => {
 
   test('tipo não fixado no processo → TIPO_NAO_FIXADO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: `${PROJ}:${PROC}:fantasma`,
@@ -1045,7 +1045,7 @@ describe('N9', () => {
 
   test('id completo inexistente → ID_DESCONHECIDO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: `${PREFIXO_MILESTONE}:${randomUUIDv7()}`,
@@ -1062,7 +1062,7 @@ describe('N12', () => {
     async (alvoInvalido) => {
       await preparar(ambiente, PROJ, PROC);
       const antes = ambiente.arvore();
-      const result = await ambiente.chamar('registrar', {
+      const result = await ambiente.chamar('register', {
         project: PROJ,
         process: PROC,
         id: PREFIXO_MILESTONE,
@@ -1070,14 +1070,14 @@ describe('N12', () => {
         data: dadosMarco({ target: alvoInvalido }),
       });
       const corpo = esperarErro(result, 'INVALID_EVENT');
-      expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/data/target' }));
+      expect(corpo.details).toContainEqual(expect.objectContaining({ path: '/data/target' }));
       expect(ambiente.arvore()).toEqual(antes);
     },
   );
 
   test('destino inválido em Veredito → EVENTO_INVALIDO em /data/destino', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_VERDICT,
@@ -1085,12 +1085,12 @@ describe('N12', () => {
       data: dadosVeredito({ target: 'hex:outro:x' }),
     });
     const corpo = esperarErro(result, 'INVALID_EVENT');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/data/target' }));
+    expect(corpo.details).toContainEqual(expect.objectContaining({ path: '/data/target' }));
   });
 
   test('hex:target:u1 é aceito', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -1103,7 +1103,7 @@ describe('N12', () => {
   test('avaliar_gate com alvo: "u1" → Input validation error, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const result = await ambiente.chamar('avaliar_gate', {
+    const result = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'no-orphans',
@@ -1117,10 +1117,10 @@ describe('N12', () => {
 });
 
 describe('N13', () => {
-  test('Marco vencido gera órfão; avaliar_gate não o remove de estado.orfaos', async () => {
+  test('Marco vencido gera órfão; avaliar_gate não o remove de estado.orphans', async () => {
     await preparar(ambiente, PROJ, PROC);
     ambiente.definirRelogio(new Date('2026-06-01T00:00:00.000Z'));
-    await ambiente.chamar('registrar', {
+    await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -1128,14 +1128,14 @@ describe('N13', () => {
       data: dadosMarco({ target: 'hex:target:x', dueAt: '2026-01-01T00:00:00.000Z' }),
     });
 
-    const antes = await ambiente.chamar('estado', {
+    const antes = await ambiente.chamar('state', {
       project: PROJ,
       process: PROC,
-      sections: ['orfaos'],
+      sections: ['orphans'],
     });
-    expect((antes.structuredContent as { orfaos: unknown[] }).orfaos).toHaveLength(1);
+    expect((antes.structuredContent as { orphans: unknown[] }).orphans).toHaveLength(1);
 
-    const avaliado = await ambiente.chamar('avaliar_gate', {
+    const avaliado = await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'no-orphans',
@@ -1144,17 +1144,17 @@ describe('N13', () => {
     });
     expect((avaliado.structuredContent as { passed: boolean }).passed).toBe(false);
 
-    const depois = await ambiente.chamar('estado', {
+    const depois = await ambiente.chamar('state', {
       project: PROJ,
       process: PROC,
-      sections: ['orfaos'],
+      sections: ['orphans'],
     });
-    expect((depois.structuredContent as { orfaos: unknown[] }).orfaos).toHaveLength(1);
+    expect((depois.structuredContent as { orphans: unknown[] }).orphans).toHaveLength(1);
   });
 
   test('Marco de gate sozinho num alvo não cria abertura', async () => {
     await preparar(ambiente, PROJ, PROC);
-    await ambiente.chamar('avaliar_gate', {
+    await ambiente.chamar('evaluate_gate', {
       project: PROJ,
       process: PROC,
       gate: 'no-orphans',
@@ -1163,20 +1163,20 @@ describe('N13', () => {
     });
 
     ambiente.definirRelogio(new Date('2099-01-01T00:00:00.000Z'));
-    const result = await ambiente.chamar('estado', {
+    const result = await ambiente.chamar('state', {
       project: PROJ,
       process: PROC,
-      sections: ['orfaos'],
+      sections: ['orphans'],
     });
-    const orfaos = (result.structuredContent as { orfaos: { target: string }[] }).orfaos;
-    expect(orfaos.some((orfao) => orfao.target === 'hex:target:y')).toBe(false);
+    const orphans = (result.structuredContent as { orphans: { target: string }[] }).orphans;
+    expect(orphans.some((orfao) => orfao.target === 'hex:target:y')).toBe(false);
   });
 });
 
 describe('N14', () => {
   test('prevHash do 1º elo é a âncora de process.json', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const registrado = await ambiente.chamar('registrar', {
+    const registrado = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -1187,9 +1187,9 @@ describe('N14', () => {
     expect(event.prevHash).toBe(anchor(lerManifesto(ambiente, PROJ, PROC)));
   });
 
-  test('fixado alterado com hashes recalculados → cadeia.quebras inclui {0, hash-nao-bate}', async () => {
+  test('fixado alterado com hashes recalculados → cadeia.breaks inclui {0, hash-nao-bate}', async () => {
     await preparar(ambiente, PROJ, PROC);
-    await ambiente.chamar('registrar', {
+    await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -1200,24 +1200,22 @@ describe('N14', () => {
     const caminhoManifesto = path.join(ambiente.dir, PROJ, PROC, 'process.json');
     const manifesto = JSON.parse(fs.readFileSync(caminhoManifesto, 'utf8')) as {
       fixed: { vocabulary: { core: { milestoneType: string[] } } };
-      hashes: { schemas: string; vocabulario: string; gates: string };
+      hashes: { schemas: string; vocabulary: string; gates: string };
     };
     manifesto.fixed.vocabulary.core.milestoneType.push('outro-value');
-    manifesto.hashes.vocabulario = sha256hex(canonicalize(manifesto.fixed.vocabulary) ?? '');
+    manifesto.hashes.vocabulary = sha256hex(canonicalize(manifesto.fixed.vocabulary) ?? '');
     fs.writeFileSync(caminhoManifesto, JSON.stringify(manifesto, null, 2));
 
-    const cadeia = (await ambiente.chamar('cadeia', { project: PROJ, process: PROC }))
+    const cadeia = (await ambiente.chamar('chain', { project: PROJ, process: PROC }))
       .structuredContent as Chain;
-    expect(cadeia.quebras).toEqual(
-      expect.arrayContaining([{ indice: 0, motivo: 'hash-nao-bate' }]),
-    );
+    expect(cadeia.breaks).toEqual(expect.arrayContaining([{ index: 0, reason: 'hash-mismatch' }]));
   });
 });
 
 describe('S2', () => {
   test('evento custom válido vira elo', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_NOTA,
@@ -1230,7 +1228,7 @@ describe('S2', () => {
   test('chave extra → EVENTO_INVALIDO em /data/..., sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_NOTA,
@@ -1238,13 +1236,13 @@ describe('S2', () => {
       data: { nota: 'ok', extra: 1 },
     });
     const corpo = esperarErro(result, 'INVALID_EVENT');
-    expect(corpo.detalhes[0]?.path.startsWith('/data')).toBe(true);
+    expect(corpo.details[0]?.path.startsWith('/data')).toBe(true);
     expect(ambiente.arvore()).toEqual(antes);
   });
 
   test('enum inválido → EVENTO_INVALIDO em /data/categoria', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_NOTA,
@@ -1252,12 +1250,12 @@ describe('S2', () => {
       data: { nota: 'ok', categoria: 'fora' },
     });
     const corpo = esperarErro(result, 'INVALID_EVENT');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/data/categoria' }));
+    expect(corpo.details).toContainEqual(expect.objectContaining({ path: '/data/categoria' }));
   });
 
   test('format date-time inválido → EVENTO_INVALIDO em /data/quando', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_NOTA,
@@ -1265,7 +1263,7 @@ describe('S2', () => {
       data: { nota: 'ok', quando: 'not-a-date' },
     });
     const corpo = esperarErro(result, 'INVALID_EVENT');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/data/quando' }));
+    expect(corpo.details).toContainEqual(expect.objectContaining({ path: '/data/quando' }));
   });
 });
 
@@ -1273,21 +1271,21 @@ describe('S3', () => {
   test('eventos custom aparecem em eventos e ficam inertes na projeção do Estado', async () => {
     await preparar(ambiente, PROJ, PROC);
 
-    await ambiente.chamar('registrar', {
+    await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
       agent: AGENTE,
       data: dadosMarco({ target: 'hex:target:a', dueAt: '2025-01-01T00:00:00.000Z' }),
     });
-    await ambiente.chamar('registrar', {
+    await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_NOTA,
       agent: AGENTE,
       data: { nota: 'intercalado' },
     });
-    await ambiente.chamar('registrar', {
+    await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_VERDICT,
@@ -1295,7 +1293,7 @@ describe('S3', () => {
       data: dadosVeredito({ target: 'hex:target:a', claim: 'a1' }),
     });
 
-    const eventosResult = (await ambiente.chamar('eventos', { project: PROJ, process: PROC }))
+    const eventosResult = (await ambiente.chamar('events', { project: PROJ, process: PROC }))
       .structuredContent as { events: EventLine[] };
     expect(eventosResult.events.map((event) => event.type)).toEqual([
       'milestone',
@@ -1303,20 +1301,20 @@ describe('S3', () => {
       'verdict',
     ]);
 
-    const estado = (await ambiente.chamar('estado', { project: PROJ, process: PROC }))
+    const estado = (await ambiente.chamar('state', { project: PROJ, process: PROC }))
       .structuredContent as {
-      vigentes: unknown[];
-      orfaos: unknown[];
-      conflitos: unknown[];
-      aRevisar: unknown[];
-      referenciasInvalidas: unknown[];
+      active: unknown[];
+      orphans: unknown[];
+      conflicts: unknown[];
+      toReview: unknown[];
+      invalidReferences: unknown[];
     };
     // o Veredito fecha o ciclo do Marco: sem o custom intercalado no meio, o result seria idêntico.
-    expect(estado.vigentes).toHaveLength(1);
-    expect(estado.orfaos).toEqual([]);
-    expect(estado.conflitos).toEqual([]);
-    expect(estado.aRevisar).toEqual([]);
-    expect(estado.referenciasInvalidas).toEqual([]);
+    expect(estado.active).toHaveLength(1);
+    expect(estado.orphans).toEqual([]);
+    expect(estado.conflicts).toEqual([]);
+    expect(estado.toReview).toEqual([]);
+    expect(estado.invalidReferences).toEqual([]);
   });
 });
 
@@ -1336,29 +1334,29 @@ describe('S5', () => {
       additionalProperties: false,
     };
 
-    await ambiente.chamar('registrar_vocabulario', {
+    await ambiente.chamar('register_vocabulary', {
       project,
       owner: 'core',
       milestoneType: ['v1'],
       result: [],
       action: [],
     });
-    await ambiente.chamar('registrar_tipo', { project, name: 'nota', schema: schemaAntigo });
-    await ambiente.chamar('registrar_gate', { project, name: 'g', criteria: 'v1' });
-    await ambiente.chamar('criar_processo', { project, process: 'proc-antigo' });
+    await ambiente.chamar('register_type', { project, name: 'nota', schema: schemaAntigo });
+    await ambiente.chamar('register_gate', { project, name: 'g', criteria: 'v1' });
+    await ambiente.chamar('create_process', { project, process: 'proc-antigo' });
 
-    await ambiente.chamar('registrar_vocabulario', {
+    await ambiente.chamar('register_vocabulary', {
       project,
       owner: 'core',
       milestoneType: ['v2'],
       result: [],
       action: [],
     });
-    await ambiente.chamar('registrar_tipo', { project, name: 'nota', schema: schemaNovo });
-    await ambiente.chamar('registrar_gate', { project, name: 'g', criteria: 'v2' });
-    await ambiente.chamar('criar_processo', { project, process: 'proc-novo' });
+    await ambiente.chamar('register_type', { project, name: 'nota', schema: schemaNovo });
+    await ambiente.chamar('register_gate', { project, name: 'g', criteria: 'v2' });
+    await ambiente.chamar('create_process', { project, process: 'proc-novo' });
 
-    const antigoV1 = await ambiente.chamar('registrar', {
+    const antigoV1 = await ambiente.chamar('register', {
       project,
       process: 'proc-antigo',
       id: `${project}:proc-antigo:milestone`,
@@ -1367,7 +1365,7 @@ describe('S5', () => {
     });
     expect(antigoV1.isError).not.toBe(true);
 
-    const antigoV2 = await ambiente.chamar('registrar', {
+    const antigoV2 = await ambiente.chamar('register', {
       project,
       process: 'proc-antigo',
       id: `${project}:proc-antigo:milestone`,
@@ -1376,7 +1374,7 @@ describe('S5', () => {
     });
     esperarErro(antigoV2, 'VOCABULARY_VIOLATED');
 
-    const novoV2 = await ambiente.chamar('registrar', {
+    const novoV2 = await ambiente.chamar('register', {
       project,
       process: 'proc-novo',
       id: `${project}:proc-novo:milestone`,
@@ -1385,7 +1383,7 @@ describe('S5', () => {
     });
     expect(novoV2.isError).not.toBe(true);
 
-    const novoExtra = await ambiente.chamar('registrar', {
+    const novoExtra = await ambiente.chamar('register', {
       project,
       process: 'proc-novo',
       id: `${project}:proc-novo:nota`,
@@ -1394,7 +1392,7 @@ describe('S5', () => {
     });
     expect(novoExtra.isError).not.toBe(true);
 
-    const antigoExtra = await ambiente.chamar('registrar', {
+    const antigoExtra = await ambiente.chamar('register', {
       project,
       process: 'proc-antigo',
       id: `${project}:proc-antigo:nota`,
@@ -1404,7 +1402,7 @@ describe('S5', () => {
     esperarErro(antigoExtra, 'INVALID_EVENT');
 
     const gateAntigo = (
-      await ambiente.chamar('avaliar_gate', {
+      await ambiente.chamar('evaluate_gate', {
         project,
         process: 'proc-antigo',
         gate: 'g',
@@ -1416,7 +1414,7 @@ describe('S5', () => {
     expect((gateAntigo.event.data as { gate: { criteria: string } }).gate.criteria).toBe('v1');
 
     const gateNovo = (
-      await ambiente.chamar('avaliar_gate', {
+      await ambiente.chamar('evaluate_gate', {
         project,
         process: 'proc-novo',
         gate: 'g',
@@ -1433,7 +1431,7 @@ describe('RESERVED_FIELD', () => {
   test('Marco com marcoTipo "gate" → CAMPO_RESERVADO, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,
@@ -1446,7 +1444,7 @@ describe('RESERVED_FIELD', () => {
 
   test('Marco com chave "gate", mesmo sem marcoTipo "gate" → CAMPO_RESERVADO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const result = await ambiente.chamar('registrar', {
+    const result = await ambiente.chamar('register', {
       project: PROJ,
       process: PROC,
       id: PREFIXO_MILESTONE,

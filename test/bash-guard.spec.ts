@@ -144,7 +144,7 @@ describe('guarda-bash (I4): nega o acesso a D por Bash', () => {
     test(caso.nome, () => {
       const resultado = rodarHook(caso, caso.env ?? envBase);
       expect(resultado.status).toBe(2);
-      expect(resultado.stderr).toContain('só é acessível pelas tools MCP do hexlog');
+      expect(resultado.stderr).toContain('is only accessible through the hexlog MCP tools');
     });
   }
 
@@ -152,6 +152,14 @@ describe('guarda-bash (I4): nega o acesso a D por Bash', () => {
     const resultado = rodarHook(casoXdg, casoXdg.env!);
     expect(resultado.status).toBe(2);
     expect(resultado.stderr).toContain(dadosDirXdg);
+  });
+
+  test('mensagem de negação completa cita os nomes novos das tools de leitura', () => {
+    const resultado = rodarHook({ command: `cat ${dadosDir}/x` }, envBase);
+    expect(resultado.status).toBe(2);
+    expect(resultado.stderr).toBe(
+      `hexlog: ${dadosDir} is only accessible through the hexlog MCP tools (list, state, events, chain).`,
+    );
   });
 });
 
@@ -210,7 +218,7 @@ describe('guarda-bash (I7): entrada inválida ou exceção interna falha aberto'
   test('shell-quote.parse lançando: decide só pela checagem literal (contém D → nega)', () => {
     const resultado = rodarHook({ command: `cat \${} ${dadosDir}/x` }, envBase);
     expect(resultado.status).toBe(2);
-    expect(resultado.stderr).toContain('só é acessível pelas tools MCP do hexlog');
+    expect(resultado.stderr).toContain('is only accessible through the hexlog MCP tools');
   });
 
   test('shell-quote.parse lançando: decide só pela checagem literal (sem D → permite)', () => {
@@ -244,7 +252,7 @@ describe('B1(b): hook empacotado pelo esbuild', () => {
       encoding: 'utf8',
     });
     expect(nega.status).toBe(2);
-    expect(nega.stderr).toContain('só é acessível pelas tools MCP do hexlog');
+    expect(nega.stderr).toContain('is only accessible through the hexlog MCP tools');
 
     const permite = spawnSync(process.execPath, [bundle], {
       input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' } }),

@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import { GateMilestoneData } from '../src/events.ts';
 import type { State } from '../src/state.ts';
-import type { Chain, Quebra } from '../src/chain.ts';
+import type { Chain, Break } from '../src/chain.ts';
 import {
   BUILTIN_GATES,
   evaluateBuiltin,
@@ -22,11 +22,11 @@ const TARGET = 'hex:target:u1';
 function cadeiaLimpa(): Chain {
   return {
     ok: true,
-    totalLinhas: 1,
-    cabeca: '0'.repeat(64),
-    quebras: [],
-    totalQuebras: 0,
-    linhasReparadas: [],
+    totalLines: 1,
+    head: '0'.repeat(64),
+    breaks: [],
+    totalBreaks: 0,
+    repairedLines: [],
   };
 }
 
@@ -57,7 +57,7 @@ const itemConflito = (i: number): ItemConflito => ({
   claim: `a${i}`,
   candidates: ['id1', 'id2'],
 });
-const itemQuebra = (i: number): Quebra => ({ indice: i, motivo: 'hash-nao-bate' });
+const itemQuebra = (i: number): Break => ({ index: i, reason: 'hash-mismatch' });
 const itemReferenciaInvalida = (i: number): ItemReferenciaInvalida => ({
   citedBy: `id${i}`,
   reference: `ref${i}`,
@@ -79,8 +79,8 @@ const CENARIOS: { nome: BuiltinGateName; overrides: (qtd: number) => Partial<Sta
       chain: {
         ...cadeiaLimpa(),
         ok: false,
-        quebras: Array.from({ length: qtd }, (_, i) => itemQuebra(i)),
-        totalQuebras: qtd,
+        breaks: Array.from({ length: qtd }, (_, i) => itemQuebra(i)),
+        totalBreaks: qtd,
       },
     }),
   },

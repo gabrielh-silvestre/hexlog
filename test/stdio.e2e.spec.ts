@@ -154,7 +154,7 @@ describe('M6', () => {
       jsonrpc: '2.0',
       id: 3,
       method: 'tools/call',
-      params: { name: 'listar', arguments: {} },
+      params: { name: 'list', arguments: {} },
     });
     await aguardar(() => stdout.linhas().length >= 3);
 
@@ -163,7 +163,7 @@ describe('M6', () => {
       jsonrpc: '2.0',
       id: 4,
       method: 'tools/call',
-      params: { name: 'cadeia', arguments: { project: 'fantasma', process: 'fantasma' } },
+      params: { name: 'chain', arguments: { project: 'fantasma', process: 'fantasma' } },
     });
     await aguardar(() => stdout.linhas().length >= 4);
 
@@ -227,14 +227,14 @@ describe('B1', () => {
           return resultado;
         };
 
-        await chamar('registrar_vocabulario', {
+        await chamar('register_vocabulary', {
           project: projeto,
           owner: 'core',
           milestoneType: ['aprovado'],
           result: ['ok'],
           action: ['seguir'],
         });
-        await chamar('registrar_tipo', {
+        await chamar('register_type', {
           project: projeto,
           name: 'nota-e2e',
           schema: {
@@ -244,20 +244,20 @@ describe('B1', () => {
             additionalProperties: false,
           },
         });
-        await chamar('registrar_gate', {
+        await chamar('register_gate', {
           project: projeto,
           name: 'gate-e2e',
           criteria: 'critério e2e qualquer',
         });
-        await chamar('criar_processo', { project: projeto, process: processo });
-        await chamar('registrar', {
+        await chamar('create_process', { project: projeto, process: processo });
+        await chamar('register', {
           project: projeto,
           process: processo,
           id: `${projeto}:${processo}:milestone`,
           agent: 'agente-e2e',
           data: { milestoneType: 'aprovado', target: 'hex:target:e2e1' },
         });
-        await chamar('registrar', {
+        await chamar('register', {
           project: projeto,
           process: processo,
           id: `${projeto}:${processo}:verdict`,
@@ -272,27 +272,27 @@ describe('B1', () => {
             trace: 'r',
           },
         });
-        await chamar('registrar', {
+        await chamar('register', {
           project: projeto,
           process: processo,
           id: `${projeto}:${processo}:nota-e2e`,
           agent: 'agente-e2e',
           data: { quando: new Date().toISOString() },
         });
-        await chamar('avaliar_gate', {
+        await chamar('evaluate_gate', {
           project: projeto,
           process: processo,
           gate: 'no-conflicts',
           agent: 'agente-e2e',
           target: 'hex:target:e2e1',
         });
-        await chamar('estado', { project: projeto, process: processo });
-        await chamar('eventos', { project: projeto, process: processo });
+        await chamar('state', { project: projeto, process: processo });
+        await chamar('events', { project: projeto, process: processo });
         if (buscaDisponivel) {
-          await chamar('eventos', { project: projeto, process: processo, search: 'aprovado' });
+          await chamar('events', { project: projeto, process: processo, search: 'aprovado' });
         }
-        await chamar('cadeia', { project: projeto, process: processo });
-        await chamar('listar', {});
+        await chamar('chain', { project: projeto, process: processo });
+        await chamar('list', {});
       } finally {
         await cliente.close();
       }
@@ -348,7 +348,7 @@ describe('C1', () => {
   ) {
     const escritas = Array.from({ length: 20 }, (_, indice) =>
       cliente.callTool({
-        name: 'registrar',
+        name: 'register',
         arguments: {
           project: projeto,
           process: processo,
@@ -360,7 +360,7 @@ describe('C1', () => {
     );
     const retentativas = semeados.slice(0, 5).map((semente) =>
       cliente.callTool({
-        name: 'registrar',
+        name: 'register',
         arguments: {
           project: projeto,
           process: processo,
@@ -382,7 +382,7 @@ describe('C1', () => {
     // 1) semeadura: um servidor à parte, fechado antes da concorrência começar.
     const semente = await criarCliente(servidorMjs, env, bundlePrincipal);
     await semente.cliente.callTool({
-      name: 'registrar_vocabulario',
+      name: 'register_vocabulary',
       arguments: {
         project: projeto,
         owner: 'core',
@@ -392,7 +392,7 @@ describe('C1', () => {
       },
     });
     await semente.cliente.callTool({
-      name: 'criar_processo',
+      name: 'create_process',
       arguments: { project: projeto, process: processo },
     });
 
@@ -401,7 +401,7 @@ describe('C1', () => {
       const agent = 'semente';
       const data = { milestoneType: 'aprovado', target: `hex:target:seed${indice}` };
       const resultado = await semente.cliente.callTool({
-        name: 'registrar',
+        name: 'register',
         arguments: {
           project: projeto,
           process: processo,
@@ -446,7 +446,7 @@ describe('C1', () => {
     const respostas = (await Promise.all(disparos)).flat();
     const cadeiaResultado = (
       await clientes[0].cliente.callTool({
-        name: 'cadeia',
+        name: 'chain',
         arguments: { project: projeto, process: processo },
       })
     ).structuredContent as {
@@ -482,7 +482,7 @@ describe('C1', () => {
     expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_LOST')).toBe(false);
 
     const msDeRegistrar = registrosTodos
-      .filter((registro) => registro.event === 'tool' && registro.nome === 'registrar')
+      .filter((registro) => registro.event === 'tool' && registro.nome === 'register')
       .map((registro) => registro.ms as number);
     const totalLockEspera = registrosTodos.filter(
       (registro) => registro.event === 'lock-wait',

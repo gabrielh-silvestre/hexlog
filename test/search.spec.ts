@@ -32,7 +32,7 @@ const MANIFESTO: ProcessManifest = {
     vocabulary: VOCABULARIO,
     gates: {},
   },
-  hashes: { schemas: '0'.repeat(64), vocabulario: '0'.repeat(64), gates: '0'.repeat(64) },
+  hashes: { schemas: '0'.repeat(64), vocabulary: '0'.repeat(64), gates: '0'.repeat(64) },
 };
 
 function linhaBase(overrides: Partial<EventLine>): EventLine {

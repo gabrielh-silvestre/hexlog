@@ -5,7 +5,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { last } from 'es-toolkit';
 import { z } from 'zod';
-import { executar } from '../src/mcp.ts';
+import { execute } from '../src/mcp.ts';
 import type { LogRecord } from '../src/log.ts';
 import {
   type Ambiente,
@@ -22,23 +22,23 @@ const SCHEMA_VALIDO = {
   additionalProperties: false,
 };
 
-// Forma de schemas/<nome>.json gravado por `registrar_tipo` (S1).
+// Forma de schemas/<nome>.json gravado por `register_type` (S1).
 const RegistroTipoSchema = z.object({ schema: z.record(z.string(), z.unknown()) });
 
 /** Registra vocabulário núcleo, um tipo e um gate custom, depois fixa `processo` (setup comum a vários ACs). */
 async function prepararProcesso(ambiente: Ambiente, projeto: string, processo: string) {
   await registrarNucleo(ambiente, projeto);
-  const tipo = await ambiente.chamar('registrar_tipo', {
+  const tipo = await ambiente.chamar('register_type', {
     project: projeto,
     name: 'nota',
     schema: SCHEMA_VALIDO,
   });
-  await ambiente.chamar('registrar_gate', {
+  await ambiente.chamar('register_gate', {
     project: projeto,
     name: 'gate-custom',
     criteria: 'critério qualquer',
   });
-  const criado = await ambiente.chamar('criar_processo', { project: projeto, process: processo });
+  const criado = await ambiente.chamar('create_process', { project: projeto, process: processo });
   return { tipo, criado };
 }
 
@@ -57,47 +57,47 @@ describe('M2', () => {
 
   const CASOS: { tool: string; campo: string; base: Record<string, unknown> }[] = [
     {
-      tool: 'criar_processo',
+      tool: 'create_process',
       campo: 'project',
       base: { project: 'proj-valido', process: 'proc-valido' },
     },
     {
-      tool: 'criar_processo',
+      tool: 'create_process',
       campo: 'process',
       base: { project: 'proj-valido', process: 'proc-valido' },
     },
     {
-      tool: 'registrar_tipo',
+      tool: 'register_type',
       campo: 'project',
       base: { project: 'proj-valido', name: 'tipo-valido', schema: SCHEMA_VALIDO },
     },
     {
-      tool: 'registrar_tipo',
+      tool: 'register_type',
       campo: 'name',
       base: { project: 'proj-valido', name: 'tipo-valido', schema: SCHEMA_VALIDO },
     },
     {
-      tool: 'registrar_vocabulario',
+      tool: 'register_vocabulary',
       campo: 'project',
       base: { project: 'proj-valido', owner: 'core' },
     },
     {
-      tool: 'registrar_vocabulario',
+      tool: 'register_vocabulary',
       campo: 'owner',
       base: { project: 'proj-valido', owner: 'core' },
     },
     {
-      tool: 'registrar_gate',
+      tool: 'register_gate',
       campo: 'project',
       base: { project: 'proj-valido', name: 'gate-valido', criteria: 'critério qualquer' },
     },
     {
-      tool: 'registrar_gate',
+      tool: 'register_gate',
       campo: 'name',
       base: { project: 'proj-valido', name: 'gate-valido', criteria: 'critério qualquer' },
     },
-    { tool: 'listar', campo: 'project', base: {} },
-    { tool: 'listar', campo: 'process', base: { project: 'proj-valido' } },
+    { tool: 'list', campo: 'project', base: {} },
+    { tool: 'list', campo: 'process', base: { project: 'proj-valido' } },
   ];
 
   for (const { tool, campo, base } of CASOS) {
@@ -114,20 +114,20 @@ describe('M2', () => {
 });
 
 describe('M7', () => {
-  test('registrar_tipo com schema reprovado pelo Ajv → SCHEMA_INVALIDO estruturado', async () => {
-    const resultado = await ambiente.chamar('registrar_tipo', {
+  test('register_type com schema reprovado pelo Ajv → SCHEMA_INVALIDO estruturado', async () => {
+    const resultado = await ambiente.chamar('register_type', {
       project: 'p1',
       name: 'ruim',
       schema: { typ: 'object' },
     });
     const corpo = esperarErro(resultado, 'INVALID_SCHEMA');
-    expect(corpo.detalhes.length).toBeGreaterThan(0);
-    expect(corpo.detalhes[0]?.path.startsWith('/')).toBe(true);
-    expect(corpo.mensagem.length).toBeGreaterThan(0);
+    expect(corpo.details.length).toBeGreaterThan(0);
+    expect(corpo.details[0]?.path.startsWith('/')).toBe(true);
+    expect(corpo.message.length).toBeGreaterThan(0);
   });
 
-  test('registrar_tipo com schema: [] → Input validation error (forma), sem chegar ao handler', async () => {
-    const resultado = await ambiente.chamar('registrar_tipo', {
+  test('register_type com schema: [] → Input validation error (forma), sem chegar ao handler', async () => {
+    const resultado = await ambiente.chamar('register_type', {
       project: 'p1',
       name: 'ruim',
       schema: [],
@@ -141,8 +141,8 @@ describe('M7', () => {
     const servidorTeste = new McpServer({ name: 'teste-interno', version: '0.0.0' });
     const logs: LogRecord[] = [];
     const ctxTeste = {
-      dirDados: ambiente.dir,
-      relogio: () => new Date(),
+      dataDir: ambiente.dir,
+      clock: () => new Date(),
       log: (r: LogRecord) => logs.push(r),
     };
 
@@ -154,7 +154,7 @@ describe('M7', () => {
         outputSchema: { ok: z.boolean() },
       },
       async () =>
-        executar(ctxTeste, 'explode', {}, () => {
+        execute(ctxTeste, 'explode', {}, () => {
           throw new Error('boom');
         }),
     );
@@ -166,14 +166,14 @@ describe('M7', () => {
     ]);
     const resultado = (await clienteTeste.callTool({ name: 'explode', arguments: {} })) as {
       isError?: boolean;
-      structuredContent?: { codigo?: string };
+      structuredContent?: { code?: string };
     };
 
     expect(resultado.isError).toBe(true);
-    expect(resultado.structuredContent?.codigo).toBe('INTERNAL');
+    expect(resultado.structuredContent?.code).toBe('INTERNAL');
     expect(
       logs.some(
-        (registro) => registro.event === 'erro-interno' && typeof registro.stack === 'string',
+        (registro) => registro.event === 'internal-error' && typeof registro.stack === 'string',
       ),
     ).toBe(true);
     await clienteTeste.close();
@@ -181,10 +181,10 @@ describe('M7', () => {
 });
 
 describe('M8', () => {
-  test('listar {processo} não traz schema dos tipos; listar {tipo} traz o schema fixado', async () => {
+  test('list {processo} não traz schema dos tipos; list {tipo} traz o schema fixado', async () => {
     const { tipo } = await prepararProcesso(ambiente, 'p1', 'proc1');
 
-    const processo = await ambiente.chamar('listar', { project: 'p1', process: 'proc1' });
+    const processo = await ambiente.chamar('list', { project: 'p1', process: 'proc1' });
     const tipos = (
       processo.structuredContent as {
         process: { types: { name: string; hash: string; schema?: unknown }[] };
@@ -195,7 +195,7 @@ describe('M8', () => {
     ]);
     expect(tipos[0]).not.toHaveProperty('schema');
 
-    const doTipo = await ambiente.chamar('listar', {
+    const doTipo = await ambiente.chamar('list', {
       project: 'p1',
       process: 'proc1',
       type: 'nota',
@@ -216,13 +216,13 @@ describe('M9', () => {
     const { tools } = await ambiente.cliente.listTools();
     const porNome = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
 
-    expect(porNome.listar).toMatchObject({
+    expect(porNome.list).toMatchObject({
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     });
-    for (const nome of ['registrar_tipo', 'registrar_vocabulario', 'registrar_gate']) {
+    for (const nome of ['register_type', 'register_vocabulary', 'register_gate']) {
       expect(porNome[nome]).toMatchObject({
         readOnlyHint: false,
         destructiveHint: true,
@@ -230,7 +230,7 @@ describe('M9', () => {
         openWorldHint: false,
       });
     }
-    expect(porNome.criar_processo).toMatchObject({
+    expect(porNome.create_process).toMatchObject({
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: false,
@@ -240,8 +240,8 @@ describe('M9', () => {
 });
 
 describe('S1', () => {
-  test('registrar_tipo grava schemas/<nome>.json com o schema exato', async () => {
-    await ambiente.chamar('registrar_tipo', { project: 'p1', name: 'nota', schema: SCHEMA_VALIDO });
+  test('register_type grava schemas/<nome>.json com o schema exato', async () => {
+    await ambiente.chamar('register_type', { project: 'p1', name: 'nota', schema: SCHEMA_VALIDO });
     const gravado = parseJson(
       RegistroTipoSchema,
       fs.readFileSync(path.join(ambiente.dir, 'p1', 'schemas', 'nota.json'), 'utf8'),
@@ -252,14 +252,14 @@ describe('S1', () => {
   test('rejeita schema inválido, $ref externo e nomes reservados, sem gravar', async () => {
     const antes = ambiente.arvore();
 
-    const invalido = await ambiente.chamar('registrar_tipo', {
+    const invalido = await ambiente.chamar('register_type', {
       project: 'p1',
       name: 'ruim',
       schema: { typ: 'object' },
     });
     esperarErro(invalido, 'INVALID_SCHEMA');
 
-    const refExterno = await ambiente.chamar('registrar_tipo', {
+    const refExterno = await ambiente.chamar('register_type', {
       project: 'p1',
       name: 'comref',
       schema: {
@@ -269,14 +269,14 @@ describe('S1', () => {
     });
     esperarErro(refExterno, 'INVALID_SCHEMA');
 
-    const marco = await ambiente.chamar('registrar_tipo', {
+    const marco = await ambiente.chamar('register_type', {
       project: 'p1',
       name: 'milestone',
       schema: SCHEMA_VALIDO,
     });
     esperarErro(marco, 'RESERVED_NAME');
 
-    const veredito = await ambiente.chamar('registrar_tipo', {
+    const veredito = await ambiente.chamar('register_type', {
       project: 'p1',
       name: 'verdict',
       schema: SCHEMA_VALIDO,
@@ -288,9 +288,9 @@ describe('S1', () => {
 });
 
 describe('S8', () => {
-  test('criar_processo com processo reservado → NOME_RESERVADO', async () => {
+  test('create_process com processo reservado → NOME_RESERVADO', async () => {
     for (const processo of ['schemas', 'vocabulary', 'gates']) {
-      const resultado = await ambiente.chamar('criar_processo', {
+      const resultado = await ambiente.chamar('create_process', {
         project: 'p1',
         process: processo,
       });
@@ -298,9 +298,9 @@ describe('S8', () => {
     }
   });
 
-  test('registrar_gate com nome de gate embutido → NOME_RESERVADO', async () => {
+  test('register_gate com nome de gate embutido → NOME_RESERVADO', async () => {
     for (const nome of ['no-orphans', 'no-conflicts', 'chain-intact', 'no-invalid-references']) {
-      const resultado = await ambiente.chamar('registrar_gate', {
+      const resultado = await ambiente.chamar('register_gate', {
         project: 'p1',
         name: nome,
         criteria: 'x',
@@ -311,26 +311,24 @@ describe('S8', () => {
 });
 
 describe('N14', () => {
-  test('2 criar_processo concorrentes → exatamente um PROCESSO_JA_EXISTE e um process.json', async () => {
-    await ambiente.chamar('registrar_vocabulario', { project: 'p1', owner: 'core' });
+  test('2 create_process concorrentes → exatamente um PROCESSO_JA_EXISTE e um process.json', async () => {
+    await ambiente.chamar('register_vocabulary', { project: 'p1', owner: 'core' });
 
     const [a, b] = await Promise.all([
-      ambiente.chamar('criar_processo', { project: 'p1', process: 'proc1' }),
-      ambiente.chamar('criar_processo', { project: 'p1', process: 'proc1' }),
+      ambiente.chamar('create_process', { project: 'p1', process: 'proc1' }),
+      ambiente.chamar('create_process', { project: 'p1', process: 'proc1' }),
     ]);
 
     const erros = [a, b].filter((r) => r.isError === true);
     const sucessos = [a, b].filter((r) => r.isError !== true);
     expect(erros).toHaveLength(1);
     expect(sucessos).toHaveLength(1);
-    expect((erros[0]?.structuredContent as { codigo: string }).codigo).toBe(
-      'PROCESS_ALREADY_EXISTS',
-    );
+    expect((erros[0]?.structuredContent as { code: string }).code).toBe('PROCESS_ALREADY_EXISTS');
     expect(fs.existsSync(path.join(ambiente.dir, 'p1', 'proc1', 'process.json'))).toBe(true);
   });
 
-  test('criar_processo sem nenhum vocabulário registrado → VOCABULARIO_AUSENTE', async () => {
-    const resultado = await ambiente.chamar('criar_processo', {
+  test('create_process sem nenhum vocabulário registrado → VOCABULARIO_AUSENTE', async () => {
+    const resultado = await ambiente.chamar('create_process', {
       project: 'sem-vocab',
       process: 'proc1',
     });
@@ -338,11 +336,11 @@ describe('N14', () => {
   });
 });
 
-describe('listar', () => {
+describe('list', () => {
   test('sem parâmetros: projetos existentes com a contagem de processos, e builtinGates sempre presente', async () => {
     await prepararProcesso(ambiente, 'p1', 'proc1');
 
-    const resultado = await ambiente.chamar('listar', {});
+    const resultado = await ambiente.chamar('list', {});
     const corpo = resultado.structuredContent as {
       projects: { name: string; processes: number }[];
       builtinGates: unknown[];
@@ -352,18 +350,18 @@ describe('listar', () => {
   });
 
   test('processo sem projeto, ou tipo sem processo → ENTRADA_INVALIDA', async () => {
-    esperarErro(await ambiente.chamar('listar', { process: 'proc1' }), 'INVALID_INPUT');
-    esperarErro(await ambiente.chamar('listar', { project: 'p1', type: 'nota' }), 'INVALID_INPUT');
+    esperarErro(await ambiente.chamar('list', { process: 'proc1' }), 'INVALID_INPUT');
+    esperarErro(await ambiente.chamar('list', { project: 'p1', type: 'nota' }), 'INVALID_INPUT');
   });
 
   test('projeto inexistente → PROJETO_INEXISTENTE', async () => {
-    esperarErro(await ambiente.chamar('listar', { project: 'fantasma' }), 'PROJECT_NOT_FOUND');
+    esperarErro(await ambiente.chamar('list', { project: 'fantasma' }), 'PROJECT_NOT_FOUND');
   });
 
   test('processo inexistente → PROCESSO_INEXISTENTE', async () => {
-    await ambiente.chamar('registrar_vocabulario', { project: 'p1', owner: 'core' });
+    await ambiente.chamar('register_vocabulary', { project: 'p1', owner: 'core' });
     esperarErro(
-      await ambiente.chamar('listar', { project: 'p1', process: 'fantasma' }),
+      await ambiente.chamar('list', { project: 'p1', process: 'fantasma' }),
       'PROCESS_NOT_FOUND',
     );
   });
@@ -371,7 +369,7 @@ describe('listar', () => {
   test('tipo fora do snapshot do processo → TIPO_INEXISTENTE', async () => {
     await prepararProcesso(ambiente, 'p1', 'proc1');
     esperarErro(
-      await ambiente.chamar('listar', { project: 'p1', process: 'proc1', type: 'fantasma' }),
+      await ambiente.chamar('list', { project: 'p1', process: 'proc1', type: 'fantasma' }),
       'TYPE_NOT_FOUND',
     );
   });
@@ -380,7 +378,7 @@ describe('listar', () => {
     await prepararProcesso(ambiente, 'p1', 'proc1');
     fs.mkdirSync(path.join(ambiente.dir, 'p1', 'processo-sem-manifesto'));
 
-    const resultado = await ambiente.chamar('listar', { project: 'p1' });
+    const resultado = await ambiente.chamar('list', { project: 'p1' });
     const processos = (
       resultado.structuredContent as { project: { processes: { name: string }[] } }
     ).project.processes;
@@ -389,19 +387,17 @@ describe('listar', () => {
 });
 
 describe('logger', () => {
-  test('toda chamada gera um registro tool com nome e ms; erro também traz codigo', async () => {
-    await ambiente.chamar('listar', {});
-    const registroSucesso = ambiente.registros.find(
-      (r) => r.event === 'tool' && r.nome === 'listar',
-    );
+  test('toda chamada gera um registro tool com nome e ms; erro também traz code', async () => {
+    await ambiente.chamar('list', {});
+    const registroSucesso = ambiente.registros.find((r) => r.event === 'tool' && r.name === 'list');
     expect(registroSucesso).toBeDefined();
     expect(typeof registroSucesso?.ms).toBe('number');
-    expect(registroSucesso?.codigo).toBeUndefined();
+    expect(registroSucesso?.code).toBeUndefined();
 
-    await ambiente.chamar('listar', { project: 'fantasma' });
+    await ambiente.chamar('list', { project: 'fantasma' });
     const chamadasListar = ambiente.registros.filter(
-      (r) => r.event === 'tool' && r.nome === 'listar',
+      (r) => r.event === 'tool' && r.name === 'list',
     );
-    expect(last(chamadasListar)?.codigo).toBe('PROJECT_NOT_FOUND');
+    expect(last(chamadasListar)?.code).toBe('PROJECT_NOT_FOUND');
   });
 });

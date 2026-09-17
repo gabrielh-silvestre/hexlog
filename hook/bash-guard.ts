@@ -19,7 +19,7 @@ const REGEX_CARACTERES_GLOB = /[*?[{]/;
 const REGEX_TIL = /(^|=)~(?=\/|$)/g;
 
 const mensagemNegacao = (d: string): string =>
-  `hexlog: ${d} só é acessível pelas tools MCP do hexlog (listar, estado, eventos, cadeia).`;
+  `hexlog: ${d} is only accessible through the hexlog MCP tools (list, state, events, chain).`;
 
 interface EntradaBruta {
   tool_name?: unknown;

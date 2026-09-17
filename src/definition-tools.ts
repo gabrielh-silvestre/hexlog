@@ -15,10 +15,10 @@ import {
 import { HexlogError } from './errors.ts';
 import { listBuiltinGates, CRITERIA_MAX_CHARS } from './gates.ts';
 import {
-  adaptarLoggerAjv,
-  type Contexto,
-  Definida,
-  executar,
+  adaptAjvLogger,
+  type Context,
+  Registered,
+  execute,
   Hash,
   Hashes,
   Instant,
@@ -29,15 +29,15 @@ import {
 const Label = z.string().min(1).max(100);
 const LabelList = z.array(Label).max(100).default([]);
 
-/** Registra as 5 tools de definição (`listar`, `registrar_tipo`, `registrar_vocabulario`, `registrar_gate`, `criar_processo`). */
-export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Contexto): void {
-  servidor.registerTool(
-    'listar',
+/** Registra as 5 tools de definição (`list`, `register_type`, `register_vocabulary`, `register_gate`, `create_process`). */
+export function registerDefinitionTools(server: McpServer, ctx: Context): void {
+  server.registerTool(
+    'list',
     {
-      title: 'Listar',
+      title: 'List',
       description:
-        'Lista projetos, ou o detalhe de um projeto, processo ou tipo fixado, conforme os parâmetros informados. ' +
-        'Sem parâmetros, lista os projetos existentes. Sempre traz os gates embutidos disponíveis.',
+        'Lists projects, or the detail of a project, process or fixed type, depending on the parameters given. ' +
+        'With no parameters, lists the existing projects. Always includes the available builtin gates.',
       inputSchema: { project: Name.optional(), process: Name.optional(), type: Name.optional() },
       outputSchema: {
         projects: z.array(z.object({ name: Name, processes: z.number().int() })).optional(),
@@ -73,19 +73,19 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
       },
     },
     async ({ project, process, type }) =>
-      executar(ctx, 'listar', { projeto: project, processo: process }, () =>
+      execute(ctx, 'list', { project, process }, () =>
         resolveList(ctx, { project, process, type }),
       ),
   );
 
-  servidor.registerTool(
-    'registrar_tipo',
+  server.registerTool(
+    'register_type',
     {
-      title: 'Registrar tipo',
+      title: 'Register type',
       description:
-        'Registra (ou substitui) o schema JSON de um tipo de evento custom do projeto, gravando `schemas/<name>.json`.',
+        'Registers (or replaces) the JSON schema of a custom event type for the project, writing `schemas/<name>.json`.',
       inputSchema: { project: Name, name: Name, schema: z.record(z.string(), z.unknown()) },
-      outputSchema: Definida.shape,
+      outputSchema: Registered.shape,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -94,20 +94,17 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
       },
     },
     async ({ project, name, schema }) =>
-      executar(ctx, 'registrar_tipo', { projeto: project }, () => {
-        const registered = registerType(ctx.dirDados, project, name, schema, {
-          log: adaptarLoggerAjv(ctx.log),
-        });
-        return toDefinida(registered);
-      }),
+      execute(ctx, 'register_type', { project }, () =>
+        registerType(ctx.dataDir, project, name, schema, { log: adaptAjvLogger(ctx.log) }),
+      ),
   );
 
-  servidor.registerTool(
-    'registrar_vocabulario',
+  server.registerTool(
+    'register_vocabulary',
     {
-      title: 'Registrar vocabulário',
+      title: 'Register vocabulary',
       description:
-        'Registra (ou substitui) o vocabulário de um owner do projeto (`"core"` ou uma extensão), gravando `vocabulary/<owner>.json`.',
+        'Registers (or replaces) the vocabulary of a project owner (`"core"` or an extension), writing `vocabulary/<owner>.json`.',
       inputSchema: {
         project: Name,
         owner: Name,
@@ -124,23 +121,23 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
       },
     },
     async ({ project, owner, milestoneType, result, action }) =>
-      executar(ctx, 'registrar_vocabulario', { projeto: project }, () =>
-        registerVocabulary(ctx.dirDados, project, owner, { milestoneType, result, action }),
+      execute(ctx, 'register_vocabulary', { project }, () =>
+        registerVocabulary(ctx.dataDir, project, owner, { milestoneType, result, action }),
       ),
   );
 
-  servidor.registerTool(
-    'registrar_gate',
+  server.registerTool(
+    'register_gate',
     {
-      title: 'Registrar gate',
+      title: 'Register gate',
       description:
-        'Registra (ou substitui) o critério de um gate custom do projeto, gravando `gates/<name>.json`.',
+        'Registers (or replaces) the criteria of a custom gate for the project, writing `gates/<name>.json`.',
       inputSchema: {
         project: Name,
         name: Name,
         criteria: z.string().min(1).max(CRITERIA_MAX_CHARS),
       },
-      outputSchema: Definida.shape,
+      outputSchema: Registered.shape,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -149,25 +146,24 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
       },
     },
     async ({ project, name, criteria }) =>
-      executar(ctx, 'registrar_gate', { projeto: project }, () => {
-        const registered = registerGate(ctx.dirDados, project, name, criteria);
-        return toDefinida(registered);
-      }),
+      execute(ctx, 'register_gate', { project }, () =>
+        registerGate(ctx.dataDir, project, name, criteria),
+      ),
   );
 
-  servidor.registerTool(
-    'criar_processo',
+  server.registerTool(
+    'create_process',
     {
-      title: 'Criar processo',
+      title: 'Create process',
       description:
-        'Cria um novo processo, fixando o snapshot atual de tipos, vocabulário e gates do projeto em `process.json`. ' +
-        'Falha se o processo já existir ou se o projeto não tiver nenhum vocabulário registrado.',
+        'Creates a new process, fixing the current snapshot of the project’s types, vocabulary and gates into `process.json`. ' +
+        'Fails if the process already exists or if the project has no vocabulary registered.',
       inputSchema: { project: Name, process: Name },
       outputSchema: {
         project: Name,
         process: Name,
         createdAt: Instant,
-        hashes: z.object({ schemas: Hash, vocabulario: Hash, gates: Hash }),
+        hashes: z.object({ schemas: Hash, vocabulary: Hash, gates: Hash }),
         types: z.array(Name),
         owners: z.array(Name),
         gates: z.array(Name),
@@ -180,36 +176,20 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
       },
     },
     async ({ project, process }) =>
-      executar(ctx, 'criar_processo', { projeto: project, processo: process }, () =>
-        createProcess(ctx.dirDados, project, process, ctx.relogio),
+      execute(ctx, 'create_process', { project, process }, () =>
+        createProcess(ctx.dataDir, project, process, ctx.clock),
       ),
   );
 }
 
-/** `Definida` (mcp.ts, contrato ainda pt-BR na Fase 4) espera `{projeto,nome,hash,substituiu}`;
- *  `registerType`/`registerGate` (Fase 3) já devolvem `{project,name,hash,replaced}`. */
-function toDefinida(registered: {
-  project: string;
-  name: string;
-  hash: string;
-  replaced: boolean;
-}): { projeto: string; nome: string; hash: string; substituiu: boolean } {
-  return {
-    projeto: registered.project,
-    nome: registered.name,
-    hash: registered.hash,
-    substituiu: registered.replaced,
-  };
-}
-
-/** Hash do mesmo formato de `Definida` (§4.10): sha256 do JSON canônico (JCS) do schema. */
+/** Hash do mesmo formato de `Registered` (§4.10): sha256 do JSON canônico (JCS) do schema. */
 function hashSchema(schema: object): string {
   return sha256hex(canonicalize(schema) ?? '');
 }
 
-/** Lógica dos 4 níveis de `listar` (§4.12): projects → project → process → type. */
+/** Lógica dos 4 níveis de `list` (§4.12): projects → project → process → type. */
 function resolveList(
-  ctx: Contexto,
+  ctx: Context,
   { project, process, type }: { project?: string; process?: string; type?: string },
 ) {
   if (isNil(project) && isNotNil(process)) {
@@ -232,7 +212,7 @@ function resolveList(
   if (isNil(project)) {
     return {
       builtinGates,
-      projects: listProjects(ctx.dirDados).map((p) => ({
+      projects: listProjects(ctx.dataDir).map((p) => ({
         name: p.name,
         processes: p.processes.length,
       })),
@@ -240,10 +220,10 @@ function resolveList(
   }
 
   if (isNil(process)) {
-    return { builtinGates, project: readProject(ctx.dirDados, project) };
+    return { builtinGates, project: readProject(ctx.dataDir, project) };
   }
 
-  const loaded = loadProcess(ctx.dirDados, project, process);
+  const loaded = loadProcess(ctx.dataDir, project, process);
 
   if (isNil(type)) {
     return {

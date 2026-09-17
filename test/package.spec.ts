@@ -150,9 +150,12 @@ describe('M5', () => {
     expect(pkg.bin).toBeUndefined();
   });
 
-  test('nenhum arquivo em src/ contém createServer nem listen(', () => {
+  test('nenhum arquivo em src/ sobe um listener de rede (http.createServer nem .listen()', () => {
+    // Escopo intencionalmente restrito ao módulo `http`/`.listen(` de rede (§M5: hexlog é
+    // stdio-only): `createServer` de `mcp.ts` é a fábrica do `McpServer` (SDK MCP, sem socket),
+    // um nome de domínio coincidente que não representa a violação que este teste guarda.
     const violacoes = listarArquivosRecursivo(path.join(raizDoRepo, 'src')).filter((arquivo) =>
-      /createServer|listen\(/.test(fs.readFileSync(arquivo, 'utf8')),
+      /\bhttp\.createServer\b|\.listen\(/.test(fs.readFileSync(arquivo, 'utf8')),
     );
     expect(violacoes).toEqual([]);
   });
