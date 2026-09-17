@@ -312,6 +312,8 @@ o prefixo não é ancestral do diretório de dados.
    em `hooks.PreToolUse`.
 2. `claude mcp remove hexlog -s user`.
 3. `rm -rf ~/.local/lib/hexlog`.
+4. `rm -rf ~/.claude/skills/hexlog` — o instalador grava essa skill e nenhum
+   dos passos acima a remove.
 
 Os dados já registrados em `~/.local/share/hexlog` (ou no diretório apontado
 por `XDG_DATA_HOME`) não são apagados por nenhum desses passos.

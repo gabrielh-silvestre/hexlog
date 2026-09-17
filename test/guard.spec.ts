@@ -22,6 +22,7 @@ import {
   readManifest,
   installArtifact,
   registerGuard,
+  writeSkill,
   verifyInstallation,
   type Bundles,
 } from '../src/installation.ts';
@@ -926,6 +927,49 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
   }, 20_000);
 });
 
+describe('B2b: gravação da skill do hexlog (writeSkill)', () => {
+  test('grava <home>/.claude/skills/hexlog/SKILL.md com o conteúdo passado', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-a-'));
+    try {
+      writeSkill(home, '# hexlog skill\n');
+      const skillFile = path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md');
+      expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill\n');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('instalar duas vezes seguidas deixa o arquivo idêntico', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-b-'));
+    try {
+      const skillFile = path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md');
+      writeSkill(home, '# hexlog skill\n');
+      writeSkill(home, '# hexlog skill\n');
+      expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill\n');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('sobrescreve um arquivo editado à mão com o canônico, sem criar .bak', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-c-'));
+    try {
+      const skillDir = path.join(home, '.claude', 'skills', 'hexlog');
+      const skillFile = path.join(skillDir, 'SKILL.md');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(skillFile, 'editado à mão');
+
+      writeSkill(home, '# hexlog skill\n');
+
+      expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill\n');
+      expect(fs.existsSync(`${skillFile}.bak-hexlog`)).toBe(false);
+      expect(fs.readdirSync(skillDir)).toEqual(['SKILL.md']);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('B3: install.ts --check (processo real)', () => {
   let home: string;
   let version: string;
@@ -990,6 +1034,19 @@ describe('B3: install.ts --check (processo real)', () => {
       expect(stdout).toContain('hook-file');
     } finally {
       fs.renameSync(backup, versionDir);
+    }
+  }, 15_000);
+
+  test('diretório da skill removido: skill-file, exit 1', () => {
+    const skillDir = path.join(home, '.claude', 'skills', 'hexlog');
+    const backup = `${skillDir}.backup-test`;
+    fs.renameSync(skillDir, backup);
+    try {
+      const { status, stdout } = runCheck();
+      expect(status).toBe(1);
+      expect(stdout).toContain('skill-file');
+    } finally {
+      fs.renameSync(backup, skillDir);
     }
   }, 15_000);
 

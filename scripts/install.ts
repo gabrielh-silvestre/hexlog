@@ -15,6 +15,7 @@ import { expectedRules, runRealHook } from '../src/guard.ts';
 import {
   installArtifact,
   registerGuard,
+  writeSkill,
   needsMcpRegistration,
   verifyInstallation,
   type Bundles,
@@ -102,6 +103,7 @@ function registerMcp(execPath: string, serverFile: string): void {
 
 async function install(): Promise<void> {
   const version = readPackageJsonVersion();
+  const skillText = fs.readFileSync(path.join(repoRoot, 'skills', 'hexlog', 'SKILL.md'), 'utf8');
   const bundles = await buildBundles();
   const home = os.homedir();
 
@@ -121,6 +123,8 @@ async function install(): Promise<void> {
   const expected = expectedRules(D, home, process.execPath, version);
   const settingsPath = path.join(home, '.claude', 'settings.json');
   const { changed } = registerGuard({ settingsPath, expected });
+
+  writeSkill(home, skillText);
 
   const claudeJsonText = readIfExists(path.join(home, '.claude.json'));
   if (needsMcpRegistration(claudeJsonText, expected)) {

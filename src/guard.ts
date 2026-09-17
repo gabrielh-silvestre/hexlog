@@ -20,6 +20,7 @@ export interface ExpectedRules {
   serverExec: string;
   serverFile: string;
   versionDir: string;
+  skillFile: string;
 }
 
 export type MissingItem =
@@ -33,7 +34,8 @@ export type MissingItem =
   | 'hook-not-denying'
   | 'hook-not-allowing'
   | 'artifact-modified'
-  | 'mcp';
+  | 'mcp'
+  | 'skill-file';
 
 /** As 4 regras de deny e os caminhos do hook/servidor instalados para uma versão (§4.14, QN4). */
 export function expectedRules(
@@ -57,6 +59,7 @@ export function expectedRules(
     serverExec: execPath,
     serverFile,
     versionDir,
+    skillFile: path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md'),
   };
 }
 

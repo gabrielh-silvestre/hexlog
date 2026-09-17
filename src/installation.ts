@@ -276,6 +276,14 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   return { changed: true };
 }
 
+/** Grava a skill do hexlog em `<home>/.claude/skills/hexlog/SKILL.md`, sobrescrevendo sem backup
+ * (decisão do usuário; diferente de `registerGuard`, que preserva `.bak-hexlog`). */
+export function writeSkill(home: string, skillText: string): void {
+  const dir = path.join(home, '.claude', 'skills', 'hexlog');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'SKILL.md'), skillText);
+}
+
 /** `~/.claude.json` ainda não aponta `mcpServers.hexlog` para o servidor esperado. */
 export function needsMcpRegistration(
   claudeJsonText: string | null,
@@ -338,6 +346,7 @@ export function verifyInstallation(args: {
     runHook,
     installedBytes,
   });
+  if (!existsSync(expected.skillFile)) result.missing.push('skill-file');
 
   const warnings: string[] = [];
   if (!isNil(manifest) && !isNil(currentBundles) && !result.missing.includes('artifact-modified')) {
