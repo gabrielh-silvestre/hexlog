@@ -1,6 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { VERSAO } from '../src/versao.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
 const DIRETORIOS_IGNORADOS = new Set(['node_modules', 'dist', '.omc', '.git', 'coverage']);
@@ -110,6 +111,10 @@ describe('N11', () => {
 
   test('engines.node é >=24.18.1', () => {
     expect(pkg.engines).toEqual({ node: '>=24.18.1' });
+  });
+
+  test('VERSAO de src/versao.ts bate com package.json.version', () => {
+    expect(VERSAO).toBe(pkg.version);
   });
 
   test('.gitignore contém a linha dist/', () => {
