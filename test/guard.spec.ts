@@ -51,7 +51,7 @@ const SettingsSchema = z.looseObject({
 // entrada alheia `rtk hook claude` (~/.claude/settings.json:92-96).
 function buildSettingsWithRtk(home: string): string {
   return `{
-  // comentário de exemplo, precisa sobreviver às edições do jsonc-parser
+  // example comment, must survive jsonc-parser edits
   "permissions": {
     "allow": ["mcp__hindsight__*"],
     "deny": ["mcp__gitnexus__cypher", "mcp__gitnexus__rename"]
@@ -142,7 +142,7 @@ function simulatedRunHook(_exec: string, _file: string, stdin: string): { status
 }
 
 describe('I5: applyGuard idempotente e não intrusivo', () => {
-  const home = '/home/usuario-teste';
+  const home = '/home/test-user';
   const D = path.join(home, '.local', 'share', 'hexlog');
   const expected = expectedRules(D, home, '/usr/bin/node', '0.1.0');
 
@@ -201,7 +201,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
     const errors: ParseError[] = [];
     parseJsonc(result, errors);
     expect(errors).toHaveLength(0);
-    expect(result).toContain('// comentário de exemplo');
+    expect(result).toContain('// example comment');
   });
 
   test('settings sem comentários continua JSON.parse válido depois de applyGuard', () => {
@@ -255,7 +255,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
 });
 
 describe('I6: as 4 regras de deny exatas (QN4)', () => {
-  const home = '/home/usuario-teste';
+  const home = '/home/test-user';
   const D = path.join(home, '.local', 'share', 'hexlog');
   const expected = expectedRules(D, home, '/usr/bin/node', '0.1.0');
 
@@ -301,7 +301,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
   // Prefixo com espaço (Critic iter3-7): o `command` do settings precisa
   // sobreviver ao ciclo `shellQuote.quote` (instalador) → `shellQuote.parse`
   // (verificação) mesmo com espaço no caminho do HOME.
-  const homeWithSpace = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog casa-'));
+  const homeWithSpace = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog home-'));
   const D = path.join(homeWithSpace, '.local', 'share', 'hexlog');
   const version = '0.1.0';
   const expected = expectedRules(D, homeWithSpace, process.execPath, version);
@@ -322,7 +322,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
     { encoding: 'utf8', cwd: repoRoot },
   );
   if (build.status !== 0) {
-    throw new Error(`build do hook falhou: ${build.stderr}`);
+    throw new Error(`hook build failed: ${build.stderr}`);
   }
   const realBundle = fs.readFileSync(path.join(outdirBundle, 'bash-guard.mjs'));
 
@@ -369,14 +369,14 @@ describe('I7: verificação com execução real do hook instalado', () => {
   });
 
   const functionalCases: { name: string; variantVersion: string; item: MissingItem }[] = [
-    { name: 'cópia com erro de sintaxe', variantVersion: '0.1.0-error', item: 'hook-not-denying' },
+    { name: 'copy with syntax error', variantVersion: '0.1.0-error', item: 'hook-not-denying' },
     {
-      name: 'script que sempre sai 0',
+      name: 'script that always exits 0',
       variantVersion: '0.1.0-always-zero',
       item: 'hook-not-denying',
     },
     {
-      name: 'script que sempre sai 2',
+      name: 'script that always exits 2',
       variantVersion: '0.1.0-always-two',
       item: 'hook-not-allowing',
     },
@@ -415,7 +415,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
   });
 
   test('node quando o executável registrado não existe', () => {
-    const missingExec = path.join(homeWithSpace, 'bin-que-nao-existe', 'node');
+    const missingExec = path.join(homeWithSpace, 'bin-that-does-not-exist', 'node');
     const commandWithFakeExec = shellQuoteQuote([missingExec, expected.hookFile]);
     const settings = buildFullSettings(expected, commandWithFakeExec);
     const verification = verifyGuard({
@@ -429,7 +429,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
   });
 
   test('command que não vira exatamente [exec, file] sob .local/lib/hexlog → hook', () => {
-    for (const command of ['bash -c true', `${process.execPath} /tmp/nada-a-ver.mjs`]) {
+    for (const command of ['bash -c true', `${process.execPath} /tmp/unrelated.mjs`]) {
       const settings = buildFullSettings(expected, command);
       const verification = verifyGuard({
         settingsText: settings,
@@ -497,7 +497,7 @@ beforeAll(() => {
     },
   );
   if (build.status !== 0) {
-    throw new Error(`build para B2/B3 falhou: ${build.stderr}`);
+    throw new Error(`build for B2/B3 failed: ${build.stderr}`);
   }
   realBundles = {
     server: fs.readFileSync(path.join(realBundlesOutdir, 'server.mjs')),
@@ -840,7 +840,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       const installedHookFile = path.join(first.versionDir, 'bash-guard.mjs');
       fs.writeFileSync(
         installedHookFile,
-        Buffer.concat([realBundles.hook, Buffer.from('\n// alterado por fora\n')]),
+        Buffer.concat([realBundles.hook, Buffer.from('\n// modified externally\n')]),
       );
 
       const second = await installArtifact(args);
@@ -951,7 +951,7 @@ describe('B3: install.ts --check (processo real)', () => {
     });
     if (installation.status !== 0) {
       throw new Error(
-        `instalação real de baseline (B3) falhou: ${installation.stderr}\n${installation.stdout}`,
+        `real baseline installation (B3) failed: ${installation.stderr}\n${installation.stdout}`,
       );
     }
   }, 30_000);
@@ -982,7 +982,7 @@ describe('B3: install.ts --check (processo real)', () => {
 
   test('diretório da versão removido: hook-file, exit 1', () => {
     const versionDir = versionDirOf(home, version);
-    const backup = `${versionDir}.backup-teste`;
+    const backup = `${versionDir}.backup-test`;
     fs.renameSync(versionDir, backup);
     try {
       const { status, stdout } = runCheck();
@@ -996,7 +996,7 @@ describe('B3: install.ts --check (processo real)', () => {
   test('bash-guard.mjs instalado editado, mas ainda nega/permite: artifact-modified, exit 1', () => {
     const hookFile = path.join(versionDirOf(home, version), 'bash-guard.mjs');
     const original = fs.readFileSync(hookFile);
-    fs.writeFileSync(hookFile, Buffer.concat([original, Buffer.from('\n// comentário extra\n')]));
+    fs.writeFileSync(hookFile, Buffer.concat([original, Buffer.from('\n// extra comment\n')]));
     try {
       const { status, stdout } = runCheck();
       expect(status).toBe(1);

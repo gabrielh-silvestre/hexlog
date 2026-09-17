@@ -85,7 +85,7 @@ function collectStrings(value: unknown, parts: string[]): void {
 }
 
 /**
- * Filtros estruturados de `events` (§4.12 item 9): igualdade exata sobre `data` cru, nunca via
+ * Filters estruturados de `events` (§4.12 item 9): igualdade exata sobre `data` cru, nunca via
  * índice de texto. `after`/`before` já normalizados (`new Date(v).toISOString()`) por quem chama.
  */
 export type Filters = {

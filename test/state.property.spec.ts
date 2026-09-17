@@ -7,8 +7,8 @@ import { effectiveNow, projectState, type Vocabulary } from '../src/state.ts';
 // ---- fixtures locais (duplicadas de state.spec.ts: 2 arquivos só, sem 3º módulo) ----
 
 const T = (n: number) => new Date(n * 60_000).toISOString();
-const AGORA_BASE = T(0);
-const vocabularioVazio: Vocabulary = {
+const BASE_NOW = T(0);
+const emptyVocabulary: Vocabulary = {
   core: { milestoneType: [], result: [], action: [] },
   byOwner: {},
 };
@@ -20,13 +20,13 @@ function line(args: {
   timestamp?: string;
   seq?: number;
 }): EventLine {
-  const numeroSeq = args.seq ?? 0;
+  const seqNumber = args.seq ?? 0;
   return {
-    seq: numeroSeq,
+    seq: seqNumber,
     id: args.id ?? `p:r:${args.type}:${randomUUIDv7()}`,
     type: args.type,
-    timestamp: args.timestamp ?? T(numeroSeq),
-    agent: 'teste',
+    timestamp: args.timestamp ?? T(seqNumber),
+    agent: 'test',
     prevHash: '0'.repeat(64), // sintético: a projeção não verifica hash
     data: args.data,
   };
@@ -34,132 +34,135 @@ function line(args: {
 
 function milestone(
   data: { target: string },
-  opcoes: { id?: string; timestamp?: string; seq?: number } = {},
+  options: { id?: string; timestamp?: string; seq?: number } = {},
 ): EventLine {
   return line({
     type: 'milestone',
-    data: { milestoneType: 'evento-property', ...data },
-    ...opcoes,
+    data: { milestoneType: 'property-event', ...data },
+    ...options,
   });
 }
 
 function verdict(
   data: { target: string; claim: string; supersedes?: string[] },
-  opcoes: { id?: string; timestamp?: string; seq?: number } = {},
+  options: { id?: string; timestamp?: string; seq?: number } = {},
 ): EventLine {
   return line({
     type: 'verdict',
-    data: { source: 'f', evidence: 'p', origin: 'o', trace: 'r', result: 'confirmada', ...data },
-    ...opcoes,
+    data: { source: 'f', evidence: 'p', origin: 'o', trace: 'r', result: 'confirmed', ...data },
+    ...options,
   });
 }
 
 // ---- gerador de intents (porte de evolve.property.spec.ts:26-67, ids/alvos no formato novo) ----
 
-const ALVO_A = 'hex:target:a';
-const ALVO_B = 'hex:target:b';
+const TARGET_A = 'hex:target:a';
+const TARGET_B = 'hex:target:b';
 
-interface IntentoVeredito {
-  readonly tipo: 'verdict';
+interface VerdictIntent {
+  readonly kind: 'verdict';
   readonly target: string;
   readonly claim: 'a1' | 'a2';
-  readonly superaOffset: number | null;
+  readonly supersedesOffset: number | null;
 }
-interface IntentoMarco {
-  readonly tipo: 'milestone';
+interface MilestoneIntent {
+  readonly kind: 'milestone';
   readonly target: string;
 }
-type Intento = IntentoVeredito | IntentoMarco;
+type Intent = VerdictIntent | MilestoneIntent;
 
-const arbitrarioIntento: fc.Arbitrary<Intento> = fc.oneof(
+const intentArbitrary: fc.Arbitrary<Intent> = fc.oneof(
   fc.record({
-    tipo: fc.constant('verdict' as const),
-    target: fc.constantFrom(ALVO_A, ALVO_B),
+    kind: fc.constant('verdict' as const),
+    target: fc.constantFrom(TARGET_A, TARGET_B),
     claim: fc.constantFrom('a1' as const, 'a2' as const),
-    superaOffset: fc.option(fc.integer({ min: 1, max: 6 }), { nil: null }),
+    supersedesOffset: fc.option(fc.integer({ min: 1, max: 6 }), { nil: null }),
   }),
-  fc.record({ tipo: fc.constant('milestone' as const), target: fc.constantFrom(ALVO_A, ALVO_B) }),
+  fc.record({
+    kind: fc.constant('milestone' as const),
+    target: fc.constantFrom(TARGET_A, TARGET_B),
+  }),
 );
 
-const arbitrarioSequencia = fc.array(arbitrarioIntento, { minLength: 1, maxLength: 12 });
+const sequenceArbitrary = fc.array(intentArbitrary, { minLength: 1, maxLength: 12 });
 
 /** Materializa a sequência de intenções em lines: timestamps crescentes, ids únicos por índice,
  * `supersedes` resolvido só contra verdicts anteriores (nunca referencia algo à frente no log). */
-function materializar(intentos: readonly Intento[]): EventLine[] {
-  const idPorIndice: string[] = [];
-  const tipoPorIndice: Intento['tipo'][] = [];
+function materialize(intents: readonly Intent[]): EventLine[] {
+  const idByIndex: string[] = [];
+  const kindByIndex: Intent['kind'][] = [];
 
-  return intentos.map((intento, indice) => {
-    const timestamp = T(indice);
-    const id = `p:r:${intento.tipo}:${randomUUIDv7()}`;
-    idPorIndice.push(id);
-    tipoPorIndice.push(intento.tipo);
+  return intents.map((intent, index) => {
+    const timestamp = T(index);
+    const id = `p:r:${intent.kind}:${randomUUIDv7()}`;
+    idByIndex.push(id);
+    kindByIndex.push(intent.kind);
 
-    if (intento.tipo === 'milestone')
-      return milestone({ target: intento.target }, { id, timestamp, seq: indice });
+    if (intent.kind === 'milestone')
+      return milestone({ target: intent.target }, { id, timestamp, seq: index });
 
     let supersedes: string[] | undefined;
-    if (intento.superaOffset !== null) {
-      const alvoIndice = indice - intento.superaOffset;
-      if (alvoIndice >= 0 && tipoPorIndice[alvoIndice] === 'verdict')
-        supersedes = [idPorIndice[alvoIndice]];
+    if (intent.supersedesOffset !== null) {
+      const targetIndex = index - intent.supersedesOffset;
+      if (targetIndex >= 0 && kindByIndex[targetIndex] === 'verdict')
+        supersedes = [idByIndex[targetIndex]];
     }
     return verdict(
-      { target: intento.target, claim: intento.claim, supersedes },
-      { id, timestamp, seq: indice },
+      { target: intent.target, claim: intent.claim, supersedes },
+      { id, timestamp, seq: index },
     );
   });
 }
 
-describe('projetar — propriedades (fast-check)', () => {
-  test('para qualquer sequência válida, projetar nunca lança e toda vigência é única ou conflito com 2+ candidatos', () => {
+describe('projectState — propriedades (fast-check)', () => {
+  test('para qualquer sequência válida, projectState nunca lança e toda vigência é única ou conflito com 2+ candidatos', () => {
     fc.assert(
-      fc.property(arbitrarioSequencia, (intentos) => {
-        const lines = materializar(intentos);
-        const projecao = projectState(lines, vocabularioVazio, effectiveNow(AGORA_BASE, lines));
+      fc.property(sequenceArbitrary, (intents) => {
+        const lines = materialize(intents);
+        const projection = projectState(lines, emptyVocabulary, effectiveNow(BASE_NOW, lines));
 
-        for (const vigencia of projecao.active) {
-          if (vigencia.status === 'active') expect(vigencia.active).toBeTruthy();
-          else expect(vigencia.candidates.length).toBeGreaterThanOrEqual(2);
+        for (const entry of projection.active) {
+          if (entry.status === 'active') expect(entry.active).toBeTruthy();
+          else expect(entry.candidates.length).toBeGreaterThanOrEqual(2);
         }
       }),
     );
   });
 
-  test('reinserir ao final uma duplicata de um elo já existente não muda a Projeção (idempotência de dedupe)', () => {
+  test('reinserir ao final uma duplicata de um elo já existente não muda a Projection (idempotência de dedupe)', () => {
     fc.assert(
-      fc.property(arbitrarioSequencia, fc.nat(), (intentos, indiceBruto) => {
-        const lines = materializar(intentos);
-        const indice = indiceBruto % lines.length;
-        const duplicata = lines[indice];
-        const comDuplicata = [...lines, duplicata];
-        const agora = effectiveNow(AGORA_BASE, lines);
+      fc.property(sequenceArbitrary, fc.nat(), (intents, rawIndex) => {
+        const lines = materialize(intents);
+        const index = rawIndex % lines.length;
+        const duplicate = lines[index];
+        const withDuplicate = [...lines, duplicate];
+        const now = effectiveNow(BASE_NOW, lines);
 
-        expect(projectState(comDuplicata, vocabularioVazio, agora)).toEqual(
-          projectState(lines, vocabularioVazio, agora),
+        expect(projectState(withDuplicate, emptyVocabulary, now)).toEqual(
+          projectState(lines, emptyVocabulary, now),
         );
       }),
     );
   });
 
-  test('vigentes aparece na ordem de 1ª aparição da chave (destino, afirmação) no log', () => {
+  test('vigentes aparece na ordem de 1ª aparição da chave (target, claim) no log', () => {
     fc.assert(
-      fc.property(arbitrarioSequencia, (intentos) => {
-        const lines = materializar(intentos);
-        const projecao = projectState(lines, vocabularioVazio, effectiveNow(AGORA_BASE, lines));
+      fc.property(sequenceArbitrary, (intents) => {
+        const lines = materialize(intents);
+        const projection = projectState(lines, emptyVocabulary, effectiveNow(BASE_NOW, lines));
 
-        const ordemNoLog: string[] = [];
+        const logOrder: string[] = [];
         for (const e of lines) {
           if (e.type !== 'verdict') continue;
           const data = e.data as { target: string; claim: string };
-          const chave = JSON.stringify([data.target, data.claim]);
-          if (!ordemNoLog.includes(chave)) ordemNoLog.push(chave);
+          const key = JSON.stringify([data.target, data.claim]);
+          if (!logOrder.includes(key)) logOrder.push(key);
         }
 
-        const ordemObtida = projecao.active.map((v) => JSON.stringify([v.target, v.claim]));
+        const obtainedOrder = projection.active.map((v) => JSON.stringify([v.target, v.claim]));
         // grupos inteiramente superados por outra chave somem de active (não fundem, só desaparecem):
         // a ordem relativa entre as chaves que sobraram é a propriedade garantida.
-        expect(ordemObtida).toEqual(ordemNoLog.filter((chave) => ordemObtida.includes(chave)));
+        expect(obtainedOrder).toEqual(logOrder.filter((key) => obtainedOrder.includes(key)));
       }),
     );
   });

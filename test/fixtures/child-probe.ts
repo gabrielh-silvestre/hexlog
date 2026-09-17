@@ -39,7 +39,7 @@ const output = {
   pick: pick({ a: 1, b: 2, c: 3 }, ['a', 'c']),
   get: get({ a: { b: 42 } }, 'a.b'),
   canon: canonicalize({ b: 1, a: 2 }),
-  jsonc: jsonc.parse('{"a":1} // comentário') as { a: number },
+  jsonc: jsonc.parse('{"a":1} // comment') as { a: number },
   shellQuote: quote(['echo', 'a b']),
   zodOk: z.string().safeParse('ok').success,
   mcpServerLoaded: typeof McpServer === 'function',

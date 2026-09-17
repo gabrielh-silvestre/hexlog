@@ -21,8 +21,8 @@ export type Chain = {
 const MAX_BREAKS = 100;
 const MAX_REPAIRED = 100;
 
-export function sha256hex(texto: string): string {
-  return createHash('sha256').update(texto).digest('hex');
+export function sha256hex(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
 }
 
 /** `hashLine(l) = sha256hex(l.prevHash + canonicalize(omit(l, 'prevHash')))` (JCS, §4.6). */
@@ -67,13 +67,13 @@ export function nextSeq(lastLink: EventLine | null, n: number): number {
  * um retorno não nulo vira quebra `invalid-data`.
  */
 export function verifyChain(
-  texto: string,
+  text: string,
   manifest: unknown,
   validateData?: (type: string, data: Record<string, unknown>) => Detail[] | null,
 ): Chain {
   // A cauda sem '\n' (escrita em andamento, ou rasgo ainda não reparado) é ignorada:
   // split(-1) descarta o último elemento, terminado ou não.
-  const lines = texto.split('\n').slice(0, -1);
+  const lines = text.split('\n').slice(0, -1);
 
   let lastLink: EventLine | null = null;
   let pending: number[] = [];

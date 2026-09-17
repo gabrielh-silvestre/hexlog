@@ -19,7 +19,7 @@ import { BUILTIN_GATE_NAMES } from '../src/storage.ts';
 const T = (n: number) => new Date(n * 60_000).toISOString();
 const TARGET = 'hex:target:u1';
 
-function cadeiaLimpa(): Chain {
+function cleanChain(): Chain {
   return {
     ok: true,
     totalLines: 1,
@@ -30,7 +30,7 @@ function cadeiaLimpa(): Chain {
   };
 }
 
-function estadoLimpo(): State {
+function cleanState(): State {
   return {
     logThrough: { id: `${TARGET}:0`, seq: 0, timestamp: T(0) },
     active: [],
@@ -39,55 +39,57 @@ function estadoLimpo(): State {
     toReview: [],
     invalidReferences: [],
     warnings: [],
-    chain: cadeiaLimpa(),
+    chain: cleanChain(),
   };
 }
 
-type ItemOrfao = State['orphans'][number];
-type ItemConflito = State['conflicts'][number];
-type ItemReferenciaInvalida = State['invalidReferences'][number];
+type OrphanItem = State['orphans'][number];
+type ConflictItem = State['conflicts'][number];
+type InvalidReferenceItem = State['invalidReferences'][number];
 
-const itemOrfao = (i: number): ItemOrfao => ({
+const orphanItem = (i: number): OrphanItem => ({
   milestone: `p:r:milestone:${i}`,
   target: TARGET,
   dueAt: T(-1),
 });
-const itemConflito = (i: number): ItemConflito => ({
+const conflictItem = (i: number): ConflictItem => ({
   target: TARGET,
   claim: `a${i}`,
   candidates: ['id1', 'id2'],
 });
-const itemQuebra = (i: number): Break => ({ index: i, reason: 'hash-mismatch' });
-const itemReferenciaInvalida = (i: number): ItemReferenciaInvalida => ({
+const breakItem = (i: number): Break => ({ index: i, reason: 'hash-mismatch' });
+const invalidReferenceItem = (i: number): InvalidReferenceItem => ({
   citedBy: `id${i}`,
   reference: `ref${i}`,
 });
 
 // Um cenário por gate embutido: como violar o estado e onde a violação aparece.
-const CENARIOS: { nome: BuiltinGateName; overrides: (qtd: number) => Partial<State> }[] = [
+const SCENARIOS: { name: BuiltinGateName; overrides: (count: number) => Partial<State> }[] = [
   {
-    nome: 'no-orphans',
-    overrides: (qtd) => ({ orphans: Array.from({ length: qtd }, (_, i) => itemOrfao(i)) }),
+    name: 'no-orphans',
+    overrides: (count) => ({ orphans: Array.from({ length: count }, (_, i) => orphanItem(i)) }),
   },
   {
-    nome: 'no-conflicts',
-    overrides: (qtd) => ({ conflicts: Array.from({ length: qtd }, (_, i) => itemConflito(i)) }),
+    name: 'no-conflicts',
+    overrides: (count) => ({
+      conflicts: Array.from({ length: count }, (_, i) => conflictItem(i)),
+    }),
   },
   {
-    nome: 'chain-intact',
-    overrides: (qtd) => ({
+    name: 'chain-intact',
+    overrides: (count) => ({
       chain: {
-        ...cadeiaLimpa(),
+        ...cleanChain(),
         ok: false,
-        breaks: Array.from({ length: qtd }, (_, i) => itemQuebra(i)),
-        totalBreaks: qtd,
+        breaks: Array.from({ length: count }, (_, i) => breakItem(i)),
+        totalBreaks: count,
       },
     }),
   },
   {
-    nome: 'no-invalid-references',
-    overrides: (qtd) => ({
-      invalidReferences: Array.from({ length: qtd }, (_, i) => itemReferenciaInvalida(i)),
+    name: 'no-invalid-references',
+    overrides: (count) => ({
+      invalidReferences: Array.from({ length: count }, (_, i) => invalidReferenceItem(i)),
     }),
   },
 ];
@@ -95,112 +97,112 @@ const CENARIOS: { nome: BuiltinGateName; overrides: (qtd: number) => Partial<Sta
 // ---- N5: gates embutidos ----
 
 describe('N5 › gates embutidos', () => {
-  test('GATES_EMBUTIDOS tem exatamente os 4 nomes de GATES_EMBUTIDOS_NOMES', () => {
+  test('BUILTIN_GATES tem exatamente os 4 nomes de BUILTIN_GATE_NAMES', () => {
     expect(Object.keys(BUILTIN_GATES).sort()).toEqual([...BUILTIN_GATE_NAMES].sort());
   });
 
-  describe.each(CENARIOS)('gate $nome', ({ nome, overrides }) => {
+  describe.each(SCENARIOS)('gate $name', ({ name, overrides }) => {
     test('estado violando reprova, com a prova completa e o total real', () => {
-      const estado: State = { ...estadoLimpo(), ...overrides(3) };
-      const resultado = evaluateBuiltin(nome, estado);
+      const state: State = { ...cleanState(), ...overrides(3) };
+      const result = evaluateBuiltin(name, state);
 
-      expect(resultado.passed).toBe(false);
-      expect(resultado.totalEvidenceItems).toBe(3);
-      expect(resultado.evidence).toHaveLength(3);
+      expect(result.passed).toBe(false);
+      expect(result.totalEvidenceItems).toBe(3);
+      expect(result.evidence).toHaveLength(3);
     });
 
-    test('60 itens: prova cortada em 50, totalItensProva mantém o total real', () => {
-      const estado: State = { ...estadoLimpo(), ...overrides(60) };
-      const resultado = evaluateBuiltin(nome, estado);
+    test('60 itens: prova cortada em 50, totalEvidenceItems mantém o total real', () => {
+      const state: State = { ...cleanState(), ...overrides(60) };
+      const result = evaluateBuiltin(name, state);
 
-      expect(resultado.evidence).toHaveLength(50);
-      expect(resultado.totalEvidenceItems).toBe(60);
+      expect(result.evidence).toHaveLength(50);
+      expect(result.totalEvidenceItems).toBe(60);
     });
 
-    test('estado limpo passa com prova vazia e avaliadoAte = último elo', () => {
-      const estado = estadoLimpo();
-      expect(evaluateBuiltin(nome, estado)).toEqual({
+    test('estado limpo passa com prova vazia e evaluatedThrough = último elo', () => {
+      const state = cleanState();
+      expect(evaluateBuiltin(name, state)).toEqual({
         passed: true,
         evidence: [],
         totalEvidenceItems: 0,
-        evaluatedThrough: estado.logThrough,
+        evaluatedThrough: state.logThrough,
       });
     });
   });
 
   test('contrato: resultado nunca é boolean solto, sempre objeto com as 4 chaves', () => {
-    const chavesEsperadas = ['evaluatedThrough', 'passed', 'evidence', 'totalEvidenceItems'].sort();
-    const resultados: EvaluationResult[] = [
-      evaluateBuiltin('no-orphans', estadoLimpo()),
-      evaluateBuiltin('no-orphans', { ...estadoLimpo(), orphans: [itemOrfao(0)] }),
+    const expectedKeys = ['evaluatedThrough', 'passed', 'evidence', 'totalEvidenceItems'].sort();
+    const results: EvaluationResult[] = [
+      evaluateBuiltin('no-orphans', cleanState()),
+      evaluateBuiltin('no-orphans', { ...cleanState(), orphans: [orphanItem(0)] }),
     ];
 
-    for (const resultado of resultados) {
-      expect(typeof resultado).toBe('object');
-      expect(Object.keys(resultado).sort()).toEqual(chavesEsperadas);
+    for (const result of results) {
+      expect(typeof result).toBe('object');
+      expect(Object.keys(result).sort()).toEqual(expectedKeys);
     }
   });
 
-  test('ehGateEmbutido reconhece só os 4 nomes embutidos', () => {
+  test('isBuiltinGate reconhece só os 4 nomes embutidos', () => {
     expect(isBuiltinGate('chain-intact')).toBe(true);
-    expect(isBuiltinGate('meu-gate-custom')).toBe(false);
+    expect(isBuiltinGate('my-custom-gate')).toBe(false);
   });
 
-  test('montarDadosMarcoGate produz DadosMarcoGate válido com origem embutido', () => {
-    const estado = estadoLimpo();
-    const resultado = evaluateBuiltin('chain-intact', estado);
+  test('buildGateMilestoneData produz GateMilestoneData válido com origem embutido', () => {
+    const state = cleanState();
+    const result = evaluateBuiltin('chain-intact', state);
     const data = buildGateMilestoneData({
       name: 'chain-intact',
       origin: 'builtin',
       criteria: BUILTIN_GATES['chain-intact'].criteria,
       target: TARGET,
-      result: resultado,
+      result,
     });
 
     expect(() => GateMilestoneData.parse(data)).not.toThrow();
     expect(data.gate.origin).toBe('builtin');
   });
 
-  test("normalizarProvaCustom('x') vira ['x']", () => {
+  test("normalizeCustomEvidence('x') vira ['x']", () => {
     expect(normalizeCustomEvidence('x')).toEqual(['x']);
   });
 
-  test('normalizarProvaCustom mantém o array quando já vem em lista', () => {
+  test('normalizeCustomEvidence mantém o array quando já vem em lista', () => {
     expect(normalizeCustomEvidence(['a', 'b'])).toEqual(['a', 'b']);
   });
 
-  test('listarGatesEmbutidos() tem 4 itens, cada um com criterio não vazio', () => {
-    const lista = listBuiltinGates();
-    expect(lista).toHaveLength(4);
-    for (const { criteria } of lista) expect(criteria.length).toBeGreaterThan(0);
+  test('listBuiltinGates() tem 4 itens, cada um com criterio não vazio', () => {
+    const list = listBuiltinGates();
+    expect(list).toHaveLength(4);
+    for (const { criteria } of list) expect(criteria.length).toBeGreaterThan(0);
   });
 });
 
-// ---- N6 (nível de montarDadosMarcoGate; a tool avaliar_gate fica pro passo 7b) ----
+// ---- N6 (nível de buildGateMilestoneData; a tool evaluate_gate fica pro passo 7b) ----
 
-describe('N6 › gate custom em montarDadosMarcoGate', () => {
-  test('origem custom e criterio vindo de fora produzem DadosMarcoGate válido', () => {
-    const resultado: EvaluationResult = {
+describe('N6 › gate custom em buildGateMilestoneData', () => {
+  test('origem custom e criterio vindo de fora produzem GateMilestoneData válido', () => {
+    const result: EvaluationResult = {
       passed: false,
-      evidence: ['evidência'],
+      evidence: ['evidence'],
       totalEvidenceItems: 1,
       evaluatedThrough: null,
     };
     const data = buildGateMilestoneData({
-      name: 'meu-gate-custom',
+      name: 'my-custom-gate',
       origin: 'custom',
-      criteria: 'critério definido pelo usuário',
+      criteria: 'user-defined criteria',
       target: TARGET,
-      result: resultado,
+      result,
     });
 
     expect(() => GateMilestoneData.parse(data)).not.toThrow();
     expect(data.gate).toMatchObject({
-      name: 'meu-gate-custom',
+      name: 'my-custom-gate',
       origin: 'custom',
-      criteria: 'critério definido pelo usuário',
+      criteria: 'user-defined criteria',
       passed: false,
-      evidence: ['evidência'],
+      evidence: ['evidence'],
       totalEvidenceItems: 1,
       evaluatedThrough: null,
     });

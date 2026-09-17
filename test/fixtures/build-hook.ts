@@ -7,7 +7,7 @@ import { build } from '../../scripts/build.ts';
 
 const outdir = process.argv[2];
 if (outdir === undefined) {
-  throw new Error('uso: build-hook.ts <outdir>');
+  throw new Error('usage: build-hook.ts <outdir>');
 }
 
 await build({

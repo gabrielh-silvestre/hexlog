@@ -3,82 +3,78 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { search } from '../src/search.ts';
 import type { ProcessManifest } from '../src/definitions.ts';
-import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
-import { type Ambiente, criarAmbiente, registrarNucleo } from './helpers.ts';
+import { writeCorpus, generateCorpus } from './fixtures/corpus.ts';
+import { type Environment, createEnvironment, registerCore } from './helpers.ts';
 
-const PROJ = 'orcamento';
+const PROJ = 'budget';
 const PROC = 'proc1';
-const TAMANHO = 10_000;
+const SIZE = 10_000;
 
 /** Fixa vocabulário núcleo + um tipo custom e cria o processo; devolve o manifesto real gravado. */
-async function prepararProcesso(ambiente: Ambiente): Promise<ProcessManifest> {
-  await registrarNucleo(ambiente, PROJ);
-  await ambiente.chamar('register_type', {
+async function prepareProcess(environment: Environment): Promise<ProcessManifest> {
+  await registerCore(environment, PROJ);
+  await environment.call('register_type', {
     project: PROJ,
-    name: 'nota',
+    name: 'note',
     schema: {
       type: 'object',
-      properties: { texto: { type: 'string' } },
-      required: ['texto'],
+      properties: { text: { type: 'string' } },
+      required: ['text'],
       additionalProperties: false,
     },
   });
-  await ambiente.chamar('create_process', { project: PROJ, process: PROC });
-  const conteudo = fs.readFileSync(path.join(ambiente.dir, PROJ, PROC, 'process.json'), 'utf8');
-  return JSON.parse(conteudo) as ProcessManifest;
+  await environment.call('create_process', { project: PROJ, process: PROC });
+  const content = fs.readFileSync(path.join(environment.dir, PROJ, PROC, 'process.json'), 'utf8');
+  return JSON.parse(content) as ProcessManifest;
 }
 
-function mediana(valores: number[]): number {
-  const ordenados = [...valores].sort((a, b) => a - b);
-  const meio = Math.floor(ordenados.length / 2);
-  return ordenados.length % 2 === 0 ? (ordenados[meio - 1] + ordenados[meio]) / 2 : ordenados[meio];
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
 describe('M13', () => {
-  test('orçamento: índice (construção + consulta) ≤ 500 ms e eventos{busca} completo ≤ 2000 ms (medianas de 5, corpus de 10 000)', async () => {
-    const ambiente = await criarAmbiente();
+  test('orçamento: índice (construção + consulta) ≤ 500 ms e events{search} completo ≤ 2000 ms (medianas de 5, corpus de 10 000)', async () => {
+    const environment = await createEnvironment();
     try {
-      const manifesto = await prepararProcesso(ambiente);
-      const corpus = gerarCorpus({
-        tamanho: TAMANHO,
-        manifesto,
-        vocabulario: manifesto.fixed.vocabulary,
+      const manifest = await prepareProcess(environment);
+      const corpus = generateCorpus({
+        size: SIZE,
+        manifest,
+        vocabulary: manifest.fixed.vocabulary,
       });
-      escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), corpus.texto);
+      writeCorpus(path.join(environment.dir, PROJ, PROC, 'events.jsonl'), corpus.text);
 
-      const candidatos = corpus.linhas.map((line, index) => ({ index, line }));
-      const temposIndice = Array.from({ length: 5 }, () => {
-        const inicio = performance.now();
-        search(candidatos, 'webhook');
-        return performance.now() - inicio;
+      const candidates = corpus.lines.map((line, index) => ({ index, line }));
+      const indexTimes = Array.from({ length: 5 }, () => {
+        const start = performance.now();
+        search(candidates, 'webhook');
+        return performance.now() - start;
       });
 
-      const temposChamada: number[] = [];
+      const callTimes: number[] = [];
       for (let i = 0; i < 5; i++) {
-        const inicio = performance.now();
-        const resultado = await ambiente.chamar('events', {
+        const start = performance.now();
+        const result = await environment.call('events', {
           project: PROJ,
           process: PROC,
           search: 'webhook',
           limit: 50,
         });
-        temposChamada.push(performance.now() - inicio);
-        expect(resultado.isError).not.toBe(true);
+        callTimes.push(performance.now() - start);
+        expect(result.isError).not.toBe(true);
       }
 
-      const medianaIndice = mediana(temposIndice);
-      const medianaChamada = mediana(temposChamada);
-      process.stdout.write(
-        `M13 mediana índice (construção+consulta): ${medianaIndice.toFixed(2)} ms\n`,
-      );
-      process.stdout.write(
-        `M13 mediana chamada completa eventos{busca}: ${medianaChamada.toFixed(2)} ms\n`,
-      );
+      const indexMedian = median(indexTimes);
+      const callMedian = median(callTimes);
+      process.stdout.write(`M13 median index (build+query): ${indexMedian.toFixed(2)} ms\n`);
+      process.stdout.write(`M13 median full call events{search}: ${callMedian.toFixed(2)} ms\n`);
 
-      expect(medianaIndice).toBeLessThanOrEqual(500);
-      expect(medianaChamada).toBeLessThanOrEqual(2000);
+      expect(indexMedian).toBeLessThanOrEqual(500);
+      expect(callMedian).toBeLessThanOrEqual(2000);
     } finally {
-      await ambiente.fechar();
+      await environment.close();
     }
   }, 60_000);
 });

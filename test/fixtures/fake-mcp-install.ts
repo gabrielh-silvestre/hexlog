@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 const [, , execPath, serverFile] = process.argv;
 if (execPath === undefined || serverFile === undefined) {
-  throw new Error('uso: fake-mcp-install.ts <execPath> <serverFile>');
+  throw new Error('usage: fake-mcp-install.ts <execPath> <serverFile>');
 }
 
 // Forma mínima de `~/.claude.json` que este fixture lê e regrava, com passthrough pro resto.

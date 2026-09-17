@@ -57,83 +57,90 @@ interface I4Case {
 }
 
 const denyCases: I4Case[] = [
-  { name: 'caminho absoluto de D', command: `cat ${dataDir}/x` },
-  { name: '~ expandido para D', command: 'cat ~/.local/share/hexlog/p/r/events.jsonl' },
-  { name: '$HOME expandido pelo shell-quote', command: 'cat $HOME/.local/share/hexlog/x' },
+  { name: 'absolute path to D', command: `cat ${dataDir}/x` },
+  { name: '~ expanded to D', command: 'cat ~/.local/share/hexlog/p/r/events.jsonl' },
+  { name: '$HOME expanded by shell-quote', command: 'cat $HOME/.local/share/hexlog/x' },
   {
-    name: 'aspas duplas vazias no meio do nome (hex""log)',
+    name: 'empty double quotes mid-name (hex""log)',
     command: 'cat ~/.local/share/hex""log/x',
   },
   {
-    name: 'substituição de comando: $(echo ~/...)',
+    name: 'command substitution: $(echo ~/...)',
     command: 'cat $(echo ~/.local/share/hexlog/x)',
   },
-  { name: '/./ no meio do caminho absoluto', command: `cat /./${dataDir.slice(1)}/x` },
+  { name: '/./ in the middle of the absolute path', command: `cat /./${dataDir.slice(1)}/x` },
   {
-    name: 'relativo a D com cwd no pai de D',
+    name: 'relative to D with cwd in D parent dir',
     command: 'cat hexlog/p/r/events.jsonl',
     cwd: cwdParentOfData,
   },
   { name: '--opt=<D>/x', command: `--opt=${dataDir}/x` },
   { name: 'glob hex*', command: 'cat ~/.local/share/hex*/p/r/events.jsonl' },
   { name: 'glob hexl?g', command: 'cat ~/.local/share/hexl?g' },
-  { name: 'chave {hexlog,x}', command: 'cat ~/.local/share/{hexlog,x}' },
-  { name: 'classe de caracteres [h]exlog', command: 'cat ~/.local/share/[h]exlog' },
-  { name: 'glob * com cwd no pai de D', command: 'cat */p/r/events.jsonl', cwd: cwdParentOfData },
-  { name: 'glob no meio do caminho (~/.local/*/hexlog/x)', command: 'cat ~/.local/*/hexlog/x' },
+  { name: 'brace {hexlog,x}', command: 'cat ~/.local/share/{hexlog,x}' },
+  { name: 'character class [h]exlog', command: 'cat ~/.local/share/[h]exlog' },
   {
-    name: '** cujo prefixo literal é ancestral de D (R-6)',
+    name: 'glob * with cwd in D parent dir',
+    command: 'cat */p/r/events.jsonl',
+    cwd: cwdParentOfData,
+  },
+  {
+    name: 'glob in the middle of the path (~/.local/*/hexlog/x)',
+    command: 'cat ~/.local/*/hexlog/x',
+  },
+  {
+    name: '** whose literal prefix is an ancestor of D (R-6)',
     command: 'cat ~/.local/**/events.jsonl',
   },
   {
-    name: 'chave com barra dentro ({hexlog/p/r/events.jsonl,x})',
+    name: 'brace with slash inside ({hexlog/p/r/events.jsonl,x})',
     command: 'cat ~/.local/share/{hexlog/p/r/events.jsonl,x}',
   },
   {
-    name: 'falso positivo aceito: ** cujo prefixo é ancestral de D',
+    name: 'accepted false positive: ** whose prefix is an ancestor of D',
     command: 'ls ~/**/*.md',
     class: 'false-positive',
   },
 ];
 
 const xdgCase: I4Case = {
-  name: '${XDG_DATA_HOME} expandido pelo shell-quote',
+  name: '${XDG_DATA_HOME} expanded by shell-quote',
   command: 'cat ${XDG_DATA_HOME}/hexlog/x',
   env: envXdg,
 };
 
 const allowCases: I4Case[] = [
-  { name: 'ls no diretório pai de D', command: 'ls ~/.local/share' },
-  { name: 'ls com glob raso no pai de D', command: 'ls ~/.local/*' },
-  { name: 'find a partir de ~ sem citar D', command: "find ~ -name '*.jsonl'" },
-  { name: 'Read fora de D (~/.claude/projects)', command: 'cat ~/.claude/projects/x/y.jsonl' },
-  { name: 'cd para o repo e rodar testes', command: `cd ${repoRoot} && npm test` },
+  { name: 'ls in D parent dir', command: 'ls ~/.local/share' },
+  { name: 'ls with shallow glob in D parent dir', command: 'ls ~/.local/*' },
+  { name: 'find starting from ~ without citing D', command: "find ~ -name '*.jsonl'" },
+  { name: 'Read outside D (~/.claude/projects)', command: 'cat ~/.claude/projects/x/y.jsonl' },
+  { name: 'cd into the repo and run tests', command: `cd ${repoRoot} && npm test` },
   {
-    name: '** dentro do repositório (não é ancestral de D)',
+    name: '** inside the repository (not an ancestor of D)',
     command: `grep -rn x ${repoRoot}/**/*.ts`,
   },
   {
-    name: 'lacuna: cd + caminho relativo em comandos separados',
+    name: 'gap: cd + relative path in separate commands',
     command: 'cd ~/.local/share && cat hexlog/p/r/events.jsonl',
     class: 'gap',
   },
   {
-    name: 'lacuna: grep -r no diretório pai de D',
+    name: 'gap: grep -r in D parent dir',
     command: 'grep -r foo ~/.local/share/',
     class: 'gap',
   },
   {
-    name: 'lacuna: variável atribuída no mesmo comando',
+    name: 'gap: variable assigned in the same command',
     command: 'd=~/.local/share; cat $d/hexlog/x',
     class: 'gap',
   },
   {
-    name: "lacuna: ANSI-C quoting ($'...\\x6c...')",
+    name: "gap: ANSI-C quoting ($'...\\x6c...')",
     command: `cat $'${tmpHome}/.local/share/hex\\x6cog/x'`,
     class: 'gap',
   },
   {
-    name: 'lacuna: alternância zsh ((hexlog|x))',
+    name: 'gap: zsh alternation ((hexlog|x))',
     command: 'cat ~/.local/share/(hexlog|x)/p/r/events.jsonl',
     class: 'gap',
   },
@@ -222,7 +229,7 @@ describe('bash-guard (I7): entrada inválida ou exceção interna falha aberto',
   });
 
   test('shell-quote.parse lançando: decide só pela checagem literal (sem D → permite)', () => {
-    const result = runHook({ command: 'cat ${} /tmp/algo-sem-relacao' }, envBase);
+    const result = runHook({ command: 'cat ${} /tmp/something-unrelated' }, envBase);
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
   });
@@ -238,7 +245,7 @@ describe('B1(b): hook empacotado pelo esbuild', () => {
     { encoding: 'utf8', cwd: repoRoot },
   );
   if (build.status !== 0) {
-    throw new Error(`build do hook falhou: ${build.stderr}`);
+    throw new Error(`hook build failed: ${build.stderr}`);
   }
 
   afterAll(() => {

@@ -27,7 +27,7 @@ serveStdio(() => {
   server.registerTool(
     'echo',
     {
-      description: 'devolve um diagnóstico das deps carregadas',
+      description: 'returns a diagnostic of the loaded deps',
       inputSchema: { text: z.string() },
     },
     ({ text }) =>

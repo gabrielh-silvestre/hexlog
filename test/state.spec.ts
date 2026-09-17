@@ -16,12 +16,12 @@ const T = (n: number) => new Date(n * 60_000).toISOString();
 const TARGET_1 = 'hex:target:u1';
 const TARGET_2 = 'hex:target:u2';
 
-const vocabularioVazio: Vocabulary = {
+const emptyVocabulary: Vocabulary = {
   core: { milestoneType: [], result: [], action: [] },
   byOwner: {},
 };
 
-let proximoSeqValor = 0;
+let nextSeqValue = 0;
 
 function line(args: {
   type: string;
@@ -30,13 +30,13 @@ function line(args: {
   timestamp?: string;
   seq?: number;
 }): EventLine {
-  const numeroSeq = args.seq ?? proximoSeqValor++;
+  const seqNumber = args.seq ?? nextSeqValue++;
   return {
-    seq: numeroSeq,
+    seq: seqNumber,
     id: args.id ?? `p:r:${args.type}:${randomUUIDv7()}`,
     type: args.type,
-    timestamp: args.timestamp ?? T(numeroSeq),
-    agent: 'teste',
+    timestamp: args.timestamp ?? T(seqNumber),
+    agent: 'test',
     prevHash: '0'.repeat(64), // sintético: a projeção não verifica hash
     data: args.data,
   };
@@ -49,39 +49,36 @@ function milestone(
     dueAt?: string;
     decisions?: { item: string; action: string; text: string }[];
   },
-  opcoes: { id?: string; timestamp?: string; seq?: number } = {},
+  options: { id?: string; timestamp?: string; seq?: number } = {},
 ): EventLine {
-  const { milestoneType = 'evento-teste', ...resto } = data;
-  return line({ type: 'milestone', data: { milestoneType, ...resto }, ...opcoes });
+  const { milestoneType = 'test-event', ...rest } = data;
+  return line({ type: 'milestone', data: { milestoneType, ...rest }, ...options });
 }
 
 function verdict(
   data: { target: string; claim: string; result?: string; supersedes?: string[] },
-  opcoes: { id?: string; timestamp?: string; seq?: number } = {},
+  options: { id?: string; timestamp?: string; seq?: number } = {},
 ): EventLine {
-  const { result = 'confirmada', ...resto } = data;
+  const { result = 'confirmed', ...rest } = data;
   return line({
     type: 'verdict',
-    data: { source: 'f', evidence: 'p', origin: 'o', trace: 'r', result, ...resto },
-    ...opcoes,
+    data: { source: 'f', evidence: 'p', origin: 'o', trace: 'r', result, ...rest },
+    ...options,
   });
 }
 
 // ---- testes ----
 
-describe('projetar › Estado bate com fixture (envelope novo, alvo hex:target:*)', () => {
-  test('marco + veredito confirmando produzem o Estado esperado', () => {
-    const m1 = milestone(
-      { target: TARGET_1, milestoneType: 'esqueleto-aberto' },
-      { timestamp: T(0) },
-    );
+describe('projectState › State bate com fixture (envelope novo, target hex:target:*)', () => {
+  test('marco + veredito confirmando produzem o State esperado', () => {
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'open-skeleton' }, { timestamp: T(0) });
     const v1 = verdict(
-      { target: TARGET_1, claim: 'dod-1', result: 'confirmada' },
+      { target: TARGET_1, claim: 'dod-1', result: 'confirmed' },
       { timestamp: T(1) },
     );
     const lines = [m1, v1];
     const vocabulary: Vocabulary = {
-      core: { milestoneType: ['esqueleto-aberto'], result: ['confirmada'], action: [] },
+      core: { milestoneType: ['open-skeleton'], result: ['confirmed'], action: [] },
       byOwner: {},
     };
 
@@ -97,12 +94,12 @@ describe('projetar › Estado bate com fixture (envelope novo, alvo hex:target:*
   });
 });
 
-describe('projetar › pureza', () => {
+describe('projectState › pureza', () => {
   test('mesmos argumentos produzem o mesmo resultado', () => {
     const v1 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(0) });
     const lines = [v1];
-    expect(projectState(lines, vocabularioVazio, T(0))).toEqual(
-      projectState(lines, vocabularioVazio, T(0)),
+    expect(projectState(lines, emptyVocabulary, T(0))).toEqual(
+      projectState(lines, emptyVocabulary, T(0)),
     );
   });
 
@@ -112,25 +109,25 @@ describe('projetar › pureza', () => {
     const v2 = verdict({ target: TARGET_1, claim: 'a2' }, { timestamp: T(2) });
     const lines = [m1, v1, v2];
 
-    let ultimoReplay;
-    for (let ate = 1; ate <= lines.length; ate++) {
-      const parcial = lines.slice(0, ate);
-      ultimoReplay = projectState(parcial, vocabularioVazio, effectiveNow(T(2), parcial));
+    let lastReplay;
+    for (let through = 1; through <= lines.length; through++) {
+      const partial = lines.slice(0, through);
+      lastReplay = projectState(partial, emptyVocabulary, effectiveNow(T(2), partial));
     }
 
-    expect(ultimoReplay).toEqual(projectState(lines, vocabularioVazio, effectiveNow(T(2), lines)));
+    expect(lastReplay).toEqual(projectState(lines, emptyVocabulary, effectiveNow(T(2), lines)));
   });
 });
 
-describe('projetar › dedupe por id', () => {
-  test('evento duplicado por id não muda a Projeção', () => {
+describe('projectState › dedupe por id', () => {
+  test('evento duplicado por id não muda a Projection', () => {
     const v1 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(0) });
     const v2 = verdict({ target: TARGET_1, claim: 'a2' }, { timestamp: T(1) });
     const lines = [v1, v2];
-    const comDuplicata = [v1, v1, v2];
+    const withDuplicate = [v1, v1, v2];
 
-    expect(projectState(comDuplicata, vocabularioVazio, T(1))).toEqual(
-      projectState(lines, vocabularioVazio, T(1)),
+    expect(projectState(withDuplicate, emptyVocabulary, T(1))).toEqual(
+      projectState(lines, emptyVocabulary, T(1)),
     );
   });
 });
@@ -138,21 +135,21 @@ describe('projetar › dedupe por id', () => {
 describe('N3 › supersessão', () => {
   test('veredito único fica vigente', () => {
     const v1 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(0) });
-    const projecao = projectState([v1], vocabularioVazio, T(0));
-    expect(projecao.active).toEqual([
+    const projection = projectState([v1], emptyVocabulary, T(0));
+    expect(projection.active).toEqual([
       { target: TARGET_1, claim: 'a1', status: 'active', active: v1.id },
     ]);
-    expect(projecao.conflicts).toEqual([]);
+    expect(projection.conflicts).toEqual([]);
   });
 
   test('dois vereditos concorrentes sem supera viram conflito', () => {
     const v1 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(0) });
     const v2 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(1) });
-    const projecao = projectState([v1, v2], vocabularioVazio, T(1));
-    expect(projecao.active).toEqual([
+    const projection = projectState([v1, v2], emptyVocabulary, T(1));
+    expect(projection.active).toEqual([
       { target: TARGET_1, claim: 'a1', status: 'conflict', candidates: [v1.id, v2.id] },
     ]);
-    expect(projecao.conflicts).toEqual([
+    expect(projection.conflicts).toEqual([
       { target: TARGET_1, claim: 'a1', candidates: [v1.id, v2.id] },
     ]);
   });
@@ -161,194 +158,194 @@ describe('N3 › supersessão', () => {
     const a = verdict({ target: TARGET_1, claim: 'x' }, { timestamp: T(0) });
     const b = verdict({ target: TARGET_1, claim: 'x', supersedes: [a.id] }, { timestamp: T(1) });
     const c = verdict({ target: TARGET_1, claim: 'x', supersedes: [b.id] }, { timestamp: T(2) });
-    const projecao = projectState([a, b, c], vocabularioVazio, T(2));
-    expect(projecao.active).toEqual([
+    const projection = projectState([a, b, c], emptyVocabulary, T(2));
+    expect(projection.active).toEqual([
       { target: TARGET_1, claim: 'x', status: 'active', active: c.id },
     ]);
   });
 
-  test('supera cruzando destino/afirmação diferente não funde grupos', () => {
+  test('supera cruzando target/claim diferente não funde grupos', () => {
     const y = verdict({ target: TARGET_2, claim: 'A2' }, { timestamp: T(0) });
     const x = verdict({ target: TARGET_1, claim: 'A1', supersedes: [y.id] }, { timestamp: T(1) });
-    const projecao = projectState([y, x], vocabularioVazio, T(1));
-    expect(projecao.active).toEqual([
+    const projection = projectState([y, x], emptyVocabulary, T(1));
+    expect(projection.active).toEqual([
       { target: TARGET_1, claim: 'A1', status: 'active', active: x.id },
     ]);
   });
 
-  test('supera para id que não é Veredito do log vira referenciasInvalidas', () => {
-    const marcoQualquer = milestone({ target: TARGET_1 }, { timestamp: T(0) });
+  test('supera para id que não é Verdict do log vira invalidReferences', () => {
+    const anyMilestone = milestone({ target: TARGET_1 }, { timestamp: T(0) });
     const v1 = verdict(
-      { target: TARGET_1, claim: 'a1', supersedes: [marcoQualquer.id] },
+      { target: TARGET_1, claim: 'a1', supersedes: [anyMilestone.id] },
       { timestamp: T(1) },
     );
-    const projecao = projectState([marcoQualquer, v1], vocabularioVazio, T(1));
-    expect(projecao.invalidReferences).toEqual([{ citedBy: v1.id, reference: marcoQualquer.id }]);
-    expect(projecao.active).toEqual([
+    const projection = projectState([anyMilestone, v1], emptyVocabulary, T(1));
+    expect(projection.invalidReferences).toEqual([{ citedBy: v1.id, reference: anyMilestone.id }]);
+    expect(projection.active).toEqual([
       { target: TARGET_1, claim: 'a1', status: 'active', active: v1.id },
     ]);
   });
 
   test('supera para id inexistente vira referenciasInvalidas', () => {
     const v1 = verdict(
-      { target: TARGET_1, claim: 'a1', supersedes: ['p:r:verdict:fantasma'] },
+      { target: TARGET_1, claim: 'a1', supersedes: ['p:r:verdict:phantom'] },
       { timestamp: T(0) },
     );
-    const projecao = projectState([v1], vocabularioVazio, T(0));
-    expect(projecao.invalidReferences).toEqual([
-      { citedBy: v1.id, reference: 'p:r:verdict:fantasma' },
+    const projection = projectState([v1], emptyVocabulary, T(0));
+    expect(projection.invalidReferences).toEqual([
+      { citedBy: v1.id, reference: 'p:r:verdict:phantom' },
     ]);
   });
 });
 
 describe('N3 › órfãos (relógio injetado)', () => {
   test('vencido pelo relógio do próprio log', () => {
-    const abertura = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
-    const outro = verdict({ target: TARGET_2, claim: 'a1' }, { timestamp: T(3) });
-    const lines = [abertura, outro];
+    const opening = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
+    const other = verdict({ target: TARGET_2, claim: 'a1' }, { timestamp: T(3) });
+    const lines = [opening, other];
 
-    expect(projectState(lines, vocabularioVazio, effectiveNow(T(0), lines)).orphans).toEqual([
-      { milestone: abertura.id, target: TARGET_1, dueAt: T(1) },
+    expect(projectState(lines, emptyVocabulary, effectiveNow(T(0), lines)).orphans).toEqual([
+      { milestone: opening.id, target: TARGET_1, dueAt: T(1) },
     ]);
   });
 
   test('a tempo (agora ainda antes do prazo) não é órfão', () => {
-    const abertura = milestone({ target: TARGET_1, dueAt: T(10) }, { timestamp: T(0) });
-    expect(projectState([abertura], vocabularioVazio, T(1)).orphans).toEqual([]);
+    const opening = milestone({ target: TARGET_1, dueAt: T(10) }, { timestamp: T(0) });
+    expect(projectState([opening], emptyVocabulary, T(1)).orphans).toEqual([]);
   });
 
   test('pela parede: relógio injetado ultrapassa o prazo mesmo sem evento novo no log', () => {
-    const abertura = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
-    const agora = effectiveNow(T(5), [abertura]);
+    const opening = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
+    const now = effectiveNow(T(5), [opening]);
 
-    expect(projectState([abertura], vocabularioVazio, agora).orphans).toEqual([
-      { milestone: abertura.id, target: TARGET_1, dueAt: T(1) },
+    expect(projectState([opening], emptyVocabulary, now).orphans).toEqual([
+      { milestone: opening.id, target: TARGET_1, dueAt: T(1) },
     ]);
   });
 });
 
 describe('N3 › aRevisar (com gate incluído)', () => {
-  test('inclui eventos do mesmo alvo do veredito superado (marco e gate), exclui alvos não relacionados', () => {
+  test('inclui eventos do mesmo target do verdict superado (milestone e gate), exclui targets não relacionados', () => {
     const v1 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(0) });
-    const m1 = milestone({ target: TARGET_1, milestoneType: 'comentario' }, { timestamp: T(1) });
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'comment' }, { timestamp: T(1) });
     const gate1 = milestone({ target: TARGET_1, milestoneType: 'gate' }, { timestamp: T(2) });
     const v2 = verdict({ target: TARGET_1, claim: 'a1', supersedes: [v1.id] }, { timestamp: T(3) });
-    const outraUnidade = milestone(
-      { target: TARGET_2, milestoneType: 'comentario' },
+    const otherTarget = milestone(
+      { target: TARGET_2, milestoneType: 'comment' },
       { timestamp: T(4) },
     );
 
-    const projecao = projectState([v1, m1, gate1, v2, outraUnidade], vocabularioVazio, T(4));
+    const projection = projectState([v1, m1, gate1, v2, otherTarget], emptyVocabulary, T(4));
 
-    expect(projecao.toReview).toEqual(expect.arrayContaining([m1.id, gate1.id, v2.id]));
-    expect(projecao.toReview).not.toEqual(expect.arrayContaining([v1.id]));
-    expect(projecao.toReview).not.toEqual(expect.arrayContaining([outraUnidade.id]));
+    expect(projection.toReview).toEqual(expect.arrayContaining([m1.id, gate1.id, v2.id]));
+    expect(projection.toReview).not.toEqual(expect.arrayContaining([v1.id]));
+    expect(projection.toReview).not.toEqual(expect.arrayContaining([otherTarget.id]));
   });
 });
 
-describe('ciclo do Marco', () => {
+describe('ciclo do Milestone', () => {
   test('abre e permanece aberto (sem órfão) antes do prazo', () => {
-    const abertura = milestone({ target: TARGET_1, dueAt: T(10) }, { timestamp: T(0) });
-    expect(projectState([abertura], vocabularioVazio, T(1)).orphans).toEqual([]);
+    const opening = milestone({ target: TARGET_1, dueAt: T(10) }, { timestamp: T(0) });
+    expect(projectState([opening], emptyVocabulary, T(1)).orphans).toEqual([]);
   });
 
-  test('fecha por Veredito no mesmo alvo', () => {
-    const abertura = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
-    const fechamento = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(2) });
-    expect(projectState([abertura, fechamento], vocabularioVazio, T(5)).orphans).toEqual([]);
+  test('fecha por Verdict no mesmo target', () => {
+    const opening = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
+    const closing = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(2) });
+    expect(projectState([opening, closing], emptyVocabulary, T(5)).orphans).toEqual([]);
   });
 
-  test('fecha por Marco sem prazoExecucao', () => {
-    const abertura = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
-    const fechamento = milestone({ target: TARGET_1 }, { timestamp: T(2) });
-    expect(projectState([abertura, fechamento], vocabularioVazio, T(5)).orphans).toEqual([]);
+  test('fecha por Milestone sem dueAt', () => {
+    const opening = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
+    const closing = milestone({ target: TARGET_1 }, { timestamp: T(2) });
+    expect(projectState([opening, closing], emptyVocabulary, T(5)).orphans).toEqual([]);
   });
 
   test('nova abertura reinicia o ciclo, ignorando o anterior', () => {
-    const abertura1 = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
-    const fechamento = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(2) });
-    const abertura2 = milestone({ target: TARGET_1, dueAt: T(20) }, { timestamp: T(3) });
-    const lines = [abertura1, fechamento, abertura2];
+    const opening1 = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
+    const closing = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(2) });
+    const opening2 = milestone({ target: TARGET_1, dueAt: T(20) }, { timestamp: T(3) });
+    const lines = [opening1, closing, opening2];
 
-    expect(projectState(lines, vocabularioVazio, T(4)).orphans).toEqual([]);
-    expect(projectState(lines, vocabularioVazio, T(25)).orphans).toEqual([
-      { milestone: abertura2.id, target: TARGET_1, dueAt: T(20) },
+    expect(projectState(lines, emptyVocabulary, T(4)).orphans).toEqual([]);
+    expect(projectState(lines, emptyVocabulary, T(25)).orphans).toEqual([
+      { milestone: opening2.id, target: TARGET_1, dueAt: T(20) },
     ]);
   });
 });
 
-describe('N13 › R-3: Marco de gate não abre nem fecha', () => {
-  test('Marco de gate sozinho não cria abertura', () => {
+describe('N13 › R-3: Milestone de gate não abre nem fecha', () => {
+  test('Milestone de gate sozinho não cria abertura', () => {
     const gate = milestone({ target: TARGET_1, milestoneType: 'gate' }, { timestamp: T(0) });
-    expect(projectState([gate], vocabularioVazio, T(100)).orphans).toEqual([]);
+    expect(projectState([gate], emptyVocabulary, T(100)).orphans).toEqual([]);
   });
 
-  test('órfão persiste depois de um Marco de gate no mesmo alvo', () => {
-    const abertura = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
+  test('órfão persiste depois de um Milestone de gate no mesmo target', () => {
+    const opening = milestone({ target: TARGET_1, dueAt: T(1) }, { timestamp: T(0) });
     const gate = milestone({ target: TARGET_1, milestoneType: 'gate' }, { timestamp: T(2) });
-    const lines = [abertura, gate];
+    const lines = [opening, gate];
 
-    expect(projectState(lines, vocabularioVazio, T(5)).orphans).toEqual([
-      { milestone: abertura.id, target: TARGET_1, dueAt: T(1) },
+    expect(projectState(lines, emptyVocabulary, T(5)).orphans).toEqual([
+      { milestone: opening.id, target: TARGET_1, dueAt: T(1) },
     ]);
   });
 });
 
 describe('avisos (N4): por dono e classes', () => {
-  test('marcoTipo do núcleo não gera aviso', () => {
+  test('milestoneType do núcleo não gera aviso', () => {
     const vocabulary: Vocabulary = {
-      core: { milestoneType: ['abertura'], result: [], action: [] },
+      core: { milestoneType: ['opening'], result: [], action: [] },
       byOwner: {},
     };
-    const m1 = milestone({ target: TARGET_1, milestoneType: 'abertura' }, { timestamp: T(0) });
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'opening' }, { timestamp: T(0) });
     expect(projectState([m1], vocabulary, T(0)).warnings).toEqual([]);
   });
 
-  test('marcoTipo de extensão de um dono gera aviso com esse dono', () => {
+  test('milestoneType de extensão de um dono gera aviso com esse dono', () => {
     const vocabulary: Vocabulary = {
       core: { milestoneType: [], result: [], action: [] },
-      byOwner: { 'dono-x': { milestoneType: ['card-revisado'], result: [], action: [] } },
+      byOwner: { 'owner-x': { milestoneType: ['card-reviewed'], result: [], action: [] } },
     };
-    const m1 = milestone({ target: TARGET_1, milestoneType: 'card-revisado' }, { timestamp: T(0) });
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'card-reviewed' }, { timestamp: T(0) });
     expect(projectState([m1], vocabulary, T(0)).warnings).toEqual([
       {
         event: m1.id,
         field: 'milestoneType',
-        value: 'card-revisado',
+        value: 'card-reviewed',
         kind: 'extension',
-        owner: 'dono-x',
+        owner: 'owner-x',
       },
     ]);
   });
 
-  test('marcoTipo declarado por dois donos vira extensão ambígua (dono null)', () => {
+  test('milestoneType declarado por dois donos vira extensão ambígua (dono null)', () => {
     const vocabulary: Vocabulary = {
       core: { milestoneType: [], result: [], action: [] },
       byOwner: {
-        'dono-a': { milestoneType: ['card-revisado'], result: [], action: [] },
-        'dono-b': { milestoneType: ['card-revisado'], result: [], action: [] },
+        'owner-a': { milestoneType: ['card-reviewed'], result: [], action: [] },
+        'owner-b': { milestoneType: ['card-reviewed'], result: [], action: [] },
       },
     };
-    const m1 = milestone({ target: TARGET_1, milestoneType: 'card-revisado' }, { timestamp: T(0) });
-    const [aviso] = projectState([m1], vocabulary, T(0)).warnings;
-    expect(aviso).toEqual({
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'card-reviewed' }, { timestamp: T(0) });
+    const [warning] = projectState([m1], vocabulary, T(0)).warnings;
+    expect(warning).toEqual({
       event: m1.id,
       field: 'milestoneType',
-      value: 'card-revisado',
+      value: 'card-reviewed',
       kind: 'extension',
       owner: null,
     });
   });
 
-  test('marcoTipo desconhecido (campo fechado) vira erro; resultado desconhecido (campo aberto) vira aviso-desconhecido', () => {
-    const m1 = milestone({ target: TARGET_1, milestoneType: 'inedito' }, { timestamp: T(0) });
-    const v1 = verdict({ target: TARGET_1, claim: 'a1', result: 'inedito' }, { timestamp: T(1) });
-    expect(projectState([m1, v1], vocabularioVazio, T(1)).warnings).toEqual([
-      { event: m1.id, field: 'milestoneType', value: 'inedito', kind: 'error', owner: null },
+  test('milestoneType desconhecido (campo fechado) vira erro; resultado desconhecido (campo aberto) vira aviso-desconhecido', () => {
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'novel' }, { timestamp: T(0) });
+    const v1 = verdict({ target: TARGET_1, claim: 'a1', result: 'novel' }, { timestamp: T(1) });
+    expect(projectState([m1, v1], emptyVocabulary, T(1)).warnings).toEqual([
+      { event: m1.id, field: 'milestoneType', value: 'novel', kind: 'error', owner: null },
       {
         event: v1.id,
         field: 'result',
-        value: 'inedito',
+        value: 'novel',
         kind: 'unknown-warning',
         owner: null,
       },
@@ -357,56 +354,56 @@ describe('avisos (N4): por dono e classes', () => {
 
   test('decisoes[].acao é validado por decisão', () => {
     const vocabulary: Vocabulary = {
-      core: { milestoneType: ['evento-teste'], result: [], action: ['aprovar'] },
+      core: { milestoneType: ['test-event'], result: [], action: ['approve'] },
       byOwner: {},
     };
     const m1 = milestone(
       {
         target: TARGET_1,
         decisions: [
-          { item: 'x', action: 'aprovar', text: 't' },
-          { item: 'y', action: 'rejeitar', text: 't2' },
+          { item: 'x', action: 'approve', text: 't' },
+          { item: 'y', action: 'reject', text: 't2' },
         ],
       },
       { timestamp: T(0) },
     );
     expect(projectState([m1], vocabulary, T(0)).warnings).toEqual([
-      { event: m1.id, field: 'decisions.action', value: 'rejeitar', kind: 'error', owner: null },
+      { event: m1.id, field: 'decisions.action', value: 'reject', kind: 'error', owner: null },
     ]);
   });
 
-  test('Marco de gate é ignorado nos avisos', () => {
+  test('Milestone de gate é ignorado nos avisos', () => {
     const m1 = milestone({ target: TARGET_1, milestoneType: 'gate' }, { timestamp: T(0) });
-    expect(projectState([m1], vocabularioVazio, T(0)).warnings).toEqual([]);
+    expect(projectState([m1], emptyVocabulary, T(0)).warnings).toEqual([]);
   });
 });
 
 describe('validarCampo', () => {
   const vocabulary: Vocabulary = {
-    core: { milestoneType: ['nucleo-tipo'], result: [], action: [] },
-    byOwner: { d1: { milestoneType: [], result: ['ext-resultado'], action: [] } },
+    core: { milestoneType: ['core-type'], result: [], action: [] },
+    byOwner: { d1: { milestoneType: [], result: ['ext-result'], action: [] } },
   };
 
   test('valor do núcleo devolve null (sem aviso)', () => {
-    expect(validateField(vocabulary, 'milestoneType', 'nucleo-tipo')).toBeNull();
+    expect(validateField(vocabulary, 'milestoneType', 'core-type')).toBeNull();
   });
 
   test('valor de extensão de um dono devolve classe extensao com esse dono', () => {
-    expect(validateField(vocabulary, 'result', 'ext-resultado')).toEqual({
+    expect(validateField(vocabulary, 'result', 'ext-result')).toEqual({
       kind: 'extension',
       owner: 'd1',
     });
   });
 
   test('resultado fora de tudo (campo aberto) devolve aviso-desconhecido', () => {
-    expect(validateField(vocabulary, 'result', 'nunca-visto')).toEqual({
+    expect(validateField(vocabulary, 'result', 'never-seen')).toEqual({
       kind: 'unknown-warning',
       owner: null,
     });
   });
 
-  test('marcoTipo fora de tudo (campo fechado) devolve erro', () => {
-    expect(validateField(vocabulary, 'milestoneType', 'nunca-visto')).toEqual({
+  test('milestoneType fora de tudo (campo fechado) devolve erro', () => {
+    expect(validateField(vocabulary, 'milestoneType', 'never-seen')).toEqual({
       kind: 'error',
       owner: null,
     });
@@ -431,31 +428,33 @@ describe('agoraEfetivo (Q10)', () => {
 
 describe('VocabularioSchema', () => {
   test('aceita vocabulário válido', () => {
-    const valido = {
+    const valid = {
       core: { milestoneType: ['a'], result: [], action: [] },
-      byOwner: { 'dono-x': { milestoneType: [], result: ['b'], action: [] } },
+      byOwner: { 'owner-x': { milestoneType: [], result: ['b'], action: [] } },
     };
-    expect(VocabularySchema.safeParse(valido).success).toBe(true);
+    expect(VocabularySchema.safeParse(valid).success).toBe(true);
   });
 
   test('rejeita chave extra (strictObject)', () => {
-    const invalido = { core: { milestoneType: [], result: [], action: [] }, byOwner: {}, extra: 1 };
-    expect(VocabularySchema.safeParse(invalido).success).toBe(false);
+    const invalid = { core: { milestoneType: [], result: [], action: [] }, byOwner: {}, extra: 1 };
+    expect(VocabularySchema.safeParse(invalid).success).toBe(false);
   });
 });
 
 describe('S3: eventos custom são inertes', () => {
-  test('Estado com eventos custom intercalados é igual ao Estado sem eles (fora logAte)', () => {
+  test('State com eventos custom intercalados é igual ao State sem eles (fora logThrough)', () => {
     const v1 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(0) });
-    const custom = line({ type: 'anotacao', data: { texto: 'nota livre' }, timestamp: T(1) });
+    const custom = line({ type: 'annotation', data: { text: 'free note' }, timestamp: T(1) });
     const v2 = verdict({ target: TARGET_1, claim: 'a2' }, { timestamp: T(2) });
-    const agora = T(2);
+    const now = T(2);
 
-    const projecaoSemCustom = omit(projectState([v1, v2], vocabularioVazio, agora), ['logThrough']);
-    const projecaoComCustom = omit(projectState([v1, custom, v2], vocabularioVazio, agora), [
+    const projectionWithoutCustom = omit(projectState([v1, v2], emptyVocabulary, now), [
+      'logThrough',
+    ]);
+    const projectionWithCustom = omit(projectState([v1, custom, v2], emptyVocabulary, now), [
       'logThrough',
     ]);
 
-    expect(projecaoComCustom).toEqual(projecaoSemCustom);
+    expect(projectionWithCustom).toEqual(projectionWithoutCustom);
   });
 });

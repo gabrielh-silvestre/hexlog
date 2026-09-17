@@ -10,7 +10,7 @@ import { installArtifact } from '../../src/installation.ts';
 const [, , home, version, variant, processId, totalProcessesText] = process.argv;
 if ([home, version, variant, processId, totalProcessesText].some((v) => v === undefined)) {
   throw new Error(
-    'uso: concurrent-install.ts <home> <version> <variant> <processId> <totalProcesses>',
+    'usage: concurrent-install.ts <home> <version> <variant> <processId> <totalProcesses>',
   );
 }
 const totalProcesses = Number(totalProcessesText);

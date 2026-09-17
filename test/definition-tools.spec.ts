@@ -8,204 +8,199 @@ import { z } from 'zod';
 import { execute } from '../src/mcp.ts';
 import type { LogRecord } from '../src/log.ts';
 import {
-  type Ambiente,
-  criarAmbiente,
-  esperarErro,
+  type Environment,
+  createEnvironment,
+  expectError,
   parseJson,
-  registrarNucleo,
+  registerCore,
 } from './helpers.ts';
 
-const SCHEMA_VALIDO = {
+const VALID_SCHEMA = {
   type: 'object',
-  properties: { nota: { type: 'string' } },
-  required: ['nota'],
+  properties: { note: { type: 'string' } },
+  required: ['note'],
   additionalProperties: false,
 };
 
 // Forma de schemas/<nome>.json gravado por `register_type` (S1).
-const RegistroTipoSchema = z.object({ schema: z.record(z.string(), z.unknown()) });
+const TypeRecordSchema = z.object({ schema: z.record(z.string(), z.unknown()) });
 
-/** Registra vocabulário núcleo, um tipo e um gate custom, depois fixa `processo` (setup comum a vários ACs). */
-async function prepararProcesso(ambiente: Ambiente, projeto: string, processo: string) {
-  await registrarNucleo(ambiente, projeto);
-  const tipo = await ambiente.chamar('register_type', {
-    project: projeto,
-    name: 'nota',
-    schema: SCHEMA_VALIDO,
+/** Registra vocabulário núcleo, um tipo e um gate custom, depois fixa `process` (setup comum a vários ACs). */
+async function prepareProcess(environment: Environment, project: string, process: string) {
+  await registerCore(environment, project);
+  const type = await environment.call('register_type', {
+    project,
+    name: 'note',
+    schema: VALID_SCHEMA,
   });
-  await ambiente.chamar('register_gate', {
-    project: projeto,
-    name: 'gate-custom',
-    criteria: 'critério qualquer',
+  await environment.call('register_gate', {
+    project,
+    name: 'custom-gate',
+    criteria: 'any criteria',
   });
-  const criado = await ambiente.chamar('create_process', { project: projeto, process: processo });
-  return { tipo, criado };
+  const created = await environment.call('create_process', { project, process });
+  return { type, created };
 }
 
-let ambiente: Ambiente;
+let environment: Environment;
 
 beforeEach(async () => {
-  ambiente = await criarAmbiente();
+  environment = await createEnvironment();
 });
 
 afterEach(async () => {
-  await ambiente.fechar();
+  await environment.close();
 });
 
 describe('M2', () => {
-  const NOMES_INVALIDOS = ['..', 'a/b', 'A', '', '-a', 'a'.repeat(64)];
+  const INVALID_NAMES = ['..', 'a/b', 'A', '', '-a', 'a'.repeat(64)];
 
-  const CASOS: { tool: string; campo: string; base: Record<string, unknown> }[] = [
+  const CASES: { tool: string; field: string; base: Record<string, unknown> }[] = [
     {
       tool: 'create_process',
-      campo: 'project',
-      base: { project: 'proj-valido', process: 'proc-valido' },
+      field: 'project',
+      base: { project: 'valid-project', process: 'valid-process' },
     },
     {
       tool: 'create_process',
-      campo: 'process',
-      base: { project: 'proj-valido', process: 'proc-valido' },
+      field: 'process',
+      base: { project: 'valid-project', process: 'valid-process' },
     },
     {
       tool: 'register_type',
-      campo: 'project',
-      base: { project: 'proj-valido', name: 'tipo-valido', schema: SCHEMA_VALIDO },
+      field: 'project',
+      base: { project: 'valid-project', name: 'valid-type', schema: VALID_SCHEMA },
     },
     {
       tool: 'register_type',
-      campo: 'name',
-      base: { project: 'proj-valido', name: 'tipo-valido', schema: SCHEMA_VALIDO },
+      field: 'name',
+      base: { project: 'valid-project', name: 'valid-type', schema: VALID_SCHEMA },
     },
     {
       tool: 'register_vocabulary',
-      campo: 'project',
-      base: { project: 'proj-valido', owner: 'core' },
+      field: 'project',
+      base: { project: 'valid-project', owner: 'core' },
     },
     {
       tool: 'register_vocabulary',
-      campo: 'owner',
-      base: { project: 'proj-valido', owner: 'core' },
+      field: 'owner',
+      base: { project: 'valid-project', owner: 'core' },
     },
     {
       tool: 'register_gate',
-      campo: 'project',
-      base: { project: 'proj-valido', name: 'gate-valido', criteria: 'critério qualquer' },
+      field: 'project',
+      base: { project: 'valid-project', name: 'valid-gate', criteria: 'any criteria' },
     },
     {
       tool: 'register_gate',
-      campo: 'name',
-      base: { project: 'proj-valido', name: 'gate-valido', criteria: 'critério qualquer' },
+      field: 'name',
+      base: { project: 'valid-project', name: 'valid-gate', criteria: 'any criteria' },
     },
-    { tool: 'list', campo: 'project', base: {} },
-    { tool: 'list', campo: 'process', base: { project: 'proj-valido' } },
+    { tool: 'list', field: 'project', base: {} },
+    { tool: 'list', field: 'process', base: { project: 'valid-project' } },
   ];
 
-  for (const { tool, campo, base } of CASOS) {
-    for (const nomeInvalido of NOMES_INVALIDOS) {
-      test(`${tool}({${campo}: ${JSON.stringify(nomeInvalido)}}) → Input validation error, árvore intacta`, async () => {
-        const antes = ambiente.arvore();
-        const resultado = await ambiente.chamar(tool, { ...base, [campo]: nomeInvalido });
-        expect(resultado.isError).toBe(true);
-        expect(resultado.content?.[0]?.text).toMatch(/^Input validation error/);
-        expect(ambiente.arvore()).toEqual(antes);
+  for (const { tool, field, base } of CASES) {
+    for (const invalidName of INVALID_NAMES) {
+      test(`${tool}({${field}: ${JSON.stringify(invalidName)}}) → Input validation error, árvore intacta`, async () => {
+        const before = environment.tree();
+        const result = await environment.call(tool, { ...base, [field]: invalidName });
+        expect(result.isError).toBe(true);
+        expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
+        expect(environment.tree()).toEqual(before);
       });
     }
   }
 });
 
 describe('M7', () => {
-  test('register_type com schema reprovado pelo Ajv → SCHEMA_INVALIDO estruturado', async () => {
-    const resultado = await ambiente.chamar('register_type', {
+  test('register_type com schema reprovado pelo Ajv → INVALID_SCHEMA estruturado', async () => {
+    const result = await environment.call('register_type', {
       project: 'p1',
-      name: 'ruim',
+      name: 'bad',
       schema: { typ: 'object' },
     });
-    const corpo = esperarErro(resultado, 'INVALID_SCHEMA');
-    expect(corpo.details.length).toBeGreaterThan(0);
-    expect(corpo.details[0]?.path.startsWith('/')).toBe(true);
-    expect(corpo.message.length).toBeGreaterThan(0);
+    const body = expectError(result, 'INVALID_SCHEMA');
+    expect(body.details.length).toBeGreaterThan(0);
+    expect(body.details[0]?.path.startsWith('/')).toBe(true);
+    expect(body.message.length).toBeGreaterThan(0);
   });
 
   test('register_type com schema: [] → Input validation error (forma), sem chegar ao handler', async () => {
-    const resultado = await ambiente.chamar('register_type', {
+    const result = await environment.call('register_type', {
       project: 'p1',
-      name: 'ruim',
+      name: 'bad',
       schema: [],
     });
-    expect(resultado.isError).toBe(true);
-    expect(resultado.content?.[0]?.text).toMatch(/^Input validation error/);
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
   });
 
-  test('handler que lança exceção interna devolve INTERNO estruturado, nunca a exceção crua', async () => {
-    const [transporteServidor, transporteCliente] = InMemoryTransport.createLinkedPair();
-    const servidorTeste = new McpServer({ name: 'teste-interno', version: '0.0.0' });
+  test('handler que lança exceção interna devolve INTERNAL estruturado, nunca a exceção crua', async () => {
+    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+    const testServer = new McpServer({ name: 'internal-test', version: '0.0.0' });
     const logs: LogRecord[] = [];
-    const ctxTeste = {
-      dataDir: ambiente.dir,
+    const testCtx = {
+      dataDir: environment.dir,
       clock: () => new Date(),
       log: (r: LogRecord) => logs.push(r),
     };
 
-    servidorTeste.registerTool(
+    testServer.registerTool(
       'explode',
       {
-        description: 'lança exceção interna de propósito',
+        description: 'intentionally throws an internal exception',
         inputSchema: {},
         outputSchema: { ok: z.boolean() },
       },
       async () =>
-        execute(ctxTeste, 'explode', {}, () => {
+        execute(testCtx, 'explode', {}, () => {
           throw new Error('boom');
         }),
     );
 
-    const clienteTeste = new Client({ name: 'cliente-teste', version: '0.0.0' });
-    await Promise.all([
-      servidorTeste.connect(transporteServidor),
-      clienteTeste.connect(transporteCliente),
-    ]);
-    const resultado = (await clienteTeste.callTool({ name: 'explode', arguments: {} })) as {
+    const testClient = new Client({ name: 'test-client', version: '0.0.0' });
+    await Promise.all([testServer.connect(serverTransport), testClient.connect(clientTransport)]);
+    const result = (await testClient.callTool({ name: 'explode', arguments: {} })) as {
       isError?: boolean;
       structuredContent?: { code?: string };
     };
 
-    expect(resultado.isError).toBe(true);
-    expect(resultado.structuredContent?.code).toBe('INTERNAL');
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent?.code).toBe('INTERNAL');
     expect(
-      logs.some(
-        (registro) => registro.event === 'internal-error' && typeof registro.stack === 'string',
-      ),
+      logs.some((record) => record.event === 'internal-error' && typeof record.stack === 'string'),
     ).toBe(true);
-    await clienteTeste.close();
+    await testClient.close();
   });
 });
 
 describe('M8', () => {
   test('list {processo} não traz schema dos tipos; list {tipo} traz o schema fixado', async () => {
-    const { tipo } = await prepararProcesso(ambiente, 'p1', 'proc1');
+    const { type } = await prepareProcess(environment, 'p1', 'proc1');
 
-    const processo = await ambiente.chamar('list', { project: 'p1', process: 'proc1' });
-    const tipos = (
-      processo.structuredContent as {
+    const processResult = await environment.call('list', { project: 'p1', process: 'proc1' });
+    const types = (
+      processResult.structuredContent as {
         process: { types: { name: string; hash: string; schema?: unknown }[] };
       }
     ).process.types;
-    expect(tipos).toEqual([
-      { name: 'nota', hash: (tipo.structuredContent as { hash: string }).hash },
+    expect(types).toEqual([
+      { name: 'note', hash: (type.structuredContent as { hash: string }).hash },
     ]);
-    expect(tipos[0]).not.toHaveProperty('schema');
+    expect(types[0]).not.toHaveProperty('schema');
 
-    const doTipo = await ambiente.chamar('list', {
+    const typeResult = await environment.call('list', {
       project: 'p1',
       process: 'proc1',
-      type: 'nota',
+      type: 'note',
     });
-    expect(doTipo.structuredContent).toEqual({
-      builtinGates: (doTipo.structuredContent as { builtinGates: unknown }).builtinGates,
+    expect(typeResult.structuredContent).toEqual({
+      builtinGates: (typeResult.structuredContent as { builtinGates: unknown }).builtinGates,
       type: {
-        name: 'nota',
-        hash: (tipo.structuredContent as { hash: string }).hash,
-        schema: SCHEMA_VALIDO,
+        name: 'note',
+        hash: (type.structuredContent as { hash: string }).hash,
+        schema: VALID_SCHEMA,
       },
     });
   });
@@ -213,24 +208,24 @@ describe('M8', () => {
 
 describe('M9', () => {
   test('annotations das 5 tools de definição batem com §4.12', async () => {
-    const { tools } = await ambiente.cliente.listTools();
-    const porNome = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
+    const { tools } = await environment.client.listTools();
+    const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
 
-    expect(porNome.list).toMatchObject({
+    expect(byName.list).toMatchObject({
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     });
-    for (const nome of ['register_type', 'register_vocabulary', 'register_gate']) {
-      expect(porNome[nome]).toMatchObject({
+    for (const name of ['register_type', 'register_vocabulary', 'register_gate']) {
+      expect(byName[name]).toMatchObject({
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: true,
         openWorldHint: false,
       });
     }
-    expect(porNome.create_process).toMatchObject({
+    expect(byName.create_process).toMatchObject({
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: false,
@@ -241,163 +236,160 @@ describe('M9', () => {
 
 describe('S1', () => {
   test('register_type grava schemas/<nome>.json com o schema exato', async () => {
-    await ambiente.chamar('register_type', { project: 'p1', name: 'nota', schema: SCHEMA_VALIDO });
-    const gravado = parseJson(
-      RegistroTipoSchema,
-      fs.readFileSync(path.join(ambiente.dir, 'p1', 'schemas', 'nota.json'), 'utf8'),
+    await environment.call('register_type', { project: 'p1', name: 'note', schema: VALID_SCHEMA });
+    const written = parseJson(
+      TypeRecordSchema,
+      fs.readFileSync(path.join(environment.dir, 'p1', 'schemas', 'note.json'), 'utf8'),
     );
-    expect(gravado.schema).toEqual(SCHEMA_VALIDO);
+    expect(written.schema).toEqual(VALID_SCHEMA);
   });
 
   test('rejeita schema inválido, $ref externo e nomes reservados, sem gravar', async () => {
-    const antes = ambiente.arvore();
+    const before = environment.tree();
 
-    const invalido = await ambiente.chamar('register_type', {
+    const invalid = await environment.call('register_type', {
       project: 'p1',
-      name: 'ruim',
+      name: 'bad',
       schema: { typ: 'object' },
     });
-    esperarErro(invalido, 'INVALID_SCHEMA');
+    expectError(invalid, 'INVALID_SCHEMA');
 
-    const refExterno = await ambiente.chamar('register_type', {
+    const externalRef = await environment.call('register_type', {
       project: 'p1',
-      name: 'comref',
+      name: 'with-ref',
       schema: {
         type: 'object',
-        properties: { x: { $ref: 'https://exemplo.invalido/schema.json' } },
+        properties: { x: { $ref: 'https://example.invalid/schema.json' } },
       },
     });
-    esperarErro(refExterno, 'INVALID_SCHEMA');
+    expectError(externalRef, 'INVALID_SCHEMA');
 
-    const marco = await ambiente.chamar('register_type', {
+    const milestone = await environment.call('register_type', {
       project: 'p1',
       name: 'milestone',
-      schema: SCHEMA_VALIDO,
+      schema: VALID_SCHEMA,
     });
-    esperarErro(marco, 'RESERVED_NAME');
+    expectError(milestone, 'RESERVED_NAME');
 
-    const veredito = await ambiente.chamar('register_type', {
+    const verdict = await environment.call('register_type', {
       project: 'p1',
       name: 'verdict',
-      schema: SCHEMA_VALIDO,
+      schema: VALID_SCHEMA,
     });
-    esperarErro(veredito, 'RESERVED_NAME');
+    expectError(verdict, 'RESERVED_NAME');
 
-    expect(ambiente.arvore()).toEqual(antes);
+    expect(environment.tree()).toEqual(before);
   });
 });
 
 describe('S8', () => {
-  test('create_process com processo reservado → NOME_RESERVADO', async () => {
-    for (const processo of ['schemas', 'vocabulary', 'gates']) {
-      const resultado = await ambiente.chamar('create_process', {
+  test('create_process com processo reservado → RESERVED_NAME', async () => {
+    for (const processName of ['schemas', 'vocabulary', 'gates']) {
+      const result = await environment.call('create_process', {
         project: 'p1',
-        process: processo,
+        process: processName,
       });
-      esperarErro(resultado, 'RESERVED_NAME');
+      expectError(result, 'RESERVED_NAME');
     }
   });
 
-  test('register_gate com nome de gate embutido → NOME_RESERVADO', async () => {
-    for (const nome of ['no-orphans', 'no-conflicts', 'chain-intact', 'no-invalid-references']) {
-      const resultado = await ambiente.chamar('register_gate', {
+  test('register_gate com nome de gate embutido → RESERVED_NAME', async () => {
+    for (const name of ['no-orphans', 'no-conflicts', 'chain-intact', 'no-invalid-references']) {
+      const result = await environment.call('register_gate', {
         project: 'p1',
-        name: nome,
+        name,
         criteria: 'x',
       });
-      esperarErro(resultado, 'RESERVED_NAME');
+      expectError(result, 'RESERVED_NAME');
     }
   });
 });
 
 describe('N14', () => {
-  test('2 create_process concorrentes → exatamente um PROCESSO_JA_EXISTE e um process.json', async () => {
-    await ambiente.chamar('register_vocabulary', { project: 'p1', owner: 'core' });
+  test('2 create_process concorrentes → exatamente um PROCESS_ALREADY_EXISTS e um process.json', async () => {
+    await environment.call('register_vocabulary', { project: 'p1', owner: 'core' });
 
     const [a, b] = await Promise.all([
-      ambiente.chamar('create_process', { project: 'p1', process: 'proc1' }),
-      ambiente.chamar('create_process', { project: 'p1', process: 'proc1' }),
+      environment.call('create_process', { project: 'p1', process: 'proc1' }),
+      environment.call('create_process', { project: 'p1', process: 'proc1' }),
     ]);
 
-    const erros = [a, b].filter((r) => r.isError === true);
-    const sucessos = [a, b].filter((r) => r.isError !== true);
-    expect(erros).toHaveLength(1);
-    expect(sucessos).toHaveLength(1);
-    expect((erros[0]?.structuredContent as { code: string }).code).toBe('PROCESS_ALREADY_EXISTS');
-    expect(fs.existsSync(path.join(ambiente.dir, 'p1', 'proc1', 'process.json'))).toBe(true);
+    const errors = [a, b].filter((r) => r.isError === true);
+    const successes = [a, b].filter((r) => r.isError !== true);
+    expect(errors).toHaveLength(1);
+    expect(successes).toHaveLength(1);
+    expect((errors[0]?.structuredContent as { code: string }).code).toBe('PROCESS_ALREADY_EXISTS');
+    expect(fs.existsSync(path.join(environment.dir, 'p1', 'proc1', 'process.json'))).toBe(true);
   });
 
-  test('create_process sem nenhum vocabulário registrado → VOCABULARIO_AUSENTE', async () => {
-    const resultado = await ambiente.chamar('create_process', {
-      project: 'sem-vocab',
+  test('create_process sem nenhum vocabulário registrado → VOCABULARY_MISSING', async () => {
+    const result = await environment.call('create_process', {
+      project: 'no-vocab',
       process: 'proc1',
     });
-    esperarErro(resultado, 'VOCABULARY_MISSING');
+    expectError(result, 'VOCABULARY_MISSING');
   });
 });
 
 describe('list', () => {
   test('sem parâmetros: projetos existentes com a contagem de processos, e builtinGates sempre presente', async () => {
-    await prepararProcesso(ambiente, 'p1', 'proc1');
+    await prepareProcess(environment, 'p1', 'proc1');
 
-    const resultado = await ambiente.chamar('list', {});
-    const corpo = resultado.structuredContent as {
+    const result = await environment.call('list', {});
+    const body = result.structuredContent as {
       projects: { name: string; processes: number }[];
       builtinGates: unknown[];
     };
-    expect(corpo.projects).toEqual(expect.arrayContaining([{ name: 'p1', processes: 1 }]));
-    expect(corpo.builtinGates).toHaveLength(4);
+    expect(body.projects).toEqual(expect.arrayContaining([{ name: 'p1', processes: 1 }]));
+    expect(body.builtinGates).toHaveLength(4);
   });
 
-  test('processo sem projeto, ou tipo sem processo → ENTRADA_INVALIDA', async () => {
-    esperarErro(await ambiente.chamar('list', { process: 'proc1' }), 'INVALID_INPUT');
-    esperarErro(await ambiente.chamar('list', { project: 'p1', type: 'nota' }), 'INVALID_INPUT');
+  test('processo sem projeto, ou tipo sem processo → INVALID_INPUT', async () => {
+    expectError(await environment.call('list', { process: 'proc1' }), 'INVALID_INPUT');
+    expectError(await environment.call('list', { project: 'p1', type: 'note' }), 'INVALID_INPUT');
   });
 
-  test('projeto inexistente → PROJETO_INEXISTENTE', async () => {
-    esperarErro(await ambiente.chamar('list', { project: 'fantasma' }), 'PROJECT_NOT_FOUND');
+  test('projeto inexistente → PROJECT_NOT_FOUND', async () => {
+    expectError(await environment.call('list', { project: 'ghost' }), 'PROJECT_NOT_FOUND');
   });
 
-  test('processo inexistente → PROCESSO_INEXISTENTE', async () => {
-    await ambiente.chamar('register_vocabulary', { project: 'p1', owner: 'core' });
-    esperarErro(
-      await ambiente.chamar('list', { project: 'p1', process: 'fantasma' }),
+  test('processo inexistente → PROCESS_NOT_FOUND', async () => {
+    await environment.call('register_vocabulary', { project: 'p1', owner: 'core' });
+    expectError(
+      await environment.call('list', { project: 'p1', process: 'ghost' }),
       'PROCESS_NOT_FOUND',
     );
   });
 
-  test('tipo fora do snapshot do processo → TIPO_INEXISTENTE', async () => {
-    await prepararProcesso(ambiente, 'p1', 'proc1');
-    esperarErro(
-      await ambiente.chamar('list', { project: 'p1', process: 'proc1', type: 'fantasma' }),
+  test('tipo fora do snapshot do processo → TYPE_NOT_FOUND', async () => {
+    await prepareProcess(environment, 'p1', 'proc1');
+    expectError(
+      await environment.call('list', { project: 'p1', process: 'proc1', type: 'ghost' }),
       'TYPE_NOT_FOUND',
     );
   });
 
   test('ignora diretórios reservados e diretórios de processo sem manifesto', async () => {
-    await prepararProcesso(ambiente, 'p1', 'proc1');
-    fs.mkdirSync(path.join(ambiente.dir, 'p1', 'processo-sem-manifesto'));
+    await prepareProcess(environment, 'p1', 'proc1');
+    fs.mkdirSync(path.join(environment.dir, 'p1', 'process-without-manifest'));
 
-    const resultado = await ambiente.chamar('list', { project: 'p1' });
-    const processos = (
-      resultado.structuredContent as { project: { processes: { name: string }[] } }
-    ).project.processes;
-    expect(processos.map((p) => p.name)).toEqual(['proc1']);
+    const result = await environment.call('list', { project: 'p1' });
+    const processes = (result.structuredContent as { project: { processes: { name: string }[] } })
+      .project.processes;
+    expect(processes.map((p) => p.name)).toEqual(['proc1']);
   });
 });
 
 describe('logger', () => {
   test('toda chamada gera um registro tool com nome e ms; erro também traz code', async () => {
-    await ambiente.chamar('list', {});
-    const registroSucesso = ambiente.registros.find((r) => r.event === 'tool' && r.name === 'list');
-    expect(registroSucesso).toBeDefined();
-    expect(typeof registroSucesso?.ms).toBe('number');
-    expect(registroSucesso?.code).toBeUndefined();
+    await environment.call('list', {});
+    const successRecord = environment.records.find((r) => r.event === 'tool' && r.name === 'list');
+    expect(successRecord).toBeDefined();
+    expect(typeof successRecord?.ms).toBe('number');
+    expect(successRecord?.code).toBeUndefined();
 
-    await ambiente.chamar('list', { project: 'fantasma' });
-    const chamadasListar = ambiente.registros.filter(
-      (r) => r.event === 'tool' && r.name === 'list',
-    );
-    expect(last(chamadasListar)?.code).toBe('PROJECT_NOT_FOUND');
+    await environment.call('list', { project: 'ghost' });
+    const listCalls = environment.records.filter((r) => r.event === 'tool' && r.name === 'list');
+    expect(last(listCalls)?.code).toBe('PROJECT_NOT_FOUND');
   });
 });

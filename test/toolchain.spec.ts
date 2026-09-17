@@ -62,7 +62,7 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
   });
 
   test('jsonc-parser lê JSON com comentários', () => {
-    expect(jsonc.parse('{"a":1} // comentário')).toEqual({ a: 1 });
+    expect(jsonc.parse('{"a":1} // comment')).toEqual({ a: 1 });
   });
 
   test('es-toolkit (core) pick e es-toolkit/compat get', () => {
@@ -98,8 +98,8 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
     const client = new Client({ name: 'probe-client', version: '0.0.0' });
 
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    const result = await client.callTool({ name: 'echo', arguments: { text: 'oi' } });
-    expect(result.content).toEqual([{ type: 'text', text: 'oi' }]);
+    const result = await client.callTool({ name: 'echo', arguments: { text: 'hi' } });
+    expect(result.content).toEqual([{ type: 'text', text: 'hi' }]);
     await client.close();
   });
 
@@ -141,7 +141,7 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
       { encoding: 'utf8', cwd: repoRoot },
     );
     if (result.status !== 0) {
-      throw new Error(`build de probe falhou: ${result.stderr}`);
+      throw new Error(`probe build failed: ${result.stderr}`);
     }
   });
 
@@ -226,7 +226,7 @@ async function talkToServer(bundlePath: string): Promise<{ lines: string[]; stde
     jsonrpc: '2.0',
     id: 3,
     method: 'tools/call',
-    params: { name: 'echo', arguments: { text: 'oi' } },
+    params: { name: 'echo', arguments: { text: 'hi' } },
   });
   await waitForLines(3);
 

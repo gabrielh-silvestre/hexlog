@@ -82,7 +82,7 @@ export function buildGateMilestoneData(args: {
   });
 }
 
-/** Para `listar.builtinGates`: nome e critério dos 4 gates embutidos. */
+/** Para `listBuiltinGates`: nome e critério dos 4 gates embutidos. */
 export function listBuiltinGates(): { name: string; criteria: string }[] {
   return BUILTIN_GATE_NAMES.map((name) => ({ name, criteria: BUILTIN_GATES[name].criteria }));
 }

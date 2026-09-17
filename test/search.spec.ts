@@ -10,89 +10,89 @@ import {
 } from '../src/search.ts';
 import type { ProcessManifest, Vocabulary } from '../src/definitions.ts';
 import type { EventLine } from '../src/events.ts';
-import { gerarCorpus } from './fixtures/corpus.ts';
+import { generateCorpus } from './fixtures/corpus.ts';
 
-const VOCABULARIO: Vocabulary = {
+const VOCABULARY: Vocabulary = {
   core: {
-    milestoneType: ['aprovado', 'rejeitado'],
-    result: ['ok', 'falhou'],
-    action: ['seguir', 'revisar'],
+    milestoneType: ['approved', 'rejected'],
+    result: ['ok', 'failed'],
+    action: ['proceed', 'review'],
   },
   byOwner: {},
 };
 
-const MANIFESTO: ProcessManifest = {
+const MANIFEST: ProcessManifest = {
   project: 'p1',
   process: 'proc1',
   createdAt: '2026-01-01T00:00:00.000Z',
   fixed: {
     types: {
-      nota: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] },
+      note: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
     },
-    vocabulary: VOCABULARIO,
+    vocabulary: VOCABULARY,
     gates: {},
   },
   hashes: { schemas: '0'.repeat(64), vocabulary: '0'.repeat(64), gates: '0'.repeat(64) },
 };
 
-function linhaBase(overrides: Partial<EventLine>): EventLine {
+function baseLine(overrides: Partial<EventLine>): EventLine {
   return {
     seq: 0,
     id: 'p1:proc1:milestone:00000000-0000-7000-8000-000000000001',
     type: 'milestone',
     timestamp: '2026-01-01T00:00:00.000Z',
-    agent: 'agente-teste',
+    agent: 'test-agent',
     prevHash: '0'.repeat(64),
     data: {},
     ...overrides,
   };
 }
 
-function linhaComTexto(frase: string): EventLine {
-  return linhaBase({ type: 'nota', data: { texto: frase } });
+function lineWithText(text: string): EventLine {
+  return baseLine({ type: 'note', data: { text } });
 }
 
-function candidatosDe(linhas: EventLine[]): { index: number; line: EventLine }[] {
-  return linhas.map((line, index) => ({ index, line }));
+function candidatesFrom(lines: EventLine[]): { index: number; line: EventLine }[] {
+  return lines.map((line, index) => ({ index, line }));
 }
 
-describe('textoIndexavel', () => {
-  test('Marco: inclui marcoTipo, contagem.campo e decisoes[].item/acao/texto; exclui alvo e prazoExecucao', () => {
-    const linha = linhaBase({
+describe('indexableText', () => {
+  test('Milestone: inclui milestoneType, count.field e decisions[].item/action/text; exclui target e dueAt', () => {
+    const line = baseLine({
       data: {
-        milestoneType: 'aprovado',
-        target: 'hex:target:secreto',
+        milestoneType: 'approved',
+        target: 'hex:target:secret',
         dueAt: '2026-02-01T00:00:00.000Z',
-        count: { field: 'itens pendentes', value: 42 },
-        decisions: [{ item: 'revisar contrato', action: 'seguir', text: 'aprovado apos analise' }],
+        count: { field: 'pending items', value: 42 },
+        decisions: [{ item: 'review contract', action: 'proceed', text: 'approved after review' }],
       },
     });
-    const texto = indexableText(linha);
-    for (const parte of [
-      'aprovado',
-      'itens pendentes',
-      'revisar contrato',
-      'seguir',
-      'aprovado apos analise',
+    const text = indexableText(line);
+    for (const part of [
+      'approved',
+      'pending items',
+      'review contract',
+      'proceed',
+      'approved after review',
     ]) {
-      expect(texto).toContain(parte);
+      expect(text).toContain(part);
     }
-    expect(texto).not.toContain('hex:target:secreto');
-    expect(texto).not.toContain('2026-02-01');
-    expect(texto).not.toContain('42');
+    expect(text).not.toContain('hex:target:secret');
+    expect(text).not.toContain('2026-02-01');
+    expect(text).not.toContain('42');
   });
 
-  test('Marco de gate: inclui gate.nome/criterio e itens string de gate.prova; exclui alvo e itens estruturados', () => {
-    const linha = linhaBase({
+  test('Milestone de gate: inclui gate.name/criteria e itens string de gate.evidence; exclui target e itens estruturados', () => {
+    const line = baseLine({
       data: {
         milestoneType: 'gate',
-        target: 'hex:target:secreto',
+        target: 'hex:target:secret',
         gate: {
           name: 'gate-custom',
           origin: 'custom',
-          criteria: 'critério textual do gate',
+          criteria: 'gate criteria text',
           passed: true,
-          evidence: ['evidência em texto', { estruturado: true }],
+          evidence: ['evidence in text', { structured: true }],
           totalEvidenceItems: 2,
           evaluatedThrough: {
             id: 'p1:proc1:milestone:x',
@@ -102,70 +102,70 @@ describe('textoIndexavel', () => {
         },
       },
     });
-    const texto = indexableText(linha);
-    expect(texto).toContain('gate-custom');
-    expect(texto).toContain('critério textual do gate');
-    expect(texto).toContain('evidência em texto');
-    expect(texto).not.toContain('hex:target:secreto');
-    expect(texto).not.toContain('estruturado');
+    const text = indexableText(line);
+    expect(text).toContain('gate-custom');
+    expect(text).toContain('gate criteria text');
+    expect(text).toContain('evidence in text');
+    expect(text).not.toContain('hex:target:secret');
+    expect(text).not.toContain('structured');
   });
 
-  test('Veredito: inclui afirmacao/fonte/resultado/prova/origem/rastro; exclui destino e supera', () => {
-    const linha = linhaBase({
+  test('Verdict: inclui claim/source/result/evidence/origin/trace; exclui target e supersedes', () => {
+    const line = baseLine({
       type: 'verdict',
       data: {
-        claim: 'afirmação textual',
-        source: 'fonte textual',
+        claim: 'claim text',
+        source: 'source text',
         result: 'ok',
-        evidence: ['prova um', 'prova dois'],
-        target: 'hex:target:secreto',
+        evidence: ['evidence one', 'evidence two'],
+        target: 'hex:target:secret',
         supersedes: ['p1:proc1:verdict:00000000-0000-7000-8000-000000000000'],
-        origin: 'origem textual',
-        trace: 'rastro textual',
+        origin: 'origin text',
+        trace: 'trace text',
       },
     });
-    const texto = indexableText(linha);
-    for (const parte of [
-      'afirmação textual',
-      'fonte textual',
+    const text = indexableText(line);
+    for (const part of [
+      'claim text',
+      'source text',
       'ok',
-      'prova um',
-      'prova dois',
-      'origem textual',
-      'rastro textual',
+      'evidence one',
+      'evidence two',
+      'origin text',
+      'trace text',
     ]) {
-      expect(texto).toContain(parte);
+      expect(text).toContain(part);
     }
-    expect(texto).not.toContain('hex:target:secreto');
-    expect(texto).not.toContain('00000000-0000-7000-8000-000000000000');
+    expect(text).not.toContain('hex:target:secret');
+    expect(text).not.toContain('00000000-0000-7000-8000-000000000000');
   });
 
   test('custom: inclui toda string em qualquer profundidade, exceto hex: e ids completos', () => {
-    const linha = linhaBase({
-      type: 'nota',
+    const line = baseLine({
+      type: 'note',
       data: {
-        texto: 'nota em texto livre',
-        numero: 42,
+        text: 'free text note',
+        number: 42,
         ok: true,
-        detalhe: { sub: 'valor aninhado' },
-        lista: [
-          'item um',
-          'hex:target:secreto',
+        detail: { sub: 'nested value' },
+        list: [
+          'item one',
+          'hex:target:secret',
           'p1:proc1:milestone:00000000-0000-7000-8000-000000000000',
         ],
       },
     });
-    const texto = indexableText(linha);
-    expect(texto).toContain('nota em texto livre');
-    expect(texto).toContain('valor aninhado');
-    expect(texto).toContain('item um');
-    expect(texto).not.toContain('hex:target:secreto');
-    expect(texto).not.toContain('00000000-0000-7000-8000-000000000000');
-    expect(texto).not.toContain('42');
+    const text = indexableText(line);
+    expect(text).toContain('free text note');
+    expect(text).toContain('nested value');
+    expect(text).toContain('item one');
+    expect(text).not.toContain('hex:target:secret');
+    expect(text).not.toContain('00000000-0000-7000-8000-000000000000');
+    expect(text).not.toContain('42');
   });
 
   test('envelope: id, prevHash, timestamp e agente nunca entram no índice', () => {
-    const linha = linhaBase({
+    const line = baseLine({
       type: 'verdict',
       data: {
         claim: 'x',
@@ -177,33 +177,33 @@ describe('textoIndexavel', () => {
         trace: 'r',
       },
     });
-    const texto = indexableText(linha);
-    expect(texto).not.toContain(linha.id);
-    expect(texto).not.toContain(linha.prevHash);
-    expect(texto).not.toContain(linha.timestamp);
-    expect(texto).not.toContain(linha.agent);
+    const text = indexableText(line);
+    expect(text).not.toContain(line.id);
+    expect(text).not.toContain(line.prevHash);
+    expect(text).not.toContain(line.timestamp);
+    expect(text).not.toContain(line.agent);
   });
 });
 
-describe('semAcento', () => {
+describe('stripDiacritics', () => {
   test('remove acentos e normaliza para minúsculas', () => {
-    expect(stripDiacritics('AUTENTICAÇÃO')).toBe('autenticacao');
-    expect(stripDiacritics('inválido')).toBe('invalido');
+    expect(stripDiacritics('CAFÉ')).toBe('cafe');
+    expect(stripDiacritics('naïve')).toBe('naive');
   });
 });
 
-describe('ehCandidato', () => {
-  test('alvo: igualdade exata, "login" não casa "login-1"', () => {
-    const login = linhaBase({ data: { milestoneType: 'aprovado', target: 'hex:target:login' } });
-    const loginUm = linhaBase({
-      data: { milestoneType: 'aprovado', target: 'hex:target:login-1' },
+describe('isCandidate', () => {
+  test('target: igualdade exata, "login" não casa "login-1"', () => {
+    const login = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:login' } });
+    const loginOne = baseLine({
+      data: { milestoneType: 'approved', target: 'hex:target:login-1' },
     });
     expect(isCandidate(login, { target: 'hex:target:login' })).toBe(true);
-    expect(isCandidate(loginUm, { target: 'hex:target:login' })).toBe(false);
+    expect(isCandidate(loginOne, { target: 'hex:target:login' })).toBe(false);
   });
 
-  test('alvo casa tanto data.target (Marco) quanto data.target (Veredito)', () => {
-    const veredito = linhaBase({
+  test('target casa tanto data.target (Milestone) quanto data.target (Verdict)', () => {
+    const verdict = baseLine({
       type: 'verdict',
       data: {
         claim: 'a',
@@ -215,177 +215,177 @@ describe('ehCandidato', () => {
         trace: 'r',
       },
     });
-    expect(isCandidate(veredito, { target: 'hex:target:x' })).toBe(true);
+    expect(isCandidate(verdict, { target: 'hex:target:x' })).toBe(true);
   });
 
-  test('resultado: igualdade exata sem validação de vocabulário, só em Veredito', () => {
-    const veredito = linhaBase({
+  test('result: igualdade exata sem validação de vocabulário, só em Verdict', () => {
+    const verdict = baseLine({
       type: 'verdict',
       data: {
         claim: 'a',
         source: 'f',
-        result: 'fora-do-vocabulario',
+        result: 'out-of-vocabulary',
         evidence: 'p',
         target: 'hex:target:x',
         origin: 'o',
         trace: 'r',
       },
     });
-    expect(isCandidate(veredito, { result: 'fora-do-vocabulario' })).toBe(true);
-    const marco = linhaBase({ data: { milestoneType: 'aprovado', target: 'hex:target:x' } });
-    expect(isCandidate(marco, { result: 'fora-do-vocabulario' })).toBe(false);
+    expect(isCandidate(verdict, { result: 'out-of-vocabulary' })).toBe(true);
+    const milestone = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:x' } });
+    expect(isCandidate(milestone, { result: 'out-of-vocabulary' })).toBe(false);
   });
 
-  test('marcoTipo: só casa em Marco', () => {
-    const marco = linhaBase({ data: { milestoneType: 'aprovado', target: 'hex:target:x' } });
-    expect(isCandidate(marco, { milestoneType: 'aprovado' })).toBe(true);
-    expect(isCandidate(marco, { milestoneType: 'rejeitado' })).toBe(false);
+  test('milestoneType: só casa em Milestone', () => {
+    const milestone = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:x' } });
+    expect(isCandidate(milestone, { milestoneType: 'approved' })).toBe(true);
+    expect(isCandidate(milestone, { milestoneType: 'rejected' })).toBe(false);
   });
 
-  test('intervalo [apos, antes)', () => {
-    const linha = linhaBase({
+  test('intervalo [after, before)', () => {
+    const line = baseLine({
       timestamp: '2026-01-05T00:00:00.000Z',
-      data: { milestoneType: 'aprovado', target: 'hex:target:x' },
+      data: { milestoneType: 'approved', target: 'hex:target:x' },
     });
-    expect(isCandidate(linha, { after: '2026-01-05T00:00:00.000Z' })).toBe(true);
-    expect(isCandidate(linha, { after: '2026-01-05T00:00:00.001Z' })).toBe(false);
-    expect(isCandidate(linha, { before: '2026-01-05T00:00:00.000Z' })).toBe(false);
-    expect(isCandidate(linha, { before: '2026-01-05T00:00:00.001Z' })).toBe(true);
+    expect(isCandidate(line, { after: '2026-01-05T00:00:00.000Z' })).toBe(true);
+    expect(isCandidate(line, { after: '2026-01-05T00:00:00.001Z' })).toBe(false);
+    expect(isCandidate(line, { before: '2026-01-05T00:00:00.000Z' })).toBe(false);
+    expect(isCandidate(line, { before: '2026-01-05T00:00:00.001Z' })).toBe(true);
   });
 });
 
-describe('buscar: ordenação, desempate e fallback OR', () => {
+describe('search: ordenação, desempate e fallback OR', () => {
   test('relevância decrescente, empate por índice físico crescente', () => {
-    const candidatos = [
-      { index: 5, line: linhaComTexto('alfa') },
-      { index: 2, line: linhaComTexto('alfa') },
-      { index: 9, line: linhaComTexto('alfa beta') },
+    const candidates = [
+      { index: 5, line: lineWithText('alpha') },
+      { index: 2, line: lineWithText('alpha') },
+      { index: 9, line: lineWithText('alpha beta') },
     ];
-    const { results } = search(candidatos, 'alfa');
+    const { results } = search(candidates, 'alpha');
     expect(results).toEqual(orderBy(results, ['relevance', 'index'], ['desc', 'asc']));
     const indices = results.map((r) => r.index);
     expect(indices.indexOf(2)).toBeLessThan(indices.indexOf(5));
   });
 
   test('AND vazio com 2+ termos distintos cai para OR', () => {
-    const candidatos = [
-      { index: 0, line: linhaComTexto('alfa') },
-      { index: 1, line: linhaComTexto('beta') },
+    const candidates = [
+      { index: 0, line: lineWithText('alpha') },
+      { index: 1, line: lineWithText('beta') },
     ];
-    const { results, combination } = search(candidatos, 'alfa gama');
+    const { results, combination } = search(candidates, 'alpha gamma');
     expect(combination).toBe('OR');
     expect(results.map((r) => r.index)).toEqual([0]);
   });
 
   test('termo único sem resultado continua AND', () => {
-    const candidatos = [{ index: 0, line: linhaComTexto('alfa') }];
-    const { results, combination } = search(candidatos, 'zzz');
+    const candidates = [{ index: 0, line: lineWithText('alpha') }];
+    const { results, combination } = search(candidates, 'zzz');
     expect(results).toEqual([]);
     expect(combination).toBe('AND');
   });
 
-  test('termosDistintos conta termos únicos após processTerm (acento e maiúsculas)', () => {
+  test('distinctTerms conta termos únicos após processTerm (acento e maiúsculas)', () => {
     expect(distinctTerms('Café café CAFÉ')).toBe(1);
-    expect(distinctTerms('cache invalidação')).toBe(2);
+    expect(distinctTerms('cache invalidation')).toBe(2);
   });
 });
 
 describe('M11', () => {
-  const corpus = gerarCorpus({ tamanho: 300, manifesto: MANIFESTO, vocabulario: VOCABULARIO });
-  const candidatos = candidatosDe(corpus.linhas);
+  const corpus = generateCorpus({ size: 300, manifest: MANIFEST, vocabulary: VOCABULARY });
+  const candidates = candidatesFrom(corpus.lines);
 
-  test('a) acento: "autenticacao" e "autenticação" retornam o mesmo conjunto e a mesma ordem', () => {
-    const semAc = search(candidatos, 'autenticacao');
-    const comAc = search(candidatos, 'autenticação');
-    expect(comAc).toEqual(semAc);
+  test('a) acento: "cafe" e "café" retornam o mesmo conjunto e a mesma ordem', () => {
+    const withoutAccent = search(candidates, 'cafe');
+    const withAccent = search(candidates, 'café');
+    expect(withAccent).toEqual(withoutAccent);
   });
 
-  test('b) erro de digitação: recall 1,0 sobre o gabarito de "autenticação"', () => {
-    const gabarito = corpus.gabarito('autenticação');
-    const { results } = search(candidatos, 'atenticação');
-    const encontrados = new Set(results.map((r) => r.index));
-    for (const indice of gabarito) expect(encontrados.has(indice)).toBe(true);
+  test('b) erro de digitação: recall 1,0 sobre o gabarito de "authentication"', () => {
+    const expectedIndices = corpus.expected('authentication');
+    const { results } = search(candidates, 'authentcation');
+    const found = new Set(results.map((r) => r.index));
+    for (const index of expectedIndices) expect(found.has(index)).toBe(true);
   });
 
-  test('c) AND: "cache invalidação" só retorna quem tem as duas palavras, precisão 1,0', () => {
-    const gabaritoCache = new Set(corpus.gabarito('cache'));
-    const gabaritoInvalidacao = new Set(corpus.gabarito('invalidação'));
-    const esperado = [...gabaritoCache].filter((indice) => gabaritoInvalidacao.has(indice));
-    const { results, combination } = search(candidatos, 'cache invalidação');
+  test('c) AND: "cache invalidation" só retorna quem tem as duas palavras, precisão 1,0', () => {
+    const expectedCache = new Set(corpus.expected('cache'));
+    const expectedInvalidation = new Set(corpus.expected('invalidation'));
+    const expected = [...expectedCache].filter((index) => expectedInvalidation.has(index));
+    const { results, combination } = search(candidates, 'cache invalidation');
     expect(combination).toBe('AND');
-    expect(new Set(results.map((r) => r.index))).toEqual(new Set(esperado));
+    expect(new Set(results.map((r) => r.index))).toEqual(new Set(expected));
   });
 
   test('d) inexistente: "zzqxwv" → vazio', () => {
-    const { results, combination } = search(candidatos, 'zzqxwv');
+    const { results, combination } = search(candidates, 'zzqxwv');
     expect(results).toEqual([]);
     expect(combination).toBe('AND');
   });
 
   test('e) determinismo: 5 chamadas idênticas devolvem o mesmo resultado', () => {
-    const chamadas = Array.from({ length: 5 }, () => search(candidatos, 'cache'));
-    for (const chamada of chamadas) expect(chamada).toEqual(chamadas[0]);
+    const calls = Array.from({ length: 5 }, () => search(candidates, 'cache'));
+    for (const call of calls) expect(call).toEqual(calls[0]);
   });
 
   test('f) relevância não crescente, empate por índice físico crescente', () => {
-    const { results } = search(candidatos, 'webhook');
+    const { results } = search(candidates, 'webhook');
     expect(results.length).toBeGreaterThan(0);
     expect(results).toEqual(orderBy(results, ['relevance', 'index'], ['desc', 'asc']));
   });
 
-  test('i) linguagem natural: "problema com o webhook" cai para OR e acha os eventos de webhook', () => {
-    const gabaritoWebhook = corpus.gabarito('webhook');
-    const { results, combination } = search(candidatos, 'problema com o webhook');
+  test('i) linguagem natural: "problem with the webhook" cai para OR e acha os eventos de webhook', () => {
+    const expectedWebhook = corpus.expected('webhook');
+    const { results, combination } = search(candidates, 'problem with the webhook');
     expect(combination).toBe('OR');
     expect(results.length).toBeGreaterThan(0);
-    const encontrados = new Set(results.map((r) => r.index));
-    for (const indice of gabaritoWebhook) expect(encontrados.has(indice)).toBe(true);
+    const found = new Set(results.map((r) => r.index));
+    for (const index of expectedWebhook) expect(found.has(index)).toBe(true);
   });
 });
 
 describe('M12', () => {
-  test('a) alvo exato nunca casa "login-1..6", inclusive combinado com busca "login"', () => {
-    const corpus = gerarCorpus({ tamanho: 300, manifesto: MANIFESTO, vocabulario: VOCABULARIO });
-    const filtros: Filters = { target: 'hex:target:login' };
-    const candidatosFiltrados = candidatosDe(corpus.linhas).filter(({ line }) =>
-      isCandidate(line, filtros),
+  test('a) target exato nunca casa "login-1..6", inclusive combinado com busca "login"', () => {
+    const corpus = generateCorpus({ size: 300, manifest: MANIFEST, vocabulary: VOCABULARY });
+    const filters: Filters = { target: 'hex:target:login' };
+    const filteredCandidates = candidatesFrom(corpus.lines).filter(({ line }) =>
+      isCandidate(line, filters),
     );
     expect(
-      candidatosFiltrados.every(({ line }) => {
+      filteredCandidates.every(({ line }) => {
         const data = line.data as { target?: string };
         return data.target === 'hex:target:login';
       }),
     ).toBe(true);
 
-    const { results } = search(candidatosFiltrados, 'login');
+    const { results } = search(filteredCandidates, 'login');
     expect(results.length).toBeGreaterThan(0);
   });
 
-  test('c) apos/antes: só timestamp em [apos, antes)', () => {
-    const corpus = gerarCorpus({ tamanho: 50, manifesto: MANIFESTO, vocabulario: VOCABULARIO });
-    const filtros: Filters = {
-      after: corpus.linhas[10].timestamp,
-      before: corpus.linhas[20].timestamp,
+  test('c) after/before: só timestamp em [after, before)', () => {
+    const corpus = generateCorpus({ size: 50, manifest: MANIFEST, vocabulary: VOCABULARY });
+    const filters: Filters = {
+      after: corpus.lines[10].timestamp,
+      before: corpus.lines[20].timestamp,
     };
-    const indices = candidatosDe(corpus.linhas)
-      .filter(({ line }) => isCandidate(line, filtros))
+    const indices = candidatesFrom(corpus.lines)
+      .filter(({ line }) => isCandidate(line, filters))
       .map(({ index }) => index)
       .sort((a, b) => a - b);
     expect(indices).toEqual(Array.from({ length: 10 }, (_, i) => 10 + i));
   });
 
-  test('d) busca + alvo + tipo: interseção', () => {
-    const corpus = gerarCorpus({ tamanho: 300, manifesto: MANIFESTO, vocabulario: VOCABULARIO });
-    const filtros: Filters = { type: 'verdict', target: 'hex:target:login' };
-    const candidatosFiltrados = candidatosDe(corpus.linhas).filter(({ line }) =>
-      isCandidate(line, filtros),
+  test('d) busca + target + tipo: interseção', () => {
+    const corpus = generateCorpus({ size: 300, manifest: MANIFEST, vocabulary: VOCABULARY });
+    const filters: Filters = { type: 'verdict', target: 'hex:target:login' };
+    const filteredCandidates = candidatesFrom(corpus.lines).filter(({ line }) =>
+      isCandidate(line, filters),
     );
-    const { results } = search(candidatosFiltrados, 'login');
+    const { results } = search(filteredCandidates, 'login');
     expect(results.length).toBeGreaterThan(0);
-    for (const resultado of results) {
-      const linha = corpus.linhas[resultado.index];
-      expect(linha.type).toBe('verdict');
-      expect((linha.data as { target: string }).target).toBe('hex:target:login');
+    for (const result of results) {
+      const line = corpus.lines[result.index];
+      expect(line.type).toBe('verdict');
+      expect((line.data as { target: string }).target).toBe('hex:target:login');
     }
   });
 });

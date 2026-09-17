@@ -43,7 +43,7 @@ function buildBundle(outdir: string, cwd: string): void {
     encoding: 'utf8',
   });
   if (result.status !== 0) {
-    throw new Error(`build de e2e falhou (cwd=${cwd}): ${result.stderr}`);
+    throw new Error(`e2e build failed (cwd=${cwd}): ${result.stderr}`);
   }
 }
 
@@ -163,7 +163,7 @@ describe('M6', () => {
       jsonrpc: '2.0',
       id: 4,
       method: 'tools/call',
-      params: { name: 'chain', arguments: { project: 'fantasma', process: 'fantasma' } },
+      params: { name: 'chain', arguments: { project: 'ghost', process: 'ghost' } },
     });
     await waitFor(() => stdout.lines().length >= 4);
 
@@ -230,13 +230,13 @@ describe('B1', () => {
         await call('register_vocabulary', {
           project: projectName,
           owner: 'core',
-          milestoneType: ['aprovado'],
+          milestoneType: ['approved'],
           result: ['ok'],
-          action: ['seguir'],
+          action: ['follow'],
         });
         await call('register_type', {
           project: projectName,
-          name: 'nota-e2e',
+          name: 'note-e2e',
           schema: {
             type: 'object',
             properties: { when: { type: 'string', format: 'date-time' } },
@@ -255,7 +255,7 @@ describe('B1', () => {
           process: processName,
           id: `${projectName}:${processName}:milestone`,
           agent: 'e2e-agent',
-          data: { milestoneType: 'aprovado', target: 'hex:target:e2e1' },
+          data: { milestoneType: 'approved', target: 'hex:target:e2e1' },
         });
         await call('register', {
           project: projectName,
@@ -275,7 +275,7 @@ describe('B1', () => {
         await call('register', {
           project: projectName,
           process: processName,
-          id: `${projectName}:${processName}:nota-e2e`,
+          id: `${projectName}:${processName}:note-e2e`,
           agent: 'e2e-agent',
           data: { when: new Date().toISOString() },
         });
@@ -289,7 +289,7 @@ describe('B1', () => {
         await call('state', { project: projectName, process: processName });
         await call('events', { project: projectName, process: processName });
         if (searchAvailable) {
-          await call('events', { project: projectName, process: processName, search: 'aprovado' });
+          await call('events', { project: projectName, process: processName, search: 'approved' });
         }
         await call('chain', { project: projectName, process: processName });
         await call('list', {});
@@ -354,7 +354,7 @@ describe('C1', () => {
           process: processName,
           id: `${projectName}:${processName}:milestone`,
           agent: `server${serverIndex}`,
-          data: { milestoneType: 'aprovado', target: `hex:target:s${serverIndex}-${index}` },
+          data: { milestoneType: 'approved', target: `hex:target:s${serverIndex}-${index}` },
         },
       }),
     );
@@ -386,7 +386,7 @@ describe('C1', () => {
       arguments: {
         project: projectName,
         owner: 'core',
-        milestoneType: ['aprovado'],
+        milestoneType: ['approved'],
         result: [],
         action: [],
       },
@@ -399,7 +399,7 @@ describe('C1', () => {
     const seeds: SeedEvent[] = [];
     for (let index = 0; index < 20; index++) {
       const agent = 'seed';
-      const data = { milestoneType: 'aprovado', target: `hex:target:seed${index}` };
+      const data = { milestoneType: 'approved', target: `hex:target:seed${index}` };
       const result = await seedClient.client.callTool({
         name: 'register',
         arguments: {
