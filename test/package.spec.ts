@@ -58,6 +58,21 @@ function leavesRepo(specifier: string, file: string): boolean {
   return relative.startsWith('..') || path.isAbsolute(relative);
 }
 
+const FORBIDDEN_SERVER_MODULES = new Set(['http', 'https', 'http2', 'net']);
+
+/**
+ * true se `content` importa/requer (estático, dinâmico ou require) um módulo de servidor de
+ * rede (http/https/http2/net) ou chama `.listen(`. Usa `extractSpecifiers` — que olha o
+ * especificador do import, não o nome do símbolo importado — então não confunde `createServer`
+ * próprio do hexlog (fábrica do `McpServer`, importado de `./mcp.ts`) com `http.createServer`.
+ */
+function usesNetworkServerModule(content: string): boolean {
+  const importsForbiddenModule = extractSpecifiers(content).some((specifier) =>
+    FORBIDDEN_SERVER_MODULES.has(specifier.replace(/^node:/, '')),
+  );
+  return importsForbiddenModule || /\.listen\(/.test(content);
+}
+
 const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
 describe('N7', () => {
@@ -148,16 +163,31 @@ describe('M5', () => {
   });
 
   test('nenhum arquivo em src/ importa módulo de servidor de rede nem chama .listen(', () => {
-    // Escopo: proíbe importar http/https/http2/net (§M5: hexlog é stdio-only) e chamar
-    // `.listen(`, sem depender do nome do símbolo — `createServer` de `mcp.ts` é a fábrica
-    // do `McpServer` (SDK MCP, sem socket) e não deve disparar este teste por coincidência
-    // de nome com `http.createServer`.
+    // §M5: hexlog é stdio-only — proíbe http/https/http2/net e `.listen(`.
     const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
-      /from\s+['"](node:)?(http|https|http2|net)['"]|\.listen\(/.test(
-        fs.readFileSync(file, 'utf8'),
-      ),
+      usesNetworkServerModule(fs.readFileSync(file, 'utf8')),
     );
     expect(violations).toEqual([]);
+  });
+
+  test('detecta import estático de módulo de servidor de rede (from)', () => {
+    expect(usesNetworkServerModule(`import { createServer } from 'node:http';`)).toBe(true);
+  });
+
+  test('detecta require de módulo de servidor de rede', () => {
+    expect(usesNetworkServerModule(`const http = require('node:http');`)).toBe(true);
+  });
+
+  test('detecta import dinâmico de módulo de servidor de rede', () => {
+    expect(usesNetworkServerModule(`const http = await import('node:http');`)).toBe(true);
+  });
+
+  test('detecta chamada .listen(', () => {
+    expect(usesNetworkServerModule('server.listen(3000);')).toBe(true);
+  });
+
+  test('não dispara em createServer que não vem de módulo de servidor de rede (fábrica do hexlog)', () => {
+    expect(usesNetworkServerModule(`import { createServer } from './mcp.ts';`)).toBe(false);
   });
 
   test('não existe diretório cli no repo (fora de node_modules)', () => {
