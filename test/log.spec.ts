@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { anchor, hashLine, verifyChain } from '../src/chain.ts';
-import type { Linha } from '../src/events.ts';
+import type { EventLine } from '../src/events.ts';
 import { append, readText, type LogRecord } from '../src/log.ts';
 
 const MANIFESTO = { projeto: 'p', processo: 'proc', fixado: { versao: 1 } };
@@ -15,18 +15,18 @@ type Base = {
   timestamp: string;
   prevHash: string;
   uuid: string;
-  lastLink: Linha | null;
+  lastLink: EventLine | null;
 };
 
-function montarLinha(base: Base): Linha {
+function montarLinha(base: Base): EventLine {
   return {
     seq: base.seq,
-    id: `p:proc:marco:${base.uuid}`,
-    tipo: 'marco',
+    id: `p:proc:milestone:${base.uuid}`,
+    type: 'milestone',
     timestamp: base.timestamp,
-    agente: 'agente-teste',
+    agent: 'agente-teste',
     prevHash: base.prevHash,
-    dados: { marcoTipo: 'passo', alvo: 'hex:alvo:u1' },
+    data: { milestoneType: 'passo', target: 'hex:target:u1' },
   };
 }
 
@@ -40,7 +40,7 @@ let arquivo: string;
 
 beforeEach(() => {
   dirTemp = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-log-'));
-  arquivo = path.join(dirTemp, 'eventos.jsonl');
+  arquivo = path.join(dirTemp, 'events.jsonl');
 });
 
 afterEach(() => {
@@ -170,7 +170,7 @@ describe('anexar — fencing', () => {
     const dirLock = `${arquivo}.lock`;
     const { log, registros } = criarLoggerEspiao();
 
-    const montarComRoubo = (base: Base): Linha => {
+    const montarComRoubo = (base: Base): EventLine => {
       // simula um segundo dono assumindo o lock entre a montagem e a escrita
       fs.writeFileSync(path.join(dirLock, 'holder'), 'outro-token', { mode: 0o600 });
       return montarLinha(base);

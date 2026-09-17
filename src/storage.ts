@@ -5,17 +5,17 @@ import { isNil } from 'es-toolkit';
 import { HexlogError } from './errors.ts';
 
 /** §4.2: nomes de processo reservados para as definições do projeto. */
-export const PROCESSOS_RESERVADOS = ['schemas', 'vocabulario', 'gates'] as const;
+export const RESERVED_PROCESS_NAMES = ['schemas', 'vocabulary', 'gates'] as const;
 
 /** §4.2: nomes de tipo reservados para os eventos nativos. */
-export const TIPOS_RESERVADOS = ['marco', 'veredito'] as const;
+export const RESERVED_TYPE_NAMES = ['milestone', 'verdict'] as const;
 
-/** §4.11: nomes de gate embutidos, reservados para `registrar_gate`. */
-export const GATES_EMBUTIDOS_NOMES = [
-  'sem-orfaos',
-  'sem-conflitos',
-  'cadeia-integra',
-  'sem-referencias-invalidas',
+/** §4.11: nomes de gate embutidos, reservados para `register_gate`. */
+export const BUILTIN_GATE_NAMES = [
+  'no-orphans',
+  'no-conflicts',
+  'chain-intact',
+  'no-invalid-references',
 ] as const;
 
 /**

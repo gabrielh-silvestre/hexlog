@@ -1,169 +1,165 @@
 import { isNil, isString, orderBy, round } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import MiniSearch from 'minisearch';
-import { ID_COMPLETO_RE, type Linha } from './events.ts';
+import { FULL_ID_RE, type EventLine } from './events.ts';
 
-/** Teto de caracteres do parâmetro `busca` de `eventos` (§4.16): abaixo de 2, `prefix` casaria quase tudo. */
-export const TETO_BUSCA_CHARS = 200;
+/** Teto de caracteres do parâmetro `search` de `events` (§4.16): abaixo de 2, `prefix` casaria quase tudo. */
+export const SEARCH_MAX_CHARS = 200;
 
-const DIACRITICOS_RE = /[̀-ͯ]/g;
-const HEX_PREFIXO_RE = /^hex:/;
+const DIACRITICS_RE = /[̀-ͯ]/g;
+const HEX_PREFIX_RE = /^hex:/;
 
 /** Remove acentos e normaliza para minúsculas (mesma função do probe da frente 15). */
-export function semAcento(t: string): string {
-  return t.normalize('NFD').replace(DIACRITICOS_RE, '').toLowerCase();
+export function stripDiacritics(t: string): string {
+  return t.normalize('NFD').replace(DIACRITICS_RE, '').toLowerCase();
 }
 
 /** Texto livre indexável de uma linha (§4.17): campos por tipo, concatenados com `\n`; ids e endereços ficam fora. */
-export function textoIndexavel(linha: Linha): string {
-  if (linha.tipo === 'marco') {
-    const dados = linha.dados as { marcoTipo?: string };
-    return dados.marcoTipo === 'gate' ? textoDeGate(linha.dados) : textoDeMarco(linha.dados);
+export function indexableText(line: EventLine): string {
+  if (line.type === 'milestone') {
+    const data = line.data as { milestoneType?: string };
+    return data.milestoneType === 'gate' ? gateText(line.data) : milestoneText(line.data);
   }
-  if (linha.tipo === 'veredito') return textoDeVeredito(linha.dados);
-  return textoCustom(linha.dados);
+  if (line.type === 'verdict') return verdictText(line.data);
+  return customText(line.data);
 }
 
-function textoDeMarco(dados: Record<string, unknown>): string {
-  const marco = dados as {
-    marcoTipo?: string;
-    contagem?: { campo?: string };
-    decisoes?: { item: string; acao: string; texto: string }[];
+function milestoneText(data: Record<string, unknown>): string {
+  const milestone = data as {
+    milestoneType?: string;
+    count?: { field?: string };
+    decisions?: { item: string; action: string; text: string }[];
   };
-  const decisoes = (marco.decisoes ?? []).flatMap((decisao) => [
-    decisao.item,
-    decisao.acao,
-    decisao.texto,
+  const decisions = (milestone.decisions ?? []).flatMap((decision) => [
+    decision.item,
+    decision.action,
+    decision.text,
   ]);
-  return [marco.marcoTipo, marco.contagem?.campo, ...decisoes].filter(isString).join('\n');
+  return [milestone.milestoneType, milestone.count?.field, ...decisions]
+    .filter(isString)
+    .join('\n');
 }
 
-function textoDeGate(dados: Record<string, unknown>): string {
-  const gate = dados as { gate?: { nome?: string; criterio?: string; prova?: unknown[] } };
-  const itensDeProva = (gate.gate?.prova ?? []).filter(isString);
-  return [gate.gate?.nome, gate.gate?.criterio, ...itensDeProva].filter(isString).join('\n');
+function gateText(data: Record<string, unknown>): string {
+  const gate = data as { gate?: { name?: string; criteria?: string; evidence?: unknown[] } };
+  const evidenceItems = (gate.gate?.evidence ?? []).filter(isString);
+  return [gate.gate?.name, gate.gate?.criteria, ...evidenceItems].filter(isString).join('\n');
 }
 
-function textoDeVeredito(dados: Record<string, unknown>): string {
-  const veredito = dados as {
-    afirmacao?: string;
-    fonte?: string;
-    resultado?: string;
-    prova?: string | string[];
-    origem?: string;
-    rastro?: string;
+function verdictText(data: Record<string, unknown>): string {
+  const verdict = data as {
+    claim?: string;
+    source?: string;
+    result?: string;
+    evidence?: string | string[];
+    origin?: string;
+    trace?: string;
   };
-  const prova = isString(veredito.prova)
-    ? [veredito.prova]
-    : (veredito.prova ?? []).filter(isString);
-  return [
-    veredito.afirmacao,
-    veredito.fonte,
-    veredito.resultado,
-    ...prova,
-    veredito.origem,
-    veredito.rastro,
-  ]
+  const evidence = isString(verdict.evidence)
+    ? [verdict.evidence]
+    : (verdict.evidence ?? []).filter(isString);
+  return [verdict.claim, verdict.source, verdict.result, ...evidence, verdict.origin, verdict.trace]
     .filter(isString)
     .join('\n');
 }
 
 /** Tipo custom (§4.17): todo valor string em qualquer profundidade, exceto endereços `hex:` e ids completos. */
-function textoCustom(dados: Record<string, unknown>): string {
-  const partes: string[] = [];
-  coletarStrings(dados, partes);
-  return partes.join('\n');
+function customText(data: Record<string, unknown>): string {
+  const parts: string[] = [];
+  collectStrings(data, parts);
+  return parts.join('\n');
 }
 
-function coletarStrings(valor: unknown, partes: string[]): void {
-  if (isString(valor)) {
-    if (!HEX_PREFIXO_RE.test(valor) && !ID_COMPLETO_RE.test(valor)) partes.push(valor);
+function collectStrings(value: unknown, parts: string[]): void {
+  if (isString(value)) {
+    if (!HEX_PREFIX_RE.test(value) && !FULL_ID_RE.test(value)) parts.push(value);
     return;
   }
-  if (Array.isArray(valor)) {
-    valor.forEach((item) => coletarStrings(item, partes));
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectStrings(item, parts));
     return;
   }
-  if (!isNil(valor) && typeof valor === 'object') {
-    Object.values(valor).forEach((item) => coletarStrings(item, partes));
+  if (!isNil(value) && typeof value === 'object') {
+    Object.values(value).forEach((item) => collectStrings(item, parts));
   }
 }
 
 /**
- * Filtros estruturados de `eventos` (§4.12 item 9): igualdade exata sobre `dados` cru, nunca via
- * índice de texto. `apos`/`antes` já normalizados (`new Date(v).toISOString()`) por quem chama.
+ * Filtros estruturados de `events` (§4.12 item 9): igualdade exata sobre `data` cru, nunca via
+ * índice de texto. `after`/`before` já normalizados (`new Date(v).toISOString()`) por quem chama.
  */
-export type Filtros = {
-  tipo?: string;
-  alvo?: string;
-  marcoTipo?: string;
-  resultado?: string;
-  apos?: string;
-  antes?: string;
+export type Filters = {
+  type?: string;
+  target?: string;
+  milestoneType?: string;
+  result?: string;
+  after?: string;
+  before?: string;
 };
 
 /** Uma linha é candidata quando satisfaz todos os filtros presentes (§4.12 item 9). */
-export function ehCandidato(linha: Linha, filtros: Filtros): boolean {
-  if (!isNil(filtros.tipo) && linha.tipo !== filtros.tipo) return false;
-  if (!isNil(filtros.alvo) && !casaAlvo(linha, filtros.alvo)) return false;
-  if (!isNil(filtros.marcoTipo) && !casaMarcoTipo(linha, filtros.marcoTipo)) return false;
-  if (!isNil(filtros.resultado) && !casaResultado(linha, filtros.resultado)) return false;
-  if (!isNil(filtros.apos) && linha.timestamp < filtros.apos) return false;
-  if (!isNil(filtros.antes) && linha.timestamp >= filtros.antes) return false;
+export function isCandidate(line: EventLine, filters: Filters): boolean {
+  if (!isNil(filters.type) && line.type !== filters.type) return false;
+  if (!isNil(filters.target) && !matchesTarget(line, filters.target)) return false;
+  if (!isNil(filters.milestoneType) && !matchesMilestoneType(line, filters.milestoneType))
+    return false;
+  if (!isNil(filters.result) && !matchesResult(line, filters.result)) return false;
+  if (!isNil(filters.after) && line.timestamp < filters.after) return false;
+  if (!isNil(filters.before) && line.timestamp >= filters.before) return false;
   return true;
 }
 
-function casaAlvo(linha: Linha, alvo: string): boolean {
-  const dados = linha.dados as { alvo?: string; destino?: string };
-  return dados.alvo === alvo || dados.destino === alvo;
+function matchesTarget(line: EventLine, target: string): boolean {
+  return (line.data as { target?: string }).target === target;
 }
 
-function casaMarcoTipo(linha: Linha, marcoTipo: string): boolean {
-  return linha.tipo === 'marco' && (linha.dados as { marcoTipo?: string }).marcoTipo === marcoTipo;
-}
-
-function casaResultado(linha: Linha, resultado: string): boolean {
+function matchesMilestoneType(line: EventLine, milestoneType: string): boolean {
   return (
-    linha.tipo === 'veredito' && (linha.dados as { resultado?: string }).resultado === resultado
+    line.type === 'milestone' &&
+    (line.data as { milestoneType?: string }).milestoneType === milestoneType
   );
 }
 
-/** Quantidade de termos distintos de `busca` depois de tokenizar (padrão do MiniSearch) e aplicar `processTerm`. */
-export function termosDistintos(busca: string): number {
-  const tokenizar = MiniSearch.getDefault('tokenize') as (texto: string) => string[];
-  const termos = tokenizar(busca)
-    .map(semAcento)
-    .filter((termo) => termo.length > 0);
-  return new Set(termos).size;
+function matchesResult(line: EventLine, result: string): boolean {
+  return line.type === 'verdict' && (line.data as { result?: string }).result === result;
 }
 
-type Candidato = { indice: number; linha: Linha };
-type ResultadoBusca = { indice: number; relevancia: number };
+/** Quantidade de termos distintos de `search` depois de tokenizar (padrão do MiniSearch) e aplicar `processTerm`. */
+export function distinctTerms(search: string): number {
+  const tokenize = MiniSearch.getDefault('tokenize') as (text: string) => string[];
+  const terms = tokenize(search)
+    .map(stripDiacritics)
+    .filter((term) => term.length > 0);
+  return new Set(terms).size;
+}
+
+type Candidate = { index: number; line: EventLine };
+type SearchResult = { index: number; relevance: number };
 
 /**
- * Índice MiniSearch (§4.17), construído só sobre `candidatos`, a cada chamada: config fixa
+ * Índice MiniSearch (§4.17), construído só sobre `candidates`, a cada chamada: config fixa
  * `AND` + `prefix` + `fuzzy: 0.1`, com fallback para `OR` quando o `AND` não devolve nada e a
  * consulta tem 2+ termos distintos.
  */
-export function buscar(
-  candidatos: Candidato[],
-  busca: string,
-): { resultados: ResultadoBusca[]; combinacao: 'AND' | 'OR' } {
-  const motor = new MiniSearch<{ indice: number; texto: string }>({
-    idField: 'indice',
-    fields: ['texto'],
-    processTerm: (t) => semAcento(t) || null,
+export function search(
+  candidates: Candidate[],
+  query: string,
+): { results: SearchResult[]; combination: 'AND' | 'OR' } {
+  const engine = new MiniSearch<{ index: number; text: string }>({
+    idField: 'index',
+    fields: ['text'],
+    processTerm: (t) => stripDiacritics(t) || null,
     searchOptions: { combineWith: 'AND', prefix: true, fuzzy: 0.1 },
   });
-  motor.addAll(candidatos.map((c) => ({ indice: c.indice, texto: textoIndexavel(c.linha) })));
+  engine.addAll(candidates.map((c) => ({ index: c.index, text: indexableText(c.line) })));
 
-  let brutos = motor.search(busca);
-  let combinacao: 'AND' | 'OR' = 'AND';
-  if (isEmpty(brutos) && termosDistintos(busca) >= 2) {
-    brutos = motor.search(busca, { combineWith: 'OR' });
-    combinacao = 'OR';
+  let raw = engine.search(query);
+  let combination: 'AND' | 'OR' = 'AND';
+  if (isEmpty(raw) && distinctTerms(query) >= 2) {
+    raw = engine.search(query, { combineWith: 'OR' });
+    combination = 'OR';
   }
 
-  const resultados = brutos.map((r) => ({ indice: r.id as number, relevancia: round(r.score, 4) }));
-  return { resultados: orderBy(resultados, ['relevancia', 'indice'], ['desc', 'asc']), combinacao };
+  const results = raw.map((r) => ({ index: r.id as number, relevance: round(r.score, 4) }));
+  return { results: orderBy(results, ['relevance', 'index'], ['desc', 'asc']), combination };
 }

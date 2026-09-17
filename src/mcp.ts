@@ -5,8 +5,8 @@ import type { Logger as LoggerAjv } from './definitions.ts';
 import { type Detail, HexlogError } from './errors.ts';
 import { registrarFerramentasDefinicoes } from './definition-tools.ts';
 import { registrarFerramentasEventos } from './event-tools.ts';
-import { VocabSchema, VocabularioSchema } from './state.ts';
-import { Agente, Hash, Instante, Nome } from './events.ts';
+import { VocabSchema, VocabularySchema } from './state.ts';
+import { Agent, Hash, Instant, Name } from './events.ts';
 import type { Logger, LogRecord } from './log.ts';
 import { VERSAO } from './version.ts';
 
@@ -46,8 +46,8 @@ export const Aviso = z.object({
 });
 // Reexportados de state.ts (fonte única do schema de vocabulário, DE-29).
 export const Vocab = VocabSchema;
-export const Vocabulario = VocabularioSchema;
-export const Ref = z.object({ id: z.string(), seq: z.number().int(), timestamp: Instante });
+export const Vocabulary = VocabularySchema;
+export const Ref = z.object({ id: z.string(), seq: z.number().int(), timestamp: Instant });
 export const Quebra = z.object({
   indice: z.number().int(),
   motivo: z.enum(['linha-invalida', 'seq-divergente', 'hash-nao-bate', 'dados-invalidos']),
@@ -63,8 +63,8 @@ export const Cadeia = z.object({
 });
 export const Hashes = z.object({ schemas: Hash, vocabulario: Hash, gates: Hash });
 export const Definida = z.object({
-  projeto: Nome,
-  nome: Nome,
+  projeto: Name,
+  nome: Name,
   hash: Hash,
   substituiu: z.boolean(),
 });
@@ -79,7 +79,7 @@ export const Secao = z.enum([
 ]);
 
 // Reexportadas por conveniência: os módulos de tools só precisam importar de `mcp.ts`.
-export { Agente, Hash, Instante, Nome };
+export { Agent, Hash, Instant, Name };
 
 /** Corpo de sucesso ou erro que uma tool devolve ao SDK (§4.13): nunca uma exceção. */
 type ResultadoTool<T> =

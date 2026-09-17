@@ -1,87 +1,91 @@
 import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
-import type { Linha } from '../src/events.ts';
-import { agoraEfetivo, projetar, type Vocabulario } from '../src/state.ts';
+import type { EventLine } from '../src/events.ts';
+import { effectiveNow, projectState, type Vocabulary } from '../src/state.ts';
 
-// ---- fixtures locais (duplicadas de estado.spec.ts: 2 arquivos só, sem 3º módulo) ----
+// ---- fixtures locais (duplicadas de state.spec.ts: 2 arquivos só, sem 3º módulo) ----
 
 const T = (n: number) => new Date(n * 60_000).toISOString();
 const AGORA_BASE = T(0);
-const vocabularioVazio: Vocabulario = {
-  nucleo: { marcoTipo: [], resultado: [], acao: [] },
-  porDono: {},
+const vocabularioVazio: Vocabulary = {
+  core: { milestoneType: [], result: [], action: [] },
+  byOwner: {},
 };
 
-function elo(args: {
-  tipo: string;
-  dados: Record<string, unknown>;
+function line(args: {
+  type: string;
+  data: Record<string, unknown>;
   id?: string;
   timestamp?: string;
   seq?: number;
-}): Linha {
+}): EventLine {
   const numeroSeq = args.seq ?? 0;
   return {
     seq: numeroSeq,
-    id: args.id ?? `p:r:${args.tipo}:${randomUUIDv7()}`,
-    tipo: args.tipo,
+    id: args.id ?? `p:r:${args.type}:${randomUUIDv7()}`,
+    type: args.type,
     timestamp: args.timestamp ?? T(numeroSeq),
-    agente: 'teste',
+    agent: 'teste',
     prevHash: '0'.repeat(64), // sintético: a projeção não verifica hash
-    dados: args.dados,
+    data: args.data,
   };
 }
 
-function marco(
-  dados: { alvo: string },
+function milestone(
+  data: { target: string },
   opcoes: { id?: string; timestamp?: string; seq?: number } = {},
-): Linha {
-  return elo({ tipo: 'marco', dados: { marcoTipo: 'evento-property', ...dados }, ...opcoes });
+): EventLine {
+  return line({
+    type: 'milestone',
+    data: { milestoneType: 'evento-property', ...data },
+    ...opcoes,
+  });
 }
 
-function veredito(
-  dados: { destino: string; afirmacao: string; supera?: string[] },
+function verdict(
+  data: { target: string; claim: string; supersedes?: string[] },
   opcoes: { id?: string; timestamp?: string; seq?: number } = {},
-): Linha {
-  return elo({
-    tipo: 'veredito',
-    dados: { fonte: 'f', prova: 'p', origem: 'o', rastro: 'r', resultado: 'confirmada', ...dados },
+): EventLine {
+  return line({
+    type: 'verdict',
+    data: { source: 'f', evidence: 'p', origin: 'o', trace: 'r', result: 'confirmada', ...data },
     ...opcoes,
   });
 }
 
 // ---- gerador de intents (porte de evolve.property.spec.ts:26-67, ids/alvos no formato novo) ----
 
-const ALVO_A = 'hex:alvo:a';
-const ALVO_B = 'hex:alvo:b';
+const ALVO_A = 'hex:target:a';
+const ALVO_B = 'hex:target:b';
 
 interface IntentoVeredito {
-  readonly tipo: 'veredito';
-  readonly destino: string;
-  readonly afirmacao: 'a1' | 'a2';
+  readonly tipo: 'verdict';
+  readonly target: string;
+  readonly claim: 'a1' | 'a2';
   readonly superaOffset: number | null;
 }
 interface IntentoMarco {
-  readonly tipo: 'marco';
-  readonly alvo: string;
+  readonly tipo: 'milestone';
+  readonly target: string;
 }
 type Intento = IntentoVeredito | IntentoMarco;
 
 const arbitrarioIntento: fc.Arbitrary<Intento> = fc.oneof(
   fc.record({
-    tipo: fc.constant('veredito' as const),
-    destino: fc.constantFrom(ALVO_A, ALVO_B),
-    afirmacao: fc.constantFrom('a1' as const, 'a2' as const),
+    tipo: fc.constant('verdict' as const),
+    target: fc.constantFrom(ALVO_A, ALVO_B),
+    claim: fc.constantFrom('a1' as const, 'a2' as const),
     superaOffset: fc.option(fc.integer({ min: 1, max: 6 }), { nil: null }),
   }),
-  fc.record({ tipo: fc.constant('marco' as const), alvo: fc.constantFrom(ALVO_A, ALVO_B) }),
+  fc.record({ tipo: fc.constant('milestone' as const), target: fc.constantFrom(ALVO_A, ALVO_B) }),
 );
 
 const arbitrarioSequencia = fc.array(arbitrarioIntento, { minLength: 1, maxLength: 12 });
 
-/** Materializa a sequência de intenções em elos: timestamps crescentes, ids únicos por índice,
- * `supera` resolvido só contra vereditos anteriores (nunca referencia algo à frente no log). */
-function materializar(intentos: readonly Intento[]): Linha[] {
+/** Materializa a sequência de intenções em lines: timestamps crescentes, ids únicos por índice,
+ * `supersedes` resolvido só contra verdicts anteriores (nunca referencia algo à frente no log). */
+function materializar(intentos: readonly Intento[]): EventLine[] {
   const idPorIndice: string[] = [];
   const tipoPorIndice: Intento['tipo'][] = [];
 
@@ -91,17 +95,17 @@ function materializar(intentos: readonly Intento[]): Linha[] {
     idPorIndice.push(id);
     tipoPorIndice.push(intento.tipo);
 
-    if (intento.tipo === 'marco')
-      return marco({ alvo: intento.alvo }, { id, timestamp, seq: indice });
+    if (intento.tipo === 'milestone')
+      return milestone({ target: intento.target }, { id, timestamp, seq: indice });
 
-    let supera: string[] | undefined;
+    let supersedes: string[] | undefined;
     if (intento.superaOffset !== null) {
       const alvoIndice = indice - intento.superaOffset;
-      if (alvoIndice >= 0 && tipoPorIndice[alvoIndice] === 'veredito')
-        supera = [idPorIndice[alvoIndice]];
+      if (alvoIndice >= 0 && tipoPorIndice[alvoIndice] === 'verdict')
+        supersedes = [idPorIndice[alvoIndice]];
     }
-    return veredito(
-      { destino: intento.destino, afirmacao: intento.afirmacao, supera },
+    return verdict(
+      { target: intento.target, claim: intento.claim, supersedes },
       { id, timestamp, seq: indice },
     );
   });
@@ -111,12 +115,12 @@ describe('projetar — propriedades (fast-check)', () => {
   test('para qualquer sequência válida, projetar nunca lança e toda vigência é única ou conflito com 2+ candidatos', () => {
     fc.assert(
       fc.property(arbitrarioSequencia, (intentos) => {
-        const elos = materializar(intentos);
-        const projecao = projetar(elos, vocabularioVazio, agoraEfetivo(AGORA_BASE, elos));
+        const lines = materializar(intentos);
+        const projecao = projectState(lines, vocabularioVazio, effectiveNow(AGORA_BASE, lines));
 
-        for (const vigencia of projecao.vigentes) {
-          if (vigencia.status === 'vigente') expect(vigencia.vigente).toBeTruthy();
-          else expect(vigencia.candidatos.length).toBeGreaterThanOrEqual(2);
+        for (const vigencia of projecao.active) {
+          if (vigencia.status === 'active') expect(vigencia.active).toBeTruthy();
+          else expect(vigencia.candidates.length).toBeGreaterThanOrEqual(2);
         }
       }),
     );
@@ -125,14 +129,14 @@ describe('projetar — propriedades (fast-check)', () => {
   test('reinserir ao final uma duplicata de um elo já existente não muda a Projeção (idempotência de dedupe)', () => {
     fc.assert(
       fc.property(arbitrarioSequencia, fc.nat(), (intentos, indiceBruto) => {
-        const elos = materializar(intentos);
-        const indice = indiceBruto % elos.length;
-        const duplicata = elos[indice];
-        const comDuplicata = [...elos, duplicata];
-        const agora = agoraEfetivo(AGORA_BASE, elos);
+        const lines = materializar(intentos);
+        const indice = indiceBruto % lines.length;
+        const duplicata = lines[indice];
+        const comDuplicata = [...lines, duplicata];
+        const agora = effectiveNow(AGORA_BASE, lines);
 
-        expect(projetar(comDuplicata, vocabularioVazio, agora)).toEqual(
-          projetar(elos, vocabularioVazio, agora),
+        expect(projectState(comDuplicata, vocabularioVazio, agora)).toEqual(
+          projectState(lines, vocabularioVazio, agora),
         );
       }),
     );
@@ -141,19 +145,19 @@ describe('projetar — propriedades (fast-check)', () => {
   test('vigentes aparece na ordem de 1ª aparição da chave (destino, afirmação) no log', () => {
     fc.assert(
       fc.property(arbitrarioSequencia, (intentos) => {
-        const elos = materializar(intentos);
-        const projecao = projetar(elos, vocabularioVazio, agoraEfetivo(AGORA_BASE, elos));
+        const lines = materializar(intentos);
+        const projecao = projectState(lines, vocabularioVazio, effectiveNow(AGORA_BASE, lines));
 
         const ordemNoLog: string[] = [];
-        for (const e of elos) {
-          if (e.tipo !== 'veredito') continue;
-          const dados = e.dados as { destino: string; afirmacao: string };
-          const chave = JSON.stringify([dados.destino, dados.afirmacao]);
+        for (const e of lines) {
+          if (e.type !== 'verdict') continue;
+          const data = e.data as { target: string; claim: string };
+          const chave = JSON.stringify([data.target, data.claim]);
           if (!ordemNoLog.includes(chave)) ordemNoLog.push(chave);
         }
 
-        const ordemObtida = projecao.vigentes.map((v) => JSON.stringify([v.destino, v.afirmacao]));
-        // grupos inteiramente superados por outra chave somem de vigentes (não fundem, só desaparecem):
+        const ordemObtida = projecao.active.map((v) => JSON.stringify([v.target, v.claim]));
+        // grupos inteiramente superados por outra chave somem de active (não fundem, só desaparecem):
         // a ordem relativa entre as chaves que sobraram é a propriedade garantida.
         expect(ordemObtida).toEqual(ordemNoLog.filter((chave) => ordemObtida.includes(chave)));
       }),

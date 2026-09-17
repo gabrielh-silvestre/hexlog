@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { isEmpty, isNil } from 'es-toolkit/compat';
 import { expectedPrevHash, isValidLink, nextSeq } from './chain.ts';
 import { HexlogError } from './errors.ts';
-import type { Linha } from './events.ts';
+import type { EventLine } from './events.ts';
 
 export type LogRecord = {
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -27,7 +27,7 @@ type Base = {
   timestamp: string;
   prevHash: string;
   uuid: string;
-  lastLink: Linha | null;
+  lastLink: EventLine | null;
 };
 
 /** Leitura sem lock. Arquivo inexistente conta como log vazio. */
@@ -43,14 +43,14 @@ export function readText(file: string): string {
  * Anexa um elo ao log JSONL sob lock exclusivo por diretório (§4.7). A espera pela aquisição do
  * lock é assíncrona (retry com `await` de sleep); a partir daqui, `build` roda dentro da seção
  * crítica síncrona (sem `await`): recebe a base já calculada (`seq`/`prevHash`/`uuid`/`timestamp`/
- * `lastLink`) e devolve a `Linha` a gravar.
+ * `lastLink`) e devolve a `EventLine` a gravar.
  */
 export async function append(
   file: string,
   manifest: unknown,
-  build: (base: Base) => Linha,
+  build: (base: Base) => EventLine,
   options: { log: Logger; timeoutMs?: number; orphanMs?: number; clock?: () => Date },
-): Promise<Linha> {
+): Promise<EventLine> {
   const {
     log,
     timeoutMs = LOCK_TIMEOUT_MS,
@@ -99,7 +99,10 @@ function prepareContext(
 }
 
 /** Primeira linha, de trás pra frente, que passa em `isValidLink`; e quantas vêm depois dela. */
-function lastLinkAndLinesAfter(lines: string[]): { lastLink: Linha | null; linesAfter: number } {
+function lastLinkAndLinesAfter(lines: string[]): {
+  lastLink: EventLine | null;
+  linesAfter: number;
+} {
   for (let index = lines.length - 1; index >= 0; index--) {
     const link = isValidLink(lines[index]);
     if (!isNil(link)) return { lastLink: link, linesAfter: lines.length - 1 - index };
@@ -107,7 +110,7 @@ function lastLinkAndLinesAfter(lines: string[]): { lastLink: Linha | null; lines
   return { lastLink: null, linesAfter: lines.length };
 }
 
-function writeLine(file: string, endsWithNewline: boolean, line: Linha): void {
+function writeLine(file: string, endsWithNewline: boolean, line: EventLine): void {
   const fd = fs.openSync(file, 'a', 0o600);
   try {
     fs.writeSync(fd, `${endsWithNewline ? '' : '\n'}${JSON.stringify(line)}\n`);

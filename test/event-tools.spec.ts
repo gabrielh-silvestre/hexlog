@@ -4,10 +4,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
-import { buscar } from '../src/search.ts';
+import { search as runSearch } from '../src/search.ts';
 import { anchor, expectedPrevHash, nextSeq, sha256hex, type Chain } from '../src/chain.ts';
-import type { Manifesto } from '../src/definitions.ts';
-import type { Linha } from '../src/events.ts';
+import type { ProcessManifest } from '../src/definitions.ts';
+import type { EventLine } from '../src/events.ts';
 import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
 import { type Ambiente, criarAmbiente, esperarErro, registrarNucleo } from './helpers.ts';
 
@@ -15,9 +15,9 @@ type ResultadoChamada = Awaited<ReturnType<Ambiente['chamar']>>;
 
 const PROJ = 'p1';
 const PROC = 'proc1';
-const AGENTE = 'agente-teste';
-const PREFIXO_MARCO = `${PROJ}:${PROC}:marco`;
-const PREFIXO_VEREDITO = `${PROJ}:${PROC}:veredito`;
+const AGENTE = 'agent-teste';
+const PREFIXO_MILESTONE = `${PROJ}:${PROC}:milestone`;
+const PREFIXO_VERDICT = `${PROJ}:${PROC}:verdict`;
 const PREFIXO_NOTA = `${PROJ}:${PROC}:nota`;
 
 const SCHEMA_CUSTOM = {
@@ -33,67 +33,67 @@ const SCHEMA_CUSTOM = {
 };
 
 function dadosMarco(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { marcoTipo: 'aprovado', alvo: 'hex:alvo:u1', ...overrides };
+  return { milestoneType: 'aprovado', target: 'hex:target:u1', ...overrides };
 }
 
 function dadosVeredito(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    afirmacao: 'a',
-    fonte: 'f',
-    resultado: 'ok',
-    prova: 'p',
-    destino: 'hex:alvo:u1',
-    origem: 'o',
-    rastro: 'r',
+    claim: 'a',
+    source: 'f',
+    result: 'ok',
+    evidence: 'p',
+    target: 'hex:target:u1',
+    origin: 'o',
+    trace: 'r',
     ...overrides,
   };
 }
 
-/** Vocabulário núcleo + tipo custom com `default`/`format: date-time`/`enum` + gate custom, e fixa o processo. */
-async function preparar(ambiente: Ambiente, projeto: string, processo: string): Promise<void> {
-  await registrarNucleo(ambiente, projeto);
-  await ambiente.chamar('registrar_tipo', { projeto, nome: 'nota', schema: SCHEMA_CUSTOM });
+/** Vocabulário núcleo + tipo custom com `default`/`format: date-time`/`enum` + gate custom, e fixa o process. */
+async function preparar(ambiente: Ambiente, project: string, process: string): Promise<void> {
+  await registrarNucleo(ambiente, project);
+  await ambiente.chamar('registrar_tipo', { project, name: 'nota', schema: SCHEMA_CUSTOM });
   await ambiente.chamar('registrar_gate', {
-    projeto,
-    nome: 'gate-custom',
-    criterio: 'critério custom qualquer',
+    project,
+    name: 'gate-custom',
+    criteria: 'critério custom qualquer',
   });
-  await ambiente.chamar('criar_processo', { projeto, processo });
+  await ambiente.chamar('criar_processo', { project, process });
 }
 
-function lerManifesto(ambiente: Ambiente, projeto: string, processo: string): unknown {
+function lerManifesto(ambiente: Ambiente, project: string, process: string): unknown {
   return JSON.parse(
-    fs.readFileSync(path.join(ambiente.dir, projeto, processo, 'processo.json'), 'utf8'),
+    fs.readFileSync(path.join(ambiente.dir, project, process, 'process.json'), 'utf8'),
   );
 }
 
 function escreverLog(
   ambiente: Ambiente,
-  projeto: string,
-  processo: string,
-  linhas: (Linha | string)[],
+  project: string,
+  process: string,
+  linhas: (EventLine | string)[],
 ): void {
   const texto =
     linhas.map((linha) => (typeof linha === 'string' ? linha : JSON.stringify(linha))).join('\n') +
     '\n';
-  fs.writeFileSync(path.join(ambiente.dir, projeto, processo, 'eventos.jsonl'), texto);
+  fs.writeFileSync(path.join(ambiente.dir, project, process, 'events.jsonl'), texto);
 }
 
-function construirElo(manifesto: unknown, ultimoElo: Linha | null, indice: number): Linha {
+function construirElo(manifesto: unknown, ultimoElo: EventLine | null, indice: number): EventLine {
   return {
     seq: nextSeq(ultimoElo, 0),
-    id: `${PROJ}:${PROC}:marco:${randomUUIDv7()}`,
-    tipo: 'marco',
+    id: `${PROJ}:${PROC}:milestone:${randomUUIDv7()}`,
+    type: 'milestone',
     timestamp: new Date(Date.UTC(2026, 0, 1 + indice)).toISOString(),
-    agente: AGENTE,
+    agent: AGENTE,
     prevHash: expectedPrevHash(ultimoElo, manifesto),
-    dados: { marcoTipo: 'aprovado', alvo: 'hex:alvo:u1' },
+    data: { milestoneType: 'aprovado', target: 'hex:target:u1' },
   };
 }
 
-function construirLog(manifesto: unknown, quantidade: number): Linha[] {
-  const linhas: Linha[] = [];
-  let ultimoElo: Linha | null = null;
+function construirLog(manifesto: unknown, quantidade: number): EventLine[] {
+  const linhas: EventLine[] = [];
+  let ultimoElo: EventLine | null = null;
   for (let indice = 0; indice < quantidade; indice++) {
     const elo = construirElo(manifesto, ultimoElo, indice);
     linhas.push(elo);
@@ -102,10 +102,10 @@ function construirLog(manifesto: unknown, quantidade: number): Linha[] {
   return linhas;
 }
 
-function esperarDeduplicado(resultado: ResultadoChamada, seqEsperado: number): void {
-  const corpo = resultado.structuredContent as { deduplicado: boolean; evento: Linha };
-  expect(corpo.deduplicado).toBe(true);
-  expect(corpo.evento.seq).toBe(seqEsperado);
+function esperarDeduplicado(result: ResultadoChamada, seqEsperado: number): void {
+  const corpo = result.structuredContent as { deduplicated: boolean; event: EventLine };
+  expect(corpo.deduplicated).toBe(true);
+  expect(corpo.event.seq).toBe(seqEsperado);
 }
 
 let ambiente: Ambiente;
@@ -145,66 +145,66 @@ describe('M1', () => {
 describe('M2', () => {
   const NOMES_INVALIDOS = ['..', 'a/b', 'A', '', '-a', 'a'.repeat(64)];
 
-  const CASOS: { tool: string; campo: string; base: Record<string, unknown> }[] = [
+  const CASOS: { tool: string; field: string; base: Record<string, unknown> }[] = [
     {
       tool: 'registrar',
-      campo: 'projeto',
+      field: 'project',
       base: {
-        projeto: PROJ,
-        processo: PROC,
-        id: PREFIXO_MARCO,
-        agente: AGENTE,
-        dados: dadosMarco(),
+        project: PROJ,
+        process: PROC,
+        id: PREFIXO_MILESTONE,
+        agent: AGENTE,
+        data: dadosMarco(),
       },
     },
     {
       tool: 'registrar',
-      campo: 'processo',
+      field: 'process',
       base: {
-        projeto: PROJ,
-        processo: PROC,
-        id: PREFIXO_MARCO,
-        agente: AGENTE,
-        dados: dadosMarco(),
+        project: PROJ,
+        process: PROC,
+        id: PREFIXO_MILESTONE,
+        agent: AGENTE,
+        data: dadosMarco(),
       },
     },
     {
       tool: 'avaliar_gate',
-      campo: 'projeto',
+      field: 'project',
       base: {
-        projeto: PROJ,
-        processo: PROC,
-        gate: 'sem-orfaos',
-        agente: AGENTE,
-        alvo: 'hex:alvo:u1',
+        project: PROJ,
+        process: PROC,
+        gate: 'no-orphans',
+        agent: AGENTE,
+        target: 'hex:target:u1',
       },
     },
     {
       tool: 'avaliar_gate',
-      campo: 'processo',
+      field: 'process',
       base: {
-        projeto: PROJ,
-        processo: PROC,
-        gate: 'sem-orfaos',
-        agente: AGENTE,
-        alvo: 'hex:alvo:u1',
+        project: PROJ,
+        process: PROC,
+        gate: 'no-orphans',
+        agent: AGENTE,
+        target: 'hex:target:u1',
       },
     },
-    { tool: 'estado', campo: 'projeto', base: { projeto: PROJ, processo: PROC } },
-    { tool: 'estado', campo: 'processo', base: { projeto: PROJ, processo: PROC } },
-    { tool: 'eventos', campo: 'projeto', base: { projeto: PROJ, processo: PROC } },
-    { tool: 'eventos', campo: 'processo', base: { projeto: PROJ, processo: PROC } },
-    { tool: 'cadeia', campo: 'projeto', base: { projeto: PROJ, processo: PROC } },
-    { tool: 'cadeia', campo: 'processo', base: { projeto: PROJ, processo: PROC } },
+    { tool: 'estado', field: 'project', base: { project: PROJ, process: PROC } },
+    { tool: 'estado', field: 'process', base: { project: PROJ, process: PROC } },
+    { tool: 'eventos', field: 'project', base: { project: PROJ, process: PROC } },
+    { tool: 'eventos', field: 'process', base: { project: PROJ, process: PROC } },
+    { tool: 'cadeia', field: 'project', base: { project: PROJ, process: PROC } },
+    { tool: 'cadeia', field: 'process', base: { project: PROJ, process: PROC } },
   ];
 
-  for (const { tool, campo, base } of CASOS) {
+  for (const { tool, field, base } of CASOS) {
     for (const nomeInvalido of NOMES_INVALIDOS) {
-      test(`${tool}({${campo}: ${JSON.stringify(nomeInvalido)}}) → Input validation error, árvore intacta`, async () => {
+      test(`${tool}({${field}: ${JSON.stringify(nomeInvalido)}}) → Input validation error, árvore intacta`, async () => {
         const antes = ambiente.arvore();
-        const resultado = await ambiente.chamar(tool, { ...base, [campo]: nomeInvalido });
-        expect(resultado.isError).toBe(true);
-        expect(resultado.content?.[0]?.text).toMatch(/^Input validation error/);
+        const result = await ambiente.chamar(tool, { ...base, [field]: nomeInvalido });
+        expect(result.isError).toBe(true);
+        expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
         expect(ambiente.arvore()).toEqual(antes);
       });
     }
@@ -216,136 +216,136 @@ describe('M3', () => {
     {
       tool: 'registrar',
       args: {
-        projeto: PROJ,
-        processo: 'fantasma',
-        id: `${PROJ}:fantasma:marco`,
-        agente: AGENTE,
-        dados: dadosMarco(),
+        project: PROJ,
+        process: 'fantasma',
+        id: `${PROJ}:fantasma:milestone`,
+        agent: AGENTE,
+        data: dadosMarco(),
       },
     },
     {
       tool: 'avaliar_gate',
       args: {
-        projeto: PROJ,
-        processo: 'fantasma',
-        gate: 'sem-orfaos',
-        agente: AGENTE,
-        alvo: 'hex:alvo:u1',
+        project: PROJ,
+        process: 'fantasma',
+        gate: 'no-orphans',
+        agent: AGENTE,
+        target: 'hex:target:u1',
       },
     },
-    { tool: 'estado', args: { projeto: PROJ, processo: 'fantasma' } },
-    { tool: 'eventos', args: { projeto: PROJ, processo: 'fantasma' } },
-    { tool: 'cadeia', args: { projeto: PROJ, processo: 'fantasma' } },
+    { tool: 'estado', args: { project: PROJ, process: 'fantasma' } },
+    { tool: 'eventos', args: { project: PROJ, process: 'fantasma' } },
+    { tool: 'cadeia', args: { project: PROJ, process: 'fantasma' } },
   ];
 
   for (const { tool, args } of CASOS) {
     test(`${tool} em processo inexistente → PROCESSO_INEXISTENTE, sem criar diretório`, async () => {
-      const resultado = await ambiente.chamar(tool, args);
-      esperarErro(resultado, 'PROCESS_NOT_FOUND');
+      const result = await ambiente.chamar(tool, args);
+      esperarErro(result, 'PROCESS_NOT_FOUND');
       expect(fs.existsSync(path.join(ambiente.dir, PROJ, 'fantasma'))).toBe(false);
     });
   }
 });
 
 describe('M7', () => {
-  test('avaliar_gate com alvo fora do formato hex:alvo: → Input validation error', async () => {
+  test('avaliar_gate com alvo fora do formato hex:target: → Input validation error', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
-      gate: 'sem-orfaos',
-      agente: AGENTE,
-      alvo: 'u1',
+    const result = await ambiente.chamar('avaliar_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: 'no-orphans',
+      agent: AGENTE,
+      target: 'u1',
     });
-    expect(resultado.isError).toBe(true);
-    expect(resultado.content?.[0]?.text).toMatch(/^Input validation error/);
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
   });
 
   test('registrar com id fora da gramática → ID_INVALIDO estruturado', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
       id: 'lixo',
-      agente: AGENTE,
-      dados: dadosMarco(),
+      agent: AGENTE,
+      data: dadosMarco(),
     });
-    const corpo = esperarErro(resultado, 'INVALID_ID');
+    const corpo = esperarErro(result, 'INVALID_ID');
     expect(corpo.detalhes[0]?.path).toBe('/id');
   });
 });
 
 describe('M8', () => {
-  test('eventos pagina 250 linhas em 3 páginas de até 100, em ordem, sem exceder o teto de caracteres', async () => {
+  test('eventos pagina 250 linhas em 4 páginas (teto de caracteres), em ordem, sem exceder o teto', async () => {
     await preparar(ambiente, PROJ, PROC);
     for (let i = 0; i < 250; i++) {
-      const resultado = await ambiente.chamar('registrar', {
-        projeto: PROJ,
-        processo: PROC,
-        id: PREFIXO_MARCO,
-        agente: AGENTE,
-        dados: dadosMarco(),
+      const result = await ambiente.chamar('registrar', {
+        project: PROJ,
+        process: PROC,
+        id: PREFIXO_MILESTONE,
+        agent: AGENTE,
+        data: dadosMarco(),
       });
-      expect(resultado.isError).not.toBe(true);
+      expect(result.isError).not.toBe(true);
     }
 
-    const paginas: { eventos: Linha[]; proximoCursor: number | null }[] = [];
+    const paginas: { events: EventLine[]; nextCursor: number | null }[] = [];
     let cursor = 0;
     for (;;) {
-      const resultado = await ambiente.chamar('eventos', {
-        projeto: PROJ,
-        processo: PROC,
-        desde: cursor,
-        limite: 100,
+      const result = await ambiente.chamar('eventos', {
+        project: PROJ,
+        process: PROC,
+        since: cursor,
+        limit: 100,
       });
-      const corpo = resultado.structuredContent as {
-        eventos: Linha[];
-        proximoCursor: number | null;
+      const corpo = result.structuredContent as {
+        events: EventLine[];
+        nextCursor: number | null;
       };
       paginas.push(corpo);
-      if (isNil(corpo.proximoCursor)) break;
-      cursor = corpo.proximoCursor;
+      if (isNil(corpo.nextCursor)) break;
+      cursor = corpo.nextCursor;
     }
 
-    expect(paginas).toHaveLength(3);
-    const todos = paginas.flatMap((pagina) => pagina.eventos);
+    expect(paginas).toHaveLength(4);
+    const todos = paginas.flatMap((pagina) => pagina.events);
     expect(todos).toHaveLength(250);
-    expect(todos.map((evento) => evento.seq)).toEqual(Array.from({ length: 250 }, (_, i) => i));
-    expect(paginas.at(-1)?.proximoCursor).toBeNull();
+    expect(todos.map((event) => event.seq)).toEqual(Array.from({ length: 250 }, (_, i) => i));
+    expect(paginas.at(-1)?.nextCursor).toBeNull();
     for (const pagina of paginas) {
-      if (pagina.eventos.length > 1) {
-        expect(JSON.stringify(pagina.eventos).length).toBeLessThanOrEqual(24_000);
+      if (pagina.events.length > 1) {
+        expect(JSON.stringify(pagina.events).length).toBeLessThanOrEqual(24_000);
       }
     }
   });
 
-  test('dados acima de 16 000 caracteres canônicos → EVENTO_INVALIDO', async () => {
+  test('data acima de 16 000 caracteres canônicos → EVENTO_INVALIDO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
       id: PREFIXO_NOTA,
-      agente: AGENTE,
-      dados: { nota: 'x'.repeat(17_000) },
+      agent: AGENTE,
+      data: { nota: 'x'.repeat(17_000) },
     });
-    const corpo = esperarErro(resultado, 'INVALID_EVENT');
+    const corpo = esperarErro(result, 'INVALID_EVENT');
     expect(corpo.detalhes.some((detalhe) => detalhe.code === 'too_big')).toBe(true);
   });
 
   test('estado com 150 vigentes → 100 itens na lista e totais.vigentes = 150', async () => {
     await preparar(ambiente, PROJ, PROC);
     for (let i = 0; i < 150; i++) {
-      const resultado = await ambiente.chamar('registrar', {
-        projeto: PROJ,
-        processo: PROC,
-        id: PREFIXO_VEREDITO,
-        agente: AGENTE,
-        dados: dadosVeredito({ destino: `hex:alvo:u${i}`, afirmacao: `a${i}` }),
+      const result = await ambiente.chamar('registrar', {
+        project: PROJ,
+        process: PROC,
+        id: PREFIXO_VERDICT,
+        agent: AGENTE,
+        data: dadosVeredito({ target: `hex:target:u${i}`, claim: `a${i}` }),
       });
-      expect(resultado.isError).not.toBe(true);
+      expect(result.isError).not.toBe(true);
     }
-    const resultado = await ambiente.chamar('estado', { projeto: PROJ, processo: PROC });
-    const corpo = resultado.structuredContent as {
+    const result = await ambiente.chamar('estado', { project: PROJ, process: PROC });
+    const corpo = result.structuredContent as {
       vigentes: unknown[];
       totais: Record<string, number>;
     };
@@ -381,217 +381,221 @@ describe('M9', () => {
 describe('M11', () => {
   test('g) paginação estável com ate: registrar entre páginas não desloca nem repete itens; ate além do arquivo → FILTRO_INVALIDO /ate', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const manifesto = lerManifesto(ambiente, PROJ, PROC) as Manifesto;
+    const manifesto = lerManifesto(ambiente, PROJ, PROC) as ProcessManifest;
     const corpus = gerarCorpus({
       tamanho: 300,
       manifesto,
-      vocabulario: manifesto.fixado.vocabulario,
+      vocabulario: manifesto.fixed.vocabulary,
     });
-    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
+    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), corpus.texto);
 
     const primeira = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      busca: 'webhook',
-      limite: 3,
+      project: PROJ,
+      process: PROC,
+      search: 'webhook',
+      limit: 3,
     });
     const corpoPrimeira = primeira.structuredContent as {
-      eventos: Linha[];
-      ate: number;
-      proximoCursor: number | null;
+      events: EventLine[];
+      until: number;
+      nextCursor: number | null;
     };
-    expect(corpoPrimeira.ate).toBe(corpus.linhas.length);
+    expect(corpoPrimeira.until).toBe(corpus.linhas.length);
 
-    // registrado entre páginas: com `ate` congelado, não deve aparecer nas páginas seguintes.
+    // registrado entre páginas: com `until` congelado, não deve aparecer nas páginas seguintes.
     const novo = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_VEREDITO,
-      agente: AGENTE,
-      dados: dadosVeredito({
-        afirmacao: 'novo evento sobre webhook registrado entre as páginas',
-        destino: 'hex:alvo:u1',
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_VERDICT,
+      agent: AGENTE,
+      data: dadosVeredito({
+        claim: 'novo evento sobre webhook registrado entre as páginas',
+        target: 'hex:target:u1',
       }),
     });
-    const idNovo = (novo.structuredContent as { evento: Linha }).evento.id;
+    const idNovo = (novo.structuredContent as { event: EventLine }).event.id;
 
-    const paginas: Linha[] = [...corpoPrimeira.eventos];
-    let cursor = corpoPrimeira.proximoCursor;
+    const paginas: EventLine[] = [...corpoPrimeira.events];
+    let cursor = corpoPrimeira.nextCursor;
     while (!isNil(cursor)) {
       const pagina = await ambiente.chamar('eventos', {
-        projeto: PROJ,
-        processo: PROC,
-        busca: 'webhook',
-        limite: 3,
-        ate: corpoPrimeira.ate,
-        desde: cursor,
+        project: PROJ,
+        process: PROC,
+        search: 'webhook',
+        limit: 3,
+        until: corpoPrimeira.until,
+        since: cursor,
       });
-      const corpo = pagina.structuredContent as { eventos: Linha[]; proximoCursor: number | null };
-      paginas.push(...corpo.eventos);
-      cursor = corpo.proximoCursor;
+      const corpo = pagina.structuredContent as { events: EventLine[]; nextCursor: number | null };
+      paginas.push(...corpo.events);
+      cursor = corpo.nextCursor;
     }
 
-    const candidatos = corpus.linhas.map((linha, indice) => ({ indice, linha }));
-    const { resultados } = buscar(candidatos, 'webhook');
-    expect(paginas.map((evento) => evento.id)).toEqual(
-      resultados.map((resultado) => corpus.linhas[resultado.indice].id),
+    const candidatos = corpus.linhas.map((linha, indice) => ({ index: indice, line: linha }));
+    const { results } = runSearch(candidatos, 'webhook');
+    expect(paginas.map((event) => event.id)).toEqual(
+      results.map((result) => corpus.linhas[result.index].id),
     );
-    expect(paginas.map((evento) => evento.id)).not.toContain(idNovo);
+    expect(paginas.map((event) => event.id)).not.toContain(idNovo);
 
     const alem = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      ate: corpus.linhas.length + 1000,
+      project: PROJ,
+      process: PROC,
+      until: corpus.linhas.length + 1000,
     });
     const corpoAlem = esperarErro(alem, 'INVALID_FILTER');
-    expect(corpoAlem.detalhes.some((detalhe) => detalhe.path === '/ate')).toBe(true);
+    expect(corpoAlem.detalhes.some((detalhe) => detalhe.path === '/until')).toBe(true);
   });
 
   test('h) regressão do modo cru: sem busca e sem filtros novos, a resposta é igual ao contrato anterior (M8) mais modo e ate', async () => {
     await preparar(ambiente, PROJ, PROC);
     for (let i = 0; i < 250; i++) {
-      const resultado = await ambiente.chamar('registrar', {
-        projeto: PROJ,
-        processo: PROC,
-        id: PREFIXO_MARCO,
-        agente: AGENTE,
-        dados: dadosMarco(),
+      const result = await ambiente.chamar('registrar', {
+        project: PROJ,
+        process: PROC,
+        id: PREFIXO_MILESTONE,
+        agent: AGENTE,
+        data: dadosMarco(),
       });
-      expect(resultado.isError).not.toBe(true);
+      expect(result.isError).not.toBe(true);
     }
 
-    const paginas: { eventos: Linha[]; proximoCursor: number | null; modo: string; ate: number }[] =
-      [];
+    const paginas: {
+      events: EventLine[];
+      nextCursor: number | null;
+      mode: string;
+      until: number;
+    }[] = [];
     let cursor = 0;
     for (;;) {
-      const resultado = await ambiente.chamar('eventos', {
-        projeto: PROJ,
-        processo: PROC,
-        desde: cursor,
-        limite: 100,
+      const result = await ambiente.chamar('eventos', {
+        project: PROJ,
+        process: PROC,
+        since: cursor,
+        limit: 100,
       });
-      const corpo = resultado.structuredContent as {
-        eventos: Linha[];
-        proximoCursor: number | null;
-        modo: string;
-        ate: number;
+      const corpo = result.structuredContent as {
+        events: EventLine[];
+        nextCursor: number | null;
+        mode: string;
+        until: number;
       };
-      expect(corpo.modo).toBe('cru');
-      expect(corpo.ate).toBe(250);
+      expect(corpo.mode).toBe('raw');
+      expect(corpo.until).toBe(250);
       paginas.push(corpo);
-      if (isNil(corpo.proximoCursor)) break;
-      cursor = corpo.proximoCursor;
+      if (isNil(corpo.nextCursor)) break;
+      cursor = corpo.nextCursor;
     }
 
-    expect(paginas).toHaveLength(3);
-    const todos = paginas.flatMap((pagina) => pagina.eventos);
+    expect(paginas).toHaveLength(4);
+    const todos = paginas.flatMap((pagina) => pagina.events);
     expect(todos).toHaveLength(250);
-    expect(todos.map((evento) => evento.seq)).toEqual(Array.from({ length: 250 }, (_, i) => i));
-    expect(paginas.at(-1)?.proximoCursor).toBeNull();
+    expect(todos.map((event) => event.seq)).toEqual(Array.from({ length: 250 }, (_, i) => i));
+    expect(paginas.at(-1)?.nextCursor).toBeNull();
     for (const pagina of paginas) {
-      if (pagina.eventos.length > 1) {
-        expect(JSON.stringify(pagina.eventos).length).toBeLessThanOrEqual(24_000);
+      if (pagina.events.length > 1) {
+        expect(JSON.stringify(pagina.events).length).toBeLessThanOrEqual(24_000);
       }
     }
   });
 
   test('i) linguagem natural: "problema com o webhook" cai para OR e devolve resultado não vazio', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const manifesto = lerManifesto(ambiente, PROJ, PROC) as Manifesto;
+    const manifesto = lerManifesto(ambiente, PROJ, PROC) as ProcessManifest;
     const corpus = gerarCorpus({
       tamanho: 300,
       manifesto,
-      vocabulario: manifesto.fixado.vocabulario,
+      vocabulario: manifesto.fixed.vocabulary,
     });
-    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
+    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), corpus.texto);
 
-    const resultado = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      busca: 'problema com o webhook',
-      limite: 50,
+    const result = await ambiente.chamar('eventos', {
+      project: PROJ,
+      process: PROC,
+      search: 'problema com o webhook',
+      limit: 50,
     });
-    const corpo = resultado.structuredContent as {
-      modo: string;
-      combinacao: string;
-      eventos: Linha[];
+    const corpo = result.structuredContent as {
+      mode: string;
+      combination: string;
+      events: EventLine[];
     };
-    expect(corpo.modo).toBe('busca');
-    expect(corpo.combinacao).toBe('OR');
-    expect(corpo.eventos.length).toBeGreaterThan(0);
+    expect(corpo.mode).toBe('search');
+    expect(corpo.combination).toBe('OR');
+    expect(corpo.events.length).toBeGreaterThan(0);
   });
 });
 
 describe('M12', () => {
   test('b) marcoTipo fora do vocabulário → FILTRO_INVALIDO /marcoTipo sem ler o log; "gate" aceito; resultado fora do vocabulário é encontrado; sem casamento → vazio; apos ≥ antes → FILTRO_INVALIDO /apos', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const manifesto = lerManifesto(ambiente, PROJ, PROC) as Manifesto;
+    const manifesto = lerManifesto(ambiente, PROJ, PROC) as ProcessManifest;
     const corpus = gerarCorpus({
       tamanho: 300,
       manifesto,
-      vocabulario: manifesto.fixado.vocabulario,
+      vocabulario: manifesto.fixed.vocabulary,
     });
-    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
+    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), corpus.texto);
 
     const invalido = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      marcoTipo: 'nao-existe',
+      project: PROJ,
+      process: PROC,
+      milestoneType: 'nao-existe',
     });
     const corpoErro = esperarErro(invalido, 'INVALID_FILTER');
-    expect(corpoErro.detalhes.some((detalhe) => detalhe.path === '/marcoTipo')).toBe(true);
+    expect(corpoErro.detalhes.some((detalhe) => detalhe.path === '/milestoneType')).toBe(true);
     const ultimoLogDeEventos = ambiente.registros
       .filter((registro) => registro.event === 'tool' && registro.nome === 'eventos')
       .at(-1);
     expect(ultimoLogDeEventos?.candidatos).toBeUndefined();
 
     const comGate = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      marcoTipo: 'gate',
+      project: PROJ,
+      process: PROC,
+      milestoneType: 'gate',
     });
     expect(comGate.isError).not.toBe(true);
 
     const foraDoVocab = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      resultado: 'resultado-fora-do-vocabulario',
+      project: PROJ,
+      process: PROC,
+      result: 'resultado-fora-do-vocabulario',
     });
-    const corpoFora = foraDoVocab.structuredContent as { eventos: Linha[] };
-    expect(corpoFora.eventos.length).toBeGreaterThan(0);
+    const corpoFora = foraDoVocab.structuredContent as { events: EventLine[] };
+    expect(corpoFora.events.length).toBeGreaterThan(0);
 
     const semCasamento = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      resultado: 'nunca-usado-em-lugar-nenhum',
+      project: PROJ,
+      process: PROC,
+      result: 'nunca-usado-em-lugar-nenhum',
     });
-    const corpoSemCasamento = semCasamento.structuredContent as { eventos: Linha[] };
-    expect(corpoSemCasamento.eventos).toEqual([]);
+    const corpoSemCasamento = semCasamento.structuredContent as { events: EventLine[] };
+    expect(corpoSemCasamento.events).toEqual([]);
 
     const intervaloInvalido = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      apos: '2026-06-01T00:00:00.000Z',
-      antes: '2026-01-01T00:00:00.000Z',
+      project: PROJ,
+      process: PROC,
+      after: '2026-06-01T00:00:00.000Z',
+      before: '2026-01-01T00:00:00.000Z',
     });
     const corpoIntervalo = esperarErro(intervaloInvalido, 'INVALID_FILTER');
-    expect(corpoIntervalo.detalhes.some((detalhe) => detalhe.path === '/apos')).toBe(true);
+    expect(corpoIntervalo.detalhes.some((detalhe) => detalhe.path === '/after')).toBe(true);
   });
 
-  test('e) alvo sem "hex:alvo:" → Input validation error', async () => {
+  test('e) alvo sem "hex:target:" → Input validation error', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('eventos', {
-      projeto: PROJ,
-      processo: PROC,
-      alvo: 'login',
+    const result = await ambiente.chamar('eventos', {
+      project: PROJ,
+      process: PROC,
+      target: 'login',
     });
-    expect(resultado.isError).toBe(true);
-    expect(resultado.content?.[0]?.text ?? '').toContain('Input validation error');
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text ?? '').toContain('Input validation error');
   });
 });
 
 describe('N1', () => {
-  async function logDe5(): Promise<Linha[]> {
+  async function logDe5(): Promise<EventLine[]> {
     await preparar(ambiente, PROJ, PROC);
     const manifesto = lerManifesto(ambiente, PROJ, PROC);
     const linhas = construirLog(manifesto, 5);
@@ -600,8 +604,8 @@ describe('N1', () => {
   }
 
   async function chamarCadeia(): Promise<Chain> {
-    const resultado = await ambiente.chamar('cadeia', { projeto: PROJ, processo: PROC });
-    return resultado.structuredContent as Chain;
+    const result = await ambiente.chamar('cadeia', { project: PROJ, process: PROC });
+    return result.structuredContent as Chain;
   }
 
   test('(a) JSON inválido na linha 1', async () => {
@@ -623,11 +627,11 @@ describe('N1', () => {
     );
   });
 
-  test('(b) texto livre alterado em dados da linha 1', async () => {
+  test('(b) texto livre alterado em data da linha 1', async () => {
     const linhas = await logDe5();
-    const alterada: Linha = {
+    const alterada: EventLine = {
       ...linhas[1],
-      dados: { ...linhas[1].dados, marcoTipo: 'adulterado' },
+      data: { ...linhas[1].data, milestoneType: 'adulterado' },
     };
     escreverLog(ambiente, PROJ, PROC, [linhas[0], alterada, linhas[2], linhas[3], linhas[4]]);
     const cadeia = await chamarCadeia();
@@ -654,16 +658,16 @@ describe('N1', () => {
       linhas.map((linha) => JSON.stringify(linha)).join('\n') +
       '\n' +
       JSON.stringify(linhas[0]).slice(0, 10);
-    fs.writeFileSync(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), texto);
+    fs.writeFileSync(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), texto);
 
     const registrado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco(),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
-    expect((registrado.structuredContent as { evento: Linha }).evento.seq).toBe(6);
+    expect((registrado.structuredContent as { event: EventLine }).event.seq).toBe(6);
 
     const cadeia = await chamarCadeia();
     expect(cadeia.ok).toBe(true);
@@ -673,7 +677,7 @@ describe('N1', () => {
 
   test('(e) (a) + prevHash alterado na linha 4', async () => {
     const linhas = await logDe5();
-    const linha4Alterada: Linha = { ...linhas[4], prevHash: '0'.repeat(64) };
+    const linha4Alterada: EventLine = { ...linhas[4], prevHash: '0'.repeat(64) };
     escreverLog(ambiente, PROJ, PROC, [
       linhas[0],
       '{ json quebrado',
@@ -696,14 +700,14 @@ describe('N1', () => {
     const linhas = await logDe5();
     const texto =
       linhas.map((linha) => JSON.stringify(linha)).join('\n') + '\n' + 'lixo qualquer\n';
-    fs.writeFileSync(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), texto);
+    fs.writeFileSync(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), texto);
 
     await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco(),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
 
     const cadeia = await chamarCadeia();
@@ -716,11 +720,11 @@ describe('N1', () => {
     escreverLog(ambiente, PROJ, PROC, [linhas[0], linhas[2], linhas[3], linhas[4]]);
 
     await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco(),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
 
     const cadeia = await chamarCadeia();
@@ -737,75 +741,75 @@ describe('N1', () => {
 describe('N2', () => {
   test('(i) Marco com prazoExecucao em offset reenviado igual → deduplicado, mesmo seq, sem nova linha', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const dados = dadosMarco({ prazoExecucao: '2026-09-16T18:00:00-03:00' });
+    const data = dadosMarco({ dueAt: '2026-09-16T18:00:00-03:00' });
     const primeiro = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados,
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data,
     });
-    const corpo1 = primeiro.structuredContent as { evento: Linha };
+    const corpo1 = primeiro.structuredContent as { event: EventLine };
     const antes = ambiente.arvore();
 
     const segundo = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: corpo1.evento.id,
-      agente: AGENTE,
-      dados,
+      project: PROJ,
+      process: PROC,
+      id: corpo1.event.id,
+      agent: AGENTE,
+      data,
     });
-    esperarDeduplicado(segundo, corpo1.evento.seq);
+    esperarDeduplicado(segundo, corpo1.event.seq);
     expect(ambiente.arvore()).toEqual(antes);
   });
 
   test('(ii) tipo custom com default omitido, reenviado omitido ou explícito → deduplicado', async () => {
     await preparar(ambiente, PROJ, PROC);
     const primeiro = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+      project: PROJ,
+      process: PROC,
       id: PREFIXO_NOTA,
-      agente: AGENTE,
-      dados: { nota: 'x' },
+      agent: AGENTE,
+      data: { nota: 'x' },
     });
-    const corpo1 = primeiro.structuredContent as { evento: Linha };
+    const corpo1 = primeiro.structuredContent as { event: EventLine };
 
     const reenviadoOmitido = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: corpo1.evento.id,
-      agente: AGENTE,
-      dados: { nota: 'x' },
+      project: PROJ,
+      process: PROC,
+      id: corpo1.event.id,
+      agent: AGENTE,
+      data: { nota: 'x' },
     });
-    esperarDeduplicado(reenviadoOmitido, corpo1.evento.seq);
+    esperarDeduplicado(reenviadoOmitido, corpo1.event.seq);
 
     const reenviadoExplicito = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: corpo1.evento.id,
-      agente: AGENTE,
-      dados: { nota: 'x', prioridade: 1 },
+      project: PROJ,
+      process: PROC,
+      id: corpo1.event.id,
+      agent: AGENTE,
+      data: { nota: 'x', prioridade: 1 },
     });
-    esperarDeduplicado(reenviadoExplicito, corpo1.evento.seq);
+    esperarDeduplicado(reenviadoExplicito, corpo1.event.seq);
   });
 
   test('conteúdo diferente com o mesmo id completo → ID_CONFLITANTE', async () => {
     await preparar(ambiente, PROJ, PROC);
     const primeiro = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco(),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
-    const corpo1 = primeiro.structuredContent as { evento: Linha };
+    const corpo1 = primeiro.structuredContent as { event: EventLine };
 
     const conflitante = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: corpo1.evento.id,
-      agente: AGENTE,
-      dados: dadosMarco({ alvo: 'hex:alvo:outro' }),
+      project: PROJ,
+      process: PROC,
+      id: corpo1.event.id,
+      agent: AGENTE,
+      data: dadosMarco({ target: 'hex:target:outro' }),
     });
     esperarErro(conflitante, 'CONFLICTING_ID');
   });
@@ -815,44 +819,44 @@ describe('N4', () => {
   test('marcoTipo fora do vocabulário fixado → VOCABULARIO_VIOLADO, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco({ marcoTipo: 'desconhecido' }),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco({ milestoneType: 'desconhecido' }),
     });
-    esperarErro(resultado, 'VOCABULARY_VIOLATED');
+    esperarErro(result, 'VOCABULARY_VIOLATED');
     expect(ambiente.arvore()).toEqual(antes);
   });
 
   test('decisoes[].acao fora do vocabulário fixado → VOCABULARIO_VIOLADO, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco({ decisoes: [{ item: 'i', acao: 'fora-do-vocab', texto: 't' }] }),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco({ decisions: [{ item: 'i', action: 'fora-do-vocab', text: 't' }] }),
     });
-    esperarErro(resultado, 'VOCABULARY_VIOLATED');
+    esperarErro(result, 'VOCABULARY_VIOLATED');
     expect(ambiente.arvore()).toEqual(antes);
   });
 
   test('resultado fora do vocabulário → grava e devolve aviso VOCABULARIO_DESCONHECIDO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_VEREDITO,
-      agente: AGENTE,
-      dados: dadosVeredito({ resultado: 'desconhecido' }),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_VERDICT,
+      agent: AGENTE,
+      data: dadosVeredito({ result: 'desconhecido' }),
     });
-    expect(resultado.isError).not.toBe(true);
-    const corpo = resultado.structuredContent as { avisos: { codigo: string }[] };
-    expect(corpo.avisos).toEqual(
-      expect.arrayContaining([expect.objectContaining({ codigo: 'VOCABULARIO_DESCONHECIDO' })]),
+    expect(result.isError).not.toBe(true);
+    const corpo = result.structuredContent as { warnings: { codigo: string }[] };
+    expect(corpo.warnings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ codigo: 'UNKNOWN_VOCABULARY' })]),
     );
   });
 });
@@ -861,255 +865,253 @@ describe('N5', () => {
   test('sem-orfaos: estado limpo passa, Marco vencido reprova com prova', async () => {
     await preparar(ambiente, PROJ, PROC);
     const limpo = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
-      gate: 'sem-orfaos',
-      agente: AGENTE,
-      alvo: 'hex:alvo:u1',
+      project: PROJ,
+      process: PROC,
+      gate: 'no-orphans',
+      agent: AGENTE,
+      target: 'hex:target:u1',
     });
-    const corpoLimpo = limpo.structuredContent as { passou: boolean; prova: unknown[] };
-    expect(corpoLimpo.passou).toBe(true);
-    expect(corpoLimpo.prova).toEqual([]);
+    const corpoLimpo = limpo.structuredContent as { passed: boolean; evidence: unknown[] };
+    expect(corpoLimpo.passed).toBe(true);
+    expect(corpoLimpo.evidence).toEqual([]);
 
     ambiente.definirRelogio(new Date('2026-06-01T00:00:00.000Z'));
     await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco({ alvo: 'hex:alvo:u2', prazoExecucao: '2026-01-01T00:00:00.000Z' }),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco({ target: 'hex:target:u2', dueAt: '2026-01-01T00:00:00.000Z' }),
     });
 
     const violado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
-      gate: 'sem-orfaos',
-      agente: AGENTE,
-      alvo: 'hex:alvo:u2',
+      project: PROJ,
+      process: PROC,
+      gate: 'no-orphans',
+      agent: AGENTE,
+      target: 'hex:target:u2',
     });
-    const corpoViolado = violado.structuredContent as { passou: boolean; prova: unknown[] };
-    expect(corpoViolado.passou).toBe(false);
-    expect(corpoViolado.prova.length).toBeGreaterThan(0);
+    const corpoViolado = violado.structuredContent as { passed: boolean; evidence: unknown[] };
+    expect(corpoViolado.passed).toBe(false);
+    expect(corpoViolado.evidence.length).toBeGreaterThan(0);
   });
 
   test('cadeia-integra passa num log íntegro', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
-      gate: 'cadeia-integra',
-      agente: AGENTE,
-      alvo: 'hex:alvo:u1',
+    const result = await ambiente.chamar('avaliar_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: 'chain-intact',
+      agent: AGENTE,
+      target: 'hex:target:u1',
     });
-    expect((resultado.structuredContent as { passou: boolean }).passou).toBe(true);
+    expect((result.structuredContent as { passed: boolean }).passed).toBe(true);
   });
 });
 
 describe('N6', () => {
   test('gate custom sem resultado → AVALIACAO_INVALIDA', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('avaliar_gate', {
+      project: PROJ,
+      process: PROC,
       gate: 'gate-custom',
-      agente: AGENTE,
-      alvo: 'hex:alvo:u1',
+      agent: AGENTE,
+      target: 'hex:target:u1',
     });
-    esperarErro(resultado, 'INVALID_EVALUATION');
+    esperarErro(result, 'INVALID_EVALUATION');
   });
 
   test('gate embutido com resultado informado → AVALIACAO_INVALIDA', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
-      gate: 'sem-orfaos',
-      agente: AGENTE,
-      alvo: 'hex:alvo:u1',
-      resultado: { passou: true, prova: 'ok' },
+    const result = await ambiente.chamar('avaliar_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: 'no-orphans',
+      agent: AGENTE,
+      target: 'hex:target:u1',
+      result: { passed: true, evidence: 'ok' },
     });
-    esperarErro(resultado, 'INVALID_EVALUATION');
+    esperarErro(result, 'INVALID_EVALUATION');
   });
 
   test('gate não fixado, nem embutido nem no snapshot → GATE_NAO_REGISTRADO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('avaliar_gate', {
+      project: PROJ,
+      process: PROC,
       gate: 'fantasma',
-      agente: AGENTE,
-      alvo: 'hex:alvo:u1',
-      resultado: { passou: true, prova: 'ok' },
+      agent: AGENTE,
+      target: 'hex:target:u1',
+      result: { passed: true, evidence: 'ok' },
     });
-    esperarErro(resultado, 'GATE_NOT_REGISTERED');
+    esperarErro(result, 'GATE_NOT_REGISTERED');
   });
 
   test('gate registrado depois de criar_processo → GATE_NAO_REGISTRADO', async () => {
     await preparar(ambiente, PROJ, PROC);
     await ambiente.chamar('registrar_gate', {
-      projeto: PROJ,
-      nome: 'gate-tardio',
-      criterio: 'critério tardio',
+      project: PROJ,
+      name: 'gate-tardio',
+      criteria: 'critério tardio',
     });
-    const resultado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('avaliar_gate', {
+      project: PROJ,
+      process: PROC,
       gate: 'gate-tardio',
-      agente: AGENTE,
-      alvo: 'hex:alvo:u1',
-      resultado: { passou: true, prova: 'ok' },
+      agent: AGENTE,
+      target: 'hex:target:u1',
+      result: { passed: true, evidence: 'ok' },
     });
-    esperarErro(resultado, 'GATE_NOT_REGISTERED');
+    esperarErro(result, 'GATE_NOT_REGISTERED');
   });
 
   test('gate custom aceito → Marco de gate com criterio do snapshot e origem custom', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('avaliar_gate', {
+      project: PROJ,
+      process: PROC,
       gate: 'gate-custom',
-      agente: AGENTE,
-      alvo: 'hex:alvo:u1',
-      resultado: { passou: false, prova: ['evidência'] },
+      agent: AGENTE,
+      target: 'hex:target:u1',
+      result: { passed: false, evidence: ['evidência'] },
     });
-    expect(resultado.isError).not.toBe(true);
-    const corpo = resultado.structuredContent as { evento: Linha };
-    const dados = corpo.evento.dados as {
-      marcoTipo: string;
-      gate: { nome: string; origem: string; criterio: string; passou: boolean };
+    expect(result.isError).not.toBe(true);
+    const corpo = result.structuredContent as { event: EventLine };
+    const data = corpo.event.data as {
+      milestoneType: string;
+      gate: { name: string; origin: string; criteria: string; passed: boolean };
     };
-    expect(dados.marcoTipo).toBe('gate');
-    expect(dados.gate.origem).toBe('custom');
-    expect(dados.gate.criterio).toBe('critério custom qualquer');
-    expect(dados.gate.passou).toBe(false);
+    expect(data.milestoneType).toBe('gate');
+    expect(data.gate.origin).toBe('custom');
+    expect(data.gate.criteria).toBe('critério custom qualquer');
+    expect(data.gate.passed).toBe(false);
   });
 });
 
 describe('N8', () => {
   test('timestamp termina em Z; prazoExecucao com offset é normalizado para UTC', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco({ prazoExecucao: '2026-09-16T18:00:00-03:00' }),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco({ dueAt: '2026-09-16T18:00:00-03:00' }),
     });
-    const corpo = resultado.structuredContent as { evento: Linha };
-    expect(corpo.evento.timestamp).toMatch(/Z$/);
-    expect((corpo.evento.dados as { prazoExecucao: string }).prazoExecucao).toBe(
-      '2026-09-16T21:00:00.000Z',
-    );
+    const corpo = result.structuredContent as { event: EventLine };
+    expect(corpo.event.timestamp).toMatch(/Z$/);
+    expect((corpo.event.data as { dueAt: string }).dueAt).toBe('2026-09-16T21:00:00.000Z');
   });
 });
 
 describe('N9', () => {
   test('prefixo gera id no formato projeto:processo:tipo:uuidv7', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco(),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
-    const corpo = resultado.structuredContent as { evento: Linha };
-    expect(corpo.evento.id).toMatch(new RegExp(`^${PROJ}:${PROC}:marco:[0-9a-f-]{36}$`));
+    const corpo = result.structuredContent as { event: EventLine };
+    expect(corpo.event.id).toMatch(new RegExp(`^${PROJ}:${PROC}:milestone:[0-9a-f-]{36}$`));
   });
 
   test('projeto/processo do id divergente dos parâmetros → ID_INVALIDO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: `outro-projeto:${PROC}:marco`,
-      agente: AGENTE,
-      dados: dadosMarco(),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: `outro-project:${PROC}:milestone`,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
-    esperarErro(resultado, 'INVALID_ID');
+    esperarErro(result, 'INVALID_ID');
   });
 
   test('tipo não fixado no processo → TIPO_NAO_FIXADO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
       id: `${PROJ}:${PROC}:fantasma`,
-      agente: AGENTE,
-      dados: { x: 1 },
+      agent: AGENTE,
+      data: { x: 1 },
     });
-    esperarErro(resultado, 'TYPE_NOT_PINNED');
+    esperarErro(result, 'TYPE_NOT_PINNED');
   });
 
   test('id completo inexistente → ID_DESCONHECIDO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: `${PREFIXO_MARCO}:${randomUUIDv7()}`,
-      agente: AGENTE,
-      dados: dadosMarco(),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: `${PREFIXO_MILESTONE}:${randomUUIDv7()}`,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
-    esperarErro(resultado, 'UNKNOWN_ID');
+    esperarErro(result, 'UNKNOWN_ID');
   });
 });
 
 describe('N12', () => {
-  test.each(['u1', 'hex:alvo:', 'hex:alvo:a:b', 'hex:alvo:a b', 'hex:outro:x'])(
-    'alvo %s inválido em Marco → EVENTO_INVALIDO em /dados/alvo, sem linha',
+  test.each(['u1', 'hex:target:', 'hex:target:a:b', 'hex:target:a b', 'hex:outro:x'])(
+    'alvo %s inválido em Marco → EVENTO_INVALIDO em /data/alvo, sem linha',
     async (alvoInvalido) => {
       await preparar(ambiente, PROJ, PROC);
       const antes = ambiente.arvore();
-      const resultado = await ambiente.chamar('registrar', {
-        projeto: PROJ,
-        processo: PROC,
-        id: PREFIXO_MARCO,
-        agente: AGENTE,
-        dados: dadosMarco({ alvo: alvoInvalido }),
+      const result = await ambiente.chamar('registrar', {
+        project: PROJ,
+        process: PROC,
+        id: PREFIXO_MILESTONE,
+        agent: AGENTE,
+        data: dadosMarco({ target: alvoInvalido }),
       });
-      const corpo = esperarErro(resultado, 'INVALID_EVENT');
-      expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/dados/alvo' }));
+      const corpo = esperarErro(result, 'INVALID_EVENT');
+      expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/data/target' }));
       expect(ambiente.arvore()).toEqual(antes);
     },
   );
 
-  test('destino inválido em Veredito → EVENTO_INVALIDO em /dados/destino', async () => {
+  test('destino inválido em Veredito → EVENTO_INVALIDO em /data/destino', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_VEREDITO,
-      agente: AGENTE,
-      dados: dadosVeredito({ destino: 'hex:outro:x' }),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_VERDICT,
+      agent: AGENTE,
+      data: dadosVeredito({ target: 'hex:outro:x' }),
     });
-    const corpo = esperarErro(resultado, 'INVALID_EVENT');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/dados/destino' }));
+    const corpo = esperarErro(result, 'INVALID_EVENT');
+    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/data/target' }));
   });
 
-  test('hex:alvo:u1 é aceito', async () => {
+  test('hex:target:u1 é aceito', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco(),
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
-    expect(resultado.isError).not.toBe(true);
+    expect(result.isError).not.toBe(true);
   });
 
   test('avaliar_gate com alvo: "u1" → Input validation error, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const resultado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
-      gate: 'sem-orfaos',
-      agente: AGENTE,
-      alvo: 'u1',
+    const result = await ambiente.chamar('avaliar_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: 'no-orphans',
+      agent: AGENTE,
+      target: 'u1',
     });
-    expect(resultado.isError).toBe(true);
-    expect(resultado.content?.[0]?.text).toMatch(/^Input validation error/);
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
     expect(ambiente.arvore()).toEqual(antes);
   });
 });
@@ -1119,33 +1121,33 @@ describe('N13', () => {
     await preparar(ambiente, PROJ, PROC);
     ambiente.definirRelogio(new Date('2026-06-01T00:00:00.000Z'));
     await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco({ alvo: 'hex:alvo:x', prazoExecucao: '2026-01-01T00:00:00.000Z' }),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco({ target: 'hex:target:x', dueAt: '2026-01-01T00:00:00.000Z' }),
     });
 
     const antes = await ambiente.chamar('estado', {
-      projeto: PROJ,
-      processo: PROC,
-      secoes: ['orfaos'],
+      project: PROJ,
+      process: PROC,
+      sections: ['orfaos'],
     });
     expect((antes.structuredContent as { orfaos: unknown[] }).orfaos).toHaveLength(1);
 
     const avaliado = await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
-      gate: 'sem-orfaos',
-      agente: AGENTE,
-      alvo: 'hex:alvo:x',
+      project: PROJ,
+      process: PROC,
+      gate: 'no-orphans',
+      agent: AGENTE,
+      target: 'hex:target:x',
     });
-    expect((avaliado.structuredContent as { passou: boolean }).passou).toBe(false);
+    expect((avaliado.structuredContent as { passed: boolean }).passed).toBe(false);
 
     const depois = await ambiente.chamar('estado', {
-      projeto: PROJ,
-      processo: PROC,
-      secoes: ['orfaos'],
+      project: PROJ,
+      process: PROC,
+      sections: ['orfaos'],
     });
     expect((depois.structuredContent as { orfaos: unknown[] }).orfaos).toHaveLength(1);
   });
@@ -1153,58 +1155,58 @@ describe('N13', () => {
   test('Marco de gate sozinho num alvo não cria abertura', async () => {
     await preparar(ambiente, PROJ, PROC);
     await ambiente.chamar('avaliar_gate', {
-      projeto: PROJ,
-      processo: PROC,
-      gate: 'sem-orfaos',
-      agente: AGENTE,
-      alvo: 'hex:alvo:y',
+      project: PROJ,
+      process: PROC,
+      gate: 'no-orphans',
+      agent: AGENTE,
+      target: 'hex:target:y',
     });
 
     ambiente.definirRelogio(new Date('2099-01-01T00:00:00.000Z'));
-    const resultado = await ambiente.chamar('estado', {
-      projeto: PROJ,
-      processo: PROC,
-      secoes: ['orfaos'],
+    const result = await ambiente.chamar('estado', {
+      project: PROJ,
+      process: PROC,
+      sections: ['orfaos'],
     });
-    const orfaos = (resultado.structuredContent as { orfaos: { alvo: string }[] }).orfaos;
-    expect(orfaos.some((orfao) => orfao.alvo === 'hex:alvo:y')).toBe(false);
+    const orfaos = (result.structuredContent as { orfaos: { target: string }[] }).orfaos;
+    expect(orfaos.some((orfao) => orfao.target === 'hex:target:y')).toBe(false);
   });
 });
 
 describe('N14', () => {
-  test('prevHash do 1º elo é a âncora de processo.json', async () => {
+  test('prevHash do 1º elo é a âncora de process.json', async () => {
     await preparar(ambiente, PROJ, PROC);
     const registrado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco(),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
-    const evento = (registrado.structuredContent as { evento: Linha }).evento;
-    expect(evento.prevHash).toBe(anchor(lerManifesto(ambiente, PROJ, PROC)));
+    const event = (registrado.structuredContent as { event: EventLine }).event;
+    expect(event.prevHash).toBe(anchor(lerManifesto(ambiente, PROJ, PROC)));
   });
 
   test('fixado alterado com hashes recalculados → cadeia.quebras inclui {0, hash-nao-bate}', async () => {
     await preparar(ambiente, PROJ, PROC);
     await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco(),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco(),
     });
 
-    const caminhoManifesto = path.join(ambiente.dir, PROJ, PROC, 'processo.json');
+    const caminhoManifesto = path.join(ambiente.dir, PROJ, PROC, 'process.json');
     const manifesto = JSON.parse(fs.readFileSync(caminhoManifesto, 'utf8')) as {
-      fixado: { vocabulario: { nucleo: { marcoTipo: string[] } } };
+      fixed: { vocabulary: { core: { milestoneType: string[] } } };
       hashes: { schemas: string; vocabulario: string; gates: string };
     };
-    manifesto.fixado.vocabulario.nucleo.marcoTipo.push('outro-valor');
-    manifesto.hashes.vocabulario = sha256hex(canonicalize(manifesto.fixado.vocabulario) ?? '');
+    manifesto.fixed.vocabulary.core.milestoneType.push('outro-value');
+    manifesto.hashes.vocabulario = sha256hex(canonicalize(manifesto.fixed.vocabulary) ?? '');
     fs.writeFileSync(caminhoManifesto, JSON.stringify(manifesto, null, 2));
 
-    const cadeia = (await ambiente.chamar('cadeia', { projeto: PROJ, processo: PROC }))
+    const cadeia = (await ambiente.chamar('cadeia', { project: PROJ, process: PROC }))
       .structuredContent as Chain;
     expect(cadeia.quebras).toEqual(
       expect.arrayContaining([{ indice: 0, motivo: 'hash-nao-bate' }]),
@@ -1215,55 +1217,55 @@ describe('N14', () => {
 describe('S2', () => {
   test('evento custom válido vira elo', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
       id: PREFIXO_NOTA,
-      agente: AGENTE,
-      dados: { nota: 'ok', categoria: 'a' },
+      agent: AGENTE,
+      data: { nota: 'ok', categoria: 'a' },
     });
-    expect(resultado.isError).not.toBe(true);
+    expect(result.isError).not.toBe(true);
   });
 
-  test('chave extra → EVENTO_INVALIDO em /dados/..., sem linha', async () => {
+  test('chave extra → EVENTO_INVALIDO em /data/..., sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
       id: PREFIXO_NOTA,
-      agente: AGENTE,
-      dados: { nota: 'ok', extra: 1 },
+      agent: AGENTE,
+      data: { nota: 'ok', extra: 1 },
     });
-    const corpo = esperarErro(resultado, 'INVALID_EVENT');
-    expect(corpo.detalhes[0]?.path.startsWith('/dados')).toBe(true);
+    const corpo = esperarErro(result, 'INVALID_EVENT');
+    expect(corpo.detalhes[0]?.path.startsWith('/data')).toBe(true);
     expect(ambiente.arvore()).toEqual(antes);
   });
 
-  test('enum inválido → EVENTO_INVALIDO em /dados/categoria', async () => {
+  test('enum inválido → EVENTO_INVALIDO em /data/categoria', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
       id: PREFIXO_NOTA,
-      agente: AGENTE,
-      dados: { nota: 'ok', categoria: 'fora' },
+      agent: AGENTE,
+      data: { nota: 'ok', categoria: 'fora' },
     });
-    const corpo = esperarErro(resultado, 'INVALID_EVENT');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/dados/categoria' }));
+    const corpo = esperarErro(result, 'INVALID_EVENT');
+    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/data/categoria' }));
   });
 
-  test('format date-time inválido → EVENTO_INVALIDO em /dados/quando', async () => {
+  test('format date-time inválido → EVENTO_INVALIDO em /data/quando', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
       id: PREFIXO_NOTA,
-      agente: AGENTE,
-      dados: { nota: 'ok', quando: 'não-é-data' },
+      agent: AGENTE,
+      data: { nota: 'ok', quando: 'not-a-date' },
     });
-    const corpo = esperarErro(resultado, 'INVALID_EVENT');
-    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/dados/quando' }));
+    const corpo = esperarErro(result, 'INVALID_EVENT');
+    expect(corpo.detalhes).toContainEqual(expect.objectContaining({ path: '/data/quando' }));
   });
 });
 
@@ -1272,32 +1274,36 @@ describe('S3', () => {
     await preparar(ambiente, PROJ, PROC);
 
     await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: dadosMarco({ alvo: 'hex:alvo:a', prazoExecucao: '2025-01-01T00:00:00.000Z' }),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: dadosMarco({ target: 'hex:target:a', dueAt: '2025-01-01T00:00:00.000Z' }),
     });
     await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
+      project: PROJ,
+      process: PROC,
       id: PREFIXO_NOTA,
-      agente: AGENTE,
-      dados: { nota: 'intercalado' },
+      agent: AGENTE,
+      data: { nota: 'intercalado' },
     });
     await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_VEREDITO,
-      agente: AGENTE,
-      dados: dadosVeredito({ destino: 'hex:alvo:a', afirmacao: 'a1' }),
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_VERDICT,
+      agent: AGENTE,
+      data: dadosVeredito({ target: 'hex:target:a', claim: 'a1' }),
     });
 
-    const eventos = (await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC }))
-      .structuredContent as { eventos: Linha[] };
-    expect(eventos.eventos.map((evento) => evento.tipo)).toEqual(['marco', 'nota', 'veredito']);
+    const eventosResult = (await ambiente.chamar('eventos', { project: PROJ, process: PROC }))
+      .structuredContent as { events: EventLine[] };
+    expect(eventosResult.events.map((event) => event.type)).toEqual([
+      'milestone',
+      'nota',
+      'verdict',
+    ]);
 
-    const estado = (await ambiente.chamar('estado', { projeto: PROJ, processo: PROC }))
+    const estado = (await ambiente.chamar('estado', { project: PROJ, process: PROC }))
       .structuredContent as {
       vigentes: unknown[];
       orfaos: unknown[];
@@ -1305,7 +1311,7 @@ describe('S3', () => {
       aRevisar: unknown[];
       referenciasInvalidas: unknown[];
     };
-    // o Veredito fecha o ciclo do Marco: sem o custom intercalado no meio, o resultado seria idêntico.
+    // o Veredito fecha o ciclo do Marco: sem o custom intercalado no meio, o result seria idêntico.
     expect(estado.vigentes).toHaveLength(1);
     expect(estado.orfaos).toEqual([]);
     expect(estado.conflitos).toEqual([]);
@@ -1316,7 +1322,7 @@ describe('S3', () => {
 
 describe('S5', () => {
   test('schema, vocabulário e gate alterados entre a criação de dois processos: cada um usa sua versão', async () => {
-    const projeto = 'p-s5';
+    const project = 'p-s5';
     const schemaAntigo = {
       type: 'object',
       properties: { nota: { type: 'string' } },
@@ -1331,95 +1337,95 @@ describe('S5', () => {
     };
 
     await ambiente.chamar('registrar_vocabulario', {
-      projeto,
-      dono: 'nucleo',
-      marcoTipo: ['v1'],
-      resultado: [],
-      acao: [],
+      project,
+      owner: 'core',
+      milestoneType: ['v1'],
+      result: [],
+      action: [],
     });
-    await ambiente.chamar('registrar_tipo', { projeto, nome: 'nota', schema: schemaAntigo });
-    await ambiente.chamar('registrar_gate', { projeto, nome: 'g', criterio: 'v1' });
-    await ambiente.chamar('criar_processo', { projeto, processo: 'proc-antigo' });
+    await ambiente.chamar('registrar_tipo', { project, name: 'nota', schema: schemaAntigo });
+    await ambiente.chamar('registrar_gate', { project, name: 'g', criteria: 'v1' });
+    await ambiente.chamar('criar_processo', { project, process: 'proc-antigo' });
 
     await ambiente.chamar('registrar_vocabulario', {
-      projeto,
-      dono: 'nucleo',
-      marcoTipo: ['v2'],
-      resultado: [],
-      acao: [],
+      project,
+      owner: 'core',
+      milestoneType: ['v2'],
+      result: [],
+      action: [],
     });
-    await ambiente.chamar('registrar_tipo', { projeto, nome: 'nota', schema: schemaNovo });
-    await ambiente.chamar('registrar_gate', { projeto, nome: 'g', criterio: 'v2' });
-    await ambiente.chamar('criar_processo', { projeto, processo: 'proc-novo' });
+    await ambiente.chamar('registrar_tipo', { project, name: 'nota', schema: schemaNovo });
+    await ambiente.chamar('registrar_gate', { project, name: 'g', criteria: 'v2' });
+    await ambiente.chamar('criar_processo', { project, process: 'proc-novo' });
 
     const antigoV1 = await ambiente.chamar('registrar', {
-      projeto,
-      processo: 'proc-antigo',
-      id: `${projeto}:proc-antigo:marco`,
-      agente: AGENTE,
-      dados: { marcoTipo: 'v1', alvo: 'hex:alvo:u1' },
+      project,
+      process: 'proc-antigo',
+      id: `${project}:proc-antigo:milestone`,
+      agent: AGENTE,
+      data: { milestoneType: 'v1', target: 'hex:target:u1' },
     });
     expect(antigoV1.isError).not.toBe(true);
 
     const antigoV2 = await ambiente.chamar('registrar', {
-      projeto,
-      processo: 'proc-antigo',
-      id: `${projeto}:proc-antigo:marco`,
-      agente: AGENTE,
-      dados: { marcoTipo: 'v2', alvo: 'hex:alvo:u1' },
+      project,
+      process: 'proc-antigo',
+      id: `${project}:proc-antigo:milestone`,
+      agent: AGENTE,
+      data: { milestoneType: 'v2', target: 'hex:target:u1' },
     });
     esperarErro(antigoV2, 'VOCABULARY_VIOLATED');
 
     const novoV2 = await ambiente.chamar('registrar', {
-      projeto,
-      processo: 'proc-novo',
-      id: `${projeto}:proc-novo:marco`,
-      agente: AGENTE,
-      dados: { marcoTipo: 'v2', alvo: 'hex:alvo:u1' },
+      project,
+      process: 'proc-novo',
+      id: `${project}:proc-novo:milestone`,
+      agent: AGENTE,
+      data: { milestoneType: 'v2', target: 'hex:target:u1' },
     });
     expect(novoV2.isError).not.toBe(true);
 
     const novoExtra = await ambiente.chamar('registrar', {
-      projeto,
-      processo: 'proc-novo',
-      id: `${projeto}:proc-novo:nota`,
-      agente: AGENTE,
-      dados: { nota: 'x', extra: 'y' },
+      project,
+      process: 'proc-novo',
+      id: `${project}:proc-novo:nota`,
+      agent: AGENTE,
+      data: { nota: 'x', extra: 'y' },
     });
     expect(novoExtra.isError).not.toBe(true);
 
     const antigoExtra = await ambiente.chamar('registrar', {
-      projeto,
-      processo: 'proc-antigo',
-      id: `${projeto}:proc-antigo:nota`,
-      agente: AGENTE,
-      dados: { nota: 'x', extra: 'y' },
+      project,
+      process: 'proc-antigo',
+      id: `${project}:proc-antigo:nota`,
+      agent: AGENTE,
+      data: { nota: 'x', extra: 'y' },
     });
     esperarErro(antigoExtra, 'INVALID_EVENT');
 
     const gateAntigo = (
       await ambiente.chamar('avaliar_gate', {
-        projeto,
-        processo: 'proc-antigo',
+        project,
+        process: 'proc-antigo',
         gate: 'g',
-        agente: AGENTE,
-        alvo: 'hex:alvo:u1',
-        resultado: { passou: true, prova: 'ok' },
+        agent: AGENTE,
+        target: 'hex:target:u1',
+        result: { passed: true, evidence: 'ok' },
       })
-    ).structuredContent as { evento: Linha };
-    expect((gateAntigo.evento.dados as { gate: { criterio: string } }).gate.criterio).toBe('v1');
+    ).structuredContent as { event: EventLine };
+    expect((gateAntigo.event.data as { gate: { criteria: string } }).gate.criteria).toBe('v1');
 
     const gateNovo = (
       await ambiente.chamar('avaliar_gate', {
-        projeto,
-        processo: 'proc-novo',
+        project,
+        process: 'proc-novo',
         gate: 'g',
-        agente: AGENTE,
-        alvo: 'hex:alvo:u1',
-        resultado: { passou: true, prova: 'ok' },
+        agent: AGENTE,
+        target: 'hex:target:u1',
+        result: { passed: true, evidence: 'ok' },
       })
-    ).structuredContent as { evento: Linha };
-    expect((gateNovo.evento.dados as { gate: { criterio: string } }).gate.criterio).toBe('v2');
+    ).structuredContent as { event: EventLine };
+    expect((gateNovo.event.data as { gate: { criteria: string } }).gate.criteria).toBe('v2');
   });
 });
 
@@ -1427,26 +1433,26 @@ describe('RESERVED_FIELD', () => {
   test('Marco com marcoTipo "gate" → CAMPO_RESERVADO, sem linha', async () => {
     await preparar(ambiente, PROJ, PROC);
     const antes = ambiente.arvore();
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: { marcoTipo: 'gate', alvo: 'hex:alvo:u1', gate: { nome: 'x' } },
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: { milestoneType: 'gate', target: 'hex:target:u1', gate: { name: 'x' } },
     });
-    esperarErro(resultado, 'RESERVED_FIELD');
+    esperarErro(result, 'RESERVED_FIELD');
     expect(ambiente.arvore()).toEqual(antes);
   });
 
   test('Marco com chave "gate", mesmo sem marcoTipo "gate" → CAMPO_RESERVADO', async () => {
     await preparar(ambiente, PROJ, PROC);
-    const resultado = await ambiente.chamar('registrar', {
-      projeto: PROJ,
-      processo: PROC,
-      id: PREFIXO_MARCO,
-      agente: AGENTE,
-      dados: { marcoTipo: 'aprovado', alvo: 'hex:alvo:u1', gate: 'qualquer' },
+    const result = await ambiente.chamar('registrar', {
+      project: PROJ,
+      process: PROC,
+      id: PREFIXO_MILESTONE,
+      agent: AGENTE,
+      data: { milestoneType: 'aprovado', target: 'hex:target:u1', gate: 'qualquer' },
     });
-    esperarErro(resultado, 'RESERVED_FIELD');
+    esperarErro(result, 'RESERVED_FIELD');
   });
 });

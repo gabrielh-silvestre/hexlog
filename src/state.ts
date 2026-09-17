@@ -1,273 +1,276 @@
 import { groupBy, isNil, keyBy, pick, uniqBy } from 'es-toolkit';
 import { z } from 'zod';
 import type { Chain } from './chain.ts';
-import { Nome } from './events.ts';
-import type { Linha } from './events.ts';
+import { Name } from './events.ts';
+import type { EventLine } from './events.ts';
 
 // §4.9: cada lista do vocabulário tem até 100 valores de até 100 caracteres.
-const ValorVocabulario = z.string().min(1).max(100);
-const ListaVocabulario = z.array(ValorVocabulario).max(100);
+const VocabValue = z.string().min(1).max(100);
+const VocabList = z.array(VocabValue).max(100);
 
 export const VocabSchema = z.strictObject({
-  marcoTipo: ListaVocabulario,
-  resultado: ListaVocabulario,
-  acao: ListaVocabulario,
+  milestoneType: VocabList,
+  result: VocabList,
+  action: VocabList,
 });
 export type Vocab = z.infer<typeof VocabSchema>;
 
-export const VocabularioSchema = z.strictObject({
-  nucleo: VocabSchema,
-  porDono: z.record(Nome, VocabSchema),
+export const VocabularySchema = z.strictObject({
+  core: VocabSchema,
+  byOwner: z.record(Name, VocabSchema),
 });
-export type Vocabulario = z.infer<typeof VocabularioSchema>;
+export type Vocabulary = z.infer<typeof VocabularySchema>;
 
-export type CampoVocabulario = 'marcoTipo' | 'resultado' | 'decisoes.acao';
+export type VocabularyField = 'milestoneType' | 'result' | 'decisions.action';
 
-export type VigenciaPorChave =
-  | { destino: string; afirmacao: string; status: 'vigente'; vigente: string }
-  | { destino: string; afirmacao: string; status: 'conflito'; candidatos: string[] };
+export type StatusEntry =
+  | { target: string; claim: string; status: 'active'; active: string }
+  | { target: string; claim: string; status: 'conflict'; candidates: string[] };
 
-export type Projecao = {
-  logAte: { id: string; seq: number; timestamp: string } | null;
-  vigentes: VigenciaPorChave[]; // ordem de 1ª aparição
-  conflitos: { destino: string; afirmacao: string; candidatos: string[] }[];
-  orfaos: { marco: string; alvo: string; prazoExecucao: string }[];
-  aRevisar: string[];
-  referenciasInvalidas: { citadaPor: string; referencia: string }[];
-  avisos: {
-    evento: string;
-    campo: CampoVocabulario;
-    valor: string;
-    classe: 'extensao' | 'aviso-desconhecido' | 'erro';
-    dono: string | null;
+export type Projection = {
+  logThrough: { id: string; seq: number; timestamp: string } | null;
+  active: StatusEntry[]; // ordem de 1ª aparição
+  conflicts: { target: string; claim: string; candidates: string[] }[];
+  orphans: { milestone: string; target: string; dueAt: string }[];
+  toReview: string[];
+  invalidReferences: { citedBy: string; reference: string }[];
+  warnings: {
+    event: string;
+    field: VocabularyField;
+    value: string;
+    kind: 'extension' | 'unknown-warning' | 'error';
+    owner: string | null;
   }[];
 };
 
-export type Estado = Projecao & { cadeia: Chain };
+export type State = Projection & { chain: Chain };
 
-/** `agora` efetivo da projeção (Q10): o mais recente entre o relógio injetado e o último elo do log. */
-export function agoraEfetivo(relogio: string, elos: Linha[]): string {
-  const ultimo = elos.at(-1);
-  if (isNil(ultimo)) return relogio;
-  // Instante (ISO 8601 UTC "Z") ordena igual por comparação lexicográfica; es-toolkit.maxBy
+/** `now` efetivo da projeção (Q10): o mais recente entre o relógio injetado e o último elo do log. */
+export function effectiveNow(clockTime: string, lines: EventLine[]): string {
+  const last = lines.at(-1);
+  if (isNil(last)) return clockTime;
+  // Instant (ISO 8601 UTC "Z") ordena igual por comparação lexicográfica; es-toolkit.maxBy
   // compara numericamente e erraria aqui, por isso o ternário em vez do helper.
-  return relogio > ultimo.timestamp ? relogio : ultimo.timestamp;
+  return clockTime > last.timestamp ? clockTime : last.timestamp;
 }
 
-// Forma de leitura de `dados` já validado (normalizarDados): cobre Marco e a variante gate
-// (que não tem `prazoExecucao`/`decisoes`), e Veredito. Sem revalidação — só acesso a campo.
-type CampoMarco = {
-  marcoTipo: string;
-  alvo: string;
-  prazoExecucao?: string;
-  decisoes?: { item: string; acao: string; texto: string }[];
+// Forma de leitura de `data` já validado (normalizeData): cobre Milestone e a variante gate
+// (que não tem `dueAt`/`decisions`), e Verdict. Sem revalidação — só acesso a campo.
+type MilestoneFields = {
+  milestoneType: string;
+  target: string;
+  dueAt?: string;
+  decisions?: { item: string; action: string; text: string }[];
 };
-type CampoVeredito = {
-  destino: string;
-  afirmacao: string;
-  resultado: string;
-  supera?: string[];
-};
-
-function alvoDe(elo: Linha): string | undefined {
-  if (elo.tipo === 'marco') return (elo.dados as CampoMarco).alvo;
-  if (elo.tipo === 'veredito') return (elo.dados as CampoVeredito).destino;
-  return undefined; // tipos custom não têm alvo e são inertes (S3)
-}
-
-function ehMarcoGate(elo: Linha): boolean {
-  return elo.tipo === 'marco' && (elo.dados as CampoMarco).marcoTipo === 'gate';
-}
-
-function chaveDeAgrupamento(dados: CampoVeredito): string {
-  return JSON.stringify([dados.destino, dados.afirmacao]);
-}
-
-type ResultadoSupersessao = {
-  vigentes: VigenciaPorChave[];
-  conflitos: Projecao['conflitos'];
-  referenciasInvalidas: Projecao['referenciasInvalidas'];
-  superadas: Linha[];
+type VerdictFields = {
+  target: string;
+  claim: string;
+  result: string;
+  supersedes?: string[];
 };
 
-/** Vigentes/conflitos/referenciasInvalidas por (destino, afirmação); `supera` marca superados sem fundir grupos. */
-function computarSupersessao(vereditos: Linha[]): ResultadoSupersessao {
-  const vereditoPorId = keyBy(vereditos, (v) => v.id);
-  const superado = new Set<string>();
-  const referenciasInvalidas: Projecao['referenciasInvalidas'] = [];
+function targetOf(line: EventLine): string | undefined {
+  if (line.type === 'milestone') return (line.data as MilestoneFields).target;
+  if (line.type === 'verdict') return (line.data as VerdictFields).target;
+  return undefined; // tipos custom não têm target e são inertes (S3)
+}
 
-  for (const v of vereditos) {
-    const dados = v.dados as CampoVeredito;
-    for (const refId of dados.supera ?? []) {
-      if (isNil(vereditoPorId[refId])) {
-        referenciasInvalidas.push({ citadaPor: v.id, referencia: refId });
+function isMilestoneGate(line: EventLine): boolean {
+  return line.type === 'milestone' && (line.data as MilestoneFields).milestoneType === 'gate';
+}
+
+function groupingKey(data: VerdictFields): string {
+  return JSON.stringify([data.target, data.claim]);
+}
+
+type SupersessionResult = {
+  active: StatusEntry[];
+  conflicts: Projection['conflicts'];
+  invalidReferences: Projection['invalidReferences'];
+  superseded: EventLine[];
+};
+
+/** Active/conflicts/invalidReferences por (target, claim); `supersedes` marca superados sem fundir grupos. */
+function computeSupersession(verdicts: EventLine[]): SupersessionResult {
+  const verdictById = keyBy(verdicts, (v) => v.id);
+  const supersededIds = new Set<string>();
+  const invalidReferences: Projection['invalidReferences'] = [];
+
+  for (const v of verdicts) {
+    const data = v.data as VerdictFields;
+    for (const refId of data.supersedes ?? []) {
+      if (isNil(verdictById[refId])) {
+        invalidReferences.push({ citedBy: v.id, reference: refId });
         continue;
       }
-      superado.add(refId);
+      supersededIds.add(refId);
     }
   }
 
-  const porChave = groupBy(vereditos, (v) => chaveDeAgrupamento(v.dados as CampoVeredito));
+  const byKey = groupBy(verdicts, (v) => groupingKey(v.data as VerdictFields));
 
-  const vigentes: VigenciaPorChave[] = [];
-  const conflitos: Projecao['conflitos'] = [];
-  for (const [chave, membros] of Object.entries(porChave)) {
-    const candidatos = membros.filter((v) => !superado.has(v.id)).map((v) => v.id);
-    if (candidatos.length === 0) continue; // grupo inteiro superado por vereditos de outra chave: sem vigente
+  const active: StatusEntry[] = [];
+  const conflicts: Projection['conflicts'] = [];
+  for (const [key, members] of Object.entries(byKey)) {
+    const candidates = members.filter((v) => !supersededIds.has(v.id)).map((v) => v.id);
+    if (candidates.length === 0) continue; // grupo inteiro superado por verdicts de outra chave: sem active
 
-    const [destino, afirmacao] = JSON.parse(chave) as [string, string];
-    if (candidatos.length === 1) {
-      vigentes.push({ destino, afirmacao, status: 'vigente', vigente: candidatos[0] });
+    const [target, claim] = JSON.parse(key) as [string, string];
+    if (candidates.length === 1) {
+      active.push({ target, claim, status: 'active', active: candidates[0] });
       continue;
     }
-    vigentes.push({ destino, afirmacao, status: 'conflito', candidatos });
-    conflitos.push({ destino, afirmacao, candidatos });
+    active.push({ target, claim, status: 'conflict', candidates });
+    conflicts.push({ target, claim, candidates });
   }
 
-  const superadas = vereditos.filter((v) => superado.has(v.id));
-  return { vigentes, conflitos, referenciasInvalidas, superadas };
+  const superseded = verdicts.filter((v) => supersededIds.has(v.id));
+  return { active, conflicts, invalidReferences, superseded };
 }
 
-/** Ciclo do Marco por alvo (§4.8, pseudocódigo do plano): reduce puro, gate nunca abre nem fecha (R-3). */
-function derivarCiclo(eventosDoAlvo: Linha[]): { abertura: Linha; fechado: boolean } | undefined {
-  type Acc = { abertura?: Linha; fechado: boolean };
-  const final = eventosDoAlvo.reduce<Acc>(
+/** Ciclo do Milestone por target (§4.8, pseudocódigo do plano): reduce puro, gate nunca abre nem fecha (R-3). */
+function deriveCycle(
+  eventsForTarget: EventLine[],
+): { opening: EventLine; closed: boolean } | undefined {
+  type Acc = { opening?: EventLine; closed: boolean };
+  const final = eventsForTarget.reduce<Acc>(
     (acc, e) => {
-      if (ehMarcoGate(e)) return acc;
-      const prazoExecucao = e.tipo === 'marco' ? (e.dados as CampoMarco).prazoExecucao : undefined;
-      if (!isNil(prazoExecucao)) return { abertura: e, fechado: false }; // nova abertura reinicia
-      return isNil(acc.abertura) ? acc : { ...acc, fechado: true }; // qualquer evento posterior fecha
+      if (isMilestoneGate(e)) return acc;
+      const dueAt = e.type === 'milestone' ? (e.data as MilestoneFields).dueAt : undefined;
+      if (!isNil(dueAt)) return { opening: e, closed: false }; // nova abertura reinicia
+      return isNil(acc.opening) ? acc : { ...acc, closed: true }; // qualquer evento posterior fecha
     },
-    { fechado: false },
+    { closed: false },
   );
 
-  return isNil(final.abertura) ? undefined : { abertura: final.abertura, fechado: final.fechado };
+  return isNil(final.opening) ? undefined : { opening: final.opening, closed: final.closed };
 }
 
-function calcularOrfaos(elos: Linha[], agora: string): Projecao['orfaos'] {
-  const comAlvo = elos.filter((e) => e.tipo === 'marco' || e.tipo === 'veredito');
-  const porAlvo = groupBy(comAlvo, (e) => alvoDe(e) as string);
+function calculateOrphans(lines: EventLine[], now: string): Projection['orphans'] {
+  const withTarget = lines.filter((e) => e.type === 'milestone' || e.type === 'verdict');
+  const byTarget = groupBy(withTarget, (e) => targetOf(e) as string);
 
-  const orfaos: Projecao['orfaos'] = [];
-  for (const [alvo, eventosDoAlvo] of Object.entries(porAlvo)) {
-    const ciclo = derivarCiclo(eventosDoAlvo);
-    if (isNil(ciclo) || ciclo.fechado) continue;
+  const orphans: Projection['orphans'] = [];
+  for (const [target, eventsForTarget] of Object.entries(byTarget)) {
+    const cycle = deriveCycle(eventsForTarget);
+    if (isNil(cycle) || cycle.closed) continue;
 
-    const prazoExecucao = (ciclo.abertura.dados as CampoMarco).prazoExecucao;
-    if (!isNil(prazoExecucao) && prazoExecucao < agora) {
-      orfaos.push({ marco: ciclo.abertura.id, alvo, prazoExecucao });
+    const dueAt = (cycle.opening.data as MilestoneFields).dueAt;
+    if (!isNil(dueAt) && dueAt < now) {
+      orphans.push({ milestone: cycle.opening.id, target, dueAt });
     }
   }
-  return orfaos;
+  return orphans;
 }
 
-/** BFS por alvo a partir dos Vereditos superados; Marcos de gate entram (só ficam fora do ciclo, R-3). */
-function calcularARevisar(elos: Linha[], superadas: Linha[]): string[] {
-  const porId = keyBy(elos, (e) => e.id);
-  const idsSuperados = new Set(superadas.map((v) => v.id));
-  const alvosVisitados = new Set<string>();
-  const fila: string[] = [];
+/** BFS por target a partir dos Verdicts superados; Milestones de gate entram (só ficam fora do ciclo, R-3). */
+function calculateToReview(lines: EventLine[], superseded: EventLine[]): string[] {
+  const byId = keyBy(lines, (e) => e.id);
+  const supersededIds = new Set(superseded.map((v) => v.id));
+  const visitedTargets = new Set<string>();
+  const queue: string[] = [];
 
-  for (const veredito of superadas) {
-    const alvo = alvoDe(veredito);
-    if (isNil(alvo) || alvosVisitados.has(alvo)) continue;
-    alvosVisitados.add(alvo);
-    fila.push(alvo);
+  for (const verdict of superseded) {
+    const target = targetOf(verdict);
+    if (isNil(target) || visitedTargets.has(target)) continue;
+    visitedTargets.add(target);
+    queue.push(target);
   }
 
-  const resultado: string[] = [];
-  while (fila.length > 0) {
-    const alvo = fila.shift();
-    if (isNil(alvo)) continue;
+  const result: string[] = [];
+  while (queue.length > 0) {
+    const target = queue.shift();
+    if (isNil(target)) continue;
 
-    for (const elo of elos) {
-      if (alvoDe(elo) !== alvo || idsSuperados.has(elo.id)) continue;
-      resultado.push(elo.id);
+    for (const line of lines) {
+      if (targetOf(line) !== target || supersededIds.has(line.id)) continue;
+      result.push(line.id);
 
-      if (elo.tipo !== 'veredito') continue;
-      for (const refId of (elo.dados as CampoVeredito).supera ?? []) {
-        const referenciado = porId[refId];
-        if (isNil(referenciado)) continue;
-        const alvoReferenciado = alvoDe(referenciado);
-        if (isNil(alvoReferenciado) || alvosVisitados.has(alvoReferenciado)) continue;
-        alvosVisitados.add(alvoReferenciado);
-        fila.push(alvoReferenciado);
+      if (line.type !== 'verdict') continue;
+      for (const refId of (line.data as VerdictFields).supersedes ?? []) {
+        const referencedLine = byId[refId];
+        if (isNil(referencedLine)) continue;
+        const referencedTarget = targetOf(referencedLine);
+        if (isNil(referencedTarget) || visitedTargets.has(referencedTarget)) continue;
+        visitedTargets.add(referencedTarget);
+        queue.push(referencedTarget);
       }
     }
   }
-  return resultado;
+  return result;
 }
 
-type PoliticaCampo = { chave: keyof Vocab; aberto: boolean };
+type FieldPolicy = { key: keyof Vocab; open: boolean };
 
-// aberto=true: fora de núcleo ∪ extensões vira aviso (campo aberto); aberto=false: vira erro (campo fechado).
-const POLITICA_POR_CAMPO: Record<CampoVocabulario, PoliticaCampo> = {
-  marcoTipo: { chave: 'marcoTipo', aberto: false },
-  resultado: { chave: 'resultado', aberto: true },
-  'decisoes.acao': { chave: 'acao', aberto: false },
+// open=true: fora de core ∪ extensões vira warning (campo aberto); open=false: vira error (campo fechado).
+const FIELD_POLICY_BY_KEY: Record<VocabularyField, FieldPolicy> = {
+  milestoneType: { key: 'milestoneType', open: false },
+  result: { key: 'result', open: true },
+  'decisions.action': { key: 'action', open: false },
 };
 
-/** Classifica `valor` de `campo` contra o vocabulário (§4.9). `null` = valor do núcleo, sem aviso. */
-export function validarCampo(
-  vocabulario: Vocabulario,
-  campo: CampoVocabulario,
-  valor: string,
-): { classe: 'extensao' | 'aviso-desconhecido' | 'erro'; dono: string | null } | null {
-  const { chave, aberto } = POLITICA_POR_CAMPO[campo];
+/** Classifica `value` de `field` contra o vocabulário (§4.9). `null` = valor do core, sem warning. */
+export function validateField(
+  vocabulary: Vocabulary,
+  field: VocabularyField,
+  value: string,
+): { kind: 'extension' | 'unknown-warning' | 'error'; owner: string | null } | null {
+  const { key, open } = FIELD_POLICY_BY_KEY[field];
 
-  if (vocabulario.nucleo[chave].includes(valor)) return null;
+  if (vocabulary.core[key].includes(value)) return null;
 
-  const donos = Object.entries(vocabulario.porDono)
-    .filter(([, vocab]) => vocab[chave].includes(valor))
-    .map(([dono]) => dono);
+  const owners = Object.entries(vocabulary.byOwner)
+    .filter(([, vocab]) => vocab[key].includes(value))
+    .map(([owner]) => owner);
 
-  if (donos.length === 1) return { classe: 'extensao', dono: donos[0] };
-  if (donos.length > 1) return { classe: 'extensao', dono: null }; // dois+ donos declaram o mesmo valor: ambíguo
+  if (owners.length === 1) return { kind: 'extension', owner: owners[0] };
+  if (owners.length > 1) return { kind: 'extension', owner: null }; // dois+ owners declaram o mesmo valor: ambíguo
 
-  return { classe: aberto ? 'aviso-desconhecido' : 'erro', dono: null };
+  return { kind: open ? 'unknown-warning' : 'error', owner: null };
 }
 
-function coletarAvisos(elos: Linha[], vocabulario: Vocabulario): Projecao['avisos'] {
-  const avisos: Projecao['avisos'] = [];
+function collectWarnings(lines: EventLine[], vocabulary: Vocabulary): Projection['warnings'] {
+  const warnings: Projection['warnings'] = [];
 
-  const registrar = (evento: string, campo: CampoVocabulario, valor: string): void => {
-    const resultado = validarCampo(vocabulario, campo, valor);
-    if (isNil(resultado)) return;
-    avisos.push({ evento, campo, valor, ...resultado });
+  const record = (event: string, field: VocabularyField, value: string): void => {
+    const result = validateField(vocabulary, field, value);
+    if (isNil(result)) return;
+    warnings.push({ event, field, value, ...result });
   };
 
-  for (const elo of elos) {
-    if (elo.tipo === 'marco') {
-      if (ehMarcoGate(elo)) continue; // §4.9: Marcos de gate são ignorados
-      const dados = elo.dados as CampoMarco;
-      registrar(elo.id, 'marcoTipo', dados.marcoTipo);
-      for (const decisao of dados.decisoes ?? []) registrar(elo.id, 'decisoes.acao', decisao.acao);
-    } else if (elo.tipo === 'veredito') {
-      registrar(elo.id, 'resultado', (elo.dados as CampoVeredito).resultado);
+  for (const line of lines) {
+    if (line.type === 'milestone') {
+      if (isMilestoneGate(line)) continue; // §4.9: Milestones de gate são ignorados
+      const data = line.data as MilestoneFields;
+      record(line.id, 'milestoneType', data.milestoneType);
+      for (const decision of data.decisions ?? [])
+        record(line.id, 'decisions.action', decision.action);
+    } else if (line.type === 'verdict') {
+      record(line.id, 'result', (line.data as VerdictFields).result);
     }
   }
-  return avisos;
+  return warnings;
 }
 
 /**
- * Projeta o Estado a partir dos elos (§4.8), pura: full rebuild sempre a partir do array
- * completo, nunca incremental. Recebe só elos com `dados` já validado (normalizarDados) e
- * `agora` já resolvido por `agoraEfetivo` (Q10).
+ * Projeta o State a partir das lines (§4.8), pura: full rebuild sempre a partir do array
+ * completo, nunca incremental. Recebe só lines com `data` já validado (normalizeData) e
+ * `now` já resolvido por `effectiveNow` (Q10).
  */
-export function projetar(elos: Linha[], vocabulario: Vocabulario, agora: string): Projecao {
-  const deduplicados = uniqBy(elos, (e) => e.id); // primeira ocorrência vence
-  const ultimo = deduplicados.at(-1);
+export function projectState(lines: EventLine[], vocabulary: Vocabulary, now: string): Projection {
+  const deduplicated = uniqBy(lines, (e) => e.id); // primeira ocorrência vence
+  const last = deduplicated.at(-1);
 
-  const vereditos = deduplicados.filter((e) => e.tipo === 'veredito');
-  const { vigentes, conflitos, referenciasInvalidas, superadas } = computarSupersessao(vereditos);
+  const verdicts = deduplicated.filter((e) => e.type === 'verdict');
+  const { active, conflicts, invalidReferences, superseded } = computeSupersession(verdicts);
 
   return {
-    logAte: isNil(ultimo) ? null : pick(ultimo, ['id', 'seq', 'timestamp']),
-    vigentes,
-    conflitos,
-    orfaos: calcularOrfaos(deduplicados, agora),
-    aRevisar: calcularARevisar(deduplicados, superadas),
-    referenciasInvalidas,
-    avisos: coletarAvisos(deduplicados, vocabulario),
+    logThrough: isNil(last) ? null : pick(last, ['id', 'seq', 'timestamp']),
+    active,
+    conflicts,
+    orphans: calculateOrphans(deduplicated, now),
+    toReview: calculateToReview(deduplicated, superseded),
+    invalidReferences,
+    warnings: collectWarnings(deduplicated, vocabulary),
   };
 }

@@ -1,8 +1,8 @@
 import { describe, expect, test } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { buscar } from '../src/search.ts';
-import type { Manifesto } from '../src/definitions.ts';
+import { search } from '../src/search.ts';
+import type { ProcessManifest } from '../src/definitions.ts';
 import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
 import { type Ambiente, criarAmbiente, registrarNucleo } from './helpers.ts';
 
@@ -11,11 +11,11 @@ const PROC = 'proc1';
 const TAMANHO = 10_000;
 
 /** Fixa vocabulário núcleo + um tipo custom e cria o processo; devolve o manifesto real gravado. */
-async function prepararProcesso(ambiente: Ambiente): Promise<Manifesto> {
+async function prepararProcesso(ambiente: Ambiente): Promise<ProcessManifest> {
   await registrarNucleo(ambiente, PROJ);
   await ambiente.chamar('registrar_tipo', {
-    projeto: PROJ,
-    nome: 'nota',
+    project: PROJ,
+    name: 'nota',
     schema: {
       type: 'object',
       properties: { texto: { type: 'string' } },
@@ -23,9 +23,9 @@ async function prepararProcesso(ambiente: Ambiente): Promise<Manifesto> {
       additionalProperties: false,
     },
   });
-  await ambiente.chamar('criar_processo', { projeto: PROJ, processo: PROC });
-  const conteudo = fs.readFileSync(path.join(ambiente.dir, PROJ, PROC, 'processo.json'), 'utf8');
-  return JSON.parse(conteudo) as Manifesto;
+  await ambiente.chamar('criar_processo', { project: PROJ, process: PROC });
+  const conteudo = fs.readFileSync(path.join(ambiente.dir, PROJ, PROC, 'process.json'), 'utf8');
+  return JSON.parse(conteudo) as ProcessManifest;
 }
 
 function mediana(valores: number[]): number {
@@ -42,14 +42,14 @@ describe('M13', () => {
       const corpus = gerarCorpus({
         tamanho: TAMANHO,
         manifesto,
-        vocabulario: manifesto.fixado.vocabulario,
+        vocabulario: manifesto.fixed.vocabulary,
       });
-      escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
+      escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'events.jsonl'), corpus.texto);
 
-      const candidatos = corpus.linhas.map((linha, indice) => ({ indice, linha }));
+      const candidatos = corpus.linhas.map((line, index) => ({ index, line }));
       const temposIndice = Array.from({ length: 5 }, () => {
         const inicio = performance.now();
-        buscar(candidatos, 'webhook');
+        search(candidatos, 'webhook');
         return performance.now() - inicio;
       });
 
@@ -57,10 +57,10 @@ describe('M13', () => {
       for (let i = 0; i < 5; i++) {
         const inicio = performance.now();
         const resultado = await ambiente.chamar('eventos', {
-          projeto: PROJ,
-          processo: PROC,
-          busca: 'webhook',
-          limite: 50,
+          project: PROJ,
+          process: PROC,
+          search: 'webhook',
+          limit: 50,
         });
         temposChamada.push(performance.now() - inicio);
         expect(resultado.isError).not.toBe(true);

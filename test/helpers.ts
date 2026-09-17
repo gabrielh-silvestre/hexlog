@@ -17,7 +17,7 @@ export type Ambiente = {
   registros: LogRecord[];
   chamar: (nome: string, args?: Record<string, unknown>) => Promise<ResultadoChamada>;
   arvore: (raiz?: string) => string[];
-  definirRelogio: (data: Date) => void;
+  definirRelogio: (date: Date) => void;
   fechar: () => Promise<void>;
 };
 
@@ -76,8 +76,8 @@ export async function criarAmbiente(): Promise<Ambiente> {
     registros,
     chamar,
     arvore: (raiz = dir) => arvore(raiz),
-    definirRelogio: (data: Date) => {
-      agora = data;
+    definirRelogio: (date: Date) => {
+      agora = date;
     },
     fechar: async () => {
       await cliente.close();
@@ -89,11 +89,11 @@ export async function criarAmbiente(): Promise<Ambiente> {
 /** Vocabulário núcleo mínimo (`aprovado`/`ok`/`seguir`), base de quase todo processo de teste. */
 export async function registrarNucleo(ambiente: Ambiente, projeto: string): Promise<void> {
   await ambiente.chamar('registrar_vocabulario', {
-    projeto,
-    dono: 'nucleo',
-    marcoTipo: ['aprovado'],
-    resultado: ['ok'],
-    acao: ['seguir'],
+    project: projeto,
+    owner: 'core',
+    milestoneType: ['aprovado'],
+    result: ['ok'],
+    action: ['seguir'],
   });
 }
 

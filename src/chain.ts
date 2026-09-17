@@ -3,7 +3,7 @@ import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
 import { omit } from 'es-toolkit/compat';
 import type { Detail } from './errors.ts';
-import { Linha } from './events.ts';
+import { EventLine } from './events.ts';
 
 type MotivoQuebra = 'linha-invalida' | 'seq-divergente' | 'hash-nao-bate' | 'dados-invalidos';
 
@@ -26,7 +26,7 @@ export function sha256hex(texto: string): string {
 }
 
 /** `hashLine(l) = sha256hex(l.prevHash + canonicalize(omit(l, 'prevHash')))` (JCS, §4.6). */
-export function hashLine(l: Linha): string {
+export function hashLine(l: EventLine): string {
   return sha256hex(l.prevHash + jcs(omit(l, ['prevHash'])));
 }
 
@@ -36,15 +36,15 @@ export function anchor(manifest: unknown): string {
 }
 
 // canonicalize devolve `string | undefined` só para entradas não serializáveis (function,
-// symbol, undefined); Linha e o manifesto nunca são isso, mas o tipo exige o fallback.
+// symbol, undefined); EventLine e o manifesto nunca são isso, mas o tipo exige o fallback.
 function jcs(value: unknown): string {
   return canonicalize(value) ?? '';
 }
 
 /** Predicado único (escritor e verificador): a linha é um elo válido, ou `null`. */
-export function isValidLink(text: string): Linha | null {
+export function isValidLink(text: string): EventLine | null {
   try {
-    const result = Linha.safeParse(JSON.parse(text));
+    const result = EventLine.safeParse(JSON.parse(text));
     return result.success ? result.data : null;
   } catch {
     return null;
@@ -52,30 +52,30 @@ export function isValidLink(text: string): Linha | null {
 }
 
 /** `prevHash` esperado do próximo elo, dado o último elo válido anterior (ou `null` = início da cadeia). */
-export function expectedPrevHash(lastLink: Linha | null, manifest: unknown): string {
+export function expectedPrevHash(lastLink: EventLine | null, manifest: unknown): string {
   return isNil(lastLink) ? anchor(manifest) : hashLine(lastLink);
 }
 
 /** `seq` esperado do próximo elo: `n` = linhas não-elo (pendentes) desde o último elo (ou desde o início). */
-export function nextSeq(lastLink: Linha | null, n: number): number {
+export function nextSeq(lastLink: EventLine | null, n: number): number {
   return isNil(lastLink) ? n : lastLink.seq + 1 + n;
 }
 
 /**
  * Verifica a cadeia de hash de um log JSONL (§4.6). `validateData`, quando informado, roda
- * sobre `{tipo, dados}` de cada elo e retorna `Detail[]` (reprovado) ou `null` (aprovado);
+ * sobre `{type, data}` de cada elo e retorna `Detail[]` (reprovado) ou `null` (aprovado);
  * um retorno não nulo vira quebra `dados-invalidos`.
  */
 export function verifyChain(
   texto: string,
   manifest: unknown,
-  validateData?: (tipo: string, dados: Record<string, unknown>) => Detail[] | null,
+  validateData?: (type: string, data: Record<string, unknown>) => Detail[] | null,
 ): Chain {
   // A cauda sem '\n' (escrita em andamento, ou rasgo ainda não reparado) é ignorada:
   // split(-1) descarta o último elemento, terminado ou não.
   const lines = texto.split('\n').slice(0, -1);
 
-  let lastLink: Linha | null = null;
+  let lastLink: EventLine | null = null;
   let pending: number[] = [];
   const quebras: Quebra[] = [];
   const linhasReparadas: number[] = [];
@@ -102,7 +102,7 @@ export function verifyChain(
     if (!hashOk) quebras.push({ indice: index, motivo: 'hash-nao-bate' });
     resolvePending(seqOk && hashOk);
 
-    if (!isNil(validateData) && !isNil(validateData(link.tipo, link.dados))) {
+    if (!isNil(validateData) && !isNil(validateData(link.type, link.data))) {
       quebras.push({ indice: index, motivo: 'dados-invalidos' });
     }
 

@@ -5,15 +5,15 @@ import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { z } from 'zod';
 import { sha256hex } from '../src/chain.ts';
-import { resolveSafePath, PROCESSOS_RESERVADOS } from '../src/storage.ts';
-import type { Manifesto } from '../src/definitions.ts';
+import { resolveSafePath, RESERVED_PROCESS_NAMES } from '../src/storage.ts';
+import type { ProcessManifest } from '../src/definitions.ts';
 import {
-  carregarProcesso,
-  criarProcesso,
-  lerProjeto,
-  registrarGate,
-  registrarTipo,
-  registrarVocabulario,
+  loadProcess,
+  createProcess,
+  readProject,
+  registerGate,
+  registerType,
+  registerVocabulary,
 } from '../src/definitions.ts';
 import { HexlogError } from '../src/errors.ts';
 import { parseJson } from './helpers.ts';
@@ -26,12 +26,12 @@ const SCHEMA_VALIDO = {
   additionalProperties: false,
 };
 
-// Forma de schemas/<nome>.json gravado por `registrarTipo` (S1).
+// Forma de schemas/<name>.json gravado por `registerType` (S1).
 const RegistroTipoSchema = z.object({
-  nome: z.string(),
+  name: z.string(),
   schema: z.record(z.string(), z.unknown()),
   hash: z.string(),
-  registradoEm: z.string(),
+  registeredAt: z.string(),
 });
 
 let dir: string;
@@ -55,41 +55,41 @@ function capturarErro(fn: () => unknown): HexlogError {
   throw new Error('esperava que a função lançasse HexlogError');
 }
 
-/** Registra um núcleo de vocabulário mínimo e um schema custom, pré-requisito de `criarProcesso`. */
+/** Registra um núcleo de vocabulário mínimo e um schema custom, pré-requisito de `createProcess`. */
 function prepararNucleoEUmSchema(): void {
-  registrarVocabulario(dir, PROJETO, 'nucleo', { marcoTipo: ['revisao'], resultado: [], acao: [] });
-  registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
+  registerVocabulary(dir, PROJETO, 'core', { milestoneType: ['revisao'], result: [], action: [] });
+  registerType(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
 }
 
-function lerManifesto(processo: string): Manifesto {
+function lerManifesto(processo: string): ProcessManifest {
   return JSON.parse(
-    fs.readFileSync(path.join(dir, PROJETO, processo, 'processo.json'), 'utf8'),
-  ) as Manifesto;
+    fs.readFileSync(path.join(dir, PROJETO, processo, 'process.json'), 'utf8'),
+  ) as ProcessManifest;
 }
 
 describe('registrarTipo (S1)', () => {
   test('grava schemas/<nome>.json com nome, schema, hash e registradoEm', () => {
-    const resultado = registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
+    const resultado = registerType(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
     const gravado = parseJson(
       RegistroTipoSchema,
       fs.readFileSync(resolveSafePath(dir, PROJETO, 'schemas', 'decisao.json'), 'utf8'),
     );
     expect(gravado).toEqual({
-      nome: 'decisao',
+      name: 'decisao',
       schema: SCHEMA_VALIDO,
       hash: resultado.hash,
-      registradoEm: expect.any(String),
+      registeredAt: expect.any(String),
     });
   });
 
   test('rejeita $ref externo, sem gravar arquivo', () => {
-    const erro = capturarErro(() => registrarTipo(dir, PROJETO, 'com-ref', { $ref: 'http://x/y' }));
+    const erro = capturarErro(() => registerType(dir, PROJETO, 'com-ref', { $ref: 'http://x/y' }));
     expect(erro.code).toBe('INVALID_SCHEMA');
     expect(fs.existsSync(resolveSafePath(dir, PROJETO, 'schemas', 'com-ref.json'))).toBe(false);
   });
 
-  test.each(['marco', 'veredito'])('rejeita nome reservado "%s", sem gravar arquivo', (nome) => {
-    const erro = capturarErro(() => registrarTipo(dir, PROJETO, nome, SCHEMA_VALIDO));
+  test.each(['milestone', 'verdict'])('rejeita nome reservado "%s", sem gravar arquivo', (nome) => {
+    const erro = capturarErro(() => registerType(dir, PROJETO, nome, SCHEMA_VALIDO));
     expect(erro.code).toBe('RESERVED_NAME');
     expect(fs.existsSync(resolveSafePath(dir, PROJETO, 'schemas', `${nome}.json`))).toBe(false);
   });
@@ -112,7 +112,7 @@ describe('registrarTipo — SCHEMA_INVALIDO sem gravar arquivo (S7)', () => {
   ];
 
   test.each(CASOS)('%s → SCHEMA_INVALIDO', (_descricao, schema) => {
-    const erro = capturarErro(() => registrarTipo(dir, PROJETO, 'tipo-invalido', schema));
+    const erro = capturarErro(() => registerType(dir, PROJETO, 'tipo-invalido', schema));
     expect(erro.code).toBe('INVALID_SCHEMA');
     expect(fs.existsSync(resolveSafePath(dir, PROJETO, 'schemas', 'tipo-invalido.json'))).toBe(
       false,
@@ -124,7 +124,7 @@ describe('registrarTipo — SCHEMA_INVALIDO sem gravar arquivo (S7)', () => {
       type: 'object',
       properties: { texto: { type: 'string', description: 'x'.repeat(16_500) } },
     };
-    const erro = capturarErro(() => registrarTipo(dir, PROJETO, 'tipo-gigante', schemaGigante));
+    const erro = capturarErro(() => registerType(dir, PROJETO, 'tipo-gigante', schemaGigante));
     expect(erro.code).toBe('INVALID_SCHEMA');
     expect(erro.details).toContainEqual(expect.objectContaining({ code: 'too_big' }));
     expect(fs.existsSync(resolveSafePath(dir, PROJETO, 'schemas', 'tipo-gigante.json'))).toBe(
@@ -134,101 +134,101 @@ describe('registrarTipo — SCHEMA_INVALIDO sem gravar arquivo (S7)', () => {
 });
 
 describe('criarProcesso / registrarGate — nomes reservados (S8)', () => {
-  test.each(PROCESSOS_RESERVADOS)(
+  test.each(RESERVED_PROCESS_NAMES)(
     'criarProcesso com processo="%s" → NOME_RESERVADO',
     (processo) => {
-      const erro = capturarErro(() => criarProcesso(dir, PROJETO, processo, () => new Date()));
+      const erro = capturarErro(() => createProcess(dir, PROJETO, processo, () => new Date()));
       expect(erro.code).toBe('RESERVED_NAME');
     },
   );
 
-  test('registrarGate com nome de gate embutido (sem-orfaos) → NOME_RESERVADO', () => {
-    const erro = capturarErro(() => registrarGate(dir, PROJETO, 'sem-orfaos', 'critério qualquer'));
+  test('registrarGate com nome de gate embutido (no-orphans) → NOME_RESERVADO', () => {
+    const erro = capturarErro(() => registerGate(dir, PROJETO, 'no-orphans', 'critério qualquer'));
     expect(erro.code).toBe('RESERVED_NAME');
   });
 });
 
 describe('criarProcesso / carregarProcesso — hashes por parte (S4)', () => {
-  test('processo.json grava fixado e hashes = sha256(JCS) de cada parte', () => {
+  test('process.json grava fixado e hashes = sha256(JCS) de cada parte', () => {
     prepararNucleoEUmSchema();
-    const resultado = criarProcesso(dir, PROJETO, 'p1', () => new Date('2026-01-01T00:00:00.000Z'));
+    const resultado = createProcess(dir, PROJETO, 'p1', () => new Date('2026-01-01T00:00:00.000Z'));
     const manifesto = lerManifesto('p1');
 
-    expect(manifesto.hashes.schemas).toBe(sha256hex(canonicalize(manifesto.fixado.tipos) ?? ''));
+    expect(manifesto.hashes.schemas).toBe(sha256hex(canonicalize(manifesto.fixed.types) ?? ''));
     expect(manifesto.hashes.vocabulario).toBe(
-      sha256hex(canonicalize(manifesto.fixado.vocabulario) ?? ''),
+      sha256hex(canonicalize(manifesto.fixed.vocabulary) ?? ''),
     );
-    expect(manifesto.hashes.gates).toBe(sha256hex(canonicalize(manifesto.fixado.gates) ?? ''));
+    expect(manifesto.hashes.gates).toBe(sha256hex(canonicalize(manifesto.fixed.gates) ?? ''));
     expect(resultado.hashes).toEqual(manifesto.hashes);
   });
 
   test('hashes.schemas divergente do fixado → PROCESSO_CORROMPIDO com caminho /hashes/schemas', () => {
     prepararNucleoEUmSchema();
-    criarProcesso(dir, PROJETO, 'p1', () => new Date());
-    const arquivo = path.join(dir, PROJETO, 'p1', 'processo.json');
+    createProcess(dir, PROJETO, 'p1', () => new Date());
+    const arquivo = path.join(dir, PROJETO, 'p1', 'process.json');
     const manifesto = lerManifesto('p1');
     manifesto.hashes.schemas = 'f'.repeat(64);
     fs.writeFileSync(arquivo, JSON.stringify(manifesto));
 
-    const erro = capturarErro(() => carregarProcesso(dir, PROJETO, 'p1'));
+    const erro = capturarErro(() => loadProcess(dir, PROJETO, 'p1'));
     expect(erro.code).toBe('PROCESS_CORRUPTED');
     expect(erro.details).toContainEqual(expect.objectContaining({ path: '/hashes/schemas' }));
   });
 });
 
 describe('criarProcesso / carregarProcesso (N14)', () => {
-  test('ancora = sha256hex(canonicalize(processo.json lido do disco))', () => {
+  test('ancora = sha256hex(canonicalize(process.json lido do disco))', () => {
     prepararNucleoEUmSchema();
-    criarProcesso(dir, PROJETO, 'p1', () => new Date());
+    createProcess(dir, PROJETO, 'p1', () => new Date());
     const manifesto = lerManifesto('p1');
-    const carregado = carregarProcesso(dir, PROJETO, 'p1');
-    expect(carregado.ancora).toBe(sha256hex(canonicalize(manifesto) ?? ''));
+    const carregado = loadProcess(dir, PROJETO, 'p1');
+    expect(carregado.anchor).toBe(sha256hex(canonicalize(manifesto) ?? ''));
   });
 
   test('diretório de processo sem manifesto (crash simulado) → criarProcesso cria normalmente', () => {
     fs.mkdirSync(path.join(dir, PROJETO, 'p1'), { recursive: true, mode: 0o700 });
     prepararNucleoEUmSchema();
 
-    expect(() => criarProcesso(dir, PROJETO, 'p1', () => new Date())).not.toThrow();
-    expect(fs.existsSync(path.join(dir, PROJETO, 'p1', 'processo.json'))).toBe(true);
+    expect(() => createProcess(dir, PROJETO, 'p1', () => new Date())).not.toThrow();
+    expect(fs.existsSync(path.join(dir, PROJETO, 'p1', 'process.json'))).toBe(true);
   });
 
   test('segunda criarProcesso no mesmo nome → PROCESSO_JA_EXISTE', () => {
     prepararNucleoEUmSchema();
-    criarProcesso(dir, PROJETO, 'p1', () => new Date());
-    const erro = capturarErro(() => criarProcesso(dir, PROJETO, 'p1', () => new Date()));
+    createProcess(dir, PROJETO, 'p1', () => new Date());
+    const erro = capturarErro(() => createProcess(dir, PROJETO, 'p1', () => new Date()));
     expect(erro.code).toBe('PROCESS_ALREADY_EXISTS');
   });
 
   test('alterar fixado e recalcular hashes → carga ok, mas âncora muda', () => {
     prepararNucleoEUmSchema();
-    criarProcesso(dir, PROJETO, 'p1', () => new Date());
-    const arquivo = path.join(dir, PROJETO, 'p1', 'processo.json');
-    const ancoraOriginal = carregarProcesso(dir, PROJETO, 'p1').ancora;
+    createProcess(dir, PROJETO, 'p1', () => new Date());
+    const arquivo = path.join(dir, PROJETO, 'p1', 'process.json');
+    const ancoraOriginal = loadProcess(dir, PROJETO, 'p1').anchor;
 
     const alterado = lerManifesto('p1');
-    alterado.fixado.gates = { novo: { criterio: 'critério novo' } };
-    alterado.hashes.gates = sha256hex(canonicalize(alterado.fixado.gates) ?? '');
+    alterado.fixed.gates = { novo: { criteria: 'critério novo' } };
+    alterado.hashes.gates = sha256hex(canonicalize(alterado.fixed.gates) ?? '');
     fs.writeFileSync(arquivo, JSON.stringify(alterado));
 
-    const carregado = carregarProcesso(dir, PROJETO, 'p1');
-    expect(carregado.ancora).not.toBe(ancoraOriginal);
+    const carregado = loadProcess(dir, PROJETO, 'p1');
+    expect(carregado.anchor).not.toBe(ancoraOriginal);
   });
 });
 
 describe('vocabulário', () => {
   test('hash de fixado.vocabulario independe da ordem em que os donos foram registrados', () => {
-    registrarVocabulario(dir, PROJETO, 'nucleo', { marcoTipo: [], resultado: [], acao: [] });
-    registrarVocabulario(dir, PROJETO, 'dono-a', { marcoTipo: ['a'], resultado: [], acao: [] });
-    registrarVocabulario(dir, PROJETO, 'dono-b', { marcoTipo: ['b'], resultado: [], acao: [] });
-    const p1 = criarProcesso(dir, PROJETO, 'p1', () => new Date());
+    registerVocabulary(dir, PROJETO, 'core', { milestoneType: [], result: [], action: [] });
+    registerVocabulary(dir, PROJETO, 'dono-a', { milestoneType: ['a'], result: [], action: [] });
+    registerVocabulary(dir, PROJETO, 'dono-b', { milestoneType: ['b'], result: [], action: [] });
+    const p1 = createProcess(dir, PROJETO, 'p1', () => new Date());
 
     const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-definicoes-'));
     try {
-      registrarVocabulario(dir2, PROJETO, 'nucleo', { marcoTipo: [], resultado: [], acao: [] });
-      registrarVocabulario(dir2, PROJETO, 'dono-b', { marcoTipo: ['b'], resultado: [], acao: [] });
-      registrarVocabulario(dir2, PROJETO, 'dono-a', { marcoTipo: ['a'], resultado: [], acao: [] });
-      const p2 = criarProcesso(dir2, PROJETO, 'p1', () => new Date());
+      registerVocabulary(dir2, PROJETO, 'core', { milestoneType: [], result: [], action: [] });
+      registerVocabulary(dir2, PROJETO, 'dono-b', { milestoneType: ['b'], result: [], action: [] });
+      registerVocabulary(dir2, PROJETO, 'dono-a', { milestoneType: ['a'], result: [], action: [] });
+      const p2 = createProcess(dir2, PROJETO, 'p1', () => new Date());
 
       expect(p2.hashes.vocabulario).toBe(p1.hashes.vocabulario);
     } finally {
@@ -237,32 +237,32 @@ describe('vocabulário', () => {
   });
 
   test('sem nenhum arquivo de vocabulário → VOCABULARIO_AUSENTE', () => {
-    registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
-    const erro = capturarErro(() => criarProcesso(dir, PROJETO, 'p1', () => new Date()));
+    registerType(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
+    const erro = capturarErro(() => createProcess(dir, PROJETO, 'p1', () => new Date()));
     expect(erro.code).toBe('VOCABULARY_MISSING');
   });
 
   test('dono "nucleo" vira fixado.vocabulario.nucleo; demais donos viram porDono', () => {
-    registrarVocabulario(dir, PROJETO, 'nucleo', {
-      marcoTipo: ['revisao'],
-      resultado: [],
-      acao: [],
+    registerVocabulary(dir, PROJETO, 'core', {
+      milestoneType: ['revisao'],
+      result: [],
+      action: [],
     });
-    registrarVocabulario(dir, PROJETO, 'squad-x', {
-      marcoTipo: ['extra'],
-      resultado: [],
-      acao: [],
+    registerVocabulary(dir, PROJETO, 'squad-x', {
+      milestoneType: ['extra'],
+      result: [],
+      action: [],
     });
-    criarProcesso(dir, PROJETO, 'p1', () => new Date());
+    createProcess(dir, PROJETO, 'p1', () => new Date());
     const manifesto = lerManifesto('p1');
 
-    expect(manifesto.fixado.vocabulario.nucleo).toEqual({
-      marcoTipo: ['revisao'],
-      resultado: [],
-      acao: [],
+    expect(manifesto.fixed.vocabulary.core).toEqual({
+      milestoneType: ['revisao'],
+      result: [],
+      action: [],
     });
-    expect(manifesto.fixado.vocabulario.porDono).toEqual({
-      'squad-x': { marcoTipo: ['extra'], resultado: [], acao: [] },
+    expect(manifesto.fixed.vocabulary.byOwner).toEqual({
+      'squad-x': { milestoneType: ['extra'], result: [], action: [] },
     });
   });
 });
@@ -280,36 +280,36 @@ describe('caminho', () => {
 
 describe('substituiu', () => {
   test('registrarTipo: false na primeira gravação, true na segunda', () => {
-    expect(registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO).substituiu).toBe(false);
-    expect(registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO).substituiu).toBe(true);
+    expect(registerType(dir, PROJETO, 'decisao', SCHEMA_VALIDO).replaced).toBe(false);
+    expect(registerType(dir, PROJETO, 'decisao', SCHEMA_VALIDO).replaced).toBe(true);
   });
 
   test('registrarGate: false na primeira gravação, true na segunda', () => {
-    expect(registrarGate(dir, PROJETO, 'gate-x', 'critério').substituiu).toBe(false);
-    expect(registrarGate(dir, PROJETO, 'gate-x', 'critério novo').substituiu).toBe(true);
+    expect(registerGate(dir, PROJETO, 'gate-x', 'critério').replaced).toBe(false);
+    expect(registerGate(dir, PROJETO, 'gate-x', 'critério novo').replaced).toBe(true);
   });
 
   test('registrarVocabulario: false na primeira gravação, true na segunda', () => {
-    const vocab = { marcoTipo: [], resultado: [], acao: [] };
-    expect(registrarVocabulario(dir, PROJETO, 'nucleo', vocab).substituiu).toBe(false);
-    expect(registrarVocabulario(dir, PROJETO, 'nucleo', vocab).substituiu).toBe(true);
+    const vocab = { milestoneType: [], result: [], action: [] };
+    expect(registerVocabulary(dir, PROJETO, 'core', vocab).replaced).toBe(false);
+    expect(registerVocabulary(dir, PROJETO, 'core', vocab).replaced).toBe(true);
   });
 });
 
 describe('lerProjeto', () => {
   test('PROJETO_INEXISTENTE quando o diretório do projeto não existe', () => {
-    const erro = capturarErro(() => lerProjeto(dir, 'inexistente'));
+    const erro = capturarErro(() => readProject(dir, 'inexistente'));
     expect(erro.code).toBe('PROJECT_NOT_FOUND');
   });
 
-  test('ignora nomes reservados e diretórios de processo sem processo.json', () => {
+  test('ignora nomes reservados e diretórios de processo sem process.json', () => {
     prepararNucleoEUmSchema();
-    criarProcesso(dir, PROJETO, 'p1', () => new Date());
+    createProcess(dir, PROJETO, 'p1', () => new Date());
     fs.mkdirSync(path.join(dir, PROJETO, 'p2-sem-manifesto'), { recursive: true });
 
-    const projeto = lerProjeto(dir, PROJETO);
-    expect(projeto.processos.map((p) => p.nome)).toEqual(['p1']);
-    expect(projeto.tipos.map((t) => t.nome)).toEqual(['decisao']);
-    expect(projeto.vocabulario.map((v) => v.dono)).toEqual(['nucleo']);
+    const projeto = readProject(dir, PROJETO);
+    expect(projeto.processes.map((p) => p.name)).toEqual(['p1']);
+    expect(projeto.types.map((t) => t.name)).toEqual(['decisao']);
+    expect(projeto.vocabulary.map((v) => v.owner)).toEqual(['core']);
   });
 });

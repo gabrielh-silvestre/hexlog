@@ -163,7 +163,7 @@ describe('M6', () => {
       jsonrpc: '2.0',
       id: 4,
       method: 'tools/call',
-      params: { name: 'cadeia', arguments: { projeto: 'fantasma', processo: 'fantasma' } },
+      params: { name: 'cadeia', arguments: { project: 'fantasma', process: 'fantasma' } },
     });
     await aguardar(() => stdout.linhas().length >= 4);
 
@@ -228,15 +228,15 @@ describe('B1', () => {
         };
 
         await chamar('registrar_vocabulario', {
-          projeto,
-          dono: 'nucleo',
-          marcoTipo: ['aprovado'],
-          resultado: ['ok'],
-          acao: ['seguir'],
+          project: projeto,
+          owner: 'core',
+          milestoneType: ['aprovado'],
+          result: ['ok'],
+          action: ['seguir'],
         });
         await chamar('registrar_tipo', {
-          projeto,
-          nome: 'nota-e2e',
+          project: projeto,
+          name: 'nota-e2e',
           schema: {
             type: 'object',
             properties: { quando: { type: 'string', format: 'date-time' } },
@@ -245,53 +245,53 @@ describe('B1', () => {
           },
         });
         await chamar('registrar_gate', {
-          projeto,
-          nome: 'gate-e2e',
-          criterio: 'critério e2e qualquer',
+          project: projeto,
+          name: 'gate-e2e',
+          criteria: 'critério e2e qualquer',
         });
-        await chamar('criar_processo', { projeto, processo });
+        await chamar('criar_processo', { project: projeto, process: processo });
         await chamar('registrar', {
-          projeto,
-          processo,
-          id: `${projeto}:${processo}:marco`,
-          agente: 'agente-e2e',
-          dados: { marcoTipo: 'aprovado', alvo: 'hex:alvo:e2e1' },
+          project: projeto,
+          process: processo,
+          id: `${projeto}:${processo}:milestone`,
+          agent: 'agente-e2e',
+          data: { milestoneType: 'aprovado', target: 'hex:target:e2e1' },
         });
         await chamar('registrar', {
-          projeto,
-          processo,
-          id: `${projeto}:${processo}:veredito`,
-          agente: 'agente-e2e',
-          dados: {
-            afirmacao: 'a',
-            fonte: 'f',
-            resultado: 'ok',
-            prova: 'p',
-            destino: 'hex:alvo:e2e1',
-            origem: 'o',
-            rastro: 'r',
+          project: projeto,
+          process: processo,
+          id: `${projeto}:${processo}:verdict`,
+          agent: 'agente-e2e',
+          data: {
+            claim: 'a',
+            source: 'f',
+            result: 'ok',
+            evidence: 'p',
+            target: 'hex:target:e2e1',
+            origin: 'o',
+            trace: 'r',
           },
         });
         await chamar('registrar', {
-          projeto,
-          processo,
+          project: projeto,
+          process: processo,
           id: `${projeto}:${processo}:nota-e2e`,
-          agente: 'agente-e2e',
-          dados: { quando: new Date().toISOString() },
+          agent: 'agente-e2e',
+          data: { quando: new Date().toISOString() },
         });
         await chamar('avaliar_gate', {
-          projeto,
-          processo,
-          gate: 'sem-conflitos',
-          agente: 'agente-e2e',
-          alvo: 'hex:alvo:e2e1',
+          project: projeto,
+          process: processo,
+          gate: 'no-conflicts',
+          agent: 'agente-e2e',
+          target: 'hex:target:e2e1',
         });
-        await chamar('estado', { projeto, processo });
-        await chamar('eventos', { projeto, processo });
+        await chamar('estado', { project: projeto, process: processo });
+        await chamar('eventos', { project: projeto, process: processo });
         if (buscaDisponivel) {
-          await chamar('eventos', { projeto, processo, busca: 'aprovado' });
+          await chamar('eventos', { project: projeto, process: processo, search: 'aprovado' });
         }
-        await chamar('cadeia', { projeto, processo });
+        await chamar('cadeia', { project: projeto, process: processo });
         await chamar('listar', {});
       } finally {
         await cliente.close();
@@ -332,10 +332,10 @@ describe('B1', () => {
 });
 
 describe('C1', () => {
-  type EventoSemeado = { id: string; agente: string; dados: Record<string, unknown> };
+  type EventoSemeado = { id: string; agent: string; data: Record<string, unknown> };
   type RespostaRegistrar = {
     isError?: boolean;
-    structuredContent?: { deduplicado: boolean; evento: { seq: number; id: string } };
+    structuredContent?: { deduplicated: boolean; event: { seq: number; id: string } };
   };
 
   /** 20 `registrar` com prefixo + 5 retentativas por id completo de elos semeados, todos em paralelo. */
@@ -350,11 +350,11 @@ describe('C1', () => {
       cliente.callTool({
         name: 'registrar',
         arguments: {
-          projeto,
-          processo,
-          id: `${projeto}:${processo}:marco`,
-          agente: `servidor${indiceServidor}`,
-          dados: { marcoTipo: 'aprovado', alvo: `hex:alvo:s${indiceServidor}-${indice}` },
+          project: projeto,
+          process: processo,
+          id: `${projeto}:${processo}:milestone`,
+          agent: `servidor${indiceServidor}`,
+          data: { milestoneType: 'aprovado', target: `hex:target:s${indiceServidor}-${indice}` },
         },
       }),
     );
@@ -362,11 +362,11 @@ describe('C1', () => {
       cliente.callTool({
         name: 'registrar',
         arguments: {
-          projeto,
-          processo,
+          project: projeto,
+          process: processo,
           id: semente.id,
-          agente: semente.agente,
-          dados: semente.dados,
+          agent: semente.agent,
+          data: semente.data,
         },
       }),
     );
@@ -383,25 +383,40 @@ describe('C1', () => {
     const semente = await criarCliente(servidorMjs, env, bundlePrincipal);
     await semente.cliente.callTool({
       name: 'registrar_vocabulario',
-      arguments: { projeto, dono: 'nucleo', marcoTipo: ['aprovado'], resultado: [], acao: [] },
+      arguments: {
+        project: projeto,
+        owner: 'core',
+        milestoneType: ['aprovado'],
+        result: [],
+        action: [],
+      },
     });
-    await semente.cliente.callTool({ name: 'criar_processo', arguments: { projeto, processo } });
+    await semente.cliente.callTool({
+      name: 'criar_processo',
+      arguments: { project: projeto, process: processo },
+    });
 
     const semeados: EventoSemeado[] = [];
     for (let indice = 0; indice < 20; indice++) {
-      const agente = 'semente';
-      const dados = { marcoTipo: 'aprovado', alvo: `hex:alvo:seed${indice}` };
+      const agent = 'semente';
+      const data = { milestoneType: 'aprovado', target: `hex:target:seed${indice}` };
       const resultado = await semente.cliente.callTool({
         name: 'registrar',
-        arguments: { projeto, processo, id: `${projeto}:${processo}:marco`, agente, dados },
+        arguments: {
+          project: projeto,
+          process: processo,
+          id: `${projeto}:${processo}:milestone`,
+          agent,
+          data,
+        },
       });
-      const corpo = resultado.structuredContent as { evento: { id: string } };
-      semeados.push({ id: corpo.evento.id, agente, dados });
+      const corpo = resultado.structuredContent as { event: { id: string } };
+      semeados.push({ id: corpo.event.id, agent, data });
     }
     await semente.cliente.close();
 
     // 2) lock artificial: qualquer `append` real colide já na primeira tentativa.
-    const arquivoEventos = path.join(dirDados(env), projeto, processo, 'eventos.jsonl');
+    const arquivoEventos = path.join(dirDados(env), projeto, processo, 'events.jsonl');
     const dirLock = `${arquivoEventos}.lock`;
     fs.mkdirSync(dirLock);
     fs.writeFileSync(path.join(dirLock, 'holder'), 'token-alheio');
@@ -430,7 +445,10 @@ describe('C1', () => {
 
     const respostas = (await Promise.all(disparos)).flat();
     const cadeiaResultado = (
-      await clientes[0].cliente.callTool({ name: 'cadeia', arguments: { projeto, processo } })
+      await clientes[0].cliente.callTool({
+        name: 'cadeia',
+        arguments: { project: projeto, process: processo },
+      })
     ).structuredContent as {
       ok: boolean;
     };
@@ -454,7 +472,7 @@ describe('C1', () => {
     expect(cadeiaResultado.ok).toBe(true);
 
     const totalDeduplicados = respostas.filter(
-      (resposta) => resposta.structuredContent?.deduplicado === true,
+      (resposta) => resposta.structuredContent?.deduplicated === true,
     ).length;
     expect(totalDeduplicados).toBe(20);
 

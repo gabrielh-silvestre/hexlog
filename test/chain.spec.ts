@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
-import type { Linha } from '../src/events.ts';
+import type { EventLine } from '../src/events.ts';
 import {
   anchor,
   hashLine,
@@ -13,22 +13,26 @@ import {
 
 const MANIFESTO = { projeto: 'p', processo: 'proc', fixado: { versao: 1 } };
 
-function construirLinha(indice: number, ultimoElo: Linha | null, marcoTipo = 'passo'): Linha {
+function construirLinha(
+  indice: number,
+  ultimoElo: EventLine | null,
+  milestoneType = 'passo',
+): EventLine {
   return {
     seq: nextSeq(ultimoElo, 0),
-    id: `p:proc:marco:${randomUUIDv7()}`,
-    tipo: 'marco',
+    id: `p:proc:milestone:${randomUUIDv7()}`,
+    type: 'milestone',
     timestamp: new Date(Date.UTC(2026, 0, 1 + indice)).toISOString(),
-    agente: 'agente-teste',
+    agent: 'agente-teste',
     prevHash: expectedPrevHash(ultimoElo, MANIFESTO),
-    dados: { marcoTipo, alvo: 'hex:alvo:u1' },
+    data: { milestoneType, target: 'hex:target:u1' },
   };
 }
 
 /** Log íntegro de `quantidade` elos encadeados a partir do manifesto (linhas 0..quantidade-1). */
-function construirLog(quantidade: number): Linha[] {
-  const linhas: Linha[] = [];
-  let ultimoElo: Linha | null = null;
+function construirLog(quantidade: number): EventLine[] {
+  const linhas: EventLine[] = [];
+  let ultimoElo: EventLine | null = null;
   for (let indice = 0; indice < quantidade; indice++) {
     const elo = construirLinha(indice, ultimoElo);
     linhas.push(elo);
@@ -37,7 +41,7 @@ function construirLog(quantidade: number): Linha[] {
   return linhas;
 }
 
-function paraTexto(linhas: Array<Linha | string>): string {
+function paraTexto(linhas: Array<EventLine | string>): string {
   return (
     linhas.map((linha) => (typeof linha === 'string' ? linha : JSON.stringify(linha))).join('\n') +
     '\n'
@@ -47,16 +51,16 @@ function paraTexto(linhas: Array<Linha | string>): string {
 describe('hashLinha / ancora (N10, golden)', () => {
   const manifesto = { projeto: 'p', processo: 'x', fixado: { versao: 1 } };
   const anc = '086da7f0012515baec7fc75f3d0031be58c332c472c40a447bd86495073d97e6';
-  const linha: Linha = {
+  const linha: EventLine = {
     seq: 0,
-    id: 'p:x:marco:018f5b3a-1a2b-7c3d-89ab-0123456789ab',
-    tipo: 'marco',
+    id: 'p:x:milestone:018f5b3a-1a2b-7c3d-89ab-0123456789ab',
+    type: 'milestone',
     timestamp: '2026-01-01T00:00:00.000Z',
-    agente: 'agente-teste',
+    agent: 'agente-teste',
     prevHash: anc,
-    dados: { marcoTipo: 'inicio', alvo: 'hex:alvo:u1' },
+    data: { milestoneType: 'inicio', target: 'hex:target:u1' },
   };
-  const hashEsperado = '5ce118a3ce3e08d19f468921b45a37a3f06fa4751c3485bdb12fe01844cdd26f';
+  const hashEsperado = 'f612455e0338f8310456335ad5b6a0922817781cbc27a3154a8ea352256cf700';
 
   test('ancora do manifesto é o hex fixo', () => {
     expect(anchor(manifesto)).toBe(anc);
@@ -68,11 +72,11 @@ describe('hashLinha / ancora (N10, golden)', () => {
 
   test('reordenar as chaves da linha não muda o hash (JCS ordena)', () => {
     const reordenada = {
-      dados: linha.dados,
+      data: linha.data,
       prevHash: linha.prevHash,
-      agente: linha.agente,
+      agent: linha.agent,
       timestamp: linha.timestamp,
-      tipo: linha.tipo,
+      type: linha.type,
       id: linha.id,
       seq: linha.seq,
     };
@@ -82,8 +86,8 @@ describe('hashLinha / ancora (N10, golden)', () => {
   test('property: ida e volta por JSON.parse(JSON.stringify(l)) preserva o hash', () => {
     fc.assert(
       fc.property(fc.integer({ min: 0, max: 1000 }), (seq) => {
-        const l: Linha = { ...linha, seq };
-        const clonada = JSON.parse(JSON.stringify(l)) as Linha;
+        const l: EventLine = { ...linha, seq };
+        const clonada = JSON.parse(JSON.stringify(l)) as EventLine;
         expect(hashLine(clonada)).toBe(hashLine(l));
       }),
     );
@@ -126,7 +130,7 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
   });
 
   test('(a) JSON inválido na linha 1 → {1,linha-invalida},{2,hash-nao-bate}', () => {
-    const log: Array<Linha | string> = [...construirLog(5)];
+    const log: Array<EventLine | string> = [...construirLog(5)];
     log[1] = '{ isso nao e json valido';
     const resultado = verifyChain(paraTexto(log), MANIFESTO);
     expect(resultado.quebras).toEqual([
@@ -140,8 +144,8 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
 
   test('(b) dados alterado na linha 1 → {2,hash-nao-bate}', () => {
     const log = construirLog(5);
-    const alterado: Array<Linha | string> = [...log];
-    alterado[1] = { ...log[1], dados: { ...log[1].dados, marcoTipo: 'alterado' } };
+    const alterado: Array<EventLine | string> = [...log];
+    alterado[1] = { ...log[1], data: { ...log[1].data, milestoneType: 'alterado' } };
     const resultado = verifyChain(paraTexto(alterado), MANIFESTO);
     expect(resultado.quebras).toEqual([{ indice: 2, motivo: 'hash-nao-bate' }]);
     expect(resultado.totalQuebras).toBe(1);
@@ -179,7 +183,7 @@ describe('verificarCadeia (N1: log de 5 elos, corrupções pontuais)', () => {
 
   test('(e) (a) + prevHash alterado na linha 4 → {1,linha-invalida},{2,hash-nao-bate},{4,hash-nao-bate}', () => {
     const log = construirLog(5);
-    const alterado: Array<Linha | string> = [...log];
+    const alterado: Array<EventLine | string> = [...log];
     alterado[1] = '{ isso nao e json valido';
     alterado[4] = { ...log[4], prevHash: sha256hex('lixo-qualquer') };
     const resultado = verifyChain(paraTexto(alterado), MANIFESTO);
@@ -227,9 +231,9 @@ describe('verificarCadeia: outros casos', () => {
   test('dados-invalidos: validarDados reprovando um elo gera a quebra', () => {
     const e0 = construirLinha(0, null);
     const e1 = construirLinha(1, e0, 'ruim');
-    const validarDados = (_tipo: string, dados: Record<string, unknown>) =>
-      dados.marcoTipo === 'ruim'
-        ? [{ path: '/dados/marcoTipo', code: 'ruim', message: 'x' }]
+    const validarDados = (_tipo: string, data: Record<string, unknown>) =>
+      data.milestoneType === 'ruim'
+        ? [{ path: '/data/milestoneType', code: 'ruim', message: 'x' }]
         : null;
 
     const resultado = verifyChain(paraTexto([e0, e1]), MANIFESTO, validarDados);
