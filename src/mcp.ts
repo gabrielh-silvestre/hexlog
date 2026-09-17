@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Logger as LoggerAjv } from './definicoes.ts';
 import { type Detalhe, ErroHexlog } from './erros.ts';
 import { registrarFerramentasDefinicoes } from './ferramentas-definicoes.ts';
+import { registrarFerramentasEventos } from './ferramentas-eventos.ts';
 import { Agente, Hash, Instante, Nome } from './eventos.ts';
 import type { Logger, Registro } from './log.ts';
 import { VERSAO } from './versao.ts';
@@ -118,6 +119,7 @@ function paraErroHexlog(e: unknown, ctx: Contexto): ErroHexlog {
 export function criarServidor(ctx: Contexto): McpServer {
   const servidor = new McpServer({ name: 'hexlog', version: VERSAO });
   registrarFerramentasDefinicoes(servidor, ctx);
+  registrarFerramentasEventos(servidor, ctx);
   ctx.log({ nivel: 'info', evento: 'inicio', dirDados: ctx.dirDados, versao: VERSAO });
   return servidor;
 }
