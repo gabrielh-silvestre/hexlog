@@ -4,6 +4,8 @@ import * as path from 'node:path';
 import { expect } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
+import { parse as parseJsonBruto } from 'jsonc-parser';
+import { z } from 'zod';
 import type { CodigoErro, Detalhe } from '../src/erros.ts';
 import type { Logger, Registro } from '../src/log.ts';
 import { criarServidor } from '../src/mcp.ts';
@@ -93,6 +95,17 @@ export async function registrarNucleo(ambiente: Ambiente, projeto: string): Prom
     resultado: ['ok'],
     acao: ['seguir'],
   });
+}
+
+/** Parseia `texto` (JSON ou JSONC) e valida o formato com `schema`, lançando erro claro se não bater. */
+export function parseJson<T extends z.ZodType>(schema: T, texto: string): z.infer<T> {
+  const resultado = schema.safeParse(parseJsonBruto(texto));
+  if (!resultado.success) {
+    throw new Error(
+      `JSON não corresponde ao schema esperado:\n${z.prettifyError(resultado.error)}`,
+    );
+  }
+  return resultado.data;
 }
 
 /** Afirma que `resultado` é um erro de domínio (§4.13) com o `codigo` esperado, e devolve o corpo estruturado. */

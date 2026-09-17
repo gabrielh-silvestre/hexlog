@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 import { quote as shellQuoteQuote } from 'shell-quote';
+import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import {
@@ -24,8 +25,26 @@ import {
   verificarInstalacao,
   type Bundles,
 } from '../src/instalacao.ts';
+import { parseJson } from './helpers.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
+
+// Forma mínima de `~/.claude/settings.json` lida nos testes: só os campos
+// que as asserções acessam, com passthrough pro resto (timeout, etc.).
+const esquemaSettings = z.looseObject({
+  permissions: z.looseObject({
+    allow: z.array(z.string()),
+    deny: z.array(z.string()),
+  }),
+  hooks: z.looseObject({
+    PreToolUse: z.array(
+      z.looseObject({
+        matcher: z.string(),
+        hooks: z.array(z.looseObject({ command: z.string() })),
+      }),
+    ),
+  }),
+});
 
 // Settings "reais", sanitizados: só a forma de `permissions` e `hooks.PreToolUse`
 // (~/.claude/settings.json), com um comentário pra testar preservação e a
@@ -151,7 +170,7 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
 
   test('preserva entradas alheias (rtk hook claude e as regras/allow existentes)', () => {
     const resultado = aplicarGuard(montarSettingsComRtk(home), esperado);
-    const dados = parseJsonc(resultado);
+    const dados = parseJson(esquemaSettings, resultado);
     expect(dados.permissions.allow).toEqual(['mcp__hindsight__*']);
     expect(dados.permissions.deny).toEqual(
       expect.arrayContaining(['mcp__gitnexus__cypher', 'mcp__gitnexus__rename']),
@@ -171,7 +190,7 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
     const esperadoAntigo = regrasEsperadas(D, home, '/usr/bin/node', '0.0.9');
     const comVersaoAntiga = aplicarGuard(montarSettingsTemplate(home), esperadoAntigo);
     const resultado = aplicarGuard(comVersaoAntiga, esperado);
-    const dados = parseJsonc(resultado);
+    const dados = parseJson(esquemaSettings, resultado);
     const entradasDoHexlog = dados.hooks.PreToolUse.filter(
       (entrada: { hooks: { command: string }[] }) =>
         entrada.hooks.some(
@@ -192,7 +211,9 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
 
   test('settings sem comentários continua JSON.parse válido depois de aplicarGuard', () => {
     const resultado = aplicarGuard(montarSettingsTemplate(home), esperado);
-    expect(() => JSON.parse(resultado)).not.toThrow();
+    expect(() => {
+      JSON.parse(resultado);
+    }).not.toThrow();
   });
 
   test('verificarGuard lista cada regra de deny quando removida individualmente', () => {
@@ -205,7 +226,7 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
       [esperado.denyEditLib, 'deny-edit-lib'],
     ];
     for (const [regra, item] of casos) {
-      const dados = parseJsonc(completo);
+      const dados = parseJson(esquemaSettings, completo);
       dados.permissions.deny = dados.permissions.deny.filter((r: string) => r !== regra);
       const verificacao = verificarGuard({
         textoSettings: JSON.stringify(dados),
@@ -220,7 +241,7 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
 
   test('verificarGuard aponta "hook" quando a entrada do hook é removida', () => {
     const completo = aplicarGuard(montarSettingsTemplate(home), esperado);
-    const dados = parseJsonc(completo);
+    const dados = parseJson(esquemaSettings, completo);
     dados.hooks.PreToolUse = dados.hooks.PreToolUse.filter(
       (entrada: { hooks: { command: string }[] }) =>
         !entrada.hooks.some(
@@ -268,7 +289,7 @@ describe('I6: as 4 regras de deny exatas (QN4)', () => {
 
   test('sem a quarta regra, verificarGuard aponta deny-edit-lib', () => {
     const completo = aplicarGuard(montarSettingsTemplate(home), esperado);
-    const dados = parseJsonc(completo);
+    const dados = parseJson(esquemaSettings, completo);
     dados.permissions.deny = dados.permissions.deny.filter(
       (r: string) => r !== esperado.denyEditLib,
     );
@@ -516,7 +537,7 @@ async function contarToolsReal(arquivoServidor: string): Promise<number> {
   }
 }
 
-const verificarServidorFalso = async (): Promise<number> => 10;
+const verificarServidorFalso = (): Promise<number> => Promise.resolve(10);
 
 function executarFixtureConcorrente(
   home: string,
@@ -590,7 +611,7 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
       expect(mudou).toBe(true);
 
       const textoFinal = fs.readFileSync(caminhoSettings, 'utf8');
-      const dados = parseJsonc(textoFinal);
+      const dados = parseJson(esquemaSettings, textoFinal);
       expect(dados.permissions.deny).toEqual(
         expect.arrayContaining([
           esperado.denyReadDir,
@@ -679,7 +700,7 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
         esperado: regrasEsperadas(D, home, process.execPath, '0.2.0'),
       });
 
-      const dados = parseJsonc(fs.readFileSync(caminhoSettings, 'utf8'));
+      const dados = parseJson(esquemaSettings, fs.readFileSync(caminhoSettings, 'utf8'));
       const entradasDoHexlog = dados.hooks.PreToolUse.filter(
         (entrada: { hooks: { command: string }[] }) =>
           entrada.hooks.some(
@@ -773,7 +794,7 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
           ...argsBase,
           bundles: bundlesReais,
           executarHook: executarHookReaisDeInstalacao,
-          verificarServidor: async () => 9,
+          verificarServidor: () => Promise.resolve(9),
         }),
       ).rejects.toThrow(/9 tools/);
       expect(fs.existsSync(dirVersaoDe(home, '0.1.0'))).toBe(false);
@@ -885,7 +906,7 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
         sujo: false,
         agora: () => new Date(),
         executarHook: (_arquivoHook, stdin) => ({ status: stdin.includes('/sonda') ? 2 : 0 }),
-        verificarServidor: async () => 10,
+        verificarServidor: () => Promise.resolve(10),
         log: () => {},
       });
 
@@ -994,7 +1015,7 @@ describe('B3: instalar.ts --check (processo real)', () => {
   test('quarta regra de deny ausente: deny-edit-lib, exit 1', () => {
     const caminhoSettings = path.join(home, '.claude', 'settings.json');
     const original = fs.readFileSync(caminhoSettings, 'utf8');
-    const dados = parseJsonc(original);
+    const dados = parseJson(esquemaSettings, original);
     const D = path.join(home, '.local', 'share', 'hexlog');
     const esperado = regrasEsperadas(D, home, process.execPath, versao);
     dados.permissions.deny = dados.permissions.deny.filter(
