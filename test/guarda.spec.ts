@@ -1,10 +1,12 @@
-import { describe, test, expect, afterAll } from '@jest/globals';
+import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 import { quote as shellQuoteQuote } from 'shell-quote';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import {
   regrasEsperadas,
   aplicarGuard,
@@ -14,6 +16,14 @@ import {
   type RegrasEsperadas,
   type ItemFaltando,
 } from '../src/guarda.ts';
+import {
+  dirVersaoDe,
+  lerManifesto,
+  instalarArtefato,
+  registrarGuard,
+  verificarInstalacao,
+  type Bundles,
+} from '../src/instalacao.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
 
@@ -410,4 +420,514 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expect(verificacao.faltando).toContain('mcp');
     }
   });
+});
+
+// Bundles reais construídos uma vez (esbuild custa ~1s) e reaproveitados por
+// todos os casos de B2/B3 que não precisam de um build "diferente" de propósito.
+let bundlesReais: Bundles;
+let outdirBundlesReais: string;
+
+beforeAll(() => {
+  outdirBundlesReais = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-build-'));
+  const build = spawnSync(process.execPath, [path.join(raizDoRepo, 'scripts/build.ts'), '--outdir', outdirBundlesReais], {
+    encoding: 'utf8',
+    cwd: raizDoRepo,
+  });
+  if (build.status !== 0) {
+    throw new Error(`build para B2/B3 falhou: ${build.stderr}`);
+  }
+  bundlesReais = {
+    servidor: fs.readFileSync(path.join(outdirBundlesReais, 'servidor.mjs')),
+    hook: fs.readFileSync(path.join(outdirBundlesReais, 'guarda-bash.mjs')),
+  };
+}, 30_000);
+
+afterAll(() => {
+  fs.rmSync(outdirBundlesReais, { recursive: true, force: true });
+});
+
+// Roda o hook preparado (real) exatamente como `scripts/instalar.ts` injetaria.
+const executarHookReaisDeInstalacao = (arquivoHook: string, stdin: string): { status: number | null } =>
+  executarHookReal(process.execPath, arquivoHook, stdin);
+
+/** Sobe o servidor preparado num HOME/XDG_DATA_HOME descartáveis e conta as tools anunciadas (uso real, B2(a)). */
+async function contarToolsReal(arquivoServidor: string): Promise<number> {
+  const homeDescartavel = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-verifica-'));
+  try {
+    const transporte = new StdioClientTransport({
+      command: process.execPath,
+      args: [arquivoServidor],
+      env: { HOME: homeDescartavel, XDG_DATA_HOME: path.join(homeDescartavel, 'dados') },
+    });
+    const cliente = new Client({ name: 'teste-instalacao', version: '0.0.0' });
+    await cliente.connect(transporte);
+    const { tools } = await cliente.listTools();
+    await cliente.close();
+    return tools.length;
+  } finally {
+    fs.rmSync(homeDescartavel, { recursive: true, force: true });
+  }
+}
+
+const verificarServidorFalso = async (): Promise<number> => 10;
+
+function executarFixtureConcorrente(
+  home: string,
+  versao: string,
+  variante: string,
+  idProcesso: number,
+  totalProcessos: number,
+): Promise<{ status: number | null; stdout: string }> {
+  return new Promise((resolve, reject) => {
+    const filho = spawn(
+      process.execPath,
+      [
+        path.join(raizDoRepo, 'test/fixtures/instalar-concorrente.ts'),
+        home,
+        versao,
+        variante,
+        String(idProcesso),
+        String(totalProcessos),
+      ],
+      { cwd: raizDoRepo },
+    );
+    let stdout = '';
+    filho.stdout.on('data', (d) => (stdout += d));
+    filho.on('error', reject);
+    filho.on('close', (status) => resolve({ status, stdout }));
+  });
+}
+
+describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
+  test('(a) instala em <HOME>/.local/lib/hexlog/<versão>/ com os 2 bundles e manifesto.json (Client real)', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-a-'));
+    try {
+      const resultado = await instalarArtefato({
+        home,
+        versao: '0.1.0',
+        bundles: bundlesReais,
+        commit: 'commit-de-teste',
+        sujo: false,
+        agora: () => new Date('2026-01-01T00:00:00.000Z'),
+        executarHook: executarHookReaisDeInstalacao,
+        verificarServidor: contarToolsReal,
+        log: () => {},
+      });
+      expect(resultado.acao).toBe('instalado');
+      const dirVersao = dirVersaoDe(home, '0.1.0');
+      expect(resultado.dirVersao).toBe(dirVersao);
+      expect(fs.existsSync(path.join(dirVersao, 'servidor.mjs'))).toBe(true);
+      expect(fs.existsSync(path.join(dirVersao, 'guarda-bash.mjs'))).toBe(true);
+      expect(lerManifesto(dirVersao)).toEqual({
+        versao: '0.1.0',
+        sha256: { servidor: sha256(bundlesReais.servidor), hook: sha256(bundlesReais.hook) },
+        construidoEm: '2026-01-01T00:00:00.000Z',
+        commit: 'commit-de-teste',
+        sujo: false,
+      });
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  test('(b) registrarGuard aplica as 4 regras de deny e o hook apontando pro dirVersao instalado', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-b-'));
+    try {
+      const D = path.join(home, '.local', 'share', 'hexlog');
+      const esperado = regrasEsperadas(D, home, process.execPath, '0.1.0');
+      const caminhoSettings = path.join(home, '.claude', 'settings.json');
+      fs.mkdirSync(path.dirname(caminhoSettings), { recursive: true });
+      fs.writeFileSync(caminhoSettings, montarSettingsTemplate(home));
+
+      const { mudou } = registrarGuard({ caminhoSettings, esperado });
+      expect(mudou).toBe(true);
+
+      const textoFinal = fs.readFileSync(caminhoSettings, 'utf8');
+      const dados = parseJsonc(textoFinal);
+      expect(dados.permissions.deny).toEqual(
+        expect.arrayContaining([esperado.denyReadDir, esperado.denyRead, esperado.denyEdit, esperado.denyEditLib]),
+      );
+      expect(textoFinal).toContain(esperado.hookCommand);
+      expect(textoFinal).not.toContain('personal/hexlog');
+      expect(fs.existsSync(`${caminhoSettings}.bak-hexlog`)).toBe(true);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('(c) segunda execução sem mudança decide pelos bytes instalados: nada, settings e mtime intocados', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-c-'));
+    try {
+      const args = {
+        home,
+        versao: '0.1.0',
+        bundles: bundlesReais,
+        commit: 'c1',
+        sujo: false,
+        agora: () => new Date(),
+        executarHook: executarHookReaisDeInstalacao,
+        verificarServidor: verificarServidorFalso,
+        log: () => {},
+      };
+      const primeira = await instalarArtefato(args);
+      const mtimeAntes = fs.statSync(primeira.dirVersao).mtimeMs;
+
+      const D = path.join(home, '.local', 'share', 'hexlog');
+      const esperado = regrasEsperadas(D, home, process.execPath, '0.1.0');
+      const caminhoSettings = path.join(home, '.claude', 'settings.json');
+      fs.mkdirSync(path.dirname(caminhoSettings), { recursive: true });
+      fs.writeFileSync(caminhoSettings, montarSettingsTemplate(home));
+      registrarGuard({ caminhoSettings, esperado });
+      const settingsAntes = fs.readFileSync(caminhoSettings, 'utf8');
+
+      const segunda = await instalarArtefato(args);
+      expect(segunda).toEqual({ acao: 'nada', dirVersao: primeira.dirVersao, manifesto: primeira.manifesto, avisos: [] });
+      expect(fs.statSync(primeira.dirVersao).mtimeMs).toBe(mtimeAntes);
+      expect(fs.readFileSync(caminhoSettings, 'utf8')).toBe(settingsAntes);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  test('(d) versão nova cria diretório novo, mantém o antigo e substitui a entrada do hook sem duplicar', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-d-'));
+    try {
+      const argsPara = (versao: string) => ({
+        home,
+        versao,
+        bundles: bundlesReais,
+        commit: null,
+        sujo: false,
+        agora: () => new Date(),
+        executarHook: executarHookReaisDeInstalacao,
+        verificarServidor: verificarServidorFalso,
+        log: () => {},
+      });
+      const primeira = await instalarArtefato(argsPara('0.1.0'));
+      const segunda = await instalarArtefato(argsPara('0.2.0'));
+      expect(segunda.acao).toBe('instalado');
+      expect(fs.existsSync(primeira.dirVersao)).toBe(true);
+      expect(fs.existsSync(segunda.dirVersao)).toBe(true);
+
+      const D = path.join(home, '.local', 'share', 'hexlog');
+      const caminhoSettings = path.join(home, '.claude', 'settings.json');
+      fs.mkdirSync(path.dirname(caminhoSettings), { recursive: true });
+      fs.writeFileSync(caminhoSettings, montarSettingsTemplate(home));
+      registrarGuard({ caminhoSettings, esperado: regrasEsperadas(D, home, process.execPath, '0.1.0') });
+      registrarGuard({ caminhoSettings, esperado: regrasEsperadas(D, home, process.execPath, '0.2.0') });
+
+      const dados = parseJsonc(fs.readFileSync(caminhoSettings, 'utf8'));
+      const entradasDoHexlog = dados.hooks.PreToolUse.filter((entrada: { hooks: { command: string }[] }) =>
+        entrada.hooks.some((h) => typeof h.command === 'string' && h.command.includes('guarda-bash.mjs')),
+      );
+      expect(entradasDoHexlog).toHaveLength(1);
+      expect(entradasDoHexlog[0].hooks[0].command).toContain('0.2.0');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  test('(e) mesma versão reinstalada com bundles diferentes troca atomicamente e avisa', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-e-'));
+    try {
+      const argsPara = (bundles: Bundles) => ({
+        home,
+        versao: '0.1.0',
+        bundles,
+        commit: 'c',
+        sujo: false,
+        agora: () => new Date(),
+        executarHook: executarHookReaisDeInstalacao,
+        verificarServidor: verificarServidorFalso,
+        log: () => {},
+      });
+      await instalarArtefato(argsPara(bundlesReais));
+      const hookDiferente = Buffer.concat([bundlesReais.hook, Buffer.from('\n// bytes diferentes\n')]);
+      const resultado = await instalarArtefato(argsPara({ servidor: bundlesReais.servidor, hook: hookDiferente }));
+
+      expect(resultado.acao).toBe('reinstalado');
+      expect(resultado.avisos).toEqual(
+        expect.arrayContaining([expect.stringContaining('reinstalada com conteúdo diferente')]),
+      );
+      expect(fs.readFileSync(path.join(resultado.dirVersao, 'guarda-bash.mjs'))).toEqual(hookDiferente);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  test('(f) qualquer falha na verificação do preparo aborta sem tocar no que já estava instalado', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-f-'));
+    try {
+      const argsBase = {
+        home,
+        versao: '0.1.0',
+        commit: null,
+        sujo: false,
+        agora: () => new Date(),
+        log: () => {},
+      };
+
+      // hook preparado que não nega (cópia que sempre "permite")
+      await expect(
+        instalarArtefato({
+          ...argsBase,
+          bundles: bundlesReais,
+          executarHook: () => ({ status: 0 }),
+          verificarServidor: verificarServidorFalso,
+        }),
+      ).rejects.toThrow(/não nega/);
+      expect(fs.existsSync(dirVersaoDe(home, '0.1.0'))).toBe(false);
+      expect(fs.readdirSync(path.join(home, '.local', 'lib', 'hexlog'))).toEqual([]);
+
+      // bundle com "Dynamic require of"
+      const bundleComDynamicRequire = Buffer.concat([
+        bundlesReais.servidor,
+        Buffer.from('\n// Dynamic require of "x" is not supported\n'),
+      ]);
+      await expect(
+        instalarArtefato({
+          ...argsBase,
+          bundles: { servidor: bundleComDynamicRequire, hook: bundlesReais.hook },
+          executarHook: executarHookReaisDeInstalacao,
+          verificarServidor: verificarServidorFalso,
+        }),
+      ).rejects.toThrow(/Dynamic require of/);
+      expect(fs.existsSync(dirVersaoDe(home, '0.1.0'))).toBe(false);
+
+      // servidor preparado que não lista as 10 tools
+      await expect(
+        instalarArtefato({
+          ...argsBase,
+          bundles: bundlesReais,
+          executarHook: executarHookReaisDeInstalacao,
+          verificarServidor: async () => 9,
+        }),
+      ).rejects.toThrow(/9 tools/);
+      expect(fs.existsSync(dirVersaoDe(home, '0.1.0'))).toBe(false);
+
+      // instala com sucesso e confirma que uma falha subsequente não mexe no que já está instalado
+      const instalada = await instalarArtefato({
+        ...argsBase,
+        bundles: bundlesReais,
+        executarHook: executarHookReaisDeInstalacao,
+        verificarServidor: verificarServidorFalso,
+      });
+      const hookAntes = fs.readFileSync(path.join(instalada.dirVersao, 'guarda-bash.mjs'));
+      await expect(
+        instalarArtefato({
+          ...argsBase,
+          bundles: { servidor: bundlesReais.servidor, hook: Buffer.concat([bundlesReais.hook, Buffer.from('\n// x\n')]) },
+          executarHook: () => ({ status: 0 }),
+          verificarServidor: verificarServidorFalso,
+        }),
+      ).rejects.toThrow();
+      expect(fs.readFileSync(path.join(instalada.dirVersao, 'guarda-bash.mjs'))).toEqual(hookAntes);
+      expect(fs.readdirSync(path.join(home, '.local', 'lib', 'hexlog'))).toEqual(['0.1.0']);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  test('(g) artefato instalado alterado por fora é reparado na execução seguinte', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-g-'));
+    try {
+      const args = {
+        home,
+        versao: '0.1.0',
+        bundles: bundlesReais,
+        commit: null,
+        sujo: false,
+        agora: () => new Date(),
+        executarHook: executarHookReaisDeInstalacao,
+        verificarServidor: verificarServidorFalso,
+        log: () => {},
+      };
+      const primeira = await instalarArtefato(args);
+      const arquivoHookInstalado = path.join(primeira.dirVersao, 'guarda-bash.mjs');
+      fs.writeFileSync(arquivoHookInstalado, Buffer.concat([bundlesReais.hook, Buffer.from('\n// alterado por fora\n')]));
+
+      const segunda = await instalarArtefato(args);
+      expect(segunda.acao).toBe('reparado');
+      expect(segunda.avisos).toEqual(expect.arrayContaining([expect.stringContaining('artefato instalado alterado')]));
+      expect(fs.readFileSync(arquivoHookInstalado)).toEqual(bundlesReais.hook);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  test('(h) instaladores concorrentes: mesmo build convergem, builds diferentes só um vence', async () => {
+    const homeIgual = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-concorrencia-igual-'));
+    try {
+      const [r1, r2] = await Promise.all([
+        executarFixtureConcorrente(homeIgual, '0.1.0', 'x', 1, 2),
+        executarFixtureConcorrente(homeIgual, '0.1.0', 'x', 2, 2),
+      ]);
+      expect([r1.status, r2.status]).toEqual([0, 0]);
+      expect(fs.readdirSync(dirVersaoDe(homeIgual, '0.1.0')).sort()).toEqual([
+        'guarda-bash.mjs',
+        'manifesto.json',
+        'servidor.mjs',
+      ]);
+    } finally {
+      fs.rmSync(homeIgual, { recursive: true, force: true });
+    }
+
+    const homeDiferente = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-concorrencia-diferente-'));
+    try {
+      const [r1, r2] = await Promise.all([
+        executarFixtureConcorrente(homeDiferente, '0.1.0', 'x', 1, 2),
+        executarFixtureConcorrente(homeDiferente, '0.1.0', 'y', 2, 2),
+      ]);
+      expect([r1.status, r2.status].sort()).toEqual([0, 1]);
+      const perdedor = r1.status === 1 ? r1 : r2;
+      expect(perdedor.stdout).toContain('ao mesmo tempo');
+      expect(fs.readdirSync(dirVersaoDe(homeDiferente, '0.1.0')).sort()).toEqual([
+        'guarda-bash.mjs',
+        'manifesto.json',
+        'servidor.mjs',
+      ]);
+    } finally {
+      fs.rmSync(homeDiferente, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
+
+describe('B3: instalar.ts --check (processo real)', () => {
+  let home: string;
+  let versao: string;
+
+  beforeAll(() => {
+    versao = (JSON.parse(fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8')) as { version: string }).version;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-b3-'));
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), montarSettingsTemplate(home));
+
+    const instalacao = spawnSync(process.execPath, [path.join(raizDoRepo, 'scripts/instalar.ts')], {
+      cwd: raizDoRepo,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        HEXLOG_REGISTRAR_MCP: path.join(raizDoRepo, 'test/fixtures/instalar-mcp-falso.ts'),
+      },
+    });
+    if (instalacao.status !== 0) {
+      throw new Error(`instalação real de baseline (B3) falhou: ${instalacao.stderr}\n${instalacao.stdout}`);
+    }
+  }, 30_000);
+
+  afterAll(() => {
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  function rodarCheck(opts: { cwd?: string } = {}): { status: number | null; stdout: string } {
+    const resultado = spawnSync(process.execPath, [path.join(raizDoRepo, 'scripts/instalar.ts'), '--check'], {
+      cwd: opts.cwd ?? raizDoRepo,
+      encoding: 'utf8',
+      env: { ...process.env, HOME: home },
+    });
+    return { status: resultado.status, stdout: resultado.stdout };
+  }
+
+  test('instalação completa: exit 0, sem artefato-alterado nem artefato-desatualizado', () => {
+    const { status, stdout } = rodarCheck();
+    expect(status).toBe(0);
+    expect(stdout).not.toContain('artefato-alterado');
+    expect(stdout).not.toContain('artefato-desatualizado');
+  }, 15_000);
+
+  test('diretório da versão removido: hook-arquivo, exit 1', () => {
+    const dirVersao = dirVersaoDe(home, versao);
+    const backup = `${dirVersao}.backup-teste`;
+    fs.renameSync(dirVersao, backup);
+    try {
+      const { status, stdout } = rodarCheck();
+      expect(status).toBe(1);
+      expect(stdout).toContain('hook-arquivo');
+    } finally {
+      fs.renameSync(backup, dirVersao);
+    }
+  }, 15_000);
+
+  test('guarda-bash.mjs instalado editado, mas ainda nega/permite: artefato-alterado, exit 1', () => {
+    const arquivoHook = path.join(dirVersaoDe(home, versao), 'guarda-bash.mjs');
+    const original = fs.readFileSync(arquivoHook);
+    fs.writeFileSync(arquivoHook, Buffer.concat([original, Buffer.from('\n// comentário extra\n')]));
+    try {
+      const { status, stdout } = rodarCheck();
+      expect(status).toBe(1);
+      expect(stdout).toContain('artefato-alterado');
+    } finally {
+      fs.writeFileSync(arquivoHook, original);
+    }
+  }, 15_000);
+
+  test('quarta regra de deny ausente: deny-edit-lib, exit 1', () => {
+    const caminhoSettings = path.join(home, '.claude', 'settings.json');
+    const original = fs.readFileSync(caminhoSettings, 'utf8');
+    const dados = parseJsonc(original);
+    const D = path.join(home, '.local', 'share', 'hexlog');
+    const esperado = regrasEsperadas(D, home, process.execPath, versao);
+    dados.permissions.deny = dados.permissions.deny.filter((r: string) => r !== esperado.denyEditLib);
+    fs.writeFileSync(caminhoSettings, JSON.stringify(dados));
+    try {
+      const { status, stdout } = rodarCheck();
+      expect(status).toBe(1);
+      expect(stdout).toContain('deny-edit-lib');
+    } finally {
+      fs.writeFileSync(caminhoSettings, original);
+    }
+  }, 15_000);
+
+  test('build atual diferente do manifesto com bytes instalados íntegros: aviso artefato-desatualizado, exit inalterado', () => {
+    // Chamada direta (sem subprocesso): `executarHookReal` herda `process.env` do
+    // processo de teste, então o hook precisa enxergar o mesmo HOME temporário
+    // usado pra montar `esperado` — mesmo motivo do describe I7.
+    const homeOriginal = process.env.HOME;
+    const xdgOriginal = process.env.XDG_DATA_HOME;
+    process.env.HOME = home;
+    delete process.env.XDG_DATA_HOME;
+    try {
+      const dirVersao = dirVersaoDe(home, versao);
+      const manifesto = lerManifesto(dirVersao)!;
+      const D = path.join(home, '.local', 'share', 'hexlog');
+      const esperado = regrasEsperadas(D, home, process.execPath, versao);
+      const textoSettings = fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8');
+      const textoClaudeJson = fs.readFileSync(path.join(home, '.claude.json'), 'utf8');
+      // Simula um build atual diferente do que gerou o manifesto, sem alterar a working tree real.
+      const bundlesSimulandoBuildNovo: Bundles = {
+        servidor: Buffer.from('servidor-de-um-build-futuro'),
+        hook: fs.readFileSync(esperado.hookArquivo),
+      };
+
+      const resultado = verificarInstalacao({
+        home,
+        versao,
+        execPath: process.execPath,
+        D,
+        bundlesAtuais: bundlesSimulandoBuildNovo,
+        textoSettings,
+        textoClaudeJson,
+        executarHook: executarHookReal,
+      });
+
+      expect(resultado.exit).toBe(0);
+      expect(resultado.avisos.some((a) => a.startsWith('artefato-desatualizado'))).toBe(true);
+      expect(resultado.avisos.some((a) => a.includes(String(manifesto.commit)))).toBe(true);
+    } finally {
+      process.env.HOME = homeOriginal;
+      if (xdgOriginal === undefined) {
+        delete process.env.XDG_DATA_HOME;
+      } else {
+        process.env.XDG_DATA_HOME = xdgOriginal;
+      }
+    }
+  });
+
+  test('mesmo resultado rodando o --check de outro cwd', () => {
+    const doRepo = rodarCheck();
+    const deOutroCwd = rodarCheck({ cwd: os.tmpdir() });
+    expect(deOutroCwd.status).toBe(doRepo.status);
+    expect(deOutroCwd.stdout).toBe(doRepo.stdout);
+  }, 15_000);
 });
