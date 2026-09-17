@@ -1,156 +1,132 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { isNil } from 'es-toolkit';
 import { z } from 'zod';
-import type { Logger as LoggerAjv } from './definicoes.ts';
-import { type Detalhe, ErroHexlog } from './erros.ts';
-import { registrarFerramentasDefinicoes } from './ferramentas-definicoes.ts';
-import { registrarFerramentasEventos } from './ferramentas-eventos.ts';
-import { VocabSchema, VocabularioSchema } from './estado.ts';
-import { Agente, Hash, Instante, Nome } from './eventos.ts';
-import type { Logger, Registro } from './log.ts';
-import { VERSAO } from './versao.ts';
+import type { Logger as LoggerAjv } from './definitions.ts';
+import { Hashes, Registered } from './definitions.ts';
+import { Break, Chain } from './chain.ts';
+import { type Detail, HexlogError } from './errors.ts';
+import { registerDefinitionTools } from './definition-tools.ts';
+import { registerEventTools } from './event-tools.ts';
+import { Section, VocabSchema, VocabularySchema } from './state.ts';
+import { Agent, Hash, Instant, Name } from './events.ts';
+import type { Logger, LogRecord } from './log.ts';
+import { VERSION } from './version.ts';
 
-/** Contexto compartilhado por todas as tools MCP do hexlog. */
-export type Contexto = {
-  dirDados: string;
-  relogio: () => Date;
+/** Context compartilhado por todas as tools MCP do hexlog. */
+export type Context = {
+  dataDir: string;
+  clock: () => Date;
   log: Logger;
 };
 
-/** Cria um logger de linha JSON para `saida` (§4.15): nenhuma linha é filtrada, `debug` incluso. */
-export function criarLoggerStderr(saida: NodeJS.WritableStream = process.stderr): Logger {
-  return (registro: Registro) => {
-    saida.write(`${JSON.stringify({ ts: new Date().toISOString(), ...registro })}\n`);
+/** Cria um logger de linha JSON para `output` (§4.15): nenhuma linha é filtrada, `debug` incluso. */
+export function createStderrLogger(output: NodeJS.WritableStream = process.stderr): Logger {
+  return (record: LogRecord) => {
+    output.write(`${JSON.stringify({ ts: new Date().toISOString(), ...record })}\n`);
   };
 }
 
-/** Adapta o `Logger` de linha (§4.15) para a forma `{log, warn, error}` que o Ajv espera (`definicoes.ts`). */
-export function adaptarLoggerAjv(log: Logger): LoggerAjv {
-  const emitir =
-    (nivel: 'debug' | 'aviso' | 'erro') =>
+/** Adapta o `Logger` de linha (§4.15) para a forma `{log, warn, error}` que o Ajv espera (`definitions.ts`). */
+export function adaptAjvLogger(log: Logger): LoggerAjv {
+  const emit =
+    (level: 'debug' | 'warn' | 'error') =>
     (...args: unknown[]) => {
-      log({ nivel, evento: 'ajv', mensagem: args.map(String).join(' ') });
+      log({ level, event: 'ajv', message: args.map(String).join(' ') });
     };
-  return { log: emitir('debug'), warn: emitir('aviso'), error: emitir('erro') };
+  return { log: emit('debug'), warn: emit('warn'), error: emit('error') };
 }
 
 // §4.16: tetos de saída, compartilhados pelas tools de eventos.
-export const TETO_ITENS_SECAO = 100;
-export const TETO_PAGINA_CHARS = 24_000;
+export const SECTION_ITEMS_CAP = 100;
+export const PAGE_CHARS_CAP = 24_000;
 
 // Esquemas comuns de §4.12, compartilhados pelas tools de definição e de eventos.
-export const Aviso = z.object({
-  codigo: z.string(),
-  mensagem: z.string(),
-  detalhes: z.unknown().optional(),
+export const Warning = z.object({
+  code: z.string(),
+  message: z.string(),
+  details: z.unknown().optional(),
 });
-// Reexportados de estado.ts (fonte única do schema de vocabulário, DE-29).
+// Reexportados de state.ts (fonte única do schema de vocabulário, DE-29).
 export const Vocab = VocabSchema;
-export const Vocabulario = VocabularioSchema;
-export const Ref = z.object({ id: z.string(), seq: z.number().int(), timestamp: Instante });
-export const Quebra = z.object({
-  indice: z.number().int(),
-  motivo: z.enum(['linha-invalida', 'seq-divergente', 'hash-nao-bate', 'dados-invalidos']),
-  detalhe: z.string().optional(),
-});
-export const Cadeia = z.object({
-  ok: z.boolean(),
-  totalLinhas: z.number().int(),
-  cabeca: z.union([z.literal(''), Hash]),
-  quebras: z.array(Quebra).max(100),
-  totalQuebras: z.number().int(),
-  linhasReparadas: z.array(z.number().int()).max(100),
-});
-export const Hashes = z.object({ schemas: Hash, vocabulario: Hash, gates: Hash });
-export const Definida = z.object({
-  projeto: Nome,
-  nome: Nome,
-  hash: Hash,
-  substituiu: z.boolean(),
-});
-export const Secao = z.enum([
-  'vigentes',
-  'conflitos',
-  'orfaos',
-  'aRevisar',
-  'referenciasInvalidas',
-  'avisos',
-  'cadeia',
-]);
+export const Vocabulary = VocabularySchema;
+export const Ref = z.object({ id: z.string(), seq: z.number().int(), timestamp: Instant });
 
 // Reexportadas por conveniência: os módulos de tools só precisam importar de `mcp.ts`.
-export { Agente, Hash, Instante, Nome };
+export { Agent, Hash, Instant, Name };
+// Reexportados dos módulos de domínio (Break/Chain de chain.ts, Hashes/Registered de
+// definitions.ts, Section de state.ts): schema Zod declarado junto do tipo TS, mcp.ts só reexporta.
+export { Break, Chain, Hashes, Registered, Section };
 
 /** Corpo de sucesso ou erro que uma tool devolve ao SDK (§4.13): nunca uma exceção. */
-type ResultadoTool<T> =
+type ToolResult<T> =
   | { structuredContent: T; content: [{ type: 'text'; text: string }] }
   | {
       isError: true;
-      structuredContent: { codigo: string; mensagem: string; detalhes: Detalhe[] };
+      structuredContent: { code: string; message: string; details: Detail[] };
       content: [{ type: 'text'; text: string }];
     };
 
 /**
  * Roda `fn` dentro do envelope de erro de domínio (§4.13) e sempre devolve, nunca lança para o SDK.
- * `ErroHexlog` vira `{codigo, mensagem, detalhes}`; qualquer outra exceção vira `INTERNO`, com stack
- * só no log `erro-interno`. Emite sempre um log `tool` com `nome`, `projeto`, `processo`, `ms` e
- * `codigo?` (nunca o conteúdo de `dados`). `extraLog`, quando informado, é lido depois de `fn()`
- * rodar e mesclado no log `tool` (§4.15: usado por `eventos` para `modo`/`candidatos`/`msIndice`/
- * `combinacao`, sem alterar `structuredContent` nem os demais chamadores).
+ * `HexlogError` vira `{code, message, details}`; qualquer outra exceção vira `INTERNAL`, com stack
+ * só no log `internal-error`. Emite sempre um log `tool` com `name`, `project`, `process`, `ms` e
+ * `code?` (nunca o conteúdo de `data`). `extraLog`, quando informado, é lido depois de `fn()`
+ * rodar e mesclado no log `tool` (§4.15: usado por `events` para `mode`/`candidates`/`indexMs`/
+ * `combination`, sem alterar `structuredContent` nem os demais chamadores).
  */
-export async function executar<T>(
-  ctx: Contexto,
-  nome: string,
-  args: { projeto?: string; processo?: string },
+export async function execute<T>(
+  ctx: Context,
+  name: string,
+  args: { project?: string; process?: string },
   fn: () => T | Promise<T>,
   extraLog?: () => Record<string, unknown>,
-): Promise<ResultadoTool<T>> {
-  const inicio = Date.now();
-  const logTool = (nivel: 'info' | 'erro', codigo?: string) => {
+): Promise<ToolResult<T>> {
+  const start = Date.now();
+  const logTool = (level: 'info' | 'error', code?: string) => {
     ctx.log({
-      nivel,
-      evento: 'tool',
-      nome,
-      projeto: args.projeto,
-      processo: args.processo,
-      ms: Date.now() - inicio,
-      ...(isNil(codigo) ? {} : { codigo }),
+      level,
+      event: 'tool',
+      name,
+      project: args.project,
+      process: args.process,
+      ms: Date.now() - start,
+      ...(isNil(code) ? {} : { code }),
       ...(extraLog?.() ?? {}),
     });
   };
 
   try {
-    const resultado = await fn();
+    const result = await fn();
     logTool('info');
     return {
-      structuredContent: resultado,
-      content: [{ type: 'text', text: JSON.stringify(resultado) }],
+      structuredContent: result,
+      content: [{ type: 'text', text: JSON.stringify(result) }],
     };
   } catch (e) {
-    const erro = paraErroHexlog(e, ctx);
-    const corpo = { codigo: erro.codigo, mensagem: erro.message, detalhes: erro.detalhes };
-    logTool('erro', erro.codigo);
+    const error = toHexlogError(e, ctx);
+    const body = { code: error.code, message: error.message, details: error.details };
+    logTool('error', error.code);
     return {
       isError: true,
-      structuredContent: corpo,
-      content: [{ type: 'text', text: JSON.stringify(corpo) }],
+      structuredContent: body,
+      content: [{ type: 'text', text: JSON.stringify(body) }],
     };
   }
 }
 
-/** `ErroHexlog` passa direto; qualquer outra exceção vira `INTERNO`, logando a stack em `erro-interno`. */
-function paraErroHexlog(e: unknown, ctx: Contexto): ErroHexlog {
-  if (e instanceof ErroHexlog) return e;
+/** `HexlogError` passa direto; qualquer outra exceção vira `INTERNAL`, logando a stack em `internal-error`. */
+function toHexlogError(e: unknown, ctx: Context): HexlogError {
+  if (e instanceof HexlogError) return e;
   const stack = e instanceof Error ? e.stack : String(e);
-  ctx.log({ nivel: 'erro', evento: 'erro-interno', stack });
-  return new ErroHexlog('INTERNO', 'erro interno');
+  ctx.log({ level: 'error', event: 'internal-error', stack });
+  return new HexlogError('INTERNAL', 'internal error');
 }
 
-/** Monta o servidor MCP `hexlog`: nome fixo, versão de `versao.ts`, tools de definição e de eventos. */
-export function criarServidor(ctx: Contexto): McpServer {
-  const servidor = new McpServer({ name: 'hexlog', version: VERSAO });
-  registrarFerramentasDefinicoes(servidor, ctx);
-  registrarFerramentasEventos(servidor, ctx);
-  ctx.log({ nivel: 'info', evento: 'inicio', dirDados: ctx.dirDados, versao: VERSAO });
-  return servidor;
+/** Monta o servidor MCP `hexlog`: nome fixo, versão de `version.ts`, tools de definição e de eventos. */
+export function createServer(ctx: Context): McpServer {
+  const server = new McpServer({ name: 'hexlog', version: VERSION });
+  registerDefinitionTools(server, ctx);
+  registerEventTools(server, ctx);
+  ctx.log({ level: 'info', event: 'start', dataDir: ctx.dataDir, version: VERSION });
+  return server;
 }

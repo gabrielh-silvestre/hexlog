@@ -14,7 +14,7 @@
 - `nanoid` 6.0.1: só aleatório, ESM only.
 
 ### 3. Erro estruturado (Zod 4.6.5, probe com enum inválido + datetime inválida + chave extra)
-- `error.issues`: array plano `[{path, code, message, ...}]` → mapeia 1:1 para `detalhes[]`.
+- `error.issues`: array plano `[{path, code, message, ...}]` → mapeia 1:1 para `details[]`.
 - `z.treeifyError`: árvore `{errors, properties}`; `z.flattenError`: `{formErrors, fieldErrors}`; `z.prettifyError`: string humana.
 - `zod-validation-error` 5.0.0: redundante com `prettifyError`.
 - **Melhor encaixe:** `error.issues` direto (+ conversão de `path` para JSON Pointer).

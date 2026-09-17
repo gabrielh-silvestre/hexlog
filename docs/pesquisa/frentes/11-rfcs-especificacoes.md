@@ -12,17 +12,17 @@
 | RFC 9562 UUID (v7) | Proposed Standard, 2024 (obsoleta 4122) | v7 = 48 bits ms Unix + aleatório, ordenável | Campo `id` | Adotar integral para `id` (complementa `seq`) |
 | RFC 6962 / RFC 9162 (CT) | **Experimental** | Merkle Tree Hash, inclusão, consistência | Cadeia é lista encadeada; verificação O(n) | Só a ideia (consistência) |
 | C2SP tlog-checkpoint / signed-note | community v1.0.0, 2025-11-08 | note assinada; checkpoint = origin/tree-size/root-hash | Checkpoint periódico da cadeia | Adotar integral como feature futura (não MVP) |
-| RFC 6901 JSON Pointer | Proposed Standard, 2013 | `/a/b/0`, escapes `~0`/`~1` | Caminho em `detalhes[]` | Adotar integral |
+| RFC 6901 JSON Pointer | Proposed Standard, 2013 | `/a/b/0`, escapes `~0`/`~1` | Caminho em `details[]` | Adotar integral |
 | RFC 9535 JSONPath | Proposed Standard, 2024 | Query com filtros | Overkill | Ignorar |
-| RFC 9457 Problem Details | Proposed Standard, 2023 | `type/title/status/detail/instance` + extensões | Molde de `{codigo, mensagem, detalhes[]}` | Adotar ideia (sem `status` HTTP) |
+| RFC 9457 Problem Details | Proposed Standard, 2023 | `type/title/status/detail/instance` + extensões | Molde de `{code, message, details[]}` | Adotar ideia (sem `status` HTTP) |
 | RFC 3161 TSP | Proposed Standard, 2001 | TSA terceira | Local, sem TSA | Ignorar |
 | RFC 5424 syslog | Proposed Standard, 2009 | Mensagem de rede | Não serve | Ignorar |
 | JSON Schema 2020-12 | **Internet-Draft expirado (dez/2022), nunca RFC**; mantido por json-schema.org | `format-annotation` (default, não valida) vs `format-assertion` | Zod valida de fato; documentar a pegadinha se schemas forem publicados | Adotar integral como formato |
 | CloudEvents 1.0 (1.0.3-wip) | CNCF | `id, source, specversion, type` obrigatórios; `time` opcional; `dataschema`, `subject` | Mesmo shape do envelope; `time` vs `timestamp` | Adotar ideia, não envelope literal |
-| W3C PROV-O / PROV-DM | W3C Recommendation, 2013-04-30 | Entity/Activity/Agent, `wasDerivedFrom`, `wasAssociatedWith` | Nomes de proveniência do Veredito (`origem`, `fonte`, `rastro`) | Adotar ideia (nomenclatura) |
+| W3C PROV-O / PROV-DM | W3C Recommendation, 2013-04-30 | Entity/Activity/Agent, `wasDerivedFrom`, `wasAssociatedWith` | Nomes de proveniência do Veredito (`origin`, `source`, `trace`) | Adotar ideia (nomenclatura) |
 | in-toto Attestation v1.2 + SLSA v1.2 | Linux Foundation; SLSA v1.1 Retired, v1.2 Approved | Statement `{_type, subject:[{name,digest}], predicateType, predicate}` | Molde para o campo `prova` do Veredito | Adotar ideia fortemente (sem DSSE) |
 | XDG Base Directory 0.8 | freedesktop.org | `$XDG_DATA_HOME` padrão `$HOME/.local/share` | Já usado | Adotar integral |
-| Spec MCP **2026-07-28** (corrente) | modelcontextprotocol.io | `structuredContent` + `outputSchema`; `isError: true` no result = erro de execução, distinto de erro JSON-RPC de protocolo; annotations | Confirma `isError + {codigo, mensagem, detalhes[]}` via `structuredContent`; `readOnlyHint` em `estado`/`eventos`/`cadeia`/`listar` | Adotar integral |
+| Spec MCP **2026-07-28** (corrente) | modelcontextprotocol.io | `structuredContent` + `outputSchema`; `isError: true` no result = erro de execução, distinto de erro JSON-RPC de protocolo; annotations | Confirma `isError + {code, message, details[]}` via `structuredContent`; `readOnlyHint` em `state`/`events`/`chain`/`list` | Adotar integral |
 | SemVer 2.0.0 | semver.org | MAJOR.MINOR.PATCH | Só no catálogo de schemas; dentro do processo o hash é a âncora | Adotar só no catálogo |
 
 ### Recomendações de design (top 5)

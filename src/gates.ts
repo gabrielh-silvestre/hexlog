@@ -1,89 +1,88 @@
 import { isString } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat'; // isEmpty só existe em es-toolkit/compat (1.52.0)
 import { z } from 'zod';
-import { GATES_EMBUTIDOS_NOMES } from './dados.ts';
-import { DadosMarcoGate as EsquemaDadosMarcoGate } from './eventos.ts';
-import type { Estado } from './estado.ts';
+import { BUILTIN_GATE_NAMES } from './definitions.ts';
+import { GateMilestoneData as GateMilestoneDataSchema } from './events.ts';
+import type { State } from './state.ts';
 
-// §4.16: tetos de prova de gate. Custom (TETO_PROVA_CUSTOM/TETO_ITEM_PROVA_CHARS) e
-// TETO_CRITERIO_CHARS são validados no inputSchema da tool, não aqui.
-export const TETO_PROVA_EMBUTIDO = 50;
-export const TETO_PROVA_CUSTOM = 20;
-export const TETO_ITEM_PROVA_CHARS = 2000;
-export const TETO_CRITERIO_CHARS = 2000;
+// §4.16: tetos de prova de gate. Custom (CUSTOM_EVIDENCE_MAX/EVIDENCE_ITEM_MAX_CHARS) e
+// CRITERIA_MAX_CHARS são validados no inputSchema da tool, não aqui.
+export const BUILTIN_EVIDENCE_MAX = 50;
+export const CUSTOM_EVIDENCE_MAX = 20;
+export const EVIDENCE_ITEM_MAX_CHARS = 2000;
+export const CRITERIA_MAX_CHARS = 2000;
 
-export type NomeGateEmbutido = (typeof GATES_EMBUTIDOS_NOMES)[number];
+export type BuiltinGateName = (typeof BUILTIN_GATE_NAMES)[number];
 
-/** Forma canônica de `dados.gate` gravado pelo Marco de gate (§4.5/§4.11): nunca boolean solto. */
-export type DadosMarcoGate = z.infer<typeof EsquemaDadosMarcoGate>;
+/** Forma canônica de `data.gate` gravado pelo Milestone de gate (§4.5/§4.11): nunca boolean solto. */
+export type GateMilestoneData = z.infer<typeof GateMilestoneDataSchema>;
 
-export type ResultadoGate = {
-  passou: boolean;
-  prova: unknown[];
-  totalItensProva: number;
-  avaliadoAte: { id: string; seq: number; timestamp: string } | null;
+export type EvaluationResult = {
+  passed: boolean;
+  evidence: unknown[];
+  totalEvidenceItems: number;
+  evaluatedThrough: { id: string; seq: number; timestamp: string } | null;
 };
 
-type DefinicaoGateEmbutido = { criterio: string; itens: (estado: Estado) => unknown[] };
+type BuiltinGateDefinition = { criteria: string; items: (state: State) => unknown[] };
 
-// §4.11: textos de `criterio` exatamente como a tabela do plano.
-export const GATES_EMBUTIDOS: Record<NomeGateEmbutido, DefinicaoGateEmbutido> = {
-  'sem-orfaos': {
-    criterio:
-      'estado.orfaos vazio: nenhum Marco com prazoExecucao < agora sem evento posterior no mesmo alvo',
-    itens: (estado) => estado.orfaos,
+// §4.11: textos de `criteria` exatamente como a tabela do plano.
+export const BUILTIN_GATES: Record<BuiltinGateName, BuiltinGateDefinition> = {
+  'no-orphans': {
+    criteria:
+      'state.orphans empty: no Milestone with dueAt < now and no later event on the same target',
+    items: (state) => state.orphans,
   },
-  'sem-conflitos': {
-    criterio:
-      'estado.conflitos vazio: nenhuma (destino, afirmacao) com mais de um Veredito vigente',
-    itens: (estado) => estado.conflitos,
+  'no-conflicts': {
+    criteria: 'state.conflicts empty: no (target, claim) with more than one active Verdict',
+    items: (state) => state.conflicts,
   },
-  'cadeia-integra': {
-    criterio: 'cadeia.ok = true',
-    itens: (estado) => estado.cadeia.quebras,
+  'chain-intact': {
+    criteria: 'chain.ok = true',
+    items: (state) => state.chain.breaks,
   },
-  'sem-referencias-invalidas': {
-    criterio: 'estado.referenciasInvalidas vazio: todo supera aponta para Veredito existente',
-    itens: (estado) => estado.referenciasInvalidas,
+  'no-invalid-references': {
+    criteria: 'state.invalidReferences empty: every supersedes points to an existing Verdict',
+    items: (state) => state.invalidReferences,
   },
 };
 
-export function ehGateEmbutido(nome: string): nome is NomeGateEmbutido {
-  return (GATES_EMBUTIDOS_NOMES as readonly string[]).includes(nome);
+export function isBuiltinGate(name: string): name is BuiltinGateName {
+  return (BUILTIN_GATE_NAMES as readonly string[]).includes(name);
 }
 
-/** Avalia um gate embutido contra `estado` (§4.11): sem itens → passa; senão, corta a prova em 50. */
-export function avaliarEmbutido(nome: NomeGateEmbutido, estado: Estado): ResultadoGate {
-  const itens = GATES_EMBUTIDOS[nome].itens(estado);
+/** Avalia um gate embutido contra `state` (§4.11): sem items → passa; senão, corta a prova em 50. */
+export function evaluateBuiltin(name: BuiltinGateName, state: State): EvaluationResult {
+  const items = BUILTIN_GATES[name].items(state);
   return {
-    passou: isEmpty(itens),
-    prova: itens.slice(0, TETO_PROVA_EMBUTIDO),
-    totalItensProva: itens.length,
-    avaliadoAte: estado.logAte,
+    passed: isEmpty(items),
+    evidence: items.slice(0, BUILTIN_EVIDENCE_MAX),
+    totalEvidenceItems: items.length,
+    evaluatedThrough: state.logThrough,
   };
 }
 
-/** `prova` de gate custom, vinda do agente: string vira lista de um item. */
-export function normalizarProvaCustom(prova: string | string[]): string[] {
-  return isString(prova) ? [prova] : prova;
+/** `evidence` de gate custom, vinda do agente: string vira lista de um item. */
+export function normalizeCustomEvidence(evidence: string | string[]): string[] {
+  return isString(evidence) ? [evidence] : evidence;
 }
 
-/** Monta e valida `DadosMarcoGate` (§4.5) para o Marco de gate, embutido ou custom. */
-export function montarDadosMarcoGate(args: {
-  nome: string;
-  origem: 'embutido' | 'custom';
-  criterio: string;
-  alvo: string;
-  resultado: ResultadoGate;
-}): DadosMarcoGate {
-  return EsquemaDadosMarcoGate.parse({
-    marcoTipo: 'gate',
-    alvo: args.alvo,
-    gate: { nome: args.nome, origem: args.origem, criterio: args.criterio, ...args.resultado },
+/** Monta e valida `GateMilestoneData` (§4.5) para o Milestone de gate, embutido ou custom. */
+export function buildGateMilestoneData(args: {
+  name: string;
+  origin: 'builtin' | 'custom';
+  criteria: string;
+  target: string;
+  result: EvaluationResult;
+}): GateMilestoneData {
+  return GateMilestoneDataSchema.parse({
+    milestoneType: 'gate',
+    target: args.target,
+    gate: { name: args.name, origin: args.origin, criteria: args.criteria, ...args.result },
   });
 }
 
-/** Para `listar.gatesEmbutidos`: nome e critério dos 4 gates embutidos. */
-export function listarGatesEmbutidos(): { nome: string; criterio: string }[] {
-  return GATES_EMBUTIDOS_NOMES.map((nome) => ({ nome, criterio: GATES_EMBUTIDOS[nome].criterio }));
+/** Para `listBuiltinGates`: nome e critério dos 4 gates embutidos. */
+export function listBuiltinGates(): { name: string; criteria: string }[] {
+  return BUILTIN_GATE_NAMES.map((name) => ({ name, criteria: BUILTIN_GATES[name].criteria }));
 }

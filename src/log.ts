@@ -5,35 +5,35 @@ import { randomBytes, randomUUIDv7 } from 'node:crypto';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { isEmpty, isNil } from 'es-toolkit/compat';
-import { eloValido, prevHashEsperado, proximoSeq } from './cadeia.ts';
-import { ErroHexlog } from './erros.ts';
-import type { Linha } from './eventos.ts';
+import { expectedPrevHash, isValidLink, nextSeq } from './chain.ts';
+import { HexlogError } from './errors.ts';
+import type { EventLine } from './events.ts';
 
-export type Registro = {
-  nivel: 'debug' | 'info' | 'aviso' | 'erro';
-  evento: string;
-  [campo: string]: unknown;
+export type LogRecord = {
+  level: 'debug' | 'info' | 'warn' | 'error';
+  event: string;
+  [field: string]: unknown;
 };
-export type Logger = (registro: Registro) => void;
+export type Logger = (record: LogRecord) => void;
 
 const LOCK_TIMEOUT_MS = 5_000;
 const LOCK_RETRY_MS = 10;
-const LOCK_ORFAO_MS = 10_000;
+const LOCK_ORPHAN_MS = 10_000;
 
-const ARQUIVO_TOKEN = 'owner';
+const HOLDER_FILE = 'holder';
 
 type Base = {
   seq: number;
   timestamp: string;
   prevHash: string;
   uuid: string;
-  ultimoElo: Linha | null;
+  lastLink: EventLine | null;
 };
 
 /** Leitura sem lock. Arquivo inexistente conta como log vazio. */
-export function lerTexto(arquivo: string): string {
+export function readText(file: string): string {
   try {
-    return fs.readFileSync(arquivo, 'utf8');
+    return fs.readFileSync(file, 'utf8');
   } catch {
     return '';
   }
@@ -41,76 +41,79 @@ export function lerTexto(arquivo: string): string {
 
 /**
  * Anexa um elo ao log JSONL sob lock exclusivo por diretório (§4.7). A espera pela aquisição do
- * lock é assíncrona (retry com `await` de sleep); a partir daqui, `montar` roda dentro da seção
+ * lock é assíncrona (retry com `await` de sleep); a partir daqui, `build` roda dentro da seção
  * crítica síncrona (sem `await`): recebe a base já calculada (`seq`/`prevHash`/`uuid`/`timestamp`/
- * `ultimoElo`) e devolve a `Linha` a gravar.
+ * `lastLink`) e devolve a `EventLine` a gravar.
  */
-export async function anexar(
-  arquivo: string,
-  manifesto: unknown,
-  montar: (base: Base) => Linha,
-  opcoes: { log: Logger; timeoutMs?: number; orfaoMs?: number; relogio?: () => Date },
-): Promise<Linha> {
+export async function append(
+  file: string,
+  manifest: unknown,
+  build: (base: Base) => EventLine,
+  options: { log: Logger; timeoutMs?: number; orphanMs?: number; clock?: () => Date },
+): Promise<EventLine> {
   const {
     log,
     timeoutMs = LOCK_TIMEOUT_MS,
-    orfaoMs = LOCK_ORFAO_MS,
-    relogio = () => new Date(),
-  } = opcoes;
-  const dirLock = `${arquivo}.lock`;
-  const token = await adquirirLock(dirLock, { log, timeoutMs, orfaoMs });
+    orphanMs = LOCK_ORPHAN_MS,
+    clock = () => new Date(),
+  } = options;
+  const lockDir = `${file}.lock`;
+  const token = await acquireLock(lockDir, { log, timeoutMs, orphanMs });
 
   try {
-    const contexto = prepararContexto(arquivo, manifesto, relogio);
-    const linha = montar(contexto);
+    const context = prepareContext(file, manifest, clock);
+    const line = build(context);
 
-    if (lerToken(dirLock) !== token) {
-      log({ nivel: 'erro', evento: 'lock-perdido' });
-      throw new ErroHexlog('LOCK_PERDIDO', 'lock perdido antes da escrita');
+    if (readToken(lockDir) !== token) {
+      log({ level: 'error', event: 'lock-lost' });
+      throw new HexlogError('LOCK_LOST', 'lock lost before write');
     }
 
-    escreverLinha(arquivo, contexto.endsWithNewline, linha);
-    return linha;
+    writeLine(file, context.endsWithNewline, line);
+    return line;
   } finally {
-    liberarLock(dirLock, token);
+    releaseLock(lockDir, token);
   }
 }
 
-function prepararContexto(
-  arquivo: string,
-  manifesto: unknown,
-  relogio: () => Date,
+function prepareContext(
+  file: string,
+  manifest: unknown,
+  clock: () => Date,
 ): Base & { endsWithNewline: boolean } {
-  const texto = lerTexto(arquivo);
-  const endsWithNewline = isEmpty(texto) || texto.endsWith('\n');
+  const text = readText(file);
+  const endsWithNewline = isEmpty(text) || text.endsWith('\n');
   // A cauda sem '\n' (escrita em andamento ou rasgo ainda não reparado) entra na busca do
-  // último elo (mesma regra de verificarCadeia em cadeia.ts, mas aqui sem descartá-la).
-  const linhas = isEmpty(texto) ? [] : texto.split('\n').slice(0, endsWithNewline ? -1 : undefined);
-  const { ultimoElo, linhasDepois } = ultimoEloEDepois(linhas);
+  // último elo (mesma regra de verifyChain em chain.ts, mas aqui sem descartá-la).
+  const lines = isEmpty(text) ? [] : text.split('\n').slice(0, endsWithNewline ? -1 : undefined);
+  const { lastLink, linesAfter } = lastLinkAndLinesAfter(lines);
 
   return {
-    seq: proximoSeq(ultimoElo, linhasDepois),
-    timestamp: relogio().toISOString(),
-    prevHash: prevHashEsperado(ultimoElo, manifesto),
+    seq: nextSeq(lastLink, linesAfter),
+    timestamp: clock().toISOString(),
+    prevHash: expectedPrevHash(lastLink, manifest),
     uuid: randomUUIDv7(),
-    ultimoElo,
+    lastLink,
     endsWithNewline,
   };
 }
 
-/** Primeira linha, de trás pra frente, que passa em `eloValido`; e quantas vêm depois dela. */
-function ultimoEloEDepois(linhas: string[]): { ultimoElo: Linha | null; linhasDepois: number } {
-  for (let indice = linhas.length - 1; indice >= 0; indice--) {
-    const elo = eloValido(linhas[indice]);
-    if (!isNil(elo)) return { ultimoElo: elo, linhasDepois: linhas.length - 1 - indice };
+/** Primeira linha, de trás pra frente, que passa em `isValidLink`; e quantas vêm depois dela. */
+function lastLinkAndLinesAfter(lines: string[]): {
+  lastLink: EventLine | null;
+  linesAfter: number;
+} {
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const link = isValidLink(lines[index]);
+    if (!isNil(link)) return { lastLink: link, linesAfter: lines.length - 1 - index };
   }
-  return { ultimoElo: null, linhasDepois: linhas.length };
+  return { lastLink: null, linesAfter: lines.length };
 }
 
-function escreverLinha(arquivo: string, endsWithNewline: boolean, linha: Linha): void {
-  const fd = fs.openSync(arquivo, 'a', 0o600);
+function writeLine(file: string, endsWithNewline: boolean, line: EventLine): void {
+  const fd = fs.openSync(file, 'a', 0o600);
   try {
-    fs.writeSync(fd, `${endsWithNewline ? '' : '\n'}${JSON.stringify(linha)}\n`);
+    fs.writeSync(fd, `${endsWithNewline ? '' : '\n'}${JSON.stringify(line)}\n`);
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -118,69 +121,69 @@ function escreverLinha(arquivo: string, endsWithNewline: boolean, linha: Linha):
 }
 // ponytail: reread O(n) por append; medido ~18 ms a 10k linhas com fsync; upgrade: sidecar de tail/índice.
 
-async function adquirirLock(
-  dirLock: string,
-  opcoes: { log: Logger; timeoutMs: number; orfaoMs: number },
+async function acquireLock(
+  lockDir: string,
+  options: { log: Logger; timeoutMs: number; orphanMs: number },
 ): Promise<string> {
-  const inicio = Date.now();
-  let avisouEspera = false;
+  const start = Date.now();
+  let warnedWait = false;
 
   for (;;) {
     try {
-      return criarLock(dirLock);
-    } catch (erro) {
-      if ((erro as NodeJS.ErrnoException).code !== 'EEXIST') throw erro;
+      return createLock(lockDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
 
-      if (!avisouEspera) {
-        opcoes.log({ nivel: 'debug', evento: 'lock-espera' });
-        avisouEspera = true;
+      if (!warnedWait) {
+        options.log({ level: 'debug', event: 'lock-wait' });
+        warnedWait = true;
       }
 
-      if (lockOrfao(dirLock, opcoes.orfaoMs)) {
-        removerLock(dirLock);
-        opcoes.log({ nivel: 'aviso', evento: 'lock-orfao-removido' });
+      if (isLockOrphan(lockDir, options.orphanMs)) {
+        removeLock(lockDir);
+        options.log({ level: 'warn', event: 'lock-orphan-removed' });
         continue;
       }
 
-      if (Date.now() - inicio > opcoes.timeoutMs) {
-        throw new ErroHexlog('LOCK_TIMEOUT', `lock não liberado em ${opcoes.timeoutMs}ms`);
+      if (Date.now() - start > options.timeoutMs) {
+        throw new HexlogError('LOCK_TIMEOUT', `lock not released within ${options.timeoutMs}ms`);
       }
-      await esperarMs(LOCK_RETRY_MS);
+      await waitMs(LOCK_RETRY_MS);
     }
   }
 }
 
-function criarLock(dirLock: string): string {
-  fs.mkdirSync(dirLock, 0o700);
+function createLock(lockDir: string): string {
+  fs.mkdirSync(lockDir, 0o700);
   const token = `${process.pid}-${randomBytes(16).toString('hex')}`;
-  fs.writeFileSync(path.join(dirLock, ARQUIVO_TOKEN), token, { mode: 0o600 });
+  fs.writeFileSync(path.join(lockDir, HOLDER_FILE), token, { mode: 0o600 });
   return token;
 }
 
-function lockOrfao(dirLock: string, orfaoMs: number): boolean {
+function isLockOrphan(lockDir: string, orphanMs: number): boolean {
   try {
-    return Date.now() - fs.statSync(dirLock).mtimeMs > orfaoMs;
+    return Date.now() - fs.statSync(lockDir).mtimeMs > orphanMs;
   } catch {
     return false; // sumiu entre o EEXIST e o stat: outro processo já resolveu
   }
 }
 
-function removerLock(dirLock: string): void {
+function removeLock(lockDir: string): void {
   try {
-    fs.rmSync(dirLock, { recursive: true, force: true });
+    fs.rmSync(lockDir, { recursive: true, force: true });
   } catch {
     // já removido por outro processo
   }
 }
 
-function liberarLock(dirLock: string, token: string): void {
-  if (lerToken(dirLock) !== token) return; // não é mais nosso: não mexe no lock de outro dono
-  removerLock(dirLock);
+function releaseLock(lockDir: string, token: string): void {
+  if (readToken(lockDir) !== token) return; // não é mais nosso: não mexe no lock de outro dono
+  removeLock(lockDir);
 }
 
-function lerToken(dirLock: string): string | null {
+function readToken(lockDir: string): string | null {
   try {
-    return fs.readFileSync(path.join(dirLock, ARQUIVO_TOKEN), 'utf8');
+    return fs.readFileSync(path.join(lockDir, HOLDER_FILE), 'utf8');
   } catch {
     return null;
   }
@@ -188,6 +191,6 @@ function lerToken(dirLock: string): string | null {
 
 // Espera assíncrona (DE-29): fora da seção crítica, então não precisa bloquear a thread — libera
 // o event loop para outras chamadas da mesma sessão MCP enquanto este pedido aguarda o retry.
-function esperarMs(ms: number): Promise<void> {
+function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

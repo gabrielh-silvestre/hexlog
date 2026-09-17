@@ -3,248 +3,256 @@ import { randomUUIDv7 } from 'node:crypto';
 import { isNil } from 'es-toolkit';
 import * as fc from 'fast-check';
 import MiniSearch from 'minisearch';
-import { prevHashEsperado, proximoSeq } from '../../src/cadeia.ts';
-import type { Manifesto, Vocabulario } from '../../src/definicoes.ts';
-import { semAcento, textoIndexavel } from '../../src/busca.ts';
-import type { Linha } from '../../src/eventos.ts';
+import { expectedPrevHash, nextSeq } from '../../src/chain.ts';
+import type { ProcessManifest, Vocabulary } from '../../src/definitions.ts';
+import { stripDiacritics, indexableText } from '../../src/search.ts';
+import type { EventLine } from '../../src/events.ts';
 
 // Marcadas como "obrigatórias" pelo passo 7c (âncoras que os ACs M11/M12 exigem, sem depender
 // da distribuição aleatória do gerador para aparecerem).
-const FRASE_CACHE_INVALIDACAO_TRUE = 'cache invalidação aplicada corretamente nesta rodada';
-const FRASE_CACHE_INVALIDADO_DECOY = 'cache invalidado no processo anterior';
-const FRASE_CACHE_VALIDACAO_DECOY = 'validação de cache sem problemas registrados';
-const FRASE_LOGIN = 'login realizado pelo usuário com sucesso';
+const PHRASE_CACHE_INVALIDATION_TRUE = 'cache invalidation applied correctly in this round';
+const PHRASE_CACHE_INVALIDATED_DECOY = 'cache invalidated in the previous process';
+const PHRASE_CACHE_VALIDATION_DECOY = 'cache validation with no problems recorded';
+const PHRASE_LOGIN = 'login performed by the user successfully';
+const PHRASE_CAFE = 'café orders logged during the review meeting';
 
-// Banco geral: nunca contém a palavra "problema" junto de "webhook" (M11i depende disso).
-const FRASES_GERAIS = [
-  'revisão geral do processo concluída sem pendências',
-  'nota registrada pelo agente responsável pela etapa',
-  'verificação de rotina sem pendências encontradas',
-  'ajuste de configuração aplicado com sucesso',
-  'documentação interna atualizada nesta etapa',
-  'houve um problema isolado no processamento geral',
+// Banco geral: nunca contém a palavra "problem" junto de "webhook" (M11i depende disso).
+const PHRASES_GENERAL = [
+  'general process review completed with no pending items',
+  'note recorded by the agent responsible for the step',
+  'routine check with no pending items found',
+  'configuration adjustment applied successfully',
+  'internal documentation updated at this step',
+  'there was an isolated problem in general processing',
 ];
-const FRASES_AUTENTICACAO = [
-  'processo de autenticação concluído com êxito',
-  'falha na autenticação do usuário reportada',
-  'autenticação de dois fatores habilitada',
+const PHRASES_AUTHENTICATION = [
+  'authentication process completed successfully',
+  'user authentication failure reported',
+  'two-factor authentication enabled',
 ];
-const FRASES_PAGAMENTO = [
-  'pagamento processado sem erros aparentes',
-  'estorno de pagamento solicitado pelo cliente',
+const PHRASES_PAYMENT = [
+  'payment processed with no apparent errors',
+  'payment refund requested by the client',
 ];
-const FRASES_WEBHOOK = [
-  'webhook recebido do parceiro externo',
-  'webhook disparado para o sistema do cliente',
-  'reenvio automático do webhook configurado',
+const PHRASES_WEBHOOK = [
+  'webhook received from the external partner',
+  "webhook triggered for the client's system",
+  'automatic webhook resend configured',
 ];
-const BANCO_FRASES = [
-  ...FRASES_GERAIS,
-  ...FRASES_AUTENTICACAO,
-  ...FRASES_PAGAMENTO,
-  ...FRASES_WEBHOOK,
+const PHRASE_BANK = [
+  ...PHRASES_GENERAL,
+  ...PHRASES_AUTHENTICATION,
+  ...PHRASES_PAYMENT,
+  ...PHRASES_WEBHOOK,
 ];
 
-const ALVOS_BASE = [
-  'hex:alvo:conta-1',
-  'hex:alvo:conta-2',
-  'hex:alvo:pedido-1',
-  'hex:alvo:pagamento-1',
-  'hex:alvo:sessao-1',
+const TARGETS_BASE = [
+  'hex:target:account-1',
+  'hex:target:account-2',
+  'hex:target:order-1',
+  'hex:target:payment-1',
+  'hex:target:session-1',
 ];
-const ALVOS_LOGIN = [
-  'hex:alvo:login',
-  'hex:alvo:login-1',
-  'hex:alvo:login-2',
-  'hex:alvo:login-3',
-  'hex:alvo:login-4',
-  'hex:alvo:login-5',
-  'hex:alvo:login-6',
+const TARGETS_LOGIN = [
+  'hex:target:login',
+  'hex:target:login-1',
+  'hex:target:login-2',
+  'hex:target:login-3',
+  'hex:target:login-4',
+  'hex:target:login-5',
+  'hex:target:login-6',
 ];
-const ALVOS_DO_CORPUS = [...ALVOS_BASE, ...ALVOS_LOGIN];
+const CORPUS_TARGETS = [...TARGETS_BASE, ...TARGETS_LOGIN];
 
-type IntentoMarco = {
-  categoria: 'marco';
-  marcoTipo: string;
-  alvo: string;
-  frase?: string;
-  comContagem: boolean;
+type MilestoneIntent = {
+  category: 'milestone';
+  milestoneType: string;
+  target: string;
+  text?: string;
+  withCount: boolean;
 };
-type IntentoVeredito = { categoria: 'veredito'; destino: string; resultado: string; frase: string };
-type IntentoCustom = { categoria: 'custom'; frase: string; tag: string; alvoOculto?: string };
-type Intento = IntentoMarco | IntentoVeredito | IntentoCustom;
+type VerdictIntent = { category: 'verdict'; target: string; result: string; text: string };
+type CustomIntent = { category: 'custom'; text: string; tag: string; hiddenTarget?: string };
+type Intent = MilestoneIntent | VerdictIntent | CustomIntent;
 
-function escolher<T>(lista: T[], padrao: T, indice: number): T {
-  return lista.length > 0 ? lista[indice % lista.length] : padrao;
+function pick<T>(list: T[], fallback: T, index: number): T {
+  return list.length > 0 ? list[index % list.length] : fallback;
 }
 
 /** Eventos garantidos pelos ACs (M11c, M11i, M12a, M12b): não dependem da amostragem aleatória. */
-function ancoras(vocabulario: Vocabulario): Intento[] {
-  const marcoTipo = escolher(vocabulario.nucleo.marcoTipo, 'aprovado', 0);
-  const resultado = escolher(vocabulario.nucleo.resultado, 'ok', 0);
-  const comDecisao = (alvo: string, frase: string): IntentoMarco => ({
-    categoria: 'marco',
-    marcoTipo,
-    alvo,
-    frase,
-    comContagem: false,
+function anchors(vocabulary: Vocabulary): Intent[] {
+  const milestoneType = pick(vocabulary.core.milestoneType, 'approved', 0);
+  const result = pick(vocabulary.core.result, 'ok', 0);
+  const withDecision = (target: string, text: string): MilestoneIntent => ({
+    category: 'milestone',
+    milestoneType,
+    target,
+    text,
+    withCount: false,
   });
 
   return [
-    comDecisao('hex:alvo:cache-1', FRASE_CACHE_INVALIDACAO_TRUE),
-    comDecisao('hex:alvo:cache-2', FRASE_CACHE_INVALIDADO_DECOY),
-    comDecisao('hex:alvo:cache-3', FRASE_CACHE_VALIDACAO_DECOY),
-    { categoria: 'veredito', destino: 'hex:alvo:login', resultado, frase: FRASE_LOGIN },
-    { categoria: 'veredito', destino: 'hex:alvo:login-1', resultado, frase: FRASE_LOGIN },
+    withDecision('hex:target:cache-1', PHRASE_CACHE_INVALIDATION_TRUE),
+    withDecision('hex:target:cache-2', PHRASE_CACHE_INVALIDATED_DECOY),
+    withDecision('hex:target:cache-3', PHRASE_CACHE_VALIDATION_DECOY),
+    { category: 'verdict', target: 'hex:target:login', result, text: PHRASE_LOGIN },
+    { category: 'verdict', target: 'hex:target:login-1', result, text: PHRASE_LOGIN },
     {
-      categoria: 'veredito',
-      destino: 'hex:alvo:conta-1',
-      resultado: 'resultado-fora-do-vocabulario',
-      frase: FRASES_GERAIS[0],
+      category: 'verdict',
+      target: 'hex:target:account-1',
+      result: 'result-outside-vocabulary',
+      text: PHRASES_GENERAL[0],
     },
-    { categoria: 'veredito', destino: 'hex:alvo:conta-2', resultado, frase: FRASES_WEBHOOK[0] },
-    { categoria: 'veredito', destino: 'hex:alvo:conta-3', resultado, frase: FRASES_WEBHOOK[1] },
-    comDecisao('hex:alvo:conta-4', FRASES_WEBHOOK[2]),
+    { category: 'verdict', target: 'hex:target:account-2', result, text: PHRASES_WEBHOOK[0] },
+    { category: 'verdict', target: 'hex:target:account-3', result, text: PHRASES_WEBHOOK[1] },
+    withDecision('hex:target:account-4', PHRASES_WEBHOOK[2]),
+    withDecision('hex:target:note-1', PHRASE_CAFE),
   ];
 }
 
-type Rascunho = {
-  categoria: 'marco' | 'veredito' | 'custom';
-  banco: number;
-  alvoIndice: number;
-  resultadoForaDoVocab: boolean;
-  comDecisoes: boolean;
+type Draft = {
+  category: 'milestone' | 'verdict' | 'custom';
+  bank: number;
+  targetIndex: number;
+  resultOutsideVocab: boolean;
+  withDecisions: boolean;
 };
 
-const RASCUNHO_ARB: fc.Arbitrary<Rascunho> = fc.record({
-  categoria: fc.oneof(
-    { weight: 4, arbitrary: fc.constant<'marco'>('marco') },
-    { weight: 4, arbitrary: fc.constant<'veredito'>('veredito') },
+const DRAFT_ARB: fc.Arbitrary<Draft> = fc.record({
+  category: fc.oneof(
+    { weight: 4, arbitrary: fc.constant<'milestone'>('milestone') },
+    { weight: 4, arbitrary: fc.constant<'verdict'>('verdict') },
     { weight: 2, arbitrary: fc.constant<'custom'>('custom') },
   ),
-  banco: fc.nat({ max: 9999 }),
-  alvoIndice: fc.nat({ max: 9999 }),
-  resultadoForaDoVocab: fc.boolean(),
-  comDecisoes: fc.boolean(),
+  bank: fc.nat({ max: 9999 }),
+  targetIndex: fc.nat({ max: 9999 }),
+  resultOutsideVocab: fc.boolean(),
+  withDecisions: fc.boolean(),
 });
 
-function paraIntento(r: Rascunho, vocabulario: Vocabulario, indice: number): Intento {
-  const alvo = ALVOS_DO_CORPUS[r.alvoIndice % ALVOS_DO_CORPUS.length];
-  const frase = BANCO_FRASES[r.banco % BANCO_FRASES.length];
+function toIntent(d: Draft, vocabulary: Vocabulary, index: number): Intent {
+  const target = CORPUS_TARGETS[d.targetIndex % CORPUS_TARGETS.length];
+  const text = PHRASE_BANK[d.bank % PHRASE_BANK.length];
 
-  if (r.categoria === 'marco') {
-    const marcoTipo = escolher(vocabulario.nucleo.marcoTipo, 'aprovado', r.banco);
+  if (d.category === 'milestone') {
+    const milestoneType = pick(vocabulary.core.milestoneType, 'approved', d.bank);
     return {
-      categoria: 'marco',
-      marcoTipo,
-      alvo,
-      frase: r.comDecisoes ? frase : undefined,
-      comContagem: r.banco % 5 === 0,
+      category: 'milestone',
+      milestoneType,
+      target,
+      text: d.withDecisions ? text : undefined,
+      withCount: d.bank % 5 === 0,
     };
   }
-  if (r.categoria === 'veredito') {
-    const resultadoBase = escolher(vocabulario.nucleo.resultado, 'ok', r.banco);
-    const resultado = r.resultadoForaDoVocab ? `resultado-externo-${indice}` : resultadoBase;
-    return { categoria: 'veredito', destino: alvo, resultado, frase };
+  if (d.category === 'verdict') {
+    const resultBase = pick(vocabulary.core.result, 'ok', d.bank);
+    const result = d.resultOutsideVocab ? `external-result-${index}` : resultBase;
+    return { category: 'verdict', target, result, text };
   }
   return {
-    categoria: 'custom',
-    frase,
-    tag: `tag-${r.banco % 7}`,
-    alvoOculto: r.banco % 11 === 0 ? alvo : undefined,
+    category: 'custom',
+    text,
+    tag: `tag-${d.bank % 7}`,
+    hiddenTarget: d.bank % 11 === 0 ? target : undefined,
   };
 }
 
-function dadosDoIntento(intento: Intento): Record<string, unknown> {
-  if (intento.categoria === 'marco') {
-    const dados: Record<string, unknown> = { marcoTipo: intento.marcoTipo, alvo: intento.alvo };
-    if (intento.comContagem) dados.contagem = { campo: 'itens processados', valor: 1 };
-    if (!isNil(intento.frase))
-      dados.decisoes = [{ item: 'item-1', acao: 'seguir', texto: intento.frase }];
-    return dados;
+function dataFromIntent(intent: Intent): Record<string, unknown> {
+  if (intent.category === 'milestone') {
+    const data: Record<string, unknown> = {
+      milestoneType: intent.milestoneType,
+      target: intent.target,
+    };
+    if (intent.withCount) data.count = { field: 'items processed', value: 1 };
+    if (!isNil(intent.text))
+      data.decisions = [{ item: 'item-1', action: 'follow', text: intent.text }];
+    return data;
   }
-  if (intento.categoria === 'veredito') {
+  if (intent.category === 'verdict') {
     return {
-      afirmacao: intento.frase,
-      fonte: 'corpus-fixture',
-      resultado: intento.resultado,
-      prova: 'evidência gerada pelo corpus',
-      destino: intento.destino,
-      origem: 'gerarCorpus',
-      rastro: 'rastro-sintético',
+      claim: intent.text,
+      source: 'corpus-fixture',
+      result: intent.result,
+      evidence: 'evidence generated by the corpus',
+      target: intent.target,
+      origin: 'generateCorpus',
+      trace: 'synthetic-trace',
     };
   }
-  const dados: Record<string, unknown> = {
-    texto: intento.frase,
-    detalhe: { nota: `observação sobre ${intento.tag}` },
-    tags: [intento.tag, 'sintético'],
+  const data: Record<string, unknown> = {
+    text: intent.text,
+    detail: { note: `note about ${intent.tag}` },
+    tags: [intent.tag, 'synthetic'],
   };
-  if (!isNil(intento.alvoOculto)) dados.alvoRelacionado = intento.alvoOculto;
-  return dados;
+  if (!isNil(intent.hiddenTarget)) data.relatedTarget = intent.hiddenTarget;
+  return data;
 }
 
-function tipoDoIntento(intento: Intento, nomeTipoCustom: string): string {
-  if (intento.categoria === 'marco') return 'marco';
-  if (intento.categoria === 'veredito') return 'veredito';
-  return nomeTipoCustom;
+function typeFromIntent(intent: Intent, customTypeName: string): string {
+  if (intent.category === 'milestone') return 'milestone';
+  if (intent.category === 'verdict') return 'verdict';
+  return customTypeName;
 }
 
-function montarLinhas(manifesto: Manifesto, intentos: Intento[]): Linha[] {
-  const nomeTipoCustom = Object.keys(manifesto.fixado.tipos)[0] ?? 'nota';
-  const linhas: Linha[] = [];
-  let ultimoElo: Linha | null = null;
+function buildLines(manifest: ProcessManifest, intents: Intent[]): EventLine[] {
+  const customTypeName = Object.keys(manifest.fixed.types)[0] ?? 'note';
+  const lines: EventLine[] = [];
+  let lastLink: EventLine | null = null;
 
-  intentos.forEach((intento, indice) => {
-    const tipo = tipoDoIntento(intento, nomeTipoCustom);
-    const linha: Linha = {
-      seq: proximoSeq(ultimoElo, 0),
-      id: `${manifesto.projeto}:${manifesto.processo}:${tipo}:${randomUUIDv7()}`,
-      tipo,
-      timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, indice)).toISOString(),
-      agente: 'agente-corpus',
-      prevHash: prevHashEsperado(ultimoElo, manifesto),
-      dados: dadosDoIntento(intento),
+  intents.forEach((intent, index) => {
+    const type = typeFromIntent(intent, customTypeName);
+    const line: EventLine = {
+      seq: nextSeq(lastLink, 0),
+      id: `${manifest.project}:${manifest.process}:${type}:${randomUUIDv7()}`,
+      type,
+      timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+      agent: 'corpus-agent',
+      prevHash: expectedPrevHash(lastLink, manifest),
+      data: dataFromIntent(intent),
     };
-    linhas.push(linha);
-    ultimoElo = linha;
+    lines.push(line);
+    lastLink = line;
   });
 
-  return linhas;
+  return lines;
 }
 
-const TOKENIZAR = MiniSearch.getDefault('tokenize') as (texto: string) => string[];
+const TOKENIZE = MiniSearch.getDefault('tokenize') as (text: string) => string[];
 
-/** Força bruta: índices cujo `textoIndexavel` normalizado contém `termo` como prefixo de algum token. */
-function gabaritoDeTermo(linhas: Linha[], termo: string): number[] {
-  const alvo = semAcento(termo);
-  return linhas
-    .map((linha, indice) => ({ indice, tokens: TOKENIZAR(textoIndexavel(linha)).map(semAcento) }))
-    .filter(({ tokens }) => tokens.some((token) => token.startsWith(alvo)))
-    .map(({ indice }) => indice);
+/** Força bruta: índices cujo `indexableText` normalizado contém `term` como prefixo de algum token. */
+function goldenForTerm(lines: EventLine[], term: string): number[] {
+  const needle = stripDiacritics(term);
+  return lines
+    .map((line, index) => ({
+      index,
+      tokens: TOKENIZE(indexableText(line)).map(stripDiacritics),
+    }))
+    .filter(({ tokens }) => tokens.some((token: string) => token.startsWith(needle)))
+    .map(({ index }) => index);
 }
 
 /**
- * Gera um corpus determinístico (`fc.sample`, seed fixa) com cadeia de hash válida (`cadeia.ts`),
- * ~40% Marco, ~40% Veredito, ~20% custom, mais as âncoras exigidas pelos ACs M11/M12 (§4.17, passo 7c).
+ * Gera um corpus determinístico (`fc.sample`, seed fixa) com cadeia de hash válida (`chain.ts`),
+ * ~40% Milestone, ~40% Verdict, ~20% custom, mais as âncoras exigidas pelos ACs M11/M12 (§4.17, passo 7c).
  */
-export function gerarCorpus(opcoes: {
-  tamanho: number;
+export function generateCorpus(options: {
+  size: number;
   seed?: number;
-  manifesto: Manifesto;
-  vocabulario: Vocabulario;
-}): { linhas: Linha[]; texto: string; gabarito: (termo: string) => number[] } {
-  const { tamanho, seed = 42, manifesto, vocabulario } = opcoes;
+  manifest: ProcessManifest;
+  vocabulary: Vocabulary;
+}): { lines: EventLine[]; text: string; expected: (term: string) => number[] } {
+  const { size, seed = 42, manifest, vocabulary } = options;
 
-  const fixas = ancoras(vocabulario);
-  const rascunhos = fc.sample(RASCUNHO_ARB, { seed, numRuns: Math.max(0, tamanho - fixas.length) });
-  const intentos = [...fixas, ...rascunhos.map((r, i) => paraIntento(r, vocabulario, i))];
+  const fixed = anchors(vocabulary);
+  const drafts = fc.sample(DRAFT_ARB, { seed, numRuns: Math.max(0, size - fixed.length) });
+  const intents = [...fixed, ...drafts.map((d, i) => toIntent(d, vocabulary, i))];
 
-  const linhas = montarLinhas(manifesto, intentos);
-  const texto = `${linhas.map((linha) => JSON.stringify(linha)).join('\n')}\n`;
+  const lines = buildLines(manifest, intents);
+  const text = `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`;
 
-  return { linhas, texto, gabarito: (termo: string) => gabaritoDeTermo(linhas, termo) };
+  return { lines, text, expected: (term: string) => goldenForTerm(lines, term) };
 }
 
-export function escreverCorpus(arquivo: string, texto: string): void {
-  fs.writeFileSync(arquivo, texto);
+export function writeCorpus(file: string, text: string): void {
+  fs.writeFileSync(file, text);
 }
