@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "lint": "eslint ."
   },
   "jest": {
     "testEnvironment": "node",
