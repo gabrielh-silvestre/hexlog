@@ -33,7 +33,9 @@ function arvore(raiz: string): string[] {
     .flatMap((entrada) => {
       const caminho = path.join(raiz, entrada.name);
       const relativo = path.relative(raiz, caminho);
-      return entrada.isDirectory() ? [relativo, ...arvore(caminho).map((f) => path.join(relativo, f))] : [relativo];
+      return entrada.isDirectory()
+        ? [relativo, ...arvore(caminho).map((f) => path.join(relativo, f))]
+        : [relativo];
     })
     .sort();
 }
@@ -52,7 +54,10 @@ export async function criarAmbiente(): Promise<Ambiente> {
   const cliente = new Client({ name: 'hexlog-teste', version: '0.0.0' });
   await Promise.all([servidor.connect(transporteServidor), cliente.connect(transporteCliente)]);
 
-  async function chamar(nome: string, args: Record<string, unknown> = {}): Promise<ResultadoChamada> {
+  async function chamar(
+    nome: string,
+    args: Record<string, unknown> = {},
+  ): Promise<ResultadoChamada> {
     const resultado = (await cliente.callTool({ name: nome, arguments: args })) as ResultadoChamada;
     // M7: nenhuma chamada, em toda a suíte, pode devolver um erro de forma de saída — só bug no handler produziria isso.
     for (const item of resultado.content ?? []) {
@@ -96,7 +101,11 @@ export function esperarErro(
   codigo: CodigoErro,
 ): { codigo: CodigoErro; mensagem: string; detalhes: Detalhe[] } {
   expect(resultado.isError).toBe(true);
-  const corpo = resultado.structuredContent as { codigo: CodigoErro; mensagem: string; detalhes: Detalhe[] };
+  const corpo = resultado.structuredContent as {
+    codigo: CodigoErro;
+    mensagem: string;
+    detalhes: Detalhe[];
+  };
   expect(corpo.codigo).toBe(codigo);
   return corpo;
 }

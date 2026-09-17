@@ -34,7 +34,8 @@ export const GATES_EMBUTIDOS: Record<NomeGateEmbutido, DefinicaoGateEmbutido> = 
     itens: (estado) => estado.orfaos,
   },
   'sem-conflitos': {
-    criterio: 'estado.conflitos vazio: nenhuma (destino, afirmacao) com mais de um Veredito vigente',
+    criterio:
+      'estado.conflitos vazio: nenhuma (destino, afirmacao) com mais de um Veredito vigente',
     itens: (estado) => estado.conflitos,
   },
   'cadeia-integra': {

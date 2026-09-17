@@ -60,8 +60,14 @@ const casosNega: CasoI4[] = [
   { nome: 'caminho absoluto de D', command: `cat ${dadosDir}/x` },
   { nome: '~ expandido para D', command: 'cat ~/.local/share/hexlog/p/r/eventos.jsonl' },
   { nome: '$HOME expandido pelo shell-quote', command: 'cat $HOME/.local/share/hexlog/x' },
-  { nome: 'aspas duplas vazias no meio do nome (hex""log)', command: 'cat ~/.local/share/hex""log/x' },
-  { nome: 'substituição de comando: $(echo ~/...)', command: 'cat $(echo ~/.local/share/hexlog/x)' },
+  {
+    nome: 'aspas duplas vazias no meio do nome (hex""log)',
+    command: 'cat ~/.local/share/hex""log/x',
+  },
+  {
+    nome: 'substituição de comando: $(echo ~/...)',
+    command: 'cat $(echo ~/.local/share/hexlog/x)',
+  },
   { nome: '/./ no meio do caminho absoluto', command: `cat /./${dadosDir.slice(1)}/x` },
   {
     nome: 'relativo a D com cwd no pai de D',
@@ -90,7 +96,11 @@ const casosNega: CasoI4[] = [
   },
 ];
 
-const casoXdg: CasoI4 = { nome: '${XDG_DATA_HOME} expandido pelo shell-quote', command: 'cat ${XDG_DATA_HOME}/hexlog/x', env: envXdg };
+const casoXdg: CasoI4 = {
+  nome: '${XDG_DATA_HOME} expandido pelo shell-quote',
+  command: 'cat ${XDG_DATA_HOME}/hexlog/x',
+  env: envXdg,
+};
 
 const casosPermite: CasoI4[] = [
   { nome: 'ls no diretório pai de D', command: 'ls ~/.local/share' },
@@ -98,20 +108,27 @@ const casosPermite: CasoI4[] = [
   { nome: 'find a partir de ~ sem citar D', command: "find ~ -name '*.jsonl'" },
   { nome: 'Read fora de D (~/.claude/projects)', command: 'cat ~/.claude/projects/x/y.jsonl' },
   { nome: 'cd para o repo e rodar testes', command: `cd ${raizDoRepo} && npm test` },
-  { nome: '** dentro do repositório (não é ancestral de D)', command: `grep -rn x ${raizDoRepo}/**/*.ts` },
+  {
+    nome: '** dentro do repositório (não é ancestral de D)',
+    command: `grep -rn x ${raizDoRepo}/**/*.ts`,
+  },
   {
     nome: 'lacuna: cd + caminho relativo em comandos separados',
     command: 'cd ~/.local/share && cat hexlog/p/r/eventos.jsonl',
     classe: 'lacuna',
   },
-  { nome: 'lacuna: grep -r no diretório pai de D', command: 'grep -r foo ~/.local/share/', classe: 'lacuna' },
+  {
+    nome: 'lacuna: grep -r no diretório pai de D',
+    command: 'grep -r foo ~/.local/share/',
+    classe: 'lacuna',
+  },
   {
     nome: 'lacuna: variável atribuída no mesmo comando',
     command: 'd=~/.local/share; cat $d/hexlog/x',
     classe: 'lacuna',
   },
   {
-    nome: 'lacuna: ANSI-C quoting ($\'...\\x6c...\')',
+    nome: "lacuna: ANSI-C quoting ($'...\\x6c...')",
     command: `cat $'${tmpHome}/.local/share/hex\\x6cog/x'`,
     classe: 'lacuna',
   },
@@ -150,7 +167,11 @@ describe('guarda-bash (I4): permite o que não alcança D', () => {
 
 describe('guarda-bash (I7): entrada inválida ou exceção interna falha aberto', () => {
   test('stdin vazio → exit 0 sem saída', () => {
-    const resultado = spawnSync(process.execPath, [caminhoDoHook], { input: '', env: envBase, encoding: 'utf8' });
+    const resultado = spawnSync(process.execPath, [caminhoDoHook], {
+      input: '',
+      env: envBase,
+      encoding: 'utf8',
+    });
     expect(resultado.status).toBe(0);
     expect(resultado.stdout).toBe('');
     expect(resultado.stderr).toBe('');

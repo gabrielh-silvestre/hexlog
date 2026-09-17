@@ -8,7 +8,10 @@ import { agoraEfetivo, projetar, type Vocabulario } from '../src/estado.ts';
 
 const T = (n: number) => new Date(n * 60_000).toISOString();
 const AGORA_BASE = T(0);
-const vocabularioVazio: Vocabulario = { nucleo: { marcoTipo: [], resultado: [], acao: [] }, porDono: {} };
+const vocabularioVazio: Vocabulario = {
+  nucleo: { marcoTipo: [], resultado: [], acao: [] },
+  porDono: {},
+};
 
 function elo(args: {
   tipo: string;
@@ -29,7 +32,10 @@ function elo(args: {
   };
 }
 
-function marco(dados: { alvo: string }, opcoes: { id?: string; timestamp?: string; seq?: number } = {}): Linha {
+function marco(
+  dados: { alvo: string },
+  opcoes: { id?: string; timestamp?: string; seq?: number } = {},
+): Linha {
   return elo({ tipo: 'marco', dados: { marcoTipo: 'evento-property', ...dados }, ...opcoes });
 }
 
@@ -85,14 +91,19 @@ function materializar(intentos: readonly Intento[]): Linha[] {
     idPorIndice.push(id);
     tipoPorIndice.push(intento.tipo);
 
-    if (intento.tipo === 'marco') return marco({ alvo: intento.alvo }, { id, timestamp, seq: indice });
+    if (intento.tipo === 'marco')
+      return marco({ alvo: intento.alvo }, { id, timestamp, seq: indice });
 
     let supera: string[] | undefined;
     if (intento.superaOffset !== null) {
       const alvoIndice = indice - intento.superaOffset;
-      if (alvoIndice >= 0 && tipoPorIndice[alvoIndice] === 'veredito') supera = [idPorIndice[alvoIndice]];
+      if (alvoIndice >= 0 && tipoPorIndice[alvoIndice] === 'veredito')
+        supera = [idPorIndice[alvoIndice]];
     }
-    return veredito({ destino: intento.destino, afirmacao: intento.afirmacao, supera }, { id, timestamp, seq: indice });
+    return veredito(
+      { destino: intento.destino, afirmacao: intento.afirmacao, supera },
+      { id, timestamp, seq: indice },
+    );
   });
 }
 
@@ -120,7 +131,9 @@ describe('projetar — propriedades (fast-check)', () => {
         const comDuplicata = [...elos, duplicata];
         const agora = agoraEfetivo(AGORA_BASE, elos);
 
-        expect(projetar(comDuplicata, vocabularioVazio, agora)).toEqual(projetar(elos, vocabularioVazio, agora));
+        expect(projetar(comDuplicata, vocabularioVazio, agora)).toEqual(
+          projetar(elos, vocabularioVazio, agora),
+        );
       }),
     );
   });

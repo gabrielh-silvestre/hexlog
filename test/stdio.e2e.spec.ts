@@ -30,11 +30,18 @@ function mkdtempFora(prefixo: string): string {
 /** `env` de um processo filho isolado: HOME e XDG_DATA_HOME temporários (§9.3); o real nunca é tocado. */
 function envTemporario(): Record<string, string> {
   const base = omitBy(process.env, isUndefined) as Record<string, string>;
-  return { ...base, HOME: mkdtempFora('hexlog-e2e-home-'), XDG_DATA_HOME: mkdtempFora('hexlog-e2e-xdg-') };
+  return {
+    ...base,
+    HOME: mkdtempFora('hexlog-e2e-home-'),
+    XDG_DATA_HOME: mkdtempFora('hexlog-e2e-xdg-'),
+  };
 }
 
 function construirBundle(outdir: string, cwd: string): void {
-  const resultado = spawnSync(process.execPath, [caminhoDoBuild, '--outdir', outdir], { cwd, encoding: 'utf8' });
+  const resultado = spawnSync(process.execPath, [caminhoDoBuild, '--outdir', outdir], {
+    cwd,
+    encoding: 'utf8',
+  });
   if (resultado.status !== 0) {
     throw new Error(`build de e2e falhou (cwd=${cwd}): ${resultado.stderr}`);
   }
@@ -72,7 +79,13 @@ function aguardar(condicao: () => boolean, intervaloMs = 20): Promise<void> {
 }
 
 async function criarCliente(servidorMjs: string, env: Record<string, string>, cwd: string) {
-  const transporte = new StdioClientTransport({ command: process.execPath, args: [servidorMjs], env, cwd, stderr: 'pipe' });
+  const transporte = new StdioClientTransport({
+    command: process.execPath,
+    args: [servidorMjs],
+    env,
+    cwd,
+    stderr: 'pipe',
+  });
   const stderr = coletorDeLinhas(transporte.stderr);
   const cliente = new Client({ name: 'hexlog-e2e', version: '0.0.0' });
   await cliente.connect(transporte);
@@ -85,7 +98,9 @@ let dirRealAntes: { existe: boolean; mtimeMs?: number };
 
 beforeAll(() => {
   const dirReal = dirDados(process.env);
-  dirRealAntes = fs.existsSync(dirReal) ? { existe: true, mtimeMs: fs.statSync(dirReal).mtimeMs } : { existe: false };
+  dirRealAntes = fs.existsSync(dirReal)
+    ? { existe: true, mtimeMs: fs.statSync(dirReal).mtimeMs }
+    : { existe: false };
 });
 
 afterAll(() => {
@@ -123,7 +138,11 @@ describe('M6', () => {
       jsonrpc: '2.0',
       id: 1,
       method: 'initialize',
-      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'hexlog-e2e', version: '0.0.0' } },
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'hexlog-e2e', version: '0.0.0' },
+      },
     });
     await aguardar(() => stdout.linhas().length >= 1);
 
@@ -131,11 +150,21 @@ describe('M6', () => {
     enviar({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
     await aguardar(() => stdout.linhas().length >= 2);
 
-    enviar({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'listar', arguments: {} } });
+    enviar({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'listar', arguments: {} },
+    });
     await aguardar(() => stdout.linhas().length >= 3);
 
     // Erro de domínio: continua uma resposta JSON-RPC normal, com `result.isError`.
-    enviar({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'cadeia', arguments: { projeto: 'fantasma', processo: 'fantasma' } } });
+    enviar({
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: { name: 'cadeia', arguments: { projeto: 'fantasma', processo: 'fantasma' } },
+    });
     await aguardar(() => stdout.linhas().length >= 4);
 
     const linhas = stdout.linhas();
@@ -183,16 +212,28 @@ describe('B1', () => {
     test('uma chamada de cada uma das 10 tools contra o bundle, sem erro, sem INTERNO, sem Dynamic require', async () => {
       const projeto = 'e2e-proj';
       const processo = 'e2e-proc';
-      const { cliente, stderr } = await criarCliente(path.join(bundlePrincipal, 'servidor.mjs'), envTemporario(), bundlePrincipal);
+      const { cliente, stderr } = await criarCliente(
+        path.join(bundlePrincipal, 'servidor.mjs'),
+        envTemporario(),
+        bundlePrincipal,
+      );
 
       try {
         const chamar = async (nome: string, args: Record<string, unknown> = {}) => {
-          const resultado = (await cliente.callTool({ name: nome, arguments: args })) as { isError?: boolean };
+          const resultado = (await cliente.callTool({ name: nome, arguments: args })) as {
+            isError?: boolean;
+          };
           expect(resultado.isError).not.toBe(true);
           return resultado;
         };
 
-        await chamar('registrar_vocabulario', { projeto, dono: 'nucleo', marcoTipo: ['aprovado'], resultado: ['ok'], acao: ['seguir'] });
+        await chamar('registrar_vocabulario', {
+          projeto,
+          dono: 'nucleo',
+          marcoTipo: ['aprovado'],
+          resultado: ['ok'],
+          acao: ['seguir'],
+        });
         await chamar('registrar_tipo', {
           projeto,
           nome: 'nota-e2e',
@@ -203,7 +244,11 @@ describe('B1', () => {
             additionalProperties: false,
           },
         });
-        await chamar('registrar_gate', { projeto, nome: 'gate-e2e', criterio: 'critério e2e qualquer' });
+        await chamar('registrar_gate', {
+          projeto,
+          nome: 'gate-e2e',
+          criterio: 'critério e2e qualquer',
+        });
         await chamar('criar_processo', { projeto, processo });
         await chamar('registrar', {
           projeto,
@@ -217,7 +262,15 @@ describe('B1', () => {
           processo,
           id: `${projeto}:${processo}:veredito`,
           agente: 'agente-e2e',
-          dados: { afirmacao: 'a', fonte: 'f', resultado: 'ok', prova: 'p', destino: 'hex:alvo:e2e1', origem: 'o', rastro: 'r' },
+          dados: {
+            afirmacao: 'a',
+            fonte: 'f',
+            resultado: 'ok',
+            prova: 'p',
+            destino: 'hex:alvo:e2e1',
+            origem: 'o',
+            rastro: 'r',
+          },
         });
         await chamar('registrar', {
           projeto,
@@ -226,7 +279,13 @@ describe('B1', () => {
           agente: 'agente-e2e',
           dados: { quando: new Date().toISOString() },
         });
-        await chamar('avaliar_gate', { projeto, processo, gate: 'sem-conflitos', agente: 'agente-e2e', alvo: 'hex:alvo:e2e1' });
+        await chamar('avaliar_gate', {
+          projeto,
+          processo,
+          gate: 'sem-conflitos',
+          agente: 'agente-e2e',
+          alvo: 'hex:alvo:e2e1',
+        });
         await chamar('estado', { projeto, processo });
         await chamar('eventos', { projeto, processo });
         if (buscaDisponivel) {
@@ -264,7 +323,9 @@ describe('B1', () => {
 
     test('build com cwd na raiz e com cwd em os.tmpdir() geram sha256 idênticos', () => {
       for (const arquivo of ['servidor.mjs', 'guarda-bash.mjs']) {
-        expect(sha256Arquivo(path.join(bundleDaRaiz, arquivo))).toBe(sha256Arquivo(path.join(bundleDoTmp, arquivo)));
+        expect(sha256Arquivo(path.join(bundleDaRaiz, arquivo))).toBe(
+          sha256Arquivo(path.join(bundleDoTmp, arquivo)),
+        );
       }
     });
   });
@@ -272,10 +333,19 @@ describe('B1', () => {
 
 describe('C1', () => {
   type EventoSemeado = { id: string; agente: string; dados: Record<string, unknown> };
-  type RespostaRegistrar = { isError?: boolean; structuredContent?: { deduplicado: boolean; evento: { seq: number; id: string } } };
+  type RespostaRegistrar = {
+    isError?: boolean;
+    structuredContent?: { deduplicado: boolean; evento: { seq: number; id: string } };
+  };
 
   /** 20 `registrar` com prefixo + 5 retentativas por id completo de elos semeados, todos em paralelo. */
-  function dispararRodada(cliente: Client, projeto: string, processo: string, indiceServidor: number, semeados: EventoSemeado[]) {
+  function dispararRodada(
+    cliente: Client,
+    projeto: string,
+    processo: string,
+    indiceServidor: number,
+    semeados: EventoSemeado[],
+  ) {
     const escritas = Array.from({ length: 20 }, (_, indice) =>
       cliente.callTool({
         name: 'registrar',
@@ -288,99 +358,121 @@ describe('C1', () => {
         },
       }),
     );
-    const retentativas = semeados
-      .slice(0, 5)
-      .map((semente) =>
-        cliente.callTool({ name: 'registrar', arguments: { projeto, processo, id: semente.id, agente: semente.agente, dados: semente.dados } }),
-      );
+    const retentativas = semeados.slice(0, 5).map((semente) =>
+      cliente.callTool({
+        name: 'registrar',
+        arguments: {
+          projeto,
+          processo,
+          id: semente.id,
+          agente: semente.agente,
+          dados: semente.dados,
+        },
+      }),
+    );
     return Promise.all([...escritas, ...retentativas]) as Promise<RespostaRegistrar[]>;
   }
 
-  test(
-    '4 servidores concorrentes, barreira por lock artificial: 100 linhas, seq 0..99, cadeia íntegra, 20 deduplicados, zero timeouts',
-    async () => {
-      const projeto = 'c1-proj';
-      const processo = 'c1-proc';
-      const env = envTemporario();
-      const servidorMjs = path.join(bundlePrincipal, 'servidor.mjs');
+  test('4 servidores concorrentes, barreira por lock artificial: 100 linhas, seq 0..99, cadeia íntegra, 20 deduplicados, zero timeouts', async () => {
+    const projeto = 'c1-proj';
+    const processo = 'c1-proc';
+    const env = envTemporario();
+    const servidorMjs = path.join(bundlePrincipal, 'servidor.mjs');
 
-      // 1) semeadura: um servidor à parte, fechado antes da concorrência começar.
-      const semente = await criarCliente(servidorMjs, env, bundlePrincipal);
-      await semente.cliente.callTool({
-        name: 'registrar_vocabulario',
-        arguments: { projeto, dono: 'nucleo', marcoTipo: ['aprovado'], resultado: [], acao: [] },
+    // 1) semeadura: um servidor à parte, fechado antes da concorrência começar.
+    const semente = await criarCliente(servidorMjs, env, bundlePrincipal);
+    await semente.cliente.callTool({
+      name: 'registrar_vocabulario',
+      arguments: { projeto, dono: 'nucleo', marcoTipo: ['aprovado'], resultado: [], acao: [] },
+    });
+    await semente.cliente.callTool({ name: 'criar_processo', arguments: { projeto, processo } });
+
+    const semeados: EventoSemeado[] = [];
+    for (let indice = 0; indice < 20; indice++) {
+      const agente = 'semente';
+      const dados = { marcoTipo: 'aprovado', alvo: `hex:alvo:seed${indice}` };
+      const resultado = await semente.cliente.callTool({
+        name: 'registrar',
+        arguments: { projeto, processo, id: `${projeto}:${processo}:marco`, agente, dados },
       });
-      await semente.cliente.callTool({ name: 'criar_processo', arguments: { projeto, processo } });
+      const corpo = resultado.structuredContent as { evento: { id: string } };
+      semeados.push({ id: corpo.evento.id, agente, dados });
+    }
+    await semente.cliente.close();
 
-      const semeados: EventoSemeado[] = [];
-      for (let indice = 0; indice < 20; indice++) {
-        const agente = 'semente';
-        const dados = { marcoTipo: 'aprovado', alvo: `hex:alvo:seed${indice}` };
-        const resultado = await semente.cliente.callTool({
-          name: 'registrar',
-          arguments: { projeto, processo, id: `${projeto}:${processo}:marco`, agente, dados },
-        });
-        const corpo = resultado.structuredContent as { evento: { id: string } };
-        semeados.push({ id: corpo.evento.id, agente, dados });
-      }
-      await semente.cliente.close();
+    // 2) lock artificial: qualquer `anexar` real colide já na primeira tentativa.
+    const arquivoEventos = path.join(dirDados(env), projeto, processo, 'eventos.jsonl');
+    const dirLock = `${arquivoEventos}.lock`;
+    fs.mkdirSync(dirLock);
+    fs.writeFileSync(path.join(dirLock, 'owner'), 'token-alheio');
 
-      // 2) lock artificial: qualquer `anexar` real colide já na primeira tentativa.
-      const arquivoEventos = path.join(dirDados(env), projeto, processo, 'eventos.jsonl');
-      const dirLock = `${arquivoEventos}.lock`;
-      fs.mkdirSync(dirLock);
-      fs.writeFileSync(path.join(dirLock, 'owner'), 'token-alheio');
+    // 3) 4 servidores concorrentes, mesmo `env`.
+    const clientes = await Promise.all(
+      Array.from({ length: 4 }, () => criarCliente(servidorMjs, env, bundlePrincipal)),
+    );
+    const contarLockEspera = () =>
+      clientes
+        .flatMap((c) => registrosDeStderr(c.stderr.texto()))
+        .filter((registro) => registro.evento === 'lock-espera').length;
 
-      // 3) 4 servidores concorrentes, mesmo `env`.
-      const clientes = await Promise.all(Array.from({ length: 4 }, () => criarCliente(servidorMjs, env, bundlePrincipal)));
-      const contarLockEspera = () =>
-        clientes.flatMap((c) => registrosDeStderr(c.stderr.texto())).filter((registro) => registro.evento === 'lock-espera').length;
+    const inicioBarreira = Date.now();
+    const disparos = clientes.map((cliente, indice) =>
+      dispararRodada(cliente.cliente, projeto, processo, indice, semeados),
+    );
 
-      const inicioBarreira = Date.now();
-      const disparos = clientes.map((cliente, indice) => dispararRodada(cliente.cliente, projeto, processo, indice, semeados));
+    // A espera pela aquisição do lock em `adquirirLock` (src/log.ts) é assíncrona: o handler de
+    // uma tool devolve o controle ao laço de mensagens do SDK entre uma tentativa e outra, então
+    // as 20 chamadas de `registrar` com prefixo de cada um dos 4 servidores despacham e colidem
+    // com o lock artificial, gerando as 80 `lock-espera` que o AC C1 exige antes da soltura.
+    await aguardar(() => contarLockEspera() >= 80, 5);
+    const msBarreira = Date.now() - inicioBarreira;
+    fs.rmSync(dirLock, { recursive: true, force: true });
 
-      // A espera pela aquisição do lock em `adquirirLock` (src/log.ts) é assíncrona: o handler de
-      // uma tool devolve o controle ao laço de mensagens do SDK entre uma tentativa e outra, então
-      // as 20 chamadas de `registrar` com prefixo de cada um dos 4 servidores despacham e colidem
-      // com o lock artificial, gerando as 80 `lock-espera` que o AC C1 exige antes da soltura.
-      await aguardar(() => contarLockEspera() >= 80, 5);
-      const msBarreira = Date.now() - inicioBarreira;
-      fs.rmSync(dirLock, { recursive: true, force: true });
+    const respostas = (await Promise.all(disparos)).flat();
+    const cadeiaResultado = (
+      await clientes[0]!.cliente.callTool({ name: 'cadeia', arguments: { projeto, processo } })
+    ).structuredContent as {
+      ok: boolean;
+    };
 
-      const respostas = (await Promise.all(disparos)).flat();
-      const cadeiaResultado = (await clientes[0]!.cliente.callTool({ name: 'cadeia', arguments: { projeto, processo } })).structuredContent as {
-        ok: boolean;
-      };
+    await Promise.all(clientes.map((c) => c.cliente.close()));
 
-      await Promise.all(clientes.map((c) => c.cliente.close()));
+    // ---- verificações ----
+    expect(msBarreira).toBeLessThan(3_000);
+    expect(respostas.every((resposta) => resposta.isError !== true)).toBe(true);
 
-      // ---- verificações ----
-      expect(msBarreira).toBeLessThan(3_000);
-      expect(respostas.every((resposta) => resposta.isError !== true)).toBe(true);
+    const linhasDoArquivo = fs
+      .readFileSync(arquivoEventos, 'utf8')
+      .split('\n')
+      .filter((linha) => !isEmpty(linha));
+    expect(linhasDoArquivo).toHaveLength(100);
+    const elos = linhasDoArquivo.map((linha) => JSON.parse(linha) as { seq: number; id: string });
+    expect(elos.map((elo) => elo.seq).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 100 }, (_, indice) => indice),
+    );
+    expect(new Set(elos.map((elo) => elo.id)).size).toBe(100);
+    expect(cadeiaResultado.ok).toBe(true);
 
-      const linhasDoArquivo = fs.readFileSync(arquivoEventos, 'utf8').split('\n').filter((linha) => !isEmpty(linha));
-      expect(linhasDoArquivo).toHaveLength(100);
-      const elos = linhasDoArquivo.map((linha) => JSON.parse(linha) as { seq: number; id: string });
-      expect(elos.map((elo) => elo.seq).sort((a, b) => a - b)).toEqual(Array.from({ length: 100 }, (_, indice) => indice));
-      expect(new Set(elos.map((elo) => elo.id)).size).toBe(100);
-      expect(cadeiaResultado.ok).toBe(true);
+    const totalDeduplicados = respostas.filter(
+      (resposta) => resposta.structuredContent?.deduplicado === true,
+    ).length;
+    expect(totalDeduplicados).toBe(20);
 
-      const totalDeduplicados = respostas.filter((resposta) => resposta.structuredContent?.deduplicado === true).length;
-      expect(totalDeduplicados).toBe(20);
+    const registrosTodos = clientes.flatMap((c) => registrosDeStderr(c.stderr.texto()));
+    expect(registrosTodos.some((registro) => registro.evento === 'lock-orfao-removido')).toBe(
+      false,
+    );
+    expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_TIMEOUT')).toBe(false);
+    expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_PERDIDO')).toBe(false);
 
-      const registrosTodos = clientes.flatMap((c) => registrosDeStderr(c.stderr.texto()));
-      expect(registrosTodos.some((registro) => registro.evento === 'lock-orfao-removido')).toBe(false);
-      expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_TIMEOUT')).toBe(false);
-      expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_PERDIDO')).toBe(false);
-
-      const msDeRegistrar = registrosTodos
-        .filter((registro) => registro.evento === 'tool' && registro.nome === 'registrar')
-        .map((registro) => registro.ms as number);
-      const totalLockEspera = registrosTodos.filter((registro) => registro.evento === 'lock-espera').length;
-      process.stdout.write(
-        `C1: barreira=${msBarreira}ms maiorMsRegistrar=${Math.max(...msDeRegistrar)}ms totalLockEspera=${totalLockEspera} (min. garantido 80)\n`,
-      );
-    },
-    60_000,
-  );
+    const msDeRegistrar = registrosTodos
+      .filter((registro) => registro.evento === 'tool' && registro.nome === 'registrar')
+      .map((registro) => registro.ms as number);
+    const totalLockEspera = registrosTodos.filter(
+      (registro) => registro.evento === 'lock-espera',
+    ).length;
+    process.stdout.write(
+      `C1: barreira=${msBarreira}ms maiorMsRegistrar=${Math.max(...msDeRegistrar)}ms totalLockEspera=${totalLockEspera} (min. garantido 80)\n`,
+    );
+  }, 60_000);
 });

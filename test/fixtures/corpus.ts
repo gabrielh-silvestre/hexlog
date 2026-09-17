@@ -29,19 +29,47 @@ const FRASES_AUTENTICACAO = [
   'falha na autenticação do usuário reportada',
   'autenticação de dois fatores habilitada',
 ];
-const FRASES_PAGAMENTO = ['pagamento processado sem erros aparentes', 'estorno de pagamento solicitado pelo cliente'];
+const FRASES_PAGAMENTO = [
+  'pagamento processado sem erros aparentes',
+  'estorno de pagamento solicitado pelo cliente',
+];
 const FRASES_WEBHOOK = [
   'webhook recebido do parceiro externo',
   'webhook disparado para o sistema do cliente',
   'reenvio automático do webhook configurado',
 ];
-const BANCO_FRASES = [...FRASES_GERAIS, ...FRASES_AUTENTICACAO, ...FRASES_PAGAMENTO, ...FRASES_WEBHOOK];
+const BANCO_FRASES = [
+  ...FRASES_GERAIS,
+  ...FRASES_AUTENTICACAO,
+  ...FRASES_PAGAMENTO,
+  ...FRASES_WEBHOOK,
+];
 
-const ALVOS_BASE = ['hex:alvo:conta-1', 'hex:alvo:conta-2', 'hex:alvo:pedido-1', 'hex:alvo:pagamento-1', 'hex:alvo:sessao-1'];
-const ALVOS_LOGIN = ['hex:alvo:login', 'hex:alvo:login-1', 'hex:alvo:login-2', 'hex:alvo:login-3', 'hex:alvo:login-4', 'hex:alvo:login-5', 'hex:alvo:login-6'];
+const ALVOS_BASE = [
+  'hex:alvo:conta-1',
+  'hex:alvo:conta-2',
+  'hex:alvo:pedido-1',
+  'hex:alvo:pagamento-1',
+  'hex:alvo:sessao-1',
+];
+const ALVOS_LOGIN = [
+  'hex:alvo:login',
+  'hex:alvo:login-1',
+  'hex:alvo:login-2',
+  'hex:alvo:login-3',
+  'hex:alvo:login-4',
+  'hex:alvo:login-5',
+  'hex:alvo:login-6',
+];
 const ALVOS_DO_CORPUS = [...ALVOS_BASE, ...ALVOS_LOGIN];
 
-type IntentoMarco = { categoria: 'marco'; marcoTipo: string; alvo: string; frase?: string; comContagem: boolean };
+type IntentoMarco = {
+  categoria: 'marco';
+  marcoTipo: string;
+  alvo: string;
+  frase?: string;
+  comContagem: boolean;
+};
 type IntentoVeredito = { categoria: 'veredito'; destino: string; resultado: string; frase: string };
 type IntentoCustom = { categoria: 'custom'; frase: string; tag: string; alvoOculto?: string };
 type Intento = IntentoMarco | IntentoVeredito | IntentoCustom;
@@ -54,7 +82,13 @@ function escolher<T>(lista: T[], padrao: T, indice: number): T {
 function ancoras(vocabulario: Vocabulario): Intento[] {
   const marcoTipo = escolher(vocabulario.nucleo.marcoTipo, 'aprovado', 0);
   const resultado = escolher(vocabulario.nucleo.resultado, 'ok', 0);
-  const comDecisao = (alvo: string, frase: string): IntentoMarco => ({ categoria: 'marco', marcoTipo, alvo, frase, comContagem: false });
+  const comDecisao = (alvo: string, frase: string): IntentoMarco => ({
+    categoria: 'marco',
+    marcoTipo,
+    alvo,
+    frase,
+    comContagem: false,
+  });
 
   return [
     comDecisao('hex:alvo:cache-1', FRASE_CACHE_INVALIDACAO_TRUE),
@@ -62,7 +96,12 @@ function ancoras(vocabulario: Vocabulario): Intento[] {
     comDecisao('hex:alvo:cache-3', FRASE_CACHE_VALIDACAO_DECOY),
     { categoria: 'veredito', destino: 'hex:alvo:login', resultado, frase: FRASE_LOGIN },
     { categoria: 'veredito', destino: 'hex:alvo:login-1', resultado, frase: FRASE_LOGIN },
-    { categoria: 'veredito', destino: 'hex:alvo:conta-1', resultado: 'resultado-fora-do-vocabulario', frase: FRASES_GERAIS[0]! },
+    {
+      categoria: 'veredito',
+      destino: 'hex:alvo:conta-1',
+      resultado: 'resultado-fora-do-vocabulario',
+      frase: FRASES_GERAIS[0]!,
+    },
     { categoria: 'veredito', destino: 'hex:alvo:conta-2', resultado, frase: FRASES_WEBHOOK[0]! },
     { categoria: 'veredito', destino: 'hex:alvo:conta-3', resultado, frase: FRASES_WEBHOOK[1]! },
     comDecisao('hex:alvo:conta-4', FRASES_WEBHOOK[2]!),
@@ -95,7 +134,13 @@ function paraIntento(r: Rascunho, vocabulario: Vocabulario, indice: number): Int
 
   if (r.categoria === 'marco') {
     const marcoTipo = escolher(vocabulario.nucleo.marcoTipo, 'aprovado', r.banco);
-    return { categoria: 'marco', marcoTipo, alvo, frase: r.comDecisoes ? frase : undefined, comContagem: r.banco % 5 === 0 };
+    return {
+      categoria: 'marco',
+      marcoTipo,
+      alvo,
+      frase: r.comDecisoes ? frase : undefined,
+      comContagem: r.banco % 5 === 0,
+    };
   }
   if (r.categoria === 'veredito') {
     const resultadoBase = escolher(vocabulario.nucleo.resultado, 'ok', r.banco);
@@ -114,7 +159,8 @@ function dadosDoIntento(intento: Intento): Record<string, unknown> {
   if (intento.categoria === 'marco') {
     const dados: Record<string, unknown> = { marcoTipo: intento.marcoTipo, alvo: intento.alvo };
     if (intento.comContagem) dados.contagem = { campo: 'itens processados', valor: 1 };
-    if (!isNil(intento.frase)) dados.decisoes = [{ item: 'item-1', acao: 'seguir', texto: intento.frase }];
+    if (!isNil(intento.frase))
+      dados.decisoes = [{ item: 'item-1', acao: 'seguir', texto: intento.frase }];
     return dados;
   }
   if (intento.categoria === 'veredito') {

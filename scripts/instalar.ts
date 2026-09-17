@@ -23,7 +23,9 @@ import {
 const raizDoRepo = path.resolve(import.meta.dirname, '..');
 
 function lerVersaoDoPackageJson(): string {
-  const pkg = JSON.parse(fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8')) as { version: string };
+  const pkg = JSON.parse(fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8')) as {
+    version: string;
+  };
   return pkg.version;
 }
 
@@ -41,7 +43,10 @@ function commitAtual(): string | null {
 
 function workingTreeSuja(): boolean {
   try {
-    return execFileSync('git', ['status', '--porcelain'], { cwd: raizDoRepo, encoding: 'utf8' }).trim().length > 0;
+    return (
+      execFileSync('git', ['status', '--porcelain'], { cwd: raizDoRepo, encoding: 'utf8' }).trim()
+        .length > 0
+    );
   } catch {
     return false;
   }
@@ -80,7 +85,9 @@ async function contarTools(arquivoServidor: string): Promise<number> {
 function registrarMcp(execPath: string, arquivoServidor: string): void {
   const scriptDeTeste = process.env.HEXLOG_REGISTRAR_MCP;
   if (scriptDeTeste) {
-    execFileSync(process.execPath, [scriptDeTeste, execPath, arquivoServidor], { stdio: 'inherit' });
+    execFileSync(process.execPath, [scriptDeTeste, execPath, arquivoServidor], {
+      stdio: 'inherit',
+    });
     return;
   }
   try {
@@ -88,9 +95,13 @@ function registrarMcp(execPath: string, arquivoServidor: string): void {
   } catch {
     // Sem entrada prévia: nada a remover, segue direto pro add.
   }
-  execFileSync('claude', ['mcp', 'add', '--scope', 'user', 'hexlog', '--', execPath, arquivoServidor], {
-    stdio: 'inherit',
-  });
+  execFileSync(
+    'claude',
+    ['mcp', 'add', '--scope', 'user', 'hexlog', '--', execPath, arquivoServidor],
+    {
+      stdio: 'inherit',
+    },
+  );
 }
 
 async function instalar(): Promise<void> {

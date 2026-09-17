@@ -26,7 +26,10 @@ serveStdio(() => {
 
   servidor.registerTool(
     'eco',
-    { description: 'devolve um diagnóstico das deps carregadas', inputSchema: { texto: z.string() } },
+    {
+      description: 'devolve um diagnóstico das deps carregadas',
+      inputSchema: { texto: z.string() },
+    },
     async ({ texto }) => ({
       content: [
         {

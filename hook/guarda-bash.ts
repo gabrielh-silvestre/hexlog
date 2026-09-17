@@ -65,7 +65,11 @@ function tokensComoStrings(tokens: ParseEntry[]): string[] {
   return strings;
 }
 
-function tentarTokenizar(comando: string, home: string, env: NodeJS.ProcessEnv): ParseEntry[] | undefined {
+function tentarTokenizar(
+  comando: string,
+  home: string,
+  env: NodeJS.ProcessEnv,
+): ParseEntry[] | undefined {
   try {
     return shellQuoteParse(comando, { HOME: home, XDG_DATA_HOME: env.XDG_DATA_HOME ?? '' });
   } catch {
@@ -74,7 +78,12 @@ function tentarTokenizar(comando: string, home: string, env: NodeJS.ProcessEnv):
 }
 
 /** Um token isolado alcança `D` (por igualdade, prefixo ou glob compatível)? */
-function tokenAlcancaDiretorio(tokenBruto: string, cwd: string, dirDados: string, home: string): boolean {
+function tokenAlcancaDiretorio(
+  tokenBruto: string,
+  cwd: string,
+  dirDados: string,
+  home: string,
+): boolean {
   const token = expandirTil(tokenBruto, home);
   if (token.includes(dirDados)) return true;
 
@@ -87,7 +96,11 @@ function tokenAlcancaDiretorio(tokenBruto: string, cwd: string, dirDados: string
     const segmentos = caminho.split(sep);
     const indiceGlob = primeiroIndiceComGlob(segmentos);
     const prefixo = indiceGlob === -1 ? caminho : segmentos.slice(0, indiceGlob).join(sep);
-    return prefixo === dirDados || dirDados.startsWith(prefixo + sep) || prefixo.startsWith(dirDados + sep);
+    return (
+      prefixo === dirDados ||
+      dirDados.startsWith(prefixo + sep) ||
+      prefixo.startsWith(dirDados + sep)
+    );
   }
 
   if (REGEX_CARACTERES_GLOB.test(token)) {

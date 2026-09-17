@@ -52,13 +52,17 @@ function prepararNucleoEUmSchema(): void {
 }
 
 function lerManifesto(processo: string): Manifesto {
-  return JSON.parse(fs.readFileSync(path.join(dir, PROJETO, processo, 'processo.json'), 'utf8')) as Manifesto;
+  return JSON.parse(
+    fs.readFileSync(path.join(dir, PROJETO, processo, 'processo.json'), 'utf8'),
+  ) as Manifesto;
 }
 
 describe('registrarTipo (S1)', () => {
   test('grava schemas/<nome>.json com nome, schema, hash e registradoEm', () => {
     const resultado = registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
-    const gravado = JSON.parse(fs.readFileSync(caminho(dir, PROJETO, 'schemas', 'decisao.json'), 'utf8'));
+    const gravado = JSON.parse(
+      fs.readFileSync(caminho(dir, PROJETO, 'schemas', 'decisao.json'), 'utf8'),
+    );
     expect(gravado).toEqual({
       nome: 'decisao',
       schema: SCHEMA_VALIDO,
@@ -115,10 +119,13 @@ describe('registrarTipo — SCHEMA_INVALIDO sem gravar arquivo (S7)', () => {
 });
 
 describe('criarProcesso / registrarGate — nomes reservados (S8)', () => {
-  test.each(PROCESSOS_RESERVADOS)('criarProcesso com processo="%s" → NOME_RESERVADO', (processo) => {
-    const erro = capturarErro(() => criarProcesso(dir, PROJETO, processo, () => new Date()));
-    expect(erro.codigo).toBe('NOME_RESERVADO');
-  });
+  test.each(PROCESSOS_RESERVADOS)(
+    'criarProcesso com processo="%s" → NOME_RESERVADO',
+    (processo) => {
+      const erro = capturarErro(() => criarProcesso(dir, PROJETO, processo, () => new Date()));
+      expect(erro.codigo).toBe('NOME_RESERVADO');
+    },
+  );
 
   test('registrarGate com nome de gate embutido (sem-orfaos) → NOME_RESERVADO', () => {
     const erro = capturarErro(() => registrarGate(dir, PROJETO, 'sem-orfaos', 'critério qualquer'));
@@ -133,7 +140,9 @@ describe('criarProcesso / carregarProcesso — hashes por parte (S4)', () => {
     const manifesto = lerManifesto('p1');
 
     expect(manifesto.hashes.schemas).toBe(sha256hex(canonicalize(manifesto.fixado.tipos) ?? ''));
-    expect(manifesto.hashes.vocabulario).toBe(sha256hex(canonicalize(manifesto.fixado.vocabulario) ?? ''));
+    expect(manifesto.hashes.vocabulario).toBe(
+      sha256hex(canonicalize(manifesto.fixado.vocabulario) ?? ''),
+    );
     expect(manifesto.hashes.gates).toBe(sha256hex(canonicalize(manifesto.fixado.gates) ?? ''));
     expect(resultado.hashes).toEqual(manifesto.hashes);
   });
@@ -219,12 +228,24 @@ describe('vocabulário', () => {
   });
 
   test('dono "nucleo" vira fixado.vocabulario.nucleo; demais donos viram porDono', () => {
-    registrarVocabulario(dir, PROJETO, 'nucleo', { marcoTipo: ['revisao'], resultado: [], acao: [] });
-    registrarVocabulario(dir, PROJETO, 'squad-x', { marcoTipo: ['extra'], resultado: [], acao: [] });
+    registrarVocabulario(dir, PROJETO, 'nucleo', {
+      marcoTipo: ['revisao'],
+      resultado: [],
+      acao: [],
+    });
+    registrarVocabulario(dir, PROJETO, 'squad-x', {
+      marcoTipo: ['extra'],
+      resultado: [],
+      acao: [],
+    });
     criarProcesso(dir, PROJETO, 'p1', () => new Date());
     const manifesto = lerManifesto('p1');
 
-    expect(manifesto.fixado.vocabulario.nucleo).toEqual({ marcoTipo: ['revisao'], resultado: [], acao: [] });
+    expect(manifesto.fixado.vocabulario.nucleo).toEqual({
+      marcoTipo: ['revisao'],
+      resultado: [],
+      acao: [],
+    });
     expect(manifesto.fixado.vocabulario.porDono).toEqual({
       'squad-x': { marcoTipo: ['extra'], resultado: [], acao: [] },
     });

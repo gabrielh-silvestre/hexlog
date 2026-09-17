@@ -99,9 +99,13 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
 
 describe('probe no Node ESM real (sub-passo 6, filho-probe)', () => {
   test('spawn de filho-probe.ts imprime só JSON no stdout, sem warnings no stderr', () => {
-    const resultado = spawnSync(process.execPath, [path.join(raizDoRepo, 'test/fixtures/filho-probe.ts')], {
-      encoding: 'utf8',
-    });
+    const resultado = spawnSync(
+      process.execPath,
+      [path.join(raizDoRepo, 'test/fixtures/filho-probe.ts')],
+      {
+        encoding: 'utf8',
+      },
+    );
 
     expect(resultado.status).toBe(0);
     expect(resultado.stderr).toBe('');
@@ -141,24 +145,24 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
     }
   });
 
-  test(
-    'servidor-probe.mjs fala só JSON-RPC 2.0 no stdout, sem Dynamic require no stderr',
-    async () => {
-      const { linhas, stderr } = await falarComServidor(path.join(outdir, 'servidor-probe.mjs'));
+  test('servidor-probe.mjs fala só JSON-RPC 2.0 no stdout, sem Dynamic require no stderr', async () => {
+    const { linhas, stderr } = await falarComServidor(path.join(outdir, 'servidor-probe.mjs'));
 
-      expect(linhas.length).toBe(3);
-      for (const linha of linhas) {
-        expect(JSON.parse(linha).jsonrpc).toBe('2.0');
-      }
-      expect(stderr).not.toContain('Dynamic require');
-    },
-    15000,
-  );
+    expect(linhas.length).toBe(3);
+    for (const linha of linhas) {
+      expect(JSON.parse(linha).jsonrpc).toBe('2.0');
+    }
+    expect(stderr).not.toContain('Dynamic require');
+  }, 15000);
 
   test('hook-probe.mjs sai com o código esperado conforme o comando recebido', () => {
-    const reconhecido = spawnSync(process.execPath, [path.join(outdir, 'hook-probe.mjs'), 'echo hi'], {
-      encoding: 'utf8',
-    });
+    const reconhecido = spawnSync(
+      process.execPath,
+      [path.join(outdir, 'hook-probe.mjs'), 'echo hi'],
+      {
+        encoding: 'utf8',
+      },
+    );
     expect(reconhecido.status).toBe(0);
 
     const semComando = spawnSync(process.execPath, [path.join(outdir, 'hook-probe.mjs'), ''], {
@@ -169,7 +173,9 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
 });
 
 /** Conversa em JSON-RPC 2.0 bruto (initialize, tools/list, tools/call) por stdin/stdout. */
-async function falarComServidor(caminhoDoBundle: string): Promise<{ linhas: string[]; stderr: string }> {
+async function falarComServidor(
+  caminhoDoBundle: string,
+): Promise<{ linhas: string[]; stderr: string }> {
   const filho = spawn(process.execPath, [caminhoDoBundle], { stdio: ['pipe', 'pipe', 'pipe'] });
   const saida = { texto: '' };
   let stderrTexto = '';
@@ -195,7 +201,11 @@ async function falarComServidor(caminhoDoBundle: string): Promise<{ linhas: stri
     jsonrpc: '2.0',
     id: 1,
     method: 'initialize',
-    params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'probe', version: '0.0.0' } },
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'probe', version: '0.0.0' },
+    },
   });
   await aguardarLinhas(1);
 
@@ -203,7 +213,12 @@ async function falarComServidor(caminhoDoBundle: string): Promise<{ linhas: stri
   enviar({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   await aguardarLinhas(2);
 
-  enviar({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'eco', arguments: { texto: 'oi' } } });
+  enviar({
+    jsonrpc: '2.0',
+    id: 3,
+    method: 'tools/call',
+    params: { name: 'eco', arguments: { texto: 'oi' } },
+  });
   await aguardarLinhas(3);
 
   filho.kill();

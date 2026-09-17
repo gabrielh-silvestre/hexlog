@@ -9,7 +9,11 @@ import { eloValido, prevHashEsperado, proximoSeq } from './cadeia.ts';
 import { ErroHexlog } from './erros.ts';
 import type { Linha } from './eventos.ts';
 
-export type Registro = { nivel: 'debug' | 'info' | 'aviso' | 'erro'; evento: string; [campo: string]: unknown };
+export type Registro = {
+  nivel: 'debug' | 'info' | 'aviso' | 'erro';
+  evento: string;
+  [campo: string]: unknown;
+};
 export type Logger = (registro: Registro) => void;
 
 const LOCK_TIMEOUT_MS = 5_000;
@@ -18,7 +22,13 @@ const LOCK_ORFAO_MS = 10_000;
 
 const ARQUIVO_TOKEN = 'owner';
 
-type Base = { seq: number; timestamp: string; prevHash: string; uuid: string; ultimoElo: Linha | null };
+type Base = {
+  seq: number;
+  timestamp: string;
+  prevHash: string;
+  uuid: string;
+  ultimoElo: Linha | null;
+};
 
 /** Leitura sem lock. Arquivo inexistente conta como log vazio. */
 export function lerTexto(arquivo: string): string {
@@ -41,7 +51,12 @@ export async function anexar(
   montar: (base: Base) => Linha,
   opcoes: { log: Logger; timeoutMs?: number; orfaoMs?: number; relogio?: () => Date },
 ): Promise<Linha> {
-  const { log, timeoutMs = LOCK_TIMEOUT_MS, orfaoMs = LOCK_ORFAO_MS, relogio = () => new Date() } = opcoes;
+  const {
+    log,
+    timeoutMs = LOCK_TIMEOUT_MS,
+    orfaoMs = LOCK_ORFAO_MS,
+    relogio = () => new Date(),
+  } = opcoes;
   const dirLock = `${arquivo}.lock`;
   const token = await adquirirLock(dirLock, { log, timeoutMs, orfaoMs });
 
@@ -103,7 +118,10 @@ function escreverLinha(arquivo: string, endsWithNewline: boolean, linha: Linha):
 }
 // ponytail: reread O(n) por append; medido ~18 ms a 10k linhas com fsync; upgrade: sidecar de tail/índice.
 
-async function adquirirLock(dirLock: string, opcoes: { log: Logger; timeoutMs: number; orfaoMs: number }): Promise<string> {
+async function adquirirLock(
+  dirLock: string,
+  opcoes: { log: Logger; timeoutMs: number; orfaoMs: number },
+): Promise<string> {
   const inicio = Date.now();
   let avisouEspera = false;
 

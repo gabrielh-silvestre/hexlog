@@ -101,7 +101,10 @@ async function verificarArtefatoPreparado(args: {
     throw new ErroHexlog('INTERNO', `servidor preparado falhou ao iniciar: ${mensagem}`);
   }
   if (quantidadeTools !== QUANTIDADE_TOOLS) {
-    throw new ErroHexlog('INTERNO', `servidor preparado listou ${quantidadeTools} tools, esperado ${QUANTIDADE_TOOLS}`);
+    throw new ErroHexlog(
+      'INTERNO',
+      `servidor preparado listou ${quantidadeTools} tools, esperado ${QUANTIDADE_TOOLS}`,
+    );
   }
 }
 
@@ -122,7 +125,10 @@ function resolverConcorrencia(
   if (instaladosAgora.servidor === shaBuild.servidor && instaladosAgora.hook === shaBuild.hook) {
     return { acao: 'nada', avisoExtra: null };
   }
-  throw new ErroHexlog('INTERNO', `outra instalação trocou ${versao} ao mesmo tempo; rode o instalador de novo`);
+  throw new ErroHexlog(
+    'INTERNO',
+    `outra instalação trocou ${versao} ao mesmo tempo; rode o instalador de novo`,
+  );
 }
 
 /** Troca atômica de `tmp` para `dirVersao` (§4.14), cobrindo instalação nova, reinstalação e concorrência. */
@@ -191,7 +197,13 @@ export async function instalarArtefato(args: {
     return {
       acao: 'nada',
       dirVersao,
-      manifesto: manifestoAntigo ?? { versao, sha256: shaBuild, construidoEm: agora().toISOString(), commit, sujo },
+      manifesto: manifestoAntigo ?? {
+        versao,
+        sha256: shaBuild,
+        construidoEm: agora().toISOString(),
+        commit,
+        sujo,
+      },
       avisos: [],
     };
   }
@@ -200,28 +212,44 @@ export async function instalarArtefato(args: {
   // alterado por fora (não é uma reinstalação normal com bundles novos) — repara e avisa.
   const alteracaoDetectada =
     !isNil(manifestoAntigo) &&
-    (instalados.servidor !== manifestoAntigo.sha256.servidor || instalados.hook !== manifestoAntigo.sha256.hook);
+    (instalados.servidor !== manifestoAntigo.sha256.servidor ||
+      instalados.hook !== manifestoAntigo.sha256.hook);
   const avisos: string[] = [];
   if (alteracaoDetectada) {
     avisos.push('artefato instalado alterado; reparando');
     log('artefato instalado alterado; reparando');
   }
 
-  const manifesto: Manifesto = { versao, sha256: shaBuild, construidoEm: agora().toISOString(), commit, sujo };
+  const manifesto: Manifesto = {
+    versao,
+    sha256: shaBuild,
+    construidoEm: agora().toISOString(),
+    commit,
+    sujo,
+  };
   const tmp = path.join(path.dirname(dirVersao), `.${versao}.tmp-${process.pid}`);
   rmSync(tmp, { recursive: true, force: true });
   mkdirSync(tmp, { recursive: true });
   try {
     writeFileSync(path.join(tmp, 'servidor.mjs'), bundles.servidor, { mode: 0o644 });
     writeFileSync(path.join(tmp, 'guarda-bash.mjs'), bundles.hook, { mode: 0o644 });
-    writeFileSync(path.join(tmp, 'manifesto.json'), JSON.stringify(manifesto, null, 2), { mode: 0o644 });
+    writeFileSync(path.join(tmp, 'manifesto.json'), JSON.stringify(manifesto, null, 2), {
+      mode: 0o644,
+    });
     await verificarArtefatoPreparado({ tmp, bundles, executarHook, verificarServidor });
   } catch (erro) {
     rmSync(tmp, { recursive: true, force: true });
     throw erro;
   }
 
-  const { acao, avisoExtra } = trocarArtefato({ dirVersao, tmp, existeAntes, shaBuild, alteracaoDetectada, versao });
+  const { acao, avisoExtra } = trocarArtefato({
+    dirVersao,
+    tmp,
+    existeAntes,
+    shaBuild,
+    alteracaoDetectada,
+    versao,
+  });
   if (!isNil(avisoExtra)) avisos.push(avisoExtra);
 
   const manifestoFinal = acao === 'nada' ? (lerManifesto(dirVersao) ?? manifesto) : manifesto;
@@ -230,7 +258,9 @@ export async function instalarArtefato(args: {
 }
 
 /** Aplica o guard em `settings.json` (backup + troca atômica), só se algo mudou. */
-export function registrarGuard(args: { caminhoSettings: string; esperado: RegrasEsperadas }): { mudou: boolean } {
+export function registrarGuard(args: { caminhoSettings: string; esperado: RegrasEsperadas }): {
+  mudou: boolean;
+} {
   const { caminhoSettings, esperado } = args;
   if (!existsSync(caminhoSettings)) {
     throw new ErroHexlog('INTERNO', 'instale o harness antes de instalar o hexlog');
@@ -247,7 +277,10 @@ export function registrarGuard(args: { caminhoSettings: string; esperado: Regras
 }
 
 /** `~/.claude.json` ainda não aponta `mcpServers.hexlog` para o servidor esperado. */
-export function precisaRegistrarMcp(textoClaudeJson: string | null, esperado: RegrasEsperadas): boolean {
+export function precisaRegistrarMcp(
+  textoClaudeJson: string | null,
+  esperado: RegrasEsperadas,
+): boolean {
   return !mcpRegistrado(textoClaudeJson, esperado);
 }
 
@@ -272,7 +305,17 @@ export function verificarInstalacao(args: {
   executarHook: (exec: string, arquivo: string, stdin: string) => { status: number | null };
   headAtual: string | null;
 }): { faltando: ItemFaltando[]; avisos: string[]; exit: 0 | 1 } {
-  const { home, versao, execPath, D, bundlesAtuais, textoSettings, textoClaudeJson, executarHook, headAtual } = args;
+  const {
+    home,
+    versao,
+    execPath,
+    D,
+    bundlesAtuais,
+    textoSettings,
+    textoClaudeJson,
+    executarHook,
+    headAtual,
+  } = args;
   // Sem settings, tudo dá "faltando" pelas checagens normais de `verificarGuard` — não precisa de um caso especial.
   const textoParaVerificar = textoSettings ?? '{}';
   const versaoInstalada = versaoDoHookRegistrado(parseJsonc(textoParaVerificar), home) ?? versao;
@@ -282,7 +325,9 @@ export function verificarInstalacao(args: {
   const bytesInstalados = isNil(manifesto)
     ? undefined
     : {
-        servidor: existsSync(esperado.servidorArquivo) ? readFileSync(esperado.servidorArquivo) : null,
+        servidor: existsSync(esperado.servidorArquivo)
+          ? readFileSync(esperado.servidorArquivo)
+          : null,
         hook: existsSync(esperado.hookArquivo) ? readFileSync(esperado.hookArquivo) : null,
         manifesto,
       };
@@ -297,9 +342,14 @@ export function verificarInstalacao(args: {
   });
 
   const avisos: string[] = [];
-  if (!isNil(manifesto) && !isNil(bundlesAtuais) && !resultado.faltando.includes('artefato-alterado')) {
+  if (
+    !isNil(manifesto) &&
+    !isNil(bundlesAtuais) &&
+    !resultado.faltando.includes('artefato-alterado')
+  ) {
     const shaBuild = { servidor: sha256(bundlesAtuais.servidor), hook: sha256(bundlesAtuais.hook) };
-    const desatualizado = shaBuild.servidor !== manifesto.sha256.servidor || shaBuild.hook !== manifesto.sha256.hook;
+    const desatualizado =
+      shaBuild.servidor !== manifesto.sha256.servidor || shaBuild.hook !== manifesto.sha256.hook;
     if (desatualizado) {
       const sujoTexto = manifesto.sujo ? ' (sujo)' : '';
       const headTexto = headAtual ?? 'HEAD desconhecido';

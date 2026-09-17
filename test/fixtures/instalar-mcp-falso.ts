@@ -12,5 +12,8 @@ if (execPath === undefined || arquivoServidor === undefined) {
 
 const caminho = path.join(os.homedir(), '.claude.json');
 const dados = fs.existsSync(caminho) ? JSON.parse(fs.readFileSync(caminho, 'utf8')) : {};
-dados.mcpServers = { ...dados.mcpServers, hexlog: { command: execPath, args: [arquivoServidor], env: {} } };
+dados.mcpServers = {
+  ...dados.mcpServers,
+  hexlog: { command: execPath, args: [arquivoServidor], env: {} },
+};
 fs.writeFileSync(caminho, JSON.stringify(dados, null, 2));

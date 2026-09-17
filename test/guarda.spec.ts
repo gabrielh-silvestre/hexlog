@@ -87,7 +87,9 @@ function montarSettingsTemplate(home: string): string {
 // servidor stdio (confirmada em `.mcpServers.gitnexus`: `command`+`args`+`env`).
 function montarClaudeJsonCompleto(esperado: RegrasEsperadas): string {
   return JSON.stringify({
-    mcpServers: { hexlog: { command: esperado.servidorExec, args: [esperado.servidorArquivo], env: {} } },
+    mcpServers: {
+      hexlog: { command: esperado.servidorExec, args: [esperado.servidorArquivo], env: {} },
+    },
   });
 }
 
@@ -101,7 +103,11 @@ function montarSettingsCompleto(esperadoParaDeny: RegrasEsperadas, comandoHook: 
         esperadoParaDeny.denyEditLib,
       ],
     },
-    hooks: { PreToolUse: [{ matcher: '^Bash$', hooks: [{ type: 'command', command: comandoHook, timeout: 10 }] }] },
+    hooks: {
+      PreToolUse: [
+        { matcher: '^Bash$', hooks: [{ type: 'command', command: comandoHook, timeout: 10 }] },
+      ],
+    },
   });
 }
 
@@ -111,7 +117,11 @@ function existeSempre(): boolean {
 
 // Simula a semântica do hook real sem executar processo — usado nos testes
 // puros de I5/I6, onde só interessa a lógica de `verificarGuard`.
-function executarHookSimulado(_exec: string, _arquivo: string, stdin: string): { status: number | null } {
+function executarHookSimulado(
+  _exec: string,
+  _arquivo: string,
+  stdin: string,
+): { status: number | null } {
   const { tool_input } = JSON.parse(stdin) as { tool_input: { command: string } };
   return { status: tool_input.command.includes('/sonda') ? 2 : 0 };
 }
@@ -146,7 +156,9 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
     expect(dados.permissions.deny).toEqual(
       expect.arrayContaining(['mcp__gitnexus__cypher', 'mcp__gitnexus__rename']),
     );
-    const entradasBash = dados.hooks.PreToolUse.filter((entrada: { matcher: string }) => entrada.matcher === '^Bash$');
+    const entradasBash = dados.hooks.PreToolUse.filter(
+      (entrada: { matcher: string }) => entrada.matcher === '^Bash$',
+    );
     const comandos = entradasBash.flatMap((entrada: { hooks: { command: string }[] }) =>
       entrada.hooks.map((h) => h.command),
     );
@@ -160,8 +172,11 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
     const comVersaoAntiga = aplicarGuard(montarSettingsTemplate(home), esperadoAntigo);
     const resultado = aplicarGuard(comVersaoAntiga, esperado);
     const dados = parseJsonc(resultado);
-    const entradasDoHexlog = dados.hooks.PreToolUse.filter((entrada: { hooks: { command: string }[] }) =>
-      entrada.hooks.some((h) => typeof h.command === 'string' && h.command.includes('guarda-bash.mjs')),
+    const entradasDoHexlog = dados.hooks.PreToolUse.filter(
+      (entrada: { hooks: { command: string }[] }) =>
+        entrada.hooks.some(
+          (h) => typeof h.command === 'string' && h.command.includes('guarda-bash.mjs'),
+        ),
     );
     expect(entradasDoHexlog).toHaveLength(1);
     expect(entradasDoHexlog[0].hooks[0].command).toBe(esperado.hookCommand);
@@ -208,7 +223,9 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
     const dados = parseJsonc(completo);
     dados.hooks.PreToolUse = dados.hooks.PreToolUse.filter(
       (entrada: { hooks: { command: string }[] }) =>
-        !entrada.hooks.some((h) => typeof h.command === 'string' && h.command.includes('guarda-bash.mjs')),
+        !entrada.hooks.some(
+          (h) => typeof h.command === 'string' && h.command.includes('guarda-bash.mjs'),
+        ),
     );
     const verificacao = verificarGuard({
       textoSettings: JSON.stringify(dados),
@@ -234,7 +251,12 @@ describe('I6: as 4 regras de deny exatas (QN4)', () => {
   });
 
   test('nenhuma regra usa barra única (o prefixo é sempre "//")', () => {
-    for (const regra of [esperado.denyReadDir, esperado.denyRead, esperado.denyEdit, esperado.denyEditLib]) {
+    for (const regra of [
+      esperado.denyReadDir,
+      esperado.denyRead,
+      esperado.denyEdit,
+      esperado.denyEditLib,
+    ]) {
       expect(regra).toMatch(/^(Read|Edit)\(\/\//);
     }
   });
@@ -247,7 +269,9 @@ describe('I6: as 4 regras de deny exatas (QN4)', () => {
   test('sem a quarta regra, verificarGuard aponta deny-edit-lib', () => {
     const completo = aplicarGuard(montarSettingsTemplate(home), esperado);
     const dados = parseJsonc(completo);
-    dados.permissions.deny = dados.permissions.deny.filter((r: string) => r !== esperado.denyEditLib);
+    dados.permissions.deny = dados.permissions.deny.filter(
+      (r: string) => r !== esperado.denyEditLib,
+    );
     const verificacao = verificarGuard({
       textoSettings: JSON.stringify(dados),
       textoClaudeJson: montarClaudeJsonCompleto(esperado),
@@ -294,7 +318,10 @@ describe('I7: verificação com execução real do hook instalado', () => {
   const variantes: { versao: string; conteudo: string }[] = [
     { versao: '0.1.0-erro', conteudo: 'isto não é ( javascript válido {{{\n' },
     { versao: '0.1.0-sempre-zero', conteudo: 'process.exitCode = 0;\n' },
-    { versao: '0.1.0-sempre-dois', conteudo: "process.stderr.write('nega tudo'); process.exitCode = 2;\n" },
+    {
+      versao: '0.1.0-sempre-dois',
+      conteudo: "process.stderr.write('nega tudo'); process.exitCode = 2;\n",
+    },
   ];
   const esperadosVariantes = new Map<string, RegrasEsperadas>();
   for (const variante of variantes) {
@@ -330,7 +357,11 @@ describe('I7: verificação com execução real do hook instalado', () => {
   const casosDeFuncional: { nome: string; versaoVariante: string; item: ItemFaltando }[] = [
     { nome: 'cópia com erro de sintaxe', versaoVariante: '0.1.0-erro', item: 'hook-nao-nega' },
     { nome: 'script que sempre sai 0', versaoVariante: '0.1.0-sempre-zero', item: 'hook-nao-nega' },
-    { nome: 'script que sempre sai 2', versaoVariante: '0.1.0-sempre-dois', item: 'hook-nao-permite' },
+    {
+      nome: 'script que sempre sai 2',
+      versaoVariante: '0.1.0-sempre-dois',
+      item: 'hook-nao-permite',
+    },
   ];
   for (const caso of casosDeFuncional) {
     test(`checagem funcional real: ${caso.nome} → ${caso.item}`, () => {
@@ -348,7 +379,12 @@ describe('I7: verificação com execução real do hook instalado', () => {
   }
 
   test('hook-arquivo quando o arquivo registrado não existe', () => {
-    const esperadoNaoInstalado = regrasEsperadas(D, homeComEspaco, process.execPath, 'versao-nao-instalada');
+    const esperadoNaoInstalado = regrasEsperadas(
+      D,
+      homeComEspaco,
+      process.execPath,
+      'versao-nao-instalada',
+    );
     const settings = montarSettingsCompleto(esperado, esperadoNaoInstalado.hookCommand);
     const verificacao = verificarGuard({
       textoSettings: settings,
@@ -391,7 +427,10 @@ describe('I7: verificação com execução real do hook instalado', () => {
   test('artefato-alterado quando o hash do hook instalado diverge do manifesto', () => {
     const settings = montarSettingsCompleto(esperado, esperado.hookCommand);
     const manifestoDivergente = {
-      sha256: { servidor: sha256(Buffer.from('servidor esperado')), hook: sha256(Buffer.from('bytes diferentes')) },
+      sha256: {
+        servidor: sha256(Buffer.from('servidor esperado')),
+        hook: sha256(Buffer.from('bytes diferentes')),
+      },
     };
     const verificacao = verificarGuard({
       textoSettings: settings,
@@ -407,7 +446,9 @@ describe('I7: verificação com execução real do hook instalado', () => {
   test('mcp quando o claude.json é nulo ou não aponta para o servidor instalado', () => {
     const settings = montarSettingsCompleto(esperado, esperado.hookCommand);
     const claudeJsonErrado = JSON.stringify({
-      mcpServers: { hexlog: { command: esperado.servidorExec, args: ['/caminho/errado/servidor.mjs'] } },
+      mcpServers: {
+        hexlog: { command: esperado.servidorExec, args: ['/caminho/errado/servidor.mjs'] },
+      },
     });
     for (const textoClaudeJson of [null, claudeJsonErrado]) {
       const verificacao = verificarGuard({
@@ -429,10 +470,14 @@ let outdirBundlesReais: string;
 
 beforeAll(() => {
   outdirBundlesReais = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-instalacao-build-'));
-  const build = spawnSync(process.execPath, [path.join(raizDoRepo, 'scripts/build.ts'), '--outdir', outdirBundlesReais], {
-    encoding: 'utf8',
-    cwd: raizDoRepo,
-  });
+  const build = spawnSync(
+    process.execPath,
+    [path.join(raizDoRepo, 'scripts/build.ts'), '--outdir', outdirBundlesReais],
+    {
+      encoding: 'utf8',
+      cwd: raizDoRepo,
+    },
+  );
   if (build.status !== 0) {
     throw new Error(`build para B2/B3 falhou: ${build.stderr}`);
   }
@@ -447,8 +492,10 @@ afterAll(() => {
 });
 
 // Roda o hook preparado (real) exatamente como `scripts/instalar.ts` injetaria.
-const executarHookReaisDeInstalacao = (arquivoHook: string, stdin: string): { status: number | null } =>
-  executarHookReal(process.execPath, arquivoHook, stdin);
+const executarHookReaisDeInstalacao = (
+  arquivoHook: string,
+  stdin: string,
+): { status: number | null } => executarHookReal(process.execPath, arquivoHook, stdin);
 
 /** Sobe o servidor preparado num HOME/XDG_DATA_HOME descartáveis e conta as tools anunciadas (uso real, B2(a)). */
 async function contarToolsReal(arquivoServidor: string): Promise<number> {
@@ -545,7 +592,12 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
       const textoFinal = fs.readFileSync(caminhoSettings, 'utf8');
       const dados = parseJsonc(textoFinal);
       expect(dados.permissions.deny).toEqual(
-        expect.arrayContaining([esperado.denyReadDir, esperado.denyRead, esperado.denyEdit, esperado.denyEditLib]),
+        expect.arrayContaining([
+          esperado.denyReadDir,
+          esperado.denyRead,
+          esperado.denyEdit,
+          esperado.denyEditLib,
+        ]),
       );
       expect(textoFinal).toContain(esperado.hookCommand);
       expect(textoFinal).not.toContain('personal/hexlog');
@@ -581,7 +633,12 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
       const settingsAntes = fs.readFileSync(caminhoSettings, 'utf8');
 
       const segunda = await instalarArtefato(args);
-      expect(segunda).toEqual({ acao: 'nada', dirVersao: primeira.dirVersao, manifesto: primeira.manifesto, avisos: [] });
+      expect(segunda).toEqual({
+        acao: 'nada',
+        dirVersao: primeira.dirVersao,
+        manifesto: primeira.manifesto,
+        avisos: [],
+      });
       expect(fs.statSync(primeira.dirVersao).mtimeMs).toBe(mtimeAntes);
       expect(fs.readFileSync(caminhoSettings, 'utf8')).toBe(settingsAntes);
     } finally {
@@ -613,12 +670,21 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
       const caminhoSettings = path.join(home, '.claude', 'settings.json');
       fs.mkdirSync(path.dirname(caminhoSettings), { recursive: true });
       fs.writeFileSync(caminhoSettings, montarSettingsTemplate(home));
-      registrarGuard({ caminhoSettings, esperado: regrasEsperadas(D, home, process.execPath, '0.1.0') });
-      registrarGuard({ caminhoSettings, esperado: regrasEsperadas(D, home, process.execPath, '0.2.0') });
+      registrarGuard({
+        caminhoSettings,
+        esperado: regrasEsperadas(D, home, process.execPath, '0.1.0'),
+      });
+      registrarGuard({
+        caminhoSettings,
+        esperado: regrasEsperadas(D, home, process.execPath, '0.2.0'),
+      });
 
       const dados = parseJsonc(fs.readFileSync(caminhoSettings, 'utf8'));
-      const entradasDoHexlog = dados.hooks.PreToolUse.filter((entrada: { hooks: { command: string }[] }) =>
-        entrada.hooks.some((h) => typeof h.command === 'string' && h.command.includes('guarda-bash.mjs')),
+      const entradasDoHexlog = dados.hooks.PreToolUse.filter(
+        (entrada: { hooks: { command: string }[] }) =>
+          entrada.hooks.some(
+            (h) => typeof h.command === 'string' && h.command.includes('guarda-bash.mjs'),
+          ),
       );
       expect(entradasDoHexlog).toHaveLength(1);
       expect(entradasDoHexlog[0].hooks[0].command).toContain('0.2.0');
@@ -642,14 +708,21 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
         log: () => {},
       });
       await instalarArtefato(argsPara(bundlesReais));
-      const hookDiferente = Buffer.concat([bundlesReais.hook, Buffer.from('\n// bytes diferentes\n')]);
-      const resultado = await instalarArtefato(argsPara({ servidor: bundlesReais.servidor, hook: hookDiferente }));
+      const hookDiferente = Buffer.concat([
+        bundlesReais.hook,
+        Buffer.from('\n// bytes diferentes\n'),
+      ]);
+      const resultado = await instalarArtefato(
+        argsPara({ servidor: bundlesReais.servidor, hook: hookDiferente }),
+      );
 
       expect(resultado.acao).toBe('reinstalado');
       expect(resultado.avisos).toEqual(
         expect.arrayContaining([expect.stringContaining('reinstalada com conteúdo diferente')]),
       );
-      expect(fs.readFileSync(path.join(resultado.dirVersao, 'guarda-bash.mjs'))).toEqual(hookDiferente);
+      expect(fs.readFileSync(path.join(resultado.dirVersao, 'guarda-bash.mjs'))).toEqual(
+        hookDiferente,
+      );
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
@@ -716,7 +789,10 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
       await expect(
         instalarArtefato({
           ...argsBase,
-          bundles: { servidor: bundlesReais.servidor, hook: Buffer.concat([bundlesReais.hook, Buffer.from('\n// x\n')]) },
+          bundles: {
+            servidor: bundlesReais.servidor,
+            hook: Buffer.concat([bundlesReais.hook, Buffer.from('\n// x\n')]),
+          },
           executarHook: () => ({ status: 0 }),
           verificarServidor: verificarServidorFalso,
         }),
@@ -744,11 +820,16 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
       };
       const primeira = await instalarArtefato(args);
       const arquivoHookInstalado = path.join(primeira.dirVersao, 'guarda-bash.mjs');
-      fs.writeFileSync(arquivoHookInstalado, Buffer.concat([bundlesReais.hook, Buffer.from('\n// alterado por fora\n')]));
+      fs.writeFileSync(
+        arquivoHookInstalado,
+        Buffer.concat([bundlesReais.hook, Buffer.from('\n// alterado por fora\n')]),
+      );
 
       const segunda = await instalarArtefato(args);
       expect(segunda.acao).toBe('reparado');
-      expect(segunda.avisos).toEqual(expect.arrayContaining([expect.stringContaining('artefato instalado alterado')]));
+      expect(segunda.avisos).toEqual(
+        expect.arrayContaining([expect.stringContaining('artefato instalado alterado')]),
+      );
       expect(fs.readFileSync(arquivoHookInstalado)).toEqual(bundlesReais.hook);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
@@ -815,7 +896,11 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
 
       expect([r1.status, r2.status]).toEqual([0, 0]);
       const dirVersao = dirVersaoDe(home, '0.1.0');
-      expect(fs.readdirSync(dirVersao).sort()).toEqual(['guarda-bash.mjs', 'manifesto.json', 'servidor.mjs']);
+      expect(fs.readdirSync(dirVersao).sort()).toEqual([
+        'guarda-bash.mjs',
+        'manifesto.json',
+        'servidor.mjs',
+      ]);
       expect(fs.readFileSync(path.join(dirVersao, 'servidor.mjs'), 'utf8')).toBe('servidor-novo');
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
@@ -828,7 +913,11 @@ describe('B3: instalar.ts --check (processo real)', () => {
   let versao: string;
 
   beforeAll(() => {
-    versao = (JSON.parse(fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8')) as { version: string }).version;
+    versao = (
+      JSON.parse(fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8')) as {
+        version: string;
+      }
+    ).version;
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-b3-'));
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(home, '.claude', 'settings.json'), montarSettingsTemplate(home));
@@ -843,7 +932,9 @@ describe('B3: instalar.ts --check (processo real)', () => {
       },
     });
     if (instalacao.status !== 0) {
-      throw new Error(`instalação real de baseline (B3) falhou: ${instalacao.stderr}\n${instalacao.stdout}`);
+      throw new Error(
+        `instalação real de baseline (B3) falhou: ${instalacao.stderr}\n${instalacao.stdout}`,
+      );
     }
   }, 30_000);
 
@@ -852,11 +943,15 @@ describe('B3: instalar.ts --check (processo real)', () => {
   });
 
   function rodarCheck(opts: { cwd?: string } = {}): { status: number | null; stdout: string } {
-    const resultado = spawnSync(process.execPath, [path.join(raizDoRepo, 'scripts/instalar.ts'), '--check'], {
-      cwd: opts.cwd ?? raizDoRepo,
-      encoding: 'utf8',
-      env: { ...process.env, HOME: home },
-    });
+    const resultado = spawnSync(
+      process.execPath,
+      [path.join(raizDoRepo, 'scripts/instalar.ts'), '--check'],
+      {
+        cwd: opts.cwd ?? raizDoRepo,
+        encoding: 'utf8',
+        env: { ...process.env, HOME: home },
+      },
+    );
     return { status: resultado.status, stdout: resultado.stdout };
   }
 
@@ -883,7 +978,10 @@ describe('B3: instalar.ts --check (processo real)', () => {
   test('guarda-bash.mjs instalado editado, mas ainda nega/permite: artefato-alterado, exit 1', () => {
     const arquivoHook = path.join(dirVersaoDe(home, versao), 'guarda-bash.mjs');
     const original = fs.readFileSync(arquivoHook);
-    fs.writeFileSync(arquivoHook, Buffer.concat([original, Buffer.from('\n// comentário extra\n')]));
+    fs.writeFileSync(
+      arquivoHook,
+      Buffer.concat([original, Buffer.from('\n// comentário extra\n')]),
+    );
     try {
       const { status, stdout } = rodarCheck();
       expect(status).toBe(1);
@@ -899,7 +997,9 @@ describe('B3: instalar.ts --check (processo real)', () => {
     const dados = parseJsonc(original);
     const D = path.join(home, '.local', 'share', 'hexlog');
     const esperado = regrasEsperadas(D, home, process.execPath, versao);
-    dados.permissions.deny = dados.permissions.deny.filter((r: string) => r !== esperado.denyEditLib);
+    dados.permissions.deny = dados.permissions.deny.filter(
+      (r: string) => r !== esperado.denyEditLib,
+    );
     fs.writeFileSync(caminhoSettings, JSON.stringify(dados));
     try {
       const { status, stdout } = rodarCheck();

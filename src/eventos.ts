@@ -12,7 +12,9 @@ export const Nome = z.string().regex(NOME_RE);
 // §4.3: prefixo do id (sem uuid) × id completo (com uuid v7).
 const UUID_V7_SRC = '[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const ID_RE = new RegExp(`^(${NOME_SRC}):(${NOME_SRC}):(${NOME_SRC})(?::(${UUID_V7_SRC}))?$`);
-export const ID_COMPLETO_RE = new RegExp(`^(${NOME_SRC}):(${NOME_SRC}):(${NOME_SRC}):(${UUID_V7_SRC})$`);
+export const ID_COMPLETO_RE = new RegExp(
+  `^(${NOME_SRC}):(${NOME_SRC}):(${NOME_SRC}):(${UUID_V7_SRC})$`,
+);
 
 export const Hash = z.string().regex(/^[0-9a-f]{64}$/);
 export const Instante = z.iso.datetime();
@@ -22,7 +24,10 @@ export const Texto = z.string().min(1).max(4000);
 const IdCompleto = z.string().regex(ID_COMPLETO_RE);
 
 // Endereço de alvo: só o serviço 'alvo' (§4.3), sem espaço nem ':' no id.
-export const Alvo = z.string().max(200).regex(/^hex:alvo:[^\s:]+$/);
+export const Alvo = z
+  .string()
+  .max(200)
+  .regex(/^hex:alvo:[^\s:]+$/);
 
 /** Decompõe um id de evento em `{projeto, processo, tipo, uuid?}`, ou `null` se não casar §4.3. */
 export function analisarId(
@@ -50,7 +55,10 @@ const DadosMarco = z.strictObject({
   alvo: Alvo,
   contagem: z.strictObject({ campo: Rotulo, valor: z.number() }).optional(),
   prazoExecucao: z.iso.datetime({ offset: true }).optional(),
-  decisoes: z.array(z.strictObject({ item: Rotulo, acao: Rotulo, texto: Texto })).max(100).optional(),
+  decisoes: z
+    .array(z.strictObject({ item: Rotulo, acao: Rotulo, texto: Texto }))
+    .max(100)
+    .optional(),
 });
 
 const DadosVeredito = z.strictObject({
@@ -74,7 +82,9 @@ export const DadosMarcoGate = z.strictObject({
     passou: z.boolean(),
     prova: z.array(z.unknown()).max(50),
     totalItensProva: z.number().int().min(0),
-    avaliadoAte: z.strictObject({ id: z.string(), seq: z.number().int(), timestamp: Instante }).nullable(),
+    avaliadoAte: z
+      .strictObject({ id: z.string(), seq: z.number().int(), timestamp: Instante })
+      .nullable(),
   }),
 });
 
@@ -123,9 +133,11 @@ export function normalizarDados(
   // sempre um objeto simples pós-parse do Zod.
   const tamanho = (canonicalize(normalizado) ?? '').length;
   if (tamanho > TETO_DADOS_CHARS) {
-    throw new ErroHexlog('EVENTO_INVALIDO', `dados excedem ${TETO_DADOS_CHARS} caracteres canônicos`, [
-      { caminho: '/dados', codigo: 'too_big', mensagem: `tamanho canônico ${tamanho}` },
-    ]);
+    throw new ErroHexlog(
+      'EVENTO_INVALIDO',
+      `dados excedem ${TETO_DADOS_CHARS} caracteres canônicos`,
+      [{ caminho: '/dados', codigo: 'too_big', mensagem: `tamanho canônico ${tamanho}` }],
+    );
   }
   return normalizado;
 }

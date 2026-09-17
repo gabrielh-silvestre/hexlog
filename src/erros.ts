@@ -48,7 +48,9 @@ export class ErroHexlog extends Error {
 
 /** JSON Pointer (RFC 6901) de um `path` do Zod, escapando `~` e `/` na ordem correta. */
 function ponteiro(path: PropertyKey[]): string {
-  return path.map((segmento) => `/${String(segmento).replace(/~/g, '~0').replace(/\//g, '~1')}`).join('');
+  return path
+    .map((segmento) => `/${String(segmento).replace(/~/g, '~0').replace(/\//g, '~1')}`)
+    .join('');
 }
 
 /** Converte `issues` do Zod em `detalhes[]`, prefixando o ponteiro (ex.: `/dados`). */

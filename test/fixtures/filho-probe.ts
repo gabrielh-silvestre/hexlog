@@ -19,7 +19,9 @@ const ajv = new Ajv2020.default({ strict: true });
 addFormats.default(ajv);
 
 const uuid = randomUUIDv7();
-const uuidV7Valido = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+const uuidV7Valido = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+  uuid,
+);
 
 const indice = new MiniSearch({ fields: ['texto'] });
 indice.addAll([

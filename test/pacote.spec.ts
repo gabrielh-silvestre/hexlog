@@ -12,7 +12,9 @@ function listarArquivosRecursivo(dir: string, extensao = '.ts'): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entrada) => {
     const caminho = path.join(dir, entrada.name);
     if (entrada.isDirectory()) {
-      return DIRETORIOS_IGNORADOS.has(entrada.name) ? [] : listarArquivosRecursivo(caminho, extensao);
+      return DIRETORIOS_IGNORADOS.has(entrada.name)
+        ? []
+        : listarArquivosRecursivo(caminho, extensao);
     }
     return entrada.name.endsWith(extensao) ? [caminho] : [];
   });
@@ -22,7 +24,8 @@ function listarArquivosRecursivo(dir: string, extensao = '.ts'): string[] {
 function listarDiretorios(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entrada) => {
-    if (!entrada.isDirectory() || entrada.name === 'node_modules' || entrada.name === '.git') return [];
+    if (!entrada.isDirectory() || entrada.name === 'node_modules' || entrada.name === '.git')
+      return [];
     const caminho = path.join(dir, entrada.name);
     return [caminho, ...listarDiretorios(caminho)];
   });
@@ -144,7 +147,9 @@ describe('M5', () => {
   });
 
   test('não existe diretório cli no repo (fora de node_modules)', () => {
-    const temDiretorioCli = listarDiretorios(raizDoRepo).some((dir) => path.basename(dir) === 'cli');
+    const temDiretorioCli = listarDiretorios(raizDoRepo).some(
+      (dir) => path.basename(dir) === 'cli',
+    );
     expect(temDiretorioCli).toBe(false);
   });
 });
@@ -164,7 +169,9 @@ describe('I1 (parcial)', () => {
     const conteudo = fs.readFileSync(path.join(raizDoRepo, 'src/diretorio.ts'), 'utf8');
     const violacoes = extrairEspecificadores(conteudo).filter(
       (especificador) =>
-        !especificador.startsWith('node:') && especificador !== 'es-toolkit' && !especificador.startsWith('es-toolkit/'),
+        !especificador.startsWith('node:') &&
+        especificador !== 'es-toolkit' &&
+        !especificador.startsWith('es-toolkit/'),
     );
     expect(violacoes).toEqual([]);
   });

@@ -9,7 +9,9 @@ import { instalarArtefato } from '../../src/instalacao.ts';
 
 const [, , home, versao, variante, idProcesso, totalProcessosTexto] = process.argv;
 if ([home, versao, variante, idProcesso, totalProcessosTexto].some((v) => v === undefined)) {
-  throw new Error('uso: instalar-concorrente.ts <home> <versao> <variante> <idProcesso> <totalProcessos>');
+  throw new Error(
+    'uso: instalar-concorrente.ts <home> <versao> <variante> <idProcesso> <totalProcessos>',
+  );
 }
 const totalProcessos = Number(totalProcessosTexto);
 
@@ -25,7 +27,10 @@ while (fs.readdirSync(dirBarreira).length < totalProcessos) {
   // spin
 }
 
-const bundles = { servidor: Buffer.from(`servidor-${variante}`), hook: Buffer.from(`hook-${variante}`) };
+const bundles = {
+  servidor: Buffer.from(`servidor-${variante}`),
+  hook: Buffer.from(`hook-${variante}`),
+};
 
 try {
   const resultado = await instalarArtefato({
@@ -42,6 +47,8 @@ try {
   process.stdout.write(JSON.stringify({ ok: true, acao: resultado.acao }));
   process.exit(0);
 } catch (erro) {
-  process.stdout.write(JSON.stringify({ ok: false, mensagem: erro instanceof Error ? erro.message : String(erro) }));
+  process.stdout.write(
+    JSON.stringify({ ok: false, mensagem: erro instanceof Error ? erro.message : String(erro) }),
+  );
   process.exit(1);
 }

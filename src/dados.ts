@@ -11,7 +11,12 @@ export const PROCESSOS_RESERVADOS = ['schemas', 'vocabulario', 'gates'] as const
 export const TIPOS_RESERVADOS = ['marco', 'veredito'] as const;
 
 /** §4.11: nomes de gate embutidos, reservados para `registrar_gate`. */
-export const GATES_EMBUTIDOS_NOMES = ['sem-orfaos', 'sem-conflitos', 'cadeia-integra', 'sem-referencias-invalidas'] as const;
+export const GATES_EMBUTIDOS_NOMES = [
+  'sem-orfaos',
+  'sem-conflitos',
+  'cadeia-integra',
+  'sem-referencias-invalidas',
+] as const;
 
 /**
  * Resolve `dir/...partes` e afirma, em defesa de profundidade, que o resultado não escapou
@@ -30,7 +35,10 @@ export function escreverJsonAtomico(arquivo: string, valor: unknown): void {
   const dir = path.dirname(arquivo);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
-  const tmp = path.join(dir, `.${path.basename(arquivo)}.${process.pid}.${randomBytes(4).toString('hex')}`);
+  const tmp = path.join(
+    dir,
+    `.${path.basename(arquivo)}.${process.pid}.${randomBytes(4).toString('hex')}`,
+  );
   const fd = fs.openSync(tmp, 'w');
   try {
     fs.writeSync(fd, JSON.stringify(valor, null, 2));
@@ -62,5 +70,7 @@ export function lerJson(arquivo: string): unknown | null {
 export function erroIo(e: unknown): ErroHexlog {
   const erro = e as NodeJS.ErrnoException;
   const codigo = isNil(erro.code) ? 'desconhecido' : erro.code;
-  return new ErroHexlog('ERRO_IO', 'falha de I/O', [{ caminho: '', codigo, mensagem: erro.message }]);
+  return new ErroHexlog('ERRO_IO', 'falha de I/O', [
+    { caminho: '', codigo, mensagem: erro.message },
+  ]);
 }

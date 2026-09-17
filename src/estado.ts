@@ -131,12 +131,15 @@ function computarSupersessao(vereditos: Linha[]): ResultadoSupersessao {
 /** Ciclo do Marco por alvo (§4.8, pseudocódigo do plano): reduce puro, gate nunca abre nem fecha (R-3). */
 function derivarCiclo(eventosDoAlvo: Linha[]): { abertura: Linha; fechado: boolean } | undefined {
   type Acc = { abertura?: Linha; fechado: boolean };
-  const final = eventosDoAlvo.reduce<Acc>((acc, e) => {
-    if (ehMarcoGate(e)) return acc;
-    const prazoExecucao = e.tipo === 'marco' ? (e.dados as CampoMarco).prazoExecucao : undefined;
-    if (!isNil(prazoExecucao)) return { abertura: e, fechado: false }; // nova abertura reinicia
-    return isNil(acc.abertura) ? acc : { ...acc, fechado: true }; // qualquer evento posterior fecha
-  }, { fechado: false });
+  const final = eventosDoAlvo.reduce<Acc>(
+    (acc, e) => {
+      if (ehMarcoGate(e)) return acc;
+      const prazoExecucao = e.tipo === 'marco' ? (e.dados as CampoMarco).prazoExecucao : undefined;
+      if (!isNil(prazoExecucao)) return { abertura: e, fechado: false }; // nova abertura reinicia
+      return isNil(acc.abertura) ? acc : { ...acc, fechado: true }; // qualquer evento posterior fecha
+    },
+    { fechado: false },
+  );
 
   return isNil(final.abertura) ? undefined : { abertura: final.abertura, fechado: final.fechado };
 }

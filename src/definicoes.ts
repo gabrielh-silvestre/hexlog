@@ -27,7 +27,11 @@ export type { Vocab, Vocabulario };
 const TETO_SCHEMA_CHARS = 16_000;
 
 /** Logger opcional injetável no Ajv (§4.10): por padrão, nenhum log vai para stdout/stderr. */
-export type Logger = { log: (...args: unknown[]) => void; warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
+export type Logger = {
+  log: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+};
 
 /** Resposta comum de `registrar_*`: o que foi gravado e se substituiu uma versão anterior. */
 export type Definida = { projeto: string; nome: string; hash: string; substituiu: boolean };
@@ -70,9 +74,17 @@ export function registrarTipo(
 
   const schemaCanonico = canonicalize(schema) ?? '';
   if (schemaCanonico.length > TETO_SCHEMA_CHARS) {
-    throw new ErroHexlog('SCHEMA_INVALIDO', `schema excede ${TETO_SCHEMA_CHARS} caracteres canônicos`, [
-      { caminho: '/schema', codigo: 'too_big', mensagem: `tamanho canônico ${schemaCanonico.length}` },
-    ]);
+    throw new ErroHexlog(
+      'SCHEMA_INVALIDO',
+      `schema excede ${TETO_SCHEMA_CHARS} caracteres canônicos`,
+      [
+        {
+          caminho: '/schema',
+          codigo: 'too_big',
+          mensagem: `tamanho canônico ${schemaCanonico.length}`,
+        },
+      ],
+    );
   }
 
   validarComAjv(schema, opcoes.log);
@@ -88,7 +100,11 @@ export function registrarTipo(
   } catch {
     // a mensagem bruta do zod não é exposta (§4.10): só o código de domínio.
     throw new ErroHexlog('SCHEMA_INVALIDO', 'construção do schema não suportada', [
-      { caminho: '/schema', codigo: 'nao-suportado', mensagem: 'construção de schema não suportada' },
+      {
+        caminho: '/schema',
+        codigo: 'nao-suportado',
+        mensagem: 'construção de schema não suportada',
+      },
     ]);
   }
 
@@ -129,7 +145,12 @@ export function registrarVocabulario(
 }
 
 /** §4.11: registra o critério de um gate custom, gravando `gates/<nome>.json`. */
-export function registrarGate(dir: string, projeto: string, nome: string, criterio: string): Definida {
+export function registrarGate(
+  dir: string,
+  projeto: string,
+  nome: string,
+  criterio: string,
+): Definida {
   if ((GATES_EMBUTIDOS_NOMES as readonly string[]).includes(nome)) {
     throw new ErroHexlog('NOME_RESERVADO', `gate '${nome}' é embutido`);
   }
@@ -185,7 +206,10 @@ export function criarProcesso(
 
 function montarSnapshot(dirProjeto: string): Manifesto['fixado'] {
   const tipos = Object.fromEntries(
-    listarDefinicoes(path.join(dirProjeto, 'schemas')).map((d) => [d.nome, d.conteudo.schema as object]),
+    listarDefinicoes(path.join(dirProjeto, 'schemas')).map((d) => [
+      d.nome,
+      d.conteudo.schema as object,
+    ]),
   );
 
   const arquivosVocab = listarDefinicoes(path.join(dirProjeto, 'vocabulario'));
@@ -196,12 +220,17 @@ function montarSnapshot(dirProjeto: string): Manifesto['fixado'] {
   const vocabulario: Vocabulario = {
     nucleo: isNil(nucleoArquivo) ? VOCAB_VAZIO : extrairVocab(nucleoArquivo.conteudo),
     porDono: Object.fromEntries(
-      arquivosVocab.filter((d) => d.nome !== 'nucleo').map((d) => [d.nome, extrairVocab(d.conteudo)]),
+      arquivosVocab
+        .filter((d) => d.nome !== 'nucleo')
+        .map((d) => [d.nome, extrairVocab(d.conteudo)]),
     ),
   };
 
   const gates = Object.fromEntries(
-    listarDefinicoes(path.join(dirProjeto, 'gates')).map((d) => [d.nome, { criterio: d.conteudo.criterio as string }]),
+    listarDefinicoes(path.join(dirProjeto, 'gates')).map((d) => [
+      d.nome,
+      { criterio: d.conteudo.criterio as string },
+    ]),
   );
 
   return { tipos, vocabulario, gates };
@@ -215,7 +244,10 @@ function extrairVocab(conteudo: Record<string, unknown>): Vocab {
 function criarArquivoExclusivo(dirProcesso: string, manifesto: Manifesto, processo: string): void {
   fs.mkdirSync(dirProcesso, { recursive: true, mode: 0o700 });
   const arquivo = path.join(dirProcesso, 'processo.json');
-  const tmp = path.join(dirProcesso, `.processo.json.${process.pid}.${randomBytes(4).toString('hex')}`);
+  const tmp = path.join(
+    dirProcesso,
+    `.processo.json.${process.pid}.${randomBytes(4).toString('hex')}`,
+  );
 
   const fd = fs.openSync(tmp, 'w');
   try {
@@ -238,7 +270,11 @@ function criarArquivoExclusivo(dirProcesso: string, manifesto: Manifesto, proces
 }
 
 /** Carrega e verifica um processo: hashes internos recalculados, âncora e schemas Zod dos tipos custom. */
-export function carregarProcesso(dir: string, projeto: string, processo: string): ProcessoCarregado {
+export function carregarProcesso(
+  dir: string,
+  projeto: string,
+  processo: string,
+): ProcessoCarregado {
   const dirProcesso = caminho(dir, projeto, processo);
   const arquivo = path.join(dirProcesso, 'processo.json');
 
@@ -284,9 +320,17 @@ function verificarHashes(manifesto: Manifesto): void {
   for (const parte of partes) {
     const recalculado = sha256hex(canonicalize(parte.fixado) ?? '');
     if (recalculado !== manifesto.hashes[parte.hash]) {
-      throw new ErroHexlog('PROCESSO_CORROMPIDO', `hash de ${parte.hash} não bate com o snapshot fixado`, [
-        { caminho: `/hashes/${parte.hash}`, codigo: 'hash_divergente', mensagem: 'hash recalculado difere do gravado' },
-      ]);
+      throw new ErroHexlog(
+        'PROCESSO_CORROMPIDO',
+        `hash de ${parte.hash} não bate com o snapshot fixado`,
+        [
+          {
+            caminho: `/hashes/${parte.hash}`,
+            codigo: 'hash_divergente',
+            mensagem: 'hash recalculado difere do gravado',
+          },
+        ],
+      );
     }
   }
 }
@@ -295,12 +339,13 @@ type ArquivoDefinicao = { nome: string; conteudo: Record<string, unknown> };
 
 /** Lê todo `.json` (não `.`-prefixado) de `dirParte`, ou `[]` se o diretório não existe. */
 function listarDefinicoes(dirParte: string): ArquivoDefinicao[] {
-  return listarNomesDiretorio(dirParte, (entrada) => entrada.isFile() && entrada.name.endsWith('.json')).map(
-    (arquivo) => ({
-      nome: path.basename(arquivo, '.json'),
-      conteudo: lerJson(path.join(dirParte, arquivo)) as Record<string, unknown>,
-    }),
-  );
+  return listarNomesDiretorio(
+    dirParte,
+    (entrada) => entrada.isFile() && entrada.name.endsWith('.json'),
+  ).map((arquivo) => ({
+    nome: path.basename(arquivo, '.json'),
+    conteudo: lerJson(path.join(dirParte, arquivo)) as Record<string, unknown>,
+  }));
 }
 
 /** Lê os nomes de entradas de `dirPai` que casam `filtro`, ignorando `.`-prefixados; `[]` se o diretório não existe. */
@@ -312,14 +357,17 @@ function listarNomesDiretorio(dirPai: string, filtro: (entrada: fs.Dirent) => bo
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw erroIo(e);
   }
-  return entradas.filter((entrada) => !entrada.name.startsWith('.') && filtro(entrada)).map((entrada) => entrada.name);
+  return entradas
+    .filter((entrada) => !entrada.name.startsWith('.') && filtro(entrada))
+    .map((entrada) => entrada.name);
 }
 
 /** Nomes de processo válidos de um projeto: diretórios não reservados com `processo.json` legível. */
 function listarProcessosValidos(dirProjeto: string): string[] {
   return listarNomesDiretorio(
     dirProjeto,
-    (entrada) => entrada.isDirectory() && !(PROCESSOS_RESERVADOS as readonly string[]).includes(entrada.name),
+    (entrada) =>
+      entrada.isDirectory() && !(PROCESSOS_RESERVADOS as readonly string[]).includes(entrada.name),
   ).filter((nome) => !isNil(lerJson(path.join(dirProjeto, nome, 'processo.json'))));
 }
 
@@ -359,7 +407,10 @@ export function lerProjeto(
     nome: projeto,
     processos,
     tipos: nomesEHashes(path.join(dirProjeto, 'schemas')),
-    vocabulario: nomesEHashes(path.join(dirProjeto, 'vocabulario')).map(({ nome, hash }) => ({ dono: nome, hash })),
+    vocabulario: nomesEHashes(path.join(dirProjeto, 'vocabulario')).map(({ nome, hash }) => ({
+      dono: nome,
+      hash,
+    })),
     gates: nomesEHashes(path.join(dirProjeto, 'gates')),
   };
 }

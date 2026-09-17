@@ -15,7 +15,10 @@ const T = (n: number) => new Date(n * 60_000).toISOString();
 const ALVO_1 = 'hex:alvo:u1';
 const ALVO_2 = 'hex:alvo:u2';
 
-const vocabularioVazio: Vocabulario = { nucleo: { marcoTipo: [], resultado: [], acao: [] }, porDono: {} };
+const vocabularioVazio: Vocabulario = {
+  nucleo: { marcoTipo: [], resultado: [], acao: [] },
+  porDono: {},
+};
 
 let proximoSeqValor = 0;
 
@@ -68,7 +71,10 @@ function veredito(
 describe('projetar › Estado bate com fixture (envelope novo, alvo hex:alvo:*)', () => {
   test('marco + veredito confirmando produzem o Estado esperado', () => {
     const m1 = marco({ alvo: ALVO_1, marcoTipo: 'esqueleto-aberto' }, { timestamp: T(0) });
-    const v1 = veredito({ destino: ALVO_1, afirmacao: 'dod-1', resultado: 'confirmada' }, { timestamp: T(1) });
+    const v1 = veredito(
+      { destino: ALVO_1, afirmacao: 'dod-1', resultado: 'confirmada' },
+      { timestamp: T(1) },
+    );
     const elos = [m1, v1];
     const vocabulario: Vocabulario = {
       nucleo: { marcoTipo: ['esqueleto-aberto'], resultado: ['confirmada'], acao: [] },
@@ -117,7 +123,9 @@ describe('projetar › dedupe por id', () => {
     const elos = [v1, v2];
     const comDuplicata = [v1, v1, v2];
 
-    expect(projetar(comDuplicata, vocabularioVazio, T(1))).toEqual(projetar(elos, vocabularioVazio, T(1)));
+    expect(projetar(comDuplicata, vocabularioVazio, T(1))).toEqual(
+      projetar(elos, vocabularioVazio, T(1)),
+    );
   });
 });
 
@@ -125,7 +133,9 @@ describe('N3 › supersessão', () => {
   test('veredito único fica vigente', () => {
     const v1 = veredito({ destino: ALVO_1, afirmacao: 'a1' }, { timestamp: T(0) });
     const projecao = projetar([v1], vocabularioVazio, T(0));
-    expect(projecao.vigentes).toEqual([{ destino: ALVO_1, afirmacao: 'a1', status: 'vigente', vigente: v1.id }]);
+    expect(projecao.vigentes).toEqual([
+      { destino: ALVO_1, afirmacao: 'a1', status: 'vigente', vigente: v1.id },
+    ]);
     expect(projecao.conflitos).toEqual([]);
   });
 
@@ -136,7 +146,9 @@ describe('N3 › supersessão', () => {
     expect(projecao.vigentes).toEqual([
       { destino: ALVO_1, afirmacao: 'a1', status: 'conflito', candidatos: [v1.id, v2.id] },
     ]);
-    expect(projecao.conflitos).toEqual([{ destino: ALVO_1, afirmacao: 'a1', candidatos: [v1.id, v2.id] }]);
+    expect(projecao.conflitos).toEqual([
+      { destino: ALVO_1, afirmacao: 'a1', candidatos: [v1.id, v2.id] },
+    ]);
   });
 
   test('cadeia A<-B<-C: só C fica vigente (supera em cadeia)', () => {
@@ -144,28 +156,44 @@ describe('N3 › supersessão', () => {
     const b = veredito({ destino: ALVO_1, afirmacao: 'x', supera: [a.id] }, { timestamp: T(1) });
     const c = veredito({ destino: ALVO_1, afirmacao: 'x', supera: [b.id] }, { timestamp: T(2) });
     const projecao = projetar([a, b, c], vocabularioVazio, T(2));
-    expect(projecao.vigentes).toEqual([{ destino: ALVO_1, afirmacao: 'x', status: 'vigente', vigente: c.id }]);
+    expect(projecao.vigentes).toEqual([
+      { destino: ALVO_1, afirmacao: 'x', status: 'vigente', vigente: c.id },
+    ]);
   });
 
   test('supera cruzando destino/afirmação diferente não funde grupos', () => {
     const y = veredito({ destino: ALVO_2, afirmacao: 'A2' }, { timestamp: T(0) });
     const x = veredito({ destino: ALVO_1, afirmacao: 'A1', supera: [y.id] }, { timestamp: T(1) });
     const projecao = projetar([y, x], vocabularioVazio, T(1));
-    expect(projecao.vigentes).toEqual([{ destino: ALVO_1, afirmacao: 'A1', status: 'vigente', vigente: x.id }]);
+    expect(projecao.vigentes).toEqual([
+      { destino: ALVO_1, afirmacao: 'A1', status: 'vigente', vigente: x.id },
+    ]);
   });
 
   test('supera para id que não é Veredito do log vira referenciasInvalidas', () => {
     const marcoQualquer = marco({ alvo: ALVO_1 }, { timestamp: T(0) });
-    const v1 = veredito({ destino: ALVO_1, afirmacao: 'a1', supera: [marcoQualquer.id] }, { timestamp: T(1) });
+    const v1 = veredito(
+      { destino: ALVO_1, afirmacao: 'a1', supera: [marcoQualquer.id] },
+      { timestamp: T(1) },
+    );
     const projecao = projetar([marcoQualquer, v1], vocabularioVazio, T(1));
-    expect(projecao.referenciasInvalidas).toEqual([{ citadaPor: v1.id, referencia: marcoQualquer.id }]);
-    expect(projecao.vigentes).toEqual([{ destino: ALVO_1, afirmacao: 'a1', status: 'vigente', vigente: v1.id }]);
+    expect(projecao.referenciasInvalidas).toEqual([
+      { citadaPor: v1.id, referencia: marcoQualquer.id },
+    ]);
+    expect(projecao.vigentes).toEqual([
+      { destino: ALVO_1, afirmacao: 'a1', status: 'vigente', vigente: v1.id },
+    ]);
   });
 
   test('supera para id inexistente vira referenciasInvalidas', () => {
-    const v1 = veredito({ destino: ALVO_1, afirmacao: 'a1', supera: ['p:r:veredito:fantasma'] }, { timestamp: T(0) });
+    const v1 = veredito(
+      { destino: ALVO_1, afirmacao: 'a1', supera: ['p:r:veredito:fantasma'] },
+      { timestamp: T(0) },
+    );
     const projecao = projetar([v1], vocabularioVazio, T(0));
-    expect(projecao.referenciasInvalidas).toEqual([{ citadaPor: v1.id, referencia: 'p:r:veredito:fantasma' }]);
+    expect(projecao.referenciasInvalidas).toEqual([
+      { citadaPor: v1.id, referencia: 'p:r:veredito:fantasma' },
+    ]);
   });
 });
 
@@ -261,7 +289,10 @@ describe('N13 › R-3: Marco de gate não abre nem fecha', () => {
 
 describe('avisos (N4): por dono e classes', () => {
   test('marcoTipo do núcleo não gera aviso', () => {
-    const vocabulario: Vocabulario = { nucleo: { marcoTipo: ['abertura'], resultado: [], acao: [] }, porDono: {} };
+    const vocabulario: Vocabulario = {
+      nucleo: { marcoTipo: ['abertura'], resultado: [], acao: [] },
+      porDono: {},
+    };
     const m1 = marco({ alvo: ALVO_1, marcoTipo: 'abertura' }, { timestamp: T(0) });
     expect(projetar([m1], vocabulario, T(0)).avisos).toEqual([]);
   });
@@ -273,7 +304,13 @@ describe('avisos (N4): por dono e classes', () => {
     };
     const m1 = marco({ alvo: ALVO_1, marcoTipo: 'card-revisado' }, { timestamp: T(0) });
     expect(projetar([m1], vocabulario, T(0)).avisos).toEqual([
-      { evento: m1.id, campo: 'marcoTipo', valor: 'card-revisado', classe: 'extensao', dono: 'dono-x' },
+      {
+        evento: m1.id,
+        campo: 'marcoTipo',
+        valor: 'card-revisado',
+        classe: 'extensao',
+        dono: 'dono-x',
+      },
     ]);
   });
 
@@ -287,15 +324,30 @@ describe('avisos (N4): por dono e classes', () => {
     };
     const m1 = marco({ alvo: ALVO_1, marcoTipo: 'card-revisado' }, { timestamp: T(0) });
     const [aviso] = projetar([m1], vocabulario, T(0)).avisos;
-    expect(aviso).toEqual({ evento: m1.id, campo: 'marcoTipo', valor: 'card-revisado', classe: 'extensao', dono: null });
+    expect(aviso).toEqual({
+      evento: m1.id,
+      campo: 'marcoTipo',
+      valor: 'card-revisado',
+      classe: 'extensao',
+      dono: null,
+    });
   });
 
   test('marcoTipo desconhecido (campo fechado) vira erro; resultado desconhecido (campo aberto) vira aviso-desconhecido', () => {
     const m1 = marco({ alvo: ALVO_1, marcoTipo: 'inedito' }, { timestamp: T(0) });
-    const v1 = veredito({ destino: ALVO_1, afirmacao: 'a1', resultado: 'inedito' }, { timestamp: T(1) });
+    const v1 = veredito(
+      { destino: ALVO_1, afirmacao: 'a1', resultado: 'inedito' },
+      { timestamp: T(1) },
+    );
     expect(projetar([m1, v1], vocabularioVazio, T(1)).avisos).toEqual([
       { evento: m1.id, campo: 'marcoTipo', valor: 'inedito', classe: 'erro', dono: null },
-      { evento: v1.id, campo: 'resultado', valor: 'inedito', classe: 'aviso-desconhecido', dono: null },
+      {
+        evento: v1.id,
+        campo: 'resultado',
+        valor: 'inedito',
+        classe: 'aviso-desconhecido',
+        dono: null,
+      },
     ]);
   });
 
@@ -305,7 +357,13 @@ describe('avisos (N4): por dono e classes', () => {
       porDono: {},
     };
     const m1 = marco(
-      { alvo: ALVO_1, decisoes: [{ item: 'x', acao: 'aprovar', texto: 't' }, { item: 'y', acao: 'rejeitar', texto: 't2' }] },
+      {
+        alvo: ALVO_1,
+        decisoes: [
+          { item: 'x', acao: 'aprovar', texto: 't' },
+          { item: 'y', acao: 'rejeitar', texto: 't2' },
+        ],
+      },
       { timestamp: T(0) },
     );
     expect(projetar([m1], vocabulario, T(0)).avisos).toEqual([
@@ -330,15 +388,24 @@ describe('validarCampo', () => {
   });
 
   test('valor de extensão de um dono devolve classe extensao com esse dono', () => {
-    expect(validarCampo(vocabulario, 'resultado', 'ext-resultado')).toEqual({ classe: 'extensao', dono: 'd1' });
+    expect(validarCampo(vocabulario, 'resultado', 'ext-resultado')).toEqual({
+      classe: 'extensao',
+      dono: 'd1',
+    });
   });
 
   test('resultado fora de tudo (campo aberto) devolve aviso-desconhecido', () => {
-    expect(validarCampo(vocabulario, 'resultado', 'nunca-visto')).toEqual({ classe: 'aviso-desconhecido', dono: null });
+    expect(validarCampo(vocabulario, 'resultado', 'nunca-visto')).toEqual({
+      classe: 'aviso-desconhecido',
+      dono: null,
+    });
   });
 
   test('marcoTipo fora de tudo (campo fechado) devolve erro', () => {
-    expect(validarCampo(vocabulario, 'marcoTipo', 'nunca-visto')).toEqual({ classe: 'erro', dono: null });
+    expect(validarCampo(vocabulario, 'marcoTipo', 'nunca-visto')).toEqual({
+      classe: 'erro',
+      dono: null,
+    });
   });
 });
 
@@ -380,8 +447,16 @@ describe('S3: eventos custom são inertes', () => {
     const v2 = veredito({ destino: ALVO_1, afirmacao: 'a2' }, { timestamp: T(2) });
     const agora = T(2);
 
-    const { logAte: _semLogAte, ...projecaoSemCustom } = projetar([v1, v2], vocabularioVazio, agora);
-    const { logAte: _comLogAte, ...projecaoComCustom } = projetar([v1, custom, v2], vocabularioVazio, agora);
+    const { logAte: _semLogAte, ...projecaoSemCustom } = projetar(
+      [v1, v2],
+      vocabularioVazio,
+      agora,
+    );
+    const { logAte: _comLogAte, ...projecaoComCustom } = projetar(
+      [v1, custom, v2],
+      vocabularioVazio,
+      agora,
+    );
 
     expect(projecaoComCustom).toEqual(projecaoSemCustom);
   });

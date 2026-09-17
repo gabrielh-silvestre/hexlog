@@ -36,7 +36,12 @@ export type ItemFaltando =
   | 'mcp';
 
 /** As 4 regras de deny e os caminhos do hook/servidor instalados para uma versão (§4.14, QN4). */
-export function regrasEsperadas(D: string, home: string, execPath: string, versao: string): RegrasEsperadas {
+export function regrasEsperadas(
+  D: string,
+  home: string,
+  execPath: string,
+  versao: string,
+): RegrasEsperadas {
   const dirVersao = path.join(home, '.local', 'lib', 'hexlog', versao);
   const hookArquivo = path.join(dirVersao, 'guarda-bash.mjs');
   const servidorArquivo = path.join(dirVersao, 'servidor.mjs');
@@ -79,7 +84,10 @@ function aplicarDenyFaltantes(textoSettings: string, esperado: RegrasEsperadas):
 /** `arquivo` é um `guarda-bash.mjs` sob `<home>/.local/lib/hexlog/<qualquer versão>`? Chave estável entre versões. */
 function ehArquivoDoHookHexlog(arquivo: string, dirVersao: string): boolean {
   const dirHexlogLib = path.dirname(dirVersao);
-  return path.basename(arquivo) === 'guarda-bash.mjs' && path.dirname(path.dirname(arquivo)) === dirHexlogLib;
+  return (
+    path.basename(arquivo) === 'guarda-bash.mjs' &&
+    path.dirname(path.dirname(arquivo)) === dirHexlogLib
+  );
 }
 
 function tentarParseComando(comando: string): [string, string] | undefined {
@@ -102,8 +110,12 @@ export interface EntradaHookEncontrada {
 }
 
 /** Percorre `hooks.PreToolUse` procurando a entrada do hook do hexlog, em qualquer versão instalada. */
-export function localizarEntradaHook(dadosSettings: unknown, dirVersao: string): EntradaHookEncontrada | undefined {
-  const entradas = ((dadosSettings as { hooks?: { PreToolUse?: unknown[] } })?.hooks?.PreToolUse ?? []) as {
+export function localizarEntradaHook(
+  dadosSettings: unknown,
+  dirVersao: string,
+): EntradaHookEncontrada | undefined {
+  const entradas = ((dadosSettings as { hooks?: { PreToolUse?: unknown[] } })?.hooks?.PreToolUse ??
+    []) as {
     hooks?: unknown[];
   }[];
   for (const [entradaIndex, entrada] of entradas.entries()) {
@@ -125,11 +137,22 @@ export function localizarEntradaHook(dadosSettings: unknown, dirVersao: string):
 function aplicarHook(textoSettings: string, esperado: RegrasEsperadas): string {
   const encontrada = localizarEntradaHook(parse(textoSettings), esperado.dirVersao);
   if (isNil(encontrada)) {
-    const novaEntrada = { matcher: '^Bash$', hooks: [{ type: 'command', command: esperado.hookCommand, timeout: 10 }] };
+    const novaEntrada = {
+      matcher: '^Bash$',
+      hooks: [{ type: 'command', command: esperado.hookCommand, timeout: 10 }],
+    };
     return inserirNoFimDoArray(textoSettings, ['hooks', 'PreToolUse'], novaEntrada);
   }
-  if (encontrada.exec === esperado.hookExec && encontrada.arquivo === esperado.hookArquivo) return textoSettings;
-  const caminho = ['hooks', 'PreToolUse', encontrada.entradaIndex, 'hooks', encontrada.hookIndex, 'command'];
+  if (encontrada.exec === esperado.hookExec && encontrada.arquivo === esperado.hookArquivo)
+    return textoSettings;
+  const caminho = [
+    'hooks',
+    'PreToolUse',
+    encontrada.entradaIndex,
+    'hooks',
+    encontrada.hookIndex,
+    'command',
+  ];
   const edits = modify(textoSettings, caminho, esperado.hookCommand, OPCOES_FORMATACAO);
   return applyEdits(textoSettings, edits);
 }
@@ -175,7 +198,9 @@ export function sondasDoHook(D: string): { nega: string; permite: string } {
   };
 }
 
-function verificarArtefatoAlterado(bytesInstalados: ArgsVerificarGuard['bytesInstalados']): boolean {
+function verificarArtefatoAlterado(
+  bytesInstalados: ArgsVerificarGuard['bytesInstalados'],
+): boolean {
   if (isNil(bytesInstalados) || isNil(bytesInstalados.manifesto)) return false;
   const { servidor, hook, manifesto } = bytesInstalados;
   const servidorAlterado = !isNil(servidor) && sha256(servidor) !== manifesto.sha256.servidor;
@@ -197,7 +222,10 @@ interface ArgsVerificarGuard {
 }
 
 /** Único mecanismo de detecção de guard ausente, alterado ou quebrado (R-1); usado por `instalar.ts --check`. */
-export function verificarGuard(args: ArgsVerificarGuard): { ok: boolean; faltando: ItemFaltando[] } {
+export function verificarGuard(args: ArgsVerificarGuard): {
+  ok: boolean;
+  faltando: ItemFaltando[];
+} {
   const { textoSettings, textoClaudeJson, esperado, existe, executarHook, bytesInstalados } = args;
   const dadosSettings = parse(textoSettings);
   const denyAtual: unknown[] = dadosSettings?.permissions?.deny ?? [];
@@ -226,7 +254,11 @@ export function verificarGuard(args: ArgsVerificarGuard): { ok: boolean; faltand
 }
 
 /** Execução real do hook instalado: sem `split`, `arquivo` já resolvido pelo `shellQuote.parse` do `command` registrado. */
-export function executarHookReal(exec: string, arquivo: string, stdin: string): { status: number | null } {
+export function executarHookReal(
+  exec: string,
+  arquivo: string,
+  stdin: string,
+): { status: number | null } {
   // `env: process.env` explícito (em vez de deixar o spawnSync herdar por
   // omissão): equivalente em produção, mas lê o `process.env` atual — sem
   // isso, o teste que simula um `HOME` diferente (I7) não convence o filho,

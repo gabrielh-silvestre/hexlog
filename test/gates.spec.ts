@@ -20,7 +20,14 @@ const T = (n: number) => new Date(n * 60_000).toISOString();
 const ALVO = 'hex:alvo:u1';
 
 function cadeiaLimpa(): Cadeia {
-  return { ok: true, totalLinhas: 1, cabeca: '0'.repeat(64), quebras: [], totalQuebras: 0, linhasReparadas: [] };
+  return {
+    ok: true,
+    totalLinhas: 1,
+    cabeca: '0'.repeat(64),
+    quebras: [],
+    totalQuebras: 0,
+    linhasReparadas: [],
+  };
 }
 
 function estadoLimpo(): Estado {
@@ -40,15 +47,32 @@ type ItemOrfao = Estado['orfaos'][number];
 type ItemConflito = Estado['conflitos'][number];
 type ItemReferenciaInvalida = Estado['referenciasInvalidas'][number];
 
-const itemOrfao = (i: number): ItemOrfao => ({ marco: `p:r:marco:${i}`, alvo: ALVO, prazoExecucao: T(-1) });
-const itemConflito = (i: number): ItemConflito => ({ destino: ALVO, afirmacao: `a${i}`, candidatos: ['id1', 'id2'] });
+const itemOrfao = (i: number): ItemOrfao => ({
+  marco: `p:r:marco:${i}`,
+  alvo: ALVO,
+  prazoExecucao: T(-1),
+});
+const itemConflito = (i: number): ItemConflito => ({
+  destino: ALVO,
+  afirmacao: `a${i}`,
+  candidatos: ['id1', 'id2'],
+});
 const itemQuebra = (i: number): Quebra => ({ indice: i, motivo: 'hash-nao-bate' });
-const itemReferenciaInvalida = (i: number): ItemReferenciaInvalida => ({ citadaPor: `id${i}`, referencia: `ref${i}` });
+const itemReferenciaInvalida = (i: number): ItemReferenciaInvalida => ({
+  citadaPor: `id${i}`,
+  referencia: `ref${i}`,
+});
 
 // Um cenário por gate embutido: como violar o estado e onde a violação aparece.
 const CENARIOS: { nome: NomeGateEmbutido; overrides: (qtd: number) => Partial<Estado> }[] = [
-  { nome: 'sem-orfaos', overrides: (qtd) => ({ orfaos: Array.from({ length: qtd }, (_, i) => itemOrfao(i)) }) },
-  { nome: 'sem-conflitos', overrides: (qtd) => ({ conflitos: Array.from({ length: qtd }, (_, i) => itemConflito(i)) }) },
+  {
+    nome: 'sem-orfaos',
+    overrides: (qtd) => ({ orfaos: Array.from({ length: qtd }, (_, i) => itemOrfao(i)) }),
+  },
+  {
+    nome: 'sem-conflitos',
+    overrides: (qtd) => ({ conflitos: Array.from({ length: qtd }, (_, i) => itemConflito(i)) }),
+  },
   {
     nome: 'cadeia-integra',
     overrides: (qtd) => ({
@@ -62,7 +86,9 @@ const CENARIOS: { nome: NomeGateEmbutido; overrides: (qtd: number) => Partial<Es
   },
   {
     nome: 'sem-referencias-invalidas',
-    overrides: (qtd) => ({ referenciasInvalidas: Array.from({ length: qtd }, (_, i) => itemReferenciaInvalida(i)) }),
+    overrides: (qtd) => ({
+      referenciasInvalidas: Array.from({ length: qtd }, (_, i) => itemReferenciaInvalida(i)),
+    }),
   },
 ];
 
@@ -135,7 +161,7 @@ describe('N5 › gates embutidos', () => {
     expect(dados.gate.origem).toBe('embutido');
   });
 
-  test('normalizarProvaCustom(\'x\') vira [\'x\']', () => {
+  test("normalizarProvaCustom('x') vira ['x']", () => {
     expect(normalizarProvaCustom('x')).toEqual(['x']);
   });
 
@@ -154,7 +180,12 @@ describe('N5 › gates embutidos', () => {
 
 describe('N6 › gate custom em montarDadosMarcoGate', () => {
   test('origem custom e criterio vindo de fora produzem DadosMarcoGate válido', () => {
-    const resultado: ResultadoGate = { passou: false, prova: ['evidência'], totalItensProva: 1, avaliadoAte: null };
+    const resultado: ResultadoGate = {
+      passou: false,
+      prova: ['evidência'],
+      totalItensProva: 1,
+      avaliadoAte: null,
+    };
     const dados = montarDadosMarcoGate({
       nome: 'meu-gate-custom',
       origem: 'custom',

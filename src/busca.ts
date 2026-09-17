@@ -30,7 +30,11 @@ function textoDeMarco(dados: Record<string, unknown>): string {
     contagem?: { campo?: string };
     decisoes?: { item: string; acao: string; texto: string }[];
   };
-  const decisoes = (marco.decisoes ?? []).flatMap((decisao) => [decisao.item, decisao.acao, decisao.texto]);
+  const decisoes = (marco.decisoes ?? []).flatMap((decisao) => [
+    decisao.item,
+    decisao.acao,
+    decisao.texto,
+  ]);
   return [marco.marcoTipo, marco.contagem?.campo, ...decisoes].filter(isString).join('\n');
 }
 
@@ -49,8 +53,17 @@ function textoDeVeredito(dados: Record<string, unknown>): string {
     origem?: string;
     rastro?: string;
   };
-  const prova = isString(veredito.prova) ? [veredito.prova] : (veredito.prova ?? []).filter(isString);
-  return [veredito.afirmacao, veredito.fonte, veredito.resultado, ...prova, veredito.origem, veredito.rastro]
+  const prova = isString(veredito.prova)
+    ? [veredito.prova]
+    : (veredito.prova ?? []).filter(isString);
+  return [
+    veredito.afirmacao,
+    veredito.fonte,
+    veredito.resultado,
+    ...prova,
+    veredito.origem,
+    veredito.rastro,
+  ]
     .filter(isString)
     .join('\n');
 }
@@ -110,13 +123,17 @@ function casaMarcoTipo(linha: Linha, marcoTipo: string): boolean {
 }
 
 function casaResultado(linha: Linha, resultado: string): boolean {
-  return linha.tipo === 'veredito' && (linha.dados as { resultado?: string }).resultado === resultado;
+  return (
+    linha.tipo === 'veredito' && (linha.dados as { resultado?: string }).resultado === resultado
+  );
 }
 
 /** Quantidade de termos distintos de `busca` depois de tokenizar (padrão do MiniSearch) e aplicar `processTerm`. */
 export function termosDistintos(busca: string): number {
   const tokenizar = MiniSearch.getDefault('tokenize') as (texto: string) => string[];
-  const termos = tokenizar(busca).map(semAcento).filter((termo) => termo.length > 0);
+  const termos = tokenizar(busca)
+    .map(semAcento)
+    .filter((termo) => termo.length > 0);
   return new Set(termos).size;
 }
 
@@ -128,7 +145,10 @@ type ResultadoBusca = { indice: number; relevancia: number };
  * `AND` + `prefix` + `fuzzy: 0.1`, com fallback para `OR` quando o `AND` não devolve nada e a
  * consulta tem 2+ termos distintos.
  */
-export function buscar(candidatos: Candidato[], busca: string): { resultados: ResultadoBusca[]; combinacao: 'AND' | 'OR' } {
+export function buscar(
+  candidatos: Candidato[],
+  busca: string,
+): { resultados: ResultadoBusca[]; combinacao: 'AND' | 'OR' } {
   const motor = new MiniSearch<{ indice: number; texto: string }>({
     idField: 'indice',
     fields: ['texto'],

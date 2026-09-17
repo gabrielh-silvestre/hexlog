@@ -66,7 +66,11 @@ describe('Alvo (N12)', () => {
 
 describe('normalizarDados (N8: prazoExecucao → UTC Z)', () => {
   test('offset -03:00 vira Z equivalente', () => {
-    const dados = { marcoTipo: 'revisao', alvo: 'hex:alvo:u1', prazoExecucao: '2026-09-16T18:00:00-03:00' };
+    const dados = {
+      marcoTipo: 'revisao',
+      alvo: 'hex:alvo:u1',
+      prazoExecucao: '2026-09-16T18:00:00-03:00',
+    };
     expect(normalizarDados('marco', dados).prazoExecucao).toBe('2026-09-16T21:00:00.000Z');
   });
 });
@@ -122,15 +126,20 @@ describe('normalizarDados idempotência (N2 iii, property)', () => {
     noInvalidDate: true,
   });
   const arbOffsetMin = fc.integer({ min: -23 * 60, max: 23 * 60 });
-  const arbPrazo = fc.tuple(arbData, arbOffsetMin).map(([data, offset]) => formatarComOffset(data, offset));
+  const arbPrazo = fc
+    .tuple(arbData, arbOffsetMin)
+    .map(([data, offset]) => formatarComOffset(data, offset));
 
   test('Marco: normalizarDados é idempotente com prazoExecucao em offset aleatório', () => {
     fc.assert(
-      fc.property(fc.record({ marcoTipo: arbTexto, alvo: arbAlvo, prazoExecucao: arbPrazo }), (dados) => {
-        const uma = normalizarDados('marco', dados);
-        const duas = normalizarDados('marco', uma);
-        expect(duas).toEqual(uma);
-      }),
+      fc.property(
+        fc.record({ marcoTipo: arbTexto, alvo: arbAlvo, prazoExecucao: arbPrazo }),
+        (dados) => {
+          const uma = normalizarDados('marco', dados);
+          const duas = normalizarDados('marco', uma);
+          expect(duas).toEqual(uma);
+        },
+      ),
     );
   });
 

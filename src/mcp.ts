@@ -39,7 +39,11 @@ export const TETO_ITENS_SECAO = 100;
 export const TETO_PAGINA_CHARS = 24_000;
 
 // Esquemas comuns de §4.12, compartilhados pelas tools de definição e de eventos.
-export const Aviso = z.object({ codigo: z.string(), mensagem: z.string(), detalhes: z.unknown().optional() });
+export const Aviso = z.object({
+  codigo: z.string(),
+  mensagem: z.string(),
+  detalhes: z.unknown().optional(),
+});
 // Reexportados de estado.ts (fonte única do schema de vocabulário, DE-29).
 export const Vocab = VocabSchema;
 export const Vocabulario = VocabularioSchema;
@@ -58,8 +62,21 @@ export const Cadeia = z.object({
   linhasReparadas: z.array(z.number().int()).max(100),
 });
 export const Hashes = z.object({ schemas: Hash, vocabulario: Hash, gates: Hash });
-export const Definida = z.object({ projeto: Nome, nome: Nome, hash: Hash, substituiu: z.boolean() });
-export const Secao = z.enum(['vigentes', 'conflitos', 'orfaos', 'aRevisar', 'referenciasInvalidas', 'avisos', 'cadeia']);
+export const Definida = z.object({
+  projeto: Nome,
+  nome: Nome,
+  hash: Hash,
+  substituiu: z.boolean(),
+});
+export const Secao = z.enum([
+  'vigentes',
+  'conflitos',
+  'orfaos',
+  'aRevisar',
+  'referenciasInvalidas',
+  'avisos',
+  'cadeia',
+]);
 
 // Reexportadas por conveniência: os módulos de tools só precisam importar de `mcp.ts`.
 export { Agente, Hash, Instante, Nome };
@@ -105,12 +122,19 @@ export async function executar<T>(
   try {
     const resultado = await fn();
     logTool('info');
-    return { structuredContent: resultado, content: [{ type: 'text', text: JSON.stringify(resultado) }] };
+    return {
+      structuredContent: resultado,
+      content: [{ type: 'text', text: JSON.stringify(resultado) }],
+    };
   } catch (e) {
     const erro = paraErroHexlog(e, ctx);
     const corpo = { codigo: erro.codigo, mensagem: erro.message, detalhes: erro.detalhes };
     logTool('erro', erro.codigo);
-    return { isError: true, structuredContent: corpo, content: [{ type: 'text', text: JSON.stringify(corpo) }] };
+    return {
+      isError: true,
+      structuredContent: corpo,
+      content: [{ type: 'text', text: JSON.stringify(corpo) }],
+    };
   }
 }
 

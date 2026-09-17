@@ -10,7 +10,13 @@ import { anexar, lerTexto, type Registro } from '../src/log.ts';
 
 const MANIFESTO = { projeto: 'p', processo: 'proc', fixado: { versao: 1 } };
 
-type Base = { seq: number; timestamp: string; prevHash: string; uuid: string; ultimoElo: Linha | null };
+type Base = {
+  seq: number;
+  timestamp: string;
+  prevHash: string;
+  uuid: string;
+  ultimoElo: Linha | null;
+};
 
 function montarLinha(base: Base): Linha {
   return {
@@ -94,7 +100,9 @@ describe('anexar — rasgo (cauda sem \\n final)', () => {
 
     expect(segundo.seq).toBe(1);
     expect(segundo.prevHash).toBe(hashLinha(primeiro));
-    expect(fs.readFileSync(arquivo, 'utf8')).toBe(`${textoSemQuebra}\n${JSON.stringify(segundo)}\n`);
+    expect(fs.readFileSync(arquivo, 'utf8')).toBe(
+      `${textoSemQuebra}\n${JSON.stringify(segundo)}\n`,
+    );
   });
 
   test('cauda truncada (JSON incompleto) sem \\n: o próximo append insere \\n e conta a rasgada no seq', async () => {
@@ -116,9 +124,9 @@ describe('anexar — lock', () => {
     fs.mkdirSync(dirLock, 0o700); // mtime fresco: nunca órfão neste teste
     const { log, registros } = criarLoggerEspiao();
 
-    await expect(anexar(arquivo, MANIFESTO, montarLinha, { log, timeoutMs: 200, orfaoMs: 60_000 })).rejects.toEqual(
-      expect.objectContaining({ codigo: 'LOCK_TIMEOUT' }),
-    );
+    await expect(
+      anexar(arquivo, MANIFESTO, montarLinha, { log, timeoutMs: 200, orfaoMs: 60_000 }),
+    ).rejects.toEqual(expect.objectContaining({ codigo: 'LOCK_TIMEOUT' }));
 
     expect(lerTexto(arquivo)).toBe('');
     expect(fs.existsSync(dirLock)).toBe(true);
@@ -132,7 +140,11 @@ describe('anexar — lock', () => {
     fs.utimesSync(dirLock, antigo, antigo); // mais velho que o orfaoMs abaixo
     const { log, registros } = criarLoggerEspiao();
 
-    const linha = await anexar(arquivo, MANIFESTO, montarLinha, { log, orfaoMs: 5_000, timeoutMs: 2_000 });
+    const linha = await anexar(arquivo, MANIFESTO, montarLinha, {
+      log,
+      orfaoMs: 5_000,
+      timeoutMs: 2_000,
+    });
 
     expect(linha.seq).toBe(0);
     expect(registros.some((r) => r.evento === 'lock-orfao-removido')).toBe(true);
@@ -145,7 +157,9 @@ describe('anexar — lock', () => {
     const { log, registros } = criarLoggerEspiao();
 
     // timeoutMs pequeno com retry de 10ms gera várias colisões antes de estourar
-    await expect(anexar(arquivo, MANIFESTO, montarLinha, { log, timeoutMs: 50, orfaoMs: 60_000 })).rejects.toThrow();
+    await expect(
+      anexar(arquivo, MANIFESTO, montarLinha, { log, timeoutMs: 50, orfaoMs: 60_000 }),
+    ).rejects.toThrow();
 
     expect(registros.filter((r) => r.evento === 'lock-espera')).toHaveLength(1);
   });

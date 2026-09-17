@@ -16,7 +16,12 @@ async function prepararProcesso(ambiente: Ambiente): Promise<Manifesto> {
   await ambiente.chamar('registrar_tipo', {
     projeto: PROJ,
     nome: 'nota',
-    schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'], additionalProperties: false },
+    schema: {
+      type: 'object',
+      properties: { texto: { type: 'string' } },
+      required: ['texto'],
+      additionalProperties: false,
+    },
   });
   await ambiente.chamar('criar_processo', { projeto: PROJ, processo: PROC });
   const conteudo = fs.readFileSync(path.join(ambiente.dir, PROJ, PROC, 'processo.json'), 'utf8');
@@ -26,45 +31,56 @@ async function prepararProcesso(ambiente: Ambiente): Promise<Manifesto> {
 function mediana(valores: number[]): number {
   const ordenados = [...valores].sort((a, b) => a - b);
   const meio = Math.floor(ordenados.length / 2);
-  return ordenados.length % 2 === 0 ? (ordenados[meio - 1]! + ordenados[meio]!) / 2 : ordenados[meio]!;
+  return ordenados.length % 2 === 0
+    ? (ordenados[meio - 1]! + ordenados[meio]!) / 2
+    : ordenados[meio]!;
 }
 
 describe('M13', () => {
-  test(
-    'orçamento: índice (construção + consulta) ≤ 500 ms e eventos{busca} completo ≤ 2000 ms (medianas de 5, corpus de 10 000)',
-    async () => {
-      const ambiente = await criarAmbiente();
-      try {
-        const manifesto = await prepararProcesso(ambiente);
-        const corpus = gerarCorpus({ tamanho: TAMANHO, manifesto, vocabulario: manifesto.fixado.vocabulario });
-        escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
+  test('orçamento: índice (construção + consulta) ≤ 500 ms e eventos{busca} completo ≤ 2000 ms (medianas de 5, corpus de 10 000)', async () => {
+    const ambiente = await criarAmbiente();
+    try {
+      const manifesto = await prepararProcesso(ambiente);
+      const corpus = gerarCorpus({
+        tamanho: TAMANHO,
+        manifesto,
+        vocabulario: manifesto.fixado.vocabulario,
+      });
+      escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
 
-        const candidatos = corpus.linhas.map((linha, indice) => ({ indice, linha }));
-        const temposIndice = Array.from({ length: 5 }, () => {
-          const inicio = performance.now();
-          buscar(candidatos, 'webhook');
-          return performance.now() - inicio;
+      const candidatos = corpus.linhas.map((linha, indice) => ({ indice, linha }));
+      const temposIndice = Array.from({ length: 5 }, () => {
+        const inicio = performance.now();
+        buscar(candidatos, 'webhook');
+        return performance.now() - inicio;
+      });
+
+      const temposChamada: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        const inicio = performance.now();
+        const resultado = await ambiente.chamar('eventos', {
+          projeto: PROJ,
+          processo: PROC,
+          busca: 'webhook',
+          limite: 50,
         });
-
-        const temposChamada: number[] = [];
-        for (let i = 0; i < 5; i++) {
-          const inicio = performance.now();
-          const resultado = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, busca: 'webhook', limite: 50 });
-          temposChamada.push(performance.now() - inicio);
-          expect(resultado.isError).not.toBe(true);
-        }
-
-        const medianaIndice = mediana(temposIndice);
-        const medianaChamada = mediana(temposChamada);
-        process.stdout.write(`M13 mediana índice (construção+consulta): ${medianaIndice.toFixed(2)} ms\n`);
-        process.stdout.write(`M13 mediana chamada completa eventos{busca}: ${medianaChamada.toFixed(2)} ms\n`);
-
-        expect(medianaIndice).toBeLessThanOrEqual(500);
-        expect(medianaChamada).toBeLessThanOrEqual(2000);
-      } finally {
-        await ambiente.fechar();
+        temposChamada.push(performance.now() - inicio);
+        expect(resultado.isError).not.toBe(true);
       }
-    },
-    60_000,
-  );
+
+      const medianaIndice = mediana(temposIndice);
+      const medianaChamada = mediana(temposChamada);
+      process.stdout.write(
+        `M13 mediana índice (construção+consulta): ${medianaIndice.toFixed(2)} ms\n`,
+      );
+      process.stdout.write(
+        `M13 mediana chamada completa eventos{busca}: ${medianaChamada.toFixed(2)} ms\n`,
+      );
+
+      expect(medianaIndice).toBeLessThanOrEqual(500);
+      expect(medianaChamada).toBeLessThanOrEqual(2000);
+    } finally {
+      await ambiente.fechar();
+    }
+  }, 60_000);
 });

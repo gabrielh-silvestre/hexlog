@@ -3,10 +3,28 @@ import canonicalize from 'canonicalize';
 import { isNil, isNotNil } from 'es-toolkit';
 import { z } from 'zod';
 import { sha256hex } from './cadeia.ts';
-import { carregarProcesso, criarProcesso, lerProjeto, listarProjetos, registrarGate, registrarTipo, registrarVocabulario } from './definicoes.ts';
+import {
+  carregarProcesso,
+  criarProcesso,
+  lerProjeto,
+  listarProjetos,
+  registrarGate,
+  registrarTipo,
+  registrarVocabulario,
+} from './definicoes.ts';
 import { ErroHexlog } from './erros.ts';
 import { listarGatesEmbutidos, TETO_CRITERIO_CHARS } from './gates.ts';
-import { adaptarLoggerAjv, type Contexto, Definida, executar, Hash, Hashes, Instante, Nome, Vocabulario } from './mcp.ts';
+import {
+  adaptarLoggerAjv,
+  type Contexto,
+  Definida,
+  executar,
+  Hash,
+  Hashes,
+  Instante,
+  Nome,
+  Vocabulario,
+} from './mcp.ts';
 
 const Rotulo = z.string().min(1).max(100);
 const ListaRotulos = z.array(Rotulo).max(100).default([]);
@@ -42,13 +60,22 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
             gates: z.record(z.string(), z.object({ criterio: z.string() })),
           })
           .optional(),
-        tipo: z.object({ nome: Nome, hash: Hash, schema: z.record(z.string(), z.unknown()) }).optional(),
+        tipo: z
+          .object({ nome: Nome, hash: Hash, schema: z.record(z.string(), z.unknown()) })
+          .optional(),
         gatesEmbutidos: z.array(z.object({ nome: Nome, criterio: z.string() })),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ projeto, processo, tipo }) =>
-      executar(ctx, 'listar', { projeto, processo }, () => resolverListar(ctx, { projeto, processo, tipo })),
+      executar(ctx, 'listar', { projeto, processo }, () =>
+        resolverListar(ctx, { projeto, processo, tipo }),
+      ),
   );
 
   servidor.registerTool(
@@ -59,7 +86,12 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
         'Registra (ou substitui) o schema JSON de um tipo de evento custom do projeto, gravando `schemas/<nome>.json`.',
       inputSchema: { projeto: Nome, nome: Nome, schema: z.record(z.string(), z.unknown()) },
       outputSchema: Definida.shape,
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ projeto, nome, schema }) =>
       executar(ctx, 'registrar_tipo', { projeto }, () =>
@@ -73,9 +105,20 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
       title: 'Registrar vocabulário',
       description:
         'Registra (ou substitui) o vocabulário de um dono do projeto (`"nucleo"` ou uma extensão), gravando `vocabulario/<dono>.json`.',
-      inputSchema: { projeto: Nome, dono: Nome, marcoTipo: ListaRotulos, resultado: ListaRotulos, acao: ListaRotulos },
+      inputSchema: {
+        projeto: Nome,
+        dono: Nome,
+        marcoTipo: ListaRotulos,
+        resultado: ListaRotulos,
+        acao: ListaRotulos,
+      },
       outputSchema: { projeto: Nome, dono: Nome, hash: Hash, substituiu: z.boolean() },
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ projeto, dono, marcoTipo, resultado, acao }) =>
       executar(ctx, 'registrar_vocabulario', { projeto }, () =>
@@ -87,13 +130,25 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
     'registrar_gate',
     {
       title: 'Registrar gate',
-      description: 'Registra (ou substitui) o critério de um gate custom do projeto, gravando `gates/<nome>.json`.',
-      inputSchema: { projeto: Nome, nome: Nome, criterio: z.string().min(1).max(TETO_CRITERIO_CHARS) },
+      description:
+        'Registra (ou substitui) o critério de um gate custom do projeto, gravando `gates/<nome>.json`.',
+      inputSchema: {
+        projeto: Nome,
+        nome: Nome,
+        criterio: z.string().min(1).max(TETO_CRITERIO_CHARS),
+      },
       outputSchema: Definida.shape,
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ projeto, nome, criterio }) =>
-      executar(ctx, 'registrar_gate', { projeto }, () => registrarGate(ctx.dirDados, projeto, nome, criterio)),
+      executar(ctx, 'registrar_gate', { projeto }, () =>
+        registrarGate(ctx.dirDados, projeto, nome, criterio),
+      ),
   );
 
   servidor.registerTool(
@@ -113,7 +168,12 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
         donos: z.array(Nome),
         gates: z.array(Nome),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ projeto, processo }) =>
       executar(ctx, 'criar_processo', { projeto, processo }, () =>
@@ -134,7 +194,11 @@ function resolverListar(
 ) {
   if (isNil(projeto) && isNotNil(processo)) {
     throw new ErroHexlog('ENTRADA_INVALIDA', 'processo requer projeto', [
-      { caminho: '/processo', codigo: 'requer_projeto', mensagem: 'processo informado sem projeto' },
+      {
+        caminho: '/processo',
+        codigo: 'requer_projeto',
+        mensagem: 'processo informado sem projeto',
+      },
     ]);
   }
   if (isNil(processo) && isNotNil(tipo)) {
@@ -148,7 +212,10 @@ function resolverListar(
   if (isNil(projeto)) {
     return {
       gatesEmbutidos,
-      projetos: listarProjetos(ctx.dirDados).map((p) => ({ nome: p.nome, processos: p.processos.length })),
+      projetos: listarProjetos(ctx.dirDados).map((p) => ({
+        nome: p.nome,
+        processos: p.processos.length,
+      })),
     };
   }
 
@@ -177,7 +244,10 @@ function resolverListar(
 
   const schema = carregado.manifesto.fixado.tipos[tipo];
   if (isNil(schema)) {
-    throw new ErroHexlog('TIPO_INEXISTENTE', `tipo '${tipo}' não está fixado no processo '${processo}'`);
+    throw new ErroHexlog(
+      'TIPO_INEXISTENTE',
+      `tipo '${tipo}' não está fixado no processo '${processo}'`,
+    );
   }
   return { gatesEmbutidos, tipo: { nome: tipo, hash: hashSchema(schema), schema } };
 }

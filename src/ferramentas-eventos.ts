@@ -7,7 +7,14 @@ import { eloValido, verificarCadeia, type Cadeia } from './cadeia.ts';
 import { carregarProcesso, type ProcessoCarregado } from './definicoes.ts';
 import { detalhesDeIssues, ErroHexlog, type Detalhe } from './erros.ts';
 import { analisarId, Alvo, esquemaDados, Linha, normalizarDados, Rotulo } from './eventos.ts';
-import { agoraEfetivo, projetar, validarCampo, type CampoVocabulario, type Estado, type Vocabulario } from './estado.ts';
+import {
+  agoraEfetivo,
+  projetar,
+  validarCampo,
+  type CampoVocabulario,
+  type Estado,
+  type Vocabulario,
+} from './estado.ts';
 import {
   avaliarEmbutido,
   ehGateEmbutido,
@@ -60,10 +67,17 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
         dados: z.record(z.string(), z.unknown()),
       },
       outputSchema: { evento: Linha, deduplicado: z.boolean(), avisos: z.array(AvisoSchema) },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ projeto, processo, id, agente, dados }) =>
-      executar(ctx, 'registrar', { projeto, processo }, () => registrar(ctx, { projeto, processo, id, agente, dados })),
+      executar(ctx, 'registrar', { projeto, processo }, () =>
+        registrar(ctx, { projeto, processo, id, agente, dados }),
+      ),
   );
 
   servidor.registerTool(
@@ -92,8 +106,18 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
           })
           .optional(),
       },
-      outputSchema: { evento: Linha, passou: z.boolean(), prova: z.array(z.unknown()), totalItensProva: z.number().int() },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      outputSchema: {
+        evento: Linha,
+        passou: z.boolean(),
+        prova: z.array(z.unknown()),
+        totalItensProva: z.number().int(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ projeto, processo, gate, agente, alvo, resultado }) =>
       executar(ctx, 'avaliar_gate', { projeto, processo }, () =>
@@ -125,10 +149,22 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
             }),
           )
           .optional(),
-        conflitos: z.array(z.object({ destino: z.string(), afirmacao: z.string(), candidatos: z.array(z.string()) })).optional(),
-        orfaos: z.array(z.object({ marco: z.string(), alvo: z.string(), prazoExecucao: Instante })).optional(),
+        conflitos: z
+          .array(
+            z.object({
+              destino: z.string(),
+              afirmacao: z.string(),
+              candidatos: z.array(z.string()),
+            }),
+          )
+          .optional(),
+        orfaos: z
+          .array(z.object({ marco: z.string(), alvo: z.string(), prazoExecucao: Instante }))
+          .optional(),
         aRevisar: z.array(z.string()).optional(),
-        referenciasInvalidas: z.array(z.object({ citadaPor: z.string(), referencia: z.string() })).optional(),
+        referenciasInvalidas: z
+          .array(z.object({ citadaPor: z.string(), referencia: z.string() }))
+          .optional(),
         avisos: z
           .array(
             z.object({
@@ -142,10 +178,17 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
           .optional(),
         cadeia: CadeiaSchema.optional(),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ projeto, processo, secoes }) =>
-      executar(ctx, 'estado', { projeto, processo }, () => resolverEstado(ctx, { projeto, processo, secoes })),
+      executar(ctx, 'estado', { projeto, processo }, () =>
+        resolverEstado(ctx, { projeto, processo, secoes }),
+      ),
   );
 
   servidor.registerTool(
@@ -189,9 +232,27 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
         linhasInvalidas: z.array(z.number().int()).max(100),
         proximoCursor: z.number().int().nullable(),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
-    async ({ projeto, processo, desde, limite, tipo, busca, alvo, marcoTipo, resultado, apos, antes, ate }) => {
+    async ({
+      projeto,
+      processo,
+      desde,
+      limite,
+      tipo,
+      busca,
+      alvo,
+      marcoTipo,
+      resultado,
+      apos,
+      antes,
+      ate,
+    }) => {
       let logExtra: Record<string, unknown> = {};
       return executar(
         ctx,
@@ -230,9 +291,17 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
         '`linhasReparadas` vêm cortadas em 100 itens, com os totais reais.',
       inputSchema: { projeto: Nome, processo: Nome },
       outputSchema: CadeiaSchema.shape,
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
-    async ({ projeto, processo }) => executar(ctx, 'cadeia', { projeto, processo }, () => resolverCadeia(ctx, { projeto, processo })),
+    async ({ projeto, processo }) =>
+      executar(ctx, 'cadeia', { projeto, processo }, () =>
+        resolverCadeia(ctx, { projeto, processo }),
+      ),
   );
 }
 
@@ -263,7 +332,13 @@ function validarDadosDoProcesso(
   return (tipo, dados) => {
     const esquema = esquemaDados(tipo, dados, esquemasCustom) as z.ZodType | undefined;
     if (isNil(esquema)) {
-      return [{ caminho: '', codigo: 'tipo_desconhecido', mensagem: `tipo '${tipo}' não está fixado no processo` }];
+      return [
+        {
+          caminho: '',
+          codigo: 'tipo_desconhecido',
+          mensagem: `tipo '${tipo}' não está fixado no processo`,
+        },
+      ];
     }
     const resultado = esquema.safeParse(dados);
     return resultado.success ? null : detalhesDeIssues(resultado.error.issues, '');
@@ -279,7 +354,11 @@ function montarEstado(
   const elos = lerElos(texto, processo.esquemasCustom);
   const agora = agoraEfetivo(relogio().toISOString(), elos);
   const projecao = projetar(elos, processo.manifesto.fixado.vocabulario, agora);
-  const cadeia = verificarCadeia(texto, processo.manifesto, validarDadosDoProcesso(processo.esquemasCustom));
+  const cadeia = verificarCadeia(
+    texto,
+    processo.manifesto,
+    validarDadosDoProcesso(processo.esquemasCustom),
+  );
   return { ...projecao, cadeia, agora };
 }
 
@@ -287,7 +366,13 @@ function montarEstado(
 
 async function registrar(
   ctx: Contexto,
-  args: { projeto: string; processo: string; id: string; agente: string; dados: Record<string, unknown> },
+  args: {
+    projeto: string;
+    processo: string;
+    id: string;
+    agente: string;
+    dados: Record<string, unknown>;
+  },
 ): Promise<{ evento: Linha; deduplicado: boolean; avisos: AvisoSaida[] }> {
   const { projeto, processo, id, agente, dados } = args;
   const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
@@ -297,7 +382,10 @@ async function registrar(
     throw new ErroHexlog('TIPO_NAO_FIXADO', `tipo '${tipo}' não está fixado no processo`);
   }
   if (tipo === 'marco' && temCampoReservado(dados)) {
-    throw new ErroHexlog('CAMPO_RESERVADO', 'marcoTipo "gate" e a chave "gate" são reservados ao Marco de gate de avaliar_gate');
+    throw new ErroHexlog(
+      'CAMPO_RESERVADO',
+      'marcoTipo "gate" e a chave "gate" são reservados ao Marco de gate de avaliar_gate',
+    );
   }
 
   const normalizados = normalizarDados(tipo, dados, carregado.esquemasCustom);
@@ -324,11 +412,19 @@ async function registrar(
   return { evento: linha, deduplicado: false, avisos };
 }
 
-function validarIdDoEvento(id: string, projeto: string, processo: string): { tipo: string; uuid?: string } {
+function validarIdDoEvento(
+  id: string,
+  projeto: string,
+  processo: string,
+): { tipo: string; uuid?: string } {
   const analisado = analisarId(id);
   if (isNil(analisado) || analisado.projeto !== projeto || analisado.processo !== processo) {
     throw new ErroHexlog('ID_INVALIDO', 'id inválido para este projeto/processo', [
-      { caminho: '/id', codigo: 'id_invalido', mensagem: 'id não casa a gramática esperada ou diverge de projeto/processo' },
+      {
+        caminho: '/id',
+        codigo: 'id_invalido',
+        mensagem: 'id não casa a gramática esperada ou diverge de projeto/processo',
+      },
     ]);
   }
   return analisado;
@@ -353,7 +449,8 @@ function retentarComIdCompleto(
   }
 
   const enviado = canonicalize({ tipo, agente, dados: normalizados }) ?? '';
-  const gravado = canonicalize({ tipo: existente.tipo, agente: existente.agente, dados: existente.dados }) ?? '';
+  const gravado =
+    canonicalize({ tipo: existente.tipo, agente: existente.agente, dados: existente.dados }) ?? '';
   if (enviado !== gravado) {
     throw new ErroHexlog('ID_CONFLITANTE', `id '${id}' já usado com conteúdo diferente`);
   }
@@ -362,7 +459,11 @@ function retentarComIdCompleto(
 }
 
 /** Vocabulário na escrita (§4.9): `marcoTipo`/`decisoes[].acao` fechados (erro); `resultado` aberto (aviso). */
-function aplicarVocabulario(tipo: string, dados: Record<string, unknown>, vocabulario: Vocabulario): AvisoSaida[] {
+function aplicarVocabulario(
+  tipo: string,
+  dados: Record<string, unknown>,
+  vocabulario: Vocabulario,
+): AvisoSaida[] {
   if (tipo === 'veredito') return avisoResultadoDesconhecido(dados, vocabulario);
   if (tipo === 'marco' && (dados as { marcoTipo: string }).marcoTipo !== 'gate') {
     validarVocabularioMarco(dados, vocabulario);
@@ -374,19 +475,36 @@ function validarVocabularioMarco(dados: Record<string, unknown>, vocabulario: Vo
   const marco = dados as { marcoTipo: string; decisoes?: { acao: string }[] };
   garantirVocabulario('marcoTipo', marco.marcoTipo, vocabulario, '/dados/marcoTipo');
   marco.decisoes?.forEach((decisao, indice) =>
-    garantirVocabulario('decisoes.acao', decisao.acao, vocabulario, `/dados/decisoes/${indice}/acao`),
+    garantirVocabulario(
+      'decisoes.acao',
+      decisao.acao,
+      vocabulario,
+      `/dados/decisoes/${indice}/acao`,
+    ),
   );
 }
 
-function garantirVocabulario(campo: CampoVocabulario, valor: string, vocabulario: Vocabulario, caminho: string): void {
+function garantirVocabulario(
+  campo: CampoVocabulario,
+  valor: string,
+  vocabulario: Vocabulario,
+  caminho: string,
+): void {
   if (validarCampo(vocabulario, campo, valor)?.classe === 'erro') {
     throw new ErroHexlog('VOCABULARIO_VIOLADO', `${campo} '${valor}' fora do vocabulário fixado`, [
-      { caminho, codigo: 'vocabulario_violado', mensagem: `valor '${valor}' fora do vocabulário fixado` },
+      {
+        caminho,
+        codigo: 'vocabulario_violado',
+        mensagem: `valor '${valor}' fora do vocabulário fixado`,
+      },
     ]);
   }
 }
 
-function avisoResultadoDesconhecido(dados: Record<string, unknown>, vocabulario: Vocabulario): AvisoSaida[] {
+function avisoResultadoDesconhecido(
+  dados: Record<string, unknown>,
+  vocabulario: Vocabulario,
+): AvisoSaida[] {
   const resultado = (dados as { resultado: string }).resultado;
   if (validarCampo(vocabulario, 'resultado', resultado)?.classe !== 'aviso-desconhecido') return [];
   return [
@@ -402,7 +520,11 @@ function avisoResultadoDesconhecido(dados: Record<string, unknown>, vocabulario:
 
 type ResolucaoGate =
   | { origem: 'embutido'; nome: NomeGateEmbutido }
-  | { origem: 'custom'; criterio: string; resultado: { passou: boolean; prova: string | string[] } };
+  | {
+      origem: 'custom';
+      criterio: string;
+      resultado: { passou: boolean; prova: string | string[] };
+    };
 
 async function avaliarGate(
   ctx: Contexto,
@@ -422,10 +544,22 @@ async function avaliarGate(
 
   const { resultadoGate, criterio } =
     resolucao.origem === 'embutido'
-      ? { resultadoGate: avaliarEmbutido(resolucao.nome, estado), criterio: GATES_EMBUTIDOS[resolucao.nome].criterio }
-      : { resultadoGate: avaliarGateCustom(resolucao.resultado, estado.logAte), criterio: resolucao.criterio };
+      ? {
+          resultadoGate: avaliarEmbutido(resolucao.nome, estado),
+          criterio: GATES_EMBUTIDOS[resolucao.nome].criterio,
+        }
+      : {
+          resultadoGate: avaliarGateCustom(resolucao.resultado, estado.logAte),
+          criterio: resolucao.criterio,
+        };
 
-  const dados = montarDadosMarcoGate({ nome: gate, origem: resolucao.origem, criterio, alvo, resultado: resultadoGate });
+  const dados = montarDadosMarcoGate({
+    nome: gate,
+    origem: resolucao.origem,
+    criterio,
+    alvo,
+    resultado: resultadoGate,
+  });
   const linha = await anexar(
     carregado.arquivoEventos,
     carregado.manifesto,
@@ -452,14 +586,20 @@ function resolverGate(
 ): ResolucaoGate {
   if (ehGateEmbutido(gate)) {
     if (isNotNil(resultado)) {
-      throw new ErroHexlog('AVALIACAO_INVALIDA', 'gate embutido não aceita resultado informado pelo agente');
+      throw new ErroHexlog(
+        'AVALIACAO_INVALIDA',
+        'gate embutido não aceita resultado informado pelo agente',
+      );
     }
     return { origem: 'embutido', nome: gate };
   }
 
   const definicao = gates[gate];
   if (isNil(definicao)) {
-    throw new ErroHexlog('GATE_NAO_REGISTRADO', `gate '${gate}' não está fixado no processo nem é embutido`);
+    throw new ErroHexlog(
+      'GATE_NAO_REGISTRADO',
+      `gate '${gate}' não está fixado no processo nem é embutido`,
+    );
   }
   if (isNil(resultado)) {
     throw new ErroHexlog('AVALIACAO_INVALIDA', 'gate custom exige resultado informado pelo agente');
@@ -467,14 +607,24 @@ function resolverGate(
   return { origem: 'custom', criterio: definicao.criterio, resultado };
 }
 
-function avaliarGateCustom(resultado: { passou: boolean; prova: string | string[] }, logAte: Estado['logAte']): ResultadoGate {
+function avaliarGateCustom(
+  resultado: { passou: boolean; prova: string | string[] },
+  logAte: Estado['logAte'],
+): ResultadoGate {
   const prova = normalizarProvaCustom(resultado.prova);
   return { passou: resultado.passou, prova, totalItensProva: prova.length, avaliadoAte: logAte };
 }
 
 // ---- estado ----
 
-const CAMPOS_LISTA = ['vigentes', 'conflitos', 'orfaos', 'aRevisar', 'referenciasInvalidas', 'avisos'] as const;
+const CAMPOS_LISTA = [
+  'vigentes',
+  'conflitos',
+  'orfaos',
+  'aRevisar',
+  'referenciasInvalidas',
+  'avisos',
+] as const;
 const TODAS_SECOES: NomeSecao[] = [...CAMPOS_LISTA, 'cadeia'];
 
 function resolverEstado(
@@ -487,7 +637,10 @@ function resolverEstado(
 
   const totais = Object.fromEntries(CAMPOS_LISTA.map((campo) => [campo, estado[campo].length]));
   const listas = Object.fromEntries(
-    CAMPOS_LISTA.filter((campo) => incluidas.has(campo)).map((campo) => [campo, estado[campo].slice(0, TETO_ITENS_SECAO)]),
+    CAMPOS_LISTA.filter((campo) => incluidas.has(campo)).map((campo) => [
+      campo,
+      estado[campo].slice(0, TETO_ITENS_SECAO),
+    ]),
   );
 
   return {
@@ -527,7 +680,10 @@ type ArgsEventos = {
   ate?: number;
 };
 
-function resolverEventos(ctx: Contexto, args: ArgsEventos): { saida: SaidaEventos; extra: Record<string, unknown> } {
+function resolverEventos(
+  ctx: Contexto,
+  args: ArgsEventos,
+): { saida: SaidaEventos; extra: Record<string, unknown> } {
   const { projeto, processo, desde, limite, tipo, busca, alvo, marcoTipo, resultado, ate } = args;
   const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
 
@@ -552,7 +708,11 @@ function validarMarcoTipoDoFiltro(marcoTipo: string | undefined, vocabulario: Vo
   if (isNil(marcoTipo) || marcoTipo === 'gate') return;
   if (validarCampo(vocabulario, 'marcoTipo', marcoTipo)?.classe === 'erro') {
     throw new ErroHexlog('FILTRO_INVALIDO', `marcoTipo '${marcoTipo}' fora do vocabulário fixado`, [
-      { caminho: '/marcoTipo', codigo: 'fora_do_vocabulario', mensagem: `valor '${marcoTipo}' fora do vocabulário fixado` },
+      {
+        caminho: '/marcoTipo',
+        codigo: 'fora_do_vocabulario',
+        mensagem: `valor '${marcoTipo}' fora do vocabulário fixado`,
+      },
     ]);
   }
 }
@@ -565,7 +725,11 @@ function normalizarInstante(v: string | undefined): string | undefined {
 function validarIntervalo(apos: string | undefined, antes: string | undefined): void {
   if (isNil(apos) || isNil(antes) || apos < antes) return;
   throw new ErroHexlog('FILTRO_INVALIDO', 'apos deve ser anterior a antes', [
-    { caminho: '/apos', codigo: 'intervalo_invalido', mensagem: `apos (${apos}) não é anterior a antes (${antes})` },
+    {
+      caminho: '/apos',
+      codigo: 'intervalo_invalido',
+      mensagem: `apos (${apos}) não é anterior a antes (${antes})`,
+    },
   ]);
 }
 
@@ -573,7 +737,11 @@ function validarIntervalo(apos: string | undefined, antes: string | undefined): 
 function validarAte(ate: number | undefined, totalLinhasFisicas: number): void {
   if (isNil(ate) || ate <= totalLinhasFisicas) return;
   throw new ErroHexlog('FILTRO_INVALIDO', `ate (${ate}) maior que o número de linhas do arquivo`, [
-    { caminho: '/ate', codigo: 'ate_alem_do_arquivo', mensagem: `ate (${ate}) maior que ${totalLinhasFisicas} linhas físicas` },
+    {
+      caminho: '/ate',
+      codigo: 'ate_alem_do_arquivo',
+      mensagem: `ate (${ate}) maior que ${totalLinhasFisicas} linhas físicas`,
+    },
   ]);
 }
 
@@ -619,7 +787,13 @@ function resolverModoCru(
   }
 
   return {
-    saida: { modo: 'cru', eventos, ate: limiteAte, linhasInvalidas: linhasInvalidas.slice(0, 100), proximoCursor },
+    saida: {
+      modo: 'cru',
+      eventos,
+      ate: limiteAte,
+      linhasInvalidas: linhasInvalidas.slice(0, 100),
+      proximoCursor,
+    },
     extra: { modo: 'cru', candidatos },
   };
 }
@@ -670,7 +844,10 @@ function resolverModoBusca(
 
   for (let posicao = 0; posicao < pagina.length; posicao++) {
     const item = pagina[posicao]!;
-    const evento: LinhaResultado = { ...linhaPorIndice.get(item.indice)!, relevancia: item.relevancia };
+    const evento: LinhaResultado = {
+      ...linhaPorIndice.get(item.indice)!,
+      relevancia: item.relevancia,
+    };
     const incremento = JSON.stringify(evento).length + (eventos.length > 0 ? 1 : 0);
 
     if (eventos.length > 0 && tamanho + incremento > TETO_PAGINA_CHARS) {
@@ -687,15 +864,29 @@ function resolverModoBusca(
   }
 
   return {
-    saida: { modo: 'busca', eventos, combinacao, ate: limiteAte, linhasInvalidas: linhasInvalidas.slice(0, 100), proximoCursor },
+    saida: {
+      modo: 'busca',
+      eventos,
+      combinacao,
+      ate: limiteAte,
+      linhasInvalidas: linhasInvalidas.slice(0, 100),
+      proximoCursor,
+    },
     extra: { modo: 'busca', candidatos: candidatos.length, msIndice, combinacao },
   };
 }
 
 // ---- cadeia ----
 
-function resolverCadeia(ctx: Contexto, { projeto, processo }: { projeto: string; processo: string }): Cadeia {
+function resolverCadeia(
+  ctx: Contexto,
+  { projeto, processo }: { projeto: string; processo: string },
+): Cadeia {
   const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
   const texto = lerTexto(carregado.arquivoEventos);
-  return verificarCadeia(texto, carregado.manifesto, validarDadosDoProcesso(carregado.esquemasCustom));
+  return verificarCadeia(
+    texto,
+    carregado.manifesto,
+    validarDadosDoProcesso(carregado.esquemasCustom),
+  );
 }

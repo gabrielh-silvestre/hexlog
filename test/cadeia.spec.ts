@@ -38,7 +38,10 @@ function construirLog(quantidade: number): Linha[] {
 }
 
 function paraTexto(linhas: Array<Linha | string>): string {
-  return linhas.map((linha) => (typeof linha === 'string' ? linha : JSON.stringify(linha))).join('\n') + '\n';
+  return (
+    linhas.map((linha) => (typeof linha === 'string' ? linha : JSON.stringify(linha))).join('\n') +
+    '\n'
+  );
 }
 
 describe('hashLinha / ancora (N10, golden)', () => {
@@ -225,7 +228,9 @@ describe('verificarCadeia: outros casos', () => {
     const e0 = construirLinha(0, null);
     const e1 = construirLinha(1, e0, 'ruim');
     const validarDados = (_tipo: string, dados: Record<string, unknown>) =>
-      dados.marcoTipo === 'ruim' ? [{ caminho: '/dados/marcoTipo', codigo: 'ruim', mensagem: 'x' }] : null;
+      dados.marcoTipo === 'ruim'
+        ? [{ caminho: '/dados/marcoTipo', codigo: 'ruim', mensagem: 'x' }]
+        : null;
 
     const resultado = verificarCadeia(paraTexto([e0, e1]), MANIFESTO, validarDados);
     expect(resultado.quebras).toEqual([{ indice: 1, motivo: 'dados-invalidos' }]);

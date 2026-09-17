@@ -1,12 +1,23 @@
 import { describe, expect, test } from '@jest/globals';
 import { orderBy } from 'es-toolkit';
-import { buscar, ehCandidato, semAcento, termosDistintos, textoIndexavel, type Filtros } from '../src/busca.ts';
+import {
+  buscar,
+  ehCandidato,
+  semAcento,
+  termosDistintos,
+  textoIndexavel,
+  type Filtros,
+} from '../src/busca.ts';
 import type { Manifesto, Vocabulario } from '../src/definicoes.ts';
 import type { Linha } from '../src/eventos.ts';
 import { gerarCorpus } from './fixtures/corpus.ts';
 
 const VOCABULARIO: Vocabulario = {
-  nucleo: { marcoTipo: ['aprovado', 'rejeitado'], resultado: ['ok', 'falhou'], acao: ['seguir', 'revisar'] },
+  nucleo: {
+    marcoTipo: ['aprovado', 'rejeitado'],
+    resultado: ['ok', 'falhou'],
+    acao: ['seguir', 'revisar'],
+  },
   porDono: {},
 };
 
@@ -15,7 +26,9 @@ const MANIFESTO: Manifesto = {
   processo: 'proc1',
   criadoEm: '2026-01-01T00:00:00.000Z',
   fixado: {
-    tipos: { nota: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
+    tipos: {
+      nota: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] },
+    },
     vocabulario: VOCABULARIO,
     gates: {},
   },
@@ -55,7 +68,13 @@ describe('textoIndexavel', () => {
       },
     });
     const texto = textoIndexavel(linha);
-    for (const parte of ['aprovado', 'itens pendentes', 'revisar contrato', 'seguir', 'aprovado apos analise']) {
+    for (const parte of [
+      'aprovado',
+      'itens pendentes',
+      'revisar contrato',
+      'seguir',
+      'aprovado apos analise',
+    ]) {
       expect(texto).toContain(parte);
     }
     expect(texto).not.toContain('hex:alvo:secreto');
@@ -102,7 +121,15 @@ describe('textoIndexavel', () => {
       },
     });
     const texto = textoIndexavel(linha);
-    for (const parte of ['afirmação textual', 'fonte textual', 'ok', 'prova um', 'prova dois', 'origem textual', 'rastro textual']) {
+    for (const parte of [
+      'afirmação textual',
+      'fonte textual',
+      'ok',
+      'prova um',
+      'prova dois',
+      'origem textual',
+      'rastro textual',
+    ]) {
       expect(texto).toContain(parte);
     }
     expect(texto).not.toContain('hex:alvo:secreto');
@@ -117,7 +144,11 @@ describe('textoIndexavel', () => {
         numero: 42,
         ok: true,
         detalhe: { sub: 'valor aninhado' },
-        lista: ['item um', 'hex:alvo:secreto', 'p1:proc1:marco:00000000-0000-7000-8000-000000000000'],
+        lista: [
+          'item um',
+          'hex:alvo:secreto',
+          'p1:proc1:marco:00000000-0000-7000-8000-000000000000',
+        ],
       },
     });
     const texto = textoIndexavel(linha);
@@ -132,7 +163,15 @@ describe('textoIndexavel', () => {
   test('envelope: id, prevHash, timestamp e agente nunca entram no índice', () => {
     const linha = linhaBase({
       tipo: 'veredito',
-      dados: { afirmacao: 'x', fonte: 'y', resultado: 'ok', prova: 'z', destino: 'hex:alvo:a', origem: 'o', rastro: 'r' },
+      dados: {
+        afirmacao: 'x',
+        fonte: 'y',
+        resultado: 'ok',
+        prova: 'z',
+        destino: 'hex:alvo:a',
+        origem: 'o',
+        rastro: 'r',
+      },
     });
     const texto = textoIndexavel(linha);
     expect(texto).not.toContain(linha.id);
@@ -160,7 +199,15 @@ describe('ehCandidato', () => {
   test('alvo casa tanto dados.alvo (Marco) quanto dados.destino (Veredito)', () => {
     const veredito = linhaBase({
       tipo: 'veredito',
-      dados: { afirmacao: 'a', fonte: 'f', resultado: 'ok', prova: 'p', destino: 'hex:alvo:x', origem: 'o', rastro: 'r' },
+      dados: {
+        afirmacao: 'a',
+        fonte: 'f',
+        resultado: 'ok',
+        prova: 'p',
+        destino: 'hex:alvo:x',
+        origem: 'o',
+        rastro: 'r',
+      },
     });
     expect(ehCandidato(veredito, { alvo: 'hex:alvo:x' })).toBe(true);
   });
@@ -168,7 +215,15 @@ describe('ehCandidato', () => {
   test('resultado: igualdade exata sem validação de vocabulário, só em Veredito', () => {
     const veredito = linhaBase({
       tipo: 'veredito',
-      dados: { afirmacao: 'a', fonte: 'f', resultado: 'fora-do-vocabulario', prova: 'p', destino: 'hex:alvo:x', origem: 'o', rastro: 'r' },
+      dados: {
+        afirmacao: 'a',
+        fonte: 'f',
+        resultado: 'fora-do-vocabulario',
+        prova: 'p',
+        destino: 'hex:alvo:x',
+        origem: 'o',
+        rastro: 'r',
+      },
     });
     expect(ehCandidato(veredito, { resultado: 'fora-do-vocabulario' })).toBe(true);
     const marco = linhaBase({ dados: { marcoTipo: 'aprovado', alvo: 'hex:alvo:x' } });
@@ -182,7 +237,10 @@ describe('ehCandidato', () => {
   });
 
   test('intervalo [apos, antes)', () => {
-    const linha = linhaBase({ timestamp: '2026-01-05T00:00:00.000Z', dados: { marcoTipo: 'aprovado', alvo: 'hex:alvo:x' } });
+    const linha = linhaBase({
+      timestamp: '2026-01-05T00:00:00.000Z',
+      dados: { marcoTipo: 'aprovado', alvo: 'hex:alvo:x' },
+    });
     expect(ehCandidato(linha, { apos: '2026-01-05T00:00:00.000Z' })).toBe(true);
     expect(ehCandidato(linha, { apos: '2026-01-05T00:00:00.001Z' })).toBe(false);
     expect(ehCandidato(linha, { antes: '2026-01-05T00:00:00.000Z' })).toBe(false);
@@ -283,7 +341,9 @@ describe('M12', () => {
   test('a) alvo exato nunca casa "login-1..6", inclusive combinado com busca "login"', () => {
     const corpus = gerarCorpus({ tamanho: 300, manifesto: MANIFESTO, vocabulario: VOCABULARIO });
     const filtros: Filtros = { alvo: 'hex:alvo:login' };
-    const candidatosFiltrados = candidatosDe(corpus.linhas).filter(({ linha }) => ehCandidato(linha, filtros));
+    const candidatosFiltrados = candidatosDe(corpus.linhas).filter(({ linha }) =>
+      ehCandidato(linha, filtros),
+    );
     expect(
       candidatosFiltrados.every(({ linha }) => {
         const dados = linha.dados as { alvo?: string; destino?: string };
@@ -297,7 +357,10 @@ describe('M12', () => {
 
   test('c) apos/antes: só timestamp em [apos, antes)', () => {
     const corpus = gerarCorpus({ tamanho: 50, manifesto: MANIFESTO, vocabulario: VOCABULARIO });
-    const filtros: Filtros = { apos: corpus.linhas[10]!.timestamp, antes: corpus.linhas[20]!.timestamp };
+    const filtros: Filtros = {
+      apos: corpus.linhas[10]!.timestamp,
+      antes: corpus.linhas[20]!.timestamp,
+    };
     const indices = candidatosDe(corpus.linhas)
       .filter(({ linha }) => ehCandidato(linha, filtros))
       .map(({ indice }) => indice)
@@ -308,7 +371,9 @@ describe('M12', () => {
   test('d) busca + alvo + tipo: interseção', () => {
     const corpus = gerarCorpus({ tamanho: 300, manifesto: MANIFESTO, vocabulario: VOCABULARIO });
     const filtros: Filtros = { tipo: 'veredito', alvo: 'hex:alvo:login' };
-    const candidatosFiltrados = candidatosDe(corpus.linhas).filter(({ linha }) => ehCandidato(linha, filtros));
+    const candidatosFiltrados = candidatosDe(corpus.linhas).filter(({ linha }) =>
+      ehCandidato(linha, filtros),
+    );
     const { resultados } = buscar(candidatosFiltrados, 'login');
     expect(resultados.length).toBeGreaterThan(0);
     for (const resultado of resultados) {
