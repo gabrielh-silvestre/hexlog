@@ -236,14 +236,14 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
   );
 }
 
-// ---- helpers puros reutilizáveis (passos 7c e 8) ----
+// ---- helpers puros (montagem de elos e Estado) ----
 
 /**
  * Lê as linhas físicas de um log (§4.6: cauda sem `\n` descartada) e separa em elos com `dados`
  * validado contra o schema do seu `tipo` (nativo ou do snapshot) e linhas inválidas (envelope ou
  * `dados` reprovados). `linhasInvalidas` guarda o índice físico de cada linha fora dos elos.
  */
-export function lerElos(
+function lerElos(
   texto: string,
   esquemasCustom: Record<string, z.ZodType>,
 ): { elos: Linha[]; linhasInvalidas: number[]; linhasFisicas: string[] } {
@@ -269,7 +269,7 @@ function dadosValidos(elo: Linha, esquemasCustom: Record<string, z.ZodType>): bo
 }
 
 /** `validarDados` de `verificarCadeia` (§4.6): reprova `dados` fora do schema fixado do seu `tipo`. */
-export function validarDadosDoProcesso(
+function validarDadosDoProcesso(
   esquemasCustom: Record<string, z.ZodType>,
 ): (tipo: string, dados: Record<string, unknown>) => Detalhe[] | null {
   return (tipo, dados) => {
@@ -283,7 +283,7 @@ export function validarDadosDoProcesso(
 }
 
 /** Projeta o Estado completo do processo (§4.8) a partir do texto atual do log. */
-export function montarEstado(
+function montarEstado(
   processo: ProcessoCarregado,
   texto: string,
   relogio: () => Date,
@@ -297,10 +297,10 @@ export function montarEstado(
 
 // ---- registrar ----
 
-function registrar(
+async function registrar(
   ctx: Contexto,
   args: { projeto: string; processo: string; id: string; agente: string; dados: Record<string, unknown> },
-): { evento: Linha; deduplicado: boolean; avisos: AvisoSaida[] } {
+): Promise<{ evento: Linha; deduplicado: boolean; avisos: AvisoSaida[] }> {
   const { projeto, processo, id, agente, dados } = args;
   const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
   const { tipo, uuid } = validarIdDoEvento(id, projeto, processo);
@@ -319,7 +319,7 @@ function registrar(
     return { ...retentarComIdCompleto(carregado, id, tipo, agente, normalizados), avisos };
   }
 
-  const linha = anexar(
+  const linha = await anexar(
     carregado.arquivoEventos,
     carregado.manifesto,
     (base) => ({
@@ -416,7 +416,7 @@ type ResolucaoGate =
   | { origem: 'embutido'; nome: NomeGateEmbutido }
   | { origem: 'custom'; criterio: string; resultado: { passou: boolean; prova: string | string[] } };
 
-function avaliarGate(
+async function avaliarGate(
   ctx: Contexto,
   args: {
     projeto: string;
@@ -426,7 +426,7 @@ function avaliarGate(
     alvo: string;
     resultado?: { passou: boolean; prova: string | string[] };
   },
-): { evento: Linha; passou: boolean; prova: unknown[]; totalItensProva: number } {
+): Promise<{ evento: Linha; passou: boolean; prova: unknown[]; totalItensProva: number }> {
   const { projeto, processo, gate, agente, alvo, resultado } = args;
   const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
   const resolucao = resolverGate(gate, resultado, carregado.manifesto.fixado.gates);
@@ -438,7 +438,7 @@ function avaliarGate(
       : { resultadoGate: avaliarGateCustom(resolucao.resultado, estado.logAte), criterio: resolucao.criterio };
 
   const dados = montarDadosMarcoGate({ nome: gate, origem: resolucao.origem, criterio, alvo, resultado: resultadoGate });
-  const linha = anexar(
+  const linha = await anexar(
     carregado.arquivoEventos,
     carregado.manifesto,
     (base) => ({

@@ -49,6 +49,10 @@ describe('M2', () => {
     { tool: 'criar_processo', campo: 'processo', base: { projeto: 'proj-valido', processo: 'proc-valido' } },
     { tool: 'registrar_tipo', campo: 'projeto', base: { projeto: 'proj-valido', nome: 'tipo-valido', schema: SCHEMA_VALIDO } },
     { tool: 'registrar_tipo', campo: 'nome', base: { projeto: 'proj-valido', nome: 'tipo-valido', schema: SCHEMA_VALIDO } },
+    { tool: 'registrar_vocabulario', campo: 'projeto', base: { projeto: 'proj-valido', dono: 'nucleo' } },
+    { tool: 'registrar_vocabulario', campo: 'dono', base: { projeto: 'proj-valido', dono: 'nucleo' } },
+    { tool: 'registrar_gate', campo: 'projeto', base: { projeto: 'proj-valido', nome: 'gate-valido', criterio: 'critério qualquer' } },
+    { tool: 'registrar_gate', campo: 'nome', base: { projeto: 'proj-valido', nome: 'gate-valido', criterio: 'critério qualquer' } },
     { tool: 'listar', campo: 'projeto', base: {} },
     { tool: 'listar', campo: 'processo', base: { projeto: 'proj-valido' } },
   ];

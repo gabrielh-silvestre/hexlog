@@ -43,10 +43,10 @@
 | Projeção do Estado | Padrão sem lib | Decider: `evolve` puro + `reduce` | Libs de ES impõem agregado/comando e backend externo | 7 |
 | Deny de leitura/escrita | Adotar (nativo CC) | `permissions.deny`: `Read(//<dados>/**)`, `Edit(//<dados>/**)` | Cobre Read/Grep/Glob/Edit/Write e `cat <arquivo>`; forma `//` obrigatória | 6 |
 | Hook PreToolUse Bash | Construir | TS + `shell-quote@1.10.0` | Pega `$HOME`, `${XDG_DATA_HOME}`, `hex""log`; 0 deps | 6, 8 |
-| Runtime do hook | Nativo | `.ts`/`.mts` direto no Node 24 (type stripping estável) | Sem build; +~35 ms por comando Bash | 8, 9 |
+| Runtime do hook | Nativo | `.ts`/`.mts` direto no Node 24 (type stripping estável) | Sem build; +~35 ms por comando Bash; substituído pelo bundle esbuild instalado, U-7/U-8, ver ADR | 8, 9 |
 | Instalação em settings.json | Adotar | `jsonc-parser@3.3.1` + tmp/rename nativo + backup + `--check` | Diff cirúrgico de 2 linhas vs 13 do stringify | 8 |
 | Diretório de dados | Nativo | 3 linhas XDG (ignorar valor vazio ou relativo) | `env-paths` adiciona `-nodejs`; só Linux | 10 |
-| UUID do id | Adotar | `uuid@14.0.2` (`v7`) | Node 24 não gera v7 nativo; RFC 9562 ordenável | 10, 11 |
+| UUID do id | Adotar | `uuid@14.0.2` (`v7`) | Node 24 não gera v7 nativo; RFC 9562 ordenável; substituído por `crypto.randomUUIDv7()` nativo, ver ADR | 10, 11 |
 | Erro estruturado | Nativo do Zod | `error.issues` → `detalhes[]` com `caminho` em JSON Pointer | treeify/flatten/prettify e `zod-validation-error` desnecessários | 10, 11 |
 | Datas | Nativo | ISO-8601 UTC `Z`; comparação lexicográfica | `Temporal` indisponível no Node 24 | 10 |
 | Runner de teste | Adotar | `jest@30.5.1` + `ts-jest@29.4.12` (CJS, sem `--experimental-vm-modules`) | Probe verde com SDK v2 + zod + fast-check | 9 |

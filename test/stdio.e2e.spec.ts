@@ -339,16 +339,11 @@ describe('C1', () => {
       const inicioBarreira = Date.now();
       const disparos = clientes.map((cliente, indice) => dispararRodada(cliente.cliente, projeto, processo, indice, semeados));
 
-      // Desvio do plano, verificado empiricamente (diagnóstico à parte, fora do repo): a espera do
-      // lock em `adquirirLock` (src/log.ts) é síncrona (`Atomics.wait`), então o handler de uma tool
-      // roda até o fim (sucesso ou LOCK_TIMEOUT) sem devolver o controle ao laço de mensagens do SDK.
-      // Isso serializa completamente as chamadas dentro de um mesmo processo servidor: das 20
-      // chamadas "em paralelo" de cada servidor, só a primeira chega a tentar o lock enquanto o lock
-      // artificial estiver de pé — as 19 seguintes nem são despachadas. Logo o máximo de `lock-espera`
-      // garantido nesta barreira é 4 (uma por servidor), não 80; reportado ao team-lead como decisão
-      // técnica fora do plano. A barreira aqui espera as 4 garantidas; o total real (inclui contenção
-      // orgânica entre os 4 processos depois da soltura) é só impresso, não travado em 80.
-      await aguardar(() => contarLockEspera() >= 4, 5);
+      // A espera pela aquisição do lock em `adquirirLock` (src/log.ts) é assíncrona: o handler de
+      // uma tool devolve o controle ao laço de mensagens do SDK entre uma tentativa e outra, então
+      // as 20 chamadas de `registrar` com prefixo de cada um dos 4 servidores despacham e colidem
+      // com o lock artificial, gerando as 80 `lock-espera` que o AC C1 exige antes da soltura.
+      await aguardar(() => contarLockEspera() >= 80, 5);
       const msBarreira = Date.now() - inicioBarreira;
       fs.rmSync(dirLock, { recursive: true, force: true });
 
@@ -383,7 +378,7 @@ describe('C1', () => {
         .map((registro) => registro.ms as number);
       const totalLockEspera = registrosTodos.filter((registro) => registro.evento === 'lock-espera').length;
       process.stdout.write(
-        `C1: barreira=${msBarreira}ms maiorMsRegistrar=${Math.max(...msDeRegistrar)}ms totalLockEspera=${totalLockEspera} (min. garantido 4, não 80 — ver comentário acima)\n`,
+        `C1: barreira=${msBarreira}ms maiorMsRegistrar=${Math.max(...msDeRegistrar)}ms totalLockEspera=${totalLockEspera} (min. garantido 80)\n`,
       );
     },
     60_000,

@@ -94,7 +94,7 @@ function tentarParseComando(comando: string): [string, string] | undefined {
   return [tokens[0], tokens[1]] as [string, string];
 }
 
-interface EntradaHookEncontrada {
+export interface EntradaHookEncontrada {
   entradaIndex: number;
   hookIndex: number;
   exec: string;
@@ -102,7 +102,7 @@ interface EntradaHookEncontrada {
 }
 
 /** Percorre `hooks.PreToolUse` procurando a entrada do hook do hexlog, em qualquer versão instalada. */
-function localizarEntradaHook(dadosSettings: unknown, dirVersao: string): EntradaHookEncontrada | undefined {
+export function localizarEntradaHook(dadosSettings: unknown, dirVersao: string): EntradaHookEncontrada | undefined {
   const entradas = ((dadosSettings as { hooks?: { PreToolUse?: unknown[] } })?.hooks?.PreToolUse ?? []) as {
     hooks?: unknown[];
   }[];
@@ -188,7 +188,7 @@ interface ArgsVerificarGuard {
 }
 
 /** Único mecanismo de detecção de guard ausente, alterado ou quebrado (R-1); usado por `instalar.ts --check`. */
-export function verificarGuard(args: ArgsVerificarGuard): { ok: boolean; faltando: ItemFaltando[]; avisos: string[] } {
+export function verificarGuard(args: ArgsVerificarGuard): { ok: boolean; faltando: ItemFaltando[] } {
   const { textoSettings, textoClaudeJson, esperado, existe, executarHook, bytesInstalados } = args;
   const dadosSettings = parse(textoSettings);
   const denyAtual: unknown[] = dadosSettings?.permissions?.deny ?? [];
@@ -216,7 +216,7 @@ export function verificarGuard(args: ArgsVerificarGuard): { ok: boolean; faltand
   if (!verificarMcp(textoClaudeJson, esperado)) faltando.push('mcp');
   if (verificarArtefatoAlterado(bytesInstalados)) faltando.push('artefato-alterado');
 
-  return { ok: faltando.length === 0, faltando, avisos: [] };
+  return { ok: faltando.length === 0, faltando };
 }
 
 /** Execução real do hook instalado: sem `split`, `arquivo` já resolvido pelo `shellQuote.parse` do `command` registrado. */

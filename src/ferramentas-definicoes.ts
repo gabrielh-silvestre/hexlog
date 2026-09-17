@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { sha256hex } from './cadeia.ts';
 import { carregarProcesso, criarProcesso, lerProjeto, listarProjetos, registrarGate, registrarTipo, registrarVocabulario } from './definicoes.ts';
 import { ErroHexlog } from './erros.ts';
-import { listarGatesEmbutidos } from './gates.ts';
-import { adaptarLoggerAjv, type Contexto, Definida, executar, Hash, Instante, Nome } from './mcp.ts';
+import { listarGatesEmbutidos, TETO_CRITERIO_CHARS } from './gates.ts';
+import { adaptarLoggerAjv, type Contexto, Definida, executar, Hash, Hashes, Instante, Nome, Vocabulario } from './mcp.ts';
 
 const Rotulo = z.string().min(1).max(100);
 const ListaRotulos = z.array(Rotulo).max(100).default([]);
@@ -36,15 +36,9 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
           .object({
             nome: Nome,
             criadoEm: Instante,
-            hashes: z.object({ schemas: Hash, vocabulario: Hash, gates: Hash }),
+            hashes: Hashes,
             tipos: z.array(z.object({ nome: Nome, hash: Hash })),
-            vocabulario: z.object({
-              nucleo: z.object({ marcoTipo: z.array(z.string()), resultado: z.array(z.string()), acao: z.array(z.string()) }),
-              porDono: z.record(
-                z.string(),
-                z.object({ marcoTipo: z.array(z.string()), resultado: z.array(z.string()), acao: z.array(z.string()) }),
-              ),
-            }),
+            vocabulario: Vocabulario,
             gates: z.record(z.string(), z.object({ criterio: z.string() })),
           })
           .optional(),
@@ -94,7 +88,7 @@ export function registrarFerramentasDefinicoes(servidor: McpServer, ctx: Context
     {
       title: 'Registrar gate',
       description: 'Registra (ou substitui) o critério de um gate custom do projeto, gravando `gates/<nome>.json`.',
-      inputSchema: { projeto: Nome, nome: Nome, criterio: z.string().min(1).max(2000) },
+      inputSchema: { projeto: Nome, nome: Nome, criterio: z.string().min(1).max(TETO_CRITERIO_CHARS) },
       outputSchema: Definida.shape,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },

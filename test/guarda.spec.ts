@@ -136,7 +136,7 @@ describe('I5: aplicarGuard idempotente e não intrusivo', () => {
       existe: existeSempre,
       executarHook: executarHookSimulado,
     });
-    expect(verificacao).toEqual({ ok: true, faltando: [], avisos: [] });
+    expect(verificacao).toEqual({ ok: true, faltando: [] });
   });
 
   test('preserva entradas alheias (rtk hook claude e as regras/allow existentes)', () => {
@@ -324,7 +324,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
       existe: fs.existsSync,
       executarHook: executarHookReal,
     });
-    expect(verificacao).toEqual({ ok: true, faltando: [], avisos: [] });
+    expect(verificacao).toEqual({ ok: true, faltando: [] });
   });
 
   const casosDeFuncional: { nome: string; versaoVariante: string; item: ItemFaltando }[] = [
@@ -790,6 +790,37 @@ describe('B2: instalação versionada do artefato (instalarArtefato)', () => {
       fs.rmSync(homeDiferente, { recursive: true, force: true });
     }
   }, 20_000);
+
+  test('(h2) reinstalação concorrente: ENOENT no primeiro renameSync é tratado como concorrência, sem diretório misto', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-concorrencia-reinstalacao-'));
+    try {
+      // versão já instalada antes da corrida: o primeiro renameSync de cada
+      // filho (dirVersao → antiga) só pode achar ENOENT se o outro já a moveu.
+      await instalarArtefato({
+        home,
+        versao: '0.1.0',
+        bundles: { servidor: Buffer.from('servidor-inicial'), hook: Buffer.from('hook-inicial') },
+        commit: null,
+        sujo: false,
+        agora: () => new Date(),
+        executarHook: (_arquivoHook, stdin) => ({ status: stdin.includes('/sonda') ? 2 : 0 }),
+        verificarServidor: async () => 10,
+        log: () => {},
+      });
+
+      const [r1, r2] = await Promise.all([
+        executarFixtureConcorrente(home, '0.1.0', 'novo', 1, 2),
+        executarFixtureConcorrente(home, '0.1.0', 'novo', 2, 2),
+      ]);
+
+      expect([r1.status, r2.status]).toEqual([0, 0]);
+      const dirVersao = dirVersaoDe(home, '0.1.0');
+      expect(fs.readdirSync(dirVersao).sort()).toEqual(['guarda-bash.mjs', 'manifesto.json', 'servidor.mjs']);
+      expect(fs.readFileSync(path.join(dirVersao, 'servidor.mjs'), 'utf8')).toBe('servidor-novo');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
 });
 
 describe('B3: instalar.ts --check (processo real)', () => {
@@ -909,11 +940,13 @@ describe('B3: instalar.ts --check (processo real)', () => {
         textoSettings,
         textoClaudeJson,
         executarHook: executarHookReal,
+        headAtual: 'head-simulado-de-teste',
       });
 
       expect(resultado.exit).toBe(0);
       expect(resultado.avisos.some((a) => a.startsWith('artefato-desatualizado'))).toBe(true);
       expect(resultado.avisos.some((a) => a.includes(String(manifesto.commit)))).toBe(true);
+      expect(resultado.avisos.some((a) => a.includes('head-simulado-de-teste'))).toBe(true);
     } finally {
       process.env.HOME = homeOriginal;
       if (xdgOriginal === undefined) {

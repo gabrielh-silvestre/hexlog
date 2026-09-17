@@ -100,7 +100,7 @@ function tokenAlcancaDiretorio(tokenBruto: string, cwd: string, dirDados: string
 }
 
 /** Decisão pura do guard: sem I/O, testável isolada do processo real. */
-export function decidir(
+function decidir(
   input: unknown,
   env: NodeJS.ProcessEnv,
   cwdPadrao: string,

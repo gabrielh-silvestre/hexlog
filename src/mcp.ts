@@ -4,6 +4,7 @@ import type { Logger as LoggerAjv } from './definicoes.ts';
 import { type Detalhe, ErroHexlog } from './erros.ts';
 import { registrarFerramentasDefinicoes } from './ferramentas-definicoes.ts';
 import { registrarFerramentasEventos } from './ferramentas-eventos.ts';
+import { VocabSchema, VocabularioSchema } from './estado.ts';
 import { Agente, Hash, Instante, Nome } from './eventos.ts';
 import type { Logger, Registro } from './log.ts';
 import { VERSAO } from './versao.ts';
@@ -35,15 +36,12 @@ export function adaptarLoggerAjv(log: Logger): LoggerAjv {
 // §4.16: tetos de saída (medidos no passo 13), compartilhados com os passos 7b/7c.
 export const TETO_ITENS_SECAO = 100;
 export const TETO_PAGINA_CHARS = 24_000;
-export const TETO_SCHEMA_CHARS = 16_000;
 
 // Esquemas comuns de §4.12, compartilhados pelas tools de definição e de eventos.
 export const Aviso = z.object({ codigo: z.string(), mensagem: z.string(), detalhes: z.unknown().optional() });
-export const Vocab = z.object({
-  marcoTipo: z.array(z.string()),
-  resultado: z.array(z.string()),
-  acao: z.array(z.string()),
-});
+// Reexportados de estado.ts (fonte única do schema de vocabulário, DE-29).
+export const Vocab = VocabSchema;
+export const Vocabulario = VocabularioSchema;
 export const Ref = z.object({ id: z.string(), seq: z.number().int(), timestamp: Instante });
 export const Quebra = z.object({
   indice: z.number().int(),
@@ -82,16 +80,16 @@ type ResultadoTool<T> =
  * rodar e mesclado no log `tool` (§4.15: usado por `eventos` para `modo`/`candidatos`/`msIndice`/
  * `combinacao`, sem alterar `structuredContent` nem os demais chamadores).
  */
-export function executar<T>(
+export async function executar<T>(
   ctx: Contexto,
   nome: string,
   args: { projeto?: string; processo?: string },
-  fn: () => T,
+  fn: () => T | Promise<T>,
   extraLog?: () => Record<string, unknown>,
-): ResultadoTool<T> {
+): Promise<ResultadoTool<T>> {
   const inicio = Date.now();
   try {
-    const resultado = fn();
+    const resultado = await fn();
     ctx.log({
       nivel: 'info',
       evento: 'tool',

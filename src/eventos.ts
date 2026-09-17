@@ -6,12 +6,12 @@ import { detalhesDeIssues, ErroHexlog } from './erros.ts';
 
 // §4.2: regex única de nome para projeto, processo, tipo, gate e dono.
 const NOME_SRC = '[a-z0-9][a-z0-9-]{0,62}';
-export const NOME_RE = new RegExp(`^${NOME_SRC}$`);
+const NOME_RE = new RegExp(`^${NOME_SRC}$`);
 export const Nome = z.string().regex(NOME_RE);
 
 // §4.3: prefixo do id (sem uuid) × id completo (com uuid v7).
 const UUID_V7_SRC = '[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
-export const ID_RE = new RegExp(`^(${NOME_SRC}):(${NOME_SRC}):(${NOME_SRC})(?::(${UUID_V7_SRC}))?$`);
+const ID_RE = new RegExp(`^(${NOME_SRC}):(${NOME_SRC}):(${NOME_SRC})(?::(${UUID_V7_SRC}))?$`);
 export const ID_COMPLETO_RE = new RegExp(`^(${NOME_SRC}):(${NOME_SRC}):(${NOME_SRC}):(${UUID_V7_SRC})$`);
 
 export const Hash = z.string().regex(/^[0-9a-f]{64}$/);
@@ -19,7 +19,7 @@ export const Instante = z.iso.datetime();
 export const Agente = z.string().min(1).max(100);
 export const Rotulo = z.string().min(1).max(200);
 export const Texto = z.string().min(1).max(4000);
-export const IdCompleto = z.string().regex(ID_COMPLETO_RE);
+const IdCompleto = z.string().regex(ID_COMPLETO_RE);
 
 // Gramática reimplementada de POC:src/core/addressing.ts:19-39 + POC:poc/src/endereco.ts:7,13-15
 // (serviço 'alvo'). Sem import da POC.
@@ -46,7 +46,7 @@ export const Linha = z.strictObject({
 });
 export type Linha = z.infer<typeof Linha>;
 
-export const DadosMarco = z.strictObject({
+const DadosMarco = z.strictObject({
   marcoTipo: Rotulo,
   alvo: Alvo,
   contagem: z.strictObject({ campo: Rotulo, valor: z.number() }).optional(),
@@ -54,7 +54,7 @@ export const DadosMarco = z.strictObject({
   decisoes: z.array(z.strictObject({ item: Rotulo, acao: Rotulo, texto: Texto })).max(100).optional(),
 });
 
-export const DadosVeredito = z.strictObject({
+const DadosVeredito = z.strictObject({
   afirmacao: Texto,
   fonte: Texto,
   resultado: Rotulo,
@@ -80,7 +80,7 @@ export const DadosMarcoGate = z.strictObject({
 });
 
 /** Teto de caracteres canônicos (JCS) para `dados` de um evento (§4.4). */
-export const TETO_DADOS_CHARS = 16_000;
+const TETO_DADOS_CHARS = 16_000;
 
 /**
  * Escolhe o schema de `dados` para `tipo`: nativos fixos (Marco/Veredito, com o desvio

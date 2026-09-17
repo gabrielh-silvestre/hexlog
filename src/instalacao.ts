@@ -6,12 +6,12 @@
 import * as path from 'node:path';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
-import { parse as shellQuoteParse } from 'shell-quote';
-import { isNil, isString } from 'es-toolkit';
+import { isNil } from 'es-toolkit';
 import {
   regrasEsperadas,
   aplicarGuard,
   verificarGuard,
+  localizarEntradaHook,
   sha256,
   type RegrasEsperadas,
   type ItemFaltando,
@@ -52,7 +52,7 @@ export function lerManifesto(dirVersao: string): Manifesto | null {
   }
 }
 
-export function shasInstalados(dirVersao: string): { servidor: string | null; hook: string | null } {
+function shasInstalados(dirVersao: string): { servidor: string | null; hook: string | null } {
   const shaDoArquivo = (nome: string): string | null => {
     const arquivo = path.join(dirVersao, nome);
     return existsSync(arquivo) ? sha256(readFileSync(arquivo)) : null;
@@ -60,10 +60,12 @@ export function shasInstalados(dirVersao: string): { servidor: string | null; ho
   return { servidor: shaDoArquivo('servidor.mjs'), hook: shaDoArquivo('guarda-bash.mjs') };
 }
 
+/** `ENOENT` cobre a reinstalação: o primeiro `renameSync(dirVersao, antiga)` acha `dirVersao` já
+ * movido por outro instalador que chegou primeiro — mesma resolução de `ENOTEMPTY`/`EEXIST`. */
 function ehErroDeDiretorioOcupado(erro: unknown): boolean {
   if (!(erro instanceof Error)) return false;
   const codigo = (erro as NodeJS.ErrnoException).code;
-  return codigo === 'ENOTEMPTY' || codigo === 'EEXIST';
+  return codigo === 'ENOTEMPTY' || codigo === 'EEXIST' || codigo === 'ENOENT';
 }
 
 /** Verifica o artefato preparado em `tmp` antes de trocar (§4.14 passo 5): qualquer falha aborta sem tocar em nada. */
@@ -259,27 +261,11 @@ export function precisaRegistrarMcp(textoClaudeJson: string | null, esperado: Re
 
 /** Versão instalada segundo o `command` do hook já registrado em `settings.json`, se houver. */
 function versaoDoHookRegistrado(dadosSettings: unknown, home: string): string | undefined {
-  const entradas = ((dadosSettings as { hooks?: { PreToolUse?: unknown[] } })?.hooks?.PreToolUse ?? []) as {
-    hooks?: { command?: unknown }[];
-  }[];
-  const dirHexlogLib = path.join(home, '.local', 'lib', 'hexlog');
-  for (const entrada of entradas) {
-    for (const hook of entrada.hooks ?? []) {
-      if (!isString(hook.command)) continue;
-      let tokens;
-      try {
-        tokens = shellQuoteParse(hook.command);
-      } catch {
-        continue;
-      }
-      if (tokens.length !== 2 || !tokens.every(isString)) continue;
-      const arquivo = tokens[1];
-      if (path.basename(arquivo) !== 'guarda-bash.mjs') continue;
-      if (path.dirname(path.dirname(arquivo)) !== dirHexlogLib) continue;
-      return path.basename(path.dirname(arquivo));
-    }
-  }
-  return undefined;
+  // `localizarEntradaHook` só usa `dirname(dirVersao)` (o diretório `.local/lib/hexlog`) para
+  // reconhecer o hook do hexlog em qualquer versão — o segmento de versão em si é irrelevante aqui.
+  const dirVersaoQualquer = path.join(home, '.local', 'lib', 'hexlog', '_');
+  const encontrada = localizarEntradaHook(dadosSettings, dirVersaoQualquer);
+  return isNil(encontrada) ? undefined : path.basename(path.dirname(encontrada.arquivo));
 }
 
 /** `instalar.ts --check` (§4.14, §10; QN4): mesmo `verificarGuard` de I5-I7, mais o aviso de artefato desatualizado. */
@@ -292,8 +278,9 @@ export function verificarInstalacao(args: {
   textoSettings: string | null;
   textoClaudeJson: string | null;
   executarHook: (exec: string, arquivo: string, stdin: string) => { status: number | null };
+  headAtual: string | null;
 }): { faltando: ItemFaltando[]; avisos: string[]; exit: 0 | 1 } {
-  const { home, versao, execPath, D, bundlesAtuais, textoSettings, textoClaudeJson, executarHook } = args;
+  const { home, versao, execPath, D, bundlesAtuais, textoSettings, textoClaudeJson, executarHook, headAtual } = args;
   // Sem settings, tudo dá "faltando" pelas checagens normais de `verificarGuard` — não precisa de um caso especial.
   const textoParaVerificar = textoSettings ?? '{}';
   const versaoInstalada = versaoDoHookRegistrado(parseJsonc(textoParaVerificar), home) ?? versao;
@@ -317,14 +304,15 @@ export function verificarInstalacao(args: {
     bytesInstalados,
   });
 
-  const avisos = [...resultado.avisos];
+  const avisos: string[] = [];
   if (!isNil(manifesto) && !isNil(bundlesAtuais) && !resultado.faltando.includes('artefato-alterado')) {
     const shaBuild = { servidor: sha256(bundlesAtuais.servidor), hook: sha256(bundlesAtuais.hook) };
     const desatualizado = shaBuild.servidor !== manifesto.sha256.servidor || shaBuild.hook !== manifesto.sha256.hook;
     if (desatualizado) {
       const sujoTexto = manifesto.sujo ? ' (sujo)' : '';
+      const headTexto = headAtual ?? 'HEAD desconhecido';
       avisos.push(
-        `artefato-desatualizado: instalado de ${manifesto.commit ?? 'commit desconhecido'}${sujoTexto}; rode o instalador`,
+        `artefato-desatualizado: instalado de ${manifesto.commit ?? 'commit desconhecido'}${sujoTexto}; working tree em ${headTexto}; rode o instalador`,
       );
     }
   }

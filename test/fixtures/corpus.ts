@@ -39,7 +39,7 @@ const BANCO_FRASES = [...FRASES_GERAIS, ...FRASES_AUTENTICACAO, ...FRASES_PAGAME
 
 const ALVOS_BASE = ['hex:alvo:conta-1', 'hex:alvo:conta-2', 'hex:alvo:pedido-1', 'hex:alvo:pagamento-1', 'hex:alvo:sessao-1'];
 const ALVOS_LOGIN = ['hex:alvo:login', 'hex:alvo:login-1', 'hex:alvo:login-2', 'hex:alvo:login-3', 'hex:alvo:login-4', 'hex:alvo:login-5', 'hex:alvo:login-6'];
-const TODOS_ALVOS = [...ALVOS_BASE, ...ALVOS_LOGIN];
+const ALVOS_DO_CORPUS = [...ALVOS_BASE, ...ALVOS_LOGIN];
 
 type IntentoMarco = { categoria: 'marco'; marcoTipo: string; alvo: string; frase?: string; comContagem: boolean };
 type IntentoVeredito = { categoria: 'veredito'; destino: string; resultado: string; frase: string };
@@ -90,7 +90,7 @@ const RASCUNHO_ARB: fc.Arbitrary<Rascunho> = fc.record({
 });
 
 function paraIntento(r: Rascunho, vocabulario: Vocabulario, indice: number): Intento {
-  const alvo = TODOS_ALVOS[r.alvoIndice % TODOS_ALVOS.length]!;
+  const alvo = ALVOS_DO_CORPUS[r.alvoIndice % ALVOS_DO_CORPUS.length]!;
   const frase = BANCO_FRASES[r.banco % BANCO_FRASES.length]!;
 
   if (r.categoria === 'marco') {

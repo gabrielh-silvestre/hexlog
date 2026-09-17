@@ -144,6 +144,7 @@ async function checar(): Promise<void> {
     textoSettings,
     textoClaudeJson,
     executarHook: executarHookReal,
+    headAtual: commitAtual(),
   });
 
   for (const item of resultado.faltando) console.log(`faltando: ${item}`);

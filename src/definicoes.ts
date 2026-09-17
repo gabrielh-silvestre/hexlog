@@ -18,6 +18,10 @@ import {
   TIPOS_RESERVADOS,
 } from './dados.ts';
 import { ErroHexlog } from './erros.ts';
+import type { Vocab, Vocabulario } from './estado.ts';
+
+// Reexportados de estado.ts (fonte única do schema de vocabulário, DE-29).
+export type { Vocab, Vocabulario };
 
 /** Teto de caracteres canônicos (JCS) para um schema custom (§4.10). */
 const TETO_SCHEMA_CHARS = 16_000;
@@ -27,12 +31,6 @@ export type Logger = { log: (...args: unknown[]) => void; warn: (...args: unknow
 
 /** Resposta comum de `registrar_*`: o que foi gravado e se substituiu uma versão anterior. */
 export type Definida = { projeto: string; nome: string; hash: string; substituiu: boolean };
-
-/** Um vocabulário (núcleo ou de um dono): listas de valores aceitos por campo. */
-export type Vocab = { marcoTipo: string[]; resultado: string[]; acao: string[] };
-
-/** Vocabulário completo de um projeto: núcleo + extensões por dono. */
-export type Vocabulario = { nucleo: Vocab; porDono: Record<string, Vocab> };
 
 /** Manifesto fixado de um processo (`processo.json`, §4.1). */
 export type Manifesto = {

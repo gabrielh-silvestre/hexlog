@@ -42,40 +42,40 @@ afterEach(() => {
 });
 
 describe('anexar — encadeamento', () => {
-  test('1º elo usa a âncora do manifesto como prevHash e seq 0', () => {
+  test('1º elo usa a âncora do manifesto como prevHash e seq 0', async () => {
     const { log } = criarLoggerEspiao();
 
-    const linha = anexar(arquivo, MANIFESTO, montarLinha, { log });
+    const linha = await anexar(arquivo, MANIFESTO, montarLinha, { log });
 
     expect(linha.seq).toBe(0);
     expect(linha.prevHash).toBe(ancora(MANIFESTO));
   });
 
-  test('2º elo encadeia no anterior', () => {
+  test('2º elo encadeia no anterior', async () => {
     const { log } = criarLoggerEspiao();
-    const primeiro = anexar(arquivo, MANIFESTO, montarLinha, { log });
+    const primeiro = await anexar(arquivo, MANIFESTO, montarLinha, { log });
 
-    const segundo = anexar(arquivo, MANIFESTO, montarLinha, { log });
+    const segundo = await anexar(arquivo, MANIFESTO, montarLinha, { log });
 
     expect(segundo.seq).toBe(1);
     expect(segundo.prevHash).toBe(hashLinha(primeiro));
   });
 
-  test('fsyncSync é chamado a cada append', () => {
+  test('fsyncSync é chamado a cada append', async () => {
     const espiaoFsync = jest.spyOn(fs, 'fsyncSync');
     const { log } = criarLoggerEspiao();
 
-    anexar(arquivo, MANIFESTO, montarLinha, { log });
+    await anexar(arquivo, MANIFESTO, montarLinha, { log });
 
     expect(espiaoFsync).toHaveBeenCalledTimes(1);
     espiaoFsync.mockRestore();
   });
 
-  test('2 chamadas em sequência no mesmo processo produzem 2 elos íntegros', () => {
+  test('2 chamadas em sequência no mesmo processo produzem 2 elos íntegros', async () => {
     const { log } = criarLoggerEspiao();
 
-    anexar(arquivo, MANIFESTO, montarLinha, { log });
-    anexar(arquivo, MANIFESTO, montarLinha, { log });
+    await anexar(arquivo, MANIFESTO, montarLinha, { log });
+    await anexar(arquivo, MANIFESTO, montarLinha, { log });
 
     const resultado = verificarCadeia(lerTexto(arquivo), MANIFESTO);
     expect(resultado.ok).toBe(true);
@@ -84,25 +84,25 @@ describe('anexar — encadeamento', () => {
 });
 
 describe('anexar — rasgo (cauda sem \\n final)', () => {
-  test('JSON completo sem \\n final vira elo válido e o próximo encadeia nele', () => {
+  test('JSON completo sem \\n final vira elo válido e o próximo encadeia nele', async () => {
     const { log } = criarLoggerEspiao();
-    const primeiro = anexar(arquivo, MANIFESTO, montarLinha, { log });
+    const primeiro = await anexar(arquivo, MANIFESTO, montarLinha, { log });
     const textoSemQuebra = fs.readFileSync(arquivo, 'utf8').replace(/\n$/, ''); // simula escrita interrompida só no separador
     fs.writeFileSync(arquivo, textoSemQuebra);
 
-    const segundo = anexar(arquivo, MANIFESTO, montarLinha, { log });
+    const segundo = await anexar(arquivo, MANIFESTO, montarLinha, { log });
 
     expect(segundo.seq).toBe(1);
     expect(segundo.prevHash).toBe(hashLinha(primeiro));
     expect(fs.readFileSync(arquivo, 'utf8')).toBe(`${textoSemQuebra}\n${JSON.stringify(segundo)}\n`);
   });
 
-  test('cauda truncada (JSON incompleto) sem \\n: o próximo append insere \\n e conta a rasgada no seq', () => {
+  test('cauda truncada (JSON incompleto) sem \\n: o próximo append insere \\n e conta a rasgada no seq', async () => {
     const { log } = criarLoggerEspiao();
-    const primeiro = anexar(arquivo, MANIFESTO, montarLinha, { log });
+    const primeiro = await anexar(arquivo, MANIFESTO, montarLinha, { log });
     fs.appendFileSync(arquivo, '{"seq":1,"id":"p:proc:marco:incompl'); // rasgo: JSON truncado, sem \n
 
-    const segundo = anexar(arquivo, MANIFESTO, montarLinha, { log });
+    const segundo = await anexar(arquivo, MANIFESTO, montarLinha, { log });
 
     expect(segundo.seq).toBe(2); // conta a linha rasgada como pendente
     expect(segundo.prevHash).toBe(hashLinha(primeiro)); // aponta pro último elo válido, não pro rasgo
@@ -111,12 +111,12 @@ describe('anexar — rasgo (cauda sem \\n final)', () => {
 });
 
 describe('anexar — lock', () => {
-  test('LOCK_TIMEOUT com lock alheio: nenhuma linha escrita e o lock alheio não é removido', () => {
+  test('LOCK_TIMEOUT com lock alheio: nenhuma linha escrita e o lock alheio não é removido', async () => {
     const dirLock = `${arquivo}.lock`;
     fs.mkdirSync(dirLock, 0o700); // mtime fresco: nunca órfão neste teste
     const { log, registros } = criarLoggerEspiao();
 
-    expect(() => anexar(arquivo, MANIFESTO, montarLinha, { log, timeoutMs: 200, orfaoMs: 60_000 })).toThrow(
+    await expect(anexar(arquivo, MANIFESTO, montarLinha, { log, timeoutMs: 200, orfaoMs: 60_000 })).rejects.toEqual(
       expect.objectContaining({ codigo: 'LOCK_TIMEOUT' }),
     );
 
@@ -125,34 +125,34 @@ describe('anexar — lock', () => {
     expect(registros.filter((r) => r.evento === 'lock-espera')).toHaveLength(1);
   });
 
-  test('lock órfão (mtime velho) é removido, loga lock-orfao-removido, e o append segue', () => {
+  test('lock órfão (mtime velho) é removido, loga lock-orfao-removido, e o append segue', async () => {
     const dirLock = `${arquivo}.lock`;
     fs.mkdirSync(dirLock, 0o700);
     const antigo = new Date(Date.now() - 20_000);
     fs.utimesSync(dirLock, antigo, antigo); // mais velho que o orfaoMs abaixo
     const { log, registros } = criarLoggerEspiao();
 
-    const linha = anexar(arquivo, MANIFESTO, montarLinha, { log, orfaoMs: 5_000, timeoutMs: 2_000 });
+    const linha = await anexar(arquivo, MANIFESTO, montarLinha, { log, orfaoMs: 5_000, timeoutMs: 2_000 });
 
     expect(linha.seq).toBe(0);
     expect(registros.some((r) => r.evento === 'lock-orfao-removido')).toBe(true);
     expect(fs.existsSync(dirLock)).toBe(false); // liberado ao final do append (lock era do próprio processo)
   });
 
-  test('lock-espera é emitido exatamente 1× por requisição mesmo com várias colisões', () => {
+  test('lock-espera é emitido exatamente 1× por requisição mesmo com várias colisões', async () => {
     const dirLock = `${arquivo}.lock`;
     fs.mkdirSync(dirLock, 0o700);
     const { log, registros } = criarLoggerEspiao();
 
     // timeoutMs pequeno com retry de 10ms gera várias colisões antes de estourar
-    expect(() => anexar(arquivo, MANIFESTO, montarLinha, { log, timeoutMs: 50, orfaoMs: 60_000 })).toThrow();
+    await expect(anexar(arquivo, MANIFESTO, montarLinha, { log, timeoutMs: 50, orfaoMs: 60_000 })).rejects.toThrow();
 
     expect(registros.filter((r) => r.evento === 'lock-espera')).toHaveLength(1);
   });
 });
 
 describe('anexar — fencing', () => {
-  test('owner trocado durante montar → LOCK_PERDIDO, 0 linhas novas, log lock-perdido, lock alheio intacto', () => {
+  test('owner trocado durante montar → LOCK_PERDIDO, 0 linhas novas, log lock-perdido, lock alheio intacto', async () => {
     const dirLock = `${arquivo}.lock`;
     const { log, registros } = criarLoggerEspiao();
 
@@ -162,7 +162,7 @@ describe('anexar — fencing', () => {
       return montarLinha(base);
     };
 
-    expect(() => anexar(arquivo, MANIFESTO, montarComRoubo, { log })).toThrow(
+    await expect(anexar(arquivo, MANIFESTO, montarComRoubo, { log })).rejects.toEqual(
       expect.objectContaining({ codigo: 'LOCK_PERDIDO' }),
     );
 

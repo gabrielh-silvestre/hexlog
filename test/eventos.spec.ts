@@ -116,7 +116,11 @@ describe('normalizarDados idempotência (N2 iii, property)', () => {
 
   const arbTexto = fc.stringMatching(/^[A-Za-z0-9 ]{1,20}$/);
   const arbAlvo = fc.stringMatching(/^[a-z0-9]{1,20}$/).map((s) => `hex:alvo:${s}`);
-  const arbData = fc.date({ min: new Date('2000-01-01T00:00:00.000Z'), max: new Date('2035-01-01T00:00:00.000Z') });
+  const arbData = fc.date({
+    min: new Date('2000-01-01T00:00:00.000Z'),
+    max: new Date('2035-01-01T00:00:00.000Z'),
+    noInvalidDate: true,
+  });
   const arbOffsetMin = fc.integer({ min: -23 * 60, max: 23 * 60 });
   const arbPrazo = fc.tuple(arbData, arbOffsetMin).map(([data, offset]) => formatarComOffset(data, offset));
 

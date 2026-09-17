@@ -5,9 +5,9 @@ decisões, marcos e veredictos, com um log append-only e cadeia de hash por
 processo. Expõe exatamente 10 tools. Não tem CLI nem daemon: só o servidor
 MCP e um hook de isolamento instalados no Claude Code.
 
-Os dados ficam em `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog` sem
-essa variável), um diretório por projeto e, dentro dele, um log JSONL por
-processo. Cada linha do log referencia o hash da anterior, então qualquer
+Os dados ficam em `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog` se a
+variável estiver ausente, vazia ou não for um caminho absoluto), um diretório
+por projeto e, dentro dele, um log JSONL por processo. Cada linha do log referencia o hash da anterior, então qualquer
 alteração ou remoção de linha quebra a cadeia de forma detectável pela tool
 `cadeia`.
 

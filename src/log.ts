@@ -12,9 +12,9 @@ import type { Linha } from './eventos.ts';
 export type Registro = { nivel: 'debug' | 'info' | 'aviso' | 'erro'; evento: string; [campo: string]: unknown };
 export type Logger = (registro: Registro) => void;
 
-export const LOCK_TIMEOUT_MS = 5_000;
-export const LOCK_RETRY_MS = 10;
-export const LOCK_ORFAO_MS = 10_000;
+const LOCK_TIMEOUT_MS = 5_000;
+const LOCK_RETRY_MS = 10;
+const LOCK_ORFAO_MS = 10_000;
 
 const ARQUIVO_TOKEN = 'owner';
 
@@ -30,19 +30,20 @@ export function lerTexto(arquivo: string): string {
 }
 
 /**
- * Anexa um elo ao log JSONL sob lock exclusivo por diretório (§4.7). `montar` roda dentro da
- * seção crítica síncrona (sem `await`): recebe a base já calculada (`seq`/`prevHash`/`uuid`/
- * `timestamp`/`ultimoElo`) e devolve a `Linha` a gravar.
+ * Anexa um elo ao log JSONL sob lock exclusivo por diretório (§4.7). A espera pela aquisição do
+ * lock é assíncrona (retry com `await` de sleep); a partir daqui, `montar` roda dentro da seção
+ * crítica síncrona (sem `await`): recebe a base já calculada (`seq`/`prevHash`/`uuid`/`timestamp`/
+ * `ultimoElo`) e devolve a `Linha` a gravar.
  */
-export function anexar(
+export async function anexar(
   arquivo: string,
   manifesto: unknown,
   montar: (base: Base) => Linha,
   opcoes: { log: Logger; timeoutMs?: number; orfaoMs?: number; relogio?: () => Date },
-): Linha {
+): Promise<Linha> {
   const { log, timeoutMs = LOCK_TIMEOUT_MS, orfaoMs = LOCK_ORFAO_MS, relogio = () => new Date() } = opcoes;
   const dirLock = `${arquivo}.lock`;
-  const token = adquirirLock(dirLock, { log, timeoutMs, orfaoMs });
+  const token = await adquirirLock(dirLock, { log, timeoutMs, orfaoMs });
 
   try {
     const contexto = prepararContexto(arquivo, manifesto, relogio);
@@ -102,7 +103,7 @@ function escreverLinha(arquivo: string, endsWithNewline: boolean, linha: Linha):
 }
 // ponytail: reread O(n) por append; medido ~18 ms a 10k linhas com fsync; upgrade: sidecar de tail/índice.
 
-function adquirirLock(dirLock: string, opcoes: { log: Logger; timeoutMs: number; orfaoMs: number }): string {
+async function adquirirLock(dirLock: string, opcoes: { log: Logger; timeoutMs: number; orfaoMs: number }): Promise<string> {
   const inicio = Date.now();
   let avisouEspera = false;
 
@@ -126,7 +127,7 @@ function adquirirLock(dirLock: string, opcoes: { log: Logger; timeoutMs: number;
       if (Date.now() - inicio > opcoes.timeoutMs) {
         throw new ErroHexlog('LOCK_TIMEOUT', `lock não liberado em ${opcoes.timeoutMs}ms`);
       }
-      esperarMs(LOCK_RETRY_MS);
+      await esperarMs(LOCK_RETRY_MS);
     }
   }
 }
@@ -167,8 +168,8 @@ function lerToken(dirLock: string): string | null {
   }
 }
 
-// ponytail: espera ocupada síncrona (a seção crítica não pode ter `await`); bloqueia a thread
-// pelo tempo do retry. Atomics.wait é permitido na thread principal do Node (diferente do browser).
-function esperarMs(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+// Espera assíncrona (DE-29): fora da seção crítica, então não precisa bloquear a thread — libera
+// o event loop para outras chamadas da mesma sessão MCP enquanto este pedido aguarda o retry.
+function esperarMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

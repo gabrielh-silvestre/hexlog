@@ -5,7 +5,7 @@ import { omit } from 'es-toolkit/compat';
 import type { Detalhe } from './erros.ts';
 import { Linha } from './eventos.ts';
 
-export type MotivoQuebra = 'linha-invalida' | 'seq-divergente' | 'hash-nao-bate' | 'dados-invalidos';
+type MotivoQuebra = 'linha-invalida' | 'seq-divergente' | 'hash-nao-bate' | 'dados-invalidos';
 
 export type Quebra = { indice: number; motivo: MotivoQuebra };
 
