@@ -17,9 +17,20 @@ import MiniSearch from 'minisearch';
 import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
 import { dirDados } from '../src/diretorio.ts';
+import { parseJson } from './helpers.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
 const REGEX_UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// Forma esperada de test/fixtures/filho-probe.ts, campos usados abaixo.
+const SaidaFilhoProbeSchema = z.object({
+  uuidV7Valido: z.boolean(),
+  mcpServerCarregado: z.boolean(),
+  stdioServerTransportCarregado: z.boolean(),
+});
+
+// Forma mínima de um envelope JSON-RPC 2.0 recebido do servidor bundlado.
+const EnvelopeJsonRpcSchema = z.object({ jsonrpc: z.string() });
 
 describe('probe de dependências no jest (sub-passo 5)', () => {
   test('canonicalize produz JSON canônico (RFC 8785)', () => {
@@ -69,7 +80,7 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
       { id: 2, texto: 'evento veredito reprovado' },
       { id: 3, texto: 'evento comum' },
     ]);
-    expect(indice.search('márco').map((resultado) => resultado.id)).toEqual([1]);
+    expect(indice.search('márco').map((resultado) => resultado.id as number)).toEqual([1]);
   });
 
   test('path.matchesGlob casa padrão simples', () => {
@@ -82,7 +93,7 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
     servidor.registerTool(
       'eco',
       { description: 'eco', inputSchema: { texto: z.string() } },
-      async ({ texto }) => ({ content: [{ type: 'text', text: texto }] }),
+      ({ texto }) => Promise.resolve({ content: [{ type: 'text', text: texto }] }),
     );
     const cliente = new Client({ name: 'probe-cliente', version: '0.0.0' });
 
@@ -110,7 +121,7 @@ describe('probe no Node ESM real (sub-passo 6, filho-probe)', () => {
     expect(resultado.status).toBe(0);
     expect(resultado.stderr).toBe('');
 
-    const saida = JSON.parse(resultado.stdout);
+    const saida = parseJson(SaidaFilhoProbeSchema, resultado.stdout);
     expect(saida.uuidV7Valido).toBe(true);
     expect(saida.mcpServerCarregado).toBe(true);
     expect(saida.stdioServerTransportCarregado).toBe(true);
@@ -150,7 +161,7 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
 
     expect(linhas.length).toBe(3);
     for (const linha of linhas) {
-      expect(JSON.parse(linha).jsonrpc).toBe('2.0');
+      expect(parseJson(EnvelopeJsonRpcSchema, linha).jsonrpc).toBe('2.0');
     }
     expect(stderr).not.toContain('Dynamic require');
   }, 15000);

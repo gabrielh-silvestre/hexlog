@@ -3,7 +3,7 @@ import { randomUUIDv7 } from 'node:crypto';
 import { isNil } from 'es-toolkit';
 import * as fc from 'fast-check';
 import MiniSearch from 'minisearch';
-import { ancora, prevHashEsperado, proximoSeq } from '../../src/cadeia.ts';
+import { prevHashEsperado, proximoSeq } from '../../src/cadeia.ts';
 import type { Manifesto, Vocabulario } from '../../src/definicoes.ts';
 import { semAcento, textoIndexavel } from '../../src/busca.ts';
 import type { Linha } from '../../src/eventos.ts';

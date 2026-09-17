@@ -41,7 +41,7 @@ try {
     sujo: false,
     agora: () => new Date(),
     executarHook: (_arquivoHook, stdin) => ({ status: stdin.includes('/sonda') ? 2 : 0 }),
-    verificarServidor: async () => 10,
+    verificarServidor: () => Promise.resolve(10),
     log: () => {},
   });
   process.stdout.write(JSON.stringify({ ok: true, acao: resultado.acao }));

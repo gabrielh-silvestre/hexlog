@@ -1,10 +1,21 @@
 import { describe, test, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { z } from 'zod';
 import { VERSAO } from '../src/versao.ts';
+import { parseJson } from './helpers.ts';
 
 const raizDoRepo = path.resolve(__dirname, '..');
 const DIRETORIOS_IGNORADOS = new Set(['node_modules', 'dist', '.omc', '.git', 'coverage']);
+
+// Forma de package.json que este arquivo lê (campos usados nas asserções abaixo).
+const PacoteSchema = z.object({
+  dependencies: z.record(z.string(), z.string()),
+  devDependencies: z.record(z.string(), z.string()),
+  engines: z.record(z.string(), z.string()),
+  version: z.string(),
+  bin: z.unknown().optional(),
+});
 
 /** Lista recursivamente os arquivos com a extensão dada, pulando diretórios de build/dependências. */
 function listarArquivosRecursivo(dir: string, extensao = '.ts'): string[] {
@@ -50,7 +61,7 @@ function saiDoRepo(especificador: string, arquivo: string): boolean {
   return relativo.startsWith('..') || path.isAbsolute(relativo);
 }
 
-const pkg = JSON.parse(fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8'));
+const pkg = parseJson(PacoteSchema, fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8'));
 
 describe('N7', () => {
   test('package.json não depende de xstate, hexnucleus, core.poc-motor-log nem uuid', () => {

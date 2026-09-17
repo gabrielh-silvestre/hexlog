@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import canonicalize from 'canonicalize';
+import { z } from 'zod';
 import { sha256hex } from '../src/cadeia.ts';
 import { caminho, PROCESSOS_RESERVADOS } from '../src/dados.ts';
 import type { Manifesto } from '../src/definicoes.ts';
@@ -15,6 +16,7 @@ import {
   registrarVocabulario,
 } from '../src/definicoes.ts';
 import { ErroHexlog } from '../src/erros.ts';
+import { parseJson } from './helpers.ts';
 
 const PROJETO = 'projeto-teste';
 const SCHEMA_VALIDO = {
@@ -23,6 +25,14 @@ const SCHEMA_VALIDO = {
   required: ['texto'],
   additionalProperties: false,
 };
+
+// Forma de schemas/<nome>.json gravado por `registrarTipo` (S1).
+const RegistroTipoSchema = z.object({
+  nome: z.string(),
+  schema: z.record(z.string(), z.unknown()),
+  hash: z.string(),
+  registradoEm: z.string(),
+});
 
 let dir: string;
 
@@ -60,7 +70,8 @@ function lerManifesto(processo: string): Manifesto {
 describe('registrarTipo (S1)', () => {
   test('grava schemas/<nome>.json com nome, schema, hash e registradoEm', () => {
     const resultado = registrarTipo(dir, PROJETO, 'decisao', SCHEMA_VALIDO);
-    const gravado = JSON.parse(
+    const gravado = parseJson(
+      RegistroTipoSchema,
       fs.readFileSync(caminho(dir, PROJETO, 'schemas', 'decisao.json'), 'utf8'),
     );
     expect(gravado).toEqual({

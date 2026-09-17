@@ -7,7 +7,13 @@ import { last } from 'es-toolkit';
 import { z } from 'zod';
 import { executar } from '../src/mcp.ts';
 import type { Registro } from '../src/log.ts';
-import { type Ambiente, criarAmbiente, esperarErro, registrarNucleo } from './helpers.ts';
+import {
+  type Ambiente,
+  criarAmbiente,
+  esperarErro,
+  parseJson,
+  registrarNucleo,
+} from './helpers.ts';
 
 const SCHEMA_VALIDO = {
   type: 'object',
@@ -15,6 +21,9 @@ const SCHEMA_VALIDO = {
   required: ['nota'],
   additionalProperties: false,
 };
+
+// Forma de schemas/<nome>.json gravado por `registrar_tipo` (S1).
+const RegistroTipoSchema = z.object({ schema: z.record(z.string(), z.unknown()) });
 
 /** Registra vocabulário núcleo, um tipo e um gate custom, depois fixa `processo` (setup comum a vários ACs). */
 async function prepararProcesso(ambiente: Ambiente, projeto: string, processo: string) {
@@ -233,7 +242,8 @@ describe('M9', () => {
 describe('S1', () => {
   test('registrar_tipo grava schemas/<nome>.json com o schema exato', async () => {
     await ambiente.chamar('registrar_tipo', { projeto: 'p1', nome: 'nota', schema: SCHEMA_VALIDO });
-    const gravado = JSON.parse(
+    const gravado = parseJson(
+      RegistroTipoSchema,
       fs.readFileSync(path.join(ambiente.dir, 'p1', 'schemas', 'nota.json'), 'utf8'),
     );
     expect(gravado.schema).toEqual(SCHEMA_VALIDO);

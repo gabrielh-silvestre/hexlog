@@ -30,23 +30,24 @@ serveStdio(() => {
       description: 'devolve um diagnóstico das deps carregadas',
       inputSchema: { texto: z.string() },
     },
-    async ({ texto }) => ({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            texto,
-            ajvSchemaValido: ajv.validateSchema({ type: 'object' }),
-            uuid: randomUUIDv7(),
-            buscaMinisearch: indice.search('marco').map((resultado) => resultado.id),
-            pick: pick({ a: 1, b: 2 }, ['a']),
-            get: get({ a: { b: 1 } }, 'a.b'),
-            canon: canonicalize({ b: 1, a: 2 }),
-            shellQuote: quote(['echo', texto]),
-          }),
-        },
-      ],
-    }),
+    ({ texto }) =>
+      Promise.resolve({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              texto,
+              ajvSchemaValido: ajv.validateSchema({ type: 'object' }),
+              uuid: randomUUIDv7(),
+              buscaMinisearch: indice.search('marco').map((resultado) => resultado.id as number),
+              pick: pick({ a: 1, b: 2 }, ['a']),
+              get: get({ a: { b: 1 } }, 'a.b'),
+              canon: canonicalize({ b: 1, a: 2 }),
+              shellQuote: quote(['echo', texto]),
+            }),
+          },
+        ],
+      }),
   );
 
   return servidor;

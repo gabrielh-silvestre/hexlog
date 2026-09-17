@@ -1,5 +1,6 @@
 import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
+import { omit } from 'es-toolkit';
 import type { Linha } from '../src/eventos.ts';
 import {
   agoraEfetivo,
@@ -447,16 +448,8 @@ describe('S3: eventos custom são inertes', () => {
     const v2 = veredito({ destino: ALVO_1, afirmacao: 'a2' }, { timestamp: T(2) });
     const agora = T(2);
 
-    const { logAte: _semLogAte, ...projecaoSemCustom } = projetar(
-      [v1, v2],
-      vocabularioVazio,
-      agora,
-    );
-    const { logAte: _comLogAte, ...projecaoComCustom } = projetar(
-      [v1, custom, v2],
-      vocabularioVazio,
-      agora,
-    );
+    const projecaoSemCustom = omit(projetar([v1, v2], vocabularioVazio, agora), ['logAte']);
+    const projecaoComCustom = omit(projetar([v1, custom, v2], vocabularioVazio, agora), ['logAte']);
 
     expect(projecaoComCustom).toEqual(projecaoSemCustom);
   });
