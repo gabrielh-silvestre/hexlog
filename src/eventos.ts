@@ -21,8 +21,7 @@ export const Rotulo = z.string().min(1).max(200);
 export const Texto = z.string().min(1).max(4000);
 const IdCompleto = z.string().regex(ID_COMPLETO_RE);
 
-// Gramática reimplementada de POC:src/core/addressing.ts:19-39 + POC:poc/src/endereco.ts:7,13-15
-// (serviço 'alvo'). Sem import da POC.
+// Endereço de alvo: só o serviço 'alvo' (§4.3), sem espaço nem ':' no id.
 export const Alvo = z.string().max(200).regex(/^hex:alvo:[^\s:]+$/);
 
 /** Decompõe um id de evento em `{projeto, processo, tipo, uuid?}`, ou `null` se não casar §4.3. */
@@ -85,7 +84,7 @@ const TETO_DADOS_CHARS = 16_000;
 /**
  * Escolhe o schema de `dados` para `tipo`: nativos fixos (Marco/Veredito, com o desvio
  * para `DadosMarcoGate` quando `marcoTipo === 'gate'`) ou o Zod já convertido do snapshot
- * do processo, recebido em `esquemasCustom` (a conversão JSON Schema → Zod é do passo 5).
+ * do processo, recebido em `esquemasCustom` (já convertido de JSON Schema por `carregarProcesso`).
  */
 export function esquemaDados(
   tipo: string,

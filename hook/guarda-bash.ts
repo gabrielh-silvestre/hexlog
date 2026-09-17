@@ -117,7 +117,7 @@ function decidir(
     ? false
     : tokensComoStrings(tokens).some((token) => tokenAlcancaDiretorio(token, cwd, dados, home));
 
-  // Rede de segurança (passo 4 do §4.14): também decide sozinha quando o
+  // Rede de segurança (§4.14): também decide sozinha quando o
   // parse lança, e cobre o comando citando D fora de qualquer token isolado.
   const nega = alcancaPelosTokens || comando.includes(dados);
   return nega ? { nega: true, motivo: mensagemNegacao(dados) } : { nega: false };

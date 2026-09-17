@@ -86,7 +86,7 @@ export function registrarTipo(
   try {
     z.fromJSONSchema(schema);
   } catch {
-    // a mensagem bruta do zod não é exposta (§4.10 passo 5): só o código de domínio.
+    // a mensagem bruta do zod não é exposta (§4.10): só o código de domínio.
     throw new ErroHexlog('SCHEMA_INVALIDO', 'construção do schema não suportada', [
       { caminho: '/schema', codigo: 'nao-suportado', mensagem: 'construção de schema não suportada' },
     ]);
@@ -323,7 +323,7 @@ function listarProcessosValidos(dirProjeto: string): string[] {
   ).filter((nome) => !isNil(lerJson(path.join(dirProjeto, nome, 'processo.json'))));
 }
 
-/** Helper de `listar` (passo 7a): projetos existentes e seus processos válidos. */
+/** Projetos existentes e seus processos válidos. */
 export function listarProjetos(dir: string): { nome: string; processos: string[] }[] {
   return listarNomesDiretorio(dir, (entrada) => entrada.isDirectory()).map((nome) => ({
     nome,
@@ -331,7 +331,7 @@ export function listarProjetos(dir: string): { nome: string; processos: string[]
   }));
 }
 
-/** Helper de `listar` (passo 7a): detalhe de um projeto — processos, tipos, vocabulário e gates registrados. */
+/** Detalhe de um projeto: processos, tipos, vocabulário e gates registrados. */
 export function lerProjeto(
   dir: string,
   projeto: string,
@@ -352,14 +352,14 @@ export function lerProjeto(
     return { nome, criadoEm: manifesto.criadoEm };
   });
 
-  const paraNomeEHash = (dirParte: string, campo: 'nome' | 'dono') =>
-    listarDefinicoes(dirParte).map((d) => ({ [campo]: d.nome, hash: d.conteudo.hash as string }));
+  const nomesEHashes = (dirParte: string) =>
+    listarDefinicoes(dirParte).map((d) => ({ nome: d.nome, hash: d.conteudo.hash as string }));
 
   return {
     nome: projeto,
     processos,
-    tipos: paraNomeEHash(path.join(dirProjeto, 'schemas'), 'nome') as { nome: string; hash: string }[],
-    vocabulario: paraNomeEHash(path.join(dirProjeto, 'vocabulario'), 'dono') as { dono: string; hash: string }[],
-    gates: paraNomeEHash(path.join(dirProjeto, 'gates'), 'nome') as { nome: string; hash: string }[],
+    tipos: nomesEHashes(path.join(dirProjeto, 'schemas')),
+    vocabulario: nomesEHashes(path.join(dirProjeto, 'vocabulario')).map(({ nome, hash }) => ({ dono: nome, hash })),
+    gates: nomesEHashes(path.join(dirProjeto, 'gates')),
   };
 }

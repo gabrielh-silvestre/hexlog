@@ -1,4 +1,4 @@
-import { groupBy, isNil, keyBy, uniqBy } from 'es-toolkit';
+import { groupBy, isNil, keyBy, pick, uniqBy } from 'es-toolkit';
 import { z } from 'zod';
 import type { Cadeia } from './cadeia.ts';
 import { Nome } from './eventos.ts';
@@ -259,7 +259,7 @@ export function projetar(elos: Linha[], vocabulario: Vocabulario, agora: string)
   const { vigentes, conflitos, referenciasInvalidas, superadas } = computarSupersessao(vereditos);
 
   return {
-    logAte: isNil(ultimo) ? null : { id: ultimo.id, seq: ultimo.seq, timestamp: ultimo.timestamp },
+    logAte: isNil(ultimo) ? null : pick(ultimo, ['id', 'seq', 'timestamp']),
     vigentes,
     conflitos,
     orfaos: calcularOrfaos(deduplicados, agora),

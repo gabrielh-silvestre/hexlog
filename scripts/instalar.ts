@@ -1,9 +1,8 @@
-// Instalador versionado do hexlog (§4.14, passo 10b). Entrypoint real: liga
-// `construir` (esbuild), `Client`/`StdioClientTransport` (devDependency) e
-// `claude mcp` às funções puras de `src/instalacao.ts` e `src/guarda.ts`.
-// Nunca roda com `HOME` real fora do passo 12 [EXIGE CONFIRMAÇÃO]; os testes
+// Instalador versionado do hexlog (§4.14). Entrypoint real: liga `construir`
+// (esbuild), `Client`/`StdioClientTransport` (devDependency) e `claude mcp` às
+// funções puras de `src/instalacao.ts` e `src/guarda.ts`. Os testes
 // (`test/guarda.spec.ts`, describes B2/B3) chamam `instalarArtefato`/
-// `verificarInstalacao` direto com `HOME` temporário.
+// `verificarInstalacao` direto com `HOME` temporário, nunca o `HOME` real.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -26,6 +25,10 @@ const raizDoRepo = path.resolve(import.meta.dirname, '..');
 function lerVersaoDoPackageJson(): string {
   const pkg = JSON.parse(fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8')) as { version: string };
   return pkg.version;
+}
+
+function lerSeExistir(arquivo: string): string | null {
+  return fs.existsSync(arquivo) ? fs.readFileSync(arquivo, 'utf8') : null;
 }
 
 function commitAtual(): string | null {
@@ -112,8 +115,7 @@ async function instalar(): Promise<void> {
   const caminhoSettings = path.join(home, '.claude', 'settings.json');
   const { mudou } = registrarGuard({ caminhoSettings, esperado });
 
-  const caminhoClaudeJson = path.join(home, '.claude.json');
-  const textoClaudeJson = fs.existsSync(caminhoClaudeJson) ? fs.readFileSync(caminhoClaudeJson, 'utf8') : null;
+  const textoClaudeJson = lerSeExistir(path.join(home, '.claude.json'));
   if (precisaRegistrarMcp(textoClaudeJson, esperado)) {
     registrarMcp(process.execPath, esperado.servidorArquivo);
   }
@@ -129,10 +131,8 @@ async function checar(): Promise<void> {
   const home = os.homedir();
   const versao = lerVersaoDoPackageJson();
   const D = dirDados(process.env);
-  const caminhoSettings = path.join(home, '.claude', 'settings.json');
-  const caminhoClaudeJson = path.join(home, '.claude.json');
-  const textoSettings = fs.existsSync(caminhoSettings) ? fs.readFileSync(caminhoSettings, 'utf8') : null;
-  const textoClaudeJson = fs.existsSync(caminhoClaudeJson) ? fs.readFileSync(caminhoClaudeJson, 'utf8') : null;
+  const textoSettings = lerSeExistir(path.join(home, '.claude', 'settings.json'));
+  const textoClaudeJson = lerSeExistir(path.join(home, '.claude.json'));
   const bundlesAtuais = await construirBundles();
 
   const resultado = verificarInstalacao({

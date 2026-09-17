@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { buscar } from '../src/busca.ts';
 import type { Manifesto } from '../src/definicoes.ts';
 import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
-import { type Ambiente, criarAmbiente } from './helpers.ts';
+import { type Ambiente, criarAmbiente, registrarNucleo } from './helpers.ts';
 
 const PROJ = 'orcamento';
 const PROC = 'proc1';
@@ -12,13 +12,7 @@ const TAMANHO = 10_000;
 
 /** Fixa vocabulário núcleo + um tipo custom e cria o processo; devolve o manifesto real gravado. */
 async function prepararProcesso(ambiente: Ambiente): Promise<Manifesto> {
-  await ambiente.chamar('registrar_vocabulario', {
-    projeto: PROJ,
-    dono: 'nucleo',
-    marcoTipo: ['aprovado'],
-    resultado: ['ok'],
-    acao: ['seguir'],
-  });
+  await registrarNucleo(ambiente, PROJ);
   await ambiente.chamar('registrar_tipo', {
     projeto: PROJ,
     nome: 'nota',

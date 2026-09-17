@@ -6,7 +6,7 @@ import { DadosMarcoGate as EsquemaDadosMarcoGate } from './eventos.ts';
 import type { Estado } from './estado.ts';
 
 // §4.16: tetos de prova de gate. Custom (TETO_PROVA_CUSTOM/TETO_ITEM_PROVA_CHARS) e
-// TETO_CRITERIO_CHARS são validados no inputSchema da tool (passo 7b), não aqui.
+// TETO_CRITERIO_CHARS são validados no inputSchema da tool, não aqui.
 export const TETO_PROVA_EMBUTIDO = 50;
 export const TETO_PROVA_CUSTOM = 20;
 export const TETO_ITEM_PROVA_CHARS = 2000;
@@ -54,10 +54,8 @@ export function ehGateEmbutido(nome: string): nome is NomeGateEmbutido {
 /** Avalia um gate embutido contra `estado` (§4.11): sem itens → passa; senão, corta a prova em 50. */
 export function avaliarEmbutido(nome: NomeGateEmbutido, estado: Estado): ResultadoGate {
   const itens = GATES_EMBUTIDOS[nome].itens(estado);
-  if (isEmpty(itens)) return { passou: true, prova: [], totalItensProva: 0, avaliadoAte: estado.logAte };
-
   return {
-    passou: false,
+    passou: isEmpty(itens),
     prova: itens.slice(0, TETO_PROVA_EMBUTIDO),
     totalItensProva: itens.length,
     avaliadoAte: estado.logAte,
@@ -80,15 +78,7 @@ export function montarDadosMarcoGate(args: {
   return EsquemaDadosMarcoGate.parse({
     marcoTipo: 'gate',
     alvo: args.alvo,
-    gate: {
-      nome: args.nome,
-      origem: args.origem,
-      criterio: args.criterio,
-      passou: args.resultado.passou,
-      prova: args.resultado.prova,
-      totalItensProva: args.resultado.totalItensProva,
-      avaliadoAte: args.resultado.avaliadoAte,
-    },
+    gate: { nome: args.nome, origem: args.origem, criterio: args.criterio, ...args.resultado },
   });
 }
 

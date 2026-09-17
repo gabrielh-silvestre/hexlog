@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/server';
+import { isNil } from 'es-toolkit';
 import { z } from 'zod';
 import type { Logger as LoggerAjv } from './definicoes.ts';
 import { type Detalhe, ErroHexlog } from './erros.ts';
@@ -33,7 +34,7 @@ export function adaptarLoggerAjv(log: Logger): LoggerAjv {
   return { log: emitir('debug'), warn: emitir('aviso'), error: emitir('erro') };
 }
 
-// §4.16: tetos de saída (medidos no passo 13), compartilhados com os passos 7b/7c.
+// §4.16: tetos de saída, compartilhados pelas tools de eventos.
 export const TETO_ITENS_SECAO = 100;
 export const TETO_PAGINA_CHARS = 24_000;
 
@@ -88,31 +89,27 @@ export async function executar<T>(
   extraLog?: () => Record<string, unknown>,
 ): Promise<ResultadoTool<T>> {
   const inicio = Date.now();
-  try {
-    const resultado = await fn();
+  const logTool = (nivel: 'info' | 'erro', codigo?: string) => {
     ctx.log({
-      nivel: 'info',
+      nivel,
       evento: 'tool',
       nome,
       projeto: args.projeto,
       processo: args.processo,
       ms: Date.now() - inicio,
+      ...(isNil(codigo) ? {} : { codigo }),
       ...(extraLog?.() ?? {}),
     });
+  };
+
+  try {
+    const resultado = await fn();
+    logTool('info');
     return { structuredContent: resultado, content: [{ type: 'text', text: JSON.stringify(resultado) }] };
   } catch (e) {
     const erro = paraErroHexlog(e, ctx);
     const corpo = { codigo: erro.codigo, mensagem: erro.message, detalhes: erro.detalhes };
-    ctx.log({
-      nivel: 'erro',
-      evento: 'tool',
-      nome,
-      projeto: args.projeto,
-      processo: args.processo,
-      ms: Date.now() - inicio,
-      codigo: erro.codigo,
-      ...(extraLog?.() ?? {}),
-    });
+    logTool('erro', erro.codigo);
     return { isError: true, structuredContent: corpo, content: [{ type: 'text', text: JSON.stringify(corpo) }] };
   }
 }
@@ -125,7 +122,7 @@ function paraErroHexlog(e: unknown, ctx: Contexto): ErroHexlog {
   return new ErroHexlog('INTERNO', 'erro interno');
 }
 
-/** Monta o servidor MCP `hexlog`: nome fixo, versão de `versao.ts`, tools de definição (passo 7a). */
+/** Monta o servidor MCP `hexlog`: nome fixo, versão de `versao.ts`, tools de definição e de eventos. */
 export function criarServidor(ctx: Contexto): McpServer {
   const servidor = new McpServer({ name: 'hexlog', version: VERSAO });
   registrarFerramentasDefinicoes(servidor, ctx);

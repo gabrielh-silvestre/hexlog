@@ -1,7 +1,7 @@
 // Guard de instalação (§4.14): regras de deny + hook PreToolUse em
 // `settings.json`, e verificação de que o guard está de fato ativo e
 // funcionando (I5, I6, I7). Puro e testável; não é importado pelo servidor
-// nem pelo hook — só pelo instalador (`scripts/instalar.ts`, passo 10b).
+// nem pelo hook — só pelo instalador (`scripts/instalar.ts`).
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -154,7 +154,8 @@ function extrairD(esperado: RegrasEsperadas): string {
   return esperado.denyReadDir.slice('Read(/'.length, -')'.length);
 }
 
-function verificarMcp(textoClaudeJson: string | null, esperado: RegrasEsperadas): boolean {
+/** `~/.claude.json` já tem `mcpServers.hexlog` apontando para o servidor esperado? */
+export function mcpRegistrado(textoClaudeJson: string | null, esperado: RegrasEsperadas): boolean {
   if (isNil(textoClaudeJson)) return false;
   const servidor = parse(textoClaudeJson)?.mcpServers?.hexlog;
   if (isNil(servidor)) return false;
@@ -164,6 +165,14 @@ function verificarMcp(textoClaudeJson: string | null, esperado: RegrasEsperadas)
     servidor.args.length === 1 &&
     servidor.args[0] === esperado.servidorArquivo
   );
+}
+
+/** As duas entradas de sonda que provam o hook vivo: nega o diretório de dados `D`, permite o resto. */
+export function sondasDoHook(D: string): { nega: string; permite: string } {
+  return {
+    nega: JSON.stringify({ tool_name: 'Bash', tool_input: { command: `cat ${D}/sonda` } }),
+    permite: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' } }),
+  };
 }
 
 function verificarArtefatoAlterado(bytesInstalados: ArgsVerificarGuard['bytesInstalados']): boolean {
@@ -205,15 +214,12 @@ export function verificarGuard(args: ArgsVerificarGuard): { ok: boolean; faltand
   if (!arquivoExiste) faltando.push('hook-arquivo');
 
   if (execExiste && arquivoExiste) {
-    const D = extrairD(esperado);
-    const entradaNega = JSON.stringify({ tool_name: 'Bash', tool_input: { command: `cat ${D}/sonda` } });
-    if (executarHook(exec, arquivo, entradaNega).status !== 2) faltando.push('hook-nao-nega');
-
-    const entradaPermite = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' } });
-    if (executarHook(exec, arquivo, entradaPermite).status !== 0) faltando.push('hook-nao-permite');
+    const sondas = sondasDoHook(extrairD(esperado));
+    if (executarHook(exec, arquivo, sondas.nega).status !== 2) faltando.push('hook-nao-nega');
+    if (executarHook(exec, arquivo, sondas.permite).status !== 0) faltando.push('hook-nao-permite');
   }
 
-  if (!verificarMcp(textoClaudeJson, esperado)) faltando.push('mcp');
+  if (!mcpRegistrado(textoClaudeJson, esperado)) faltando.push('mcp');
   if (verificarArtefatoAlterado(bytesInstalados)) faltando.push('artefato-alterado');
 
   return { ok: faltando.length === 0, faltando };

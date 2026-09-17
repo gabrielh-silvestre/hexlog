@@ -26,7 +26,7 @@ type ResultadoChamada = {
 };
 
 /** Lista recursivamente os caminhos relativos a `raiz`, em ordem estável, para comparar árvores de diretório (M2). */
-export function arvore(raiz: string): string[] {
+function arvore(raiz: string): string[] {
   if (!fs.existsSync(raiz)) return [];
   return fs
     .readdirSync(raiz, { withFileTypes: true })
@@ -77,6 +77,17 @@ export async function criarAmbiente(): Promise<Ambiente> {
       fs.rmSync(dir, { recursive: true, force: true });
     },
   };
+}
+
+/** Vocabulário núcleo mínimo (`aprovado`/`ok`/`seguir`), base de quase todo processo de teste. */
+export async function registrarNucleo(ambiente: Ambiente, projeto: string): Promise<void> {
+  await ambiente.chamar('registrar_vocabulario', {
+    projeto,
+    dono: 'nucleo',
+    marcoTipo: ['aprovado'],
+    resultado: ['ok'],
+    acao: ['seguir'],
+  });
 }
 
 /** Afirma que `resultado` é um erro de domínio (§4.13) com o `codigo` esperado, e devolve o corpo estruturado. */

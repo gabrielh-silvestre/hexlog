@@ -9,7 +9,7 @@ import { ancora, prevHashEsperado, proximoSeq, sha256hex, type Cadeia } from '..
 import type { Manifesto } from '../src/definicoes.ts';
 import type { Linha } from '../src/eventos.ts';
 import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
-import { type Ambiente, criarAmbiente, esperarErro } from './helpers.ts';
+import { type Ambiente, criarAmbiente, esperarErro, registrarNucleo } from './helpers.ts';
 
 type ResultadoChamada = Awaited<ReturnType<Ambiente['chamar']>>;
 
@@ -42,13 +42,7 @@ function dadosVeredito(overrides: Record<string, unknown> = {}): Record<string, 
 
 /** Vocabulário núcleo + tipo custom com `default`/`format: date-time`/`enum` + gate custom, e fixa o processo. */
 async function preparar(ambiente: Ambiente, projeto: string, processo: string): Promise<void> {
-  await ambiente.chamar('registrar_vocabulario', {
-    projeto,
-    dono: 'nucleo',
-    marcoTipo: ['aprovado'],
-    resultado: ['ok'],
-    acao: ['seguir'],
-  });
+  await registrarNucleo(ambiente, projeto);
   await ambiente.chamar('registrar_tipo', { projeto, nome: 'nota', schema: SCHEMA_CUSTOM });
   await ambiente.chamar('registrar_gate', { projeto, nome: 'gate-custom', criterio: 'critério custom qualquer' });
   await ambiente.chamar('criar_processo', { projeto, processo });

@@ -1,4 +1,4 @@
-// Instalação versionada do artefato (§4.14, passo 10b): copia os bundles para
+// Instalação versionada do artefato (§4.14): copia os bundles para
 // `~/.local/lib/hexlog/<versão>/`, registra o guard em `settings.json` e decide
 // se o MCP precisa ser (re)registrado. Puro e testável: toda execução externa
 // (hook, servidor, relógio, log) é injetada — nada aqui chama `claude` nem builda.
@@ -12,7 +12,9 @@ import {
   aplicarGuard,
   verificarGuard,
   localizarEntradaHook,
+  mcpRegistrado,
   sha256,
+  sondasDoHook,
   type RegrasEsperadas,
   type ItemFaltando,
 } from './guarda.ts';
@@ -68,7 +70,7 @@ function ehErroDeDiretorioOcupado(erro: unknown): boolean {
   return codigo === 'ENOTEMPTY' || codigo === 'EEXIST' || codigo === 'ENOENT';
 }
 
-/** Verifica o artefato preparado em `tmp` antes de trocar (§4.14 passo 5): qualquer falha aborta sem tocar em nada. */
+/** Verifica o artefato preparado em `tmp` antes de trocar (§4.14): qualquer falha aborta sem tocar em nada. */
 async function verificarArtefatoPreparado(args: {
   tmp: string;
   bundles: Bundles;
@@ -83,13 +85,11 @@ async function verificarArtefatoPreparado(args: {
   // Mesma checagem funcional de `verificarGuard` (nega o diretório de dados, permite o resto),
   // mas contra o hook recém-preparado em `tmp`, antes de virar o hook instalado de verdade.
   const arquivoHook = path.join(tmp, 'guarda-bash.mjs');
-  const D = dirDados(process.env);
-  const stdinNega = JSON.stringify({ tool_name: 'Bash', tool_input: { command: `cat ${D}/sonda` } });
-  const stdinPermite = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' } });
-  if (executarHook(arquivoHook, stdinNega).status !== 2) {
+  const sondas = sondasDoHook(dirDados(process.env));
+  if (executarHook(arquivoHook, sondas.nega).status !== 2) {
     throw new ErroHexlog('INTERNO', 'hook preparado não nega o acesso ao diretório de dados');
   }
-  if (executarHook(arquivoHook, stdinPermite).status !== 0) {
+  if (executarHook(arquivoHook, sondas.permite).status !== 0) {
     throw new ErroHexlog('INTERNO', 'hook preparado não permite comandos inofensivos');
   }
 
@@ -125,7 +125,7 @@ function resolverConcorrencia(
   throw new ErroHexlog('INTERNO', `outra instalação trocou ${versao} ao mesmo tempo; rode o instalador de novo`);
 }
 
-/** Troca atômica de `tmp` para `dirVersao` (§4.14 passo 6), cobrindo instalação nova, reinstalação e concorrência. */
+/** Troca atômica de `tmp` para `dirVersao` (§4.14), cobrindo instalação nova, reinstalação e concorrência. */
 function trocarArtefato(args: {
   dirVersao: string;
   tmp: string;
@@ -162,7 +162,7 @@ function trocarArtefato(args: {
   };
 }
 
-/** Instala os bundles preparados como a versão ativa, idempotente pelos bytes instalados (§4.14 passos 3-6). */
+/** Instala os bundles preparados como a versão ativa, idempotente pelos bytes instalados (§4.14). */
 export async function instalarArtefato(args: {
   home: string;
   versao: string;
@@ -246,17 +246,9 @@ export function registrarGuard(args: { caminhoSettings: string; esperado: Regras
   return { mudou: true };
 }
 
-/** `~/.claude.json` já tem `mcpServers.hexlog` apontando pro servidor esperado? */
+/** `~/.claude.json` ainda não aponta `mcpServers.hexlog` para o servidor esperado. */
 export function precisaRegistrarMcp(textoClaudeJson: string | null, esperado: RegrasEsperadas): boolean {
-  if (isNil(textoClaudeJson)) return true;
-  const servidor = parseJsonc(textoClaudeJson)?.mcpServers?.hexlog;
-  if (isNil(servidor)) return true;
-  const bate =
-    servidor.command === esperado.servidorExec &&
-    Array.isArray(servidor.args) &&
-    servidor.args.length === 1 &&
-    servidor.args[0] === esperado.servidorArquivo;
-  return !bate;
+  return !mcpRegistrado(textoClaudeJson, esperado);
 }
 
 /** Versão instalada segundo o `command` do hook já registrado em `settings.json`, se houver. */

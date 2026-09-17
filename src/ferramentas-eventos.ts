@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
-import { isNil, isNotNil } from 'es-toolkit';
+import { isNil, isNotNil, omit } from 'es-toolkit';
 import { z } from 'zod';
 import { buscar, ehCandidato, TETO_BUSCA_CHARS, type Filtros } from './busca.ts';
 import { eloValido, verificarCadeia, type Cadeia } from './cadeia.ts';
@@ -239,28 +239,16 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
 // ---- helpers puros (montagem de elos e Estado) ----
 
 /**
- * Lê as linhas físicas de um log (§4.6: cauda sem `\n` descartada) e separa em elos com `dados`
- * validado contra o schema do seu `tipo` (nativo ou do snapshot) e linhas inválidas (envelope ou
- * `dados` reprovados). `linhasInvalidas` guarda o índice físico de cada linha fora dos elos.
+ * Elos de um log (§4.6: cauda sem `\n` descartada): linha que passa no envelope e cujo `dados`
+ * bate o schema do seu `tipo` (nativo ou do snapshot). As demais linhas ficam de fora.
  */
-function lerElos(
-  texto: string,
-  esquemasCustom: Record<string, z.ZodType>,
-): { elos: Linha[]; linhasInvalidas: number[]; linhasFisicas: string[] } {
-  const linhasFisicas = texto.split('\n').slice(0, -1);
+function lerElos(texto: string, esquemasCustom: Record<string, z.ZodType>): Linha[] {
   const elos: Linha[] = [];
-  const linhasInvalidas: number[] = [];
-
-  linhasFisicas.forEach((linhaTexto, indice) => {
+  for (const linhaTexto of texto.split('\n').slice(0, -1)) {
     const elo = eloValido(linhaTexto);
-    if (isNotNil(elo) && dadosValidos(elo, esquemasCustom)) {
-      elos.push(elo);
-      return;
-    }
-    linhasInvalidas.push(indice);
-  });
-
-  return { elos, linhasInvalidas, linhasFisicas };
+    if (isNotNil(elo) && dadosValidos(elo, esquemasCustom)) elos.push(elo);
+  }
+  return elos;
 }
 
 function dadosValidos(elo: Linha, esquemasCustom: Record<string, z.ZodType>): boolean {
@@ -288,7 +276,7 @@ function montarEstado(
   texto: string,
   relogio: () => Date,
 ): Estado & { agora: string } {
-  const { elos } = lerElos(texto, processo.esquemasCustom);
+  const elos = lerElos(texto, processo.esquemasCustom);
   const agora = agoraEfetivo(relogio().toISOString(), elos);
   const projecao = projetar(elos, processo.manifesto.fixado.vocabulario, agora);
   const cadeia = verificarCadeia(texto, processo.manifesto, validarDadosDoProcesso(processo.esquemasCustom));
@@ -358,7 +346,7 @@ function retentarComIdCompleto(
   agente: string,
   normalizados: Record<string, unknown>,
 ): { evento: Linha; deduplicado: true } {
-  const { elos } = lerElos(lerTexto(carregado.arquivoEventos), carregado.esquemasCustom);
+  const elos = lerElos(lerTexto(carregado.arquivoEventos), carregado.esquemasCustom);
   const existente = elos.find((elo) => elo.id === id);
   if (isNil(existente)) {
     throw new ErroHexlog('ID_DESCONHECIDO', `id '${id}' não encontrado`);
@@ -453,7 +441,7 @@ async function avaliarGate(
     { log: ctx.log, relogio: ctx.relogio },
   );
 
-  return { evento: linha, passou: resultadoGate.passou, prova: resultadoGate.prova, totalItensProva: resultadoGate.totalItensProva };
+  return { evento: linha, ...omit(resultadoGate, ['avaliadoAte']) };
 }
 
 /** §4.11: decide embutido × custom e valida a presença/ausência de `resultado`, antes de avaliar. */
@@ -592,7 +580,7 @@ function validarAte(ate: number | undefined, totalLinhasFisicas: number): void {
 /**
  * Modo cru: ordem física a partir de `desde`, streaming (sem escanear além de onde a página para).
  * `candidatos` do log conta só os elos vistos durante essa varredura, não o total no arquivo inteiro
- * (decisão do passo 7c: evitar forçar leitura completa do arquivo numa chamada sem `busca`).
+ * (decisão de projeto: evitar forçar leitura completa do arquivo numa chamada sem `busca`).
  */
 function resolverModoCru(
   linhasFisicas: string[],

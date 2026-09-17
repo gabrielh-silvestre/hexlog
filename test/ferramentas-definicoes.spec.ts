@@ -7,7 +7,7 @@ import { last } from 'es-toolkit';
 import { z } from 'zod';
 import { executar } from '../src/mcp.ts';
 import type { Registro } from '../src/log.ts';
-import { type Ambiente, criarAmbiente, esperarErro } from './helpers.ts';
+import { type Ambiente, criarAmbiente, esperarErro, registrarNucleo } from './helpers.ts';
 
 const SCHEMA_VALIDO = {
   type: 'object',
@@ -18,13 +18,7 @@ const SCHEMA_VALIDO = {
 
 /** Registra vocabulário núcleo, um tipo e um gate custom, depois fixa `processo` (setup comum a vários ACs). */
 async function prepararProcesso(ambiente: Ambiente, projeto: string, processo: string) {
-  await ambiente.chamar('registrar_vocabulario', {
-    projeto,
-    dono: 'nucleo',
-    marcoTipo: ['aprovado'],
-    resultado: ['ok'],
-    acao: ['seguir'],
-  });
+  await registrarNucleo(ambiente, projeto);
   const tipo = await ambiente.chamar('registrar_tipo', { projeto, nome: 'nota', schema: SCHEMA_VALIDO });
   await ambiente.chamar('registrar_gate', { projeto, nome: 'gate-custom', criterio: 'critério qualquer' });
   const criado = await ambiente.chamar('criar_processo', { projeto, processo });
