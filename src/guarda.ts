@@ -64,6 +64,16 @@ const OPCOES_FORMATACAO: ModificationOptions = {
   formattingOptions: { tabSize: 2, insertSpaces: true, eol: '\n' },
 };
 
+/** Forma mínima de `settings.json` usada por este módulo — `parse` (jsonc-parser) devolve `any`. */
+interface DadosSettings {
+  permissions?: { deny?: unknown[] };
+}
+
+/** Forma mínima de `~/.claude.json` usada por `mcpRegistrado` — `parse` devolve `any`. */
+interface DadosClaudeJson {
+  mcpServers?: { hexlog?: { command?: unknown; args?: unknown } };
+}
+
 function inserirNoFimDoArray(texto: string, caminho: (string | number)[], valor: unknown): string {
   const edits = modify(texto, [...caminho, -1], valor, OPCOES_FORMATACAO);
   return applyEdits(texto, edits);
@@ -74,7 +84,8 @@ function aplicarDenyFaltantes(textoSettings: string, esperado: RegrasEsperadas):
   const regras = [esperado.denyReadDir, esperado.denyRead, esperado.denyEdit, esperado.denyEditLib];
   let texto = textoSettings;
   for (const regra of regras) {
-    const denyAtual: unknown[] = parse(texto)?.permissions?.deny ?? [];
+    const dados = parse(texto) as DadosSettings | undefined;
+    const denyAtual: unknown[] = dados?.permissions?.deny ?? [];
     if (denyAtual.includes(regra)) continue;
     texto = inserirNoFimDoArray(texto, ['permissions', 'deny'], regra);
   }
@@ -180,7 +191,8 @@ function extrairD(esperado: RegrasEsperadas): string {
 /** `~/.claude.json` já tem `mcpServers.hexlog` apontando para o servidor esperado? */
 export function mcpRegistrado(textoClaudeJson: string | null, esperado: RegrasEsperadas): boolean {
   if (isNil(textoClaudeJson)) return false;
-  const servidor = parse(textoClaudeJson)?.mcpServers?.hexlog;
+  const dados = parse(textoClaudeJson) as DadosClaudeJson | undefined;
+  const servidor = dados?.mcpServers?.hexlog;
   if (isNil(servidor)) return false;
   return (
     servidor.command === esperado.servidorExec &&
@@ -227,7 +239,7 @@ export function verificarGuard(args: ArgsVerificarGuard): {
   faltando: ItemFaltando[];
 } {
   const { textoSettings, textoClaudeJson, esperado, existe, executarHook, bytesInstalados } = args;
-  const dadosSettings = parse(textoSettings);
+  const dadosSettings = parse(textoSettings) as DadosSettings | undefined;
   const denyAtual: unknown[] = dadosSettings?.permissions?.deny ?? [];
   const faltando = verificarDeny(denyAtual, esperado);
 

@@ -50,7 +50,7 @@ export function escreverJsonAtomico(arquivo: string, valor: unknown): void {
 }
 
 /** Lê `arquivo` como JSON. Inexistente → `null`. Ilegível (fs ou parse) → `ErroHexlog('ERRO_IO')`. */
-export function lerJson(arquivo: string): unknown | null {
+export function lerJson(arquivo: string): unknown {
   let texto: string;
   try {
     texto = fs.readFileSync(arquivo, 'utf8');
