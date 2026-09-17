@@ -224,12 +224,12 @@ Decisões tomadas durante a execução (Ralph, iterações 1–3):
 
 ## Verificações Reais Pendentes
 
-O escopo do Ralph cobre os passos 0 a 12 (DE-01); o passo 12 roda dentro desse escopo, sem nova confirmação do usuário (DE-04). Os passos 13 a 16 ficam como pendências do usuário, com o roteiro pronto:
+O escopo do Ralph cobriu os passos 0 a 12 (DE-01); o passo 12 rodou dentro desse escopo, sem nova confirmação do usuário (DE-04). Os passos 13 a 16 ficam como pendências do usuário, com o roteiro pronto:
 
-- **Passo 12 — instalação real:** `npm test` verde, backup de `~/.claude/settings.json`, depois `node scripts/instalar.ts` (não existe `npm run instalar`) e `node scripts/instalar.ts --check`. Reversível via backup e `claude mcp remove`.
+- **Passo 12 — instalação real: concluído em 2026-09-17.** Suíte 481/481 e e2e estáveis antes; backup em `~/.claude/settings.json.bak-hexlog`; `node scripts/instalar.ts` instalou `~/.local/lib/hexlog/0.1.0/` (manifesto com commit `52b24dc`, working tree limpa); segunda execução respondeu "nada a fazer" sem alterar o `settings.json`; `node scripts/instalar.ts --check` saiu com 0 tanto do repositório quanto de `/tmp`; `claude mcp get hexlog` mostra o servidor em escopo user apontando para a cópia instalada; as 4 regras de deny e o hook estão registrados; nenhum registro cita a working tree; os bundles instalados não contêm `Dynamic require of`. O hook instalado nega `cat <D>/…` com exit 2 e permite `ls ~/.local/share` com exit 0, em 31–36 ms por execução (o `.ts` direto media ≈ 220 ms). Reversível via backup e `claude mcp remove hexlog -s user`.
 - **Passo 13 — isolamento e tokens em sessão real:** validação do deny do hook numa sessão isolada, cobrindo os critérios de aceite I2, I3 e M10 (medição do tamanho de saída da busca paginada e do `estado`).
 - **Passo 14 — teste real no weed-clicker [conduzido pelo usuário]:** o usuário conduz um refinamento real usando só as tools MCP; o executor só confere as evidências depois (critério de aceite R1).
 - **Passo 15 — remover o symlink `~/.local/bin/hexlog` da CLI da POC:** `rm ~/.local/bin/hexlog`, só depois do R1 aprovado (critério de aceite G1).
 - **Passo 16 — remover a worktree e a branch da POC:** `wt remove -D -f` no repo `/home/gabriel/personal/core`, descartando os 27 commits de `main..poc-motor-log`. Ação destrutiva e irreversível, com confirmação explícita separada da do passo 15 (critério de aceite G2, decisão R-7).
 
-O andamento das mudanças de código (passos 0–11) segue com executores em paralelo; este ADR não presume conclusão total nem lista o corte atual, para não ficar desatualizado a cada commit. A POC segue congelada em `5703a53`, pronta para o arquivamento no passo 16.
+Os passos 0 a 12 estão concluídos e revisados (revisão final aprovada sem achados bloqueantes; correções e limpeza aplicadas nos commits seguintes). A POC segue congelada em `5703a53`, pronta para o arquivamento no passo 16.
