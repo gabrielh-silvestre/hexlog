@@ -2,24 +2,32 @@ import { createHash } from 'node:crypto';
 import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
 import { omit } from 'es-toolkit/compat';
+import { z } from 'zod';
 import type { Detail } from './errors.ts';
-import { EventLine } from './events.ts';
+import { EventLine, Hash } from './events.ts';
 
-type BreakReason = 'invalid-line' | 'diverging-seq' | 'hash-mismatch' | 'invalid-data';
-
-export type Break = { index: number; reason: BreakReason };
-
-export type Chain = {
-  ok: boolean;
-  totalLines: number;
-  head: string;
-  breaks: Break[];
-  totalBreaks: number;
-  repairedLines: number[];
-};
-
+// §4.6: tetos de saída da verificação de cadeia, usados pelos schemas abaixo e por `verifyChain`.
 const MAX_BREAKS = 100;
 const MAX_REPAIRED = 100;
+
+/** Elo quebrado da cadeia (§4.6): schema Zod é a fonte única, mcp.ts só reexporta. */
+export const Break = z.object({
+  index: z.number().int(),
+  reason: z.enum(['invalid-line', 'diverging-seq', 'hash-mismatch', 'invalid-data']),
+  detail: z.string().optional(),
+});
+export type Break = z.infer<typeof Break>;
+
+/** Resultado de `verifyChain` (§4.6): schema Zod é a fonte única, mcp.ts só reexporta. */
+export const Chain = z.object({
+  ok: z.boolean(),
+  totalLines: z.number().int(),
+  head: z.union([z.literal(''), Hash]),
+  breaks: z.array(Break).max(MAX_BREAKS),
+  totalBreaks: z.number().int(),
+  repairedLines: z.array(z.number().int()).max(MAX_REPAIRED),
+});
+export type Chain = z.infer<typeof Chain>;
 
 export function sha256hex(text: string): string {
   return createHash('sha256').update(text).digest('hex');

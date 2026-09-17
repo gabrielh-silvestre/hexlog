@@ -1,7 +1,7 @@
 import { isString } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat'; // isEmpty só existe em es-toolkit/compat (1.52.0)
 import { z } from 'zod';
-import { BUILTIN_GATE_NAMES } from './storage.ts';
+import { BUILTIN_GATE_NAMES } from './definitions.ts';
 import { GateMilestoneData as GateMilestoneDataSchema } from './events.ts';
 import type { State } from './state.ts';
 

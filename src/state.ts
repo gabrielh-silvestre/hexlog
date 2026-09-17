@@ -45,6 +45,17 @@ export type Projection = {
 
 export type State = Projection & { chain: Chain };
 
+/** Seções que a tool `state` pode filtrar (§4.12): schema Zod é a fonte única, mcp.ts só reexporta. */
+export const Section = z.enum([
+  'active',
+  'conflicts',
+  'orphans',
+  'toReview',
+  'invalidReferences',
+  'warnings',
+  'chain',
+]);
+
 /** `now` efetivo da projeção (Q10): o mais recente entre o relógio injetado e o último elo do log. */
 export function effectiveNow(clockTime: string, lines: EventLine[]): string {
   const last = lines.at(-1);

@@ -4,20 +4,6 @@ import * as path from 'node:path';
 import { isNil } from 'es-toolkit';
 import { HexlogError } from './errors.ts';
 
-/** §4.2: nomes de processo reservados para as definições do projeto. */
-export const RESERVED_PROCESS_NAMES = ['schemas', 'vocabulary', 'gates'] as const;
-
-/** §4.2: nomes de tipo reservados para os eventos nativos. */
-export const RESERVED_TYPE_NAMES = ['milestone', 'verdict'] as const;
-
-/** §4.11: nomes de gate embutidos, reservados para `register_gate`. */
-export const BUILTIN_GATE_NAMES = [
-  'no-orphans',
-  'no-conflicts',
-  'chain-intact',
-  'no-invalid-references',
-] as const;
-
 /**
  * Resolve `dir/...parts` e afirma, em defesa de profundidade, que o resultado não escapou
  * de `dir` (§4.2). Nomes já são validados por `Nome` antes de chegar aqui; este é o último gate.

@@ -12,7 +12,7 @@ import {
   type BuiltinGateName,
   type EvaluationResult,
 } from '../src/gates.ts';
-import { BUILTIN_GATE_NAMES } from '../src/storage.ts';
+import { BUILTIN_GATE_NAMES } from '../src/definitions.ts';
 
 // ---- fixtures locais ----
 

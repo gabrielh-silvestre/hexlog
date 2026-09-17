@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { z } from 'zod';
 import { sha256hex } from '../src/chain.ts';
-import { resolveSafePath, RESERVED_PROCESS_NAMES } from '../src/storage.ts';
+import { resolveSafePath } from '../src/storage.ts';
 import type { ProcessManifest } from '../src/definitions.ts';
 import {
   loadProcess,
@@ -14,6 +14,7 @@ import {
   registerGate,
   registerType,
   registerVocabulary,
+  RESERVED_PROCESS_NAMES,
 } from '../src/definitions.ts';
 import { HexlogError } from '../src/errors.ts';
 import { parseJson } from './helpers.ts';

@@ -30,7 +30,9 @@ import { append, readText } from './log.ts';
 import {
   Agent,
   Warning,
-  ChainSchema,
+  // Alias: `type Chain` (chain.ts, acima) já ocupa esse nome neste arquivo; o schema Zod de
+  // `Chain` (mesmo nome, reexportado de mcp.ts) precisa de um nome local diferente.
+  Chain as ChainSchema,
   type Context,
   execute,
   Instant,

@@ -2,10 +2,12 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { isNil } from 'es-toolkit';
 import { z } from 'zod';
 import type { Logger as LoggerAjv } from './definitions.ts';
+import { Hashes, Registered } from './definitions.ts';
+import { Break, Chain } from './chain.ts';
 import { type Detail, HexlogError } from './errors.ts';
 import { registerDefinitionTools } from './definition-tools.ts';
 import { registerEventTools } from './event-tools.ts';
-import { VocabSchema, VocabularySchema } from './state.ts';
+import { Section, VocabSchema, VocabularySchema } from './state.ts';
 import { Agent, Hash, Instant, Name } from './events.ts';
 import type { Logger, LogRecord } from './log.ts';
 import { VERSION } from './version.ts';
@@ -48,38 +50,12 @@ export const Warning = z.object({
 export const Vocab = VocabSchema;
 export const Vocabulary = VocabularySchema;
 export const Ref = z.object({ id: z.string(), seq: z.number().int(), timestamp: Instant });
-export const Break = z.object({
-  index: z.number().int(),
-  reason: z.enum(['invalid-line', 'diverging-seq', 'hash-mismatch', 'invalid-data']),
-  detail: z.string().optional(),
-});
-export const ChainSchema = z.object({
-  ok: z.boolean(),
-  totalLines: z.number().int(),
-  head: z.union([z.literal(''), Hash]),
-  breaks: z.array(Break).max(100),
-  totalBreaks: z.number().int(),
-  repairedLines: z.array(z.number().int()).max(100),
-});
-export const Hashes = z.object({ schemas: Hash, vocabulary: Hash, gates: Hash });
-export const Registered = z.object({
-  project: Name,
-  name: Name,
-  hash: Hash,
-  replaced: z.boolean(),
-});
-export const Section = z.enum([
-  'active',
-  'conflicts',
-  'orphans',
-  'toReview',
-  'invalidReferences',
-  'warnings',
-  'chain',
-]);
 
 // Reexportadas por conveniência: os módulos de tools só precisam importar de `mcp.ts`.
 export { Agent, Hash, Instant, Name };
+// Reexportados dos módulos de domínio (Break/Chain de chain.ts, Hashes/Registered de
+// definitions.ts, Section de state.ts): schema Zod declarado junto do tipo TS, mcp.ts só reexporta.
+export { Break, Chain, Hashes, Registered, Section };
 
 /** Corpo de sucesso ou erro que uma tool devolve ao SDK (§4.13): nunca uma exceção. */
 type ToolResult<T> =

@@ -8,20 +8,27 @@ import { isNil, pick } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { z } from 'zod';
 import { anchor, sha256hex } from './chain.ts';
-import {
-  resolveSafePath,
-  ioError,
-  writeJsonAtomic,
-  BUILTIN_GATE_NAMES,
-  readJson,
-  RESERVED_PROCESS_NAMES,
-  RESERVED_TYPE_NAMES,
-} from './storage.ts';
+import { resolveSafePath, ioError, writeJsonAtomic, readJson } from './storage.ts';
 import { HexlogError } from './errors.ts';
+import { Hash, Name } from './events.ts';
 import type { Vocab, Vocabulary } from './state.ts';
 
 // Reexportados de state.ts (fonte única do schema de vocabulário, DE-29).
 export type { Vocab, Vocabulary };
+
+/** §4.2: nomes de processo reservados para as definições do projeto. */
+export const RESERVED_PROCESS_NAMES = ['schemas', 'vocabulary', 'gates'] as const;
+
+/** §4.2: nomes de tipo reservados para os eventos nativos. */
+export const RESERVED_TYPE_NAMES = ['milestone', 'verdict'] as const;
+
+/** §4.11: nomes de gate embutidos, reservados para `register_gate`. */
+export const BUILTIN_GATE_NAMES = [
+  'no-orphans',
+  'no-conflicts',
+  'chain-intact',
+  'no-invalid-references',
+] as const;
 
 /** Teto de caracteres canônicos (JCS) para um schema custom (§4.10). */
 const SCHEMA_MAX_CHARS = 16_000;
@@ -33,8 +40,21 @@ export type Logger = {
   error: (...args: unknown[]) => void;
 };
 
-/** Resposta comum de `register_*`: o que foi gravado e se substituiu uma versão anterior. */
-export type Registered = { project: string; name: string; hash: string; replaced: boolean };
+/**
+ * Resposta comum de `register_*`: o que foi gravado e se substituiu uma versão anterior.
+ * Schema Zod é a fonte única, mcp.ts só reexporta; `definition-tools.ts` usa `.shape`.
+ */
+export const Registered = z.object({
+  project: Name,
+  name: Name,
+  hash: Hash,
+  replaced: z.boolean(),
+});
+export type Registered = z.infer<typeof Registered>;
+
+/** Hashes dos três blocos fixados no `process.json` (§4.1): schema Zod é a fonte única. */
+export const Hashes = z.object({ schemas: Hash, vocabulary: Hash, gates: Hash });
+export type Hashes = z.infer<typeof Hashes>;
 
 /** Manifesto fixado de um processo (`process.json`, §4.1). */
 export type ProcessManifest = {
@@ -46,7 +66,7 @@ export type ProcessManifest = {
     vocabulary: Vocabulary;
     gates: Record<string, { criteria: string }>;
   };
-  hashes: { schemas: string; vocabulary: string; gates: string };
+  hashes: Hashes;
 };
 
 /** Processo carregado e pronto para uso: manifesto verificado, âncora e schemas Zod dos tipos custom. */
@@ -172,7 +192,7 @@ export function createProcess(
   project: string;
   process: string;
   createdAt: string;
-  hashes: ProcessManifest['hashes'];
+  hashes: Hashes;
   types: string[];
   owners: string[];
   gates: string[];
@@ -183,7 +203,7 @@ export function createProcess(
 
   const projectDir = resolveSafePath(dir, project);
   const fixed = buildSnapshot(projectDir);
-  const hashes: ProcessManifest['hashes'] = {
+  const hashes: Hashes = {
     schemas: sha256hex(canonicalize(fixed.types) ?? ''),
     vocabulary: sha256hex(canonicalize(fixed.vocabulary) ?? ''),
     gates: sha256hex(canonicalize(fixed.gates) ?? ''),
