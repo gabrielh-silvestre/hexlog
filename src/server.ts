@@ -1,10 +1,10 @@
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { dirDados } from './directory.ts';
+import { dataDir } from './directory.ts';
 import { createStderrLogger, createServer } from './mcp.ts';
 
 serveStdio(() =>
   createServer({
-    dataDir: dirDados(process.env),
+    dataDir: dataDir(process.env),
     clock: () => new Date(),
     log: createStderrLogger(),
   }),

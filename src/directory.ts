@@ -8,7 +8,7 @@ import { isEmpty } from 'es-toolkit/compat';
  * está definida, não vazia e é um caminho absoluto (XDG Base Directory 0.8);
  * senão `~/.local/share/hexlog`.
  */
-export function dirDados(env: NodeJS.ProcessEnv): string {
+export function dataDir(env: NodeJS.ProcessEnv): string {
   const xdgDataHome = env.XDG_DATA_HOME;
   if (!isNil(xdgDataHome) && !isEmpty(xdgDataHome) && path.isAbsolute(xdgDataHome)) {
     return path.join(xdgDataHome, 'hexlog');

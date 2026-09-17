@@ -8,7 +8,7 @@ import { registerEventTools } from './event-tools.ts';
 import { VocabSchema, VocabularySchema } from './state.ts';
 import { Agent, Hash, Instant, Name } from './events.ts';
 import type { Logger, LogRecord } from './log.ts';
-import { VERSAO } from './version.ts';
+import { VERSION } from './version.ts';
 
 /** Context compartilhado por todas as tools MCP do hexlog. */
 export type Context = {
@@ -148,9 +148,9 @@ function toHexlogError(e: unknown, ctx: Context): HexlogError {
 
 /** Monta o servidor MCP `hexlog`: nome fixo, versão de `version.ts`, tools de definição e de eventos. */
 export function createServer(ctx: Context): McpServer {
-  const server = new McpServer({ name: 'hexlog', version: VERSAO });
+  const server = new McpServer({ name: 'hexlog', version: VERSION });
   registerDefinitionTools(server, ctx);
   registerEventTools(server, ctx);
-  ctx.log({ level: 'info', event: 'start', dataDir: ctx.dataDir, version: VERSAO });
+  ctx.log({ level: 'info', event: 'start', dataDir: ctx.dataDir, version: VERSION });
   return server;
 }

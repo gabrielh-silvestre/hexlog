@@ -9,102 +9,101 @@ import { parse, modify, applyEdits, type ModificationOptions } from 'jsonc-parse
 import { parse as shellQuoteParse, quote as shellQuoteQuote } from 'shell-quote';
 import { isNil, isString } from 'es-toolkit';
 
-export interface RegrasEsperadas {
+export interface ExpectedRules {
   denyReadDir: string;
   denyRead: string;
   denyEdit: string;
   denyEditLib: string;
   hookExec: string;
-  hookArquivo: string;
+  hookFile: string;
   hookCommand: string;
-  servidorExec: string;
-  servidorArquivo: string;
-  dirVersao: string;
+  serverExec: string;
+  serverFile: string;
+  versionDir: string;
 }
 
-export type ItemFaltando =
+export type MissingItem =
   | 'deny-read-dir'
   | 'deny-read'
   | 'deny-edit'
   | 'deny-edit-lib'
   | 'hook'
-  | 'hook-arquivo'
+  | 'hook-file'
   | 'node'
-  | 'hook-nao-nega'
-  | 'hook-nao-permite'
-  | 'artefato-alterado'
+  | 'hook-not-denying'
+  | 'hook-not-allowing'
+  | 'artifact-modified'
   | 'mcp';
 
 /** As 4 regras de deny e os caminhos do hook/servidor instalados para uma versão (§4.14, QN4). */
-export function regrasEsperadas(
+export function expectedRules(
   D: string,
   home: string,
   execPath: string,
-  versao: string,
-): RegrasEsperadas {
-  const dirVersao = path.join(home, '.local', 'lib', 'hexlog', versao);
-  const hookArquivo = path.join(dirVersao, 'guarda-bash.mjs');
-  const servidorArquivo = path.join(dirVersao, 'servidor.mjs');
+  version: string,
+): ExpectedRules {
+  const versionDir = path.join(home, '.local', 'lib', 'hexlog', version);
+  const hookFile = path.join(versionDir, 'bash-guard.mjs');
+  const serverFile = path.join(versionDir, 'server.mjs');
   return {
     denyReadDir: `Read(/${D})`,
     denyRead: `Read(/${D}/**)`,
     denyEdit: `Edit(/${D}/**)`,
     denyEditLib: `Edit(/${home}/.local/lib/hexlog/**)`,
     hookExec: execPath,
-    hookArquivo,
+    hookFile,
     // O `command` do settings é interpretado por shell: caminho com espaço precisa de aspas.
-    hookCommand: shellQuoteQuote([execPath, hookArquivo]),
-    servidorExec: execPath,
-    servidorArquivo,
-    dirVersao,
+    hookCommand: shellQuoteQuote([execPath, hookFile]),
+    serverExec: execPath,
+    serverFile,
+    versionDir,
   };
 }
 
-const OPCOES_FORMATACAO: ModificationOptions = {
+const FORMATTING_OPTIONS: ModificationOptions = {
   formattingOptions: { tabSize: 2, insertSpaces: true, eol: '\n' },
 };
 
 /** Forma mínima de `settings.json` usada por este módulo — `parse` (jsonc-parser) devolve `any`. */
-interface DadosSettings {
+interface SettingsData {
   permissions?: { deny?: unknown[] };
 }
 
-/** Forma mínima de `~/.claude.json` usada por `mcpRegistrado` — `parse` devolve `any`. */
-interface DadosClaudeJson {
+/** Forma mínima de `~/.claude.json` usada por `mcpRegistered` — `parse` devolve `any`. */
+interface ClaudeJsonData {
   mcpServers?: { hexlog?: { command?: unknown; args?: unknown } };
 }
 
-function inserirNoFimDoArray(texto: string, caminho: (string | number)[], valor: unknown): string {
-  const edits = modify(texto, [...caminho, -1], valor, OPCOES_FORMATACAO);
-  return applyEdits(texto, edits);
+function appendToArray(text: string, jsonPath: (string | number)[], value: unknown): string {
+  const edits = modify(text, [...jsonPath, -1], value, FORMATTING_OPTIONS);
+  return applyEdits(text, edits);
 }
 
 /** Insere cada uma das 4 regras de deny ausentes em `permissions.deny` (idempotente). */
-function aplicarDenyFaltantes(textoSettings: string, esperado: RegrasEsperadas): string {
-  const regras = [esperado.denyReadDir, esperado.denyRead, esperado.denyEdit, esperado.denyEditLib];
-  let texto = textoSettings;
-  for (const regra of regras) {
-    const dados = parse(texto) as DadosSettings | undefined;
-    const denyAtual: unknown[] = dados?.permissions?.deny ?? [];
-    if (denyAtual.includes(regra)) continue;
-    texto = inserirNoFimDoArray(texto, ['permissions', 'deny'], regra);
+function applyMissingDeny(settingsText: string, expected: ExpectedRules): string {
+  const rules = [expected.denyReadDir, expected.denyRead, expected.denyEdit, expected.denyEditLib];
+  let text = settingsText;
+  for (const rule of rules) {
+    const data = parse(text) as SettingsData | undefined;
+    const currentDeny: unknown[] = data?.permissions?.deny ?? [];
+    if (currentDeny.includes(rule)) continue;
+    text = appendToArray(text, ['permissions', 'deny'], rule);
   }
-  return texto;
+  return text;
 }
 
-/** `arquivo` é um `guarda-bash.mjs` sob `<home>/.local/lib/hexlog/<qualquer versão>`? Chave estável entre versões. */
-function ehArquivoDoHookHexlog(arquivo: string, dirVersao: string): boolean {
-  const dirHexlogLib = path.dirname(dirVersao);
+/** `file` é um `bash-guard.mjs` sob `<home>/.local/lib/hexlog/<qualquer versão>`? Chave estável entre versões. */
+function isHexlogHookFile(file: string, versionDir: string): boolean {
+  const hexlogLibDir = path.dirname(versionDir);
   return (
-    path.basename(arquivo) === 'guarda-bash.mjs' &&
-    path.dirname(path.dirname(arquivo)) === dirHexlogLib
+    path.basename(file) === 'bash-guard.mjs' && path.dirname(path.dirname(file)) === hexlogLibDir
   );
 }
 
-function tentarParseComando(comando: string): [string, string] | undefined {
+function tryParseCommand(command: string): [string, string] | undefined {
   let tokens;
   try {
-    tokens = shellQuoteParse(comando);
+    tokens = shellQuoteParse(command);
   } catch {
     return undefined;
   }
@@ -113,31 +112,31 @@ function tentarParseComando(comando: string): [string, string] | undefined {
   return [tokens[0], tokens[1]] as [string, string];
 }
 
-export interface EntradaHookEncontrada {
-  entradaIndex: number;
+export interface FoundHookEntry {
+  entryIndex: number;
   hookIndex: number;
   exec: string;
-  arquivo: string;
+  file: string;
 }
 
 /** Percorre `hooks.PreToolUse` procurando a entrada do hook do hexlog, em qualquer versão instalada. */
-export function localizarEntradaHook(
-  dadosSettings: unknown,
-  dirVersao: string,
-): EntradaHookEncontrada | undefined {
-  const entradas = ((dadosSettings as { hooks?: { PreToolUse?: unknown[] } })?.hooks?.PreToolUse ??
+export function findHookEntry(
+  settingsData: unknown,
+  versionDir: string,
+): FoundHookEntry | undefined {
+  const entries = ((settingsData as { hooks?: { PreToolUse?: unknown[] } })?.hooks?.PreToolUse ??
     []) as {
     hooks?: unknown[];
   }[];
-  for (const [entradaIndex, entrada] of entradas.entries()) {
-    const hooks = (entrada?.hooks ?? []) as { command?: unknown }[];
+  for (const [entryIndex, entry] of entries.entries()) {
+    const hooks = (entry?.hooks ?? []) as { command?: unknown }[];
     for (const [hookIndex, hook] of hooks.entries()) {
       if (!isString(hook.command)) continue;
-      const par = tentarParseComando(hook.command);
-      if (isNil(par)) continue;
-      const [exec, arquivo] = par;
-      if (ehArquivoDoHookHexlog(arquivo, dirVersao)) {
-        return { entradaIndex, hookIndex, exec, arquivo };
+      const pair = tryParseCommand(hook.command);
+      if (isNil(pair)) continue;
+      const [exec, file] = pair;
+      if (isHexlogHookFile(file, versionDir)) {
+        return { entryIndex, hookIndex, exec, file };
       }
     }
   }
@@ -145,139 +144,125 @@ export function localizarEntradaHook(
 }
 
 /** Insere ou corrige (sem duplicar) a entrada do hook do hexlog em `hooks.PreToolUse`. */
-function aplicarHook(textoSettings: string, esperado: RegrasEsperadas): string {
-  const encontrada = localizarEntradaHook(parse(textoSettings), esperado.dirVersao);
-  if (isNil(encontrada)) {
-    const novaEntrada = {
+function applyHook(settingsText: string, expected: ExpectedRules): string {
+  const found = findHookEntry(parse(settingsText), expected.versionDir);
+  if (isNil(found)) {
+    const newEntry = {
       matcher: '^Bash$',
-      hooks: [{ type: 'command', command: esperado.hookCommand, timeout: 10 }],
+      hooks: [{ type: 'command', command: expected.hookCommand, timeout: 10 }],
     };
-    return inserirNoFimDoArray(textoSettings, ['hooks', 'PreToolUse'], novaEntrada);
+    return appendToArray(settingsText, ['hooks', 'PreToolUse'], newEntry);
   }
-  if (encontrada.exec === esperado.hookExec && encontrada.arquivo === esperado.hookArquivo)
-    return textoSettings;
-  const caminho = [
-    'hooks',
-    'PreToolUse',
-    encontrada.entradaIndex,
-    'hooks',
-    encontrada.hookIndex,
-    'command',
-  ];
-  const edits = modify(textoSettings, caminho, esperado.hookCommand, OPCOES_FORMATACAO);
-  return applyEdits(textoSettings, edits);
+  if (found.exec === expected.hookExec && found.file === expected.hookFile) return settingsText;
+  const jsonPath = ['hooks', 'PreToolUse', found.entryIndex, 'hooks', found.hookIndex, 'command'];
+  const edits = modify(settingsText, jsonPath, expected.hookCommand, FORMATTING_OPTIONS);
+  return applyEdits(settingsText, edits);
 }
 
 /** Aplica as 4 regras de deny e o hook faltantes sobre `settings.json`, sem tocar em mais nada (I5). */
-export function aplicarGuard(textoSettings: string, esperado: RegrasEsperadas): string {
-  const comDeny = aplicarDenyFaltantes(textoSettings, esperado);
-  return aplicarHook(comDeny, esperado);
+export function applyGuard(settingsText: string, expected: ExpectedRules): string {
+  const withDeny = applyMissingDeny(settingsText, expected);
+  return applyHook(withDeny, expected);
 }
 
-function verificarDeny(denyAtual: unknown[], esperado: RegrasEsperadas): ItemFaltando[] {
-  const faltando: ItemFaltando[] = [];
-  if (!denyAtual.includes(esperado.denyReadDir)) faltando.push('deny-read-dir');
-  if (!denyAtual.includes(esperado.denyRead)) faltando.push('deny-read');
-  if (!denyAtual.includes(esperado.denyEdit)) faltando.push('deny-edit');
-  if (!denyAtual.includes(esperado.denyEditLib)) faltando.push('deny-edit-lib');
-  return faltando;
+function verifyDeny(currentDeny: unknown[], expected: ExpectedRules): MissingItem[] {
+  const missing: MissingItem[] = [];
+  if (!currentDeny.includes(expected.denyReadDir)) missing.push('deny-read-dir');
+  if (!currentDeny.includes(expected.denyRead)) missing.push('deny-read');
+  if (!currentDeny.includes(expected.denyEdit)) missing.push('deny-edit');
+  if (!currentDeny.includes(expected.denyEditLib)) missing.push('deny-edit-lib');
+  return missing;
 }
 
 /** `D` extraído de `denyReadDir = 'Read(/' + D + ')'` — evita repetir o parâmetro em todo o módulo. */
-function extrairD(esperado: RegrasEsperadas): string {
-  return esperado.denyReadDir.slice('Read(/'.length, -')'.length);
+function extractD(expected: ExpectedRules): string {
+  return expected.denyReadDir.slice('Read(/'.length, -')'.length);
 }
 
 /** `~/.claude.json` já tem `mcpServers.hexlog` apontando para o servidor esperado? */
-export function mcpRegistrado(textoClaudeJson: string | null, esperado: RegrasEsperadas): boolean {
-  if (isNil(textoClaudeJson)) return false;
-  const dados = parse(textoClaudeJson) as DadosClaudeJson | undefined;
-  const servidor = dados?.mcpServers?.hexlog;
-  if (isNil(servidor)) return false;
+export function mcpRegistered(claudeJsonText: string | null, expected: ExpectedRules): boolean {
+  if (isNil(claudeJsonText)) return false;
+  const data = parse(claudeJsonText) as ClaudeJsonData | undefined;
+  const server = data?.mcpServers?.hexlog;
+  if (isNil(server)) return false;
   return (
-    servidor.command === esperado.servidorExec &&
-    Array.isArray(servidor.args) &&
-    servidor.args.length === 1 &&
-    servidor.args[0] === esperado.servidorArquivo
+    server.command === expected.serverExec &&
+    Array.isArray(server.args) &&
+    server.args.length === 1 &&
+    server.args[0] === expected.serverFile
   );
 }
 
 /** As duas entradas de sonda que provam o hook vivo: nega o diretório de dados `D`, permite o resto. */
-export function sondasDoHook(D: string): { nega: string; permite: string } {
+export function hookProbes(D: string): { deny: string; allow: string } {
   return {
-    nega: JSON.stringify({ tool_name: 'Bash', tool_input: { command: `cat ${D}/sonda` } }),
-    permite: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' } }),
+    deny: JSON.stringify({ tool_name: 'Bash', tool_input: { command: `cat ${D}/probe` } }),
+    allow: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' } }),
   };
 }
 
-function verificarArtefatoAlterado(
-  bytesInstalados: ArgsVerificarGuard['bytesInstalados'],
-): boolean {
-  if (isNil(bytesInstalados) || isNil(bytesInstalados.manifesto)) return false;
-  const { servidor, hook, manifesto } = bytesInstalados;
-  const servidorAlterado = !isNil(servidor) && sha256(servidor) !== manifesto.sha256.servidor;
-  const hookAlterado = !isNil(hook) && sha256(hook) !== manifesto.sha256.hook;
-  return servidorAlterado || hookAlterado;
+function verifyArtifactModified(installedBytes: VerifyGuardArgs['installedBytes']): boolean {
+  if (isNil(installedBytes) || isNil(installedBytes.manifest)) return false;
+  const { server, hook, manifest } = installedBytes;
+  const serverModified = !isNil(server) && sha256(server) !== manifest.sha256.server;
+  const hookModified = !isNil(hook) && sha256(hook) !== manifest.sha256.hook;
+  return serverModified || hookModified;
 }
 
-interface ArgsVerificarGuard {
-  textoSettings: string;
-  textoClaudeJson: string | null;
-  esperado: RegrasEsperadas;
-  existe: (caminho: string) => boolean;
-  executarHook: (exec: string, arquivo: string, stdin: string) => { status: number | null };
-  bytesInstalados?: {
-    servidor: Buffer | null;
+interface VerifyGuardArgs {
+  settingsText: string;
+  claudeJsonText: string | null;
+  expected: ExpectedRules;
+  exists: (path: string) => boolean;
+  runHook: (exec: string, file: string, stdin: string) => { status: number | null };
+  installedBytes?: {
+    server: Buffer | null;
     hook: Buffer | null;
-    manifesto: { sha256: { servidor: string; hook: string } } | null;
+    manifest: { sha256: { server: string; hook: string } } | null;
   };
 }
 
 /** Único mecanismo de detecção de guard ausente, alterado ou quebrado (R-1); usado por `install.ts --check`. */
-export function verificarGuard(args: ArgsVerificarGuard): {
+export function verifyGuard(args: VerifyGuardArgs): {
   ok: boolean;
-  faltando: ItemFaltando[];
+  missing: MissingItem[];
 } {
-  const { textoSettings, textoClaudeJson, esperado, existe, executarHook, bytesInstalados } = args;
-  const dadosSettings = parse(textoSettings) as DadosSettings | undefined;
-  const denyAtual: unknown[] = dadosSettings?.permissions?.deny ?? [];
-  const faltando = verificarDeny(denyAtual, esperado);
+  const { settingsText, claudeJsonText, expected, exists, runHook, installedBytes } = args;
+  const settingsData = parse(settingsText) as SettingsData | undefined;
+  const currentDeny: unknown[] = settingsData?.permissions?.deny ?? [];
+  const missing = verifyDeny(currentDeny, expected);
 
-  const encontrada = localizarEntradaHook(dadosSettings, esperado.dirVersao);
-  if (isNil(encontrada)) faltando.push('hook');
+  const found = findHookEntry(settingsData, expected.versionDir);
+  if (isNil(found)) missing.push('hook');
 
-  const exec = encontrada?.exec ?? esperado.hookExec;
-  const arquivo = encontrada?.arquivo ?? esperado.hookArquivo;
-  const execExiste = existe(exec);
-  const arquivoExiste = existe(arquivo);
-  if (!execExiste) faltando.push('node');
-  if (!arquivoExiste) faltando.push('hook-arquivo');
+  const exec = found?.exec ?? expected.hookExec;
+  const file = found?.file ?? expected.hookFile;
+  const execExists = exists(exec);
+  const fileExists = exists(file);
+  if (!execExists) missing.push('node');
+  if (!fileExists) missing.push('hook-file');
 
-  if (execExiste && arquivoExiste) {
-    const sondas = sondasDoHook(extrairD(esperado));
-    if (executarHook(exec, arquivo, sondas.nega).status !== 2) faltando.push('hook-nao-nega');
-    if (executarHook(exec, arquivo, sondas.permite).status !== 0) faltando.push('hook-nao-permite');
+  if (execExists && fileExists) {
+    const probes = hookProbes(extractD(expected));
+    if (runHook(exec, file, probes.deny).status !== 2) missing.push('hook-not-denying');
+    if (runHook(exec, file, probes.allow).status !== 0) missing.push('hook-not-allowing');
   }
 
-  if (!mcpRegistrado(textoClaudeJson, esperado)) faltando.push('mcp');
-  if (verificarArtefatoAlterado(bytesInstalados)) faltando.push('artefato-alterado');
+  if (!mcpRegistered(claudeJsonText, expected)) missing.push('mcp');
+  if (verifyArtifactModified(installedBytes)) missing.push('artifact-modified');
 
-  return { ok: faltando.length === 0, faltando };
+  return { ok: missing.length === 0, missing };
 }
 
-/** Execução real do hook instalado: sem `split`, `arquivo` já resolvido pelo `shellQuote.parse` do `command` registrado. */
-export function executarHookReal(
-  exec: string,
-  arquivo: string,
-  stdin: string,
-): { status: number | null } {
+/** Execução real do hook instalado: sem `split`, `file` já resolvido pelo `shellQuote.parse` do `command` registrado. */
+export function runRealHook(exec: string, file: string, stdin: string): { status: number | null } {
   // `env: process.env` explícito (em vez de deixar o spawnSync herdar por
   // omissão): equivalente em produção, mas lê o `process.env` atual — sem
   // isso, o teste que simula um `HOME` diferente (I7) não convence o filho,
   // porque o sandbox do Jest desacopla o `process.env` mutável do ambiente
   // nativo que o `child_process` usaria por omissão.
-  const resultado = spawnSync(exec, [arquivo], { input: stdin, timeout: 10_000, env: process.env });
-  return { status: resultado.status };
+  const result = spawnSync(exec, [file], { input: stdin, timeout: 10_000, env: process.env });
+  return { status: result.status };
 }
 
 export function sha256(bytes: Buffer): string {

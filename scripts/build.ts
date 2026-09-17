@@ -2,27 +2,27 @@ import * as esbuild from 'esbuild';
 import * as path from 'node:path';
 
 // Nunca o cwd: garante o mesmo bytes independente de onde o script é chamado
-// (instalador, e2e ou `npm run build`), evitando falso "artefato-desatualizado".
-export const raizDoRepo = path.resolve(import.meta.dirname, '..');
+// (instalador, e2e ou `npm run build`), evitando falso "artifact-outdated".
+export const repoRoot = path.resolve(import.meta.dirname, '..');
 
-export const entradas: Record<string, string> = {
-  servidor: 'src/server.ts',
-  'guarda-bash': 'hook/bash-guard.ts',
+export const entries: Record<string, string> = {
+  server: 'src/server.ts',
+  'bash-guard': 'hook/bash-guard.ts',
 };
 
-interface OpcoesConstruir {
+interface BuildOptions {
   write: boolean;
   outdir?: string;
   entryPoints?: Record<string, string>;
 }
 
-export function construir({
+export function build({
   write,
-  outdir = path.join(raizDoRepo, 'dist'),
-  entryPoints = entradas,
-}: OpcoesConstruir) {
+  outdir = path.join(repoRoot, 'dist'),
+  entryPoints = entries,
+}: BuildOptions) {
   return esbuild.build({
-    absWorkingDir: raizDoRepo,
+    absWorkingDir: repoRoot,
     entryPoints,
     outdir,
     write,
@@ -37,11 +37,11 @@ export function construir({
 
 // Ocorrência do shim de `require` dinâmico que o esbuild injeta para uma
 // dependência CJS não embutida (só lança quando o caminho é executado).
-export const temDynamicRequire = (bytes: Uint8Array): boolean =>
+export const hasDynamicRequire = (bytes: Uint8Array): boolean =>
   Buffer.from(bytes).includes('Dynamic require of');
 
 if (import.meta.main) {
   const flagIndex = process.argv.indexOf('--outdir');
   const outdir = flagIndex !== -1 ? process.argv[flagIndex + 1] : undefined;
-  await construir({ write: true, ...(outdir ? { outdir } : {}) });
+  await build({ write: true, ...(outdir ? { outdir } : {}) });
 }

@@ -16,21 +16,21 @@ import { get, isEmpty } from 'es-toolkit/compat';
 import MiniSearch from 'minisearch';
 import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
-import { dirDados } from '../src/directory.ts';
+import { dataDir } from '../src/directory.ts';
 import { parseJson } from './helpers.ts';
 
-const raizDoRepo = path.resolve(__dirname, '..');
+const repoRoot = path.resolve(__dirname, '..');
 const REGEX_UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Forma esperada de test/fixtures/child-probe.ts, campos usados abaixo.
-const SaidaFilhoProbeSchema = z.object({
-  uuidV7Valido: z.boolean(),
-  mcpServerCarregado: z.boolean(),
-  stdioServerTransportCarregado: z.boolean(),
+const ChildProbeOutputSchema = z.object({
+  uuidV7Valid: z.boolean(),
+  mcpServerLoaded: z.boolean(),
+  stdioServerTransportLoaded: z.boolean(),
 });
 
 // Forma mínima de um envelope JSON-RPC 2.0 recebido do servidor bundlado.
-const EnvelopeJsonRpcSchema = z.object({ jsonrpc: z.string() });
+const JsonRpcEnvelopeSchema = z.object({ jsonrpc: z.string() });
 
 describe('probe de dependências no jest (sub-passo 5)', () => {
   test('canonicalize produz JSON canônico (RFC 8785)', () => {
@@ -44,10 +44,10 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
   test('z.fromJSONSchema converte schema JSON em schema zod', () => {
     const schema = z.fromJSONSchema({
       type: 'object',
-      properties: { nome: { type: 'string' } },
-      required: ['nome'],
+      properties: { name: { type: 'string' } },
+      required: ['name'],
     });
-    expect(schema.safeParse({ nome: 'a' }).success).toBe(true);
+    expect(schema.safeParse({ name: 'a' }).success).toBe(true);
     expect(schema.safeParse({}).success).toBe(false);
   });
 
@@ -71,16 +71,16 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
   });
 
   test('minisearch busca com acento normalizado via processTerm', () => {
-    const indice = new MiniSearch<{ id: number; texto: string }>({
-      fields: ['texto'],
-      processTerm: (termo) => termo.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(),
+    const index = new MiniSearch<{ id: number; text: string }>({
+      fields: ['text'],
+      processTerm: (term) => term.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(),
     });
-    indice.addAll([
-      { id: 1, texto: 'evento marco aprovado' },
-      { id: 2, texto: 'evento veredito reprovado' },
-      { id: 3, texto: 'evento comum' },
+    index.addAll([
+      { id: 1, text: 'cafe order approved' },
+      { id: 2, text: 'tea order rejected' },
+      { id: 3, text: 'plain event' },
     ]);
-    expect(indice.search('márco').map((resultado) => resultado.id as number)).toEqual([1]);
+    expect(index.search('café').map((result) => result.id as number)).toEqual([1]);
   });
 
   test('path.matchesGlob casa padrão simples', () => {
@@ -88,43 +88,43 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
   });
 
   test('McpServer + Client + InMemoryTransport do mesmo pacote (@modelcontextprotocol/server)', async () => {
-    const [transporteServidor, transporteCliente] = InMemoryTransport.createLinkedPair();
-    const servidor = new McpServer({ name: 'probe', version: '0.0.0' });
-    servidor.registerTool(
-      'eco',
-      { description: 'eco', inputSchema: { texto: z.string() } },
-      ({ texto }) => Promise.resolve({ content: [{ type: 'text', text: texto }] }),
+    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+    const server = new McpServer({ name: 'probe', version: '0.0.0' });
+    server.registerTool(
+      'echo',
+      { description: 'echo', inputSchema: { text: z.string() } },
+      ({ text }) => Promise.resolve({ content: [{ type: 'text', text }] }),
     );
-    const cliente = new Client({ name: 'probe-cliente', version: '0.0.0' });
+    const client = new Client({ name: 'probe-client', version: '0.0.0' });
 
-    await Promise.all([servidor.connect(transporteServidor), cliente.connect(transporteCliente)]);
-    const resultado = await cliente.callTool({ name: 'eco', arguments: { texto: 'oi' } });
-    expect(resultado.content).toEqual([{ type: 'text', text: 'oi' }]);
-    await cliente.close();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const result = await client.callTool({ name: 'echo', arguments: { text: 'oi' } });
+    expect(result.content).toEqual([{ type: 'text', text: 'oi' }]);
+    await client.close();
   });
 
   test('módulo local importado com extensão .ts resolve (src/directory.ts)', () => {
-    expect(dirDados({})).toMatch(/[/\\]hexlog$/);
+    expect(dataDir({})).toMatch(/[/\\]hexlog$/);
   });
 });
 
 describe('probe no Node ESM real (sub-passo 6, filho-probe)', () => {
   test('spawn de child-probe.ts imprime só JSON no stdout, sem warnings no stderr', () => {
-    const resultado = spawnSync(
+    const result = spawnSync(
       process.execPath,
-      [path.join(raizDoRepo, 'test/fixtures/child-probe.ts')],
+      [path.join(repoRoot, 'test/fixtures/child-probe.ts')],
       {
         encoding: 'utf8',
       },
     );
 
-    expect(resultado.status).toBe(0);
-    expect(resultado.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
 
-    const saida = parseJson(SaidaFilhoProbeSchema, resultado.stdout);
-    expect(saida.uuidV7Valido).toBe(true);
-    expect(saida.mcpServerCarregado).toBe(true);
-    expect(saida.stdioServerTransportCarregado).toBe(true);
+    const output = parseJson(ChildProbeOutputSchema, result.stdout);
+    expect(output.uuidV7Valid).toBe(true);
+    expect(output.mcpServerLoaded).toBe(true);
+    expect(output.stdioServerTransportLoaded).toBe(true);
   });
 });
 
@@ -135,13 +135,13 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
     // mkdtemp fora do repo: garante que o bundle não alcança node_modules
     // por um caminho relativo acidental.
     outdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-build-probe-'));
-    const resultado = spawnSync(
+    const result = spawnSync(
       process.execPath,
-      [path.join(raizDoRepo, 'test/fixtures/build-fixtures.ts'), outdir],
-      { encoding: 'utf8', cwd: raizDoRepo },
+      [path.join(repoRoot, 'test/fixtures/build-fixtures.ts'), outdir],
+      { encoding: 'utf8', cwd: repoRoot },
     );
-    if (resultado.status !== 0) {
-      throw new Error(`build de probe falhou: ${resultado.stderr}`);
+    if (result.status !== 0) {
+      throw new Error(`build de probe falhou: ${result.stderr}`);
     }
   });
 
@@ -150,65 +150,63 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
   });
 
   test('nenhum dos dois bundles contém o shim "Dynamic require of"', () => {
-    for (const arquivo of ['servidor-probe.mjs', 'hook-probe.mjs']) {
-      const bytes = fs.readFileSync(path.join(outdir, arquivo));
+    for (const file of ['server-probe.mjs', 'hook-probe.mjs']) {
+      const bytes = fs.readFileSync(path.join(outdir, file));
       expect(bytes.includes('Dynamic require of')).toBe(false);
     }
   });
 
-  test('servidor-probe.mjs fala só JSON-RPC 2.0 no stdout, sem Dynamic require no stderr', async () => {
-    const { linhas, stderr } = await falarComServidor(path.join(outdir, 'servidor-probe.mjs'));
+  test('server-probe.mjs fala só JSON-RPC 2.0 no stdout, sem Dynamic require no stderr', async () => {
+    const { lines, stderr } = await talkToServer(path.join(outdir, 'server-probe.mjs'));
 
-    expect(linhas.length).toBe(3);
-    for (const linha of linhas) {
-      expect(parseJson(EnvelopeJsonRpcSchema, linha).jsonrpc).toBe('2.0');
+    expect(lines.length).toBe(3);
+    for (const line of lines) {
+      expect(parseJson(JsonRpcEnvelopeSchema, line).jsonrpc).toBe('2.0');
     }
     expect(stderr).not.toContain('Dynamic require');
   }, 15000);
 
   test('hook-probe.mjs sai com o código esperado conforme o comando recebido', () => {
-    const reconhecido = spawnSync(
+    const recognized = spawnSync(
       process.execPath,
       [path.join(outdir, 'hook-probe.mjs'), 'echo hi'],
       {
         encoding: 'utf8',
       },
     );
-    expect(reconhecido.status).toBe(0);
+    expect(recognized.status).toBe(0);
 
-    const semComando = spawnSync(process.execPath, [path.join(outdir, 'hook-probe.mjs'), ''], {
+    const noCommand = spawnSync(process.execPath, [path.join(outdir, 'hook-probe.mjs'), ''], {
       encoding: 'utf8',
     });
-    expect(semComando.status).toBe(1);
+    expect(noCommand.status).toBe(1);
   });
 });
 
 /** Conversa em JSON-RPC 2.0 bruto (initialize, tools/list, tools/call) por stdin/stdout. */
-async function falarComServidor(
-  caminhoDoBundle: string,
-): Promise<{ linhas: string[]; stderr: string }> {
-  const filho = spawn(process.execPath, [caminhoDoBundle], { stdio: ['pipe', 'pipe', 'pipe'] });
-  const saida = { texto: '' };
-  let stderrTexto = '';
-  filho.stdout.on('data', (chunk: Buffer) => {
-    saida.texto += chunk.toString();
+async function talkToServer(bundlePath: string): Promise<{ lines: string[]; stderr: string }> {
+  const child = spawn(process.execPath, [bundlePath], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const output = { text: '' };
+  let stderrText = '';
+  child.stdout.on('data', (chunk: Buffer) => {
+    output.text += chunk.toString();
   });
-  filho.stderr.on('data', (chunk: Buffer) => {
-    stderrTexto += chunk.toString();
+  child.stderr.on('data', (chunk: Buffer) => {
+    stderrText += chunk.toString();
   });
 
-  const enviar = (mensagem: unknown) => filho.stdin.write(`${JSON.stringify(mensagem)}\n`);
-  const linhasRecebidas = () => saida.texto.split('\n').filter((linha) => !isEmpty(linha));
-  const aguardarLinhas = (quantidade: number) =>
+  const send = (message: unknown) => child.stdin.write(`${JSON.stringify(message)}\n`);
+  const receivedLines = () => output.text.split('\n').filter((line) => !isEmpty(line));
+  const waitForLines = (count: number) =>
     new Promise<void>((resolve) => {
-      const verificar = () => {
-        if (linhasRecebidas().length >= quantidade) resolve();
-        else setTimeout(verificar, 20);
+      const check = () => {
+        if (receivedLines().length >= count) resolve();
+        else setTimeout(check, 20);
       };
-      verificar();
+      check();
     });
 
-  enviar({
+  send({
     jsonrpc: '2.0',
     id: 1,
     method: 'initialize',
@@ -218,20 +216,20 @@ async function falarComServidor(
       clientInfo: { name: 'probe', version: '0.0.0' },
     },
   });
-  await aguardarLinhas(1);
+  await waitForLines(1);
 
-  enviar({ jsonrpc: '2.0', method: 'notifications/initialized' });
-  enviar({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-  await aguardarLinhas(2);
+  send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+  send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+  await waitForLines(2);
 
-  enviar({
+  send({
     jsonrpc: '2.0',
     id: 3,
     method: 'tools/call',
-    params: { name: 'eco', arguments: { texto: 'oi' } },
+    params: { name: 'echo', arguments: { text: 'oi' } },
   });
-  await aguardarLinhas(3);
+  await waitForLines(3);
 
-  filho.kill();
-  return { linhas: linhasRecebidas(), stderr: stderrTexto };
+  child.kill();
+  return { lines: receivedLines(), stderr: stderrText };
 }

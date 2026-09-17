@@ -19,31 +19,31 @@ const ajv = new Ajv2020.default({ strict: true });
 addFormats.default(ajv);
 
 const uuid = randomUUIDv7();
-const uuidV7Valido = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+const uuidV7Valid = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
   uuid,
 );
 
-const indice = new MiniSearch({ fields: ['texto'] });
-indice.addAll([
-  { id: 1, texto: 'evento marco aprovado' },
-  { id: 2, texto: 'evento veredito reprovado' },
-  { id: 3, texto: 'evento comum registrado' },
+const index = new MiniSearch({ fields: ['text'] });
+index.addAll([
+  { id: 1, text: 'approved milestone event' },
+  { id: 2, text: 'rejected verdict event' },
+  { id: 3, text: 'registered common event' },
 ]);
 
-const saida = {
-  ajvSchemaValido: ajv.validateSchema({ type: 'object' }),
+const output = {
+  ajvSchemaValid: ajv.validateSchema({ type: 'object' }),
   uuid,
-  uuidV7Valido,
+  uuidV7Valid,
   globOk: matchesGlob('a/b.ts', 'a/*.ts'),
-  buscaMinisearch: indice.search('marco').map((resultado) => resultado.id as number),
+  minisearchResults: index.search('milestone').map((result) => result.id as number),
   pick: pick({ a: 1, b: 2, c: 3 }, ['a', 'c']),
   get: get({ a: { b: 42 } }, 'a.b'),
   canon: canonicalize({ b: 1, a: 2 }),
   jsonc: jsonc.parse('{"a":1} // comentário') as { a: number },
   shellQuote: quote(['echo', 'a b']),
   zodOk: z.string().safeParse('ok').success,
-  mcpServerCarregado: typeof McpServer === 'function',
-  stdioServerTransportCarregado: typeof StdioServerTransport === 'function',
+  mcpServerLoaded: typeof McpServer === 'function',
+  stdioServerTransportLoaded: typeof StdioServerTransport === 'function',
 };
 
-console.log(JSON.stringify(saida));
+console.log(JSON.stringify(output));

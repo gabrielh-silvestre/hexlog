@@ -8,52 +8,52 @@ import { matchesGlob } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as shellQuoteParse, type ParseEntry } from 'shell-quote';
 import { isNil, isString } from 'es-toolkit';
-import { dirDados } from '../src/directory.ts';
+import { dataDir } from '../src/directory.ts';
 
 // Segmento com `**` ou uma chave `{a/b,c}` com barra dentro: o `path.matchesGlob`
 // não expande `**` até a profundidade de D, e o truncamento por `sep` corta a
 // chave no meio (R-6, Critic iter2-1) — por isso o prefixo literal decide.
-const REGEX_CHAVE_COM_BARRA = /\{[^}]*\/[^}]*\}/;
-const REGEX_CARACTERES_GLOB = /[*?[{]/;
+const SLASH_KEY_REGEX = /\{[^}]*\/[^}]*\}/;
+const GLOB_CHARS_REGEX = /[*?[{]/;
 // `~` no início do token ou logo após `=` (`--opt=~/x`); shell-quote não expande til.
-const REGEX_TIL = /(^|=)~(?=\/|$)/g;
+const TILDE_REGEX = /(^|=)~(?=\/|$)/g;
 
-const mensagemNegacao = (d: string): string =>
+const denialMessage = (d: string): string =>
   `hexlog: ${d} is only accessible through the hexlog MCP tools (list, state, events, chain).`;
 
-interface EntradaBruta {
+interface RawInput {
   tool_name?: unknown;
   tool_input?: { command?: unknown };
   cwd?: unknown;
 }
 
-function comoEntradaBruta(input: unknown): EntradaBruta | undefined {
+function asRawInput(input: unknown): RawInput | undefined {
   return !isNil(input) && typeof input === 'object' ? input : undefined;
 }
 
-function extrairComando(input: unknown): string | undefined {
-  const entrada = comoEntradaBruta(input);
-  if (isNil(entrada) || entrada.tool_name !== 'Bash') return undefined;
-  const comando = entrada.tool_input?.command;
-  return isString(comando) ? comando : undefined;
+function extractCommand(input: unknown): string | undefined {
+  const rawInput = asRawInput(input);
+  if (isNil(rawInput) || rawInput.tool_name !== 'Bash') return undefined;
+  const command = rawInput.tool_input?.command;
+  return isString(command) ? command : undefined;
 }
 
-function extrairCwd(input: unknown): string | undefined {
-  const cwd = comoEntradaBruta(input)?.cwd;
+function extractCwd(input: unknown): string | undefined {
+  const cwd = asRawInput(input)?.cwd;
   return isString(cwd) ? cwd : undefined;
 }
 
-function expandirTil(token: string, home: string): string {
-  return token.replace(REGEX_TIL, `$1${home}`);
+function expandTilde(token: string, home: string): string {
+  return token.replace(TILDE_REGEX, `$1${home}`);
 }
 
 /** Índice do primeiro segmento com caractere de glob, ou -1 se nenhum. */
-function primeiroIndiceComGlob(segmentos: string[]): number {
-  return segmentos.findIndex((segmento) => REGEX_CARACTERES_GLOB.test(segmento));
+function firstGlobIndex(segments: string[]): number {
+  return segments.findIndex((segment) => GLOB_CHARS_REGEX.test(segment));
 }
 
 /** Só os tokens texto e os padrões `{op: 'glob', pattern}` interessam à checagem. */
-function tokensComoStrings(tokens: ParseEntry[]): string[] {
+function tokensAsStrings(tokens: ParseEntry[]): string[] {
   const strings: string[] = [];
   for (const token of tokens) {
     if (isString(token)) {
@@ -65,79 +65,77 @@ function tokensComoStrings(tokens: ParseEntry[]): string[] {
   return strings;
 }
 
-function tentarTokenizar(
-  comando: string,
+function tryTokenize(
+  command: string,
   home: string,
   env: NodeJS.ProcessEnv,
 ): ParseEntry[] | undefined {
   try {
-    return shellQuoteParse(comando, { HOME: home, XDG_DATA_HOME: env.XDG_DATA_HOME ?? '' });
+    return shellQuoteParse(command, { HOME: home, XDG_DATA_HOME: env.XDG_DATA_HOME ?? '' });
   } catch {
     return undefined;
   }
 }
 
 /** Um token isolado alcança `D` (por igualdade, prefixo ou glob compatível)? */
-function tokenAlcancaDiretorio(
-  tokenBruto: string,
+function tokenReachesDirectory(
+  rawToken: string,
   cwd: string,
-  dirDados: string,
+  dataDir: string,
   home: string,
 ): boolean {
-  const token = expandirTil(tokenBruto, home);
-  if (token.includes(dirDados)) return true;
+  const token = expandTilde(rawToken, home);
+  if (token.includes(dataDir)) return true;
 
   const sep = path.sep;
-  const caminho = path.resolve(cwd, token);
-  if (caminho === dirDados || caminho.startsWith(dirDados + sep)) return true;
+  const resolvedPath = path.resolve(cwd, token);
+  if (resolvedPath === dataDir || resolvedPath.startsWith(dataDir + sep)) return true;
 
-  const temChaveComBarra = REGEX_CHAVE_COM_BARRA.test(token);
-  if (token.includes('**') || temChaveComBarra) {
-    const segmentos = caminho.split(sep);
-    const indiceGlob = primeiroIndiceComGlob(segmentos);
-    const prefixo = indiceGlob === -1 ? caminho : segmentos.slice(0, indiceGlob).join(sep);
+  const hasSlashKey = SLASH_KEY_REGEX.test(token);
+  if (token.includes('**') || hasSlashKey) {
+    const segments = resolvedPath.split(sep);
+    const globIndex = firstGlobIndex(segments);
+    const prefix = globIndex === -1 ? resolvedPath : segments.slice(0, globIndex).join(sep);
     return (
-      prefixo === dirDados ||
-      dirDados.startsWith(prefixo + sep) ||
-      prefixo.startsWith(dirDados + sep)
+      prefix === dataDir || dataDir.startsWith(prefix + sep) || prefix.startsWith(dataDir + sep)
     );
   }
 
-  if (REGEX_CARACTERES_GLOB.test(token)) {
-    const profundidadeDeD = dirDados.split(sep).length;
-    const truncado = caminho.split(sep).slice(0, profundidadeDeD).join(sep);
-    return matchesGlob(dirDados, truncado);
+  if (GLOB_CHARS_REGEX.test(token)) {
+    const dirDepth = dataDir.split(sep).length;
+    const truncated = resolvedPath.split(sep).slice(0, dirDepth).join(sep);
+    return matchesGlob(dataDir, truncated);
   }
 
   return false;
 }
 
 /** Decisão pura do guard: sem I/O, testável isolada do processo real. */
-function decidir(
+function decide(
   input: unknown,
   env: NodeJS.ProcessEnv,
-  cwdPadrao: string,
-): { nega: boolean; motivo?: string } {
-  const comando = extrairComando(input);
-  if (isNil(comando)) return { nega: false };
+  defaultCwd: string,
+): { deny: boolean; reason?: string } {
+  const command = extractCommand(input);
+  if (isNil(command)) return { deny: false };
 
-  const dados = dirDados(env);
+  const dataDirPath = dataDir(env);
   const home = os.homedir();
-  const cwd = extrairCwd(input) ?? cwdPadrao;
+  const cwd = extractCwd(input) ?? defaultCwd;
 
-  const tokens = tentarTokenizar(comando, home, env);
-  const alcancaPelosTokens = isNil(tokens)
+  const tokens = tryTokenize(command, home, env);
+  const reachedByTokens = isNil(tokens)
     ? false
-    : tokensComoStrings(tokens).some((token) => tokenAlcancaDiretorio(token, cwd, dados, home));
+    : tokensAsStrings(tokens).some((token) => tokenReachesDirectory(token, cwd, dataDirPath, home));
 
   // Rede de segurança (§4.14): também decide sozinha quando o
   // parse lança, e cobre o comando citando D fora de qualquer token isolado.
-  const nega = alcancaPelosTokens || comando.includes(dados);
-  return nega ? { nega: true, motivo: mensagemNegacao(dados) } : { nega: false };
+  const deny = reachedByTokens || command.includes(dataDirPath);
+  return deny ? { deny: true, reason: denialMessage(dataDirPath) } : { deny: false };
 }
 
 /** `import.meta.main` não sobrevive ao bundle do esbuild: compara o caminho do entrypoint. */
-function executadoDiretamente(): boolean {
+function isExecutedDirectly(): boolean {
   try {
     return path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url);
   } catch {
@@ -145,19 +143,19 @@ function executadoDiretamente(): boolean {
   }
 }
 
-function rodar(): void {
-  const entradaStdin = fs.readFileSync(0, 'utf8');
-  const input: unknown = JSON.parse(entradaStdin);
-  const { nega, motivo } = decidir(input, process.env, process.cwd());
-  if (nega) {
-    process.stderr.write(motivo ?? '');
+function run(): void {
+  const stdinInput = fs.readFileSync(0, 'utf8');
+  const input: unknown = JSON.parse(stdinInput);
+  const { deny, reason } = decide(input, process.env, process.cwd());
+  if (deny) {
+    process.stderr.write(reason ?? '');
     process.exitCode = 2;
   }
 }
 
-if (executadoDiretamente()) {
+if (isExecutedDirectly()) {
   try {
-    rodar();
+    run();
   } catch {
     // R-1: falha aberto — Node ausente, JSON inválido ou qualquer erro
     // interno nunca deve bloquear o Bash tool.

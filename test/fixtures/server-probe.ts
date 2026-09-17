@@ -18,37 +18,37 @@ import { randomUUIDv7 } from 'node:crypto';
 const ajv = new Ajv2020.default({ strict: true });
 addFormats.default(ajv);
 
-const indice = new MiniSearch({ fields: ['texto'] });
-indice.addAll([{ id: 1, texto: 'evento marco aprovado' }]);
+const index = new MiniSearch({ fields: ['text'] });
+index.addAll([{ id: 1, text: 'approved milestone event' }]);
 
 serveStdio(() => {
-  const servidor = new McpServer({ name: 'servidor-probe', version: '0.0.0' });
+  const server = new McpServer({ name: 'server-probe', version: '0.0.0' });
 
-  servidor.registerTool(
-    'eco',
+  server.registerTool(
+    'echo',
     {
       description: 'devolve um diagnóstico das deps carregadas',
-      inputSchema: { texto: z.string() },
+      inputSchema: { text: z.string() },
     },
-    ({ texto }) =>
+    ({ text }) =>
       Promise.resolve({
         content: [
           {
             type: 'text',
             text: JSON.stringify({
-              texto,
-              ajvSchemaValido: ajv.validateSchema({ type: 'object' }),
+              text,
+              ajvSchemaValid: ajv.validateSchema({ type: 'object' }),
               uuid: randomUUIDv7(),
-              buscaMinisearch: indice.search('marco').map((resultado) => resultado.id as number),
+              minisearchResults: index.search('milestone').map((result) => result.id as number),
               pick: pick({ a: 1, b: 2 }, ['a']),
               get: get({ a: { b: 1 } }, 'a.b'),
               canon: canonicalize({ b: 1, a: 2 }),
-              shellQuote: quote(['echo', texto]),
+              shellQuote: quote(['echo', text]),
             }),
           },
         ],
       }),
   );
 
-  return servidor;
+  return server;
 });

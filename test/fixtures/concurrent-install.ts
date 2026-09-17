@@ -1,54 +1,54 @@
-// Processo filho pro teste de concorrência de `instalarArtefato` (B2(h), passo
+// Processo filho pro teste de concorrência de `installArtifact` (B2(h), passo
 // 10b): hook e servidor são buffers sintéticos e as duas checagens são stubs —
-// só a troca atômica de `instalarArtefato` importa aqui. Uma barreira em
+// só a troca atômica de `installArtifact` importa aqui. Uma barreira em
 // arquivos garante que os processos irmãos cheguem juntos na instalação, em
 // vez de torcer pra concorrência real de processo acontecer por sorte.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { instalarArtefato } from '../../src/installation.ts';
+import { installArtifact } from '../../src/installation.ts';
 
-const [, , home, versao, variante, idProcesso, totalProcessosTexto] = process.argv;
-if ([home, versao, variante, idProcesso, totalProcessosTexto].some((v) => v === undefined)) {
+const [, , home, version, variant, processId, totalProcessesText] = process.argv;
+if ([home, version, variant, processId, totalProcessesText].some((v) => v === undefined)) {
   throw new Error(
-    'uso: concurrent-install.ts <home> <versao> <variante> <idProcesso> <totalProcessos>',
+    'uso: concurrent-install.ts <home> <version> <variant> <processId> <totalProcesses>',
   );
 }
-const totalProcessos = Number(totalProcessosTexto);
+const totalProcesses = Number(totalProcessesText);
 
 // Busy-wait síncrono: qualquer `await`/`setTimeout` aqui dá alguns ms de
 // vantagem sistemática a quem chega por último (o que já viu a barreira cheia
 // não dorme, quem chegou primeiro ainda está no timeout) — isso serializa os
 // processos em vez de fazê-los colidir na troca atômica, que é o que o teste
 // de concorrência (B2(h)) precisa provocar de propósito.
-const dirBarreira = path.join(home, '.barreira');
-fs.mkdirSync(dirBarreira, { recursive: true });
-fs.writeFileSync(path.join(dirBarreira, idProcesso), '');
-while (fs.readdirSync(dirBarreira).length < totalProcessos) {
+const barrierDir = path.join(home, '.barrier');
+fs.mkdirSync(barrierDir, { recursive: true });
+fs.writeFileSync(path.join(barrierDir, processId), '');
+while (fs.readdirSync(barrierDir).length < totalProcesses) {
   // spin
 }
 
 const bundles = {
-  servidor: Buffer.from(`servidor-${variante}`),
-  hook: Buffer.from(`hook-${variante}`),
+  server: Buffer.from(`server-${variant}`),
+  hook: Buffer.from(`hook-${variant}`),
 };
 
 try {
-  const resultado = await instalarArtefato({
+  const result = await installArtifact({
     home,
-    versao,
+    version,
     bundles,
     commit: null,
-    sujo: false,
-    agora: () => new Date(),
-    executarHook: (_arquivoHook, stdin) => ({ status: stdin.includes('/sonda') ? 2 : 0 }),
-    verificarServidor: () => Promise.resolve(10),
+    dirty: false,
+    clock: () => new Date(),
+    runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
+    verifyServer: () => Promise.resolve(10),
     log: () => {},
   });
-  process.stdout.write(JSON.stringify({ ok: true, acao: resultado.acao }));
+  process.stdout.write(JSON.stringify({ ok: true, action: result.action }));
   process.exit(0);
-} catch (erro) {
+} catch (error) {
   process.stdout.write(
-    JSON.stringify({ ok: false, mensagem: erro instanceof Error ? erro.message : String(erro) }),
+    JSON.stringify({ ok: false, message: error instanceof Error ? error.message : String(error) }),
   );
   process.exit(1);
 }

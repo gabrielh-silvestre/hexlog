@@ -2,14 +2,14 @@ import { describe, test, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { VERSAO } from '../src/version.ts';
+import { VERSION } from '../src/version.ts';
 import { parseJson } from './helpers.ts';
 
-const raizDoRepo = path.resolve(__dirname, '..');
-const DIRETORIOS_IGNORADOS = new Set(['node_modules', 'dist', '.omc', '.git', 'coverage']);
+const repoRoot = path.resolve(__dirname, '..');
+const IGNORED_DIRS = new Set(['node_modules', 'dist', '.omc', '.git', 'coverage']);
 
 // Forma de package.json que este arquivo lê (campos usados nas asserções abaixo).
-const PacoteSchema = z.object({
+const PackageSchema = z.object({
   dependencies: z.record(z.string(), z.string()),
   devDependencies: z.record(z.string(), z.string()),
   engines: z.record(z.string(), z.string()),
@@ -18,69 +18,66 @@ const PacoteSchema = z.object({
 });
 
 /** Lista recursivamente os arquivos com a extensão dada, pulando diretórios de build/dependências. */
-function listarArquivosRecursivo(dir: string, extensao = '.ts'): string[] {
+function listFilesRecursive(dir: string, extension = '.ts'): string[] {
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entrada) => {
-    const caminho = path.join(dir, entrada.name);
-    if (entrada.isDirectory()) {
-      return DIRETORIOS_IGNORADOS.has(entrada.name)
-        ? []
-        : listarArquivosRecursivo(caminho, extensao);
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const filePath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return IGNORED_DIRS.has(entry.name) ? [] : listFilesRecursive(filePath, extension);
     }
-    return entrada.name.endsWith(extensao) ? [caminho] : [];
+    return entry.name.endsWith(extension) ? [filePath] : [];
   });
 }
 
 /** Lista recursivamente todos os diretórios do repo, pulando node_modules/.git. */
-function listarDiretorios(dir: string): string[] {
+function listDirectories(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entrada) => {
-    if (!entrada.isDirectory() || entrada.name === 'node_modules' || entrada.name === '.git')
-      return [];
-    const caminho = path.join(dir, entrada.name);
-    return [caminho, ...listarDiretorios(caminho)];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (!entry.isDirectory() || entry.name === 'node_modules' || entry.name === '.git') return [];
+    const dirPath = path.join(dir, entry.name);
+    return [dirPath, ...listDirectories(dirPath)];
   });
 }
 
 /** Extrai os especificadores de import/require de um arquivo TS (estático, via regex — sem parser de AST). */
-function extrairEspecificadores(conteudo: string): string[] {
+function extractSpecifiers(content: string): string[] {
   const regexes = [
     /\bfrom\s+['"]([^'"]+)['"]/g,
     /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
     /\bimport\s+['"]([^'"]+)['"]/g,
     /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g,
   ];
-  return regexes.flatMap((regex) => [...conteudo.matchAll(regex)].map((m) => m[1]));
+  return regexes.flatMap((regex) => [...content.matchAll(regex)].map((m) => m[1]));
 }
 
 /** Um especificador relativo (`.`) ou absoluto (`/`) que resolve para fora da raiz do repo. */
-function saiDoRepo(especificador: string, arquivo: string): boolean {
-  if (!especificador.startsWith('.') && !especificador.startsWith('/')) return false;
-  const alvo = path.resolve(path.dirname(arquivo), especificador);
-  const relativo = path.relative(raizDoRepo, alvo);
-  return relativo.startsWith('..') || path.isAbsolute(relativo);
+function leavesRepo(specifier: string, file: string): boolean {
+  if (!specifier.startsWith('.') && !specifier.startsWith('/')) return false;
+  const target = path.resolve(path.dirname(file), specifier);
+  const relative = path.relative(repoRoot, target);
+  return relative.startsWith('..') || path.isAbsolute(relative);
 }
 
-const pkg = parseJson(PacoteSchema, fs.readFileSync(path.join(raizDoRepo, 'package.json'), 'utf8'));
+const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
 describe('N7', () => {
   test('package.json não depende de xstate, hexnucleus, core.poc-motor-log nem uuid', () => {
-    const todasAsDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-    for (const proibido of ['xstate', 'hexnucleus', 'core.poc-motor-log', 'uuid']) {
-      expect(todasAsDeps).not.toHaveProperty(proibido);
+    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+    for (const forbidden of ['xstate', 'hexnucleus', 'core.poc-motor-log', 'uuid']) {
+      expect(allDeps).not.toHaveProperty(forbidden);
     }
   });
 
   test('nenhum import relativo/absoluto em src/, hook/, scripts/ ou test/ sai do repo', () => {
-    const arquivos = ['src', 'hook', 'scripts', 'test'].flatMap((dir) =>
-      listarArquivosRecursivo(path.join(raizDoRepo, dir)),
+    const files = ['src', 'hook', 'scripts', 'test'].flatMap((dir) =>
+      listFilesRecursive(path.join(repoRoot, dir)),
     );
-    const violacoes = arquivos.flatMap((arquivo) =>
-      extrairEspecificadores(fs.readFileSync(arquivo, 'utf8'))
-        .filter((especificador) => saiDoRepo(especificador, arquivo))
-        .map((especificador) => `${path.relative(raizDoRepo, arquivo)}: ${especificador}`),
+    const violations = files.flatMap((file) =>
+      extractSpecifiers(fs.readFileSync(file, 'utf8'))
+        .filter((specifier) => leavesRepo(specifier, file))
+        .map((specifier) => `${path.relative(repoRoot, file)}: ${specifier}`),
     );
-    expect(violacoes).toEqual([]);
+    expect(violations).toEqual([]);
   });
 });
 
@@ -92,7 +89,7 @@ describe('S6', () => {
 
 describe('N11', () => {
   // Manifesto literal de §2.2 — versões exatas (npm install --save-exact).
-  const DEPENDENCIAS_ESPERADAS = {
+  const EXPECTED_DEPENDENCIES = {
     '@modelcontextprotocol/server': '2.0.0',
     zod: '4.6.5',
     ajv: '8.20.0',
@@ -103,7 +100,7 @@ describe('N11', () => {
     'es-toolkit': '1.52.0',
     minisearch: '7.2.0',
   };
-  const DEV_DEPENDENCIAS_ESPERADAS = {
+  const EXPECTED_DEV_DEPENDENCIES = {
     '@modelcontextprotocol/client': '2.0.0',
     jest: '30.5.1',
     '@jest/globals': '30.5.1',
@@ -124,23 +121,23 @@ describe('N11', () => {
   };
 
   test('dependencies bate exatamente com o manifesto de §2.2 (sem ^/~/faixas)', () => {
-    expect(pkg.dependencies).toEqual(DEPENDENCIAS_ESPERADAS);
+    expect(pkg.dependencies).toEqual(EXPECTED_DEPENDENCIES);
   });
 
   test('devDependencies bate exatamente com o manifesto de §2.2 (sem ^/~/faixas)', () => {
-    expect(pkg.devDependencies).toEqual(DEV_DEPENDENCIAS_ESPERADAS);
+    expect(pkg.devDependencies).toEqual(EXPECTED_DEV_DEPENDENCIES);
   });
 
   test('engines.node é >=24.18.1', () => {
     expect(pkg.engines).toEqual({ node: '>=24.18.1' });
   });
 
-  test('VERSAO de src/version.ts bate com package.json.version', () => {
-    expect(VERSAO).toBe(pkg.version);
+  test('VERSION de src/version.ts bate com package.json.version', () => {
+    expect(VERSION).toBe(pkg.version);
   });
 
   test('.gitignore contém a linha dist/', () => {
-    const gitignore = fs.readFileSync(path.join(raizDoRepo, '.gitignore'), 'utf8');
+    const gitignore = fs.readFileSync(path.join(repoRoot, '.gitignore'), 'utf8');
     expect(gitignore.split('\n')).toContain('dist/');
   });
 });
@@ -150,43 +147,45 @@ describe('M5', () => {
     expect(pkg.bin).toBeUndefined();
   });
 
-  test('nenhum arquivo em src/ sobe um listener de rede (http.createServer nem .listen()', () => {
-    // Escopo intencionalmente restrito ao módulo `http`/`.listen(` de rede (§M5: hexlog é
-    // stdio-only): `createServer` de `mcp.ts` é a fábrica do `McpServer` (SDK MCP, sem socket),
-    // um nome de domínio coincidente que não representa a violação que este teste guarda.
-    const violacoes = listarArquivosRecursivo(path.join(raizDoRepo, 'src')).filter((arquivo) =>
-      /\bhttp\.createServer\b|\.listen\(/.test(fs.readFileSync(arquivo, 'utf8')),
+  test('nenhum arquivo em src/ importa módulo de servidor de rede nem chama .listen(', () => {
+    // Escopo: proíbe importar http/https/http2/net (§M5: hexlog é stdio-only) e chamar
+    // `.listen(`, sem depender do nome do símbolo — `createServer` de `mcp.ts` é a fábrica
+    // do `McpServer` (SDK MCP, sem socket) e não deve disparar este teste por coincidência
+    // de nome com `http.createServer`.
+    const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
+      /from\s+['"](node:)?(http|https|http2|net)['"]|\.listen\(/.test(
+        fs.readFileSync(file, 'utf8'),
+      ),
     );
-    expect(violacoes).toEqual([]);
+    expect(violations).toEqual([]);
   });
 
   test('não existe diretório cli no repo (fora de node_modules)', () => {
-    const temDiretorioCli = listarDiretorios(raizDoRepo).some(
-      (dir) => path.basename(dir) === 'cli',
-    );
-    expect(temDiretorioCli).toBe(false);
+    const hasCliDir = listDirectories(repoRoot).some((dir) => path.basename(dir) === 'cli');
+    expect(hasCliDir).toBe(false);
   });
 });
 
 describe('M6 (estático)', () => {
   test('nenhum arquivo .ts em src/ usa console de depuração ou process.stdout.write', () => {
-    const REGEX_SAIDA_PROIBIDA = /console\.(log|info|debug|dir|table|trace)|process\.stdout\.write/;
-    const violacoes = listarArquivosRecursivo(path.join(raizDoRepo, 'src')).filter((arquivo) =>
-      REGEX_SAIDA_PROIBIDA.test(fs.readFileSync(arquivo, 'utf8')),
+    const FORBIDDEN_OUTPUT_REGEX =
+      /console\.(log|info|debug|dir|table|trace)|process\.stdout\.write/;
+    const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
+      FORBIDDEN_OUTPUT_REGEX.test(fs.readFileSync(file, 'utf8')),
     );
-    expect(violacoes).toEqual([]);
+    expect(violations).toEqual([]);
   });
 });
 
 describe('I1 (parcial)', () => {
   test('src/directory.ts só importa node:* e es-toolkit, nunca zod/canonicalize/minisearch', () => {
-    const conteudo = fs.readFileSync(path.join(raizDoRepo, 'src/directory.ts'), 'utf8');
-    const violacoes = extrairEspecificadores(conteudo).filter(
-      (especificador) =>
-        !especificador.startsWith('node:') &&
-        especificador !== 'es-toolkit' &&
-        !especificador.startsWith('es-toolkit/'),
+    const content = fs.readFileSync(path.join(repoRoot, 'src/directory.ts'), 'utf8');
+    const violations = extractSpecifiers(content).filter(
+      (specifier) =>
+        !specifier.startsWith('node:') &&
+        specifier !== 'es-toolkit' &&
+        !specifier.startsWith('es-toolkit/'),
     );
-    expect(violacoes).toEqual([]);
+    expect(violations).toEqual([]);
   });
 });

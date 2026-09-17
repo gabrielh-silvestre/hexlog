@@ -1,4 +1,4 @@
-// e2e do passo 8: fala stdio contra o bundle real (`servidor.mjs`), nunca contra `src/*.ts`
+// e2e do passo 8: fala stdio contra o bundle real (`server.mjs`), nunca contra `src/*.ts`
 // (§9.3, U-7). O `.ts` já é coberto em processo por `InMemoryTransport` nos passos 7a/7b/7c;
 // aqui o alvo é o caminho de produção — o que as sessões realmente executam.
 import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
@@ -11,130 +11,130 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
-import { dirDados } from '../src/directory.ts';
+import { dataDir } from '../src/directory.ts';
 import type { LogRecord } from '../src/log.ts';
 
-const raizDoRepo = path.resolve(__dirname, '..');
-const caminhoDoBuild = path.join(raizDoRepo, 'scripts/build.ts');
+const repoRoot = path.resolve(__dirname, '..');
+const buildPath = path.join(repoRoot, 'scripts/build.ts');
 
 // ---- infra compartilhada ----
 
-const diretoriosTemporarios: string[] = [];
+const temporaryDirs: string[] = [];
 
-function mkdtempFora(prefixo: string): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefixo));
-  diretoriosTemporarios.push(dir);
+function mkdtempOutside(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  temporaryDirs.push(dir);
   return dir;
 }
 
 /** `env` de um processo filho isolado: HOME e XDG_DATA_HOME temporários (§9.3); o real nunca é tocado. */
-function envTemporario(): Record<string, string> {
+function temporaryEnv(): Record<string, string> {
   const base = omitBy(process.env, isUndefined) as Record<string, string>;
   return {
     ...base,
-    HOME: mkdtempFora('hexlog-e2e-home-'),
-    XDG_DATA_HOME: mkdtempFora('hexlog-e2e-xdg-'),
+    HOME: mkdtempOutside('hexlog-e2e-home-'),
+    XDG_DATA_HOME: mkdtempOutside('hexlog-e2e-xdg-'),
   };
 }
 
-function construirBundle(outdir: string, cwd: string): void {
-  const resultado = spawnSync(process.execPath, [caminhoDoBuild, '--outdir', outdir], {
+function buildBundle(outdir: string, cwd: string): void {
+  const result = spawnSync(process.execPath, [buildPath, '--outdir', outdir], {
     cwd,
     encoding: 'utf8',
   });
-  if (resultado.status !== 0) {
-    throw new Error(`build de e2e falhou (cwd=${cwd}): ${resultado.stderr}`);
+  if (result.status !== 0) {
+    throw new Error(`build de e2e falhou (cwd=${cwd}): ${result.stderr}`);
   }
 }
 
-function sha256Arquivo(caminho: string): string {
-  return createHash('sha256').update(fs.readFileSync(caminho)).digest('hex');
+function sha256OfFile(file: string): string {
+  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
 /** Acumula os `data` de um stream (stdout/stderr de processo filho ou de `StdioClientTransport`) em texto. */
-function coletorDeLinhas(fonte: NodeJS.EventEmitter | null) {
-  const estado = { texto: '' };
-  fonte?.on('data', (chunk: Buffer) => {
-    estado.texto += chunk.toString();
+function lineCollector(source: NodeJS.EventEmitter | null) {
+  const state = { text: '' };
+  source?.on('data', (chunk: Buffer) => {
+    state.text += chunk.toString();
   });
   return {
-    linhas: () => estado.texto.split('\n').filter((linha) => !isEmpty(linha)),
-    texto: () => estado.texto,
+    lines: () => state.text.split('\n').filter((line) => !isEmpty(line)),
+    text: () => state.text,
   };
 }
 
 /** Parseia cada linha do stderr estruturado (§4.15) como um `LogRecord`. */
-function registrosDeStderr(texto: string): LogRecord[] {
-  return texto
+function stderrRecords(text: string): LogRecord[] {
+  return text
     .split('\n')
-    .filter((linha) => !isEmpty(linha))
-    .map((linha) => JSON.parse(linha) as LogRecord);
+    .filter((line) => !isEmpty(line))
+    .map((line) => JSON.parse(line) as LogRecord);
 }
 
-function aguardar(condicao: () => boolean, intervaloMs = 20): Promise<void> {
+function waitFor(condition: () => boolean, intervalMs = 20): Promise<void> {
   return new Promise((resolve) => {
-    const verificar = () => (condicao() ? resolve() : setTimeout(verificar, intervaloMs));
-    verificar();
+    const check = () => (condition() ? resolve() : setTimeout(check, intervalMs));
+    check();
   });
 }
 
-async function criarCliente(servidorMjs: string, env: Record<string, string>, cwd: string) {
-  const transporte = new StdioClientTransport({
+async function createClient(serverMjs: string, env: Record<string, string>, cwd: string) {
+  const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [servidorMjs],
+    args: [serverMjs],
     env,
     cwd,
     stderr: 'pipe',
   });
-  const stderr = coletorDeLinhas(transporte.stderr);
-  const cliente = new Client({ name: 'hexlog-e2e', version: '0.0.0' });
-  await cliente.connect(transporte);
-  return { cliente, stderr };
+  const stderr = lineCollector(transport.stderr);
+  const client = new Client({ name: 'hexlog-e2e', version: '0.0.0' });
+  await client.connect(transport);
+  return { client, stderr };
 }
 
 // ---- diretório de dados real: nunca tocado por estes e2e ----
 
-let dirRealAntes: { existe: boolean; mtimeMs?: number };
+let realDirBefore: { exists: boolean; mtimeMs?: number };
 
 beforeAll(() => {
-  const dirReal = dirDados(process.env);
-  dirRealAntes = fs.existsSync(dirReal)
-    ? { existe: true, mtimeMs: fs.statSync(dirReal).mtimeMs }
-    : { existe: false };
+  const realDir = dataDir(process.env);
+  realDirBefore = fs.existsSync(realDir)
+    ? { exists: true, mtimeMs: fs.statSync(realDir).mtimeMs }
+    : { exists: false };
 });
 
 afterAll(() => {
-  const dirReal = dirDados(process.env);
-  expect(fs.existsSync(dirReal)).toBe(dirRealAntes.existe);
-  if (dirRealAntes.existe) {
-    expect(fs.statSync(dirReal).mtimeMs).toBe(dirRealAntes.mtimeMs);
+  const realDir = dataDir(process.env);
+  expect(fs.existsSync(realDir)).toBe(realDirBefore.exists);
+  if (realDirBefore.exists) {
+    expect(fs.statSync(realDir).mtimeMs).toBe(realDirBefore.mtimeMs);
   }
-  for (const dir of diretoriosTemporarios) {
+  for (const dir of temporaryDirs) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
 // ---- bundle principal: compartilhado por M6, B1(a), B1(c) e C1 ----
 
-let bundlePrincipal: string;
+let mainBundle: string;
 
 beforeAll(() => {
-  bundlePrincipal = mkdtempFora('hexlog-e2e-bundle-');
-  construirBundle(bundlePrincipal, raizDoRepo);
+  mainBundle = mkdtempOutside('hexlog-e2e-bundle-');
+  buildBundle(mainBundle, repoRoot);
 }, 30_000);
 
 describe('M6', () => {
   test('bundle fala só JSON-RPC 2.0 no stdout e JSON estruturado (evento) no stderr', async () => {
-    const filho = spawn(process.execPath, [path.join(bundlePrincipal, 'servidor.mjs')], {
-      cwd: bundlePrincipal,
-      env: envTemporario(),
+    const child = spawn(process.execPath, [path.join(mainBundle, 'server.mjs')], {
+      cwd: mainBundle,
+      env: temporaryEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const stdout = coletorDeLinhas(filho.stdout);
-    const stderr = coletorDeLinhas(filho.stderr);
-    const enviar = (mensagem: unknown) => filho.stdin.write(`${JSON.stringify(mensagem)}\n`);
+    const stdout = lineCollector(child.stdout);
+    const stderr = lineCollector(child.stderr);
+    const send = (message: unknown) => child.stdin.write(`${JSON.stringify(message)}\n`);
 
-    enviar({
+    send({
       jsonrpc: '2.0',
       id: 1,
       method: 'initialize',
@@ -144,124 +144,124 @@ describe('M6', () => {
         clientInfo: { name: 'hexlog-e2e', version: '0.0.0' },
       },
     });
-    await aguardar(() => stdout.linhas().length >= 1);
+    await waitFor(() => stdout.lines().length >= 1);
 
-    enviar({ jsonrpc: '2.0', method: 'notifications/initialized' });
-    enviar({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-    await aguardar(() => stdout.linhas().length >= 2);
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    await waitFor(() => stdout.lines().length >= 2);
 
-    enviar({
+    send({
       jsonrpc: '2.0',
       id: 3,
       method: 'tools/call',
       params: { name: 'list', arguments: {} },
     });
-    await aguardar(() => stdout.linhas().length >= 3);
+    await waitFor(() => stdout.lines().length >= 3);
 
     // Erro de domínio: continua uma resposta JSON-RPC normal, com `result.isError`.
-    enviar({
+    send({
       jsonrpc: '2.0',
       id: 4,
       method: 'tools/call',
       params: { name: 'chain', arguments: { project: 'fantasma', process: 'fantasma' } },
     });
-    await aguardar(() => stdout.linhas().length >= 4);
+    await waitFor(() => stdout.lines().length >= 4);
 
-    const linhas = stdout.linhas();
-    expect(linhas).toHaveLength(4);
-    for (const linha of linhas) {
-      const mensagem = JSON.parse(linha) as { jsonrpc: string; id?: unknown; method?: unknown };
-      expect(mensagem.jsonrpc).toBe('2.0');
-      expect(mensagem.id !== undefined || mensagem.method !== undefined).toBe(true);
+    const lines = stdout.lines();
+    expect(lines).toHaveLength(4);
+    for (const line of lines) {
+      const message = JSON.parse(line) as { jsonrpc: string; id?: unknown; method?: unknown };
+      expect(message.jsonrpc).toBe('2.0');
+      expect(message.id !== undefined || message.method !== undefined).toBe(true);
     }
-    expect((JSON.parse(linhas[3]) as { result: { isError?: boolean } }).result.isError).toBe(true);
+    expect((JSON.parse(lines[3]) as { result: { isError?: boolean } }).result.isError).toBe(true);
 
-    for (const registro of registrosDeStderr(stderr.texto())) {
-      expect(registro.event).toBeDefined();
+    for (const record of stderrRecords(stderr.text())) {
+      expect(record.event).toBeDefined();
     }
 
-    filho.kill();
+    child.kill();
   }, 15_000);
 });
 
 describe('B1', () => {
-  const ESPERA_BUSCA_MS = 20 * 60 * 1000;
-  const INTERVALO_BUSCA_MS = 15_000;
+  const SEARCH_WAIT_MS = 20 * 60 * 1000;
+  const SEARCH_POLL_MS = 15_000;
 
-  function commitFeatBuscaExiste(): boolean {
-    const resultado = spawnSync('git', ['log', '--oneline'], { cwd: raizDoRepo, encoding: 'utf8' });
-    return resultado.stdout.includes('feat(busca)');
+  function featSearchCommitExists(): boolean {
+    const result = spawnSync('git', ['log', '--oneline'], { cwd: repoRoot, encoding: 'utf8' });
+    return result.stdout.includes('feat(busca)');
   }
 
   /** Espera o commit `feat(busca)` de outro executor (poll a cada 15s, até 20 min). */
-  async function esperarFeatBusca(): Promise<boolean> {
-    const limite = Date.now() + ESPERA_BUSCA_MS;
-    while (!commitFeatBuscaExiste() && Date.now() < limite) {
-      await new Promise((resolve) => setTimeout(resolve, INTERVALO_BUSCA_MS));
+  async function waitForFeatSearch(): Promise<boolean> {
+    const deadline = Date.now() + SEARCH_WAIT_MS;
+    while (!featSearchCommitExists() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_POLL_MS));
     }
-    return commitFeatBuscaExiste();
+    return featSearchCommitExists();
   }
 
   describe('(a)', () => {
-    let buscaDisponivel = false;
+    let searchAvailable = false;
 
     beforeAll(async () => {
-      buscaDisponivel = await esperarFeatBusca();
-    }, ESPERA_BUSCA_MS + 5_000);
+      searchAvailable = await waitForFeatSearch();
+    }, SEARCH_WAIT_MS + 5_000);
 
     test('uma chamada de cada uma das 10 tools contra o bundle, sem erro, sem INTERNO, sem Dynamic require', async () => {
-      const projeto = 'e2e-proj';
-      const processo = 'e2e-proc';
-      const { cliente, stderr } = await criarCliente(
-        path.join(bundlePrincipal, 'servidor.mjs'),
-        envTemporario(),
-        bundlePrincipal,
+      const projectName = 'e2e-proj';
+      const processName = 'e2e-proc';
+      const { client, stderr } = await createClient(
+        path.join(mainBundle, 'server.mjs'),
+        temporaryEnv(),
+        mainBundle,
       );
 
       try {
-        const chamar = async (nome: string, args: Record<string, unknown> = {}) => {
-          const resultado = (await cliente.callTool({ name: nome, arguments: args })) as {
+        const call = async (name: string, args: Record<string, unknown> = {}) => {
+          const result = (await client.callTool({ name, arguments: args })) as {
             isError?: boolean;
           };
-          expect(resultado.isError).not.toBe(true);
-          return resultado;
+          expect(result.isError).not.toBe(true);
+          return result;
         };
 
-        await chamar('register_vocabulary', {
-          project: projeto,
+        await call('register_vocabulary', {
+          project: projectName,
           owner: 'core',
           milestoneType: ['aprovado'],
           result: ['ok'],
           action: ['seguir'],
         });
-        await chamar('register_type', {
-          project: projeto,
+        await call('register_type', {
+          project: projectName,
           name: 'nota-e2e',
           schema: {
             type: 'object',
-            properties: { quando: { type: 'string', format: 'date-time' } },
-            required: ['quando'],
+            properties: { when: { type: 'string', format: 'date-time' } },
+            required: ['when'],
             additionalProperties: false,
           },
         });
-        await chamar('register_gate', {
-          project: projeto,
+        await call('register_gate', {
+          project: projectName,
           name: 'gate-e2e',
-          criteria: 'critério e2e qualquer',
+          criteria: 'any e2e criteria',
         });
-        await chamar('create_process', { project: projeto, process: processo });
-        await chamar('register', {
-          project: projeto,
-          process: processo,
-          id: `${projeto}:${processo}:milestone`,
-          agent: 'agente-e2e',
+        await call('create_process', { project: projectName, process: processName });
+        await call('register', {
+          project: projectName,
+          process: processName,
+          id: `${projectName}:${processName}:milestone`,
+          agent: 'e2e-agent',
           data: { milestoneType: 'aprovado', target: 'hex:target:e2e1' },
         });
-        await chamar('register', {
-          project: projeto,
-          process: processo,
-          id: `${projeto}:${processo}:verdict`,
-          agent: 'agente-e2e',
+        await call('register', {
+          project: projectName,
+          process: processName,
+          id: `${projectName}:${processName}:verdict`,
+          agent: 'e2e-agent',
           data: {
             claim: 'a',
             source: 'f',
@@ -272,59 +272,59 @@ describe('B1', () => {
             trace: 'r',
           },
         });
-        await chamar('register', {
-          project: projeto,
-          process: processo,
-          id: `${projeto}:${processo}:nota-e2e`,
-          agent: 'agente-e2e',
-          data: { quando: new Date().toISOString() },
+        await call('register', {
+          project: projectName,
+          process: processName,
+          id: `${projectName}:${processName}:nota-e2e`,
+          agent: 'e2e-agent',
+          data: { when: new Date().toISOString() },
         });
-        await chamar('evaluate_gate', {
-          project: projeto,
-          process: processo,
+        await call('evaluate_gate', {
+          project: projectName,
+          process: processName,
           gate: 'no-conflicts',
-          agent: 'agente-e2e',
+          agent: 'e2e-agent',
           target: 'hex:target:e2e1',
         });
-        await chamar('state', { project: projeto, process: processo });
-        await chamar('events', { project: projeto, process: processo });
-        if (buscaDisponivel) {
-          await chamar('events', { project: projeto, process: processo, search: 'aprovado' });
+        await call('state', { project: projectName, process: processName });
+        await call('events', { project: projectName, process: processName });
+        if (searchAvailable) {
+          await call('events', { project: projectName, process: processName, search: 'aprovado' });
         }
-        await chamar('chain', { project: projeto, process: processo });
-        await chamar('list', {});
+        await call('chain', { project: projectName, process: processName });
+        await call('list', {});
       } finally {
-        await cliente.close();
+        await client.close();
       }
 
-      const textoStderr = stderr.texto();
-      expect(textoStderr).not.toContain('"codigo":"INTERNAL"');
-      expect(textoStderr).not.toContain('Dynamic require');
+      const stderrText = stderr.text();
+      expect(stderrText).not.toContain('"code":"INTERNAL"');
+      expect(stderrText).not.toContain('Dynamic require');
     }, 20_000);
   });
 
-  test('(c) servidor.mjs e guarda-bash.mjs não contêm o shim "Dynamic require of"', () => {
-    for (const arquivo of ['servidor.mjs', 'guarda-bash.mjs']) {
-      const texto = fs.readFileSync(path.join(bundlePrincipal, arquivo), 'utf8');
-      expect(texto.includes('Dynamic require of')).toBe(false);
+  test('(c) server.mjs e bash-guard.mjs não contêm o shim "Dynamic require of"', () => {
+    for (const file of ['server.mjs', 'bash-guard.mjs']) {
+      const content = fs.readFileSync(path.join(mainBundle, file), 'utf8');
+      expect(content.includes('Dynamic require of')).toBe(false);
     }
   });
 
   describe('(d)', () => {
-    let bundleDaRaiz: string;
-    let bundleDoTmp: string;
+    let rootBundle: string;
+    let tmpBundle: string;
 
     beforeAll(() => {
-      bundleDaRaiz = mkdtempFora('hexlog-e2e-b1d-raiz-');
-      bundleDoTmp = mkdtempFora('hexlog-e2e-b1d-tmp-');
-      construirBundle(bundleDaRaiz, raizDoRepo);
-      construirBundle(bundleDoTmp, os.tmpdir());
+      rootBundle = mkdtempOutside('hexlog-e2e-b1d-root-');
+      tmpBundle = mkdtempOutside('hexlog-e2e-b1d-tmp-');
+      buildBundle(rootBundle, repoRoot);
+      buildBundle(tmpBundle, os.tmpdir());
     }, 30_000);
 
     test('build com cwd na raiz e com cwd em os.tmpdir() geram sha256 idênticos', () => {
-      for (const arquivo of ['servidor.mjs', 'guarda-bash.mjs']) {
-        expect(sha256Arquivo(path.join(bundleDaRaiz, arquivo))).toBe(
-          sha256Arquivo(path.join(bundleDoTmp, arquivo)),
+      for (const file of ['server.mjs', 'bash-guard.mjs']) {
+        expect(sha256OfFile(path.join(rootBundle, file))).toBe(
+          sha256OfFile(path.join(tmpBundle, file)),
         );
       }
     });
@@ -332,163 +332,161 @@ describe('B1', () => {
 });
 
 describe('C1', () => {
-  type EventoSemeado = { id: string; agent: string; data: Record<string, unknown> };
-  type RespostaRegistrar = {
+  type SeedEvent = { id: string; agent: string; data: Record<string, unknown> };
+  type RegisterResponse = {
     isError?: boolean;
     structuredContent?: { deduplicated: boolean; event: { seq: number; id: string } };
   };
 
-  /** 20 `registrar` com prefixo + 5 retentativas por id completo de elos semeados, todos em paralelo. */
-  function dispararRodada(
-    cliente: Client,
-    projeto: string,
-    processo: string,
-    indiceServidor: number,
-    semeados: EventoSemeado[],
+  /** 20 `register` com prefixo + 5 retentativas por id completo de elos semeados, todos em paralelo. */
+  function fireRound(
+    client: Client,
+    projectName: string,
+    processName: string,
+    serverIndex: number,
+    seeds: SeedEvent[],
   ) {
-    const escritas = Array.from({ length: 20 }, (_, indice) =>
-      cliente.callTool({
+    const writes = Array.from({ length: 20 }, (_, index) =>
+      client.callTool({
         name: 'register',
         arguments: {
-          project: projeto,
-          process: processo,
-          id: `${projeto}:${processo}:milestone`,
-          agent: `servidor${indiceServidor}`,
-          data: { milestoneType: 'aprovado', target: `hex:target:s${indiceServidor}-${indice}` },
+          project: projectName,
+          process: processName,
+          id: `${projectName}:${processName}:milestone`,
+          agent: `server${serverIndex}`,
+          data: { milestoneType: 'aprovado', target: `hex:target:s${serverIndex}-${index}` },
         },
       }),
     );
-    const retentativas = semeados.slice(0, 5).map((semente) =>
-      cliente.callTool({
+    const retries = seeds.slice(0, 5).map((seed) =>
+      client.callTool({
         name: 'register',
         arguments: {
-          project: projeto,
-          process: processo,
-          id: semente.id,
-          agent: semente.agent,
-          data: semente.data,
+          project: projectName,
+          process: processName,
+          id: seed.id,
+          agent: seed.agent,
+          data: seed.data,
         },
       }),
     );
-    return Promise.all([...escritas, ...retentativas]) as Promise<RespostaRegistrar[]>;
+    return Promise.all([...writes, ...retries]) as Promise<RegisterResponse[]>;
   }
 
   test('4 servidores concorrentes, barreira por lock artificial: 100 linhas, seq 0..99, cadeia íntegra, 20 deduplicados, zero timeouts', async () => {
-    const projeto = 'c1-proj';
-    const processo = 'c1-proc';
-    const env = envTemporario();
-    const servidorMjs = path.join(bundlePrincipal, 'servidor.mjs');
+    const projectName = 'c1-proj';
+    const processName = 'c1-proc';
+    const env = temporaryEnv();
+    const serverMjs = path.join(mainBundle, 'server.mjs');
 
     // 1) semeadura: um servidor à parte, fechado antes da concorrência começar.
-    const semente = await criarCliente(servidorMjs, env, bundlePrincipal);
-    await semente.cliente.callTool({
+    const seedClient = await createClient(serverMjs, env, mainBundle);
+    await seedClient.client.callTool({
       name: 'register_vocabulary',
       arguments: {
-        project: projeto,
+        project: projectName,
         owner: 'core',
         milestoneType: ['aprovado'],
         result: [],
         action: [],
       },
     });
-    await semente.cliente.callTool({
+    await seedClient.client.callTool({
       name: 'create_process',
-      arguments: { project: projeto, process: processo },
+      arguments: { project: projectName, process: processName },
     });
 
-    const semeados: EventoSemeado[] = [];
-    for (let indice = 0; indice < 20; indice++) {
-      const agent = 'semente';
-      const data = { milestoneType: 'aprovado', target: `hex:target:seed${indice}` };
-      const resultado = await semente.cliente.callTool({
+    const seeds: SeedEvent[] = [];
+    for (let index = 0; index < 20; index++) {
+      const agent = 'seed';
+      const data = { milestoneType: 'aprovado', target: `hex:target:seed${index}` };
+      const result = await seedClient.client.callTool({
         name: 'register',
         arguments: {
-          project: projeto,
-          process: processo,
-          id: `${projeto}:${processo}:milestone`,
+          project: projectName,
+          process: processName,
+          id: `${projectName}:${processName}:milestone`,
           agent,
           data,
         },
       });
-      const corpo = resultado.structuredContent as { event: { id: string } };
-      semeados.push({ id: corpo.event.id, agent, data });
+      const body = result.structuredContent as { event: { id: string } };
+      seeds.push({ id: body.event.id, agent, data });
     }
-    await semente.cliente.close();
+    await seedClient.client.close();
 
     // 2) lock artificial: qualquer `append` real colide já na primeira tentativa.
-    const arquivoEventos = path.join(dirDados(env), projeto, processo, 'events.jsonl');
-    const dirLock = `${arquivoEventos}.lock`;
-    fs.mkdirSync(dirLock);
-    fs.writeFileSync(path.join(dirLock, 'holder'), 'token-alheio');
+    const eventsFile = path.join(dataDir(env), projectName, processName, 'events.jsonl');
+    const lockDir = `${eventsFile}.lock`;
+    fs.mkdirSync(lockDir);
+    fs.writeFileSync(path.join(lockDir, 'holder'), 'foreign-token');
 
     // 3) 4 servidores concorrentes, mesmo `env`.
-    const clientes = await Promise.all(
-      Array.from({ length: 4 }, () => criarCliente(servidorMjs, env, bundlePrincipal)),
+    const clients = await Promise.all(
+      Array.from({ length: 4 }, () => createClient(serverMjs, env, mainBundle)),
     );
-    const contarLockEspera = () =>
-      clientes
-        .flatMap((c) => registrosDeStderr(c.stderr.texto()))
-        .filter((registro) => registro.event === 'lock-wait').length;
+    const countLockWaits = () =>
+      clients
+        .flatMap((c) => stderrRecords(c.stderr.text()))
+        .filter((record) => record.event === 'lock-wait').length;
 
-    const inicioBarreira = Date.now();
-    const disparos = clientes.map((cliente, indice) =>
-      dispararRodada(cliente.cliente, projeto, processo, indice, semeados),
+    const barrierStart = Date.now();
+    const rounds = clients.map((client, index) =>
+      fireRound(client.client, projectName, processName, index, seeds),
     );
 
-    // A espera pela aquisição do lock em `adquirirLock` (src/log.ts) é assíncrona: o handler de
+    // A espera pela aquisição do lock em `acquireLock` (src/log.ts) é assíncrona: o handler de
     // uma tool devolve o controle ao laço de mensagens do SDK entre uma tentativa e outra, então
-    // as 20 chamadas de `registrar` com prefixo de cada um dos 4 servidores despacham e colidem
-    // com o lock artificial, gerando as 80 `lock-espera` que o AC C1 exige antes da soltura.
-    await aguardar(() => contarLockEspera() >= 80, 5);
-    const msBarreira = Date.now() - inicioBarreira;
-    fs.rmSync(dirLock, { recursive: true, force: true });
+    // as 20 chamadas de `register` com prefixo de cada um dos 4 servidores despacham e colidem
+    // com o lock artificial, gerando os 80 `lock-wait` que o AC C1 exige antes da soltura.
+    await waitFor(() => countLockWaits() >= 80, 5);
+    const barrierMs = Date.now() - barrierStart;
+    fs.rmSync(lockDir, { recursive: true, force: true });
 
-    const respostas = (await Promise.all(disparos)).flat();
-    const cadeiaResultado = (
-      await clientes[0].cliente.callTool({
+    const responses = (await Promise.all(rounds)).flat();
+    const chainResult = (
+      await clients[0].client.callTool({
         name: 'chain',
-        arguments: { project: projeto, process: processo },
+        arguments: { project: projectName, process: processName },
       })
     ).structuredContent as {
       ok: boolean;
     };
 
-    await Promise.all(clientes.map((c) => c.cliente.close()));
+    await Promise.all(clients.map((c) => c.client.close()));
 
     // ---- verificações ----
-    expect(msBarreira).toBeLessThan(3_000);
-    expect(respostas.every((resposta) => resposta.isError !== true)).toBe(true);
+    expect(barrierMs).toBeLessThan(3_000);
+    expect(responses.every((response) => response.isError !== true)).toBe(true);
 
-    const linhasDoArquivo = fs
-      .readFileSync(arquivoEventos, 'utf8')
+    const fileLines = fs
+      .readFileSync(eventsFile, 'utf8')
       .split('\n')
-      .filter((linha) => !isEmpty(linha));
-    expect(linhasDoArquivo).toHaveLength(100);
-    const elos = linhasDoArquivo.map((linha) => JSON.parse(linha) as { seq: number; id: string });
-    expect(elos.map((elo) => elo.seq).sort((a, b) => a - b)).toEqual(
-      Array.from({ length: 100 }, (_, indice) => indice),
+      .filter((line) => !isEmpty(line));
+    expect(fileLines).toHaveLength(100);
+    const links = fileLines.map((line) => JSON.parse(line) as { seq: number; id: string });
+    expect(links.map((link) => link.seq).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 100 }, (_, index) => index),
     );
-    expect(new Set(elos.map((elo) => elo.id)).size).toBe(100);
-    expect(cadeiaResultado.ok).toBe(true);
+    expect(new Set(links.map((link) => link.id)).size).toBe(100);
+    expect(chainResult.ok).toBe(true);
 
-    const totalDeduplicados = respostas.filter(
-      (resposta) => resposta.structuredContent?.deduplicated === true,
+    const totalDeduplicated = responses.filter(
+      (response) => response.structuredContent?.deduplicated === true,
     ).length;
-    expect(totalDeduplicados).toBe(20);
+    expect(totalDeduplicated).toBe(20);
 
-    const registrosTodos = clientes.flatMap((c) => registrosDeStderr(c.stderr.texto()));
-    expect(registrosTodos.some((registro) => registro.event === 'lock-orphan-removed')).toBe(false);
-    expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_TIMEOUT')).toBe(false);
-    expect(registrosTodos.some((registro) => registro.codigo === 'LOCK_LOST')).toBe(false);
+    const allRecords = clients.flatMap((c) => stderrRecords(c.stderr.text()));
+    expect(allRecords.some((record) => record.event === 'lock-orphan-removed')).toBe(false);
+    expect(allRecords.some((record) => record.code === 'LOCK_TIMEOUT')).toBe(false);
+    expect(allRecords.some((record) => record.code === 'LOCK_LOST')).toBe(false);
 
-    const msDeRegistrar = registrosTodos
-      .filter((registro) => registro.event === 'tool' && registro.nome === 'register')
-      .map((registro) => registro.ms as number);
-    const totalLockEspera = registrosTodos.filter(
-      (registro) => registro.event === 'lock-wait',
-    ).length;
+    const registerMs = allRecords
+      .filter((record) => record.event === 'tool' && record.name === 'register')
+      .map((record) => record.ms as number);
+    const totalLockWaits = allRecords.filter((record) => record.event === 'lock-wait').length;
     process.stdout.write(
-      `C1: barreira=${msBarreira}ms maiorMsRegistrar=${Math.max(...msDeRegistrar)}ms totalLockEspera=${totalLockEspera} (min. garantido 80)\n`,
+      `C1: barrier=${barrierMs}ms maxRegisterMs=${Math.max(...registerMs)}ms totalLockWaits=${totalLockWaits} (guaranteed min 80)\n`,
     );
   }, 60_000);
 });
