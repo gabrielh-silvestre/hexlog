@@ -4,8 +4,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { isNil } from 'es-toolkit';
+import { buscar } from '../src/busca.ts';
 import { ancora, prevHashEsperado, proximoSeq, sha256hex, type Cadeia } from '../src/cadeia.ts';
+import type { Manifesto } from '../src/definicoes.ts';
 import type { Linha } from '../src/eventos.ts';
+import { escreverCorpus, gerarCorpus } from './fixtures/corpus.ts';
 import { type Ambiente, criarAmbiente, esperarErro } from './helpers.ts';
 
 type ResultadoChamada = Awaited<ReturnType<Ambiente['chamar']>>;
@@ -265,6 +268,140 @@ describe('M9', () => {
     for (const nome of ['estado', 'eventos', 'cadeia']) {
       expect(porNome[nome]).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
     }
+  });
+});
+
+describe('M11', () => {
+  test('g) paginação estável com ate: registrar entre páginas não desloca nem repete itens; ate além do arquivo → FILTRO_INVALIDO /ate', async () => {
+    await preparar(ambiente, PROJ, PROC);
+    const manifesto = lerManifesto(ambiente, PROJ, PROC) as Manifesto;
+    const corpus = gerarCorpus({ tamanho: 300, manifesto, vocabulario: manifesto.fixado.vocabulario });
+    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
+
+    const primeira = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, busca: 'webhook', limite: 3 });
+    const corpoPrimeira = primeira.structuredContent as { eventos: Linha[]; ate: number; proximoCursor: number | null };
+    expect(corpoPrimeira.ate).toBe(corpus.linhas.length);
+
+    // registrado entre páginas: com `ate` congelado, não deve aparecer nas páginas seguintes.
+    const novo = await ambiente.chamar('registrar', {
+      projeto: PROJ,
+      processo: PROC,
+      id: PREFIXO_VEREDITO,
+      agente: AGENTE,
+      dados: dadosVeredito({ afirmacao: 'novo evento sobre webhook registrado entre as páginas', destino: 'hex:alvo:u1' }),
+    });
+    const idNovo = (novo.structuredContent as { evento: Linha }).evento.id;
+
+    const paginas: Linha[] = [...corpoPrimeira.eventos];
+    let cursor = corpoPrimeira.proximoCursor;
+    while (!isNil(cursor)) {
+      const pagina = await ambiente.chamar('eventos', {
+        projeto: PROJ,
+        processo: PROC,
+        busca: 'webhook',
+        limite: 3,
+        ate: corpoPrimeira.ate,
+        desde: cursor,
+      });
+      const corpo = pagina.structuredContent as { eventos: Linha[]; proximoCursor: number | null };
+      paginas.push(...corpo.eventos);
+      cursor = corpo.proximoCursor;
+    }
+
+    const candidatos = corpus.linhas.map((linha, indice) => ({ indice, linha }));
+    const { resultados } = buscar(candidatos, 'webhook');
+    expect(paginas.map((evento) => evento.id)).toEqual(resultados.map((resultado) => corpus.linhas[resultado.indice]!.id));
+    expect(paginas.map((evento) => evento.id)).not.toContain(idNovo);
+
+    const alem = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, ate: corpus.linhas.length + 1000 });
+    const corpoAlem = esperarErro(alem, 'FILTRO_INVALIDO');
+    expect(corpoAlem.detalhes.some((detalhe) => detalhe.caminho === '/ate')).toBe(true);
+  });
+
+  test('h) regressão do modo cru: sem busca e sem filtros novos, a resposta é igual ao contrato anterior (M8) mais modo e ate', async () => {
+    await preparar(ambiente, PROJ, PROC);
+    for (let i = 0; i < 250; i++) {
+      const resultado = await ambiente.chamar('registrar', { projeto: PROJ, processo: PROC, id: PREFIXO_MARCO, agente: AGENTE, dados: dadosMarco() });
+      expect(resultado.isError).not.toBe(true);
+    }
+
+    const paginas: { eventos: Linha[]; proximoCursor: number | null; modo: string; ate: number }[] = [];
+    let cursor = 0;
+    for (;;) {
+      const resultado = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, desde: cursor, limite: 100 });
+      const corpo = resultado.structuredContent as { eventos: Linha[]; proximoCursor: number | null; modo: string; ate: number };
+      expect(corpo.modo).toBe('cru');
+      expect(corpo.ate).toBe(250);
+      paginas.push(corpo);
+      if (isNil(corpo.proximoCursor)) break;
+      cursor = corpo.proximoCursor;
+    }
+
+    expect(paginas).toHaveLength(3);
+    const todos = paginas.flatMap((pagina) => pagina.eventos);
+    expect(todos).toHaveLength(250);
+    expect(todos.map((evento) => evento.seq)).toEqual(Array.from({ length: 250 }, (_, i) => i));
+    expect(paginas.at(-1)?.proximoCursor).toBeNull();
+    for (const pagina of paginas) {
+      if (pagina.eventos.length > 1) {
+        expect(JSON.stringify(pagina.eventos).length).toBeLessThanOrEqual(24_000);
+      }
+    }
+  });
+
+  test('i) linguagem natural: "problema com o webhook" cai para OR e devolve resultado não vazio', async () => {
+    await preparar(ambiente, PROJ, PROC);
+    const manifesto = lerManifesto(ambiente, PROJ, PROC) as Manifesto;
+    const corpus = gerarCorpus({ tamanho: 300, manifesto, vocabulario: manifesto.fixado.vocabulario });
+    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
+
+    const resultado = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, busca: 'problema com o webhook', limite: 50 });
+    const corpo = resultado.structuredContent as { modo: string; combinacao: string; eventos: Linha[] };
+    expect(corpo.modo).toBe('busca');
+    expect(corpo.combinacao).toBe('OR');
+    expect(corpo.eventos.length).toBeGreaterThan(0);
+  });
+});
+
+describe('M12', () => {
+  test('b) marcoTipo fora do vocabulário → FILTRO_INVALIDO /marcoTipo sem ler o log; "gate" aceito; resultado fora do vocabulário é encontrado; sem casamento → vazio; apos ≥ antes → FILTRO_INVALIDO /apos', async () => {
+    await preparar(ambiente, PROJ, PROC);
+    const manifesto = lerManifesto(ambiente, PROJ, PROC) as Manifesto;
+    const corpus = gerarCorpus({ tamanho: 300, manifesto, vocabulario: manifesto.fixado.vocabulario });
+    escreverCorpus(path.join(ambiente.dir, PROJ, PROC, 'eventos.jsonl'), corpus.texto);
+
+    const invalido = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, marcoTipo: 'nao-existe' });
+    const corpoErro = esperarErro(invalido, 'FILTRO_INVALIDO');
+    expect(corpoErro.detalhes.some((detalhe) => detalhe.caminho === '/marcoTipo')).toBe(true);
+    const ultimoLogDeEventos = ambiente.registros.filter((registro) => registro.evento === 'tool' && registro.nome === 'eventos').at(-1);
+    expect(ultimoLogDeEventos?.candidatos).toBeUndefined();
+
+    const comGate = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, marcoTipo: 'gate' });
+    expect(comGate.isError).not.toBe(true);
+
+    const foraDoVocab = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, resultado: 'resultado-fora-do-vocabulario' });
+    const corpoFora = foraDoVocab.structuredContent as { eventos: Linha[] };
+    expect(corpoFora.eventos.length).toBeGreaterThan(0);
+
+    const semCasamento = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, resultado: 'nunca-usado-em-lugar-nenhum' });
+    const corpoSemCasamento = semCasamento.structuredContent as { eventos: Linha[] };
+    expect(corpoSemCasamento.eventos).toEqual([]);
+
+    const intervaloInvalido = await ambiente.chamar('eventos', {
+      projeto: PROJ,
+      processo: PROC,
+      apos: '2026-06-01T00:00:00.000Z',
+      antes: '2026-01-01T00:00:00.000Z',
+    });
+    const corpoIntervalo = esperarErro(intervaloInvalido, 'FILTRO_INVALIDO');
+    expect(corpoIntervalo.detalhes.some((detalhe) => detalhe.caminho === '/apos')).toBe(true);
+  });
+
+  test('e) alvo sem "hex:alvo:" → Input validation error', async () => {
+    await preparar(ambiente, PROJ, PROC);
+    const resultado = await ambiente.chamar('eventos', { projeto: PROJ, processo: PROC, alvo: 'login' });
+    expect(resultado.isError).toBe(true);
+    expect(resultado.content?.[0]?.text ?? '').toContain('Input validation error');
   });
 });
 

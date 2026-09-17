@@ -2,10 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
 import { isNil, isNotNil } from 'es-toolkit';
 import { z } from 'zod';
+import { buscar, ehCandidato, TETO_BUSCA_CHARS, type Filtros } from './busca.ts';
 import { eloValido, verificarCadeia, type Cadeia } from './cadeia.ts';
 import { carregarProcesso, type ProcessoCarregado } from './definicoes.ts';
 import { detalhesDeIssues, ErroHexlog, type Detalhe } from './erros.ts';
-import { analisarId, Alvo, esquemaDados, Linha, normalizarDados } from './eventos.ts';
+import { analisarId, Alvo, esquemaDados, Linha, normalizarDados, Rotulo } from './eventos.ts';
 import { agoraEfetivo, projetar, validarCampo, type CampoVocabulario, type Estado, type Vocabulario } from './estado.ts';
 import {
   avaliarEmbutido,
@@ -152,27 +153,71 @@ export function registrarFerramentasEventos(servidor: McpServer, ctx: Contexto):
     {
       title: 'Eventos',
       description:
-        'Lista os eventos do log de um processo em ordem física, a partir do índice físico `desde`. `tipo` filtra ' +
-        'por igualdade exata. Uma página cabe em `limite` eventos e no teto de 24 000 caracteres, exceto o primeiro ' +
-        'evento da página, que sempre entra mesmo sozinho acima do teto. `proximoCursor` é o índice físico da ' +
-        'próxima linha a examinar, ou `null` no fim do log. `linhasInvalidas` lista, só desta página, os índices ' +
-        'físicos que não são um elo válido.',
+        'Lista os eventos do log de um processo. Sem `busca`: ordem física, a partir do índice físico `desde` ' +
+        '(modo cru). Com `busca` (2 a 200 caracteres): índice de texto construído nesta chamada só sobre os ' +
+        'candidatos, ordenado por relevância decrescente (modo busca); `combinacao` informa se a consulta casou em ' +
+        '`AND` ou caiu no fallback `OR`. Filtros por igualdade exata, combináveis com `busca` ou sozinhos: `tipo`, ' +
+        '`alvo` (`dados.alvo`/`dados.destino`), `marcoTipo`, `resultado` e o intervalo `[apos, antes)` de ' +
+        '`timestamp`. A busca textual **não encontra** endereços `hex:alvo:<id>` nem ids de evento; para endereço, ' +
+        'use o filtro `alvo` (não há filtro por id de evento). Uma página cabe em `limite` eventos e no teto de ' +
+        '24 000 caracteres, exceto o primeiro evento da página, que sempre entra mesmo sozinho acima do teto. ' +
+        '`ate` congela o prefixo do arquivo considerado (linhas físicas de índice < `ate`); sem informar, a ' +
+        'chamada usa todas as linhas do momento e devolve esse número em `ate`. Para páginas seguintes estáveis, ' +
+        'reenvie o mesmo `ate` recebido e use `proximoCursor` como `desde`: sem `ate`, um `registrar` entre ' +
+        'páginas pode repetir ou omitir itens na fronteira. `proximoCursor` é `null` no fim (índice físico no modo ' +
+        'cru; posição no ranking no modo busca). `linhasInvalidas` lista os índices físicos que não são um elo ' +
+        'válido: só desta página no modo cru, do arquivo inteiro (até 100) no modo busca.',
       inputSchema: {
         projeto: Nome,
         processo: Nome,
         desde: z.number().int().min(0).default(0),
         limite: z.number().int().min(1).max(200).default(50),
         tipo: Nome.optional(),
+        busca: z.string().trim().min(2).max(TETO_BUSCA_CHARS).optional(),
+        alvo: Alvo.optional(),
+        marcoTipo: Rotulo.optional(),
+        resultado: Rotulo.optional(),
+        apos: Instante.optional(),
+        antes: Instante.optional(),
+        ate: z.number().int().min(0).optional(),
       },
       outputSchema: {
-        eventos: z.array(Linha),
+        modo: z.enum(['cru', 'busca']),
+        eventos: z.array(Linha.extend({ relevancia: z.number().optional() })),
+        combinacao: z.enum(['AND', 'OR']).optional(),
+        ate: z.number().int(),
         linhasInvalidas: z.array(z.number().int()).max(100),
         proximoCursor: z.number().int().nullable(),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ projeto, processo, desde, limite, tipo }) =>
-      executar(ctx, 'eventos', { projeto, processo }, () => resolverEventos(ctx, { projeto, processo, desde, limite, tipo })),
+    async ({ projeto, processo, desde, limite, tipo, busca, alvo, marcoTipo, resultado, apos, antes, ate }) => {
+      let logExtra: Record<string, unknown> = {};
+      return executar(
+        ctx,
+        'eventos',
+        { projeto, processo },
+        () => {
+          const { saida, extra } = resolverEventos(ctx, {
+            projeto,
+            processo,
+            desde,
+            limite,
+            tipo,
+            busca,
+            alvo,
+            marcoTipo,
+            resultado,
+            apos,
+            antes,
+            ate,
+          });
+          logExtra = extra;
+          return saida;
+        },
+        () => logExtra,
+      );
+    },
   );
 
   servidor.registerTool(
@@ -468,25 +513,108 @@ function resolverEstado(
 
 // ---- eventos ----
 
-function resolverEventos(
-  ctx: Contexto,
-  { projeto, processo, desde, limite, tipo }: { projeto: string; processo: string; desde: number; limite: number; tipo?: string },
-): { eventos: Linha[]; linhasInvalidas: number[]; proximoCursor: number | null } {
-  const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
-  const linhasFisicas = lerTexto(carregado.arquivoEventos).split('\n').slice(0, -1);
+type LinhaResultado = Linha & { relevancia?: number };
 
+type SaidaEventos = {
+  modo: 'cru' | 'busca';
+  eventos: LinhaResultado[];
+  combinacao?: 'AND' | 'OR';
+  ate: number;
+  linhasInvalidas: number[];
+  proximoCursor: number | null;
+};
+
+type ArgsEventos = {
+  projeto: string;
+  processo: string;
+  desde: number;
+  limite: number;
+  tipo?: string;
+  busca?: string;
+  alvo?: string;
+  marcoTipo?: string;
+  resultado?: string;
+  apos?: string;
+  antes?: string;
+  ate?: number;
+};
+
+function resolverEventos(ctx: Contexto, args: ArgsEventos): { saida: SaidaEventos; extra: Record<string, unknown> } {
+  const { projeto, processo, desde, limite, tipo, busca, alvo, marcoTipo, resultado, ate } = args;
+  const carregado = carregarProcesso(ctx.dirDados, projeto, processo);
+
+  validarMarcoTipoDoFiltro(marcoTipo, carregado.manifesto.fixado.vocabulario);
+  const apos = normalizarInstante(args.apos);
+  const antes = normalizarInstante(args.antes);
+  validarIntervalo(apos, antes);
+
+  const linhasFisicas = lerTexto(carregado.arquivoEventos).split('\n').slice(0, -1);
+  validarAte(ate, linhasFisicas.length);
+  const limiteAte = ate ?? linhasFisicas.length;
+
+  const filtros: Filtros = { tipo, alvo, marcoTipo, resultado, apos, antes };
+
+  return isNil(busca)
+    ? resolverModoCru(linhasFisicas, limiteAte, desde, limite, filtros)
+    : resolverModoBusca(linhasFisicas, limiteAte, desde, limite, filtros, busca);
+}
+
+/** `marcoTipo` fora de núcleo ∪ extensões e ≠ `"gate"` (sempre aceito) → `FILTRO_INVALIDO` (§4.12 item 9). */
+function validarMarcoTipoDoFiltro(marcoTipo: string | undefined, vocabulario: Vocabulario): void {
+  if (isNil(marcoTipo) || marcoTipo === 'gate') return;
+  if (validarCampo(vocabulario, 'marcoTipo', marcoTipo)?.classe === 'erro') {
+    throw new ErroHexlog('FILTRO_INVALIDO', `marcoTipo '${marcoTipo}' fora do vocabulário fixado`, [
+      { caminho: '/marcoTipo', codigo: 'fora_do_vocabulario', mensagem: `valor '${marcoTipo}' fora do vocabulário fixado` },
+    ]);
+  }
+}
+
+/** `z.iso.datetime()` aceita entrada sem milissegundos; normaliza pra largura fixa antes de comparar. */
+function normalizarInstante(v: string | undefined): string | undefined {
+  return isNil(v) ? undefined : new Date(v).toISOString();
+}
+
+function validarIntervalo(apos: string | undefined, antes: string | undefined): void {
+  if (isNil(apos) || isNil(antes) || apos < antes) return;
+  throw new ErroHexlog('FILTRO_INVALIDO', 'apos deve ser anterior a antes', [
+    { caminho: '/apos', codigo: 'intervalo_invalido', mensagem: `apos (${apos}) não é anterior a antes (${antes})` },
+  ]);
+}
+
+/** `ate` além do fim do arquivo: o log tem menos linhas do que a página anterior viu. */
+function validarAte(ate: number | undefined, totalLinhasFisicas: number): void {
+  if (isNil(ate) || ate <= totalLinhasFisicas) return;
+  throw new ErroHexlog('FILTRO_INVALIDO', `ate (${ate}) maior que o número de linhas do arquivo`, [
+    { caminho: '/ate', codigo: 'ate_alem_do_arquivo', mensagem: `ate (${ate}) maior que ${totalLinhasFisicas} linhas físicas` },
+  ]);
+}
+
+/**
+ * Modo cru: ordem física a partir de `desde`, streaming (sem escanear além de onde a página para).
+ * `candidatos` do log conta só os elos vistos durante essa varredura, não o total no arquivo inteiro
+ * (decisão do passo 7c: evitar forçar leitura completa do arquivo numa chamada sem `busca`).
+ */
+function resolverModoCru(
+  linhasFisicas: string[],
+  limiteAte: number,
+  desde: number,
+  limite: number,
+  filtros: Filtros,
+): { saida: SaidaEventos; extra: Record<string, unknown> } {
   const eventos: Linha[] = [];
   const linhasInvalidas: number[] = [];
+  let candidatos = 0;
   let proximoCursor: number | null = null;
   let tamanho = 2; // '[]'
 
-  for (let indice = desde; indice < linhasFisicas.length; indice++) {
+  for (let indice = desde; indice < limiteAte; indice++) {
     const elo = eloValido(linhasFisicas[indice]!);
     if (isNil(elo)) {
       linhasInvalidas.push(indice);
       continue;
     }
-    if (isNotNil(tipo) && elo.tipo !== tipo) continue;
+    if (!ehCandidato(elo, filtros)) continue;
+    candidatos++;
 
     const incremento = JSON.stringify(elo).length + (eventos.length > 0 ? 1 : 0);
     if (eventos.length > 0 && tamanho + incremento > TETO_PAGINA_CHARS) {
@@ -497,12 +625,83 @@ function resolverEventos(
     tamanho += incremento;
     eventos.push(elo);
     if (eventos.length >= limite) {
-      proximoCursor = indice + 1 < linhasFisicas.length ? indice + 1 : null;
+      proximoCursor = indice + 1 < limiteAte ? indice + 1 : null;
       break;
     }
   }
 
-  return { eventos, linhasInvalidas: linhasInvalidas.slice(0, 100), proximoCursor };
+  return {
+    saida: { modo: 'cru', eventos, ate: limiteAte, linhasInvalidas: linhasInvalidas.slice(0, 100), proximoCursor },
+    extra: { modo: 'cru', candidatos },
+  };
+}
+
+/** Candidatos e linhas inválidas do **arquivo inteiro** (§4.17): base do índice de texto do modo busca. */
+function candidatosDoArquivo(
+  linhasFisicas: string[],
+  limiteAte: number,
+  filtros: Filtros,
+): { candidatos: { indice: number; linha: Linha }[]; linhasInvalidas: number[] } {
+  const candidatos: { indice: number; linha: Linha }[] = [];
+  const linhasInvalidas: number[] = [];
+
+  linhasFisicas.forEach((linhaTexto, indice) => {
+    const elo = eloValido(linhaTexto);
+    if (isNil(elo)) {
+      linhasInvalidas.push(indice);
+      return;
+    }
+    if (indice < limiteAte && ehCandidato(elo, filtros)) {
+      candidatos.push({ indice, linha: elo });
+    }
+  });
+
+  return { candidatos, linhasInvalidas };
+}
+
+/** Modo busca (§4.12 item 9 e §4.17): índice construído nesta chamada, `desde`/`proximoCursor` no ranking. */
+function resolverModoBusca(
+  linhasFisicas: string[],
+  limiteAte: number,
+  desde: number,
+  limite: number,
+  filtros: Filtros,
+  busca: string,
+): { saida: SaidaEventos; extra: Record<string, unknown> } {
+  const inicioIndice = Date.now();
+  const { candidatos, linhasInvalidas } = candidatosDoArquivo(linhasFisicas, limiteAte, filtros);
+  const { resultados, combinacao } = buscar(candidatos, busca);
+  const msIndice = Date.now() - inicioIndice;
+
+  const linhaPorIndice = new Map(candidatos.map((c) => [c.indice, c.linha]));
+  const pagina = resultados.slice(desde);
+
+  const eventos: LinhaResultado[] = [];
+  let proximoCursor: number | null = null;
+  let tamanho = 2; // '[]'
+
+  for (let posicao = 0; posicao < pagina.length; posicao++) {
+    const item = pagina[posicao]!;
+    const evento: LinhaResultado = { ...linhaPorIndice.get(item.indice)!, relevancia: item.relevancia };
+    const incremento = JSON.stringify(evento).length + (eventos.length > 0 ? 1 : 0);
+
+    if (eventos.length > 0 && tamanho + incremento > TETO_PAGINA_CHARS) {
+      proximoCursor = desde + posicao;
+      break;
+    }
+
+    tamanho += incremento;
+    eventos.push(evento);
+    if (eventos.length >= limite) {
+      proximoCursor = desde + posicao + 1 < resultados.length ? desde + posicao + 1 : null;
+      break;
+    }
+  }
+
+  return {
+    saida: { modo: 'busca', eventos, combinacao, ate: limiteAte, linhasInvalidas: linhasInvalidas.slice(0, 100), proximoCursor },
+    extra: { modo: 'busca', candidatos: candidatos.length, msIndice, combinacao },
+  };
 }
 
 // ---- cadeia ----

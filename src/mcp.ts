@@ -78,18 +78,29 @@ type ResultadoTool<T> =
  * Roda `fn` dentro do envelope de erro de domínio (§4.13) e sempre devolve, nunca lança para o SDK.
  * `ErroHexlog` vira `{codigo, mensagem, detalhes}`; qualquer outra exceção vira `INTERNO`, com stack
  * só no log `erro-interno`. Emite sempre um log `tool` com `nome`, `projeto`, `processo`, `ms` e
- * `codigo?` (nunca o conteúdo de `dados`).
+ * `codigo?` (nunca o conteúdo de `dados`). `extraLog`, quando informado, é lido depois de `fn()`
+ * rodar e mesclado no log `tool` (§4.15: usado por `eventos` para `modo`/`candidatos`/`msIndice`/
+ * `combinacao`, sem alterar `structuredContent` nem os demais chamadores).
  */
 export function executar<T>(
   ctx: Contexto,
   nome: string,
   args: { projeto?: string; processo?: string },
   fn: () => T,
+  extraLog?: () => Record<string, unknown>,
 ): ResultadoTool<T> {
   const inicio = Date.now();
   try {
     const resultado = fn();
-    ctx.log({ nivel: 'info', evento: 'tool', nome, projeto: args.projeto, processo: args.processo, ms: Date.now() - inicio });
+    ctx.log({
+      nivel: 'info',
+      evento: 'tool',
+      nome,
+      projeto: args.projeto,
+      processo: args.processo,
+      ms: Date.now() - inicio,
+      ...(extraLog?.() ?? {}),
+    });
     return { structuredContent: resultado, content: [{ type: 'text', text: JSON.stringify(resultado) }] };
   } catch (e) {
     const erro = paraErroHexlog(e, ctx);
@@ -102,6 +113,7 @@ export function executar<T>(
       processo: args.processo,
       ms: Date.now() - inicio,
       codigo: erro.codigo,
+      ...(extraLog?.() ?? {}),
     });
     return { isError: true, structuredContent: corpo, content: [{ type: 'text', text: JSON.stringify(corpo) }] };
   }
