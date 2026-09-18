@@ -136,9 +136,11 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'data',
   'process',
   // campos de schema (z.object), não funções: `milestoneType` em event-tools.ts,
-  // `builtinGates` em definition-tools.ts.
+  // `builtinGates` em definition-tools.ts, `versions` (bloco de versionamento,
+  // leva 8) em definition-tools.ts/definitions.ts.
   'milestoneType',
   'builtinGates',
+  'versions',
 ]);
 
 // ---- tokens citados na skill hoje ----
