@@ -59,8 +59,15 @@ do cálculo de `hashes`/`verifyHashes`. Continuam sendo exatamente 10 tools.
 - O spec exige explicitamente que nada seja migrado ou reescrito em disco:
   qualquer solução que tocasse o legado (mesmo de forma aditiva) contraria
   esse não-objetivo.
-- `test/stdio.e2e.spec.ts` já sobe processos MCP concorrentes no mesmo
-  `dataDir` — corrida entre `register_*` no mesmo nome não é hipotética.
+- A corrida entre `register_*` no mesmo nome é plausível — vários processos
+  MCP podem compartilhar o mesmo `dataDir` — mas não é o que `test/stdio.e2e.spec.ts`
+  exercita: o C1 daquele arquivo sobe servidores concorrentes contra `register`
+  (registro de evento), que usa o lock cooperativo por diretório
+  (`process.json.lock`), um mecanismo diferente do `linkSync` otimista das
+  escritas de definição; ali os três `register_*` de definição aparecem só em
+  chamadas sequenciais. O caminho `EEXIST` é coberto por
+  `describe('exclusive version write')` em
+  `test/definitions.spec.ts:540-631`.
 
 ## Alternatives Considered
 
@@ -159,12 +166,47 @@ considerado.
 - Comparação de versão é sempre numérica por `(major, minor)`
   (`compareVersions`), nunca ordenação de string — evita `"1.10" < "1.9"`
   lexicográfico.
-- `versions` em `process.json` fica fora de `verifyHashes`: é informativo,
-  não faz parte da garantia de integridade da cadeia, e pode divergir do
-  disco sem que `PROCESS_CORRUPTED` detecte.
+- `versions` em `process.json` fica fora de `verifyHashes`, mas não fora da
+  garantia de integridade da cadeia: `anchor()` (`src/chain.ts:41-44`) faz
+  `sha256hex(canonicalize(manifest))` sobre o manifesto inteiro, sem filtrar
+  campos, então adulterar `versions` muda a âncora e quebra o `prevHash` do
+  primeiro evento — `chain.ok: false` em qualquer processo com ao menos um
+  evento gravado. A janela que resta é estreita: um processo adulterado antes
+  do seu primeiro evento, quando ainda não há elo para expor a divergência.
+  `PROCESS_CORRUPTED` continua sem detectar isso porque só olha `hashes`, não
+  a âncora.
 - Nenhum `process.json` gravado antes desta mudança precisa de migração: o
   campo é opcional e sua ausência é tratada como processo legado.
 
+## Rastreabilidade dos critérios de aceite
+
+Os 18 critérios de aceite vieram do deep-dive de planejamento (fora do
+repositório versionado); a tabela abaixo os traz para o histórico do
+projeto e aponta o teste que cobre cada um.
+
+| # | Critério | Teste |
+| - | -------- | ----- |
+| 1 | `register_vocabulary` 2x só com adições → `1.0`/`1.1` (nome novo) ou `1.1`/`1.2` (nome com legado), ambos os arquivos em disco | `test/definitions.spec.ts:658`, `test/definitions.spec.ts:674` |
+| 2 | Remover termo de `milestoneType` sem `breaking: true` → `BREAKING_CHANGE`, nada escrito | `test/definitions.spec.ts:695` |
+| 3 | Mesma remoção com `breaking: true` → major | `test/definitions.spec.ts:707` |
+| 4 | Remover termo só de `result` → minor, sem exigir a flag | `test/definitions.spec.ts:726` |
+| 5 | `register_gate` com `criteria` diferente → minor, sem exigir a flag | `test/definitions.spec.ts:418` |
+| 6 | `register_type` com schema diferente sem `breaking: true` → `BREAKING_CHANGE`; com a flag → major | `test/definitions.spec.ts:383`, `test/definitions.spec.ts:392` |
+| 7 | Reregistrar conteúdo idêntico ao vigente → `unchanged: true` com a versão vigente, nenhum arquivo novo | `test/definitions.spec.ts:400` (type), `test/definitions.spec.ts:734` (vocabulary) |
+| 8 | `breaking: true` numa mudança compatível → minor com aviso `NO_BREAKING_CHANGE` | `test/definitions.spec.ts:743` |
+| 9 | `create_process` grava `versions` apontando as vigentes; a resposta traz o mesmo bloco | `test/definitions.spec.ts:229` |
+| 10 | Não-regressão do lock: bump major de vocabulário fora do processo não afeta `state`/`events`/`chain` do processo já fixado | `test/event-tools.spec.ts:1207-1244` |
+| 11 | Legado: `vocabulary/<owner>.json` solto é lido como `1.0`; o próximo `register_vocabulary` grava `1.1` sem apagar o legado | `test/definitions.spec.ts:758` |
+| 12 | `process.json` sem `versions` carrega sem `PROCESS_CORRUPTED`; `list` mostra sem o bloco | `test/definitions.spec.ts:239` |
+| 13 | Ordenação numérica: com `1.9` e `1.10` em disco, a vigente é `1.10` | `test/definitions.spec.ts:464` |
+| 14 | `tools/list` continua com exatamente 10 tools; `TOOLS_COUNT` inalterado | `src/installation.ts:41`, `src/installation.ts:103-107`, `test/stdio.e2e.spec.ts:212` |
+| 15 | `npm test` e `npm run typecheck` verdes | Critério de processo, não uma asserção de teste — verificado rodando os dois comandos antes do merge, não por um `test/*.spec.ts` |
+| 16 | Concorrência: duas gravações simultâneas do mesmo nome → `1.1`/`1.2`, nunca duas `1.1`, nunca sobrescrita silenciosa | `test/definitions.spec.ts:563` (EEXIST real, via `writeVersionExclusive`); `test/definitions.spec.ts:780-823` (chamadas via `Promise.all`, documentando por que isso não é uma corrida real — ver D1) |
+| 17 | Legado não materializado: após o primeiro registro versionado, `<name>/1.0.json` não existe, o diretório só tem `1.1.json`, e `list` mostra `versions: ["1.0", "1.1"]` | `test/definitions.spec.ts:758` |
+| 18 | Nada além do que já existia é gravado em disco quando `BREAKING_CHANGE` é lançado | `test/definitions.spec.ts:383` |
+
 ## Follow-ups
 
-Nenhum registrado nesta iteração.
+- Um campo `versionsHash` (hash isolado do bloco `versions`, cobrindo
+  também a janela pré-primeiro-evento descrita em "Consequences") foi
+  cogitado e deliberadamente deixado fora de escopo desta iteração.
