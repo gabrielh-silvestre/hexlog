@@ -57,6 +57,52 @@ function functionNamesFrom(content: string): string[] {
   return [...content.matchAll(/(?:^|\s)function ([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]);
 }
 
+const LINE_CITATION_FORMAT = /^[A-Za-z0-9_.-]+\.ts:\d+(?:-\d+)?$/;
+
+/** Citações `arquivo.ts:N` ou `arquivo.ts:N-M` entre crase simples em `content`, fora de blocos cercados. */
+function fileCitationsFrom(content: string): string[] {
+  return extractInlineBackticks(content).filter((token) => LINE_CITATION_FORMAT.test(token));
+}
+
+/** Faz o parse de uma citação `arquivo.ts:N(-M)?` em arquivo + linha inicial/final (1-indexadas, inclusive). */
+function parseCitation(citation: string): { file: string; startLine: number; endLine: number } {
+  const [file, lines] = citation.split(':');
+  const [start, end] = lines.split('-');
+  return { file, startLine: Number(start), endLine: Number(end ?? start) };
+}
+
+/** Linhas `[startLine, endLine]` (1-indexadas, inclusive) de `content`. */
+function linesInRange(content: string, startLine: number, endLine: number): string {
+  return content
+    .split('\n')
+    .slice(startLine - 1, endLine)
+    .join('\n');
+}
+
+/**
+ * Linha da declaração `function name(` em `content` e a linha do `}` que a fecha, achada por balanço
+ * de chaves — prova que uma citação em faixa (`N-M`) é justa: começa na declaração, termina no
+ * fechamento real da função, não em qualquer ponto arbitrário escolhido à mão.
+ */
+function functionRangeFrom(content: string, name: string): { startLine: number; endLine: number } {
+  const lines = content.split('\n');
+  const startIndex = lines.findIndex((line) => new RegExp(`function ${name}\\(`).test(line));
+  if (startIndex === -1) throw new Error(`função '${name}' não encontrada`);
+  let depth = 0;
+  let opened = false;
+  for (let i = startIndex; i < lines.length; i++) {
+    for (const ch of lines[i]) {
+      if (ch === '{') {
+        depth++;
+        opened = true;
+      }
+      if (ch === '}') depth--;
+    }
+    if (opened && depth === 0) return { startLine: startIndex + 1, endLine: i + 1 };
+  }
+  throw new Error(`fechamento de '${name}' não encontrado`);
+}
+
 describe('extratores (unitário, sobre string literal)', () => {
   test('extractInlineBackticks ignora crase dentro de bloco cercado e pega a de fora', () => {
     const content = '`fora` texto\n```\n`dentro` não conta\n```\n`tambem-fora`';
@@ -81,6 +127,44 @@ describe('extratores (unitário, sobre string literal)', () => {
   test('functionNamesFrom pega export function, async function e function simples', () => {
     const content = `export function minhaFuncao() {}\nasync function outraFuncao() {}\nfunction terceira() {}`;
     expect(functionNamesFrom(content)).toEqual(['minhaFuncao', 'outraFuncao', 'terceira']);
+  });
+
+  test('fileCitationsFrom pega só crases no formato arquivo.ts:N ou arquivo.ts:N-M, ignorando outras crases', () => {
+    const content =
+      '`definitions.ts:21` e `event-tools.ts:397-402`, mas não `register_type` nem `AGENTS.md:37`';
+    expect(fileCitationsFrom(content)).toEqual(['definitions.ts:21', 'event-tools.ts:397-402']);
+  });
+
+  test('parseCitation extrai arquivo e linha inicial/final, repetindo a linha única quando não há faixa', () => {
+    expect(parseCitation('definitions.ts:21')).toEqual({
+      file: 'definitions.ts',
+      startLine: 21,
+      endLine: 21,
+    });
+    expect(parseCitation('event-tools.ts:397-402')).toEqual({
+      file: 'event-tools.ts',
+      startLine: 397,
+      endLine: 402,
+    });
+  });
+
+  test('linesInRange devolve só as linhas pedidas, 1-indexadas e inclusive nas duas pontas', () => {
+    const content = 'a\nb\nc\nd';
+    expect(linesInRange(content, 2, 3)).toBe('b\nc');
+  });
+
+  test('functionRangeFrom encontra a declaração e o fechamento por balanço de chaves, ignorando chaves de tipo aninhadas', () => {
+    const content = [
+      'function outraCoisa() {}',
+      'function alvo(): {',
+      '  campo: string;',
+      '} {',
+      '  if (true) {',
+      '    return 1;',
+      '  }',
+      '}',
+    ].join('\n');
+    expect(functionRangeFrom(content, 'alvo')).toEqual({ startLine: 2, endLine: 8 });
   });
 });
 
@@ -143,10 +227,31 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'versions',
 ]);
 
+/**
+ * Símbolo esperado dentro do trecho citado, por citação `arquivo.ts:N(-M)?` — mapa explícito em vez de
+ * inferir o símbolo a partir de outras crases da mesma linha: a citação `installation.ts:239` (o `);` da
+ * chamada de `verifyPreparedArtifact`) não tem identificador próprio na crase da tabela, então "mesma linha"
+ * não bastaria para toda citação do arquivo.
+ */
+const CITATION_EXPECTATIONS: Record<string, string> = {
+  'definitions.ts:496': 'VOCABULARY_MISSING',
+  'definitions.ts:443-484': 'createProcess',
+  'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
+  'definitions.ts:24': 'RESERVED_TYPE_NAMES',
+  'definitions.ts:27-32': 'BUILTIN_GATE_NAMES',
+  'event-tools.ts:395': 'TYPE_NOT_PINNED',
+  'event-tools.ts:508': 'VOCABULARY_VIOLATED',
+  'event-tools.ts:529': 'UNKNOWN_VOCABULARY',
+  'event-tools.ts:397-402': 'RESERVED_FIELD',
+  'installation.ts:74': 'verifyPreparedArtifact',
+  'installation.ts:239': 'verifyPreparedArtifact',
+};
+
 // ---- tokens citados na skill hoje ----
 
 const skillContent = fs.readFileSync(SKILL_PATH, 'utf8');
 const backtickTokens = extractInlineBackticks(skillContent);
+const citedFileCitations = fileCitationsFrom(skillContent);
 const citedScreamingSnakeTokens = [
   ...new Set(backtickTokens.filter((t) => SCREAMING_SNAKE_CASE.test(t))),
 ];
@@ -198,5 +303,32 @@ describe('coerência SKILL.md × código', () => {
   test('TYPE_NOT_FIXED continua ausente do código, como a skill afirma', () => {
     expect(errorCodeCatalog).not.toContain('TYPE_NOT_FIXED');
     expect(exportedConstantNames).not.toContain('TYPE_NOT_FIXED');
+  });
+});
+
+describe('citações arquivo.ts:N(-M)? na skill × código real em src/', () => {
+  test('a extração de citações não está vazia (sanity)', () => {
+    expect(citedFileCitations.length).toBeGreaterThan(0);
+  });
+
+  test('toda citação da skill tem uma expectativa mapeada, e toda expectativa mapeada ainda é citada (nenhuma citação nova ou removida passa despercebida)', () => {
+    expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(CITATION_EXPECTATIONS)));
+  });
+
+  test('cada citação aponta pra um trecho de src/ que de fato contém o símbolo esperado (detecta deslocamento de linha)', () => {
+    for (const citation of citedFileCitations) {
+      const { file, startLine, endLine } = parseCitation(citation);
+      const fileContent = fs.readFileSync(path.join(srcDir, file), 'utf8');
+      const snippet = linesInRange(fileContent, startLine, endLine);
+      expect(snippet).toContain(CITATION_EXPECTATIONS[citation]);
+    }
+  });
+
+  test('definitions.ts:443-484 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
+    const citation = 'definitions.ts:443-484';
+    expect(citedFileCitations).toContain(citation);
+    const { startLine, endLine } = parseCitation(citation);
+    const definitionsContent = fs.readFileSync(path.join(srcDir, 'definitions.ts'), 'utf8');
+    expect(functionRangeFrom(definitionsContent, 'createProcess')).toEqual({ startLine, endLine });
   });
 });
