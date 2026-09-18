@@ -77,11 +77,11 @@ function readManifest(process: string): ProcessManifest {
 }
 
 describe('registerType (S1)', () => {
-  test('grava schemas/<nome>.json com nome, schema, hash e registeredAt', () => {
+  test('grava schemas/<nome>/<versão>.json com nome, schema, hash e registeredAt', () => {
     const result = registerType(dir, PROJECT, 'decision', VALID_SCHEMA);
     const written = parseJson(
       RegisteredTypeSchema,
-      fs.readFileSync(resolveSafePath(dir, PROJECT, 'schemas', 'decision.json'), 'utf8'),
+      fs.readFileSync(resolveSafePath(dir, PROJECT, 'schemas', 'decision', '1.0.json'), 'utf8'),
     );
     expect(written).toEqual({
       name: 'decision',
@@ -364,21 +364,81 @@ describe('caminho', () => {
   });
 });
 
-describe('substituiu', () => {
-  test('registerType: false na primeira gravação, true na segunda', () => {
-    expect(registerType(dir, PROJECT, 'decision', VALID_SCHEMA).replaced).toBe(false);
-    expect(registerType(dir, PROJECT, 'decision', VALID_SCHEMA).replaced).toBe(true);
+describe('registerType — versionamento (Leva 4)', () => {
+  const schemasDir = () => path.join(dir, PROJECT, 'schemas');
+  const OTHER_SCHEMA = {
+    type: 'object',
+    properties: { text: { type: 'string' }, extra: { type: 'string' } },
+    required: ['text'],
+    additionalProperties: false,
+  };
+
+  test('primeiro registro → 1.0, sem versão anterior', () => {
+    const result = registerType(dir, PROJECT, 'decision', VALID_SCHEMA);
+    expect(result).toMatchObject({ version: '1.0', previousVersion: null, unchanged: false });
   });
 
-  test('registerGate: false na primeira gravação, true na segunda', () => {
-    expect(registerGate(dir, PROJECT, 'gate-x', 'criteria').replaced).toBe(false);
-    expect(registerGate(dir, PROJECT, 'gate-x', 'new criteria').replaced).toBe(true);
+  // Critérios 6 e 18: schema diferente sem breaking:true lança BREAKING_CHANGE, e nada é
+  // gravado além do que já existia.
+  test('critério 6/18: schema diferente sem breaking:true → BREAKING_CHANGE, nada novo em disco', () => {
+    registerType(dir, PROJECT, 'decision', VALID_SCHEMA);
+
+    const error = captureError(() => registerType(dir, PROJECT, 'decision', OTHER_SCHEMA));
+
+    expect(error.code).toBe('BREAKING_CHANGE');
+    expect(fs.readdirSync(path.join(schemasDir(), 'decision'))).toEqual(['1.0.json']);
   });
 
-  test('registerVocabulary: false na primeira gravação, true na segunda', () => {
-    const vocab = { milestoneType: [], result: [], action: [] };
-    expect(registerVocabulary(dir, PROJECT, 'core', vocab).replaced).toBe(false);
-    expect(registerVocabulary(dir, PROJECT, 'core', vocab).replaced).toBe(true);
+  test('critério 6: mesma mudança com breaking:true → major', () => {
+    registerType(dir, PROJECT, 'decision', VALID_SCHEMA);
+
+    const result = registerType(dir, PROJECT, 'decision', OTHER_SCHEMA, { breaking: true });
+
+    expect(result).toMatchObject({ version: '2.0', previousVersion: '1.0', unchanged: false });
+  });
+
+  test('critério 7 (vale também para type): conteúdo idêntico ao vigente → unchanged, nunca major', () => {
+    registerType(dir, PROJECT, 'decision', VALID_SCHEMA);
+
+    const result = registerType(dir, PROJECT, 'decision', VALID_SCHEMA);
+
+    expect(result).toMatchObject({ version: '1.0', unchanged: true });
+    expect(fs.readdirSync(path.join(schemasDir(), 'decision'))).toEqual(['1.0.json']);
+  });
+});
+
+describe('registerGate — versionamento (Leva 5)', () => {
+  const gatesDir = () => path.join(dir, PROJECT, 'gates');
+
+  test('primeiro registro → 1.0, sem versão anterior', () => {
+    const result = registerGate(dir, PROJECT, 'gate-x', 'criteria');
+    expect(result).toMatchObject({ version: '1.0', previousVersion: null, unchanged: false });
+  });
+
+  test('critério 5: criteria diferente → minor, sem exigir flag', () => {
+    registerGate(dir, PROJECT, 'gate-x', 'criteria');
+
+    const result = registerGate(dir, PROJECT, 'gate-x', 'new criteria');
+
+    expect(result).toMatchObject({ version: '1.1', previousVersion: '1.0', unchanged: false });
+  });
+
+  test('criteria idêntico ao vigente → unchanged, nenhum arquivo novo', () => {
+    registerGate(dir, PROJECT, 'gate-x', 'criteria');
+
+    const result = registerGate(dir, PROJECT, 'gate-x', 'criteria');
+
+    expect(result).toMatchObject({ version: '1.0', unchanged: true });
+    expect(fs.readdirSync(path.join(gatesDir(), 'gate-x'))).toEqual(['1.0.json']);
+  });
+
+  test('breaking:true numa mudança de gate → minor com aviso NO_BREAKING_CHANGE, nunca major', () => {
+    registerGate(dir, PROJECT, 'gate-x', 'criteria');
+
+    const result = registerGate(dir, PROJECT, 'gate-x', 'new criteria', { breaking: true });
+
+    expect(result.version).toBe('1.1');
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'NO_BREAKING_CHANGE' }));
   });
 });
 
@@ -567,5 +627,230 @@ describe('exclusive version write', () => {
     ]);
     expect(resolveTarget).toHaveBeenCalledTimes(3);
     expect(fs.readdirSync(defDir())).toEqual(['1.1.json']);
+  });
+});
+
+describe('registerVocabulary — versionamento (Leva 3)', () => {
+  const vocabularyDir = () => path.join(dir, PROJECT, 'vocabulary');
+  const EMPTY: { milestoneType: string[]; result: string[]; action: string[] } = {
+    milestoneType: [],
+    result: [],
+    action: [],
+  };
+
+  /** Escreve o arquivo legado `vocabulary/<owner>.json` direto no disco, sem passar por `registerVocabulary`. */
+  function writeLegacyVocabulary(
+    owner: string,
+    vocab: { milestoneType: string[]; result: string[]; action: string[] },
+  ): void {
+    fs.mkdirSync(vocabularyDir(), { recursive: true });
+    fs.writeFileSync(
+      path.join(vocabularyDir(), `${owner}.json`),
+      JSON.stringify({
+        owner,
+        ...vocab,
+        hash: sha256hex(canonicalize(vocab) ?? ''),
+        registeredAt: new Date().toISOString(),
+      }),
+    );
+  }
+
+  test('critério 1: dois registros só com adições, em nome novo → 1.0 e 1.1, ambos os arquivos em disco', () => {
+    const first = registerVocabulary(dir, PROJECT, 'owner-new', { ...EMPTY, milestoneType: ['a'] });
+    expect(first).toMatchObject({ version: '1.0', previousVersion: null, unchanged: false });
+
+    const second = registerVocabulary(dir, PROJECT, 'owner-new', {
+      ...EMPTY,
+      milestoneType: ['a', 'b'],
+    });
+    expect(second).toMatchObject({ version: '1.1', previousVersion: '1.0', unchanged: false });
+
+    expect(fs.readdirSync(path.join(vocabularyDir(), 'owner-new')).sort()).toEqual([
+      '1.0.json',
+      '1.1.json',
+    ]);
+  });
+
+  test('critério 1: dois registros só com adições, em nome com legado → 1.1 e 1.2, ambos os arquivos em disco', () => {
+    writeLegacyVocabulary('owner-legacy', { ...EMPTY, milestoneType: ['a'] });
+
+    const first = registerVocabulary(dir, PROJECT, 'owner-legacy', {
+      ...EMPTY,
+      milestoneType: ['a', 'b'],
+    });
+    expect(first).toMatchObject({ version: '1.1', previousVersion: '1.0', unchanged: false });
+
+    const second = registerVocabulary(dir, PROJECT, 'owner-legacy', {
+      ...EMPTY,
+      milestoneType: ['a', 'b', 'c'],
+    });
+    expect(second).toMatchObject({ version: '1.2', previousVersion: '1.1', unchanged: false });
+
+    expect(fs.readdirSync(path.join(vocabularyDir(), 'owner-legacy')).sort()).toEqual([
+      '1.1.json',
+      '1.2.json',
+    ]);
+  });
+
+  test('critério 2: remover termo de milestoneType sem breaking → BREAKING_CHANGE, nada escrito em disco', () => {
+    registerVocabulary(dir, PROJECT, 'owner-x', { ...EMPTY, milestoneType: ['a', 'b'] });
+
+    const error = captureError(() =>
+      registerVocabulary(dir, PROJECT, 'owner-x', { ...EMPTY, milestoneType: ['a'] }),
+    );
+
+    expect(error.code).toBe('BREAKING_CHANGE');
+    expect(error.details).toContainEqual(expect.objectContaining({ path: '/milestoneType' }));
+    expect(fs.readdirSync(path.join(vocabularyDir(), 'owner-x'))).toEqual(['1.0.json']);
+  });
+
+  test('critério 3: mesma remoção com breaking:true → major', () => {
+    registerVocabulary(dir, PROJECT, 'owner-y', { ...EMPTY, milestoneType: ['a', 'b'] });
+
+    const result = registerVocabulary(
+      dir,
+      PROJECT,
+      'owner-y',
+      { ...EMPTY, milestoneType: ['a'] },
+      { breaking: true },
+    );
+
+    expect(result).toMatchObject({
+      version: '2.0',
+      previousVersion: '1.0',
+      unchanged: false,
+      warnings: [],
+    });
+  });
+
+  test('critério 4: remover termo só de result → minor, sem exigir flag', () => {
+    registerVocabulary(dir, PROJECT, 'owner-z', { ...EMPTY, result: ['ok', 'fail'] });
+
+    const result = registerVocabulary(dir, PROJECT, 'owner-z', { ...EMPTY, result: ['ok'] });
+
+    expect(result).toMatchObject({ version: '1.1', previousVersion: '1.0', unchanged: false });
+  });
+
+  test('critério 7: re-registrar conteúdo idêntico → unchanged com a versão vigente, nenhum arquivo novo', () => {
+    registerVocabulary(dir, PROJECT, 'owner-w', { ...EMPTY, milestoneType: ['a'] });
+
+    const result = registerVocabulary(dir, PROJECT, 'owner-w', { ...EMPTY, milestoneType: ['a'] });
+
+    expect(result).toMatchObject({ version: '1.0', unchanged: true });
+    expect(fs.readdirSync(path.join(vocabularyDir(), 'owner-w'))).toEqual(['1.0.json']);
+  });
+
+  test('critério 8: breaking:true numa mudança compatível → minor com aviso NO_BREAKING_CHANGE', () => {
+    registerVocabulary(dir, PROJECT, 'owner-v', { ...EMPTY, milestoneType: ['a'] });
+
+    const result = registerVocabulary(
+      dir,
+      PROJECT,
+      'owner-v',
+      { ...EMPTY, milestoneType: ['a', 'b'] },
+      { breaking: true },
+    );
+
+    expect(result.version).toBe('1.1');
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'NO_BREAKING_CHANGE' }));
+  });
+
+  test('critérios 11/17: primeiro registro versionado sobre nome só-legado não materializa 1.0.json e preserva o legado', () => {
+    writeLegacyVocabulary('owner-u', { ...EMPTY, milestoneType: ['a'] });
+    const legacyFile = path.join(vocabularyDir(), 'owner-u.json');
+    const legacyBefore = fs.readFileSync(legacyFile, 'utf8');
+
+    const result = registerVocabulary(dir, PROJECT, 'owner-u', {
+      ...EMPTY,
+      milestoneType: ['a', 'b'],
+    });
+
+    expect(result.version).toBe('1.1');
+    expect(fs.existsSync(path.join(vocabularyDir(), 'owner-u', '1.0.json'))).toBe(false);
+    expect(fs.readdirSync(path.join(vocabularyDir(), 'owner-u'))).toEqual(['1.1.json']);
+    expect(fs.readFileSync(legacyFile, 'utf8')).toBe(legacyBefore);
+  });
+
+  // Critério 16: corrida real com Promise.all (não os cenários scriptados de `writeVersionExclusive`
+  // acima, que testam só o retry em EEXIST). Cada chamada é agendada via `Promise.resolve().then`,
+  // e como `registerVocabulary` é 100% síncrona (só `fs.*Sync`), a ordem de conclusão das
+  // microtasks é garantida pela spec (FIFO): a 1ª chamada do array sempre termina antes da 2ª
+  // começar — o que ainda assim exercita o caminho real (não mockado) de ponta a ponta.
+  describe('critério 16 — corrida real com Promise.all', () => {
+    test('(a) conteúdos diferentes → duas versões distintas, ambos os conteúdos em disco, nenhum sobrescrito', async () => {
+      registerVocabulary(dir, PROJECT, 'owner-race-a', { ...EMPTY, milestoneType: ['seed'] });
+
+      const [first, second] = await Promise.all([
+        Promise.resolve().then(() =>
+          registerVocabulary(dir, PROJECT, 'owner-race-a', {
+            ...EMPTY,
+            milestoneType: ['seed', 'x'],
+          }),
+        ),
+        Promise.resolve().then(() =>
+          registerVocabulary(dir, PROJECT, 'owner-race-a', {
+            ...EMPTY,
+            milestoneType: ['seed', 'x', 'y'],
+          }),
+        ),
+      ]);
+
+      expect(first).toMatchObject({ version: '1.1', unchanged: false });
+      expect(second).toMatchObject({ version: '1.2', unchanged: false });
+      expect(fs.readdirSync(path.join(vocabularyDir(), 'owner-race-a')).sort()).toEqual([
+        '1.0.json',
+        '1.1.json',
+        '1.2.json',
+      ]);
+    });
+
+    test('(b) conteúdos idênticos → a segunda devolve unchanged apontando a versão da primeira, sem gravar arquivo novo', async () => {
+      registerVocabulary(dir, PROJECT, 'owner-race-b', { ...EMPTY, milestoneType: ['seed'] });
+      const sameVocab = { ...EMPTY, milestoneType: ['seed', 'x'] };
+
+      const [first, second] = await Promise.all([
+        Promise.resolve().then(() => registerVocabulary(dir, PROJECT, 'owner-race-b', sameVocab)),
+        Promise.resolve().then(() => registerVocabulary(dir, PROJECT, 'owner-race-b', sameVocab)),
+      ]);
+
+      expect(first).toMatchObject({ version: '1.1', unchanged: false });
+      expect(second).toMatchObject({ version: '1.1', unchanged: true });
+      expect(fs.readdirSync(path.join(vocabularyDir(), 'owner-race-b')).sort()).toEqual([
+        '1.0.json',
+        '1.1.json',
+      ]);
+    });
+
+    test('(c) candidato que se torna breaking contra o vigente pós-corrida → a segunda falha com BREAKING_CHANGE, sem gravar', async () => {
+      registerVocabulary(dir, PROJECT, 'owner-race-c', { ...EMPTY, milestoneType: ['a'] });
+
+      const [first, second] = await Promise.allSettled([
+        Promise.resolve().then(() =>
+          registerVocabulary(dir, PROJECT, 'owner-race-c', { ...EMPTY, milestoneType: ['a', 'b'] }),
+        ),
+        // idêntico ao vigente PRÉ-corrida ('a'): não é remoção contra o que essa chamada
+        // conhecia, mas vira remoção de 'b' contra o vigente PÓS-corrida (['a', 'b'] gravado
+        // pela chamada acima) — é exatamente essa janela que `resolveTarget` do zero fecha.
+        Promise.resolve().then(() =>
+          registerVocabulary(dir, PROJECT, 'owner-race-c', { ...EMPTY, milestoneType: ['a'] }),
+        ),
+      ]);
+
+      expect(first.status).toBe('fulfilled');
+      expect(first.status === 'fulfilled' && first.value).toMatchObject({
+        version: '1.1',
+        unchanged: false,
+      });
+
+      expect(second.status).toBe('rejected');
+      const reason: unknown = second.status === 'rejected' ? second.reason : undefined;
+      expect(reason).toBeInstanceOf(HexlogError);
+      expect((reason as HexlogError).code).toBe('BREAKING_CHANGE');
+
+      expect(fs.readdirSync(path.join(vocabularyDir(), 'owner-race-c')).sort()).toEqual([
+        '1.0.json',
+        '1.1.json',
+      ]);
+    });
   });
 });

@@ -8,9 +8,10 @@ import { isNil, pick } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { z } from 'zod';
 import { anchor, sha256hex } from './chain.ts';
-import { resolveSafePath, ioError, writeJsonAtomic, readJson } from './storage.ts';
+import { resolveSafePath, ioError, readJson } from './storage.ts';
 import { HexlogError, type Detail } from './errors.ts';
 import { Hash, Name } from './events.ts';
+import { CLOSED_VOCAB_KEYS } from './state.ts';
 import type { Vocab, Vocabulary } from './state.ts';
 
 // Reexportados de state.ts (fonte única do schema de vocabulário, DE-29).
@@ -41,16 +42,31 @@ export type Logger = {
 };
 
 /**
- * Resposta comum de `register_*`: o que foi gravado e se substituiu uma versão anterior.
- * Schema Zod é a fonte única, mcp.ts só reexporta; `definition-tools.ts` usa `.shape`.
+ * Resposta comum de `register_type`/`register_gate`: o que foi gravado e sua versão (§4.10/§4.11).
+ * Schema Zod é a fonte única, mcp.ts só reexporta; `definition-tools.ts` usa `.shape` e adiciona
+ * `warnings` (schema `Warning` vive em `mcp.ts`, camada acima — evita import circular daqui).
  */
 export const Registered = z.object({
   project: Name,
   name: Name,
   hash: Hash,
-  replaced: z.boolean(),
+  version: z.string(),
+  previousVersion: z.string().nullable(),
+  unchanged: z.boolean(),
 });
 export type Registered = z.infer<typeof Registered>;
+
+/** Aviso não-fatal de `register_*` (§4.12): mesmo shape do schema Zod `Warning` de `mcp.ts:44-48`. */
+export type Warning = { code: string; message: string; details?: unknown };
+
+/** Campos de versionamento comuns aos três `register_*` (levas 3-5): só o identificador varia. */
+type VersionedRegistration = {
+  hash: string;
+  version: string;
+  previousVersion: string | null;
+  unchanged: boolean;
+  warnings: Warning[];
+};
 
 /** Hashes dos três blocos fixados no `process.json` (§4.1): schema Zod é a fonte única. */
 export const Hashes = z.object({ schemas: Hash, vocabulary: Hash, gates: Hash });
@@ -92,14 +108,75 @@ export type LoadedProcess = {
 
 const EMPTY_VOCAB: Vocab = { milestoneType: [], result: [], action: [] };
 
-/** §4.10: registra um schema JSON custom para `name`, gravando `schemas/<name>.json`. */
+/**
+ * Decisão de versionamento compartilhada pelos três `register_*` (levas 3-5): resolve o `outcome`
+ * a passar a `writeVersionExclusive` (D1) a partir do vigente lido nesta tentativa, mais
+ * `previousVersion`/`warnings` pra montar a resposta final. Genérica sobre `T` (o conteúdo
+ * comparável — `Vocab`, o schema JSON, ou a `criteria` do gate) pra injetar `detectBreak` sem
+ * alargar sua assinatura pra `Record<string, unknown>`, o que sob TS estrito falharia por
+ * contravariância de parâmetros.
+ *
+ * A ordem importa: `unchanged` (hash do candidato == hash do vigente) é checado **antes** de
+ * chamar `detectBreak` — é isso que faz conteúdo idêntico ser sempre no-op, mesmo pra `type`,
+ * cujo `detectBreak` devolve quebra sempre que é chamado.
+ */
+function decideVersion<T>(params: {
+  current: { version: string; content: T } | null;
+  candidateContent: T;
+  candidateHash: string;
+  content: Record<string, unknown>;
+  breakingInput: boolean;
+  detectBreak: (current: T, candidate: T) => { breaking: boolean; details: Detail[] };
+}): { outcome: ResolveOutcome; previousVersion: string | null; warnings: Warning[] } {
+  const { current, candidateContent, candidateHash, content, breakingInput, detectBreak } = params;
+  const previousVersion = current?.version ?? null;
+
+  if (isNil(current)) {
+    return { outcome: { kind: 'write', version: '1.0', content }, previousVersion, warnings: [] };
+  }
+
+  if (sha256hex(canonicalize(current.content) ?? '') === candidateHash) {
+    return {
+      outcome: { kind: 'unchanged', version: current.version },
+      previousVersion,
+      warnings: [],
+    };
+  }
+
+  const { breaking, details } = detectBreak(current.content, candidateContent);
+  if (breaking && !breakingInput) {
+    return { outcome: { kind: 'breaking', details }, previousVersion, warnings: [] };
+  }
+
+  const warnings: Warning[] =
+    !breaking && breakingInput
+      ? [
+          {
+            code: 'NO_BREAKING_CHANGE',
+            message: 'breaking:true was passed but the change is compatible',
+          },
+        ]
+      : [];
+
+  const version = formatVersion(bumpVersion(current.version, breaking ? 'major' : 'minor'));
+  return { outcome: { kind: 'write', version, content }, previousVersion, warnings };
+}
+
+/**
+ * §4.10: registra (versionado) o schema JSON custom de `name`, gravando `schemas/<name>/<versão>.json`.
+ * Sem vigente (nome novo) → `1.0` direto. Conteúdo igual ao vigente → `unchanged`, nada escrito.
+ * Qualquer outra mudança de schema é sempre quebra (regra do spec: "qualquer mudança no schema
+ * JSON"): exige `breaking: true` (senão lança `BREAKING_CHANGE`) e bumpa major; com `breaking: true`
+ * também bumpa major, sem aviso (nunca há mudança compatível pra um schema, então `NO_BREAKING_CHANGE`
+ * nunca dispara aqui — ao contrário de vocabulário e gate).
+ */
 export function registerType(
   dir: string,
   project: string,
   name: string,
   schema: Record<string, unknown>,
-  options: { log?: Logger } = {},
-): Registered {
+  options: { log?: Logger; breaking?: boolean } = {},
+): { project: string; name: string } & VersionedRegistration {
   if ((RESERVED_TYPE_NAMES as readonly string[]).includes(name)) {
     throw new HexlogError('RESERVED_NAME', `type '${name}' is reserved`);
   }
@@ -140,11 +217,50 @@ export function registerType(
     ]);
   }
 
-  const file = resolveSafePath(dir, project, 'schemas', `${name}.json`);
+  const partDir = resolveSafePath(dir, project, 'schemas');
+  const defDir = resolveSafePath(dir, project, 'schemas', name);
   const hash = sha256hex(canonicalSchema);
-  const replaced = !isNil(readJson(file));
-  writeJsonAtomic(file, { name, schema, hash, registeredAt: new Date().toISOString() });
-  return { project, name, hash, replaced };
+  const content: Record<string, unknown> = {
+    name,
+    schema,
+    hash,
+    registeredAt: new Date().toISOString(),
+  };
+
+  let previousVersion: string | null = null;
+  let warnings: Warning[] = [];
+
+  const resolveTarget = (): ResolveOutcome => {
+    const current = resolveCurrentDefinition(partDir, name);
+    const decision = decideVersion<Record<string, unknown>>({
+      current: isNil(current)
+        ? null
+        : { version: current.version, content: current.content.schema as Record<string, unknown> },
+      candidateContent: schema,
+      candidateHash: hash,
+      content,
+      breakingInput: options.breaking === true,
+      detectBreak: () => ({
+        breaking: true,
+        details: [{ path: '/schema', code: 'changed', message: 'schema changed' }],
+      }),
+    });
+    previousVersion = decision.previousVersion;
+    warnings = decision.warnings;
+    return decision.outcome;
+  };
+
+  const result = writeVersionExclusive(defDir, resolveTarget);
+
+  return {
+    project,
+    name,
+    hash,
+    version: result.version,
+    previousVersion,
+    unchanged: result.kind === 'unchanged',
+    warnings,
+  };
 }
 
 /** Ajv2020 strict + ajv-formats: pega typo de keyword, forma malformada e `$ref` externo. */
@@ -162,36 +278,148 @@ function validateWithAjv(schema: Record<string, unknown>, log: Logger | undefine
   }
 }
 
-/** §4.9: registra o vocabulário de `owner` (`"core"` ou uma extensão), gravando `vocabulary/<owner>.json`. */
+/**
+ * Quebra de vocabulário (§4.9): termo presente no vigente e ausente no candidato, só nas
+ * chaves fechadas de `CLOSED_VOCAB_KEYS` — `result` é campo aberto e nunca entra aqui.
+ * `details[].path` é a chave do `Vocab` comparado (`/milestoneType`, `/action`), não o path de
+ * runtime de `VOCABULARY_VIOLATED` (`/data/milestoneType`, `/data/decisions/${index}/action`),
+ * que tem prefixo e índice de array que não existem ao comparar duas definições estáticas.
+ */
+export function detectVocabularyBreak(
+  current: Vocab,
+  next: Vocab,
+): { breaking: boolean; details: Detail[] } {
+  const details: Detail[] = [];
+  for (const key of CLOSED_VOCAB_KEYS) {
+    for (const term of current[key]) {
+      if (!next[key].includes(term)) {
+        details.push({
+          path: `/${key}`,
+          code: 'removed',
+          message: `term removed from ${key}: ${term}`,
+        });
+      }
+    }
+  }
+  return { breaking: !isEmpty(details), details };
+}
+
+/**
+ * §4.9: registra (versionado) o vocabulário de `owner` (`"core"` ou uma extensão), gravando
+ * `vocabulary/<owner>/<versão>.json`. Sem vigente (nome novo) → `1.0` direto. Conteúdo igual ao
+ * vigente → `unchanged`, nada escrito. Termo fechado removido → quebra: exige `breaking: true`
+ * (senão lança `BREAKING_CHANGE`) e bumpa major; sem quebra bumpa minor, e `breaking: true` numa
+ * mudança compatível vira aviso `NO_BREAKING_CHANGE` em vez de forçar major. O arquivo legado
+ * `vocabulary/<owner>.json`, se existir, nunca é apagado, reescrito ou materializado como `1.0.json`.
+ */
 export function registerVocabulary(
   dir: string,
   project: string,
   owner: string,
   vocab: Vocab,
-): { project: string; owner: string; hash: string; replaced: boolean } {
-  const file = resolveSafePath(dir, project, 'vocabulary', `${owner}.json`);
+  options: { breaking?: boolean } = {},
+): { project: string; owner: string } & VersionedRegistration {
+  const partDir = resolveSafePath(dir, project, 'vocabulary');
+  const defDir = resolveSafePath(dir, project, 'vocabulary', owner);
   const hash = sha256hex(canonicalize(vocab) ?? '');
-  const replaced = !isNil(readJson(file));
-  writeJsonAtomic(file, { owner, ...vocab, hash, registeredAt: new Date().toISOString() });
-  return { project, owner, hash, replaced };
+  const content: Record<string, unknown> = {
+    owner,
+    ...vocab,
+    hash,
+    registeredAt: new Date().toISOString(),
+  };
+
+  let previousVersion: string | null = null;
+  let warnings: Warning[] = [];
+
+  const resolveTarget = (): ResolveOutcome => {
+    const current = resolveCurrentDefinition(partDir, owner);
+    const decision = decideVersion<Vocab>({
+      current: isNil(current)
+        ? null
+        : { version: current.version, content: extractVocab(current.content) },
+      candidateContent: vocab,
+      candidateHash: hash,
+      content,
+      breakingInput: options.breaking === true,
+      detectBreak: detectVocabularyBreak,
+    });
+    previousVersion = decision.previousVersion;
+    warnings = decision.warnings;
+    return decision.outcome;
+  };
+
+  const result = writeVersionExclusive(defDir, resolveTarget);
+
+  return {
+    project,
+    owner,
+    hash,
+    version: result.version,
+    previousVersion,
+    unchanged: result.kind === 'unchanged',
+    warnings,
+  };
 }
 
-/** §4.11: registra o critério de um gate custom, gravando `gates/<name>.json`. */
+/**
+ * §4.11: registra (versionado) o critério de um gate custom, gravando `gates/<name>/<versão>.json`.
+ * Sem vigente (nome novo) → `1.0` direto. Conteúdo igual ao vigente → `unchanged`, nada escrito.
+ * Gate nunca quebra (tabela do spec, "Major quando: nunca"): qualquer mudança de `criteria` bumpa
+ * minor, sem exigir flag; `breaking: true` numa mudança de gate sempre vira aviso `NO_BREAKING_CHANGE`.
+ */
 export function registerGate(
   dir: string,
   project: string,
   name: string,
   criteria: string,
-): Registered {
+  options: { breaking?: boolean } = {},
+): { project: string; name: string } & VersionedRegistration {
   if ((BUILTIN_GATE_NAMES as readonly string[]).includes(name)) {
     throw new HexlogError('RESERVED_NAME', `gate '${name}' is builtin`);
   }
 
-  const file = resolveSafePath(dir, project, 'gates', `${name}.json`);
+  const partDir = resolveSafePath(dir, project, 'gates');
+  const defDir = resolveSafePath(dir, project, 'gates', name);
   const hash = sha256hex(canonicalize(criteria) ?? '');
-  const replaced = !isNil(readJson(file));
-  writeJsonAtomic(file, { name, criteria, hash, registeredAt: new Date().toISOString() });
-  return { project, name, hash, replaced };
+  const content: Record<string, unknown> = {
+    name,
+    criteria,
+    hash,
+    registeredAt: new Date().toISOString(),
+  };
+
+  let previousVersion: string | null = null;
+  let warnings: Warning[] = [];
+
+  const resolveTarget = (): ResolveOutcome => {
+    const current = resolveCurrentDefinition(partDir, name);
+    const decision = decideVersion<string>({
+      current: isNil(current)
+        ? null
+        : { version: current.version, content: current.content.criteria as string },
+      candidateContent: criteria,
+      candidateHash: hash,
+      content,
+      breakingInput: options.breaking === true,
+      detectBreak: () => ({ breaking: false, details: [] }),
+    });
+    previousVersion = decision.previousVersion;
+    warnings = decision.warnings;
+    return decision.outcome;
+  };
+
+  const result = writeVersionExclusive(defDir, resolveTarget);
+
+  return {
+    project,
+    name,
+    hash,
+    version: result.version,
+    previousVersion,
+    unchanged: result.kind === 'unchanged',
+    warnings,
+  };
 }
 
 /** §4.1: fixa o snapshot atual de definições do projeto num novo `process.json`, criado exclusivamente. */
