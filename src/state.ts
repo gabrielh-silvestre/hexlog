@@ -41,6 +41,11 @@ export type Projection = {
     kind: 'extension' | 'unknown-warning' | 'error';
     owner: string | null;
   }[];
+  // P1 (no-forks): Verdict com 2+ sucessores vivos (sucessor = Verdict que o cita em `supersedes`
+  // e não está ele mesmo superado).
+  forks: { verdict: string; successors: string[] }[];
+  // P4: todos os targets de Verdict já usados no log, inclusive os sem vigente, ordenados.
+  targets: string[];
 };
 
 export type State = Projection & { chain: Chain };
@@ -53,6 +58,7 @@ export const Section = z.enum([
   'toReview',
   'invalidReferences',
   'warnings',
+  'forks',
   'chain',
 ]);
 
@@ -99,7 +105,33 @@ type SupersessionResult = {
   conflicts: Projection['conflicts'];
   invalidReferences: Projection['invalidReferences'];
   superseded: EventLine[];
+  forks: Projection['forks'];
 };
+
+/**
+ * P1 (no-forks): agrupa, por Verdict citado, os sucessores vivos (que o citam em `supersedes` e não
+ * estão eles mesmos superados). 2+ sucessores vivos para o mesmo citado é um fork. Referência a id
+ * que não é Verdict do log já foi registrada em `invalidReferences` por quem monta `supersededIds`.
+ */
+function calculateForks(
+  verdicts: EventLine[],
+  verdictById: Record<string, EventLine>,
+  supersededIds: Set<string>,
+): Projection['forks'] {
+  const successorsByCited = new Map<string, string[]>();
+  for (const v of verdicts) {
+    if (supersededIds.has(v.id)) continue; // só sucessor vivo conta
+    for (const refId of (v.data as VerdictFields).supersedes ?? []) {
+      if (isNil(verdictById[refId])) continue;
+      const successors = successorsByCited.get(refId);
+      if (isNil(successors)) successorsByCited.set(refId, [v.id]);
+      else successors.push(v.id);
+    }
+  }
+  return [...successorsByCited.entries()]
+    .filter(([, successors]) => successors.length >= 2)
+    .map(([verdict, successors]) => ({ verdict, successors }));
+}
 
 /** Active/conflicts/invalidReferences por (target, claim); `supersedes` marca superados sem fundir grupos. */
 function computeSupersession(verdicts: EventLine[]): SupersessionResult {
@@ -118,6 +150,7 @@ function computeSupersession(verdicts: EventLine[]): SupersessionResult {
     }
   }
 
+  const forks = calculateForks(verdicts, verdictById, supersededIds);
   const byKey = groupBy(verdicts, (v) => groupingKey(v.data as VerdictFields));
 
   const active: StatusEntry[] = [];
@@ -136,7 +169,12 @@ function computeSupersession(verdicts: EventLine[]): SupersessionResult {
   }
 
   const superseded = verdicts.filter((v) => supersededIds.has(v.id));
-  return { active, conflicts, invalidReferences, superseded };
+  return { active, conflicts, invalidReferences, superseded, forks };
+}
+
+/** P4: targets de todo Verdict do log, inclusive os sem vigente, ordenados. */
+function calculateTargets(verdicts: EventLine[]): string[] {
+  return [...new Set(verdicts.map((v) => (v.data as VerdictFields).target))].sort();
 }
 
 /** Ciclo do Milestone por target (§4.8, pseudocódigo do plano): reduce puro, gate nunca abre nem fecha (R-3). */
@@ -249,6 +287,13 @@ export function validateField(
   return { kind: open ? 'unknown-warning' : 'error', owner: null };
 }
 
+/** P2: termos permitidos (core ∪ extensões) de `field` — contexto de `VOCABULARY_VIOLATED`. */
+export function allowedTerms(vocabulary: Vocabulary, field: VocabularyField): string[] {
+  const { key } = FIELD_POLICY_BY_KEY[field];
+  const extended = Object.values(vocabulary.byOwner).flatMap((vocab) => vocab[key]);
+  return [...new Set([...vocabulary.core[key], ...extended])];
+}
+
 function collectWarnings(lines: EventLine[], vocabulary: Vocabulary): Projection['warnings'] {
   const warnings: Projection['warnings'] = [];
 
@@ -282,7 +327,7 @@ export function projectState(lines: EventLine[], vocabulary: Vocabulary, now: st
   const last = deduplicated.at(-1);
 
   const verdicts = deduplicated.filter((e) => e.type === 'verdict');
-  const { active, conflicts, invalidReferences, superseded } = computeSupersession(verdicts);
+  const { active, conflicts, invalidReferences, superseded, forks } = computeSupersession(verdicts);
 
   return {
     logThrough: isNil(last) ? null : pick(last, ['id', 'seq', 'timestamp']),
@@ -292,5 +337,7 @@ export function projectState(lines: EventLine[], vocabulary: Vocabulary, now: st
     toReview: calculateToReview(deduplicated, superseded),
     invalidReferences,
     warnings: collectWarnings(deduplicated, vocabulary),
+    forks,
+    targets: calculateTargets(verdicts),
   };
 }

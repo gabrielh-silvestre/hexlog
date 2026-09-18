@@ -166,9 +166,15 @@ o diretório de versões, quando existe, começa em `1.1`.
 ### `create_process`
 
 Cria um processo novo, fixando para sempre o snapshot atual de tipos,
-vocabulário e gates do projeto. Falha com `PROCESS_ALREADY_EXISTS` se o processo
-já existir, e com `VOCABULARY_MISSING` se o projeto não tiver nenhum
-vocabulário registrado ainda.
+vocabulário e gates do projeto. **Idempotente**: se `process` já existir,
+devolve o processo existente com `existed: true` em vez de erro — hashes
+iguais ao snapshot fixado, sem aviso; hashes diferentes (algo foi registrado
+no projeto depois da fixação), aviso `STALE_DEFINITIONS` em `warnings`, com
+`details: [{ section, name, pinned, current }]` do que mudou. Duas chamadas
+concorrentes para o mesmo `process` novo: a que perde a corrida do link
+exclusivo também segue esse caminho — as duas terminam com sucesso, só uma
+com `existed: false`. Falha com `VOCABULARY_MISSING` se o projeto não tiver
+nenhum vocabulário registrado ainda.
 
 ### `register`
 
@@ -186,19 +192,30 @@ Registra um evento. O `id` pode ser:
   completo nunca inventado pelo agente).
 
 Marco aceita `milestoneType`, `target` (endereço no formato `hex:target:<id>`),
-`count`, `dueAt` e `decisions[]`. Veredito aceita `claim`,
+`count`, `dueAt`, `decisions[]` e `trace` (opcional). Veredito aceita `claim`,
 `source`, `result`, `evidence`, `target` (também `hex:target:<id>`), `supersedes[]`,
 `origin` e `trace`. `milestoneType: "gate"` e a chave `gate` são reservados ao
 Marco que `evaluate_gate` grava; usá-los em `register` é `RESERVED_FIELD`.
+
+No Marco, `trace` é ignorado na comparação de retentativa idempotente: reenviar
+o mesmo id completo com `trace` diferente ainda deduplica (`deduplicated: true`).
+No Veredito `trace` é obrigatório e entra normalmente na comparação.
 
 ### `evaluate_gate`
 
 Avalia um gate contra um `target` e grava o resultado como um Marco de gate.
 Gates **embutidos** (`no-orphans`, `no-conflicts`, `chain-intact`,
-`no-invalid-references`) são calculados pelo próprio servidor a partir do
-Estado do processo, e não aceitam `result` informado pelo agente. Gates
-**custom**, registrados via `register_gate` e fixados no processo, exigem
-`result: {passed, evidence}` do agente.
+`no-invalid-references`, `no-forks`) são calculados pelo próprio servidor a
+partir do Estado do processo, e não aceitam `result` informado pelo agente.
+Gates **custom**, registrados via `register_gate` e fixados no processo,
+exigem `result: {passed, evidence}` do agente.
+
+`no-forks` reprova quando um Veredito superado tem 2 ou mais sucessores vivos
+(2+ Vereditos que o citam em `supersedes` e não estão eles mesmos superados) —
+um fan-out legítimo de um Veredito ainda vigente (Vereditos distintos, cada um
+com seu próprio `claim`/`target`) não conta como fork.
+Para resolver um fork, registre um Veredito que supere ramos em `supersedes`
+até restar 1 sucessor vivo — superar só um dos dois ramos já basta.
 
 O Marco de gate registrado **não abre nem fecha o ciclo** do alvo: avaliar
 `no-orphans` sobre um Marco vencido não faz esse Marco deixar de aparecer em
@@ -209,9 +226,18 @@ O Marco de gate registrado **não abre nem fecha o ciclo** do alvo: avaliar
 Projeta o Estado atual do processo: Vereditos vigentes e em conflito, Marcos
 órfãos (com `dueAt` vencido e sem evento posterior no mesmo alvo),
 eventos a revisar, referências inválidas (`supersedes` apontando para um Veredito
-inexistente), avisos de vocabulário e a cadeia de hash. O parâmetro `sections`
-filtra o que volta na resposta; sem ele, todas as seções voltam. Cada lista é
-cortada em 100 itens, e `totals` traz o tamanho real de cada uma.
+inexistente), avisos de vocabulário, Vereditos com fork (`no-forks`, ver acima)
+e a cadeia de hash. O parâmetro `sections` filtra o que volta na resposta; sem
+ele, todas as seções voltam. Cada lista é cortada em 100 itens, e `totals` traz
+o tamanho real de cada uma.
+
+`targets` sempre volta na resposta, independente de `sections`: todo `target`
+que algum Veredito já usou, inclusive os totalmente superados (sem nenhum
+Veredito vigente). Com `withData: true` (padrão `false`), cada item de status
+`active` em `active` ganha o `data` do Veredito vigente; itens de status
+`conflict` (sem um vigente único) não ganham `data`. A resposta ainda respeita
+o teto de `PAGE_CHARS_CAP = 24_000` caracteres: uma vez que o orçamento
+estoura, os itens restantes vêm sem `data` e com `truncated: true`.
 
 ### `events`
 
@@ -308,7 +334,7 @@ Alguns dos mais comuns:
 | `TYPE_NOT_PINNED` | tipo custom fora do snapshot fixado do processo |
 | `INVALID_EVENT` | `data` reprovado na validação, ou acima de 16.000 caracteres canônicos |
 | `RESERVED_FIELD` | Marco com `milestoneType: "gate"` ou chave `gate` fora de `evaluate_gate` |
-| `VOCABULARY_VIOLATED` | `milestoneType`/`decisions[].action` fora do vocabulário fixado (campo fechado) |
+| `VOCABULARY_VIOLATED` | `milestoneType`/`decisions[].action` fora do vocabulário fixado (campo fechado); `details[0]` traz `owners` (donos de extensão fixados no processo) e `allowed` (termos que o campo de fato aceita, core ∪ extensões) |
 | `INVALID_FILTER` | filtros de `events` inconsistentes (`milestoneType` fora do vocabulário, `after ≥ before`, `until` além do arquivo) |
 | `GATE_NOT_REGISTERED` / `INVALID_EVALUATION` | problemas ao chamar `evaluate_gate` |
 | `PROCESS_CORRUPTED` | `process.json` ilegível, ou hashes internos divergentes |
@@ -322,6 +348,10 @@ Um aviso, diferente de erro, vem em `warnings[]` numa resposta de sucesso:
 - `NO_BREAKING_CHANGE` num `register_type`/`register_vocabulary`/`register_gate`
   com `breaking: true` cuja mudança, na verdade, não quebra — a versão bumpa
   minor mesmo assim, em vez de forçar major.
+- `STALE_DEFINITIONS` em `create_process`, quando o `process` já existe e o
+  snapshot fixado na criação diverge do candidato desta chamada (algo foi
+  registrado no projeto depois) — `details: [{ section, name, pinned, current }]`
+  lista o que mudou. `existed: true` de qualquer forma, com ou sem esse aviso.
 
 ## Lacunas de isolamento
 

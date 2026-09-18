@@ -202,11 +202,30 @@ describe('createProcess / loadProcess (N14)', () => {
     expect(fs.existsSync(path.join(dir, PROJECT, 'p1', 'process.json'))).toBe(true);
   });
 
-  test('segunda createProcess no mesmo nome → PROCESS_ALREADY_EXISTS', () => {
+  test('segunda createProcess no mesmo nome, definições inalteradas → existed: true sem warning (P3)', () => {
+    prepareCoreAndType();
+    const first = createProcess(dir, PROJECT, 'p1', () => new Date());
+    const second = createProcess(dir, PROJECT, 'p1', () => new Date());
+    expect(second.existed).toBe(true);
+    expect(second.warnings).toEqual([]);
+    expect(second.hashes).toEqual(first.hashes);
+  });
+
+  test('segunda createProcess após um register_vocabulary novo → existed: true + STALE_DEFINITIONS citando o owner (P3)', () => {
     prepareCoreAndType();
     createProcess(dir, PROJECT, 'p1', () => new Date());
-    const error = captureError(() => createProcess(dir, PROJECT, 'p1', () => new Date()));
-    expect(error.code).toBe('PROCESS_ALREADY_EXISTS');
+    registerVocabulary(dir, PROJECT, 'extra', { milestoneType: [], result: [], action: [] });
+
+    const second = createProcess(dir, PROJECT, 'p1', () => new Date());
+    expect(second.existed).toBe(true);
+    expect(second.warnings).toEqual([
+      expect.objectContaining({
+        code: 'STALE_DEFINITIONS',
+        details: expect.arrayContaining([
+          expect.objectContaining({ section: 'vocabulary', name: 'extra' }),
+        ]),
+      }),
+    ]);
   });
 
   test('alterar fixado e recalcular hashes → carga ok, mas âncora muda', () => {
@@ -262,6 +281,19 @@ describe('process.json — bloco versions (Leva 6)', () => {
     tamperedFixed.fixed.gates = { 'ghost-gate': { criteria: 'x' } };
     fs.writeFileSync(file, JSON.stringify(tamperedFixed));
     const error = captureError(() => loadProcess(dir, PROJECT, 'p1'));
+    expect(error.code).toBe('PROCESS_CORRUPTED');
+  });
+
+  test('create_process idempotente sobre process.json adulterado → PROCESS_CORRUPTED, sem devolver o manifesto', () => {
+    prepareCoreAndType();
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    const file = path.join(dir, PROJECT, 'p1', 'process.json');
+
+    const tampered = readManifest('p1');
+    tampered.fixed.gates = { 'ghost-gate': { criteria: 'x' } };
+    fs.writeFileSync(file, JSON.stringify(tampered));
+
+    const error = captureError(() => createProcess(dir, PROJECT, 'p1', () => new Date()));
     expect(error.code).toBe('PROCESS_CORRUPTED');
   });
 

@@ -90,6 +90,8 @@ describe('projectState › State bate com fixture (envelope novo, target hex:tar
       toReview: [],
       invalidReferences: [],
       warnings: [],
+      forks: [],
+      targets: [TARGET_1],
     });
   });
 });
@@ -195,6 +197,50 @@ describe('N3 › supersessão', () => {
     expect(projection.invalidReferences).toEqual([
       { citedBy: v1.id, reference: 'p:r:verdict:phantom' },
     ]);
+  });
+});
+
+describe('P1 › forks', () => {
+  test('2 sucessores vivos do mesmo superado → forks aponta os dois', () => {
+    const a = verdict({ target: TARGET_1, claim: 'x' }, { timestamp: T(0) });
+    const b = verdict({ target: TARGET_1, claim: 'y', supersedes: [a.id] }, { timestamp: T(1) });
+    const c = verdict({ target: TARGET_1, claim: 'z', supersedes: [a.id] }, { timestamp: T(2) });
+    const projection = projectState([a, b, c], emptyVocabulary, T(2));
+
+    expect(projection.forks).toEqual([{ verdict: a.id, successors: [b.id, c.id] }]);
+  });
+
+  test('cadeias independentes, cada citado com só 1 sucessor vivo → forks vazio (fan-out legítimo, fora de escopo)', () => {
+    const a1 = verdict({ target: TARGET_1, claim: 'x' }, { timestamp: T(0) });
+    const b1 = verdict({ target: TARGET_1, claim: 'x', supersedes: [a1.id] }, { timestamp: T(1) });
+    const a2 = verdict({ target: TARGET_2, claim: 'y' }, { timestamp: T(2) });
+    const b2 = verdict({ target: TARGET_2, claim: 'y', supersedes: [a2.id] }, { timestamp: T(3) });
+    const projection = projectState([a1, b1, a2, b2], emptyVocabulary, T(3));
+
+    expect(projection.forks).toEqual([]);
+  });
+
+  test('recuperação: D supera os dois ramos (B e C) → forks vazio', () => {
+    const a = verdict({ target: TARGET_1, claim: 'x' }, { timestamp: T(0) });
+    const b = verdict({ target: TARGET_1, claim: 'y', supersedes: [a.id] }, { timestamp: T(1) });
+    const c = verdict({ target: TARGET_1, claim: 'z', supersedes: [a.id] }, { timestamp: T(2) });
+    const d = verdict(
+      { target: TARGET_1, claim: 'w', supersedes: [b.id, c.id] },
+      { timestamp: T(3) },
+    );
+    const projection = projectState([a, b, c, d], emptyVocabulary, T(3));
+
+    expect(projection.forks).toEqual([]);
+  });
+
+  test('recuperação: D supera só um ramo (B) → resta 1 sucessor vivo (C) e forks fica vazio', () => {
+    const a = verdict({ target: TARGET_1, claim: 'x' }, { timestamp: T(0) });
+    const b = verdict({ target: TARGET_1, claim: 'y', supersedes: [a.id] }, { timestamp: T(1) });
+    const c = verdict({ target: TARGET_1, claim: 'z', supersedes: [a.id] }, { timestamp: T(2) });
+    const d = verdict({ target: TARGET_1, claim: 'y', supersedes: [b.id] }, { timestamp: T(3) });
+    const projection = projectState([a, b, c, d], emptyVocabulary, T(3));
+
+    expect(projection.forks).toEqual([]);
   });
 });
 

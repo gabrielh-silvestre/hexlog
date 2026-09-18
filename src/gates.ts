@@ -45,6 +45,10 @@ export const BUILTIN_GATES: Record<BuiltinGateName, BuiltinGateDefinition> = {
     criteria: 'state.invalidReferences empty: every supersedes points to an existing Verdict',
     items: (state) => state.invalidReferences,
   },
+  'no-forks': {
+    criteria: 'state.forks empty: no Verdict with more than one active successor',
+    items: (state) => state.forks,
+  },
 };
 
 export function isBuiltinGate(name: string): name is BuiltinGateName {
@@ -82,7 +86,7 @@ export function buildGateMilestoneData(args: {
   });
 }
 
-/** Para `listBuiltinGates`: nome e critério dos 4 gates embutidos. */
+/** Para `listBuiltinGates`: nome e critério dos 5 gates embutidos. */
 export function listBuiltinGates(): { name: string; criteria: string }[] {
   return BUILTIN_GATE_NAMES.map((name) => ({ name, criteria: BUILTIN_GATES[name].criteria }));
 }

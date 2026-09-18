@@ -212,8 +212,11 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
     {
       title: 'Create process',
       description:
-        'Creates a new process, fixing the current snapshot of the project’s types, vocabulary and gates into `process.json`. ' +
-        'Fails if the process already exists or if the project has no vocabulary registered.',
+        'Creates a new process, fixing the current snapshot of the project’s types, vocabulary and gates into ' +
+        '`process.json`. Idempotent: if the process already exists, returns it with `existed: true` instead of ' +
+        'failing. If the snapshot fixed back then still matches the project’s current definitions, no warning; ' +
+        'if it diverged since (a `register_*` happened after `create_process`), a `STALE_DEFINITIONS` warning ' +
+        'lists what changed. Fails only if the project has no vocabulary registered.',
       inputSchema: { project: Name, process: Name },
       outputSchema: {
         project: Name,
@@ -224,11 +227,13 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         owners: z.array(Name),
         gates: z.array(Name),
         versions: FixedVersions.describe(FIXED_VERSIONS_DESC),
+        existed: z.boolean(),
+        warnings: z.array(Warning),
       },
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: false,
+        idempotentHint: true,
         openWorldHint: false,
       },
     },
