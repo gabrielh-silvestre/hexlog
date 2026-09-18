@@ -185,30 +185,7 @@ describe('M6', () => {
 });
 
 describe('B1', () => {
-  const SEARCH_WAIT_MS = 20 * 60 * 1000;
-  const SEARCH_POLL_MS = 15_000;
-
-  function featSearchCommitExists(): boolean {
-    const result = spawnSync('git', ['log', '--oneline'], { cwd: repoRoot, encoding: 'utf8' });
-    return result.stdout.includes('feat(busca)');
-  }
-
-  /** Espera o commit `feat(busca)` de outro executor (poll a cada 15s, até 20 min). */
-  async function waitForFeatSearch(): Promise<boolean> {
-    const deadline = Date.now() + SEARCH_WAIT_MS;
-    while (!featSearchCommitExists() && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, SEARCH_POLL_MS));
-    }
-    return featSearchCommitExists();
-  }
-
   describe('(a)', () => {
-    let searchAvailable = false;
-
-    beforeAll(async () => {
-      searchAvailable = await waitForFeatSearch();
-    }, SEARCH_WAIT_MS + 5_000);
-
     test('uma chamada de cada uma das 10 tools contra o bundle, sem erro, sem INTERNO, sem Dynamic require', async () => {
       const projectName = 'e2e-proj';
       const processName = 'e2e-proc';
@@ -288,9 +265,7 @@ describe('B1', () => {
         });
         await call('state', { project: projectName, process: processName });
         await call('events', { project: projectName, process: processName });
-        if (searchAvailable) {
-          await call('events', { project: projectName, process: processName, search: 'approved' });
-        }
+        await call('events', { project: projectName, process: processName, search: 'approved' });
         await call('chain', { project: projectName, process: processName });
         await call('list', {});
       } finally {
