@@ -201,8 +201,14 @@ const reservedNameValues: readonly string[] = [
  *   `ErrorCode` — a skill documenta essa distinção de propósito (ver teste dedicado abaixo).
  * - `TYPE_NOT_FIXED`: citado de propósito como contraste ("não `TYPE_NOT_FIXED`, esse código não
  *   existe") — a skill afirma que ele NÃO existe; exigi-lo no catálogo inverteria a checagem.
+ * - `STALE_DEFINITIONS`: código de **aviso** de `create_process` (P3), quando o processo já existe
+ *   com um snapshot de definições diferente do candidato desta chamada — não um `ErrorCode`.
  */
-const DELIBERATE_NON_ERROR_CODES = new Set(['UNKNOWN_VOCABULARY', 'TYPE_NOT_FIXED']);
+const DELIBERATE_NON_ERROR_CODES = new Set([
+  'UNKNOWN_VOCABULARY',
+  'TYPE_NOT_FIXED',
+  'STALE_DEFINITIONS',
+]);
 
 /**
  * Palavras de domínio (campo/valor de exemplo) citadas em crase na skill que coincidem em forma
@@ -225,6 +231,16 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'milestoneType',
   'builtinGates',
   'versions',
+  // P1-P5: campos de saída/entrada citados na skill, não tools nem valores reservados.
+  // `owners`/`allowed` (details de VOCABULARY_VIOLATED, P2), `supersedes`/`active`
+  // (Verdict/state, contexto do `no-forks`, P1), `targets` (state, P4), `trace`
+  // (Milestone, P5).
+  'owners',
+  'allowed',
+  'supersedes',
+  'active',
+  'targets',
+  'trace',
 ]);
 
 /**
@@ -234,15 +250,15 @@ const FIELD_NAME_ALLOWLIST = new Set([
  * não bastaria para toda citação do arquivo.
  */
 const CITATION_EXPECTATIONS: Record<string, string> = {
-  'definitions.ts:496': 'VOCABULARY_MISSING',
-  'definitions.ts:443-484': 'createProcess',
+  'definitions.ts:576': 'VOCABULARY_MISSING',
+  'definitions.ts:450-498': 'createProcess',
   'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
   'definitions.ts:24': 'RESERVED_TYPE_NAMES',
-  'definitions.ts:27-32': 'BUILTIN_GATE_NAMES',
-  'event-tools.ts:395': 'TYPE_NOT_PINNED',
-  'event-tools.ts:508': 'VOCABULARY_VIOLATED',
-  'event-tools.ts:529': 'UNKNOWN_VOCABULARY',
-  'event-tools.ts:397-402': 'RESERVED_FIELD',
+  'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
+  'event-tools.ts:421': 'TYPE_NOT_PINNED',
+  'event-tools.ts:545': 'VOCABULARY_VIOLATED',
+  'event-tools.ts:567': 'UNKNOWN_VOCABULARY',
+  'event-tools.ts:423-428': 'RESERVED_FIELD',
   'installation.ts:74': 'verifyPreparedArtifact',
   'installation.ts:239': 'verifyPreparedArtifact',
 };
@@ -324,8 +340,8 @@ describe('citações arquivo.ts:N(-M)? na skill × código real em src/', () => 
     }
   });
 
-  test('definitions.ts:443-484 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
-    const citation = 'definitions.ts:443-484';
+  test('definitions.ts:450-498 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
+    const citation = 'definitions.ts:450-498';
     expect(citedFileCitations).toContain(citation);
     const { startLine, endLine } = parseCitation(citation);
     const definitionsContent = fs.readFileSync(path.join(srcDir, 'definitions.ts'), 'utf8');

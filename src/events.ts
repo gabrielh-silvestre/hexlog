@@ -59,6 +59,8 @@ const MilestoneData = z.strictObject({
     .array(z.strictObject({ item: Label, action: Label, text: Text }))
     .max(100)
     .optional(),
+  // P5: excluído do envelope de dedupe de `retryWithFullId` — não entra na comparação de retentativa.
+  trace: Text.optional(),
 });
 
 const VerdictData = z.strictObject({

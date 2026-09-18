@@ -13,9 +13,9 @@ diagnóstico de saúde — não a instalação; isso é do `README.md` do repo h
 
 | # | Tool | Motivo |
 |---|---|---|
-| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:496`, único lançador em todo o `src/`) |
+| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:576`, único lançador em todo o `src/`) |
 | 2 | `register_type` / `register_gate` | Opcionais — mas, se usados, precisam vir **antes** do passo 3 |
-| 3 | `create_process` | **Ponto sem volta**: congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:443-484`). Nada registrado depois vale para esse processo — não existe "atualizar"; recriar dá `PROCESS_ALREADY_EXISTS` |
+| 3 | `create_process` | Congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:450-498`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
 | 4 | `register` / `evaluate_gate` | Dependem de `loadProcess`, que só existe a partir do passo 3 |
 
 Chame `register_vocabulary` pelo menos uma vez, com qualquer `owner` — o que
@@ -27,12 +27,12 @@ destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele
 |---|---|---|
 | `create_process` com `process` em `RESERVED_PROCESS_NAMES` (`schemas`, `vocabulary`, `gates`) | `RESERVED_NAME` | `definitions.ts:21` |
 | `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts:24` |
-| `register_gate` com `name` em um dos 4 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`) | `RESERVED_NAME` | `definitions.ts:27-32` |
+| `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts:27-33` |
 | `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:395` |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED` | `event-tools.ts:508` |
-| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:529` |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:397-402` |
+| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:421` |
+| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:545` |
+| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:567` |
+| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:423-428` |
 
 Notas adicionais:
 
@@ -44,8 +44,21 @@ Notas adicionais:
   substituem: conteúdo igual ao vigente é no-op (`unchanged: true`); mudança
   que quebra (ver README, tabela de quebra por definição) exige
   `breaking: true` no input, senão lança `BREAKING_CHANGE`.
-- Os 4 gates embutidos passam trivialmente (`passed: true`) num processo com
+- Os 5 gates embutidos passam trivialmente (`passed: true`) num processo com
   zero eventos — ausência de contra-evidência, não prova de saúde do processo.
+  `no-forks` reprova quando um Verdict superado tem 2+ sucessores vivos
+  (2+ Verdicts que o citam em `supersedes` e não estão eles mesmos superados)
+  — um fan-out legítimo de um Verdict ainda vigente não conta.
+- Se `VOCABULARY_VIOLATED` (ou qualquer dúvida sobre o que o processo
+  congelou) surpreender, chame `list({project, process})`: devolve o
+  vocabulário e os gates fixados por inteiro, não só o hash.
+- `state` aceita `withData: true` para trazer o `data` do Verdict vigente
+  junto de cada item de `active`, e sempre devolve `targets` (todo target de
+  Verdict já usado, mesmo os totalmente superados) — sem precisar de um
+  `events` à parte para achar o vigente de um target.
+- Milestone aceita `trace` (opcional) como os demais eventos, mas ele é
+  ignorado na comparação de retentativa idempotente: reenviar o mesmo id
+  completo com `trace` diferente ainda deduplica.
 
 ## Exemplo mínimo: do zero a um `register` e um `evaluate_gate` verdes
 
@@ -60,7 +73,8 @@ Notas adicionais:
 2. create_process({ project: "myproj", process: "onboarding" })
    → { project: "myproj", process: "onboarding", createdAt: "<iso>",
        hashes: {...}, types: [], owners: ["core"], gates: [],
-       versions: { types: {}, vocabulary: { core: "1.0" }, gates: {} } }
+       versions: { types: {}, vocabulary: { core: "1.0" }, gates: {} },
+       existed: false, warnings: [] }
 
 3. register({
      project: "myproj", process: "onboarding",
@@ -91,7 +105,7 @@ calcula a partir do Estado do processo. Só um gate **custom** (registrado via
 ## Diagnóstico de saúde
 
 **A prova real de que o servidor está vivo é chamar `list` sem parâmetros.**
-Ele responde os 4 gates embutidos (`builtinGates`) sem precisar de nenhum
+Ele responde os 5 gates embutidos (`builtinGates`) sem precisar de nenhum
 projeto existente.
 
 **`--check` não prova o servidor.** `node scripts/install.ts --check` valida

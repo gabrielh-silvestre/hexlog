@@ -228,7 +228,7 @@ describe('M9', () => {
     expect(byName.create_process).toMatchObject({
       readOnlyHint: false,
       destructiveHint: false,
-      idempotentHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     });
   });
@@ -306,7 +306,7 @@ describe('S8', () => {
 });
 
 describe('N14', () => {
-  test('2 create_process concorrentes → exatamente um PROCESS_ALREADY_EXISTS e um process.json', async () => {
+  test('2 create_process concorrentes → os dois com sucesso, exatamente um com existed: false (P3)', async () => {
     await environment.call('register_vocabulary', { project: 'p1', owner: 'core' });
 
     const [a, b] = await Promise.all([
@@ -314,11 +314,9 @@ describe('N14', () => {
       environment.call('create_process', { project: 'p1', process: 'proc1' }),
     ]);
 
-    const errors = [a, b].filter((r) => r.isError === true);
-    const successes = [a, b].filter((r) => r.isError !== true);
-    expect(errors).toHaveLength(1);
-    expect(successes).toHaveLength(1);
-    expect((errors[0]?.structuredContent as { code: string }).code).toBe('PROCESS_ALREADY_EXISTS');
+    expect([a, b].every((r) => r.isError !== true)).toBe(true);
+    const existedFlags = [a, b].map((r) => (r.structuredContent as { existed: boolean }).existed);
+    expect(existedFlags.sort()).toEqual([false, true]);
     expect(fs.existsSync(path.join(environment.dir, 'p1', 'proc1', 'process.json'))).toBe(true);
   });
 
@@ -341,7 +339,7 @@ describe('list', () => {
       builtinGates: unknown[];
     };
     expect(body.projects).toEqual(expect.arrayContaining([{ name: 'p1', processes: 1 }]));
-    expect(body.builtinGates).toHaveLength(4);
+    expect(body.builtinGates).toHaveLength(5);
   });
 
   test('processo sem projeto, ou tipo sem processo → INVALID_INPUT', async () => {

@@ -353,6 +353,87 @@ describe('M8', () => {
   });
 });
 
+describe('P4', () => {
+  test('withData traz o data do Verdict vigente em cada item active', async () => {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim: 'a' }),
+    });
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: true,
+    });
+    const body = result.structuredContent as { active: { data?: Record<string, unknown> }[] };
+    expect(body.active[0]?.data).toMatchObject({ claim: 'a' });
+  });
+
+  test('withData acima de PAGE_CHARS_CAP (24k) → itens excedentes vêm sem data e com truncated: true', async () => {
+    await prepare(environment, PROJ, PROC);
+    const bigEvidence = 'x'.repeat(3900);
+    for (let i = 0; i < 8; i++) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: VERDICT_PREFIX,
+        agent: AGENT,
+        data: verdictData({ claim: `a${i}`, target: `hex:target:u${i}`, evidence: bigEvidence }),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: true,
+    });
+    const body = result.structuredContent as {
+      active: { data?: unknown; truncated?: boolean }[];
+    };
+    expect(body.active.some((item) => item.truncated === true)).toBe(true);
+    expect(body.active.some((item) => item.data !== undefined)).toBe(true);
+    for (const item of body.active) {
+      if (item.truncated === true) expect(item.data).toBeUndefined();
+    }
+  });
+
+  test('targets inclui target totalmente superado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const v1 = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim: 'a', target: 'hex:target:gone' }),
+    });
+    const v1Id = (v1.structuredContent as { event: EventLine }).event.id;
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim: 'a', target: 'hex:target:elsewhere', supersedes: [v1Id] }),
+    });
+
+    const result = await environment.call('state', { project: PROJ, process: PROC });
+    const body = result.structuredContent as {
+      targets: string[];
+      active: { target: string }[];
+    };
+    expect(body.targets).toEqual(
+      expect.arrayContaining(['hex:target:elsewhere', 'hex:target:gone']),
+    );
+    expect(body.active.some((item) => item.target === 'hex:target:gone')).toBe(false);
+  });
+});
+
 describe('M9', () => {
   test('annotations das 5 tools de eventos batem com §4.12', async () => {
     const { tools } = await environment.client.listTools();
@@ -785,6 +866,28 @@ describe('N2', () => {
     expectDeduplicated(resentExplicit, body1.event.seq);
   });
 
+  test('(iii) Milestone com trace: schema aceita, e reenviar o mesmo id com trace diferente ainda deduplica (P5)', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ trace: 'first-trace' }),
+    });
+    expect(first.isError).not.toBe(true);
+    const body1 = first.structuredContent as { event: EventLine };
+
+    const resent = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: body1.event.id,
+      agent: AGENT,
+      data: milestoneData({ trace: 'different-trace' }),
+    });
+    expectDeduplicated(resent, body1.event.seq);
+  });
+
   test('conteúdo diferente com o mesmo id completo → ID_CONFLITANTE', async () => {
     await prepare(environment, PROJ, PROC);
     const first = await environment.call('register', {
@@ -834,6 +937,32 @@ describe('N4', () => {
     });
     expectError(result, 'VOCABULARY_VIOLATED');
     expect(environment.tree()).toEqual(before);
+  });
+
+  test('VOCABULARY_VIOLATED.details[0] traz owners fixados e os termos aceitos do campo (P2)', async () => {
+    await registerCore(environment, PROJ);
+    await environment.call('register_vocabulary', {
+      project: PROJ,
+      owner: 'extra',
+      milestoneType: ['extended'],
+      result: [],
+      action: [],
+    });
+    await environment.call('create_process', { project: PROJ, process: PROC });
+
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ milestoneType: 'unknown' }),
+    });
+    const body = expectError(result, 'VOCABULARY_VIOLATED');
+    // `owners` são só os donos de extensão (`byOwner`); "core" não é um owner fixável à parte.
+    expect(body.details[0]).toMatchObject({
+      owners: ['extra'],
+      allowed: expect.arrayContaining(['approved', 'extended']),
+    });
   });
 
   test('resultado fora do vocabulário → grava e devolve aviso UNKNOWN_VOCABULARY', async () => {
@@ -898,6 +1027,46 @@ describe('N5', () => {
       target: 'hex:target:u1',
     });
     expect((result.structuredContent as { passed: boolean }).passed).toBe(true);
+  });
+
+  test('no-forks: 2 sucessores vivos do mesmo Verdict superado reprova (P1)', async () => {
+    await prepare(environment, PROJ, PROC);
+    const a = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim: 'a' }),
+    });
+    const aId = (a.structuredContent as { event: EventLine }).event.id;
+
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim: 'b', supersedes: [aId] }),
+    });
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim: 'c', supersedes: [aId] }),
+    });
+
+    const forked = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: 'no-forks',
+      agent: AGENT,
+      target: 'hex:target:u1',
+    });
+    const forkedBody = forked.structuredContent as { passed: boolean; evidence: unknown[] };
+    expect(forkedBody.passed).toBe(false);
+    expect(forkedBody.evidence).toEqual([
+      { verdict: aId, successors: expect.arrayContaining([expect.any(String)]) },
+    ]);
   });
 });
 

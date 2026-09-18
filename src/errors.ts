@@ -1,10 +1,16 @@
 import type { z } from 'zod';
 
-/** Um item do array `details` de `HexlogError` (§4.13): aponta o campo problemático via JSON Pointer. */
+/**
+ * Um item do array `details` de `HexlogError` (§4.13): aponta o campo problemático via JSON Pointer.
+ * `owners`/`allowed` são específicos de `VOCABULARY_VIOLATED` (P2): contexto opcional, não usado
+ * pelos demais erros.
+ */
 export type Detail = {
   path: string;
   code: string;
   message: string;
+  owners?: string[];
+  allowed?: string[];
 };
 
 /** Catálogo de códigos de erro de domínio (§4.13). */
@@ -16,7 +22,6 @@ export type ErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'PROCESS_NOT_FOUND'
   | 'TYPE_NOT_FOUND'
-  | 'PROCESS_ALREADY_EXISTS'
   | 'VOCABULARY_MISSING'
   | 'PROCESS_CORRUPTED'
   | 'INVALID_ID'

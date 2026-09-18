@@ -39,6 +39,8 @@ function cleanState(): State {
     toReview: [],
     invalidReferences: [],
     warnings: [],
+    forks: [],
+    targets: [],
     chain: cleanChain(),
   };
 }
@@ -46,6 +48,7 @@ function cleanState(): State {
 type OrphanItem = State['orphans'][number];
 type ConflictItem = State['conflicts'][number];
 type InvalidReferenceItem = State['invalidReferences'][number];
+type ForkItem = State['forks'][number];
 
 const orphanItem = (i: number): OrphanItem => ({
   milestone: `p:r:milestone:${i}`,
@@ -61,6 +64,10 @@ const breakItem = (i: number): Break => ({ index: i, reason: 'hash-mismatch' });
 const invalidReferenceItem = (i: number): InvalidReferenceItem => ({
   citedBy: `id${i}`,
   reference: `ref${i}`,
+});
+const forkItem = (i: number): ForkItem => ({
+  verdict: `superseded${i}`,
+  successors: [`successor${i}a`, `successor${i}b`],
 });
 
 // Um cenário por gate embutido: como violar o estado e onde a violação aparece.
@@ -92,12 +99,16 @@ const SCENARIOS: { name: BuiltinGateName; overrides: (count: number) => Partial<
       invalidReferences: Array.from({ length: count }, (_, i) => invalidReferenceItem(i)),
     }),
   },
+  {
+    name: 'no-forks',
+    overrides: (count) => ({ forks: Array.from({ length: count }, (_, i) => forkItem(i)) }),
+  },
 ];
 
 // ---- N5: gates embutidos ----
 
 describe('N5 › gates embutidos', () => {
-  test('BUILTIN_GATES tem exatamente os 4 nomes de BUILTIN_GATE_NAMES', () => {
+  test('BUILTIN_GATES tem exatamente os 5 nomes de BUILTIN_GATE_NAMES', () => {
     expect(Object.keys(BUILTIN_GATES).sort()).toEqual([...BUILTIN_GATE_NAMES].sort());
   });
 
@@ -143,7 +154,7 @@ describe('N5 › gates embutidos', () => {
     }
   });
 
-  test('isBuiltinGate reconhece só os 4 nomes embutidos', () => {
+  test('isBuiltinGate reconhece só os 5 nomes embutidos', () => {
     expect(isBuiltinGate('chain-intact')).toBe(true);
     expect(isBuiltinGate('my-custom-gate')).toBe(false);
   });
@@ -171,9 +182,9 @@ describe('N5 › gates embutidos', () => {
     expect(normalizeCustomEvidence(['a', 'b'])).toEqual(['a', 'b']);
   });
 
-  test('listBuiltinGates() tem 4 itens, cada um com criterio não vazio', () => {
+  test('listBuiltinGates() tem 5 itens, cada um com criterio não vazio', () => {
     const list = listBuiltinGates();
-    expect(list).toHaveLength(4);
+    expect(list).toHaveLength(5);
     for (const { criteria } of list) expect(criteria.length).toBeGreaterThan(0);
   });
 });

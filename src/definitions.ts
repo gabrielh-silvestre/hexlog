@@ -29,6 +29,7 @@ export const BUILTIN_GATE_NAMES = [
   'no-conflicts',
   'chain-intact',
   'no-invalid-references',
+  'no-forks',
 ] as const;
 
 /** Teto de caracteres canônicos (JCS) para um schema custom (§4.10). */
@@ -439,7 +440,13 @@ export function registerGate(
   };
 }
 
-/** §4.1: fixa o snapshot atual de definições do projeto num novo `process.json`, criado exclusivamente. */
+/**
+ * §4.1: fixa o snapshot atual de definições do projeto num novo `process.json`, criado exclusivamente.
+ * Idempotente (P3): se o processo já existir — seja por uma chamada anterior, seja por perder a
+ * corrida do link exclusivo — compara `hashes` com o candidato desta chamada em vez de lançar.
+ * Hashes iguais devolve o processo existente (`existed: true`, sem aviso); hashes diferentes também
+ * devolve o existente, mas com o aviso `STALE_DEFINITIONS` apontando o que mudou desde a fixação.
+ */
 export function createProcess(
   dir: string,
   project: string,
@@ -454,6 +461,8 @@ export function createProcess(
   owners: string[];
   gates: string[];
   versions: FixedVersions;
+  existed: boolean;
+  warnings: Warning[];
 } {
   if ((RESERVED_PROCESS_NAMES as readonly string[]).includes(process)) {
     throw new HexlogError('RESERVED_NAME', `process '${process}' is reserved`);
@@ -467,19 +476,90 @@ export function createProcess(
     gates: sha256hex(canonicalize(fixed.gates) ?? ''),
   };
   const createdAt = clock().toISOString();
-  const manifest: ProcessManifest = { project, process, createdAt, fixed, hashes, versions };
+  const candidate: ProcessManifest = { project, process, createdAt, fixed, hashes, versions };
 
-  createExclusiveFile(resolveSafePath(projectDir, process), manifest, process);
+  const { manifest, existed, warnings } = createOrCompareProcess(
+    resolveSafePath(projectDir, process),
+    candidate,
+  );
 
   return {
     project,
     process,
-    createdAt,
-    hashes,
-    types: Object.keys(fixed.types),
-    owners: Object.keys(fixed.vocabulary.byOwner),
-    gates: Object.keys(fixed.gates),
-    versions,
+    createdAt: manifest.createdAt,
+    hashes: manifest.hashes,
+    types: Object.keys(manifest.fixed.types),
+    owners: Object.keys(manifest.fixed.vocabulary.byOwner),
+    gates: Object.keys(manifest.fixed.gates),
+    versions: manifest.versions ?? versions,
+    existed,
+    warnings,
+  };
+}
+
+/** Detalhe de `STALE_DEFINITIONS` (P3): versão fixada no `process.json` existente × a vigente agora. */
+type StaleDetail = {
+  section: keyof FixedVersions;
+  name: string;
+  pinned: string | null;
+  current: string | null;
+};
+
+const VERSION_SECTIONS: (keyof FixedVersions)[] = ['types', 'vocabulary', 'gates'];
+
+/** Compara `versions` fixado × candidato, seção a seção, e lista só o que divergiu. */
+function detectStaleVersions(
+  pinned: FixedVersions | undefined,
+  current: FixedVersions | undefined,
+): StaleDetail[] {
+  return VERSION_SECTIONS.flatMap((section) => {
+    const pinnedSection = pinned?.[section] ?? {};
+    const currentSection = current?.[section] ?? {};
+    const names = new Set([...Object.keys(pinnedSection), ...Object.keys(currentSection)]);
+    return [...names]
+      .filter((name) => pinnedSection[name] !== currentSection[name])
+      .map((name) => ({
+        section,
+        name,
+        pinned: pinnedSection[name] ?? null,
+        current: currentSection[name] ?? null,
+      }));
+  });
+}
+
+/**
+ * §4.1.1: cria `process.json` exclusivamente (vence quem chega primeiro). Quem perde o `EEXIST` —
+ * seja retentativa do agente, seja a corrida entre duas chamadas concorrentes — lê o vigente e
+ * compara com o candidato desta chamada, em vez de lançar (P3).
+ */
+function createOrCompareProcess(
+  processDir: string,
+  candidate: ProcessManifest,
+): { manifest: ProcessManifest; existed: boolean; warnings: Warning[] } {
+  const file = path.join(processDir, 'process.json');
+  try {
+    writeThenLinkExclusive(processDir, file, candidate);
+    return { manifest: candidate, existed: false, warnings: [] };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+  }
+
+  const existing = readJson(file) as ProcessManifest;
+  if (canonicalize(existing.hashes) === canonicalize(candidate.hashes)) {
+    return { manifest: existing, existed: true, warnings: [] };
+  }
+
+  const details = detectStaleVersions(existing.versions, candidate.versions);
+  return {
+    manifest: existing,
+    existed: true,
+    warnings: [
+      {
+        code: 'STALE_DEFINITIONS',
+        message: `process '${existing.process}' already exists with a different definitions snapshot`,
+        details,
+      },
+    ],
   };
 }
 
@@ -523,7 +603,7 @@ function extractVocab(content: Record<string, unknown>): Vocab {
 
 /**
  * Grava `content` num arquivo temporário em `dir` e o linka exclusivamente como `file`
- * (vence quem chega primeiro — usado tanto por `createExclusiveFile` quanto por
+ * (vence quem chega primeiro — usado tanto por `createOrCompareProcess` quanto por
  * `writeVersionExclusive`, D1). Sucesso: retorna. `EEXIST`: relança tal qual, sem
  * empacotar — cabe ao chamador decidir se isso é erro definitivo ou motivo de retry.
  * Qualquer outro erro de I/O já sai como `HexlogError('IO_ERROR')`. O `.tmp` é sempre
@@ -551,19 +631,6 @@ function writeThenLinkExclusive(dir: string, file: string, content: unknown): vo
     throw ioError(e);
   } finally {
     fs.unlinkSync(tmp);
-  }
-}
-
-/** §4.1.1: criação exclusiva de `process.json` — vence quem chega primeiro. */
-function createExclusiveFile(processDir: string, manifest: ProcessManifest, process: string): void {
-  const file = path.join(processDir, 'process.json');
-  try {
-    writeThenLinkExclusive(processDir, file, manifest);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new HexlogError('PROCESS_ALREADY_EXISTS', `process '${process}' already exists`);
-    }
-    throw e;
   }
 }
 
