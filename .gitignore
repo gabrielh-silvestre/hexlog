@@ -5,3 +5,4 @@ dist/
 !.omc/skills/
 graphify-out/
 .gitnexus/
+.ignore/
