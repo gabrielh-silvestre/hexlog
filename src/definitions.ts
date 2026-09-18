@@ -545,6 +545,7 @@ function createOrCompareProcess(
   }
 
   const existing = readJson(file) as ProcessManifest;
+  verifyHashes(existing);
   if (canonicalize(existing.hashes) === canonicalize(candidate.hashes)) {
     return { manifest: existing, existed: true, warnings: [] };
   }

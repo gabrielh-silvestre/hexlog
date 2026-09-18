@@ -284,6 +284,19 @@ describe('process.json — bloco versions (Leva 6)', () => {
     expect(error.code).toBe('PROCESS_CORRUPTED');
   });
 
+  test('create_process idempotente sobre process.json adulterado → PROCESS_CORRUPTED, sem devolver o manifesto', () => {
+    prepareCoreAndType();
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    const file = path.join(dir, PROJECT, 'p1', 'process.json');
+
+    const tampered = readManifest('p1');
+    tampered.fixed.gates = { 'ghost-gate': { criteria: 'x' } };
+    fs.writeFileSync(file, JSON.stringify(tampered));
+
+    const error = captureError(() => createProcess(dir, PROJECT, 'p1', () => new Date()));
+    expect(error.code).toBe('PROCESS_CORRUPTED');
+  });
+
   test('buildSnapshot resolve um projeto misto: dono só-legado, só-diretório, e com os dois (vale o do diretório)', () => {
     const vocabDir = path.join(dir, PROJECT, 'vocabulary');
     fs.mkdirSync(vocabDir, { recursive: true });

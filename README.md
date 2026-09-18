@@ -214,6 +214,8 @@ exigem `result: {passed, evidence}` do agente.
 (2+ Vereditos que o citam em `supersedes` e não estão eles mesmos superados) —
 um fan-out legítimo de um Veredito ainda vigente (Vereditos distintos, cada um
 com seu próprio `claim`/`target`) não conta como fork.
+Para resolver um fork, registre um Veredito que supere ramos em `supersedes`
+até restar 1 sucessor vivo — superar só um dos dois ramos já basta.
 
 O Marco de gate registrado **não abre nem fecha o ciclo** do alvo: avaliar
 `no-orphans` sobre um Marco vencido não faz esse Marco deixar de aparecer em

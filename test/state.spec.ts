@@ -219,6 +219,29 @@ describe('P1 › forks', () => {
 
     expect(projection.forks).toEqual([]);
   });
+
+  test('recuperação: D supera os dois ramos (B e C) → forks vazio', () => {
+    const a = verdict({ target: TARGET_1, claim: 'x' }, { timestamp: T(0) });
+    const b = verdict({ target: TARGET_1, claim: 'y', supersedes: [a.id] }, { timestamp: T(1) });
+    const c = verdict({ target: TARGET_1, claim: 'z', supersedes: [a.id] }, { timestamp: T(2) });
+    const d = verdict(
+      { target: TARGET_1, claim: 'w', supersedes: [b.id, c.id] },
+      { timestamp: T(3) },
+    );
+    const projection = projectState([a, b, c, d], emptyVocabulary, T(3));
+
+    expect(projection.forks).toEqual([]);
+  });
+
+  test('recuperação: D supera só um ramo (B) → resta 1 sucessor vivo (C) e forks fica vazio', () => {
+    const a = verdict({ target: TARGET_1, claim: 'x' }, { timestamp: T(0) });
+    const b = verdict({ target: TARGET_1, claim: 'y', supersedes: [a.id] }, { timestamp: T(1) });
+    const c = verdict({ target: TARGET_1, claim: 'z', supersedes: [a.id] }, { timestamp: T(2) });
+    const d = verdict({ target: TARGET_1, claim: 'y', supersedes: [b.id] }, { timestamp: T(3) });
+    const projection = projectState([a, b, c, d], emptyVocabulary, T(3));
+
+    expect(projection.forks).toEqual([]);
+  });
 });
 
 describe('N3 › órfãos (relógio injetado)', () => {

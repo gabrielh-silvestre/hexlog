@@ -13,7 +13,7 @@ diagnóstico de saúde — não a instalação; isso é do `README.md` do repo h
 
 | # | Tool | Motivo |
 |---|---|---|
-| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:576`, único lançador em todo o `src/`) |
+| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:577`, único lançador em todo o `src/`) |
 | 2 | `register_type` / `register_gate` | Opcionais — mas, se usados, precisam vir **antes** do passo 3 |
 | 3 | `create_process` | Congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:450-498`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
 | 4 | `register` / `evaluate_gate` | Dependem de `loadProcess`, que só existe a partir do passo 3 |
@@ -49,6 +49,8 @@ Notas adicionais:
   `no-forks` reprova quando um Verdict superado tem 2+ sucessores vivos
   (2+ Verdicts que o citam em `supersedes` e não estão eles mesmos superados)
   — um fan-out legítimo de um Verdict ainda vigente não conta.
+  Para resolver um fork, registre um Verdict que supere ramos em `supersedes`
+  até restar 1 sucessor vivo (superar só um dos dois ramos já basta).
 - Se `VOCABULARY_VIOLATED` (ou qualquer dúvida sobre o que o processo
   congelou) surpreender, chame `list({project, process})`: devolve o
   vocabulário e os gates fixados por inteiro, não só o hash.

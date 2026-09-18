@@ -250,7 +250,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
  * não bastaria para toda citação do arquivo.
  */
 const CITATION_EXPECTATIONS: Record<string, string> = {
-  'definitions.ts:576': 'VOCABULARY_MISSING',
+  'definitions.ts:577': 'VOCABULARY_MISSING',
   'definitions.ts:450-498': 'createProcess',
   'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
   'definitions.ts:24': 'RESERVED_TYPE_NAMES',

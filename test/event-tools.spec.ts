@@ -346,10 +346,13 @@ describe('M8', () => {
     const result = await environment.call('state', { project: PROJ, process: PROC });
     const body = result.structuredContent as {
       active: unknown[];
+      targets: string[];
       totals: Record<string, number>;
     };
     expect(body.active).toHaveLength(100);
     expect(body.totals.active).toBe(150);
+    expect(body.targets).toHaveLength(100);
+    expect(body.totals.targets).toBe(150);
   });
 });
 
@@ -402,6 +405,36 @@ describe('P4', () => {
     for (const item of body.active) {
       if (item.truncated === true) expect(item.data).toBeUndefined();
     }
+  });
+
+  test('withData: itens conflict contam no PAGE_CHARS_CAP e recebem truncated: true, nunca data', async () => {
+    await prepare(environment, PROJ, PROC);
+    const bigClaim = (i: number) => `${i}`.padEnd(3900, 'x');
+    for (let i = 0; i < 8; i++) {
+      for (const source of ['f1', 'f2']) {
+        const result = await environment.call('register', {
+          project: PROJ,
+          process: PROC,
+          id: VERDICT_PREFIX,
+          agent: AGENT,
+          data: verdictData({ claim: bigClaim(i), target: `hex:target:u${i}`, source }),
+        });
+        expect(result.isError).not.toBe(true);
+      }
+    }
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: true,
+    });
+    const body = result.structuredContent as {
+      active: { status: string; data?: unknown; truncated?: boolean }[];
+    };
+    expect(body.active.every((item) => item.status === 'conflict')).toBe(true);
+    expect(body.active.some((item) => item.truncated === true)).toBe(true);
+    expect(body.active.every((item) => item.data === undefined)).toBe(true);
   });
 
   test('targets inclui target totalmente superado', async () => {

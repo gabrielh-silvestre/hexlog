@@ -711,8 +711,8 @@ function resolveState(
   return {
     logThrough: state.logThrough,
     now: state.now,
-    totals,
-    targets: state.targets,
+    totals: { ...totals, targets: state.targets.length },
+    targets: state.targets.slice(0, SECTION_ITEMS_CAP),
     ...lists,
     ...(included.has('chain') ? { chain: state.chain } : {}),
   };
@@ -720,8 +720,9 @@ function resolveState(
 
 /**
  * P4: com `withData`, anexa a `data` do Verdict vigente a cada item de status `active` (itens de
- * `conflict`, sem vigente único, ficam como estão). Respeita `PAGE_CHARS_CAP`: uma vez que o
- * orçamento estoura, os itens restantes vêm sem `data` e com `truncated: true`.
+ * `conflict`, sem vigente único, não ganham `data` mas contam no orçamento). Respeita
+ * `PAGE_CHARS_CAP`: uma vez que o orçamento estoura, os itens restantes vêm sem `data` e com
+ * `truncated: true`.
  */
 function attachVerdictData(
   items: State['active'],
@@ -734,10 +735,10 @@ function attachVerdictData(
   let overBudget = false;
 
   return items.map((item, index) => {
-    if (item.status !== 'active') return item;
     if (overBudget) return { ...item, truncated: true };
 
-    const withField = { ...item, data: verdictById[item.active]?.data };
+    const withField =
+      item.status === 'active' ? { ...item, data: verdictById[item.active]?.data } : item;
     const increment = JSON.stringify(withField).length + (index > 0 ? 1 : 0);
     if (size + increment <= PAGE_CHARS_CAP) {
       size += increment;
