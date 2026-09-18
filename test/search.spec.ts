@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { orderBy } from 'es-toolkit';
+import { orderBy, range } from 'es-toolkit';
 import {
   search,
   isCandidate,
@@ -371,7 +371,7 @@ describe('M12', () => {
       .filter(({ line }) => isCandidate(line, filters))
       .map(({ index }) => index)
       .sort((a, b) => a - b);
-    expect(indices).toEqual(Array.from({ length: 10 }, (_, i) => 10 + i));
+    expect(indices).toEqual(range(10, 20));
   });
 
   test('d) busca + target + tipo: interseção', () => {

@@ -3,7 +3,7 @@ import { randomUUIDv7 } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import canonicalize from 'canonicalize';
-import { isNil } from 'es-toolkit';
+import { isNil, range } from 'es-toolkit';
 import { search as runSearch } from '../src/search.ts';
 import { anchor, expectedPrevHash, nextSeq, sha256hex, type Chain } from '../src/chain.ts';
 import type { ProcessManifest } from '../src/definitions.ts';
@@ -309,7 +309,7 @@ describe('M8', () => {
     expect(pages).toHaveLength(4);
     const all = pages.flatMap((page) => page.events);
     expect(all).toHaveLength(250);
-    expect(all.map((event) => event.seq)).toEqual(Array.from({ length: 250 }, (_, i) => i));
+    expect(all.map((event) => event.seq)).toEqual(range(250));
     expect(pages.at(-1)?.nextCursor).toBeNull();
     for (const page of pages) {
       if (page.events.length > 1) {
@@ -603,7 +603,7 @@ describe('M11', () => {
     expect(pages).toHaveLength(4);
     const all = pages.flatMap((page) => page.events);
     expect(all).toHaveLength(250);
-    expect(all.map((event) => event.seq)).toEqual(Array.from({ length: 250 }, (_, i) => i));
+    expect(all.map((event) => event.seq)).toEqual(range(250));
     expect(pages.at(-1)?.nextCursor).toBeNull();
     for (const page of pages) {
       if (page.events.length > 1) {

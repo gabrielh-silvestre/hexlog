@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { isUndefined, omitBy } from 'es-toolkit';
+import { isUndefined, omitBy, range } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { dataDir } from '../src/directory.ts';
 import type { LogRecord } from '../src/log.ts';
@@ -440,9 +440,7 @@ describe('C1', () => {
       .filter((line) => !isEmpty(line));
     expect(fileLines).toHaveLength(100);
     const links = fileLines.map((line) => JSON.parse(line) as { seq: number; id: string });
-    expect(links.map((link) => link.seq).sort((a, b) => a - b)).toEqual(
-      Array.from({ length: 100 }, (_, index) => index),
-    );
+    expect(links.map((link) => link.seq).sort((a, b) => a - b)).toEqual(range(100));
     expect(new Set(links.map((link) => link.id)).size).toBe(100);
     expect(chainResult.ok).toBe(true);
 

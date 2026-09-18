@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import canonicalize from 'canonicalize';
-import { isNil, pick } from 'es-toolkit';
+import { difference, isNil, mapValues, pick, union } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { z } from 'zod';
 import { anchor, sha256hex } from './chain.ts';
@@ -325,14 +325,12 @@ function detectVocabularyBreak(
 ): { breaking: boolean; details: Detail[] } {
   const details: Detail[] = [];
   for (const key of CLOSED_VOCAB_KEYS) {
-    for (const term of current[key]) {
-      if (!next[key].includes(term)) {
-        details.push({
-          path: `/${key}`,
-          code: 'removed',
-          message: `term removed from ${key}: ${term}`,
-        });
-      }
+    for (const term of difference(current[key], next[key])) {
+      details.push({
+        path: `/${key}`,
+        code: 'removed',
+        message: `term removed from ${key}: ${term}`,
+      });
     }
   }
   return { breaking: !isEmpty(details), details };
@@ -515,8 +513,8 @@ function detectStaleVersions(
   return VERSION_SECTIONS.flatMap((section) => {
     const pinnedSection = pinned?.[section] ?? {};
     const currentSection = current?.[section] ?? {};
-    const names = new Set([...Object.keys(pinnedSection), ...Object.keys(currentSection)]);
-    return [...names]
+    const names = union(Object.keys(pinnedSection), Object.keys(currentSection));
+    return names
       .filter((name) => pinnedSection[name] !== currentSection[name])
       .map((name) => ({
         section,
@@ -706,11 +704,8 @@ export function loadProcess(dir: string, project: string, process: string): Load
   const manifest = loadedManifest as ProcessManifest;
   verifyHashes(manifest);
 
-  const customSchemas = Object.fromEntries(
-    Object.entries(manifest.fixed.types).map(([name, schema]) => [
-      name,
-      z.fromJSONSchema(schema as z.core.JSONSchema.JSONSchema),
-    ]),
+  const customSchemas = mapValues(manifest.fixed.types, (schema) =>
+    z.fromJSONSchema(schema as z.core.JSONSchema.JSONSchema),
   );
 
   return {
@@ -761,7 +756,7 @@ function listDefinitions(partDir: string): DefinitionFile[] {
     (entry) => entry.isFile() && entry.name.endsWith('.json'),
   ).map((file) => path.basename(file, '.json'));
   const dirNames = listDirectoryNames(partDir, (entry) => entry.isDirectory());
-  const names = [...new Set([...legacyNames, ...dirNames])];
+  const names = union(legacyNames, dirNames);
 
   return names.flatMap((name) => {
     const current = resolveCurrentDefinition(partDir, name);

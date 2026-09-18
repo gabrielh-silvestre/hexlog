@@ -1,6 +1,7 @@
 import { describe, expect, test } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { median } from 'es-toolkit';
 import { search } from '../src/search.ts';
 import type { ProcessManifest } from '../src/definitions.ts';
 import { writeCorpus, generateCorpus } from './fixtures/corpus.ts';
@@ -26,12 +27,6 @@ async function prepareProcess(environment: Environment): Promise<ProcessManifest
   await environment.call('create_process', { project: PROJ, process: PROC });
   const content = fs.readFileSync(path.join(environment.dir, PROJ, PROC, 'process.json'), 'utf8');
   return JSON.parse(content) as ProcessManifest;
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
 describe('M13', () => {

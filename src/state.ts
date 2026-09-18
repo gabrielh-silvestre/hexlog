@@ -1,4 +1,4 @@
-import { groupBy, isNil, keyBy, pick, uniqBy } from 'es-toolkit';
+import { groupBy, isNil, keyBy, pick, uniq, uniqBy } from 'es-toolkit';
 import { z } from 'zod';
 import type { Chain } from './chain.ts';
 import { Name } from './events.ts';
@@ -174,7 +174,7 @@ function computeSupersession(verdicts: EventLine[]): SupersessionResult {
 
 /** P4: targets de todo Verdict do log, inclusive os sem vigente, ordenados. */
 function calculateTargets(verdicts: EventLine[]): string[] {
-  return [...new Set(verdicts.map((v) => (v.data as VerdictFields).target))].sort();
+  return uniq(verdicts.map((v) => (v.data as VerdictFields).target)).sort();
 }
 
 /** Ciclo do Milestone por target (§4.8, pseudocódigo do plano): reduce puro, gate nunca abre nem fecha (R-3). */
@@ -291,7 +291,7 @@ export function validateField(
 export function allowedTerms(vocabulary: Vocabulary, field: VocabularyField): string[] {
   const { key } = FIELD_POLICY_BY_KEY[field];
   const extended = Object.values(vocabulary.byOwner).flatMap((vocab) => vocab[key]);
-  return [...new Set([...vocabulary.core[key], ...extended])];
+  return uniq([...vocabulary.core[key], ...extended]);
 }
 
 function collectWarnings(lines: EventLine[], vocabulary: Vocabulary): Projection['warnings'] {

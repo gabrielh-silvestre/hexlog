@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import canonicalize from 'canonicalize';
-import { isNil } from 'es-toolkit';
-import { omit } from 'es-toolkit/compat';
+import { isNil, isNotNil, omit } from 'es-toolkit';
 import { z } from 'zod';
 import type { Detail } from './errors.ts';
 import { EventLine, Hash } from './events.ts';
@@ -110,7 +109,7 @@ export function verifyChain(
     if (!hashOk) breaks.push({ index, reason: 'hash-mismatch' });
     resolvePending(seqOk && hashOk);
 
-    if (!isNil(validateData) && !isNil(validateData(link.type, link.data))) {
+    if (isNotNil(validateData) && isNotNil(validateData(link.type, link.data))) {
       breaks.push({ index, reason: 'invalid-data' });
     }
 

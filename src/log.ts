@@ -4,6 +4,7 @@ import { randomBytes, randomUUIDv7 } from 'node:crypto';
 // a partir do teste (test/log.spec.ts precisa espiar o mesmo objeto `fs` que este módulo usa).
 import fs from 'node:fs';
 import * as path from 'node:path';
+import { delay } from 'es-toolkit';
 import { isEmpty, isNil } from 'es-toolkit/compat';
 import { expectedPrevHash, isValidLink, nextSeq } from './chain.ts';
 import { HexlogError } from './errors.ts';
@@ -148,7 +149,7 @@ async function acquireLock(
       if (Date.now() - start > options.timeoutMs) {
         throw new HexlogError('LOCK_TIMEOUT', `lock not released within ${options.timeoutMs}ms`);
       }
-      await waitMs(LOCK_RETRY_MS);
+      await delay(LOCK_RETRY_MS);
     }
   }
 }
@@ -187,10 +188,4 @@ function readToken(lockDir: string): string | null {
   } catch {
     return null;
   }
-}
-
-// Espera assíncrona (DE-29): fora da seção crítica, então não precisa bloquear a thread — libera
-// o event loop para outras chamadas da mesma sessão MCP enquanto este pedido aguarda o retry.
-function waitMs(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

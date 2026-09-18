@@ -13,9 +13,9 @@ diagnóstico de saúde — não a instalação; isso é do `README.md` do repo h
 
 | # | Tool | Motivo |
 |---|---|---|
-| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:577`, único lançador em todo o `src/`) |
+| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:575`, único lançador em todo o `src/`) |
 | 2 | `register_type` / `register_gate` | Opcionais — mas, se usados, precisam vir **antes** do passo 3 |
-| 3 | `create_process` | Congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:450-498`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
+| 3 | `create_process` | Congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:448-496`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
 | 4 | `register` / `evaluate_gate` | Dependem de `loadProcess`, que só existe a partir do passo 3 |
 
 Chame `register_vocabulary` pelo menos uma vez, com qualquer `owner` — o que

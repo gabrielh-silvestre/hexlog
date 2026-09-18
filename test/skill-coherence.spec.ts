@@ -250,8 +250,8 @@ const FIELD_NAME_ALLOWLIST = new Set([
  * não bastaria para toda citação do arquivo.
  */
 const CITATION_EXPECTATIONS: Record<string, string> = {
-  'definitions.ts:577': 'VOCABULARY_MISSING',
-  'definitions.ts:450-498': 'createProcess',
+  'definitions.ts:575': 'VOCABULARY_MISSING',
+  'definitions.ts:448-496': 'createProcess',
   'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
   'definitions.ts:24': 'RESERVED_TYPE_NAMES',
   'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
@@ -340,8 +340,8 @@ describe('citações arquivo.ts:N(-M)? na skill × código real em src/', () => 
     }
   });
 
-  test('definitions.ts:450-498 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
-    const citation = 'definitions.ts:450-498';
+  test('definitions.ts:448-496 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
+    const citation = 'definitions.ts:448-496';
     expect(citedFileCitations).toContain(citation);
     const { startLine, endLine } = parseCitation(citation);
     const definitionsContent = fs.readFileSync(path.join(srcDir, 'definitions.ts'), 'utf8');
