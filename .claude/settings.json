@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "c=$(jq -r '.tool_input.command // \"\"'); if printf '%s' \"$c\" | grep -qE 'gitnexus(@[^ ]+)?[[:space:]]+analyze' && ! printf '%s' \"$c\" | grep -qE -- '--(skip-agents-md|index-only)'; then echo 'hexlog: run `gitnexus analyze --skip-agents-md`. Without the flag it injects a gitnexus block into AGENTS.md and CLAUDE.md.' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
