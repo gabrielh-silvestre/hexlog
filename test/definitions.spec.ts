@@ -225,6 +225,75 @@ describe('createProcess / loadProcess (N14)', () => {
   });
 });
 
+describe('process.json — bloco versions (Leva 6)', () => {
+  test('critério 9: createProcess grava versions apontando as vigentes e a resposta traz o mesmo bloco', () => {
+    prepareCoreAndType();
+    const result = createProcess(dir, PROJECT, 'p1', () => new Date());
+    const manifest = readManifest('p1');
+
+    const expected = { types: { decision: '1.0' }, vocabulary: { core: '1.0' }, gates: {} };
+    expect(manifest.versions).toEqual(expected);
+    expect(result.versions).toEqual(expected);
+  });
+
+  test('critério 12: process.json legado sem "versions" carrega sem PROCESS_CORRUPTED', () => {
+    prepareCoreAndType();
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    const file = path.join(dir, PROJECT, 'p1', 'process.json');
+    const legacyManifest = readManifest('p1');
+    delete legacyManifest.versions;
+    fs.writeFileSync(file, JSON.stringify(legacyManifest));
+
+    expect(() => loadProcess(dir, PROJECT, 'p1')).not.toThrow();
+    expect(loadProcess(dir, PROJECT, 'p1').manifest.versions).toBeUndefined();
+  });
+
+  test('versions fica fora do hash: adulterá-lo não dispara PROCESS_CORRUPTED, mas adulterar fixed.* continua disparando', () => {
+    prepareCoreAndType();
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    const file = path.join(dir, PROJECT, 'p1', 'process.json');
+
+    const tamperedVersions = readManifest('p1');
+    tamperedVersions.versions = { types: { decision: '9.9' }, vocabulary: {}, gates: {} };
+    fs.writeFileSync(file, JSON.stringify(tamperedVersions));
+    expect(() => loadProcess(dir, PROJECT, 'p1')).not.toThrow();
+
+    const tamperedFixed = readManifest('p1');
+    tamperedFixed.fixed.gates = { 'ghost-gate': { criteria: 'x' } };
+    fs.writeFileSync(file, JSON.stringify(tamperedFixed));
+    const error = captureError(() => loadProcess(dir, PROJECT, 'p1'));
+    expect(error.code).toBe('PROCESS_CORRUPTED');
+  });
+
+  test('buildSnapshot resolve um projeto misto: dono só-legado, só-diretório, e com os dois (vale o do diretório)', () => {
+    const vocabDir = path.join(dir, PROJECT, 'vocabulary');
+    fs.mkdirSync(vocabDir, { recursive: true });
+    const vocabFile = (owner: string, milestoneType: string[]) =>
+      JSON.stringify({ owner, milestoneType, result: [], action: [], hash: '', registeredAt: '' });
+
+    fs.writeFileSync(path.join(vocabDir, 'core.json'), vocabFile('core', []));
+    // "a": só-legado.
+    fs.writeFileSync(path.join(vocabDir, 'a.json'), vocabFile('a', ['a1']));
+    // "b": só-diretório.
+    fs.mkdirSync(path.join(vocabDir, 'b'), { recursive: true });
+    fs.writeFileSync(path.join(vocabDir, 'b', '1.0.json'), vocabFile('b', ['b1']));
+    // "c": os dois — o diretório (1.1) vale, não o legado.
+    fs.writeFileSync(path.join(vocabDir, 'c.json'), vocabFile('c', ['c-legacy']));
+    fs.mkdirSync(path.join(vocabDir, 'c'), { recursive: true });
+    fs.writeFileSync(path.join(vocabDir, 'c', '1.1.json'), vocabFile('c', ['c-dir']));
+
+    const result = createProcess(dir, PROJECT, 'p1', () => new Date());
+    const manifest = readManifest('p1');
+
+    expect(manifest.fixed.vocabulary.byOwner).toEqual({
+      a: { milestoneType: ['a1'], result: [], action: [] },
+      b: { milestoneType: ['b1'], result: [], action: [] },
+      c: { milestoneType: ['c-dir'], result: [], action: [] },
+    });
+    expect(result.versions.vocabulary).toEqual({ core: '1.0', a: '1.0', b: '1.0', c: '1.1' });
+  });
+});
+
 describe('vocabulário', () => {
   test('hash de fixado.vocabulary independe da ordem em que os donos foram registrados', () => {
     registerVocabulary(dir, PROJECT, 'core', { milestoneType: [], result: [], action: [] });

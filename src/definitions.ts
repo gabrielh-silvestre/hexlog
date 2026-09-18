@@ -56,7 +56,18 @@ export type Registered = z.infer<typeof Registered>;
 export const Hashes = z.object({ schemas: Hash, vocabulary: Hash, gates: Hash });
 export type Hashes = z.infer<typeof Hashes>;
 
-/** Manifesto fixado de um processo (`process.json`, §4.1). */
+/** Versão vigente de cada definição fixada no momento do `createProcess` (§4.1, leva 6). */
+export type FixedVersions = {
+  types: Record<string, string>;
+  vocabulary: Record<string, string>;
+  gates: Record<string, string>;
+};
+
+/**
+ * Manifesto fixado de um processo (`process.json`, §4.1). `versions` é informativo: fica **fora**
+ * de `hashes`/`fixed` (não entra em `verifyHashes`) e é opcional para aceitar sem erro um
+ * `process.json` legado gravado antes da leva 6, que nunca teve esse campo.
+ */
 export type ProcessManifest = {
   project: string;
   process: string;
@@ -67,6 +78,7 @@ export type ProcessManifest = {
     gates: Record<string, { criteria: string }>;
   };
   hashes: Hashes;
+  versions?: FixedVersions;
 };
 
 /** Processo carregado e pronto para uso: manifesto verificado, âncora e schemas Zod dos tipos custom. */
@@ -196,20 +208,21 @@ export function createProcess(
   types: string[];
   owners: string[];
   gates: string[];
+  versions: FixedVersions;
 } {
   if ((RESERVED_PROCESS_NAMES as readonly string[]).includes(process)) {
     throw new HexlogError('RESERVED_NAME', `process '${process}' is reserved`);
   }
 
   const projectDir = resolveSafePath(dir, project);
-  const fixed = buildSnapshot(projectDir);
+  const { fixed, versions } = buildSnapshot(projectDir);
   const hashes: Hashes = {
     schemas: sha256hex(canonicalize(fixed.types) ?? ''),
     vocabulary: sha256hex(canonicalize(fixed.vocabulary) ?? ''),
     gates: sha256hex(canonicalize(fixed.gates) ?? ''),
   };
   const createdAt = clock().toISOString();
-  const manifest: ProcessManifest = { project, process, createdAt, fixed, hashes };
+  const manifest: ProcessManifest = { project, process, createdAt, fixed, hashes, versions };
 
   createExclusiveFile(resolveSafePath(projectDir, process), manifest, process);
 
@@ -221,16 +234,17 @@ export function createProcess(
     types: Object.keys(fixed.types),
     owners: Object.keys(fixed.vocabulary.byOwner),
     gates: Object.keys(fixed.gates),
+    versions,
   };
 }
 
-function buildSnapshot(projectDir: string): ProcessManifest['fixed'] {
-  const types = Object.fromEntries(
-    listDefinitions(path.join(projectDir, 'schemas')).map((d) => [
-      d.name,
-      d.content.schema as object,
-    ]),
-  );
+/** Conteúdo fixado de cada definição (inalterado) e a versão vigente de cada uma (bloco `versions`, leva 6). */
+function buildSnapshot(projectDir: string): {
+  fixed: ProcessManifest['fixed'];
+  versions: FixedVersions;
+} {
+  const typeDefs = listDefinitions(path.join(projectDir, 'schemas'));
+  const types = Object.fromEntries(typeDefs.map((d) => [d.name, d.content.schema as object]));
 
   const vocabFiles = listDefinitions(path.join(projectDir, 'vocabulary'));
   if (isEmpty(vocabFiles)) {
@@ -244,14 +258,18 @@ function buildSnapshot(projectDir: string): ProcessManifest['fixed'] {
     ),
   };
 
+  const gateDefs = listDefinitions(path.join(projectDir, 'gates'));
   const gates = Object.fromEntries(
-    listDefinitions(path.join(projectDir, 'gates')).map((d) => [
-      d.name,
-      { criteria: d.content.criteria as string },
-    ]),
+    gateDefs.map((d) => [d.name, { criteria: d.content.criteria as string }]),
   );
 
-  return { types, vocabulary, gates };
+  const versions: FixedVersions = {
+    types: Object.fromEntries(typeDefs.map((d) => [d.name, d.version])),
+    vocabulary: Object.fromEntries(vocabFiles.map((d) => [d.name, d.version])),
+    gates: Object.fromEntries(gateDefs.map((d) => [d.name, d.version])),
+  };
+
+  return { fixed: { types, vocabulary, gates }, versions };
 }
 
 function extractVocab(content: Record<string, unknown>): Vocab {
@@ -417,16 +435,25 @@ function verifyHashes(manifest: ProcessManifest): void {
   }
 }
 
-type DefinitionFile = { name: string; content: Record<string, unknown> };
+type DefinitionFile = { name: string; version: string; content: Record<string, unknown> };
 
-/** Lê todo `.json` (não `.`-prefixado) de `partDir`, ou `[]` se o diretório não existe. */
+/**
+ * Definições vigentes de `partDir` (`schemas/`, `vocabulary/`, `gates/`): nomes vêm da união dos
+ * arquivos `.json` soltos (legado) com os subdiretórios versionados (leva 3), sem duplicar um
+ * nome presente nos dois; cada nome é resolvido para a sua vigente via `resolveCurrentDefinition`.
+ */
 function listDefinitions(partDir: string): DefinitionFile[] {
-  return listDirectoryNames(partDir, (entry) => entry.isFile() && entry.name.endsWith('.json')).map(
-    (file) => ({
-      name: path.basename(file, '.json'),
-      content: readJson(path.join(partDir, file)) as Record<string, unknown>,
-    }),
-  );
+  const legacyNames = listDirectoryNames(
+    partDir,
+    (entry) => entry.isFile() && entry.name.endsWith('.json'),
+  ).map((file) => path.basename(file, '.json'));
+  const dirNames = listDirectoryNames(partDir, (entry) => entry.isDirectory());
+  const names = [...new Set([...legacyNames, ...dirNames])];
+
+  return names.flatMap((name) => {
+    const current = resolveCurrentDefinition(partDir, name);
+    return isNil(current) ? [] : [{ name, ...current }];
+  });
 }
 
 /** Lê os nomes de entradas de `parentDir` que casam `filter`, ignorando `.`-prefixados; `[]` se o diretório não existe. */
@@ -530,6 +557,9 @@ export function listProjects(dir: string): { name: string; processes: string[] }
   }));
 }
 
+/** Uma definição do projeto (tipo, vocabulário ou gate) com a vigente e o histórico completo de versões. */
+type DefinitionSummary = { name: string; hash: string; version: string; versions: string[] };
+
 /** Detalhe de um projeto: processos, tipos, vocabulário e gates registrados. */
 export function readProject(
   dir: string,
@@ -537,9 +567,9 @@ export function readProject(
 ): {
   name: string;
   processes: { name: string; createdAt: string }[];
-  types: { name: string; hash: string }[];
-  vocabulary: { owner: string; hash: string }[];
-  gates: { name: string; hash: string }[];
+  types: DefinitionSummary[];
+  vocabulary: (Omit<DefinitionSummary, 'name'> & { owner: string })[];
+  gates: DefinitionSummary[];
 } {
   const projectDir = resolveSafePath(dir, project);
   if (!fs.existsSync(projectDir)) {
@@ -551,17 +581,22 @@ export function readProject(
     return { name, createdAt: manifest.createdAt };
   });
 
-  const namesAndHashes = (partDir: string) =>
-    listDefinitions(partDir).map((d) => ({ name: d.name, hash: d.content.hash as string }));
+  const summarize = (partDir: string): DefinitionSummary[] =>
+    listDefinitions(partDir).map((d) => ({
+      name: d.name,
+      hash: d.content.hash as string,
+      version: d.version,
+      versions: listVersions(partDir, d.name),
+    }));
 
   return {
     name: project,
     processes,
-    types: namesAndHashes(path.join(projectDir, 'schemas')),
-    vocabulary: namesAndHashes(path.join(projectDir, 'vocabulary')).map(({ name, hash }) => ({
+    types: summarize(path.join(projectDir, 'schemas')),
+    vocabulary: summarize(path.join(projectDir, 'vocabulary')).map(({ name, ...rest }) => ({
       owner: name,
-      hash,
+      ...rest,
     })),
-    gates: namesAndHashes(path.join(projectDir, 'gates')),
+    gates: summarize(path.join(projectDir, 'gates')),
   };
 }
