@@ -9,7 +9,7 @@ import { isEmpty } from 'es-toolkit/compat';
 import { z } from 'zod';
 import { anchor, sha256hex } from './chain.ts';
 import { resolveSafePath, ioError, writeJsonAtomic, readJson } from './storage.ts';
-import { HexlogError } from './errors.ts';
+import { HexlogError, type Detail } from './errors.ts';
 import { Hash, Name } from './events.ts';
 import type { Vocab, Vocabulary } from './state.ts';
 
@@ -258,18 +258,24 @@ function extractVocab(content: Record<string, unknown>): Vocab {
   return pick(content, ['milestoneType', 'result', 'action']) as Vocab;
 }
 
-/** §4.1.1: criação exclusiva de `process.json` via `linkSync` — vence quem chega primeiro. */
-function createExclusiveFile(processDir: string, manifest: ProcessManifest, process: string): void {
-  fs.mkdirSync(processDir, { recursive: true, mode: 0o700 });
-  const file = path.join(processDir, 'process.json');
+/**
+ * Grava `content` num arquivo temporário em `dir` e o linka exclusivamente como `file`
+ * (vence quem chega primeiro — usado tanto por `createExclusiveFile` quanto por
+ * `writeVersionExclusive`, D1). Sucesso: retorna. `EEXIST`: relança tal qual, sem
+ * empacotar — cabe ao chamador decidir se isso é erro definitivo ou motivo de retry.
+ * Qualquer outro erro de I/O já sai como `HexlogError('IO_ERROR')`. O `.tmp` é sempre
+ * removido, sucesso ou falha.
+ */
+function writeThenLinkExclusive(dir: string, file: string, content: unknown): void {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const tmp = path.join(
-    processDir,
-    `.process.json.${globalThis.process.pid}.${randomBytes(4).toString('hex')}`,
+    dir,
+    `.${path.basename(file)}.${globalThis.process.pid}.${randomBytes(4).toString('hex')}`,
   );
 
   const fd = fs.openSync(tmp, 'w');
   try {
-    fs.writeSync(fd, JSON.stringify(manifest, null, 2));
+    fs.writeSync(fd, JSON.stringify(content, null, 2));
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -278,13 +284,75 @@ function createExclusiveFile(processDir: string, manifest: ProcessManifest, proc
   try {
     fs.linkSync(tmp, file);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new HexlogError('PROCESS_ALREADY_EXISTS', `process '${process}' already exists`);
-    }
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw e;
     throw ioError(e);
   } finally {
     fs.unlinkSync(tmp);
   }
+}
+
+/** §4.1.1: criação exclusiva de `process.json` — vence quem chega primeiro. */
+function createExclusiveFile(processDir: string, manifest: ProcessManifest, process: string): void {
+  const file = path.join(processDir, 'process.json');
+  try {
+    writeThenLinkExclusive(processDir, file, manifest);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new HexlogError('PROCESS_ALREADY_EXISTS', `process '${process}' already exists`);
+    }
+    throw e;
+  }
+}
+
+/** Decisão completa de versionamento devolvida por `resolveTarget` a cada tentativa de `writeVersionExclusive`. */
+export type ResolveOutcome =
+  | { kind: 'write'; version: string; content: Record<string, unknown> }
+  | { kind: 'unchanged'; version: string }
+  | { kind: 'breaking'; details: Detail[] };
+
+/** Resultado de `writeVersionExclusive`: o que foi de fato gravado, ou a confirmação de que nada mudou. */
+export type WriteVersionResult =
+  | { kind: 'written'; version: string; content: Record<string, unknown> }
+  | { kind: 'unchanged'; version: string };
+
+/**
+ * Grava em `defDir` (ex.: `schemas/<name>/`) a versão decidida por `resolveTarget` (D1).
+ *
+ * `resolveTarget` encapsula a decisão inteira de versionamento — resolver o vigente em
+ * disco, checar `unchanged`, detectar quebra, bumpar — e é chamado do zero a cada
+ * tentativa, inclusive a primeira: o vigente pode ter mudado entre duas invocações, seja
+ * por um retry após `EEXIST`, seja porque a primeira leitura já estava desatualizada no
+ * instante em que o `linkSync` de fato acontece. Não há atalho de "recalcular só o
+ * número" fora do laço.
+ */
+export function writeVersionExclusive(
+  defDir: string,
+  resolveTarget: () => ResolveOutcome,
+  maxAttempts = 10,
+): WriteVersionResult {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const outcome = resolveTarget();
+
+    if (outcome.kind === 'unchanged') return { kind: 'unchanged', version: outcome.version };
+    if (outcome.kind === 'breaking') {
+      throw new HexlogError('BREAKING_CHANGE', 'change requires breaking: true', outcome.details);
+    }
+
+    try {
+      writeThenLinkExclusive(defDir, path.join(defDir, `${outcome.version}.json`), outcome.content);
+      return { kind: 'written', version: outcome.version, content: outcome.content };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+    }
+  }
+
+  throw new HexlogError('IO_ERROR', 'exclusive write did not succeed', [
+    {
+      path: '',
+      code: 'exclusive_write_exhausted',
+      message: `exclusive write did not succeed after ${maxAttempts} attempts`,
+    },
+  ]);
 }
 
 /** Carrega e verifica um processo: hashes internos recalculados, âncora e schemas Zod dos tipos custom. */

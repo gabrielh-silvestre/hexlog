@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -6,7 +6,7 @@ import canonicalize from 'canonicalize';
 import { z } from 'zod';
 import { sha256hex } from '../src/chain.ts';
 import { resolveSafePath } from '../src/storage.ts';
-import type { ProcessManifest } from '../src/definitions.ts';
+import type { ProcessManifest, ResolveOutcome } from '../src/definitions.ts';
 import {
   loadProcess,
   createProcess,
@@ -22,6 +22,7 @@ import {
   listVersions,
   parseVersion,
   resolveCurrentDefinition,
+  writeVersionExclusive,
 } from '../src/definitions.ts';
 import { HexlogError } from '../src/errors.ts';
 import { parseJson } from './helpers.ts';
@@ -404,5 +405,98 @@ describe('versionamento de definições (Leva 1)', () => {
     fs.writeFileSync(path.join(defDir, '1.1.json'), JSON.stringify({ v: 'a' }));
 
     expect(listVersions(partDir, 'decision')).toEqual(['1.0', '1.1']);
+  });
+});
+
+describe('exclusive version write', () => {
+  /** `resolveTarget` de teste: devolve os outcomes de `sequence` em ordem, um por chamada. */
+  function scriptedResolver(...sequence: ResolveOutcome[]) {
+    return jest.fn(() => {
+      const outcome = sequence.shift();
+      if (outcome === undefined) throw new Error('scriptedResolver: sequência esgotada');
+      return outcome;
+    });
+  }
+
+  const defDir = () => path.join(dir, PROJECT, 'vocabulary', 'ext1');
+
+  test("'write' bem-sucedido grava o arquivo e devolve 'written'", () => {
+    const resolveTarget = scriptedResolver({ kind: 'write', version: '1.0', content: { v: 'a' } });
+
+    const result = writeVersionExclusive(defDir(), resolveTarget);
+
+    expect(result).toEqual({ kind: 'written', version: '1.0', content: { v: 'a' } });
+    expect(JSON.parse(fs.readFileSync(path.join(defDir(), '1.0.json'), 'utf8'))).toEqual({
+      v: 'a',
+    });
+  });
+
+  test('EEXIST retenta chamando resolveTarget de novo, do zero, e grava a versão seguinte', () => {
+    fs.mkdirSync(defDir(), { recursive: true });
+    fs.writeFileSync(path.join(defDir(), '1.1.json'), JSON.stringify({ v: 'old' }));
+    const resolveTarget = scriptedResolver(
+      { kind: 'write', version: '1.1', content: { v: 'colide' } },
+      { kind: 'write', version: '1.2', content: { v: 'b' } },
+    );
+
+    const result = writeVersionExclusive(defDir(), resolveTarget);
+
+    expect(result).toEqual({ kind: 'written', version: '1.2', content: { v: 'b' } });
+    expect(JSON.parse(fs.readFileSync(path.join(defDir(), '1.1.json'), 'utf8'))).toEqual({
+      v: 'old',
+    });
+    expect(JSON.parse(fs.readFileSync(path.join(defDir(), '1.2.json'), 'utf8'))).toEqual({
+      v: 'b',
+    });
+    expect(resolveTarget).toHaveBeenCalledTimes(2);
+  });
+
+  test("'unchanged' devolve na hora, sem escrever e sem retentar", () => {
+    fs.mkdirSync(defDir(), { recursive: true });
+    fs.writeFileSync(path.join(defDir(), '1.1.json'), JSON.stringify({ v: 'old' }));
+    const resolveTarget = scriptedResolver({ kind: 'unchanged', version: '1.1' });
+
+    const result = writeVersionExclusive(defDir(), resolveTarget);
+
+    expect(result).toEqual({ kind: 'unchanged', version: '1.1' });
+    expect(fs.readdirSync(defDir())).toEqual(['1.1.json']);
+    expect(resolveTarget).toHaveBeenCalledTimes(1);
+  });
+
+  test("'breaking' lança BREAKING_CHANGE na hora, sem escrever e sem retentar", () => {
+    fs.mkdirSync(defDir(), { recursive: true });
+    fs.writeFileSync(path.join(defDir(), '1.1.json'), JSON.stringify({ v: 'old' }));
+    const details = [{ path: '/milestoneType', code: 'removed', message: 'termo removido' }];
+    const resolveTarget = scriptedResolver({ kind: 'breaking', details });
+
+    const error = captureError(() => writeVersionExclusive(defDir(), resolveTarget));
+
+    expect(error.code).toBe('BREAKING_CHANGE');
+    expect(error.details).toEqual(details);
+    expect(fs.readdirSync(defDir())).toEqual(['1.1.json']);
+    expect(resolveTarget).toHaveBeenCalledTimes(1);
+  });
+
+  test('exaustão de maxAttempts: sempre EEXIST → IO_ERROR e nenhum .tmp remanescente', () => {
+    fs.mkdirSync(defDir(), { recursive: true });
+    fs.writeFileSync(path.join(defDir(), '1.1.json'), JSON.stringify({ v: 'sempre lá' }));
+    const resolveTarget = jest.fn((): ResolveOutcome => ({
+      kind: 'write',
+      version: '1.1',
+      content: { v: 'tentativa' },
+    }));
+
+    const error = captureError(() => writeVersionExclusive(defDir(), resolveTarget, 3));
+
+    expect(error.code).toBe('IO_ERROR');
+    expect(error.details).toEqual([
+      {
+        path: '',
+        code: 'exclusive_write_exhausted',
+        message: 'exclusive write did not succeed after 3 attempts',
+      },
+    ]);
+    expect(resolveTarget).toHaveBeenCalledTimes(3);
+    expect(fs.readdirSync(defDir())).toEqual(['1.1.json']);
   });
 });
