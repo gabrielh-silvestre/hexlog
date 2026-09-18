@@ -1204,6 +1204,54 @@ describe('N14', () => {
   });
 });
 
+describe('critério 10 (Leva 6) — não-regressão: lock por processo sobrevive a um bump de vocabulário', () => {
+  test('vocabulário bumpado pra major fora do processo (removendo "approved") não afeta o processo já fixado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const firstEvent = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expect(firstEvent.isError).not.toBe(true);
+
+    const stateBefore = await environment.call('state', { project: PROJ, process: PROC });
+    const eventsBefore = await environment.call('events', { project: PROJ, process: PROC });
+    const chainBefore = await environment.call('chain', { project: PROJ, process: PROC });
+
+    // Simula, fora do fluxo de `register_vocabulary` (cujo `breaking` ainda não está na
+    // superfície MCP — leva 7), uma versão major do vocabulário "core" que remove "approved".
+    fs.writeFileSync(
+      path.join(environment.dir, PROJ, 'vocabulary', 'core', '2.0.json'),
+      JSON.stringify({
+        owner: 'core',
+        milestoneType: ['other'],
+        result: ['ok'],
+        action: ['follow'],
+        hash: 'irrelevant-for-this-test',
+        registeredAt: new Date().toISOString(),
+      }),
+    );
+
+    // O processo antigo lê `manifest.fixed.vocabulary`, não o disco vigente: nada muda pra ele.
+    expect(await environment.call('state', { project: PROJ, process: PROC })).toEqual(stateBefore);
+    expect(await environment.call('events', { project: PROJ, process: PROC })).toEqual(
+      eventsBefore,
+    );
+    expect(await environment.call('chain', { project: PROJ, process: PROC })).toEqual(chainBefore);
+
+    const secondEvent = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ target: 'hex:target:u2' }),
+    });
+    expect(secondEvent.isError).not.toBe(true);
+  });
+});
+
 describe('S2', () => {
   test('evento custom válido vira elo', async () => {
     await prepare(environment, PROJ, PROC);
@@ -1340,11 +1388,16 @@ describe('S5', () => {
     await environment.call('register_vocabulary', {
       project,
       owner: 'core',
-      milestoneType: ['v2'],
+      milestoneType: ['v1', 'v2'],
       result: [],
       action: [],
     });
-    await environment.call('register_type', { project, name: 'note', schema: newSchema });
+    await environment.call('register_type', {
+      project,
+      name: 'note',
+      schema: newSchema,
+      breaking: true,
+    });
     await environment.call('register_gate', { project, name: 'g', criteria: 'v2' });
     await environment.call('create_process', { project, process: 'proc-new' });
 

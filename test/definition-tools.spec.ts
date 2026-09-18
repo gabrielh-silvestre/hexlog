@@ -235,11 +235,11 @@ describe('M9', () => {
 });
 
 describe('S1', () => {
-  test('register_type grava schemas/<nome>.json com o schema exato', async () => {
+  test('register_type grava schemas/<nome>/<versão>.json com o schema exato', async () => {
     await environment.call('register_type', { project: 'p1', name: 'note', schema: VALID_SCHEMA });
     const written = parseJson(
       TypeRecordSchema,
-      fs.readFileSync(path.join(environment.dir, 'p1', 'schemas', 'note.json'), 'utf8'),
+      fs.readFileSync(path.join(environment.dir, 'p1', 'schemas', 'note', '1.0.json'), 'utf8'),
     );
     expect(written.schema).toEqual(VALID_SCHEMA);
   });
@@ -377,6 +377,87 @@ describe('list', () => {
     const processes = (result.structuredContent as { project: { processes: { name: string }[] } })
       .project.processes;
     expect(processes.map((p) => p.name)).toEqual(['proc1']);
+  });
+});
+
+describe('leva 7', () => {
+  test('register_vocabulary aceita breaking: true e bumpa major numa remoção de termo fechado', async () => {
+    await environment.call('register_vocabulary', {
+      project: 'p1',
+      owner: 'owner-x',
+      milestoneType: ['a', 'b'],
+    });
+
+    const result = await environment.call('register_vocabulary', {
+      project: 'p1',
+      owner: 'owner-x',
+      milestoneType: ['a'],
+      breaking: true,
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ version: '2.0', previousVersion: '1.0' });
+  });
+
+  test('register_gate aceita breaking: true (gate nunca quebra, mas o campo é aceito e vira aviso)', async () => {
+    await environment.call('register_gate', { project: 'p1', name: 'g1', criteria: 'v1' });
+
+    const result = await environment.call('register_gate', {
+      project: 'p1',
+      name: 'g1',
+      criteria: 'v2',
+      breaking: true,
+    });
+
+    expect(result.isError).not.toBe(true);
+    const body = result.structuredContent as { version: string; warnings: { code: string }[] };
+    expect(body.version).toBe('1.1');
+    expect(body.warnings).toContainEqual(expect.objectContaining({ code: 'NO_BREAKING_CHANGE' }));
+  });
+
+  test('list nível projeto: version/versions para um nome com múltiplas versões e um nome só-legado', async () => {
+    await environment.call('register_gate', { project: 'p1', name: 'g-multi', criteria: 'v1' });
+    await environment.call('register_gate', { project: 'p1', name: 'g-multi', criteria: 'v2' });
+
+    const gatesDir = path.join(environment.dir, 'p1', 'gates');
+    fs.mkdirSync(gatesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(gatesDir, 'g-legacy.json'),
+      JSON.stringify({ name: 'g-legacy', criteria: 'legacy', hash: 'a'.repeat(64) }),
+    );
+
+    const result = await environment.call('list', { project: 'p1' });
+    const gates = (
+      result.structuredContent as {
+        project: { gates: { name: string; version: string; versions: string[] }[] };
+      }
+    ).project.gates;
+
+    expect(gates).toContainEqual(
+      expect.objectContaining({ name: 'g-multi', version: '1.1', versions: ['1.0', '1.1'] }),
+    );
+    expect(gates).toContainEqual(
+      expect.objectContaining({ name: 'g-legacy', version: '1.0', versions: ['1.0'] }),
+    );
+  });
+
+  test('list nível processo: traz versions do manifesto; processo legado (sem o campo) não traz o bloco', async () => {
+    await prepareProcess(environment, 'p1', 'proc1');
+
+    const withVersions = await environment.call('list', { project: 'p1', process: 'proc1' });
+    const body = withVersions.structuredContent as {
+      process: { versions?: { types: Record<string, string> } };
+    };
+    expect(body.process.versions).toMatchObject({ types: { note: '1.0' } });
+
+    const manifestPath = path.join(environment.dir, 'p1', 'proc1', 'process.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    delete manifest.versions;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    const legacyResult = await environment.call('list', { project: 'p1', process: 'proc1' });
+    const legacyBody = legacyResult.structuredContent as { process: Record<string, unknown> };
+    expect(legacyBody.process).not.toHaveProperty('versions');
   });
 });
 

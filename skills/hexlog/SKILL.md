@@ -13,9 +13,9 @@ diagnóstico de saúde — não a instalação; isso é do `README.md` do repo h
 
 | # | Tool | Motivo |
 |---|---|---|
-| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:237`, único lançador em todo o `src/`) |
+| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:496`, único lançador em todo o `src/`) |
 | 2 | `register_type` / `register_gate` | Opcionais — mas, se usados, precisam vir **antes** do passo 3 |
-| 3 | `create_process` | **Ponto sem volta**: congela um snapshot de types/vocabulary/gates lidos naquele instante (`definitions.ts:186-255`). Nada registrado depois vale para esse processo — não existe "atualizar"; recriar dá `PROCESS_ALREADY_EXISTS` |
+| 3 | `create_process` | **Ponto sem volta**: congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:443-484`). Nada registrado depois vale para esse processo — não existe "atualizar"; recriar dá `PROCESS_ALREADY_EXISTS` |
 | 4 | `register` / `evaluate_gate` | Dependem de `loadProcess`, que só existe a partir do passo 3 |
 
 Chame `register_vocabulary` pelo menos uma vez, com qualquer `owner` — o que
@@ -25,9 +25,10 @@ destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele
 
 | Situação | Resultado | Onde |
 |---|---|---|
-| `create_process` com `process` em `RESERVED_PROCESS_NAMES` (`schemas`, `vocabulary`, `gates`) | `RESERVED_NAME` | `definitions.ts:20` |
-| `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts:23` |
-| `register_gate` com `name` em um dos 4 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`) | `RESERVED_NAME` | `definitions.ts:26-31` |
+| `create_process` com `process` em `RESERVED_PROCESS_NAMES` (`schemas`, `vocabulary`, `gates`) | `RESERVED_NAME` | `definitions.ts:21` |
+| `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts:24` |
+| `register_gate` com `name` em um dos 4 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`) | `RESERVED_NAME` | `definitions.ts:27-32` |
+| `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
 | Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:395` |
 | `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED` | `event-tools.ts:508` |
 | `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:529` |
@@ -35,9 +36,14 @@ destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele
 
 Notas adicionais:
 
-- Vocabulário de owners diferentes **coexiste** — cada owner grava seu próprio
-  `vocabulary/<owner>.json`. Reregistrar substitui só o arquivo do **mesmo**
-  owner, nunca o de outro.
+- Vocabulário de owners diferentes **coexiste** — cada owner grava sua própria
+  linha de versões em `vocabulary/<owner>/`. Reregistrar o mesmo owner cria uma
+  versão nova (`major.minor`), nunca sobrescreve a anterior nem afeta o
+  arquivo de outro owner.
+- `register_type`/`register_vocabulary`/`register_gate` versionam, não
+  substituem: conteúdo igual ao vigente é no-op (`unchanged: true`); mudança
+  que quebra (ver README, tabela de quebra por definição) exige
+  `breaking: true` no input, senão lança `BREAKING_CHANGE`.
 - Os 4 gates embutidos passam trivialmente (`passed: true`) num processo com
   zero eventos — ausência de contra-evidência, não prova de saúde do processo.
 
@@ -48,11 +54,13 @@ Notas adicionais:
      project: "myproj", owner: "core",
      milestoneType: ["setup"], result: ["ok"], action: ["approve"]
    })
-   → { project: "myproj", owner: "core", hash: "<sha256>", replaced: false }
+   → { project: "myproj", owner: "core", hash: "<sha256>", version: "1.0",
+       previousVersion: null, unchanged: false, warnings: [] }
 
 2. create_process({ project: "myproj", process: "onboarding" })
    → { project: "myproj", process: "onboarding", createdAt: "<iso>",
-       hashes: {...}, types: [], owners: ["core"], gates: [] }
+       hashes: {...}, types: [], owners: ["core"], gates: [],
+       versions: { types: {}, vocabulary: { core: "1.0" }, gates: {} } }
 
 3. register({
      project: "myproj", process: "onboarding",
@@ -100,7 +108,7 @@ nada sobre o servidor MCP responder.
 |---|---|
 | Descartar `~/.local/share/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
 | Reiniciar a sessão do Claude Code | Cache de `tools/list` do protocolo MCP — fora do alcance de qualquer agente |
-| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:33` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
+| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:37` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
 
 Reinstalar a mesma versão com conteúdo diferente **não bloqueia** — só avisa
 "consider bumping the version".

@@ -107,9 +107,9 @@ rode `node scripts/install.ts` de novo.
 | Tool | O que faz | Escreve |
 |---|---|---|
 | `list` | Lista projetos, ou detalha um projeto, processo ou tipo fixado | — |
-| `register_type` | Registra (ou substitui) o schema JSON de um tipo de evento custom | `schemas/<type>.json` |
-| `register_vocabulary` | Registra (ou substitui) o vocabulário de um dono do projeto | `vocabulary/<owner>.json` |
-| `register_gate` | Registra (ou substitui) o critério de um gate custom | `gates/<gate>.json` |
+| `register_type` | Registra uma nova versão do schema JSON de um tipo de evento custom | `schemas/<type>/<versão>.json` |
+| `register_vocabulary` | Registra uma nova versão do vocabulário de um dono do projeto | `vocabulary/<owner>/<versão>.json` |
+| `register_gate` | Registra uma nova versão do critério de um gate custom | `gates/<gate>/<versão>.json` |
 | `create_process` | Cria um processo, fixando o snapshot atual de tipos/vocabulário/gates | `process.json` |
 | `register` | Registra um evento (Marco, Veredito ou tipo custom fixado) | `events.jsonl` |
 | `evaluate_gate` | Avalia um gate contra um alvo e grava o resultado como Marco de gate | `events.jsonl` |
@@ -120,8 +120,14 @@ rode `node scripts/install.ts` de novo.
 ### `list`
 
 Sem parâmetros, lista os projetos existentes. Com `project`, detalha esse
-projeto (processos, tipos, vocabulários, gates). Com `project` + `process`,
-detalha o processo (hashes do snapshot fixado, tipos, vocabulário, gates).
+projeto: tipos, vocabulários e gates trazem `version` (a vigente, que muda a
+cada novo `register_*`) e `versions` (todo o histórico, do legado `1.0` até a
+mais nova). Com `project` + `process`, detalha o processo (hashes do
+snapshot fixado, tipos, vocabulário, gates) — inclui `versions` só se o
+processo foi criado depois da leva de versionamento; um `process.json`
+legado não tem esse bloco. Ali `versions` é **fixado** na criação do
+processo (a versão de cada definição naquele instante) e não muda depois,
+ao contrário do `version` do nível-projeto, que é sempre a vigente em disco.
 Com `type` também informado, devolve o schema JSON fixado desse tipo. Sempre
 traz os gates embutidos disponíveis. `process` sem `project`, ou `type` sem
 `process`, é `INVALID_INPUT`.
@@ -130,9 +136,32 @@ traz os gates embutidos disponíveis. `process` sem `project`, ou `type` sem
 
 Registram, respectivamente, o schema JSON de um tipo custom, o vocabulário
 (`milestoneType`, `result`, `action`) de um dono do projeto, e o critério de um
-gate custom. Todas devolvem `{project, name, hash, replaced}` (ou
-equivalente), com `hash` sendo o sha256 do JSON canônico (JCS) do conteúdo
-registrado.
+gate custom. Cada registro cria uma versão nova em `major.minor`, nunca
+sobrescreve a anterior. Todas devolvem
+`{project, name (ou owner), hash, version, previousVersion, unchanged, warnings}`,
+com `hash` sendo o sha256 do JSON canônico (JCS) do conteúdo registrado.
+
+- **Nome novo** (sem versão vigente): grava `1.0` direto.
+- **Conteúdo idêntico ao vigente**: no-op — devolve `unchanged: true` com a
+  versão vigente, nada é gravado.
+- **Mudança compatível**: bumpa minor.
+- **Mudança quebra** (ver critério abaixo): bumpa major, mas só com
+  `breaking: true` no input; sem a flag, lança o erro `BREAKING_CHANGE`.
+  Passar `breaking: true` numa mudança que não quebra vira minor com o aviso
+  `NO_BREAKING_CHANGE` em `warnings`, em vez de forçar major.
+
+O que conta como quebra (o que faria um evento antes válido ser rejeitado)
+varia por tipo de definição:
+
+| Definição | Quebra é |
+|---|---|
+| `type` | qualquer mudança no schema JSON |
+| `vocabulary` | remover um termo de `milestoneType` ou `action` (campos fechados). Remover de `result` não é quebra — é campo aberto |
+| `gate` | nada — `criteria` nunca quebra |
+
+O arquivo legado `<nome>.json` (de antes do versionamento) nunca é apagado,
+reescrito ou copiado: continua sendo a fonte da versão `1.0` para sempre, e
+o diretório de versões, quando existe, começa em `1.1`.
 
 ### `create_process`
 
@@ -235,14 +264,37 @@ Verifica a sequência, o encadeamento de hash a partir da âncora fixada em
 ```
 $XDG_DATA_HOME/hexlog/                 # 0700; fallback ~/.local/share/hexlog
   <project>/                           # 0700; criado pelo 1º register_* ou create_process
-    schemas/<type>.json                # {name, schema, hash, registeredAt} — vigente, sobrescrito
-    vocabulary/<owner>.json            # {owner, milestoneType[], result[], action[], hash, registeredAt}
-    gates/<gate>.json                  # {name, criteria, hash, registeredAt}
+    schemas/<type>.json                # legado: fonte fixa da versão 1.0, nunca apagado/reescrito
+    schemas/<type>/<major.minor>.json  # {name, schema, hash, registeredAt} — a partir de 1.1
+    vocabulary/<owner>.json            # legado: fonte fixa da versão 1.0
+    vocabulary/<owner>/<major.minor>.json  # {owner, milestoneType[], result[], action[], hash, registeredAt}
+    gates/<gate>.json                  # legado: fonte fixa da versão 1.0
+    gates/<gate>/<major.minor>.json    # {name, criteria, hash, registeredAt}
     <process>/                         # 0700
       process.json                     # manifesto fixado; criado só por create_process
       events.jsonl                     # 0600; 1 linha por evento
       events.jsonl.lock/holder         # transitório: lock mkdir + token
 ```
+
+Um nome sem arquivo legado (registrado pela primeira vez já sob
+versionamento) grava `1.0` direto no diretório — não existe `<nome>.json`
+solto nesse caso. Um nome com legado nunca ganha um `1.0.json` dentro do
+diretório: a versão `1.0` é sempre lida do arquivo solto, e o diretório, se
+existir, começa em `1.1`.
+
+`process.json` ganha um bloco opcional `versions` ({types, vocabulary,
+gates}, cada um `Record<nome, versão>`) com a versão vigente de cada
+definição no instante do `create_process`. Esse bloco fica **fora** do
+cálculo de hash (`hashes`/`verifyHashes`) — por isso todo `process.json` já
+gravado antes desta leva continua válido sem migração, e por isso também
+`versions` é adulterável em disco sem disparar `PROCESS_CORRUPTED` (limitação
+conhecida para quem cogitar usá-lo como trilha de auditoria).
+
+A escrita de cada versão (`<nome>/<versão>.json`) é sempre exclusiva
+(`linkSync`, nunca `writeJsonAtomic`): duas chamadas concorrentes no mesmo
+alvo nunca produzem sucesso silencioso uma sobre a outra — a que perde a
+corrida refaz a decisão inteira (vigente, `unchanged`, quebra, bump) contra
+o que a vencedora acabou de gravar.
 
 ## Erros e avisos
 
@@ -260,11 +312,16 @@ Alguns dos mais comuns:
 | `INVALID_FILTER` | filtros de `events` inconsistentes (`milestoneType` fora do vocabulário, `after ≥ before`, `until` além do arquivo) |
 | `GATE_NOT_REGISTERED` / `INVALID_EVALUATION` | problemas ao chamar `evaluate_gate` |
 | `PROCESS_CORRUPTED` | `process.json` ilegível, ou hashes internos divergentes |
+| `BREAKING_CHANGE` | `register_type`/`register_vocabulary`/`register_gate` com uma mudança que quebra, sem `breaking: true` no input |
 
 Um aviso, diferente de erro, vem em `warnings[]` numa resposta de sucesso:
-`UNKNOWN_VOCABULARY` em `register`, quando `result` de um Veredito
-está fora do vocabulário conhecido (`result` é campo aberto: o evento é
-gravado normalmente, só o aviso muda).
+
+- `UNKNOWN_VOCABULARY` em `register`, quando `result` de um Veredito
+  está fora do vocabulário conhecido (`result` é campo aberto: o evento é
+  gravado normalmente, só o aviso muda).
+- `NO_BREAKING_CHANGE` num `register_type`/`register_vocabulary`/`register_gate`
+  com `breaking: true` cuja mudança, na verdade, não quebra — a versão bumpa
+  minor mesmo assim, em vez de forçar major.
 
 ## Lacunas de isolamento
 

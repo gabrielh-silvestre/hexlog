@@ -31,7 +31,8 @@ export type ErrorCode =
   | 'LOCK_TIMEOUT'
   | 'LOCK_LOST'
   | 'IO_ERROR'
-  | 'INTERNAL';
+  | 'INTERNAL'
+  | 'BREAKING_CHANGE';
 
 /** Erro de domínio do hexlog: todo handler MCP captura este tipo e devolve `{code, message, details}` (§4.13). */
 export class HexlogError extends Error {

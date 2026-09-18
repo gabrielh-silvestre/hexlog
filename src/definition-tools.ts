@@ -11,6 +11,7 @@ import {
   registerGate,
   registerType,
   registerVocabulary,
+  FixedVersions,
 } from './definitions.ts';
 import { HexlogError } from './errors.ts';
 import { listBuiltinGates, CRITERIA_MAX_CHARS } from './gates.ts';
@@ -24,10 +25,28 @@ import {
   Instant,
   Name,
   Vocabulary,
+  Warning,
 } from './mcp.ts';
 
 const Label = z.string().min(1).max(100);
 const LabelList = z.array(Label).max(100).default([]);
+
+// §correção C5: `versions` aparece em dois níveis de `list` com o mesmo nome mas semânticas
+// diferentes — descrições Zod deixam isso explícito pra quem lê só a superfície MCP.
+const CURRENT_VERSION_DESC =
+  'Current version on disk for this definition. Mutable: changes on every new register_* call, ' +
+  'unlike the versions fixed inside a process manifest.';
+const ALL_VERSIONS_DESC = 'Every version ever registered for this definition, in ascending order.';
+const FIXED_VERSIONS_DESC =
+  'Versions fixed at create_process time. Immutable after creation, unlike the current version ' +
+  'reported by project-level list. Outside verifyHashes, so this block can be edited on disk ' +
+  'without triggering PROCESS_CORRUPTED — a known limitation for anyone using it as an audit trail.';
+
+/** Campos comuns às entradas de `types`/`vocabulary`/`gates` do `list` nível-projeto. */
+const projectDefinitionVersionFields = {
+  version: z.string().describe(CURRENT_VERSION_DESC),
+  versions: z.array(z.string()).describe(ALL_VERSIONS_DESC),
+};
 
 /** Registra as 5 tools de definição (`list`, `register_type`, `register_vocabulary`, `register_gate`, `create_process`). */
 export function registerDefinitionTools(server: McpServer, ctx: Context): void {
@@ -45,9 +64,11 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
           .object({
             name: Name,
             processes: z.array(z.object({ name: Name, createdAt: Instant })),
-            types: z.array(z.object({ name: Name, hash: Hash })),
-            vocabulary: z.array(z.object({ owner: Name, hash: Hash })),
-            gates: z.array(z.object({ name: Name, hash: Hash })),
+            types: z.array(z.object({ name: Name, hash: Hash, ...projectDefinitionVersionFields })),
+            vocabulary: z.array(
+              z.object({ owner: Name, hash: Hash, ...projectDefinitionVersionFields }),
+            ),
+            gates: z.array(z.object({ name: Name, hash: Hash, ...projectDefinitionVersionFields })),
           })
           .optional(),
         process: z
@@ -58,6 +79,7 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
             types: z.array(z.object({ name: Name, hash: Hash })),
             vocabulary: Vocabulary,
             gates: z.record(z.string(), z.object({ criteria: z.string() })),
+            versions: FixedVersions.optional().describe(FIXED_VERSIONS_DESC),
           })
           .optional(),
         type: z
@@ -83,9 +105,16 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
     {
       title: 'Register type',
       description:
-        'Registers (or replaces) the JSON schema of a custom event type for the project, writing `schemas/<name>.json`.',
-      inputSchema: { project: Name, name: Name, schema: z.record(z.string(), z.unknown()) },
-      outputSchema: Registered.shape,
+        "Registers a new version of a custom event type's JSON schema for the project, writing " +
+        '`schemas/<name>/<version>.json` (never replaces a prior version). Identical content is a ' +
+        'no-op (`unchanged: true`). Any schema change is breaking and requires `breaking: true`.',
+      inputSchema: {
+        project: Name,
+        name: Name,
+        schema: z.record(z.string(), z.unknown()),
+        breaking: z.boolean().optional(),
+      },
+      outputSchema: { ...Registered.shape, warnings: z.array(Warning) },
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -93,9 +122,12 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, name, schema }) =>
+    async ({ project, name, schema, breaking }) =>
       execute(ctx, 'register_type', { project }, () =>
-        registerType(ctx.dataDir, project, name, schema, { log: adaptAjvLogger(ctx.log) }),
+        registerType(ctx.dataDir, project, name, schema, {
+          log: adaptAjvLogger(ctx.log),
+          breaking,
+        }),
       ),
   );
 
@@ -104,15 +136,29 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
     {
       title: 'Register vocabulary',
       description:
-        'Registers (or replaces) the vocabulary of a project owner (`"core"` or an extension), writing `vocabulary/<owner>.json`.',
+        'Registers a new version of a project owner\'s (`"core"` or an extension) vocabulary, writing ' +
+        '`vocabulary/<owner>/<version>.json` (never replaces a prior version). Identical content is a ' +
+        'no-op (`unchanged: true`). Removing a term from `milestoneType` or `action` is breaking and ' +
+        'requires `breaking: true`; removing from `result` is not, since it is an open field. ' +
+        '`breaking: true` on a compatible change adds a `NO_BREAKING_CHANGE` warning to the response ' +
+        'instead of forcing a major bump.',
       inputSchema: {
         project: Name,
         owner: Name,
         milestoneType: LabelList,
         result: LabelList,
         action: LabelList,
+        breaking: z.boolean().optional(),
       },
-      outputSchema: { project: Name, owner: Name, hash: Hash, replaced: z.boolean() },
+      outputSchema: {
+        project: Name,
+        owner: Name,
+        hash: Hash,
+        version: z.string(),
+        previousVersion: z.string().nullable(),
+        unchanged: z.boolean(),
+        warnings: z.array(Warning),
+      },
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -120,9 +166,15 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, owner, milestoneType, result, action }) =>
+    async ({ project, owner, milestoneType, result, action, breaking }) =>
       execute(ctx, 'register_vocabulary', { project }, () =>
-        registerVocabulary(ctx.dataDir, project, owner, { milestoneType, result, action }),
+        registerVocabulary(
+          ctx.dataDir,
+          project,
+          owner,
+          { milestoneType, result, action },
+          { breaking },
+        ),
       ),
   );
 
@@ -131,13 +183,17 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
     {
       title: 'Register gate',
       description:
-        'Registers (or replaces) the criteria of a custom gate for the project, writing `gates/<name>.json`.',
+        "Registers a new version of a custom gate's criteria for the project, writing " +
+        '`gates/<name>/<version>.json` (never replaces a prior version). Identical content is a ' +
+        'no-op (`unchanged: true`). No criteria change is breaking for a gate: `breaking: true` never ' +
+        'blocks the write or forces a major bump, it only adds a `NO_BREAKING_CHANGE` warning to the response.',
       inputSchema: {
         project: Name,
         name: Name,
         criteria: z.string().min(1).max(CRITERIA_MAX_CHARS),
+        breaking: z.boolean().optional(),
       },
-      outputSchema: Registered.shape,
+      outputSchema: { ...Registered.shape, warnings: z.array(Warning) },
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -145,9 +201,9 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, name, criteria }) =>
+    async ({ project, name, criteria, breaking }) =>
       execute(ctx, 'register_gate', { project }, () =>
-        registerGate(ctx.dataDir, project, name, criteria),
+        registerGate(ctx.dataDir, project, name, criteria, { breaking }),
       ),
   );
 
@@ -167,6 +223,7 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         types: z.array(Name),
         owners: z.array(Name),
         gates: z.array(Name),
+        versions: FixedVersions.describe(FIXED_VERSIONS_DESC),
       },
       annotations: {
         readOnlyHint: false,
@@ -226,6 +283,9 @@ function resolveList(
   const loaded = loadProcess(ctx.dataDir, project, process);
 
   if (isNil(type)) {
+    // spread condicional (não `versions: loaded.manifest.versions`): o SDK MCP preserva chaves com
+    // valor `undefined` até a serialização, então setar a chave direto faria um processo legado
+    // (sem o campo) devolver `versions: undefined` em vez do bloco realmente ausente.
     return {
       builtinGates,
       process: {
@@ -238,6 +298,7 @@ function resolveList(
         })),
         vocabulary: loaded.manifest.fixed.vocabulary,
         gates: loaded.manifest.fixed.gates,
+        ...(isNotNil(loaded.manifest.versions) ? { versions: loaded.manifest.versions } : {}),
       },
     };
   }

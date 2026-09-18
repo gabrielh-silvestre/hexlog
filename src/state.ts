@@ -220,6 +220,15 @@ const FIELD_POLICY_BY_KEY: Record<VocabularyField, FieldPolicy> = {
   'decisions.action': { key: 'action', open: false },
 };
 
+/**
+ * Chaves de `Vocab` fechadas (`open: false` em `FIELD_POLICY_BY_KEY`): remover um termo delas
+ * é quebra de versionamento (`definitions.ts`). Subconjunto estreito, não o `Record` inteiro,
+ * para não acoplar `definitions.ts` ao tipo `VocabularyField` nem ao literal `'decisions.action'`.
+ */
+export const CLOSED_VOCAB_KEYS: readonly (keyof Vocab)[] = Object.values(FIELD_POLICY_BY_KEY)
+  .filter((policy) => !policy.open)
+  .map((policy) => policy.key);
+
 /** Classifica `value` de `field` contra o vocabulário (§4.9). `null` = valor do core, sem warning. */
 export function validateField(
   vocabulary: Vocabulary,

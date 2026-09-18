@@ -20,7 +20,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
 | `scripts/` | Build esbuild e instalador (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio e pacote (see `test/AGENTS.md`) |
-| `docs/` | ADR 0001 e pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
+| `docs/` | ADR 0001/0002 e pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
 
 ## For AI Agents
 
@@ -29,7 +29,11 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - A cadeia usa um único predicado (`isValidLink` em `src/chain.ts`) para escrita e verificação. Não duplique essa lógica.
 - Toda tool passa por `execute()` em `src/mcp.ts`. `HexlogError` vira `{code, message, details}`, e qualquer outra exceção vira `INTERNAL`, sem stack na resposta.
 - São exatamente 10 tools. Adicionar ou remover uma quebra testes do instalador e do e2e.
-- Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0001-hexlog-mvp.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`.
+- `register_type`/`register_vocabulary`/`register_gate` versionam em semver `major.minor` em
+  `<nome>/<versão>.json`, nunca sobrescrevem. O arquivo legado `<nome>.json` nunca é apagado,
+  reescrito ou materializado — segue como fonte fixa da versão `1.0` para sempre.
+- Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0001-hexlog-mvp.md`,
+  `docs/adr-0002-versionamento-definicoes.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`.
 - `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica.
 
 ### Testing Requirements
