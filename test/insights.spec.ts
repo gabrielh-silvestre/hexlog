@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
+import { keyBy, mapValues } from 'es-toolkit';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -25,15 +26,14 @@ function runInsights(xdg: string, ...args: string[]) {
 
 function snapshot(dir: string): Record<string, string> {
   const entries = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
-  return Object.fromEntries(
-    entries
-      .filter((entry) => entry.isFile())
-      .map((entry) => {
-        const file = path.join(entry.parentPath, entry.name);
-        const hash = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-        return [file, `${hash}:${fs.statSync(file).mtimeMs}`];
-      }),
+  const files = keyBy(
+    entries.filter((entry) => entry.isFile()),
+    (entry) => path.join(entry.parentPath, entry.name),
   );
+  return mapValues(files, (_entry, file) => {
+    const hash = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    return `${hash}:${fs.statSync(file).mtimeMs}`;
+  });
 }
 
 function copyToXdg(source: string): string {

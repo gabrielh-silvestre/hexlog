@@ -1,6 +1,17 @@
 // Relatório markdown read-only (integridade, gates, timeline) sobre os logs do hexlog.
 // Uso: node scripts/insights.ts [projeto[/processo]]; diretório de dados via XDG_DATA_HOME.
-import { countBy, isNil, isNotNil } from 'es-toolkit';
+import {
+  countBy,
+  head,
+  isNil,
+  isNotNil,
+  last,
+  orderBy,
+  partition,
+  take,
+  windowed,
+} from 'es-toolkit';
+import { isEmpty } from 'es-toolkit/compat';
 import { isValidLink, verifyChain } from '../src/chain.ts';
 import { listProjects, loadProcess } from '../src/definitions.ts';
 import { dataDir } from '../src/directory.ts';
@@ -22,36 +33,34 @@ function gatesSection(lines: EventLine[]): string[] {
   const gates = lines
     .filter((line) => line.type === 'milestone' && line.data.milestoneType === 'gate')
     .map((line) => line.data.gate as { name: string; passed: boolean });
-  if (gates.length === 0) return ['- gates: none evaluated'];
-  const passed = gates.filter((gate) => gate.passed).length;
+  if (isEmpty(gates)) return ['- gates: none evaluated'];
+  const [passed, failed] = partition(gates, (gate) => gate.passed);
   const perGate = countBy(gates, (gate) => `${gate.name} ${gate.passed ? 'pass' : 'fail'}`);
   return [
-    `- gates: ${gates.length} evaluated, ${passed} pass, ${gates.length - passed} fail`,
+    `- gates: ${gates.length} evaluated, ${passed.length} pass, ${failed.length} fail`,
     ...Object.entries(perGate).map(([key, count]) => `  - ${key}: ${count}`),
   ];
 }
 
 function timelineSection(lines: EventLine[]): string[] {
-  if (lines.length === 0) return ['- timeline: no events'];
-  const times = lines.map((line) => Date.parse(line.timestamp));
-  const gaps = times
-    .slice(1)
-    .map((time, index) => ({
-      ms: time - times[index],
-      from: lines[index].seq,
-      to: lines[index + 1].seq,
-    }))
-    .sort((a, b) => b.ms - a.ms)
-    .slice(0, TOP_GAPS);
+  const first = head(lines);
+  const final = last(lines);
+  if (isNil(first) || isNil(final)) return ['- timeline: no events'];
+  const pairs = windowed(lines, 2, 1).map(([from, to]) => ({
+    ms: Date.parse(to.timestamp) - Date.parse(from.timestamp),
+    from: from.seq,
+    to: to.seq,
+  }));
+  const gaps = take(orderBy(pairs, [(gap) => gap.ms], ['desc']), TOP_GAPS);
   const perDay = countBy(lines, (line) => line.timestamp.slice(0, 10));
   const perMilestone = countBy(
     lines.filter((line) => line.type === 'milestone'),
     (line) => String(line.data.milestoneType),
   );
   return [
-    `- first event: ${lines[0].timestamp}`,
-    `- last event: ${lines[lines.length - 1].timestamp}`,
-    `- total duration: ${formatDuration(times[times.length - 1] - times[0])}`,
+    `- first event: ${first.timestamp}`,
+    `- last event: ${final.timestamp}`,
+    `- total duration: ${formatDuration(Date.parse(final.timestamp) - Date.parse(first.timestamp))}`,
     '- events per day:',
     ...Object.entries(perDay).map(([day, count]) => `  - ${day}: ${count}`),
     '- milestones by type:',
@@ -86,7 +95,7 @@ function processReport(
       lines: [
         title,
         `- chain: ${chain.ok ? 'ok' : `BROKEN (${chain.totalBreaks} breaks: ${breaks})`}, ${chain.totalLines} lines, repaired lines: ${chain.repairedLines.length}`,
-        forks === '' ? '- forks: none' : `- forks: ${forks}`,
+        isEmpty(forks) ? '- forks: none' : `- forks: ${forks}`,
         ...gatesSection(events),
         ...timelineSection(events),
         '',
@@ -116,7 +125,7 @@ function main(filter: string | undefined): number {
         .map((name) => ({ project: project.name, process: name })),
     );
 
-  if (targets.length === 0) {
+  if (isEmpty(targets)) {
     console.log(`No processes found in ${dir}${isNil(filter) ? '' : ` matching '${filter}'`}.`);
     return isNil(filter) ? 0 : 1;
   }
