@@ -15,6 +15,13 @@ import {
   registerType,
   registerVocabulary,
   RESERVED_PROCESS_NAMES,
+  bumpVersion,
+  compareVersions,
+  formatVersion,
+  listVersionFiles,
+  listVersions,
+  parseVersion,
+  resolveCurrentDefinition,
 } from '../src/definitions.ts';
 import { HexlogError } from '../src/errors.ts';
 import { parseJson } from './helpers.ts';
@@ -320,5 +327,82 @@ describe('readProject', () => {
     expect(project.processes.map((p) => p.name)).toEqual(['p1']);
     expect(project.types.map((t) => t.name)).toEqual(['decision']);
     expect(project.vocabulary.map((v) => v.owner)).toEqual(['core']);
+  });
+});
+
+describe('versionamento de definições (Leva 1)', () => {
+  test('compareVersions compara numericamente: 1.10 é maior que 1.9 (critério 13)', () => {
+    expect(compareVersions('1.10', '1.9')).toBeGreaterThan(0);
+    expect(compareVersions('1.9', '1.10')).toBeLessThan(0);
+    expect(compareVersions('1.2', '1.2')).toBe(0);
+  });
+
+  test('parseVersion, formatVersion e bumpVersion', () => {
+    expect(parseVersion('2.7')).toEqual({ major: 2, minor: 7 });
+    expect(formatVersion({ major: 2, minor: 7 })).toBe('2.7');
+    expect(bumpVersion('2.7', 'minor')).toEqual({ major: 2, minor: 8 });
+    expect(bumpVersion('2.7', 'major')).toEqual({ major: 3, minor: 0 });
+  });
+
+  test('listVersionFiles ordena 1.9 antes de 1.10 e ignora nomes fora de major.minor.json (P4)', () => {
+    const defDir = path.join(dir, PROJECT, 'schemas', 'decision');
+    fs.mkdirSync(defDir, { recursive: true });
+    for (const name of ['1.9.json', '1.10.json', 'notes.json', '1.0.0.json', 'v2.json']) {
+      fs.writeFileSync(path.join(defDir, name), '{}');
+    }
+
+    expect(listVersionFiles(defDir)).toEqual(['1.9', '1.10']);
+  });
+
+  describe('resolveCurrentDefinition', () => {
+    const partDir = () => path.join(dir, PROJECT, 'schemas');
+
+    test('diretório com versões: o vigente é a maior delas', () => {
+      const defDir = path.join(partDir(), 'decision');
+      fs.mkdirSync(defDir, { recursive: true });
+      fs.writeFileSync(path.join(defDir, '1.1.json'), JSON.stringify({ v: 'a' }));
+      fs.writeFileSync(path.join(defDir, '1.2.json'), JSON.stringify({ v: 'b' }));
+
+      expect(resolveCurrentDefinition(partDir(), 'decision')).toEqual({
+        version: '1.2',
+        content: { v: 'b' },
+      });
+    });
+
+    test('sem diretório, só legado: o vigente é o legado como "1.0"', () => {
+      fs.mkdirSync(partDir(), { recursive: true });
+      fs.writeFileSync(path.join(partDir(), 'decision.json'), JSON.stringify({ v: 'legacy' }));
+
+      expect(resolveCurrentDefinition(partDir(), 'decision')).toEqual({
+        version: '1.0',
+        content: { v: 'legacy' },
+      });
+    });
+
+    test('diretório existente mas vazio cai no ramo do legado', () => {
+      const defDir = path.join(partDir(), 'decision');
+      fs.mkdirSync(defDir, { recursive: true });
+      fs.writeFileSync(path.join(partDir(), 'decision.json'), JSON.stringify({ v: 'legacy' }));
+
+      expect(resolveCurrentDefinition(partDir(), 'decision')).toEqual({
+        version: '1.0',
+        content: { v: 'legacy' },
+      });
+    });
+
+    test('nem diretório nem legado: null', () => {
+      fs.mkdirSync(partDir(), { recursive: true });
+      expect(resolveCurrentDefinition(partDir(), 'nonexistent')).toBeNull();
+    });
+  });
+
+  test('listVersions une legado ("1.0") com as versões do diretório, sem duplicata (D2)', () => {
+    const partDir = path.join(dir, PROJECT, 'schemas');
+    const defDir = path.join(partDir, 'decision');
+    fs.mkdirSync(defDir, { recursive: true });
+    fs.writeFileSync(path.join(partDir, 'decision.json'), JSON.stringify({ v: 'legacy' }));
+    fs.writeFileSync(path.join(defDir, '1.1.json'), JSON.stringify({ v: 'a' }));
+
+    expect(listVersions(partDir, 'decision')).toEqual(['1.0', '1.1']);
   });
 });

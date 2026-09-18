@@ -375,6 +375,76 @@ function listDirectoryNames(parentDir: string, filter: (entry: fs.Dirent) => boo
     .map((entry) => entry.name);
 }
 
+/** Um número de versão `major.minor` (ex.: `schemas/<name>/1.9.json`). */
+export type Version = { major: number; minor: number };
+
+const VERSION_FILE_RE = /^\d+\.\d+\.json$/;
+
+/** Converte `"1.9"` em `{ major: 1, minor: 9 }`. */
+export function parseVersion(v: string): Version {
+  const [major, minor] = v.split('.').map(Number);
+  return { major, minor };
+}
+
+/** Converte `{ major: 1, minor: 9 }` em `"1.9"`. */
+export function formatVersion(v: Version): string {
+  return `${v.major}.${v.minor}`;
+}
+
+/** Compara duas versões numericamente por `(major, minor)` — nunca por ordenação de string (`1.10` > `1.9`). */
+export function compareVersions(a: string, b: string): number {
+  const va = parseVersion(a);
+  const vb = parseVersion(b);
+  return va.major - vb.major || va.minor - vb.minor;
+}
+
+/** Próxima versão a partir de `current`: `minor` incrementa o minor, `major` incrementa o major e zera o minor. */
+export function bumpVersion(current: string, kind: 'major' | 'minor'): Version {
+  const { major, minor } = parseVersion(current);
+  return kind === 'major' ? { major: major + 1, minor: 0 } : { major, minor: minor + 1 };
+}
+
+/**
+ * Versões gravadas em `defDir` (ex.: `schemas/<name>/`), ordenadas crescentemente.
+ * Arquivo cujo nome não bate com `major.minor.json` é ignorado silenciosamente: um `notes.json`
+ * colocado à mão no diretório não pode derrubar `list`/`buildSnapshot` inteiros.
+ */
+export function listVersionFiles(defDir: string): string[] {
+  return listDirectoryNames(defDir, (entry) => entry.isFile() && VERSION_FILE_RE.test(entry.name))
+    .map((file) => path.basename(file, '.json'))
+    .sort(compareVersions);
+}
+
+/**
+ * Definição vigente de `name` dentro de `partDir` (`schemas/`, `vocabulary/<owner>/`, `gates/`):
+ * a maior versão do diretório `partDir/name/`, ou o legado `partDir/name.json` como `1.0` se o
+ * diretório não tiver nenhuma versão; `null` se nenhum dos dois existir.
+ */
+export function resolveCurrentDefinition(
+  partDir: string,
+  name: string,
+): { version: string; content: Record<string, unknown> } | null {
+  const defDir = path.join(partDir, name);
+  const versions = listVersionFiles(defDir);
+  if (!isEmpty(versions)) {
+    const version = versions[versions.length - 1];
+    return {
+      version,
+      content: readJson(path.join(defDir, `${version}.json`)) as Record<string, unknown>,
+    };
+  }
+
+  const legacy = readJson(path.join(partDir, `${name}.json`));
+  return isNil(legacy) ? null : { version: '1.0', content: legacy as Record<string, unknown> };
+}
+
+/** Todas as versões de `name` em `partDir`, do legado (`1.0`, se existir) até a mais nova do diretório. */
+export function listVersions(partDir: string, name: string): string[] {
+  const legacyExists = !isNil(readJson(path.join(partDir, `${name}.json`)));
+  const dirVersions = listVersionFiles(path.join(partDir, name));
+  return legacyExists ? ['1.0', ...dirVersions] : dirVersions;
+}
+
 /** Nomes de processo válidos de um projeto: diretórios não reservados com `process.json` legível. */
 function listValidProcesses(projectDir: string): string[] {
   return listDirectoryNames(
