@@ -72,12 +72,13 @@ type VersionedRegistration = {
 export const Hashes = z.object({ schemas: Hash, vocabulary: Hash, gates: Hash });
 export type Hashes = z.infer<typeof Hashes>;
 
-/** Versão vigente de cada definição fixada no momento do `createProcess` (§4.1, leva 6). */
-export type FixedVersions = {
-  types: Record<string, string>;
-  vocabulary: Record<string, string>;
-  gates: Record<string, string>;
-};
+/** Versão vigente de cada definição fixada no momento do `createProcess` (§4.1, leva 6). Schema Zod é a fonte única. */
+export const FixedVersions = z.object({
+  types: z.record(z.string(), z.string()),
+  vocabulary: z.record(z.string(), z.string()),
+  gates: z.record(z.string(), z.string()),
+});
+export type FixedVersions = z.infer<typeof FixedVersions>;
 
 /**
  * Manifesto fixado de um processo (`process.json`, §4.1). `versions` é informativo: fica **fora**
@@ -108,6 +109,16 @@ export type LoadedProcess = {
 
 const EMPTY_VOCAB: Vocab = { milestoneType: [], result: [], action: [] };
 
+/** Parâmetros de `decideVersion` — extraído para ser reaproveitado por `registerVersioned`. */
+type DecideVersionParams<T> = {
+  current: { version: string; content: T } | null;
+  candidateContent: T;
+  candidateHash: string;
+  content: Record<string, unknown>;
+  breakingInput: boolean;
+  detectBreak: (current: T, candidate: T) => { breaking: boolean; details: Detail[] };
+};
+
 /**
  * Decisão de versionamento compartilhada pelos três `register_*` (levas 3-5): resolve o `outcome`
  * a passar a `writeVersionExclusive` (D1) a partir do vigente lido nesta tentativa, mais
@@ -120,14 +131,11 @@ const EMPTY_VOCAB: Vocab = { milestoneType: [], result: [], action: [] };
  * chamar `detectBreak` — é isso que faz conteúdo idêntico ser sempre no-op, mesmo pra `type`,
  * cujo `detectBreak` devolve quebra sempre que é chamado.
  */
-function decideVersion<T>(params: {
-  current: { version: string; content: T } | null;
-  candidateContent: T;
-  candidateHash: string;
-  content: Record<string, unknown>;
-  breakingInput: boolean;
-  detectBreak: (current: T, candidate: T) => { breaking: boolean; details: Detail[] };
-}): { outcome: ResolveOutcome; previousVersion: string | null; warnings: Warning[] } {
+function decideVersion<T>(params: DecideVersionParams<T>): {
+  outcome: ResolveOutcome;
+  previousVersion: string | null;
+  warnings: Warning[];
+} {
   const { current, candidateContent, candidateHash, content, breakingInput, detectBreak } = params;
   const previousVersion = current?.version ?? null;
 
@@ -160,6 +168,39 @@ function decideVersion<T>(params: {
 
   const version = formatVersion(bumpVersion(current.version, breaking ? 'major' : 'minor'));
   return { outcome: { kind: 'write', version, content }, previousVersion, warnings };
+}
+
+/**
+ * Wiring de versionamento comum aos três `register_*` (levas 3-5): resolve o vigente em `partDir`
+ * e delega a decisão a `decideVersion` (ver seu JSDoc pro porquê de `T` genérico), gravando com
+ * `writeVersionExclusive`. `projectCurrent` extrai de `current.content` (JSON bruto do disco) só
+ * o pedaço comparável de tipo `T`.
+ */
+function registerVersioned<T>(
+  partDir: string,
+  defDir: string,
+  key: string,
+  projectCurrent: (content: Record<string, unknown>) => T,
+  decision: Omit<DecideVersionParams<T>, 'current'>,
+): { result: WriteVersionResult; previousVersion: string | null; warnings: Warning[] } {
+  let previousVersion: string | null = null;
+  let warnings: Warning[] = [];
+
+  const resolveTarget = (): ResolveOutcome => {
+    const current = resolveCurrentDefinition(partDir, key);
+    const decided = decideVersion<T>({
+      ...decision,
+      current: isNil(current)
+        ? null
+        : { version: current.version, content: projectCurrent(current.content) },
+    });
+    previousVersion = decided.previousVersion;
+    warnings = decided.warnings;
+    return decided.outcome;
+  };
+
+  const result = writeVersionExclusive(defDir, resolveTarget);
+  return { result, previousVersion, warnings };
 }
 
 /**
@@ -227,15 +268,12 @@ export function registerType(
     registeredAt: new Date().toISOString(),
   };
 
-  let previousVersion: string | null = null;
-  let warnings: Warning[] = [];
-
-  const resolveTarget = (): ResolveOutcome => {
-    const current = resolveCurrentDefinition(partDir, name);
-    const decision = decideVersion<Record<string, unknown>>({
-      current: isNil(current)
-        ? null
-        : { version: current.version, content: current.content.schema as Record<string, unknown> },
+  const { result, previousVersion, warnings } = registerVersioned<Record<string, unknown>>(
+    partDir,
+    defDir,
+    name,
+    (c) => c.schema as Record<string, unknown>,
+    {
       candidateContent: schema,
       candidateHash: hash,
       content,
@@ -244,13 +282,8 @@ export function registerType(
         breaking: true,
         details: [{ path: '/schema', code: 'changed', message: 'schema changed' }],
       }),
-    });
-    previousVersion = decision.previousVersion;
-    warnings = decision.warnings;
-    return decision.outcome;
-  };
-
-  const result = writeVersionExclusive(defDir, resolveTarget);
+    },
+  );
 
   return {
     project,
@@ -285,7 +318,7 @@ function validateWithAjv(schema: Record<string, unknown>, log: Logger | undefine
  * runtime de `VOCABULARY_VIOLATED` (`/data/milestoneType`, `/data/decisions/${index}/action`),
  * que tem prefixo e índice de array que não existem ao comparar duas definições estáticas.
  */
-export function detectVocabularyBreak(
+function detectVocabularyBreak(
   current: Vocab,
   next: Vocab,
 ): { breaking: boolean; details: Detail[] } {
@@ -329,27 +362,19 @@ export function registerVocabulary(
     registeredAt: new Date().toISOString(),
   };
 
-  let previousVersion: string | null = null;
-  let warnings: Warning[] = [];
-
-  const resolveTarget = (): ResolveOutcome => {
-    const current = resolveCurrentDefinition(partDir, owner);
-    const decision = decideVersion<Vocab>({
-      current: isNil(current)
-        ? null
-        : { version: current.version, content: extractVocab(current.content) },
+  const { result, previousVersion, warnings } = registerVersioned<Vocab>(
+    partDir,
+    defDir,
+    owner,
+    extractVocab,
+    {
       candidateContent: vocab,
       candidateHash: hash,
       content,
       breakingInput: options.breaking === true,
       detectBreak: detectVocabularyBreak,
-    });
-    previousVersion = decision.previousVersion;
-    warnings = decision.warnings;
-    return decision.outcome;
-  };
-
-  const result = writeVersionExclusive(defDir, resolveTarget);
+    },
+  );
 
   return {
     project,
@@ -389,27 +414,19 @@ export function registerGate(
     registeredAt: new Date().toISOString(),
   };
 
-  let previousVersion: string | null = null;
-  let warnings: Warning[] = [];
-
-  const resolveTarget = (): ResolveOutcome => {
-    const current = resolveCurrentDefinition(partDir, name);
-    const decision = decideVersion<string>({
-      current: isNil(current)
-        ? null
-        : { version: current.version, content: current.content.criteria as string },
+  const { result, previousVersion, warnings } = registerVersioned<string>(
+    partDir,
+    defDir,
+    name,
+    (c) => c.criteria as string,
+    {
       candidateContent: criteria,
       candidateHash: hash,
       content,
       breakingInput: options.breaking === true,
       detectBreak: () => ({ breaking: false, details: [] }),
-    });
-    previousVersion = decision.previousVersion;
-    warnings = decision.warnings;
-    return decision.outcome;
-  };
-
-  const result = writeVersionExclusive(defDir, resolveTarget);
+    },
+  );
 
   return {
     project,
@@ -557,7 +574,7 @@ export type ResolveOutcome =
   | { kind: 'breaking'; details: Detail[] };
 
 /** Resultado de `writeVersionExclusive`: o que foi de fato gravado, ou a confirmação de que nada mudou. */
-export type WriteVersionResult =
+type WriteVersionResult =
   | { kind: 'written'; version: string; content: Record<string, unknown> }
   | { kind: 'unchanged'; version: string };
 
@@ -699,7 +716,7 @@ function listDirectoryNames(parentDir: string, filter: (entry: fs.Dirent) => boo
 }
 
 /** Um número de versão `major.minor` (ex.: `schemas/<name>/1.9.json`). */
-export type Version = { major: number; minor: number };
+type Version = { major: number; minor: number };
 
 const VERSION_FILE_RE = /^\d+\.\d+\.json$/;
 

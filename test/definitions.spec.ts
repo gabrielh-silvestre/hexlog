@@ -771,12 +771,13 @@ describe('registerVocabulary — versionamento (Leva 3)', () => {
     expect(fs.readFileSync(legacyFile, 'utf8')).toBe(legacyBefore);
   });
 
-  // Critério 16: corrida real com Promise.all (não os cenários scriptados de `writeVersionExclusive`
-  // acima, que testam só o retry em EEXIST). Cada chamada é agendada via `Promise.resolve().then`,
-  // e como `registerVocabulary` é 100% síncrona (só `fs.*Sync`), a ordem de conclusão das
-  // microtasks é garantida pela spec (FIFO): a 1ª chamada do array sempre termina antes da 2ª
-  // começar — o que ainda assim exercita o caminho real (não mockado) de ponta a ponta.
-  describe('critério 16 — corrida real com Promise.all', () => {
+  // Critério 16: chamadas sequenciais via Promise.all, não uma corrida real —
+  // `registerVocabulary` é 100% síncrona (só `fs.*Sync`), então não há ponto de suspensão
+  // dentro dela e a ordem de conclusão das microtasks é garantida pela spec (FIFO): a 1ª
+  // chamada do array sempre termina antes da 2ª começar, gerando versões consecutivas de forma
+  // determinística. A proteção real contra EEXIST concorrente é validada em
+  // `describe('exclusive version write')` (acima), que força um EEXIST de verdade no disco.
+  describe('critério 16 — chamadas sequenciais via Promise.all, ordem determinística', () => {
     test('(a) conteúdos diferentes → duas versões distintas, ambos os conteúdos em disco, nenhum sobrescrito', async () => {
       registerVocabulary(dir, PROJECT, 'owner-race-a', { ...EMPTY, milestoneType: ['seed'] });
 

@@ -11,6 +11,7 @@ import {
   registerGate,
   registerType,
   registerVocabulary,
+  FixedVersions,
 } from './definitions.ts';
 import { HexlogError } from './errors.ts';
 import { listBuiltinGates, CRITERIA_MAX_CHARS } from './gates.ts';
@@ -46,13 +47,6 @@ const projectDefinitionVersionFields = {
   version: z.string().describe(CURRENT_VERSION_DESC),
   versions: z.array(z.string()).describe(ALL_VERSIONS_DESC),
 };
-
-/** Bloco `versions` de um manifesto de processo (`fixed` implícito no nome): mesmo shape em `list` nível-processo e `create_process`. */
-const FixedVersions = z.object({
-  types: z.record(z.string(), z.string()),
-  vocabulary: z.record(z.string(), z.string()),
-  gates: z.record(z.string(), z.string()),
-});
 
 /** Registra as 5 tools de definição (`list`, `register_type`, `register_vocabulary`, `register_gate`, `create_process`). */
 export function registerDefinitionTools(server: McpServer, ctx: Context): void {
@@ -145,7 +139,9 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         'Registers a new version of a project owner\'s (`"core"` or an extension) vocabulary, writing ' +
         '`vocabulary/<owner>/<version>.json` (never replaces a prior version). Identical content is a ' +
         'no-op (`unchanged: true`). Removing a term from `milestoneType` or `action` is breaking and ' +
-        'requires `breaking: true`; removing from `result` is not, since it is an open field.',
+        'requires `breaking: true`; removing from `result` is not, since it is an open field. ' +
+        '`breaking: true` on a compatible change adds a `NO_BREAKING_CHANGE` warning to the response ' +
+        'instead of forcing a major bump.',
       inputSchema: {
         project: Name,
         owner: Name,
@@ -189,7 +185,8 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
       description:
         "Registers a new version of a custom gate's criteria for the project, writing " +
         '`gates/<name>/<version>.json` (never replaces a prior version). Identical content is a ' +
-        'no-op (`unchanged: true`). No criteria change is breaking for a gate; `breaking: true` is ignored.',
+        'no-op (`unchanged: true`). No criteria change is breaking for a gate: `breaking: true` never ' +
+        'blocks the write or forces a major bump, it only adds a `NO_BREAKING_CHANGE` warning to the response.',
       inputSchema: {
         project: Name,
         name: Name,
