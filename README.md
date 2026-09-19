@@ -111,7 +111,7 @@ rode `node scripts/install.ts` de novo.
 | `register_vocabulary` | Registra uma nova versão do vocabulário de um dono do projeto | `vocabulary/<owner>/<versão>.json` |
 | `register_gate` | Registra uma nova versão do critério de um gate custom | `gates/<gate>/<versão>.json` |
 | `create_process` | Cria um processo, fixando o snapshot atual de tipos/vocabulário/gates | `process.json` |
-| `register` | Registra um evento (Marco, Veredito ou tipo custom fixado) | `events.jsonl` |
+| `register` | Registra um evento (Marco, Veredito, Voto ou tipo custom fixado) | `events.jsonl` |
 | `evaluate_gate` | Avalia um gate contra um alvo e grava o resultado como Marco de gate | `events.jsonl` |
 | `state` | Projeta o Estado atual do processo (vigentes, conflitos, órfãos, avisos, cadeia) | — |
 | `events` | Lista os eventos do log, em ordem física ou por busca textual | — |
@@ -157,11 +157,31 @@ varia por tipo de definição:
 |---|---|
 | `type` | qualquer mudança no schema JSON |
 | `vocabulary` | remover um termo de `milestoneType` ou `action` (campos fechados). Remover de `result` não é quebra — é campo aberto |
-| `gate` | nada — `criteria` nunca quebra |
+| `gate` | nada — `criteria`/`rule` nunca quebram |
+| `transitions` | nada — regra de fluxo, não vocabulário fechado |
 
 O arquivo legado `<nome>.json` (de antes do versionamento) nunca é apagado,
 reescrito ou copiado: continua sendo a fonte da versão `1.0` para sempre, e
 o diretório de versões, quando existe, começa em `1.1`.
+
+`register_vocabulary` aceita ainda `transitions[]` (opcional): pares
+`{from, to}` de `milestoneType` para `owner`, registrados na mesma chamada
+como uma categoria versionada à parte (`transitions/<owner>/<versão>.json`),
+com o resultado da tool sob a chave `transitions` da resposta. `from: null`
+marca a fase inicial. Uma vez que algum par declara um `to`, `register`
+passa a exigir que a fase atual do alvo (`state.phases`) seja um dos `from`
+aceitos para gravar um Marco daquele `milestoneType` — ver `register`
+abaixo. `milestoneType` sem nenhum par declarado continua sem restrição.
+
+`register_gate` aceita ainda `rule` (opcional): `{targetPattern,
+requireVigente, acceptedResults, minCount}`. Um gate registrado com `rule`
+vira um **gate de regra** — `evaluate_gate` calcula `passed` sozinho a
+partir de `state.active` (contando os alvos cujo endereço começa com
+`targetPattern`, cujo `claim` está em `acceptedResults`, e cujo status é
+`active` quando `requireVigente: true` ou `active`/`conflict` quando
+`false`, contra o piso `minCount`), em vez de aceitar `result` do agente —
+ver `evaluate_gate` abaixo. Gate sem `rule` continua sendo um gate de
+opinião, comportamento idêntico ao de antes desta mudança.
 
 ### `create_process`
 
@@ -192,14 +212,47 @@ Registra um evento. O `id` pode ser:
   completo nunca inventado pelo agente).
 
 Marco aceita `milestoneType`, `target` (endereço no formato `hex:target:<id>`),
-`count`, `dueAt`, `decisions[]` e `trace` (opcional). Veredito aceita `claim`,
-`source`, `result`, `evidence`, `target` (também `hex:target:<id>`), `supersedes[]`,
-`origin` e `trace`. `milestoneType: "gate"` e a chave `gate` são reservados ao
-Marco que `evaluate_gate` grava; usá-los em `register` é `RESERVED_FIELD`.
+`count`, `dueAt`, `decisions[]`, `predecessors[]` (opcional; alvos que
+precisam ter um Veredito vigente para este alvo aparecer como `released` em
+vez de `blocked`, ver `state`) e `trace` (opcional). Veredito aceita `claim`,
+`source`, `result`, `evidence`, `target` (também `hex:target:<id>`),
+`supersedes[]`, `dependsOn[]` (opcional; Vereditos dos quais este depende —
+superar um deles faz o alvo deste Veredito aparecer em `state.toReview`,
+mesmo esquema de `supersedes`, mas sem superar nada), `origin` e `trace`.
+`milestoneType: "gate"` e a chave `gate` são reservados ao Marco que
+`evaluate_gate` grava; usá-los em `register` é `RESERVED_FIELD`.
 
-No Marco, `trace` é ignorado na comparação de retentativa idempotente: reenviar
-o mesmo id completo com `trace` diferente ainda deduplica (`deduplicated: true`).
-No Veredito `trace` é obrigatório e entra normalmente na comparação.
+Se `register_vocabulary` já tiver declarado algum par `from -> to` de
+`transitions` para o `milestoneType` do Marco, a fase atual do alvo
+(`state.phases`, a `milestoneType` não-gate mais recente daquele alvo) tem
+que bater um dos `from` aceitos — senão a chamada falha com
+`INVALID_TRANSITION`, listando os `from` aceitos em `details`.
+`milestoneType` sem nenhum par declarado continua sem restrição.
+
+Voto aceita `target`, `round`, `votersExpected` (fixado pelo 1º voto daquela
+rodada — `target`+`round` — um voto seguinte da mesma rodada com
+`votersExpected` diferente falha com `VOTE_ROUND_MISMATCH`, sem gravar
+nada), `position`, `confidence`, `changed`, `flipReason` (obrigatório quando
+`changed: true`) e `trace`. É rodada às cegas: até a contagem de votos da
+rodada bater `votersExpected`, `position`/`confidence`/`changed`/
+`flipReason` voltam redigidos (`null`) e com `redacted: true` em `events`/
+`state` (modo cru/paginado), e o voto fica de fora de `events(search: ...)`
+por completo — nunca aparece, nem redigido, para não vazar por relevância
+de busca. O N-ésimo voto revela todos de uma vez, calculado a cada leitura;
+nada é reescrito no log. `state.voteRounds` traz a contagem
+(`votesReceived`/`votersExpected`/`revealed`) de cada rodada sem expor
+conteúdo — é como notar uma rodada emperrada.
+
+No Marco e no Voto, `trace` é ignorado na comparação de retentativa
+idempotente: reenviar o mesmo id completo com `trace` diferente ainda
+deduplica (`deduplicated: true`). No Veredito `trace` é obrigatório e entra
+normalmente na comparação.
+
+**Limite de confidencialidade conhecido:** a rodada às cegas é um controle
+de tempo de consulta (`events`/`state`/busca redigem), não de tempo de
+repouso — o voto está em texto claro em `events.jsonl` desde o `append`.
+Código com acesso direto ao arquivo (hoje, `scripts/insights.ts`) enxerga
+votos de rodada aberta sem passar pela redação.
 
 ### `evaluate_gate`
 
@@ -208,7 +261,11 @@ Gates **embutidos** (`no-orphans`, `no-conflicts`, `chain-intact`,
 `no-invalid-references`, `no-forks`) são calculados pelo próprio servidor a
 partir do Estado do processo, e não aceitam `result` informado pelo agente.
 Gates **custom**, registrados via `register_gate` e fixados no processo,
-exigem `result: {passed, evidence}` do agente.
+exigem `result: {passed, evidence}` do agente — a menos que tenham `rule`
+fixado: nesse caso o gate vira **de regra**, calculado pelo servidor a
+partir de `state.active` (ver `register_gate`), e `result` informado pelo
+agente falha com `INVALID_EVALUATION`, o mesmo código que um gate embutido
+usa para o mesmo caso.
 
 `no-forks` reprova quando um Veredito superado tem 2 ou mais sucessores vivos
 (2+ Vereditos que o citam em `supersedes` e não estão eles mesmos superados) —
@@ -225,19 +282,35 @@ O Marco de gate registrado **não abre nem fecha o ciclo** do alvo: avaliar
 
 Projeta o Estado atual do processo: Vereditos vigentes e em conflito, Marcos
 órfãos (com `dueAt` vencido e sem evento posterior no mesmo alvo),
-eventos a revisar, referências inválidas (`supersedes` apontando para um Veredito
-inexistente), avisos de vocabulário, Vereditos com fork (`no-forks`, ver acima)
-e a cadeia de hash. O parâmetro `sections` filtra o que volta na resposta; sem
-ele, todas as seções voltam. Cada lista é cortada em 100 itens, e `totals` traz
-o tamanho real de cada uma.
+eventos a revisar (inclusive o alvo de um Veredito cuja premissa em
+`dependsOn[]` foi superada), referências inválidas (`supersedes`/`dependsOn`
+apontando para um Veredito inexistente), avisos de vocabulário, Vereditos
+com fork (`no-forks`, ver acima), Marcos bloqueados/liberados por
+`predecessors[]`, rodadas de voto e a cadeia de hash. O parâmetro `sections`
+filtra o que volta na resposta; sem ele, todas as seções voltam. Cada lista
+é cortada em 100 itens, e `totals` traz o tamanho real de cada uma.
 
-`targets` sempre volta na resposta, independente de `sections`: todo `target`
-que algum Veredito já usou, inclusive os totalmente superados (sem nenhum
-Veredito vigente). Com `withData: true` (padrão `false`), cada item de status
+`targets` e `phases` sempre voltam na resposta, independente de `sections`:
+`targets` é todo `target` que algum Veredito já usou, inclusive os
+totalmente superados (sem nenhum Veredito vigente); `phases` é a fase atual
+(a `milestoneType` não-gate mais recente) de todo `target` que já teve ao
+menos um Marco. Com `withData: true` (padrão `false`), cada item de status
 `active` em `active` ganha o `data` do Veredito vigente; itens de status
 `conflict` (sem um vigente único) não ganham `data`. A resposta ainda respeita
 o teto de `PAGE_CHARS_CAP = 24_000` caracteres: uma vez que o orçamento
 estoura, os itens restantes vêm sem `data` e com `truncated: true`.
+
+`blocked` lista, para todo alvo com `predecessors[]` declarado (Marco mais
+recente daquele alvo que declarou o campo — última ocorrência vence) e ao
+menos um predecessor ainda sem Veredito vigente, `{target, blockedBy}`.
+`released` lista os alvos com `predecessors[]` declarado e todos já com
+Veredito vigente (`active` ou `conflict`). Alvo sem `predecessors[]`
+declarado não entra em nenhuma das duas listas.
+
+`voteRounds` traz, por rodada de voto (`target`+`round`),
+`{votersExpected, votesReceived, revealed}` — sem nenhum conteúdo do voto,
+mesmo com a rodada ainda aberta. É o jeito de notar uma rodada emperrada sem
+esperar a revelação (ver `register`).
 
 ### `events`
 
@@ -259,6 +332,11 @@ comum a Marco e Veredito), `milestoneType`, `result` e o intervalo
 **A busca textual não encontra endereços `hex:target:<id>` nem ids de evento.**
 Para filtrar por endereço, use o parâmetro `target` — não existe filtro por id
 de evento.
+
+Um Voto de rodada ainda não revelada (ver `register`) volta com
+`redacted: true` e `data` redigido no modo cru, mas fica de fora dos
+candidatos do modo busca por completo — nunca aparece, nem redigido, por
+mais que o termo buscado combine com o voto.
 
 `until` congela o prefixo do arquivo considerado (só as linhas físicas de
 índice menor que `until`); sem informar, a chamada usa todas as linhas do
@@ -295,7 +373,8 @@ $XDG_DATA_HOME/hexlog/                 # 0700; fallback ~/.local/share/hexlog
     vocabulary/<owner>.json            # legado: fonte fixa da versão 1.0
     vocabulary/<owner>/<major.minor>.json  # {owner, milestoneType[], result[], action[], hash, registeredAt}
     gates/<gate>.json                  # legado: fonte fixa da versão 1.0
-    gates/<gate>/<major.minor>.json    # {name, criteria, hash, registeredAt}
+    gates/<gate>/<major.minor>.json    # {name, criteria, rule?, hash, registeredAt}
+    transitions/<owner>/<major.minor>.json  # {owner, transitions[], hash, registeredAt} — sempre começa em 1.0, categoria nova sem legado possível
     <process>/                         # 0700
       process.json                     # manifesto fixado; criado só por create_process
       events.jsonl                     # 0600; 1 linha por evento
@@ -315,6 +394,15 @@ cálculo de hash (`hashes`/`verifyHashes`) — por isso todo `process.json` já
 gravado antes desta leva continua válido sem migração, e por isso também
 `versions` é adulterável em disco sem disparar `PROCESS_CORRUPTED` (limitação
 conhecida para quem cogitar usá-lo como trilha de auditoria).
+
+`fixed.gates.<nome>` ganha a chave opcional `rule` (o `RuleGateSpec` fixado,
+quando o gate foi registrado com `rule`) e `fixed`/`hashes` ganham o bloco
+opcional `transitions` (`Record<owner, TransitionRule[]>`), fixado só quando
+algum owner do projeto já registrou `transitions` via `register_vocabulary`.
+Diferente de `versions`, `hashes.transitions` **entra** no cálculo de
+`verifyHashes` quando presente — mas, como a chave é opcional e ausente em
+todo `process.json` gravado antes desta leva, nenhum processo legado passa a
+exigi-la.
 
 A escrita de cada versão (`<nome>/<versão>.json`) é sempre exclusiva
 (`linkSync`, nunca `writeJsonAtomic`): duas chamadas concorrentes no mesmo
@@ -336,15 +424,18 @@ Alguns dos mais comuns:
 | `RESERVED_FIELD` | Marco com `milestoneType: "gate"` ou chave `gate` fora de `evaluate_gate` |
 | `VOCABULARY_VIOLATED` | `milestoneType`/`decisions[].action` fora do vocabulário fixado (campo fechado); `details[0]` traz `owners` (donos de extensão fixados no processo) e `allowed` (termos que o campo de fato aceita, core ∪ extensões) |
 | `INVALID_FILTER` | filtros de `events` inconsistentes (`milestoneType` fora do vocabulário, `after ≥ before`, `until` além do arquivo) |
-| `GATE_NOT_REGISTERED` / `INVALID_EVALUATION` | problemas ao chamar `evaluate_gate` |
+| `GATE_NOT_REGISTERED` / `INVALID_EVALUATION` | problemas ao chamar `evaluate_gate` (`INVALID_EVALUATION` também cobre `result` informado pelo agente num gate de regra) |
+| `INVALID_TRANSITION` | `register` de um Marco cujo `milestoneType` tem `transitions` fixadas e a fase atual do alvo não está entre os `from` aceitos |
+| `VOTE_ROUND_MISMATCH` | `register` de um Voto cuja rodada (`target`+`round`) já fixou `votersExpected` com outro valor |
 | `PROCESS_CORRUPTED` | `process.json` ilegível, ou hashes internos divergentes |
 | `BREAKING_CHANGE` | `register_type`/`register_vocabulary`/`register_gate` com uma mudança que quebra, sem `breaking: true` no input |
 
 Um aviso, diferente de erro, vem em `warnings[]` numa resposta de sucesso:
 
-- `UNKNOWN_VOCABULARY` em `register`, quando `result` de um Veredito
-  está fora do vocabulário conhecido (`result` é campo aberto: o evento é
-  gravado normalmente, só o aviso muda).
+- `UNKNOWN_VOCABULARY` em `register`, quando `result` de um Veredito, ou
+  `position` de um Voto (reaproveita o vocabulário de `result` do dono),
+  está fora do vocabulário conhecido (campo aberto: o evento é gravado
+  normalmente, só o aviso muda).
 - `NO_BREAKING_CHANGE` num `register_type`/`register_vocabulary`/`register_gate`
   com `breaking: true` cuja mudança, na verdade, não quebra — a versão bumpa
   minor mesmo assim, em vez de forçar major.
