@@ -13,9 +13,9 @@ diagnóstico de saúde — não a instalação; isso é do `README.md` do repo h
 
 | # | Tool | Motivo |
 |---|---|---|
-| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:575`, único lançador em todo o `src/`) |
+| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:666`, único lançador em todo o `src/`) |
 | 2 | `register_type` / `register_gate` | Opcionais — mas, se usados, precisam vir **antes** do passo 3 |
-| 3 | `create_process` | Congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:448-496`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
+| 3 | `create_process` | Congela um snapshot de types/vocabulary/gates (e `transitions`, se registradas) lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:543-587`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
 | 4 | `register` / `evaluate_gate` | Dependem de `loadProcess`, que só existe a partir do passo 3 |
 
 Chame `register_vocabulary` pelo menos uma vez, com qualquer `owner` — o que
@@ -25,14 +25,16 @@ destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele
 
 | Situação | Resultado | Onde |
 |---|---|---|
-| `create_process` com `process` em `RESERVED_PROCESS_NAMES` (`schemas`, `vocabulary`, `gates`) | `RESERVED_NAME` | `definitions.ts:21` |
-| `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts:24` |
-| `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts:27-33` |
+| `create_process` com `process` em `RESERVED_PROCESS_NAMES` (`schemas`, `vocabulary`, `gates`, `transitions`) | `RESERVED_NAME` | `definitions.ts:22` |
+| `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`, `vote`) | `RESERVED_NAME` | `definitions.ts:25` |
+| `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts:28-34` |
 | `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:421` |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:545` |
-| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:567` |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:423-428` |
+| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:476` |
+| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:678` |
+| `result` de um Veredito, ou `position` de um Voto, fora do vocabulário fixado (campos abertos) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:700` |
+| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:478-483` |
+| `milestoneType` fora de ordem, com `transitions` registradas para aquela fase de destino | `INVALID_TRANSITION`, mensagem lista as fases de origem aceitas | `event-tools.ts` (`checkTransitionOrder`) |
+| Voto seguinte da mesma rodada (`target`+`round`) com `votersExpected` diferente do 1º voto | `VOTE_ROUND_MISMATCH`, sem linha gravada | `event-tools.ts` (`checkVoteRound`) |
 
 Notas adicionais:
 
@@ -61,6 +63,14 @@ Notas adicionais:
 - Milestone aceita `trace` (opcional) como os demais eventos, mas ele é
   ignorado na comparação de retentativa idempotente: reenviar o mesmo id
   completo com `trace` diferente ainda deduplica.
+- Voto (rodada às cegas): `votersExpected` é fixado pelo 1º voto de cada
+  `target`+`round` — os seguintes têm de bater esse número, senão
+  `VOTE_ROUND_MISMATCH`. Até a rodada bater `votersExpected`, `position` e os
+  demais campos sensíveis vêm redigidos (`redacted: true`) em `events`/`state`
+  e o voto é excluído de `events(search: ...)` inteiro — nunca aparece, nem
+  redigido. `state.voteRounds` mostra a contagem (`votesReceived`/
+  `votersExpected`/`revealed`) sem revelar conteúdo, para notar uma rodada
+  emperrada.
 
 ## Exemplo mínimo: do zero a um `register` e um `evaluate_gate` verdes
 

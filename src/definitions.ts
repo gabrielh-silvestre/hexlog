@@ -11,6 +11,7 @@ import { anchor, sha256hex } from './chain.ts';
 import { resolveSafePath, ioError, readJson } from './storage.ts';
 import { HexlogError, type Detail } from './errors.ts';
 import { Hash, Name } from './events.ts';
+import { RuleGateSpec } from './gates.ts';
 import { CLOSED_VOCAB_KEYS } from './state.ts';
 import type { Vocab, Vocabulary } from './state.ts';
 
@@ -18,10 +19,10 @@ import type { Vocab, Vocabulary } from './state.ts';
 export type { Vocab, Vocabulary };
 
 /** §4.2: nomes de processo reservados para as definições do projeto. */
-export const RESERVED_PROCESS_NAMES = ['schemas', 'vocabulary', 'gates'] as const;
+export const RESERVED_PROCESS_NAMES = ['schemas', 'vocabulary', 'gates', 'transitions'] as const;
 
 /** §4.2: nomes de tipo reservados para os eventos nativos. */
-export const RESERVED_TYPE_NAMES = ['milestone', 'verdict'] as const;
+export const RESERVED_TYPE_NAMES = ['milestone', 'verdict', 'vote'] as const;
 
 /** §4.11: nomes de gate embutidos, reservados para `register_gate`. */
 export const BUILTIN_GATE_NAMES = [
@@ -69,15 +70,29 @@ type VersionedRegistration = {
   warnings: Warning[];
 };
 
-/** Hashes dos três blocos fixados no `process.json` (§4.1): schema Zod é a fonte única. */
-export const Hashes = z.object({ schemas: Hash, vocabulary: Hash, gates: Hash });
+/** Hashes dos blocos fixados no `process.json` (§4.1): schema Zod é a fonte única. `transitions` é
+ *  opcional (leva "fases", mudança 3) — mesmo precedente de `versions`, um `process.json` legado
+ *  nunca teve essa chave e não pode passar a exigi-la. */
+export const Hashes = z.object({
+  schemas: Hash,
+  vocabulary: Hash,
+  gates: Hash,
+  transitions: Hash.optional(),
+});
 export type Hashes = z.infer<typeof Hashes>;
+
+/** Mudança 3 (fases): uma regra de transição `from -> to` de `milestoneType`; `from: null` é a fase inicial. */
+export const TransitionRuleSchema = z.strictObject({ from: Name.nullable(), to: Name });
+export type TransitionRule = z.infer<typeof TransitionRuleSchema>;
 
 /** Versão vigente de cada definição fixada no momento do `createProcess` (§4.1, leva 6). Schema Zod é a fonte única. */
 export const FixedVersions = z.object({
   types: z.record(z.string(), z.string()),
   vocabulary: z.record(z.string(), z.string()),
   gates: z.record(z.string(), z.string()),
+  // Mudança 3 (fases): opcional, mesmo precedente de `Hashes.transitions` — ausente enquanto
+  // nenhum owner registrou transitions, um `process.json` legado nunca teve essa chave.
+  transitions: z.record(z.string(), z.string()).optional(),
 });
 export type FixedVersions = z.infer<typeof FixedVersions>;
 
@@ -93,7 +108,12 @@ export type ProcessManifest = {
   fixed: {
     types: Record<string, object>;
     vocabulary: Vocabulary;
-    gates: Record<string, { criteria: string }>;
+    // `rule` (mudança 1, D1): ausente = gate de opinião, comportamento idêntico ao de antes desta mudança.
+    gates: Record<string, { criteria: string; rule?: RuleGateSpec }>;
+    // Mudança 3 (fases): por owner, mesma organização de `vocabulary.byOwner`. Opcional: ausente
+    // enquanto nenhum `register_vocabulary(..., transitions)` for chamado no projeto, byte a byte
+    // igual ao `process.json` de antes desta mudança.
+    transitions?: Record<string, TransitionRule[]>;
   };
   hashes: Hashes;
   versions?: FixedVersions;
@@ -387,42 +407,105 @@ export function registerVocabulary(
 }
 
 /**
+ * Mudança 3 (fases): registra (versionado) as regras de transição de `owner`, gravando
+ * `transitions/<owner>/<versão>.json`. Sem vigente (nome novo) → `1.0` direto. Conteúdo igual ao
+ * vigente → `unchanged`, nada escrito. Transição nunca quebra (mesma regra de gate, tabela do spec:
+ * regras de fluxo, não vocabulário fechado): qualquer mudança bumpa minor, sem exigir flag;
+ * `breaking: true` vira aviso `NO_BREAKING_CHANGE` em vez de forçar major.
+ */
+export function registerTransitions(
+  dir: string,
+  project: string,
+  owner: string,
+  transitions: TransitionRule[],
+  options: { breaking?: boolean } = {},
+): { project: string; owner: string } & VersionedRegistration {
+  const partDir = resolveSafePath(dir, project, 'transitions');
+  const defDir = resolveSafePath(dir, project, 'transitions', owner);
+  const hash = sha256hex(canonicalize(transitions) ?? '');
+  const content: Record<string, unknown> = {
+    owner,
+    transitions,
+    hash,
+    registeredAt: new Date().toISOString(),
+  };
+
+  const { result, previousVersion, warnings } = registerVersioned<TransitionRule[]>(
+    partDir,
+    defDir,
+    owner,
+    (c) => c.transitions as TransitionRule[],
+    {
+      candidateContent: transitions,
+      candidateHash: hash,
+      content,
+      breakingInput: options.breaking === true,
+      detectBreak: () => ({ breaking: false, details: [] }),
+    },
+  );
+
+  return {
+    project,
+    owner,
+    hash,
+    version: result.version,
+    previousVersion,
+    unchanged: result.kind === 'unchanged',
+    warnings,
+  };
+}
+
+/** Conteúdo comparável de um gate (mudança 1, D1): `rule` ausente = gate de opinião, hash/versionamento
+ *  idênticos ao de antes desta mudança. */
+type GateContent = { criteria: string; rule?: RuleGateSpec };
+
+/**
  * §4.11: registra (versionado) o critério de um gate custom, gravando `gates/<name>/<versão>.json`.
  * Sem vigente (nome novo) → `1.0` direto. Conteúdo igual ao vigente → `unchanged`, nada escrito.
- * Gate nunca quebra (tabela do spec, "Major quando: nunca"): qualquer mudança de `criteria` bumpa
- * minor, sem exigir flag; `breaking: true` numa mudança de gate sempre vira aviso `NO_BREAKING_CHANGE`.
+ * Gate nunca quebra (tabela do spec, "Major quando: nunca"): qualquer mudança de `criteria` ou `rule`
+ * bumpa minor, sem exigir flag; `breaking: true` numa mudança de gate sempre vira aviso
+ * `NO_BREAKING_CHANGE`. `rule` (mudança 1, D1) marca um gate de regra: `evaluate_gate` calcula
+ * `passed` sozinho a partir de `state.active`, em vez de aceitar `result` do agente.
  */
 export function registerGate(
   dir: string,
   project: string,
   name: string,
   criteria: string,
-  options: { breaking?: boolean } = {},
+  options: { breaking?: boolean; rule?: RuleGateSpec } = {},
 ): { project: string; name: string } & VersionedRegistration {
   if ((BUILTIN_GATE_NAMES as readonly string[]).includes(name)) {
     throw new HexlogError('RESERVED_NAME', `gate '${name}' is builtin`);
   }
 
+  const { breaking, rule } = options;
   const partDir = resolveSafePath(dir, project, 'gates');
   const defDir = resolveSafePath(dir, project, 'gates', name);
-  const hash = sha256hex(canonicalize(criteria) ?? '');
+  const comparable: GateContent = { criteria, ...(isNil(rule) ? {} : { rule }) };
+  const hash = sha256hex(canonicalize(comparable) ?? '');
   const content: Record<string, unknown> = {
     name,
-    criteria,
+    ...comparable,
     hash,
     registeredAt: new Date().toISOString(),
   };
 
-  const { result, previousVersion, warnings } = registerVersioned<string>(
+  const { result, previousVersion, warnings } = registerVersioned<GateContent>(
     partDir,
     defDir,
     name,
-    (c) => c.criteria as string,
+    (c) => ({
+      criteria: c.criteria as string,
+      // Borda de leitura (não dentro de `evaluateRule`): `rule` persistido inválido falha aqui,
+      // com o erro claro do Zod, em vez de produzir um `RuleGateSpec` malformado que só quebra
+      // mais tarde, na avaliação do gate.
+      ...(isNil(c.rule) ? {} : { rule: RuleGateSpec.parse(c.rule) }),
+    }),
     {
-      candidateContent: criteria,
+      candidateContent: comparable,
       candidateHash: hash,
       content,
-      breakingInput: options.breaking === true,
+      breakingInput: breaking === true,
       detectBreak: () => ({ breaking: false, details: [] }),
     },
   );
@@ -435,6 +518,18 @@ export function registerGate(
     previousVersion,
     unchanged: result.kind === 'unchanged',
     warnings,
+  };
+}
+
+/** Hash de cada bloco fixado (§4.1); `transitions` só entra quando o projeto de fato o usa (mudança 3, §4.1). */
+function hashFixed(fixed: ProcessManifest['fixed']): Hashes {
+  return {
+    schemas: sha256hex(canonicalize(fixed.types) ?? ''),
+    vocabulary: sha256hex(canonicalize(fixed.vocabulary) ?? ''),
+    gates: sha256hex(canonicalize(fixed.gates) ?? ''),
+    ...(isNil(fixed.transitions)
+      ? {}
+      : { transitions: sha256hex(canonicalize(fixed.transitions) ?? '') }),
   };
 }
 
@@ -468,11 +563,7 @@ export function createProcess(
 
   const projectDir = resolveSafePath(dir, project);
   const { fixed, versions } = buildSnapshot(projectDir);
-  const hashes: Hashes = {
-    schemas: sha256hex(canonicalize(fixed.types) ?? ''),
-    vocabulary: sha256hex(canonicalize(fixed.vocabulary) ?? ''),
-    gates: sha256hex(canonicalize(fixed.gates) ?? ''),
-  };
+  const hashes = hashFixed(fixed);
   const createdAt = clock().toISOString();
   const candidate: ProcessManifest = { project, process, createdAt, fixed, hashes, versions };
 
@@ -503,7 +594,7 @@ type StaleDetail = {
   current: string | null;
 };
 
-const VERSION_SECTIONS: (keyof FixedVersions)[] = ['types', 'vocabulary', 'gates'];
+const VERSION_SECTIONS: (keyof FixedVersions)[] = ['types', 'vocabulary', 'gates', 'transitions'];
 
 /** Compara `versions` fixado × candidato, seção a seção, e lista só o que divergiu. */
 function detectStaleVersions(
@@ -584,16 +675,39 @@ function buildSnapshot(projectDir: string): {
 
   const gateDefs = listDefinitions(path.join(projectDir, 'gates'));
   const gates = Object.fromEntries(
-    gateDefs.map((d) => [d.name, { criteria: d.content.criteria as string }]),
+    gateDefs.map((d) => [
+      d.name,
+      {
+        criteria: d.content.criteria as string,
+        ...(isNil(d.content.rule) ? {} : { rule: d.content.rule as RuleGateSpec }),
+      },
+    ]),
   );
+
+  // Mudança 3 (fases): ausente (não `{}`) enquanto nenhum owner registrou transitions — é isso que
+  // mantém `fixed.transitions`/`hashes.transitions` fora do process.json de um projeto que não usa a
+  // feature, byte a byte igual ao de antes desta mudança.
+  const transitionDefs = listDefinitions(path.join(projectDir, 'transitions'));
+  const transitions = isEmpty(transitionDefs)
+    ? undefined
+    : Object.fromEntries(
+        transitionDefs.map((d) => [d.name, d.content.transitions as TransitionRule[]]),
+      );
 
   const versions: FixedVersions = {
     types: Object.fromEntries(typeDefs.map((d) => [d.name, d.version])),
     vocabulary: Object.fromEntries(vocabFiles.map((d) => [d.name, d.version])),
     gates: Object.fromEntries(gateDefs.map((d) => [d.name, d.version])),
+    // Mesma regra de `fixed.transitions`: ausente enquanto `transitionDefs` está vazio, nunca `{}`.
+    ...(isEmpty(transitionDefs)
+      ? {}
+      : { transitions: Object.fromEntries(transitionDefs.map((d) => [d.name, d.version])) }),
   };
 
-  return { fixed: { types, vocabulary, gates }, versions };
+  return {
+    fixed: { types, vocabulary, gates, ...(isNil(transitions) ? {} : { transitions }) },
+    versions,
+  };
 }
 
 function extractVocab(content: Record<string, unknown>): Vocab {
@@ -724,6 +838,11 @@ function verifyHashes(manifest: ProcessManifest): void {
     { hash: 'vocabulary', fixed: manifest.fixed.vocabulary },
     { hash: 'gates', fixed: manifest.fixed.gates },
   ];
+  // Mudança 3 (fases): checado só se presente — mesma regra de `versions` (leva 6): um
+  // process.json legado nunca teve `hashes.transitions` e não pode passar a exigi-lo.
+  if (!isNil(manifest.hashes.transitions)) {
+    parts.push({ hash: 'transitions', fixed: manifest.fixed.transitions });
+  }
 
   for (const part of parts) {
     const recalculated = sha256hex(canonicalize(part.fixed) ?? '');

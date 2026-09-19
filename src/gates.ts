@@ -55,6 +55,37 @@ export function isBuiltinGate(name: string): name is BuiltinGateName {
   return (BUILTIN_GATE_NAMES as readonly string[]).includes(name);
 }
 
+/**
+ * Mudança 1 (D1): critério de um gate de regra — piso de targets, sob `targetPattern` (prefixo
+ * literal, mesmo estilo de match do hook de guard do repo, não regex livre), cujo `claim` vigente em
+ * `state.active` está em `acceptedResults`. `requireVigente: true` só conta status `'active'` (vigente
+ * sem disputa); com `requireVigente: false`, `'conflict'` (candidatos ainda em disputa) também conta.
+ */
+export const RuleGateSpec = z.strictObject({
+  targetPattern: z.string().min(1).max(200),
+  requireVigente: z.boolean(),
+  acceptedResults: z.array(z.string().min(1).max(200)).min(1).max(100),
+  minCount: z.number().int().min(0),
+});
+export type RuleGateSpec = z.infer<typeof RuleGateSpec>;
+
+/** Avalia um gate de regra (§4.11, mudança 1): conta os targets de `state.active` que batem `spec`,
+ *  corta a prova em 50 como os builtins já fazem. */
+export function evaluateRule(spec: RuleGateSpec, state: State): EvaluationResult {
+  const matches = state.active
+    .filter((entry) => entry.target.startsWith(spec.targetPattern))
+    .filter((entry) => !spec.requireVigente || entry.status === 'active')
+    .filter((entry) => spec.acceptedResults.includes(entry.claim))
+    .map((entry) => entry.target);
+
+  return {
+    passed: matches.length >= spec.minCount,
+    evidence: matches.slice(0, BUILTIN_EVIDENCE_MAX),
+    totalEvidenceItems: matches.length,
+    evaluatedThrough: state.logThrough,
+  };
+}
+
 /** Avalia um gate embutido contra `state` (§4.11): sem items → passa; senão, corta a prova em 50. */
 export function evaluateBuiltin(name: BuiltinGateName, state: State): EvaluationResult {
   const items = BUILTIN_GATES[name].items(state);
@@ -74,7 +105,7 @@ export function normalizeCustomEvidence(evidence: string | string[]): string[] {
 /** Monta e valida `GateMilestoneData` (§4.5) para o Milestone de gate, embutido ou custom. */
 export function buildGateMilestoneData(args: {
   name: string;
-  origin: 'builtin' | 'custom';
+  origin: 'builtin' | 'custom' | 'rule';
   criteria: string;
   target: string;
   result: EvaluationResult;

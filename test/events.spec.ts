@@ -3,7 +3,7 @@ import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import { z } from 'zod';
 import { HexlogError } from '../src/errors.ts';
-import { Target, Name, parseId, normalizeData } from '../src/events.ts';
+import { Target, Name, parseId, normalizeData, dataSchema } from '../src/events.ts';
 
 describe('Nome', () => {
   test.each(['a', 'a-b1', 'x'.repeat(63)])('%s é válido', (value) => {
@@ -61,6 +61,92 @@ describe('Alvo (N12)', () => {
         expect.objectContaining({ path: '/data/target' }),
       );
     }
+  });
+});
+
+describe('Mudança 4/5 › predecessors e dependsOn são opcionais', () => {
+  test('Milestone sem predecessors normaliza igual a hoje (campo opcional)', () => {
+    const data = { milestoneType: 'review', target: 'hex:target:u1' };
+    expect(normalizeData('milestone', data)).toEqual(data);
+  });
+
+  test('Milestone com predecessors normaliza preservando a lista', () => {
+    const data = {
+      milestoneType: 'review',
+      target: 'hex:target:u1',
+      predecessors: ['hex:target:p1', 'hex:target:p2'],
+    };
+    expect(normalizeData('milestone', data)).toEqual(data);
+  });
+
+  test('Verdict sem dependsOn normaliza igual a hoje (campo opcional)', () => {
+    const data = {
+      claim: 'a',
+      source: 'f',
+      result: 'approved',
+      evidence: 'p',
+      target: 'hex:target:u1',
+      origin: 'o',
+      trace: 'r',
+    };
+    expect(normalizeData('verdict', data)).toEqual(data);
+  });
+
+  test('Verdict com dependsOn normaliza preservando a lista', () => {
+    const uuid = randomUUIDv7();
+    const data = {
+      claim: 'a',
+      source: 'f',
+      result: 'approved',
+      evidence: 'p',
+      target: 'hex:target:u1',
+      dependsOn: [`p:r:verdict:${uuid}`],
+      origin: 'o',
+      trace: 'r',
+    };
+    expect(normalizeData('verdict', data)).toEqual(data);
+  });
+});
+
+describe('Mudança 2 (votos) — VoteData', () => {
+  function voteData(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      target: 'hex:target:u1',
+      round: 'r1',
+      votersExpected: 3,
+      position: 'approve',
+      changed: false,
+      ...overrides,
+    };
+  }
+
+  test('voto com os campos obrigatórios normaliza sem alteração', () => {
+    expect(normalizeData('vote', voteData())).toEqual(voteData());
+  });
+
+  test('changed: true sem flipReason → INVALID_EVENT em /data/flipReason', () => {
+    expect.assertions(3);
+    try {
+      normalizeData('vote', voteData({ changed: true }));
+    } catch (error) {
+      expect(error).toBeInstanceOf(HexlogError);
+      expect((error as HexlogError).code).toBe('INVALID_EVENT');
+      expect((error as HexlogError).details).toContainEqual(
+        expect.objectContaining({ path: '/data/flipReason' }),
+      );
+    }
+  });
+
+  test('changed: true com flipReason normaliza', () => {
+    const data = voteData({ changed: true, flipReason: 'evidence changed' });
+    expect(normalizeData('vote', data)).toEqual(data);
+  });
+
+  // Achado Critic ALTO #1: sem o ramo `vote` em `dataSchema`, `normalizeData` cairia em
+  // `customSchemas['vote']` (`undefined`) e quebraria antes mesmo de chegar num HexlogError.
+  test('dataSchema devolve VoteData nativamente, não customSchemas[type]', () => {
+    expect(dataSchema('vote', voteData(), {}).safeParse(voteData()).success).toBe(true);
+    expect(() => normalizeData('vote', voteData(), {})).not.toThrow();
   });
 });
 

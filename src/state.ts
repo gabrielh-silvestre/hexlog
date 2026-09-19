@@ -21,7 +21,7 @@ export const VocabularySchema = z.strictObject({
 });
 export type Vocabulary = z.infer<typeof VocabularySchema>;
 
-export type VocabularyField = 'milestoneType' | 'result' | 'decisions.action';
+export type VocabularyField = 'milestoneType' | 'result' | 'decisions.action' | 'position';
 
 export type StatusEntry =
   | { target: string; claim: string; status: 'active'; active: string }
@@ -46,6 +46,15 @@ export type Projection = {
   forks: { verdict: string; successors: string[] }[];
   // P4: todos os targets de Verdict já usados no log, inclusive os sem vigente, ordenados.
   targets: string[];
+  // Mudança 4 (predecessores): target com `predecessors` declarado e ao menos 1 sem Verdict ativo.
+  blocked: { target: string; blockedBy: string[] }[];
+  // Mudança 4: target com `predecessors` declarado e todos já com Verdict ativo.
+  released: string[];
+  // Mudança 3 (fases): fase atual (última `milestoneType` não-gate) de cada target com Milestone.
+  phases: { target: string; current: string }[];
+  // Mudança 2 (votos): status sem conteúdo por rodada (target+round) — sempre visível, mesmo com a
+  // rodada ainda aberta (mitigação do pre-mortem #2: sem isso, uma rodada emperrada passa despercebida).
+  voteRounds: VoteRoundStatus[];
 };
 
 export type State = Projection & { chain: Chain };
@@ -59,6 +68,9 @@ export const Section = z.enum([
   'invalidReferences',
   'warnings',
   'forks',
+  'blocked',
+  'released',
+  'voteRounds',
   'chain',
 ]);
 
@@ -78,13 +90,16 @@ type MilestoneFields = {
   target: string;
   dueAt?: string;
   decisions?: { item: string; action: string; text: string }[];
+  predecessors?: string[];
 };
 type VerdictFields = {
   target: string;
   claim: string;
   result: string;
   supersedes?: string[];
+  dependsOn?: string[];
 };
+type VoteFields = { target: string; round: string; votersExpected: number };
 
 function targetOf(line: EventLine): string | undefined {
   if (line.type === 'milestone') return (line.data as MilestoneFields).target;
@@ -133,6 +148,17 @@ function calculateForks(
     .map(([verdict, successors]) => ({ verdict, successors }));
 }
 
+/** Referências (`supersedes`/`dependsOn`) de `v` para ids que não são Verdict do log. */
+function invalidRefs(
+  v: EventLine,
+  refs: string[] | undefined,
+  verdictById: Record<string, EventLine>,
+): Projection['invalidReferences'] {
+  return (refs ?? [])
+    .filter((refId) => isNil(verdictById[refId]))
+    .map((reference) => ({ citedBy: v.id, reference }));
+}
+
 /** Active/conflicts/invalidReferences por (target, claim); `supersedes` marca superados sem fundir grupos. */
 function computeSupersession(verdicts: EventLine[]): SupersessionResult {
   const verdictById = keyBy(verdicts, (v) => v.id);
@@ -141,12 +167,11 @@ function computeSupersession(verdicts: EventLine[]): SupersessionResult {
 
   for (const v of verdicts) {
     const data = v.data as VerdictFields;
+    invalidReferences.push(...invalidRefs(v, data.supersedes, verdictById));
+    // Mudança 5: `dependsOn` só é checado quanto a referência válida — não supera nada.
+    invalidReferences.push(...invalidRefs(v, data.dependsOn, verdictById));
     for (const refId of data.supersedes ?? []) {
-      if (isNil(verdictById[refId])) {
-        invalidReferences.push({ citedBy: v.id, reference: refId });
-        continue;
-      }
-      supersededIds.add(refId);
+      if (!isNil(verdictById[refId])) supersededIds.add(refId);
     }
   }
 
@@ -175,6 +200,109 @@ function computeSupersession(verdicts: EventLine[]): SupersessionResult {
 /** P4: targets de todo Verdict do log, inclusive os sem vigente, ordenados. */
 function calculateTargets(verdicts: EventLine[]): string[] {
   return uniq(verdicts.map((v) => (v.data as VerdictFields).target)).sort();
+}
+
+/** Mudança 4: predecessores do Milestone mais recente daquele target que declarou o campo (última ocorrência vence). */
+function latestPredecessors(eventsForTarget: EventLine[]): string[] | null {
+  let result: string[] | null = null;
+  for (const e of eventsForTarget) {
+    const predecessors = (e.data as MilestoneFields).predecessors;
+    if (!isNil(predecessors)) result = predecessors;
+  }
+  return result;
+}
+
+/**
+ * Mudança 4 (D6): predecessor "resolvido" ⇔ aparece em `active` (status `active` ou `conflict` —
+ * grupo (target, claim) inteiramente superado já não entra em `active`). Target sem `predecessors`
+ * declarado não entra em nenhuma das duas listas.
+ */
+function calculateBlockedAndReleased(
+  milestones: EventLine[],
+  active: StatusEntry[],
+): { blocked: Projection['blocked']; released: string[] } {
+  const resolvedTargets = new Set(active.map((entry) => entry.target));
+  const byTarget = groupBy(milestones, (e) => targetOf(e) as string);
+
+  const blocked: Projection['blocked'] = [];
+  const released: string[] = [];
+  for (const [target, eventsForTarget] of Object.entries(byTarget)) {
+    const predecessors = latestPredecessors(eventsForTarget);
+    if (isNil(predecessors)) continue;
+
+    const blockedBy = predecessors.filter((p) => !resolvedTargets.has(p));
+    if (blockedBy.length > 0) blocked.push({ target, blockedBy });
+    else released.push(target);
+  }
+  return { blocked, released };
+}
+
+/**
+ * Mudança 3 (fases): fase atual de `target` — a `milestoneType` do Milestone não-gate mais recente
+ * daquele target entre `lines` (última ocorrência vence), `null` se nenhum. Exportada porque
+ * `event-tools.ts` reusa exatamente esta função para checar a ordem de transição na escrita, em vez
+ * de duplicar a mesma passada por lines (DRY) — só `state.ts` pode fazer isso sem criar dependência
+ * circular, já que `event-tools.ts` é quem importa de `state.ts`, nunca o contrário.
+ */
+export function currentPhase(lines: EventLine[], target: string): string | null {
+  let result: string | null = null;
+  for (const line of lines) {
+    if (targetOf(line) !== target || line.type !== 'milestone' || isMilestoneGate(line)) continue;
+    result = (line.data as MilestoneFields).milestoneType;
+  }
+  return result;
+}
+
+/** Mudança 3: fase atual de todo target que já teve ao menos um Milestone; sem fase (nunca teve um não-gate) fica de fora. */
+function calculatePhases(lines: EventLine[], milestones: EventLine[]): Projection['phases'] {
+  const targets = uniq(milestones.map((m) => targetOf(m) as string));
+  return targets.flatMap((target) => {
+    const current = currentPhase(lines, target);
+    return isNil(current) ? [] : [{ target, current }];
+  });
+}
+
+export type VoteRoundStatus = {
+  target: string;
+  round: string;
+  votersExpected: number;
+  votesReceived: number;
+  revealed: boolean;
+};
+
+/** Chave de agrupamento de uma rodada de voto: um `target` pode ter várias rodadas concorrentes. */
+export function voteRoundKey(target: string, round: string): string {
+  return `${target}::${round}`;
+}
+
+/**
+ * Mudança 2 (votos): status por rodada (`target`+`round`), 1 passada sobre `lines`. Exportada porque
+ * `event-tools.ts` reusa exatamente esta função (validar `votersExpected` do próximo voto, redigir
+ * `events`/`state` até a rodada revelar, excluir voto de rodada aberta do conjunto de `candidates` de
+ * busca) sem duplicar a mesma passada por lines (DRY) — mesma razão de `currentPhase`. `revealed`:
+ * "o N-ésimo voto revela todos" (D2/D3) — calculado a cada leitura, nunca gravado no evento.
+ */
+export function voteRoundCounts(lines: EventLine[]): Map<string, VoteRoundStatus> {
+  const counts = new Map<string, VoteRoundStatus>();
+  for (const line of lines) {
+    if (line.type !== 'vote') continue;
+    const vote = line.data as VoteFields;
+    const key = voteRoundKey(vote.target, vote.round);
+    const status = counts.get(key);
+    if (isNil(status)) {
+      counts.set(key, {
+        target: vote.target,
+        round: vote.round,
+        votersExpected: vote.votersExpected,
+        votesReceived: 1,
+        revealed: 1 >= vote.votersExpected,
+      });
+      continue;
+    }
+    status.votesReceived++;
+    status.revealed = status.votesReceived >= status.votersExpected;
+  }
+  return counts;
 }
 
 /** Ciclo do Milestone por target (§4.8, pseudocódigo do plano): reduce puro, gate nunca abre nem fecha (R-3). */
@@ -212,18 +340,45 @@ function calculateOrphans(lines: EventLine[], now: string): Projection['orphans'
   return orphans;
 }
 
-/** BFS por target a partir dos Verdicts superados; Milestones de gate entram (só ficam fora do ciclo, R-3). */
-function calculateToReview(lines: EventLine[], superseded: EventLine[]): string[] {
+/** Mudança 5: premissa (id de Verdict superado) → Verdicts que declaram depender dela (`dependsOn`). */
+function dependentsByPremise(verdicts: EventLine[]): Map<string, EventLine[]> {
+  const index = new Map<string, EventLine[]>();
+  for (const v of verdicts) {
+    for (const premiseId of (v.data as VerdictFields).dependsOn ?? []) {
+      const dependents = index.get(premiseId);
+      if (isNil(dependents)) index.set(premiseId, [v]);
+      else dependents.push(v);
+    }
+  }
+  return index;
+}
+
+/**
+ * BFS por target a partir dos Verdicts superados; Milestones de gate entram (só ficam fora do ciclo,
+ * R-3). Mudança 5: no laço de seed, cada Verdict superado também enfileira os targets dos Verdicts
+ * que declaram depender dele (`dependsOn`) — mesmo `visitedTargets` do BFS por `supersedes`, o que
+ * evita loop numa dependência circular (A depende de B, B depende de A).
+ */
+function calculateToReview(
+  lines: EventLine[],
+  verdicts: EventLine[],
+  superseded: EventLine[],
+): string[] {
   const byId = keyBy(lines, (e) => e.id);
   const supersededIds = new Set(superseded.map((v) => v.id));
+  const dependentsById = dependentsByPremise(verdicts);
   const visitedTargets = new Set<string>();
   const queue: string[] = [];
 
-  for (const verdict of superseded) {
-    const target = targetOf(verdict);
-    if (isNil(target) || visitedTargets.has(target)) continue;
+  const enqueue = (target: string | undefined): void => {
+    if (isNil(target) || visitedTargets.has(target)) return;
     visitedTargets.add(target);
     queue.push(target);
+  };
+
+  for (const verdict of superseded) {
+    enqueue(targetOf(verdict));
+    for (const dependent of dependentsById.get(verdict.id) ?? []) enqueue(targetOf(dependent));
   }
 
   const result: string[] = [];
@@ -239,10 +394,7 @@ function calculateToReview(lines: EventLine[], superseded: EventLine[]): string[
       for (const refId of (line.data as VerdictFields).supersedes ?? []) {
         const referencedLine = byId[refId];
         if (isNil(referencedLine)) continue;
-        const referencedTarget = targetOf(referencedLine);
-        if (isNil(referencedTarget) || visitedTargets.has(referencedTarget)) continue;
-        visitedTargets.add(referencedTarget);
-        queue.push(referencedTarget);
+        enqueue(targetOf(referencedLine));
       }
     }
   }
@@ -256,6 +408,9 @@ const FIELD_POLICY_BY_KEY: Record<VocabularyField, FieldPolicy> = {
   milestoneType: { key: 'milestoneType', open: false },
   result: { key: 'result', open: true },
   'decisions.action': { key: 'action', open: false },
+  // Mudança 2 (D4): reuso de Vocab.result para validar vote.position — ver RALPLAN. A checagem de
+  // pertencimento é contra a mesma lista de `result`; só o `field` do warning muda para o nome real.
+  position: { key: 'result', open: true },
 };
 
 /**
@@ -327,17 +482,23 @@ export function projectState(lines: EventLine[], vocabulary: Vocabulary, now: st
   const last = deduplicated.at(-1);
 
   const verdicts = deduplicated.filter((e) => e.type === 'verdict');
+  const milestones = deduplicated.filter((e) => e.type === 'milestone');
   const { active, conflicts, invalidReferences, superseded, forks } = computeSupersession(verdicts);
+  const { blocked, released } = calculateBlockedAndReleased(milestones, active);
 
   return {
     logThrough: isNil(last) ? null : pick(last, ['id', 'seq', 'timestamp']),
     active,
     conflicts,
     orphans: calculateOrphans(deduplicated, now),
-    toReview: calculateToReview(deduplicated, superseded),
+    toReview: calculateToReview(deduplicated, verdicts, superseded),
     invalidReferences,
     warnings: collectWarnings(deduplicated, vocabulary),
     forks,
     targets: calculateTargets(verdicts),
+    blocked,
+    released,
+    phases: calculatePhases(deduplicated, milestones),
+    voteRounds: [...voteRoundCounts(deduplicated).values()],
   };
 }

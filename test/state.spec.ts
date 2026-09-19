@@ -48,6 +48,7 @@ function milestone(
     milestoneType?: string;
     dueAt?: string;
     decisions?: { item: string; action: string; text: string }[];
+    predecessors?: string[];
   },
   options: { id?: string; timestamp?: string; seq?: number } = {},
 ): EventLine {
@@ -56,7 +57,13 @@ function milestone(
 }
 
 function verdict(
-  data: { target: string; claim: string; result?: string; supersedes?: string[] },
+  data: {
+    target: string;
+    claim: string;
+    result?: string;
+    supersedes?: string[];
+    dependsOn?: string[];
+  },
   options: { id?: string; timestamp?: string; seq?: number } = {},
 ): EventLine {
   const { result = 'confirmed', ...rest } = data;
@@ -65,6 +72,14 @@ function verdict(
     data: { source: 'f', evidence: 'p', origin: 'o', trace: 'r', result, ...rest },
     ...options,
   });
+}
+
+function vote(
+  data: { target: string; round: string; votersExpected: number; position?: string },
+  options: { id?: string; timestamp?: string; seq?: number } = {},
+): EventLine {
+  const { position = 'approve', ...rest } = data;
+  return line({ type: 'vote', data: { position, changed: false, ...rest }, ...options });
 }
 
 // ---- testes ----
@@ -92,6 +107,10 @@ describe('projectState › State bate com fixture (envelope novo, target hex:tar
       warnings: [],
       forks: [],
       targets: [TARGET_1],
+      blocked: [],
+      released: [],
+      phases: [{ target: TARGET_1, current: 'open-skeleton' }],
+      voteRounds: [],
     });
   });
 });
@@ -286,6 +305,62 @@ describe('N3 › aRevisar (com gate incluído)', () => {
     expect(projection.toReview).toEqual(expect.arrayContaining([m1.id, gate1.id, v2.id]));
     expect(projection.toReview).not.toEqual(expect.arrayContaining([v1.id]));
     expect(projection.toReview).not.toEqual(expect.arrayContaining([otherTarget.id]));
+  });
+});
+
+describe('Mudança 5 › dependsOn', () => {
+  test('dependsOn para id inexistente vira invalidReferences', () => {
+    const v1 = verdict(
+      { target: TARGET_1, claim: 'a1', dependsOn: ['p:r:verdict:phantom'] },
+      { timestamp: T(0) },
+    );
+    const projection = projectState([v1], emptyVocabulary, T(0));
+    expect(projection.invalidReferences).toEqual([
+      { citedBy: v1.id, reference: 'p:r:verdict:phantom' },
+    ]);
+  });
+
+  test('supera premissa da qual outro verdict depende: dependente entra no mesmo toReview', () => {
+    const premise = verdict({ target: TARGET_1, claim: 'p' }, { timestamp: T(0) });
+    const dependent = verdict(
+      { target: TARGET_2, claim: 'd', dependsOn: [premise.id] },
+      { timestamp: T(1) },
+    );
+    const supersedingPremise = verdict(
+      { target: TARGET_1, claim: 'p', supersedes: [premise.id] },
+      { timestamp: T(2) },
+    );
+    const projection = projectState(
+      [premise, dependent, supersedingPremise],
+      emptyVocabulary,
+      T(2),
+    );
+
+    expect(projection.toReview).toEqual(
+      expect.arrayContaining([supersedingPremise.id, dependent.id]),
+    );
+  });
+
+  test('dependência circular A↔B: termina sem travar e devolve os dois targets exatamente uma vez cada', () => {
+    const idA = `p:r:verdict:${randomUUIDv7()}`;
+    const idB = `p:r:verdict:${randomUUIDv7()}`;
+    const a = verdict(
+      { target: TARGET_1, claim: 'a', dependsOn: [idB] },
+      { id: idA, timestamp: T(0) },
+    );
+    const b = verdict(
+      { target: TARGET_2, claim: 'b', dependsOn: [idA] },
+      { id: idB, timestamp: T(1) },
+    );
+    const supersedingA = verdict(
+      { target: TARGET_1, claim: 'a', supersedes: [idA] },
+      { timestamp: T(2) },
+    );
+
+    const projection = projectState([a, b, supersedingA], emptyVocabulary, T(2));
+
+    expect(projection.toReview).toEqual(expect.arrayContaining([supersedingA.id, b.id]));
+    expect(projection.toReview).toHaveLength(2);
   });
 });
 
@@ -502,5 +577,118 @@ describe('S3: eventos custom são inertes', () => {
     ]);
 
     expect(projectionWithCustom).toEqual(projectionWithoutCustom);
+  });
+});
+
+describe('Mudança 4 › bloqueado/liberado', () => {
+  const PREDECESSOR = 'hex:target:predecessor';
+
+  test('predecessor sem nenhum Verdict: bloqueado', () => {
+    const m1 = milestone({ target: TARGET_1, predecessors: [PREDECESSOR] }, { timestamp: T(0) });
+    const projection = projectState([m1], emptyVocabulary, T(0));
+    expect(projection.blocked).toEqual([{ target: TARGET_1, blockedBy: [PREDECESSOR] }]);
+    expect(projection.released).toEqual([]);
+  });
+
+  test('predecessor com Verdict ativo: liberado', () => {
+    const predVerdict = verdict({ target: PREDECESSOR, claim: 'done' }, { timestamp: T(0) });
+    const m1 = milestone({ target: TARGET_1, predecessors: [PREDECESSOR] }, { timestamp: T(1) });
+    const projection = projectState([predVerdict, m1], emptyVocabulary, T(1));
+    expect(projection.released).toEqual([TARGET_1]);
+    expect(projection.blocked).toEqual([]);
+  });
+
+  test('predecessor com Verdict superado e não reativado: continua bloqueado', () => {
+    const a = verdict({ target: PREDECESSOR, claim: 'x' }, { timestamp: T(0) });
+    // supera cruzando para outro target/claim: o grupo (PREDECESSOR, 'x') some de `active`
+    // (mesma mecânica do teste "supera cruzando target/claim diferente não funde grupos").
+    const c = verdict({ target: TARGET_2, claim: 'y', supersedes: [a.id] }, { timestamp: T(1) });
+    const m1 = milestone({ target: TARGET_1, predecessors: [PREDECESSOR] }, { timestamp: T(2) });
+    const projection = projectState([a, c, m1], emptyVocabulary, T(2));
+    expect(projection.blocked).toEqual([{ target: TARGET_1, blockedBy: [PREDECESSOR] }]);
+  });
+
+  test('target sem predecessors declarado não aparece em bloqueado nem liberado', () => {
+    const m1 = milestone({ target: TARGET_1 }, { timestamp: T(0) });
+    const projection = projectState([m1], emptyVocabulary, T(0));
+    expect(projection.blocked).toEqual([]);
+    expect(projection.released).toEqual([]);
+  });
+
+  test('última ocorrência que declara predecessors vence', () => {
+    const predA = 'hex:target:pred-a';
+    const predB = 'hex:target:pred-b';
+    const verdictB = verdict({ target: predB, claim: 'done' }, { timestamp: T(0) });
+    const m1 = milestone({ target: TARGET_1, predecessors: [predA] }, { timestamp: T(1) });
+    const m2 = milestone({ target: TARGET_1, predecessors: [predB] }, { timestamp: T(2) });
+    const projection = projectState([verdictB, m1, m2], emptyVocabulary, T(2));
+    expect(projection.released).toEqual([TARGET_1]);
+    expect(projection.blocked).toEqual([]);
+  });
+});
+
+describe('Mudança 3 › fases', () => {
+  test('fase atual é a milestoneType do Milestone não-gate mais recente do target', () => {
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'draft' }, { timestamp: T(0) });
+    const m2 = milestone({ target: TARGET_1, milestoneType: 'review' }, { timestamp: T(1) });
+    const projection = projectState([m1, m2], emptyVocabulary, T(1));
+    expect(projection.phases).toEqual([{ target: TARGET_1, current: 'review' }]);
+  });
+
+  test('milestoneType "gate" nunca vira fase: fase permanece a do último Milestone não-gate', () => {
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'draft' }, { timestamp: T(0) });
+    const gate = milestone({ target: TARGET_1, milestoneType: 'gate' }, { timestamp: T(1) });
+    const projection = projectState([m1, gate], emptyVocabulary, T(1));
+    expect(projection.phases).toEqual([{ target: TARGET_1, current: 'draft' }]);
+  });
+
+  test('target só com Milestone de gate não aparece em phases', () => {
+    const gate = milestone({ target: TARGET_1, milestoneType: 'gate' }, { timestamp: T(0) });
+    const projection = projectState([gate], emptyVocabulary, T(0));
+    expect(projection.phases).toEqual([]);
+  });
+
+  test('cada target tem sua própria fase, independente dos demais', () => {
+    const m1 = milestone({ target: TARGET_1, milestoneType: 'draft' }, { timestamp: T(0) });
+    const m2 = milestone({ target: TARGET_2, milestoneType: 'review' }, { timestamp: T(1) });
+    const projection = projectState([m1, m2], emptyVocabulary, T(1));
+    expect(projection.phases).toEqual(
+      expect.arrayContaining([
+        { target: TARGET_1, current: 'draft' },
+        { target: TARGET_2, current: 'review' },
+      ]),
+    );
+  });
+});
+
+describe('Mudança 2 › voteRounds (contagem sem expor conteúdo)', () => {
+  test('rodada aberta: votesReceived < votersExpected, revealed: false, sem position/data no resultado', () => {
+    const v1 = vote({ target: TARGET_1, round: 'r1', votersExpected: 3 }, { timestamp: T(0) });
+    const v2 = vote({ target: TARGET_1, round: 'r1', votersExpected: 3 }, { timestamp: T(1) });
+    const projection = projectState([v1, v2], emptyVocabulary, T(1));
+    expect(projection.voteRounds).toEqual([
+      { target: TARGET_1, round: 'r1', votersExpected: 3, votesReceived: 2, revealed: false },
+    ]);
+  });
+
+  test('rodada fechada: votesReceived === votersExpected, revealed: true', () => {
+    const v1 = vote({ target: TARGET_1, round: 'r1', votersExpected: 2 }, { timestamp: T(0) });
+    const v2 = vote({ target: TARGET_1, round: 'r1', votersExpected: 2 }, { timestamp: T(1) });
+    const projection = projectState([v1, v2], emptyVocabulary, T(1));
+    expect(projection.voteRounds).toEqual([
+      { target: TARGET_1, round: 'r1', votersExpected: 2, votesReceived: 2, revealed: true },
+    ]);
+  });
+
+  test('rodadas de targets/rounds diferentes não se misturam', () => {
+    const v1 = vote({ target: TARGET_1, round: 'r1', votersExpected: 1 }, { timestamp: T(0) });
+    const v2 = vote({ target: TARGET_2, round: 'r1', votersExpected: 5 }, { timestamp: T(1) });
+    const projection = projectState([v1, v2], emptyVocabulary, T(1));
+    expect(projection.voteRounds).toEqual(
+      expect.arrayContaining([
+        { target: TARGET_1, round: 'r1', votersExpected: 1, votesReceived: 1, revealed: true },
+        { target: TARGET_2, round: 'r1', votersExpected: 5, votesReceived: 1, revealed: false },
+      ]),
+    );
   });
 });

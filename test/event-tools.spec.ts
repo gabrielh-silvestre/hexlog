@@ -1701,3 +1701,398 @@ describe('RESERVED_FIELD', () => {
     expectError(result, 'RESERVED_FIELD');
   });
 });
+
+describe('Mudança 3 (leva 2) — transitions / ordem de fase', () => {
+  const TARGET = 'hex:target:t1';
+
+  /** Vocabulário com draft/review/done e transitions null->draft->review->done, mais o process fixado. */
+  async function prepareWithTransitions(project: string, process: string): Promise<void> {
+    await environment.call('register_vocabulary', {
+      project,
+      owner: 'core',
+      milestoneType: ['draft', 'review', 'done'],
+      result: [],
+      action: [],
+      transitions: [
+        { from: null, to: 'draft' },
+        { from: 'draft', to: 'review' },
+        { from: 'review', to: 'done' },
+      ],
+    });
+    await environment.call('create_process', { project, process });
+  }
+
+  function registerMilestone(
+    project: string,
+    process: string,
+    milestoneType: string,
+  ): Promise<CallResult> {
+    return environment.call('register', {
+      project,
+      process,
+      id: `${project}:${process}:milestone`,
+      agent: AGENT,
+      data: { milestoneType, target: TARGET },
+    });
+  }
+
+  test('register_vocabulary com transitions grava a versão sob a chave transitions da resposta', async () => {
+    const project = 'transitions-write';
+    const result = await environment.call('register_vocabulary', {
+      project,
+      owner: 'core',
+      milestoneType: ['draft'],
+      result: [],
+      action: [],
+      transitions: [{ from: null, to: 'draft' }],
+    });
+    const body = result.structuredContent as {
+      transitions?: { version: string; unchanged: boolean };
+    };
+    expect(body.transitions).toEqual(expect.objectContaining({ version: '1.0', unchanged: false }));
+    expect(
+      fs.existsSync(path.join(environment.dir, project, 'transitions', 'core', '1.0.json')),
+    ).toBe(true);
+  });
+
+  test('primeira fase (from: null) aceita, e a ordem correta encadeia sem erro', async () => {
+    const project = 'transitions-happy';
+    await prepareWithTransitions(project, PROC);
+
+    const first = await registerMilestone(project, PROC, 'draft');
+    expect(first.isError).not.toBe(true);
+    const second = await registerMilestone(project, PROC, 'review');
+    expect(second.isError).not.toBe(true);
+    const third = await registerMilestone(project, PROC, 'done');
+    expect(third.isError).not.toBe(true);
+  });
+
+  test('fase fora de ordem rejeita com INVALID_TRANSITION, listando os from aceitos', async () => {
+    const project = 'transitions-out-of-order';
+    await prepareWithTransitions(project, PROC);
+    await registerMilestone(project, PROC, 'draft');
+
+    // 'done' só aceita from: 'review'; a fase atual é 'draft'.
+    const rejected = await registerMilestone(project, PROC, 'done');
+    const body = expectError(rejected, 'INVALID_TRANSITION');
+    expect(body.details[0].message).toContain('review');
+  });
+
+  test('milestoneType sem nenhum par declarado fica sem restrição (opt-in por milestoneType)', async () => {
+    const project = 'transitions-optin';
+    await environment.call('register_vocabulary', {
+      project,
+      owner: 'core',
+      milestoneType: ['draft', 'free'],
+      result: [],
+      action: [],
+      transitions: [{ from: null, to: 'draft' }],
+    });
+    await environment.call('create_process', { project, process: PROC });
+
+    const result = await registerMilestone(project, PROC, 'free');
+    expect(result.isError).not.toBe(true);
+  });
+
+  test('regressão: processo sem transitions registradas continua aceitando milestone fora de ordem', async () => {
+    const project = 'transitions-none';
+    await environment.call('register_vocabulary', {
+      project,
+      owner: 'core',
+      milestoneType: ['draft', 'review'],
+      result: [],
+      action: [],
+    });
+    await environment.call('create_process', { project, process: PROC });
+
+    await registerMilestone(project, PROC, 'review');
+    const result = await registerMilestone(project, PROC, 'draft');
+    expect(result.isError).not.toBe(true);
+  });
+
+  test('state.phases reflete a fase atual do target e ignora Milestone de gate', async () => {
+    const project = 'transitions-phases';
+    await prepareWithTransitions(project, PROC);
+    await registerMilestone(project, PROC, 'draft');
+    await environment.call('evaluate_gate', {
+      project,
+      process: PROC,
+      gate: 'no-orphans',
+      agent: AGENT,
+      target: TARGET,
+    });
+
+    const state = await environment.call('state', { project, process: PROC });
+    const body = state.structuredContent as { phases: { target: string; current: string }[] };
+    expect(body.phases).toEqual([{ target: TARGET, current: 'draft' }]);
+  });
+
+  test('create_process(project, "transitions") rejeita com RESERVED_NAME; list(project) não lista "transitions" como processo', async () => {
+    const project = 'transitions-reserved';
+    await environment.call('register_vocabulary', { project, owner: 'core' });
+    const created = await environment.call('create_process', { project, process: 'transitions' });
+    expectError(created, 'RESERVED_NAME');
+
+    await environment.call('create_process', { project, process: 'p1' });
+    const listed = await environment.call('list', { project });
+    const body = listed.structuredContent as { project: { processes: { name: string }[] } };
+    expect(body.project.processes.map((p) => p.name)).toEqual(['p1']);
+  });
+});
+
+describe('Mudança 2 (leva 3) — votos / rodada às cegas', () => {
+  const VOTE_TARGET = 'hex:target:jury-1';
+  const VOTE_PREFIX = `${PROJ}:${PROC}:vote`;
+
+  function voteData(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      target: VOTE_TARGET,
+      round: 'r1',
+      votersExpected: 3,
+      position: 'ok',
+      changed: false,
+      ...overrides,
+    };
+  }
+
+  async function castVote(
+    agent: string,
+    overrides: Record<string, unknown> = {},
+  ): Promise<CallResult> {
+    return environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VOTE_PREFIX,
+      agent,
+      data: voteData(overrides),
+    });
+  }
+
+  type VoteEvent = EventLine & { redacted?: boolean };
+
+  function eventsById(events: VoteEvent[]): Record<string, VoteEvent> {
+    return Object.fromEntries(events.map((event) => [event.id, event]));
+  }
+
+  test('3 votantes: votos 1 e 2 vêm redigidos em events e state; o 3º revela os 3 por igual, mesmo os já lidos redigidos antes', async () => {
+    await registerCore(environment, PROJ);
+    await environment.call('create_process', { project: PROJ, process: PROC });
+
+    const first = await castVote('voter-1', { position: 'ok' });
+    const firstId = (first.structuredContent as { event: EventLine }).event.id;
+    const second = await castVote('voter-2', { position: 'ok' });
+    const secondId = (second.structuredContent as { event: EventLine }).event.id;
+
+    const afterTwo = await environment.call('events', { project: PROJ, process: PROC });
+    const afterTwoBody = afterTwo.structuredContent as { events: VoteEvent[] };
+    const afterTwoById = eventsById(afterTwoBody.events);
+    for (const id of [firstId, secondId]) {
+      expect(afterTwoById[id].redacted).toBe(true);
+      expect(afterTwoById[id].data).toMatchObject({
+        position: null,
+        confidence: null,
+        changed: null,
+        flipReason: null,
+      });
+    }
+
+    const stateAfterTwo = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['voteRounds'],
+    });
+    expect(
+      (
+        stateAfterTwo.structuredContent as {
+          voteRounds: { votesReceived: number; votersExpected: number; revealed: boolean }[];
+        }
+      ).voteRounds,
+    ).toEqual([
+      { target: VOTE_TARGET, round: 'r1', votersExpected: 3, votesReceived: 2, revealed: false },
+    ]);
+
+    const third = await castVote('voter-3', { position: 'not-ok' });
+    const thirdId = (third.structuredContent as { event: EventLine }).event.id;
+
+    const afterThree = await environment.call('events', { project: PROJ, process: PROC });
+    const afterThreeBody = afterThree.structuredContent as { events: VoteEvent[] };
+    const afterThreeById = eventsById(afterThreeBody.events);
+    expect(afterThreeById[firstId].redacted).toBeUndefined();
+    expect(afterThreeById[firstId].data.position).toBe('ok');
+    expect(afterThreeById[secondId].redacted).toBeUndefined();
+    expect(afterThreeById[secondId].data.position).toBe('ok');
+    expect(afterThreeById[thirdId].redacted).toBeUndefined();
+    expect(afterThreeById[thirdId].data.position).toBe('not-ok');
+
+    const stateAfterThree = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['voteRounds'],
+    });
+    expect(
+      (stateAfterThree.structuredContent as { voteRounds: { revealed: boolean }[] }).voteRounds,
+    ).toEqual([
+      { target: VOTE_TARGET, round: 'r1', votersExpected: 3, votesReceived: 3, revealed: true },
+    ]);
+  });
+
+  test('votersExpected divergente na mesma rodada → VOTE_ROUND_MISMATCH, sem gravar linha nova', async () => {
+    await registerCore(environment, PROJ);
+    await environment.call('create_process', { project: PROJ, process: PROC });
+
+    await castVote('voter-1', { votersExpected: 3 });
+    const eventsFile = path.join(environment.dir, PROJ, PROC, 'events.jsonl');
+    const before = fs.readFileSync(eventsFile, 'utf8');
+
+    const mismatched = await castVote('voter-2', { votersExpected: 5 });
+    expectError(mismatched, 'VOTE_ROUND_MISMATCH');
+    expect(fs.readFileSync(eventsFile, 'utf8')).toBe(before);
+  });
+
+  test('busca por termo só em position de um voto de rodada aberta não retorna a linha; após revelar, retorna; invalidLines não acusa a exclusão', async () => {
+    await registerCore(environment, PROJ);
+    await environment.call('create_process', { project: PROJ, process: PROC });
+
+    const hiddenTerm = 'xyzzy-secret-position';
+    await castVote('voter-1', { votersExpected: 2, position: hiddenTerm });
+
+    const beforeReveal = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      search: hiddenTerm,
+    });
+    const beforeBody = beforeReveal.structuredContent as {
+      events: EventLine[];
+      invalidLines: number[];
+    };
+    expect(beforeBody.events).toEqual([]);
+    // Precisão de implementação (polimento pós-APPROVE): exclusão por rodada aberta é filtro por
+    // desenho, não linha corrompida — não pode aparecer em invalidLines.
+    expect(beforeBody.invalidLines).toEqual([]);
+
+    await castVote('voter-2', { votersExpected: 2, position: hiddenTerm });
+
+    const afterReveal = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      search: hiddenTerm,
+    });
+    const afterBody = afterReveal.structuredContent as { events: EventLine[] };
+    expect(afterBody.events.length).toBe(2);
+  });
+});
+
+describe('Mudança 1 (leva 4) — gate de regra', () => {
+  const RULE_GATE = 'gate-regra';
+
+  const RULE = {
+    targetPattern: 'hex:target:u',
+    requireVigente: true,
+    acceptedResults: ['ok'],
+    minCount: 1,
+  };
+
+  /** Vocabulário núcleo + gate de regra + gate de opinião (sem `rule`), com o process fixado. */
+  async function prepareRuleGate(environment: Environment): Promise<void> {
+    await registerCore(environment, PROJ);
+    await environment.call('register_gate', {
+      project: PROJ,
+      name: RULE_GATE,
+      criteria: 'at least 1 vigent verdict under hex:target:u with claim ok',
+      rule: RULE,
+    });
+    await environment.call('register_gate', {
+      project: PROJ,
+      name: 'gate-custom',
+      criteria: 'any custom criteria',
+    });
+    await environment.call('create_process', { project: PROJ, process: PROC });
+  }
+
+  test('gate de regra sem result: reprova com estado vazio, aprova depois de um Verdict vigente que bate a regra', async () => {
+    await prepareRuleGate(environment);
+
+    const empty = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: RULE_GATE,
+      agent: AGENT,
+      target: 'hex:target:u1',
+    });
+    expect(empty.isError).not.toBe(true);
+    expect((empty.structuredContent as { passed: boolean }).passed).toBe(false);
+
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ target: 'hex:target:u1', claim: 'ok', result: 'ok' }),
+    });
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: RULE_GATE,
+      agent: AGENT,
+      target: 'hex:target:u1',
+    });
+    expect(result.isError).not.toBe(true);
+    const body = result.structuredContent as {
+      passed: boolean;
+      evidence: unknown[];
+      event: EventLine;
+    };
+    expect(body.passed).toBe(true);
+    expect(body.evidence).toEqual(['hex:target:u1']);
+    const data = body.event.data as {
+      milestoneType: string;
+      gate: { name: string; origin: string; criteria: string; passed: boolean };
+    };
+    expect(data.milestoneType).toBe('gate');
+    expect(data.gate.origin).toBe('rule');
+    expect(data.gate.criteria).toBe('at least 1 vigent verdict under hex:target:u with claim ok');
+  });
+
+  test('gate de regra com result informado → INVALID_EVALUATION, não RESERVED_FIELD', async () => {
+    await prepareRuleGate(environment);
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: RULE_GATE,
+      agent: AGENT,
+      target: 'hex:target:u1',
+      result: { passed: true, evidence: 'ok' },
+    });
+    expectError(result, 'INVALID_EVALUATION');
+  });
+
+  test('regressão: gate custom sem rule continua exigindo e aceitando result do agente, exatamente como hoje', async () => {
+    await prepareRuleGate(environment);
+
+    const withoutResult = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: 'gate-custom',
+      agent: AGENT,
+      target: 'hex:target:u1',
+    });
+    expectError(withoutResult, 'INVALID_EVALUATION');
+
+    const withResult = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: 'gate-custom',
+      agent: AGENT,
+      target: 'hex:target:u1',
+      result: { passed: true, evidence: 'ok' },
+    });
+    expect(withResult.isError).not.toBe(true);
+    const data = (withResult.structuredContent as { event: EventLine }).event.data as {
+      gate: { origin: string; passed: boolean };
+    };
+    expect(data.gate.origin).toBe('custom');
+    expect(data.gate.passed).toBe(true);
+  });
+});
