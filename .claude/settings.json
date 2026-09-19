@@ -11,5 +11,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "es-toolkit@es-toolkit-plugin": true
   }
 }
