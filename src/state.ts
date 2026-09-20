@@ -24,8 +24,16 @@ export type Vocabulary = z.infer<typeof VocabularySchema>;
 export type VocabularyField = 'milestoneType' | 'result' | 'decisions.action' | 'position';
 
 export type StatusEntry =
-  | { target: string; claim: string; status: 'active'; active: string }
-  | { target: string; claim: string; status: 'conflict'; candidates: string[] };
+  | { target: string; claim: string; status: 'active'; active: string; result: string }
+  // `result: null` quando os candidatos em disputa não convergem no mesmo `result` — evita eleger
+  // um vencedor arbitrário entre eles (`result` é o campo que os gates de regra devem casar).
+  | {
+      target: string;
+      claim: string;
+      status: 'conflict';
+      candidates: string[];
+      result: string | null;
+    };
 
 export type Projection = {
   logThrough: { id: string; seq: number; timestamp: string } | null;
@@ -186,10 +194,18 @@ function computeSupersession(verdicts: EventLine[]): SupersessionResult {
 
     const [target, claim] = JSON.parse(key) as [string, string];
     if (candidates.length === 1) {
-      active.push({ target, claim, status: 'active', active: candidates[0] });
+      const result = (verdictById[candidates[0]].data as VerdictFields).result;
+      active.push({ target, claim, status: 'active', active: candidates[0], result });
       continue;
     }
-    active.push({ target, claim, status: 'conflict', candidates });
+    const results = uniq(candidates.map((id) => (verdictById[id].data as VerdictFields).result));
+    active.push({
+      target,
+      claim,
+      status: 'conflict',
+      candidates,
+      result: results.length === 1 ? results[0] : null,
+    });
     conflicts.push({ target, claim, candidates });
   }
 
@@ -406,10 +422,15 @@ type FieldPolicy = { key: keyof Vocab; open: boolean };
 // open=true: fora de core ∪ extensões vira warning (campo aberto); open=false: vira error (campo fechado).
 const FIELD_POLICY_BY_KEY: Record<VocabularyField, FieldPolicy> = {
   milestoneType: { key: 'milestoneType', open: false },
-  result: { key: 'result', open: true },
+  // Fechado (era aberto até a wave de melhorias): `result` é o campo que os gates de regra casam
+  // contra `acceptedResults` (evaluateRule, gates.ts), então deixá-lo aberto permitia ao agente
+  // cunhar qualquer valor na escrita do Veredito e satisfazer o gate sem passar pelo vocabulário
+  // fixado do processo.
+  result: { key: 'result', open: false },
   'decisions.action': { key: 'action', open: false },
   // Mudança 2 (D4): reuso de Vocab.result para validar vote.position — ver RALPLAN. A checagem de
   // pertencimento é contra a mesma lista de `result`; só o `field` do warning muda para o nome real.
+  // Continua aberto: `position` é a escolha de voto do agente, não um valor que um gate casa.
   position: { key: 'result', open: true },
 };
 

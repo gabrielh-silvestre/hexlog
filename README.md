@@ -156,7 +156,7 @@ varia por tipo de definição:
 | Definição | Quebra é |
 |---|---|
 | `type` | qualquer mudança no schema JSON |
-| `vocabulary` | remover um termo de `milestoneType` ou `action` (campos fechados). Remover de `result` não é quebra — é campo aberto |
+| `vocabulary` | remover um termo de `milestoneType`, `action` ou `result` (campos fechados). `result` fechou junto com o gate de regra — ver `evaluate_gate` abaixo |
 | `gate` | nada — `criteria`/`rule` nunca quebram |
 | `transitions` | nada — regra de fluxo, não vocabulário fechado |
 
@@ -177,7 +177,7 @@ abaixo. `milestoneType` sem nenhum par declarado continua sem restrição.
 requireVigente, acceptedResults, minCount}`. Um gate registrado com `rule`
 vira um **gate de regra** — `evaluate_gate` calcula `passed` sozinho a
 partir de `state.active` (contando os alvos cujo endereço começa com
-`targetPattern`, cujo `claim` está em `acceptedResults`, e cujo status é
+`targetPattern`, cujo `result` está em `acceptedResults`, e cujo status é
 `active` quando `requireVigente: true` ou `active`/`conflict` quando
 `false`, contra o piso `minCount`), em vez de aceitar `result` do agente —
 ver `evaluate_gate` abaixo. Gate sem `rule` continua sendo um gate de
@@ -422,7 +422,7 @@ Alguns dos mais comuns:
 | `TYPE_NOT_PINNED` | tipo custom fora do snapshot fixado do processo |
 | `INVALID_EVENT` | `data` reprovado na validação, ou acima de 16.000 caracteres canônicos |
 | `RESERVED_FIELD` | Marco com `milestoneType: "gate"` ou chave `gate` fora de `evaluate_gate` |
-| `VOCABULARY_VIOLATED` | `milestoneType`/`decisions[].action` fora do vocabulário fixado (campo fechado); `details[0]` traz `owners` (donos de extensão fixados no processo) e `allowed` (termos que o campo de fato aceita, core ∪ extensões) |
+| `VOCABULARY_VIOLATED` | `milestoneType`/`decisions[].action`/`result` (de um Veredito) fora do vocabulário fixado (campos fechados); `details[0]` traz `owners` (donos de extensão fixados no processo) e `allowed` (termos que o campo de fato aceita, core ∪ extensões) |
 | `INVALID_FILTER` | filtros de `events` inconsistentes (`milestoneType` fora do vocabulário, `after ≥ before`, `until` além do arquivo) |
 | `GATE_NOT_REGISTERED` / `INVALID_EVALUATION` | problemas ao chamar `evaluate_gate` (`INVALID_EVALUATION` também cobre `result` informado pelo agente num gate de regra) |
 | `INVALID_TRANSITION` | `register` de um Marco cujo `milestoneType` tem `transitions` fixadas e a fase atual do alvo não está entre os `from` aceitos |
@@ -432,10 +432,10 @@ Alguns dos mais comuns:
 
 Um aviso, diferente de erro, vem em `warnings[]` numa resposta de sucesso:
 
-- `UNKNOWN_VOCABULARY` em `register`, quando `result` de um Veredito, ou
-  `position` de um Voto (reaproveita o vocabulário de `result` do dono),
-  está fora do vocabulário conhecido (campo aberto: o evento é gravado
-  normalmente, só o aviso muda).
+- `UNKNOWN_VOCABULARY` em `register`, quando `position` de um Voto
+  (reaproveita o vocabulário de `result` do dono, mas continua campo aberto)
+  está fora do vocabulário conhecido — o evento é gravado normalmente, só o
+  aviso muda.
 - `NO_BREAKING_CHANGE` num `register_type`/`register_vocabulary`/`register_gate`
   com `breaking: true` cuja mudança, na verdade, não quebra — a versão bumpa
   minor mesmo assim, em vez de forçar major.

@@ -83,7 +83,7 @@ const VerdictData = z.strictObject({
 // `confidence`/`changed`/`flipReason` até a rodada bater `votersExpected` é lógica de leitura
 // (`resolveRawMode`/`resolveSearchMode`), não do schema. `trace` segue o mesmo motivo do Milestone
 // (P5): metadado de diagnóstico, fora da comparação de retentativa idempotente (`comparableData`).
-const VoteData = z
+export const VoteData = z
   .strictObject({
     target: Target,
     round: z.string().min(1).max(50),

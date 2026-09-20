@@ -7,7 +7,15 @@ import { search as runSearch, isCandidate, SEARCH_MAX_CHARS, type Filters } from
 import { isValidLink, verifyChain, type Chain } from './chain.ts';
 import { loadProcess, type LoadedProcess, type TransitionRule } from './definitions.ts';
 import { issueDetails, HexlogError, type Detail } from './errors.ts';
-import { parseId, Target, dataSchema, EventLine, normalizeData, Label } from './events.ts';
+import {
+  parseId,
+  Target,
+  dataSchema,
+  EventLine,
+  normalizeData,
+  Label,
+  VoteData,
+} from './events.ts';
 import {
   allowedTerms,
   currentPhase,
@@ -208,6 +216,8 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
               status: z.enum(['active', 'conflict']),
               active: z.string().optional(),
               candidates: z.array(z.string()).optional(),
+              // `string` no caso 'active', `string | null` no caso 'conflict' (StatusEntry em state.ts).
+              result: z.string().nullable(),
               data: z.record(z.string(), z.unknown()).optional(),
               truncated: z.boolean().optional(),
             }),
@@ -484,25 +494,37 @@ async function registerEvent(
 
   const normalized = normalizeData(type, data, loaded.customSchemas);
   const warnings = applyVocabulary(type, normalized, loaded.manifest.fixed.vocabulary);
-  if (type === 'milestone') checkTransitionOrder(loaded, normalized);
-  if (type === 'vote') checkVoteRound(loaded, normalized);
 
+  // Dedupe por id completo tem prioridade sobre validação dependente de estado: a retentativa já
+  // passou por essa validação quando o evento original foi gravado, refazê-la contra o estado ATUAL
+  // (que pode ter avançado) rejeitaria uma retentativa idêntica e legítima.
   if (isNotNil(uuid)) {
     return { ...retryWithFullId(loaded, id, type, agent, normalized), warnings };
   }
 
+  // As checagens de ordem/rodada rodam dentro do `build`, sob o lock de `append`, lendo `base.text`
+  // (já lido na mesma seção crítica) em vez de reler o log por fora — leitura e validação check-then-act
+  // fora do lock deixavam duas escritas concorrentes passar na mesma validação antes de qualquer uma gravar.
   const line = await append(
     loaded.eventsFile,
     loaded.manifest,
-    (base) => ({
-      seq: base.seq,
-      id: `${id}:${base.uuid}`,
-      type,
-      timestamp: base.timestamp,
-      agent,
-      prevHash: base.prevHash,
-      data: normalized,
-    }),
+    (base) => {
+      // ponytail: checkTransitionOrder/checkVoteRound fazem readLines (parse + Zod por linha) do
+      // arquivo inteiro dentro da seção crítica; registros de milestone/vote serializam esse parse
+      // sob lock. Upgrade se o log crescer e essa serialização virar gargalo: cachear o parse fora
+      // do lock e invalidar só no append (ou um índice incremental, como o sidecar de log.ts:126).
+      if (type === 'milestone') checkTransitionOrder(loaded, normalized, base.text);
+      if (type === 'vote') checkVoteRound(loaded, normalized, base.text);
+      return {
+        seq: base.seq,
+        id: `${id}:${base.uuid}`,
+        type,
+        timestamp: base.timestamp,
+        agent,
+        prevHash: base.prevHash,
+        data: normalized,
+      };
+    },
     { log: ctx.log, clock: ctx.clock },
   );
   return { event: line, deduplicated: false, warnings };
@@ -579,14 +601,18 @@ function transitionRulesTo(
  * plano): um fluxo com ramificação legítima e só um dos dois caminhos registrado não é bug do hexlog,
  * é vocabulário incompleto do projeto — o agente precisa perceber isso rápido.
  */
-function checkTransitionOrder(loaded: LoadedProcess, normalized: Record<string, unknown>): void {
+function checkTransitionOrder(
+  loaded: LoadedProcess,
+  normalized: Record<string, unknown>,
+  text: string,
+): void {
   const milestone = normalized as { milestoneType: string; target: string };
   if (milestone.milestoneType === 'gate') return;
 
   const rules = transitionRulesTo(loaded.manifest.fixed.transitions, milestone.milestoneType);
   if (isEmpty(rules)) return;
 
-  const lines = readLines(readText(loaded.eventsFile), loaded.customSchemas);
+  const lines = readLines(text, loaded.customSchemas);
   const phase = currentPhase(lines, milestone.target);
   if (rules.some((rule) => rule.from === phase)) return;
 
@@ -619,9 +645,13 @@ type VoteFields = {
  * seguinte da mesma rodada com `votersExpected` diferente é erro de escrita, antes do `append`
  * (sem linha gravada) — não silencioso.
  */
-function checkVoteRound(loaded: LoadedProcess, normalized: Record<string, unknown>): void {
+function checkVoteRound(
+  loaded: LoadedProcess,
+  normalized: Record<string, unknown>,
+  text: string,
+): void {
   const vote = normalized as VoteFields;
-  const lines = readLines(readText(loaded.eventsFile), loaded.customSchemas);
+  const lines = readLines(text, loaded.customSchemas);
   const fixed = voteRoundCounts(lines).get(voteRoundKey(vote.target, vote.round));
   if (isNil(fixed) || fixed.votersExpected === vote.votersExpected) return;
 
@@ -638,13 +668,16 @@ function checkVoteRound(loaded: LoadedProcess, normalized: Record<string, unknow
   );
 }
 
-/** Vocabulário na escrita (§4.9): `milestoneType`/`decisions[].action` fechados (erro); `result` aberto (aviso). */
+/** Vocabulário na escrita (§4.9): `milestoneType`/`decisions[].action`/`result` fechados (erro); `position` aberto (aviso). */
 function applyVocabulary(
   type: string,
   data: Record<string, unknown>,
   vocabulary: Vocabulary,
 ): WarningOutput[] {
-  if (type === 'verdict') return unknownResultWarning(data, vocabulary);
+  if (type === 'verdict') {
+    ensureVocabulary('result', (data as { result: string }).result, vocabulary, '/data/result');
+    return [];
+  }
   if (type === 'vote') return unknownPositionWarning(data, vocabulary);
   if (type === 'milestone' && (data as { milestoneType: string }).milestoneType !== 'gate') {
     validateMilestoneVocabulary(data, vocabulary);
@@ -687,21 +720,6 @@ function ensureVocabulary(
       },
     ],
   );
-}
-
-function unknownResultWarning(
-  data: Record<string, unknown>,
-  vocabulary: Vocabulary,
-): WarningOutput[] {
-  const result = (data as { result: string }).result;
-  if (validateField(vocabulary, 'result', result)?.kind !== 'unknown-warning') return [];
-  return [
-    {
-      code: 'UNKNOWN_VOCABULARY',
-      message: `result '${result}' is outside the known vocabulary`,
-      details: { field: 'result', value: result },
-    },
-  ];
 }
 
 /** Mudança 2 (D4): reuso de Vocab.result para validar vote.position — ver RALPLAN. Campo aberto: fora do vocabulário vira aviso, nunca bloqueia. */
@@ -996,15 +1014,36 @@ function collectVoteRoundCounts(
   return voteRoundCounts(voteLines);
 }
 
-/** Mudança 2: `position`/`confidence`/`changed`/`flipReason` nulados até a rodada bater `votersExpected`. */
+/** Metadado de mecânica de rodada: uso já em claro, necessário para `voteRoundCounts`/paridade cliente-servidor. */
+const VOTE_METADATA_FIELDS = new Set(['target', 'round', 'votersExpected']);
+
+/** Chaves de `VoteData` (`events.ts`), lidas do schema em vez de escritas à mão — um campo novo
+ *  entra na redação sozinho, sem precisar lembrar de atualizar esta lista. */
+const VOTE_DATA_FIELDS = Object.keys(VoteData.shape);
+
+/**
+ * Mudança 2: allowlist, não blocklist — só `VOTE_METADATA_FIELDS` escapa da redação até a rodada
+ * bater `votersExpected`. Uma blocklist (nular só os campos conhecidos hoje) deixa qualquer campo
+ * novo de `VoteData` nascer em claro por padrão; isso já vazou uma vez com `trace`. O conjunto de
+ * chaves do resultado é sempre `VOTE_DATA_FIELDS` inteiro, nunca só as chaves que o voto original
+ * enviou: campos opcionais (`confidence`/`flipReason`/`trace`) materializam como `null` mesmo
+ * ausentes do voto original — senão a própria PRESENÇA da chave (ex.: `flipReason` só é enviado
+ * quando `changed: true`) já denunciaria o voto antes da revelação da rodada.
+ */
 function redactVote(line: EventLine, roundCounts: Map<string, VoteRoundStatus>): ResultLine {
   if (line.type !== 'vote') return line;
   const vote = line.data as VoteFields;
   if (roundCounts.get(voteRoundKey(vote.target, vote.round))?.revealed) return line;
 
+  const data = line.data;
   return {
     ...line,
-    data: { ...line.data, position: null, confidence: null, changed: null, flipReason: null },
+    data: Object.fromEntries(
+      VOTE_DATA_FIELDS.map((field) => [
+        field,
+        VOTE_METADATA_FIELDS.has(field) ? data[field] : null,
+      ]),
+    ),
     redacted: true,
   };
 }

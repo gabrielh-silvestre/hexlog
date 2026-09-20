@@ -29,10 +29,10 @@ destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele
 | `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`, `vote`) | `RESERVED_NAME` | `definitions.ts:25` |
 | `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts:28-34` |
 | `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:476` |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:678` |
-| `result` de um Veredito, ou `position` de um Voto, fora do vocabulário fixado (campos abertos) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:700` |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:478-483` |
+| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:486` |
+| `milestoneType`, `decisions[].action` ou `result` de um Veredito fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:711` |
+| `position` de um Voto fora do vocabulário fixado (campo aberto — reaproveita a lista de `result`) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:734` |
+| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:488-493` |
 | `milestoneType` fora de ordem, com `transitions` registradas para aquela fase de destino | `INVALID_TRANSITION`, mensagem lista as fases de origem aceitas | `event-tools.ts` (`checkTransitionOrder`) |
 | Voto seguinte da mesma rodada (`target`+`round`) com `votersExpected` diferente do 1º voto | `VOTE_ROUND_MISMATCH`, sem linha gravada | `event-tools.ts` (`checkVoteRound`) |
 

@@ -140,6 +140,22 @@ de um bloco já existente e já hasheado.
 - **(c) Teto de 10 tools mantido.** As 5 mudanças cabem nas 10 tools
   existentes; qualquer necessidade futura que não caiba é decisão de
   reabrir o teto, não deste ADR.
+- **(d) O `prevHash` devolvido por `events` deriva o voto redigido.**
+  Desdobramento de (a), pela via da tool e não do arquivo: `hashLine`
+  (`chain.ts`) fecha sobre a linha inteira **não** redigida, e o
+  `outputSchema` de `events` devolve o `EventLine` completo — `prevHash`
+  incluso, para toda linha. Assim que existe uma linha seguinte no log, o
+  `prevHash` dela é o hash do voto real; recompor
+  `sha256hex(prevHash + JCS(...))` variando os campos secretos custa dezenas
+  de tentativas, porque `position` vem de uma lista fechada e `changed` é
+  booleano. Não acrescenta capacidade a quem já lê `events.jsonl` — o hexlog
+  é servidor stdio, mesma máquina e mesmo usuário, e ali o voto está em
+  claro. Vale registrar porque (a) fala do arquivo e este canal é a tool:
+  quem um dia expuser o hexlog a um cliente sem acesso ao filesystem perde a
+  redação junto. Fechar exigiria a cadeia parar de commitar sobre o conteúdo
+  bruto (hash sobre commitment salgado, ou excluir voto não revelado do
+  cálculo até a revelação) — mudança no núcleo de integridade, fora do escopo
+  destas 5 decisões.
 
 **Assimetria deliberada entre os três canais de leitura de voto:**
 `events(search: ...)` omite a linha inteira de rodada aberta (nem aparece,

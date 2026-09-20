@@ -80,18 +80,22 @@ const forkItem = (i: number): ForkItem => ({
 
 type ActiveEntry = State['active'][number];
 
-const activeEntry = (target: string, claim: string): ActiveEntry => ({
+// `claim` fixo e alheio a `result`: os testes de `evaluateRule` casam contra `result` (B3), então
+// o fixture não pode reusar o mesmo valor para os dois campos ou o bug do bypass passaria despercebido.
+const activeEntry = (target: string, result: string): ActiveEntry => ({
   target,
-  claim,
+  claim: 'claim-livre',
   status: 'active',
   active: `${target}:verdict:winner`,
+  result,
 });
 
-const conflictEntry = (target: string, claim: string): ActiveEntry => ({
+const conflictEntry = (target: string, result: string | null): ActiveEntry => ({
   target,
-  claim,
+  claim: 'claim-livre',
   status: 'conflict',
   candidates: ['id1', 'id2'],
+  result,
 });
 
 // Um cenário por gate embutido: como violar o estado e onde a violação aparece.
@@ -255,7 +259,7 @@ describe('Mudança 1 (leva 4) — evaluateRule', () => {
     ...overrides,
   });
 
-  test('piso batido: 2 targets vigentes com claim aceito e minCount 2 → passa, prova com os 2 targets', () => {
+  test('piso batido: 2 targets vigentes com result aceito e minCount 2 → passa, prova com os 2 targets', () => {
     const state: State = {
       ...cleanState(),
       active: [
@@ -303,7 +307,7 @@ describe('Mudança 1 (leva 4) — evaluateRule', () => {
     expect(result.evidence).toEqual(['hex:target:review-a', 'hex:target:review-b']);
   });
 
-  test('acceptedResults vazio: nenhum claim bate, minCount 0 passa mesmo sem candidatos', () => {
+  test('acceptedResults vazio: nenhum result bate, minCount 0 passa mesmo sem candidatos', () => {
     const state: State = {
       ...cleanState(),
       active: [activeEntry('hex:target:review-a', 'approved')],
@@ -322,13 +326,41 @@ describe('Mudança 1 (leva 4) — evaluateRule', () => {
     expect(evaluateRule(spec({ minCount: 1 }), state).passed).toBe(false);
   });
 
-  test('claim fora de acceptedResults não conta, mesmo dentro do targetPattern', () => {
+  test('result fora de acceptedResults não conta, mesmo dentro do targetPattern', () => {
     const state: State = {
       ...cleanState(),
       active: [activeEntry('hex:target:review-a', 'rejected')],
     };
     expect(evaluateRule(spec({ minCount: 0 }), state).passed).toBe(true);
     expect(evaluateRule(spec({ minCount: 1 }), state).passed).toBe(false);
+  });
+
+  // B3: `claim` batendo `acceptedResults` não deve contar — só `result` conta. Este é o bypass
+  // que o fix fecha (antes, `evaluateRule` filtrava `entry.claim` em vez de `entry.result`).
+  test('claim dentro de acceptedResults com result fora não conta (bypass do gate de regra)', () => {
+    const state: State = {
+      ...cleanState(),
+      active: [
+        {
+          target: 'hex:target:review-a',
+          claim: 'approved',
+          status: 'active',
+          active: 'v1',
+          result: 'rejected',
+        },
+      ],
+    };
+    expect(evaluateRule(spec({ minCount: 0 }), state).passed).toBe(true);
+    expect(evaluateRule(spec({ minCount: 1 }), state).passed).toBe(false);
+  });
+
+  test('conflict com result divergente entre candidatos (result: null) não conta', () => {
+    const state: State = {
+      ...cleanState(),
+      active: [conflictEntry('hex:target:review-a', null)],
+    };
+    expect(evaluateRule(spec({ requireVigente: false, minCount: 0 }), state).passed).toBe(true);
+    expect(evaluateRule(spec({ requireVigente: false, minCount: 1 }), state).passed).toBe(false);
   });
 
   test('60 matches: prova cortada em 50, totalEvidenceItems mantém o total real', () => {

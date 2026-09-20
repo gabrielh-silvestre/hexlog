@@ -998,14 +998,34 @@ describe('N4', () => {
     });
   });
 
-  test('resultado fora do vocabulário → grava e devolve aviso UNKNOWN_VOCABULARY', async () => {
+  test('resultado fora do vocabulário fixado (campo fechado) → VOCABULARY_VIOLATED, sem linha', async () => {
     await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
     const result = await environment.call('register', {
       project: PROJ,
       process: PROC,
       id: VERDICT_PREFIX,
       agent: AGENT,
       data: verdictData({ result: 'unknown' }),
+    });
+    expectError(result, 'VOCABULARY_VIOLATED');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('position de um Voto fora do vocabulário (reaproveita a lista de result, continua campo aberto) → grava e devolve aviso UNKNOWN_VOCABULARY', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: `${PROJ}:${PROC}:vote`,
+      agent: AGENT,
+      data: {
+        target: 'hex:target:u1',
+        round: 'r1',
+        votersExpected: 1,
+        position: 'unknown',
+        changed: false,
+      },
     });
     expect(result.isError).not.toBe(true);
     const body = result.structuredContent as { warnings: { code: string }[] };
@@ -1838,6 +1858,29 @@ describe('Mudança 3 (leva 2) — transitions / ordem de fase', () => {
     const body = listed.structuredContent as { project: { processes: { name: string }[] } };
     expect(body.project.processes.map((p) => p.name)).toEqual(['p1']);
   });
+
+  test('B2: reenviar Marco pelo id completo depois da fase avançar → deduplicated, não INVALID_TRANSITION', async () => {
+    const project = 'transitions-retry-dedupe';
+    await prepareWithTransitions(project, PROC);
+
+    const draft = await registerMilestone(project, PROC, 'draft');
+    const draftBody = draft.structuredContent as { event: EventLine };
+
+    const review = await registerMilestone(project, PROC, 'review');
+    expect(review.isError).not.toBe(true);
+
+    // Reenvio do Marco 'draft' original pelo id completo (mesmo uuid, mesmo dado): a fase real já
+    // avançou para 'review', mas o dedupe por id completo tem prioridade sobre a validação de ordem,
+    // que só se aplica a um registro novo.
+    const retried = await environment.call('register', {
+      project,
+      process: PROC,
+      id: draftBody.event.id,
+      agent: AGENT,
+      data: { milestoneType: 'draft', target: TARGET },
+    });
+    expectDeduplicated(retried, draftBody.event.seq);
+  });
 });
 
 describe('Mudança 2 (leva 3) — votos / rodada às cegas', () => {
@@ -1888,11 +1931,19 @@ describe('Mudança 2 (leva 3) — votos / rodada às cegas', () => {
     const afterTwoById = eventsById(afterTwoBody.events);
     for (const id of [firstId, secondId]) {
       expect(afterTwoById[id].redacted).toBe(true);
-      expect(afterTwoById[id].data).toMatchObject({
+      // B4: o conjunto de chaves é sempre TODO campo de VoteData (events.ts), byte a byte igual pra
+      // qualquer voto da rodada — mesmo confidence/flipReason/trace, que este voto nunca enviou,
+      // aparecem como null. A ausência de uma chave optional também seria sinal (flipReason só
+      // existe quando changed: true), então a chave nasce sempre presente, nula até a revelação.
+      expect(afterTwoById[id].data).toEqual({
+        target: VOTE_TARGET,
+        round: 'r1',
+        votersExpected: 3,
         position: null,
         confidence: null,
         changed: null,
         flipReason: null,
+        trace: null,
       });
     }
 
@@ -1934,6 +1985,23 @@ describe('Mudança 2 (leva 3) — votos / rodada às cegas', () => {
     ).toEqual([
       { target: VOTE_TARGET, round: 'r1', votersExpected: 3, votesReceived: 3, revealed: true },
     ]);
+  });
+
+  test('B4: voto que mudou de posição (changed+flipReason) fica indistinguível de um que não mudou, mesma rodada aberta', async () => {
+    await registerCore(environment, PROJ);
+    await environment.call('create_process', { project: PROJ, process: PROC });
+
+    await castVote('voter-1', { changed: true, flipReason: 'mudei de ideia', confidence: 0.9 });
+    await castVote('voter-2', { changed: false });
+
+    const result = await environment.call('events', { project: PROJ, process: PROC });
+    const body = result.structuredContent as { events: VoteEvent[] };
+    const votes = body.events.filter((event) => event.type === 'vote');
+    expect(votes).toHaveLength(2);
+    expect(votes.every((vote) => vote.redacted)).toBe(true);
+
+    const [keysA, keysB] = votes.map((vote) => Object.keys(vote.data).sort());
+    expect(keysA).toEqual(keysB);
   });
 
   test('votersExpected divergente na mesma rodada → VOTE_ROUND_MISMATCH, sem gravar linha nova', async () => {
@@ -1979,6 +2047,46 @@ describe('Mudança 2 (leva 3) — votos / rodada às cegas', () => {
     });
     const afterBody = afterReveal.structuredContent as { events: EventLine[] };
     expect(afterBody.events.length).toBe(2);
+  });
+
+  test('B1: duas register concorrentes pro mesmo target/round — a segunda falha em vez de gravar votersExpected divergente', async () => {
+    await registerCore(environment, PROJ);
+    await environment.call('create_process', { project: PROJ, process: PROC });
+
+    // Sem a validação dentro do lock, as duas liam o mesmo estado "rodada ainda sem votersExpected
+    // fixado" antes de qualquer escrita e passavam juntas — gravando votersExpected divergente na
+    // mesma rodada sem erro nenhum.
+    const [first, second] = await Promise.all([
+      castVote('voter-1', { votersExpected: 2 }),
+      castVote('voter-2', { votersExpected: 5 }),
+    ]);
+
+    const outcomes = [first, second];
+    expect(outcomes.filter((result) => result.isError !== true)).toHaveLength(1);
+    const [failed] = outcomes.filter((result) => result.isError === true);
+    expectError(failed, 'VOTE_ROUND_MISMATCH');
+  });
+
+  test('B4: trace de voto de rodada aberta não vaza em events (raw) — allowlist nula tudo fora de target/round/votersExpected', async () => {
+    await registerCore(environment, PROJ);
+    await environment.call('create_process', { project: PROJ, process: PROC });
+
+    const secretTrace = 'raciocinio-secreto-do-voto';
+    await castVote('voter-1', { votersExpected: 2, trace: secretTrace });
+
+    const result = await environment.call('events', { project: PROJ, process: PROC });
+    const body = result.structuredContent as {
+      events: (EventLine & { redacted?: boolean })[];
+    };
+    const vote = body.events.find((event) => event.type === 'vote');
+    expect(vote?.redacted).toBe(true);
+    expect(vote?.data).toMatchObject({
+      target: VOTE_TARGET,
+      round: 'r1',
+      votersExpected: 2,
+      trace: null,
+    });
+    expect(JSON.stringify(vote?.data)).not.toContain(secretTrace);
   });
 });
 
@@ -2094,5 +2202,34 @@ describe('Mudança 1 (leva 4) — gate de regra', () => {
     };
     expect(data.gate.origin).toBe('custom');
     expect(data.gate.passed).toBe(true);
+  });
+
+  test('bypass fechado: agente não cunha um result fora do vocabulário pra satisfazer acceptedResults de um gate de regra', async () => {
+    await registerCore(environment, PROJ);
+    await environment.call('register_gate', {
+      project: PROJ,
+      name: RULE_GATE,
+      criteria: 'accepts a result never registered in the fixed vocabulary',
+      rule: { ...RULE, acceptedResults: ['forged-pass'] },
+    });
+    await environment.call('create_process', { project: PROJ, process: PROC });
+
+    const write = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ target: 'hex:target:u1', claim: 'x', result: 'forged-pass' }),
+    });
+    expectError(write, 'VOCABULARY_VIOLATED');
+
+    const gateResult = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gate: RULE_GATE,
+      agent: AGENT,
+      target: 'hex:target:u1',
+    });
+    expect((gateResult.structuredContent as { passed: boolean }).passed).toBe(false);
   });
 });

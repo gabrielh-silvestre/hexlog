@@ -214,7 +214,7 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         'no-op (`unchanged: true`). No criteria/rule change is breaking for a gate: `breaking: true` ' +
         'never blocks the write or forces a major bump, it only adds a `NO_BREAKING_CHANGE` warning to ' +
         'the response. Optional `rule` turns this into a rule gate: `evaluate_gate` then computes ' +
-        '`passed` itself from `state.active` (targets under `targetPattern` whose claim is vigent — or ' +
+        '`passed` itself from `state.active` (targets under `targetPattern` whose result is current — or ' +
         'not, depending on `requireVigente` — and in `acceptedResults`, compared against `minCount`) ' +
         'instead of accepting a `result` from the agent; a `result` in that call fails with ' +
         '`INVALID_EVALUATION`, the same code a builtin gate uses for the same case. A gate registered ' +

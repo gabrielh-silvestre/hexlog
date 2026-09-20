@@ -334,7 +334,7 @@ function validateWithAjv(schema: Record<string, unknown>, log: Logger | undefine
 
 /**
  * Quebra de vocabulário (§4.9): termo presente no vigente e ausente no candidato, só nas
- * chaves fechadas de `CLOSED_VOCAB_KEYS` — `result` é campo aberto e nunca entra aqui.
+ * chaves fechadas de `CLOSED_VOCAB_KEYS` (inclui `result`, fechado desde o gate de regra).
  * `details[].path` é a chave do `Vocab` comparado (`/milestoneType`, `/action`), não o path de
  * runtime de `VOCABULARY_VIOLATED` (`/data/milestoneType`, `/data/decisions/${index}/action`),
  * que tem prefixo e índice de array que não existem ao comparar duas definições estáticas.
@@ -679,7 +679,9 @@ function buildSnapshot(projectDir: string): {
       d.name,
       {
         criteria: d.content.criteria as string,
-        ...(isNil(d.content.rule) ? {} : { rule: d.content.rule as RuleGateSpec }),
+        // Mesma borda de `registerGate` (linha ~502): `rule` fica congelado sob hash em
+        // `fixed.gates` para sempre, então valida com Zod em vez de aceitar um cast sem checagem.
+        ...(isNil(d.content.rule) ? {} : { rule: RuleGateSpec.parse(d.content.rule) }),
       },
     ]),
   );

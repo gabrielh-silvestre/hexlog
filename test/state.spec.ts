@@ -99,7 +99,9 @@ describe('projectState › State bate com fixture (envelope novo, target hex:tar
 
     expect(projectState(lines, vocabulary, effectiveNow(T(1), lines))).toEqual({
       logThrough: { id: v1.id, seq: v1.seq, timestamp: v1.timestamp },
-      active: [{ target: TARGET_1, claim: 'dod-1', status: 'active', active: v1.id }],
+      active: [
+        { target: TARGET_1, claim: 'dod-1', status: 'active', active: v1.id, result: 'confirmed' },
+      ],
       conflicts: [],
       orphans: [],
       toReview: [],
@@ -158,7 +160,7 @@ describe('N3 › supersessão', () => {
     const v1 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(0) });
     const projection = projectState([v1], emptyVocabulary, T(0));
     expect(projection.active).toEqual([
-      { target: TARGET_1, claim: 'a1', status: 'active', active: v1.id },
+      { target: TARGET_1, claim: 'a1', status: 'active', active: v1.id, result: 'confirmed' },
     ]);
     expect(projection.conflicts).toEqual([]);
   });
@@ -168,7 +170,13 @@ describe('N3 › supersessão', () => {
     const v2 = verdict({ target: TARGET_1, claim: 'a1' }, { timestamp: T(1) });
     const projection = projectState([v1, v2], emptyVocabulary, T(1));
     expect(projection.active).toEqual([
-      { target: TARGET_1, claim: 'a1', status: 'conflict', candidates: [v1.id, v2.id] },
+      {
+        target: TARGET_1,
+        claim: 'a1',
+        status: 'conflict',
+        candidates: [v1.id, v2.id],
+        result: 'confirmed',
+      },
     ]);
     expect(projection.conflicts).toEqual([
       { target: TARGET_1, claim: 'a1', candidates: [v1.id, v2.id] },
@@ -181,7 +189,7 @@ describe('N3 › supersessão', () => {
     const c = verdict({ target: TARGET_1, claim: 'x', supersedes: [b.id] }, { timestamp: T(2) });
     const projection = projectState([a, b, c], emptyVocabulary, T(2));
     expect(projection.active).toEqual([
-      { target: TARGET_1, claim: 'x', status: 'active', active: c.id },
+      { target: TARGET_1, claim: 'x', status: 'active', active: c.id, result: 'confirmed' },
     ]);
   });
 
@@ -190,7 +198,7 @@ describe('N3 › supersessão', () => {
     const x = verdict({ target: TARGET_1, claim: 'A1', supersedes: [y.id] }, { timestamp: T(1) });
     const projection = projectState([y, x], emptyVocabulary, T(1));
     expect(projection.active).toEqual([
-      { target: TARGET_1, claim: 'A1', status: 'active', active: x.id },
+      { target: TARGET_1, claim: 'A1', status: 'active', active: x.id, result: 'confirmed' },
     ]);
   });
 
@@ -203,7 +211,7 @@ describe('N3 › supersessão', () => {
     const projection = projectState([anyMilestone, v1], emptyVocabulary, T(1));
     expect(projection.invalidReferences).toEqual([{ citedBy: v1.id, reference: anyMilestone.id }]);
     expect(projection.active).toEqual([
-      { target: TARGET_1, claim: 'a1', status: 'active', active: v1.id },
+      { target: TARGET_1, claim: 'a1', status: 'active', active: v1.id, result: 'confirmed' },
     ]);
   });
 
@@ -458,18 +466,12 @@ describe('avisos (N4): por dono e classes', () => {
     });
   });
 
-  test('milestoneType desconhecido (campo fechado) vira erro; resultado desconhecido (campo aberto) vira aviso-desconhecido', () => {
+  test('milestoneType e result desconhecidos (campos fechados) viram erro na leitura, sem lançar (log legado continua legível)', () => {
     const m1 = milestone({ target: TARGET_1, milestoneType: 'novel' }, { timestamp: T(0) });
     const v1 = verdict({ target: TARGET_1, claim: 'a1', result: 'novel' }, { timestamp: T(1) });
     expect(projectState([m1, v1], emptyVocabulary, T(1)).warnings).toEqual([
       { event: m1.id, field: 'milestoneType', value: 'novel', kind: 'error', owner: null },
-      {
-        event: v1.id,
-        field: 'result',
-        value: 'novel',
-        kind: 'unknown-warning',
-        owner: null,
-      },
+      { event: v1.id, field: 'result', value: 'novel', kind: 'error', owner: null },
     ]);
   });
 
@@ -516,8 +518,15 @@ describe('validarCampo', () => {
     });
   });
 
-  test('resultado fora de tudo (campo aberto) devolve aviso-desconhecido', () => {
+  test('resultado fora de tudo (campo fechado desde o gate de regra) devolve erro', () => {
     expect(validateField(vocabulary, 'result', 'never-seen')).toEqual({
+      kind: 'error',
+      owner: null,
+    });
+  });
+
+  test('position fora de tudo (campo aberto — não fechou junto com result) devolve aviso-desconhecido', () => {
+    expect(validateField(vocabulary, 'position', 'never-seen')).toEqual({
       kind: 'unknown-warning',
       owner: null,
     });

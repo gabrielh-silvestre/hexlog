@@ -941,12 +941,15 @@ describe('registerVocabulary — versionamento (Leva 3)', () => {
     });
   });
 
-  test('critério 4: remover termo só de result → minor, sem exigir flag', () => {
+  test('critério 4 (revisto): remover termo de result agora quebra, como milestoneType — result fechou junto com o gate de regra', () => {
     registerVocabulary(dir, PROJECT, 'owner-z', { ...EMPTY, result: ['ok', 'fail'] });
 
-    const result = registerVocabulary(dir, PROJECT, 'owner-z', { ...EMPTY, result: ['ok'] });
+    const error = captureError(() =>
+      registerVocabulary(dir, PROJECT, 'owner-z', { ...EMPTY, result: ['ok'] }),
+    );
 
-    expect(result).toMatchObject({ version: '1.1', previousVersion: '1.0', unchanged: false });
+    expect(error.code).toBe('BREAKING_CHANGE');
+    expect(error.details).toContainEqual(expect.objectContaining({ path: '/result' }));
   });
 
   test('critério 7: re-registrar conteúdo idêntico → unchanged com a versão vigente, nenhum arquivo novo', () => {

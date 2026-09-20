@@ -1,4 +1,4 @@
-import { isString } from 'es-toolkit';
+import { isNil, isString } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat'; // isEmpty só existe em es-toolkit/compat (1.52.0)
 import { z } from 'zod';
 import { BUILTIN_GATE_NAMES } from './definitions.ts';
@@ -57,7 +57,7 @@ export function isBuiltinGate(name: string): name is BuiltinGateName {
 
 /**
  * Mudança 1 (D1): critério de um gate de regra — piso de targets, sob `targetPattern` (prefixo
- * literal, mesmo estilo de match do hook de guard do repo, não regex livre), cujo `claim` vigente em
+ * literal, mesmo estilo de match do hook de guard do repo, não regex livre), cujo `result` vigente em
  * `state.active` está em `acceptedResults`. `requireVigente: true` só conta status `'active'` (vigente
  * sem disputa); com `requireVigente: false`, `'conflict'` (candidatos ainda em disputa) também conta.
  */
@@ -75,7 +75,10 @@ export function evaluateRule(spec: RuleGateSpec, state: State): EvaluationResult
   const matches = state.active
     .filter((entry) => entry.target.startsWith(spec.targetPattern))
     .filter((entry) => !spec.requireVigente || entry.status === 'active')
-    .filter((entry) => spec.acceptedResults.includes(entry.claim))
+    // Casa contra `result` (vocabulário aberto: valor fora da lista gera warning, não erro) —
+    // `claim` é texto livre e nunca foi o campo que `acceptedResults` deveria filtrar. `result: null`
+    // (conflito sem `result` único) nunca bate.
+    .filter((entry) => !isNil(entry.result) && spec.acceptedResults.includes(entry.result))
     .map((entry) => entry.target);
 
   return {
