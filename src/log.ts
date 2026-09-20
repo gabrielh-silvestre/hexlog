@@ -29,6 +29,8 @@ type Base = {
   prevHash: string;
   uuid: string;
   lastLink: EventLine | null;
+  /** Texto já lido sob lock em `prepareContext` — evita que `build` tenha que reler fora da seção crítica. */
+  text: string;
 };
 
 /** Leitura sem lock. Arquivo inexistente conta como log vazio. */
@@ -44,7 +46,7 @@ export function readText(file: string): string {
  * Anexa um elo ao log JSONL sob lock exclusivo por diretório (§4.7). A espera pela aquisição do
  * lock é assíncrona (retry com `await` de sleep); a partir daqui, `build` roda dentro da seção
  * crítica síncrona (sem `await`): recebe a base já calculada (`seq`/`prevHash`/`uuid`/`timestamp`/
- * `lastLink`) e devolve a `EventLine` a gravar.
+ * `lastLink`/`text`) e devolve a `EventLine` a gravar.
  */
 export async function append(
   file: string,
@@ -95,6 +97,7 @@ function prepareContext(
     prevHash: expectedPrevHash(lastLink, manifest),
     uuid: randomUUIDv7(),
     lastLink,
+    text,
     endsWithNewline,
   };
 }

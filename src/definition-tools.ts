@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
-import { isNil, isNotNil } from 'es-toolkit';
+import { isNil, isNotNil, omit } from 'es-toolkit';
 import { z } from 'zod';
 import { sha256hex } from './chain.ts';
 import {
@@ -11,10 +11,11 @@ import {
   registerGate,
   registerType,
   registerVocabulary,
+  registerTransitions,
   FixedVersions,
 } from './definitions.ts';
 import { HexlogError } from './errors.ts';
-import { listBuiltinGates, CRITERIA_MAX_CHARS } from './gates.ts';
+import { listBuiltinGates, CRITERIA_MAX_CHARS, RuleGateSpec } from './gates.ts';
 import {
   adaptAjvLogger,
   type Context,
@@ -141,13 +142,23 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         'no-op (`unchanged: true`). Removing a term from `milestoneType` or `action` is breaking and ' +
         'requires `breaking: true`; removing from `result` is not, since it is an open field. ' +
         '`breaking: true` on a compatible change adds a `NO_BREAKING_CHANGE` warning to the response ' +
-        'instead of forcing a major bump.',
+        'instead of forcing a major bump. Optional `transitions` registers, in the same call, ' +
+        "`owner`'s `from -> to` order over `milestoneType` (writing `transitions/<owner>/<version>.json`, " +
+        'versioned independently, result under the `transitions` key of the response): once any pair ' +
+        "declares a given `to`, `register`'ing a Milestone with that `milestoneType` requires the " +
+        "target's current phase to be one of the declared `from` (or `null`, if a pair declares " +
+        '`from: null`), otherwise it fails with `INVALID_TRANSITION`. A `milestoneType` with no pair ' +
+        'declared for it stays unrestricted.',
       inputSchema: {
         project: Name,
         owner: Name,
         milestoneType: LabelList,
         result: LabelList,
         action: LabelList,
+        transitions: z
+          .array(z.object({ from: Name.nullable(), to: Name }))
+          .max(100)
+          .optional(),
         breaking: z.boolean().optional(),
       },
       outputSchema: {
@@ -158,6 +169,15 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         previousVersion: z.string().nullable(),
         unchanged: z.boolean(),
         warnings: z.array(Warning),
+        transitions: z
+          .object({
+            hash: Hash,
+            version: z.string(),
+            previousVersion: z.string().nullable(),
+            unchanged: z.boolean(),
+            warnings: z.array(Warning),
+          })
+          .optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -166,16 +186,22 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, owner, milestoneType, result, action, breaking }) =>
-      execute(ctx, 'register_vocabulary', { project }, () =>
-        registerVocabulary(
+    async ({ project, owner, milestoneType, result, action, transitions, breaking }) =>
+      execute(ctx, 'register_vocabulary', { project }, () => {
+        const registered = registerVocabulary(
           ctx.dataDir,
           project,
           owner,
           { milestoneType, result, action },
           { breaking },
-        ),
-      ),
+        );
+        if (isNil(transitions)) return registered;
+
+        const transitionsResult = registerTransitions(ctx.dataDir, project, owner, transitions, {
+          breaking,
+        });
+        return { ...registered, transitions: omit(transitionsResult, ['project', 'owner']) };
+      }),
   );
 
   server.registerTool(
@@ -185,12 +211,19 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
       description:
         "Registers a new version of a custom gate's criteria for the project, writing " +
         '`gates/<name>/<version>.json` (never replaces a prior version). Identical content is a ' +
-        'no-op (`unchanged: true`). No criteria change is breaking for a gate: `breaking: true` never ' +
-        'blocks the write or forces a major bump, it only adds a `NO_BREAKING_CHANGE` warning to the response.',
+        'no-op (`unchanged: true`). No criteria/rule change is breaking for a gate: `breaking: true` ' +
+        'never blocks the write or forces a major bump, it only adds a `NO_BREAKING_CHANGE` warning to ' +
+        'the response. Optional `rule` turns this into a rule gate: `evaluate_gate` then computes ' +
+        '`passed` itself from `state.active` (targets under `targetPattern` whose result is current — or ' +
+        'not, depending on `requireVigente` — and in `acceptedResults`, compared against `minCount`) ' +
+        'instead of accepting a `result` from the agent; a `result` in that call fails with ' +
+        '`INVALID_EVALUATION`, the same code a builtin gate uses for the same case. A gate registered ' +
+        'without `rule` keeps behaving exactly as today (opinion gate, `result` required from the agent).',
       inputSchema: {
         project: Name,
         name: Name,
         criteria: z.string().min(1).max(CRITERIA_MAX_CHARS),
+        rule: RuleGateSpec.optional(),
         breaking: z.boolean().optional(),
       },
       outputSchema: { ...Registered.shape, warnings: z.array(Warning) },
@@ -201,9 +234,9 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, name, criteria, breaking }) =>
+    async ({ project, name, criteria, rule, breaking }) =>
       execute(ctx, 'register_gate', { project }, () =>
-        registerGate(ctx.dataDir, project, name, criteria, { breaking }),
+        registerGate(ctx.dataDir, project, name, criteria, { breaking, rule }),
       ),
   );
 

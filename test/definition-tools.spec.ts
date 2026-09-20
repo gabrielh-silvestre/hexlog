@@ -278,6 +278,14 @@ describe('S1', () => {
     });
     expectError(verdict, 'RESERVED_NAME');
 
+    // Mudança 2 (leva 3): 'vote' agora é tipo nativo, mesma proteção de milestone/verdict.
+    const vote = await environment.call('register_type', {
+      project: 'p1',
+      name: 'vote',
+      schema: VALID_SCHEMA,
+    });
+    expectError(vote, 'RESERVED_NAME');
+
     expect(environment.tree()).toEqual(before);
   });
 });
@@ -411,6 +419,32 @@ describe('leva 7', () => {
     const body = result.structuredContent as { version: string; warnings: { code: string }[] };
     expect(body.version).toBe('1.1');
     expect(body.warnings).toContainEqual(expect.objectContaining({ code: 'NO_BREAKING_CHANGE' }));
+  });
+
+  test('register_gate com rule: aceita e versiona; rule inválido → Input validation error', async () => {
+    const rule = {
+      targetPattern: 'hex:target:u',
+      requireVigente: true,
+      acceptedResults: ['ok'],
+      minCount: 1,
+    };
+    const result = await environment.call('register_gate', {
+      project: 'p1',
+      name: 'gate-regra',
+      criteria: 'v1',
+      rule,
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ version: '1.0', unchanged: false });
+
+    const invalid = await environment.call('register_gate', {
+      project: 'p1',
+      name: 'gate-regra-2',
+      criteria: 'v1',
+      rule: { ...rule, minCount: -1 },
+    });
+    expect(invalid.isError).toBe(true);
+    expect(invalid.content?.[0]?.text).toMatch(/^Input validation error/);
   });
 
   test('list nível projeto: version/versions para um nome com múltiplas versões e um nome só-legado', async () => {

@@ -14,6 +14,7 @@ import {
   registerGate,
   registerType,
   registerVocabulary,
+  registerTransitions,
   RESERVED_PROCESS_NAMES,
   bumpVersion,
   compareVersions,
@@ -25,6 +26,7 @@ import {
   writeVersionExclusive,
 } from '../src/definitions.ts';
 import { HexlogError } from '../src/errors.ts';
+import { RuleGateSpec } from '../src/gates.ts';
 import { parseJson } from './helpers.ts';
 
 const PROJECT = 'test-project';
@@ -39,6 +41,15 @@ const VALID_SCHEMA = {
 const RegisteredTypeSchema = z.object({
   name: z.string(),
   schema: z.record(z.string(), z.unknown()),
+  hash: z.string(),
+  registeredAt: z.string(),
+});
+
+// Forma de gates/<name>/<versão>.json gravado por `registerGate` (Leva 5 / mudança 1, D1).
+const RegisteredGateSchema = z.object({
+  name: z.string(),
+  criteria: z.string(),
+  rule: RuleGateSpec.optional(),
   hash: z.string(),
   registeredAt: z.string(),
 });
@@ -171,6 +182,25 @@ describe('createProcess / loadProcess — hashes por parte (S4)', () => {
     expect(result.hashes).toEqual(manifest.hashes);
   });
 
+  // Mudança 1 (leva 4, D1): `rule` viaja do arquivo de gate até `fixed.gates` do process.json.
+  test('gate com rule: createProcess fixa `rule` em fixed.gates; gate sem rule não ganha a chave', () => {
+    prepareCoreAndType();
+    const rule = {
+      targetPattern: 'hex:target:u',
+      requireVigente: true,
+      acceptedResults: ['ok'],
+      minCount: 1,
+    };
+    registerGate(dir, PROJECT, 'gate-regra', 'criteria', { rule });
+    registerGate(dir, PROJECT, 'gate-opiniao', 'criteria');
+
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    const manifest = readManifest('p1');
+
+    expect(manifest.fixed.gates['gate-regra'].rule).toEqual(rule);
+    expect(manifest.fixed.gates['gate-opiniao'].rule).toBeUndefined();
+  });
+
   test('hashes.schemas divergente do fixado → PROCESS_CORRUPTED com caminho /hashes/schemas', () => {
     prepareCoreAndType();
     createProcess(dir, PROJECT, 'p1', () => new Date());
@@ -223,6 +253,25 @@ describe('createProcess / loadProcess (N14)', () => {
         code: 'STALE_DEFINITIONS',
         details: expect.arrayContaining([
           expect.objectContaining({ section: 'vocabulary', name: 'extra' }),
+        ]),
+      }),
+    ]);
+  });
+
+  // Mudança 3 (fases): STALE_DEFINITIONS também detalha drift de transitions, mesmo padrão das
+  // outras três categorias (VERSION_SECTIONS/FixedVersions estendidos).
+  test('segunda createProcess após um registerTransitions novo → existed: true + STALE_DEFINITIONS citando transitions (P3)', () => {
+    prepareCoreAndType();
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    registerTransitions(dir, PROJECT, 'core', [{ from: null, to: 'draft' }]);
+
+    const second = createProcess(dir, PROJECT, 'p1', () => new Date());
+    expect(second.existed).toBe(true);
+    expect(second.warnings).toEqual([
+      expect.objectContaining({
+        code: 'STALE_DEFINITIONS',
+        details: expect.arrayContaining([
+          expect.objectContaining({ section: 'transitions', name: 'core' }),
         ]),
       }),
     ]);
@@ -323,6 +372,81 @@ describe('process.json — bloco versions (Leva 6)', () => {
       c: { milestoneType: ['c-dir'], result: [], action: [] },
     });
     expect(result.versions.vocabulary).toEqual({ core: '1.0', a: '1.0', b: '1.0', c: '1.1' });
+  });
+});
+
+describe('process.json — bloco transitions (Leva 2 / mudança 3)', () => {
+  test('registerTransitions grava transitions/<owner>/<versão>.json versionado, igual aos outros três', () => {
+    const result = registerTransitions(dir, PROJECT, 'core', [{ from: null, to: 'draft' }]);
+    expect(result).toEqual(
+      expect.objectContaining({
+        project: PROJECT,
+        owner: 'core',
+        version: '1.0',
+        previousVersion: null,
+        unchanged: false,
+      }),
+    );
+    expect(
+      JSON.parse(
+        fs.readFileSync(resolveSafePath(dir, PROJECT, 'transitions', 'core', '1.0.json'), 'utf8'),
+      ),
+    ).toEqual(expect.objectContaining({ transitions: [{ from: null, to: 'draft' }] }));
+  });
+
+  test('conteúdo idêntico ao vigente é no-op (unchanged: true), nada gravado de novo', () => {
+    registerTransitions(dir, PROJECT, 'core', [{ from: null, to: 'draft' }]);
+    const second = registerTransitions(dir, PROJECT, 'core', [{ from: null, to: 'draft' }]);
+    expect(second.unchanged).toBe(true);
+    expect(second.version).toBe('1.0');
+  });
+
+  test('createProcess fixa transitions em fixed.transitions e computa hashes.transitions', () => {
+    prepareCoreAndType();
+    registerTransitions(dir, PROJECT, 'core', [{ from: null, to: 'draft' }]);
+    const result = createProcess(dir, PROJECT, 'p1', () => new Date());
+    const manifest = readManifest('p1');
+
+    expect(manifest.fixed.transitions).toEqual({ core: [{ from: null, to: 'draft' }] });
+    expect(manifest.hashes.transitions).toBe(
+      sha256hex(canonicalize(manifest.fixed.transitions) ?? ''),
+    );
+    expect(result.hashes).toEqual(manifest.hashes);
+  });
+
+  test('sem nenhum registerTransitions: fixed.transitions e hashes.transitions ausentes (byte a byte igual a antes desta mudança)', () => {
+    prepareCoreAndType();
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    const manifest = readManifest('p1');
+    expect(manifest.fixed.transitions).toBeUndefined();
+    expect(manifest.hashes.transitions).toBeUndefined();
+  });
+
+  test('process.json legado sem fixed.transitions/hashes.transitions carrega sem PROCESS_CORRUPTED', () => {
+    prepareCoreAndType();
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    const file = path.join(dir, PROJECT, 'p1', 'process.json');
+    const legacyManifest = readManifest('p1');
+    delete legacyManifest.fixed.transitions;
+    delete legacyManifest.hashes.transitions;
+    fs.writeFileSync(file, JSON.stringify(legacyManifest));
+
+    expect(() => loadProcess(dir, PROJECT, 'p1')).not.toThrow();
+    expect(loadProcess(dir, PROJECT, 'p1').manifest.hashes.transitions).toBeUndefined();
+  });
+
+  test('hashes.transitions divergente do fixado → PROCESS_CORRUPTED com caminho /hashes/transitions', () => {
+    prepareCoreAndType();
+    registerTransitions(dir, PROJECT, 'core', [{ from: null, to: 'draft' }]);
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    const file = path.join(dir, PROJECT, 'p1', 'process.json');
+    const manifest = readManifest('p1');
+    manifest.hashes.transitions = 'f'.repeat(64);
+    fs.writeFileSync(file, JSON.stringify(manifest));
+
+    const error = captureError(() => loadProcess(dir, PROJECT, 'p1'));
+    expect(error.code).toBe('PROCESS_CORRUPTED');
+    expect(error.details).toContainEqual(expect.objectContaining({ path: '/hashes/transitions' }));
   });
 });
 
@@ -471,6 +595,68 @@ describe('registerGate — versionamento (Leva 5)', () => {
 
     expect(result.version).toBe('1.1');
     expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'NO_BREAKING_CHANGE' }));
+  });
+
+  // Mudança 1 (leva 4, D1): `rule` entra na comparação de versionamento, não só `criteria`.
+  const RULE = {
+    targetPattern: 'hex:target:u',
+    requireVigente: true,
+    acceptedResults: ['ok'],
+    minCount: 1,
+  };
+
+  test('mesmo criteria, rule nova → nova versão (não unchanged)', () => {
+    registerGate(dir, PROJECT, 'gate-x', 'criteria');
+
+    const result = registerGate(dir, PROJECT, 'gate-x', 'criteria', { rule: RULE });
+
+    expect(result).toMatchObject({ version: '1.1', unchanged: false });
+  });
+
+  test('criteria e rule idênticos ao vigente → unchanged', () => {
+    registerGate(dir, PROJECT, 'gate-x', 'criteria', { rule: RULE });
+
+    const result = registerGate(dir, PROJECT, 'gate-x', 'criteria', { rule: RULE });
+
+    expect(result).toMatchObject({ version: '1.0', unchanged: true });
+  });
+
+  test('rule é gravado no arquivo versionado em disco', () => {
+    registerGate(dir, PROJECT, 'gate-x', 'criteria', { rule: RULE });
+
+    const written = parseJson(
+      RegisteredGateSchema,
+      fs.readFileSync(path.join(gatesDir(), 'gate-x', '1.0.json'), 'utf8'),
+    );
+    expect(written.rule).toEqual(RULE);
+  });
+
+  test('gate sem rule não grava a chave no arquivo (opinião, comportamento idêntico ao de antes)', () => {
+    registerGate(dir, PROJECT, 'gate-x', 'criteria');
+
+    const written = parseJson(
+      RegisteredGateSchema,
+      fs.readFileSync(path.join(gatesDir(), 'gate-x', '1.0.json'), 'utf8'),
+    );
+    expect(written.rule).toBeUndefined();
+  });
+
+  // `rule` persistido é reconstruído com `RuleGateSpec.parse` (borda de leitura), não mais um cast:
+  // uma rule corrompida no disco falha já ao reconstruir o vigente, não dentro de `evaluateRule`.
+  test('rule persistida inválida no disco → falha ao reconstruir o vigente em vez de seguir malformada', () => {
+    registerGate(dir, PROJECT, 'gate-bad', 'criteria', { rule: RULE });
+    const file = path.join(gatesDir(), 'gate-bad', '1.0.json');
+    const written = parseJson(RegisteredGateSchema, fs.readFileSync(file, 'utf8'));
+    const corrupted = { ...written, rule: { ...written.rule, acceptedResults: 'not-an-array' } };
+    fs.writeFileSync(file, JSON.stringify(corrupted));
+
+    expect(() => registerGate(dir, PROJECT, 'gate-bad', 'new criteria')).toThrow();
+  });
+
+  test('gate sem rule persistida continua registrando nova versão normalmente (regressão)', () => {
+    registerGate(dir, PROJECT, 'gate-ok', 'criteria');
+
+    expect(() => registerGate(dir, PROJECT, 'gate-ok', 'new criteria')).not.toThrow();
   });
 });
 
@@ -755,12 +941,15 @@ describe('registerVocabulary — versionamento (Leva 3)', () => {
     });
   });
 
-  test('critério 4: remover termo só de result → minor, sem exigir flag', () => {
+  test('critério 4 (revisto): remover termo de result agora quebra, como milestoneType — result fechou junto com o gate de regra', () => {
     registerVocabulary(dir, PROJECT, 'owner-z', { ...EMPTY, result: ['ok', 'fail'] });
 
-    const result = registerVocabulary(dir, PROJECT, 'owner-z', { ...EMPTY, result: ['ok'] });
+    const error = captureError(() =>
+      registerVocabulary(dir, PROJECT, 'owner-z', { ...EMPTY, result: ['ok'] }),
+    );
 
-    expect(result).toMatchObject({ version: '1.1', previousVersion: '1.0', unchanged: false });
+    expect(error.code).toBe('BREAKING_CHANGE');
+    expect(error.details).toContainEqual(expect.objectContaining({ path: '/result' }));
   });
 
   test('critério 7: re-registrar conteúdo idêntico → unchanged com a versão vigente, nenhum arquivo novo', () => {

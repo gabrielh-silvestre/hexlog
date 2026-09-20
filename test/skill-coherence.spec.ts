@@ -241,6 +241,14 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'active',
   'targets',
   'trace',
+  // Mudança 2 (votos, leva 3): campos de data/state do voto, não tools nem valores reservados.
+  'target',
+  'round',
+  'votersExpected',
+  'position',
+  'redacted',
+  'votesReceived',
+  'revealed',
 ]);
 
 /**
@@ -250,15 +258,15 @@ const FIELD_NAME_ALLOWLIST = new Set([
  * não bastaria para toda citação do arquivo.
  */
 const CITATION_EXPECTATIONS: Record<string, string> = {
-  'definitions.ts:575': 'VOCABULARY_MISSING',
-  'definitions.ts:448-496': 'createProcess',
-  'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
-  'definitions.ts:24': 'RESERVED_TYPE_NAMES',
-  'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
-  'event-tools.ts:421': 'TYPE_NOT_PINNED',
-  'event-tools.ts:545': 'VOCABULARY_VIOLATED',
-  'event-tools.ts:567': 'UNKNOWN_VOCABULARY',
-  'event-tools.ts:423-428': 'RESERVED_FIELD',
+  'definitions.ts:666': 'VOCABULARY_MISSING',
+  'definitions.ts:543-587': 'createProcess',
+  'definitions.ts:22': 'RESERVED_PROCESS_NAMES',
+  'definitions.ts:25': 'RESERVED_TYPE_NAMES',
+  'definitions.ts:28-34': 'BUILTIN_GATE_NAMES',
+  'event-tools.ts:486': 'TYPE_NOT_PINNED',
+  'event-tools.ts:711': 'VOCABULARY_VIOLATED',
+  'event-tools.ts:734': 'UNKNOWN_VOCABULARY',
+  'event-tools.ts:488-493': 'RESERVED_FIELD',
   'installation.ts:74': 'verifyPreparedArtifact',
   'installation.ts:239': 'verifyPreparedArtifact',
 };
@@ -340,8 +348,8 @@ describe('citações arquivo.ts:N(-M)? na skill × código real em src/', () => 
     }
   });
 
-  test('definitions.ts:448-496 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
-    const citation = 'definitions.ts:448-496';
+  test('definitions.ts:543-587 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
+    const citation = 'definitions.ts:543-587';
     expect(citedFileCitations).toContain(citation);
     const { startLine, endLine } = parseCitation(citation);
     const definitionsContent = fs.readFileSync(path.join(srcDir, 'definitions.ts'), 'utf8');

@@ -33,7 +33,8 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
   `<nome>/<versão>.json`, nunca sobrescrevem. O arquivo legado `<nome>.json` nunca é apagado,
   reescrito ou materializado — segue como fonte fixa da versão `1.0` para sempre.
 - Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0001-hexlog-mvp.md`,
-  `docs/adr-0002-versionamento-definicoes.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`.
+  `docs/adr-0002-versionamento-definicoes.md`, `docs/adr-0003-gate-de-regra-voto-fases-predecessores-dependencia.md`
+  e `docs/pesquisa/hexlog-pesquisa-libs.md`.
 - `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica.
 
 ### Testing Requirements

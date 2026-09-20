@@ -39,7 +39,8 @@ diretório.
 
 Quebra é o que faria um evento antes válido ser rejeitado: para
 vocabulário, remover um termo de `milestoneType` ou `action` (campos
-fechados) — remover de `result` não é quebra, porque é campo aberto; para
+fechados) — remover de `result` não era quebra, porque era campo aberto
+(revisto na Emenda 2026-09-20, ao fim deste documento: `result` fechou); para
 `type`, qualquer mudança de schema; para `gate`, nada, porque `criteria` não
 participa de nenhuma validação de evento. Quebra bloqueia com o erro novo
 `BREAKING_CHANGE`, só passando com `breaking: true` no input; a flag numa
@@ -87,9 +88,12 @@ do cálculo de `hashes`/`verifyHashes`. Continuam sendo exatamente 10 tools.
   exige coordenação entre processos MCP separados (cada servidor stdio é um
   processo independente), fora do escopo "sem daemon" do MVP.
 - **Validar `result` do vocabulário contra a mesma regra de quebra dos
-  campos fechados** — rejeitada: `result` já é campo aberto por decisão do
-  MVP (QN3, ADR 0001); tratá-lo como fechado aqui inverteria essa decisão
-  sem necessidade.
+  campos fechados** — rejeitada nesta ADR: `result` já é campo aberto por
+  decisão do MVP (QN3, ADR 0001); tratá-lo como fechado aqui inverteria essa
+  decisão sem necessidade. Revertida na Emenda 2026-09-20 (ao fim deste
+  documento), quando surgiu a necessidade: o gate de regra (ADR 0003) casa
+  `acceptedResults` contra `result`, e campo aberto deixava o agente cunhar
+  qualquer valor na escrita do Veredito pra satisfazer o gate.
 
 ## D1 — Escrita exclusiva por `linkSync` + retry
 
@@ -189,7 +193,7 @@ projeto e aponta o teste que cobre cada um.
 | 1 | `register_vocabulary` 2x só com adições → `1.0`/`1.1` (nome novo) ou `1.1`/`1.2` (nome com legado), ambos os arquivos em disco | `test/definitions.spec.ts:658`, `test/definitions.spec.ts:674` |
 | 2 | Remover termo de `milestoneType` sem `breaking: true` → `BREAKING_CHANGE`, nada escrito | `test/definitions.spec.ts:695` |
 | 3 | Mesma remoção com `breaking: true` → major | `test/definitions.spec.ts:707` |
-| 4 | Remover termo só de `result` → minor, sem exigir a flag | `test/definitions.spec.ts:726` |
+| 4 | Remover termo só de `result` → minor, sem exigir a flag (revisto na Emenda 2026-09-20: `result` fechou, vira `BREAKING_CHANGE` como `milestoneType`) | `test/definitions.spec.ts:944` |
 | 5 | `register_gate` com `criteria` diferente → minor, sem exigir a flag | `test/definitions.spec.ts:418` |
 | 6 | `register_type` com schema diferente sem `breaking: true` → `BREAKING_CHANGE`; com a flag → major | `test/definitions.spec.ts:383`, `test/definitions.spec.ts:392` |
 | 7 | Reregistrar conteúdo idêntico ao vigente → `unchanged: true` com a versão vigente, nenhum arquivo novo | `test/definitions.spec.ts:400` (type), `test/definitions.spec.ts:734` (vocabulary) |
@@ -210,3 +214,31 @@ projeto e aponta o teste que cobre cada um.
 - Um campo `versionsHash` (hash isolado do bloco `versions`, cobrindo
   também a janela pré-primeiro-evento descrita em "Consequences") foi
   cogitado e deliberadamente deixado fora de escopo desta iteração.
+
+## Emenda 2026-09-20 — `result` passa a vocabulário fechado
+
+O ADR 0003 introduziu o gate de regra: `evaluateRule` (`src/gates.ts`) casa
+`acceptedResults` (fixado no gate) contra o `result` vigente de cada alvo em
+`state.active`. Com `result` como campo aberto (decisão original deste ADR e
+do MVP, ADR 0001, QN3), um valor de `result` fora do vocabulário fixado
+nunca era rejeitado na escrita do Veredito — só gerava o aviso
+`UNKNOWN_VOCABULARY`. Isso reabria, por outra porta, exatamente o problema
+que o gate de regra existe para fechar: o agente escolhe livremente o
+`result` que o gate compara, então podia cunhar um valor qualquer (mesmo
+fora de todo vocabulário) e satisfazer `acceptedResults` sem nenhum
+Veredito real por trás.
+
+**Decisão:** `result` (`FIELD_POLICY_BY_KEY.result` em `src/state.ts`) passa
+a `open: false`, mesmo tratamento de `milestoneType`/`decisions[].action`.
+Consequência direta deste ADR: `result` entra em `CLOSED_VOCAB_KEYS`, então
+remover um termo dele em `register_vocabulary` passa a exigir
+`breaking: true` (critério 4 da tabela acima, revisto). `position` de Voto
+(que reaproveita a mesma lista de `result` — ADR 0003, mudança 2) **não**
+fechou junto: continua campo aberto, porque é a escolha do agente no voto,
+não um valor que um gate casa.
+
+Leitura de log já gravado não quebra: um `result` legado fora do vocabulário
+continua aparecendo em `state.warnings`/`events` (agora com `kind: 'error'`
+em vez de `'unknown-warning'`, mesmo padrão que `milestoneType` já usa),
+sem lançar — só a escrita nova de um `result` fora do vocabulário passa a
+ser rejeitada com `VOCABULARY_VIOLATED`.

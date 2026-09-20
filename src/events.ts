@@ -59,6 +59,8 @@ const MilestoneData = z.strictObject({
     .array(z.strictObject({ item: Label, action: Label, text: Text }))
     .max(100)
     .optional(),
+  // Mudança 4 (predecessores/liberado-bloqueado): última ocorrência que declara o campo vence.
+  predecessors: z.array(Target).max(50).optional(),
   // P5: excluído do envelope de dedupe de `retryWithFullId` — não entra na comparação de retentativa.
   trace: Text.optional(),
 });
@@ -70,16 +72,40 @@ const VerdictData = z.strictObject({
   evidence: z.union([Text, z.array(Text).min(1).max(20)]),
   target: Target,
   supersedes: z.array(FullId).min(1).max(100).optional(),
+  // Mudança 5: mesmo tipo/teto de `supersedes` — premissa de que este Veredito depende.
+  dependsOn: z.array(FullId).min(1).max(100).optional(),
   origin: Text,
   trace: Text,
 });
+
+// Mudança 2 (votos): rodada às cegas — `votersExpected` é fixado pelo 1º voto da rodada (D3-B), os
+// seguintes têm de bater (`VOTE_ROUND_MISMATCH` em event-tools.ts); a redação de `position`/
+// `confidence`/`changed`/`flipReason` até a rodada bater `votersExpected` é lógica de leitura
+// (`resolveRawMode`/`resolveSearchMode`), não do schema. `trace` segue o mesmo motivo do Milestone
+// (P5): metadado de diagnóstico, fora da comparação de retentativa idempotente (`comparableData`).
+export const VoteData = z
+  .strictObject({
+    target: Target,
+    round: z.string().min(1).max(50),
+    votersExpected: z.number().int().min(1).max(100),
+    position: Text,
+    confidence: z.number().min(0).max(1).optional(),
+    changed: z.boolean(),
+    flipReason: Text.optional(),
+    trace: Text.optional(),
+  })
+  .refine((data) => !data.changed || !isNil(data.flipReason), {
+    path: ['flipReason'],
+    message: 'flipReason is required when changed is true',
+  });
 
 export const GateMilestoneData = z.strictObject({
   milestoneType: z.literal('gate'),
   target: Target,
   gate: z.strictObject({
     name: Name,
-    origin: z.enum(['builtin', 'custom']),
+    // Mudança 1 (gate de regra): 'rule' junto de 'builtin'/'custom' — mesma forma, um jeito a mais de avaliar.
+    origin: z.enum(['builtin', 'custom', 'rule']),
     criteria: z.string().max(2000),
     passed: z.boolean(),
     evidence: z.array(z.unknown()).max(50),
@@ -94,7 +120,7 @@ export const GateMilestoneData = z.strictObject({
 const DATA_MAX_CHARS = 16_000;
 
 /**
- * Escolhe o schema de `data` para `type`: nativos fixos (Milestone/Verdict, com o desvio
+ * Escolhe o schema de `data` para `type`: nativos fixos (Milestone/Verdict/Vote, com o desvio
  * para `GateMilestoneData` quando `milestoneType === 'gate'`) ou o Zod já convertido do snapshot
  * do processo, recebido em `customSchemas` (já convertido de JSON Schema por `loadProcess`).
  */
@@ -107,6 +133,7 @@ export function dataSchema(
     return get(data, 'milestoneType') === 'gate' ? GateMilestoneData : MilestoneData;
   }
   if (type === 'verdict') return VerdictData;
+  if (type === 'vote') return VoteData;
   return customSchemas[type];
 }
 

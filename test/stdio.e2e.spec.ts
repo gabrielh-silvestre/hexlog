@@ -306,6 +306,148 @@ describe('B1', () => {
   });
 });
 
+// Fluxo ponta a ponta de uma rodada de voto e de uma transição de fase, via cliente MCP stdio
+// real — mesmo padrão de client de B1(a), contra o bundle já compilado.
+describe('E2E — voto e transição de fase', () => {
+  test('rodada de voto com 3 votantes: os 2 primeiros saem redigidos em events, o 3º revela todos', async () => {
+    const projectName = 'e2e-vote-proj';
+    const processName = 'e2e-vote-proc';
+    const { client, stderr } = await createClient(
+      path.join(mainBundle, 'server.mjs'),
+      temporaryEnv(),
+      mainBundle,
+    );
+
+    try {
+      await client.callTool({
+        name: 'register_vocabulary',
+        arguments: {
+          project: projectName,
+          owner: 'core',
+          milestoneType: [],
+          result: [],
+          action: [],
+        },
+      });
+      await client.callTool({
+        name: 'create_process',
+        arguments: { project: projectName, process: processName },
+      });
+
+      const voteData = (overrides: Record<string, unknown> = {}) => ({
+        target: 'hex:target:jury-e2e',
+        round: 'r1',
+        votersExpected: 3,
+        position: 'ok',
+        changed: false,
+        ...overrides,
+      });
+      const castVote = (agent: string, overrides: Record<string, unknown> = {}) =>
+        client.callTool({
+          name: 'register',
+          arguments: {
+            project: projectName,
+            process: processName,
+            id: `${projectName}:${processName}:vote`,
+            agent,
+            data: voteData(overrides),
+          },
+        }) as Promise<{ structuredContent?: { event: { id: string } } }>;
+      const readEventsById = async () => {
+        const result = (await client.callTool({
+          name: 'events',
+          arguments: { project: projectName, process: processName },
+        })) as {
+          structuredContent?: {
+            events: { id: string; redacted?: boolean; data: { position: unknown } }[];
+          };
+        };
+        return Object.fromEntries((result.structuredContent?.events ?? []).map((e) => [e.id, e]));
+      };
+
+      const first = await castVote('voter-1');
+      const firstId = first.structuredContent?.event.id as string;
+      const second = await castVote('voter-2');
+      const secondId = second.structuredContent?.event.id as string;
+
+      const afterTwo = await readEventsById();
+      expect(afterTwo[firstId].redacted).toBe(true);
+      expect(afterTwo[firstId].data.position).toBeNull();
+      expect(afterTwo[secondId].redacted).toBe(true);
+
+      const third = await castVote('voter-3', { position: 'not-ok' });
+      const thirdId = third.structuredContent?.event.id as string;
+
+      const afterThree = await readEventsById();
+      expect(afterThree[firstId].redacted).toBeUndefined();
+      expect(afterThree[firstId].data.position).toBe('ok');
+      expect(afterThree[secondId].redacted).toBeUndefined();
+      expect(afterThree[secondId].data.position).toBe('ok');
+      expect(afterThree[thirdId].redacted).toBeUndefined();
+      expect(afterThree[thirdId].data.position).toBe('not-ok');
+
+      expect(stderr.text()).not.toContain('"code":"INTERNAL"');
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+
+  test('transição de fase: primeira fase (from: null) aceita; fora de ordem rejeita com INVALID_TRANSITION', async () => {
+    const projectName = 'e2e-transition-proj';
+    const processName = 'e2e-transition-proc';
+    const { client, stderr } = await createClient(
+      path.join(mainBundle, 'server.mjs'),
+      temporaryEnv(),
+      mainBundle,
+    );
+
+    try {
+      await client.callTool({
+        name: 'register_vocabulary',
+        arguments: {
+          project: projectName,
+          owner: 'core',
+          milestoneType: ['draft', 'review', 'done'],
+          result: [],
+          action: [],
+          transitions: [
+            { from: null, to: 'draft' },
+            { from: 'draft', to: 'review' },
+            { from: 'review', to: 'done' },
+          ],
+        },
+      });
+      await client.callTool({
+        name: 'create_process',
+        arguments: { project: projectName, process: processName },
+      });
+
+      const registerMilestone = (milestoneType: string) =>
+        client.callTool({
+          name: 'register',
+          arguments: {
+            project: projectName,
+            process: processName,
+            id: `${projectName}:${processName}:milestone`,
+            agent: 'e2e-agent',
+            data: { milestoneType, target: 'hex:target:phase-e2e' },
+          },
+        }) as Promise<{ isError?: boolean; structuredContent?: { code?: string } }>;
+
+      const draft = await registerMilestone('draft');
+      expect(draft.isError).not.toBe(true);
+
+      const outOfOrder = await registerMilestone('done');
+      expect(outOfOrder.isError).toBe(true);
+      expect(outOfOrder.structuredContent?.code).toBe('INVALID_TRANSITION');
+
+      expect(stderr.text()).not.toContain('"code":"INTERNAL"');
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+});
+
 describe('C1', () => {
   type SeedEvent = { id: string; agent: string; data: Record<string, unknown> };
   type RegisterResponse = {
