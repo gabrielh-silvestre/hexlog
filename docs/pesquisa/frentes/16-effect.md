@@ -20,7 +20,7 @@
 | Deps | `fast-check`, `@standard-schema/spec` | `npm view dependencies` |
 
 ### Ganhos lado a lado
-- **a. Erros tipados no retorno:** `Effect<A, LockTimeoutError | LockPerdidoError, never>` com `Data.TaggedError`; handler que esquece de tratar `LOCK_PERDIDO` não compila. No nativo, o catálogo `{codigo}` (§4.13) documenta, mas nada impede um `throw` fora dele. **Ganho real, único relevante.**
+- **a. Erros tipados no retorno:** `Effect<A, LockTimeoutError | LockPerdidoError, never>` com `Data.TaggedError`; handler que esquece de tratar `LOCK_PERDIDO` não compila. No nativo, o catálogo `{code}` (§4.13) documenta, mas nada impede um `throw` fora dele. **Ganho real, único relevante.**
 - **b. Liberação garantida:** `Effect.acquireUseRelease` cobre sucesso, erro e interrupção de fibra. `try/finally` nativo cobre sucesso e erro; o hexlog não usa fibras → **não se aplica**.
 - **c. Retry + timeout:** `Effect.retry(Schedule.spaced('10 millis'))` + `Effect.timeoutFail(5 s)` é declarativo e composável; para "10 ms fixo até 5 s" o laço nativo é trivial → ganho só se a política crescer (backoff, jitter).
 - **d. `TestClock`:** **nenhum ganho** — o plano já passa `agora` como parâmetro de função pura.

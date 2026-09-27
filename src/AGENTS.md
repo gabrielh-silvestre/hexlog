@@ -15,7 +15,7 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 10 to
 | `definitions.ts` | Persistência versionada (semver `major.minor`) de tipos/vocabulário/gates custom e do `process.json` fixado: `registerType` (valida com Ajv2020), `registerVocabulary`, `registerGate`, `decideVersion`, `writeVersionExclusive`, `createProcess`, `loadProcess`, `listProjects`, `readProject` |
 | `directory.ts` | `dataDir(env)`: resolve `$XDG_DATA_HOME/hexlog` ou `~/.local/share/hexlog` |
 | `errors.ts` | `HexlogError` (classe de erro de domínio com `code`/`details`), `ErrorCode` (23 códigos), `issueDetails` (Zod → JSON Pointer) |
-| `state.ts` | Projeção pura do Estado (§4.8): `projectState` (active/conflicts/orphans/toReview/invalidReferences/warnings), `validateField` (vocabulário) |
+| `state.ts` | Projeção pura do Estado (§4.8): `projectState` (active/conflicts/orphans/toReview/invalidReferences/warnings/forks), `validateField` (vocabulário) |
 | `events.ts` | Esquemas Zod do envelope de evento e dos tipos nativos: `EventLine`, `MilestoneData`, `VerdictData`, `GateMilestoneData`, `parseId`, `normalizeData` |
 | `definition-tools.ts` | Registra as 5 tools de definição: `list`, `register_type`, `register_vocabulary`, `register_gate`, `create_process` |
 | `event-tools.ts` | Registra as 5 tools de eventos: `register`, `evaluate_gate`, `state`, `events`, `chain` |
@@ -37,7 +37,7 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 10 to
 - **Versionamento de definições (`definitions.ts`):** `registerType`/`registerVocabulary`/`registerGate` gravam `<nome>/<versão>.json` em vez de sobrescrever — versão `major.minor`, decidida por `decideVersion` (unchanged/minor/major/`BREAKING_CHANGE`) e persistida por `writeVersionExclusive`. O arquivo legado `<nome>.json` **nunca** é apagado, reescrito nem materializado por cópia: continua sendo a fonte da versão `1.0` para sempre, e o diretório de versões começa em `1.1` quando existe. `process.json` ganha o bloco opcional `versions` (`FixedVersions`), fixado na criação e **fora** de `verifyHashes` — adulterável sem disparar `PROCESS_CORRUPTED`.
 - **Registro de tool:** toda chamada passa por `execute()` (`mcp.ts`), que nunca deixa uma exceção chegar ao SDK — `HexlogError` vira `{code, message, details}`, qualquer outra exceção vira `INTERNAL` (stack só no log `internal-error`, nunca na resposta). `execute` também emite sempre um log `tool` com `name`/`project`/`process`/`ms`/`code?`, nunca o conteúdo de `data`.
 - **Convenção de erro (`errors.ts`):** todo erro de domínio é uma instância de `HexlogError` com um dos 23 códigos de `ErrorCode` (ex.: `INVALID_INPUT`, `CONFLICTING_ID`, `VOCABULARY_VIOLATED`, `LOCK_TIMEOUT`). Erros de validação Zod viram `details[]` via `issueDetails`, com `path` em formato JSON Pointer (RFC 6901).
-- **Nomes reservados:** `milestone`/`verdict` como nome de tipo, `schemas`/`vocabulary`/`gates` como nome de processo, e os 4 nomes de gate embutido — todos rejeitados com `RESERVED_NAME` (`storage.ts`).
+- **Nomes reservados:** `milestone`/`verdict` como nome de tipo, `schemas`/`vocabulary`/`gates` como nome de processo, e os 5 nomes de gate embutido — todos rejeitados com `RESERVED_NAME` (`definitions.ts`).
 - **Módulos de instalação são puros e isolados:** `guard.ts` e `installation.ts` não são importados por `server.ts` nem pelo hook; só por `scripts/install.ts` (fora de `src/`). Toda execução externa (spawn do hook, subida do servidor, relógio) entra por parâmetro injetado — nunca chamada direta a `child_process`/`Date.now` dentro da lógica testável.
 
 ### Testing Requirements
@@ -51,7 +51,7 @@ npm run build     # esbuild -> bundles .mjs (mesmo passo 1 do instalador)
 - `stdio.e2e.spec.ts` sobe o servidor a partir do bundle `.mjs` já construído — é o único jeito de testar o artefato que as sessões de fato executam. Rode `npm run build` antes se o teste e2e depender de um bundle atualizado.
 
 ### Common Patterns
-- Toda escrita em `schemas/`, `vocabulary/`, `gates/` e `process.json` usa `writeJsonAtomic`/`createExclusiveFile`/`writeVersionExclusive` (`storage.ts`/`definitions.ts`): arquivo temporário no mesmo diretório, `fsync`, depois `rename`/`link` — nunca escrita direta no arquivo final. A escrita de uma versão (`<nome>/<versão>.json`) é sempre exclusiva por `linkSync` (`writeVersionExclusive`), nunca `writeJsonAtomic`: `writeJsonAtomic` termina em `rename`, que sobrescreveria em silêncio sob corrida entre dois `register_*` concorrentes no mesmo alvo. Em `EEXIST`, o retry refaz a decisão inteira (vigente, `unchanged`, quebra, bump), não só o número da versão.
+- Toda escrita em `schemas/`, `vocabulary/`, `gates/` e `process.json` usa `writeJsonAtomic`/`writeThenLinkExclusive`/`writeVersionExclusive` (`storage.ts`/`definitions.ts`): arquivo temporário no mesmo diretório, `fsync`, depois `rename`/`link` — nunca escrita direta no arquivo final. A escrita de uma versão (`<nome>/<versão>.json`) é sempre exclusiva por `linkSync` (`writeVersionExclusive`), nunca `writeJsonAtomic`: `writeJsonAtomic` termina em `rename`, que sobrescreveria em silêncio sob corrida entre dois `register_*` concorrentes no mesmo alvo. Em `EEXIST`, o retry refaz a decisão inteira (vigente, `unchanged`, quebra, bump), não só o número da versão.
 - Hash de conteúdo sempre por `sha256hex(canonicalize(valor) ?? '')` (JCS): mesmo padrão em `chain.ts`, `definitions.ts` e na comparação de idempotência de `register` (`event-tools.ts`).
 - Toda função pura que decide algo (`evaluateBuiltin`, `projectState`, `verifyChain`, `search`) recebe dados já carregados e devolve um valor — nenhuma delas faz I/O; o I/O fica nas bordas (`log.ts`, `storage.ts`, `definitions.ts`).
 - Toda lista de saída tem teto e devolve o total real ao lado (ex.: `breaks`/`repairedLines` em 100, seções de `state` em 100, `events` por página de 24.000 caracteres canônicos).
@@ -63,7 +63,7 @@ Ponto de entrada: `server.ts` → `directory.ts` (resolve dir de dados) + `mcp.t
 `mcp.ts` registra as tools chamando `definition-tools.ts` e `event-tools.ts`, e fornece a ambos o envelope `execute()` e os esquemas Zod comuns.
 `definition-tools.ts` chama `definitions.ts` (persistência) e `gates.ts` (lista de gates embutidos).
 `event-tools.ts` é o módulo mais conectado: chama `definitions.ts` (carregar processo), `log.ts` (`append`/`readText`), `chain.ts` (`isValidLink`/`verifyChain`), `state.ts` (`projectState`), `gates.ts` (avaliação), `search.ts` (modo busca) e `events.ts` (validação/normalização de `data`).
-`definitions.ts`, `chain.ts`, `log.ts`, `state.ts`, `gates.ts` e `search.ts` dependem de `events.ts` (esquema `EventLine`) e `errors.ts` (`HexlogError`); `storage.ts` é a base de I/O usada por `definitions.ts`.
+`definitions.ts`, `chain.ts`, `log.ts`, `state.ts`, `gates.ts` e `search.ts` dependem de `events.ts` (esquema `EventLine`); `definitions.ts`, `chain.ts` e `log.ts` também dependem de `errors.ts` (`HexlogError`). `storage.ts` é a base de I/O usada por `definitions.ts`.
 `guard.ts` e `installation.ts` formam um subgrafo isolado (instalação), consumido só por `scripts/install.ts` fora de `src/`.
 
 ### External

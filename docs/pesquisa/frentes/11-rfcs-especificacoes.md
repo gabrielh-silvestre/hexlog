@@ -20,7 +20,7 @@
 | JSON Schema 2020-12 | **Internet-Draft expirado (dez/2022), nunca RFC**; mantido por json-schema.org | `format-annotation` (default, não valida) vs `format-assertion` | Zod valida de fato; documentar a pegadinha se schemas forem publicados | Adotar integral como formato |
 | CloudEvents 1.0 (1.0.3-wip) | CNCF | `id, source, specversion, type` obrigatórios; `time` opcional; `dataschema`, `subject` | Mesmo shape do envelope; `time` vs `timestamp` | Adotar ideia, não envelope literal |
 | W3C PROV-O / PROV-DM | W3C Recommendation, 2013-04-30 | Entity/Activity/Agent, `wasDerivedFrom`, `wasAssociatedWith` | Nomes de proveniência do Veredito (`origin`, `source`, `trace`) | Adotar ideia (nomenclatura) |
-| in-toto Attestation v1.2 + SLSA v1.2 | Linux Foundation; SLSA v1.1 Retired, v1.2 Approved | Statement `{_type, subject:[{name,digest}], predicateType, predicate}` | Molde para o campo `prova` do Veredito | Adotar ideia fortemente (sem DSSE) |
+| in-toto Attestation v1.2 + SLSA v1.2 | Linux Foundation; SLSA v1.1 Retired, v1.2 Approved | Statement `{_type, subject:[{name,digest}], predicateType, predicate}` | Molde para o campo `evidence` do Veredito | Adotar ideia fortemente (sem DSSE) |
 | XDG Base Directory 0.8 | freedesktop.org | `$XDG_DATA_HOME` padrão `$HOME/.local/share` | Já usado | Adotar integral |
 | Spec MCP **2026-07-28** (corrente) | modelcontextprotocol.io | `structuredContent` + `outputSchema`; `isError: true` no result = erro de execução, distinto de erro JSON-RPC de protocolo; annotations | Confirma `isError + {code, message, details[]}` via `structuredContent`; `readOnlyHint` em `state`/`events`/`chain`/`list` | Adotar integral |
 | SemVer 2.0.0 | semver.org | MAJOR.MINOR.PATCH | Só no catálogo de schemas; dentro do processo o hash é a âncora | Adotar só no catálogo |
@@ -29,7 +29,7 @@
 1. Erro: ideia RFC 9457 + `isError`/`structuredContent`/`outputSchema` do MCP.
 2. Arquivo: JSON Lines (jsonlines.org), não RFC 7464.
 3. `id` do envelope em UUIDv7 (RFC 9562), complementando `seq`.
-4. `prova` do Veredito no molde Statement do in-toto (`subject` + `predicateType` + `predicate`).
+4. `evidence` do Veredito no molde Statement do in-toto (`subject` + `predicateType` + `predicate`).
 5. JCS (RFC 8785) se o hash cobrir o objeto do evento; dispensável se o hash cobrir os bytes brutos da linha. (Nota do orquestrador: a frente hash-chain recomenda hashear o objeto canônico, como a POC — logo JCS entra.)
 
 ### Conflitos entre specs

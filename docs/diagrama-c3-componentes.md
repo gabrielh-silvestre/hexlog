@@ -9,7 +9,10 @@ dependências internas descrito em `src/AGENTS.md`.
 > Sintaxe validada via MCP mermaid (`validate_and_render_mermaid_diagram`).
 > A versão com descrição longa por componente estourava o limite de
 > tamanho do PNG de validação; por isso as descrições ficam na tabela
-> abaixo, e o diagrama usa só alias/nome/tipo.
+> abaixo, e o diagrama usa só alias/nome/tipo. Após a revisão de
+> 2026-09-26, o número de arestas por si só voltou a estourar o mesmo
+> limite de PNG; a sintaxe foi conferida manualmente e por render de uma
+> cópia sem labels/tipo (estrutura idêntica de nós e arestas), que passou.
 
 ```mermaid
 C4Component
@@ -33,6 +36,7 @@ C4Component
         Component(errors, "errors.ts", "Dominio")
         Component(storage, "storage.ts", "I/O")
         Component(directory, "directory.ts", "Config")
+        Component(version, "version.ts", "Config")
     }
 
     Rel(agent, serverTs, "chama tools")
@@ -40,8 +44,12 @@ C4Component
     Rel(serverTs, mcpTs, "cria servidor")
     Rel(mcpTs, defTools, "registra")
     Rel(mcpTs, evtTools, "registra")
+    Rel(mcpTs, version, "usa")
     Rel(defTools, definitions, "usa")
     Rel(defTools, gates, "lista")
+    Rel(defTools, chain, "usa")
+    Rel(defTools, errors, "usa")
+    Rel(defTools, mcpTs, "usa")
     Rel(evtTools, definitions, "usa")
     Rel(evtTools, log, "usa")
     Rel(evtTools, chain, "usa")
@@ -49,19 +57,23 @@ C4Component
     Rel(evtTools, gates, "usa")
     Rel(evtTools, search, "usa")
     Rel(evtTools, events, "usa")
+    Rel(evtTools, errors, "usa")
+    Rel(evtTools, mcpTs, "usa")
     Rel(definitions, storage, "usa")
     Rel(definitions, events, "usa")
     Rel(definitions, errors, "usa")
+    Rel(definitions, state, "usa")
     Rel(chain, events, "usa")
     Rel(chain, errors, "usa")
     Rel(log, events, "usa")
     Rel(log, errors, "usa")
+    Rel(log, chain, "usa")
     Rel(state, events, "usa")
-    Rel(state, errors, "usa")
+    Rel(state, chain, "usa")
     Rel(gates, events, "usa")
-    Rel(gates, errors, "usa")
+    Rel(gates, definitions, "usa")
+    Rel(gates, state, "usa")
     Rel(search, events, "usa")
-    Rel(search, errors, "usa")
     Rel(log, fs, "grava jsonl")
     Rel(storage, fs, "grava json")
 ```
@@ -82,6 +94,7 @@ C4Component
 | `errors.ts` | `HexlogError`, `ErrorCode` (23 códigos), `issueDetails` |
 | `storage.ts` | `resolveSafePath`, `writeJsonAtomic`, `readJson` |
 | `directory.ts` | `dataDir(env)` — resolve `$XDG_DATA_HOME/hexlog` (fallback `~/.local/share/hexlog`) |
+| `version.ts` | `VERSION` — versão do servidor, reportada no handshake MCP e no log `start` |
 
 ## Fora deste diagrama
 
@@ -96,6 +109,6 @@ neste C3:
 
 ## Fonte
 
-Componentes e relações extraídos de `src/AGENTS.md` (seção "Dependencies →
-Internal", gerada em 2026-09-17). Atualize este diagrama junto de
+Componentes e relações conferidos contra os imports internos de `src/*.ts`
+em 2026-09-26 (revisão pós PR #1–#4). Atualize este diagrama junto de
 `src/AGENTS.md` sempre que um módulo mudar de dependências.

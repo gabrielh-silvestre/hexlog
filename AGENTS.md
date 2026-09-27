@@ -18,9 +18,10 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 |-----------|---------|
 | `src/` | Servidor MCP, cadeia de hash, log, estado, tools e instalação (see `src/AGENTS.md`) |
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
-| `scripts/` | Build esbuild e instalador (see `scripts/AGENTS.md`) |
+| `scripts/` | Build esbuild, instalador e script de insights read-only (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio e pacote (see `test/AGENTS.md`) |
 | `docs/` | ADR 0001/0002 e pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
+| `skills/` | Skill `hexlog` (`skills/hexlog/SKILL.md`) instalada pelo instalador em `~/.claude/skills/hexlog/SKILL.md` |
 
 ## For AI Agents
 
@@ -53,7 +54,10 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ### External
 - `@modelcontextprotocol/server` 2.0.0: servidor MCP stdio
 - `zod` 4: validação de eventos e entradas
+- `ajv` + `ajv-formats`: validação de JSON Schema (`register_type`)
 - `canonicalize`: JCS para o hash da cadeia
+- `es-toolkit`: helpers usados em todo o `src/` e no script de insights
+- `jsonc-parser`: edição preservando formatação de `~/.claude/settings.json` (instalação e guard)
 - `minisearch`: busca textual em eventos
 - `shell-quote`: tokenização de comandos no hook
 - `esbuild`, `jest` + `ts-jest`, `fast-check`: build e testes
