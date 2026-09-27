@@ -17,6 +17,8 @@ import {
   Target,
   dataSchema,
   EventLine,
+  EventLineField,
+  projectFields,
   normalizeData,
   Label,
   matchesTargetPrefix,
@@ -308,8 +310,11 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'excluded. A gate Milestone included this way — via `includeGateMilestones` or an explicit ' +
         "`milestoneType: 'gate'` alongside `target`/`targetPrefix` — comes back with `data.gate.criteria` " +
         'dropped and `data.gate.evaluatedThrough` reduced to `{ seq }` (or `null`); the events file on disk is ' +
-        'unaffected. A page fits ' +
-        '`limit` events and the 24,000-character cap, except the first event of the page, which always gets ' +
+        'unaffected. Without `fields`, each event comes back as `{ seq, id, type, timestamp, agent, data }` ' +
+        '— no `prevHash`. Pass `fields` (top-level `EventLine` keys) to replace that default entirely, e.g. ' +
+        "`['prevHash']` alone for manual chain verification. A page fits " +
+        '`limit` events and the 24,000-character cap, measured on each event already after the `fields` ' +
+        'projection, except the first event of the page, which always gets ' +
         'in even alone above the cap. `until` freezes the prefix of the file considered (physical lines with ' +
         'index < `until`); if omitted, the call uses all lines as of that moment and returns that number in ' +
         '`until`. For stable subsequent pages, resend the same `until` received and use `nextCursor` as ' +
@@ -332,10 +337,11 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         before: Instant.optional(),
         until: z.number().int().min(0).optional(),
         includeGateMilestones: z.boolean().optional(),
+        fields: z.array(EventLineField).optional(),
       },
       outputSchema: {
         mode: z.enum(['raw', 'search']),
-        events: z.array(EventLine.extend({ relevance: z.number().optional() })),
+        events: z.array(EventLine.partial().extend({ relevance: z.number().optional() })),
         combination: z.enum(['AND', 'OR']).optional(),
         until: z.number().int(),
         invalidLines: z.array(z.number().int()).max(100),
@@ -363,6 +369,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
       before,
       until,
       includeGateMilestones,
+      fields,
     }) => {
       let logExtra: Record<string, unknown> = {};
       return execute(
@@ -385,6 +392,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
             before,
             until,
             includeGateMilestones,
+            fields,
           });
           logExtra = extra;
           return output;
@@ -928,7 +936,17 @@ function attachVerdictData(
 
 // ---- events ----
 
-type ResultLine = EventLine & { relevance?: number };
+type ResultLine = Partial<EventLine> & { relevance?: number };
+
+/** Leva 7 (#16): sem `fields`, `events` omite `prevHash` do default. */
+const DEFAULT_EVENT_FIELDS: readonly EventLineField[] = [
+  'seq',
+  'id',
+  'type',
+  'timestamp',
+  'agent',
+  'data',
+];
 
 type EventsOutput = {
   mode: 'raw' | 'search';
@@ -954,6 +972,7 @@ type EventsArgs = {
   before?: string;
   until?: number;
   includeGateMilestones?: boolean;
+  fields?: EventLineField[];
 };
 
 function resolveEvents(
@@ -973,6 +992,7 @@ function resolveEvents(
     result,
     until,
     includeGateMilestones,
+    fields = DEFAULT_EVENT_FIELDS,
   } = args;
   const loaded = loadProcess(ctx.dataDir, project, process);
 
@@ -997,8 +1017,8 @@ function resolveEvents(
   };
 
   return isNil(search)
-    ? resolveRawMode(physicalLines, untilLimit, since, limit, filters)
-    : resolveSearchMode(physicalLines, untilLimit, since, limit, filters, search);
+    ? resolveRawMode(physicalLines, untilLimit, since, limit, filters, fields)
+    : resolveSearchMode(physicalLines, untilLimit, since, limit, filters, search, fields);
 }
 
 /** `milestoneType` fora de core ∪ extensões e ≠ `"gate"` (sempre aceito) → `INVALID_FILTER` (§4.12 item 9). */
@@ -1085,8 +1105,9 @@ function resolveRawMode(
   since: number,
   limit: number,
   filters: Filters,
+  fields: readonly EventLineField[],
 ): { output: EventsOutput; extra: Record<string, unknown> } {
-  const events: EventLine[] = [];
+  const events: ResultLine[] = [];
   const invalidLines: number[] = [];
   const compactGates = hasTargetFilter(filters);
   let candidates = 0;
@@ -1101,7 +1122,8 @@ function resolveRawMode(
     }
     if (!isCandidate(rawLine, filters)) continue;
     candidates++;
-    const line = compactGates ? compactGateMilestone(rawLine) : rawLine;
+    const compacted = compactGates ? compactGateMilestone(rawLine) : rawLine;
+    const line = projectFields(compacted, fields);
 
     const increment = JSON.stringify(line).length + (events.length > 0 ? 1 : 0);
     if (events.length > 0 && size + increment > PAGE_CHARS_CAP) {
@@ -1160,6 +1182,7 @@ function resolveSearchMode(
   limit: number,
   filters: Filters,
   query: string,
+  fields: readonly EventLineField[],
 ): { output: EventsOutput; extra: Record<string, unknown> } {
   const indexStart = Date.now();
   const { candidates, invalidLines } = fileCandidates(physicalLines, untilLimit, filters);
@@ -1178,7 +1201,7 @@ function resolveSearchMode(
     const item = page[position];
     const line = lineByIndex.get(item.index)!;
     const event: ResultLine = {
-      ...(compactGates ? compactGateMilestone(line) : line),
+      ...projectFields(compactGates ? compactGateMilestone(line) : line, fields),
       relevance: item.relevance,
     };
     const increment = JSON.stringify(event).length + (events.length > 0 ? 1 : 0);

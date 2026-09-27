@@ -55,6 +55,34 @@ export const EventLine = z.strictObject({
 });
 export type EventLine = z.infer<typeof EventLine>;
 
+/** Leva 7 (#16): chaves de topo de `EventLine` que `events`/export CLI podem projetar. */
+export const EventLineField = z.enum([
+  'seq',
+  'id',
+  'type',
+  'timestamp',
+  'agent',
+  'prevHash',
+  'data',
+]);
+export type EventLineField = z.infer<typeof EventLineField>;
+
+/**
+ * Projeta um subconjunto de chaves de topo de `obj` (Leva 7, #16): reduz o payload de `events` (default
+ * sem `prevHash`) e, mais tarde, o `--fields` do `hexlog export` (Leva 8). Chave listada que `obj` não
+ * possui não aparece no resultado; chave repetida em `fields` não duplica, o retorno é um objeto.
+ */
+export function projectFields<T extends Record<string, unknown>>(
+  obj: T,
+  fields: readonly (keyof T)[],
+): Partial<T> {
+  const result: Partial<T> = {};
+  for (const field of fields) {
+    if (field in obj) result[field] = obj[field];
+  }
+  return result;
+}
+
 const MilestoneData = z.strictObject({
   milestoneType: Label,
   target: Target,

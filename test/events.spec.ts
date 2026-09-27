@@ -3,7 +3,14 @@ import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import { z } from 'zod';
 import { HexlogError } from '../src/errors.ts';
-import { Target, Name, parseId, normalizeData, matchesTargetPrefix } from '../src/events.ts';
+import {
+  Target,
+  Name,
+  parseId,
+  normalizeData,
+  matchesTargetPrefix,
+  projectFields,
+} from '../src/events.ts';
 
 describe('Nome', () => {
   test.each(['a', 'a-b1', 'x'.repeat(63)])('%s é válido', (value) => {
@@ -79,6 +86,18 @@ describe('matchesTargetPrefix (Leva 4, #10/#13/#14)', () => {
 
   test('prefixo mais longo que o valor não casa', () => {
     expect(matchesTargetPrefix('hex:target:task-2', 'hex:target:task-2.sub')).toBe(false);
+  });
+});
+
+describe('projectFields (Leva 7, #16)', () => {
+  test('chave ausente no objeto não aparece no resultado', () => {
+    const obj: { a: number; b?: string } = { a: 1 };
+    expect(projectFields(obj, ['a', 'b'])).toEqual({ a: 1 });
+  });
+
+  test('chave repetida em fields não duplica', () => {
+    const obj = { a: 1, b: 2 };
+    expect(projectFields(obj, ['a', 'a', 'b'])).toEqual({ a: 1, b: 2 });
   });
 });
 

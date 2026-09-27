@@ -7,7 +7,7 @@ import { isNil, range } from 'es-toolkit';
 import { search as runSearch } from '../src/search.ts';
 import { anchor, expectedPrevHash, nextSeq, sha256hex, type Chain } from '../src/chain.ts';
 import type { ProcessManifest } from '../src/definitions.ts';
-import type { EventLine } from '../src/events.ts';
+import type { EventLine, EventLineField } from '../src/events.ts';
 import { writeCorpus, generateCorpus } from './fixtures/corpus.ts';
 import { type Environment, createEnvironment, expectError, registerCore } from './helpers.ts';
 
@@ -19,6 +19,17 @@ const AGENT = 'agent-test';
 const MILESTONE_PREFIX = `${PROJ}:${PROC}:milestone`;
 const VERDICT_PREFIX = `${PROJ}:${PROC}:verdict`;
 const NOTE_PREFIX = `${PROJ}:${PROC}:note`;
+// Leva 7 (#16): pede de volta o shape completo pré-Leva 7 (com `prevHash`), pra testes de
+// paginação que dependem do tamanho do evento inteiro, não da projeção de campos.
+const ALL_EVENT_FIELDS: EventLineField[] = [
+  'seq',
+  'id',
+  'type',
+  'timestamp',
+  'agent',
+  'prevHash',
+  'data',
+];
 
 const SCHEMA_CUSTOM = {
   type: 'object',
@@ -292,6 +303,7 @@ describe('M8', () => {
         process: PROC,
         since: cursor,
         limit: 100,
+        fields: ALL_EVENT_FIELDS,
       });
       const body = result.structuredContent as {
         events: EventLine[];
@@ -745,6 +757,49 @@ describe('Leva 6 — gate Milestone some do filtro por target (#19)', () => {
   });
 });
 
+describe('Leva 7 — fields em events, prevHash fora por padrão (#16)', () => {
+  async function registerOneMilestone(): Promise<void> {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+  }
+
+  test('sem fields → eventos sem prevHash, com seq/id/type/timestamp/agent/data', async () => {
+    await registerOneMilestone();
+    const result = await environment.call('events', { project: PROJ, process: PROC });
+    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    expect(Object.keys(event)).toEqual(['seq', 'id', 'type', 'timestamp', 'agent', 'data']);
+  });
+
+  test('fields: ["id", "data"] → cada evento só com id e data', async () => {
+    await registerOneMilestone();
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      fields: ['id', 'data'],
+    });
+    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    expect(Object.keys(event)).toEqual(['id', 'data']);
+  });
+
+  test('fields: ["prevHash"] → cada evento só com prevHash, útil pra verificação manual de cadeia', async () => {
+    await registerOneMilestone();
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      fields: ['prevHash'],
+    });
+    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    expect(Object.keys(event)).toEqual(['prevHash']);
+    expect(event.prevHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
 describe('M9', () => {
   test('annotations das 5 tools de eventos batem com §4.12', async () => {
     const { tools } = await environment.client.listTools();
@@ -864,6 +919,7 @@ describe('M11', () => {
         process: PROC,
         since: cursor,
         limit: 100,
+        fields: ALL_EVENT_FIELDS,
       });
       const body = result.structuredContent as {
         events: EventLine[];

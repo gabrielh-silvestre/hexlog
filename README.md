@@ -329,6 +329,13 @@ para um mesmo corpus de eventos muda quando o formato em disco muda — por
 exemplo, ao renomear campos —, mesmo com o teto de 24.000 caracteres
 inalterado.
 
+**`fields` projeta as chaves de topo de `EventLine` (Leva 7, #16).** Sem
+`fields`, cada evento volta como `{ seq, id, type, timestamp, agent, data }`
+— sem `prevHash`. Informar `fields` substitui esse conjunto por inteiro,
+inclusive pedindo só `prevHash` de volta (útil pra verificação manual de
+cadeia). O teto de 24.000 caracteres é medido **depois** da projeção: uma
+página cabe mais eventos quando `fields` reduz o tamanho de cada um.
+
 ### `chain`
 
 Verifica a sequência, o encadeamento de hash a partir da âncora fixada em
