@@ -264,6 +264,12 @@ dessas três seções passa a contar só os itens que casaram, antes do corte de
 100 itens — as demais seções (`orphans`, `toReview`, `invalidReferences`,
 `warnings`, `forks`) não são afetadas por esse filtro.
 
+`warnings` (Leva 9, #12) omite por padrão os itens `kind: "extension"` — uso
+esperado de vocabulário (valor declarado por um dono), não sinal de problema.
+`includeExtensionWarnings: true` traz esses itens de volta; `error` e
+`unknown-warning` sempre aparecem. `totals.warnings` sempre conta o total
+real, `extension` incluído.
+
 Com `withData: true` (padrão `false`), cada item de status
 `active` em `active` ganha o `data` do Veredito vigente; itens de status
 `conflict` (sem um vigente único) não ganham `data`. O teto de

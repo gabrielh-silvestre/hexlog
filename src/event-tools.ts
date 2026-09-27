@@ -213,7 +213,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'restricts `active`, `conflicts` and `targets` to the given `hex:target:...` address or its subtree ' +
         '(`hex:target:a.b` matches `hex:target:a.b` and `hex:target:a.b.c`, not `hex:target:a.bc`); when ' +
         'informed, `totals` for those three sections counts only the matching items, before the 100-item cap. ' +
-        '`withData` (default `false`) adds the winning Verdict’s `data` to each `active`-status ' +
+        '`warnings` omits `kind: "extension"` items by default (declared vocabulary use, not a problem ' +
+        'signal); `includeExtensionWarnings: true` brings them back. `totals.warnings` always counts every ' +
+        'warning, `extension` included. `withData` (default `false`) adds the winning Verdict’s `data` to each `active`-status ' +
         'item in `active`; the 24,000-character cap is measured against the whole response (all sections, ' +
         'not just `active`), so items that would push it past the cap come back without `data` and with ' +
         '`truncated: true` instead, and items that do not even fit that marker are dropped from `active` ' +
@@ -225,6 +227,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         sections: z.array(Section).min(1).optional(),
         withData: z.boolean().default(false),
         targetPrefix: Target.optional(),
+        includeExtensionWarnings: z.boolean().default(false),
       },
       outputSchema: {
         logThrough: Ref.nullable(),
@@ -284,9 +287,16 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, process, sections, withData, targetPrefix }) =>
+    async ({ project, process, sections, withData, targetPrefix, includeExtensionWarnings }) =>
       execute(ctx, 'state', { project, process }, () =>
-        resolveState(ctx, { project, process, sections, withData, targetPrefix }),
+        resolveState(ctx, {
+          project,
+          process,
+          sections,
+          withData,
+          targetPrefix,
+          includeExtensionWarnings,
+        }),
       ),
   );
 
@@ -833,6 +843,16 @@ function scopeToTargetPrefix<S extends Pick<State, 'active' | 'conflicts' | 'tar
   };
 }
 
+/** #12: `extension` é uso esperado de vocabulário, não sinal de problema — some da lista por padrão. */
+function visibleWarnings(
+  warnings: State['warnings'],
+  includeExtensionWarnings: boolean,
+): State['warnings'] {
+  return includeExtensionWarnings
+    ? warnings
+    : warnings.filter((warning) => warning.kind !== 'extension');
+}
+
 function resolveState(
   ctx: Context,
   {
@@ -841,12 +861,14 @@ function resolveState(
     sections,
     withData,
     targetPrefix,
+    includeExtensionWarnings,
   }: {
     project: string;
     process: string;
     sections?: SectionName[];
     withData: boolean;
     targetPrefix?: string;
+    includeExtensionWarnings: boolean;
   },
 ) {
   const loaded = loadProcess(ctx.dataDir, project, process);
@@ -855,7 +877,9 @@ function resolveState(
   const included = new Set(sections ?? ALL_SECTIONS);
 
   // #10/#13: `targets` agora é uma seção comum de LIST_SECTIONS — totals já reflete o pós-filtro
-  // de targetPrefix (feito acima, antes do cap) para as três seções que ele restringe.
+  // de targetPrefix (feito acima, antes do cap) para as três seções que ele restringe. #12: totals
+  // conta `warnings` por inteiro (inclusive `extension`), sem o filtro de `includeExtensionWarnings`
+  // aplicado só à lista abaixo.
   const totals = Object.fromEntries(
     LIST_SECTIONS.map((section) => [section, state[section].length]),
   );
@@ -863,7 +887,11 @@ function resolveState(
   const lists = Object.fromEntries(
     LIST_SECTIONS.filter((section) => included.has(section)).map((section) => [
       section,
-      section === 'active' ? activeItems : state[section].slice(0, SECTION_ITEMS_CAP),
+      section === 'active'
+        ? activeItems
+        : section === 'warnings'
+          ? visibleWarnings(state.warnings, includeExtensionWarnings).slice(0, SECTION_ITEMS_CAP)
+          : state[section].slice(0, SECTION_ITEMS_CAP),
     ]),
   );
 

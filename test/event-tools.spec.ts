@@ -800,6 +800,65 @@ describe('Leva 7 — fields em events, prevHash fora por padrão (#16)', () => {
   });
 });
 
+describe('Leva 9 — includeExtensionWarnings (#12)', () => {
+  /** Fixa um vocabulário com extensão do dono `ext` antes de `create_process`, para o registro seguinte já sair no vocabulário fixado. */
+  async function prepareWithExtension(): Promise<void> {
+    await registerCore(environment, PROJ);
+    await environment.call('register_vocabulary', {
+      project: PROJ,
+      owner: 'ext',
+      milestoneType: ['card-reviewed'],
+      result: [],
+      action: [],
+    });
+    await environment.call('create_process', { project: PROJ, process: PROC });
+  }
+
+  /** Um aviso `extension` (milestoneType do dono `ext`) e um `unknown-warning` (result fora do vocabulário). */
+  async function registerMixedWarnings(): Promise<void> {
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ milestoneType: 'card-reviewed' }),
+    });
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ result: 'totally-unknown' }),
+    });
+  }
+
+  test('sem includeExtensionWarnings → extension some da lista, unknown-warning fica; totals.warnings conta os dois', async () => {
+    await prepareWithExtension();
+    await registerMixedWarnings();
+
+    const result = await environment.call('state', { project: PROJ, process: PROC });
+    const body = result.structuredContent as {
+      warnings: { kind: string }[];
+      totals: Record<string, number>;
+    };
+    expect(body.warnings.map((w) => w.kind)).toEqual(['unknown-warning']);
+    expect(body.totals.warnings).toBe(2);
+  });
+
+  test('includeExtensionWarnings: true → extension volta a aparecer junto do unknown-warning', async () => {
+    await prepareWithExtension();
+    await registerMixedWarnings();
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      includeExtensionWarnings: true,
+    });
+    const body = result.structuredContent as { warnings: { kind: string }[] };
+    expect(body.warnings.map((w) => w.kind).sort()).toEqual(['extension', 'unknown-warning']);
+  });
+});
+
 describe('M9', () => {
   test('annotations das 5 tools de eventos batem com §4.12', async () => {
     const { tools } = await environment.client.listTools();
