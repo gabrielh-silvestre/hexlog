@@ -18,10 +18,10 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 |-----------|---------|
 | `src/` | Servidor MCP, cadeia de hash, log, estado, tools e instalação (see `src/AGENTS.md`) |
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
-| `scripts/` | Build esbuild e instalador (see `scripts/AGENTS.md`) |
+| `scripts/` | Build esbuild, instalador e script de insights read-only (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio e pacote (see `test/AGENTS.md`) |
 | `docs/` | ADR 0001/0002/0005 e pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
-| `skills/` | Três skills instaláveis: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo pré-código de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e cruza marcos/veredictos contra esse mapa) |
+| `skills/` | Três skills, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo pré-código de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e cruza marcos/veredictos contra esse mapa) |
 
 ## For AI Agents
 
@@ -56,7 +56,10 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ### External
 - `@modelcontextprotocol/server` 2.0.0: servidor MCP stdio
 - `zod` 4: validação de eventos e entradas
+- `ajv` + `ajv-formats`: validação de JSON Schema (`register_type`)
 - `canonicalize`: JCS para o hash da cadeia
+- `es-toolkit`: helpers usados em todo o `src/` e no script de insights
+- `jsonc-parser`: edição preservando formatação de `~/.claude/settings.json` (instalação e guard)
 - `minisearch`: busca textual em eventos
 - `shell-quote`: tokenização de comandos no hook
 - `esbuild`, `jest` + `ts-jest`, `fast-check`: build e testes

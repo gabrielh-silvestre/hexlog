@@ -11,6 +11,7 @@ export default defineConfig(
       'graphify-out/**',
       '.gitnexus/**',
       '.omc/**',
+      '.claude/workflows/**',
       'node_modules/**',
     ],
   },

@@ -13,7 +13,9 @@ Registro histórico das decisões do hexlog (ADRs) e a pesquisa de libs/padrões
 | `adr-0002-versionamento-definicoes.md` | ADR 0002, status Aceito: `register_type`/`register_vocabulary`/`register_gate` passam a versionar em semver `major.minor` (`<nome>/<versão>.json`) em vez de sobrescrever, com o legado `<nome>.json` nunca migrado. Decisões estruturais D1 (escrita exclusiva por `linkSync` + retry que refaz a decisão inteira) e D2 (legado não materializado). |
 | `adr-0005-hexlog-setup-hexlog-flow.md` | ADR 0005, status Aceito: duas skills novas (`hexlog-setup`, `hexlog-flow`), o mapa `.hexlog/flow.md` do repositório alvo com schema Zod (`src/flow-map.ts`) e um terceiro hook opcional (`hook/flow-reminder.ts`, `PostToolUse` em `Skill`, só lembra) que generalizam o instalador de uma skill fixa e dois bundles para N pastas de `skills/` e três bundles. Critério objetivo de reversão de `Bundles` para `Record<string, Buffer>` registrado em "Alternatives Considered". |
 | `qualidade-ci.md` | Estudo (nada instalado) de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17. |
+| `qualidade-codigo.md` | Estudo (nada instalado) de qualidade de código e teste — TypeScript, ESLint, jest, property-based testing, mutação — consultado em 2026-09-17. |
 | `ferramentas-similares.md` | Estudo (nada adotado) de decisionlog.ai, mcp-server-decisions e ConPort comparados ao hexlog, com fontes primárias consultadas em 2026-09-17 e 5 ideias ranqueadas. |
+| `diagrama-c3-componentes.md` | Diagrama C4 (nível C3, componentes) do servidor MCP em `src/`, gerado a partir do grafo de dependências internas descrito em `src/AGENTS.md`. |
 
 ## Subdirectories
 | Directory | Description |

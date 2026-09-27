@@ -14,10 +14,10 @@ marcado como _não verificado_.
 |---|---|---|---|---|
 | Modelo de dados | Processo, Marco, Veredito + tipos registrados | Decision, DecisionCandidate, DecisionSupersession, DecisionSource, SourceContent, AuditEvent | decision, prediction, outcome | decisions, progress, system_patterns, custom_data, product/active context, context_links |
 | Armazenamento | JSONL por processo, local | SaaS (GraphQL canônico + REST + MCP HTTP) | Um JSONL local | SQLite por workspace + ChromaDB |
-| Corrigir uma decisão | Novo Veredito com `supera[]` | `supersedeDecision`, atômico e auditado | Nenhum mecanismo; `status` é texto livre | `delete_decision_by_id` (DELETE físico) |
+| Corrigir uma decisão | Novo Veredito com `supersedes[]` | `supersedeDecision`, atômico e auditado | Nenhum mecanismo; `status` é texto livre | `delete_decision_by_id` (DELETE físico) |
 | Tamper-evidence | Cadeia sha256+JCS, tool `cadeia` | Não documentado (append-only arquitetural) | Não | Não |
-| Fases / gates | Gates embutidos e custom (`avaliar_gate`) | Candidato → revisão → Decision | Só documentação + aviso não bloqueante | Não |
-| Tipos customizáveis | `registrar_tipo`, `registrar_vocabulario` | Não documentado | Enums só declarativos, não validados | `category`/`relationship_type`/tags em texto livre |
+| Fases / gates | Gates embutidos e custom (`evaluate_gate`) | Candidato → revisão → Decision | Só documentação + aviso não bloqueante | Não |
+| Tipos customizáveis | `register_type`, `register_vocabulary` | Não documentado | Enums só declarativos, não validados | `category`/`relationship_type`/tags em texto livre |
 | Bloqueia edição direta | Hook PreToolUse + 4 regras deny | Estrutural: API sem update, RBAC/ABAC | Não; linha corrompida é ignorada em silêncio | Não |
 | Licença | Sem licença pública | Produto fechado; SDK/CLI Apache-2.0 | MIT | Apache-2.0 |
 | Manutenção | Ativo | Site atualizado em 2026-08-23 | Último commit 2026-09-03, 16 commits, 0 stars | PyPI 0.3.13 (2025-12-31), último commit 2026-01-19 |
@@ -61,7 +61,7 @@ resolução terminal. Não há enum de fases nomeadas documentado.
   ponta da cadeia de supersession.
 - **Não confiar no Actor informado pelo cliente** ("client-supplied Actor
   identifiers are context — not authorization proof"). No hexlog, o campo
-  `agente` do `registrar` é declarado pelo próprio agente.
+  `agent` do `register` é declarado pelo próprio agente.
 
 **Lacunas em relação ao hexlog.** Sem tamper-evidence criptográfica
 documentada, sem gates com critério, sem tipos customizáveis, só nuvem.
@@ -112,8 +112,8 @@ listando predições da sessão ainda sem outcome; é aviso, não bloqueia
 
 **Pontos fortes a copiar.**
 - **Aviso embutido na resposta** (`OUTCOME_GATE`): o agente vê a pendência onde
-  já está olhando. No hexlog, `registrar` poderia devolver um resumo de
-  `estado.orfaos` antes de o gate bloquear.
+  já está olhando. No hexlog, `register` poderia devolver um resumo de
+  `state.orphans` antes de o gate bloquear.
 - **Ciclo decisão → predição → resultado**: fecha o loop "o que achávamos vs. o
   que aconteceu". Cabe no hexlog como tipo registrado ligado ao Veredito.
 - **Criação encadeada numa chamada** (decisão + predições): menos round-trips.
@@ -161,9 +161,9 @@ código ou README. Nada impede editar o `context.db` direto.
 **Pontos fortes a copiar.**
 - **Relações tipadas** entre itens (`context_links`), com enum fechado em vez de
   texto livre: `supera`, `refina`, `conflita`, `relacionado`. Hoje o hexlog só
-  modela `supera[]`.
+  modela `supersedes[]`.
 - **`change_source`**: registrar qual ação gerou a mudança. O hexlog tem
-  `origem`/`rastro` no Veredito; vale checar se cobre Marco também.
+  `origin`/`trace` no Veredito; vale checar se cobre Marco também.
 - **Export para Markdown** e **`get_recent_activity_summary`**: leitura humana
   do log e resumo para retomar sessão.
 
@@ -185,10 +185,10 @@ ADR 0001 e pede um ADR novo; a coluna "Toca" indica onde caberia sem isso.
 
 | # | Ideia | Origem | Toca | Esforço |
 |---|---|---|---|---|
-| 1 | Resumo de pendências (órfãos, conflitos) na resposta de `registrar` | mcp-server-decisions (`OUTCOME_GATE`) | `registrar` | ~2 h |
-| 2 | Relações tipadas além de `supera[]` (`refina`, `conflita`) com enum fechado, projetadas no `estado` | ConPort (`context_links`) | `registrar`, `estado`, gate `sem-referencias-invalidas` | ~1 dia |
-| 3 | Candidato vs. Veredito: tipo "candidato" que só vira Veredito após gate | decisionlog.ai (`DecisionCandidate`) | `registrar_tipo`, `avaliar_gate` | ~meio dia se couber em tipo registrado; mais se exigir regra no núcleo |
-| 4 | Ciclo predição → resultado ligado a um Veredito | mcp-server-decisions | `registrar_tipo`, `estado` | ~meio dia via tipos registrados |
+| 1 | Resumo de pendências (órfãos, conflitos) na resposta de `register` | mcp-server-decisions (`OUTCOME_GATE`) | `register` | ~2 h |
+| 2 | Relações tipadas além de `supersedes[]` (`refina`, `conflita`) com enum fechado, projetadas no `estado` | ConPort (`context_links`) | `register`, `state`, gate `no-invalid-references` | ~1 dia |
+| 3 | Candidato vs. Veredito: tipo "candidato" que só vira Veredito após gate | decisionlog.ai (`DecisionCandidate`) | `register_type`, `evaluate_gate` | ~meio dia se couber em tipo registrado; mais se exigir regra no núcleo |
+| 4 | Ciclo predição → resultado ligado a um Veredito | mcp-server-decisions | `register_type`, `state` | ~meio dia via tipos registrados |
 | 5 | Export do processo para Markdown legível | ConPort (`export_conport_to_markdown`) | Script fora das 10 tools, ou tool nova (ADR) | ~meio dia |
 
 ## Não verificado

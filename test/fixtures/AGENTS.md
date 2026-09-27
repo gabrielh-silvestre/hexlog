@@ -42,8 +42,8 @@ Corpus determinístico para busca/volume, scripts que constroem bundles sob dema
 - `hook/bash-guard.ts` — bundle gerado por `build-hook.ts`.
 
 ### External
-- `@modelcontextprotocol/server` (`McpServer`, `serveStdio`) — usado por `server-probe.ts`/`child-probe.ts`.
-- `ajv`, `ajv-formats`, `canonicalize`, `es-toolkit`, `minisearch`, `shell-quote`, `zod` — deps de runtime replicadas nos probes para provar que sobrevivem ao bundle.
+- `@modelcontextprotocol/server` (`McpServer`, `serveStdio` em `server-probe.ts`; `McpServer`, `StdioServerTransport` em `child-probe.ts`) — usado por ambos os probes.
+- `ajv`, `ajv-formats`, `canonicalize`, `es-toolkit`, `minisearch`, `shell-quote`, `zod`, `jsonc-parser` (só em `child-probe.ts`) — deps de runtime replicadas nos probes para provar que sobrevivem ao bundle.
 - `fast-check` — usado por `corpus.ts` (`fc.sample`) para gerar o corpus determinístico.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

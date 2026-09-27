@@ -84,7 +84,7 @@
 ## Ideias de RFC/spec anotadas como follow-up (fora do MVP)
 
 - Checkpoint periódico da cadeia no formato C2SP `tlog-checkpoint`/`signed-note`.
-- Campo `prova` no molde Statement do in-toto (`subject`, `predicateType`, `predicate`).
+- Campo `evidence` no molde Statement do in-toto (`subject`, `predicateType`, `predicate`).
 - Nomes de proveniência do Veredito alinhados a W3C PROV (`wasDerivedFrom`, `wasAssociatedWith`).
 - Recursos MCP com `notifications/resources/updated` para `state`/`events`.
 - Sandbox nativo do Claude Code (`sandbox.filesystem.denyRead`, `allowUnsandboxedCommands: false`).

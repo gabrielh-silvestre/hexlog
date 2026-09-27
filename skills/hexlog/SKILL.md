@@ -74,7 +74,7 @@ Notas adicionais:
 
 2. create_process({ project: "myproj", process: "onboarding" })
    → { project: "myproj", process: "onboarding", createdAt: "<iso>",
-       hashes: {...}, types: [], owners: ["core"], gates: [],
+       hashes: {...}, types: [], owners: [], gates: [],
        versions: { types: {}, vocabulary: { core: "1.0" }, gates: {} },
        existed: false, warnings: [] }
 
@@ -124,7 +124,7 @@ nada sobre o servidor MCP responder.
 |---|---|
 | Descartar `~/.local/share/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
 | Reiniciar a sessão do Claude Code | Cache de `tools/list` do protocolo MCP — fora do alcance de qualquer agente |
-| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:37` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
+| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:38` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
 
 Reinstalar a mesma versão com conteúdo diferente **não bloqueia** — só avisa
 "consider bumping the version".
