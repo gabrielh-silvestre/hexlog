@@ -358,7 +358,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         '`since`: without `until`, a `register` call between pages may repeat or skip items at the boundary. ' +
         '`nextCursor` is `null` at the end (physical index in raw mode; ranking position in search mode). ' +
         '`invalidLines` lists the physical indexes that are not a valid link: only this page’s in raw mode, ' +
-        'the whole file’s (up to 100) in search mode.',
+        'the whole file’s (up to 100) in search mode. `truncatedByCharCap: true` marks that the ' +
+        '24,000-character cap (not `limit`, not end of data) cut the page short; a larger `limit` will not ' +
+        'bring back more events in that case, use `fields` to shrink each event instead.',
       inputSchema: {
         project: Name,
         process: Name,
@@ -384,6 +386,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         until: z.number().int(),
         invalidLines: z.array(z.number().int()).max(100),
         nextCursor: z.number().int().nullable(),
+        truncatedByCharCap: z.boolean().optional(),
       },
       annotations: {
         readOnlyHint: true,
@@ -1042,6 +1045,7 @@ type EventsOutput = {
   until: number;
   invalidLines: number[];
   nextCursor: number | null;
+  truncatedByCharCap: boolean;
 };
 
 type EventsArgs = {
@@ -1220,6 +1224,7 @@ function resolveRawMode(
   const compactGates = hasTargetFilter(filters);
   let candidates = 0;
   let nextCursor: number | null = null;
+  let truncatedByCharCap = false;
   let size = 2; // '[]'
 
   for (let index = since; index < untilLimit; index++) {
@@ -1236,6 +1241,7 @@ function resolveRawMode(
     const increment = JSON.stringify(line).length + (events.length > 0 ? 1 : 0);
     if (events.length > 0 && size + increment > PAGE_CHARS_CAP) {
       nextCursor = index;
+      truncatedByCharCap = true;
       break;
     }
 
@@ -1254,6 +1260,7 @@ function resolveRawMode(
       until: untilLimit,
       invalidLines: invalidLines.slice(0, 100),
       nextCursor,
+      truncatedByCharCap,
     },
     extra: { mode: 'raw', candidates },
   };
@@ -1303,6 +1310,7 @@ function resolveSearchMode(
 
   const events: ResultLine[] = [];
   let nextCursor: number | null = null;
+  let truncatedByCharCap = false;
   let size = 2; // '[]'
 
   for (let position = 0; position < page.length; position++) {
@@ -1316,6 +1324,7 @@ function resolveSearchMode(
 
     if (events.length > 0 && size + increment > PAGE_CHARS_CAP) {
       nextCursor = since + position;
+      truncatedByCharCap = true;
       break;
     }
 
@@ -1335,6 +1344,7 @@ function resolveSearchMode(
       until: untilLimit,
       invalidLines: invalidLines.slice(0, 100),
       nextCursor,
+      truncatedByCharCap,
     },
     extra: {
       mode: 'search',

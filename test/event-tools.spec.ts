@@ -750,6 +750,114 @@ describe('Leva 15 — events: targets[] em lote (#26)', () => {
   });
 });
 
+describe('Leva 16 — events: truncatedByCharCap (N2)', () => {
+  async function registerMilestones(count: number): Promise<void> {
+    for (let i = 0; i < count; i++) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: MILESTONE_PREFIX,
+        agent: AGENT,
+        data: milestoneData(),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+  }
+
+  test('modo raw: página que estoura o cap de 24k antes do limit → truncatedByCharCap: true', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(250); // mesmo fixture de M8: 250 linhas paginam em 4 com ALL_EVENT_FIELDS
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      limit: 100,
+      fields: ALL_EVENT_FIELDS,
+    });
+    const body = result.structuredContent as { events: unknown[]; truncatedByCharCap: boolean };
+    expect(body.truncatedByCharCap).toBe(true);
+    expect(body.events.length).toBeLessThan(100);
+  });
+
+  test('modo raw: página que termina pelo limit, sem estourar o cap → truncatedByCharCap: false/ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(5);
+
+    const result = await environment.call('events', { project: PROJ, process: PROC, limit: 2 });
+    const body = result.structuredContent as {
+      events: unknown[];
+      truncatedByCharCap?: boolean;
+    };
+    expect(body.events).toHaveLength(2);
+    expect(body.truncatedByCharCap ?? false).toBe(false);
+  });
+
+  test('modo raw: página que termina por fim de dados → truncatedByCharCap: false/ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(3);
+
+    const result = await environment.call('events', { project: PROJ, process: PROC, limit: 100 });
+    const body = result.structuredContent as {
+      events: unknown[];
+      truncatedByCharCap?: boolean;
+    };
+    expect(body.events).toHaveLength(3);
+    expect(body.truncatedByCharCap ?? false).toBe(false);
+  });
+
+  test('modo search: página que estoura o cap de 24k antes do limit → truncatedByCharCap: true', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(250);
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      search: 'approved',
+      limit: 100,
+      fields: ALL_EVENT_FIELDS,
+    });
+    const body = result.structuredContent as { events: unknown[]; truncatedByCharCap: boolean };
+    expect(body.truncatedByCharCap).toBe(true);
+    expect(body.events.length).toBeLessThan(100);
+  });
+
+  test('modo search: página que termina pelo limit, sem estourar o cap → truncatedByCharCap: false/ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(5);
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      search: 'approved',
+      limit: 2,
+    });
+    const body = result.structuredContent as {
+      events: unknown[];
+      truncatedByCharCap?: boolean;
+    };
+    expect(body.events).toHaveLength(2);
+    expect(body.truncatedByCharCap ?? false).toBe(false);
+  });
+
+  test('modo search: página que termina por fim de dados → truncatedByCharCap: false/ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(3);
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      search: 'approved',
+      limit: 100,
+    });
+    const body = result.structuredContent as {
+      events: unknown[];
+      truncatedByCharCap?: boolean;
+    };
+    expect(body.events).toHaveLength(3);
+    expect(body.truncatedByCharCap ?? false).toBe(false);
+  });
+});
+
 type GateData = {
   milestoneType: string;
   target: string;

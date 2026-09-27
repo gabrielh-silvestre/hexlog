@@ -368,6 +368,11 @@ inclusive pedindo só `prevHash` de volta (útil pra verificação manual de
 cadeia). O teto de 24.000 caracteres é medido **depois** da projeção: uma
 página cabe mais eventos quando `fields` reduz o tamanho de cada um.
 
+`truncatedByCharCap: true` sinaliza que foi o teto de 24.000 caracteres — não
+`limit`, nem o fim dos dados — que cortou a página antes da hora. Nesse caso
+pedir um `limit` maior não traz mais eventos: use `fields` pra reduzir o
+tamanho de cada evento em vez disso.
+
 ### `chain`
 
 Verifica a sequência, o encadeamento de hash a partir da âncora fixada em
