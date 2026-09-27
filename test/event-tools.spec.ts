@@ -1773,6 +1773,99 @@ describe('register — recibo por padrão (Leva 1, #6)', () => {
   });
 });
 
+describe('Leva 11 — register aceita type isolado (#8)', () => {
+  test('type isolado, sem id → id vira project:process:milestone:<uuid>, mesmo shape do prefixo manual', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      type: 'milestone',
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expect(result.structuredContent).toEqual({
+      seq: expect.any(Number),
+      id: expect.stringMatching(new RegExp(`^${MILESTONE_PREFIX}:[0-9a-f-]{36}$`)),
+      prevHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      deduplicated: false,
+      warnings: [],
+    });
+  });
+
+  test('id e type juntos → INVALID_INPUT, sem linha', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      type: 'milestone',
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('id completo e type juntos → INVALID_INPUT mesmo com id válido sozinho', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const body1 = first.structuredContent as { id: string };
+    const before = environment.tree();
+
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: body1.id,
+      type: 'milestone',
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('nem id nem type → INVALID_INPUT, sem linha', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('só id, sem type (retentativa idempotente) → comportamento idêntico ao atual', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const body1 = first.structuredContent as { id: string };
+
+    const retry = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: body1.id,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expectDeduplicated(retry, (first.structuredContent as { seq: number }).seq);
+  });
+});
+
 describe('N12', () => {
   test.each(['u1', 'hex:target:', 'hex:target:a:b', 'hex:target:a b', 'hex:other:x'])(
     'target %s inválido em Milestone → INVALID_EVENT em /data/target, sem linha',

@@ -186,10 +186,12 @@ Registra um evento. Por padrão devolve um **recibo**
 chamador já tem (ele mesmo enviou `data`). `echo: true` devolve também `event`
 com o `EventLine` completo.
 
-O `id` pode ser:
+Para abrir um evento novo, a forma preferida é `type` isolado (ex.:
+`type: 'milestone'`): o servidor monta o prefixo `{project}:{process}:{type}`
+e gera o uuid v7. Alternativamente, `id` continua aceitando:
 
 - **prefixo** `{project}:{process}:{type}`: o servidor gera um uuid v7 novo e
-  faz o append;
+  faz o append (a mesma string que `type` isolado monta por baixo);
 - **id completo** `{project}:{process}:{type}:{uuid}`, devolvido por uma
   chamada anterior: é uma **retentativa idempotente**. Se `type`/`agent`/
   `data` (já normalizados) coincidirem com o que foi gravado, devolve a
@@ -198,6 +200,8 @@ O `id` pode ser:
   agente. Conteúdo diferente para o mesmo id é `CONFLICTING_ID`; id completo
   desconhecido é `UNKNOWN_ID` (só o servidor gera uuid, então um id
   completo nunca inventado pelo agente).
+
+`id` e `type` informados juntos, ou nenhum dos dois, é `INVALID_INPUT`.
 
 Marco aceita `milestoneType`, `target` (endereço no formato `hex:target:<id>`),
 `count`, `dueAt`, `decisions[]` e `trace` (opcional). Veredito aceita `claim`,

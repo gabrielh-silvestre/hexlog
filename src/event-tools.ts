@@ -88,10 +88,12 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
       description:
         'Registers an event (Milestone, Verdict or a fixed custom type) in the process. Returns a receipt ' +
         '`{seq, id, prevHash, deduplicated, warnings}` by default; pass `echo: true` to also get the full ' +
-        'registered `event`. `id` can be a **prefix** `{project}:{process}:{type}` (the server generates a new ' +
-        'uuid v7 and appends) or a **full id** `{project}:{process}:{type}:{uuid}` returned by an earlier call: ' +
-        'idempotent retry, the same normalized `type`/`agent`/`data` returns the existing line with ' +
-        '`deduplicated: true`; different content is `CONFLICTING_ID`. Milestone accepts `milestoneType`, ' +
+        'registered `event`. Give either `type` (the new event kind, e.g. `milestone`) — the server builds the ' +
+        'id prefix `{project}:{process}:{type}` for you — or `id`, which can itself be that same **prefix** ' +
+        '(the server generates a new uuid v7 and appends) or a **full id** `{project}:{process}:{type}:{uuid}` ' +
+        'returned by an earlier call: idempotent retry, the same normalized `type`/`agent`/`data` returns the ' +
+        'existing line with `deduplicated: true`; different content is `CONFLICTING_ID`. `id` and `type` ' +
+        'together, or neither, is `INVALID_INPUT`. Milestone accepts `milestoneType`, ' +
         '`target` (`hex:target:<id>`), `count`, `dueAt`, `decisions[]` and `trace` (optional; ignored when ' +
         'comparing an idempotent retry, so a Milestone re-sent with a different `trace` still dedupes); Verdict ' +
         'accepts `claim`, `source`, `result`, `evidence`, `target` (`hex:target:<id>`), `supersedes[]`, `origin` ' +
@@ -100,7 +102,8 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
       inputSchema: {
         project: Name,
         process: Name,
-        id: z.string().min(1).max(260),
+        id: z.string().min(1).max(260).optional(),
+        type: Name.optional(),
         agent: Agent,
         data: z.record(z.string(), z.unknown()),
         echo: z.boolean().default(false),
@@ -120,9 +123,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, process, id, agent, data, echo }) =>
+    async ({ project, process, id, type, agent, data, echo }) =>
       execute(ctx, 'register', { project, process }, () =>
-        registerEvent(ctx, { project, process, id, agent, data, echo }),
+        registerEvent(ctx, { project, process, id, type, agent, data, echo }),
       ),
   );
 
@@ -518,18 +521,41 @@ function toReceipt(
   return echo ? { ...receipt, event: line } : receipt;
 }
 
+/** `id` isolado (comportamento atual) ou `type` isolado (monta o prefixo `{project}:{process}:{type}`); Leva 11 (#8). */
+function resolveRegisterId(args: {
+  project: string;
+  process: string;
+  id?: string;
+  type?: string;
+}): string {
+  const { project, process, id, type } = args;
+  if (isNotNil(id) && isNotNil(type)) {
+    throw new HexlogError('INVALID_INPUT', 'id and type are mutually exclusive', [
+      { path: '/type', code: 'ambiguous_with_id', message: 'type given together with id' },
+    ]);
+  }
+  if (isNil(id) && isNil(type)) {
+    throw new HexlogError('INVALID_INPUT', 'either id or type is required', [
+      { path: '/id', code: 'required', message: 'neither id nor type was given' },
+    ]);
+  }
+  return id ?? `${project}:${process}:${type}`;
+}
+
 async function registerEvent(
   ctx: Context,
   args: {
     project: string;
     process: string;
-    id: string;
+    id?: string;
+    type?: string;
     agent: string;
     data: Record<string, unknown>;
     echo: boolean;
   },
 ): Promise<RegisterReceipt> {
-  const { project, process, id, agent, data, echo } = args;
+  const { project, process, agent, data, echo } = args;
+  const id = resolveRegisterId(args);
   const loaded = loadProcess(ctx.dataDir, project, process);
   const { type, uuid } = validateEventId(id, project, process);
 
