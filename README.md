@@ -178,7 +178,12 @@ nenhum vocabulário registrado ainda.
 
 ### `register`
 
-Registra um evento. O `id` pode ser:
+Registra um evento. Por padrão devolve um **recibo**
+`{seq, id, prevHash, deduplicated, warnings}` — não o evento inteiro, que o
+chamador já tem (ele mesmo enviou `data`). `echo: true` devolve também `event`
+com o `EventLine` completo.
+
+O `id` pode ser:
 
 - **prefixo** `{project}:{process}:{type}`: o servidor gera um uuid v7 novo e
   faz o append;

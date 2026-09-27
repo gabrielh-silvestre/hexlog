@@ -102,9 +102,9 @@ function buildLog(manifest: unknown, count: number): EventLine[] {
 }
 
 function expectDeduplicated(result: CallResult, expectedSeq: number): void {
-  const body = result.structuredContent as { deduplicated: boolean; event: EventLine };
+  const body = result.structuredContent as { deduplicated: boolean; seq: number };
   expect(body.deduplicated).toBe(true);
-  expect(body.event.seq).toBe(expectedSeq);
+  expect(body.seq).toBe(expectedSeq);
 }
 
 let environment: Environment;
@@ -446,7 +446,7 @@ describe('P4', () => {
       agent: AGENT,
       data: verdictData({ claim: 'a', target: 'hex:target:gone' }),
     });
-    const v1Id = (v1.structuredContent as { event: EventLine }).event.id;
+    const v1Id = (v1.structuredContent as { id: string }).id;
     await environment.call('register', {
       project: PROJ,
       process: PROC,
@@ -526,7 +526,7 @@ describe('M11', () => {
         target: 'hex:target:u1',
       }),
     });
-    const newId = (newRegistration.structuredContent as { event: EventLine }).event.id;
+    const newId = (newRegistration.structuredContent as { id: string }).id;
 
     const pages: EventLine[] = [...firstBody.events];
     let cursor = firstBody.nextCursor;
@@ -774,7 +774,7 @@ describe('N1', () => {
       agent: AGENT,
       data: milestoneData(),
     });
-    expect((registered.structuredContent as { event: EventLine }).event.seq).toBe(6);
+    expect((registered.structuredContent as { seq: number }).seq).toBe(6);
 
     const chain = await callChain();
     expect(chain.ok).toBe(true);
@@ -855,17 +855,17 @@ describe('N2', () => {
       agent: AGENT,
       data,
     });
-    const body1 = first.structuredContent as { event: EventLine };
+    const body1 = first.structuredContent as { id: string; seq: number };
     const before = environment.tree();
 
     const second = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data,
     });
-    expectDeduplicated(second, body1.event.seq);
+    expectDeduplicated(second, body1.seq);
     expect(environment.tree()).toEqual(before);
   });
 
@@ -878,25 +878,25 @@ describe('N2', () => {
       agent: AGENT,
       data: { note: 'x' },
     });
-    const body1 = first.structuredContent as { event: EventLine };
+    const body1 = first.structuredContent as { id: string; seq: number };
 
     const resentOmitted = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data: { note: 'x' },
     });
-    expectDeduplicated(resentOmitted, body1.event.seq);
+    expectDeduplicated(resentOmitted, body1.seq);
 
     const resentExplicit = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data: { note: 'x', priority: 1 },
     });
-    expectDeduplicated(resentExplicit, body1.event.seq);
+    expectDeduplicated(resentExplicit, body1.seq);
   });
 
   test('(iii) Milestone com trace: schema aceita, e reenviar o mesmo id com trace diferente ainda deduplica (P5)', async () => {
@@ -909,16 +909,16 @@ describe('N2', () => {
       data: milestoneData({ trace: 'first-trace' }),
     });
     expect(first.isError).not.toBe(true);
-    const body1 = first.structuredContent as { event: EventLine };
+    const body1 = first.structuredContent as { id: string; seq: number };
 
     const resent = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data: milestoneData({ trace: 'different-trace' }),
     });
-    expectDeduplicated(resent, body1.event.seq);
+    expectDeduplicated(resent, body1.seq);
   });
 
   test('conteúdo diferente com o mesmo id completo → ID_CONFLITANTE', async () => {
@@ -930,12 +930,12 @@ describe('N2', () => {
       agent: AGENT,
       data: milestoneData(),
     });
-    const body1 = first.structuredContent as { event: EventLine };
+    const body1 = first.structuredContent as { id: string };
 
     const conflicting = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data: milestoneData({ target: 'hex:target:other' }),
     });
@@ -1071,7 +1071,7 @@ describe('N5', () => {
       agent: AGENT,
       data: verdictData({ claim: 'a' }),
     });
-    const aId = (a.structuredContent as { event: EventLine }).event.id;
+    const aId = (a.structuredContent as { id: string }).id;
 
     await environment.call('register', {
       project: PROJ,
@@ -1192,6 +1192,7 @@ describe('N8', () => {
       id: MILESTONE_PREFIX,
       agent: AGENT,
       data: milestoneData({ dueAt: '2026-09-16T18:00:00-03:00' }),
+      echo: true,
     });
     const body = result.structuredContent as { event: EventLine };
     expect(body.event.timestamp).toMatch(/Z$/);
@@ -1209,8 +1210,8 @@ describe('N9', () => {
       agent: AGENT,
       data: milestoneData(),
     });
-    const body = result.structuredContent as { event: EventLine };
-    expect(body.event.id).toMatch(new RegExp(`^${PROJ}:${PROC}:milestone:[0-9a-f-]{36}$`));
+    const body = result.structuredContent as { id: string };
+    expect(body.id).toMatch(new RegExp(`^${PROJ}:${PROC}:milestone:[0-9a-f-]{36}$`));
   });
 
   test('projeto/processo do id divergente dos parâmetros → ID_INVALIDO', async () => {
@@ -1247,6 +1248,73 @@ describe('N9', () => {
       data: milestoneData(),
     });
     expectError(result, 'UNKNOWN_ID');
+  });
+});
+
+describe('register — recibo por padrão (Leva 1, #6)', () => {
+  test('id prefixo → recibo {seq, id, prevHash, deduplicated: false, warnings}, sem data no corpo', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expect(result.structuredContent).toEqual({
+      seq: expect.any(Number),
+      id: expect.stringMatching(new RegExp(`^${PROJ}:${PROC}:milestone:[0-9a-f-]{36}$`)),
+      prevHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      deduplicated: false,
+      warnings: [],
+    });
+  });
+
+  test('id completo (retentativa idempotente) → recibo com deduplicated: true, sem data', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const body1 = first.structuredContent as { id: string };
+
+    const retry = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: body1.id,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expect(retry.structuredContent).toEqual({
+      seq: expect.any(Number),
+      id: body1.id,
+      prevHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      deduplicated: true,
+      warnings: [],
+    });
+  });
+
+  test('echo: true → recibo mais event completo (EventLine)', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+      echo: true,
+    });
+    const body = result.structuredContent as { event: EventLine; seq: number; id: string };
+    expect(body.event).toMatchObject({
+      seq: body.seq,
+      id: body.id,
+      agent: AGENT,
+      type: 'milestone',
+      data: milestoneData(),
+    });
   });
 });
 
@@ -1377,8 +1445,8 @@ describe('N14', () => {
       agent: AGENT,
       data: milestoneData(),
     });
-    const event = (registered.structuredContent as { event: EventLine }).event;
-    expect(event.prevHash).toBe(anchor(readManifest(environment, PROJ, PROC)));
+    const body = registered.structuredContent as { prevHash: string };
+    expect(body.prevHash).toBe(anchor(readManifest(environment, PROJ, PROC)));
   });
 
   test('fixado alterado com hashes recalculados → cadeia.breaks inclui {0, hash-nao-bate}', async () => {

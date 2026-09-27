@@ -385,8 +385,8 @@ describe('C1', () => {
           data,
         },
       });
-      const body = result.structuredContent as { event: { id: string } };
-      seeds.push({ id: body.event.id, agent, data });
+      const body = result.structuredContent as { id: string };
+      seeds.push({ id: body.id, agent, data });
     }
     await seedClient.client.close();
 
