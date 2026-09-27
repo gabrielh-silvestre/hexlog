@@ -27,6 +27,7 @@ import {
   Vocabulary,
   Warning,
 } from './mcp.ts';
+import { VERSION } from './version.ts';
 
 const Label = z.string().min(1).max(100);
 const LabelList = z.array(Label).max(100).default([]);
@@ -55,10 +56,13 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
     {
       title: 'List',
       description:
-        'Lists projects, or the detail of a project, process or fixed type, depending on the parameters given. ' +
-        'With no parameters, lists the existing projects. Always includes the available builtin gates.',
+        'Discovery tool: with no parameters, lists the existing projects; with `project`, `process` ' +
+        "and/or `type`, drills into that definition's detail. Not a prerequisite for other tools — once " +
+        '`project`/`process` are already known, read `state` or `events` directly instead of calling ' +
+        "`list` first. Always includes the available builtin gates and the running server's version.",
       inputSchema: { project: Name.optional(), process: Name.optional(), type: Name.optional() },
       outputSchema: {
+        server: z.object({ version: z.string() }),
         projects: z.array(z.object({ name: Name, processes: z.number().int() })).optional(),
         project: z
           .object({
@@ -95,9 +99,10 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
       },
     },
     async ({ project, process, type }) =>
-      execute(ctx, 'list', { project, process }, () =>
-        resolveList(ctx, { project, process, type }),
-      ),
+      execute(ctx, 'list', { project, process }, () => ({
+        server: { version: VERSION },
+        ...resolveList(ctx, { project, process, type }),
+      })),
   );
 
   server.registerTool(

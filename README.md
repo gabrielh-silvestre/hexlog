@@ -106,7 +106,7 @@ rode `node scripts/install.ts` de novo.
 
 | Tool | O que faz | Escreve |
 |---|---|---|
-| `list` | Lista projetos, ou detalha um projeto, processo ou tipo fixado | — |
+| `list` | Ferramenta de descoberta: lista projetos, ou detalha um projeto, processo ou tipo fixado | — |
 | `register_type` | Registra uma nova versão do schema JSON de um tipo de evento custom | `schemas/<type>/<versão>.json` |
 | `register_vocabulary` | Registra uma nova versão do vocabulário de um dono do projeto | `vocabulary/<owner>/<versão>.json` |
 | `register_gate` | Registra uma nova versão do critério de um gate custom | `gates/<gate>/<versão>.json` |
@@ -119,6 +119,9 @@ rode `node scripts/install.ts` de novo.
 
 ### `list`
 
+Ferramenta de descoberta, não pré-requisito: com `project`/`process` já
+conhecidos, prefira ler `state`/`events` direto em vez de chamar `list`
+antes. Sempre devolve `server.version` (a versão do servidor MCP rodando).
 Sem parâmetros, lista os projetos existentes. Com `project`, detalha esse
 projeto: tipos, vocabulários e gates trazem `version` (a vigente, que muda a
 cada novo `register_*`) e `versions` (todo o histórico, do legado `1.0` até a

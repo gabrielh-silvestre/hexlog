@@ -161,6 +161,23 @@ describe('anexar — lock', () => {
 
     expect(records.filter((r) => r.event === 'lock-wait')).toHaveLength(1);
   });
+
+  test(
+    'lock alheio retido por 6s (entre o antigo LOCK_TIMEOUT_MS de 5s e o LOCK_ORPHAN_MS de 10s): ' +
+      'com os defaults reais, não lança LOCK_TIMEOUT antes do lock ser liberado (#7)',
+    async () => {
+      const lockDir = `${file}.lock`;
+      fs.mkdirSync(lockDir, 0o700); // mtime fresco: nunca considerado órfão nesta janela
+      setTimeout(() => fs.rmSync(lockDir, { recursive: true, force: true }), 6_000);
+      const { log } = createSpyLogger();
+
+      // sem timeoutMs/orphanMs: usa os defaults reais do módulo (LOCK_TIMEOUT_MS/LOCK_ORPHAN_MS)
+      const line = await append(file, MANIFEST, buildLine, { log });
+
+      expect(line.seq).toBe(0);
+    },
+    10_000,
+  );
 });
 
 describe('anexar — fencing', () => {

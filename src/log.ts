@@ -17,7 +17,10 @@ export type LogRecord = {
 };
 export type Logger = (record: LogRecord) => void;
 
-const LOCK_TIMEOUT_MS = 5_000;
+// Invariante: TIMEOUT_MS >= ORPHAN_MS. Um lock genuinamente órfão só é detectável depois de
+// ORPHAN_MS; com TIMEOUT_MS menor, o chamador desiste antes de o ramo de órfão ter chance de agir
+// (#7 — lock vivo entre 5s e 10s estourava LOCK_TIMEOUT sem nunca ser avaliado como órfão).
+const LOCK_TIMEOUT_MS = 15_000;
 const LOCK_RETRY_MS = 10;
 const LOCK_ORPHAN_MS = 10_000;
 

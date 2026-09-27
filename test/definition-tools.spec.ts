@@ -7,6 +7,7 @@ import { last } from 'es-toolkit';
 import { z } from 'zod';
 import { execute } from '../src/mcp.ts';
 import type { LogRecord } from '../src/log.ts';
+import { VERSION } from '../src/version.ts';
 import {
   type Environment,
   createEnvironment,
@@ -196,6 +197,7 @@ describe('M8', () => {
       type: 'note',
     });
     expect(typeResult.structuredContent).toEqual({
+      server: { version: VERSION },
       builtinGates: (typeResult.structuredContent as { builtinGates: unknown }).builtinGates,
       type: {
         name: 'note',
@@ -340,6 +342,16 @@ describe('list', () => {
     };
     expect(body.projects).toEqual(expect.arrayContaining([{ name: 'p1', processes: 1 }]));
     expect(body.builtinGates).toHaveLength(5);
+  });
+
+  test('sempre inclui server.version, com ou sem parâmetros (#18)', async () => {
+    await prepareProcess(environment, 'p1', 'proc1');
+
+    const noParams = await environment.call('list', {});
+    const withProject = await environment.call('list', { project: 'p1' });
+
+    expect(noParams.structuredContent).toMatchObject({ server: { version: VERSION } });
+    expect(withProject.structuredContent).toMatchObject({ server: { version: VERSION } });
   });
 
   test('processo sem projeto, ou tipo sem processo → INVALID_INPUT', async () => {
