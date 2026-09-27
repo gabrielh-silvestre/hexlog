@@ -19,7 +19,7 @@ export type Logger = (record: LogRecord) => void;
 
 // Invariante: TIMEOUT_MS >= ORPHAN_MS. Um lock genuinamente órfão só é detectável depois de
 // ORPHAN_MS; com TIMEOUT_MS menor, o chamador desiste antes de o ramo de órfão ter chance de agir
-// (#7 — lock vivo entre 5s e 10s estourava LOCK_TIMEOUT sem nunca ser avaliado como órfão).
+// (lock vivo entre 5s e 10s estourava LOCK_TIMEOUT sem nunca ser avaliado como órfão).
 const LOCK_TIMEOUT_MS = 15_000;
 const LOCK_RETRY_MS = 10;
 const LOCK_ORPHAN_MS = 10_000;
@@ -81,10 +81,10 @@ export async function append(
 }
 
 /**
- * Anexa N elos ao log JSONL sob uma única aquisição de lock (Leva 5, #9) — mesma mecânica de
- * `append`, mas `builds[i]` recebe a base encadeada a partir do elo escrito por `builds[i-1]`,
- * sem reler o arquivo entre um item e outro (o lock exclusivo garante que nada mais escreve no
- * meio). O 1º item usa o `endsWithNewline` real de `prepareContext` (corrige uma cauda rasgada
+ * Anexa N elos ao log JSONL sob uma única aquisição de lock — mesma mecânica de `append`, mas
+ * `builds[i]` recebe a base encadeada a partir do elo escrito por `builds[i-1]`, sem reler o
+ * arquivo entre um item e outro (o lock exclusivo garante que nada mais escreve no meio). O 1º
+ * item usa o `endsWithNewline` real de `prepareContext` (corrige uma cauda rasgada
  * pré-existente); os demais sempre usam `true`, porque depois que `writeLine` grava qualquer
  * linha o arquivo sempre termina em `\n` — reusar o valor do 1º item faria os seguintes
  * prefixarem um `\n` supérfluo. `readToken` é revalidado antes de cada escrita, não só uma vez no

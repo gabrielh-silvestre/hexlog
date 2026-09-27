@@ -625,6 +625,27 @@ describe('Leva 4 — targetPrefix (#10, #13, #14)', () => {
     expect(unfilteredBody.totals).toMatchObject({ active: 4, conflicts: 1, targets: 4 });
   });
 
+  test('targetPrefix + withData juntos: active filtrado pelo prefixo já vem com o data do Verdict vigente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerVerdict('hex:target:task-3', 'inside');
+    await registerVerdict('hex:target:other', 'outside');
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      targetPrefix: 'hex:target:task-3',
+      withData: true,
+    });
+    const body = result.structuredContent as {
+      active: { target: string; data?: Record<string, unknown> }[];
+    };
+    expect(body.active).toHaveLength(1);
+    expect(body.active[0]).toMatchObject({
+      target: 'hex:target:task-3',
+      data: expect.objectContaining({ claim: 'inside' }),
+    });
+  });
+
   test('sections sem "targets" → targets ausente da resposta; totals.targets sempre presente', async () => {
     await prepare(environment, PROJ, PROC);
     await registerVerdict('hex:target:u1', 'a');

@@ -29,7 +29,7 @@ export const Target = z
   .max(200)
   .regex(/^hex:target:[^\s:]+$/);
 
-/** #10/#13/#14: `value` casa `prefix` na fronteira de `.` (o próprio prefixo ou um descendente `prefix.x`), nunca um vizinho que só compartilha o texto (`prefix20`). Usado por `state`/`events` (`targetPrefix`). */
+/** `value` casa `prefix` na fronteira de `.` (o próprio prefixo ou um descendente `prefix.x`), nunca um vizinho que só compartilha o texto (`prefix20`). Usado por `state`/`events` (`targetPrefix`). */
 export function matchesTargetPrefix(value: string, prefix: string): boolean {
   return value === prefix || value.startsWith(`${prefix}.`);
 }
@@ -55,7 +55,7 @@ export const EventLine = z.strictObject({
 });
 export type EventLine = z.infer<typeof EventLine>;
 
-/** Leva 7 (#16): chaves de topo de `EventLine` que `events`/export CLI podem projetar. */
+/** Chaves de topo de `EventLine` que `events`/export CLI podem projetar. */
 export const EventLineField = z.enum([
   'seq',
   'id',
@@ -68,9 +68,9 @@ export const EventLineField = z.enum([
 export type EventLineField = z.infer<typeof EventLineField>;
 
 /**
- * Projeta um subconjunto de chaves de topo de `obj` (Leva 7, #16): reduz o payload de `events` (default
- * sem `prevHash`) e, mais tarde, o `--fields` do `hexlog export` (Leva 8). Chave listada que `obj` não
- * possui não aparece no resultado; chave repetida em `fields` não duplica, o retorno é um objeto.
+ * Projeta um subconjunto de chaves de topo de `obj`: reduz o payload de `events` (default sem
+ * `prevHash`) e, mais tarde, o `--fields` do `hexlog export`. Chave listada que `obj` não possui
+ * não aparece no resultado; chave repetida em `fields` não duplica, o retorno é um objeto.
  */
 export function projectFields<T extends Record<string, unknown>>(
   obj: T,

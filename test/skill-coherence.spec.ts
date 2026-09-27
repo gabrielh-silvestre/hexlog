@@ -241,8 +241,8 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'active',
   'targets',
   'trace',
-  // Leva 4 (#10/#13/#14): `sections`/`conflicts` (campos de `state`) e `targetPrefix`
-  // (campo novo de `state`/`events`), não funções nem tools.
+  // `sections`/`conflicts` (campos de `state`) e `targetPrefix` (campo novo de `state`/`events`),
+  // não funções nem tools.
   'sections',
   'conflicts',
   'targetPrefix',

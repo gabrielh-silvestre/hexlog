@@ -736,7 +736,7 @@ async function evaluateGate(
   const { project, process, gates, agent, echo } = args;
   const loaded = loadProcess(ctx.dataDir, project, process);
   // Um único snapshot de State pro lote inteiro: todo gate embutido da mesma chamada compartilha
-  // o mesmo `evaluatedThrough` (§Leva 5).
+  // o mesmo `evaluatedThrough`.
   const state = buildState(loaded, readText(loaded.eventsFile), ctx.clock);
 
   // Resolve e avalia todos os N gates antes de gravar (sem efeito colateral): qualquer erro aqui
@@ -832,7 +832,7 @@ function evaluateCustomGate(
 
 // ---- state ----
 
-/** #10/#14: restringe `active`/`conflicts`/`targets` à subárvore de `targetPrefix`; as demais seções não são afetadas por esse filtro. */
+/** Restringe `active`/`conflicts`/`targets` à subárvore de `targetPrefix`; as demais seções não são afetadas por esse filtro. */
 function scopeToTargetPrefix<S extends Pick<State, 'active' | 'conflicts' | 'targets'>>(
   state: S,
   targetPrefix: string,
@@ -845,7 +845,7 @@ function scopeToTargetPrefix<S extends Pick<State, 'active' | 'conflicts' | 'tar
   };
 }
 
-/** #12: `extension` é uso esperado de vocabulário, não sinal de problema — some da lista por padrão. */
+/** `extension` é uso esperado de vocabulário, não sinal de problema — some da lista por padrão. */
 function visibleWarnings(
   warnings: State['warnings'],
   includeExtensionWarnings: boolean,
@@ -878,9 +878,9 @@ function resolveState(
   const state = isNil(targetPrefix) ? built : scopeToTargetPrefix(built, targetPrefix);
   const included = new Set(sections ?? ALL_SECTIONS);
 
-  // #10/#13: `targets` agora é uma seção comum de LIST_SECTIONS — totals já reflete o pós-filtro
-  // de targetPrefix (feito acima, antes do cap) para as três seções que ele restringe. #12: totals
-  // conta `warnings` por inteiro (inclusive `extension`), sem o filtro de `includeExtensionWarnings`
+  // `targets` agora é uma seção comum de LIST_SECTIONS — totals já reflete o pós-filtro de
+  // targetPrefix (feito acima, antes do cap) para as três seções que ele restringe. totals conta
+  // `warnings` por inteiro (inclusive `extension`), sem o filtro de `includeExtensionWarnings`
   // aplicado só à lista abaixo.
   const totals = Object.fromEntries(
     LIST_SECTIONS.map((section) => [section, state[section].length]),
@@ -906,7 +906,7 @@ function resolveState(
   };
   if (!withData || !included.has('active')) return response;
 
-  // #11: o orçamento é medido contra o tamanho real da resposta inteira (targets, chain, totals
+  // O orçamento é medido contra o tamanho real da resposta inteira (targets, chain, totals
   // etc. inclusos), não só o array `active` isolado — ver attachVerdictData. `activeTruncatedByBudget`
   // entra no cálculo do próprio `baseSize` (com o placeholder `false`, o literal mais longo) porque
   // esse campo também soma bytes à resposta final e senão poderia empurrá-la além do teto sozinho.
@@ -916,7 +916,7 @@ function resolveState(
 }
 
 /**
- * P4/#11: com `withData`, anexa a `data` do Verdict vigente a cada item de status `active` (itens
+ * P4: com `withData`, anexa a `data` do Verdict vigente a cada item de status `active` (itens
  * de `conflict`, sem vigente único, passam sem `data`). `baseSize` é o tamanho real da resposta
  * inteira antes desta função rodar (calculado por `resolveState`); cada item soma só o incremento
  * marginal de anexar `data` ou o marcador `truncated: true` contra o item puro já contado em
@@ -968,7 +968,7 @@ function attachVerdictData(
 
 type ResultLine = Partial<EventLine> & { relevance?: number };
 
-/** Leva 7 (#16): sem `fields`, `events` omite `prevHash` do default. */
+/** Sem `fields`, `events` omite `prevHash` do default. */
 const DEFAULT_EVENT_FIELDS: readonly EventLineField[] = [
   'seq',
   'id',
@@ -1106,7 +1106,7 @@ function validateUntil(until: number | undefined, totalPhysicalLines: number): v
 
 /**
  * Corta `criteria` e reduz `evaluatedThrough` a `{ seq }` (ou `null`) no Milestone de gate devolvido
- * por `events` (achado #19, Leva 6): só na serialização da resposta, nunca no formato em disco.
+ * por `events`: só na serialização da resposta, nunca no formato em disco.
  */
 function compactGateMilestone(line: EventLine): EventLine {
   if (!isMilestoneGate(line)) return line;

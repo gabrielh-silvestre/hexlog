@@ -213,7 +213,7 @@ No Veredito `trace` é obrigatório e entra normalmente na comparação.
 
 Avalia até 20 gates numa única chamada (`gates: [{gate, target, result?}]`) e
 grava cada resultado como um Marco de gate, sob uma **única aquisição de
-lock** (Leva 5, #9): um só snapshot de Estado é lido no início da chamada, e
+lock**: um só snapshot de Estado é lido no início da chamada, e
 todo gate embutido do lote compartilha o mesmo `evaluatedThrough`. Gates
 **embutidos** (`no-orphans`, `no-conflicts`, `chain-intact`,
 `no-invalid-references`, `no-forks`) são calculados pelo próprio servidor a
@@ -256,7 +256,7 @@ a cadeia de hash. O parâmetro `sections` filtra o que volta na resposta —
 `sections`, todas as seções voltam. Cada lista é cortada em 100 itens, e
 `totals` traz o tamanho real de cada uma.
 
-`targetPrefix` (Leva 4, #10/#13/#14) restringe `active`, `conflicts` e
+`targetPrefix` restringe `active`, `conflicts` e
 `targets` ao endereço `hex:target:...` informado ou à sua subárvore, casando
 na fronteira de `.`: `hex:target:a.b` casa `hex:target:a.b` e
 `hex:target:a.b.c`, mas não `hex:target:a.bc`. Quando informado, `totals`
@@ -264,7 +264,7 @@ dessas três seções passa a contar só os itens que casaram, antes do corte de
 100 itens — as demais seções (`orphans`, `toReview`, `invalidReferences`,
 `warnings`, `forks`) não são afetadas por esse filtro.
 
-`warnings` (Leva 9, #12) omite por padrão os itens `kind: "extension"` — uso
+`warnings` omite por padrão os itens `kind: "extension"` — uso
 esperado de vocabulário (valor declarado por um dono), não sinal de problema.
 `includeExtensionWarnings: true` traz esses itens de volta; `error` e
 `unknown-warning` sempre aparecem. `totals.warnings` sempre conta o total
@@ -294,13 +294,13 @@ Lista os eventos do log de um processo, em dois modos:
   e tiver dois ou mais termos distintos, cai para `OR` — a resposta informa
   qual das duas (`combination`) foi usada. No fallback `OR`, um resultado que
   case menos da metade (arredondado para cima) dos termos distintos da
-  consulta é descartado (Leva 10, #15): consulta longa degrada para `OR` com
+  consulta é descartado: consulta longa degrada para `OR` com
   um piso de termos casados, em vez de devolver qualquer casamento de 1 termo
   só.
 
 Os dois modos aceitam os mesmos filtros por igualdade exata, combináveis com
 `search` ou usados sozinhos: `type`, `target` (compara com `data.target`, campo
-comum a Marco e Veredito), `targetPrefix` (Leva 4, #10/#13/#14 — mesma
+comum a Marco e Veredito), `targetPrefix` (mesma
 subárvore de `data.target` que `state`, casando na fronteira de `.`:
 `hex:target:a.b` casa `hex:target:a.b.c`, não `hex:target:a.bc`),
 `milestoneType`, `result` e o intervalo `[after, before)` de `timestamp`.
@@ -309,8 +309,7 @@ subárvore de `data.target` que `state`, casando na fronteira de `.`:
 Para filtrar por endereço, use o parâmetro `target` ou `targetPrefix` — não
 existe filtro por id de evento.
 
-**Marco de gate some por padrão quando `target`/`targetPrefix` filtra (Leva 6,
-#19).** Um Marco de gate (`data.milestoneType === 'gate'`, gravado por
+**Marco de gate some por padrão quando `target`/`targetPrefix` filtra.** Um Marco de gate (`data.milestoneType === 'gate'`, gravado por
 `evaluate_gate`) fica de fora do resultado quando `target` ou `targetPrefix`
 é informado, a menos que `includeGateMilestones: true` seja pedido ou o
 chamador já peça `milestoneType: 'gate'` explicitamente — o pedido explícito
@@ -339,7 +338,7 @@ para um mesmo corpus de eventos muda quando o formato em disco muda — por
 exemplo, ao renomear campos —, mesmo com o teto de 24.000 caracteres
 inalterado.
 
-**`fields` projeta as chaves de topo de `EventLine` (Leva 7, #16).** Sem
+**`fields` projeta as chaves de topo de `EventLine`.** Sem
 `fields`, cada evento volta como `{ seq, id, type, timestamp, agent, data }`
 — sem `prevHash`. Informar `fields` substitui esse conjunto por inteiro,
 inclusive pedindo só `prevHash` de volta (útil pra verificação manual de
@@ -481,7 +480,7 @@ npm run typecheck # tsc --noEmit
 npm run build     # esbuild, gera os bundles .mjs (equivalente ao passo 1 do instalador)
 ```
 
-### `scripts/export.ts` (Leva 8, #20)
+### `scripts/export.ts`
 
 CLI read-only, sem tool MCP correspondente, no mesmo molde de
 `scripts/insights.ts`: roda direto com `node`, lê `XDG_DATA_HOME` como as

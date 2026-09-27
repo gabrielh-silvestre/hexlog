@@ -1,4 +1,4 @@
-// Exportação read-only de eventos em JSONL (Leva 8, #20).
+// Exportação read-only de eventos em JSONL.
 // Uso: node scripts/export.ts <project>/<process> [--fields a,b,c]
 import { isNil, isNotNil } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';

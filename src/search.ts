@@ -100,7 +100,7 @@ export type Filters = {
   includeGateMilestones?: boolean;
 };
 
-/** `target`/`targetPrefix` informado (§4.12 item 9, achado #19): condição que liga exclusão e compactação de gate. */
+/** `target`/`targetPrefix` informado (§4.12 item 9): condição que liga exclusão e compactação de gate. */
 export function hasTargetFilter(filters: Filters): boolean {
   return !isNil(filters.target) || !isNil(filters.targetPrefix);
 }
@@ -121,8 +121,8 @@ export function isCandidate(line: EventLine, filters: Filters): boolean {
 }
 
 /**
- * Milestones de gate somem por padrão quando `target`/`targetPrefix` filtra (achado #19): quem
- * quer auditoria de gate já pede `milestoneType: 'gate'` explícito, e isso sempre vence a exclusão
+ * Milestones de gate somem por padrão quando `target`/`targetPrefix` filtra: quem quer auditoria
+ * de gate já pede `milestoneType: 'gate'` explícito, e isso sempre vence a exclusão
  * (senão `target` + `milestoneType: 'gate'` juntos devolveriam zero, por serem AND).
  */
 function excludesGateMilestone(line: EventLine, filters: Filters): boolean {
