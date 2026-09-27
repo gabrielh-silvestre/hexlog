@@ -242,8 +242,8 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'targets',
   'trace',
   // hexlog-setup/hexlog-flow: `target` (singular, campo de entrada de register/evaluate_gate/
-  // events/chain), `editedSkills` (campo do frontmatter FlowMap, src/flow-map.ts:45) e
-  // `targetIdPattern` (campo do frontmatter FlowMap, src/flow-map.ts:38).
+  // events/chain), `editedSkills` (campo do frontmatter FlowMap, src/flow-map.ts:53) e
+  // `targetIdPattern` (campo do frontmatter FlowMap, src/flow-map.ts:46).
   'target',
   'editedSkills',
   'targetIdPattern',
@@ -275,9 +275,9 @@ const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string> = {
   'definitions.ts:24': 'RESERVED_TYPE_NAMES',
   'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
   'definitions.ts:667': 'BREAKING_CHANGE',
-  'flow-map.ts:28': 'FlowMap',
-  'flow-map.ts:43': 'hook',
-  'flow-map.ts:45': 'editedSkills',
+  'flow-map.ts:36': 'FlowMap',
+  'flow-map.ts:51': 'hook',
+  'flow-map.ts:53': 'editedSkills',
 };
 
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string> = {
@@ -288,6 +288,18 @@ const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string> = {
   'event-tools.ts:498': 'CONFLICTING_ID',
   'event-tools.ts:659-664': 'INVALID_EVALUATION',
   'events.ts:27-30': 'Target',
+};
+
+const FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS: Record<string, string> = {
+  'flow-map.ts:87': 'parseFlowMap',
+  'flow-map.ts:36-76': 'FlowMap',
+  'events.ts:10': 'Name',
+  'events.ts:27-30': 'Target',
+};
+
+const TARGET_FORMAT_CITATION_EXPECTATIONS: Record<string, string> = {
+  'events.ts:27-30': 'Target',
+  'flow-map.ts:46': 'targetIdPattern',
 };
 
 interface SkillCase {
@@ -311,6 +323,21 @@ const skillCases: SkillCase[] = [
     name: 'hexlog-flow',
     skillPath: path.join(repoRoot, 'skills/hexlog-flow/SKILL.md'),
     citationExpectations: HEXLOG_FLOW_CITATION_EXPECTATIONS,
+  },
+];
+
+// `references/*.md` só entram na checagem de citação arquivo.ts:N: citam campos do schema
+// (`phases`, `process`) em crases, que a checagem de identificadores leria como tool inexistente.
+const referenceCases: SkillCase[] = [
+  {
+    name: 'hexlog-setup/references/flow-map-schema',
+    skillPath: path.join(repoRoot, 'skills/hexlog-setup/references/flow-map-schema.md'),
+    citationExpectations: FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS,
+  },
+  {
+    name: 'hexlog-flow/references/target-format',
+    skillPath: path.join(repoRoot, 'skills/hexlog-flow/references/target-format.md'),
+    citationExpectations: TARGET_FORMAT_CITATION_EXPECTATIONS,
   },
 ];
 
@@ -379,7 +406,7 @@ describe('fatos de código globais que a skill hexlog cita (não dependem de qua
   });
 });
 
-describe.each(skillCases)(
+describe.each([...skillCases, ...referenceCases])(
   'citações arquivo.ts:N(-M)? na skill × código real em src/ ($name)',
   ({ skillPath, citationExpectations }) => {
     const { citedFileCitations } = tokensCitedBy(skillPath);

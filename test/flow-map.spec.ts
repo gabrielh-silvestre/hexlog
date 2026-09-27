@@ -40,6 +40,42 @@ gate:
     expect(result.issues.length).toBeGreaterThan(0);
   });
 
+  test('process referenciando uma fase fora de phases rejeita com issues', () => {
+    const text = `---
+phases:
+  - discovery
+process:
+  discovery: proc-discovery
+  planning: proc-planning
+---
+`;
+    const result = parseFlowMap(text);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.issues).toContainEqual(
+      expect.stringContaining('process/planning: phase "planning" is not declared in phases'),
+    );
+  });
+
+  test('skills referenciando uma fase fora de phases rejeita com issues', () => {
+    const text = `---
+phases:
+  - discovery
+process:
+  discovery: proc-discovery
+skills:
+  planning:
+    - some-skill
+---
+`;
+    const result = parseFlowMap(text);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.issues).toContainEqual(
+      expect.stringContaining('skills/planning: phase "planning" is not declared in phases'),
+    );
+  });
+
   test('targetIdPattern com regex inválida é rejeitado', () => {
     const text = `---
 phases:

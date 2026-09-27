@@ -17,6 +17,7 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 10 to
 | `errors.ts` | `HexlogError` (classe de erro de domínio com `code`/`details`), `ErrorCode` (23 códigos), `issueDetails` (Zod → JSON Pointer) |
 | `state.ts` | Projeção pura do Estado (§4.8): `projectState` (active/conflicts/orphans/toReview/invalidReferences/warnings/forks), `validateField` (vocabulário) |
 | `events.ts` | Esquemas Zod do envelope de evento e dos tipos nativos: `EventLine`, `MilestoneData`, `VerdictData`, `GateMilestoneData`, `parseId`, `normalizeData` |
+| `flow-map.ts` | Schema Zod do `.hexlog/flow.md` (`FlowMap`) e seu parser (`parseFlowMap`): frontmatter YAML entre `---`, valida `phases`/`process`/`skills`/`gate`/`targetIdPattern` com `superRefine` cruzando toda fase referenciada contra `phases`. Puro (recebe o texto já lido), consumido só por `hook/flow-reminder.ts` |
 | `definition-tools.ts` | Registra as 5 tools de definição: `list`, `register_type`, `register_vocabulary`, `register_gate`, `create_process` |
 | `event-tools.ts` | Registra as 5 tools de eventos: `register`, `evaluate_gate`, `state`, `events`, `chain` |
 | `gates.ts` | Os 5 gates embutidos (`no-orphans`, `no-conflicts`, `no-forks`, `chain-intact`, `no-invalid-references`): `evaluateBuiltin`, `buildGateMilestoneData` |
@@ -65,6 +66,7 @@ Ponto de entrada: `server.ts` → `directory.ts` (resolve dir de dados) + `mcp.t
 `event-tools.ts` é o módulo mais conectado: chama `definitions.ts` (carregar processo), `log.ts` (`append`/`readText`), `chain.ts` (`isValidLink`/`verifyChain`), `state.ts` (`projectState`), `gates.ts` (avaliação), `search.ts` (modo busca) e `events.ts` (validação/normalização de `data`).
 `definitions.ts`, `chain.ts`, `log.ts`, `state.ts`, `gates.ts` e `search.ts` dependem de `events.ts` (esquema `EventLine`); `definitions.ts`, `chain.ts` e `log.ts` também dependem de `errors.ts` (`HexlogError`). `storage.ts` é a base de I/O usada por `definitions.ts`.
 `guard.ts` e `installation.ts` formam um subgrafo isolado (instalação), consumido só por `scripts/install.ts` fora de `src/`.
+`flow-map.ts` depende só de `events.ts` (`Name`), sem `definitions.ts`, para o bundle do hook não puxar ajv/`canonicalize`; é consumido só por `hook/flow-reminder.ts`, fora de `src/`.
 
 ### External
 | Pacote | Uso em `src/` |

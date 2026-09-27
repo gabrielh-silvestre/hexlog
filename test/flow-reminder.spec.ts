@@ -24,6 +24,18 @@ hook: false
 ---
 `;
 
+const VALID_HOOK_TWO_PHASES = `---
+phases: [refinement, review]
+process:
+  refinement: proc-refinement
+  review: proc-review
+skills:
+  refinement: [my-skill]
+  review: [my-skill]
+hook: true
+---
+`;
+
 /** Cria um repo temporário e, se `content` for passado, grava `.hexlog/flow.md` nele. */
 function repoWithFlowMap(content?: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-flow-reminder-repo-'));
@@ -46,7 +58,11 @@ describe('flow-reminder hook (passo 3)', () => {
     outdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-flow-reminder-build-'));
     const result = spawnSync(
       process.execPath,
-      [path.join(repoRoot, 'test/fixtures/build-flow-reminder.ts'), outdir],
+      [
+        path.join(repoRoot, 'test/fixtures/build-entry.ts'),
+        outdir,
+        'flow-reminder=hook/flow-reminder.ts',
+      ],
       { encoding: 'utf8', cwd: repoRoot },
     );
     if (result.status !== 0) {
@@ -77,6 +93,13 @@ describe('flow-reminder hook (passo 3)', () => {
     }
   }
 
+  test('bundle não puxa ajv/canonicalize de definitions.ts (U2)', () => {
+    const bytes = fs.readFileSync(bundlePath, 'utf8');
+    expect(bytes).not.toContain('Ajv2020');
+    expect(bytes).not.toContain('ajv-formats');
+    expect(bytes).not.toContain('canonicalize');
+  });
+
   test('.hexlog/flow.md ausente → exit 0 sem stdout', () => {
     expectNoReminder(undefined, 'my-skill');
   });
@@ -103,6 +126,21 @@ describe('flow-reminder hook (passo 3)', () => {
       };
       expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolUse');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('design');
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('hook: true, skill mapeada em duas fases → additionalContext cita as duas (N3)', () => {
+    const cwd = repoWithFlowMap(VALID_HOOK_TWO_PHASES);
+    try {
+      const { status, stdout } = runHook(payload(cwd, 'my-skill'));
+      expect(status).toBe(0);
+      const parsed = JSON.parse(stdout) as {
+        hookSpecificOutput: { additionalContext: string };
+      };
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('refinement');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('review');
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }

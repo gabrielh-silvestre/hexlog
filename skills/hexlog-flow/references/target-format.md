@@ -1,13 +1,13 @@
 # Formato do target
 
 `target` é o endereço de um item de trabalho: `hex:target:<id>`, validado pelo
-schema `Target` (`src/events.ts:27-30`) contra `/^hex:target:[^\s:]+$/` — o
+schema `Target` (`events.ts:27-30`) contra `/^hex:target:[^\s:]+$/` — o
 prefixo `hex:target:` é fixo, só o `<id>` varia.
 
 ## `<id>` customizado por projeto
 
 O `.hexlog/flow.md` pode restringir o formato do `<id>` via `targetIdPattern`
-no frontmatter (`src/flow-map.ts:38`) — por exemplo, um projeto que numera
+no frontmatter (`flow-map.ts:46`) — por exemplo, um projeto que numera
 tarefas como `PROJ-123` declara `targetIdPattern: 'PROJ-\d+'`. Quando o campo
 está ausente, o default é o mesmo regex embutido em `Target`
 (`[^\s:]+` — qualquer coisa sem espaço nem `:`).

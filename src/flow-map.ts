@@ -1,7 +1,15 @@
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
-import { FixedVersions } from './definitions.ts';
 import { Name } from './events.ts';
+
+// Mesma forma de `FixedVersions` (`definitions.ts`), duplicada aqui em vez de importada: puxar
+// `definitions.ts` só por este schema opcional infla o bundle do hook `flow-reminder` com
+// `ajv`/`ajv-formats`/`canonicalize`, que este arquivo nunca usa (U2 da revisão do PR #32).
+const FixedVersionsSchema = z.object({
+  types: z.record(z.string(), z.string()),
+  vocabulary: z.record(z.string(), z.string()),
+  gates: z.record(z.string(), z.string()),
+});
 
 // Mesmo regex embutido em `Target` (events.ts:30) — default do `<id>` de target quando o
 // frontmatter não configura um padrão próprio.
@@ -39,7 +47,7 @@ export const FlowMap = z
       .string()
       .default(DEFAULT_TARGET_ID_PATTERN)
       .refine(isValidRegexSource, { message: 'targetIdPattern must be a valid regex source' }),
-    versions: FixedVersions.optional(),
+    versions: FixedVersionsSchema.optional(),
     hook: z.boolean().default(false),
     // Skills apontadas na descoberta que a `hexlog-setup` efetivamente editou pra chamar a `hexlog-flow`.
     editedSkills: z.array(z.string()).default([]),

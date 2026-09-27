@@ -281,8 +281,6 @@ export async function installArtifact(args: {
     throw error;
   }
 
-  writeStableFlowReminder(home, bundles.flowReminder);
-
   const { action, extraWarning } = swapArtifact({
     versionDir,
     tmp,
@@ -292,6 +290,8 @@ export async function installArtifact(args: {
     version,
   });
   if (!isNil(extraWarning)) warnings.push(extraWarning);
+
+  writeStableFlowReminder(home, bundles.flowReminder);
 
   const finalManifest = action === 'none' ? (readManifest(versionDir) ?? manifest) : manifest;
   log(`version ${version}: ${action}`);
@@ -322,6 +322,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
  * usuário; diferente de `registerGuard`, que preserva `.bak-hexlog`). */
 export function writeSkillFolder(home: string, name: string, srcDir: string): void {
   const dstDir = path.join(home, '.claude', 'skills', name);
+  rmSync(dstDir, { recursive: true, force: true });
   mkdirSync(dstDir, { recursive: true });
   cpSync(srcDir, dstDir, { recursive: true });
 }

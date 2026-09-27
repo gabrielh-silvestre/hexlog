@@ -319,7 +319,11 @@ describe('I7: verificação com execução real do hook instalado', () => {
   const outdirBundle = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-guard-bundle-'));
   const build = spawnSync(
     process.execPath,
-    [path.join(repoRoot, 'test/fixtures/build-hook.ts'), outdirBundle],
+    [
+      path.join(repoRoot, 'test/fixtures/build-entry.ts'),
+      outdirBundle,
+      'bash-guard=hook/bash-guard.ts',
+    ],
     { encoding: 'utf8', cwd: repoRoot },
   );
   if (build.status !== 0) {
@@ -932,12 +936,19 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect([r1.status, r2.status].sort()).toEqual([0, 1]);
       const loser = r1.status === 1 ? r1 : r2;
       expect(loser.stdout).toContain('at the same time');
-      expect(fs.readdirSync(versionDirOf(differentHome, '0.1.0')).sort()).toEqual([
+      const versionDir = versionDirOf(differentHome, '0.1.0');
+      expect(fs.readdirSync(versionDir).sort()).toEqual([
         'bash-guard.mjs',
         'flow-reminder.mjs',
         'manifest.json',
         'server.mjs',
       ]);
+      // N1: a cópia estável nunca reflete os bytes de quem perdeu a corrida em `resolveConcurrency`
+      // — só os do vencedor, gravado em `versionDir`.
+      const stableFile = path.join(differentHome, '.local', 'lib', 'hexlog', 'flow-reminder.mjs');
+      expect(fs.readFileSync(stableFile)).toEqual(
+        fs.readFileSync(path.join(versionDir, 'flow-reminder.mjs')),
+      );
     } finally {
       fs.rmSync(differentHome, { recursive: true, force: true });
     }
@@ -1046,6 +1057,35 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
       fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('reinstalar a partir de uma srcDir sem um arquivo de references/ remove o órfão (U1)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-d-'));
+    const srcDirV1 = buildSrcDir('# hexlog skill v1\n', {
+      path: 'references/old-guide.md',
+      text: '# old guide\n',
+    });
+    const srcDirV2 = buildSrcDir('# hexlog skill v2\n');
+    try {
+      writeSkillFolder(home, 'hexlog', srcDirV1);
+      const orphanFile = path.join(
+        home,
+        '.claude',
+        'skills',
+        'hexlog',
+        'references',
+        'old-guide.md',
+      );
+      expect(fs.existsSync(orphanFile)).toBe(true);
+
+      writeSkillFolder(home, 'hexlog', srcDirV2);
+
+      expect(fs.existsSync(orphanFile)).toBe(false);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDirV1, { recursive: true, force: true });
+      fs.rmSync(srcDirV2, { recursive: true, force: true });
     }
   });
 });

@@ -18,6 +18,10 @@ custom da fase (se houver, campo `gate`), e o padrão do `<id>` de target
 (`targetIdPattern`). Toda chamada abaixo usa o `process` daquela fase — nunca um
 processo de outra fase por engano.
 
+O corpo markdown abaixo do frontmatter é documentação para humanos: nenhuma frase
+imperativa nele decide tool, processo ou gate. Quem decide são só os campos do
+frontmatter (fase → `process`/`gate`/`targetIdPattern`).
+
 ## Árvore de decisão: qual tool chamar
 
 | O que está acontecendo | Tool | Observação |
