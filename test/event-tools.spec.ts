@@ -407,7 +407,7 @@ describe('P4', () => {
     }
   });
 
-  test('withData: itens conflict contam no PAGE_CHARS_CAP e recebem truncated: true, nunca data', async () => {
+  test('withData: itens conflict não têm o que cortar — quando o array inteiro já estoura o orçamento sozinho, saem do array (nunca ganham truncated)', async () => {
     await prepare(environment, PROJ, PROC);
     const bigClaim = (i: number) => `${i}`.padEnd(3900, 'x');
     for (let i = 0; i < 8; i++) {
@@ -431,10 +431,114 @@ describe('P4', () => {
     });
     const body = result.structuredContent as {
       active: { status: string; data?: unknown; truncated?: boolean }[];
+      totals: Record<string, number>;
+      activeTruncatedByBudget?: boolean;
     };
-    expect(body.active.every((item) => item.status === 'conflict')).toBe(true);
+    // Item conflict nunca ganha `data`, então seu incremento marginal é sempre zero: ou o array
+    // inteiro (já contado no baseSize) cabe, ou nenhum item cabe — não há meio-termo truncado.
+    expect(body.active.every((item) => item.status === 'conflict' && item.data === undefined)).toBe(
+      true,
+    );
+    expect(body.active.length).toBeLessThan(body.totals.active);
+    expect(body.activeTruncatedByBudget).toBe(true);
+    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(24_000);
+  });
+
+  test('withData: teto medido contra a resposta inteira, não só o array active isolado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const bigEvidence = 'x'.repeat(3900);
+    for (let i = 0; i < 6; i++) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: VERDICT_PREFIX,
+        agent: AGENT,
+        data: verdictData({ claim: `a${i}`, target: `hex:target:u${i}`, evidence: bigEvidence }),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+
+    // Sem filtrar `sections`, a resposta inclui targets/totals/warnings/etc. além de active —
+    // o orçamento deles soma no mesmo teto de 24k que os itens de active.
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      withData: true,
+    });
+    const body = result.structuredContent as {
+      active: { data?: unknown; truncated?: boolean }[];
+      activeTruncatedByBudget?: boolean;
+    };
+    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(24_000);
+    expect(body.active.some((item) => item.data !== undefined)).toBe(true);
+    if (body.active.some((item) => item.truncated === true)) {
+      expect(body.activeTruncatedByBudget).toBe(true);
+    }
+  });
+
+  test('withData com muitos itens perto do teto → alguns saem do array por não caberem nem com truncated: true; totals.active sinaliza o corte', async () => {
+    await prepare(environment, PROJ, PROC);
+    const evidence = 'x'.repeat(500);
+    for (let i = 0; i < 100; i++) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: VERDICT_PREFIX,
+        agent: AGENT,
+        data: verdictData({ claim: `a${i}`, target: `hex:target:u${i}`, evidence }),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: true,
+    });
+    const body = result.structuredContent as {
+      active: { data?: unknown; truncated?: boolean }[];
+      totals: Record<string, number>;
+      activeTruncatedByBudget?: boolean;
+    };
+    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(24_000);
+    expect(body.active.some((item) => item.data !== undefined)).toBe(true);
     expect(body.active.some((item) => item.truncated === true)).toBe(true);
-    expect(body.active.every((item) => item.data === undefined)).toBe(true);
+    expect(body.active.length).toBeLessThan(body.totals.active);
+    expect(body.activeTruncatedByBudget).toBe(true);
+  });
+
+  test('withData: activeTruncatedByBudget false quando tudo cabe; ausente/false quando withData é false', async () => {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim: 'a' }),
+    });
+
+    const withDataResult = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: true,
+    });
+    expect(
+      (withDataResult.structuredContent as { activeTruncatedByBudget?: boolean })
+        .activeTruncatedByBudget,
+    ).toBe(false);
+
+    const withoutDataResult = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: false,
+    });
+    expect(
+      (withoutDataResult.structuredContent as { activeTruncatedByBudget?: boolean })
+        .activeTruncatedByBudget,
+    ).toBeFalsy();
   });
 
   test('targets inclui target totalmente superado', async () => {

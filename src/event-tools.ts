@@ -167,8 +167,11 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'omitted, all of them come back. Each list is capped at 100 items and `totals` carries the real size ' +
         'of each one. `targets` always comes back: every target a Verdict has ever used, including ones fully ' +
         'superseded. `withData` (default `false`) adds the winning Verdict’s `data` to each `active`-status ' +
-        'item in `active`; items that would push the response past the 24,000-character cap come back without ' +
-        '`data` and with `truncated: true` instead.',
+        'item in `active`; the 24,000-character cap is measured against the whole response (all sections, ' +
+        'not just `active`), so items that would push it past the cap come back without `data` and with ' +
+        '`truncated: true` instead, and items that do not even fit that marker are dropped from `active` ' +
+        'entirely. `activeTruncatedByBudget: true` marks that this cap (not the 100-item ' +
+        '`SECTION_ITEMS_CAP`) caused the cut; retry with `withData: false` to get the full list.',
       inputSchema: {
         project: Name,
         process: Name,
@@ -224,6 +227,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
           .array(z.object({ verdict: z.string(), successors: z.array(z.string()) }))
           .optional(),
         chain: ChainSchema.optional(),
+        activeTruncatedByBudget: z.boolean().optional(),
       },
       annotations: {
         readOnlyHint: true,
@@ -728,19 +732,15 @@ function resolveState(
   const totals = Object.fromEntries(
     LIST_SECTIONS.map((section) => [section, state[section].length]),
   );
+  const activeItems = state.active.slice(0, SECTION_ITEMS_CAP);
   const lists = Object.fromEntries(
-    LIST_SECTIONS.filter((section) => included.has(section)).map((section) => {
-      const items = state[section].slice(0, SECTION_ITEMS_CAP);
-      return [
-        section,
-        section === 'active'
-          ? attachVerdictData(items as State['active'], state.verdictById, withData)
-          : items,
-      ];
-    }),
+    LIST_SECTIONS.filter((section) => included.has(section)).map((section) => [
+      section,
+      section === 'active' ? activeItems : state[section].slice(0, SECTION_ITEMS_CAP),
+    ]),
   );
 
-  return {
+  const response = {
     logThrough: state.logThrough,
     now: state.now,
     totals: { ...totals, targets: state.targets.length },
@@ -748,37 +748,64 @@ function resolveState(
     ...lists,
     ...(included.has('chain') ? { chain: state.chain } : {}),
   };
+  if (!withData || !included.has('active')) return response;
+
+  // #11: o orçamento é medido contra o tamanho real da resposta inteira (targets, chain, totals
+  // etc. inclusos), não só o array `active` isolado — ver attachVerdictData. `activeTruncatedByBudget`
+  // entra no cálculo do próprio `baseSize` (com o placeholder `false`, o literal mais longo) porque
+  // esse campo também soma bytes à resposta final e senão poderia empurrá-la além do teto sozinho.
+  const baseSize = JSON.stringify({ ...response, activeTruncatedByBudget: false }).length;
+  const { active, truncatedByBudget } = attachVerdictData(activeItems, state.verdictById, baseSize);
+  return { ...response, active, activeTruncatedByBudget: truncatedByBudget };
 }
 
 /**
- * P4: com `withData`, anexa a `data` do Verdict vigente a cada item de status `active` (itens de
- * `conflict`, sem vigente único, não ganham `data` mas contam no orçamento). Respeita
- * `PAGE_CHARS_CAP`: uma vez que o orçamento estoura, os itens restantes vêm sem `data` e com
- * `truncated: true`.
+ * P4/#11: com `withData`, anexa a `data` do Verdict vigente a cada item de status `active` (itens
+ * de `conflict`, sem vigente único, passam sem `data`). `baseSize` é o tamanho real da resposta
+ * inteira antes desta função rodar (calculado por `resolveState`); cada item soma só o incremento
+ * marginal de anexar `data` ou o marcador `truncated: true` contra o item puro já contado em
+ * `baseSize` — nunca o tamanho do item inteiro, que dobraria a conta. Quando nem o incremento do
+ * marcador cabe, esse item e os seguintes saem do array devolvido (o gap contra `totals.active`
+ * sinaliza o corte).
  */
 function attachVerdictData(
   items: State['active'],
   verdictById: Record<string, EventLine>,
-  withData: boolean,
-): (State['active'][number] & { data?: unknown; truncated?: boolean })[] {
-  if (!withData) return items;
+  baseSize: number,
+): {
+  active: (State['active'][number] & { data?: unknown; truncated?: boolean })[];
+  truncatedByBudget: boolean;
+} {
+  let size = baseSize;
+  let truncatedByBudget = false;
+  const active: (State['active'][number] & { data?: unknown; truncated?: boolean })[] = [];
 
-  let size = 2; // '[]'
-  let overBudget = false;
-
-  return items.map((item, index) => {
-    if (overBudget) return { ...item, truncated: true };
+  for (const item of items) {
+    const pureLength = JSON.stringify(item).length;
 
     const withField =
       item.status === 'active' ? { ...item, data: verdictById[item.active]?.data } : item;
-    const increment = JSON.stringify(withField).length + (index > 0 ? 1 : 0);
-    if (size + increment <= PAGE_CHARS_CAP) {
-      size += increment;
-      return withField;
+    const dataIncrement = JSON.stringify(withField).length - pureLength;
+    if (size + dataIncrement <= PAGE_CHARS_CAP) {
+      size += dataIncrement;
+      active.push(withField);
+      continue;
     }
-    overBudget = true;
-    return { ...item, truncated: true };
-  });
+
+    const truncatedItem = { ...item, truncated: true };
+    const truncatedIncrement = JSON.stringify(truncatedItem).length - pureLength;
+    if (size + truncatedIncrement <= PAGE_CHARS_CAP) {
+      size += truncatedIncrement;
+      active.push(truncatedItem);
+      truncatedByBudget = true;
+      continue;
+    }
+
+    truncatedByBudget = true;
+    break;
+  }
+
+  return { active, truncatedByBudget };
 }
 
 // ---- events ----

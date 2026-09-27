@@ -240,9 +240,15 @@ o tamanho real de cada uma.
 que algum Veredito já usou, inclusive os totalmente superados (sem nenhum
 Veredito vigente). Com `withData: true` (padrão `false`), cada item de status
 `active` em `active` ganha o `data` do Veredito vigente; itens de status
-`conflict` (sem um vigente único) não ganham `data`. A resposta ainda respeita
-o teto de `PAGE_CHARS_CAP = 24_000` caracteres: uma vez que o orçamento
-estoura, os itens restantes vêm sem `data` e com `truncated: true`.
+`conflict` (sem um vigente único) não ganham `data`. O teto de
+`PAGE_CHARS_CAP = 24_000` caracteres é medido contra a resposta inteira
+(`targets`, `chain`, `totals` etc. inclusos, não só o array `active` isolado):
+itens que empurrariam a resposta além do teto vêm sem `data` e com
+`truncated: true`; itens que nem com esse marcador couberem saem do array
+por completo (a diferença entre `totals.active` e o tamanho de `active`
+sinaliza o corte). `activeTruncatedByBudget: true` no topo da resposta indica
+que esse teto — e não o corte de 100 itens por lista — foi a causa; nesse
+caso, repita a chamada com `withData: false` para ver a lista completa.
 
 ### `events`
 
