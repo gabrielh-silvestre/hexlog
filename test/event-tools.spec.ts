@@ -880,6 +880,81 @@ describe('Leva 9 — includeExtensionWarnings (#12)', () => {
   });
 });
 
+describe('Leva 14 — state: since evita reprojetar (#25)', () => {
+  test('since igual ao seq do último evento → {logThrough, unchanged: true}, sem active/conflicts/warnings/targets', async () => {
+    await prepare(environment, PROJ, PROC);
+    const registered = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const { seq } = registered.structuredContent as { seq: number };
+
+    const result = await environment.call('state', { project: PROJ, process: PROC, since: seq });
+    expect(result.structuredContent).toEqual({
+      logThrough: {
+        id: expect.any(String),
+        seq,
+        timestamp: expect.any(String),
+      },
+      unchanged: true,
+    });
+  });
+
+  test('since menor que o seq do último evento (log avançou) → resposta cheia normal, unchanged ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const { seq: firstSeq } = first.structuredContent as { seq: number };
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ target: 'hex:target:u2' }),
+    });
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      since: firstSeq,
+    });
+    const body = result.structuredContent as { unchanged?: boolean; active: unknown[] };
+    expect(body.unchanged).toBeUndefined();
+    expect(body.active).toBeDefined();
+  });
+
+  test('sem since → comportamento idêntico ao atual (não-regressão)', async () => {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+
+    const result = await environment.call('state', { project: PROJ, process: PROC });
+    const body = result.structuredContent as { unchanged?: boolean; now: string };
+    expect(body.unchanged).toBeUndefined();
+    expect(body.now).toEqual(expect.any(String));
+  });
+
+  test('since com log vazio (nenhum evento ainda) → logThrough null, unchanged: true', async () => {
+    await prepare(environment, PROJ, PROC);
+
+    const result = await environment.call('state', { project: PROJ, process: PROC, since: 0 });
+    expect(result.structuredContent).toEqual({ logThrough: null, unchanged: true });
+  });
+});
+
 describe('M9', () => {
   test('annotations das 5 tools de eventos batem com §4.12', async () => {
     const { tools } = await environment.client.listTools();

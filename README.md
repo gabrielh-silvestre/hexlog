@@ -293,6 +293,13 @@ sinaliza o corte). `activeTruncatedByBudget: true` no topo da resposta indica
 que esse teto — e não o corte de 100 itens por lista — foi a causa; nesse
 caso, repita a chamada com `withData: false` para ver a lista completa.
 
+`since` (um `seq`, mesma convenção de `events`) evita reprojetar quando o log
+não avançou: se `logThrough` ainda é `null` ou seu `seq` é `<= since`, a
+resposta é só `{logThrough, unchanged: true}`, sem nenhuma outra seção. Se o
+log avançou, a resposta é a normal, cheia, e `unchanged` fica ausente —
+`since` não filtra `warnings` nem nenhuma outra seção por dentro da resposta
+cheia, só evita reconstruir uma resposta idêntica à anterior.
+
 ### `events`
 
 Lista os eventos do log de um processo, em dois modos:

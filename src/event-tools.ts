@@ -225,7 +225,12 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'not just `active`), so items that would push it past the cap come back without `data` and with ' +
         '`truncated: true` instead, and items that do not even fit that marker are dropped from `active` ' +
         'entirely. `activeTruncatedByBudget: true` marks that this cap (not the 100-item ' +
-        '`SECTION_ITEMS_CAP`) caused the cut; retry with `withData: false` to get the full list.',
+        '`SECTION_ITEMS_CAP`) caused the cut; retry with `withData: false` to get the full list. `since` ' +
+        '(a `seq`, same convention as `events`) skips reprojecting when the log has not advanced past it: ' +
+        'if `logThrough` is still `null` or its `seq` is `<= since`, the response is just ' +
+        '`{logThrough, unchanged: true}`, none of the other sections. When the log did advance, the ' +
+        'response is the normal full one and `unchanged` is absent — this does not filter `warnings` or ' +
+        'any other section by `since`, only short-circuits an unchanged log.',
       inputSchema: {
         project: Name,
         process: Name,
@@ -233,11 +238,12 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         withData: z.boolean().default(false),
         targetPrefix: Target.optional(),
         includeExtensionWarnings: z.boolean().default(false),
+        since: z.number().int().min(0).optional(),
       },
       outputSchema: {
         logThrough: Ref.nullable(),
-        now: Instant,
-        totals: z.record(z.string(), z.number().int()),
+        now: Instant.optional(),
+        totals: z.record(z.string(), z.number().int()).optional(),
         targets: z.array(z.string()).optional(),
         active: z
           .array(
@@ -284,6 +290,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
           .optional(),
         chain: ChainSchema.optional(),
         activeTruncatedByBudget: z.boolean().optional(),
+        unchanged: z.boolean().optional(),
       },
       annotations: {
         readOnlyHint: true,
@@ -292,7 +299,15 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, process, sections, withData, targetPrefix, includeExtensionWarnings }) =>
+    async ({
+      project,
+      process,
+      sections,
+      withData,
+      targetPrefix,
+      includeExtensionWarnings,
+      since,
+    }) =>
       execute(ctx, 'state', { project, process }, () =>
         resolveState(ctx, {
           project,
@@ -301,6 +316,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
           withData,
           targetPrefix,
           includeExtensionWarnings,
+          since,
         }),
       ),
   );
@@ -892,6 +908,7 @@ function resolveState(
     withData,
     targetPrefix,
     includeExtensionWarnings,
+    since,
   }: {
     project: string;
     process: string;
@@ -899,10 +916,15 @@ function resolveState(
     withData: boolean;
     targetPrefix?: string;
     includeExtensionWarnings: boolean;
+    since?: number;
   },
 ) {
   const loaded = loadProcess(ctx.dataDir, project, process);
   const built = buildState(loaded, readText(loaded.eventsFile), ctx.clock);
+  // #25: log não avançou desde `since` — pula LIST_SECTIONS.map/attachVerdictData/serialização.
+  if (isNotNil(since) && (isNil(built.logThrough) || built.logThrough.seq <= since)) {
+    return { logThrough: built.logThrough, unchanged: true };
+  }
   const state = isNil(targetPrefix) ? built : scopeToTargetPrefix(built, targetPrefix);
   const included = new Set(sections ?? ALL_SECTIONS);
 
