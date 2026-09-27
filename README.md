@@ -112,7 +112,7 @@ rode `node scripts/install.ts` de novo.
 | `register_gate` | Registra uma nova versão do critério de um gate custom | `gates/<gate>/<versão>.json` |
 | `create_process` | Cria um processo, fixando o snapshot atual de tipos/vocabulário/gates | `process.json` |
 | `register` | Registra um evento (Marco, Veredito ou tipo custom fixado) | `events.jsonl` |
-| `evaluate_gate` | Avalia um gate contra um alvo e grava o resultado como Marco de gate | `events.jsonl` |
+| `evaluate_gate` | Avalia até 20 gates em lote e grava cada resultado como Marco de gate | `events.jsonl` |
 | `state` | Projeta o Estado atual do processo (vigentes, conflitos, órfãos, avisos, cadeia) | — |
 | `events` | Lista os eventos do log, em ordem física ou por busca textual | — |
 | `chain` | Verifica a integridade da cadeia de hash do log | — |
@@ -211,12 +211,27 @@ No Veredito `trace` é obrigatório e entra normalmente na comparação.
 
 ### `evaluate_gate`
 
-Avalia um gate contra um `target` e grava o resultado como um Marco de gate.
-Gates **embutidos** (`no-orphans`, `no-conflicts`, `chain-intact`,
+Avalia até 20 gates numa única chamada (`gates: [{gate, target, result?}]`) e
+grava cada resultado como um Marco de gate, sob uma **única aquisição de
+lock** (Leva 5, #9): um só snapshot de Estado é lido no início da chamada, e
+todo gate embutido do lote compartilha o mesmo `evaluatedThrough`. Gates
+**embutidos** (`no-orphans`, `no-conflicts`, `chain-intact`,
 `no-invalid-references`, `no-forks`) são calculados pelo próprio servidor a
 partir do Estado do processo, e não aceitam `result` informado pelo agente.
 Gates **custom**, registrados via `register_gate` e fixados no processo,
 exigem `result: {passed, evidence}` do agente.
+
+Todos os gates do lote são validados **antes** de qualquer gravação: se
+qualquer um deles falhar a validação, a chamada inteira falha e nada é
+gravado — o lock nem chega a ser adquirido. Uma vez iniciada a escrita, um
+erro de disco genuíno ou um lock roubado (`LOCK_LOST`, token revalidado a
+cada item) deixa os Marcos já gravados persistidos — o log é append-only, sem
+rollback — e a chamada falha com um erro simples (`isError: true`, sem
+`results` no corpo); confira `events`/`state` depois para ver o que de fato
+foi gravado. A resposta traz `results[]`, um recibo
+`{seq, id, prevHash, passed, evidence, totalEvidenceItems}` por gate, na
+ordem enviada; `echo: true` (padrão `false`, mesmo parâmetro de `register`)
+devolve também o `event` completo em cada item.
 
 `no-forks` reprova quando um Veredito superado tem 2 ou mais sucessores vivos
 (2+ Vereditos que o citam em `supersedes` e não estão eles mesmos superados) —

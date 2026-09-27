@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import * as path from 'node:path';
 import { delay } from 'es-toolkit';
 import { isEmpty, isNil } from 'es-toolkit/compat';
-import { expectedPrevHash, isValidLink, nextSeq } from './chain.ts';
+import { expectedPrevHash, hashLine, isValidLink, nextSeq } from './chain.ts';
 import { HexlogError } from './errors.ts';
 import type { EventLine } from './events.ts';
 
@@ -26,7 +26,7 @@ const LOCK_ORPHAN_MS = 10_000;
 
 const HOLDER_FILE = 'holder';
 
-type Base = {
+export type Base = {
   seq: number;
   timestamp: string;
   prevHash: string;
@@ -75,6 +75,66 @@ export async function append(
 
     writeLine(file, context.endsWithNewline, line);
     return line;
+  } finally {
+    releaseLock(lockDir, token);
+  }
+}
+
+/**
+ * Anexa N elos ao log JSONL sob uma única aquisição de lock (Leva 5, #9) — mesma mecânica de
+ * `append`, mas `builds[i]` recebe a base encadeada a partir do elo escrito por `builds[i-1]`,
+ * sem reler o arquivo entre um item e outro (o lock exclusivo garante que nada mais escreve no
+ * meio). O 1º item usa o `endsWithNewline` real de `prepareContext` (corrige uma cauda rasgada
+ * pré-existente); os demais sempre usam `true`, porque depois que `writeLine` grava qualquer
+ * linha o arquivo sempre termina em `\n` — reusar o valor do 1º item faria os seguintes
+ * prefixarem um `\n` supérfluo. `readToken` é revalidado antes de cada escrita, não só uma vez no
+ * início, para pegar o lock sendo roubado no meio de um lote longo em disco degradado. Falha a
+ * meio do laço (erro de disco, `LOCK_LOST`) deixa os itens já escritos gravados: log append-only,
+ * sem rollback.
+ */
+export async function appendBatch(
+  file: string,
+  manifest: unknown,
+  builds: readonly ((base: Base) => EventLine)[],
+  options: { log: Logger; timeoutMs?: number; orphanMs?: number; clock?: () => Date },
+): Promise<EventLine[]> {
+  const {
+    log,
+    timeoutMs = LOCK_TIMEOUT_MS,
+    orphanMs = LOCK_ORPHAN_MS,
+    clock = () => new Date(),
+  } = options;
+  const lockDir = `${file}.lock`;
+  const token = await acquireLock(lockDir, { log, timeoutMs, orphanMs });
+
+  try {
+    const context = prepareContext(file, manifest, clock);
+    let base: Base = context;
+    let endsWithNewline = context.endsWithNewline;
+    const lines: EventLine[] = [];
+
+    for (const build of builds) {
+      const line = build(base);
+
+      if (readToken(lockDir) !== token) {
+        log({ level: 'error', event: 'lock-lost' });
+        throw new HexlogError('LOCK_LOST', 'lock lost before write');
+      }
+
+      writeLine(file, endsWithNewline, line);
+      lines.push(line);
+
+      endsWithNewline = true;
+      base = {
+        seq: line.seq + 1,
+        timestamp: base.timestamp,
+        prevHash: hashLine(line),
+        uuid: randomUUIDv7(),
+        lastLink: line,
+      };
+    }
+
+    return lines;
   } finally {
     releaseLock(lockDir, token);
   }

@@ -29,10 +29,10 @@ destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele
 | `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts:24` |
 | `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts:27-33` |
 | `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:474` |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:599` |
-| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:621` |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:476-481` |
+| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:499` |
+| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:624` |
+| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:646` |
+| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:501-506` |
 
 Notas adicionais:
 
@@ -91,10 +91,11 @@ Notas adicionais:
 
 4. evaluate_gate({
      project: "myproj", process: "onboarding",
-     gate: "no-orphans", agent: "setup-agent",
-     target: "hex:target:onboarding-1"
+     gates: [{ gate: "no-orphans", target: "hex:target:onboarding-1" }],
+     agent: "setup-agent"
    })
-   → { event: {...}, passed: true, evidence: [], totalEvidenceItems: 0 }
+   → { results: [{ seq: 1, id: "myproj:onboarding:milestone:<uuid v7>",
+       prevHash: "<sha256>", passed: true, evidence: [], totalEvidenceItems: 0 }] }
 ```
 
 `id` no passo 3 é um **prefixo** `{project}:{process}:{type}`: o servidor gera

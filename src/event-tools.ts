@@ -35,7 +35,7 @@ import {
   type BuiltinGateName,
   type EvaluationResult,
 } from './gates.ts';
-import { append, readText } from './log.ts';
+import { append, appendBatch, readText, type Base } from './log.ts';
 import {
   Agent,
   Hash,
@@ -121,36 +121,61 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
     {
       title: 'Evaluate gate',
       description:
-        'Evaluates a gate against `target` and writes the result as a gate Milestone. A builtin gate ' +
-        '(`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) does not accept ' +
-        "`result`: it is computed from the process's current State. A custom gate, fixed in the process, requires " +
-        "`result: {passed, evidence}`. The registered gate Milestone never opens nor closes the target's " +
-        'cycle: evaluating `no-orphans` over a due Milestone does not make that Milestone stop appearing in ' +
-        '`state.orphans`.',
+        'Evaluates up to 20 gates in one call and writes each result as a gate Milestone, all under a single ' +
+        'lock acquisition: one `state` snapshot for the whole batch, so every builtin gate in it shares the same ' +
+        '`evaluatedThrough`. A builtin gate (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, ' +
+        "`no-forks`) does not accept `result`: it is computed from the process's current State. A custom gate, " +
+        'fixed in the process, requires `result: {passed, evidence}`. Every gate in `gates` is validated before ' +
+        'anything is written: if any one of them fails validation, the whole call fails and nothing is recorded. ' +
+        'Once writing starts, a genuine disk error or a stolen lock (`LOCK_LOST`) leaves the Milestones written so ' +
+        'far persisted — the log is append-only, there is no rollback — and fails the call with a simple error; ' +
+        'check `events`/`state` afterward to see what was actually recorded. Returns `results[]`, one receipt ' +
+        '`{seq, id, prevHash, passed, evidence, totalEvidenceItems}` per gate, in the order given; pass ' +
+        '`echo: true` to also get the full `event` in each item. The registered gate Milestone never opens nor ' +
+        "closes the target's cycle: evaluating `no-orphans` over a due Milestone does not make that Milestone " +
+        'stop appearing in `state.orphans`.',
       inputSchema: {
         project: Name,
         process: Name,
-        gate: Name,
+        gates: z
+          .array(
+            z.object({
+              gate: Name,
+              target: Target,
+              result: z
+                .object({
+                  passed: z.boolean(),
+                  evidence: z.union([
+                    z.string().min(1).max(EVIDENCE_ITEM_MAX_CHARS),
+                    z
+                      .array(z.string().min(1).max(EVIDENCE_ITEM_MAX_CHARS))
+                      .min(1)
+                      .max(CUSTOM_EVIDENCE_MAX),
+                  ]),
+                })
+                .optional(),
+            }),
+          )
+          .min(1)
+          .max(20),
         agent: Agent,
-        target: Target,
-        result: z
-          .object({
-            passed: z.boolean(),
-            evidence: z.union([
-              z.string().min(1).max(EVIDENCE_ITEM_MAX_CHARS),
-              z
-                .array(z.string().min(1).max(EVIDENCE_ITEM_MAX_CHARS))
-                .min(1)
-                .max(CUSTOM_EVIDENCE_MAX),
-            ]),
-          })
-          .optional(),
+        echo: z.boolean().default(false),
       },
       outputSchema: {
-        event: EventLine,
-        passed: z.boolean(),
-        evidence: z.array(z.unknown()),
-        totalEvidenceItems: z.number().int(),
+        results: z
+          .array(
+            z.object({
+              seq: z.number().int().min(0),
+              id: z.string(),
+              prevHash: Hash,
+              passed: z.boolean(),
+              evidence: z.array(z.unknown()),
+              totalEvidenceItems: z.number().int(),
+              event: EventLine.optional(),
+            }),
+          )
+          .min(1)
+          .max(20),
       },
       annotations: {
         readOnlyHint: false,
@@ -159,9 +184,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, process, gate, agent, target, result }) =>
+    async ({ project, process, gates, agent, echo }) =>
       execute(ctx, 'evaluate_gate', { project, process }, () =>
-        evaluateGate(ctx, { project, process, gate, agent, target, result }),
+        evaluateGate(ctx, { project, process, gates, agent, echo }),
       ),
   );
 
@@ -635,44 +660,75 @@ type GateResolution =
       result: { passed: boolean; evidence: string | string[] };
     };
 
+type GateBatchItem = {
+  gate: string;
+  target: string;
+  result?: { passed: boolean; evidence: string | string[] };
+};
+
+type GateReceipt = {
+  seq: number;
+  id: string;
+  prevHash: string;
+  passed: boolean;
+  evidence: unknown[];
+  totalEvidenceItems: number;
+  event?: EventLine;
+};
+
+/** Recibo `{seq, id, prevHash, passed, evidence, totalEvidenceItems}` de `line`; inclui `event` completo só quando `echo` é `true`. */
+function toGateReceipt(
+  line: EventLine,
+  evaluationResult: EvaluationResult,
+  echo: boolean,
+): GateReceipt {
+  const receipt = {
+    seq: line.seq,
+    id: line.id,
+    prevHash: line.prevHash,
+    ...omit(evaluationResult, ['evaluatedThrough']),
+  };
+  return echo ? { ...receipt, event: line } : receipt;
+}
+
 async function evaluateGate(
   ctx: Context,
-  args: {
-    project: string;
-    process: string;
-    gate: string;
-    agent: string;
-    target: string;
-    result?: { passed: boolean; evidence: string | string[] };
-  },
-): Promise<{ event: EventLine; passed: boolean; evidence: unknown[]; totalEvidenceItems: number }> {
-  const { project, process, gate, agent, target, result } = args;
+  args: { project: string; process: string; gates: GateBatchItem[]; agent: string; echo: boolean },
+): Promise<{ results: GateReceipt[] }> {
+  const { project, process, gates, agent, echo } = args;
   const loaded = loadProcess(ctx.dataDir, project, process);
-  const resolution = resolveGate(gate, result, loaded.manifest.fixed.gates);
+  // Um único snapshot de State pro lote inteiro: todo gate embutido da mesma chamada compartilha
+  // o mesmo `evaluatedThrough` (§Leva 5).
   const state = buildState(loaded, readText(loaded.eventsFile), ctx.clock);
 
-  const { evaluationResult, criteria } =
-    resolution.origin === 'builtin'
-      ? {
-          evaluationResult: evaluateBuiltin(resolution.name, state),
-          criteria: BUILTIN_GATES[resolution.name].criteria,
-        }
-      : {
-          evaluationResult: evaluateCustomGate(resolution.result, state.logThrough),
-          criteria: resolution.criteria,
-        };
-
-  const data = buildGateMilestoneData({
-    name: gate,
-    origin: resolution.origin,
-    criteria,
-    target,
-    result: evaluationResult,
+  // Resolve e avalia todos os N gates antes de gravar (sem efeito colateral): qualquer erro aqui
+  // propaga sem que o lock chegue a ser adquirido — tudo-ou-nada na validação.
+  const evaluations = gates.map(({ gate, target, result }) => {
+    const resolution = resolveGate(gate, result, loaded.manifest.fixed.gates);
+    const { evaluationResult, criteria } =
+      resolution.origin === 'builtin'
+        ? {
+            evaluationResult: evaluateBuiltin(resolution.name, state),
+            criteria: BUILTIN_GATES[resolution.name].criteria,
+          }
+        : {
+            evaluationResult: evaluateCustomGate(resolution.result, state.logThrough),
+            criteria: resolution.criteria,
+          };
+    const data = buildGateMilestoneData({
+      name: gate,
+      origin: resolution.origin,
+      criteria,
+      target,
+      result: evaluationResult,
+    });
+    return { evaluationResult, data };
   });
-  const line = await append(
+
+  const lines = await appendBatch(
     loaded.eventsFile,
     loaded.manifest,
-    (base) => ({
+    evaluations.map(({ data }) => (base: Base): EventLine => ({
       seq: base.seq,
       id: `${project}:${process}:milestone:${base.uuid}`,
       type: 'milestone',
@@ -680,11 +736,15 @@ async function evaluateGate(
       agent,
       prevHash: base.prevHash,
       data,
-    }),
+    })),
     { log: ctx.log, clock: ctx.clock },
   );
 
-  return { event: line, ...omit(evaluationResult, ['evaluatedThrough']) };
+  return {
+    results: lines.map((line, index) =>
+      toGateReceipt(line, evaluations[index].evaluationResult, echo),
+    ),
+  };
 }
 
 /** §4.11: decide builtin × custom e valida a presença/ausência de `result`, antes de avaliar. */
