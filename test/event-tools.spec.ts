@@ -1427,6 +1427,26 @@ describe('N4', () => {
       expect.arrayContaining([expect.objectContaining({ code: 'UNKNOWN_VOCABULARY' })]),
     );
   });
+
+  test('Leva 13 (N1): aviso UNKNOWN_VOCABULARY inclui details.allowed com os termos aceitos', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ result: 'unknown' }),
+    });
+    const body = result.structuredContent as {
+      warnings: { code: string; details: unknown }[];
+    };
+    const warning = body.warnings.find((w) => w.code === 'UNKNOWN_VOCABULARY');
+    expect(warning?.details).toMatchObject({
+      field: 'result',
+      value: 'unknown',
+      allowed: expect.arrayContaining(['ok']),
+    });
+  });
 });
 
 describe('N5', () => {

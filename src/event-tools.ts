@@ -711,7 +711,7 @@ function unknownResultWarning(
     {
       code: 'UNKNOWN_VOCABULARY',
       message: `result '${result}' is outside the known vocabulary`,
-      details: { field: 'result', value: result },
+      details: { field: 'result', value: result, allowed: allowedTerms(vocabulary, 'result') },
     },
   ];
 }

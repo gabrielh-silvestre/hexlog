@@ -379,6 +379,24 @@ describe('list', () => {
     );
   });
 
+  test('Leva 13 (#27): type verdict/milestone sem process → INVALID_INPUT aponta list/README, não o requires_process genérico', async () => {
+    const body = expectError(
+      await environment.call('list', { project: 'p1', type: 'verdict' }),
+      'INVALID_INPUT',
+    );
+    expect(body.message).toMatch(/list\(\{project, process\}\)/);
+    expect(body.message).not.toBe('type requires process');
+  });
+
+  test('Leva 13 (#27): type verdict/milestone com process → TYPE_NOT_FOUND aponta list/README, não a mensagem genérica', async () => {
+    await prepareProcess(environment, 'p1', 'proc1');
+    const body = expectError(
+      await environment.call('list', { project: 'p1', process: 'proc1', type: 'milestone' }),
+      'TYPE_NOT_FOUND',
+    );
+    expect(body.message).toMatch(/list\(\{project, process\}\)/);
+  });
+
   test('ignora diretórios reservados e diretórios de processo sem manifesto', async () => {
     await prepareProcess(environment, 'p1', 'proc1');
     fs.mkdirSync(path.join(environment.dir, 'p1', 'process-without-manifest'));

@@ -12,6 +12,7 @@ import {
   registerType,
   registerVocabulary,
   FixedVersions,
+  RESERVED_TYPE_NAMES,
 } from './definitions.ts';
 import { HexlogError } from './errors.ts';
 import { listBuiltinGates, CRITERIA_MAX_CHARS } from './gates.ts';
@@ -254,6 +255,19 @@ function hashSchema(schema: object): string {
   return sha256hex(canonicalize(schema) ?? '');
 }
 
+/** #27: `verdict`/`milestone` nunca são um tipo custom fixável via `register_type`. */
+function isReservedTypeName(type: string): boolean {
+  return (RESERVED_TYPE_NAMES as readonly string[]).includes(type);
+}
+
+/** #27: mensagem que aponta o caminho certo (vocabulário fixo ou campos do Verdict/Milestone) em vez do erro genérico de tipo custom. */
+function reservedTypeMessage(type: string): string {
+  return (
+    `'${type}' is a built-in domain kind, not a registrable custom type; ` +
+    'see list({project, process}) for the fixed vocabulary or the Verdict/Milestone fields in the README'
+  );
+}
+
 /** Lógica dos 4 níveis de `list` (§4.12): projects → project → process → type. */
 function resolveList(
   ctx: Context,
@@ -269,6 +283,11 @@ function resolveList(
     ]);
   }
   if (isNil(process) && isNotNil(type)) {
+    if (isReservedTypeName(type)) {
+      throw new HexlogError('INVALID_INPUT', reservedTypeMessage(type), [
+        { path: '/type', code: 'reserved_type_name', message: reservedTypeMessage(type) },
+      ]);
+    }
     throw new HexlogError('INVALID_INPUT', 'type requires process', [
       { path: '/type', code: 'requires_process', message: 'type given without process' },
     ]);
@@ -315,6 +334,9 @@ function resolveList(
 
   const schema = loaded.manifest.fixed.types[type];
   if (isNil(schema)) {
+    if (isReservedTypeName(type)) {
+      throw new HexlogError('TYPE_NOT_FOUND', reservedTypeMessage(type));
+    }
     throw new HexlogError('TYPE_NOT_FOUND', `type '${type}' is not fixed in process '${process}'`);
   }
   return { builtinGates, type: { name: type, hash: hashSchema(schema), schema } };

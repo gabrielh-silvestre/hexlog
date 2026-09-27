@@ -21,6 +21,17 @@ diagnóstico de saúde — não a instalação; isso é do `README.md` do repo h
 Chame `register_vocabulary` pelo menos uma vez, com qualquer `owner` — o que
 destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele.
 
+**Nomeie `process` de release por escopo, não por versão.** `create_process`
+(passo 3) é imutável — para um fluxo de release cuja versão só se decide na
+entrega, nomear o `process` pela versão ainda não fechada (ex.: "release
+0.0.2") deixa um processo órfão assim que a versão real diverge; prefira
+nomear pelo escopo/feature (ex.: "release hextelemetry").
+
+**hexlog + ralplan.** Ao configurar hexlog num projeto que já roda ralplan,
+escreva no `CLAUDE.md` desse projeto a regra "cada iteração do ralplan entra
+no hexlog assim que acontece" — antes de disparar as iterações, não depois
+que o usuário notar a lacuna.
+
 ## Armadilhas
 
 | Situação | Resultado | Onde |
