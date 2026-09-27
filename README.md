@@ -471,6 +471,24 @@ npm run typecheck # tsc --noEmit
 npm run build     # esbuild, gera os bundles .mjs (equivalente ao passo 1 do instalador)
 ```
 
+### `scripts/export.ts` (Leva 8, #20)
+
+CLI read-only, sem tool MCP correspondente, no mesmo molde de
+`scripts/insights.ts`: roda direto com `node`, lê `XDG_DATA_HOME` como as
+tools, e não recebe o caminho do diretório de dados na linha de comando.
+
+```sh
+node scripts/export.ts <project>/<process> [--fields a,b,c]
+```
+
+Imprime em stdout uma linha JSON por evento válido do processo, na ordem
+física do arquivo (JSONL). Sem `--fields`, a saída é idêntica ao
+`events.jsonl` do processo (linhas inválidas ficam de fora). Com `--fields`,
+cada linha só traz as chaves pedidas — mesmas chaves de topo aceitas pela
+tool `events` (`seq`, `id`, `type`, `timestamp`, `agent`, `prevHash`,
+`data`). Processo inexistente ou campo desconhecido em `--fields` termina
+com mensagem clara em `stderr` e código de saída diferente de zero.
+
 O jest testa o `.ts` fonte; os testes de ponta a ponta sobem o servidor a
 partir do bundle já construído (`.mjs`), para cobrir o artefato que as
 sessões de fato executam. Os testes do instalador substituem as execuções
