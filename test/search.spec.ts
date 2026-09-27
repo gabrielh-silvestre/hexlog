@@ -252,6 +252,18 @@ describe('isCandidate', () => {
     expect(isCandidate(line, { before: '2026-01-05T00:00:00.000Z' })).toBe(false);
     expect(isCandidate(line, { before: '2026-01-05T00:00:00.001Z' })).toBe(true);
   });
+
+  test('targetPrefix (Leva 4): casa a subárvore na fronteira de ".", ignora quando ausente', () => {
+    const task2 = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:task-2' } });
+    const task2Sub = baseLine({
+      data: { milestoneType: 'approved', target: 'hex:target:task-2.sub' },
+    });
+    const task20 = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:task-20' } });
+    expect(isCandidate(task2, { targetPrefix: 'hex:target:task-2' })).toBe(true);
+    expect(isCandidate(task2Sub, { targetPrefix: 'hex:target:task-2' })).toBe(true);
+    expect(isCandidate(task20, { targetPrefix: 'hex:target:task-2' })).toBe(false);
+    expect(isCandidate(task20, {})).toBe(true);
+  });
 });
 
 describe('search: ordenação, desempate e fallback OR', () => {

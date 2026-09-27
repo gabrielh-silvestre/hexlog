@@ -234,14 +234,22 @@ O Marco de gate registrado **não abre nem fecha o ciclo** do alvo: avaliar
 Projeta o Estado atual do processo: Vereditos vigentes e em conflito, Marcos
 órfãos (com `dueAt` vencido e sem evento posterior no mesmo alvo),
 eventos a revisar, referências inválidas (`supersedes` apontando para um Veredito
-inexistente), avisos de vocabulário, Vereditos com fork (`no-forks`, ver acima)
-e a cadeia de hash. O parâmetro `sections` filtra o que volta na resposta; sem
-ele, todas as seções voltam. Cada lista é cortada em 100 itens, e `totals` traz
-o tamanho real de cada uma.
+inexistente), avisos de vocabulário, Vereditos com fork (`no-forks`, ver acima),
+todo `target` que algum Veredito já usou (inclusive os totalmente superados) e
+a cadeia de hash. O parâmetro `sections` filtra o que volta na resposta —
+`targets` é uma seção como as outras, então some se não estiver na lista; sem
+`sections`, todas as seções voltam. Cada lista é cortada em 100 itens, e
+`totals` traz o tamanho real de cada uma.
 
-`targets` sempre volta na resposta, independente de `sections`: todo `target`
-que algum Veredito já usou, inclusive os totalmente superados (sem nenhum
-Veredito vigente). Com `withData: true` (padrão `false`), cada item de status
+`targetPrefix` (Leva 4, #10/#13/#14) restringe `active`, `conflicts` e
+`targets` ao endereço `hex:target:...` informado ou à sua subárvore, casando
+na fronteira de `.`: `hex:target:a.b` casa `hex:target:a.b` e
+`hex:target:a.b.c`, mas não `hex:target:a.bc`. Quando informado, `totals`
+dessas três seções passa a contar só os itens que casaram, antes do corte de
+100 itens — as demais seções (`orphans`, `toReview`, `invalidReferences`,
+`warnings`, `forks`) não são afetadas por esse filtro.
+
+Com `withData: true` (padrão `false`), cada item de status
 `active` em `active` ganha o `data` do Veredito vigente; itens de status
 `conflict` (sem um vigente único) não ganham `data`. O teto de
 `PAGE_CHARS_CAP = 24_000` caracteres é medido contra a resposta inteira
@@ -267,12 +275,14 @@ Lista os eventos do log de um processo, em dois modos:
 
 Os dois modos aceitam os mesmos filtros por igualdade exata, combináveis com
 `search` ou usados sozinhos: `type`, `target` (compara com `data.target`, campo
-comum a Marco e Veredito), `milestoneType`, `result` e o intervalo
-`[after, before)` de `timestamp`.
+comum a Marco e Veredito), `targetPrefix` (Leva 4, #10/#13/#14 — mesma
+subárvore de `data.target` que `state`, casando na fronteira de `.`:
+`hex:target:a.b` casa `hex:target:a.b.c`, não `hex:target:a.bc`),
+`milestoneType`, `result` e o intervalo `[after, before)` de `timestamp`.
 
 **A busca textual não encontra endereços `hex:target:<id>` nem ids de evento.**
-Para filtrar por endereço, use o parâmetro `target` — não existe filtro por id
-de evento.
+Para filtrar por endereço, use o parâmetro `target` ou `targetPrefix` — não
+existe filtro por id de evento.
 
 `until` congela o prefixo do arquivo considerado (só as linhas físicas de
 índice menor que `until`); sem informar, a chamada usa todas as linhas do

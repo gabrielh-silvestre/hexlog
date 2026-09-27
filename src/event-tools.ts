@@ -6,7 +6,15 @@ import { search as runSearch, isCandidate, SEARCH_MAX_CHARS, type Filters } from
 import { isValidLink, verifyChain, type Chain } from './chain.ts';
 import { loadProcess, type LoadedProcess } from './definitions.ts';
 import { issueDetails, HexlogError, type Detail } from './errors.ts';
-import { parseId, Target, dataSchema, EventLine, normalizeData, Label } from './events.ts';
+import {
+  parseId,
+  Target,
+  dataSchema,
+  EventLine,
+  normalizeData,
+  Label,
+  matchesTargetPrefix,
+} from './events.ts';
 import {
   allowedTerms,
   effectiveNow,
@@ -57,6 +65,7 @@ const LIST_SECTIONS = [
   'invalidReferences',
   'warnings',
   'forks',
+  'targets',
 ] as const;
 const ALL_SECTIONS: SectionName[] = [...LIST_SECTIONS, 'chain'];
 
@@ -163,10 +172,13 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
       description:
         "Projects the process's current State: active/conflicting Verdicts, orphan Milestones, events to " +
         'review, invalid references, vocabulary warnings, forked Verdicts (2+ active successors of the same ' +
-        'superseded Verdict) and the hash chain. `sections` filters what comes back in the response; if ' +
-        'omitted, all of them come back. Each list is capped at 100 items and `totals` carries the real size ' +
-        'of each one. `targets` always comes back: every target a Verdict has ever used, including ones fully ' +
-        'superseded. `withData` (default `false`) adds the winning Verdict’s `data` to each `active`-status ' +
+        'superseded Verdict), every target a Verdict has ever used (including ones fully superseded) and the ' +
+        'hash chain. `sections` filters what comes back in the response; if omitted, all of them come back. ' +
+        'Each list is capped at 100 items and `totals` carries the real size of each one. `targetPrefix` ' +
+        'restricts `active`, `conflicts` and `targets` to the given `hex:target:...` address or its subtree ' +
+        '(`hex:target:a.b` matches `hex:target:a.b` and `hex:target:a.b.c`, not `hex:target:a.bc`); when ' +
+        'informed, `totals` for those three sections counts only the matching items, before the 100-item cap. ' +
+        '`withData` (default `false`) adds the winning Verdict’s `data` to each `active`-status ' +
         'item in `active`; the 24,000-character cap is measured against the whole response (all sections, ' +
         'not just `active`), so items that would push it past the cap come back without `data` and with ' +
         '`truncated: true` instead, and items that do not even fit that marker are dropped from `active` ' +
@@ -177,12 +189,13 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         process: Name,
         sections: z.array(Section).min(1).optional(),
         withData: z.boolean().default(false),
+        targetPrefix: Target.optional(),
       },
       outputSchema: {
         logThrough: Ref.nullable(),
         now: Instant,
         totals: z.record(z.string(), z.number().int()),
-        targets: z.array(z.string()),
+        targets: z.array(z.string()).optional(),
         active: z
           .array(
             z.object({
@@ -236,9 +249,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         openWorldHint: false,
       },
     },
-    async ({ project, process, sections, withData }) =>
+    async ({ project, process, sections, withData, targetPrefix }) =>
       execute(ctx, 'state', { project, process }, () =>
-        resolveState(ctx, { project, process, sections, withData }),
+        resolveState(ctx, { project, process, sections, withData, targetPrefix }),
       ),
   );
 
@@ -251,9 +264,11 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'index `since` (raw mode). With `search` (2 to 200 characters): a text index built during this call, ' +
         'over the candidates only, ordered by decreasing relevance (search mode); `combination` reports ' +
         'whether the query matched in `AND` or fell back to `OR`. Exact-equality filters, combinable with ' +
-        '`search` or alone: `type`, `target` (`data.target`), `milestoneType`, `result` and the ' +
-        '`[after, before)` range of `timestamp`. Text search **does not find** `hex:target:<id>` addresses ' +
-        'nor event ids; for an address, use the `target` filter (there is no filter by event id). A page fits ' +
+        '`search` or alone: `type`, `target` (`data.target`), `targetPrefix` (`data.target` subtree, same ' +
+        'dot-boundary semantics as `state`: `hex:target:a.b` matches `hex:target:a.b.c`, not ' +
+        '`hex:target:a.bc`), `milestoneType`, `result` and the `[after, before)` range of `timestamp`. Text ' +
+        'search **does not find** `hex:target:<id>` addresses nor event ids; for an address, use the `target` ' +
+        'or `targetPrefix` filter (there is no filter by event id). A page fits ' +
         '`limit` events and the 24,000-character cap, except the first event of the page, which always gets ' +
         'in even alone above the cap. `until` freezes the prefix of the file considered (physical lines with ' +
         'index < `until`); if omitted, the call uses all lines as of that moment and returns that number in ' +
@@ -270,6 +285,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         type: Name.optional(),
         search: z.string().trim().min(2).max(SEARCH_MAX_CHARS).optional(),
         target: Target.optional(),
+        targetPrefix: Target.optional(),
         milestoneType: Label.optional(),
         result: Label.optional(),
         after: Instant.optional(),
@@ -299,6 +315,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
       type,
       search,
       target,
+      targetPrefix,
       milestoneType,
       result,
       after,
@@ -319,6 +336,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
             type,
             search,
             target,
+            targetPrefix,
             milestoneType,
             result,
             after,
@@ -716,6 +734,19 @@ function evaluateCustomGate(
 
 // ---- state ----
 
+/** #10/#14: restringe `active`/`conflicts`/`targets` à subárvore de `targetPrefix`; as demais seções não são afetadas por esse filtro. */
+function scopeToTargetPrefix<S extends Pick<State, 'active' | 'conflicts' | 'targets'>>(
+  state: S,
+  targetPrefix: string,
+): S {
+  return {
+    ...state,
+    active: state.active.filter((item) => matchesTargetPrefix(item.target, targetPrefix)),
+    conflicts: state.conflicts.filter((item) => matchesTargetPrefix(item.target, targetPrefix)),
+    targets: state.targets.filter((target) => matchesTargetPrefix(target, targetPrefix)),
+  };
+}
+
 function resolveState(
   ctx: Context,
   {
@@ -723,12 +754,22 @@ function resolveState(
     process,
     sections,
     withData,
-  }: { project: string; process: string; sections?: SectionName[]; withData: boolean },
+    targetPrefix,
+  }: {
+    project: string;
+    process: string;
+    sections?: SectionName[];
+    withData: boolean;
+    targetPrefix?: string;
+  },
 ) {
   const loaded = loadProcess(ctx.dataDir, project, process);
-  const state = buildState(loaded, readText(loaded.eventsFile), ctx.clock);
+  const built = buildState(loaded, readText(loaded.eventsFile), ctx.clock);
+  const state = isNil(targetPrefix) ? built : scopeToTargetPrefix(built, targetPrefix);
   const included = new Set(sections ?? ALL_SECTIONS);
 
+  // #10/#13: `targets` agora é uma seção comum de LIST_SECTIONS — totals já reflete o pós-filtro
+  // de targetPrefix (feito acima, antes do cap) para as três seções que ele restringe.
   const totals = Object.fromEntries(
     LIST_SECTIONS.map((section) => [section, state[section].length]),
   );
@@ -743,8 +784,7 @@ function resolveState(
   const response = {
     logThrough: state.logThrough,
     now: state.now,
-    totals: { ...totals, targets: state.targets.length },
-    targets: state.targets.slice(0, SECTION_ITEMS_CAP),
+    totals,
     ...lists,
     ...(included.has('chain') ? { chain: state.chain } : {}),
   };
@@ -829,6 +869,7 @@ type EventsArgs = {
   type?: string;
   search?: string;
   target?: string;
+  targetPrefix?: string;
   milestoneType?: string;
   result?: string;
   after?: string;
@@ -840,8 +881,19 @@ function resolveEvents(
   ctx: Context,
   args: EventsArgs,
 ): { output: EventsOutput; extra: Record<string, unknown> } {
-  const { project, process, since, limit, type, search, target, milestoneType, result, until } =
-    args;
+  const {
+    project,
+    process,
+    since,
+    limit,
+    type,
+    search,
+    target,
+    targetPrefix,
+    milestoneType,
+    result,
+    until,
+  } = args;
   const loaded = loadProcess(ctx.dataDir, project, process);
 
   validateFilterMilestoneType(milestoneType, loaded.manifest.fixed.vocabulary);
@@ -853,7 +905,7 @@ function resolveEvents(
   validateUntil(until, physicalLines.length);
   const untilLimit = until ?? physicalLines.length;
 
-  const filters: Filters = { type, target, milestoneType, result, after, before };
+  const filters: Filters = { type, target, targetPrefix, milestoneType, result, after, before };
 
   return isNil(search)
     ? resolveRawMode(physicalLines, untilLimit, since, limit, filters)

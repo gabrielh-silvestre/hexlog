@@ -29,10 +29,10 @@ destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele
 | `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts:24` |
 | `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts:27-33` |
 | `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:456` |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:581` |
-| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:603` |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:458-463` |
+| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:474` |
+| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:599` |
+| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:621` |
+| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:476-481` |
 
 Notas adicionais:
 
@@ -55,9 +55,11 @@ Notas adicionais:
   congelou) surpreender, chame `list({project, process})`: devolve o
   vocabulário e os gates fixados por inteiro, não só o hash.
 - `state` aceita `withData: true` para trazer o `data` do Verdict vigente
-  junto de cada item de `active`, e sempre devolve `targets` (todo target de
-  Verdict já usado, mesmo os totalmente superados) — sem precisar de um
-  `events` à parte para achar o vigente de um target.
+  junto de cada item de `active`, e devolve `targets` (todo target de
+  Verdict já usado, mesmo os totalmente superados) salvo quando `sections` o
+  exclui — sem precisar de um `events` à parte para achar o vigente de um
+  target. `targetPrefix` restringe `active`/`conflicts`/`targets` a uma
+  subárvore de endereço (fronteira em `.`), em `state` e em `events`.
 - Milestone aceita `trace` (opcional) como os demais eventos, mas ele é
   ignorado na comparação de retentativa idempotente: reenviar o mesmo id
   completo com `trace` diferente ainda deduplica.

@@ -1,7 +1,7 @@
 import { isNil, isString, orderBy, round } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import MiniSearch from 'minisearch';
-import { FULL_ID_RE, type EventLine } from './events.ts';
+import { FULL_ID_RE, matchesTargetPrefix, type EventLine } from './events.ts';
 
 /** Teto de caracteres do parâmetro `search` de `events` (§4.16): abaixo de 2, `prefix` casaria quase tudo. */
 export const SEARCH_MAX_CHARS = 200;
@@ -91,6 +91,7 @@ function collectStrings(value: unknown, parts: string[]): void {
 export type Filters = {
   type?: string;
   target?: string;
+  targetPrefix?: string;
   milestoneType?: string;
   result?: string;
   after?: string;
@@ -101,6 +102,8 @@ export type Filters = {
 export function isCandidate(line: EventLine, filters: Filters): boolean {
   if (!isNil(filters.type) && line.type !== filters.type) return false;
   if (!isNil(filters.target) && !matchesTarget(line, filters.target)) return false;
+  if (!isNil(filters.targetPrefix) && !matchesTargetPrefixFilter(line, filters.targetPrefix))
+    return false;
   if (!isNil(filters.milestoneType) && !matchesMilestoneType(line, filters.milestoneType))
     return false;
   if (!isNil(filters.result) && !matchesResult(line, filters.result)) return false;
@@ -111,6 +114,11 @@ export function isCandidate(line: EventLine, filters: Filters): boolean {
 
 function matchesTarget(line: EventLine, target: string): boolean {
   return (line.data as { target?: string }).target === target;
+}
+
+function matchesTargetPrefixFilter(line: EventLine, prefix: string): boolean {
+  const target = (line.data as { target?: string }).target;
+  return !isNil(target) && matchesTargetPrefix(target, prefix);
 }
 
 function matchesMilestoneType(line: EventLine, milestoneType: string): boolean {

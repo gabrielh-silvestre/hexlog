@@ -59,6 +59,7 @@ export const Section = z.enum([
   'invalidReferences',
   'warnings',
   'forks',
+  'targets',
   'chain',
 ]);
 

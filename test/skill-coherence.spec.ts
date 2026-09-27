@@ -241,6 +241,11 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'active',
   'targets',
   'trace',
+  // Leva 4 (#10/#13/#14): `sections`/`conflicts` (campos de `state`) e `targetPrefix`
+  // (campo novo de `state`/`events`), não funções nem tools.
+  'sections',
+  'conflicts',
+  'targetPrefix',
 ]);
 
 /**
@@ -255,10 +260,10 @@ const CITATION_EXPECTATIONS: Record<string, string> = {
   'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
   'definitions.ts:24': 'RESERVED_TYPE_NAMES',
   'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
-  'event-tools.ts:456': 'TYPE_NOT_PINNED',
-  'event-tools.ts:581': 'VOCABULARY_VIOLATED',
-  'event-tools.ts:603': 'UNKNOWN_VOCABULARY',
-  'event-tools.ts:458-463': 'RESERVED_FIELD',
+  'event-tools.ts:474': 'TYPE_NOT_PINNED',
+  'event-tools.ts:599': 'VOCABULARY_VIOLATED',
+  'event-tools.ts:621': 'UNKNOWN_VOCABULARY',
+  'event-tools.ts:476-481': 'RESERVED_FIELD',
   'installation.ts:74': 'verifyPreparedArtifact',
   'installation.ts:239': 'verifyPreparedArtifact',
 };

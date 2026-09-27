@@ -571,6 +571,90 @@ describe('P4', () => {
   });
 });
 
+describe('Leva 4 — targetPrefix (#10, #13, #14)', () => {
+  async function registerVerdict(target: string, claim: string): Promise<void> {
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim, target }),
+    });
+    expect(result.isError).not.toBe(true);
+  }
+
+  test('targetPrefix filtra active/conflicts/targets na fronteira de "." (não casa task-20) e totals reflete o pós-filtro', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerVerdict('hex:target:task-2', 'a'); // único candidato → active
+    await registerVerdict('hex:target:task-2.sub', 'b'); // duas ocorrências → conflict
+    await registerVerdict('hex:target:task-2.sub', 'b');
+    await registerVerdict('hex:target:task-20', 'c');
+    await registerVerdict('hex:target:other', 'd');
+
+    const filtered = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      targetPrefix: 'hex:target:task-2',
+    });
+    const filteredBody = filtered.structuredContent as {
+      active: { target: string }[];
+      conflicts: { target: string }[];
+      targets: string[];
+      totals: Record<string, number>;
+    };
+    expect(filteredBody.targets.sort()).toEqual(['hex:target:task-2', 'hex:target:task-2.sub']);
+    expect(filteredBody.active.map((item) => item.target).sort()).toEqual([
+      'hex:target:task-2',
+      'hex:target:task-2.sub',
+    ]);
+    expect(filteredBody.conflicts).toEqual([
+      expect.objectContaining({ target: 'hex:target:task-2.sub' }),
+    ]);
+    expect(filteredBody.totals).toMatchObject({ active: 2, conflicts: 1, targets: 2 });
+
+    const unfiltered = await environment.call('state', { project: PROJ, process: PROC });
+    const unfilteredBody = unfiltered.structuredContent as { totals: Record<string, number> };
+    expect(unfilteredBody.totals).toMatchObject({ active: 4, conflicts: 1, targets: 4 });
+  });
+
+  test('sections sem "targets" → targets ausente da resposta; totals.targets sempre presente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerVerdict('hex:target:u1', 'a');
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+    });
+    const body = result.structuredContent as { targets?: string[]; totals: Record<string, number> };
+    expect(body.targets).toBeUndefined();
+    expect(body.totals.targets).toBe(1);
+  });
+
+  test('events com targetPrefix "hex:target:task-2" → traz task-2 e task-2.sub, não task-20', async () => {
+    await prepare(environment, PROJ, PROC);
+    for (const target of ['hex:target:task-2', 'hex:target:task-2.sub', 'hex:target:task-20']) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: MILESTONE_PREFIX,
+        agent: AGENT,
+        data: milestoneData({ target }),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      targetPrefix: 'hex:target:task-2',
+    });
+    const body = result.structuredContent as { events: EventLine[] };
+    const targets = body.events.map((event) => (event.data as { target?: string }).target).sort();
+    expect(targets).toEqual(['hex:target:task-2', 'hex:target:task-2.sub']);
+  });
+});
+
 describe('M9', () => {
   test('annotations das 5 tools de eventos batem com §4.12', async () => {
     const { tools } = await environment.client.listTools();
