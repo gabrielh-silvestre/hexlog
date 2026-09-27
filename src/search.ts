@@ -186,6 +186,8 @@ export function search(
   if (isEmpty(raw) && distinctTerms(query) >= 2) {
     raw = engine.search(query, { combineWith: 'OR' });
     combination = 'OR';
+    const floor = Math.ceil(distinctTerms(query) / 2);
+    raw = raw.filter((r) => new Set(r.queryTerms).size >= floor);
   }
 
   const results = raw.map((r) => ({ index: r.id as number, relevance: round(r.score, 4) }));

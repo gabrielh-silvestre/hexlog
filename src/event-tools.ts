@@ -308,7 +308,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'Lists the events in a process log. Without `search`: physical order, starting from the physical ' +
         'index `since` (raw mode). With `search` (2 to 200 characters): a text index built during this call, ' +
         'over the candidates only, ordered by decreasing relevance (search mode); `combination` reports ' +
-        'whether the query matched in `AND` or fell back to `OR`. Exact-equality filters, combinable with ' +
+        'whether the query matched in `AND` or fell back to `OR`. On the `OR` fallback, a hit matching fewer ' +
+        'than half (rounded up) of the distinct query terms is dropped, so a long query degrades to `OR` ' +
+        'with a matched-terms floor instead of returning every single-term match. Exact-equality filters, combinable with ' +
         '`search` or alone: `type`, `target` (`data.target`), `targetPrefix` (`data.target` subtree, same ' +
         'dot-boundary semantics as `state`: `hex:target:a.b` matches `hex:target:a.b.c`, not ' +
         '`hex:target:a.bc`), `milestoneType`, `result` and the `[after, before)` range of `timestamp`. Text ' +

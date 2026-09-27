@@ -317,6 +317,20 @@ describe('search: ordenação, desempate e fallback OR', () => {
     expect(combination).toBe('AND');
   });
 
+  test('fallback OR com piso (#15): query de 4 termos, hit casando só 1 termo é excluído', () => {
+    const candidates = [{ index: 0, line: lineWithText('alpha only here') }];
+    const { results, combination } = search(candidates, 'alpha beta gamma delta');
+    expect(combination).toBe('OR');
+    expect(results).toEqual([]);
+  });
+
+  test('fallback OR com piso (#15): query de 4 termos, hit casando 2 termos (ceil(4/2)) é incluído', () => {
+    const candidates = [{ index: 0, line: lineWithText('alpha beta only here') }];
+    const { results, combination } = search(candidates, 'alpha beta gamma delta');
+    expect(combination).toBe('OR');
+    expect(results.map((r) => r.index)).toEqual([0]);
+  });
+
   test('distinctTerms conta termos únicos após processTerm (acento e maiúsculas)', () => {
     expect(distinctTerms('Café café CAFÉ')).toBe(1);
     expect(distinctTerms('cache invalidation')).toBe(2);

@@ -292,7 +292,11 @@ Lista os eventos do log de um processo, em dois modos:
   texto nesta própria chamada, só sobre os candidatos, e ordena por
   relevância decrescente. A consulta tenta `AND` primeiro; se não achar nada
   e tiver dois ou mais termos distintos, cai para `OR` — a resposta informa
-  qual das duas (`combination`) foi usada.
+  qual das duas (`combination`) foi usada. No fallback `OR`, um resultado que
+  case menos da metade (arredondado para cima) dos termos distintos da
+  consulta é descartado (Leva 10, #15): consulta longa degrada para `OR` com
+  um piso de termos casados, em vez de devolver qualquer casamento de 1 termo
+  só.
 
 Os dois modos aceitam os mesmos filtros por igualdade exata, combináveis com
 `search` ou usados sozinhos: `type`, `target` (compara com `data.target`, campo

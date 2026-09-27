@@ -34,10 +34,12 @@ const PHRASES_PAYMENT = [
   'payment processed with no apparent errors',
   'payment refund requested by the client',
 ];
+// A 3ª frase inclui "the" (Leva 10, #15): sem termo comum com a query de M11i além de
+// "webhook", o piso de termos casados no fallback OR a excluiria.
 const PHRASES_WEBHOOK = [
   'webhook received from the external partner',
   "webhook triggered for the client's system",
-  'automatic webhook resend configured',
+  'automatic webhook resend configured for the client',
 ];
 const PHRASE_BANK = [
   ...PHRASES_GENERAL,
