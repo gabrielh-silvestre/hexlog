@@ -8,7 +8,7 @@ import {
 } from '../src/definitions.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
-const SKILL_PATH = path.join(repoRoot, 'skills/hexlog/SKILL.md');
+const srcDir = path.join(repoRoot, 'src');
 
 // ---- extração de tokens do SKILL.md (puras: recebem `content`, não leem arquivo) ----
 
@@ -168,7 +168,7 @@ describe('extratores (unitário, sobre string literal)', () => {
   });
 });
 
-// ---- catálogo real, extraído do código (nunca copiado à mão) ----
+// ---- catálogo real, extraído do código (nunca copiado à mão) — global ao projeto, não por skill ----
 
 const registeredTools = ['src/definition-tools.ts', 'src/event-tools.ts'].flatMap((relativeFile) =>
   toolNamesFrom(fs.readFileSync(path.join(repoRoot, relativeFile), 'utf8')),
@@ -182,7 +182,6 @@ const errorCodeCatalog = errorCodeCatalogFrom(
   fs.readFileSync(path.join(repoRoot, 'src/errors.ts'), 'utf8'),
 );
 
-const srcDir = path.join(repoRoot, 'src');
 const declaredFunctionNames = fs
   .readdirSync(srcDir)
   .filter((file) => file.endsWith('.ts'))
@@ -195,10 +194,10 @@ const reservedNameValues: readonly string[] = [
 ];
 
 /**
- * SCREAMING_SNAKE_CASE citados na skill que não pertencem ao catálogo de `ErrorCode` por desenho, não
+ * SCREAMING_SNAKE_CASE citados nas skills que não pertencem ao catálogo de `ErrorCode` por desenho, não
  * por erro de digitação:
  * - `UNKNOWN_VOCABULARY`: código de **aviso** (campo `result` do Veredito, vocabulário aberto), não um
- *   `ErrorCode` — a skill documenta essa distinção de propósito (ver teste dedicado abaixo).
+ *   `ErrorCode` — a skill `hexlog` documenta essa distinção de propósito (ver teste dedicado abaixo).
  * - `TYPE_NOT_FIXED`: citado de propósito como contraste ("não `TYPE_NOT_FIXED`, esse código não
  *   existe") — a skill afirma que ele NÃO existe; exigi-lo no catálogo inverteria a checagem.
  * - `STALE_DEFINITIONS`: código de **aviso** de `create_process` (P3), quando o processo já existe
@@ -211,9 +210,10 @@ const DELIBERATE_NON_ERROR_CODES = new Set([
 ]);
 
 /**
- * Palavras de domínio (campo/valor de exemplo) citadas em crase na skill que coincidem em forma
+ * Palavras de domínio (campo/valor de exemplo) citadas nas skills em crase que coincidem em forma
  * (lowercase, sem hífen) com nome de tool ou de valor reservado, mas não são nenhum dos dois — allow-
- * list explícita em vez de afrouxar o regex de identificador.
+ * list explícita em vez de afrouxar o regex de identificador. Global ao projeto (as skills compartilham
+ * o mesmo vocabulário de campos de entrada/saída do servidor), não por skill.
  */
 const FIELD_NAME_ALLOWLIST = new Set([
   'owner',
@@ -231,7 +231,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'milestoneType',
   'builtinGates',
   'versions',
-  // P1-P5: campos de saída/entrada citados na skill, não tools nem valores reservados.
+  // P1-P5: campos de saída/entrada citados na skill hexlog, não tools nem valores reservados.
   // `owners`/`allowed` (details de VOCABULARY_VIOLATED, P2), `supersedes`/`active`
   // (Verdict/state, contexto do `no-forks`, P1), `targets` (state, P4), `trace`
   // (Milestone, P5).
@@ -241,15 +241,21 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'active',
   'targets',
   'trace',
+  // hexlog-setup/hexlog-flow: `target` (singular, campo de entrada de register/evaluate_gate/
+  // events/chain), `editedSkills` (campo do frontmatter FlowMap, src/flow-map.ts:45) e
+  // `targetIdPattern` (campo do frontmatter FlowMap, src/flow-map.ts:38).
+  'target',
+  'editedSkills',
+  'targetIdPattern',
 ]);
 
 /**
  * Símbolo esperado dentro do trecho citado, por citação `arquivo.ts:N(-M)?` — mapa explícito em vez de
- * inferir o símbolo a partir de outras crases da mesma linha: a citação `installation.ts:239` (o `);` da
+ * inferir o símbolo a partir de outras crases da mesma linha: a citação `installation.ts:278` (o `);` da
  * chamada de `verifyPreparedArtifact`) não tem identificador próprio na crase da tabela, então "mesma linha"
  * não bastaria para toda citação do arquivo.
  */
-const CITATION_EXPECTATIONS: Record<string, string> = {
+const HEXLOG_CITATION_EXPECTATIONS: Record<string, string> = {
   'definitions.ts:575': 'VOCABULARY_MISSING',
   'definitions.ts:448-496': 'createProcess',
   'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
@@ -259,24 +265,73 @@ const CITATION_EXPECTATIONS: Record<string, string> = {
   'event-tools.ts:545': 'VOCABULARY_VIOLATED',
   'event-tools.ts:567': 'UNKNOWN_VOCABULARY',
   'event-tools.ts:423-428': 'RESERVED_FIELD',
-  'installation.ts:74': 'verifyPreparedArtifact',
-  'installation.ts:239': 'verifyPreparedArtifact',
+  'installation.ts:93': 'verifyPreparedArtifact',
+  'installation.ts:278': 'verifyPreparedArtifact',
 };
 
-// ---- tokens citados na skill hoje ----
+const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string> = {
+  'definitions.ts:575': 'VOCABULARY_MISSING',
+  'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
+  'definitions.ts:24': 'RESERVED_TYPE_NAMES',
+  'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
+  'definitions.ts:667': 'BREAKING_CHANGE',
+  'flow-map.ts:28': 'FlowMap',
+  'flow-map.ts:43': 'hook',
+  'flow-map.ts:45': 'editedSkills',
+};
 
-const skillContent = fs.readFileSync(SKILL_PATH, 'utf8');
-const backtickTokens = extractInlineBackticks(skillContent);
-const citedFileCitations = fileCitationsFrom(skillContent);
-const citedScreamingSnakeTokens = [
-  ...new Set(backtickTokens.filter((t) => SCREAMING_SNAKE_CASE.test(t))),
-];
-const citedLowerIdentifiers = [...new Set(backtickTokens.filter((t) => LOWER_IDENTIFIER.test(t)))];
-const citedCamelCaseTokens = [
-  ...new Set(backtickTokens.filter((t) => CAMEL_CASE_IDENTIFIER.test(t))),
+const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string> = {
+  'event-tools.ts:421': 'TYPE_NOT_PINNED',
+  'event-tools.ts:545': 'VOCABULARY_VIOLATED',
+  'event-tools.ts:567': 'UNKNOWN_VOCABULARY',
+  'event-tools.ts:423-428': 'RESERVED_FIELD',
+  'event-tools.ts:498': 'CONFLICTING_ID',
+  'event-tools.ts:659-664': 'INVALID_EVALUATION',
+  'events.ts:27-30': 'Target',
+};
+
+interface SkillCase {
+  name: string;
+  skillPath: string;
+  citationExpectations: Record<string, string>;
+}
+
+const skillCases: SkillCase[] = [
+  {
+    name: 'hexlog',
+    skillPath: path.join(repoRoot, 'skills/hexlog/SKILL.md'),
+    citationExpectations: HEXLOG_CITATION_EXPECTATIONS,
+  },
+  {
+    name: 'hexlog-setup',
+    skillPath: path.join(repoRoot, 'skills/hexlog-setup/SKILL.md'),
+    citationExpectations: HEXLOG_SETUP_CITATION_EXPECTATIONS,
+  },
+  {
+    name: 'hexlog-flow',
+    skillPath: path.join(repoRoot, 'skills/hexlog-flow/SKILL.md'),
+    citationExpectations: HEXLOG_FLOW_CITATION_EXPECTATIONS,
+  },
 ];
 
-describe('coerência SKILL.md × código', () => {
+/** Tokens citados numa skill, já classificados por formato — computado uma vez por caso. */
+function tokensCitedBy(skillPath: string) {
+  const skillContent = fs.readFileSync(skillPath, 'utf8');
+  const backtickTokens = extractInlineBackticks(skillContent);
+  return {
+    citedFileCitations: fileCitationsFrom(skillContent),
+    citedScreamingSnakeTokens: [
+      ...new Set(backtickTokens.filter((t) => SCREAMING_SNAKE_CASE.test(t))),
+    ],
+    citedLowerIdentifiers: [...new Set(backtickTokens.filter((t) => LOWER_IDENTIFIER.test(t)))],
+    citedCamelCaseTokens: [...new Set(backtickTokens.filter((t) => CAMEL_CASE_IDENTIFIER.test(t)))],
+  };
+}
+
+describe.each(skillCases)('coerência SKILL.md × código ($name)', ({ skillPath }) => {
+  const { citedScreamingSnakeTokens, citedLowerIdentifiers, citedCamelCaseTokens } =
+    tokensCitedBy(skillPath);
+
   test('a extração não está vazia (sanity: se a skill mudar de forma, isso quebra antes das checagens abaixo)', () => {
     expect(registeredTools.length).toBeGreaterThan(0);
     expect(citedScreamingSnakeTokens.length).toBeGreaterThan(0);
@@ -306,7 +361,9 @@ describe('coerência SKILL.md × código', () => {
     const unknown = citedCamelCaseTokens.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);
   });
+});
 
+describe('fatos de código globais que a skill hexlog cita (não dependem de qual skill citou)', () => {
   test('UNKNOWN_VOCABULARY não pertence ao catálogo de ErrorCode e é usado como código de aviso em event-tools.ts', () => {
     expect(errorCodeCatalog).not.toContain('UNKNOWN_VOCABULARY');
     const eventTools = fs.readFileSync(path.join(repoRoot, 'src/event-tools.ts'), 'utf8');
@@ -322,27 +379,34 @@ describe('coerência SKILL.md × código', () => {
   });
 });
 
-describe('citações arquivo.ts:N(-M)? na skill × código real em src/', () => {
-  test('a extração de citações não está vazia (sanity)', () => {
-    expect(citedFileCitations.length).toBeGreaterThan(0);
-  });
+describe.each(skillCases)(
+  'citações arquivo.ts:N(-M)? na skill × código real em src/ ($name)',
+  ({ skillPath, citationExpectations }) => {
+    const { citedFileCitations } = tokensCitedBy(skillPath);
 
-  test('toda citação da skill tem uma expectativa mapeada, e toda expectativa mapeada ainda é citada (nenhuma citação nova ou removida passa despercebida)', () => {
-    expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(CITATION_EXPECTATIONS)));
-  });
+    test('a extração de citações não está vazia (sanity)', () => {
+      expect(citedFileCitations.length).toBeGreaterThan(0);
+    });
 
-  test('cada citação aponta pra um trecho de src/ que de fato contém o símbolo esperado (detecta deslocamento de linha)', () => {
-    for (const citation of citedFileCitations) {
-      const { file, startLine, endLine } = parseCitation(citation);
-      const fileContent = fs.readFileSync(path.join(srcDir, file), 'utf8');
-      const snippet = linesInRange(fileContent, startLine, endLine);
-      expect(snippet).toContain(CITATION_EXPECTATIONS[citation]);
-    }
-  });
+    test('toda citação da skill tem uma expectativa mapeada, e toda expectativa mapeada ainda é citada (nenhuma citação nova ou removida passa despercebida)', () => {
+      expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(citationExpectations)));
+    });
 
-  test('definitions.ts:448-496 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
+    test('cada citação aponta pra um trecho de src/ que de fato contém o símbolo esperado (detecta deslocamento de linha)', () => {
+      for (const citation of citedFileCitations) {
+        const { file, startLine, endLine } = parseCitation(citation);
+        const fileContent = fs.readFileSync(path.join(srcDir, file), 'utf8');
+        const snippet = linesInRange(fileContent, startLine, endLine);
+        expect(snippet).toContain(citationExpectations[citation]);
+      }
+    });
+  },
+);
+
+describe('citação de faixa exata (function range) — casos específicos por skill', () => {
+  test('hexlog: definitions.ts:448-496 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
     const citation = 'definitions.ts:448-496';
-    expect(citedFileCitations).toContain(citation);
+    expect(HEXLOG_CITATION_EXPECTATIONS[citation]).toBe('createProcess');
     const { startLine, endLine } = parseCitation(citation);
     const definitionsContent = fs.readFileSync(path.join(srcDir, 'definitions.ts'), 'utf8');
     expect(functionRangeFrom(definitionsContent, 'createProcess')).toEqual({ startLine, endLine });

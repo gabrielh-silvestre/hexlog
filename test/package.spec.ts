@@ -114,6 +114,7 @@ describe('N11', () => {
     'jsonc-parser': '3.3.1',
     'es-toolkit': '1.52.0',
     minisearch: '7.2.0',
+    yaml: '2.9.1',
   };
   const EXPECTED_DEV_DEPENDENCIES = {
     '@modelcontextprotocol/client': '2.0.0',

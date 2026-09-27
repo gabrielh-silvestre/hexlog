@@ -15,5 +15,6 @@ await build({
   entryPoints: {
     'server-probe': 'test/fixtures/server-probe.ts',
     'hook-probe': 'test/fixtures/hook-probe.ts',
+    'flow-reminder-probe': 'test/fixtures/flow-reminder-probe.ts',
   },
 });

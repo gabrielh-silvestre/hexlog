@@ -30,6 +30,7 @@ while (fs.readdirSync(barrierDir).length < totalProcesses) {
 const bundles = {
   server: Buffer.from(`server-${variant}`),
   hook: Buffer.from(`hook-${variant}`),
+  flowReminder: Buffer.from(`flow-reminder-${variant}`),
 };
 
 try {
