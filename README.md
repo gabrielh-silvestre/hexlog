@@ -204,10 +204,17 @@ e gera o uuid v7. Alternativamente, `id` continua aceitando:
 `id` e `type` informados juntos, ou nenhum dos dois, é `INVALID_INPUT`.
 
 Marco aceita `milestoneType`, `target` (endereço no formato `hex:target:<id>`),
-`count`, `dueAt`, `decisions[]` e `trace` (opcional). Veredito aceita `claim`,
-`source`, `result`, `evidence`, `target` (também `hex:target:<id>`), `supersedes[]`,
-`origin` e `trace`. `milestoneType: "gate"` e a chave `gate` são reservados ao
+`count` (`{field, value}`), `dueAt`, `decisions[]` e `trace` (opcional).
+`decisions[]` é uma lista de `{item, action, text}`; `action` é vocabulário
+fechado por projeto — os valores aceitos vêm de `list({project, process})`, e
+um valor fora dele é `VOCABULARY_VIOLATED`. Veredito aceita `claim`, `source`
+(string única, ao contrário de `evidence`, que aceita string ou array),
+`result`, `evidence`, `target` (também `hex:target:<id>`), `supersedes[]`,
+`origin` e `trace` — os dois últimos obrigatórios (ao contrário do `trace`
+opcional do Marco). `milestoneType: "gate"` e a chave `gate` são reservados ao
 Marco que `evaluate_gate` grava; usá-los em `register` é `RESERVED_FIELD`.
+Toda chave fora do schema de `data` do tipo é sempre rejeitada
+(`strictObject`).
 
 No Marco, `trace` é ignorado na comparação de retentativa idempotente: reenviar
 o mesmo id completo com `trace` diferente ainda deduplica (`deduplicated: true`).
