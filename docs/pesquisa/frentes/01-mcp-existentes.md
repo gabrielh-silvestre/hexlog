@@ -20,11 +20,11 @@ Sim, existem vários: audit/event log com hash chain, decision log/ADR, e o "mem
 
 Ideias a aproveitar:
 1. **Canonicalização antes de hashear** (`mcp-audit-gateway`): fixar forma canônica (chaves ordenadas, números seguros) antes de existirem logs gravados.
-2. **Tipos de evento reservados** (`audit-event-mcp`): o Marco de gate é escrito pelo servidor; `registrar` normal não pode forjá-lo.
+2. **Tipos de evento reservados** (`audit-event-mcp`): o Marco de gate é escrito pelo servidor; `register` normal não pode forjá-lo.
 3. **Política de append declarada no schema** (`journal-mcp`): `append-only-chain`/`append-once`/`replace-forbidden`.
-4. **Estado projetado sob demanda** (`journal-mcp`): recomputar só em `estado`, não a cada `registrar`.
+4. **Estado projetado sob demanda** (`journal-mcp`): recomputar só em `state`, não a cada `register`.
 5. **Granularidade de tools do memory server**: mutações pequenas e idempotentes, reportando o que faltou em vez de falhar.
-6. **Resource com notificação de mutação** (`memory://knowledge-graph` + `notifications/resources/updated`): opcional para `estado`/`eventos`.
+6. **Resource com notificação de mutação** (`memory://knowledge-graph` + `notifications/resources/updated`): opcional para `state`/`events`.
 
 ### Riscos e armadilhas
 - README de `agent-audit-mcp` contradiz o campo `license` do npm — ler LICENSE real antes de citar licença.
