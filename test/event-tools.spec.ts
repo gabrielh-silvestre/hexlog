@@ -684,6 +684,72 @@ describe('Leva 4 — targetPrefix (#10, #13, #14)', () => {
   });
 });
 
+describe('Leva 15 — events: targets[] em lote (#26)', () => {
+  async function registerMilestoneAt(target: string): Promise<void> {
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ target }),
+    });
+    expect(result.isError).not.toBe(true);
+  }
+
+  test('events com targets: [a, b, c] → traz eventos dos 3 targets numa resposta só', async () => {
+    await prepare(environment, PROJ, PROC);
+    for (const target of ['hex:target:a', 'hex:target:b', 'hex:target:c', 'hex:target:d']) {
+      await registerMilestoneAt(target);
+    }
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      targets: ['hex:target:a', 'hex:target:b', 'hex:target:c'],
+    });
+    const body = result.structuredContent as { events: EventLine[] };
+    const targets = body.events.map((event) => (event.data as { target?: string }).target).sort();
+    expect(targets).toEqual(['hex:target:a', 'hex:target:b', 'hex:target:c']);
+  });
+
+  test('events com target e targets juntos → INVALID_INPUT', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      target: 'hex:target:a',
+      targets: ['hex:target:a', 'hex:target:b'],
+    });
+    expectError(result, 'INVALID_INPUT');
+  });
+
+  test('events com targetPrefix e targets juntos → INVALID_INPUT', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      targetPrefix: 'hex:target:a',
+      targets: ['hex:target:a', 'hex:target:b'],
+    });
+    expectError(result, 'INVALID_INPUT');
+  });
+
+  test('events com targets: [] (array vazio) → Input validation error', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('events', { project: PROJ, process: PROC, targets: [] });
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
+  });
+
+  test('events com targets: 21 valores → Input validation error', async () => {
+    await prepare(environment, PROJ, PROC);
+    const targets = range(21).map((i) => `hex:target:t${i}`);
+    const result = await environment.call('events', { project: PROJ, process: PROC, targets });
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
+  });
+});
+
 type GateData = {
   milestoneType: string;
   target: string;

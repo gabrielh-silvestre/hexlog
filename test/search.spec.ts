@@ -265,6 +265,17 @@ describe('isCandidate', () => {
     expect(isCandidate(task20, {})).toBe(true);
   });
 
+  test('targets (Leva 15, #26): casa qualquer um dos valores, ignora quando ausente', () => {
+    const a = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:a' } });
+    const b = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:b' } });
+    const c = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:c' } });
+    const targets = ['hex:target:a', 'hex:target:b'];
+    expect(isCandidate(a, { targets })).toBe(true);
+    expect(isCandidate(b, { targets })).toBe(true);
+    expect(isCandidate(c, { targets })).toBe(false);
+    expect(isCandidate(c, {})).toBe(true);
+  });
+
   describe('gate Milestone some do filtro por target (Leva 6, #19)', () => {
     const gate = baseLine({ data: { milestoneType: 'gate', target: 'hex:target:x' } });
 

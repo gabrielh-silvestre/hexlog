@@ -93,6 +93,7 @@ export type Filters = {
   type?: string;
   target?: string;
   targetPrefix?: string;
+  targets?: string[];
   milestoneType?: string;
   result?: string;
   after?: string;
@@ -100,9 +101,9 @@ export type Filters = {
   includeGateMilestones?: boolean;
 };
 
-/** `target`/`targetPrefix` informado (§4.12 item 9): condição que liga exclusão e compactação de gate. */
+/** `target`/`targetPrefix`/`targets` informado (§4.12 item 9): condição que liga exclusão e compactação de gate. */
 export function hasTargetFilter(filters: Filters): boolean {
-  return !isNil(filters.target) || !isNil(filters.targetPrefix);
+  return !isNil(filters.target) || !isNil(filters.targetPrefix) || !isNil(filters.targets);
 }
 
 /** Uma linha é candidata quando satisfaz todos os filtros presentes (§4.12 item 9). */
@@ -111,6 +112,7 @@ export function isCandidate(line: EventLine, filters: Filters): boolean {
   if (!isNil(filters.target) && !matchesTarget(line, filters.target)) return false;
   if (!isNil(filters.targetPrefix) && !matchesTargetPrefixFilter(line, filters.targetPrefix))
     return false;
+  if (!isNil(filters.targets) && !matchesTargets(line, filters.targets)) return false;
   if (!isNil(filters.milestoneType) && !matchesMilestoneType(line, filters.milestoneType))
     return false;
   if (!isNil(filters.result) && !matchesResult(line, filters.result)) return false;
@@ -139,6 +141,11 @@ function matchesTarget(line: EventLine, target: string): boolean {
 function matchesTargetPrefixFilter(line: EventLine, prefix: string): boolean {
   const target = (line.data as { target?: string }).target;
   return !isNil(target) && matchesTargetPrefix(target, prefix);
+}
+
+function matchesTargets(line: EventLine, targets: string[]): boolean {
+  const target = (line.data as { target?: string }).target;
+  return !isNil(target) && targets.includes(target);
 }
 
 function matchesMilestoneType(line: EventLine, milestoneType: string): boolean {

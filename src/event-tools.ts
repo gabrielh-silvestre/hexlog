@@ -334,14 +334,18 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'with a matched-terms floor instead of returning every single-term match. Exact-equality filters, combinable with ' +
         '`search` or alone: `type`, `target` (`data.target`), `targetPrefix` (`data.target` subtree, same ' +
         'dot-boundary semantics as `state`: `hex:target:a.b` matches `hex:target:a.b.c`, not ' +
-        '`hex:target:a.bc`), `milestoneType`, `result` and the `[after, before)` range of `timestamp`. Text ' +
-        'search **does not find** `hex:target:<id>` addresses nor event ids; for an address, use the `target` ' +
-        'or `targetPrefix` filter (there is no filter by event id). When `target` or `targetPrefix` is given, ' +
+        '`hex:target:a.bc`), `targets` (up to 20 known `hex:target:<id>` addresses, matched by equality, ' +
+        'to fetch several known targets in one call instead of one call per target), `milestoneType`, ' +
+        '`result` and the `[after, before)` range of `timestamp`. `target`, `targetPrefix` and `targets` are ' +
+        'mutually exclusive; combining any two of them is `INVALID_INPUT`. Text ' +
+        'search **does not find** `hex:target:<id>` addresses nor event ids; for an address, use the `target`, ' +
+        '`targetPrefix` or `targets` filter (there is no filter by event id). When `target`, `targetPrefix` or ' +
+        '`targets` is given, ' +
         "gate Milestones (`data.milestoneType === 'gate'`) are left out by default, unless " +
         "`includeGateMilestones: true` is set or `milestoneType: 'gate'` is requested explicitly (which " +
-        'always wins over the default exclusion); without `target`/`targetPrefix`, gate Milestones are never ' +
-        'excluded. A gate Milestone included this way — via `includeGateMilestones` or an explicit ' +
-        "`milestoneType: 'gate'` alongside `target`/`targetPrefix` — comes back with `data.gate.criteria` " +
+        'always wins over the default exclusion); without `target`/`targetPrefix`/`targets`, gate Milestones ' +
+        'are never excluded. A gate Milestone included this way — via `includeGateMilestones` or an explicit ' +
+        "`milestoneType: 'gate'` alongside `target`/`targetPrefix`/`targets` — comes back with `data.gate.criteria` " +
         'dropped and `data.gate.evaluatedThrough` reduced to `{ seq }` (or `null`); the events file on disk is ' +
         'unaffected. Without `fields`, each event comes back as `{ seq, id, type, timestamp, agent, data }` ' +
         '— no `prevHash`. Pass `fields` (top-level `EventLine` keys) to replace that default entirely, e.g. ' +
@@ -364,6 +368,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         search: z.string().trim().min(2).max(SEARCH_MAX_CHARS).optional(),
         target: Target.optional(),
         targetPrefix: Target.optional(),
+        targets: z.array(Target).min(1).max(20).optional(),
         milestoneType: Label.optional(),
         result: Label.optional(),
         after: Instant.optional(),
@@ -396,6 +401,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
       search,
       target,
       targetPrefix,
+      targets,
       milestoneType,
       result,
       after,
@@ -419,6 +425,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
             search,
             target,
             targetPrefix,
+            targets,
             milestoneType,
             result,
             after,
@@ -1046,6 +1053,7 @@ type EventsArgs = {
   search?: string;
   target?: string;
   targetPrefix?: string;
+  targets?: string[];
   milestoneType?: string;
   result?: string;
   after?: string;
@@ -1068,12 +1076,14 @@ function resolveEvents(
     search,
     target,
     targetPrefix,
+    targets,
     milestoneType,
     result,
     until,
     includeGateMilestones,
     fields = DEFAULT_EVENT_FIELDS,
   } = args;
+  validateTargetFilters(target, targetPrefix, targets);
   const loaded = loadProcess(ctx.dataDir, project, process);
 
   validateFilterMilestoneType(milestoneType, loaded.manifest.fixed.vocabulary);
@@ -1089,6 +1099,7 @@ function resolveEvents(
     type,
     target,
     targetPrefix,
+    targets,
     milestoneType,
     result,
     after,
@@ -1099,6 +1110,23 @@ function resolveEvents(
   return isNil(search)
     ? resolveRawMode(physicalLines, untilLimit, since, limit, filters, fields)
     : resolveSearchMode(physicalLines, untilLimit, since, limit, filters, search, fields);
+}
+
+/** #26: `target`/`targetPrefix`/`targets` são três formas de escopar por target — combinar mais de uma é ambíguo. */
+function validateTargetFilters(target?: string, targetPrefix?: string, targets?: string[]): void {
+  const given = [target, targetPrefix, targets].filter(isNotNil).length;
+  if (given <= 1) return;
+  throw new HexlogError(
+    'INVALID_INPUT',
+    'target, targetPrefix and targets are mutually exclusive',
+    [
+      {
+        path: '/targets',
+        code: 'ambiguous_target_filter',
+        message: 'more than one of target/targetPrefix/targets was given',
+      },
+    ],
+  );
 }
 
 /** `milestoneType` fora de core ∪ extensões e ≠ `"gate"` (sempre aceito) → `INVALID_FILTER` (§4.12 item 9). */
