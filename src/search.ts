@@ -2,6 +2,7 @@ import { isNil, isString, orderBy, round } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import MiniSearch from 'minisearch';
 import { FULL_ID_RE, matchesTargetPrefix, type EventLine } from './events.ts';
+import { isMilestoneGate } from './state.ts';
 
 /** Teto de caracteres do parâmetro `search` de `events` (§4.16): abaixo de 2, `prefix` casaria quase tudo. */
 export const SEARCH_MAX_CHARS = 200;
@@ -96,7 +97,13 @@ export type Filters = {
   result?: string;
   after?: string;
   before?: string;
+  includeGateMilestones?: boolean;
 };
+
+/** `target`/`targetPrefix` informado (§4.12 item 9, achado #19): condição que liga exclusão e compactação de gate. */
+export function hasTargetFilter(filters: Filters): boolean {
+  return !isNil(filters.target) || !isNil(filters.targetPrefix);
+}
 
 /** Uma linha é candidata quando satisfaz todos os filtros presentes (§4.12 item 9). */
 export function isCandidate(line: EventLine, filters: Filters): boolean {
@@ -109,7 +116,20 @@ export function isCandidate(line: EventLine, filters: Filters): boolean {
   if (!isNil(filters.result) && !matchesResult(line, filters.result)) return false;
   if (!isNil(filters.after) && line.timestamp < filters.after) return false;
   if (!isNil(filters.before) && line.timestamp >= filters.before) return false;
+  if (excludesGateMilestone(line, filters)) return false;
   return true;
+}
+
+/**
+ * Milestones de gate somem por padrão quando `target`/`targetPrefix` filtra (achado #19): quem
+ * quer auditoria de gate já pede `milestoneType: 'gate'` explícito, e isso sempre vence a exclusão
+ * (senão `target` + `milestoneType: 'gate'` juntos devolveriam zero, por serem AND).
+ */
+function excludesGateMilestone(line: EventLine, filters: Filters): boolean {
+  if (!hasTargetFilter(filters)) return false;
+  if (filters.includeGateMilestones === true) return false;
+  if (filters.milestoneType === 'gate') return false;
+  return isMilestoneGate(line);
 }
 
 function matchesTarget(line: EventLine, target: string): boolean {

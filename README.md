@@ -299,6 +299,18 @@ subárvore de `data.target` que `state`, casando na fronteira de `.`:
 Para filtrar por endereço, use o parâmetro `target` ou `targetPrefix` — não
 existe filtro por id de evento.
 
+**Marco de gate some por padrão quando `target`/`targetPrefix` filtra (Leva 6,
+#19).** Um Marco de gate (`data.milestoneType === 'gate'`, gravado por
+`evaluate_gate`) fica de fora do resultado quando `target` ou `targetPrefix`
+é informado, a menos que `includeGateMilestones: true` seja pedido ou o
+chamador já peça `milestoneType: 'gate'` explicitamente — o pedido explícito
+sempre vence a exclusão padrão. Sem `target`/`targetPrefix`, nenhum Marco de
+gate é excluído. Quando um Marco de gate volta dessa forma (via
+`includeGateMilestones` ou `milestoneType: 'gate'` explícito ao lado de
+`target`/`targetPrefix`), a resposta corta `data.gate.criteria` e reduz
+`data.gate.evaluatedThrough` a `{ seq }` (ou `null`) — só na serialização
+desta chamada, o arquivo em disco não muda.
+
 `until` congela o prefixo do arquivo considerado (só as linhas físicas de
 índice menor que `until`); sem informar, a chamada usa todas as linhas do
 momento e devolve esse número em `until`. Como o arquivo é append-only, esse

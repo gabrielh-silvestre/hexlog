@@ -651,6 +651,100 @@ describe('Leva 4 — targetPrefix (#10, #13, #14)', () => {
   });
 });
 
+type GateData = {
+  milestoneType: string;
+  target: string;
+  gate: { criteria?: string; evaluatedThrough: { id?: string; seq: number } | null };
+};
+
+describe('Leva 6 — gate Milestone some do filtro por target (#19)', () => {
+  async function seedGateAndPlainMilestone(): Promise<void> {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ target: 'hex:target:u1' }),
+    });
+    const evaluated = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
+      agent: AGENT,
+    });
+    expect(evaluated.isError).not.toBe(true);
+  }
+
+  async function eventsFor(overrides: Record<string, unknown>): Promise<EventLine[]> {
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      target: 'hex:target:u1',
+      ...overrides,
+    });
+    return (result.structuredContent as { events: EventLine[] }).events;
+  }
+
+  test('com target e sem includeGateMilestones → Milestone de gate não aparece', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({});
+    expect(
+      events.some((event) => (event.data as { milestoneType?: string }).milestoneType === 'gate'),
+    ).toBe(false);
+    expect(events).toHaveLength(1); // só o Milestone simples
+  });
+
+  test('com targetPrefix e sem includeGateMilestones → Milestone de gate não aparece', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({ target: undefined, targetPrefix: 'hex:target:u1' });
+    expect(
+      events.some((event) => (event.data as { milestoneType?: string }).milestoneType === 'gate'),
+    ).toBe(false);
+  });
+
+  test('includeGateMilestones: true → aparece, mas com criteria/evaluatedThrough compactos', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({ includeGateMilestones: true });
+    const gateEvent = events.find((event) => (event.data as GateData).milestoneType === 'gate');
+    expect(gateEvent).toBeDefined();
+    const gate = (gateEvent!.data as GateData).gate;
+    expect(gate.criteria).toBeUndefined();
+    expect(gate.evaluatedThrough).toEqual({ seq: expect.any(Number) });
+  });
+
+  test('milestoneType: "gate" explícito (sem includeGateMilestones) → Milestone de gate aparece', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({ milestoneType: 'gate' });
+    expect(events).toHaveLength(1);
+    expect((events[0].data as GateData).milestoneType).toBe('gate');
+  });
+
+  test('sem target/targetPrefix → Milestone de gate continua aparecendo normalmente, sem compactação', async () => {
+    await seedGateAndPlainMilestone();
+    const result = await environment.call('events', { project: PROJ, process: PROC });
+    const events = (result.structuredContent as { events: EventLine[] }).events;
+    const gateEvent = events.find((event) => (event.data as GateData).milestoneType === 'gate');
+    expect(gateEvent).toBeDefined();
+    const gate = (gateEvent!.data as GateData).gate;
+    expect(gate.criteria).toEqual(expect.any(String));
+    expect(gate.evaluatedThrough).toEqual(
+      expect.objectContaining({ id: expect.any(String), seq: expect.any(Number) }),
+    );
+  });
+
+  test('Milestone não-gate não é afetado pela compactação', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({ includeGateMilestones: true });
+    const plain = events.find(
+      (event) => (event.data as { milestoneType?: string }).milestoneType === 'approved',
+    );
+    expect(plain).toEqual(
+      expect.objectContaining({ data: milestoneData({ target: 'hex:target:u1' }) }),
+    );
+  });
+});
+
 describe('M9', () => {
   test('annotations das 5 tools de eventos batem com §4.12', async () => {
     const { tools } = await environment.client.listTools();

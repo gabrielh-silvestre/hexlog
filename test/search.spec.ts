@@ -264,6 +264,27 @@ describe('isCandidate', () => {
     expect(isCandidate(task20, { targetPrefix: 'hex:target:task-2' })).toBe(false);
     expect(isCandidate(task20, {})).toBe(true);
   });
+
+  describe('gate Milestone some do filtro por target (Leva 6, #19)', () => {
+    const gate = baseLine({ data: { milestoneType: 'gate', target: 'hex:target:x' } });
+
+    test('target ou targetPrefix informado, sem includeGateMilestones → excluído', () => {
+      expect(isCandidate(gate, { target: 'hex:target:x' })).toBe(false);
+      expect(isCandidate(gate, { targetPrefix: 'hex:target:x' })).toBe(false);
+    });
+
+    test('includeGateMilestones: true → volta a aparecer', () => {
+      expect(isCandidate(gate, { target: 'hex:target:x', includeGateMilestones: true })).toBe(true);
+    });
+
+    test('milestoneType: "gate" explícito sempre vence a exclusão padrão', () => {
+      expect(isCandidate(gate, { target: 'hex:target:x', milestoneType: 'gate' })).toBe(true);
+    });
+
+    test('sem target nem targetPrefix, gate Milestone nunca é excluído', () => {
+      expect(isCandidate(gate, {})).toBe(true);
+    });
+  });
 });
 
 describe('search: ordenação, desempate e fallback OR', () => {

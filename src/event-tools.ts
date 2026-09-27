@@ -2,7 +2,13 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
 import { isNil, isNotNil, keyBy, omit } from 'es-toolkit';
 import { z } from 'zod';
-import { search as runSearch, isCandidate, SEARCH_MAX_CHARS, type Filters } from './search.ts';
+import {
+  search as runSearch,
+  isCandidate,
+  hasTargetFilter,
+  SEARCH_MAX_CHARS,
+  type Filters,
+} from './search.ts';
 import { isValidLink, verifyChain, type Chain } from './chain.ts';
 import { loadProcess, type LoadedProcess } from './definitions.ts';
 import { issueDetails, HexlogError, type Detail } from './errors.ts';
@@ -18,6 +24,7 @@ import {
 import {
   allowedTerms,
   effectiveNow,
+  isMilestoneGate,
   projectState,
   validateField,
   type VocabularyField,
@@ -34,6 +41,7 @@ import {
   CUSTOM_EVIDENCE_MAX,
   type BuiltinGateName,
   type EvaluationResult,
+  type GateMilestoneData,
 } from './gates.ts';
 import { append, appendBatch, readText, type Base } from './log.ts';
 import {
@@ -293,7 +301,14 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'dot-boundary semantics as `state`: `hex:target:a.b` matches `hex:target:a.b.c`, not ' +
         '`hex:target:a.bc`), `milestoneType`, `result` and the `[after, before)` range of `timestamp`. Text ' +
         'search **does not find** `hex:target:<id>` addresses nor event ids; for an address, use the `target` ' +
-        'or `targetPrefix` filter (there is no filter by event id). A page fits ' +
+        'or `targetPrefix` filter (there is no filter by event id). When `target` or `targetPrefix` is given, ' +
+        "gate Milestones (`data.milestoneType === 'gate'`) are left out by default, unless " +
+        "`includeGateMilestones: true` is set or `milestoneType: 'gate'` is requested explicitly (which " +
+        'always wins over the default exclusion); without `target`/`targetPrefix`, gate Milestones are never ' +
+        'excluded. A gate Milestone included this way — via `includeGateMilestones` or an explicit ' +
+        "`milestoneType: 'gate'` alongside `target`/`targetPrefix` — comes back with `data.gate.criteria` " +
+        'dropped and `data.gate.evaluatedThrough` reduced to `{ seq }` (or `null`); the events file on disk is ' +
+        'unaffected. A page fits ' +
         '`limit` events and the 24,000-character cap, except the first event of the page, which always gets ' +
         'in even alone above the cap. `until` freezes the prefix of the file considered (physical lines with ' +
         'index < `until`); if omitted, the call uses all lines as of that moment and returns that number in ' +
@@ -316,6 +331,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         after: Instant.optional(),
         before: Instant.optional(),
         until: z.number().int().min(0).optional(),
+        includeGateMilestones: z.boolean().optional(),
       },
       outputSchema: {
         mode: z.enum(['raw', 'search']),
@@ -346,6 +362,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
       after,
       before,
       until,
+      includeGateMilestones,
     }) => {
       let logExtra: Record<string, unknown> = {};
       return execute(
@@ -367,6 +384,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
             after,
             before,
             until,
+            includeGateMilestones,
           });
           logExtra = extra;
           return output;
@@ -935,6 +953,7 @@ type EventsArgs = {
   after?: string;
   before?: string;
   until?: number;
+  includeGateMilestones?: boolean;
 };
 
 function resolveEvents(
@@ -953,6 +972,7 @@ function resolveEvents(
     milestoneType,
     result,
     until,
+    includeGateMilestones,
   } = args;
   const loaded = loadProcess(ctx.dataDir, project, process);
 
@@ -965,7 +985,16 @@ function resolveEvents(
   validateUntil(until, physicalLines.length);
   const untilLimit = until ?? physicalLines.length;
 
-  const filters: Filters = { type, target, targetPrefix, milestoneType, result, after, before };
+  const filters: Filters = {
+    type,
+    target,
+    targetPrefix,
+    milestoneType,
+    result,
+    after,
+    before,
+    includeGateMilestones,
+  };
 
   return isNil(search)
     ? resolveRawMode(physicalLines, untilLimit, since, limit, filters)
@@ -1026,6 +1055,26 @@ function validateUntil(until: number | undefined, totalPhysicalLines: number): v
 }
 
 /**
+ * Corta `criteria` e reduz `evaluatedThrough` a `{ seq }` (ou `null`) no Milestone de gate devolvido
+ * por `events` (achado #19, Leva 6): só na serialização da resposta, nunca no formato em disco.
+ */
+function compactGateMilestone(line: EventLine): EventLine {
+  if (!isMilestoneGate(line)) return line;
+  const data = line.data as GateMilestoneData;
+  const { evaluatedThrough } = data.gate;
+  return {
+    ...line,
+    data: {
+      ...data,
+      gate: {
+        ...omit(data.gate, ['criteria']),
+        evaluatedThrough: isNil(evaluatedThrough) ? null : { seq: evaluatedThrough.seq },
+      },
+    },
+  };
+}
+
+/**
  * Modo raw: ordem física a partir de `since`, streaming (sem escanear além de onde a página para).
  * `candidates` do log conta só os elos vistos durante essa varredura, não o total no arquivo inteiro
  * (decisão de projeto: evitar forçar leitura completa do arquivo numa chamada sem `search`).
@@ -1039,18 +1088,20 @@ function resolveRawMode(
 ): { output: EventsOutput; extra: Record<string, unknown> } {
   const events: EventLine[] = [];
   const invalidLines: number[] = [];
+  const compactGates = hasTargetFilter(filters);
   let candidates = 0;
   let nextCursor: number | null = null;
   let size = 2; // '[]'
 
   for (let index = since; index < untilLimit; index++) {
-    const line = isValidLink(physicalLines[index]);
-    if (isNil(line)) {
+    const rawLine = isValidLink(physicalLines[index]);
+    if (isNil(rawLine)) {
       invalidLines.push(index);
       continue;
     }
-    if (!isCandidate(line, filters)) continue;
+    if (!isCandidate(rawLine, filters)) continue;
     candidates++;
+    const line = compactGates ? compactGateMilestone(rawLine) : rawLine;
 
     const increment = JSON.stringify(line).length + (events.length > 0 ? 1 : 0);
     if (events.length > 0 && size + increment > PAGE_CHARS_CAP) {
@@ -1117,6 +1168,7 @@ function resolveSearchMode(
 
   const lineByIndex = new Map(candidates.map((c) => [c.index, c.line]));
   const page = results.slice(since);
+  const compactGates = hasTargetFilter(filters);
 
   const events: ResultLine[] = [];
   let nextCursor: number | null = null;
@@ -1124,8 +1176,9 @@ function resolveSearchMode(
 
   for (let position = 0; position < page.length; position++) {
     const item = page[position];
+    const line = lineByIndex.get(item.index)!;
     const event: ResultLine = {
-      ...lineByIndex.get(item.index)!,
+      ...(compactGates ? compactGateMilestone(line) : line),
       relevance: item.relevance,
     };
     const increment = JSON.stringify(event).length + (events.length > 0 ? 1 : 0);

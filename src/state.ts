@@ -93,7 +93,8 @@ function targetOf(line: EventLine): string | undefined {
   return undefined; // tipos custom não têm target e são inertes (S3)
 }
 
-function isMilestoneGate(line: EventLine): boolean {
+/** Milestone de gate (`data.milestoneType === 'gate'`); reusado em `search.ts` e `event-tools.ts`. */
+export function isMilestoneGate(line: EventLine): boolean {
   return line.type === 'milestone' && (line.data as MilestoneFields).milestoneType === 'gate';
 }
 
