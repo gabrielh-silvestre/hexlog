@@ -1,5 +1,7 @@
 ## Frente: Hash chain / log tamper-evident e JSON canônico
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### Perguntas respondidas
 - **Libs de hash chain prontas — nenhuma encaixa.** `hypercore` é replicação P2P (17 deps). `merkle-tools`/`merkletreejs` constroem Merkle tree em lote para prova de inclusão, não cadeia sequencial com índice quebrado. `@sigstore/rekor` e `@transparency-dev/merkle` não existem no npm (404 verificado).
 - **JSON canônico:** nos casos comuns (`-0`, `1e21`, `0.1+0.2`, unicode/emoji, ordem de chaves, arrays), `canonicalize` (RFC 8785), `safe-stable-stringify`, `fast-json-stable-stringify` e a função da POC produzem a mesma string (todas delegam números/unicode ao `JSON.stringify` do V8). Diferenças só em `Date`, `NaN`/`Infinity` e `BigInt`.

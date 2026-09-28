@@ -1,5 +1,7 @@
 # ADR 0001: hexlog MVP
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 **Status:** Aceito
 
 **Data:** 2026-09-16

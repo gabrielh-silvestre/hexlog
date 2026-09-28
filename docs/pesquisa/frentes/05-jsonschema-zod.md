@@ -1,5 +1,7 @@
 ## Frente: JSON Schema → Zod
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### Perguntas respondidas
 - **Drafts/target:** `z.fromJSONSchema(schema, { defaultTarget })` aceita `"draft-2020-12"` (default), `"draft-7"`, `"draft-4"`, `"openapi-3.0"` (`from-json-schema.d.ts`).
 - **Keywords (código-fonte `from-json-schema.ts`, tag v4.6.5):**

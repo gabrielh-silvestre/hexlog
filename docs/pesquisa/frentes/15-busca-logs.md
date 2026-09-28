@@ -1,5 +1,7 @@
 ## Frente 15: Busca nos logs (Fuse.js × MiniSearch × alternativas × nativo)
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 - Data: 2026-09-16. Pedido do usuário: busca nos logs para o agente, com Fuse.js como proposta inicial.
 - Probe em `scratchpad/busca/` (`bench.cjs`, `out2.log` = execução final válida; `out.log` = 1ª rodada com teto de recall corrigido).
 - Corpus sintético determinístico (seed 42): 10.000 eventos em pt-BR com acentos (~40% Marco, ~40% Veredito, ~20% custom), 200 alvos, 15 consultas com gabarito calculado por força bruta, independente dos motores.

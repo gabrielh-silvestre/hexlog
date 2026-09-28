@@ -1,5 +1,7 @@
 ## Frente 14: Ecossistema do zod
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 - Data: 2026-09-16. Pedido do usuário ("libs do ecossistema do zod que possam ser úteis").
 - Restrição: zod `4.6.5` exato. Probes em `scratchpad/zod-ecossistema/` (`test-zfc.mjs`, `test-schema-faker.mjs`, `test-native-jsonschema.mjs`).
 

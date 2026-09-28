@@ -1,5 +1,7 @@
 ## Frente: API real do SDK v2 do MCP (`@modelcontextprotocol/server` 2.0.0)
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### Pacotes
 | Pacote | Versão / release | Licença | Papel | ESM/TS/Node 24 | Deps | Veredito |
 |---|---|---|---|---|---|---|

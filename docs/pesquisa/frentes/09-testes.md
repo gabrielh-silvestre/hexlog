@@ -1,5 +1,7 @@
 ## Frente: Stack de testes (jest + ts-jest, Node 24, property-based, multi-processo, MCP, hook)
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### Perguntas respondidas
 1. **jest + ts-jest / ESM vs CJS:** trivial. `@modelcontextprotocol/{server,client,core}@2.0.0` e `zod@4.6.5` são dual package (`exports` com `require`); `fast-check@4.10.1` resolve sob `require`. **ts-jest modo CJS padrão (sem preset ESM, sem `--experimental-vm-modules`, sem `moduleNameMapper`) passa.** O `NODE_OPTIONS=--experimental-vm-modules` da POC é herança de xstate/memfs/bullmq — descartar.
 2. **fast-check:** 4.10.1, MIT. `fc.assert(fc.property(...))` dentro de `test()` basta; `@fast-check/jest` é só açúcar. `jest --show-seed` para reproduzir.

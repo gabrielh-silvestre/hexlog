@@ -1,5 +1,7 @@
 ## Frente 17: Bundle e executável autocontido
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 - Data: 2026-09-16. Pedido do usuário: "ferramentas tipo o webpack para gerar um executável js autocontido". Cobertas as duas leituras: (A) bundle em arquivo `.js` único; (B) binário com runtime embutido.
 - Probes em `scratchpad/bundler/` (`probe/` e `harness/`): mini servidor MCP e mini hook com as deps reais em versões exatas; artefatos validados fora do projeto, sem `node_modules`, via `@modelcontextprotocol/client@2.0.0` (`Client` + `StdioClientTransport`). Node v24.18.1, Bun 1.3.14; Deno ausente.
 

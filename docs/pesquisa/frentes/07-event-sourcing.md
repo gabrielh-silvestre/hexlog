@@ -1,5 +1,7 @@
 ## Frente: Libs de event sourcing em TypeScript
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### Perguntas respondidas
 Nenhuma lib de ES em TS ativa oferece armazenamento em arquivo JSONL local com escrita multi-processo e cadeia de hash por evento — todas assumem backend externo (Postgres/EventStoreDB/MongoDB/DynamoDB) ou, no máximo, SQLite. Todas forçam vocabulário de agregado/stream/comando. Recomendação: construir o núcleo e usar o padrão Decider (decide/evolve) sem lib, como a POC já faz.
 

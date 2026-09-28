@@ -1,5 +1,7 @@
 ## Frente 12: Alternativas enxutas ao lodash
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 - Data: 2026-09-16. Pedido do usuário, por preferência pessoal (a pergunta é "qual", não "precisa").
 - Medição: `npm view`, GitHub API, `api.npmjs.org/downloads`, esbuild 0.25.5 + gzip, Node 24.18.1 + jest 30.5.1/ts-jest 29.4.12/TS 5.9.2. Probes em `scratchpad/lodash-like/` (`probe.mjs`, `inspect-exports.mjs`, `jest.config*.cjs`).
 - Nota: lodash clássico saiu do congelamento (4.18.0/4.18.1 nesta semana, antes 4.17.21 desde 2021).

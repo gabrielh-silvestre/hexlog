@@ -1,5 +1,7 @@
 # Pesquisa de libs e padrões — hexlog
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 - Data: 2026-09-16
 - Origem: fase dedicada de pesquisa do `/ralplan --deliberate` sobre a spec `deep-dive-vamos-criar-uma-aplicacao-propria.md` (mantida em `.omc/specs/`, fora do repo)
 - Método: 11 frentes em paralelo (10 × `document-specialist`, 1 × `claude-code-guide`), versões e datas verificadas no npm/GitHub/documentação oficial no dia, probes isolados no scratchpad. A frente de isolamento teve uma segunda rodada e verificação direta do orquestrador na doc em markdown.
