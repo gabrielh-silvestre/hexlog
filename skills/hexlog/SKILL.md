@@ -75,6 +75,9 @@ Notas adicionais:
   exclui — sem precisar de um `events` à parte para achar o vigente de um
   target. `targetPrefix` restringe `active`/`conflicts`/`targets` a uma
   subárvore de endereço (fronteira em `.`), em `state` e em `events`.
+- `warnings` de `state` é cumulativo e `since` não o filtra: a resposta cheia traz
+  todos os avisos do log. Os avisos novos se reconhecem comparando o `event` com
+  os já vistos.
 - Esta skill não repete o contrato completo de `state` e `events` (filtros,
   projeção de campos, atalho de log inalterado, sinais de truncamento): a
   fonte é a descrição de cada tool e o README do repositório do hexlog.

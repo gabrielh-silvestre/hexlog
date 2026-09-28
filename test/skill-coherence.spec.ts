@@ -230,6 +230,10 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'active',
   'targets',
   'trace',
+  // #33: `warnings`/`event` (saída de state) e `since` (entrada de state), citados no aviso cumulativo.
+  'warnings',
+  'since',
+  'event',
   // `sections`/`conflicts` (campos de `state`) e `targetPrefix` (campo novo de `state`/`events`),
   // não funções nem tools.
   'sections',

@@ -321,6 +321,10 @@ log avançou, a resposta é a normal, cheia, e `unchanged` fica ausente —
 `since` não filtra `warnings` nem nenhuma outra seção por dentro da resposta
 cheia, só evita reconstruir uma resposta idêntica à anterior.
 
+`warnings` é cumulativo: cada resposta cheia traz todos os avisos do log, não só
+os posteriores a `since`. Os avisos novos se reconhecem comparando o `event` de
+cada um com os já vistos.
+
 ### `events`
 
 Lista os eventos do log de um processo, em dois modos:

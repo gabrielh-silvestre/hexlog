@@ -1155,6 +1155,14 @@ describe('Leva 14 — state: since evita reprojetar (#25)', () => {
     const result = await environment.call('state', { project: PROJ, process: PROC, since: 0 });
     expect(result.structuredContent).toEqual({ logThrough: null, unchanged: true });
   });
+
+  test('a description de state avisa que warnings é cumulative e não é filtrado por since', async () => {
+    const { tools } = await environment.client.listTools();
+    const description = tools.find((tool) => tool.name === 'state')?.description;
+
+    expect(description).toEqual(expect.stringContaining('cumulative'));
+    expect(description).toEqual(expect.stringContaining('since'));
+  });
 });
 
 describe('M9', () => {

@@ -243,7 +243,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'if `logThrough` is still `null` or its `seq` is `<= since`, the response is just ' +
         '`{logThrough, unchanged: true}`, none of the other sections. When the log did advance, the ' +
         'response is the normal full one and `unchanged` is absent — this does not filter `warnings` or ' +
-        'any other section by `since`, only short-circuits an unchanged log.',
+        'any other section by `since`, only short-circuits an unchanged log. `warnings` is cumulative ' +
+        '(it carries every warning of the log, not only the ones since `since`); recognize the new ones by ' +
+        'comparing their `event` with the ones already seen.',
       inputSchema: {
         project: Name,
         process: Name,
