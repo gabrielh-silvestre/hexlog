@@ -1,12 +1,12 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-09-17 -->
+<!-- Generated: 2026-09-17 | Updated: 2026-09-27 -->
 
 # hook
 
 ## Purpose
-Hook `PreToolUse` da tool `Bash` do Claude Code. Impede que um agente
-contorne as tools MCP do hexlog (`list`, `state`, `events`, `chain`)
-lendo o diretório de dados por fora, com `cat`, `grep`, `jq` etc. Só
+Um hook do Claude Code. `bash-guard.ts` (`PreToolUse` da tool `Bash`) impede
+que um agente contorne as tools MCP do hexlog (`list`, `state`, `events`,
+`chain`) lendo o diretório de dados por fora, com `cat`, `grep`, `jq` etc. Só
 tokeniza o comando recebido; nunca executa nada.
 
 ## Key Files
@@ -34,9 +34,8 @@ tokeniza o comando recebido; nunca executa nada.
   describe `B1(b)` que builda o `.ts` de verdade com esbuild e roda o `.mjs`
   resultante (nega `cat <D>/x` com exit 2, permite `true` com exit 0, e
   confere que o bundle não contém o shim `Dynamic require of`).
-- Rodar com `npm test` (jest); `test/bash-guard.spec.ts` sempre sobe um
-  processo real de Node contra o `.ts`/`.mjs` (`spawnSync`), fora do
-  transform `ts-jest`.
+- Rodar com `npm test` (jest); o spec sempre sobe um processo real de Node
+  contra o `.ts`/`.mjs` (`spawnSync`), fora do transform `ts-jest`.
 
 ### Common Patterns
 - Prefixo literal decide antes de expandir glob: um segmento com `**` ou uma

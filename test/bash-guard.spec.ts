@@ -241,7 +241,11 @@ describe('B1(b): hook empacotado pelo esbuild', () => {
 
   const build = spawnSync(
     process.execPath,
-    [path.join(repoRoot, 'test/fixtures/build-hook.ts'), outdirBundle],
+    [
+      path.join(repoRoot, 'test/fixtures/build-entry.ts'),
+      outdirBundle,
+      'bash-guard=hook/bash-guard.ts',
+    ],
     { encoding: 'utf8', cwd: repoRoot },
   );
   if (build.status !== 0) {

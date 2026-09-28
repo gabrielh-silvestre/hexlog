@@ -113,8 +113,8 @@ projeto existente.
 **`--check` não prova o servidor.** `node scripts/install.ts --check` valida
 o hook por execução real e compara o sha256 do manifest — mas nunca conecta
 ao MCP nem reconfere a contagem de tools. Essa garantia é herdada de
-`verifyPreparedArtifact` (`installation.ts:74`), chamada dentro de `install()`
-no momento da instalação (`installation.ts:239`), e não é reverificada depois.
+`verifyPreparedArtifact` (`installation.ts:89`), chamada dentro de `install()`
+no momento da instalação (`installation.ts:266`), e não é reverificada depois.
 Confundir os dois é o erro mais fácil de cometer: um `--check` verde não diz
 nada sobre o servidor MCP responder.
 

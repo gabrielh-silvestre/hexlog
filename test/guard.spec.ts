@@ -1,5 +1,9 @@
-import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, test, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import * as fs from 'node:fs';
+// import default separado (não `* as fs`, já usado acima): precisa ser o mesmo objeto que
+// src/installation.ts usa, para `jest.spyOn(fsDefault, 'renameSync')` interceptar de fato a
+// chamada feita lá dentro (mesmo motivo documentado em src/log.ts:2-4).
+import fsDefault from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -22,7 +26,7 @@ import {
   readManifest,
   installArtifact,
   registerGuard,
-  writeSkill,
+  writeSkillFolder,
   verifyInstallation,
   type Bundles,
 } from '../src/installation.ts';
@@ -319,7 +323,11 @@ describe('I7: verificação com execução real do hook instalado', () => {
   const outdirBundle = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-guard-bundle-'));
   const build = spawnSync(
     process.execPath,
-    [path.join(repoRoot, 'test/fixtures/build-hook.ts'), outdirBundle],
+    [
+      path.join(repoRoot, 'test/fixtures/build-entry.ts'),
+      outdirBundle,
+      'bash-guard=hook/bash-guard.ts',
+    ],
     { encoding: 'utf8', cwd: repoRoot },
   );
   if (build.status !== 0) {
@@ -457,7 +465,11 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expected,
       exists: fs.existsSync,
       runHook: runRealHook,
-      installedBytes: { server: null, hook: realBundle, manifest: divergentManifest },
+      installedBytes: {
+        server: null,
+        hook: realBundle,
+        manifest: divergentManifest,
+      },
     });
     expect(verification.missing).toContain('artifact-modified');
   });
@@ -584,7 +596,10 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect(fs.existsSync(path.join(versionDir, 'bash-guard.mjs'))).toBe(true);
       expect(readManifest(versionDir)).toEqual({
         version: '0.1.0',
-        sha256: { server: sha256(realBundles.server), hook: sha256(realBundles.hook) },
+        sha256: {
+          server: sha256(realBundles.server),
+          hook: sha256(realBundles.hook),
+        },
         builtAt: '2026-01-01T00:00:00.000Z',
         commit: 'test-commit',
         dirty: false,
@@ -730,7 +745,10 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         Buffer.from('\n// different bytes\n'),
       ]);
       const result = await installArtifact(
-        argsFor({ server: realBundles.server, hook: differentHook }),
+        argsFor({
+          server: realBundles.server,
+          hook: differentHook,
+        }),
       );
 
       expect(result.action).toBe('reinstalled');
@@ -817,7 +835,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect(fs.readFileSync(path.join(installed.versionDir, 'bash-guard.mjs'))).toEqual(
         hookBefore,
       );
-      expect(fs.readdirSync(path.join(home, '.local', 'lib', 'hexlog'))).toEqual(['0.1.0']);
+      expect(fs.readdirSync(path.join(home, '.local', 'lib', 'hexlog')).sort()).toEqual(['0.1.0']);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
@@ -881,7 +899,8 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect([r1.status, r2.status].sort()).toEqual([0, 1]);
       const loser = r1.status === 1 ? r1 : r2;
       expect(loser.stdout).toContain('at the same time');
-      expect(fs.readdirSync(versionDirOf(differentHome, '0.1.0')).sort()).toEqual([
+      const versionDir = versionDirOf(differentHome, '0.1.0');
+      expect(fs.readdirSync(versionDir).sort()).toEqual([
         'bash-guard.mjs',
         'manifest.json',
         'server.mjs',
@@ -927,45 +946,158 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
   }, 20_000);
 });
 
-describe('B2b: gravação da skill do hexlog (writeSkill)', () => {
-  test('grava <home>/.claude/skills/hexlog/SKILL.md com o conteúdo passado', () => {
+describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
+  /** Pasta de origem sintética com um `SKILL.md` (e, se passado, um arquivo extra em `references/`). */
+  function buildSrcDir(skillText: string, extraFile?: { path: string; text: string }): string {
+    const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-src-'));
+    fs.writeFileSync(path.join(srcDir, 'SKILL.md'), skillText);
+    if (extraFile) {
+      fs.mkdirSync(path.join(srcDir, path.dirname(extraFile.path)), { recursive: true });
+      fs.writeFileSync(path.join(srcDir, extraFile.path), extraFile.text);
+    }
+    return srcDir;
+  }
+
+  test('copia SKILL.md (e references/) para <home>/.claude/skills/<name>/', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-a-'));
+    const srcDir = buildSrcDir('# hexlog skill\n', {
+      path: 'references/guide.md',
+      text: '# guide\n',
+    });
     try {
-      writeSkill(home, '# hexlog skill\n');
-      const skillFile = path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md');
-      expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill\n');
+      writeSkillFolder(home, 'hexlog', srcDir);
+      const skillDir = path.join(home, '.claude', 'skills', 'hexlog');
+      expect(fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8')).toBe('# hexlog skill\n');
+      expect(fs.readFileSync(path.join(skillDir, 'references', 'guide.md'), 'utf8')).toBe(
+        '# guide\n',
+      );
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
     }
   });
 
   test('instalar duas vezes seguidas deixa o arquivo idêntico', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-b-'));
+    const srcDir = buildSrcDir('# hexlog skill\n');
     try {
       const skillFile = path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md');
-      writeSkill(home, '# hexlog skill\n');
-      writeSkill(home, '# hexlog skill\n');
+      writeSkillFolder(home, 'hexlog', srcDir);
+      writeSkillFolder(home, 'hexlog', srcDir);
       expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill\n');
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
     }
   });
 
   test('sobrescreve um arquivo editado à mão com o canônico, sem criar .bak', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-c-'));
+    const srcDir = buildSrcDir('# hexlog skill\n');
     try {
       const skillDir = path.join(home, '.claude', 'skills', 'hexlog');
       const skillFile = path.join(skillDir, 'SKILL.md');
       fs.mkdirSync(skillDir, { recursive: true });
       fs.writeFileSync(skillFile, 'editado à mão');
 
-      writeSkill(home, '# hexlog skill\n');
+      writeSkillFolder(home, 'hexlog', srcDir);
 
       expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill\n');
       expect(fs.existsSync(`${skillFile}.bak-hexlog`)).toBe(false);
       expect(fs.readdirSync(skillDir)).toEqual(['SKILL.md']);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('reinstalar a partir de uma srcDir sem um arquivo de references/ remove o órfão (U1)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-d-'));
+    const srcDirV1 = buildSrcDir('# hexlog skill v1\n', {
+      path: 'references/old-guide.md',
+      text: '# old guide\n',
+    });
+    const srcDirV2 = buildSrcDir('# hexlog skill v2\n');
+    try {
+      writeSkillFolder(home, 'hexlog', srcDirV1);
+      const orphanFile = path.join(
+        home,
+        '.claude',
+        'skills',
+        'hexlog',
+        'references',
+        'old-guide.md',
+      );
+      expect(fs.existsSync(orphanFile)).toBe(true);
+
+      writeSkillFolder(home, 'hexlog', srcDirV2);
+
+      expect(fs.existsSync(orphanFile)).toBe(false);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDirV1, { recursive: true, force: true });
+      fs.rmSync(srcDirV2, { recursive: true, force: true });
+    }
+  });
+
+  test('srcDir inexistente (cpSync falha): conteúdo anterior de dstDir continua intacto (N2)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-e-'));
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    const missingSrcDir = path.join(os.tmpdir(), 'hexlog-skill-src-does-not-exist');
+    try {
+      writeSkillFolder(home, 'hexlog', srcDir);
+      const skillFile = path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md');
+
+      expect(() => writeSkillFolder(home, 'hexlog', missingSrcDir)).toThrow();
+
+      expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill\n');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('2º renameSync falha no meio da troca: dstDir continua com o conteúdo anterior (N1)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-g-'));
+    const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
+    const srcDirV2 = buildSrcDir('# hexlog skill v2\n');
+    const originalRenameSync = fsDefault.renameSync;
+    try {
+      writeSkillFolder(home, 'hexlog', srcDirV1);
+      const skillFile = path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md');
+
+      jest
+        .spyOn(fsDefault, 'renameSync')
+        // 1º rename (dstDir -> old) passa de verdade; 2º (tmp -> dstDir) é o que falha.
+        .mockImplementationOnce((...args) => originalRenameSync(...args))
+        .mockImplementationOnce(() => {
+          throw new Error('boom: simulated 2nd renameSync failure');
+        });
+
+      expect(() => writeSkillFolder(home, 'hexlog', srcDirV2)).toThrow('boom');
+
+      expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill v1\n');
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDirV1, { recursive: true, force: true });
+      fs.rmSync(srcDirV2, { recursive: true, force: true });
+    }
+  });
+
+  test('nome com "/", "..", "." ou vazio é rejeitado antes de tocar no filesystem (M3)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-f-'));
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    try {
+      expect(() => writeSkillFolder(home, '../escape', srcDir)).toThrow();
+      expect(() => writeSkillFolder(home, 'a/b', srcDir)).toThrow();
+      expect(() => writeSkillFolder(home, '.', srcDir)).toThrow();
+      expect(() => writeSkillFolder(home, '..', srcDir)).toThrow();
+      expect(() => writeSkillFolder(home, '', srcDir)).toThrow();
+      expect(fs.existsSync(path.join(home, '.claude', 'skills'))).toBe(false);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
     }
   });
 });
@@ -1037,14 +1169,18 @@ describe('B3: install.ts --check (processo real)', () => {
     }
   }, 15_000);
 
-  test('diretório da skill removido: skill-file, exit 1', () => {
-    const skillDir = path.join(home, '.claude', 'skills', 'hexlog');
+  test('diretório de uma skill removido: skill-file:<nome>, exit 1', () => {
+    const name = fs
+      .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)[0];
+    const skillDir = path.join(home, '.claude', 'skills', name);
     const backup = `${skillDir}.backup-test`;
     fs.renameSync(skillDir, backup);
     try {
       const { status, stdout } = runCheck();
       expect(status).toBe(1);
-      expect(stdout).toContain('skill-file');
+      expect(stdout).toContain(`skill-file:${name}`);
     } finally {
       fs.renameSync(backup, skillDir);
     }
@@ -1106,6 +1242,7 @@ describe('B3: install.ts --check (processo real)', () => {
         version,
         execPath: process.execPath,
         D,
+        skillNames: [],
         currentBundles: bundlesSimulatingNewBuild,
         settingsText,
         claudeJsonText,

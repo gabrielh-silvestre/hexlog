@@ -3,7 +3,7 @@
 # hexlog
 
 ## Purpose
-Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: decisões, marcos e veredictos. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 10 tools. Não há CLI nem daemon: só o servidor MCP e um hook de isolamento Bash, instalados no Claude Code como bundle esbuild em `~/.local/lib/hexlog/<versão>/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/` (fallback `~/.local/share/hexlog`).
+Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: decisões, marcos e veredictos. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 10 tools. Não há CLI nem daemon: servidor MCP e hook de isolamento Bash são instalados no Claude Code como dois bundles esbuild em `~/.local/lib/hexlog/<versão>/`, junto com as skills de `skills/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/` (fallback `~/.local/share/hexlog`).
 
 ## Key Files
 | File | Description |
@@ -20,8 +20,8 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
 | `scripts/` | Build esbuild, instalador e script de insights read-only (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio e pacote (see `test/AGENTS.md`) |
-| `docs/` | ADR 0001/0002 e pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
-| `skills/` | Skill `hexlog` (`skills/hexlog/SKILL.md`) instalada pelo instalador em `~/.claude/skills/hexlog/SKILL.md` |
+| `docs/` | ADR 0001/0002/0005 e pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
+| `skills/` | Três skills, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo pré-código de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e cruza marcos/veredictos contra esse mapa) |
 
 ## For AI Agents
 
@@ -34,8 +34,10 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
   `<nome>/<versão>.json`, nunca sobrescrevem. O arquivo legado `<nome>.json` nunca é apagado,
   reescrito ou materializado — segue como fonte fixa da versão `1.0` para sempre.
 - Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0001-hexlog-mvp.md`,
-  `docs/adr-0002-versionamento-definicoes.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`.
+  `docs/adr-0002-versionamento-definicoes.md`, `docs/adr-0005-hexlog-setup-hexlog-flow.md`
+  e `docs/pesquisa/hexlog-pesquisa-libs.md`.
 - `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica.
+- O instalador copia toda pasta de `skills/` (não uma fixa): uma skill nova só precisa da pasta em `skills/<nome>/SKILL.md` para ser instalada e conferida pelo `--check`.
 
 ### Testing Requirements
 - `npm test` roda tudo. `npx jest test/<arquivo>.spec.ts` roda um spec.

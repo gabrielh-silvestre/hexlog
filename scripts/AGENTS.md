@@ -36,10 +36,17 @@ nada.
   atual contra o instalado) e trata concorrência entre dois instaladores
   rodando ao mesmo tempo via troca atômica (`renameSync`) com fallback em
   `ENOTEMPTY`/`EEXIST`/`ENOENT`.
+- Os 2 bundles (`server`, `bash-guard`) são um conjunto fixo e nomeado (tipo
+  `Bundles` em `src/installation.ts`): um terceiro entrypoint exige tocar
+  `build.ts`, `Bundles`, `installArtifact` e
+  `verifyInstallation`. Já as skills são dinâmicas: `skillNames()` lê as
+  pastas de `skills/` e `writeSkillFolder` substitui cada uma inteira em
+  `~/.claude/skills/<nome>/` (apaga antes de copiar, sem deixar arquivo
+  órfão). Skill nova não toca `install.ts`.
 
 ### Testing Requirements
 - `npm test` (jest) roda tudo, incluindo:
-  - `test/toolchain.spec.ts`: builda os dois entrypoints com o `esbuild` real
+  - `test/toolchain.spec.ts`: builda os probes com o `esbuild` real
     e confere que nenhum bundle contém o shim `Dynamic require of`, e que o
     hook empacotado (`hook-probe.mjs`) sai com o código esperado.
   - `test/package.spec.ts` (N11): `dependencies`/`devDependencies` do
