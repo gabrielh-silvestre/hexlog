@@ -199,7 +199,7 @@ projeto e aponta o teste que cobre cada um.
 | 7 | Reregistrar conteúdo idêntico ao vigente → `unchanged: true` com a versão vigente, nenhum arquivo novo | `test/definitions.spec.ts:432` (type), `test/definitions.spec.ts:766` (vocabulary) |
 | 8 | `breaking: true` numa mudança compatível → minor com aviso `NO_BREAKING_CHANGE` | `test/definitions.spec.ts:775` |
 | 9 | `create_process` grava `versions` apontando as vigentes; a resposta traz o mesmo bloco | `test/definitions.spec.ts:248` |
-| 10 | Não-regressão do lock: bump major de vocabulário fora do processo não afeta `state`/`events`/`chain` do processo já fixado | `test/event-tools.spec.ts:2384-2430` |
+| 10 | Não-regressão do lock: bump major de vocabulário fora do processo não afeta `state`/`events`/`chain` do processo já fixado | `test/event-tools.spec.ts:2385-2431` |
 | 11 | Legado: `vocabulary/<owner>.json` solto é lido como `1.0`; o próximo `register_vocabulary` grava `1.1` sem apagar o legado | `test/definitions.spec.ts:790` |
 | 12 | `process.json` sem `versions` carrega sem `PROCESS_CORRUPTED`; `list` mostra sem o bloco | `test/definitions.spec.ts:258` |
 | 13 | Ordenação numérica: com `1.9` e `1.10` em disco, a vigente é `1.10` | `test/definitions.spec.ts:496` |

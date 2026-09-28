@@ -3,8 +3,6 @@
 
 # frentes
 
-> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
-
 ## Purpose
 Os 17 relatórios individuais da pesquisa de libs e padrões do hexlog, um por frente de investigação.
 
@@ -42,3 +40,5 @@ Os 17 relatórios individuais da pesquisa de libs e padrões do hexlog, um por f
 Sustenta a tabela "Decisão por componente" em `../hexlog-pesquisa-libs.md` e, por ela, as escolhas de dependências registradas no ADR 0001 e implementadas em `src/`.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.

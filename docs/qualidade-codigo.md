@@ -36,7 +36,7 @@ Baixo custo, zero conta externa, todos tocam arquivos que o repo já tem
 |---|---|---|---|
 | `noUncheckedIndexedAccess` + `noImplicitOverride` no tsconfig | ~20–40 min | Undefined explícito em acesso a índice; única classe do repo protegida contra override silencioso | [tsconfig noUncheckedIndexedAccess](https://www.typescriptlang.org/tsconfig/#noUncheckedIndexedAccess), [noImplicitOverride](https://www.typescriptlang.org/tsconfig/#noImplicitOverride) |
 | `tseslint.configs.stylisticTypeChecked` | ~15 min | Regras de estilo type-aware, maioria autofixável por `eslint --fix` | [typescript-eslint shared configs](https://typescript-eslint.io/users/configs/) |
-| `eslint-plugin-n` (`flat/recommended-module`) | ~15–20 min | Barra API deprecada/não suportada na versão de Node fixada (`package.json:7`, `ci.yml:18`) | [eslint-plugin-n README](https://github.com/eslint-community/eslint-plugin-n) |
+| `eslint-plugin-n` (`flat/recommended-module`) | ~15–20 min | Barra API deprecada/não suportada no piso de Node declarado em `engines` (`package.json:7`) | [eslint-plugin-n README](https://github.com/eslint-community/eslint-plugin-n) |
 | `eslint-plugin-jest` (`flat/recommended`, escopado a `test/**`) | ~10 min | Pega `no-conditional-expect`, `no-disabled-tests`, `valid-expect` numa suíte com specs de até 2681 linhas (`test/event-tools.spec.ts`) | [eslint-plugin-jest README](https://github.com/jest-community/eslint-plugin-jest) |
 | jest hardening (`collectCoverage` local sem gate, `--errorOnDeprecated`, `--ci` no CI) | ~10 min | Visibilidade de cobertura sem travar PR; erro cedo em API deprecada; snapshot novo falha em vez de gravar sozinho no CI | [jest configuration](https://jestjs.io/docs/configuration), [jest CLI](https://jestjs.io/docs/cli) |
 

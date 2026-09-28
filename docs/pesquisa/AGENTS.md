@@ -3,8 +3,6 @@
 
 # pesquisa
 
-> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
-
 ## Purpose
 Índice da pesquisa de libs e padrões do hexlog: 17 frentes (11 da fase inicial + 6 pós-consenso) que compararam bibliotecas e abordagens candidatas antes da decisão registrada no ADR 0001.
 
@@ -31,3 +29,5 @@
 Fundamenta o ADR 0001 (`../adr-0001-hexlog-mvp.md`) e, por extensão, as escolhas de dependências e padrões implementados em `src/` (SDK MCP, Zod, canonicalize, MiniSearch, es-toolkit, esbuild).
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.

@@ -24,7 +24,6 @@ Registro histórico das decisões do hexlog (ADRs) e a pesquisa de libs/padrões
 
 ## For AI Agents
 ### Working In This Directory
-- **Congelados em 2026-09-28:** `adr-0001-hexlog-mvp.md` e tudo em `pesquisa/` (inclusive os `AGENTS.md` de lá). Não edite esses arquivos, nem para corrigir, anotar ou emendar; revisões de doc contra o código os ignoram. Mudança de rumo sobre o que o ADR 0001 decidiu vai num ADR novo.
 - Os demais ADRs aceitos (`adr-0002-versionamento-definicoes.md`, `adr-0005-hexlog-setup-hexlog-flow.md`) são registro histórico: não reescreva o corpo para refletir mudanças futuras. Uma mudança de rumo emenda com uma seção nova (ex.: "Amendment") ou um ADR seguinte (`adr-000N-...md`), nunca reescrevendo Decision/Consequences já registrados.
 - Antes de propor trocar uma lib ou abordagem já decidida, confira a frente de pesquisa correspondente em `pesquisa/frentes/` e a linha do ADR que a descartou ou adotou — a maioria das alternativas já foi avaliada e tem motivo registrado.
 
@@ -36,3 +35,5 @@ Registro histórico das decisões do hexlog (ADRs) e a pesquisa de libs/padrões
 O ADR 0001 registra as decisões que originaram a arquitetura de `src/` (núcleo, store, cadeia, tools, instalação) e o formato do log (envelope de evento, manifesto `process.json`, cadeia de hash). A fonte da verdade do estado atual é o código.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+- **Congelados em 2026-09-28:** `adr-0001-hexlog-mvp.md` e tudo em `pesquisa/` (inclusive os `AGENTS.md` de lá). Não edite esses arquivos, nem para corrigir, anotar ou emendar; revisões de doc contra o código os ignoram. Mudança de rumo sobre o que o ADR 0001 decidiu vai num ADR novo.
