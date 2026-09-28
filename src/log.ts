@@ -44,10 +44,8 @@ export function readText(file: string): string {
 }
 
 /**
- * Anexa um elo ao log JSONL sob lock exclusivo por diretório (§4.7). A espera pela aquisição do
- * lock é assíncrona (retry com `await` de sleep); a partir daqui, `build` roda dentro da seção
- * crítica síncrona (sem `await`): recebe a base já calculada (`seq`/`prevHash`/`uuid`/`timestamp`/
- * `lastLink`) e devolve a `EventLine` a gravar.
+ * Anexa um elo ao log JSONL: `appendBatch` com um único item, para a mecânica de lock morar num
+ * lugar só.
  */
 export async function append(
   file: string,
@@ -55,33 +53,15 @@ export async function append(
   build: (base: Base) => EventLine,
   options: { log: Logger; timeoutMs?: number; orphanMs?: number; clock?: () => Date },
 ): Promise<EventLine> {
-  const {
-    log,
-    timeoutMs = LOCK_TIMEOUT_MS,
-    orphanMs = LOCK_ORPHAN_MS,
-    clock = () => new Date(),
-  } = options;
-  const lockDir = `${file}.lock`;
-  const token = await acquireLock(lockDir, { log, timeoutMs, orphanMs });
-
-  try {
-    const context = prepareContext(file, manifest, clock);
-    const line = build(context);
-
-    if (readToken(lockDir) !== token) {
-      log({ level: 'error', event: 'lock-lost' });
-      throw new HexlogError('LOCK_LOST', 'lock lost before write');
-    }
-
-    writeLine(file, context.endsWithNewline, line);
-    return line;
-  } finally {
-    releaseLock(lockDir, token);
-  }
+  const [line] = await appendBatch(file, manifest, [build], options);
+  return line;
 }
 
 /**
- * Anexa N elos ao log JSONL sob uma única aquisição de lock — mesma mecânica de `append`, mas
+ * Anexa N elos ao log JSONL sob uma única aquisição de lock exclusivo por diretório (§4.7). A
+ * espera pelo lock é assíncrona (retry com `await` de sleep); a partir daqui, cada `build` roda
+ * dentro da seção crítica síncrona (sem `await`): recebe a base já calculada
+ * (`seq`/`prevHash`/`uuid`/`timestamp`/`lastLink`) e devolve a `EventLine` a gravar.
  * `builds[i]` recebe a base encadeada a partir do elo escrito por `builds[i-1]`, sem reler o
  * arquivo entre um item e outro (o lock exclusivo garante que nada mais escreve no meio). O 1º
  * item usa o `endsWithNewline` real de `prepareContext` (corrige uma cauda rasgada
