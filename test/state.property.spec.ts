@@ -3,6 +3,7 @@ import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import type { EventLine } from '../src/events.ts';
 import { effectiveNow, projectState, type Vocabulary } from '../src/state.ts';
+import { at } from './helpers.ts';
 
 // ---- fixtures locais (duplicadas de state.spec.ts: 2 arquivos só, sem 3º módulo) ----
 
@@ -59,16 +60,16 @@ function verdict(
 const TARGET_A = 'hex:target:a';
 const TARGET_B = 'hex:target:b';
 
-interface VerdictIntent {
+type VerdictIntent = {
   readonly kind: 'verdict';
   readonly target: string;
   readonly claim: 'a1' | 'a2';
   readonly supersedesOffset: number | null;
-}
-interface MilestoneIntent {
+};
+type MilestoneIntent = {
   readonly kind: 'milestone';
   readonly target: string;
-}
+};
 type Intent = VerdictIntent | MilestoneIntent;
 
 const intentArbitrary: fc.Arbitrary<Intent> = fc.oneof(
@@ -105,7 +106,7 @@ function materialize(intents: readonly Intent[]): EventLine[] {
     if (intent.supersedesOffset !== null) {
       const targetIndex = index - intent.supersedesOffset;
       if (targetIndex >= 0 && kindByIndex[targetIndex] === 'verdict')
-        supersedes = [idByIndex[targetIndex]];
+        supersedes = [at(idByIndex, targetIndex)];
     }
     return verdict(
       { target: intent.target, claim: intent.claim, supersedes },
@@ -122,8 +123,11 @@ describe('projectState — propriedades (fast-check)', () => {
         const projection = projectState(lines, emptyVocabulary, effectiveNow(BASE_NOW, lines));
 
         for (const entry of projection.active) {
-          if (entry.status === 'active') expect(entry.active).toBeTruthy();
-          else expect(entry.candidates.length).toBeGreaterThanOrEqual(2);
+          // condição resolvida antes do expect (regra jest/no-conditional-expect não aceita
+          // `expect` dentro de `if`/`else`); `entry` continua estreitado por branch do ternário.
+          const isValidEntry =
+            entry.status === 'active' ? Boolean(entry.active) : entry.candidates.length >= 2;
+          expect(isValidEntry).toBe(true);
         }
       }),
     );
@@ -134,7 +138,7 @@ describe('projectState — propriedades (fast-check)', () => {
       fc.property(sequenceArbitrary, fc.nat(), (intents, rawIndex) => {
         const lines = materialize(intents);
         const index = rawIndex % lines.length;
-        const duplicate = lines[index];
+        const duplicate = at(lines, index);
         const withDuplicate = [...lines, duplicate];
         const now = effectiveNow(BASE_NOW, lines);
 

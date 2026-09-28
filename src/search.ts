@@ -8,7 +8,6 @@ import { isMilestoneGate } from './state.ts';
 export const SEARCH_MAX_CHARS = 200;
 
 const DIACRITICS_RE = /[̀-ͯ]/g;
-const HEX_PREFIX_RE = /^hex:/;
 
 /** Remove acentos e normaliza para minúsculas (mesma função do probe da frente 15). */
 export function stripDiacritics(t: string): string {
@@ -73,7 +72,7 @@ function customText(data: Record<string, unknown>): string {
 
 function collectStrings(value: unknown, parts: string[]): void {
   if (isString(value)) {
-    if (!HEX_PREFIX_RE.test(value) && !FULL_ID_RE.test(value)) parts.push(value);
+    if (!value.startsWith('hex:') && !FULL_ID_RE.test(value)) parts.push(value);
     return;
   }
   if (Array.isArray(value)) {

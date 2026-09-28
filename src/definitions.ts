@@ -782,11 +782,15 @@ function listDirectoryNames(parentDir: string, filter: (entry: fs.Dirent) => boo
 type Version = { major: number; minor: number };
 
 const VERSION_FILE_RE = /^\d+\.\d+\.json$/;
+const VERSION_STRING_RE = /^(\d+)\.(\d+)$/;
 
 /** Converte `"1.9"` em `{ major: 1, minor: 9 }`. */
 export function parseVersion(v: string): Version {
-  const [major, minor] = v.split('.').map(Number);
-  return { major, minor };
+  const match = VERSION_STRING_RE.exec(v);
+  if (isNil(match) || isNil(match[1]) || isNil(match[2])) {
+    throw new HexlogError('INTERNAL', `malformed version string '${v}'`);
+  }
+  return { major: Number(match[1]), minor: Number(match[2]) };
 }
 
 /** Converte `{ major: 1, minor: 9 }` em `"1.9"`. */
@@ -829,8 +833,8 @@ export function resolveCurrentDefinition(
 ): { version: string; content: Record<string, unknown> } | null {
   const defDir = path.join(partDir, name);
   const versions = listVersionFiles(defDir);
-  if (!isEmpty(versions)) {
-    const version = versions[versions.length - 1];
+  const version = versions.at(-1);
+  if (!isNil(version)) {
     return {
       version,
       content: readJson(path.join(defDir, `${version}.json`)) as Record<string, unknown>,

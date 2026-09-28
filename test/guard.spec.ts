@@ -30,7 +30,7 @@ import {
   verifyInstallation,
   type Bundles,
 } from '../src/installation.ts';
-import { parseJson } from './helpers.ts';
+import { at, parseJson } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -198,7 +198,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
       ),
     );
     expect(hexlogEntries).toHaveLength(1);
-    expect(hexlogEntries[0].hooks[0].command).toBe(expected.hookCommand);
+    expect(at(at(hexlogEntries, 0).hooks, 0).command).toBe(expected.hookCommand);
   });
 
   test('JSON resultante é válido e preserva comentários existentes', () => {
@@ -587,7 +587,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date('2026-01-01T00:00:00.000Z'),
         runHook: runRealHookForInstall,
         verifyServer: countRealTools,
-        log: () => {},
+        log: () => undefined,
       });
       expect(result.action).toBe('installed');
       const versionDir = versionDirOf(home, '0.1.0');
@@ -651,7 +651,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => {},
+        log: () => undefined,
       };
       const first = await installArtifact(args);
       const mtimeBefore = fs.statSync(first.versionDir).mtimeMs;
@@ -690,7 +690,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => {},
+        log: () => undefined,
       });
       const first = await installArtifact(argsFor('0.1.0'));
       const second = await installArtifact(argsFor('0.2.0'));
@@ -719,7 +719,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
           ),
       );
       expect(hexlogEntries).toHaveLength(1);
-      expect(hexlogEntries[0].hooks[0].command).toContain('0.2.0');
+      expect(at(at(hexlogEntries, 0).hooks, 0).command).toContain('0.2.0');
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
@@ -737,7 +737,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => {},
+        log: () => undefined,
       });
       await installArtifact(argsFor(realBundles));
       const differentHook = Buffer.concat([
@@ -772,7 +772,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         commit: null,
         dirty: false,
         clock: () => new Date(),
-        log: () => {},
+        log: () => undefined,
       };
 
       // hook preparado que não nega (cópia que sempre "permite")
@@ -853,7 +853,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => {},
+        log: () => undefined,
       };
       const first = await installArtifact(args);
       const installedHookFile = path.join(first.versionDir, 'bash-guard.mjs');
@@ -924,7 +924,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
         verifyServer: () => Promise.resolve(10),
-        log: () => {},
+        log: () => undefined,
       });
 
       const [r1, r2] = await Promise.all([
@@ -1170,10 +1170,13 @@ describe('B3: install.ts --check (processo real)', () => {
   }, 15_000);
 
   test('diretório de uma skill removido: skill-file:<nome>, exit 1', () => {
-    const name = fs
-      .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)[0];
+    const name = at(
+      fs
+        .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name),
+      0,
+    );
     const skillDir = path.join(home, '.claude', 'skills', name);
     const backup = `${skillDir}.backup-test`;
     fs.renameSync(skillDir, backup);

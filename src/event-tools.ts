@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
-import { isNil, isNotNil, keyBy, omit, sumBy, uniqBy } from 'es-toolkit';
+import { isNil, isNotNil, keyBy, omit, sumBy, uniqBy, zip } from 'es-toolkit';
 import { z } from 'zod';
 import {
   search as runSearch,
@@ -487,7 +487,7 @@ function readLines(text: string, customSchemas: Record<string, z.ZodType>): Even
 }
 
 function hasValidData(line: EventLine, customSchemas: Record<string, z.ZodType>): boolean {
-  const schema = dataSchema(line.type, line.data, customSchemas) as z.ZodType | undefined;
+  const schema = dataSchema(line.type, line.data, customSchemas);
   return isNotNil(schema) && schema.safeParse(line.data).success;
 }
 
@@ -496,7 +496,7 @@ function validateProcessData(
   customSchemas: Record<string, z.ZodType>,
 ): (type: string, data: Record<string, unknown>) => Detail[] | null {
   return (type, data) => {
-    const schema = dataSchema(type, data, customSchemas) as z.ZodType | undefined;
+    const schema = dataSchema(type, data, customSchemas);
     if (isNil(schema)) {
       return [
         {
@@ -859,8 +859,9 @@ async function evaluateGate(
   );
 
   return {
-    results: lines.map((line, index) =>
-      toGateReceipt(line, evaluations[index].evaluationResult, echo),
+    // appendBatch devolve um line por evaluation, na mesma ordem.
+    results: zip(lines, evaluations).map(([line, evaluation]) =>
+      toGateReceipt(line, evaluation.evaluationResult, echo),
     ),
   };
 }
@@ -1254,7 +1255,8 @@ function resolveRawMode(
   let size = 2; // '[]'
 
   for (let index = since; index < untilLimit; index++) {
-    const rawLine = isValidLink(physicalLines[index]);
+    // index < untilLimit <= physicalLines.length, garantido por validateUntil: physicalLines[index] sempre existe.
+    const rawLine = isValidLink(physicalLines[index]!);
     if (isNil(rawLine)) {
       invalidLines.push(index);
       continue;
@@ -1339,8 +1341,7 @@ function resolveSearchMode(
   let truncatedByCharCap = false;
   let size = 2; // '[]'
 
-  for (let position = 0; position < page.length; position++) {
-    const item = page[position];
+  for (const [position, item] of page.entries()) {
     const line = lineByIndex.get(item.index)!;
     const event: ResultLine = {
       ...projectFields(compactGates ? compactGateMilestone(line) : line, fields),

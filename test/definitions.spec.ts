@@ -25,7 +25,7 @@ import {
   writeVersionExclusive,
 } from '../src/definitions.ts';
 import { HexlogError } from '../src/errors.ts';
-import { parseJson } from './helpers.ts';
+import { captureError, parseJson } from './helpers.ts';
 
 const PROJECT = 'test-project';
 const VALID_SCHEMA = {
@@ -52,17 +52,6 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
-
-/** Executa `fn`, afirma que lançou `HexlogError` e devolve o erro para asserções específicas. */
-function captureError(fn: () => unknown): HexlogError {
-  try {
-    fn();
-  } catch (error) {
-    expect(error).toBeInstanceOf(HexlogError);
-    return error as HexlogError;
-  }
-  throw new Error('expected the function to throw HexlogError');
-}
 
 /** Registra um núcleo de vocabulário mínimo e um schema custom, pré-requisito de `createProcess`. */
 function prepareCoreAndType(): void {

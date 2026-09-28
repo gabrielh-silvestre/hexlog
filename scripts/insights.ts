@@ -1,16 +1,6 @@
 // Relatório markdown read-only (integridade, gates, timeline) sobre os logs do hexlog.
 // Uso: node scripts/insights.ts [projeto[/processo]]; diretório de dados via XDG_DATA_HOME.
-import {
-  countBy,
-  head,
-  isNil,
-  isNotNil,
-  last,
-  orderBy,
-  partition,
-  take,
-  windowed,
-} from 'es-toolkit';
+import { countBy, head, isNil, isNotNil, last, orderBy, partition, take, zip } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { isValidLink, verifyChain } from '../src/chain.ts';
 import { listProjects, loadProcess } from '../src/definitions.ts';
@@ -46,7 +36,7 @@ function timelineSection(lines: EventLine[]): string[] {
   const first = head(lines);
   const final = last(lines);
   if (isNil(first) || isNil(final)) return ['- timeline: no events'];
-  const pairs = windowed(lines, 2, 1).map(([from, to]) => ({
+  const pairs = zip(lines.slice(0, -1), lines.slice(1)).map(([from, to]) => ({
     ms: Date.parse(to.timestamp) - Date.parse(from.timestamp),
     from: from.seq,
     to: to.seq,

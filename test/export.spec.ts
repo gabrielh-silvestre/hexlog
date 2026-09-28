@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { createEnvironment, registerCore } from './helpers.ts';
+import { at, createEnvironment, registerCore } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const AGENT = 'agent-test';
@@ -95,7 +95,7 @@ describe('linha inválida', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
     const eventsFile = eventsFilePath(xdg);
     const lines = fs.readFileSync(eventsFile, 'utf8').split('\n').slice(0, -1);
-    lines[0] = lines[0].slice(0, -1); // remove o '}' final, quebra o parse JSON
+    lines[0] = at(lines, 0).slice(0, -1); // remove o '}' final, quebra o parse JSON
     fs.writeFileSync(eventsFile, `${lines.join('\n')}\n`);
 
     const { code, out } = runExport(xdg, 'alpha/run-1');

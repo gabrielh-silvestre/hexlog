@@ -30,10 +30,10 @@ afterAll(() => {
   fs.rmSync(xdgTmp, { recursive: true, force: true });
 });
 
-interface HookInput {
+type HookInput = {
   command: string;
   cwd?: string;
-}
+};
 
 function runHook(input: HookInput, env: NodeJS.ProcessEnv) {
   return spawnSync(process.execPath, [hookPath], {
@@ -48,13 +48,13 @@ function runHook(input: HookInput, env: NodeJS.ProcessEnv) {
   });
 }
 
-interface I4Case {
+type I4Case = {
   name: string;
   command: string;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   class?: 'gap' | 'false-positive';
-}
+};
 
 const denyCases: I4Case[] = [
   { name: 'absolute path to D', command: `cat ${dataDir}/x` },
@@ -148,14 +148,14 @@ const allowCases: I4Case[] = [
 
 describe('bash-guard (I4): nega o acesso a D por Bash', () => {
   for (const testCase of denyCases) {
-    test(testCase.name, () => {
+    test(`${testCase.name}`, () => {
       const result = runHook(testCase, testCase.env ?? envBase);
       expect(result.status).toBe(2);
       expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
     });
   }
 
-  test(xdgCase.name, () => {
+  test(`${xdgCase.name}`, () => {
     const result = runHook(xdgCase, xdgCase.env!);
     expect(result.status).toBe(2);
     expect(result.stderr).toContain(dataDirXdg);
@@ -172,7 +172,7 @@ describe('bash-guard (I4): nega o acesso a D por Bash', () => {
 
 describe('bash-guard (I4): permite o que não alcança D', () => {
   for (const testCase of allowCases) {
-    test(testCase.name, () => {
+    test(`${testCase.name}`, () => {
       const result = runHook(testCase, testCase.env ?? envBase);
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');

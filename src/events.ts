@@ -45,6 +45,9 @@ export function parseId(
   const match = ID_RE.exec(id);
   if (isNil(match)) return null;
   const [, project, process, type, uuid] = match;
+  // Os 3 primeiros grupos são obrigatórios em ID_RE; guarda só pra satisfazer
+  // noUncheckedIndexedAccess (match nunca chega aqui sem eles).
+  if (isNil(project) || isNil(process) || isNil(type)) return null;
   return isNil(uuid) ? { project, process, type } : { project, process, type, uuid };
 }
 
@@ -139,7 +142,7 @@ export function dataSchema(
   type: string,
   data: unknown,
   customSchemas: Record<string, z.ZodType>,
-): z.ZodType {
+): z.ZodType | undefined {
   if (type === 'milestone') {
     return get(data, 'milestoneType') === 'gate' ? GateMilestoneData : MilestoneData;
   }
@@ -158,6 +161,9 @@ export function normalizeData(
   customSchemas: Record<string, z.ZodType> = {},
 ): Record<string, unknown> {
   const schema = dataSchema(type, data, customSchemas);
+  if (isNil(schema)) {
+    throw new HexlogError('TYPE_NOT_PINNED', `type '${type}' is not fixed in the process`);
+  }
   const result = schema.safeParse(data);
   if (!result.success) {
     throw new HexlogError(

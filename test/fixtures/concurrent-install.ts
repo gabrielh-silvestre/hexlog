@@ -8,7 +8,13 @@ import * as path from 'node:path';
 import { installArtifact } from '../../src/installation.ts';
 
 const [, , home, version, variant, processId, totalProcessesText] = process.argv;
-if ([home, version, variant, processId, totalProcessesText].some((v) => v === undefined)) {
+if (
+  home === undefined ||
+  version === undefined ||
+  variant === undefined ||
+  processId === undefined ||
+  totalProcessesText === undefined
+) {
   throw new Error(
     'usage: concurrent-install.ts <home> <version> <variant> <processId> <totalProcesses>',
   );
@@ -42,13 +48,15 @@ try {
     clock: () => new Date(),
     runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
     verifyServer: () => Promise.resolve(10),
-    log: () => {},
+    log: () => undefined,
   });
   process.stdout.write(JSON.stringify({ ok: true, action: result.action }));
-  process.exit(0);
+  // process.exitCode em vez de process.exit(): mesmo código de saída, sem sair
+  // antes do stdout ser flushado (regra n/no-process-exit).
+  process.exitCode = 0;
 } catch (error) {
   process.stdout.write(
     JSON.stringify({ ok: false, message: error instanceof Error ? error.message : String(error) }),
   );
-  process.exit(1);
+  process.exitCode = 1;
 }

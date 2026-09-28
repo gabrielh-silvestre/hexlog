@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { VERSION } from '../src/version.ts';
-import { parseJson } from './helpers.ts';
+import { at, parseJson } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const IGNORED_DIRS = new Set(['node_modules', 'dist', '.omc', '.git', 'coverage']);
@@ -47,7 +47,7 @@ function extractSpecifiers(content: string): string[] {
     /\bimport\s+['"]([^'"]+)['"]/g,
     /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g,
   ];
-  return regexes.flatMap((regex) => [...content.matchAll(regex)].map((m) => m[1]));
+  return regexes.flatMap((regex) => [...content.matchAll(regex)].map((m) => at(m, 1)));
 }
 
 /** Um especificador relativo (`.`) ou absoluto (`/`) que resolve para fora da raiz do repo. */
@@ -70,7 +70,7 @@ function usesNetworkServerModule(content: string): boolean {
   const importsForbiddenModule = extractSpecifiers(content).some((specifier) =>
     FORBIDDEN_SERVER_MODULES.has(specifier.replace(/^node:/, '')),
   );
-  return importsForbiddenModule || /\.listen\(/.test(content);
+  return importsForbiddenModule || content.includes('.listen(');
 }
 
 const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
@@ -129,6 +129,8 @@ describe('N11', () => {
     eslint: '10.10.0',
     '@eslint/js': '10.0.1',
     'typescript-eslint': '8.70.0',
+    'eslint-plugin-jest': '29.16.6',
+    'eslint-plugin-n': '18.4.0',
     prettier: '3.9.7',
     'eslint-config-prettier': '10.1.8',
     husky: '9.1.7',

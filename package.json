@@ -7,7 +7,8 @@
     "node": ">=24.18.1"
   },
   "scripts": {
-    "test": "jest",
+    "test": "jest --errorOnDeprecated",
+    "test:coverage": "jest --coverage",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "format": "prettier --write .",
@@ -57,6 +58,8 @@
     "esbuild": "0.28.2",
     "eslint": "10.10.0",
     "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-jest": "29.16.6",
+    "eslint-plugin-n": "18.4.0",
     "fast-check": "4.10.1",
     "husky": "9.1.7",
     "jest": "30.5.1",

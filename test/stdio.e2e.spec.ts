@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import * as assert from 'node:assert';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -13,6 +14,7 @@ import { isUndefined, omitBy, range } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { dataDir } from '../src/directory.ts';
 import type { LogRecord } from '../src/log.ts';
+import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const buildPath = path.join(repoRoot, 'scripts/build.ts');
@@ -105,9 +107,11 @@ beforeAll(() => {
 
 afterAll(() => {
   const realDir = dataDir(process.env);
-  expect(fs.existsSync(realDir)).toBe(realDirBefore.exists);
+  // expect() padrão do jest não é aceito em afterAll (regra jest/no-standalone-expect);
+  // assert preserva a mesma verificação de invariante pós-suite.
+  assert.strictEqual(fs.existsSync(realDir), realDirBefore.exists);
   if (realDirBefore.exists) {
-    expect(fs.statSync(realDir).mtimeMs).toBe(realDirBefore.mtimeMs);
+    assert.strictEqual(fs.statSync(realDir).mtimeMs, realDirBefore.mtimeMs);
   }
   for (const dir of temporaryDirs) {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -174,7 +178,9 @@ describe('M6', () => {
       expect(message.jsonrpc).toBe('2.0');
       expect(message.id !== undefined || message.method !== undefined).toBe(true);
     }
-    expect((JSON.parse(lines[3]) as { result: { isError?: boolean } }).result.isError).toBe(true);
+    expect((JSON.parse(at(lines, 3)) as { result: { isError?: boolean } }).result.isError).toBe(
+      true,
+    );
 
     for (const record of stderrRecords(stderr.text())) {
       expect(record.event).toBeDefined();
@@ -419,7 +425,7 @@ describe('C1', () => {
 
     const responses = (await Promise.all(rounds)).flat();
     const chainResult = (
-      await clients[0].client.callTool({
+      await at(clients, 0).client.callTool({
         name: 'chain',
         arguments: { project: projectName, process: processName },
       })

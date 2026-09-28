@@ -11,6 +11,7 @@ import {
 import type { ProcessManifest, Vocabulary } from '../src/definitions.ts';
 import type { EventLine } from '../src/events.ts';
 import { generateCorpus } from './fixtures/corpus.ts';
+import { at } from './helpers.ts';
 
 const VOCABULARY: Vocabulary = {
   core: {
@@ -422,8 +423,8 @@ describe('M12', () => {
   test('c) after/before: só timestamp em [after, before)', () => {
     const corpus = generateCorpus({ size: 50, manifest: MANIFEST, vocabulary: VOCABULARY });
     const filters: Filters = {
-      after: corpus.lines[10].timestamp,
-      before: corpus.lines[20].timestamp,
+      after: at(corpus.lines, 10).timestamp,
+      before: at(corpus.lines, 20).timestamp,
     };
     const indices = candidatesFrom(corpus.lines)
       .filter(({ line }) => isCandidate(line, filters))
@@ -441,7 +442,7 @@ describe('M12', () => {
     const { results } = search(filteredCandidates, 'login');
     expect(results.length).toBeGreaterThan(0);
     for (const result of results) {
-      const line = corpus.lines[result.index];
+      const line = at(corpus.lines, result.index);
       expect(line.type).toBe('verdict');
       expect((line.data as { target: string }).target).toBe('hex:target:login');
     }

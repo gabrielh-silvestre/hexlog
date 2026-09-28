@@ -21,11 +21,11 @@ const TILDE_REGEX = /(^|=)~(?=\/|$)/g;
 const denialMessage = (d: string): string =>
   `hexlog: ${d} is only accessible through the hexlog MCP tools (list, state, events, chain).`;
 
-interface RawInput {
+type RawInput = {
   tool_name?: unknown;
   tool_input?: { command?: unknown };
   cwd?: unknown;
-}
+};
 
 function asRawInput(input: unknown): RawInput | undefined {
   return !isNil(input) && typeof input === 'object' ? input : undefined;

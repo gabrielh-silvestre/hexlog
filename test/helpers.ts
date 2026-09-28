@@ -6,6 +6,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { parse as parseRawJson } from 'jsonc-parser';
 import { z } from 'zod';
+import { HexlogError } from '../src/errors.ts';
 import type { ErrorCode, Detail } from '../src/errors.ts';
 import type { Logger, LogRecord } from '../src/log.ts';
 import { createServer } from '../src/mcp.ts';
@@ -101,6 +102,26 @@ export function parseJson<T extends z.ZodType>(schema: T, text: string): z.infer
     throw new Error(`JSON does not match the expected schema:\n${z.prettifyError(result.error)}`);
   }
   return result.data;
+}
+
+/** Acessa `items[index]` e lança um erro claro se a posição não existir — usa quando o tamanho do array já é garantido pelo setup do teste. */
+export function at<T>(items: readonly T[], index: number): T {
+  const value = items[index];
+  if (value === undefined) {
+    throw new Error(`índice ${index} fora do array (tamanho ${items.length})`);
+  }
+  return value;
+}
+
+/** Executa `fn`, afirma que lançou `HexlogError` e devolve o erro para asserções específicas. */
+export function captureError(fn: () => unknown): HexlogError {
+  try {
+    fn();
+  } catch (error) {
+    expect(error).toBeInstanceOf(HexlogError);
+    return error as HexlogError;
+  }
+  throw new Error('expected the function to throw HexlogError');
 }
 
 /** Afirma que `result` é um erro de domínio (§4.13) com o `code` esperado, e devolve o corpo estruturado. */
