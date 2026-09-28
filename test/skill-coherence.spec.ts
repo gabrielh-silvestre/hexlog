@@ -6,6 +6,7 @@ import {
   RESERVED_TYPE_NAMES,
   BUILTIN_GATE_NAMES,
 } from '../src/definitions.ts';
+import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const srcDir = path.join(repoRoot, 'src');
@@ -23,7 +24,7 @@ function stripFencedCodeBlocks(content: string): string {
 
 /** Tokens entre crase simples (`` `x` ``), fora de blocos cercados. */
 function extractInlineBackticks(content: string): string[] {
-  return [...stripFencedCodeBlocks(content).matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+  return [...stripFencedCodeBlocks(content).matchAll(/`([^`]+)`/g)].map((m) => at(m, 1));
 }
 
 const SCREAMING_SNAKE_CASE = /^[A-Z][A-Z0-9_]*$/;
@@ -35,13 +36,13 @@ const CAMEL_CASE_IDENTIFIER = /^[a-z][a-z0-9]*[A-Z][a-zA-Z0-9]*$/;
 
 /** Nomes entre aspas do 1º argumento de cada `server.registerTool(` em `content`. */
 function toolNamesFrom(content: string): string[] {
-  return [...content.matchAll(/server\.registerTool\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  return [...content.matchAll(/server\.registerTool\(\s*['"]([^'"]+)['"]/g)].map((m) => at(m, 1));
 }
 
 /** Nomes SCREAMING_SNAKE_CASE de `export const NOME` em `content`. */
 function exportedConstantNamesFrom(content: string): string[] {
   return [...content.matchAll(/export const ([A-Za-z][A-Za-z0-9_]*)/g)]
-    .map((m) => m[1])
+    .map((m) => at(m, 1))
     .filter((name) => SCREAMING_SNAKE_CASE.test(name));
 }
 
@@ -49,12 +50,12 @@ function exportedConstantNamesFrom(content: string): string[] {
 function errorCodeCatalogFrom(content: string): string[] {
   const start = content.indexOf('export type ErrorCode =');
   const unionBlock = content.slice(start, content.indexOf(';', start));
-  return [...unionBlock.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+  return [...unionBlock.matchAll(/'([A-Z_]+)'/g)].map((m) => at(m, 1));
 }
 
 /** Nomes de declarações de função (`export function X`, `async function X`, `function X`) em `content`. */
 function functionNamesFrom(content: string): string[] {
-  return [...content.matchAll(/(?:^|\s)function ([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]);
+  return [...content.matchAll(/(?:^|\s)function ([A-Za-z][A-Za-z0-9]*)/g)].map((m) => at(m, 1));
 }
 
 const LINE_CITATION_FORMAT = /^[A-Za-z0-9_.-]+\.ts:\d+(?:-\d+)?$/;
@@ -66,7 +67,9 @@ function fileCitationsFrom(content: string): string[] {
 
 /** Faz o parse de uma citação `arquivo.ts:N(-M)?` em arquivo + linha inicial/final (1-indexadas, inclusive). */
 function parseCitation(citation: string): { file: string; startLine: number; endLine: number } {
-  const [file, lines] = citation.split(':');
+  const parts = citation.split(':');
+  const file = at(parts, 0);
+  const lines = at(parts, 1);
   const [start, end] = lines.split('-');
   return { file, startLine: Number(start), endLine: Number(end ?? start) };
 }
@@ -91,7 +94,7 @@ function functionRangeFrom(content: string, name: string): { startLine: number; 
   let depth = 0;
   let opened = false;
   for (let i = startIndex; i < lines.length; i++) {
-    for (const ch of lines[i]) {
+    for (const ch of at(lines, i)) {
       if (ch === '{') {
         depth++;
         opened = true;

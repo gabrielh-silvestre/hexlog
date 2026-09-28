@@ -10,6 +10,7 @@ import {
   sha256hex,
   verifyChain,
 } from '../src/chain.ts';
+import { at } from './helpers.ts';
 
 const MANIFEST = { project: 'p', process: 'proc', fixed: { version: 1 } };
 
@@ -117,7 +118,7 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
     expect(result).toEqual({
       ok: true,
       totalLines: 5,
-      head: hashLine(log[4]),
+      head: hashLine(at(log, 4)),
       breaks: [],
       totalBreaks: 0,
       repairedLines: [],
@@ -140,7 +141,8 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
   test('(b) dados alterado na linha 1 → {2,hash-mismatch}', () => {
     const log = buildLog(5);
     const changed: Array<EventLine | string> = [...log];
-    changed[1] = { ...log[1], data: { ...log[1].data, milestoneType: 'changed' } };
+    const line1 = at(log, 1);
+    changed[1] = { ...line1, data: { ...line1.data, milestoneType: 'changed' } };
     const result = verifyChain(toText(changed), MANIFEST);
     expect(result.breaks).toEqual([{ index: 2, reason: 'hash-mismatch' }]);
     expect(result.totalBreaks).toBe(1);
@@ -162,7 +164,7 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
     const intactText = toText(log);
     // simula: o escritor completa a cauda torta com '\n' antes de anexar o novo elo (§4.7).
     const completedTail = `${intactText}{"seq":5,"tail":"partial bytes without closure"}\n`;
-    const lastLink = log[4];
+    const lastLink = at(log, 4);
     const newLink = buildLine(5, lastLink);
     newLink.seq = nextSeq(lastLink, 1);
     newLink.prevHash = expectedPrevHash(lastLink, MANIFEST);
@@ -180,7 +182,7 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
     const log = buildLog(5);
     const changed: Array<EventLine | string> = [...log];
     changed[1] = '{ this is not valid json';
-    changed[4] = { ...log[4], prevHash: sha256hex('random-junk') };
+    changed[4] = { ...at(log, 4), prevHash: sha256hex('random-junk') };
     const result = verifyChain(toText(changed), MANIFEST);
     expect(result.breaks).toEqual([
       { index: 1, reason: 'invalid-line' },
@@ -193,7 +195,7 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
   test('(f) limite conhecido: lixo terminado em \\n + registrar legítimo → ok, reparado (indistinguível)', () => {
     const log = buildLog(5);
     const withGarbage = `${toText(log)}this is pure garbage, not json\n`;
-    const lastLink = log[4];
+    const lastLink = at(log, 4);
     const newLink = buildLine(5, lastLink);
     newLink.seq = nextSeq(lastLink, 1);
     newLink.prevHash = expectedPrevHash(lastLink, MANIFEST);
@@ -207,7 +209,7 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
   test('(g) (c) + registrar legítimo → só as 2 quebras de (c), sem quebras novas', () => {
     const log = buildLog(5);
     const withoutLine1 = log.filter((_, index) => index !== 1);
-    const lastLink = withoutLine1[withoutLine1.length - 1];
+    const lastLink = at(withoutLine1, withoutLine1.length - 1);
     const newLink = buildLine(9, lastLink);
     newLink.seq = nextSeq(lastLink, 0);
     newLink.prevHash = expectedPrevHash(lastLink, MANIFEST);
@@ -239,7 +241,10 @@ describe('verifyChain: outros casos', () => {
   test('transposição adjacente: quebras localizadas na janela afetada, recupera depois', () => {
     const log = buildLog(5);
     const transposed = [...log];
-    [transposed[1], transposed[2]] = [transposed[2], transposed[1]];
+    const line1 = at(transposed, 1);
+    const line2 = at(transposed, 2);
+    transposed[1] = line2;
+    transposed[2] = line1;
 
     const result = verifyChain(toText(transposed), MANIFEST);
     expect(result.breaks).toEqual([
@@ -256,7 +261,7 @@ describe('verifyChain: outros casos', () => {
 
   test('duplicata de elo: só a cópia anexada quebra, localizada no seu próprio índice', () => {
     const log = buildLog(5);
-    const withDuplicate = [...log, log[2]];
+    const withDuplicate = [...log, at(log, 2)];
 
     const result = verifyChain(toText(withDuplicate), MANIFEST);
     expect(result.breaks).toEqual([
@@ -272,7 +277,7 @@ describe('verifyChain: outros casos', () => {
     const result = verifyChain(text, MANIFEST);
     expect(result.totalLines).toBe(2);
     expect(result.ok).toBe(true);
-    expect(result.head).toBe(hashLine(log[1]));
+    expect(result.head).toBe(hashLine(at(log, 1)));
   });
 
   test('head é "" quando não há nenhum elo válido', () => {

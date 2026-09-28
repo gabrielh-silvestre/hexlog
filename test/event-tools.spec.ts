@@ -16,7 +16,7 @@ import {
 import type { ProcessManifest } from '../src/definitions.ts';
 import type { EventLine, EventLineField } from '../src/events.ts';
 import { writeCorpus, generateCorpus } from './fixtures/corpus.ts';
-import { type Environment, createEnvironment, expectError, registerCore } from './helpers.ts';
+import { type Environment, at, createEnvironment, expectError, registerCore } from './helpers.ts';
 
 type CallResult = Awaited<ReturnType<Environment['call']>>;
 
@@ -446,7 +446,7 @@ describe('P4', () => {
     });
     const body = result.structuredContent as {
       active: { status: string; data?: unknown; truncated?: boolean }[];
-      totals: Record<string, number>;
+      totals: { active: number };
       activeTruncatedByBudget?: boolean;
     };
     // Item conflict nunca ganha `data`, então seu incremento marginal é sempre zero: ou o array
@@ -513,7 +513,7 @@ describe('P4', () => {
     });
     const body = result.structuredContent as {
       active: { data?: unknown; truncated?: boolean }[];
-      totals: Record<string, number>;
+      totals: { active: number };
       activeTruncatedByBudget?: boolean;
     };
     expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(24_000);
@@ -931,7 +931,7 @@ describe('Leva 6 — gate Milestone some do filtro por target (#19)', () => {
     await seedGateAndPlainMilestone();
     const events = await eventsFor({ milestoneType: 'gate' });
     expect(events).toHaveLength(1);
-    expect((events[0].data as GateData).milestoneType).toBe('gate');
+    expect((at(events, 0).data as GateData).milestoneType).toBe('gate');
   });
 
   test('sem target/targetPrefix → Milestone de gate continua aparecendo normalmente, sem compactação', async () => {
@@ -974,7 +974,7 @@ describe('Leva 7 — fields em events, prevHash fora por padrão (#16)', () => {
   test('sem fields → eventos sem prevHash, com seq/id/type/timestamp/agent/data', async () => {
     await registerOneMilestone();
     const result = await environment.call('events', { project: PROJ, process: PROC });
-    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    const event = at((result.structuredContent as { events: Record<string, unknown>[] }).events, 0);
     expect(Object.keys(event)).toEqual(['seq', 'id', 'type', 'timestamp', 'agent', 'data']);
   });
 
@@ -985,7 +985,7 @@ describe('Leva 7 — fields em events, prevHash fora por padrão (#16)', () => {
       process: PROC,
       fields: ['id', 'data'],
     });
-    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    const event = at((result.structuredContent as { events: Record<string, unknown>[] }).events, 0);
     expect(Object.keys(event)).toEqual(['id', 'data']);
   });
 
@@ -996,7 +996,7 @@ describe('Leva 7 — fields em events, prevHash fora por padrão (#16)', () => {
       process: PROC,
       fields: ['prevHash'],
     });
-    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    const event = at((result.structuredContent as { events: Record<string, unknown>[] }).events, 0);
     expect(Object.keys(event)).toEqual(['prevHash']);
     expect(event.prevHash).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -1216,7 +1216,7 @@ describe('M11', () => {
     const candidates = corpus.lines.map((line, index) => ({ index, line }));
     const { results } = runSearch(candidates, 'webhook');
     expect(pages.map((event) => event.id)).toEqual(
-      results.map((result) => corpus.lines[result.index].id),
+      results.map((result) => at(corpus.lines, result.index).id),
     );
     expect(pages.map((event) => event.id)).not.toContain(newId);
 
@@ -1393,7 +1393,13 @@ describe('N1', () => {
 
   test('(a) JSON inválido na linha 1', async () => {
     const lines = await logOfFive();
-    writeLog(environment, PROJ, PROC, [lines[0], '{ broken json', lines[2], lines[3], lines[4]]);
+    writeLog(environment, PROJ, PROC, [
+      at(lines, 0),
+      '{ broken json',
+      at(lines, 2),
+      at(lines, 3),
+      at(lines, 4),
+    ]);
     const chain = await callChain();
     expect(chain.totalBreaks).toBe(2);
     expect(chain.breaks).toEqual(
@@ -1406,11 +1412,18 @@ describe('N1', () => {
 
   test('(b) texto livre alterado em data da linha 1', async () => {
     const lines = await logOfFive();
+    const line1 = at(lines, 1);
     const altered: EventLine = {
-      ...lines[1],
-      data: { ...lines[1].data, milestoneType: 'tampered' },
+      ...line1,
+      data: { ...line1.data, milestoneType: 'tampered' },
     };
-    writeLog(environment, PROJ, PROC, [lines[0], altered, lines[2], lines[3], lines[4]]);
+    writeLog(environment, PROJ, PROC, [
+      at(lines, 0),
+      altered,
+      at(lines, 2),
+      at(lines, 3),
+      at(lines, 4),
+    ]);
     const chain = await callChain();
     expect(chain.breaks).toEqual([{ index: 2, reason: 'hash-mismatch' }]);
     expect(chain.totalBreaks).toBe(1);
@@ -1418,7 +1431,7 @@ describe('N1', () => {
 
   test('(c) linha 1 removida, sem cascata nos elos seguintes', async () => {
     const lines = await logOfFive();
-    writeLog(environment, PROJ, PROC, [lines[0], lines[2], lines[3], lines[4]]);
+    writeLog(environment, PROJ, PROC, [at(lines, 0), at(lines, 2), at(lines, 3), at(lines, 4)]);
     const chain = await callChain();
     expect(chain.totalBreaks).toBe(2);
     expect(chain.breaks).toEqual(
@@ -1434,7 +1447,7 @@ describe('N1', () => {
     const text =
       lines.map((line) => JSON.stringify(line)).join('\n') +
       '\n' +
-      JSON.stringify(lines[0]).slice(0, 10);
+      JSON.stringify(at(lines, 0)).slice(0, 10);
     fs.writeFileSync(path.join(environment.dir, PROJ, PROC, 'events.jsonl'), text);
 
     const registered = await environment.call('register', {
@@ -1454,12 +1467,12 @@ describe('N1', () => {
 
   test('(e) (a) + prevHash alterado na linha 4', async () => {
     const lines = await logOfFive();
-    const alteredLine4: EventLine = { ...lines[4], prevHash: '0'.repeat(64) };
+    const alteredLine4: EventLine = { ...at(lines, 4), prevHash: '0'.repeat(64) };
     writeLog(environment, PROJ, PROC, [
-      lines[0],
+      at(lines, 0),
       '{ broken json',
-      lines[2],
-      lines[3],
+      at(lines, 2),
+      at(lines, 3),
       alteredLine4,
     ]);
     const chain = await callChain();
@@ -1493,7 +1506,7 @@ describe('N1', () => {
 
   test('(g) (c) seguido de registrar legítimo → nenhuma quebra além das 2 de (c)', async () => {
     const lines = await logOfFive();
-    writeLog(environment, PROJ, PROC, [lines[0], lines[2], lines[3], lines[4]]);
+    writeLog(environment, PROJ, PROC, [at(lines, 0), at(lines, 2), at(lines, 3), at(lines, 4)]);
 
     await environment.call('register', {
       project: PROJ,
@@ -1717,8 +1730,9 @@ describe('N5', () => {
     const cleanBody = clean.structuredContent as {
       results: { passed: boolean; evidence: unknown[] }[];
     };
-    expect(cleanBody.results[0].passed).toBe(true);
-    expect(cleanBody.results[0].evidence).toEqual([]);
+    const cleanResult = at(cleanBody.results, 0);
+    expect(cleanResult.passed).toBe(true);
+    expect(cleanResult.evidence).toEqual([]);
 
     environment.setClock(new Date('2026-06-01T00:00:00.000Z'));
     await environment.call('register', {
@@ -1738,8 +1752,9 @@ describe('N5', () => {
     const violatedBody = violated.structuredContent as {
       results: { passed: boolean; evidence: unknown[] }[];
     };
-    expect(violatedBody.results[0].passed).toBe(false);
-    expect(violatedBody.results[0].evidence.length).toBeGreaterThan(0);
+    const violatedResult = at(violatedBody.results, 0);
+    expect(violatedResult.passed).toBe(false);
+    expect(violatedResult.evidence.length).toBeGreaterThan(0);
   });
 
   test('chain-intact passa num log íntegro', async () => {
@@ -1750,9 +1765,8 @@ describe('N5', () => {
       gates: [{ gate: 'chain-intact', target: 'hex:target:u1' }],
       agent: AGENT,
     });
-    expect((result.structuredContent as { results: { passed: boolean }[] }).results[0].passed).toBe(
-      true,
-    );
+    const body = result.structuredContent as { results: { passed: boolean }[] };
+    expect(at(body.results, 0).passed).toBe(true);
   });
 
   test('no-forks: 2 sucessores vivos do mesmo Verdict superado reprova (P1)', async () => {
@@ -1790,8 +1804,9 @@ describe('N5', () => {
     const forkedBody = forked.structuredContent as {
       results: { passed: boolean; evidence: unknown[] }[];
     };
-    expect(forkedBody.results[0].passed).toBe(false);
-    expect(forkedBody.results[0].evidence).toEqual([
+    const forkedResult = at(forkedBody.results, 0);
+    expect(forkedResult.passed).toBe(false);
+    expect(forkedResult.evidence).toEqual([
       { verdict: aId, successors: expect.arrayContaining([expect.any(String)]) },
     ]);
   });
@@ -1868,7 +1883,7 @@ describe('N6', () => {
     });
     expect(result.isError).not.toBe(true);
     const body = result.structuredContent as { results: { event: EventLine }[] };
-    const data = body.results[0].event.data as {
+    const data = at(body.results, 0).event.data as {
       milestoneType: string;
       gate: { name: string; origin: string; criteria: string; passed: boolean };
     };
@@ -1918,11 +1933,10 @@ describe('N6', () => {
     const gateOf = (event: EventLine) =>
       event.data.gate as { name: string; evaluatedThrough: number };
     expect(results.map(({ event }) => gateOf(event).name)).toEqual(['no-orphans', 'chain-intact']);
-    expect(gateOf(results[1].event).evaluatedThrough).toBe(
-      gateOf(results[0].event).evaluatedThrough,
-    );
-    expect(results[1].seq).toBe(results[0].seq + 1);
-    expect(results[1].event.prevHash).toBe(hashLine(results[0].event));
+    const [result0, result1] = [at(results, 0), at(results, 1)];
+    expect(gateOf(result1.event).evaluatedThrough).toBe(gateOf(result0.event).evaluatedThrough);
+    expect(result1.seq).toBe(result0.seq + 1);
+    expect(result1.event.prevHash).toBe(hashLine(result0.event));
   });
 
   test('gates com {gate, target} repetido → INVALID_INPUT, nada gravado', async () => {
@@ -2311,9 +2325,8 @@ describe('N13', () => {
       gates: [{ gate: 'no-orphans', target: 'hex:target:x' }],
       agent: AGENT,
     });
-    expect(
-      (evaluated.structuredContent as { results: { passed: boolean }[] }).results[0].passed,
-    ).toBe(false);
+    const evaluatedBody = evaluated.structuredContent as { results: { passed: boolean }[] };
+    expect(at(evaluatedBody.results, 0).passed).toBe(false);
 
     const after = await environment.call('state', {
       project: PROJ,
@@ -2634,7 +2647,7 @@ describe('S5', () => {
       })
     ).structuredContent as { results: { event: EventLine }[] };
     expect(
-      (oldGateResult.results[0].event.data as { gate: { criteria: string } }).gate.criteria,
+      (at(oldGateResult.results, 0).event.data as { gate: { criteria: string } }).gate.criteria,
     ).toBe('v1');
 
     const newGateResult = (
@@ -2647,7 +2660,7 @@ describe('S5', () => {
       })
     ).structuredContent as { results: { event: EventLine }[] };
     expect(
-      (newGateResult.results[0].event.data as { gate: { criteria: string } }).gate.criteria,
+      (at(newGateResult.results, 0).event.data as { gate: { criteria: string } }).gate.criteria,
     ).toBe('v2');
   });
 });

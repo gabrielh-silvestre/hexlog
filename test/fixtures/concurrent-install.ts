@@ -8,7 +8,13 @@ import * as path from 'node:path';
 import { installArtifact } from '../../src/installation.ts';
 
 const [, , home, version, variant, processId, totalProcessesText] = process.argv;
-if ([home, version, variant, processId, totalProcessesText].some((v) => v === undefined)) {
+if (
+  home === undefined ||
+  version === undefined ||
+  variant === undefined ||
+  processId === undefined ||
+  totalProcessesText === undefined
+) {
   throw new Error(
     'usage: concurrent-install.ts <home> <version> <variant> <processId> <totalProcesses>',
   );

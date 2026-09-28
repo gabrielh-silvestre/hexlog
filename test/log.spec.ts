@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { anchor, hashLine, verifyChain } from '../src/chain.ts';
 import type { EventLine } from '../src/events.ts';
 import { append, appendBatch, readText, type LogRecord } from '../src/log.ts';
+import { at } from './helpers.ts';
 
 const MANIFEST = { project: 'p', process: 'proc', fixed: { version: 1 } };
 
@@ -208,8 +209,9 @@ describe('anexar em lote (appendBatch, Leva 5)', () => {
     const lines = await appendBatch(file, MANIFEST, [buildLine, buildLine, buildLine], { log });
 
     expect(lines.map((line) => line.seq)).toEqual([0, 1, 2]);
-    expect(lines[1].prevHash).toBe(hashLine(lines[0]));
-    expect(lines[2].prevHash).toBe(hashLine(lines[1]));
+    const [line0, line1, line2] = [at(lines, 0), at(lines, 1), at(lines, 2)];
+    expect(line1.prevHash).toBe(hashLine(line0));
+    expect(line2.prevHash).toBe(hashLine(line1));
     expect(new Set(lines.map((line) => line.timestamp)).size).toBe(1);
     const result = verifyChain(readText(file), MANIFEST);
     expect(result.ok).toBe(true);
@@ -240,7 +242,7 @@ describe('anexar em lote (appendBatch, Leva 5)', () => {
 
     const lines = await appendBatch(file, MANIFEST, [buildLine, buildLine, buildLine], { log });
 
-    expect(lines[0].prevHash).toBe(hashLine(first));
+    expect(at(lines, 0).prevHash).toBe(hashLine(first));
     const result = verifyChain(readText(file), MANIFEST);
     expect(result.ok).toBe(true);
     expect(result.breaks).toEqual([]);

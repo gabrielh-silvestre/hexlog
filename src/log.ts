@@ -54,7 +54,8 @@ export async function append(
   options: { log: Logger; timeoutMs?: number; orphanMs?: number; clock?: () => Date },
 ): Promise<EventLine> {
   const [line] = await appendBatch(file, manifest, [build], options);
-  return line;
+  // appendBatch grava exatamente 1 elo por build recebido; builds aqui tem length 1.
+  return line!;
 }
 
 /**
@@ -147,9 +148,9 @@ function lastLinkAndLinesAfter(lines: string[]): {
   lastLink: EventLine | null;
   linesAfter: number;
 } {
-  for (let index = lines.length - 1; index >= 0; index--) {
-    const link = isValidLink(lines[index]);
-    if (!isNil(link)) return { lastLink: link, linesAfter: lines.length - 1 - index };
+  for (const [linesAfter, lineText] of [...lines].reverse().entries()) {
+    const link = isValidLink(lineText);
+    if (!isNil(link)) return { lastLink: link, linesAfter };
   }
   return { lastLink: null, linesAfter: lines.length };
 }

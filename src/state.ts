@@ -163,7 +163,8 @@ function computeSupersession(verdicts: EventLine[]): SupersessionResult {
 
     const [target, claim] = JSON.parse(key) as [string, string];
     if (candidates.length === 1) {
-      active.push({ target, claim, status: 'active', active: candidates[0] });
+      // candidates.length === 1 acabou de ser checado: candidates[0] sempre existe.
+      active.push({ target, claim, status: 'active', active: candidates[0]! });
       continue;
     }
     active.push({ target, claim, status: 'conflict', candidates });
@@ -283,7 +284,8 @@ export function validateField(
     .filter(([, vocab]) => vocab[key].includes(value))
     .map(([owner]) => owner);
 
-  if (owners.length === 1) return { kind: 'extension', owner: owners[0] };
+  // owners.length === 1 acabou de ser checado: owners[0] sempre existe.
+  if (owners.length === 1) return { kind: 'extension', owner: owners[0]! };
   if (owners.length > 1) return { kind: 'extension', owner: null }; // dois+ owners declaram o mesmo valor: ambíguo
 
   return { kind: open ? 'unknown-warning' : 'error', owner: null };

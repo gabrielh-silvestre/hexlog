@@ -7,6 +7,7 @@ import { expectedPrevHash, nextSeq } from '../../src/chain.ts';
 import type { ProcessManifest, Vocabulary } from '../../src/definitions.ts';
 import { stripDiacritics, indexableText } from '../../src/search.ts';
 import type { EventLine } from '../../src/events.ts';
+import { at } from '../helpers.ts';
 
 // Marcadas como "obrigatórias" pelo passo 7c (âncoras que os ACs M11/M12 exigem, sem depender
 // da distribuição aleatória do gerador para aparecerem).
@@ -78,7 +79,7 @@ type CustomIntent = { category: 'custom'; text: string; tag: string; hiddenTarge
 type Intent = MilestoneIntent | VerdictIntent | CustomIntent;
 
 function pick<T>(list: T[], fallback: T, index: number): T {
-  return list.length > 0 ? list[index % list.length] : fallback;
+  return list.length > 0 ? at(list, index % list.length) : fallback;
 }
 
 /** Eventos garantidos pelos ACs (M11c, M11i, M12a, M12b): não dependem da amostragem aleatória. */
@@ -103,11 +104,11 @@ function anchors(vocabulary: Vocabulary): Intent[] {
       category: 'verdict',
       target: 'hex:target:account-1',
       result: 'result-outside-vocabulary',
-      text: PHRASES_GENERAL[0],
+      text: at(PHRASES_GENERAL, 0),
     },
-    { category: 'verdict', target: 'hex:target:account-2', result, text: PHRASES_WEBHOOK[0] },
-    { category: 'verdict', target: 'hex:target:account-3', result, text: PHRASES_WEBHOOK[1] },
-    withDecision('hex:target:account-4', PHRASES_WEBHOOK[2]),
+    { category: 'verdict', target: 'hex:target:account-2', result, text: at(PHRASES_WEBHOOK, 0) },
+    { category: 'verdict', target: 'hex:target:account-3', result, text: at(PHRASES_WEBHOOK, 1) },
+    withDecision('hex:target:account-4', at(PHRASES_WEBHOOK, 2)),
     withDecision('hex:target:note-1', PHRASE_CAFE),
   ];
 }
@@ -133,8 +134,8 @@ const DRAFT_ARB: fc.Arbitrary<Draft> = fc.record({
 });
 
 function toIntent(d: Draft, vocabulary: Vocabulary, index: number): Intent {
-  const target = CORPUS_TARGETS[d.targetIndex % CORPUS_TARGETS.length];
-  const text = PHRASE_BANK[d.bank % PHRASE_BANK.length];
+  const target = at(CORPUS_TARGETS, d.targetIndex % CORPUS_TARGETS.length);
+  const text = at(PHRASE_BANK, d.bank % PHRASE_BANK.length);
 
   if (d.category === 'milestone') {
     const milestoneType = pick(vocabulary.core.milestoneType, 'approved', d.bank);

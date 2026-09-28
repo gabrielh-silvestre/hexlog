@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { VERSION } from '../src/version.ts';
-import { parseJson } from './helpers.ts';
+import { at, parseJson } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const IGNORED_DIRS = new Set(['node_modules', 'dist', '.omc', '.git', 'coverage']);
@@ -47,7 +47,7 @@ function extractSpecifiers(content: string): string[] {
     /\bimport\s+['"]([^'"]+)['"]/g,
     /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g,
   ];
-  return regexes.flatMap((regex) => [...content.matchAll(regex)].map((m) => m[1]));
+  return regexes.flatMap((regex) => [...content.matchAll(regex)].map((m) => at(m, 1)));
 }
 
 /** Um especificador relativo (`.`) ou absoluto (`/`) que resolve para fora da raiz do repo. */

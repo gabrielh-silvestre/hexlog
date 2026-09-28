@@ -13,6 +13,7 @@ import { isUndefined, omitBy, range } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { dataDir } from '../src/directory.ts';
 import type { LogRecord } from '../src/log.ts';
+import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const buildPath = path.join(repoRoot, 'scripts/build.ts');
@@ -174,7 +175,9 @@ describe('M6', () => {
       expect(message.jsonrpc).toBe('2.0');
       expect(message.id !== undefined || message.method !== undefined).toBe(true);
     }
-    expect((JSON.parse(lines[3]) as { result: { isError?: boolean } }).result.isError).toBe(true);
+    expect((JSON.parse(at(lines, 3)) as { result: { isError?: boolean } }).result.isError).toBe(
+      true,
+    );
 
     for (const record of stderrRecords(stderr.text())) {
       expect(record.event).toBeDefined();
@@ -419,7 +422,7 @@ describe('C1', () => {
 
     const responses = (await Promise.all(rounds)).flat();
     const chainResult = (
-      await clients[0].client.callTool({
+      await at(clients, 0).client.callTool({
         name: 'chain',
         arguments: { project: projectName, process: processName },
       })

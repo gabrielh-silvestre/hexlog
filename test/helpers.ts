@@ -103,6 +103,15 @@ export function parseJson<T extends z.ZodType>(schema: T, text: string): z.infer
   return result.data;
 }
 
+/** Acessa `items[index]` e lança um erro claro se a posição não existir — usa quando o tamanho do array já é garantido pelo setup do teste. */
+export function at<T>(items: readonly T[], index: number): T {
+  const value = items[index];
+  if (value === undefined) {
+    throw new Error(`índice ${index} fora do array (tamanho ${items.length})`);
+  }
+  return value;
+}
+
 /** Afirma que `result` é um erro de domínio (§4.13) com o `code` esperado, e devolve o corpo estruturado. */
 export function expectError(
   result: CallResult,

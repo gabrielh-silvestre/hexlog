@@ -9,7 +9,7 @@ import * as path from 'node:path';
 // a partir do teste (mesmo motivo documentado em src/log.ts:2-4).
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
-import { isNil } from 'es-toolkit';
+import { isNil, zip } from 'es-toolkit';
 import {
   expectedRules,
   applyGuard,
@@ -390,8 +390,8 @@ export function verifyInstallation(args: {
     runHook,
     installedBytes,
   });
-  skillNames.forEach((name, index) => {
-    if (!existsSync(expected.skillFiles[index])) result.missing.push(`skill-file:${name}`);
+  zip(skillNames, expected.skillFiles).forEach(([name, file]) => {
+    if (!existsSync(file)) result.missing.push(`skill-file:${name}`);
   });
 
   const warnings: string[] = [];

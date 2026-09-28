@@ -30,7 +30,7 @@ import {
   verifyInstallation,
   type Bundles,
 } from '../src/installation.ts';
-import { parseJson } from './helpers.ts';
+import { at, parseJson } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -198,7 +198,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
       ),
     );
     expect(hexlogEntries).toHaveLength(1);
-    expect(hexlogEntries[0].hooks[0].command).toBe(expected.hookCommand);
+    expect(at(at(hexlogEntries, 0).hooks, 0).command).toBe(expected.hookCommand);
   });
 
   test('JSON resultante é válido e preserva comentários existentes', () => {
@@ -719,7 +719,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
           ),
       );
       expect(hexlogEntries).toHaveLength(1);
-      expect(hexlogEntries[0].hooks[0].command).toContain('0.2.0');
+      expect(at(at(hexlogEntries, 0).hooks, 0).command).toContain('0.2.0');
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
@@ -1170,10 +1170,13 @@ describe('B3: install.ts --check (processo real)', () => {
   }, 15_000);
 
   test('diretório de uma skill removido: skill-file:<nome>, exit 1', () => {
-    const name = fs
-      .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)[0];
+    const name = at(
+      fs
+        .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name),
+      0,
+    );
     const skillDir = path.join(home, '.claude', 'skills', name);
     const backup = `${skillDir}.backup-test`;
     fs.renameSync(skillDir, backup);

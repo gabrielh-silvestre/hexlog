@@ -46,11 +46,14 @@ function timelineSection(lines: EventLine[]): string[] {
   const first = head(lines);
   const final = last(lines);
   if (isNil(first) || isNil(final)) return ['- timeline: no events'];
-  const pairs = windowed(lines, 2, 1).map(([from, to]) => ({
-    ms: Date.parse(to.timestamp) - Date.parse(from.timestamp),
-    from: from.seq,
-    to: to.seq,
-  }));
+  // windowed(lines, 2, 1) só produz janelas completas: from/to nunca vêm undefined de fato.
+  const pairs = windowed(lines, 2, 1)
+    .map(([from, to]) =>
+      isNil(from) || isNil(to)
+        ? null
+        : { ms: Date.parse(to.timestamp) - Date.parse(from.timestamp), from: from.seq, to: to.seq },
+    )
+    .filter(isNotNil);
   const gaps = take(orderBy(pairs, [(gap) => gap.ms], ['desc']), TOP_GAPS);
   const perDay = countBy(lines, (line) => line.timestamp.slice(0, 10));
   const perMilestone = countBy(

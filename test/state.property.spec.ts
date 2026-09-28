@@ -3,6 +3,7 @@ import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import type { EventLine } from '../src/events.ts';
 import { effectiveNow, projectState, type Vocabulary } from '../src/state.ts';
+import { at } from './helpers.ts';
 
 // ---- fixtures locais (duplicadas de state.spec.ts: 2 arquivos só, sem 3º módulo) ----
 
@@ -105,7 +106,7 @@ function materialize(intents: readonly Intent[]): EventLine[] {
     if (intent.supersedesOffset !== null) {
       const targetIndex = index - intent.supersedesOffset;
       if (targetIndex >= 0 && kindByIndex[targetIndex] === 'verdict')
-        supersedes = [idByIndex[targetIndex]];
+        supersedes = [at(idByIndex, targetIndex)];
     }
     return verdict(
       { target: intent.target, claim: intent.claim, supersedes },
@@ -134,7 +135,7 @@ describe('projectState — propriedades (fast-check)', () => {
       fc.property(sequenceArbitrary, fc.nat(), (intents, rawIndex) => {
         const lines = materialize(intents);
         const index = rawIndex % lines.length;
-        const duplicate = lines[index];
+        const duplicate = at(lines, index);
         const withDuplicate = [...lines, duplicate];
         const now = effectiveNow(BASE_NOW, lines);
 
