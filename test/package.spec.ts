@@ -70,7 +70,7 @@ function usesNetworkServerModule(content: string): boolean {
   const importsForbiddenModule = extractSpecifiers(content).some((specifier) =>
     FORBIDDEN_SERVER_MODULES.has(specifier.replace(/^node:/, '')),
   );
-  return importsForbiddenModule || /\.listen\(/.test(content);
+  return importsForbiddenModule || content.includes('.listen(');
 }
 
 const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));

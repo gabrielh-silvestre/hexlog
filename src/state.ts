@@ -200,7 +200,7 @@ function deriveCycle(
 
 function calculateOrphans(lines: EventLine[], now: string): Projection['orphans'] {
   const withTarget = lines.filter((e) => e.type === 'milestone' || e.type === 'verdict');
-  const byTarget = groupBy(withTarget, (e) => targetOf(e) as string);
+  const byTarget = groupBy(withTarget, (e) => targetOf(e)!);
 
   const orphans: Projection['orphans'] = [];
   for (const [target, eventsForTarget] of Object.entries(byTarget)) {

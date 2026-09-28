@@ -10,11 +10,11 @@ export const entries: Record<string, string> = {
   'bash-guard': 'hook/bash-guard.ts',
 };
 
-interface BuildOptions {
+type BuildOptions = {
   write: boolean;
   outdir?: string;
   entryPoints?: Record<string, string>;
-}
+};
 
 export function build({
   write,

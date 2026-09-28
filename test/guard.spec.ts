@@ -587,7 +587,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date('2026-01-01T00:00:00.000Z'),
         runHook: runRealHookForInstall,
         verifyServer: countRealTools,
-        log: () => {},
+        log: () => undefined,
       });
       expect(result.action).toBe('installed');
       const versionDir = versionDirOf(home, '0.1.0');
@@ -651,7 +651,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => {},
+        log: () => undefined,
       };
       const first = await installArtifact(args);
       const mtimeBefore = fs.statSync(first.versionDir).mtimeMs;
@@ -690,7 +690,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => {},
+        log: () => undefined,
       });
       const first = await installArtifact(argsFor('0.1.0'));
       const second = await installArtifact(argsFor('0.2.0'));
@@ -737,7 +737,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => {},
+        log: () => undefined,
       });
       await installArtifact(argsFor(realBundles));
       const differentHook = Buffer.concat([
@@ -772,7 +772,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         commit: null,
         dirty: false,
         clock: () => new Date(),
-        log: () => {},
+        log: () => undefined,
       };
 
       // hook preparado que não nega (cópia que sempre "permite")
@@ -853,7 +853,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => {},
+        log: () => undefined,
       };
       const first = await installArtifact(args);
       const installedHookFile = path.join(first.versionDir, 'bash-guard.mjs');
@@ -924,7 +924,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
         verifyServer: () => Promise.resolve(10),
-        log: () => {},
+        log: () => undefined,
       });
 
       const [r1, r2] = await Promise.all([

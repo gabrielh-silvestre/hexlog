@@ -9,7 +9,7 @@ import { parse, modify, applyEdits, type ModificationOptions } from 'jsonc-parse
 import { parse as shellQuoteParse, quote as shellQuoteQuote } from 'shell-quote';
 import { isNil, isString } from 'es-toolkit';
 
-export interface ExpectedRules {
+export type ExpectedRules = {
   denyReadDir: string;
   denyRead: string;
   denyEdit: string;
@@ -21,7 +21,7 @@ export interface ExpectedRules {
   serverFile: string;
   versionDir: string;
   skillFiles: string[];
-}
+};
 
 export type MissingItem =
   | 'deny-read-dir'
@@ -69,14 +69,14 @@ const FORMATTING_OPTIONS: ModificationOptions = {
 };
 
 /** Forma mínima de `settings.json` usada por este módulo — `parse` (jsonc-parser) devolve `any`. */
-interface SettingsData {
+type SettingsData = {
   permissions?: { deny?: unknown[] };
-}
+};
 
 /** Forma mínima de `~/.claude.json` usada por `mcpRegistered` — `parse` devolve `any`. */
-interface ClaudeJsonData {
+type ClaudeJsonData = {
   mcpServers?: { hexlog?: { command?: unknown; args?: unknown } };
-}
+};
 
 function appendToArray(text: string, jsonPath: (string | number)[], value: unknown): string {
   const edits = modify(text, [...jsonPath, -1], value, FORMATTING_OPTIONS);
@@ -116,12 +116,12 @@ function tryParseCommand(command: string): [string, string] | undefined {
   return [tokens[0], tokens[1]] as [string, string];
 }
 
-export interface FoundHookEntry {
+export type FoundHookEntry = {
   entryIndex: number;
   hookIndex: number;
   exec: string;
   file: string;
-}
+};
 
 /** Percorre `hooks.PreToolUse` procurando a entrada do hook do hexlog, em qualquer versão instalada. */
 export function findHookEntry(
@@ -213,7 +213,7 @@ function verifyArtifactModified(installedBytes: VerifyGuardArgs['installedBytes'
   return serverModified || hookModified;
 }
 
-interface VerifyGuardArgs {
+type VerifyGuardArgs = {
   settingsText: string;
   claudeJsonText: string | null;
   expected: ExpectedRules;
@@ -224,7 +224,7 @@ interface VerifyGuardArgs {
     hook: Buffer | null;
     manifest: { sha256: { server: string; hook: string } } | null;
   };
-}
+};
 
 /** Único mecanismo de detecção de guard ausente, alterado ou quebrado (R-1); usado por `install.ts --check`. */
 export function verifyGuard(args: VerifyGuardArgs): {

@@ -60,16 +60,16 @@ function verdict(
 const TARGET_A = 'hex:target:a';
 const TARGET_B = 'hex:target:b';
 
-interface VerdictIntent {
+type VerdictIntent = {
   readonly kind: 'verdict';
   readonly target: string;
   readonly claim: 'a1' | 'a2';
   readonly supersedesOffset: number | null;
-}
-interface MilestoneIntent {
+};
+type MilestoneIntent = {
   readonly kind: 'milestone';
   readonly target: string;
-}
+};
 type Intent = VerdictIntent | MilestoneIntent;
 
 const intentArbitrary: fc.Arbitrary<Intent> = fc.oneof(

@@ -308,11 +308,11 @@ const TARGET_FORMAT_CITATION_EXPECTATIONS: Record<string, string> = {
   'events.ts:27-30': 'Target',
 };
 
-interface SkillCase {
+type SkillCase = {
   name: string;
   skillPath: string;
   citationExpectations: Record<string, string>;
-}
+};
 
 const skillCases: SkillCase[] = [
   {

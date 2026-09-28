@@ -17,12 +17,18 @@ export default defineConfig(
   },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
+  tseslint.configs.stylisticTypeChecked,
   {
     languageOptions: {
       parserOptions: {
         projectService: { allowDefaultProject: ['eslint.config.js'] },
         tsconfigRootDir: import.meta.dirname,
       },
+    },
+  },
+  {
+    rules: {
+      '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
     },
   },
   eslintConfigPrettier,

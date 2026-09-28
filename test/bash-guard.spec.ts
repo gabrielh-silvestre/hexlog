@@ -30,10 +30,10 @@ afterAll(() => {
   fs.rmSync(xdgTmp, { recursive: true, force: true });
 });
 
-interface HookInput {
+type HookInput = {
   command: string;
   cwd?: string;
-}
+};
 
 function runHook(input: HookInput, env: NodeJS.ProcessEnv) {
   return spawnSync(process.execPath, [hookPath], {
@@ -48,13 +48,13 @@ function runHook(input: HookInput, env: NodeJS.ProcessEnv) {
   });
 }
 
-interface I4Case {
+type I4Case = {
   name: string;
   command: string;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   class?: 'gap' | 'false-positive';
-}
+};
 
 const denyCases: I4Case[] = [
   { name: 'absolute path to D', command: `cat ${dataDir}/x` },

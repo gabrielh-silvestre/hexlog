@@ -48,7 +48,7 @@ try {
     clock: () => new Date(),
     runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
     verifyServer: () => Promise.resolve(10),
-    log: () => {},
+    log: () => undefined,
   });
   process.stdout.write(JSON.stringify({ ok: true, action: result.action }));
   process.exit(0);

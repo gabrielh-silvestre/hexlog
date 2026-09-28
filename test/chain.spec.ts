@@ -38,7 +38,7 @@ function buildLog(count: number): EventLine[] {
   return lines;
 }
 
-function toText(lines: Array<EventLine | string>): string {
+function toText(lines: (EventLine | string)[]): string {
   return (
     lines.map((line) => (typeof line === 'string' ? line : JSON.stringify(line))).join('\n') + '\n'
   );
@@ -126,7 +126,7 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
   });
 
   test('(a) JSON inválido na linha 1 → {1,invalid-line},{2,hash-mismatch}', () => {
-    const log: Array<EventLine | string> = [...buildLog(5)];
+    const log: (EventLine | string)[] = [...buildLog(5)];
     log[1] = '{ this is not valid json';
     const result = verifyChain(toText(log), MANIFEST);
     expect(result.breaks).toEqual([
@@ -140,7 +140,7 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
 
   test('(b) dados alterado na linha 1 → {2,hash-mismatch}', () => {
     const log = buildLog(5);
-    const changed: Array<EventLine | string> = [...log];
+    const changed: (EventLine | string)[] = [...log];
     const line1 = at(log, 1);
     changed[1] = { ...line1, data: { ...line1.data, milestoneType: 'changed' } };
     const result = verifyChain(toText(changed), MANIFEST);
@@ -180,7 +180,7 @@ describe('verifyChain (N1: log de 5 elos, corrupções pontuais)', () => {
 
   test('(e) (a) + prevHash alterado na linha 4 → {1,invalid-line},{2,hash-mismatch},{4,hash-mismatch}', () => {
     const log = buildLog(5);
-    const changed: Array<EventLine | string> = [...log];
+    const changed: (EventLine | string)[] = [...log];
     changed[1] = '{ this is not valid json';
     changed[4] = { ...at(log, 4), prevHash: sha256hex('random-junk') };
     const result = verifyChain(toText(changed), MANIFEST);
