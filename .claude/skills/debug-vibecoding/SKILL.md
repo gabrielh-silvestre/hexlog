@@ -1,6 +1,6 @@
 ---
 name: debug-vibecoding
-description: Walk the user through the decisions behind vibecoded work in one or more GitHub PRs, from product motivation down to code, one decision per turn: collect the PR body, commits, closed issues, local plans, wiki, reviews and worktree state; flag stale PR bodies, decisions the planner took without asking the user and partially closed issues; close each PR with pending items (issue, PR body, execution) and a resumable session file in .ignore/debug/. Use when the user says "debug do vibecoding", "debug do trabalho do PR 31", "entender as decisões do PR", "por que o PR fez X", or runs /debug-vibecoding followed by PR numbers. Not for code review or bug hunting (review-pr, code-review), nor for posting a verdict (pr-verdict).
+description: Walk the user through the decisions behind vibecoded work in one or more GitHub PRs, from product motivation down to code, one decision per turn: collect the PR body, commits, closed issues, local plans, wiki, reviews and worktree state; flag stale PR bodies, decisions the planner took without asking the user and partially closed issues; close each PR with pending items (issue, PR body, execution) and a resumable session file in .ignore/debug/. Use when the user says "debug do vibecoding", "debug do trabalho do PR 31", or runs /debug-vibecoding followed by PR numbers. Not for code review or bug hunting (review-pr, code-review), nor for posting a verdict (pr-verdict).
 license: CC-BY-4.0
 metadata:
   author: Gabriel Baldino
@@ -23,7 +23,7 @@ Regras que valem do início ao fim:
 
 Entrada: um ou mais números de PR. Com vários, percorra um PR por vez, na ordem que o usuário escolher.
 
-1. Se `.ignore/debug/PR<n>.md` existir, leia e retome (Passo 6). Se o head do PR mudou desde o arquivo, avise antes de retomar.
+1. Se `.ignore/debug/PR<n>.md` existir na raiz da worktree principal (ver [references/session-file.md](references/session-file.md)), leia e retome (Passo 6). Se o head do PR mudou desde o arquivo, avise antes de retomar.
 2. Leia [references/checks.md](references/checks.md) e dispare **um** subagente `explore` (sonnet) com o prompt de coleta de lá, pedindo mensagem de conclusão com o resumo. Não leia plano, diff nem transcript inteiro no contexto principal.
 3. Enquanto a coleta roda, não pergunte nada que dependa dela.
 

@@ -9,7 +9,7 @@ Copie, trocando `<n>` e `<repo>`:
 ```
 Somente leitura. Repositório <repo>, PR #<n>. Levante e devolva numa mensagem de conclusão com o resumo (máx. ~50 linhas):
 
-1. PR: título, estado (draft/aberto/mergeado), head sha, data de criação, corpo. Lista de commits da branch com data/hora (`git log --format='%h %ad %s' --date=format:'%m-%d %H:%M' origin/<base>..origin/<branch>`).
+1. PR: título, estado (draft/aberto/mergeado), head sha, data de criação, corpo. Lista de commits da branch com data/hora via `pull_request_read` (method `get_commits`), que não depende de refs locais e sobrevive à branch apagada após o merge.
 2. Issues citadas no corpo (closes) e nos commits: título e, no corpo de cada uma, a fonte da evidência (relatório, achado H-xx, sessão).
 3. Plano local: arquivos em .omc/plans/ ligados ao PR (branch, issues, tema); iterações (snapshots) com horário; veredito de cada review de Architect/Critic; trechos "Perguntas abertas ao usuário" e decisões marcadas como recomendação do Planner.
 4. Wiki: páginas em .omc/wiki/ que citam o PR, a branch ou as issues; a de decisão principal.

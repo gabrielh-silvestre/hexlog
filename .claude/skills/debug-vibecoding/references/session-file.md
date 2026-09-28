@@ -1,6 +1,6 @@
 # Arquivo de sessão
 
-Lido nos Passos 1 (retomada) e 6 (gravação). Caminho: `.ignore/debug/PR<n>.md` na raiz do repositório. Um arquivo por PR.
+Lido nos Passos 1 (retomada) e 6 (gravação). Caminho: `.ignore/debug/PR<n>.md` na raiz da worktree principal (`dirname $(git rev-parse --path-format=absolute --git-common-dir)`), nunca na worktree atual: `.ignore/` é por worktree. Um arquivo por PR.
 
 ## Formato
 
