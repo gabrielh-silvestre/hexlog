@@ -4,6 +4,9 @@
 schema `Target` (`events.ts#Target`) contra `/^hex:target:[^\s:]+$/` — o
 prefixo `hex:target:` é fixo, só o `<id>` varia.
 
+O `<id>` é sem espaço e sem `:`, usa `.` como separador de subárvore
+(`hex:target:a.b.c`) e o endereço inteiro (prefixo incluso) tem até 200 caracteres.
+
 ## `<id>` customizado por projeto
 
 O `.hexlog/flow.md` pode restringir o formato do `<id>` via `targetIdPattern`

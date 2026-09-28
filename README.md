@@ -210,6 +210,8 @@ e gera o uuid v7. Alternativamente, `id` continua aceitando:
 
 Marco aceita `milestoneType`, `target` (endereço no formato `hex:target:<id>`),
 `count` (`{field, value}`), `dueAt`, `decisions[]` e `trace` (opcional).
+O `<id>` do `target` é sem espaço e sem `:`, usa `.` como separador de subárvore
+(`hex:target:a.b.c`) e o endereço inteiro tem até 200 caracteres.
 `decisions[]` é uma lista de `{item, action, text}`; `action` é vocabulário
 fechado por projeto — os valores aceitos vêm de `list({project, process})`, e
 um valor fora dele é `VOCABULARY_VIOLATED`. Veredito aceita `claim`, `source`
