@@ -1,5 +1,9 @@
-import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, test, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import * as fs from 'node:fs';
+// import default separado (não `* as fs`, já usado acima): precisa ser o mesmo objeto que
+// src/installation.ts usa, para `jest.spyOn(fsDefault, 'renameSync')` interceptar de fato a
+// chamada feita lá dentro (mesmo motivo documentado em src/log.ts:2-4).
+import fsDefault from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -1050,6 +1054,34 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
       fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('2º renameSync falha no meio da troca: dstDir continua com o conteúdo anterior (N1)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-g-'));
+    const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
+    const srcDirV2 = buildSrcDir('# hexlog skill v2\n');
+    const originalRenameSync = fsDefault.renameSync;
+    try {
+      writeSkillFolder(home, 'hexlog', srcDirV1);
+      const skillFile = path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md');
+
+      jest
+        .spyOn(fsDefault, 'renameSync')
+        // 1º rename (dstDir -> old) passa de verdade; 2º (tmp -> dstDir) é o que falha.
+        .mockImplementationOnce((...args) => originalRenameSync(...args))
+        .mockImplementationOnce(() => {
+          throw new Error('boom: simulated 2nd renameSync failure');
+        });
+
+      expect(() => writeSkillFolder(home, 'hexlog', srcDirV2)).toThrow('boom');
+
+      expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill v1\n');
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDirV1, { recursive: true, force: true });
+      fs.rmSync(srcDirV2, { recursive: true, force: true });
     }
   });
 

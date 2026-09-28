@@ -3,7 +3,7 @@
 # hexlog
 
 ## Purpose
-Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: decisões, marcos e veredictos. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 10 tools. Não há CLI nem daemon: servidor MCP, hook de isolamento Bash e hook opcional de lembrete de fluxo (`PostToolUse` em `Skill`, ativado por repositório) são instalados no Claude Code como três bundles esbuild em `~/.local/lib/hexlog/<versão>/`, junto com as skills de `skills/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/` (fallback `~/.local/share/hexlog`).
+Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: decisões, marcos e veredictos. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 10 tools. Não há CLI nem daemon: servidor MCP e hook de isolamento Bash são instalados no Claude Code como dois bundles esbuild em `~/.local/lib/hexlog/<versão>/`, junto com as skills de `skills/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/` (fallback `~/.local/share/hexlog`).
 
 ## Key Files
 | File | Description |

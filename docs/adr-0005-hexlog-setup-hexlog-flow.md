@@ -1,6 +1,6 @@
 # ADR 0005: Skills hexlog-setup e hexlog-flow
 
-**Status:** Aceito
+**Status:** Aceito (emendado em 2026-09-28, ver [Amendment](#amendment-2026-09-28) no fim deste arquivo; invalida partes de Decision, Drivers, Alternatives Considered e Consequences)
 
 **Data:** 2026-09-27
 

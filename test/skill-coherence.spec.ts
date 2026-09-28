@@ -251,7 +251,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
 
 /**
  * Símbolo esperado dentro do trecho citado, por citação `arquivo.ts:N(-M)?` — mapa explícito em vez de
- * inferir o símbolo a partir de outras crases da mesma linha: a citação `installation.ts:260` (o `);` da
+ * inferir o símbolo a partir de outras crases da mesma linha: a citação `installation.ts:266` (o `);` da
  * chamada de `verifyPreparedArtifact`) não tem identificador próprio na crase da tabela, então "mesma linha"
  * não bastaria para toda citação do arquivo.
  */
@@ -265,8 +265,8 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string> = {
   'event-tools.ts:545': 'VOCABULARY_VIOLATED',
   'event-tools.ts:567': 'UNKNOWN_VOCABULARY',
   'event-tools.ts:423-428': 'RESERVED_FIELD',
-  'installation.ts:94': 'verifyPreparedArtifact',
-  'installation.ts:260': 'verifyPreparedArtifact',
+  'installation.ts:89': 'verifyPreparedArtifact',
+  'installation.ts:266': 'verifyPreparedArtifact',
 };
 
 const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string> = {

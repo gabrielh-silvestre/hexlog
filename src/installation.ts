@@ -4,15 +4,10 @@
 // (hook, servidor, relógio, log) é injetada — nada aqui chama `claude` nem builda.
 // Não é importado pelo servidor nem pelo hook, só por `scripts/install.ts`.
 import * as path from 'node:path';
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+// import default (não `* as fs`): sob esModuleInterop, `* as` copia o módulo com getters
+// não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
+// a partir do teste (mesmo motivo documentado em src/log.ts:2-4).
+import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { isNil } from 'es-toolkit';
 import {
@@ -151,6 +146,21 @@ function resolveConcurrency(
   );
 }
 
+/** Troca atômica de `tmp` para `dst`: se `dst` já existe, move pra `old` antes e só remove
+ * `old` depois do rename de `tmp` ter sucesso; se esse segundo rename falhar, desfaz o
+ * primeiro (`old` -> `dst`) antes de relançar, pra nunca deixar `dst` ausente no meio do caminho. */
+function swapDirectory(tmp: string, dst: string, old: string): void {
+  const existedBefore = existsSync(dst);
+  try {
+    if (existedBefore) fs.renameSync(dst, old);
+    fs.renameSync(tmp, dst);
+    if (existedBefore) rmSync(old, { recursive: true, force: true });
+  } catch (error) {
+    if (existedBefore && existsSync(old) && !existsSync(dst)) fs.renameSync(old, dst);
+    throw error;
+  }
+}
+
 /** Troca atômica de `tmp` para `versionDir` (§4.14), cobrindo instalação nova, reinstalação e concorrência. */
 function swapArtifact(args: {
   versionDir: string;
@@ -164,7 +174,7 @@ function swapArtifact(args: {
 
   if (!existedBefore) {
     try {
-      renameSync(tmp, versionDir);
+      fs.renameSync(tmp, versionDir);
       return { action: 'installed', extraWarning: null };
     } catch (error) {
       return resolveConcurrency(error, tmp, versionDir, shaBuild, version);
@@ -173,12 +183,8 @@ function swapArtifact(args: {
 
   const old = path.join(path.dirname(versionDir), `.${version}.old-${Date.now()}`);
   try {
-    renameSync(versionDir, old);
-    renameSync(tmp, versionDir);
-    rmSync(old, { recursive: true, force: true });
+    swapDirectory(tmp, versionDir, old);
   } catch (error) {
-    // Desfaz o primeiro rename se o segundo falhou, pra não deixar `versionDir` ausente.
-    if (existsSync(old) && !existsSync(versionDir)) renameSync(old, versionDir);
     return resolveConcurrency(error, tmp, versionDir, shaBuild, version);
   }
   if (modificationDetected) return { action: 'repaired', extraWarning: null };
@@ -293,7 +299,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   writeFileSync(`${settingsPath}.bak-hexlog`, oldText);
   const tmp = `${settingsPath}.tmp-${process.pid}`;
   writeFileSync(tmp, newText);
-  renameSync(tmp, settingsPath);
+  fs.renameSync(tmp, settingsPath);
   return { changed: true };
 }
 
@@ -305,10 +311,11 @@ function assertValidSkillName(name: string): void {
 }
 
 /** Copia a pasta de uma skill (`SKILL.md` + `references/` etc.) para
- * `<home>/.claude/skills/<name>/`, com troca atômica (tmp + rename) — mesmo
- * mecanismo de `swapArtifact` — pra uma falha no meio da cópia nunca deixar o
- * destino vazio ou parcial. Sobrescreve sem backup (decisão do usuário;
- * diferente de `registerGuard`, que preserva `.bak-hexlog`). */
+ * `<home>/.claude/skills/<name>/`, com troca atômica via `swapDirectory` — mesmo
+ * mecanismo de `swapArtifact`, com rollback incluso — pra uma falha no meio da
+ * cópia ou da troca nunca deixar o destino ausente ou parcial. Sobrescreve sem
+ * backup (decisão do usuário; diferente de `registerGuard`, que preserva
+ * `.bak-hexlog`). */
 export function writeSkillFolder(home: string, name: string, srcDir: string): void {
   assertValidSkillName(name);
   const dstDir = path.join(home, '.claude', 'skills', name);
@@ -316,9 +323,7 @@ export function writeSkillFolder(home: string, name: string, srcDir: string): vo
   rmSync(tmp, { recursive: true, force: true });
   cpSync(srcDir, tmp, { recursive: true });
   const old = `${dstDir}.old-${process.pid}`;
-  if (existsSync(dstDir)) renameSync(dstDir, old);
-  renameSync(tmp, dstDir);
-  rmSync(old, { recursive: true, force: true });
+  swapDirectory(tmp, dstDir, old);
 }
 
 /** `~/.claude.json` ainda não aponta `mcpServers.hexlog` para o servidor esperado. */
