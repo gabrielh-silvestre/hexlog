@@ -1,6 +1,6 @@
 # hexlog
 
-Consulte `AGENTS.md` (raiz) para o mapa do repositório, módulos e comandos.
+@AGENTS.md
 
 ## Regra de idioma
 
