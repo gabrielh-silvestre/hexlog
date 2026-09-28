@@ -51,10 +51,12 @@ try {
     log: () => undefined,
   });
   process.stdout.write(JSON.stringify({ ok: true, action: result.action }));
-  process.exit(0);
+  // process.exitCode em vez de process.exit(): mesmo código de saída, sem sair
+  // antes do stdout ser flushado (regra n/no-process-exit).
+  process.exitCode = 0;
 } catch (error) {
   process.stdout.write(
     JSON.stringify({ ok: false, message: error instanceof Error ? error.message : String(error) }),
   );
-  process.exit(1);
+  process.exitCode = 1;
 }

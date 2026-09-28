@@ -123,8 +123,11 @@ describe('projectState — propriedades (fast-check)', () => {
         const projection = projectState(lines, emptyVocabulary, effectiveNow(BASE_NOW, lines));
 
         for (const entry of projection.active) {
-          if (entry.status === 'active') expect(entry.active).toBeTruthy();
-          else expect(entry.candidates.length).toBeGreaterThanOrEqual(2);
+          // condição resolvida antes do expect (regra jest/no-conditional-expect não aceita
+          // `expect` dentro de `if`/`else`); `entry` continua estreitado por branch do ternário.
+          const isValidEntry =
+            entry.status === 'active' ? Boolean(entry.active) : entry.candidates.length >= 2;
+          expect(isValidEntry).toBe(true);
         }
       }),
     );

@@ -188,6 +188,7 @@ async function main(): Promise<void> {
   }
 }
 
+// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine >=24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
 if (import.meta.main) {
   await main();
 }

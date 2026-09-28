@@ -2,7 +2,6 @@ import { describe, test, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import { z } from 'zod';
-import { HexlogError } from '../src/errors.ts';
 import {
   Target,
   TargetPrefix,
@@ -12,6 +11,7 @@ import {
   matchesTargetPrefix,
   projectFields,
 } from '../src/events.ts';
+import { captureError } from './helpers.ts';
 
 describe('Nome', () => {
   test.each(['a', 'a-b1', 'x'.repeat(63)])('%s é válido', (value) => {
@@ -43,16 +43,9 @@ describe('Alvo (N12)', () => {
 
   test('normalizeData rejeita target inválido num Milestone com INVALID_EVENT em /data/target', () => {
     const data = { milestoneType: 'review', target: 'u1' };
-    expect.assertions(3);
-    try {
-      normalizeData('milestone', data);
-    } catch (error) {
-      expect(error).toBeInstanceOf(HexlogError);
-      expect((error as HexlogError).code).toBe('INVALID_EVENT');
-      expect((error as HexlogError).details).toContainEqual(
-        expect.objectContaining({ path: '/data/target' }),
-      );
-    }
+    const error = captureError(() => normalizeData('milestone', data));
+    expect(error.code).toBe('INVALID_EVENT');
+    expect(error.details).toContainEqual(expect.objectContaining({ path: '/data/target' }));
   });
 
   test('normalizeData rejeita target inválido num Verdict com INVALID_EVENT em /data/target', () => {
@@ -65,16 +58,9 @@ describe('Alvo (N12)', () => {
       origin: 'o',
       trace: 'r',
     };
-    expect.assertions(3);
-    try {
-      normalizeData('verdict', data);
-    } catch (error) {
-      expect(error).toBeInstanceOf(HexlogError);
-      expect((error as HexlogError).code).toBe('INVALID_EVENT');
-      expect((error as HexlogError).details).toContainEqual(
-        expect.objectContaining({ path: '/data/target' }),
-      );
-    }
+    const error = captureError(() => normalizeData('verdict', data));
+    expect(error.code).toBe('INVALID_EVENT');
+    expect(error.details).toContainEqual(expect.objectContaining({ path: '/data/target' }));
   });
 });
 

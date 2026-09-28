@@ -326,10 +326,9 @@ describe('M8', () => {
     expect(all).toHaveLength(250);
     expect(all.map((event) => event.seq)).toEqual(range(250));
     expect(pages.at(-1)?.nextCursor).toBeNull();
-    for (const page of pages) {
-      if (page.events.length > 1) {
-        expect(JSON.stringify(page.events).length).toBeLessThanOrEqual(24_000);
-      }
+    const multiEventPages = pages.filter((page) => page.events.length > 1);
+    for (const page of multiEventPages) {
+      expect(JSON.stringify(page.events).length).toBeLessThanOrEqual(24_000);
     }
   });
 
@@ -417,8 +416,9 @@ describe('P4', () => {
     };
     expect(body.active.some((item) => item.truncated === true)).toBe(true);
     expect(body.active.some((item) => item.data !== undefined)).toBe(true);
-    for (const item of body.active) {
-      if (item.truncated === true) expect(item.data).toBeUndefined();
+    const truncatedItems = body.active.filter((item) => item.truncated === true);
+    for (const item of truncatedItems) {
+      expect(item.data).toBeUndefined();
     }
   });
 
@@ -486,9 +486,10 @@ describe('P4', () => {
     };
     expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(24_000);
     expect(body.active.some((item) => item.data !== undefined)).toBe(true);
-    if (body.active.some((item) => item.truncated === true)) {
-      expect(body.activeTruncatedByBudget).toBe(true);
-    }
+    const hasTruncatedItem = body.active.some((item) => item.truncated === true);
+    // implicação "se há item truncado, o corte do orçamento foi sinalizado" como um único
+    // expect incondicional (regra jest/no-conditional-expect não aceita `expect` dentro de `if`).
+    expect(!hasTruncatedItem || body.activeTruncatedByBudget).toBe(true);
   });
 
   test('withData com muitos itens perto do teto → alguns saem do array por não caberem nem com truncated: true; totals.active sinaliza o corte', async () => {
@@ -1275,10 +1276,9 @@ describe('M11', () => {
     expect(all).toHaveLength(250);
     expect(all.map((event) => event.seq)).toEqual(range(250));
     expect(pages.at(-1)?.nextCursor).toBeNull();
-    for (const page of pages) {
-      if (page.events.length > 1) {
-        expect(JSON.stringify(page.events).length).toBeLessThanOrEqual(24_000);
-      }
+    const multiEventPages = pages.filter((page) => page.events.length > 1);
+    for (const page of multiEventPages) {
+      expect(JSON.stringify(page.events).length).toBeLessThanOrEqual(24_000);
     }
   });
 

@@ -129,6 +129,8 @@ describe('N11', () => {
     eslint: '10.10.0',
     '@eslint/js': '10.0.1',
     'typescript-eslint': '8.70.0',
+    'eslint-plugin-jest': '29.16.6',
+    'eslint-plugin-n': '18.4.0',
     prettier: '3.9.7',
     'eslint-config-prettier': '10.1.8',
     husky: '9.1.7',

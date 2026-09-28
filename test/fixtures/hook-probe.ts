@@ -12,4 +12,6 @@ const data = dataDir(process.env);
 const recognizedCommand = isNotNil(tokens[0]) && typeof tokens[0] === 'string';
 
 process.stderr.write(JSON.stringify({ tokens, data }));
-process.exit(recognizedCommand ? 0 : 1);
+// process.exitCode em vez de process.exit(): mesmo código de saída, sem sair
+// antes do stderr ser flushado (regra n/no-process-exit).
+process.exitCode = recognizedCommand ? 0 : 1;

@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import * as assert from 'node:assert';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -106,9 +107,11 @@ beforeAll(() => {
 
 afterAll(() => {
   const realDir = dataDir(process.env);
-  expect(fs.existsSync(realDir)).toBe(realDirBefore.exists);
+  // expect() padrão do jest não é aceito em afterAll (regra jest/no-standalone-expect);
+  // assert preserva a mesma verificação de invariante pós-suite.
+  assert.strictEqual(fs.existsSync(realDir), realDirBefore.exists);
   if (realDirBefore.exists) {
-    expect(fs.statSync(realDir).mtimeMs).toBe(realDirBefore.mtimeMs);
+    assert.strictEqual(fs.statSync(realDir).mtimeMs, realDirBefore.mtimeMs);
   }
   for (const dir of temporaryDirs) {
     fs.rmSync(dir, { recursive: true, force: true });
