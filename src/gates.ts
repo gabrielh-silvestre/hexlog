@@ -1,8 +1,12 @@
+import canonicalize from 'canonicalize';
 import { isString } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat'; // isEmpty só existe em es-toolkit/compat (1.52.0)
 import { z } from 'zod';
 import { BUILTIN_GATE_NAMES } from './definitions.ts';
-import { GateMilestoneData as GateMilestoneDataSchema } from './events.ts';
+import {
+  BUILTIN_GATE_DATA_MAX_CHARS,
+  GateMilestoneData as GateMilestoneDataSchema,
+} from './events.ts';
 import type { State } from './state.ts';
 
 // §4.16: tetos de prova de gate. Custom (CUSTOM_EVIDENCE_MAX/EVIDENCE_ITEM_MAX_CHARS) e
@@ -24,18 +28,24 @@ export type EvaluationResult = {
   evaluatedThrough: { id: string; seq: number; timestamp: string } | null;
 };
 
-type BuiltinGateDefinition = { criteria: string; items: (state: State) => unknown[] };
+/** Target do Verdict de id `id`; `undefined` se o id não é um Verdict do log. */
+export type TargetOfId = (id: string) => string | undefined;
+
+type BuiltinGateDefinition = {
+  criteria: string;
+  items: (state: State, targetOfId: TargetOfId) => unknown[];
+};
 
 // §4.11: textos de `criteria` exatamente como a tabela do plano.
 export const BUILTIN_GATES: Record<BuiltinGateName, BuiltinGateDefinition> = {
   'no-orphans': {
     criteria:
       'state.orphans empty: no Milestone with dueAt < now and no later event on the same target',
-    items: (state) => state.orphans,
+    items: (state) => state.orphans.map(({ milestone, target }) => ({ milestone, target })),
   },
   'no-conflicts': {
     criteria: 'state.conflicts empty: no (target, claim) with more than one active Verdict',
-    items: (state) => state.conflicts,
+    items: (state) => state.conflicts.map(({ target, candidates }) => ({ target, candidates })),
   },
   'chain-intact': {
     criteria: 'chain.ok = true',
@@ -43,11 +53,21 @@ export const BUILTIN_GATES: Record<BuiltinGateName, BuiltinGateDefinition> = {
   },
   'no-invalid-references': {
     criteria: 'state.invalidReferences empty: every supersedes points to an existing Verdict',
-    items: (state) => state.invalidReferences,
+    items: (state, targetOfId) =>
+      state.invalidReferences.map(({ citedBy, reference }) => ({
+        citedBy,
+        reference,
+        target: targetOfId(citedBy),
+      })),
   },
   'no-forks': {
     criteria: 'state.forks empty: no Verdict with more than one active successor',
-    items: (state) => state.forks,
+    items: (state, targetOfId) =>
+      state.forks.map(({ verdict, successors }) => ({
+        verdict,
+        successors,
+        target: targetOfId(verdict),
+      })),
   },
 };
 
@@ -56,8 +76,12 @@ export function isBuiltinGate(name: string): name is BuiltinGateName {
 }
 
 /** Avalia um gate embutido contra `state` (§4.11): sem items → passa; senão, corta a prova em 50. */
-export function evaluateBuiltin(name: BuiltinGateName, state: State): EvaluationResult {
-  const items = BUILTIN_GATES[name].items(state);
+export function evaluateBuiltin(
+  name: BuiltinGateName,
+  state: State,
+  targetOfId: TargetOfId,
+): EvaluationResult {
+  const items = BUILTIN_GATES[name].items(state, targetOfId);
   return {
     passed: isEmpty(items),
     evidence: items.slice(0, BUILTIN_EVIDENCE_MAX),
@@ -84,6 +108,28 @@ export function buildGateMilestoneData(args: {
     target: args.target,
     gate: { name: args.name, origin: args.origin, criteria: args.criteria, ...args.result },
   });
+}
+
+/**
+ * Monta o `data` do Milestone de gate embutido e, se passar de `BUILTIN_GATE_DATA_MAX_CHARS`,
+ * corta `evidence` pelo fim até caber. `passed` e `totalEvidenceItems` não mudam: o corte
+ * aparece como `totalEvidenceItems > evidence.length`, o mesmo sinal do teto de 50.
+ */
+export function fitBuiltinGateResult(args: {
+  name: string;
+  criteria: string;
+  target: string;
+  result: EvaluationResult;
+}): GateMilestoneData {
+  const build = (evidence: unknown[]) =>
+    buildGateMilestoneData({ ...args, origin: 'builtin', result: { ...args.result, evidence } });
+  let evidence = args.result.evidence;
+  let data = build(evidence);
+  while (evidence.length > 0 && (canonicalize(data) ?? '').length > BUILTIN_GATE_DATA_MAX_CHARS) {
+    evidence = evidence.slice(0, -1);
+    data = build(evidence);
+  }
+  return data;
 }
 
 /** Para `listBuiltinGates`: nome e critério dos 5 gates embutidos. */

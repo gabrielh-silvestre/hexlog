@@ -23,12 +23,15 @@ import {
   normalizeData,
   Label,
   matchesTargetPrefix,
+  BUILTIN_GATE_DATA_MAX_CHARS,
+  GateMilestoneData as GateMilestoneDataSchema,
 } from './events.ts';
 import {
   allowedTerms,
   effectiveNow,
   isMilestoneGate,
   projectState,
+  targetOf,
   validateField,
   type VocabularyField,
   type State,
@@ -39,6 +42,7 @@ import {
   isBuiltinGate,
   BUILTIN_GATES,
   buildGateMilestoneData,
+  fitBuiltinGateResult,
   normalizeCustomEvidence,
   EVIDENCE_ITEM_MAX_CHARS,
   CUSTOM_EVIDENCE_MAX,
@@ -144,8 +148,13 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'fixed in the process, requires `result: {passed, evidence}`. Every gate in `gates` is validated before ' +
         'anything is written: if any one of them fails validation, the whole call fails and nothing is recorded. ' +
         'Validation also rejects a repeated `{name, target}` pair and a batch whose Milestones add up to more ' +
-        'than 24000 canonical characters (`INVALID_INPUT`: split it into smaller calls); each Milestone is capped ' +
-        'at 16000 like any other event (`INVALID_EVENT`). ' +
+        'than 24000 canonical characters (`INVALID_INPUT`: split it into smaller calls); a custom gate Milestone ' +
+        'is capped at 16000 like any other event (`INVALID_EVENT`). A builtin gate records its evidence as ' +
+        'references, without copying State text: `no-conflicts` `{target, candidates}`, `no-orphans` ' +
+        '`{milestone, target}`, `no-forks` `{verdict, successors, target}`, `no-invalid-references` ' +
+        '`{citedBy, reference, target}`, `chain-intact` `{index, reason}`. Its Milestone has its own cap of ' +
+        '24000: `evidence` is cut from the end until it fits, keeping `totalEvidenceItems` (the same signal as ' +
+        'the 50-item cap: `totalEvidenceItems > evidence.length`). ' +
         'Once writing starts, a genuine disk error or a stolen lock (`LOCK_LOST`) leaves the Milestones written so ' +
         'far persisted — the log is append-only, there is no rollback — and fails the call with a simple error; ' +
         'check `events`/`state` afterward to see what was actually recorded. Returns `results[]`, one receipt ' +
@@ -807,25 +816,38 @@ async function evaluateGate(
 
   // Resolve e avalia todos os N gates antes de gravar (sem efeito colateral): qualquer erro aqui
   // propaga sem que o lock chegue a ser adquirido — tudo-ou-nada na validação.
+  const targetOfId = (id: string): string | undefined => {
+    const verdict = state.verdictById[id];
+    return verdict === undefined ? undefined : targetOf(verdict);
+  };
   const evaluations = gates.map(({ name, target, result }) => {
     const resolution = resolveGate(name, result, loaded.manifest.fixed.gates);
-    const { evaluationResult, criteria } =
-      resolution.origin === 'builtin'
-        ? {
-            evaluationResult: evaluateBuiltin(resolution.name, state),
-            criteria: BUILTIN_GATES[resolution.name].criteria,
-          }
-        : {
-            evaluationResult: evaluateCustomGate(resolution.result, state.logThrough),
-            criteria: resolution.criteria,
-          };
-    // normalizeData aplica ao Milestone de gate o mesmo DATA_MAX_CHARS dos demais eventos.
+    if (resolution.origin === 'builtin') {
+      const evaluationResult = evaluateBuiltin(resolution.name, state, targetOfId);
+      // Ordem fixa: corta a prova, normaliza com o teto do embutido e só então lê o recibo do
+      // `data` normalizado, para que recibo e evento gravado sejam idênticos.
+      const data = normalizeData(
+        'milestone',
+        fitBuiltinGateResult({
+          name,
+          criteria: BUILTIN_GATES[resolution.name].criteria,
+          target,
+          result: evaluationResult,
+        }),
+        {},
+        { maxChars: BUILTIN_GATE_DATA_MAX_CHARS },
+      );
+      const { evidence, totalEvidenceItems } = GateMilestoneDataSchema.parse(data).gate;
+      return { evaluationResult: { ...evaluationResult, evidence, totalEvidenceItems }, data };
+    }
+    // Custom mantém o DATA_MAX_CHARS dos demais eventos.
+    const evaluationResult = evaluateCustomGate(resolution.result, state.logThrough);
     const data = normalizeData(
       'milestone',
       buildGateMilestoneData({
         name,
-        origin: resolution.origin,
-        criteria,
+        origin: 'custom',
+        criteria: resolution.criteria,
         target,
         result: evaluationResult,
       }),

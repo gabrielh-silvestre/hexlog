@@ -1827,8 +1827,166 @@ describe('N5', () => {
     const forkedResult = at(forkedBody.results, 0);
     expect(forkedResult.passed).toBe(false);
     expect(forkedResult.evidence).toEqual([
-      { verdict: aId, successors: expect.arrayContaining([expect.any(String)]) },
+      {
+        verdict: aId,
+        successors: expect.arrayContaining([expect.any(String)]),
+        target: 'hex:target:u1',
+      },
     ]);
+  });
+  describe('prova por referência e teto próprio do gate embutido', () => {
+    type GateBody = {
+      results: {
+        passed: boolean;
+        evidence: unknown[];
+        totalEvidenceItems: number;
+        event: EventLine;
+      }[];
+    };
+
+    async function registerVerdict(
+      project: string,
+      process: string,
+      overrides: Record<string, unknown>,
+    ): Promise<string> {
+      const result = await environment.call('register', {
+        project,
+        process,
+        id: `${project}:${process}:verdict`,
+        agent: AGENT,
+        data: verdictData(overrides),
+      });
+      return (result.structuredContent as { id: string }).id;
+    }
+
+    const evaluate = (name: string, project = PROJ, process = PROC) =>
+      environment.call('evaluate_gate', {
+        project,
+        process,
+        gates: [{ name, target: 'hex:target:u1' }],
+        agent: AGENT,
+        echo: true,
+      });
+
+    test('(i) no-conflicts com 4 claims de 4.000 caracteres grava; recibo == data gravado, sem claim', async () => {
+      await prepare(environment, PROJ, PROC);
+      for (const i of range(4)) {
+        const claim = String(i).repeat(4000);
+        await registerVerdict(PROJ, PROC, { claim });
+        await registerVerdict(PROJ, PROC, { claim });
+      }
+
+      const result = await evaluate('no-conflicts');
+
+      expect(result.isError).not.toBe(true);
+      const receipt = at((result.structuredContent as GateBody).results, 0);
+      const gate = (receipt.event.data as { gate: { evidence: unknown[] } }).gate;
+      expect(receipt.evidence).toEqual(gate.evidence);
+      expect(receipt.evidence).toHaveLength(4);
+      for (const item of receipt.evidence) expect(item).not.toHaveProperty('claim');
+    });
+
+    test('(ii) no-orphans com 50 órfãos grava, sem dueAt na prova', async () => {
+      await prepare(environment, PROJ, PROC);
+      environment.setClock(new Date('2026-06-01T00:00:00.000Z'));
+      for (const i of range(50)) {
+        await environment.call('register', {
+          project: PROJ,
+          process: PROC,
+          id: MILESTONE_PREFIX,
+          agent: AGENT,
+          data: milestoneData({ target: `hex:target:o${i}`, dueAt: '2026-01-01T00:00:00.000Z' }),
+        });
+      }
+
+      const result = await evaluate('no-orphans');
+
+      expect(result.isError).not.toBe(true);
+      const receipt = at((result.structuredContent as GateBody).results, 0);
+      expect(receipt.totalEvidenceItems).toBe(50);
+      expect(receipt.evidence).toHaveLength(50);
+      for (const item of receipt.evidence) expect(item).not.toHaveProperty('dueAt');
+    });
+
+    test('(iii) Milestone embutido entre 17.000 e 24.000 grava e chain, state e events leem sem erro', async () => {
+      const project = 'p'.repeat(63);
+      const process = 'q'.repeat(63);
+      await prepare(environment, project, process);
+      for (let i = 0; i < 100; i++) await registerVerdict(project, process, { claim: 'same' });
+
+      const result = await evaluate('no-conflicts', project, process);
+
+      expect(result.isError).not.toBe(true);
+      const receipt = at((result.structuredContent as GateBody).results, 0);
+      const size = (canonicalize(receipt.event.data) ?? '').length;
+      expect(size).toBeGreaterThan(17_000);
+      expect(size).toBeLessThanOrEqual(24_000);
+      expect(receipt.event.data).toMatchObject({
+        milestoneType: 'gate',
+        gate: { origin: 'builtin' },
+      });
+
+      const chain = await environment.call('chain', { project, process });
+      expect((chain.structuredContent as Chain).ok).toBe(true);
+      const state = await environment.call('state', { project, process });
+      expect(state.isError).not.toBe(true);
+      const events = await environment.call('events', {
+        project,
+        process,
+        milestoneType: 'gate',
+      });
+      expect(events.isError).not.toBe(true);
+      expect((events.structuredContent as { events: EventLine[] }).events).toHaveLength(1);
+    });
+
+    test('(iv) gate custom com data acima de 16.000 segue INVALID_EVENT; Marco comum de 17k também', async () => {
+      await prepare(environment, PROJ, PROC);
+      const custom = await environment.call('evaluate_gate', {
+        project: PROJ,
+        process: PROC,
+        gates: [
+          {
+            name: 'gate-custom',
+            target: 'hex:target:u1',
+            result: { passed: true, evidence: Array.from({ length: 9 }, () => 'x'.repeat(2000)) },
+          },
+        ],
+        agent: AGENT,
+      });
+      expectError(custom, 'INVALID_EVENT');
+
+      const plain = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: MILESTONE_PREFIX,
+        agent: AGENT,
+        data: milestoneData({
+          decisions: Array.from({ length: 7 }, () => ({
+            item: 'i',
+            action: 'a',
+            text: 'x'.repeat(2500),
+          })),
+        }),
+      });
+      expectError(plain, 'INVALID_EVENT');
+    });
+
+    test('(v) no-forks e no-invalid-references trazem o target do Verdict', async () => {
+      await prepare(environment, PROJ, PROC);
+      const target = 'hex:target:fork-t';
+      const root = await registerVerdict(PROJ, PROC, { claim: 'root', target });
+      await registerVerdict(PROJ, PROC, { claim: 'b', target, supersedes: [root] });
+      await registerVerdict(PROJ, PROC, { claim: 'c', target, supersedes: [root] });
+      const ghost = `${VERDICT_PREFIX}:${randomUUIDv7()}`;
+      const citing = await registerVerdict(PROJ, PROC, { claim: 'd', target, supersedes: [ghost] });
+
+      const forks = at(((await evaluate('no-forks')).structuredContent as GateBody).results, 0);
+      expect(forks.evidence).toEqual([expect.objectContaining({ verdict: root, target })]);
+
+      const invalidResult = await evaluate('no-invalid-references');
+      const invalid = at((invalidResult.structuredContent as GateBody).results, 0);
+      expect(invalid.evidence).toEqual([{ citedBy: citing, reference: ghost, target }]);
+    });
   });
 });
 

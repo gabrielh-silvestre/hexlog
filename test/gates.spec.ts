@@ -1,10 +1,12 @@
 import { describe, test, expect } from '@jest/globals';
-import { GateMilestoneData } from '../src/events.ts';
+import canonicalize from 'canonicalize';
+import { BUILTIN_GATE_DATA_MAX_CHARS, GateMilestoneData } from '../src/events.ts';
 import type { State } from '../src/state.ts';
 import type { Chain, Break } from '../src/chain.ts';
 import {
   BUILTIN_GATES,
   evaluateBuiltin,
+  fitBuiltinGateResult,
   isBuiltinGate,
   listBuiltinGates,
   buildGateMilestoneData,
@@ -18,6 +20,7 @@ import { BUILTIN_GATE_NAMES } from '../src/definitions.ts';
 
 const T = (n: number) => new Date(n * 60_000).toISOString();
 const TARGET = 'hex:target:u1';
+const targetOfId = (id: string) => `hex:target:of-${id}`;
 
 function cleanChain(): Chain {
   return {
@@ -115,7 +118,7 @@ describe('N5 › gates embutidos', () => {
   describe.each(SCENARIOS)('gate $name', ({ name, overrides }) => {
     test('estado violando reprova, com a prova completa e o total real', () => {
       const state: State = { ...cleanState(), ...overrides(3) };
-      const result = evaluateBuiltin(name, state);
+      const result = evaluateBuiltin(name, state, targetOfId);
 
       expect(result.passed).toBe(false);
       expect(result.totalEvidenceItems).toBe(3);
@@ -124,7 +127,7 @@ describe('N5 › gates embutidos', () => {
 
     test('60 itens: prova cortada em 50, totalEvidenceItems mantém o total real', () => {
       const state: State = { ...cleanState(), ...overrides(60) };
-      const result = evaluateBuiltin(name, state);
+      const result = evaluateBuiltin(name, state, targetOfId);
 
       expect(result.evidence).toHaveLength(50);
       expect(result.totalEvidenceItems).toBe(60);
@@ -132,7 +135,7 @@ describe('N5 › gates embutidos', () => {
 
     test('estado limpo passa com prova vazia e evaluatedThrough = último elo', () => {
       const state = cleanState();
-      expect(evaluateBuiltin(name, state)).toEqual({
+      expect(evaluateBuiltin(name, state, targetOfId)).toEqual({
         passed: true,
         evidence: [],
         totalEvidenceItems: 0,
@@ -144,8 +147,8 @@ describe('N5 › gates embutidos', () => {
   test('contrato: resultado nunca é boolean solto, sempre objeto com as 4 chaves', () => {
     const expectedKeys = ['evaluatedThrough', 'passed', 'evidence', 'totalEvidenceItems'].sort();
     const results: EvaluationResult[] = [
-      evaluateBuiltin('no-orphans', cleanState()),
-      evaluateBuiltin('no-orphans', { ...cleanState(), orphans: [orphanItem(0)] }),
+      evaluateBuiltin('no-orphans', cleanState(), targetOfId),
+      evaluateBuiltin('no-orphans', { ...cleanState(), orphans: [orphanItem(0)] }, targetOfId),
     ];
 
     for (const result of results) {
@@ -161,7 +164,7 @@ describe('N5 › gates embutidos', () => {
 
   test('buildGateMilestoneData produz GateMilestoneData válido com origem embutido', () => {
     const state = cleanState();
-    const result = evaluateBuiltin('chain-intact', state);
+    const result = evaluateBuiltin('chain-intact', state, targetOfId);
     const data = buildGateMilestoneData({
       name: 'chain-intact',
       origin: 'builtin',
@@ -186,6 +189,82 @@ describe('N5 › gates embutidos', () => {
     const list = listBuiltinGates();
     expect(list).toHaveLength(5);
     for (const { criteria } of list) expect(criteria.length).toBeGreaterThan(0);
+  });
+  test.each([
+    ['no-orphans', { milestone: 'p:r:milestone:0', target: TARGET }],
+    ['no-conflicts', { target: TARGET, candidates: ['id1', 'id2'] }],
+    ['chain-intact', { index: 0, reason: 'hash-mismatch' }],
+    ['no-invalid-references', { citedBy: 'id0', reference: 'ref0', target: 'hex:target:of-id0' }],
+    [
+      'no-forks',
+      {
+        verdict: 'superseded0',
+        successors: ['successor0a', 'successor0b'],
+        target: 'hex:target:of-superseded0',
+      },
+    ],
+  ] as const)(
+    'gate %s: item de prova é referência por id e target, sem texto do Estado',
+    (name, item) => {
+      const scenario = SCENARIOS.find((candidate) => candidate.name === name);
+      const state: State = { ...cleanState(), ...scenario?.overrides(1) };
+      expect(evaluateBuiltin(name, state, targetOfId).evidence).toEqual([item]);
+    },
+  );
+
+  test('no-conflicts e no-orphans não copiam claim nem dueAt', () => {
+    const conflicts = evaluateBuiltin(
+      'no-conflicts',
+      { ...cleanState(), conflicts: [conflictItem(0)] },
+      targetOfId,
+    );
+    const orphans = evaluateBuiltin(
+      'no-orphans',
+      { ...cleanState(), orphans: [orphanItem(0)] },
+      targetOfId,
+    );
+    expect(conflicts.evidence[0]).not.toHaveProperty('claim');
+    expect(orphans.evidence[0]).not.toHaveProperty('dueAt');
+  });
+
+  describe('fitBuiltinGateResult', () => {
+    const fit = (state: State) =>
+      fitBuiltinGateResult({
+        name: 'no-conflicts',
+        criteria: BUILTIN_GATES['no-conflicts'].criteria,
+        target: TARGET,
+        result: evaluateBuiltin('no-conflicts', state, targetOfId),
+      });
+    const bigConflict = (candidateChars: number, candidates: number): ConflictItem => ({
+      target: TARGET,
+      claim: 'a',
+      candidates: Array.from({ length: candidates }, () => 'c'.repeat(candidateChars)),
+    });
+
+    test('prova que cabe no teto passa intacta', () => {
+      const data = fit({ ...cleanState(), conflicts: [conflictItem(0)] });
+      expect(data.gate.evidence).toHaveLength(1);
+      expect(data.gate.totalEvidenceItems).toBe(1);
+    });
+
+    test('50 conflitos de 100 candidatos: corta pelo fim até caber, total real intacto', () => {
+      const conflicts = Array.from({ length: 50 }, () => bigConflict(60, 100));
+      const data = fit({ ...cleanState(), conflicts });
+
+      expect(data.gate.evidence.length).toBeGreaterThan(0);
+      expect(data.gate.evidence.length).toBeLessThan(50);
+      expect(data.gate.totalEvidenceItems).toBe(50);
+      expect(data.gate.passed).toBe(false);
+      expect((canonicalize(data) ?? '').length).toBeLessThanOrEqual(BUILTIN_GATE_DATA_MAX_CHARS);
+    });
+
+    test('item único acima do teto: evidence vazia, totalEvidenceItems intacto e data cabe', () => {
+      const data = fit({ ...cleanState(), conflicts: [bigConflict(228, 200)] });
+
+      expect(data.gate.evidence).toEqual([]);
+      expect(data.gate.totalEvidenceItems).toBe(1);
+      expect((canonicalize(data) ?? '').length).toBeLessThanOrEqual(BUILTIN_GATE_DATA_MAX_CHARS);
+    });
   });
 });
 

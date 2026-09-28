@@ -241,8 +241,9 @@ Todos os gates do lote são validados **antes** de qualquer gravação: se
 qualquer um deles falhar a validação, a chamada inteira falha e nada é
 gravado — o lock nem chega a ser adquirido. A validação também recusa
 `{name, target}` repetido no lote e lote cujos Marcos somem mais de 24.000
-caracteres canônicos (`INVALID_INPUT`: divida em chamadas menores); cada Marco
-respeita o mesmo teto de 16.000 dos demais eventos (`INVALID_EVENT`). Uma vez
+caracteres canônicos (`INVALID_INPUT`: divida em chamadas menores); o Marco de
+gate custom respeita o mesmo teto de 16.000 dos demais eventos
+(`INVALID_EVENT`). Uma vez
 iniciada a escrita, um erro de disco genuíno ou um lock roubado (`LOCK_LOST`,
 token revalidado a cada item) deixa os Marcos já gravados persistidos — o log é append-only, sem
 rollback — e a chamada falha com um erro simples (`isError: true`, sem
@@ -251,6 +252,16 @@ foi gravado. A resposta traz `results[]`, um recibo
 `{seq, id, prevHash, passed, evidence, totalEvidenceItems}` por gate, na
 ordem enviada; `echo: true` (padrão `false`, mesmo parâmetro de `register`)
 devolve também o `event` completo em cada item.
+
+Os gates embutidos gravam a prova como referências, sem copiar texto do Estado:
+`no-conflicts` `{target, candidates}`, `no-orphans` `{milestone, target}`,
+`no-forks` `{verdict, successors, target}`, `no-invalid-references`
+`{citedBy, reference, target}` e `chain-intact` `{index, reason}` (`target` é o
+do Veredito citado). O Marco de gate embutido tem teto próprio de 24.000
+caracteres canônicos: se passar, `evidence` é cortada pelo fim até caber e
+`totalEvidenceItems` continua com o total real. O sinal é o mesmo do teto de 50
+itens (`totalEvidenceItems > evidence.length`). Marcos de gate gravados antes
+desta forma (com `claim`/`dueAt`) continuam válidos.
 
 `no-forks` reprova quando um Veredito superado tem 2 ou mais sucessores vivos
 (2+ Vereditos que o citam em `supersedes` e não estão eles mesmos superados) —
@@ -435,7 +446,7 @@ Alguns dos mais comuns:
 | `PROCESS_NOT_FOUND` | o processo informado não tem `process.json` |
 | `INVALID_ID` / `UNKNOWN_ID` / `CONFLICTING_ID` | problemas de `id` em `register` |
 | `TYPE_NOT_PINNED` | tipo custom fora do snapshot fixado do processo |
-| `INVALID_EVENT` | `data` reprovado na validação, ou acima de 16.000 caracteres canônicos |
+| `INVALID_EVENT` | `data` reprovado na validação, ou acima de 16.000 caracteres canônicos (24.000 no Marco de gate embutido, que corta a prova antes) |
 | `RESERVED_FIELD` | Marco com `milestoneType: "gate"` ou chave `gate` fora de `evaluate_gate` |
 | `VOCABULARY_VIOLATED` | `milestoneType`/`decisions[].action` fora do vocabulário fixado (campo fechado); `details[0]` traz `owners` (donos de extensão fixados no processo) e `allowed` (termos que o campo de fato aceita, core ∪ extensões) |
 | `INVALID_FILTER` | filtros de `events` inconsistentes (`milestoneType` fora do vocabulário, `after ≥ before`, `until` além do arquivo) |
