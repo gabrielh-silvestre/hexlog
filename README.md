@@ -100,6 +100,18 @@ abertas**: uma sessão iniciada antes da troca de versão mantém o servidor
 antigo carregado em memória e pode continuar chamando o caminho antigo do
 hook mesmo depois de o diretório ser removido.
 
+## Migração 0.2 para 0.3
+
+A 0.3 muda o contrato das tools. Reinstale servidor e skills juntos
+(`node scripts/install.ts`) e reinicie as sessões abertas: servidor antigo em
+memória com skills novas responde `Input validation error`.
+
+- `evaluate_gate`: o campo `gate` passou a se chamar `name`.
+- `evidence` de gate embutido guarda só referências (id + target), não mais o State.
+- `gates[]` rejeita chave desconhecida.
+- `evidence` tem duas formas em disco: a antiga, com o State, e a nova, com
+  referências. Quem consome `events`/`chain` deve tolerar as duas.
+
 ## Instalação concorrente
 
 Se dois processos de instalação rodarem ao mesmo tempo, um deles pode
@@ -470,7 +482,9 @@ Um aviso, diferente de erro, vem em `warnings[]` numa resposta de sucesso:
   minor mesmo assim, em vez de forçar major.
 - `CONCURRENT_DIVERGENT_WRITE` num `register_type`/`register_vocabulary`/`register_gate`,
   quando outro escritor gravou uma versão a partir da mesma base durante a chamada —
-  `details: { versions }` lista as versões divergentes. Best-effort: o 1º escritor não é avisado.
+  `details: { versions }` lista as versões divergentes. A base comparada é a da
+  primeira leitura, então quem caiu em `EEXIST` e regravou numa versão seguinte
+  também é avisado. Best-effort: o 1º escritor não é avisado.
 - `STALE_DEFINITIONS` em `create_process`, quando o `process` já existe e o
   snapshot fixado na criação diverge do candidato desta chamada (algo foi
   registrado no projeto depois) — `details: [{ section, name, pinned, current }]`

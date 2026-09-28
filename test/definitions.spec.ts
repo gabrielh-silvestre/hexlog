@@ -44,6 +44,25 @@ const RegisteredTypeSchema = z.object({
   registeredAt: z.string(),
 });
 
+// `jest.spyOn(fs, ...)` não intercepta no ts-jest CJS: o wrapper de `node:fs` só age quando o
+// gancho está setado, então o resto do spec segue no fs real.
+const mockFsHooks: { beforeLink?: () => void; beforeReaddir?: () => void } = {};
+
+jest.mock('node:fs', () => {
+  const actual = jest.requireActual<typeof import('node:fs')>('node:fs');
+  return {
+    ...actual,
+    linkSync: (...args: Parameters<typeof actual.linkSync>) => {
+      mockFsHooks.beforeLink?.();
+      return actual.linkSync(...args);
+    },
+    readdirSync: (...args: unknown[]) => {
+      mockFsHooks.beforeReaddir?.();
+      return (actual.readdirSync as (...a: unknown[]) => unknown)(...args);
+    },
+  };
+});
+
 let dir: string;
 
 beforeEach(() => {
@@ -51,6 +70,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete mockFsHooks.beforeLink;
+  delete mockFsHooks.beforeReaddir;
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -606,7 +627,7 @@ describe('exclusive version write', () => {
       kind: 'written',
       version: '1.2',
       content: { v: 'b' },
-      divergent: [],
+      divergent: ['1.1'],
     });
     expect(JSON.parse(fs.readFileSync(path.join(defDir(), '1.1.json'), 'utf8'))).toEqual({
       v: 'old',
@@ -688,7 +709,7 @@ describe('exclusive version write', () => {
     },
   );
 
-  test('EEXIST seguido de retry com a base relida não gera falso positivo', () => {
+  test('EEXIST seguido de retry avisa com a base da primeira leitura', () => {
     fs.mkdirSync(defDir(), { recursive: true });
     fs.writeFileSync(path.join(defDir(), '1.1.json'), JSON.stringify({ v: 'old' }));
     const resolveTarget = scriptedResolver(
@@ -698,7 +719,56 @@ describe('exclusive version write', () => {
 
     const result = writeVersionExclusive(defDir(), resolveTarget);
 
-    expect(result).toMatchObject({ kind: 'written', version: '1.2', divergent: [] });
+    expect(result).toMatchObject({ kind: 'written', version: '1.2', divergent: ['1.1'] });
+  });
+
+  test('EEXIST seguido de retry com base nula na primeira leitura avisa todas as outras', () => {
+    fs.mkdirSync(defDir(), { recursive: true });
+    fs.writeFileSync(path.join(defDir(), '1.0.json'), JSON.stringify({ v: 'old' }));
+    const resolveTarget = scriptedResolver(
+      { kind: 'write', version: '1.0', content: { v: 'colide' }, base: null },
+      { kind: 'write', version: '1.1', content: { v: 'b' }, base: '1.0' },
+    );
+
+    const result = writeVersionExclusive(defDir(), resolveTarget);
+
+    expect(result).toMatchObject({ kind: 'written', version: '1.1', divergent: ['1.0'] });
+  });
+
+  test('falha ao listar depois do link não derruba a escrita: written com divergent vazio', () => {
+    mockFsHooks.beforeReaddir = () => {
+      delete mockFsHooks.beforeReaddir;
+      throw Object.assign(new Error('boom'), { code: 'EIO' });
+    };
+    const resolveTarget = scriptedResolver({
+      kind: 'write',
+      version: '1.0',
+      content: { v: 'a' },
+      base: null,
+    });
+
+    const result = writeVersionExclusive(defDir(), resolveTarget);
+
+    expect(result).toMatchObject({ kind: 'written', version: '1.0', divergent: [] });
+    expect(fs.existsSync(path.join(defDir(), '1.0.json'))).toBe(true);
+  });
+
+  test('registerGate repassa o aviso de divergência com a base da versão vigente', () => {
+    registerGate(dir, PROJECT, 'gate-x', 'criteria');
+    const gateDir = resolveSafePath(dir, PROJECT, 'gates', 'gate-x');
+    mockFsHooks.beforeLink = () => {
+      delete mockFsHooks.beforeLink;
+      fs.writeFileSync(path.join(gateDir, '1.2.json'), JSON.stringify({ v: 'outro escritor' }));
+    };
+
+    const result = registerGate(dir, PROJECT, 'gate-x', 'new criteria');
+
+    expect(result.version).toBe('1.1');
+    expect(result.warnings).toContainEqual({
+      code: 'CONCURRENT_DIVERGENT_WRITE',
+      message: expect.any(String),
+      details: { versions: ['1.2'] },
+    });
   });
 
   test('base nula com outras versões presentes: divergent lista todas as outras', () => {

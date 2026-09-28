@@ -133,9 +133,11 @@ primeira — fecha os dois casos.
 são maiores que a `base` da decisão (base nula = todas as outras). Se houver
 alguma, o `register_*` devolve `CONCURRENT_DIVERGENT_WRITE` em `warnings` com
 `details.versions`: outro escritor partiu da mesma base. O 1º escritor não é
-avisado. Há ainda uma janela residual: se um escritor C linka entre o `link` e
-o `listVersionFiles` de B, B avisa sobre uma versão que veio depois da sua —
-falso positivo inofensivo, pois a divergência é real.
+avisado. A base comparada é a da primeira leitura, então o escritor que caiu em
+`EEXIST` e regravou numa versão seguinte também é avisado. Há ainda uma janela
+residual: se um escritor C linka entre o `link` e o `listVersionFiles` de B, B
+avisa sobre uma versão que veio depois da sua — falso positivo inofensivo, pois
+a divergência é real.
 
 ## D2 — Legado não é materializado
 

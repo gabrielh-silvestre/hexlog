@@ -666,6 +666,21 @@ export function divergenceWarning(versions: string[]): Warning[] {
 }
 
 /**
+ * Versões de `defDir` que não são `written` e são maiores que `base` (base nula = todas as
+ * outras). Falha ao listar devolve `[]`: a versão já está gravada e o aviso é best-effort,
+ * então erro de I/O aqui não pode virar falha do `register_*`.
+ */
+function divergentVersions(defDir: string, written: string, base: string | null): string[] {
+  try {
+    return listVersionFiles(defDir).filter(
+      (v) => v !== written && (isNil(base) || compareVersions(v, base) > 0),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Grava em `defDir` (ex.: `schemas/<name>/`) a versão decidida por `resolveTarget` (D1).
  *
  * `resolveTarget` encapsula a decisão inteira de versionamento — resolver o vigente em
@@ -676,9 +691,10 @@ export function divergenceWarning(versions: string[]): Warning[] {
  * número" fora do laço.
  *
  * Aviso de divergência (best-effort): após o `link`, `divergent` lista as versões no
- * diretório que não são a gravada e são maiores que `outcome.base` (base nula = todas as
- * outras) — outro escritor partiu da mesma base. Não é garantia: o 1º escritor não é
- * avisado, e há uma janela residual — se um escritor C linka entre o `link` de B e o
+ * diretório que não são a gravada e são maiores que a base da primeira tentativa (base nula
+ * = todas as outras) — outro escritor partiu da mesma base; quem caiu em `EEXIST` e regravou
+ * numa versão seguinte também é avisado. Não é garantia: o 1º escritor não é avisado, falha
+ * ao listar = sem aviso, e há uma janela residual — se um escritor C linka entre o `link` de B e o
  * `listVersionFiles` de B, B avisa sobre uma versão que veio depois da sua. É um falso
  * positivo inofensivo (a divergência é real).
  */
@@ -687,6 +703,8 @@ export function writeVersionExclusive(
   resolveTarget: () => ResolveOutcome,
   maxAttempts = 10,
 ): WriteVersionResult {
+  let firstBase: string | null = null;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const outcome = resolveTarget();
 
@@ -695,16 +713,21 @@ export function writeVersionExclusive(
       throw new HexlogError('BREAKING_CHANGE', 'change requires breaking: true', outcome.details);
     }
 
+    if (attempt === 0) firstBase = outcome.base;
+
     try {
       writeThenLinkExclusive(defDir, path.join(defDir, `${outcome.version}.json`), outcome.content);
-      const divergent = listVersionFiles(defDir).filter(
-        (v) =>
-          v !== outcome.version && (isNil(outcome.base) || compareVersions(v, outcome.base) > 0),
-      );
-      return { kind: 'written', version: outcome.version, content: outcome.content, divergent };
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      throw e;
     }
+
+    return {
+      kind: 'written',
+      version: outcome.version,
+      content: outcome.content,
+      divergent: divergentVersions(defDir, outcome.version, firstBase),
+    };
   }
 
   throw new HexlogError('IO_ERROR', 'exclusive write did not succeed', [

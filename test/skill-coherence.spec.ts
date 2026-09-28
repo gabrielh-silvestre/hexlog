@@ -81,9 +81,12 @@ function declarationBodyFrom(content: string, symbol: string): string | undefine
   return content.slice(start.index, start.index + start[0].length + (next?.index ?? rest.length));
 }
 
-/** Citação `arquivo:N` de código em `.md` (todas as extensões citadas hoje); exclui nomes de produto com `.js` em prosa. */
+/** Citação `arquivo:N` de código em `.md` (todas as extensões citadas hoje, incl. `.py` de repositórios externos); exclui nomes de produto com `.js` em prosa. */
 const LINE_NUMBER_CITATION =
-  /(?<![\w./-])(?!(?:Node|Next|Nuxt|Vue|Deno)\.js:)[\w./-]+\.(?:ts|mjs|json|js|yml|md):\d+/;
+  /(?<![\w./-])(?!(?:Node|Next|Nuxt|Vue|Deno)\.js:)[\w./-]+\.(?:ts|mjs|json|js|yml|md|py):\d+/;
+
+/** Citação de linha em prosa ("linha 12", "linhas ~141"). */
+const LINE_PROSE_CITATION = /\blinhas?\s+~?\d+/i;
 
 describe('extratores (unitário, sobre string literal)', () => {
   test('extractInlineBackticks ignora crase dentro de bloco cercado e pega a de fora', () => {
@@ -145,8 +148,18 @@ describe('extratores (unitário, sobre string literal)', () => {
       'eslint.config.js' + ':12',
       'ci.yml' + ':3',
       'AGENTS.md' + ':39',
+      'server.py' + ':87-98',
     ]) {
       expect(LINE_NUMBER_CITATION.test(`veja \`${citation}\` aqui`)).toBe(true);
+    }
+  });
+
+  test('LINE_PROSE_CITATION casa "linha N" e "linhas ~N" e ignora "linha" sem número', () => {
+    for (const text of ['linhas 141–192 de x', 'na linha 12', 'Linhas ~40']) {
+      expect(LINE_PROSE_CITATION.test(text)).toBe(true);
+    }
+    for (const text of ['da linha da declaração', 'uma linha só', 'linhagem 3']) {
+      expect(LINE_PROSE_CITATION.test(text)).toBe(false);
     }
   });
 
@@ -452,7 +465,7 @@ function agentsFilesUnder(dir: string): string[] {
 }
 
 describe('documentação não cita número de linha', () => {
-  test('nenhum .md de skills/, docs/, friction-mining, README.md ou AGENTS.md casa arquivo:N', () => {
+  test('nenhum .md de skills/, docs/, friction-mining, README.md ou AGENTS.md casa arquivo:N nem "linha N"', () => {
     const files = [
       ...markdownFilesUnder(path.join(repoRoot, 'skills')),
       ...markdownFilesUnder(path.join(repoRoot, 'docs')),
@@ -465,7 +478,7 @@ describe('documentação não cita número de linha', () => {
         .readFileSync(file, 'utf8')
         .split('\n')
         .flatMap((line, index) => {
-          const match = LINE_NUMBER_CITATION.exec(line);
+          const match = LINE_NUMBER_CITATION.exec(line) ?? LINE_PROSE_CITATION.exec(line);
           return match === null
             ? []
             : [`${path.relative(repoRoot, file)}:${index + 1} → ${match[0]}`];

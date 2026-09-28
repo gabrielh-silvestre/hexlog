@@ -185,7 +185,7 @@ Os casos de teste abaixo foram adaptados da POC (`POC@5703a53`) para o MVP. Cada
 
 ## Decisões do Usuário
 
-Resumo das decisões Q, R, QN, U do plano (linhas 141–192 de ralplan-hexlog.md):
+Resumo das decisões Q, R, QN, U do plano (seção de decisões do `ralplan-hexlog.md`, plano externo ao repositório):
 
 | ID | Decisão |
 |---|---|

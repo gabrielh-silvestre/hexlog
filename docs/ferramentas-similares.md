@@ -87,12 +87,12 @@ dependências). Mesmo formato do hexlog, mas bem mais simples. Citações contra
 - `decision`: `decision_id` (`DEC-<ano>-NNNN`), `ts`, `problem`,
   `chosen_solution`, `rejected_alternatives[]`, `technologies[]`, `status`
   (ACTIVE/SUPERSEDED/DEPRECATED, não validado), `adr_ref`, `domain`
-  (server.py:87-98).
+  (server.py).
 - `prediction`: `prediction_id`, `decision_id` (existência checada),
-  `prediction_type` (enum só declarativo), `predicted_value` (server.py:126-133).
+  `prediction_type` (enum só declarativo), `predicted_value` (server.py).
 - `outcome`: `prediction_id`, `actual_value`, `measurement_source`,
   `accuracy_score` 0-100 e `validation_status` calculado pelo servidor
-  (≥90 SUCCESS, 50-89 PARTIAL_SUCCESS, <50 FAILED) (server.py:151-166).
+  (≥90 SUCCESS, 50-89 PARTIAL_SUCCESS, <50 FAILED) (server.py).
 
 **Tools.** `record-decision` (aceita `predictions[]` e cria as predições na
 mesma chamada), `record-prediction`, `record-outcome` (abaixo de 75 devolve
@@ -100,15 +100,15 @@ mesma chamada), `record-prediction`, `record-outcome` (abaixo de 75 devolve
 domínio).
 
 **Imutabilidade.** Append-only de fato: só abre o arquivo em modo `"a"`, não há
-update, delete nem lock (server.py:47-54; `docs/ARCHITECTURE.md`: "no
+update, delete nem lock (server.py; `docs/ARCHITECTURE.md`: "no
 implementation, by design"). Mas não há hash, nem vínculo entre decisão nova e
 a que ela substitui, e `_read_log()` descarta linha corrompida sem avisar
-(server.py:38-41).
+(server.py).
 
 **Fluxo.** Decide → Predict → Implement → Measure → Validate → Learn existe só
 no README. O único "gate" é o campo `OUTCOME_GATE` na resposta das tools,
 listando predições da sessão ainda sem outcome; é aviso, não bloqueia
-(server.py:391-397, 424-430; `docs/OUTCOME-GATE-PATTERN.md`).
+(server.py; `docs/OUTCOME-GATE-PATTERN.md`).
 
 **Pontos fortes a copiar.**
 - **Aviso embutido na resposta** (`OUTCOME_GATE`): o agente vê a pendência onde
