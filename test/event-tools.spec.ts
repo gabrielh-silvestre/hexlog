@@ -5,7 +5,14 @@ import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { isNil, range } from 'es-toolkit';
 import { search as runSearch } from '../src/search.ts';
-import { anchor, expectedPrevHash, nextSeq, sha256hex, type Chain } from '../src/chain.ts';
+import {
+  anchor,
+  expectedPrevHash,
+  hashLine,
+  nextSeq,
+  sha256hex,
+  type Chain,
+} from '../src/chain.ts';
 import type { ProcessManifest } from '../src/definitions.ts';
 import type { EventLine, EventLineField } from '../src/events.ts';
 import { writeCorpus, generateCorpus } from './fixtures/corpus.ts';
@@ -1888,6 +1895,91 @@ describe('N6', () => {
 
     expectError(result, 'GATE_NOT_REGISTERED');
     expect((result.structuredContent as { results?: unknown }).results).toBeUndefined();
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('gates: [no-orphans, chain-intact] → results na ordem de gates[], mesmo evaluatedThrough, cadeia fechando entre os itens', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        { gate: 'no-orphans', target: 'hex:target:u1' },
+        { gate: 'chain-intact', target: 'hex:target:u1' },
+      ],
+      agent: AGENT,
+      echo: true,
+    });
+
+    expect(result.isError).not.toBe(true);
+    const { results } = result.structuredContent as {
+      results: { seq: number; event: EventLine }[];
+    };
+    const gateOf = (event: EventLine) =>
+      event.data.gate as { name: string; evaluatedThrough: number };
+    expect(results.map(({ event }) => gateOf(event).name)).toEqual(['no-orphans', 'chain-intact']);
+    expect(gateOf(results[1].event).evaluatedThrough).toBe(
+      gateOf(results[0].event).evaluatedThrough,
+    );
+    expect(results[1].seq).toBe(results[0].seq + 1);
+    expect(results[1].event.prevHash).toBe(hashLine(results[0].event));
+  });
+
+  test('gates com {gate, target} repetido → INVALID_INPUT, nada gravado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        { gate: 'no-orphans', target: 'hex:target:u1' },
+        { gate: 'no-orphans', target: 'hex:target:u1' },
+      ],
+      agent: AGENT,
+    });
+
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('gate custom com data acima de 16.000 caracteres → INVALID_EVENT, nada gravado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        {
+          gate: 'gate-custom',
+          target: 'hex:target:u1',
+          result: { passed: true, evidence: Array.from({ length: 20 }, () => 'x'.repeat(2000)) },
+        },
+      ],
+      agent: AGENT,
+    });
+
+    expectError(result, 'INVALID_EVENT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('lote cujos Milestones somam mais de 24.000 caracteres → INVALID_INPUT, nada gravado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+    const evidence = Array.from({ length: 7 }, () => 'x'.repeat(2000));
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        { gate: 'gate-custom', target: 'hex:target:u1', result: { passed: true, evidence } },
+        { gate: 'gate-custom', target: 'hex:target:u2', result: { passed: true, evidence } },
+      ],
+      agent: AGENT,
+    });
+
+    expectError(result, 'INVALID_INPUT');
     expect(environment.tree()).toEqual(before);
   });
 

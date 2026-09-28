@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { HexlogError } from '../src/errors.ts';
 import {
   Target,
+  TargetPrefix,
   Name,
   parseId,
   normalizeData,
@@ -32,6 +33,12 @@ describe('Alvo (N12)', () => {
 
   test('hex:target:u1 é aceito', () => {
     expect(Target.safeParse('hex:target:u1').success).toBe(true);
+  });
+
+  test('hex:target:a. segue válido como Target (eventos já gravados), mas não como TargetPrefix', () => {
+    expect(Target.safeParse('hex:target:a.').success).toBe(true);
+    expect(TargetPrefix.safeParse('hex:target:a.').success).toBe(false);
+    expect(TargetPrefix.safeParse('hex:target:a.b').success).toBe(true);
   });
 
   test('normalizeData rejeita target inválido num Milestone com INVALID_EVENT em /data/target', () => {

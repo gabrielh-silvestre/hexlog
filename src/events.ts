@@ -29,6 +29,10 @@ export const Target = z
   .max(200)
   .regex(/^hex:target:[^\s:]+$/);
 
+// Prefixo de alvo (`targetPrefix`): `Target` sem '.' final, que nunca casaria descendente em
+// `matchesTargetPrefix`. Fica fora de `Target` porque este também revalida `data` já gravado.
+export const TargetPrefix = Target.regex(/[^.]$/);
+
 /** `value` casa `prefix` na fronteira de `.` (o próprio prefixo ou um descendente `prefix.x`), nunca um vizinho que só compartilha o texto (`prefix20`). Usado por `state`/`events` (`targetPrefix`). */
 export function matchesTargetPrefix(value: string, prefix: string): boolean {
   return value === prefix || value.startsWith(`${prefix}.`);

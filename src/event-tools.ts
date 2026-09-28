@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
-import { isNil, isNotNil, keyBy, omit } from 'es-toolkit';
+import { isNil, isNotNil, keyBy, omit, sumBy, uniqBy } from 'es-toolkit';
 import { z } from 'zod';
 import {
   search as runSearch,
@@ -15,6 +15,7 @@ import { issueDetails, HexlogError, type Detail } from './errors.ts';
 import {
   parseId,
   Target,
+  TargetPrefix,
   dataSchema,
   EventLine,
   EventLineField,
@@ -142,6 +143,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         "`no-forks`) does not accept `result`: it is computed from the process's current State. A custom gate, " +
         'fixed in the process, requires `result: {passed, evidence}`. Every gate in `gates` is validated before ' +
         'anything is written: if any one of them fails validation, the whole call fails and nothing is recorded. ' +
+        'Validation also rejects a repeated `{gate, target}` pair and a batch whose Milestones add up to more ' +
+        'than 24000 canonical characters (`INVALID_INPUT`: split it into smaller calls); each Milestone is capped ' +
+        'at 16000 like any other event (`INVALID_EVENT`). ' +
         'Once writing starts, a genuine disk error or a stolen lock (`LOCK_LOST`) leaves the Milestones written so ' +
         'far persisted — the log is append-only, there is no rollback — and fails the call with a simple error; ' +
         'check `events`/`state` afterward to see what was actually recorded. Returns `results[]`, one receipt ' +
@@ -236,7 +240,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         process: Name,
         sections: z.array(Section).min(1).optional(),
         withData: z.boolean().default(false),
-        targetPrefix: Target.optional(),
+        targetPrefix: TargetPrefix.optional(),
         includeExtensionWarnings: z.boolean().default(false),
         since: z.number().int().min(0).optional(),
       },
@@ -369,7 +373,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         type: Name.optional(),
         search: z.string().trim().min(2).max(SEARCH_MAX_CHARS).optional(),
         target: Target.optional(),
-        targetPrefix: Target.optional(),
+        targetPrefix: TargetPrefix.optional(),
         targets: z.array(Target).min(1).max(20).optional(),
         milestoneType: Label.optional(),
         result: Label.optional(),
@@ -788,6 +792,14 @@ async function evaluateGate(
   args: { project: string; process: string; gates: GateBatchItem[]; agent: string; echo: boolean },
 ): Promise<{ results: GateReceipt[] }> {
   const { project, process, gates, agent, echo } = args;
+
+  // `{gate, target}` repetido no lote gravaria Milestones redundantes (ou contraditórios, no custom).
+  if (uniqBy(gates, ({ gate, target }) => `${gate}\u0000${target}`).length !== gates.length) {
+    throw new HexlogError('INVALID_INPUT', 'duplicate {gate, target} in batch', [
+      { path: '/gates', code: 'duplicate', message: 'each {gate, target} must appear once' },
+    ]);
+  }
+
   const loaded = loadProcess(ctx.dataDir, project, process);
   // Um único snapshot de State pro lote inteiro: todo gate embutido da mesma chamada compartilha
   // o mesmo `evaluatedThrough`.
@@ -807,15 +819,29 @@ async function evaluateGate(
             evaluationResult: evaluateCustomGate(resolution.result, state.logThrough),
             criteria: resolution.criteria,
           };
-    const data = buildGateMilestoneData({
-      name: gate,
-      origin: resolution.origin,
-      criteria,
-      target,
-      result: evaluationResult,
-    });
+    // normalizeData aplica ao Milestone de gate o mesmo DATA_MAX_CHARS dos demais eventos.
+    const data = normalizeData(
+      'milestone',
+      buildGateMilestoneData({
+        name: gate,
+        origin: resolution.origin,
+        criteria,
+        target,
+        result: evaluationResult,
+      }),
+    );
     return { evaluationResult, data };
   });
+
+  // Teto agregado do lote: sem ele, 20 itens no DATA_MAX_CHARS gravariam até 320k de uma vez.
+  const batchSize = sumBy(evaluations, ({ data }) => (canonicalize(data) ?? '').length);
+  if (batchSize > PAGE_CHARS_CAP) {
+    throw new HexlogError(
+      'INVALID_INPUT',
+      `gates batch exceeds ${PAGE_CHARS_CAP} canonical characters; split it into smaller calls`,
+      [{ path: '/gates', code: 'too_big', message: `canonical size ${batchSize}` }],
+    );
+  }
 
   const lines = await appendBatch(
     loaded.eventsFile,

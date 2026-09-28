@@ -234,9 +234,12 @@ exigem `result: {passed, evidence}` do agente.
 
 Todos os gates do lote são validados **antes** de qualquer gravação: se
 qualquer um deles falhar a validação, a chamada inteira falha e nada é
-gravado — o lock nem chega a ser adquirido. Uma vez iniciada a escrita, um
-erro de disco genuíno ou um lock roubado (`LOCK_LOST`, token revalidado a
-cada item) deixa os Marcos já gravados persistidos — o log é append-only, sem
+gravado — o lock nem chega a ser adquirido. A validação também recusa
+`{gate, target}` repetido no lote e lote cujos Marcos somem mais de 24.000
+caracteres canônicos (`INVALID_INPUT`: divida em chamadas menores); cada Marco
+respeita o mesmo teto de 16.000 dos demais eventos (`INVALID_EVENT`). Uma vez
+iniciada a escrita, um erro de disco genuíno ou um lock roubado (`LOCK_LOST`,
+token revalidado a cada item) deixa os Marcos já gravados persistidos — o log é append-only, sem
 rollback — e a chamada falha com um erro simples (`isError: true`, sem
 `results` no corpo); confira `events`/`state` depois para ver o que de fato
 foi gravado. A resposta traz `results[]`, um recibo
@@ -470,7 +473,7 @@ o teste automatizado as marque como "passa":
 | ANSI-C quoting | `cat $'/home/…/hex\x6cog/x'` |
 | Alternância de zsh | `cat ~/.local/share/(hexlog\|x)/p/r/events.jsonl` |
 | Hook indisponível | Node removido pelo nvm, `~/.local/lib/hexlog/<versão>/` apagado à mão, ou instalação corrompida por fora |
-| Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/0.1.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"` — o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
+| Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/0.2.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"` — o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
 | Desligar o guard editando a configuração | Editar `~/.claude/settings.json` à mão para remover deny ou hook |
 | Reinstalar a partir de código alterado | Editar `hook/bash-guard.ts` na working tree e rodar o instalador |
 
