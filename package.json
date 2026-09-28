@@ -7,7 +7,8 @@
     "node": ">=24.18.1"
   },
   "scripts": {
-    "test": "jest",
+    "test": "jest --errorOnDeprecated",
+    "test:coverage": "jest --coverage",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "format": "prettier --write .",

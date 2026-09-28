@@ -29,6 +29,12 @@ fonte antes de adotar qualquer item.
 
 ## Agora
 
+> **Adotada em 2026-09-28** (branch `chore/code-quality-agora`). Desvios:
+> `--ci` ficou de fora (o repo não tem snapshots); `consistent-type-definitions`
+> padroniza em `type`; cobertura roda só via `npm run test:coverage`, sem
+> `coverageThreshold`; `jest/expect-expect` reconhece `expectError` e
+> `expectDeduplicated` como asserts.
+
 Baixo custo, zero conta externa, todos tocam arquivos que o repo já tem
 (`tsconfig.json`, `eslint.config.js`, `package.json`, `ci.yml`).
 
