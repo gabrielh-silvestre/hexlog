@@ -65,3 +65,8 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `esbuild`, `jest` + `ts-jest`, `fast-check`: build e testes
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+## Fluxo hexlog
+
+O fluxo do OMC deste repositório (fases, processos, gates) está em
+`.hexlog/flow.md`. Para registrar marcos e vereditos, use a skill `hexlog-flow`.
