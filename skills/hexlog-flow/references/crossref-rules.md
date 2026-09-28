@@ -38,8 +38,8 @@ Uma lacuna é um critério que o processo não prova sozinho (os 5 gates embutid
 passam trivialmente sem contraevidência — ver `AGENTS.md`/README do hexlog). Se
 uma fase do flow map declara um gate custom (`gate` no frontmatter), essa é a
 forma combinada de fechar a lacuna: registre esse gate via `register_gate` (feito
-pela `hexlog-setup`, não por esta skill) e avalie com `evaluate_gate` informando
-`result: {passed, evidence}` — a evidência é o que prova que o critério foi
+pela `hexlog-setup`, não por esta skill) e avalie com `evaluate_gate` informando o nome
+em `name` e `result: {passed, evidence}` — a evidência é o que prova que o critério foi
 cumprido (ex.: um trecho de doc revisado, um id de PR aprovado).
 
 Sem gate custom declarado para a fase, não invente um cruzamento — a lacuna fica

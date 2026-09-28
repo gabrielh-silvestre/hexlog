@@ -258,7 +258,7 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
   'event-tools.ts#registerEvent': ['TYPE_NOT_PINNED', 'RESERVED_FIELD'],
   'event-tools.ts#ensureVocabulary': ['VOCABULARY_VIOLATED'],
   'event-tools.ts#unknownResultWarning': ['UNKNOWN_VOCABULARY'],
-  'event-tools.ts#evaluateGate': ['duplicate {gate, target} in batch', 'gates batch exceeds'],
+  'event-tools.ts#evaluateGate': ['duplicate {name, target} in batch', 'gates batch exceeds'],
   'events.ts#TargetPrefix': ['TargetPrefix'],
   'definition-tools.ts#reservedTypeMessage': ['built-in domain kind'],
   'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],

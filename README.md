@@ -227,7 +227,7 @@ No Veredito `trace` é obrigatório e entra normalmente na comparação.
 
 ### `evaluate_gate`
 
-Avalia até 20 gates numa única chamada (`gates: [{gate, target, result?}]`) e
+Avalia até 20 gates numa única chamada (`gates: [{name, target, result?}]`) e
 grava cada resultado como um Marco de gate, sob uma **única aquisição de
 lock**: um só snapshot de Estado é lido no início da chamada, e
 todo gate embutido do lote compartilha o mesmo `evaluatedThrough`. Gates
@@ -240,7 +240,7 @@ exigem `result: {passed, evidence}` do agente.
 Todos os gates do lote são validados **antes** de qualquer gravação: se
 qualquer um deles falhar a validação, a chamada inteira falha e nada é
 gravado — o lock nem chega a ser adquirido. A validação também recusa
-`{gate, target}` repetido no lote e lote cujos Marcos somem mais de 24.000
+`{name, target}` repetido no lote e lote cujos Marcos somem mais de 24.000
 caracteres canônicos (`INVALID_INPUT`: divida em chamadas menores); cada Marco
 respeita o mesmo teto de 16.000 dos demais eventos (`INVALID_EVENT`). Uma vez
 iniciada a escrita, um erro de disco genuíno ou um lock roubado (`LOCK_LOST`,

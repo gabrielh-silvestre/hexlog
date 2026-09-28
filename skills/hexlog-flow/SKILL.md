@@ -28,7 +28,7 @@ frontmatter (fase → `process`/`gate`/`targetIdPattern`).
 |---|---|---|
 | Um marco ou decisão novo, sem gate envolvido | `register` | `agent` = nome da skill que disparou (a skill apontada que chamou a hexlog-flow, ou hexlog-flow mesma se disparada direto) |
 | Avaliar um dos 5 gates embutidos (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `evaluate_gate` sem `result` | O servidor calcula a partir do Estado — nunca informe `result` para gate embutido |
-| Avaliar o gate custom da fase corrente (campo `gate` do flow map) | `evaluate_gate` com `result: {passed, evidence}` | Gate custom sem `result` informado lança `INVALID_EVALUATION` (`event-tools.ts#resolveGate`) |
+| Avaliar o gate custom da fase corrente (campo `gate` do flow map) | `evaluate_gate` com `name` (valor do campo `gate`) e `result: {passed, evidence}` | Gate custom sem `result` informado lança `INVALID_EVALUATION` (`event-tools.ts#resolveGate`) |
 | Precisa do histórico completo de um target | `events` | Filtra por `target` (`hex:target:<id>` — regex em `events.ts#Target`, ver `references/target-format.md`) |
 | Precisa da cadeia de vereditos que se superam | `chain` | Segue `supersedes` até a raiz |
 | Precisa do Estado vigente do processo (o que está aberto, quem venceu cada target) | `state` | Aceita `withData: true` pra trazer o `data` do Verdict vigente junto |

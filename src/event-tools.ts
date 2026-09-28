@@ -143,7 +143,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         "`no-forks`) does not accept `result`: it is computed from the process's current State. A custom gate, " +
         'fixed in the process, requires `result: {passed, evidence}`. Every gate in `gates` is validated before ' +
         'anything is written: if any one of them fails validation, the whole call fails and nothing is recorded. ' +
-        'Validation also rejects a repeated `{gate, target}` pair and a batch whose Milestones add up to more ' +
+        'Validation also rejects a repeated `{name, target}` pair and a batch whose Milestones add up to more ' +
         'than 24000 canonical characters (`INVALID_INPUT`: split it into smaller calls); each Milestone is capped ' +
         'at 16000 like any other event (`INVALID_EVENT`). ' +
         'Once writing starts, a genuine disk error or a stolen lock (`LOCK_LOST`) leaves the Milestones written so ' +
@@ -158,8 +158,8 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         process: Name,
         gates: z
           .array(
-            z.object({
-              gate: Name,
+            z.strictObject({
+              name: Name,
               target: Target,
               result: z
                 .object({
@@ -757,7 +757,7 @@ type GateResolution =
     };
 
 type GateBatchItem = {
-  gate: string;
+  name: string;
   target: string;
   result?: { passed: boolean; evidence: string | string[] };
 };
@@ -793,10 +793,10 @@ async function evaluateGate(
 ): Promise<{ results: GateReceipt[] }> {
   const { project, process, gates, agent, echo } = args;
 
-  // `{gate, target}` repetido no lote gravaria Milestones redundantes (ou contraditórios, no custom).
-  if (uniqBy(gates, ({ gate, target }) => `${gate}\u0000${target}`).length !== gates.length) {
-    throw new HexlogError('INVALID_INPUT', 'duplicate {gate, target} in batch', [
-      { path: '/gates', code: 'duplicate', message: 'each {gate, target} must appear once' },
+  // `{name, target}` repetido no lote gravaria Milestones redundantes (ou contraditórios, no custom).
+  if (uniqBy(gates, ({ name, target }) => `${name}\u0000${target}`).length !== gates.length) {
+    throw new HexlogError('INVALID_INPUT', 'duplicate {name, target} in batch', [
+      { path: '/gates', code: 'duplicate', message: 'each {name, target} must appear once' },
     ]);
   }
 
@@ -807,8 +807,8 @@ async function evaluateGate(
 
   // Resolve e avalia todos os N gates antes de gravar (sem efeito colateral): qualquer erro aqui
   // propaga sem que o lock chegue a ser adquirido — tudo-ou-nada na validação.
-  const evaluations = gates.map(({ gate, target, result }) => {
-    const resolution = resolveGate(gate, result, loaded.manifest.fixed.gates);
+  const evaluations = gates.map(({ name, target, result }) => {
+    const resolution = resolveGate(name, result, loaded.manifest.fixed.gates);
     const { evaluationResult, criteria } =
       resolution.origin === 'builtin'
         ? {
@@ -823,7 +823,7 @@ async function evaluateGate(
     const data = normalizeData(
       'milestone',
       buildGateMilestoneData({
-        name: gate,
+        name,
         origin: resolution.origin,
         criteria,
         target,
@@ -868,25 +868,25 @@ async function evaluateGate(
 
 /** §4.11: decide builtin × custom e valida a presença/ausência de `result`, antes de avaliar. */
 function resolveGate(
-  gate: string,
+  name: string,
   result: { passed: boolean; evidence: string | string[] } | undefined,
   gates: Record<string, { criteria: string }>,
 ): GateResolution {
-  if (isBuiltinGate(gate)) {
+  if (isBuiltinGate(name)) {
     if (isNotNil(result)) {
       throw new HexlogError(
         'INVALID_EVALUATION',
         'builtin gate does not accept a result informed by the agent',
       );
     }
-    return { origin: 'builtin', name: gate };
+    return { origin: 'builtin', name };
   }
 
-  const definition = gates[gate];
+  const definition = gates[name];
   if (isNil(definition)) {
     throw new HexlogError(
       'GATE_NOT_REGISTERED',
-      `gate '${gate}' is not fixed in the process nor is it builtin`,
+      `gate '${name}' is not fixed in the process nor is it builtin`,
     );
   }
   if (isNil(result)) {

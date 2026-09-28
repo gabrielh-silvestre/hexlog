@@ -191,7 +191,7 @@ describe('M2', () => {
       base: {
         project: PROJ,
         process: PROC,
-        gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
+        gates: [{ name: 'no-orphans', target: 'hex:target:u1' }],
         agent: AGENT,
       },
     },
@@ -201,7 +201,7 @@ describe('M2', () => {
       base: {
         project: PROJ,
         process: PROC,
-        gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
+        gates: [{ name: 'no-orphans', target: 'hex:target:u1' }],
         agent: AGENT,
       },
     },
@@ -243,7 +243,7 @@ describe('M3', () => {
       args: {
         project: PROJ,
         process: 'ghost',
-        gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
+        gates: [{ name: 'no-orphans', target: 'hex:target:u1' }],
         agent: AGENT,
       },
     },
@@ -262,12 +262,32 @@ describe('M3', () => {
 });
 
 describe('M7', () => {
+  test.each([
+    ['campo legado gate no lugar de name', { gate: 'no-orphans', target: 'hex:target:u1' }],
+    [
+      'name junto de gate (campo extra)',
+      { name: 'no-orphans', gate: 'no-orphans', target: 'hex:target:u1' },
+    ],
+  ])('evaluate_gate com %s → Input validation error, árvore intacta', async (_label, item) => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [item],
+      agent: AGENT,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
+    expect(environment.tree()).toEqual(before);
+  });
+
   test('evaluate_gate com target fora do formato hex:target: → Input validation error', async () => {
     await prepare(environment, PROJ, PROC);
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'no-orphans', target: 'u1' }],
+      gates: [{ name: 'no-orphans', target: 'u1' }],
       agent: AGENT,
     });
     expect(result.isError).toBe(true);
@@ -885,7 +905,7 @@ describe('Leva 6 — gate Milestone some do filtro por target (#19)', () => {
     const evaluated = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
+      gates: [{ name: 'no-orphans', target: 'hex:target:u1' }],
       agent: AGENT,
     });
     expect(evaluated.isError).not.toBe(true);
@@ -1724,7 +1744,7 @@ describe('N5', () => {
     const clean = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
+      gates: [{ name: 'no-orphans', target: 'hex:target:u1' }],
       agent: AGENT,
     });
     const cleanBody = clean.structuredContent as {
@@ -1746,7 +1766,7 @@ describe('N5', () => {
     const violated = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'no-orphans', target: 'hex:target:u2' }],
+      gates: [{ name: 'no-orphans', target: 'hex:target:u2' }],
       agent: AGENT,
     });
     const violatedBody = violated.structuredContent as {
@@ -1762,7 +1782,7 @@ describe('N5', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'chain-intact', target: 'hex:target:u1' }],
+      gates: [{ name: 'chain-intact', target: 'hex:target:u1' }],
       agent: AGENT,
     });
     const body = result.structuredContent as { results: { passed: boolean }[] };
@@ -1798,7 +1818,7 @@ describe('N5', () => {
     const forked = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'no-forks', target: 'hex:target:u1' }],
+      gates: [{ name: 'no-forks', target: 'hex:target:u1' }],
       agent: AGENT,
     });
     const forkedBody = forked.structuredContent as {
@@ -1818,7 +1838,7 @@ describe('N6', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'gate-custom', target: 'hex:target:u1' }],
+      gates: [{ name: 'gate-custom', target: 'hex:target:u1' }],
       agent: AGENT,
     });
     expectError(result, 'INVALID_EVALUATION');
@@ -1830,7 +1850,7 @@ describe('N6', () => {
       project: PROJ,
       process: PROC,
       gates: [
-        { gate: 'no-orphans', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } },
+        { name: 'no-orphans', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } },
       ],
       agent: AGENT,
     });
@@ -1842,7 +1862,7 @@ describe('N6', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'ghost', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
+      gates: [{ name: 'ghost', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
       agent: AGENT,
     });
     expectError(result, 'GATE_NOT_REGISTERED');
@@ -1859,7 +1879,7 @@ describe('N6', () => {
       project: PROJ,
       process: PROC,
       gates: [
-        { gate: 'gate-late', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } },
+        { name: 'gate-late', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } },
       ],
       agent: AGENT,
     });
@@ -1873,7 +1893,7 @@ describe('N6', () => {
       process: PROC,
       gates: [
         {
-          gate: 'gate-custom',
+          name: 'gate-custom',
           target: 'hex:target:u1',
           result: { passed: false, evidence: ['evidence'] },
         },
@@ -1901,9 +1921,9 @@ describe('N6', () => {
       project: PROJ,
       process: PROC,
       gates: [
-        { gate: 'no-orphans', target: 'hex:target:u1' },
-        { gate: 'ghost', target: 'hex:target:u1' },
-        { gate: 'chain-intact', target: 'hex:target:u1' },
+        { name: 'no-orphans', target: 'hex:target:u1' },
+        { name: 'ghost', target: 'hex:target:u1' },
+        { name: 'chain-intact', target: 'hex:target:u1' },
       ],
       agent: AGENT,
     });
@@ -1919,8 +1939,8 @@ describe('N6', () => {
       project: PROJ,
       process: PROC,
       gates: [
-        { gate: 'no-orphans', target: 'hex:target:u1' },
-        { gate: 'chain-intact', target: 'hex:target:u1' },
+        { name: 'no-orphans', target: 'hex:target:u1' },
+        { name: 'chain-intact', target: 'hex:target:u1' },
       ],
       agent: AGENT,
       echo: true,
@@ -1939,7 +1959,7 @@ describe('N6', () => {
     expect(result1.event.prevHash).toBe(hashLine(result0.event));
   });
 
-  test('gates com {gate, target} repetido → INVALID_INPUT, nada gravado', async () => {
+  test('gates com {name, target} repetido → INVALID_INPUT, nada gravado', async () => {
     await prepare(environment, PROJ, PROC);
     const before = environment.tree();
 
@@ -1947,8 +1967,8 @@ describe('N6', () => {
       project: PROJ,
       process: PROC,
       gates: [
-        { gate: 'no-orphans', target: 'hex:target:u1' },
-        { gate: 'no-orphans', target: 'hex:target:u1' },
+        { name: 'no-orphans', target: 'hex:target:u1' },
+        { name: 'no-orphans', target: 'hex:target:u1' },
       ],
       agent: AGENT,
     });
@@ -1966,7 +1986,7 @@ describe('N6', () => {
       process: PROC,
       gates: [
         {
-          gate: 'gate-custom',
+          name: 'gate-custom',
           target: 'hex:target:u1',
           result: { passed: true, evidence: Array.from({ length: 20 }, () => 'x'.repeat(2000)) },
         },
@@ -1987,8 +2007,8 @@ describe('N6', () => {
       project: PROJ,
       process: PROC,
       gates: [
-        { gate: 'gate-custom', target: 'hex:target:u1', result: { passed: true, evidence } },
-        { gate: 'gate-custom', target: 'hex:target:u2', result: { passed: true, evidence } },
+        { name: 'gate-custom', target: 'hex:target:u1', result: { passed: true, evidence } },
+        { name: 'gate-custom', target: 'hex:target:u2', result: { passed: true, evidence } },
       ],
       agent: AGENT,
     });
@@ -2003,7 +2023,7 @@ describe('N6', () => {
       project: PROJ,
       process: PROC,
       gates: Array.from({ length: 21 }, () => ({
-        gate: 'no-orphans',
+        name: 'no-orphans',
         target: 'hex:target:u1',
       })),
       agent: AGENT,
@@ -2291,7 +2311,7 @@ describe('N12', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'no-orphans', target: 'u1' }],
+      gates: [{ name: 'no-orphans', target: 'u1' }],
       agent: AGENT,
     });
     expect(result.isError).toBe(true);
@@ -2322,7 +2342,7 @@ describe('N13', () => {
     const evaluated = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'no-orphans', target: 'hex:target:x' }],
+      gates: [{ name: 'no-orphans', target: 'hex:target:x' }],
       agent: AGENT,
     });
     const evaluatedBody = evaluated.structuredContent as { results: { passed: boolean }[] };
@@ -2341,7 +2361,7 @@ describe('N13', () => {
     await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gates: [{ gate: 'no-orphans', target: 'hex:target:y' }],
+      gates: [{ name: 'no-orphans', target: 'hex:target:y' }],
       agent: AGENT,
     });
 
@@ -2641,7 +2661,7 @@ describe('S5', () => {
       await environment.call('evaluate_gate', {
         project,
         process: 'proc-old',
-        gates: [{ gate: 'g', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
+        gates: [{ name: 'g', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
         agent: AGENT,
         echo: true,
       })
@@ -2654,7 +2674,7 @@ describe('S5', () => {
       await environment.call('evaluate_gate', {
         project,
         process: 'proc-new',
-        gates: [{ gate: 'g', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
+        gates: [{ name: 'g', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
         agent: AGENT,
         echo: true,
       })

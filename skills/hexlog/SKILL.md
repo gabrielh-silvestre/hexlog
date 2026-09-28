@@ -44,7 +44,7 @@ que o usuário notar a lacuna.
 | `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts#ensureVocabulary` |
 | `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts#unknownResultWarning` |
 | `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts#registerEvent` |
-| `evaluate_gate` com o mesmo `{gate, target}` repetido no lote | `INVALID_INPUT` | `event-tools.ts#evaluateGate` |
+| `evaluate_gate` com o mesmo `{name, target}` repetido no lote | `INVALID_INPUT` | `event-tools.ts#evaluateGate` |
 | `evaluate_gate` cujos Milestones somados passam de 24000 caracteres canônicos | `INVALID_INPUT` — dividir em chamadas menores | `event-tools.ts#evaluateGate` |
 | `targetPrefix` terminado em `.` | rejeitado pela validação do schema de entrada, sem código de domínio | `events.ts#TargetPrefix` |
 | `list` com `type: "milestone"` ou `"verdict"` (reservados) | mensagem própria apontando o vocabulário fixo e os campos de Verdict/Milestone, não o erro genérico de tipo | `definition-tools.ts#reservedTypeMessage` |
@@ -112,7 +112,7 @@ Notas adicionais:
 
 4. evaluate_gate({
      project: "myproj", process: "onboarding",
-     gates: [{ gate: "no-orphans", target: "hex:target:onboarding-1" }],
+     gates: [{ name: "no-orphans", target: "hex:target:onboarding-1" }],
      agent: "setup-agent"
    })
    → { results: [{ seq: 1, id: "myproj:onboarding:milestone:<uuid v7>",
