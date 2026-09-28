@@ -6,7 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { anchor, hashLine, verifyChain } from '../src/chain.ts';
 import type { EventLine } from '../src/events.ts';
-import { append, readText, type LogRecord } from '../src/log.ts';
+import { append, appendBatch, readText, type LogRecord } from '../src/log.ts';
 
 const MANIFEST = { project: 'p', process: 'proc', fixed: { version: 1 } };
 
@@ -161,6 +161,23 @@ describe('anexar — lock', () => {
 
     expect(records.filter((r) => r.event === 'lock-wait')).toHaveLength(1);
   });
+
+  test(
+    'lock alheio retido por 6s (entre o antigo LOCK_TIMEOUT_MS de 5s e o LOCK_ORPHAN_MS de 10s): ' +
+      'com os defaults reais, não lança LOCK_TIMEOUT antes do lock ser liberado (#7)',
+    async () => {
+      const lockDir = `${file}.lock`;
+      fs.mkdirSync(lockDir, 0o700); // mtime fresco: nunca considerado órfão nesta janela
+      setTimeout(() => fs.rmSync(lockDir, { recursive: true, force: true }), 6_000);
+      const { log } = createSpyLogger();
+
+      // sem timeoutMs/orphanMs: usa os defaults reais do módulo (LOCK_TIMEOUT_MS/LOCK_ORPHAN_MS)
+      const line = await append(file, MANIFEST, buildLine, { log });
+
+      expect(line.seq).toBe(0);
+    },
+    10_000,
+  );
 });
 
 describe('anexar — fencing', () => {
@@ -181,6 +198,107 @@ describe('anexar — fencing', () => {
     expect(readText(file)).toBe('');
     expect(records.some((r) => r.event === 'lock-lost')).toBe(true);
     expect(fs.readFileSync(path.join(lockDir, 'holder'), 'utf8')).toBe('other-token'); // release não mexeu no lock alheio
+  });
+});
+
+describe('anexar em lote (appendBatch, Leva 5)', () => {
+  test('N builds → grava N linhas encadeadas sob uma única aquisição de lock (seq consecutivos, prevHash aponta pro hash da anterior, mesmo timestamp)', async () => {
+    const { log } = createSpyLogger();
+
+    const lines = await appendBatch(file, MANIFEST, [buildLine, buildLine, buildLine], { log });
+
+    expect(lines.map((line) => line.seq)).toEqual([0, 1, 2]);
+    expect(lines[1].prevHash).toBe(hashLine(lines[0]));
+    expect(lines[2].prevHash).toBe(hashLine(lines[1]));
+    expect(new Set(lines.map((line) => line.timestamp)).size).toBe(1);
+    const result = verifyChain(readText(file), MANIFEST);
+    expect(result.ok).toBe(true);
+    expect(result.totalLines).toBe(3);
+  });
+
+  test('lock timeout com lock alheio → nenhuma linha escrita, LOCK_TIMEOUT propaga antes de qualquer escrita', async () => {
+    const lockDir = `${file}.lock`;
+    fs.mkdirSync(lockDir, 0o700); // mtime fresco: nunca órfão neste teste
+    const { log } = createSpyLogger();
+
+    await expect(
+      appendBatch(file, MANIFEST, [buildLine, buildLine], {
+        log,
+        timeoutMs: 200,
+        orphanMs: 60_000,
+      }),
+    ).rejects.toEqual(expect.objectContaining({ code: 'LOCK_TIMEOUT' }));
+
+    expect(readText(file)).toBe('');
+  });
+
+  test('cauda rasgada pré-existente com N≥2: item 1 corrige o rasgo (endsWithNewline real), itens 2..N não prefixam \\n extra, verifyChain sem invalid-line', async () => {
+    const { log } = createSpyLogger();
+    const first = await append(file, MANIFEST, buildLine, { log });
+    const textWithoutBreak = fs.readFileSync(file, 'utf8').replace(/\n$/, ''); // simula escrita interrompida só no separador
+    fs.writeFileSync(file, textWithoutBreak);
+
+    const lines = await appendBatch(file, MANIFEST, [buildLine, buildLine, buildLine], { log });
+
+    expect(lines[0].prevHash).toBe(hashLine(first));
+    const result = verifyChain(readText(file), MANIFEST);
+    expect(result.ok).toBe(true);
+    expect(result.breaks).toEqual([]);
+    expect(result.totalLines).toBe(4);
+  });
+
+  test('falha de escrita no meio do lote (fs.writeSync lança no item 3 de 5) → itens 1-2 já persistidos, exceção propaga, lock liberado no finally', async () => {
+    const { log } = createSpyLogger();
+    const original = fs.writeSync.bind(fs);
+    let calls = 0;
+    const writeSyncSpy = jest
+      .spyOn(fs, 'writeSync')
+      .mockImplementation((...args: Parameters<typeof fs.writeSync>) => {
+        const [, data] = args;
+        // conta só a escrita do elo em si (JSON da linha), não outras escritas de baixo nível
+        // que `fs.writeFileSync` (lock/holder) possa acionar sob o capô.
+        if (typeof data === 'string' && data.includes('"type":"milestone"')) {
+          calls++;
+          if (calls === 3) throw new Error('disk full');
+        }
+        return original(...args);
+      });
+
+    await expect(
+      appendBatch(file, MANIFEST, [buildLine, buildLine, buildLine, buildLine, buildLine], {
+        log,
+      }),
+    ).rejects.toThrow('disk full');
+    writeSyncSpy.mockRestore();
+
+    const result = verifyChain(readText(file), MANIFEST);
+    expect(result.ok).toBe(true);
+    expect(result.totalLines).toBe(2);
+    expect(fs.existsSync(`${file}.lock`)).toBe(false); // release não fica pendurado numa falha de escrita
+  });
+
+  test('token de lock trocado entre o item 2 e o item 3 de um lote de 5 → itens 1-2 persistidos, LOCK_LOST propaga, itens 3-5 não são escritos', async () => {
+    const lockDir = `${file}.lock`;
+    const { log, records } = createSpyLogger();
+    // é o 3º elemento do array de builds abaixo — dispensa contador, já é o único chamado nessa posição.
+    const buildWithTheftOnThird = (base: Base): EventLine => {
+      // simula um segundo dono assumindo o lock durante a construção do 3º item do lote
+      fs.writeFileSync(path.join(lockDir, 'holder'), 'other-token', { mode: 0o600 });
+      return buildLine(base);
+    };
+
+    await expect(
+      appendBatch(
+        file,
+        MANIFEST,
+        [buildLine, buildLine, buildWithTheftOnThird, buildLine, buildLine],
+        { log },
+      ),
+    ).rejects.toEqual(expect.objectContaining({ code: 'LOCK_LOST' }));
+
+    const result = verifyChain(readText(file), MANIFEST);
+    expect(result.totalLines).toBe(2);
+    expect(records.some((record) => record.event === 'lock-lost')).toBe(true);
   });
 });
 

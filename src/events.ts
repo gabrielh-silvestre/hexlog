@@ -29,6 +29,15 @@ export const Target = z
   .max(200)
   .regex(/^hex:target:[^\s:]+$/);
 
+// Prefixo de alvo (`targetPrefix`): `Target` sem '.' final, que nunca casaria descendente em
+// `matchesTargetPrefix`. Fica fora de `Target` porque este também revalida `data` já gravado.
+export const TargetPrefix = Target.regex(/[^.]$/);
+
+/** `value` casa `prefix` na fronteira de `.` (o próprio prefixo ou um descendente `prefix.x`), nunca um vizinho que só compartilha o texto (`prefix20`). Usado por `state`/`events` (`targetPrefix`). */
+export function matchesTargetPrefix(value: string, prefix: string): boolean {
+  return value === prefix || value.startsWith(`${prefix}.`);
+}
+
 /** Decompõe um id de evento em `{project, process, type, uuid?}`, ou `null` se não casar §4.3. */
 export function parseId(
   id: string,
@@ -49,6 +58,34 @@ export const EventLine = z.strictObject({
   data: z.record(z.string(), z.unknown()),
 });
 export type EventLine = z.infer<typeof EventLine>;
+
+/** Chaves de topo de `EventLine` que `events`/export CLI podem projetar. */
+export const EventLineField = z.enum([
+  'seq',
+  'id',
+  'type',
+  'timestamp',
+  'agent',
+  'prevHash',
+  'data',
+]);
+export type EventLineField = z.infer<typeof EventLineField>;
+
+/**
+ * Projeta um subconjunto de chaves de topo de `obj`: reduz o payload de `events` (default sem
+ * `prevHash`) e, mais tarde, o `--fields` do `hexlog export`. Chave listada que `obj` não possui
+ * não aparece no resultado; chave repetida em `fields` não duplica, o retorno é um objeto.
+ */
+export function projectFields<T extends Record<string, unknown>>(
+  obj: T,
+  fields: readonly (keyof T)[],
+): Partial<T> {
+  const result: Partial<T> = {};
+  for (const field of fields) {
+    if (field in obj) result[field] = obj[field];
+  }
+  return result;
+}
 
 const MilestoneData = z.strictObject({
   milestoneType: Label,

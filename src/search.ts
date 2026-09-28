@@ -1,7 +1,8 @@
 import { isNil, isString, orderBy, round } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import MiniSearch from 'minisearch';
-import { FULL_ID_RE, type EventLine } from './events.ts';
+import { FULL_ID_RE, matchesTargetPrefix, type EventLine } from './events.ts';
+import { isMilestoneGate } from './state.ts';
 
 /** Teto de caracteres do parâmetro `search` de `events` (§4.16): abaixo de 2, `prefix` casaria quase tudo. */
 export const SEARCH_MAX_CHARS = 200;
@@ -91,26 +92,60 @@ function collectStrings(value: unknown, parts: string[]): void {
 export type Filters = {
   type?: string;
   target?: string;
+  targetPrefix?: string;
+  targets?: string[];
   milestoneType?: string;
   result?: string;
   after?: string;
   before?: string;
+  includeGateMilestones?: boolean;
 };
+
+/** `target`/`targetPrefix`/`targets` informado (§4.12 item 9): condição que liga exclusão e compactação de gate. */
+export function hasTargetFilter(filters: Filters): boolean {
+  return !isNil(filters.target) || !isNil(filters.targetPrefix) || !isNil(filters.targets);
+}
 
 /** Uma linha é candidata quando satisfaz todos os filtros presentes (§4.12 item 9). */
 export function isCandidate(line: EventLine, filters: Filters): boolean {
   if (!isNil(filters.type) && line.type !== filters.type) return false;
   if (!isNil(filters.target) && !matchesTarget(line, filters.target)) return false;
+  if (!isNil(filters.targetPrefix) && !matchesTargetPrefixFilter(line, filters.targetPrefix))
+    return false;
+  if (!isNil(filters.targets) && !matchesTargets(line, filters.targets)) return false;
   if (!isNil(filters.milestoneType) && !matchesMilestoneType(line, filters.milestoneType))
     return false;
   if (!isNil(filters.result) && !matchesResult(line, filters.result)) return false;
   if (!isNil(filters.after) && line.timestamp < filters.after) return false;
   if (!isNil(filters.before) && line.timestamp >= filters.before) return false;
+  if (excludesGateMilestone(line, filters)) return false;
   return true;
+}
+
+/**
+ * Milestones de gate somem por padrão quando `target`/`targetPrefix` filtra: quem quer auditoria
+ * de gate já pede `milestoneType: 'gate'` explícito, e isso sempre vence a exclusão
+ * (senão `target` + `milestoneType: 'gate'` juntos devolveriam zero, por serem AND).
+ */
+function excludesGateMilestone(line: EventLine, filters: Filters): boolean {
+  if (!hasTargetFilter(filters)) return false;
+  if (filters.includeGateMilestones === true) return false;
+  if (filters.milestoneType === 'gate') return false;
+  return isMilestoneGate(line);
 }
 
 function matchesTarget(line: EventLine, target: string): boolean {
   return (line.data as { target?: string }).target === target;
+}
+
+function matchesTargetPrefixFilter(line: EventLine, prefix: string): boolean {
+  const target = (line.data as { target?: string }).target;
+  return !isNil(target) && matchesTargetPrefix(target, prefix);
+}
+
+function matchesTargets(line: EventLine, targets: string[]): boolean {
+  const target = (line.data as { target?: string }).target;
+  return !isNil(target) && targets.includes(target);
 }
 
 function matchesMilestoneType(line: EventLine, milestoneType: string): boolean {
@@ -158,6 +193,8 @@ export function search(
   if (isEmpty(raw) && distinctTerms(query) >= 2) {
     raw = engine.search(query, { combineWith: 'OR' });
     combination = 'OR';
+    const floor = Math.ceil(distinctTerms(query) / 2);
+    raw = raw.filter((r) => new Set(r.queryTerms).size >= floor);
   }
 
   const results = raw.map((r) => ({ index: r.id as number, relevance: round(r.score, 4) }));

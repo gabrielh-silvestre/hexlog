@@ -241,6 +241,11 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'active',
   'targets',
   'trace',
+  // `sections`/`conflicts` (campos de `state`) e `targetPrefix` (campo novo de `state`/`events`),
+  // não funções nem tools.
+  'sections',
+  'conflicts',
+  'targetPrefix',
   // hexlog-setup/hexlog-flow: `target` (singular, campo de entrada de register/evaluate_gate/
   // events/chain), `editedSkills` e `targetIdPattern` (campos do frontmatter FlowMap,
   // ver skills/hexlog-setup/references/flow-map-schema.md).
@@ -261,10 +266,10 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string> = {
   'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
   'definitions.ts:24': 'RESERVED_TYPE_NAMES',
   'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
-  'event-tools.ts:421': 'TYPE_NOT_PINNED',
-  'event-tools.ts:545': 'VOCABULARY_VIOLATED',
-  'event-tools.ts:567': 'UNKNOWN_VOCABULARY',
-  'event-tools.ts:423-428': 'RESERVED_FIELD',
+  'event-tools.ts:595': 'TYPE_NOT_PINNED',
+  'event-tools.ts:720': 'VOCABULARY_VIOLATED',
+  'event-tools.ts:742': 'UNKNOWN_VOCABULARY',
+  'event-tools.ts:597-602': 'RESERVED_FIELD',
   'installation.ts:89': 'verifyPreparedArtifact',
   'installation.ts:266': 'verifyPreparedArtifact',
 };
@@ -278,12 +283,12 @@ const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string> = {
 };
 
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string> = {
-  'event-tools.ts:421': 'TYPE_NOT_PINNED',
-  'event-tools.ts:545': 'VOCABULARY_VIOLATED',
-  'event-tools.ts:567': 'UNKNOWN_VOCABULARY',
-  'event-tools.ts:423-428': 'RESERVED_FIELD',
-  'event-tools.ts:498': 'CONFLICTING_ID',
-  'event-tools.ts:659-664': 'INVALID_EVALUATION',
+  'event-tools.ts:595': 'TYPE_NOT_PINNED',
+  'event-tools.ts:720': 'VOCABULARY_VIOLATED',
+  'event-tools.ts:742': 'UNKNOWN_VOCABULARY',
+  'event-tools.ts:597-602': 'RESERVED_FIELD',
+  'event-tools.ts:673': 'CONFLICTING_ID',
+  'event-tools.ts:891-896': 'INVALID_EVALUATION',
   'events.ts:27-30': 'Target',
 };
 

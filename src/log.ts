@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import * as path from 'node:path';
 import { delay } from 'es-toolkit';
 import { isEmpty, isNil } from 'es-toolkit/compat';
-import { expectedPrevHash, isValidLink, nextSeq } from './chain.ts';
+import { expectedPrevHash, hashLine, isValidLink, nextSeq } from './chain.ts';
 import { HexlogError } from './errors.ts';
 import type { EventLine } from './events.ts';
 
@@ -17,13 +17,16 @@ export type LogRecord = {
 };
 export type Logger = (record: LogRecord) => void;
 
-const LOCK_TIMEOUT_MS = 5_000;
+// Invariante: TIMEOUT_MS >= ORPHAN_MS. Um lock genuinamente órfão só é detectável depois de
+// ORPHAN_MS; com TIMEOUT_MS menor, o chamador desiste antes de o ramo de órfão ter chance de agir
+// (lock vivo entre 5s e 10s estourava LOCK_TIMEOUT sem nunca ser avaliado como órfão).
+const LOCK_TIMEOUT_MS = 15_000;
 const LOCK_RETRY_MS = 10;
 const LOCK_ORPHAN_MS = 10_000;
 
 const HOLDER_FILE = 'holder';
 
-type Base = {
+export type Base = {
   seq: number;
   timestamp: string;
   prevHash: string;
@@ -41,10 +44,8 @@ export function readText(file: string): string {
 }
 
 /**
- * Anexa um elo ao log JSONL sob lock exclusivo por diretório (§4.7). A espera pela aquisição do
- * lock é assíncrona (retry com `await` de sleep); a partir daqui, `build` roda dentro da seção
- * crítica síncrona (sem `await`): recebe a base já calculada (`seq`/`prevHash`/`uuid`/`timestamp`/
- * `lastLink`) e devolve a `EventLine` a gravar.
+ * Anexa um elo ao log JSONL: `appendBatch` com um único item, para a mecânica de lock morar num
+ * lugar só.
  */
 export async function append(
   file: string,
@@ -52,6 +53,31 @@ export async function append(
   build: (base: Base) => EventLine,
   options: { log: Logger; timeoutMs?: number; orphanMs?: number; clock?: () => Date },
 ): Promise<EventLine> {
+  const [line] = await appendBatch(file, manifest, [build], options);
+  return line;
+}
+
+/**
+ * Anexa N elos ao log JSONL sob uma única aquisição de lock exclusivo por diretório (§4.7). A
+ * espera pelo lock é assíncrona (retry com `await` de sleep); a partir daqui, cada `build` roda
+ * dentro da seção crítica síncrona (sem `await`): recebe a base já calculada
+ * (`seq`/`prevHash`/`uuid`/`timestamp`/`lastLink`) e devolve a `EventLine` a gravar.
+ * `builds[i]` recebe a base encadeada a partir do elo escrito por `builds[i-1]`, sem reler o
+ * arquivo entre um item e outro (o lock exclusivo garante que nada mais escreve no meio). O 1º
+ * item usa o `endsWithNewline` real de `prepareContext` (corrige uma cauda rasgada
+ * pré-existente); os demais sempre usam `true`, porque depois que `writeLine` grava qualquer
+ * linha o arquivo sempre termina em `\n` — reusar o valor do 1º item faria os seguintes
+ * prefixarem um `\n` supérfluo. `readToken` é revalidado antes de cada escrita, não só uma vez no
+ * início, para pegar o lock sendo roubado no meio de um lote longo em disco degradado. Falha a
+ * meio do laço (erro de disco, `LOCK_LOST`) deixa os itens já escritos gravados: log append-only,
+ * sem rollback.
+ */
+export async function appendBatch(
+  file: string,
+  manifest: unknown,
+  builds: readonly ((base: Base) => EventLine)[],
+  options: { log: Logger; timeoutMs?: number; orphanMs?: number; clock?: () => Date },
+): Promise<EventLine[]> {
   const {
     log,
     timeoutMs = LOCK_TIMEOUT_MS,
@@ -63,15 +89,32 @@ export async function append(
 
   try {
     const context = prepareContext(file, manifest, clock);
-    const line = build(context);
+    let base: Base = context;
+    let endsWithNewline = context.endsWithNewline;
+    const lines: EventLine[] = [];
 
-    if (readToken(lockDir) !== token) {
-      log({ level: 'error', event: 'lock-lost' });
-      throw new HexlogError('LOCK_LOST', 'lock lost before write');
+    for (const build of builds) {
+      const line = build(base);
+
+      if (readToken(lockDir) !== token) {
+        log({ level: 'error', event: 'lock-lost' });
+        throw new HexlogError('LOCK_LOST', 'lock lost before write');
+      }
+
+      writeLine(file, endsWithNewline, line);
+      lines.push(line);
+
+      endsWithNewline = true;
+      base = {
+        seq: line.seq + 1,
+        timestamp: base.timestamp,
+        prevHash: hashLine(line),
+        uuid: randomUUIDv7(),
+        lastLink: line,
+      };
     }
 
-    writeLine(file, context.endsWithNewline, line);
-    return line;
+    return lines;
   } finally {
     releaseLock(lockDir, token);
   }

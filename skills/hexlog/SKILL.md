@@ -21,6 +21,17 @@ diagnóstico de saúde — não a instalação; isso é do `README.md` do repo h
 Chame `register_vocabulary` pelo menos uma vez, com qualquer `owner` — o que
 destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele.
 
+**Nomeie `process` de release por escopo, não por versão.** `create_process`
+(passo 3) é imutável — para um fluxo de release cuja versão só se decide na
+entrega, nomear o `process` pela versão ainda não fechada (ex.: "release
+0.0.2") deixa um processo órfão assim que a versão real diverge; prefira
+nomear pelo escopo/feature (ex.: "release hextelemetry").
+
+**hexlog + ralplan.** Ao configurar hexlog num projeto que já roda ralplan,
+escreva no `CLAUDE.md` desse projeto a regra "cada iteração do ralplan entra
+no hexlog assim que acontece" — antes de disparar as iterações, não depois
+que o usuário notar a lacuna.
+
 ## Armadilhas
 
 | Situação | Resultado | Onde |
@@ -29,10 +40,10 @@ destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele
 | `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts:24` |
 | `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts:27-33` |
 | `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:421` |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:545` |
-| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:567` |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:423-428` |
+| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:595` |
+| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:720` |
+| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:742` |
+| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:597-602` |
 
 Notas adicionais:
 
@@ -55,9 +66,11 @@ Notas adicionais:
   congelou) surpreender, chame `list({project, process})`: devolve o
   vocabulário e os gates fixados por inteiro, não só o hash.
 - `state` aceita `withData: true` para trazer o `data` do Verdict vigente
-  junto de cada item de `active`, e sempre devolve `targets` (todo target de
-  Verdict já usado, mesmo os totalmente superados) — sem precisar de um
-  `events` à parte para achar o vigente de um target.
+  junto de cada item de `active`, e devolve `targets` (todo target de
+  Verdict já usado, mesmo os totalmente superados) salvo quando `sections` o
+  exclui — sem precisar de um `events` à parte para achar o vigente de um
+  target. `targetPrefix` restringe `active`/`conflicts`/`targets` a uma
+  subárvore de endereço (fronteira em `.`), em `state` e em `events`.
 - Milestone aceita `trace` (opcional) como os demais eventos, mas ele é
   ignorado na comparação de retentativa idempotente: reenviar o mesmo id
   completo com `trace` diferente ainda deduplica.
@@ -80,25 +93,32 @@ Notas adicionais:
 
 3. register({
      project: "myproj", process: "onboarding",
-     id: "myproj:onboarding:milestone",
+     type: "milestone",
      agent: "setup-agent",
-     data: { milestoneType: "setup", target: "hex:target:onboarding-1" }
+     data: {
+       milestoneType: "setup", target: "hex:target:onboarding-1",
+       count: { field: "steps", value: 1 }
+     }
    })
-   → { event: { id: "myproj:onboarding:milestone:<uuid v7>", ... },
+   → { seq: 0, id: "myproj:onboarding:milestone:<uuid v7>", prevHash: "<sha256>",
        deduplicated: false, warnings: [] }
 
 4. evaluate_gate({
      project: "myproj", process: "onboarding",
-     gate: "no-orphans", agent: "setup-agent",
-     target: "hex:target:onboarding-1"
+     gates: [{ gate: "no-orphans", target: "hex:target:onboarding-1" }],
+     agent: "setup-agent"
    })
-   → { event: {...}, passed: true, evidence: [], totalEvidenceItems: 0 }
+   → { results: [{ seq: 1, id: "myproj:onboarding:milestone:<uuid v7>",
+       prevHash: "<sha256>", passed: true, evidence: [], totalEvidenceItems: 0 }] }
 ```
 
-`id` no passo 3 é um **prefixo** `{project}:{process}:{type}`: o servidor gera
-o uuid v7 e devolve o id completo no evento. Reenviar esse id completo com o
-mesmo `type`/`agent`/`data` normalizados é retentativa idempotente
-(`deduplicated: true`); conteúdo diferente é `CONFLICTING_ID`.
+O `type` isolado do passo 3 é a forma preferida para abrir um evento novo: o
+servidor monta o prefixo `{project}:{process}:{type}`, gera o uuid v7 e
+devolve o id completo no evento. `id` continua aceitando esse mesmo prefixo
+manual, ou o id completo devolvido acima para retentativa idempotente —
+reenviar esse id completo com o mesmo `type`/`agent`/`data` normalizados
+devolve a linha existente (`deduplicated: true`); conteúdo diferente é
+`CONFLICTING_ID`. `id` e `type` juntos, ou nenhum dos dois, é `INVALID_INPUT`.
 
 `no-orphans` no passo 4 é embutido e por isso não aceita `result` — o servidor
 calcula a partir do Estado do processo. Só um gate **custom** (registrado via

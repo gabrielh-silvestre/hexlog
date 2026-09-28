@@ -7,6 +7,7 @@ import { last } from 'es-toolkit';
 import { z } from 'zod';
 import { execute } from '../src/mcp.ts';
 import type { LogRecord } from '../src/log.ts';
+import { VERSION } from '../src/version.ts';
 import {
   type Environment,
   createEnvironment,
@@ -196,6 +197,7 @@ describe('M8', () => {
       type: 'note',
     });
     expect(typeResult.structuredContent).toEqual({
+      server: { version: VERSION },
       builtinGates: (typeResult.structuredContent as { builtinGates: unknown }).builtinGates,
       type: {
         name: 'note',
@@ -342,6 +344,16 @@ describe('list', () => {
     expect(body.builtinGates).toHaveLength(5);
   });
 
+  test('sempre inclui server.version, com ou sem parâmetros (#18)', async () => {
+    await prepareProcess(environment, 'p1', 'proc1');
+
+    const noParams = await environment.call('list', {});
+    const withProject = await environment.call('list', { project: 'p1' });
+
+    expect(noParams.structuredContent).toMatchObject({ server: { version: VERSION } });
+    expect(withProject.structuredContent).toMatchObject({ server: { version: VERSION } });
+  });
+
   test('processo sem projeto, ou tipo sem processo → INVALID_INPUT', async () => {
     expectError(await environment.call('list', { process: 'proc1' }), 'INVALID_INPUT');
     expectError(await environment.call('list', { project: 'p1', type: 'note' }), 'INVALID_INPUT');
@@ -365,6 +377,24 @@ describe('list', () => {
       await environment.call('list', { project: 'p1', process: 'proc1', type: 'ghost' }),
       'TYPE_NOT_FOUND',
     );
+  });
+
+  test('Leva 13 (#27): type verdict/milestone sem process → INVALID_INPUT aponta list/README, não o requires_process genérico', async () => {
+    const body = expectError(
+      await environment.call('list', { project: 'p1', type: 'verdict' }),
+      'INVALID_INPUT',
+    );
+    expect(body.message).toMatch(/list\(\{project, process\}\)/);
+    expect(body.message).not.toBe('type requires process');
+  });
+
+  test('Leva 13 (#27): type verdict/milestone com process → TYPE_NOT_FOUND aponta list/README, não a mensagem genérica', async () => {
+    await prepareProcess(environment, 'p1', 'proc1');
+    const body = expectError(
+      await environment.call('list', { project: 'p1', process: 'proc1', type: 'milestone' }),
+      'TYPE_NOT_FOUND',
+    );
+    expect(body.message).toMatch(/list\(\{project, process\}\)/);
   });
 
   test('ignora diretórios reservados e diretórios de processo sem manifesto', async () => {

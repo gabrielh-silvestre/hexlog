@@ -108,19 +108,22 @@ terminar e rode `node scripts/install.ts` de novo.
 
 | Tool | O que faz | Escreve |
 |---|---|---|
-| `list` | Lista projetos, ou detalha um projeto, processo ou tipo fixado | — |
+| `list` | Ferramenta de descoberta: lista projetos, ou detalha um projeto, processo ou tipo fixado | — |
 | `register_type` | Registra uma nova versão do schema JSON de um tipo de evento custom | `schemas/<type>/<versão>.json` |
 | `register_vocabulary` | Registra uma nova versão do vocabulário de um dono do projeto | `vocabulary/<owner>/<versão>.json` |
 | `register_gate` | Registra uma nova versão do critério de um gate custom | `gates/<gate>/<versão>.json` |
 | `create_process` | Cria um processo, fixando o snapshot atual de tipos/vocabulário/gates | `process.json` |
 | `register` | Registra um evento (Marco, Veredito ou tipo custom fixado) | `events.jsonl` |
-| `evaluate_gate` | Avalia um gate contra um alvo e grava o resultado como Marco de gate | `events.jsonl` |
+| `evaluate_gate` | Avalia até 20 gates em lote e grava cada resultado como Marco de gate | `events.jsonl` |
 | `state` | Projeta o Estado atual do processo (vigentes, conflitos, órfãos, avisos, cadeia) | — |
 | `events` | Lista os eventos do log, em ordem física ou por busca textual | — |
 | `chain` | Verifica a integridade da cadeia de hash do log | — |
 
 ### `list`
 
+Ferramenta de descoberta, não pré-requisito: com `project`/`process` já
+conhecidos, prefira ler `state`/`events` direto em vez de chamar `list`
+antes. Sempre devolve `server.version` (a versão do servidor MCP rodando).
 Sem parâmetros, lista os projetos existentes. Com `project`, detalha esse
 projeto: tipos, vocabulários e gates trazem `version` (a vigente, que muda a
 cada novo `register_*`) e `versions` (todo o histórico, do legado `1.0` até a
@@ -180,10 +183,17 @@ nenhum vocabulário registrado ainda.
 
 ### `register`
 
-Registra um evento. O `id` pode ser:
+Registra um evento. Por padrão devolve um **recibo**
+`{seq, id, prevHash, deduplicated, warnings}` — não o evento inteiro, que o
+chamador já tem (ele mesmo enviou `data`). `echo: true` devolve também `event`
+com o `EventLine` completo.
+
+Para abrir um evento novo, a forma preferida é `type` isolado (ex.:
+`type: 'milestone'`): o servidor monta o prefixo `{project}:{process}:{type}`
+e gera o uuid v7. Alternativamente, `id` continua aceitando:
 
 - **prefixo** `{project}:{process}:{type}`: o servidor gera um uuid v7 novo e
-  faz o append;
+  faz o append (a mesma string que `type` isolado monta por baixo);
 - **id completo** `{project}:{process}:{type}:{uuid}`, devolvido por uma
   chamada anterior: é uma **retentativa idempotente**. Se `type`/`agent`/
   `data` (já normalizados) coincidirem com o que foi gravado, devolve a
@@ -193,11 +203,20 @@ Registra um evento. O `id` pode ser:
   desconhecido é `UNKNOWN_ID` (só o servidor gera uuid, então um id
   completo nunca inventado pelo agente).
 
+`id` e `type` informados juntos, ou nenhum dos dois, é `INVALID_INPUT`.
+
 Marco aceita `milestoneType`, `target` (endereço no formato `hex:target:<id>`),
-`count`, `dueAt`, `decisions[]` e `trace` (opcional). Veredito aceita `claim`,
-`source`, `result`, `evidence`, `target` (também `hex:target:<id>`), `supersedes[]`,
-`origin` e `trace`. `milestoneType: "gate"` e a chave `gate` são reservados ao
+`count` (`{field, value}`), `dueAt`, `decisions[]` e `trace` (opcional).
+`decisions[]` é uma lista de `{item, action, text}`; `action` é vocabulário
+fechado por projeto — os valores aceitos vêm de `list({project, process})`, e
+um valor fora dele é `VOCABULARY_VIOLATED`. Veredito aceita `claim`, `source`
+(string única, ao contrário de `evidence`, que aceita string ou array),
+`result`, `evidence`, `target` (também `hex:target:<id>`), `supersedes[]`,
+`origin` e `trace` — os dois últimos obrigatórios (ao contrário do `trace`
+opcional do Marco). `milestoneType: "gate"` e a chave `gate` são reservados ao
 Marco que `evaluate_gate` grava; usá-los em `register` é `RESERVED_FIELD`.
+Toda chave fora do schema de `data` do tipo é sempre rejeitada
+(`strictObject`).
 
 No Marco, `trace` é ignorado na comparação de retentativa idempotente: reenviar
 o mesmo id completo com `trace` diferente ainda deduplica (`deduplicated: true`).
@@ -205,12 +224,30 @@ No Veredito `trace` é obrigatório e entra normalmente na comparação.
 
 ### `evaluate_gate`
 
-Avalia um gate contra um `target` e grava o resultado como um Marco de gate.
-Gates **embutidos** (`no-orphans`, `no-conflicts`, `chain-intact`,
+Avalia até 20 gates numa única chamada (`gates: [{gate, target, result?}]`) e
+grava cada resultado como um Marco de gate, sob uma **única aquisição de
+lock**: um só snapshot de Estado é lido no início da chamada, e
+todo gate embutido do lote compartilha o mesmo `evaluatedThrough`. Gates
+**embutidos** (`no-orphans`, `no-conflicts`, `chain-intact`,
 `no-invalid-references`, `no-forks`) são calculados pelo próprio servidor a
 partir do Estado do processo, e não aceitam `result` informado pelo agente.
 Gates **custom**, registrados via `register_gate` e fixados no processo,
 exigem `result: {passed, evidence}` do agente.
+
+Todos os gates do lote são validados **antes** de qualquer gravação: se
+qualquer um deles falhar a validação, a chamada inteira falha e nada é
+gravado — o lock nem chega a ser adquirido. A validação também recusa
+`{gate, target}` repetido no lote e lote cujos Marcos somem mais de 24.000
+caracteres canônicos (`INVALID_INPUT`: divida em chamadas menores); cada Marco
+respeita o mesmo teto de 16.000 dos demais eventos (`INVALID_EVENT`). Uma vez
+iniciada a escrita, um erro de disco genuíno ou um lock roubado (`LOCK_LOST`,
+token revalidado a cada item) deixa os Marcos já gravados persistidos — o log é append-only, sem
+rollback — e a chamada falha com um erro simples (`isError: true`, sem
+`results` no corpo); confira `events`/`state` depois para ver o que de fato
+foi gravado. A resposta traz `results[]`, um recibo
+`{seq, id, prevHash, passed, evidence, totalEvidenceItems}` por gate, na
+ordem enviada; `echo: true` (padrão `false`, mesmo parâmetro de `register`)
+devolve também o `event` completo em cada item.
 
 `no-forks` reprova quando um Veredito superado tem 2 ou mais sucessores vivos
 (2+ Vereditos que o citam em `supersedes` e não estão eles mesmos superados) —
@@ -228,18 +265,45 @@ O Marco de gate registrado **não abre nem fecha o ciclo** do alvo: avaliar
 Projeta o Estado atual do processo: Vereditos vigentes e em conflito, Marcos
 órfãos (com `dueAt` vencido e sem evento posterior no mesmo alvo),
 eventos a revisar, referências inválidas (`supersedes` apontando para um Veredito
-inexistente), avisos de vocabulário, Vereditos com fork (`no-forks`, ver acima)
-e a cadeia de hash. O parâmetro `sections` filtra o que volta na resposta; sem
-ele, todas as seções voltam. Cada lista é cortada em 100 itens, e `totals` traz
-o tamanho real de cada uma.
+inexistente), avisos de vocabulário, Vereditos com fork (`no-forks`, ver acima),
+todo `target` que algum Veredito já usou (inclusive os totalmente superados) e
+a cadeia de hash. O parâmetro `sections` filtra o que volta na resposta —
+`targets` é uma seção como as outras, então some se não estiver na lista; sem
+`sections`, todas as seções voltam. Cada lista é cortada em 100 itens, e
+`totals` traz o tamanho real de cada uma.
 
-`targets` sempre volta na resposta, independente de `sections`: todo `target`
-que algum Veredito já usou, inclusive os totalmente superados (sem nenhum
-Veredito vigente). Com `withData: true` (padrão `false`), cada item de status
+`targetPrefix` restringe `active`, `conflicts` e
+`targets` ao endereço `hex:target:...` informado ou à sua subárvore, casando
+na fronteira de `.`: `hex:target:a.b` casa `hex:target:a.b` e
+`hex:target:a.b.c`, mas não `hex:target:a.bc`. Quando informado, `totals`
+dessas três seções passa a contar só os itens que casaram, antes do corte de
+100 itens — as demais seções (`orphans`, `toReview`, `invalidReferences`,
+`warnings`, `forks`) não são afetadas por esse filtro.
+
+`warnings` omite por padrão os itens `kind: "extension"` — uso
+esperado de vocabulário (valor declarado por um dono), não sinal de problema.
+`includeExtensionWarnings: true` traz esses itens de volta; `error` e
+`unknown-warning` sempre aparecem. `totals.warnings` sempre conta o total
+real, `extension` incluído.
+
+Com `withData: true` (padrão `false`), cada item de status
 `active` em `active` ganha o `data` do Veredito vigente; itens de status
-`conflict` (sem um vigente único) não ganham `data`. A resposta ainda respeita
-o teto de `PAGE_CHARS_CAP = 24_000` caracteres: uma vez que o orçamento
-estoura, os itens restantes vêm sem `data` e com `truncated: true`.
+`conflict` (sem um vigente único) não ganham `data`. O teto de
+`PAGE_CHARS_CAP = 24_000` caracteres é medido contra a resposta inteira
+(`targets`, `chain`, `totals` etc. inclusos, não só o array `active` isolado):
+itens que empurrariam a resposta além do teto vêm sem `data` e com
+`truncated: true`; itens que nem com esse marcador couberem saem do array
+por completo (a diferença entre `totals.active` e o tamanho de `active`
+sinaliza o corte). `activeTruncatedByBudget: true` no topo da resposta indica
+que esse teto — e não o corte de 100 itens por lista — foi a causa; nesse
+caso, repita a chamada com `withData: false` para ver a lista completa.
+
+`since` (um `seq`, mesma convenção de `events`) evita reprojetar quando o log
+não avançou: se `logThrough` ainda é `null` ou seu `seq` é `<= since`, a
+resposta é só `{logThrough, unchanged: true}`, sem nenhuma outra seção. Se o
+log avançou, a resposta é a normal, cheia, e `unchanged` fica ausente —
+`since` não filtra `warnings` nem nenhuma outra seção por dentro da resposta
+cheia, só evita reconstruir uma resposta idêntica à anterior.
 
 ### `events`
 
@@ -251,16 +315,38 @@ Lista os eventos do log de um processo, em dois modos:
   texto nesta própria chamada, só sobre os candidatos, e ordena por
   relevância decrescente. A consulta tenta `AND` primeiro; se não achar nada
   e tiver dois ou mais termos distintos, cai para `OR` — a resposta informa
-  qual das duas (`combination`) foi usada.
+  qual das duas (`combination`) foi usada. No fallback `OR`, um resultado que
+  case menos da metade (arredondado para cima) dos termos distintos da
+  consulta é descartado: consulta longa degrada para `OR` com
+  um piso de termos casados, em vez de devolver qualquer casamento de 1 termo
+  só.
 
 Os dois modos aceitam os mesmos filtros por igualdade exata, combináveis com
 `search` ou usados sozinhos: `type`, `target` (compara com `data.target`, campo
-comum a Marco e Veredito), `milestoneType`, `result` e o intervalo
-`[after, before)` de `timestamp`.
+comum a Marco e Veredito), `targetPrefix` (mesma
+subárvore de `data.target` que `state`, casando na fronteira de `.`:
+`hex:target:a.b` casa `hex:target:a.b.c`, não `hex:target:a.bc`), `targets`
+(até 20 endereços `hex:target:<id>` conhecidos, casados por igualdade — busca
+vários targets já conhecidos numa chamada só, em vez de uma chamada por
+target), `milestoneType`, `result` e o intervalo `[after, before)` de
+`timestamp`. `target`, `targetPrefix` e `targets` são três formas de escopar
+por target e são **mutuamente exclusivas**: combinar duas delas na mesma
+chamada é `INVALID_INPUT`.
 
 **A busca textual não encontra endereços `hex:target:<id>` nem ids de evento.**
-Para filtrar por endereço, use o parâmetro `target` — não existe filtro por id
-de evento.
+Para filtrar por endereço, use o parâmetro `target`, `targetPrefix` ou
+`targets` — não existe filtro por id de evento.
+
+**Marco de gate some por padrão quando `target`/`targetPrefix`/`targets` filtra.** Um Marco de gate (`data.milestoneType === 'gate'`, gravado por
+`evaluate_gate`) fica de fora do resultado quando `target`, `targetPrefix` ou
+`targets` é informado, a menos que `includeGateMilestones: true` seja pedido
+ou o chamador já peça `milestoneType: 'gate'` explicitamente — o pedido
+explícito sempre vence a exclusão padrão. Sem nenhum dos três, nenhum Marco
+de gate é excluído. Quando um Marco de gate volta dessa forma (via
+`includeGateMilestones` ou `milestoneType: 'gate'` explícito ao lado de
+`target`/`targetPrefix`/`targets`), a resposta corta `data.gate.criteria` e
+reduz `data.gate.evaluatedThrough` a `{ seq }` (ou `null`) — só na
+serialização desta chamada, o arquivo em disco não muda.
 
 `until` congela o prefixo do arquivo considerado (só as linhas físicas de
 índice menor que `until`); sem informar, a chamada usa todas as linhas do
@@ -279,6 +365,18 @@ com os nomes de campo e o conteúdo de `data`. Por isso o número de páginas
 para um mesmo corpus de eventos muda quando o formato em disco muda — por
 exemplo, ao renomear campos —, mesmo com o teto de 24.000 caracteres
 inalterado.
+
+**`fields` projeta as chaves de topo de `EventLine`.** Sem
+`fields`, cada evento volta como `{ seq, id, type, timestamp, agent, data }`
+— sem `prevHash`. Informar `fields` substitui esse conjunto por inteiro,
+inclusive pedindo só `prevHash` de volta (útil pra verificação manual de
+cadeia). O teto de 24.000 caracteres é medido **depois** da projeção: uma
+página cabe mais eventos quando `fields` reduz o tamanho de cada um.
+
+`truncatedByCharCap: true` sinaliza que foi o teto de 24.000 caracteres — não
+`limit`, nem o fim dos dados — que cortou a página antes da hora. Nesse caso
+pedir um `limit` maior não traz mais eventos: use `fields` pra reduzir o
+tamanho de cada evento em vez disso.
 
 ### `chain`
 
@@ -377,7 +475,7 @@ o teste automatizado as marque como "passa":
 | ANSI-C quoting | `cat $'/home/…/hex\x6cog/x'` |
 | Alternância de zsh | `cat ~/.local/share/(hexlog\|x)/p/r/events.jsonl` |
 | Hook indisponível | Node removido pelo nvm, `~/.local/lib/hexlog/<versão>/` apagado à mão, ou instalação corrompida por fora |
-| Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/0.1.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"` — o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
+| Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/0.2.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"` — o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
 | Desligar o guard editando a configuração | Editar `~/.claude/settings.json` à mão para remover deny ou hook |
 | Reinstalar a partir de código alterado | Editar `hook/bash-guard.ts` na working tree e rodar o instalador |
 
@@ -414,6 +512,24 @@ npm test          # jest: testa o código-fonte .ts diretamente
 npm run typecheck # tsc --noEmit
 npm run build     # esbuild, gera os bundles .mjs (equivalente ao passo 1 do instalador)
 ```
+
+### `scripts/export.ts`
+
+CLI read-only, sem tool MCP correspondente, no mesmo molde de
+`scripts/insights.ts`: roda direto com `node`, lê `XDG_DATA_HOME` como as
+tools, e não recebe o caminho do diretório de dados na linha de comando.
+
+```sh
+node scripts/export.ts <project>/<process> [--fields a,b,c]
+```
+
+Imprime em stdout uma linha JSON por evento válido do processo, na ordem
+física do arquivo (JSONL). Sem `--fields`, a saída é idêntica ao
+`events.jsonl` do processo (linhas inválidas ficam de fora). Com `--fields`,
+cada linha só traz as chaves pedidas — mesmas chaves de topo aceitas pela
+tool `events` (`seq`, `id`, `type`, `timestamp`, `agent`, `prevHash`,
+`data`). Processo inexistente ou campo desconhecido em `--fields` termina
+com mensagem clara em `stderr` e código de saída diferente de zero.
 
 O jest testa o `.ts` fonte; os testes de ponta a ponta sobem o servidor a
 partir do bundle já construído (`.mjs`), para cobrir o artefato que as

@@ -3,7 +3,15 @@ import { randomUUIDv7 } from 'node:crypto';
 import fc from 'fast-check';
 import { z } from 'zod';
 import { HexlogError } from '../src/errors.ts';
-import { Target, Name, parseId, normalizeData } from '../src/events.ts';
+import {
+  Target,
+  TargetPrefix,
+  Name,
+  parseId,
+  normalizeData,
+  matchesTargetPrefix,
+  projectFields,
+} from '../src/events.ts';
 
 describe('Nome', () => {
   test.each(['a', 'a-b1', 'x'.repeat(63)])('%s é válido', (value) => {
@@ -25,6 +33,12 @@ describe('Alvo (N12)', () => {
 
   test('hex:target:u1 é aceito', () => {
     expect(Target.safeParse('hex:target:u1').success).toBe(true);
+  });
+
+  test('hex:target:a. segue válido como Target (eventos já gravados), mas não como TargetPrefix', () => {
+    expect(Target.safeParse('hex:target:a.').success).toBe(true);
+    expect(TargetPrefix.safeParse('hex:target:a.').success).toBe(false);
+    expect(TargetPrefix.safeParse('hex:target:a.b').success).toBe(true);
   });
 
   test('normalizeData rejeita target inválido num Milestone com INVALID_EVENT em /data/target', () => {
@@ -61,6 +75,36 @@ describe('Alvo (N12)', () => {
         expect.objectContaining({ path: '/data/target' }),
       );
     }
+  });
+});
+
+describe('matchesTargetPrefix (Leva 4, #10/#13/#14)', () => {
+  test('prefixo igual ao valor casa', () => {
+    expect(matchesTargetPrefix('hex:target:task-2', 'hex:target:task-2')).toBe(true);
+  });
+
+  test('descendente na fronteira de "." casa', () => {
+    expect(matchesTargetPrefix('hex:target:task-2.sub', 'hex:target:task-2')).toBe(true);
+  });
+
+  test('vizinho que só compartilha o texto (sem fronteira de ".") não casa', () => {
+    expect(matchesTargetPrefix('hex:target:task-20', 'hex:target:task-2')).toBe(false);
+  });
+
+  test('prefixo mais longo que o valor não casa', () => {
+    expect(matchesTargetPrefix('hex:target:task-2', 'hex:target:task-2.sub')).toBe(false);
+  });
+});
+
+describe('projectFields (Leva 7, #16)', () => {
+  test('chave ausente no objeto não aparece no resultado', () => {
+    const obj: { a: number; b?: string } = { a: 1 };
+    expect(projectFields(obj, ['a', 'b'])).toEqual({ a: 1 });
+  });
+
+  test('chave repetida em fields não duplica', () => {
+    const obj = { a: 1, b: 2 };
+    expect(projectFields(obj, ['a', 'a', 'b'])).toEqual({ a: 1, b: 2 });
   });
 });
 

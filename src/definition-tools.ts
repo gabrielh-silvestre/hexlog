@@ -12,6 +12,7 @@ import {
   registerType,
   registerVocabulary,
   FixedVersions,
+  RESERVED_TYPE_NAMES,
 } from './definitions.ts';
 import { HexlogError } from './errors.ts';
 import { listBuiltinGates, CRITERIA_MAX_CHARS } from './gates.ts';
@@ -27,6 +28,7 @@ import {
   Vocabulary,
   Warning,
 } from './mcp.ts';
+import { VERSION } from './version.ts';
 
 const Label = z.string().min(1).max(100);
 const LabelList = z.array(Label).max(100).default([]);
@@ -55,10 +57,13 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
     {
       title: 'List',
       description:
-        'Lists projects, or the detail of a project, process or fixed type, depending on the parameters given. ' +
-        'With no parameters, lists the existing projects. Always includes the available builtin gates.',
+        'Discovery tool: with no parameters, lists the existing projects; with `project`, `process` ' +
+        "and/or `type`, drills into that definition's detail. Not a prerequisite for other tools — once " +
+        '`project`/`process` are already known, read `state` or `events` directly instead of calling ' +
+        "`list` first. Always includes the available builtin gates and the running server's version.",
       inputSchema: { project: Name.optional(), process: Name.optional(), type: Name.optional() },
       outputSchema: {
+        server: z.object({ version: z.string() }),
         projects: z.array(z.object({ name: Name, processes: z.number().int() })).optional(),
         project: z
           .object({
@@ -95,9 +100,10 @@ export function registerDefinitionTools(server: McpServer, ctx: Context): void {
       },
     },
     async ({ project, process, type }) =>
-      execute(ctx, 'list', { project, process }, () =>
-        resolveList(ctx, { project, process, type }),
-      ),
+      execute(ctx, 'list', { project, process }, () => ({
+        server: { version: VERSION },
+        ...resolveList(ctx, { project, process, type }),
+      })),
   );
 
   server.registerTool(
@@ -249,6 +255,19 @@ function hashSchema(schema: object): string {
   return sha256hex(canonicalize(schema) ?? '');
 }
 
+/** #27: `verdict`/`milestone` nunca são um tipo custom fixável via `register_type`. */
+function isReservedTypeName(type: string): boolean {
+  return (RESERVED_TYPE_NAMES as readonly string[]).includes(type);
+}
+
+/** #27: mensagem que aponta o caminho certo (vocabulário fixo ou campos do Verdict/Milestone) em vez do erro genérico de tipo custom. */
+function reservedTypeMessage(type: string): string {
+  return (
+    `'${type}' is a built-in domain kind, not a registrable custom type; ` +
+    'see list({project, process}) for the fixed vocabulary or the Verdict/Milestone fields in the README'
+  );
+}
+
 /** Lógica dos 4 níveis de `list` (§4.12): projects → project → process → type. */
 function resolveList(
   ctx: Context,
@@ -264,6 +283,11 @@ function resolveList(
     ]);
   }
   if (isNil(process) && isNotNil(type)) {
+    if (isReservedTypeName(type)) {
+      throw new HexlogError('INVALID_INPUT', reservedTypeMessage(type), [
+        { path: '/type', code: 'reserved_type_name', message: reservedTypeMessage(type) },
+      ]);
+    }
     throw new HexlogError('INVALID_INPUT', 'type requires process', [
       { path: '/type', code: 'requires_process', message: 'type given without process' },
     ]);
@@ -310,6 +334,9 @@ function resolveList(
 
   const schema = loaded.manifest.fixed.types[type];
   if (isNil(schema)) {
+    if (isReservedTypeName(type)) {
+      throw new HexlogError('TYPE_NOT_FOUND', reservedTypeMessage(type));
+    }
     throw new HexlogError('TYPE_NOT_FOUND', `type '${type}' is not fixed in process '${process}'`);
   }
   return { builtinGates, type: { name: type, hash: hashSchema(schema), schema } };

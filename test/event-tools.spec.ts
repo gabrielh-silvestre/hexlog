@@ -5,9 +5,16 @@ import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { isNil, range } from 'es-toolkit';
 import { search as runSearch } from '../src/search.ts';
-import { anchor, expectedPrevHash, nextSeq, sha256hex, type Chain } from '../src/chain.ts';
+import {
+  anchor,
+  expectedPrevHash,
+  hashLine,
+  nextSeq,
+  sha256hex,
+  type Chain,
+} from '../src/chain.ts';
 import type { ProcessManifest } from '../src/definitions.ts';
-import type { EventLine } from '../src/events.ts';
+import type { EventLine, EventLineField } from '../src/events.ts';
 import { writeCorpus, generateCorpus } from './fixtures/corpus.ts';
 import { type Environment, createEnvironment, expectError, registerCore } from './helpers.ts';
 
@@ -19,6 +26,17 @@ const AGENT = 'agent-test';
 const MILESTONE_PREFIX = `${PROJ}:${PROC}:milestone`;
 const VERDICT_PREFIX = `${PROJ}:${PROC}:verdict`;
 const NOTE_PREFIX = `${PROJ}:${PROC}:note`;
+// Leva 7 (#16): pede de volta o shape completo pré-Leva 7 (com `prevHash`), pra testes de
+// paginação que dependem do tamanho do evento inteiro, não da projeção de campos.
+const ALL_EVENT_FIELDS: EventLineField[] = [
+  'seq',
+  'id',
+  'type',
+  'timestamp',
+  'agent',
+  'prevHash',
+  'data',
+];
 
 const SCHEMA_CUSTOM = {
   type: 'object',
@@ -102,9 +120,9 @@ function buildLog(manifest: unknown, count: number): EventLine[] {
 }
 
 function expectDeduplicated(result: CallResult, expectedSeq: number): void {
-  const body = result.structuredContent as { deduplicated: boolean; event: EventLine };
+  const body = result.structuredContent as { deduplicated: boolean; seq: number };
   expect(body.deduplicated).toBe(true);
-  expect(body.event.seq).toBe(expectedSeq);
+  expect(body.seq).toBe(expectedSeq);
 }
 
 let environment: Environment;
@@ -173,9 +191,8 @@ describe('M2', () => {
       base: {
         project: PROJ,
         process: PROC,
-        gate: 'no-orphans',
+        gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
         agent: AGENT,
-        target: 'hex:target:u1',
       },
     },
     {
@@ -184,9 +201,8 @@ describe('M2', () => {
       base: {
         project: PROJ,
         process: PROC,
-        gate: 'no-orphans',
+        gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
         agent: AGENT,
-        target: 'hex:target:u1',
       },
     },
     { tool: 'state', field: 'project', base: { project: PROJ, process: PROC } },
@@ -227,9 +243,8 @@ describe('M3', () => {
       args: {
         project: PROJ,
         process: 'ghost',
-        gate: 'no-orphans',
+        gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
         agent: AGENT,
-        target: 'hex:target:u1',
       },
     },
     { tool: 'state', args: { project: PROJ, process: 'ghost' } },
@@ -252,9 +267,8 @@ describe('M7', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'no-orphans',
+      gates: [{ gate: 'no-orphans', target: 'u1' }],
       agent: AGENT,
-      target: 'u1',
     });
     expect(result.isError).toBe(true);
     expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
@@ -296,6 +310,7 @@ describe('M8', () => {
         process: PROC,
         since: cursor,
         limit: 100,
+        fields: ALL_EVENT_FIELDS,
       });
       const body = result.structuredContent as {
         events: EventLine[];
@@ -407,7 +422,7 @@ describe('P4', () => {
     }
   });
 
-  test('withData: itens conflict contam no PAGE_CHARS_CAP e recebem truncated: true, nunca data', async () => {
+  test('withData: itens conflict não têm o que cortar — quando o array inteiro já estoura o orçamento sozinho, saem do array (nunca ganham truncated)', async () => {
     await prepare(environment, PROJ, PROC);
     const bigClaim = (i: number) => `${i}`.padEnd(3900, 'x');
     for (let i = 0; i < 8; i++) {
@@ -431,10 +446,114 @@ describe('P4', () => {
     });
     const body = result.structuredContent as {
       active: { status: string; data?: unknown; truncated?: boolean }[];
+      totals: Record<string, number>;
+      activeTruncatedByBudget?: boolean;
     };
-    expect(body.active.every((item) => item.status === 'conflict')).toBe(true);
+    // Item conflict nunca ganha `data`, então seu incremento marginal é sempre zero: ou o array
+    // inteiro (já contado no baseSize) cabe, ou nenhum item cabe — não há meio-termo truncado.
+    expect(body.active.every((item) => item.status === 'conflict' && item.data === undefined)).toBe(
+      true,
+    );
+    expect(body.active.length).toBeLessThan(body.totals.active);
+    expect(body.activeTruncatedByBudget).toBe(true);
+    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(24_000);
+  });
+
+  test('withData: teto medido contra a resposta inteira, não só o array active isolado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const bigEvidence = 'x'.repeat(3900);
+    for (let i = 0; i < 6; i++) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: VERDICT_PREFIX,
+        agent: AGENT,
+        data: verdictData({ claim: `a${i}`, target: `hex:target:u${i}`, evidence: bigEvidence }),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+
+    // Sem filtrar `sections`, a resposta inclui targets/totals/warnings/etc. além de active —
+    // o orçamento deles soma no mesmo teto de 24k que os itens de active.
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      withData: true,
+    });
+    const body = result.structuredContent as {
+      active: { data?: unknown; truncated?: boolean }[];
+      activeTruncatedByBudget?: boolean;
+    };
+    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(24_000);
+    expect(body.active.some((item) => item.data !== undefined)).toBe(true);
+    if (body.active.some((item) => item.truncated === true)) {
+      expect(body.activeTruncatedByBudget).toBe(true);
+    }
+  });
+
+  test('withData com muitos itens perto do teto → alguns saem do array por não caberem nem com truncated: true; totals.active sinaliza o corte', async () => {
+    await prepare(environment, PROJ, PROC);
+    const evidence = 'x'.repeat(500);
+    for (let i = 0; i < 100; i++) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: VERDICT_PREFIX,
+        agent: AGENT,
+        data: verdictData({ claim: `a${i}`, target: `hex:target:u${i}`, evidence }),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: true,
+    });
+    const body = result.structuredContent as {
+      active: { data?: unknown; truncated?: boolean }[];
+      totals: Record<string, number>;
+      activeTruncatedByBudget?: boolean;
+    };
+    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(24_000);
+    expect(body.active.some((item) => item.data !== undefined)).toBe(true);
     expect(body.active.some((item) => item.truncated === true)).toBe(true);
-    expect(body.active.every((item) => item.data === undefined)).toBe(true);
+    expect(body.active.length).toBeLessThan(body.totals.active);
+    expect(body.activeTruncatedByBudget).toBe(true);
+  });
+
+  test('withData: activeTruncatedByBudget false quando tudo cabe; ausente/false quando withData é false', async () => {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim: 'a' }),
+    });
+
+    const withDataResult = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: true,
+    });
+    expect(
+      (withDataResult.structuredContent as { activeTruncatedByBudget?: boolean })
+        .activeTruncatedByBudget,
+    ).toBe(false);
+
+    const withoutDataResult = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+      withData: false,
+    });
+    expect(
+      (withoutDataResult.structuredContent as { activeTruncatedByBudget?: boolean })
+        .activeTruncatedByBudget,
+    ).toBeFalsy();
   });
 
   test('targets inclui target totalmente superado', async () => {
@@ -446,7 +565,7 @@ describe('P4', () => {
       agent: AGENT,
       data: verdictData({ claim: 'a', target: 'hex:target:gone' }),
     });
-    const v1Id = (v1.structuredContent as { event: EventLine }).event.id;
+    const v1Id = (v1.structuredContent as { id: string }).id;
     await environment.call('register', {
       project: PROJ,
       process: PROC,
@@ -464,6 +583,556 @@ describe('P4', () => {
       expect.arrayContaining(['hex:target:elsewhere', 'hex:target:gone']),
     );
     expect(body.active.some((item) => item.target === 'hex:target:gone')).toBe(false);
+  });
+});
+
+describe('Leva 4 — targetPrefix (#10, #13, #14)', () => {
+  async function registerVerdict(target: string, claim: string): Promise<void> {
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ claim, target }),
+    });
+    expect(result.isError).not.toBe(true);
+  }
+
+  test('targetPrefix filtra active/conflicts/targets na fronteira de "." (não casa task-20) e totals reflete o pós-filtro', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerVerdict('hex:target:task-2', 'a'); // único candidato → active
+    await registerVerdict('hex:target:task-2.sub', 'b'); // duas ocorrências → conflict
+    await registerVerdict('hex:target:task-2.sub', 'b');
+    await registerVerdict('hex:target:task-20', 'c');
+    await registerVerdict('hex:target:other', 'd');
+
+    const filtered = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      targetPrefix: 'hex:target:task-2',
+    });
+    const filteredBody = filtered.structuredContent as {
+      active: { target: string }[];
+      conflicts: { target: string }[];
+      targets: string[];
+      totals: Record<string, number>;
+    };
+    expect(filteredBody.targets.sort()).toEqual(['hex:target:task-2', 'hex:target:task-2.sub']);
+    expect(filteredBody.active.map((item) => item.target).sort()).toEqual([
+      'hex:target:task-2',
+      'hex:target:task-2.sub',
+    ]);
+    expect(filteredBody.conflicts).toEqual([
+      expect.objectContaining({ target: 'hex:target:task-2.sub' }),
+    ]);
+    expect(filteredBody.totals).toMatchObject({ active: 2, conflicts: 1, targets: 2 });
+
+    const unfiltered = await environment.call('state', { project: PROJ, process: PROC });
+    const unfilteredBody = unfiltered.structuredContent as { totals: Record<string, number> };
+    expect(unfilteredBody.totals).toMatchObject({ active: 4, conflicts: 1, targets: 4 });
+  });
+
+  test('targetPrefix + withData juntos: active filtrado pelo prefixo já vem com o data do Verdict vigente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerVerdict('hex:target:task-3', 'inside');
+    await registerVerdict('hex:target:other', 'outside');
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      targetPrefix: 'hex:target:task-3',
+      withData: true,
+    });
+    const body = result.structuredContent as {
+      active: { target: string; data?: Record<string, unknown> }[];
+    };
+    expect(body.active).toHaveLength(1);
+    expect(body.active[0]).toMatchObject({
+      target: 'hex:target:task-3',
+      data: expect.objectContaining({ claim: 'inside' }),
+    });
+  });
+
+  test('sections sem "targets" → targets ausente da resposta; totals.targets sempre presente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerVerdict('hex:target:u1', 'a');
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      sections: ['active'],
+    });
+    const body = result.structuredContent as { targets?: string[]; totals: Record<string, number> };
+    expect(body.targets).toBeUndefined();
+    expect(body.totals.targets).toBe(1);
+  });
+
+  test('events com targetPrefix "hex:target:task-2" → traz task-2 e task-2.sub, não task-20', async () => {
+    await prepare(environment, PROJ, PROC);
+    for (const target of ['hex:target:task-2', 'hex:target:task-2.sub', 'hex:target:task-20']) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: MILESTONE_PREFIX,
+        agent: AGENT,
+        data: milestoneData({ target }),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      targetPrefix: 'hex:target:task-2',
+    });
+    const body = result.structuredContent as { events: EventLine[] };
+    const targets = body.events.map((event) => (event.data as { target?: string }).target).sort();
+    expect(targets).toEqual(['hex:target:task-2', 'hex:target:task-2.sub']);
+  });
+});
+
+describe('Leva 15 — events: targets[] em lote (#26)', () => {
+  async function registerMilestoneAt(target: string): Promise<void> {
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ target }),
+    });
+    expect(result.isError).not.toBe(true);
+  }
+
+  test('events com targets: [a, b, c] → traz eventos dos 3 targets numa resposta só', async () => {
+    await prepare(environment, PROJ, PROC);
+    for (const target of ['hex:target:a', 'hex:target:b', 'hex:target:c', 'hex:target:d']) {
+      await registerMilestoneAt(target);
+    }
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      targets: ['hex:target:a', 'hex:target:b', 'hex:target:c'],
+    });
+    const body = result.structuredContent as { events: EventLine[] };
+    const targets = body.events.map((event) => (event.data as { target?: string }).target).sort();
+    expect(targets).toEqual(['hex:target:a', 'hex:target:b', 'hex:target:c']);
+  });
+
+  test('events com target e targets juntos → INVALID_INPUT', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      target: 'hex:target:a',
+      targets: ['hex:target:a', 'hex:target:b'],
+    });
+    expectError(result, 'INVALID_INPUT');
+  });
+
+  test('events com targetPrefix e targets juntos → INVALID_INPUT', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      targetPrefix: 'hex:target:a',
+      targets: ['hex:target:a', 'hex:target:b'],
+    });
+    expectError(result, 'INVALID_INPUT');
+  });
+
+  test('events com targets: [] (array vazio) → Input validation error', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('events', { project: PROJ, process: PROC, targets: [] });
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
+  });
+
+  test('events com targets: 21 valores → Input validation error', async () => {
+    await prepare(environment, PROJ, PROC);
+    const targets = range(21).map((i) => `hex:target:t${i}`);
+    const result = await environment.call('events', { project: PROJ, process: PROC, targets });
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
+  });
+});
+
+describe('Leva 16 — events: truncatedByCharCap (N2)', () => {
+  async function registerMilestones(count: number): Promise<void> {
+    for (let i = 0; i < count; i++) {
+      const result = await environment.call('register', {
+        project: PROJ,
+        process: PROC,
+        id: MILESTONE_PREFIX,
+        agent: AGENT,
+        data: milestoneData(),
+      });
+      expect(result.isError).not.toBe(true);
+    }
+  }
+
+  test('modo raw: página que estoura o cap de 24k antes do limit → truncatedByCharCap: true', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(250); // mesmo fixture de M8: 250 linhas paginam em 4 com ALL_EVENT_FIELDS
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      limit: 100,
+      fields: ALL_EVENT_FIELDS,
+    });
+    const body = result.structuredContent as { events: unknown[]; truncatedByCharCap: boolean };
+    expect(body.truncatedByCharCap).toBe(true);
+    expect(body.events.length).toBeLessThan(100);
+  });
+
+  test('modo raw: página que termina pelo limit, sem estourar o cap → truncatedByCharCap: false/ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(5);
+
+    const result = await environment.call('events', { project: PROJ, process: PROC, limit: 2 });
+    const body = result.structuredContent as {
+      events: unknown[];
+      truncatedByCharCap?: boolean;
+    };
+    expect(body.events).toHaveLength(2);
+    expect(body.truncatedByCharCap ?? false).toBe(false);
+  });
+
+  test('modo raw: página que termina por fim de dados → truncatedByCharCap: false/ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(3);
+
+    const result = await environment.call('events', { project: PROJ, process: PROC, limit: 100 });
+    const body = result.structuredContent as {
+      events: unknown[];
+      truncatedByCharCap?: boolean;
+    };
+    expect(body.events).toHaveLength(3);
+    expect(body.truncatedByCharCap ?? false).toBe(false);
+  });
+
+  test('modo search: página que estoura o cap de 24k antes do limit → truncatedByCharCap: true', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(250);
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      search: 'approved',
+      limit: 100,
+      fields: ALL_EVENT_FIELDS,
+    });
+    const body = result.structuredContent as { events: unknown[]; truncatedByCharCap: boolean };
+    expect(body.truncatedByCharCap).toBe(true);
+    expect(body.events.length).toBeLessThan(100);
+  });
+
+  test('modo search: página que termina pelo limit, sem estourar o cap → truncatedByCharCap: false/ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(5);
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      search: 'approved',
+      limit: 2,
+    });
+    const body = result.structuredContent as {
+      events: unknown[];
+      truncatedByCharCap?: boolean;
+    };
+    expect(body.events).toHaveLength(2);
+    expect(body.truncatedByCharCap ?? false).toBe(false);
+  });
+
+  test('modo search: página que termina por fim de dados → truncatedByCharCap: false/ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    await registerMilestones(3);
+
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      search: 'approved',
+      limit: 100,
+    });
+    const body = result.structuredContent as {
+      events: unknown[];
+      truncatedByCharCap?: boolean;
+    };
+    expect(body.events).toHaveLength(3);
+    expect(body.truncatedByCharCap ?? false).toBe(false);
+  });
+});
+
+type GateData = {
+  milestoneType: string;
+  target: string;
+  gate: { criteria?: string; evaluatedThrough: { id?: string; seq: number } | null };
+};
+
+describe('Leva 6 — gate Milestone some do filtro por target (#19)', () => {
+  async function seedGateAndPlainMilestone(): Promise<void> {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ target: 'hex:target:u1' }),
+    });
+    const evaluated = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
+      agent: AGENT,
+    });
+    expect(evaluated.isError).not.toBe(true);
+  }
+
+  async function eventsFor(overrides: Record<string, unknown>): Promise<EventLine[]> {
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      target: 'hex:target:u1',
+      ...overrides,
+    });
+    return (result.structuredContent as { events: EventLine[] }).events;
+  }
+
+  test('com target e sem includeGateMilestones → Milestone de gate não aparece', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({});
+    expect(
+      events.some((event) => (event.data as { milestoneType?: string }).milestoneType === 'gate'),
+    ).toBe(false);
+    expect(events).toHaveLength(1); // só o Milestone simples
+  });
+
+  test('com targetPrefix e sem includeGateMilestones → Milestone de gate não aparece', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({ target: undefined, targetPrefix: 'hex:target:u1' });
+    expect(
+      events.some((event) => (event.data as { milestoneType?: string }).milestoneType === 'gate'),
+    ).toBe(false);
+  });
+
+  test('includeGateMilestones: true → aparece, mas com criteria/evaluatedThrough compactos', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({ includeGateMilestones: true });
+    const gateEvent = events.find((event) => (event.data as GateData).milestoneType === 'gate');
+    expect(gateEvent).toBeDefined();
+    const gate = (gateEvent!.data as GateData).gate;
+    expect(gate.criteria).toBeUndefined();
+    expect(gate.evaluatedThrough).toEqual({ seq: expect.any(Number) });
+  });
+
+  test('milestoneType: "gate" explícito (sem includeGateMilestones) → Milestone de gate aparece', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({ milestoneType: 'gate' });
+    expect(events).toHaveLength(1);
+    expect((events[0].data as GateData).milestoneType).toBe('gate');
+  });
+
+  test('sem target/targetPrefix → Milestone de gate continua aparecendo normalmente, sem compactação', async () => {
+    await seedGateAndPlainMilestone();
+    const result = await environment.call('events', { project: PROJ, process: PROC });
+    const events = (result.structuredContent as { events: EventLine[] }).events;
+    const gateEvent = events.find((event) => (event.data as GateData).milestoneType === 'gate');
+    expect(gateEvent).toBeDefined();
+    const gate = (gateEvent!.data as GateData).gate;
+    expect(gate.criteria).toEqual(expect.any(String));
+    expect(gate.evaluatedThrough).toEqual(
+      expect.objectContaining({ id: expect.any(String), seq: expect.any(Number) }),
+    );
+  });
+
+  test('Milestone não-gate não é afetado pela compactação', async () => {
+    await seedGateAndPlainMilestone();
+    const events = await eventsFor({ includeGateMilestones: true });
+    const plain = events.find(
+      (event) => (event.data as { milestoneType?: string }).milestoneType === 'approved',
+    );
+    expect(plain).toEqual(
+      expect.objectContaining({ data: milestoneData({ target: 'hex:target:u1' }) }),
+    );
+  });
+});
+
+describe('Leva 7 — fields em events, prevHash fora por padrão (#16)', () => {
+  async function registerOneMilestone(): Promise<void> {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+  }
+
+  test('sem fields → eventos sem prevHash, com seq/id/type/timestamp/agent/data', async () => {
+    await registerOneMilestone();
+    const result = await environment.call('events', { project: PROJ, process: PROC });
+    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    expect(Object.keys(event)).toEqual(['seq', 'id', 'type', 'timestamp', 'agent', 'data']);
+  });
+
+  test('fields: ["id", "data"] → cada evento só com id e data', async () => {
+    await registerOneMilestone();
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      fields: ['id', 'data'],
+    });
+    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    expect(Object.keys(event)).toEqual(['id', 'data']);
+  });
+
+  test('fields: ["prevHash"] → cada evento só com prevHash, útil pra verificação manual de cadeia', async () => {
+    await registerOneMilestone();
+    const result = await environment.call('events', {
+      project: PROJ,
+      process: PROC,
+      fields: ['prevHash'],
+    });
+    const [event] = (result.structuredContent as { events: Record<string, unknown>[] }).events;
+    expect(Object.keys(event)).toEqual(['prevHash']);
+    expect(event.prevHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('Leva 9 — includeExtensionWarnings (#12)', () => {
+  /** Fixa um vocabulário com extensão do dono `ext` antes de `create_process`, para o registro seguinte já sair no vocabulário fixado. */
+  async function prepareWithExtension(): Promise<void> {
+    await registerCore(environment, PROJ);
+    await environment.call('register_vocabulary', {
+      project: PROJ,
+      owner: 'ext',
+      milestoneType: ['card-reviewed'],
+      result: [],
+      action: [],
+    });
+    await environment.call('create_process', { project: PROJ, process: PROC });
+  }
+
+  /** Um aviso `extension` (milestoneType do dono `ext`) e um `unknown-warning` (result fora do vocabulário). */
+  async function registerMixedWarnings(): Promise<void> {
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ milestoneType: 'card-reviewed' }),
+    });
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ result: 'totally-unknown' }),
+    });
+  }
+
+  test('sem includeExtensionWarnings → extension some da lista, unknown-warning fica; totals.warnings conta os dois', async () => {
+    await prepareWithExtension();
+    await registerMixedWarnings();
+
+    const result = await environment.call('state', { project: PROJ, process: PROC });
+    const body = result.structuredContent as {
+      warnings: { kind: string }[];
+      totals: Record<string, number>;
+    };
+    expect(body.warnings.map((w) => w.kind)).toEqual(['unknown-warning']);
+    expect(body.totals.warnings).toBe(2);
+  });
+
+  test('includeExtensionWarnings: true → extension volta a aparecer junto do unknown-warning', async () => {
+    await prepareWithExtension();
+    await registerMixedWarnings();
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      includeExtensionWarnings: true,
+    });
+    const body = result.structuredContent as { warnings: { kind: string }[] };
+    expect(body.warnings.map((w) => w.kind).sort()).toEqual(['extension', 'unknown-warning']);
+  });
+});
+
+describe('Leva 14 — state: since evita reprojetar (#25)', () => {
+  test('since igual ao seq do último evento → {logThrough, unchanged: true}, sem active/conflicts/warnings/targets', async () => {
+    await prepare(environment, PROJ, PROC);
+    const registered = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const { seq } = registered.structuredContent as { seq: number };
+
+    const result = await environment.call('state', { project: PROJ, process: PROC, since: seq });
+    expect(result.structuredContent).toEqual({
+      logThrough: {
+        id: expect.any(String),
+        seq,
+        timestamp: expect.any(String),
+      },
+      unchanged: true,
+    });
+  });
+
+  test('since menor que o seq do último evento (log avançou) → resposta cheia normal, unchanged ausente', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const { seq: firstSeq } = first.structuredContent as { seq: number };
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData({ target: 'hex:target:u2' }),
+    });
+
+    const result = await environment.call('state', {
+      project: PROJ,
+      process: PROC,
+      since: firstSeq,
+    });
+    const body = result.structuredContent as { unchanged?: boolean; active: unknown[] };
+    expect(body.unchanged).toBeUndefined();
+    expect(body.active).toBeDefined();
+  });
+
+  test('sem since → comportamento idêntico ao atual (não-regressão)', async () => {
+    await prepare(environment, PROJ, PROC);
+    await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+
+    const result = await environment.call('state', { project: PROJ, process: PROC });
+    const body = result.structuredContent as { unchanged?: boolean; now: string };
+    expect(body.unchanged).toBeUndefined();
+    expect(body.now).toEqual(expect.any(String));
+  });
+
+  test('since com log vazio (nenhum evento ainda) → logThrough null, unchanged: true', async () => {
+    await prepare(environment, PROJ, PROC);
+
+    const result = await environment.call('state', { project: PROJ, process: PROC, since: 0 });
+    expect(result.structuredContent).toEqual({ logThrough: null, unchanged: true });
   });
 });
 
@@ -526,7 +1195,7 @@ describe('M11', () => {
         target: 'hex:target:u1',
       }),
     });
-    const newId = (newRegistration.structuredContent as { event: EventLine }).event.id;
+    const newId = (newRegistration.structuredContent as { id: string }).id;
 
     const pages: EventLine[] = [...firstBody.events];
     let cursor = firstBody.nextCursor;
@@ -586,6 +1255,7 @@ describe('M11', () => {
         process: PROC,
         since: cursor,
         limit: 100,
+        fields: ALL_EVENT_FIELDS,
       });
       const body = result.structuredContent as {
         events: EventLine[];
@@ -774,7 +1444,7 @@ describe('N1', () => {
       agent: AGENT,
       data: milestoneData(),
     });
-    expect((registered.structuredContent as { event: EventLine }).event.seq).toBe(6);
+    expect((registered.structuredContent as { seq: number }).seq).toBe(6);
 
     const chain = await callChain();
     expect(chain.ok).toBe(true);
@@ -855,17 +1525,17 @@ describe('N2', () => {
       agent: AGENT,
       data,
     });
-    const body1 = first.structuredContent as { event: EventLine };
+    const body1 = first.structuredContent as { id: string; seq: number };
     const before = environment.tree();
 
     const second = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data,
     });
-    expectDeduplicated(second, body1.event.seq);
+    expectDeduplicated(second, body1.seq);
     expect(environment.tree()).toEqual(before);
   });
 
@@ -878,25 +1548,25 @@ describe('N2', () => {
       agent: AGENT,
       data: { note: 'x' },
     });
-    const body1 = first.structuredContent as { event: EventLine };
+    const body1 = first.structuredContent as { id: string; seq: number };
 
     const resentOmitted = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data: { note: 'x' },
     });
-    expectDeduplicated(resentOmitted, body1.event.seq);
+    expectDeduplicated(resentOmitted, body1.seq);
 
     const resentExplicit = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data: { note: 'x', priority: 1 },
     });
-    expectDeduplicated(resentExplicit, body1.event.seq);
+    expectDeduplicated(resentExplicit, body1.seq);
   });
 
   test('(iii) Milestone com trace: schema aceita, e reenviar o mesmo id com trace diferente ainda deduplica (P5)', async () => {
@@ -909,16 +1579,16 @@ describe('N2', () => {
       data: milestoneData({ trace: 'first-trace' }),
     });
     expect(first.isError).not.toBe(true);
-    const body1 = first.structuredContent as { event: EventLine };
+    const body1 = first.structuredContent as { id: string; seq: number };
 
     const resent = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data: milestoneData({ trace: 'different-trace' }),
     });
-    expectDeduplicated(resent, body1.event.seq);
+    expectDeduplicated(resent, body1.seq);
   });
 
   test('conteúdo diferente com o mesmo id completo → ID_CONFLITANTE', async () => {
@@ -930,12 +1600,12 @@ describe('N2', () => {
       agent: AGENT,
       data: milestoneData(),
     });
-    const body1 = first.structuredContent as { event: EventLine };
+    const body1 = first.structuredContent as { id: string };
 
     const conflicting = await environment.call('register', {
       project: PROJ,
       process: PROC,
-      id: body1.event.id,
+      id: body1.id,
       agent: AGENT,
       data: milestoneData({ target: 'hex:target:other' }),
     });
@@ -1013,6 +1683,26 @@ describe('N4', () => {
       expect.arrayContaining([expect.objectContaining({ code: 'UNKNOWN_VOCABULARY' })]),
     );
   });
+
+  test('Leva 13 (N1): aviso UNKNOWN_VOCABULARY inclui details.allowed com os termos aceitos', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: VERDICT_PREFIX,
+      agent: AGENT,
+      data: verdictData({ result: 'unknown' }),
+    });
+    const body = result.structuredContent as {
+      warnings: { code: string; details: unknown }[];
+    };
+    const warning = body.warnings.find((w) => w.code === 'UNKNOWN_VOCABULARY');
+    expect(warning?.details).toMatchObject({
+      field: 'result',
+      value: 'unknown',
+      allowed: expect.arrayContaining(['ok']),
+    });
+  });
 });
 
 describe('N5', () => {
@@ -1021,13 +1711,14 @@ describe('N5', () => {
     const clean = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'no-orphans',
+      gates: [{ gate: 'no-orphans', target: 'hex:target:u1' }],
       agent: AGENT,
-      target: 'hex:target:u1',
     });
-    const cleanBody = clean.structuredContent as { passed: boolean; evidence: unknown[] };
-    expect(cleanBody.passed).toBe(true);
-    expect(cleanBody.evidence).toEqual([]);
+    const cleanBody = clean.structuredContent as {
+      results: { passed: boolean; evidence: unknown[] }[];
+    };
+    expect(cleanBody.results[0].passed).toBe(true);
+    expect(cleanBody.results[0].evidence).toEqual([]);
 
     environment.setClock(new Date('2026-06-01T00:00:00.000Z'));
     await environment.call('register', {
@@ -1041,13 +1732,14 @@ describe('N5', () => {
     const violated = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'no-orphans',
+      gates: [{ gate: 'no-orphans', target: 'hex:target:u2' }],
       agent: AGENT,
-      target: 'hex:target:u2',
     });
-    const violatedBody = violated.structuredContent as { passed: boolean; evidence: unknown[] };
-    expect(violatedBody.passed).toBe(false);
-    expect(violatedBody.evidence.length).toBeGreaterThan(0);
+    const violatedBody = violated.structuredContent as {
+      results: { passed: boolean; evidence: unknown[] }[];
+    };
+    expect(violatedBody.results[0].passed).toBe(false);
+    expect(violatedBody.results[0].evidence.length).toBeGreaterThan(0);
   });
 
   test('chain-intact passa num log íntegro', async () => {
@@ -1055,11 +1747,12 @@ describe('N5', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'chain-intact',
+      gates: [{ gate: 'chain-intact', target: 'hex:target:u1' }],
       agent: AGENT,
-      target: 'hex:target:u1',
     });
-    expect((result.structuredContent as { passed: boolean }).passed).toBe(true);
+    expect((result.structuredContent as { results: { passed: boolean }[] }).results[0].passed).toBe(
+      true,
+    );
   });
 
   test('no-forks: 2 sucessores vivos do mesmo Verdict superado reprova (P1)', async () => {
@@ -1071,7 +1764,7 @@ describe('N5', () => {
       agent: AGENT,
       data: verdictData({ claim: 'a' }),
     });
-    const aId = (a.structuredContent as { event: EventLine }).event.id;
+    const aId = (a.structuredContent as { id: string }).id;
 
     await environment.call('register', {
       project: PROJ,
@@ -1091,13 +1784,14 @@ describe('N5', () => {
     const forked = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'no-forks',
+      gates: [{ gate: 'no-forks', target: 'hex:target:u1' }],
       agent: AGENT,
-      target: 'hex:target:u1',
     });
-    const forkedBody = forked.structuredContent as { passed: boolean; evidence: unknown[] };
-    expect(forkedBody.passed).toBe(false);
-    expect(forkedBody.evidence).toEqual([
+    const forkedBody = forked.structuredContent as {
+      results: { passed: boolean; evidence: unknown[] }[];
+    };
+    expect(forkedBody.results[0].passed).toBe(false);
+    expect(forkedBody.results[0].evidence).toEqual([
       { verdict: aId, successors: expect.arrayContaining([expect.any(String)]) },
     ]);
   });
@@ -1109,9 +1803,8 @@ describe('N6', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'gate-custom',
+      gates: [{ gate: 'gate-custom', target: 'hex:target:u1' }],
       agent: AGENT,
-      target: 'hex:target:u1',
     });
     expectError(result, 'INVALID_EVALUATION');
   });
@@ -1121,10 +1814,10 @@ describe('N6', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'no-orphans',
+      gates: [
+        { gate: 'no-orphans', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } },
+      ],
       agent: AGENT,
-      target: 'hex:target:u1',
-      result: { passed: true, evidence: 'ok' },
     });
     expectError(result, 'INVALID_EVALUATION');
   });
@@ -1134,10 +1827,8 @@ describe('N6', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'ghost',
+      gates: [{ gate: 'ghost', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
       agent: AGENT,
-      target: 'hex:target:u1',
-      result: { passed: true, evidence: 'ok' },
     });
     expectError(result, 'GATE_NOT_REGISTERED');
   });
@@ -1152,10 +1843,10 @@ describe('N6', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'gate-late',
+      gates: [
+        { gate: 'gate-late', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } },
+      ],
       agent: AGENT,
-      target: 'hex:target:u1',
-      result: { passed: true, evidence: 'ok' },
     });
     expectError(result, 'GATE_NOT_REGISTERED');
   });
@@ -1165,14 +1856,19 @@ describe('N6', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'gate-custom',
+      gates: [
+        {
+          gate: 'gate-custom',
+          target: 'hex:target:u1',
+          result: { passed: false, evidence: ['evidence'] },
+        },
+      ],
       agent: AGENT,
-      target: 'hex:target:u1',
-      result: { passed: false, evidence: ['evidence'] },
+      echo: true,
     });
     expect(result.isError).not.toBe(true);
-    const body = result.structuredContent as { event: EventLine };
-    const data = body.event.data as {
+    const body = result.structuredContent as { results: { event: EventLine }[] };
+    const data = body.results[0].event.data as {
       milestoneType: string;
       gate: { name: string; origin: string; criteria: string; passed: boolean };
     };
@@ -1180,6 +1876,126 @@ describe('N6', () => {
     expect(data.gate.origin).toBe('custom');
     expect(data.gate.criteria).toBe('any custom criteria');
     expect(data.gate.passed).toBe(false);
+  });
+
+  test('gates: [válido, inválido, válido] (falha de validação no meio) → nenhum Milestone gravado, erro do gate inválido, results vazio, lock nem chega a ser adquirido', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        { gate: 'no-orphans', target: 'hex:target:u1' },
+        { gate: 'ghost', target: 'hex:target:u1' },
+        { gate: 'chain-intact', target: 'hex:target:u1' },
+      ],
+      agent: AGENT,
+    });
+
+    expectError(result, 'GATE_NOT_REGISTERED');
+    expect((result.structuredContent as { results?: unknown }).results).toBeUndefined();
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('gates: [no-orphans, chain-intact] → results na ordem de gates[], mesmo evaluatedThrough, cadeia fechando entre os itens', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        { gate: 'no-orphans', target: 'hex:target:u1' },
+        { gate: 'chain-intact', target: 'hex:target:u1' },
+      ],
+      agent: AGENT,
+      echo: true,
+    });
+
+    expect(result.isError).not.toBe(true);
+    const { results } = result.structuredContent as {
+      results: { seq: number; event: EventLine }[];
+    };
+    const gateOf = (event: EventLine) =>
+      event.data.gate as { name: string; evaluatedThrough: number };
+    expect(results.map(({ event }) => gateOf(event).name)).toEqual(['no-orphans', 'chain-intact']);
+    expect(gateOf(results[1].event).evaluatedThrough).toBe(
+      gateOf(results[0].event).evaluatedThrough,
+    );
+    expect(results[1].seq).toBe(results[0].seq + 1);
+    expect(results[1].event.prevHash).toBe(hashLine(results[0].event));
+  });
+
+  test('gates com {gate, target} repetido → INVALID_INPUT, nada gravado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        { gate: 'no-orphans', target: 'hex:target:u1' },
+        { gate: 'no-orphans', target: 'hex:target:u1' },
+      ],
+      agent: AGENT,
+    });
+
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('gate custom com data acima de 16.000 caracteres → INVALID_EVENT, nada gravado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        {
+          gate: 'gate-custom',
+          target: 'hex:target:u1',
+          result: { passed: true, evidence: Array.from({ length: 20 }, () => 'x'.repeat(2000)) },
+        },
+      ],
+      agent: AGENT,
+    });
+
+    expectError(result, 'INVALID_EVENT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('lote cujos Milestones somam mais de 24.000 caracteres → INVALID_INPUT, nada gravado', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+    const evidence = Array.from({ length: 7 }, () => 'x'.repeat(2000));
+
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [
+        { gate: 'gate-custom', target: 'hex:target:u1', result: { passed: true, evidence } },
+        { gate: 'gate-custom', target: 'hex:target:u2', result: { passed: true, evidence } },
+      ],
+      agent: AGENT,
+    });
+
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('evaluate_gate com 21 gates → Input validation error (max 20)', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: Array.from({ length: 21 }, () => ({
+        gate: 'no-orphans',
+        target: 'hex:target:u1',
+      })),
+      agent: AGENT,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
   });
 });
 
@@ -1192,6 +2008,7 @@ describe('N8', () => {
       id: MILESTONE_PREFIX,
       agent: AGENT,
       data: milestoneData({ dueAt: '2026-09-16T18:00:00-03:00' }),
+      echo: true,
     });
     const body = result.structuredContent as { event: EventLine };
     expect(body.event.timestamp).toMatch(/Z$/);
@@ -1209,8 +2026,8 @@ describe('N9', () => {
       agent: AGENT,
       data: milestoneData(),
     });
-    const body = result.structuredContent as { event: EventLine };
-    expect(body.event.id).toMatch(new RegExp(`^${PROJ}:${PROC}:milestone:[0-9a-f-]{36}$`));
+    const body = result.structuredContent as { id: string };
+    expect(body.id).toMatch(new RegExp(`^${PROJ}:${PROC}:milestone:[0-9a-f-]{36}$`));
   });
 
   test('projeto/processo do id divergente dos parâmetros → ID_INVALIDO', async () => {
@@ -1247,6 +2064,166 @@ describe('N9', () => {
       data: milestoneData(),
     });
     expectError(result, 'UNKNOWN_ID');
+  });
+});
+
+describe('register — recibo por padrão (Leva 1, #6)', () => {
+  test('id prefixo → recibo {seq, id, prevHash, deduplicated: false, warnings}, sem data no corpo', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expect(result.structuredContent).toEqual({
+      seq: expect.any(Number),
+      id: expect.stringMatching(new RegExp(`^${PROJ}:${PROC}:milestone:[0-9a-f-]{36}$`)),
+      prevHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      deduplicated: false,
+      warnings: [],
+    });
+  });
+
+  test('id completo (retentativa idempotente) → recibo com deduplicated: true, sem data', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const body1 = first.structuredContent as { id: string };
+
+    const retry = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: body1.id,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expect(retry.structuredContent).toEqual({
+      seq: expect.any(Number),
+      id: body1.id,
+      prevHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      deduplicated: true,
+      warnings: [],
+    });
+  });
+
+  test('echo: true → recibo mais event completo (EventLine)', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+      echo: true,
+    });
+    const body = result.structuredContent as { event: EventLine; seq: number; id: string };
+    expect(body.event).toMatchObject({
+      seq: body.seq,
+      id: body.id,
+      agent: AGENT,
+      type: 'milestone',
+      data: milestoneData(),
+    });
+  });
+});
+
+describe('Leva 11 — register aceita type isolado (#8)', () => {
+  test('type isolado, sem id → id vira project:process:milestone:<uuid>, mesmo shape do prefixo manual', async () => {
+    await prepare(environment, PROJ, PROC);
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      type: 'milestone',
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expect(result.structuredContent).toEqual({
+      seq: expect.any(Number),
+      id: expect.stringMatching(new RegExp(`^${MILESTONE_PREFIX}:[0-9a-f-]{36}$`)),
+      prevHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      deduplicated: false,
+      warnings: [],
+    });
+  });
+
+  test('id e type juntos → INVALID_INPUT, sem linha', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      type: 'milestone',
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('id completo e type juntos → INVALID_INPUT mesmo com id válido sozinho', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const body1 = first.structuredContent as { id: string };
+    const before = environment.tree();
+
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: body1.id,
+      type: 'milestone',
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('nem id nem type → INVALID_INPUT, sem linha', async () => {
+    await prepare(environment, PROJ, PROC);
+    const before = environment.tree();
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expectError(result, 'INVALID_INPUT');
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('só id, sem type (retentativa idempotente) → comportamento idêntico ao atual', async () => {
+    await prepare(environment, PROJ, PROC);
+    const first = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: MILESTONE_PREFIX,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    const body1 = first.structuredContent as { id: string };
+
+    const retry = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      id: body1.id,
+      agent: AGENT,
+      data: milestoneData(),
+    });
+    expectDeduplicated(retry, (first.structuredContent as { seq: number }).seq);
   });
 });
 
@@ -1300,9 +2277,8 @@ describe('N12', () => {
     const result = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'no-orphans',
+      gates: [{ gate: 'no-orphans', target: 'u1' }],
       agent: AGENT,
-      target: 'u1',
     });
     expect(result.isError).toBe(true);
     expect(result.content?.[0]?.text).toMatch(/^Input validation error/);
@@ -1332,11 +2308,12 @@ describe('N13', () => {
     const evaluated = await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'no-orphans',
+      gates: [{ gate: 'no-orphans', target: 'hex:target:x' }],
       agent: AGENT,
-      target: 'hex:target:x',
     });
-    expect((evaluated.structuredContent as { passed: boolean }).passed).toBe(false);
+    expect(
+      (evaluated.structuredContent as { results: { passed: boolean }[] }).results[0].passed,
+    ).toBe(false);
 
     const after = await environment.call('state', {
       project: PROJ,
@@ -1351,9 +2328,8 @@ describe('N13', () => {
     await environment.call('evaluate_gate', {
       project: PROJ,
       process: PROC,
-      gate: 'no-orphans',
+      gates: [{ gate: 'no-orphans', target: 'hex:target:y' }],
       agent: AGENT,
-      target: 'hex:target:y',
     });
 
     environment.setClock(new Date('2099-01-01T00:00:00.000Z'));
@@ -1377,8 +2353,8 @@ describe('N14', () => {
       agent: AGENT,
       data: milestoneData(),
     });
-    const event = (registered.structuredContent as { event: EventLine }).event;
-    expect(event.prevHash).toBe(anchor(readManifest(environment, PROJ, PROC)));
+    const body = registered.structuredContent as { prevHash: string };
+    expect(body.prevHash).toBe(anchor(readManifest(environment, PROJ, PROC)));
   });
 
   test('fixado alterado com hashes recalculados → cadeia.breaks inclui {0, hash-nao-bate}', async () => {
@@ -1652,25 +2628,27 @@ describe('S5', () => {
       await environment.call('evaluate_gate', {
         project,
         process: 'proc-old',
-        gate: 'g',
+        gates: [{ gate: 'g', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
         agent: AGENT,
-        target: 'hex:target:u1',
-        result: { passed: true, evidence: 'ok' },
+        echo: true,
       })
-    ).structuredContent as { event: EventLine };
-    expect((oldGateResult.event.data as { gate: { criteria: string } }).gate.criteria).toBe('v1');
+    ).structuredContent as { results: { event: EventLine }[] };
+    expect(
+      (oldGateResult.results[0].event.data as { gate: { criteria: string } }).gate.criteria,
+    ).toBe('v1');
 
     const newGateResult = (
       await environment.call('evaluate_gate', {
         project,
         process: 'proc-new',
-        gate: 'g',
+        gates: [{ gate: 'g', target: 'hex:target:u1', result: { passed: true, evidence: 'ok' } }],
         agent: AGENT,
-        target: 'hex:target:u1',
-        result: { passed: true, evidence: 'ok' },
+        echo: true,
       })
-    ).structuredContent as { event: EventLine };
-    expect((newGateResult.event.data as { gate: { criteria: string } }).gate.criteria).toBe('v2');
+    ).structuredContent as { results: { event: EventLine }[] };
+    expect(
+      (newGateResult.results[0].event.data as { gate: { criteria: string } }).gate.criteria,
+    ).toBe('v2');
   });
 });
 

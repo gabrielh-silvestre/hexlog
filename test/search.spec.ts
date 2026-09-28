@@ -252,6 +252,50 @@ describe('isCandidate', () => {
     expect(isCandidate(line, { before: '2026-01-05T00:00:00.000Z' })).toBe(false);
     expect(isCandidate(line, { before: '2026-01-05T00:00:00.001Z' })).toBe(true);
   });
+
+  test('targetPrefix (Leva 4): casa a subárvore na fronteira de ".", ignora quando ausente', () => {
+    const task2 = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:task-2' } });
+    const task2Sub = baseLine({
+      data: { milestoneType: 'approved', target: 'hex:target:task-2.sub' },
+    });
+    const task20 = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:task-20' } });
+    expect(isCandidate(task2, { targetPrefix: 'hex:target:task-2' })).toBe(true);
+    expect(isCandidate(task2Sub, { targetPrefix: 'hex:target:task-2' })).toBe(true);
+    expect(isCandidate(task20, { targetPrefix: 'hex:target:task-2' })).toBe(false);
+    expect(isCandidate(task20, {})).toBe(true);
+  });
+
+  test('targets (Leva 15, #26): casa qualquer um dos valores, ignora quando ausente', () => {
+    const a = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:a' } });
+    const b = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:b' } });
+    const c = baseLine({ data: { milestoneType: 'approved', target: 'hex:target:c' } });
+    const targets = ['hex:target:a', 'hex:target:b'];
+    expect(isCandidate(a, { targets })).toBe(true);
+    expect(isCandidate(b, { targets })).toBe(true);
+    expect(isCandidate(c, { targets })).toBe(false);
+    expect(isCandidate(c, {})).toBe(true);
+  });
+
+  describe('gate Milestone some do filtro por target (Leva 6, #19)', () => {
+    const gate = baseLine({ data: { milestoneType: 'gate', target: 'hex:target:x' } });
+
+    test('target ou targetPrefix informado, sem includeGateMilestones → excluído', () => {
+      expect(isCandidate(gate, { target: 'hex:target:x' })).toBe(false);
+      expect(isCandidate(gate, { targetPrefix: 'hex:target:x' })).toBe(false);
+    });
+
+    test('includeGateMilestones: true → volta a aparecer', () => {
+      expect(isCandidate(gate, { target: 'hex:target:x', includeGateMilestones: true })).toBe(true);
+    });
+
+    test('milestoneType: "gate" explícito sempre vence a exclusão padrão', () => {
+      expect(isCandidate(gate, { target: 'hex:target:x', milestoneType: 'gate' })).toBe(true);
+    });
+
+    test('sem target nem targetPrefix, gate Milestone nunca é excluído', () => {
+      expect(isCandidate(gate, {})).toBe(true);
+    });
+  });
 });
 
 describe('search: ordenação, desempate e fallback OR', () => {
@@ -282,6 +326,20 @@ describe('search: ordenação, desempate e fallback OR', () => {
     const { results, combination } = search(candidates, 'zzz');
     expect(results).toEqual([]);
     expect(combination).toBe('AND');
+  });
+
+  test('fallback OR com piso (#15): query de 4 termos, hit casando só 1 termo é excluído', () => {
+    const candidates = [{ index: 0, line: lineWithText('alpha only here') }];
+    const { results, combination } = search(candidates, 'alpha beta gamma delta');
+    expect(combination).toBe('OR');
+    expect(results).toEqual([]);
+  });
+
+  test('fallback OR com piso (#15): query de 4 termos, hit casando 2 termos (ceil(4/2)) é incluído', () => {
+    const candidates = [{ index: 0, line: lineWithText('alpha beta only here') }];
+    const { results, combination } = search(candidates, 'alpha beta gamma delta');
+    expect(combination).toBe('OR');
+    expect(results.map((r) => r.index)).toEqual([0]);
   });
 
   test('distinctTerms conta termos únicos após processTerm (acento e maiúsculas)', () => {
