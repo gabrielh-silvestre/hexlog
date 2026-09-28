@@ -79,7 +79,7 @@ Integridade sob concorrência de processos do SO; isolamento efetivo sem travar 
 Cada alternativa descartada adiciona arquivo, dependência, build ou estado derivado sem requisito que o exija, ou foi invalidada por evidência:
 
 - probes `arch-jest` t0/f1 falhando e f1c passando;
-- `SDK:mcp-DXXb3Vv3.mjs:1398-1441` (exceção vira texto);
+- `SDK:mcp-DXXb3Vv3.mjs` (exceção vira texto);
 - doc de hooks sobre JSON fora do schema;
 - `randomUUIDv7` `added: v24.16.0` na doc da tag v24.18.1 e verificado em runtime;
 - comparação crua quebrando retentativa com `default`/offset;
@@ -160,24 +160,24 @@ Os casos de teste abaixo foram adaptados da POC (`POC@5703a53`) para o MVP. Cada
 
 | POC@5703a53 (arquivo:linha) | Comportamento | Destino | Adaptação |
 |---|---|---|---|
-| `poc/test/evolve.spec.ts:11` | Estado bate com o fixture | `state.spec` | Fixture no envelope novo, alvos `hex:target:*` |
-| `evolve.spec.ts:32,38` | Pureza; rebuild = incremental | `state.spec` | — |
-| `evolve.spec.ts:55` | Duplicata por id não muda o Estado | `state.spec` | — |
-| `evolve.spec.ts:69,76,85,96` | Avisos por dono | `state.spec` (N4) | Vocabulário `{core, byOwner}` |
-| `evolve.spec.ts:113,120,127` | Hash do vocabulário | `definitions.spec` | JCS ordena chaves |
-| `evolve.spec.ts:136` | aRevisar | `state.spec` | Refs por id |
-| `evolve.spec.ts:163,171,182` | Órfãos (log, a tempo, parede) | `state.spec` | `now = max(injetado, log)` (Q10) |
-| `evolve.spec.ts:195,204,217` | Cadeia íntegra; byte alterado; 1ª linha | `chain.spec` | `predecessor-ausente` → `diverging-seq`/`hash-mismatch` no 1º elo; âncora |
-| `poc/test/supersessao.spec.ts:14,23,35,51,68,90` | Supersessão completa | `state.spec` (N3) | `supersedes` por id (Q2) |
-| `poc/test/evolve.property.spec.ts:77,94,137,158` | Propriedades | `state.property.spec`, `chain.spec` | Ids no formato novo |
-| `poc/test/gate.spec.ts:22,31,41` | Contrato do gate | `gates.spec` | `condicao` → `criteria` |
-| `poc/test/motor.spec.ts:49,63,78,84,95,104,114,127,145` | Ciclo do Marco | `state.spec › ciclo` | Função pura; Marco de gate ignorado (R-3) |
-| `motor.spec.ts:137` | Alvo inválido recusado sem linha | `event-tools.spec › N12` | Regex `hex:target:` (Q1) |
-| `poc/test/append.spec.ts:34,40,47,57,65,79,92,107,188` | Store e lock | `log.spec` | Sem Port/adapter; âncora |
-| `append.spec.ts:140,220` | 2 processos | `stdio.e2e.spec › C1` | 4 servidores + barreira |
-| `append.spec.ts:252,271,288,310` | Linha fora do schema → `.rejected.jsonl` | `chain.spec`, `event-tools.spec › N1` | `invalid-line`/`invalid-data` + `events.invalidLines` |
-| `append.spec.ts:328,346,359` | Disco = memória; adulteração | `event-tools.spec › N1` | Via tool `chain` |
-| `poc/src/cli/operacoes.ts:217-285` | Validação na escrita, vocabulário, id divergente | `event-tools.spec › N2, N4, N9` | Comparação normalizada |
+| `poc/test/evolve.spec.ts` | Estado bate com o fixture | `state.spec` | Fixture no envelope novo, alvos `hex:target:*` |
+| `evolve.spec.ts` | Pureza; rebuild = incremental | `state.spec` | — |
+| `evolve.spec.ts` | Duplicata por id não muda o Estado | `state.spec` | — |
+| `evolve.spec.ts` | Avisos por dono | `state.spec` (N4) | Vocabulário `{core, byOwner}` |
+| `evolve.spec.ts` | Hash do vocabulário | `definitions.spec` | JCS ordena chaves |
+| `evolve.spec.ts` | aRevisar | `state.spec` | Refs por id |
+| `evolve.spec.ts` | Órfãos (log, a tempo, parede) | `state.spec` | `now = max(injetado, log)` (Q10) |
+| `evolve.spec.ts` | Cadeia íntegra; byte alterado; 1ª linha | `chain.spec` | `predecessor-ausente` → `diverging-seq`/`hash-mismatch` no 1º elo; âncora |
+| `poc/test/supersessao.spec.ts` | Supersessão completa | `state.spec` (N3) | `supersedes` por id (Q2) |
+| `poc/test/evolve.property.spec.ts` | Propriedades | `state.property.spec`, `chain.spec` | Ids no formato novo |
+| `poc/test/gate.spec.ts` | Contrato do gate | `gates.spec` | `condicao` → `criteria` |
+| `poc/test/motor.spec.ts` | Ciclo do Marco | `state.spec › ciclo` | Função pura; Marco de gate ignorado (R-3) |
+| `motor.spec.ts` | Alvo inválido recusado sem linha | `event-tools.spec › N12` | Regex `hex:target:` (Q1) |
+| `poc/test/append.spec.ts` | Store e lock | `log.spec` | Sem Port/adapter; âncora |
+| `append.spec.ts` | 2 processos | `stdio.e2e.spec › C1` | 4 servidores + barreira |
+| `append.spec.ts` | Linha fora do schema → `.rejected.jsonl` | `chain.spec`, `event-tools.spec › N1` | `invalid-line`/`invalid-data` + `events.invalidLines` |
+| `append.spec.ts` | Disco = memória; adulteração | `event-tools.spec › N1` | Via tool `chain` |
+| `poc/src/cli/operacoes.ts` | Validação na escrita, vocabulário, id divergente | `event-tools.spec › N2, N4, N9` | Comparação normalizada |
 
 ## Divergências em Relação à Pesquisa
 

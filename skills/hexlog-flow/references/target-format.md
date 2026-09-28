@@ -1,7 +1,7 @@
 # Formato do target
 
 `target` é o endereço de um item de trabalho: `hex:target:<id>`, validado pelo
-schema `Target` (`events.ts:27-30`) contra `/^hex:target:[^\s:]+$/` — o
+schema `Target` (`events.ts#Target`) contra `/^hex:target:[^\s:]+$/` — o
 prefixo `hex:target:` é fixo, só o `<id>` varia.
 
 ## `<id>` customizado por projeto

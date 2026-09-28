@@ -44,11 +44,11 @@ entra no array `editedSkills` (ver `references/flow-map-schema.md`) do frontmatt
 
 | Situação | Resultado |
 |---|---|
-| Nenhuma chamada a `register_vocabulary` antes de `create_process` | `VOCABULARY_MISSING` (`definitions.ts:575`) |
-| Nome de processo em `RESERVED_PROCESS_NAMES` (`definitions.ts:21`) | `RESERVED_NAME` |
-| Nome de tipo em `RESERVED_TYPE_NAMES` (`definitions.ts:24`) | `RESERVED_NAME` |
-| Nome de gate em `BUILTIN_GATE_NAMES` (`definitions.ts:27-33`) | `RESERVED_NAME` |
-| Mudança que quebra em `register_type`/`register_vocabulary`/`register_gate` sem `breaking: true` | `BREAKING_CHANGE` (`definitions.ts:667`) |
+| Nenhuma chamada a `register_vocabulary` antes de `create_process` | `VOCABULARY_MISSING` (`definitions.ts#buildSnapshot`) |
+| Nome de processo em `RESERVED_PROCESS_NAMES` (`definitions.ts#RESERVED_PROCESS_NAMES`) | `RESERVED_NAME` |
+| Nome de tipo em `RESERVED_TYPE_NAMES` (`definitions.ts#RESERVED_TYPE_NAMES`) | `RESERVED_NAME` |
+| Nome de gate em `BUILTIN_GATE_NAMES` (`definitions.ts#BUILTIN_GATE_NAMES`) | `RESERVED_NAME` |
+| Mudança que quebra em `register_type`/`register_vocabulary`/`register_gate` sem `breaking: true` | `BREAKING_CHANGE` (`definitions.ts#writeVersionExclusive`) |
 
 ## Referências
 

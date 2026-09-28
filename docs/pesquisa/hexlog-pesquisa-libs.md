@@ -79,7 +79,7 @@
 7. **stdout do servidor:** o transporte stdio v2 ignora silenciosamente linhas não-JSON → log só em stderr, com teste.
 8. **Limite de saída do Claude Code:** `MAX_MCP_OUTPUT_TOKENS` default 25000 → `events` precisa paginação.
 9. **Datas:** `z.iso.datetime()` padrão aceita só `Z`; `format: date-time` via `fromJSONSchema` aceita offset. Normalizar timestamps gravados para UTC `Z` para manter a comparação lexicográfica de prazos.
-10. **Bug da POC:** `poc/src/hash.ts:10-23` hasheia `Date` como `{}`. Não portar.
+10. **Bug da POC:** `poc/src/hash.ts` hasheia `Date` como `{}`. Não portar.
 11. **Toolchain:** `jest --experimental-vm-modules` da POC é desnecessário. Hook/filhos `.ts` com `import` exigem `"type": "module"` ou `.mts` — decidir no passo 0 com probe.
 12. **Spec MCP corrente:** 2026-07-28. Annotations `readOnlyHint`/`idempotentHint` nas tools de leitura.
 

@@ -57,7 +57,7 @@ export const Registered = z.object({
 });
 export type Registered = z.infer<typeof Registered>;
 
-/** Aviso não-fatal de `register_*` (§4.12): mesmo shape do schema Zod `Warning` de `mcp.ts:44-48`. */
+/** Aviso não-fatal de `register_*` (§4.12): mesmo shape do schema Zod `Warning` de `mcp.ts`. */
 export type Warning = { code: string; message: string; details?: unknown };
 
 /** Campos de versionamento comuns aos três `register_*` (levas 3-5): só o identificador varia. */

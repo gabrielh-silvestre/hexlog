@@ -32,7 +32,7 @@ Um arquivo por publicação; o conteúdo do arquivo é exatamente o que vai ao G
 ### Estilo dos corpos (o hook stop-slop barra o formulaico)
 
 - Abrir com `Achado H-xx da [mineração de sessões do <projeto>]({REPORT_URL}#<slug>)`. `{REPORT_URL}` é um marcador que a skill troca pelo permalink do commit na publicação; não é link quebrado.
-- Narrativa direta com sujeito claro ("os agentes chamam…", "`src/x.ts:12` faz…"). Nada de rótulos `Evidência:`/`Causa:`/`Proposta:` em sequência, nada de anúncio ("Este documento…"), nada de ressalva do tipo "leitura minha", "confiança média".
+- Narrativa direta com sujeito claro ("os agentes chamam…", "`src/x.ts` (`nomeDaFuncao`) faz…"). Nada de rótulos `Evidência:`/`Causa:`/`Proposta:` em sequência, nada de anúncio ("Este documento…"), nada de ressalva do tipo "leitura minha", "confiança média".
 - Números com o impacto ao lado ("26 páginas, ~610k chars"), não soltos.
 - No máximo uma citação em bloco, a mais forte.
 - Proposta no fim, como frase afirmativa.

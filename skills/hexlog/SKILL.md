@@ -13,9 +13,9 @@ diagnóstico de saúde — não a instalação; isso é do `README.md` do repo h
 
 | # | Tool | Motivo |
 |---|---|---|
-| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts:575`, único lançador em todo o `src/`) |
+| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts#buildSnapshot`, único lançador em todo o `src/`) |
 | 2 | `register_type` / `register_gate` | Opcionais — mas, se usados, precisam vir **antes** do passo 3 |
-| 3 | `create_process` | Congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts:448-496`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
+| 3 | `create_process` | Congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts#createProcess`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
 | 4 | `register` / `evaluate_gate` | Dependem de `loadProcess`, que só existe a partir do passo 3 |
 
 Chame `register_vocabulary` pelo menos uma vez, com qualquer `owner` — o que
@@ -36,18 +36,18 @@ que o usuário notar a lacuna.
 
 | Situação | Resultado | Onde |
 |---|---|---|
-| `create_process` com `process` em `RESERVED_PROCESS_NAMES` (`schemas`, `vocabulary`, `gates`) | `RESERVED_NAME` | `definitions.ts:21` |
-| `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts:24` |
-| `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts:27-33` |
+| `create_process` com `process` em `RESERVED_PROCESS_NAMES` (`schemas`, `vocabulary`, `gates`) | `RESERVED_NAME` | `definitions.ts#RESERVED_PROCESS_NAMES` |
+| `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts#RESERVED_TYPE_NAMES` |
+| `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts#BUILTIN_GATE_NAMES` |
 | `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts:595` |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:720` |
-| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:742` |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:597-602` |
-| `evaluate_gate` com o mesmo `{gate, target}` repetido no lote | `INVALID_INPUT` | `event-tools.ts:797-798` |
-| `evaluate_gate` cujos Milestones somados passam de 24000 caracteres canônicos | `INVALID_INPUT` — dividir em chamadas menores | `event-tools.ts:838-841` |
-| `targetPrefix` terminado em `.` | rejeitado pela validação do schema de entrada, sem código de domínio | `events.ts:34` |
-| `list` com `type: "milestone"` ou `"verdict"` (reservados) | mensagem própria apontando o vocabulário fixo e os campos de Verdict/Milestone, não o erro genérico de tipo | `definition-tools.ts:264-268` |
+| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts#registerEvent` |
+| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts#ensureVocabulary` |
+| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts#unknownResultWarning` |
+| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts#registerEvent` |
+| `evaluate_gate` com o mesmo `{gate, target}` repetido no lote | `INVALID_INPUT` | `event-tools.ts#evaluateGate` |
+| `evaluate_gate` cujos Milestones somados passam de 24000 caracteres canônicos | `INVALID_INPUT` — dividir em chamadas menores | `event-tools.ts#evaluateGate` |
+| `targetPrefix` terminado em `.` | rejeitado pela validação do schema de entrada, sem código de domínio | `events.ts#TargetPrefix` |
+| `list` com `type: "milestone"` ou `"verdict"` (reservados) | mensagem própria apontando o vocabulário fixo e os campos de Verdict/Milestone, não o erro genérico de tipo | `definition-tools.ts#reservedTypeMessage` |
 
 Notas adicionais:
 
@@ -140,8 +140,8 @@ projeto existente.
 **`--check` não prova o servidor.** `node scripts/install.ts --check` valida
 o hook por execução real e compara o sha256 do manifest — mas nunca conecta
 ao MCP nem reconfere a contagem de tools. Essa garantia é herdada de
-`verifyPreparedArtifact` (`installation.ts:89`), chamada dentro de `install()`
-no momento da instalação (`installation.ts:266`), e não é reverificada depois.
+`verifyPreparedArtifact` (`installation.ts#verifyPreparedArtifact`), chamada dentro de `install()`
+no momento da instalação (`installation.ts#installArtifact`), e não é reverificada depois.
 Confundir os dois é o erro mais fácil de cometer: um `--check` verde não diz
 nada sobre o servidor MCP responder.
 
@@ -151,7 +151,7 @@ nada sobre o servidor MCP responder.
 |---|---|
 | Descartar `~/.local/share/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
 | Reiniciar a sessão do Claude Code | Cache de `tools/list` do protocolo MCP — fora do alcance de qualquer agente |
-| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:39` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
+| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md` (regra sobre `node scripts/install.ts` em Working In This Directory) sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
 
 Reinstalar a mesma versão com conteúdo diferente **não bloqueia** — só avisa
 "consider bumping the version".

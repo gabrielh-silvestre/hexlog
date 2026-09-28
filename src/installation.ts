@@ -6,7 +6,7 @@
 import * as path from 'node:path';
 // import default (não `* as fs`): sob esModuleInterop, `* as` copia o módulo com getters
 // não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
-// a partir do teste (mesmo motivo documentado em src/log.ts:2-4).
+// a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/log.ts).
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { isNil, zip } from 'es-toolkit';

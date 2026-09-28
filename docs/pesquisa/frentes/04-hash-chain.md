@@ -43,7 +43,7 @@ Referência de domínio: `@cendor/acttrace` (npm, 2026-07-27, Apache-2.0) — "l
 | `BigInt` | lança | **`10` (trunca)** | lança | lança |
 
 ### Riscos e armadilhas
-- `poc/src/hash.ts:10-23` (`ordenarChaves`) não trata `Date`.
+- `poc/src/hash.ts` (`ordenarChaves`) não trata `Date`.
 - A lib de canonicalização vira parte do contrato do log: trocar depois invalida hashes antigos → versão exata e registrada.
 - Ordenação de chaves com surrogate pairs não testada (risco baixo; chaves ASCII).
 
