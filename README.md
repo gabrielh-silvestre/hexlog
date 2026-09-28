@@ -33,7 +33,7 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 1. Constrói o servidor e o hook com `esbuild` e verifica o artefato preparado
    antes de trocar qualquer coisa (o hook precisa negar o diretório de dados e
    permitir o resto; o servidor precisa subir e anunciar as 10 tools).
-2. Copia os três bundles (servidor, `bash-guard`, `flow-reminder`) para `~/.local/lib/hexlog/<versão>/`, fora da working
+2. Copia os dois bundles (servidor, `bash-guard`) para `~/.local/lib/hexlog/<versão>/`, fora da working
    tree e fora do diretório de dados. É essa cópia que as sessões executam.
 3. Registra as 4 regras de deny e o hook PreToolUse em
    `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog` antes

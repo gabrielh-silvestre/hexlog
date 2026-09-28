@@ -242,8 +242,8 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'targets',
   'trace',
   // hexlog-setup/hexlog-flow: `target` (singular, campo de entrada de register/evaluate_gate/
-  // events/chain), `editedSkills` (campo do frontmatter FlowMap, src/flow-map.ts:53) e
-  // `targetIdPattern` (campo do frontmatter FlowMap, src/flow-map.ts:46).
+  // events/chain), `editedSkills` e `targetIdPattern` (campos do frontmatter FlowMap,
+  // ver skills/hexlog-setup/references/flow-map-schema.md).
   'target',
   'editedSkills',
   'targetIdPattern',
@@ -251,7 +251,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
 
 /**
  * Símbolo esperado dentro do trecho citado, por citação `arquivo.ts:N(-M)?` — mapa explícito em vez de
- * inferir o símbolo a partir de outras crases da mesma linha: a citação `installation.ts:278` (o `);` da
+ * inferir o símbolo a partir de outras crases da mesma linha: a citação `installation.ts:260` (o `);` da
  * chamada de `verifyPreparedArtifact`) não tem identificador próprio na crase da tabela, então "mesma linha"
  * não bastaria para toda citação do arquivo.
  */
@@ -265,8 +265,8 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string> = {
   'event-tools.ts:545': 'VOCABULARY_VIOLATED',
   'event-tools.ts:567': 'UNKNOWN_VOCABULARY',
   'event-tools.ts:423-428': 'RESERVED_FIELD',
-  'installation.ts:93': 'verifyPreparedArtifact',
-  'installation.ts:278': 'verifyPreparedArtifact',
+  'installation.ts:94': 'verifyPreparedArtifact',
+  'installation.ts:260': 'verifyPreparedArtifact',
 };
 
 const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string> = {
@@ -275,9 +275,6 @@ const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string> = {
   'definitions.ts:24': 'RESERVED_TYPE_NAMES',
   'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
   'definitions.ts:667': 'BREAKING_CHANGE',
-  'flow-map.ts:36': 'FlowMap',
-  'flow-map.ts:51': 'hook',
-  'flow-map.ts:53': 'editedSkills',
 };
 
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string> = {
@@ -291,15 +288,12 @@ const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string> = {
 };
 
 const FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS: Record<string, string> = {
-  'flow-map.ts:87': 'parseFlowMap',
-  'flow-map.ts:36-76': 'FlowMap',
   'events.ts:10': 'Name',
   'events.ts:27-30': 'Target',
 };
 
 const TARGET_FORMAT_CITATION_EXPECTATIONS: Record<string, string> = {
   'events.ts:27-30': 'Target',
-  'flow-map.ts:46': 'targetIdPattern',
 };
 
 interface SkillCase {

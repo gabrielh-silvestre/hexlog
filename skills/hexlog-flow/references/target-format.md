@@ -7,7 +7,7 @@ prefixo `hex:target:` é fixo, só o `<id>` varia.
 ## `<id>` customizado por projeto
 
 O `.hexlog/flow.md` pode restringir o formato do `<id>` via `targetIdPattern`
-no frontmatter (`flow-map.ts:46`) — por exemplo, um projeto que numera
+no frontmatter (ver `skills/hexlog-setup/references/flow-map-schema.md`) — por exemplo, um projeto que numera
 tarefas como `PROJ-123` declara `targetIdPattern: 'PROJ-\d+'`. Quando o campo
 está ausente, o default é o mesmo regex embutido em `Target`
 (`[^\s:]+` — qualquer coisa sem espaço nem `:`).

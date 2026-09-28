@@ -142,7 +142,6 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
         outdir,
         'server-probe=test/fixtures/server-probe.ts',
         'hook-probe=test/fixtures/hook-probe.ts',
-        'flow-reminder-probe=test/fixtures/flow-reminder-probe.ts',
       ],
       { encoding: 'utf8', cwd: repoRoot },
     );
@@ -155,8 +154,8 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
     fs.rmSync(outdir, { recursive: true, force: true });
   });
 
-  test('nenhum dos três bundles contém o shim "Dynamic require of"', () => {
-    for (const file of ['server-probe.mjs', 'hook-probe.mjs', 'flow-reminder-probe.mjs']) {
+  test('nenhum dos dois bundles contém o shim "Dynamic require of"', () => {
+    for (const file of ['server-probe.mjs', 'hook-probe.mjs']) {
       const bytes = fs.readFileSync(path.join(outdir, file));
       expect(bytes.includes('Dynamic require of')).toBe(false);
     }
@@ -186,23 +185,6 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
       encoding: 'utf8',
     });
     expect(noCommand.status).toBe(1);
-  });
-
-  test('flow-reminder-probe.mjs sai com o código esperado conforme o frontmatter recebido', () => {
-    const validFrontmatter = '---\nphases: [design]\nprocess:\n  design: design\n---\n';
-    const valid = spawnSync(
-      process.execPath,
-      [path.join(outdir, 'flow-reminder-probe.mjs'), validFrontmatter],
-      { encoding: 'utf8' },
-    );
-    expect(valid.status).toBe(0);
-
-    const invalid = spawnSync(
-      process.execPath,
-      [path.join(outdir, 'flow-reminder-probe.mjs'), 'not a frontmatter block'],
-      { encoding: 'utf8' },
-    );
-    expect(invalid.status).toBe(1);
   });
 });
 

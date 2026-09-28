@@ -13,7 +13,7 @@ nada.
 ## Key Files
 | File | Description |
 |---|---|
-| `build.ts` | Builda com `esbuild` os três entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`, `flow-reminder`: `hook/flow-reminder.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `hasDynamicRequire()` (detecta o shim de `require` dinâmico que o esbuild injeta para dependência CJS não embutida) |
+| `build.ts` | Builda com `esbuild` os dois entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `hasDynamicRequire()` (detecta o shim de `require` dinâmico que o esbuild injeta para dependência CJS não embutida) |
 | `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 10 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. `node scripts/install.ts --check` só verifica, sem tocar em nada |
 | `insights.ts` | Relatório markdown read-only (integridade da chain, gates, timeline) sobre os logs do hexlog. Uso: `node scripts/insights.ts [projeto[/processo]]`; lê o diretório de dados via `dataDir`/`XDG_DATA_HOME`. Sem script `npm` dedicado; nunca escreve no diretório de dados |
 
@@ -36,9 +36,9 @@ nada.
   atual contra o instalado) e trata concorrência entre dois instaladores
   rodando ao mesmo tempo via troca atômica (`renameSync`) com fallback em
   `ENOTEMPTY`/`EEXIST`/`ENOENT`.
-- Os 3 bundles (`server`, `bash-guard`, `flow-reminder`) são um conjunto fixo
-  e nomeado (tipo `Bundles` em `src/installation.ts`): um quarto entrypoint
-  exige tocar `build.ts`, `Bundles`, `installArtifact` e
+- Os 2 bundles (`server`, `bash-guard`) são um conjunto fixo e nomeado (tipo
+  `Bundles` em `src/installation.ts`): um terceiro entrypoint exige tocar
+  `build.ts`, `Bundles`, `installArtifact` e
   `verifyInstallation`. Já as skills são dinâmicas: `skillNames()` lê as
   pastas de `skills/` e `writeSkillFolder` substitui cada uma inteira em
   `~/.claude/skills/<nome>/` (apaga antes de copiar, sem deixar arquivo

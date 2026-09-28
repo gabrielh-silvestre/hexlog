@@ -20,8 +20,6 @@ export interface ExpectedRules {
   serverExec: string;
   serverFile: string;
   versionDir: string;
-  flowReminderFile: string;
-  flowReminderStableFile: string;
   skillFiles: string[];
 }
 
@@ -37,8 +35,6 @@ export type MissingItem =
   | 'hook-not-allowing'
   | 'artifact-modified'
   | 'mcp'
-  | 'flow-reminder-file'
-  | 'flow-reminder-stable'
   | `skill-file:${string}`;
 
 /** As 4 regras de deny e os caminhos do hook/servidor/skills instalados para uma versão (§4.14, QN4). */
@@ -64,10 +60,6 @@ export function expectedRules(
     serverExec: execPath,
     serverFile,
     versionDir,
-    flowReminderFile: path.join(versionDir, 'flow-reminder.mjs'),
-    // Fora do diretório de versão — mesmo caminho entre upgrades, pro `settings.json`
-    // do repositório alvo (hexlog-setup) não precisar reapontar a cada versão.
-    flowReminderStableFile: path.join(home, '.local', 'lib', 'hexlog', 'flow-reminder.mjs'),
     skillFiles: skillNames.map((name) => path.join(home, '.claude', 'skills', name, 'SKILL.md')),
   };
 }

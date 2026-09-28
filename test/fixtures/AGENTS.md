@@ -13,7 +13,7 @@ Corpus determinístico para busca/volume, scripts que constroem bundles sob dema
 | `child-probe.ts` | Probe de import real sob Node ESM (type stripping), fora do transform do jest: importa todas as deps de runtime do manifesto e imprime só JSON no stdout (qualquer warning apareceria no stderr). Rodado via `spawnSync` direto do `.ts`, sem build. Usado por `toolchain.spec.ts`. |
 | `server-probe.ts` | Entrypoint de probe para o bundle esbuild do servidor: um `McpServer` stdio mínimo com 1 tool (`echo`) que importa as mesmas deps de runtime do servidor real (`ajv`, `ajv-formats`, `canonicalize`, `es-toolkit`, `minisearch`, `shell-quote`, `randomUUIDv7`) pra provar que o bundle não tem `Dynamic require of`. `jsonc-parser` fica de fora de propósito — é dependência só do instalador. Construído via `build-entry.ts`. |
 | `hook-probe.ts` | Entrypoint de probe para o bundle esbuild do hook: importa `shell-quote`, `es-toolkit` e `src/directory.ts` (`dataDir`), sai com código diferente conforme reconhece (ou não) o comando recebido em `argv[2]`. Construído via `build-entry.ts`. |
-| `build-entry.ts` | Roda como processo Node real (`spawn`, nunca importado pelo jest): chama `build()` de `scripts/build.ts` com os `entryPoints` passados como pares `nome=arquivo` em argv. Necessário porque `scripts/build.ts` usa `import.meta.dirname`/`import.meta.main`, incompatíveis com o transform CJS do ts-jest. Usado por `toolchain.spec.ts` (os probes), `bash-guard.spec.ts`/`guard.spec.ts` (`bash-guard`) e `flow-reminder.spec.ts` (`flow-reminder`). |
+| `build-entry.ts` | Roda como processo Node real (`spawn`, nunca importado pelo jest): chama `build()` de `scripts/build.ts` com os `entryPoints` passados como pares `nome=arquivo` em argv. Necessário porque `scripts/build.ts` usa `import.meta.dirname`/`import.meta.main`, incompatíveis com o transform CJS do ts-jest. Usado por `toolchain.spec.ts` (os probes) e `bash-guard.spec.ts`/`guard.spec.ts` (`bash-guard`). |
 | `concurrent-install.ts` | Processo filho para o teste de concorrência de `installArtifact` (`guard.spec.ts`): hook e servidor são buffers sintéticos e as duas checagens são stubs — só a troca atômica de `installArtifact` importa aqui. Usa uma barreira em arquivo (`mkdir` + busy-wait síncrono) para garantir que os processos irmãos cheguem juntos na instalação, em vez de torcer pela concorrência real do SO. |
 | `fake-mcp-install.ts` | Substitui `claude mcp add`/`remove` via `HEXLOG_REGISTER_MCP`: grava `mcpServers.hexlog` em `~/.claude.json` na mesma forma real (`command`+`args`+`env`), sem exigir o binário `claude`. Usado por `guard.spec.ts`. |
 
@@ -38,7 +38,7 @@ Corpus determinístico para busca/volume, scripts que constroem bundles sob dema
 - `scripts/build.ts#build()` — chamado por `build-entry.ts`.
 - `src/installation.ts#installArtifact` — exercitado por `concurrent-install.ts`.
 - `src/directory.ts#dataDir` — exercitado por `hook-probe.ts`.
-- `hook/bash-guard.ts`, `hook/flow-reminder.ts` — bundles gerados por `build-entry.ts`.
+- `hook/bash-guard.ts` — bundle gerado por `build-entry.ts`.
 
 ### External
 - `@modelcontextprotocol/server` (`McpServer`, `serveStdio` em `server-probe.ts`; `McpServer`, `StdioServerTransport` em `child-probe.ts`) — usado por ambos os probes.

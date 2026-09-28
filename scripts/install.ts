@@ -68,7 +68,7 @@ async function buildBundles(): Promise<Bundles> {
     if (!output) throw new Error(`build did not produce ${name}.mjs`);
     return Buffer.from(output.contents);
   };
-  return { server: file('server'), hook: file('bash-guard'), flowReminder: file('flow-reminder') };
+  return { server: file('server'), hook: file('bash-guard') };
 }
 
 /** Sobe o servidor preparado num `HOME`/`XDG_DATA_HOME` descartáveis e conta as tools anunciadas. */
@@ -144,7 +144,6 @@ async function install(): Promise<void> {
   console.log(`hexlog ${version}: ${result.action}`);
   console.log(`  server sha256: ${result.manifest.sha256.server}`);
   console.log(`  hook sha256: ${result.manifest.sha256.hook}`);
-  console.log(`  flow-reminder sha256: ${result.manifest.sha256.flowReminder}`);
   console.log(`  settings.json: ${changed ? 'updated' : 'already correct'}`);
   for (const warning of result.warnings) console.log(`  warning: ${warning}`);
 }

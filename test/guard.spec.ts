@@ -461,7 +461,11 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expected,
       exists: fs.existsSync,
       runHook: runRealHook,
-      installedBytes: { server: null, hook: realBundle, manifest: divergentManifest },
+      installedBytes: {
+        server: null,
+        hook: realBundle,
+        manifest: divergentManifest,
+      },
     });
     expect(verification.missing).toContain('artifact-modified');
   });
@@ -507,7 +511,6 @@ beforeAll(() => {
   realBundles = {
     server: fs.readFileSync(path.join(realBundlesOutdir, 'server.mjs')),
     hook: fs.readFileSync(path.join(realBundlesOutdir, 'bash-guard.mjs')),
-    flowReminder: fs.readFileSync(path.join(realBundlesOutdir, 'flow-reminder.mjs')),
   };
 }, 30_000);
 
@@ -568,7 +571,7 @@ function runConcurrentFixture(
 }
 
 describe('B2: instalação versionada do artefato (installArtifact)', () => {
-  test('(a) instala em <HOME>/.local/lib/hexlog/<versão>/ com os 3 bundles e manifest.json (Client real)', async () => {
+  test('(a) instala em <HOME>/.local/lib/hexlog/<versão>/ com os 2 bundles e manifest.json (Client real)', async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-install-a-'));
     try {
       const result = await installArtifact({
@@ -587,16 +590,11 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect(result.versionDir).toBe(versionDir);
       expect(fs.existsSync(path.join(versionDir, 'server.mjs'))).toBe(true);
       expect(fs.existsSync(path.join(versionDir, 'bash-guard.mjs'))).toBe(true);
-      expect(fs.existsSync(path.join(versionDir, 'flow-reminder.mjs'))).toBe(true);
-      // Cópia estável fora do diretório de versão: mesmo caminho entre upgrades.
-      const stableFile = path.join(home, '.local', 'lib', 'hexlog', 'flow-reminder.mjs');
-      expect(fs.readFileSync(stableFile)).toEqual(realBundles.flowReminder);
       expect(readManifest(versionDir)).toEqual({
         version: '0.1.0',
         sha256: {
           server: sha256(realBundles.server),
           hook: sha256(realBundles.hook),
-          flowReminder: sha256(realBundles.flowReminder),
         },
         builtAt: '2026-01-01T00:00:00.000Z',
         commit: 'test-commit',
@@ -746,7 +744,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         argsFor({
           server: realBundles.server,
           hook: differentHook,
-          flowReminder: realBundles.flowReminder,
         }),
       );
 
@@ -757,35 +754,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect(fs.readFileSync(path.join(result.versionDir, 'bash-guard.mjs'))).toEqual(
         differentHook,
       );
-    } finally {
-      fs.rmSync(home, { recursive: true, force: true });
-    }
-  }, 20_000);
-
-  test('(e2) cópia estável é sobrescrita a cada instalação, inclusive quando o resultado é "none"', async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-install-e2-'));
-    try {
-      const stableFile = path.join(home, '.local', 'lib', 'hexlog', 'flow-reminder.mjs');
-      const args = {
-        home,
-        version: '0.1.0',
-        bundles: realBundles,
-        commit: null,
-        dirty: false,
-        clock: () => new Date(),
-        runHook: runRealHookForInstall,
-        verifyServer: fakeVerifyServer,
-        log: () => {},
-      };
-      await installArtifact(args);
-      expect(fs.readFileSync(stableFile)).toEqual(realBundles.flowReminder);
-
-      // Apagada por fora entre execuções: a próxima instalação (mesmo sem mudança
-      // nos bundles, `action: 'none'`) precisa regravá-la.
-      fs.rmSync(stableFile);
-      const second = await installArtifact(args);
-      expect(second.action).toBe('none');
-      expect(fs.readFileSync(stableFile)).toEqual(realBundles.flowReminder);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
@@ -823,11 +791,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       await expect(
         installArtifact({
           ...baseArgs,
-          bundles: {
-            server: bundleWithDynamicRequire,
-            hook: realBundles.hook,
-            flowReminder: realBundles.flowReminder,
-          },
+          bundles: { server: bundleWithDynamicRequire, hook: realBundles.hook },
           runHook: runRealHookForInstall,
           verifyServer: fakeVerifyServer,
         }),
@@ -859,7 +823,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
           bundles: {
             server: realBundles.server,
             hook: Buffer.concat([realBundles.hook, Buffer.from('\n// x\n')]),
-            flowReminder: realBundles.flowReminder,
           },
           runHook: () => ({ status: 0 }),
           verifyServer: fakeVerifyServer,
@@ -868,10 +831,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect(fs.readFileSync(path.join(installed.versionDir, 'bash-guard.mjs'))).toEqual(
         hookBefore,
       );
-      expect(fs.readdirSync(path.join(home, '.local', 'lib', 'hexlog')).sort()).toEqual([
-        '0.1.0',
-        'flow-reminder.mjs',
-      ]);
+      expect(fs.readdirSync(path.join(home, '.local', 'lib', 'hexlog')).sort()).toEqual(['0.1.0']);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
@@ -919,7 +879,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect([r1.status, r2.status]).toEqual([0, 0]);
       expect(fs.readdirSync(versionDirOf(sameHome, '0.1.0')).sort()).toEqual([
         'bash-guard.mjs',
-        'flow-reminder.mjs',
         'manifest.json',
         'server.mjs',
       ]);
@@ -939,16 +898,9 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       const versionDir = versionDirOf(differentHome, '0.1.0');
       expect(fs.readdirSync(versionDir).sort()).toEqual([
         'bash-guard.mjs',
-        'flow-reminder.mjs',
         'manifest.json',
         'server.mjs',
       ]);
-      // N1: a cópia estável nunca reflete os bytes de quem perdeu a corrida em `resolveConcurrency`
-      // — só os do vencedor, gravado em `versionDir`.
-      const stableFile = path.join(differentHome, '.local', 'lib', 'hexlog', 'flow-reminder.mjs');
-      expect(fs.readFileSync(stableFile)).toEqual(
-        fs.readFileSync(path.join(versionDir, 'flow-reminder.mjs')),
-      );
     } finally {
       fs.rmSync(differentHome, { recursive: true, force: true });
     }
@@ -962,11 +914,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       await installArtifact({
         home,
         version: '0.1.0',
-        bundles: {
-          server: Buffer.from('initial-server'),
-          hook: Buffer.from('initial-hook'),
-          flowReminder: Buffer.from('initial-flow-reminder'),
-        },
+        bundles: { server: Buffer.from('initial-server'), hook: Buffer.from('initial-hook') },
         commit: null,
         dirty: false,
         clock: () => new Date(),
@@ -984,7 +932,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       const versionDir = versionDirOf(home, '0.1.0');
       expect(fs.readdirSync(versionDir).sort()).toEqual([
         'bash-guard.mjs',
-        'flow-reminder.mjs',
         'manifest.json',
         'server.mjs',
       ]);
@@ -1088,6 +1035,39 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
       fs.rmSync(srcDirV2, { recursive: true, force: true });
     }
   });
+
+  test('srcDir inexistente (cpSync falha): conteúdo anterior de dstDir continua intacto (N2)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-e-'));
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    const missingSrcDir = path.join(os.tmpdir(), 'hexlog-skill-src-does-not-exist');
+    try {
+      writeSkillFolder(home, 'hexlog', srcDir);
+      const skillFile = path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md');
+
+      expect(() => writeSkillFolder(home, 'hexlog', missingSrcDir)).toThrow();
+
+      expect(fs.readFileSync(skillFile, 'utf8')).toBe('# hexlog skill\n');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('nome com "/", "..", "." ou vazio é rejeitado antes de tocar no filesystem (M3)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-skill-f-'));
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    try {
+      expect(() => writeSkillFolder(home, '../escape', srcDir)).toThrow();
+      expect(() => writeSkillFolder(home, 'a/b', srcDir)).toThrow();
+      expect(() => writeSkillFolder(home, '.', srcDir)).toThrow();
+      expect(() => writeSkillFolder(home, '..', srcDir)).toThrow();
+      expect(() => writeSkillFolder(home, '', srcDir)).toThrow();
+      expect(fs.existsSync(path.join(home, '.claude', 'skills'))).toBe(false);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('B3: install.ts --check (processo real)', () => {
@@ -1157,32 +1137,6 @@ describe('B3: install.ts --check (processo real)', () => {
     }
   }, 15_000);
 
-  test('cópia estável do flow-reminder ausente: flow-reminder-stable, exit 1', () => {
-    const stableFile = path.join(home, '.local', 'lib', 'hexlog', 'flow-reminder.mjs');
-    const backup = `${stableFile}.backup-test`;
-    fs.renameSync(stableFile, backup);
-    try {
-      const { status, stdout } = runCheck();
-      expect(status).toBe(1);
-      expect(stdout).toContain('flow-reminder-stable');
-    } finally {
-      fs.renameSync(backup, stableFile);
-    }
-  }, 15_000);
-
-  test('cópia estável do flow-reminder divergente do manifesto: flow-reminder-stable, exit 1', () => {
-    const stableFile = path.join(home, '.local', 'lib', 'hexlog', 'flow-reminder.mjs');
-    const original = fs.readFileSync(stableFile);
-    fs.writeFileSync(stableFile, Buffer.concat([original, Buffer.from('\n// extra\n')]));
-    try {
-      const { status, stdout } = runCheck();
-      expect(status).toBe(1);
-      expect(stdout).toContain('flow-reminder-stable');
-    } finally {
-      fs.writeFileSync(stableFile, original);
-    }
-  }, 15_000);
-
   test('diretório de uma skill removido: skill-file:<nome>, exit 1', () => {
     const name = fs
       .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
@@ -1249,7 +1203,6 @@ describe('B3: install.ts --check (processo real)', () => {
       const bundlesSimulatingNewBuild: Bundles = {
         server: Buffer.from('server-from-a-future-build'),
         hook: fs.readFileSync(expected.hookFile),
-        flowReminder: fs.readFileSync(expected.flowReminderFile),
       };
 
       const result = verifyInstallation({

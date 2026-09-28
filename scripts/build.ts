@@ -8,7 +8,6 @@ export const repoRoot = path.resolve(import.meta.dirname, '..');
 export const entries: Record<string, string> = {
   server: 'src/server.ts',
   'bash-guard': 'hook/bash-guard.ts',
-  'flow-reminder': 'hook/flow-reminder.ts',
 };
 
 interface BuildOptions {
@@ -33,12 +32,6 @@ export function build({
     format: 'esm',
     outExtension: { '.js': '.mjs' },
     logLevel: 'warning',
-    // A condição `"node"` do exports map de `yaml` aponta pro build CJS, cujo
-    // `require('process')` esbuild não consegue externalizar em saída ESM
-    // (deixa o shim "Dynamic require of" no lugar). A condição `"default"`
-    // (`browser/index.js`) é ESM puro e não depende de nenhuma API de Node —
-    // só troca a entrada, não o pacote.
-    alias: { yaml: path.join(repoRoot, 'node_modules', 'yaml', 'browser', 'index.js') },
   });
 }
 

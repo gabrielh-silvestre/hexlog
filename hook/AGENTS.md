@@ -4,19 +4,15 @@
 # hook
 
 ## Purpose
-Dois hooks do Claude Code. `bash-guard.ts` (`PreToolUse` da tool `Bash`)
-impede que um agente contorne as tools MCP do hexlog (`list`, `state`,
-`events`, `chain`) lendo o diretório de dados por fora, com `cat`, `grep`,
-`jq` etc. Só tokeniza o comando recebido; nunca executa nada.
-`flow-reminder.ts` (`PostToolUse` da tool `Skill`) lembra o agente de cruzar
-via `hexlog-flow` quando a skill invocada está mapeada no `.hexlog/flow.md`
-do repositório alvo.
+Um hook do Claude Code. `bash-guard.ts` (`PreToolUse` da tool `Bash`) impede
+que um agente contorne as tools MCP do hexlog (`list`, `state`, `events`,
+`chain`) lendo o diretório de dados por fora, com `cat`, `grep`, `jq` etc. Só
+tokeniza o comando recebido; nunca executa nada.
 
 ## Key Files
 | File | Description |
 |---|---|
 | `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal fora de qualquer token isolado (rede de segurança). Falha aberto: qualquer exceção interna, Node ausente ou stdin inválido cai em exit 0 (R-1) |
-| `flow-reminder.ts` | Hook `PostToolUse` da tool `Skill`. Nunca bloqueia: lê `.hexlog/flow.md` do `cwd`, valida o frontmatter com `parseFlowMap` (`src/flow-map.ts`) e injeta um lembrete (`additionalContext`) quando a skill invocada está mapeada numa fase do `flow.md` com `hook: true`. Segundo modo (`--validate <path>`), usado pela `hexlog-setup`, só roda o parser e imprime os issues. Falha aberto igual a `bash-guard.ts` (R-1) |
 
 ## For AI Agents
 ### Working In This Directory
@@ -31,15 +27,6 @@ do repositório alvo.
   `.ts` ou o `.mjs` empacotado, nunca chamam `decide` direto.
 - `import.meta.main` não sobrevive ao bundle do esbuild; a checagem
   `isExecutedDirectly()` compara `process.argv[1]` com `fileURLToPath(import.meta.url)`.
-- `flow-reminder.ts` é buildado pelo mesmo `scripts/build.ts` (entrada
-  `flow-reminder` → `dist/flow-reminder.mjs`) e instalado por `install.ts`
-  também numa cópia estável fora do diretório de versão
-  (`~/.local/lib/hexlog/flow-reminder.mjs`), pra não exigir reapontar o
-  `.claude/settings.json` do repositório alvo a cada upgrade. A cópia estável
-  só é gravada depois que a troca atômica do diretório de versão dá certo.
-- O `flow-reminder.mjs` não pode puxar `src/definitions.ts` (ajv,
-  `canonicalize`): o hook roda a cada invocação de skill, e um teste de
-  `flow-reminder.spec.ts` falha se esses módulos aparecerem no bundle.
 
 ### Testing Requirements
 - `test/bash-guard.spec.ts`: casos de negação e permissão contra o hook
@@ -47,11 +34,8 @@ do repositório alvo.
   describe `B1(b)` que builda o `.ts` de verdade com esbuild e roda o `.mjs`
   resultante (nega `cat <D>/x` com exit 2, permite `true` com exit 0, e
   confere que o bundle não contém o shim `Dynamic require of`).
-- `test/flow-reminder.spec.ts`: lembrete injetado para skill mapeada, silêncio
-  para skill fora do mapa ou `flow.md` ausente/inválido, o modo `--validate`, e
-  um build real que confere que o bundle não contém ajv/`canonicalize`.
-- Rodar com `npm test` (jest); os dois specs sempre sobem um processo real de
-  Node contra o `.ts`/`.mjs` (`spawnSync`), fora do transform `ts-jest`.
+- Rodar com `npm test` (jest); o spec sempre sobe um processo real de Node
+  contra o `.ts`/`.mjs` (`spawnSync`), fora do transform `ts-jest`.
 
 ### Common Patterns
 - Prefixo literal decide antes de expandir glob: um segmento com `**` ou uma
@@ -62,13 +46,10 @@ do repositório alvo.
 
 ## Dependencies
 ### Internal
-- `../src/directory.ts` (`dataDir`, só em `bash-guard.ts`)
-- `../src/flow-map.ts` (`parseFlowMap`, `FlowMap`, só em `flow-reminder.ts`),
-  que importa `../src/events.ts` (`Name`)
+- `../src/directory.ts` (`dataDir`)
 
 ### External
-- `shell-quote` (parse dos tokens do comando, só em `bash-guard.ts`)
-- `yaml`, `zod` (parse e validação do `.hexlog/flow.md`, via `flow-map.ts`)
+- `shell-quote` (parse dos tokens do comando)
 - `es-toolkit` (`isNil`, `isString`)
 - `node:fs`, `node:os`, `node:path`, `node:url`
 

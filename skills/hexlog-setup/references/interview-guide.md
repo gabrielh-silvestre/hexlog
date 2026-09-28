@@ -39,14 +39,11 @@ espaço ou `:`) — por exemplo, se o projeto usa um formato de id fixo tipo
 `PROJ-123`. Nesse caso: "os itens de trabalho deste projeto seguem algum formato de
 id fixo (tipo `PROJ-123`)? Se sim, qual?" — vira `targetIdPattern`.
 
-## 6. Opcionais (depois do plano aprovado e registrado)
+## 6. Opcional (depois do plano aprovado e registrado)
 
-Depois do passo 6 do `SKILL.md` (ponteiro no `AGENTS.md`), uma pergunta por
-opcional, nesta ordem:
+Depois do passo 6 do `SKILL.md` (ponteiro no `AGENTS.md`):
 
-1. "Quer que eu edite as skills que você apontou para chamarem a `hexlog-flow`
-   automaticamente nos pontos de decisão? Eu mostro o diff de cada uma, uma por
-   vez, antes de gravar." — só prossiga para o diff da próxima skill depois da
-   aprovação da anterior.
-2. "Quer ativar um hook que lembra de registrar no hexlog toda vez que uma dessas
-   skills for chamada? Ele só lembra, nunca bloqueia."
+"Quer que eu edite as skills que você apontou para chamarem a `hexlog-flow`
+automaticamente nos pontos de decisão? Eu mostro o diff de cada uma, uma por
+vez, antes de gravar." — só prossiga para o diff da próxima skill depois da
+aprovação da anterior.

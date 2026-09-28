@@ -29,10 +29,12 @@ import {
 import { HexlogError } from './errors.ts';
 import { dataDir } from './directory.ts';
 
-export type Bundles = { server: Buffer; hook: Buffer; flowReminder: Buffer };
+export type Bundles = { server: Buffer; hook: Buffer };
+/** sha256 dos 2 artefatos (server/hook) de um build ou de uma instalação. */
+export type BuildShas = { server: string; hook: string };
 export type InstallManifest = {
   version: string;
-  sha256: { server: string; hook: string; flowReminder: string };
+  sha256: BuildShas;
   builtAt: string;
   commit: string | null;
   dirty: boolean;
@@ -62,7 +64,7 @@ export function readManifest(versionDir: string): InstallManifest | null {
   }
 }
 
-type Shas = { server: string | null; hook: string | null; flowReminder: string | null };
+type Shas = { server: string | null; hook: string | null };
 
 function installedShas(versionDir: string): Shas {
   const shaOfFile = (name: string): string | null => {
@@ -72,13 +74,12 @@ function installedShas(versionDir: string): Shas {
   return {
     server: shaOfFile('server.mjs'),
     hook: shaOfFile('bash-guard.mjs'),
-    flowReminder: shaOfFile('flow-reminder.mjs'),
   };
 }
 
-/** Os 3 artefatos (server/hook/flowReminder) batem entre duas leituras de sha256. */
+/** Os 2 artefatos (server/hook) batem entre duas leituras de sha256. */
 function shasEqual(a: Shas, b: Shas): boolean {
-  return a.server === b.server && a.hook === b.hook && a.flowReminder === b.flowReminder;
+  return a.server === b.server && a.hook === b.hook;
 }
 
 /** `ENOENT` cobre a reinstalação: o primeiro `renameSync(versionDir, old)` acha `versionDir` já
@@ -97,11 +98,7 @@ async function verifyPreparedArtifact(args: {
   verifyServer: (serverFile: string) => Promise<number>;
 }): Promise<void> {
   const { tmp, bundles, runHook, verifyServer } = args;
-  if (
-    hasDynamicRequire(bundles.server) ||
-    hasDynamicRequire(bundles.hook) ||
-    hasDynamicRequire(bundles.flowReminder)
-  ) {
+  if (hasDynamicRequire(bundles.server) || hasDynamicRequire(bundles.hook)) {
     throw new HexlogError('INTERNAL', 'bundle contains "Dynamic require of"; installation aborted');
   }
 
@@ -131,24 +128,12 @@ async function verifyPreparedArtifact(args: {
   }
 }
 
-/** Grava/atualiza a cópia estável do hook fora do diretório de versão
- * (`~/.local/lib/hexlog/flow-reminder.mjs`): mesmo caminho entre upgrades, pro
- * `settings.json` do repositório alvo (hexlog-setup) não precisar reapontar a
- * cada versão. Troca atômica (tmp + rename), mesmo mecanismo de `registerGuard`. */
-function writeStableFlowReminder(home: string, bytes: Buffer): void {
-  const stableFile = path.join(home, '.local', 'lib', 'hexlog', 'flow-reminder.mjs');
-  mkdirSync(path.dirname(stableFile), { recursive: true });
-  const tmp = `${stableFile}.tmp-${process.pid}`;
-  writeFileSync(tmp, bytes, { mode: 0o644 });
-  renameSync(tmp, stableFile);
-}
-
 /** Reage a um `renameSync` que achou `versionDir` ocupado: outro instalador pode ter terminado primeiro. */
 function resolveConcurrency(
   error: unknown,
   tmp: string,
   versionDir: string,
-  shaBuild: { server: string; hook: string; flowReminder: string },
+  shaBuild: BuildShas,
   version: string,
 ): { action: 'none'; extraWarning: null } {
   if (!isDirectoryBusyError(error)) {
@@ -171,7 +156,7 @@ function swapArtifact(args: {
   versionDir: string;
   tmp: string;
   existedBefore: boolean;
-  shaBuild: { server: string; hook: string; flowReminder: string };
+  shaBuild: BuildShas;
   modificationDetected: boolean;
   version: string;
 }): { action: 'installed' | 'reinstalled' | 'repaired' | 'none'; extraWarning: string | null } {
@@ -225,14 +210,12 @@ export async function installArtifact(args: {
   const shaBuild = {
     server: sha256(bundles.server),
     hook: sha256(bundles.hook),
-    flowReminder: sha256(bundles.flowReminder),
   };
   const previousManifest = readManifest(versionDir);
   const installed = installedShas(versionDir);
   const existedBefore = existsSync(versionDir);
 
   if (shasEqual(installed, shaBuild)) {
-    writeStableFlowReminder(home, bundles.flowReminder);
     log(`version ${version} already installed and intact; nothing to do`);
     return {
       action: 'none',
@@ -271,7 +254,6 @@ export async function installArtifact(args: {
   try {
     writeFileSync(path.join(tmp, 'server.mjs'), bundles.server, { mode: 0o644 });
     writeFileSync(path.join(tmp, 'bash-guard.mjs'), bundles.hook, { mode: 0o644 });
-    writeFileSync(path.join(tmp, 'flow-reminder.mjs'), bundles.flowReminder, { mode: 0o644 });
     writeFileSync(path.join(tmp, 'manifest.json'), JSON.stringify(manifest, null, 2), {
       mode: 0o644,
     });
@@ -290,8 +272,6 @@ export async function installArtifact(args: {
     version,
   });
   if (!isNil(extraWarning)) warnings.push(extraWarning);
-
-  writeStableFlowReminder(home, bundles.flowReminder);
 
   const finalManifest = action === 'none' ? (readManifest(versionDir) ?? manifest) : manifest;
   log(`version ${version}: ${action}`);
@@ -317,14 +297,28 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   return { changed: true };
 }
 
+/** `name` vira um segmento de path (`<home>/.claude/skills/<name>/`): rejeita o que escaparia dele. */
+function assertValidSkillName(name: string): void {
+  if (name === '' || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+    throw new HexlogError('INTERNAL', `invalid skill name: ${JSON.stringify(name)}`);
+  }
+}
+
 /** Copia a pasta de uma skill (`SKILL.md` + `references/` etc.) para
- * `<home>/.claude/skills/<name>/`, sobrescrevendo sem backup (decisão do
- * usuário; diferente de `registerGuard`, que preserva `.bak-hexlog`). */
+ * `<home>/.claude/skills/<name>/`, com troca atômica (tmp + rename) — mesmo
+ * mecanismo de `swapArtifact` — pra uma falha no meio da cópia nunca deixar o
+ * destino vazio ou parcial. Sobrescreve sem backup (decisão do usuário;
+ * diferente de `registerGuard`, que preserva `.bak-hexlog`). */
 export function writeSkillFolder(home: string, name: string, srcDir: string): void {
+  assertValidSkillName(name);
   const dstDir = path.join(home, '.claude', 'skills', name);
-  rmSync(dstDir, { recursive: true, force: true });
-  mkdirSync(dstDir, { recursive: true });
-  cpSync(srcDir, dstDir, { recursive: true });
+  const tmp = `${dstDir}.tmp-${process.pid}`;
+  rmSync(tmp, { recursive: true, force: true });
+  cpSync(srcDir, tmp, { recursive: true });
+  const old = `${dstDir}.old-${process.pid}`;
+  if (existsSync(dstDir)) renameSync(dstDir, old);
+  renameSync(tmp, dstDir);
+  rmSync(old, { recursive: true, force: true });
 }
 
 /** `~/.claude.json` ainda não aponta `mcpServers.hexlog` para o servidor esperado. */
@@ -391,14 +385,6 @@ export function verifyInstallation(args: {
     runHook,
     installedBytes,
   });
-  if (!existsSync(expected.flowReminderFile)) result.missing.push('flow-reminder-file');
-  if (
-    !existsSync(expected.flowReminderStableFile) ||
-    (!isNil(manifest) &&
-      sha256(readFileSync(expected.flowReminderStableFile)) !== manifest.sha256.flowReminder)
-  ) {
-    result.missing.push('flow-reminder-stable');
-  }
   skillNames.forEach((name, index) => {
     if (!existsSync(expected.skillFiles[index])) result.missing.push(`skill-file:${name}`);
   });
@@ -408,7 +394,6 @@ export function verifyInstallation(args: {
     const shaBuild = {
       server: sha256(currentBundles.server),
       hook: sha256(currentBundles.hook),
-      flowReminder: sha256(currentBundles.flowReminder),
     };
     if (!shasEqual(shaBuild, manifest.sha256)) {
       const dirtyText = manifest.dirty ? ' (dirty)' : '';

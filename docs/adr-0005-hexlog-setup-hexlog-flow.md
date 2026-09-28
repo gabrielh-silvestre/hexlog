@@ -171,6 +171,32 @@ hipotético.
   real na prática, é o usuário remover a entrada do hook — não há follow-up
   de código para "silenciar melhor" dentro do escopo v1.
 
+## Amendment (2026-09-28)
+
+Por decisão do usuário, o hook `hook/flow-reminder.ts` foi retirado do v1
+antes do merge do PR #32. Motivo: `.hexlog/flow.md` não tinha nenhum
+consumidor programático além do hook em si — o único outro leitor é o agente
+da skill `hexlog-flow`, que lê o arquivo como texto, sem parser. Sem
+consumidor programático, o schema Zod `FlowMap` e o parser `parseFlowMap`
+(`src/flow-map.ts`) saem junto: `skills/hexlog-setup/references/flow-map-schema.md`
+vira a especificação autônoma do frontmatter, sem validador de código por
+trás. O terceiro artefato/bundle (`flowReminder` em `Bundles`,
+`src/installation.ts`), a cópia estável fora do diretório de versão
+(`~/.local/lib/hexlog/flow-reminder.mjs`) e o modo `--validate` do bundle
+saem do instalador — que volta a copiar dois bundles (`server`, `bash-guard`).
+A dependência `yaml`, promovida a direta só para `flow-map.ts`, volta a
+transitiva (via `lint-staged`).
+
+Isso invalida, no texto acima, tudo que descreve o hook, o terceiro bundle e
+`FlowMap`/`parseFlowMap` como decisão vigente (Decision, Drivers,
+Alternatives Considered, Consequences) — mantido como registro histórico do
+que foi decidido e depois revertido, não como estado atual do código.
+`editedSkills` continua vigente: é o único opcional que sobra do "Acionamento
+tem dois opcionais independentes" do Decision original.
+
+Volta a existir schema/validador de código para `FlowMap` quando surgir o
+primeiro consumidor programático de `.hexlog/flow.md` — não antes.
+
 ## Follow-ups
 
 - V2 cobre manutenção e reconfiguração do flow map; hoje a `hexlog-setup` só
