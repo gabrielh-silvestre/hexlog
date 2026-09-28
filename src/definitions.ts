@@ -57,7 +57,7 @@ export const Registered = z.object({
 });
 export type Registered = z.infer<typeof Registered>;
 
-/** Aviso não-fatal de `register_*` (§4.12): mesmo shape do schema Zod `Warning` de `mcp.ts:44-48`. */
+/** Aviso não-fatal de `register_*` (§4.12): mesmo shape do schema Zod `Warning` de `mcp.ts`. */
 export type Warning = { code: string; message: string; details?: unknown };
 
 /** Campos de versionamento comuns aos três `register_*` (levas 3-5): só o identificador varia. */
@@ -141,7 +141,11 @@ function decideVersion<T>(params: DecideVersionParams<T>): {
   const previousVersion = current?.version ?? null;
 
   if (isNil(current)) {
-    return { outcome: { kind: 'write', version: '1.0', content }, previousVersion, warnings: [] };
+    return {
+      outcome: { kind: 'write', version: '1.0', content, base: previousVersion },
+      previousVersion,
+      warnings: [],
+    };
   }
 
   if (sha256hex(canonicalize(current.content) ?? '') === candidateHash) {
@@ -168,7 +172,11 @@ function decideVersion<T>(params: DecideVersionParams<T>): {
       : [];
 
   const version = formatVersion(bumpVersion(current.version, breaking ? 'major' : 'minor'));
-  return { outcome: { kind: 'write', version, content }, previousVersion, warnings };
+  return {
+    outcome: { kind: 'write', version, content, base: previousVersion },
+    previousVersion,
+    warnings,
+  };
 }
 
 /**
@@ -201,6 +209,7 @@ function registerVersioned<T>(
   };
 
   const result = writeVersionExclusive(defDir, resolveTarget);
+  if (result.kind === 'written') warnings = [...warnings, ...divergenceWarning(result.divergent)];
   return { result, previousVersion, warnings };
 }
 
@@ -635,14 +644,41 @@ function writeThenLinkExclusive(dir: string, file: string, content: unknown): vo
 
 /** Decisão completa de versionamento devolvida por `resolveTarget` a cada tentativa de `writeVersionExclusive`. */
 export type ResolveOutcome =
-  | { kind: 'write'; version: string; content: Record<string, unknown> }
+  | { kind: 'write'; version: string; content: Record<string, unknown>; base: string | null }
   | { kind: 'unchanged'; version: string }
   | { kind: 'breaking'; details: Detail[] };
 
 /** Resultado de `writeVersionExclusive`: o que foi de fato gravado, ou a confirmação de que nada mudou. */
 type WriteVersionResult =
-  | { kind: 'written'; version: string; content: Record<string, unknown> }
+  | { kind: 'written'; version: string; content: Record<string, unknown>; divergent: string[] }
   | { kind: 'unchanged'; version: string };
+
+/** Aviso `CONCURRENT_DIVERGENT_WRITE` para as versões gravadas por outro escritor a partir da mesma base; vazio sem elas. */
+export function divergenceWarning(versions: string[]): Warning[] {
+  if (versions.length === 0) return [];
+  return [
+    {
+      code: 'CONCURRENT_DIVERGENT_WRITE',
+      message: 'another writer registered a divergent version of this definition concurrently',
+      details: { versions },
+    },
+  ];
+}
+
+/**
+ * Versões de `defDir` que não são `written` e são maiores que `base` (base nula = todas as
+ * outras). Falha ao listar devolve `[]`: a versão já está gravada e o aviso é best-effort,
+ * então erro de I/O aqui não pode virar falha do `register_*`.
+ */
+function divergentVersions(defDir: string, written: string, base: string | null): string[] {
+  try {
+    return listVersionFiles(defDir).filter(
+      (v) => v !== written && (isNil(base) || compareVersions(v, base) > 0),
+    );
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Grava em `defDir` (ex.: `schemas/<name>/`) a versão decidida por `resolveTarget` (D1).
@@ -653,12 +689,22 @@ type WriteVersionResult =
  * por um retry após `EEXIST`, seja porque a primeira leitura já estava desatualizada no
  * instante em que o `linkSync` de fato acontece. Não há atalho de "recalcular só o
  * número" fora do laço.
+ *
+ * Aviso de divergência (best-effort): após o `link`, `divergent` lista as versões no
+ * diretório que não são a gravada e são maiores que a base da primeira tentativa (base nula
+ * = todas as outras) — outro escritor partiu da mesma base; quem caiu em `EEXIST` e regravou
+ * numa versão seguinte também é avisado. Não é garantia: o 1º escritor não é avisado, falha
+ * ao listar = sem aviso, e há uma janela residual — se um escritor C linka entre o `link` de B e o
+ * `listVersionFiles` de B, B avisa sobre uma versão que veio depois da sua. É um falso
+ * positivo inofensivo (a divergência é real).
  */
 export function writeVersionExclusive(
   defDir: string,
   resolveTarget: () => ResolveOutcome,
   maxAttempts = 10,
 ): WriteVersionResult {
+  let firstBase: string | null = null;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const outcome = resolveTarget();
 
@@ -667,12 +713,21 @@ export function writeVersionExclusive(
       throw new HexlogError('BREAKING_CHANGE', 'change requires breaking: true', outcome.details);
     }
 
+    if (attempt === 0) firstBase = outcome.base;
+
     try {
       writeThenLinkExclusive(defDir, path.join(defDir, `${outcome.version}.json`), outcome.content);
-      return { kind: 'written', version: outcome.version, content: outcome.content };
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      throw e;
     }
+
+    return {
+      kind: 'written',
+      version: outcome.version,
+      content: outcome.content,
+      divergent: divergentVersions(defDir, outcome.version, firstBase),
+    };
   }
 
   throw new HexlogError('IO_ERROR', 'exclusive write did not succeed', [

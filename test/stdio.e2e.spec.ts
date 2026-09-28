@@ -265,7 +265,7 @@ describe('B1', () => {
         await call('evaluate_gate', {
           project: projectName,
           process: processName,
-          gates: [{ gate: 'no-conflicts', target: 'hex:target:e2e1' }],
+          gates: [{ name: 'no-conflicts', target: 'hex:target:e2e1' }],
           agent: 'e2e-agent',
         });
         await call('state', { project: projectName, process: processName });

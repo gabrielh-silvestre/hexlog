@@ -70,7 +70,7 @@ async function evaluateGate(
   await environment.call('evaluate_gate', {
     project: 'alpha',
     process,
-    gates: [{ gate: 'no-orphans', target }],
+    gates: [{ name: 'no-orphans', target }],
     agent: AGENT,
   });
 }

@@ -33,7 +33,7 @@
 ### Evidência
 - Probe `scratchpad/testes/` (`package.json`, `tsconfig.json`, `jest.config.js`, `mcp-server.spec.ts`, `child.ts`/`child.mts`, `child-fork.spec.ts`, `fastcheck.spec.ts`); `npm ls --depth=0`: jest@30.5.1, ts-jest@29.4.12, typescript@5.9.2, @types/node@24.8.1, fast-check@4.10.1, @modelcontextprotocol/{server,client}@2.0.0, zod@4.6.5. `npx jest --no-coverage` → 3 suites, 5 testes verdes.
 - Docs: typescript-sdk `docs/migration/upgrade-to-v2.md`, `ts.sdk.modelcontextprotocol.io/v2/testing`, inspector README + `docs/cli-smoke-testing.md`, `jestjs.io/docs/30.0/ecmascript-modules`, ctx7 `/kulshekhar/ts-jest`, `/dubzzz/fast-check`.
-- POC (só leitura): `poc/test/fork-helpers.ts`, `poc/test/append.spec.ts:140-230`.
+- POC (só leitura): `poc/test/fork-helpers.ts`, `poc/test/append.spec.ts`.
 
 ### Riscos e armadilhas
 - `.ts` forkado com `import` falha sem `"type": "module"` → `.mts` ou transpilar. (Interação com a decisão de rodar o hook `.ts` direto: definir `type` do package.json no passo 0.)

@@ -28,7 +28,7 @@
 - **d. `TestClock`:** **nenhum ganho** — o plano já passa `agora` como parâmetro de função pura.
 - **e. DI com `Context.Tag`/`Layer`:** **marginal** — 1 ponto de entrada (`serveStdio`); testes usam MCP real (`InMemoryTransport`).
 - **f. Logger:** **ganho negativo por padrão.** Verificado: `Effect.log` escreve no **stdout** (`console.log`) → quebra o JSON-RPC (M6); `Effect.logDebug` é **suprimido** (mínimo Info) → silencia `lock-espera` (barreira do C1). Exige `Logger.replace` + `Logger.withMinimumLogLevel(LogLevel.All)`.
-- **g. `effect/Schema` × zod:** o SDK MCP v2 aceita Standard Schema, mas `standardSchemaToJsonSchema` (`src-CX2iR2pK.mjs:5293-5306`) lança `Schema library "effect" does not implement StandardJSONSchemaV1` se `vendor !== "zod"` e faltar `~standard.jsonSchema`; `Schema.standardSchemaV1` não tem `jsonSchema` → exige wrapper. Sem equivalente a `z.fromJSONSchema` usado no plano. Fica zod.
+- **g. `effect/Schema` × zod:** o SDK MCP v2 aceita Standard Schema, mas `standardSchemaToJsonSchema` (`src-CX2iR2pK.mjs`) lança `Schema library "effect" does not implement StandardJSONSchemaV1` se `vendor !== "zod"` e faltar `~standard.jsonSchema`; `Schema.standardSchemaV1` não tem `jsonSchema` → exige wrapper. Sem equivalente a `z.fromJSONSchema` usado no plano. Fica zod.
 - **h. O que o nativo não resolve bem:** nada no domínio do hexlog. O ganho estrutural do Effect é compor política transversal (retry + timeout + cancelamento + telemetria) em muitos efeitos; o hexlog tem um lugar só (o lock).
 
 ### Custos
@@ -67,4 +67,4 @@ Ambos: mkdir atômico + token, retry 10 ms, timeout 5 s (`LOCK_TIMEOUT`), fencin
 5. Números de bundle/import de amostra pequena (5 primitivas).
 
 ### Evidência
-`npm view effect ...`; `api.npmjs.org/downloads/point/last-week/{effect,@effect/platform,zod}`; GitHub `list_releases`/`search_repositories`; `grep` em `@modelcontextprotocol/server/dist/*.mjs` (`standardSchemaToJsonSchema`, `src-CX2iR2pK.mjs:5265-5310`); interceptação de `process.stdout.write`; esbuild + gzip; jest 2/2; `tsc --noEmit` no bug de `Scope`.
+`npm view effect ...`; `api.npmjs.org/downloads/point/last-week/{effect,@effect/platform,zod}`; GitHub `list_releases`/`search_repositories`; `grep` em `@modelcontextprotocol/server/dist/*.mjs` (`standardSchemaToJsonSchema`, `src-CX2iR2pK.mjs`); interceptação de `process.stdout.write`; esbuild + gzip; jest 2/2; `tsc --noEmit` no bug de `Scope`.

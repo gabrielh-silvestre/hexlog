@@ -50,6 +50,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - Esquemas Zod para eventos e entradas de tools. O núcleo (chain, state, gates) é puro, e o I/O fica em `log.ts` e `definitions.ts`.
 - IDs nos títulos de teste (M#, N#, S#, B#, I#, C#, Q#, R-#, U-#) remetem a critérios do ADR 0001.
 - Versões de dependências fixadas sem `^`.
+- Documentação (`.md`) e comentários citam arquivo + símbolo, nunca número de linha; `test/skill-coherence.spec.ts` trava a regra nos `.md`. Nas skills o formato é `arquivo.ts#símbolo`, conferido contra `src/`.
 
 ## Dependencies
 

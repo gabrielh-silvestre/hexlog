@@ -28,8 +28,8 @@ frontmatter (fase → `process`/`gate`/`targetIdPattern`).
 |---|---|---|
 | Um marco ou decisão novo, sem gate envolvido | `register` | `agent` = nome da skill que disparou (a skill apontada que chamou a hexlog-flow, ou hexlog-flow mesma se disparada direto) |
 | Avaliar um dos 5 gates embutidos (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `evaluate_gate` sem `result` | O servidor calcula a partir do Estado — nunca informe `result` para gate embutido |
-| Avaliar o gate custom da fase corrente (campo `gate` do flow map) | `evaluate_gate` com `result: {passed, evidence}` | Gate custom sem `result` informado lança `INVALID_EVALUATION` (`event-tools.ts:891-896`) |
-| Precisa do histórico completo de um target | `events` | Filtra por `target` (`hex:target:<id>` — regex em `events.ts:27-30`, ver `references/target-format.md`) |
+| Avaliar o gate custom da fase corrente (campo `gate` do flow map) | `evaluate_gate` com `name` (valor do campo `gate`) e `result: {passed, evidence}` | Gate custom sem `result` informado lança `INVALID_EVALUATION` (`event-tools.ts#resolveGate`) |
+| Precisa do histórico completo de um target | `events` | Filtra por `target` (`hex:target:<id>` — regex em `events.ts#Target`, ver `references/target-format.md`) |
 | Precisa da cadeia de vereditos que se superam | `chain` | Segue `supersedes` até a raiz |
 | Precisa do Estado vigente do processo (o que está aberto, quem venceu cada target) | `state` | Aceita `withData: true` pra trazer o `data` do Verdict vigente junto |
 
@@ -45,12 +45,12 @@ lacuna vira gate.
 
 | Situação | Resultado |
 |---|---|
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` (`event-tools.ts:595`) |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado | `VOCABULARY_VIOLATED` (`event-tools.ts:720`) |
-| `result` de um Veredito fora do vocabulário fixado | aviso `UNKNOWN_VOCABULARY` (`event-tools.ts:742`), não bloqueia |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` (`event-tools.ts:597-602`) |
-| Reenviar um id completo com conteúdo diferente do já gravado | `CONFLICTING_ID` (`event-tools.ts:673`) — reenviar com o **mesmo** conteúdo é retentativa idempotente, não erro |
-| Gate custom sem `result` | `INVALID_EVALUATION` (`event-tools.ts:891-896`) |
+| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` (`event-tools.ts#registerEvent`) |
+| `milestoneType` ou `decisions[].action` fora do vocabulário fixado | `VOCABULARY_VIOLATED` (`event-tools.ts#ensureVocabulary`) |
+| `result` de um Veredito fora do vocabulário fixado | aviso `UNKNOWN_VOCABULARY` (`event-tools.ts#unknownResultWarning`), não bloqueia |
+| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` (`event-tools.ts#registerEvent`) |
+| Reenviar um id completo com conteúdo diferente do já gravado | `CONFLICTING_ID` (`event-tools.ts#retryWithFullId`) — reenviar com o **mesmo** conteúdo é retentativa idempotente, não erro |
+| Gate custom sem `result` | `INVALID_EVALUATION` (`event-tools.ts#resolveGate`) |
 
 ## Referências
 

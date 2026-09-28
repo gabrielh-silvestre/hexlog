@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, afterAll, jest } from '@jest/globals
 import * as fs from 'node:fs';
 // import default separado (não `* as fs`, já usado acima): precisa ser o mesmo objeto que
 // src/installation.ts usa, para `jest.spyOn(fsDefault, 'renameSync')` interceptar de fato a
-// chamada feita lá dentro (mesmo motivo documentado em src/log.ts:2-4).
+// chamada feita lá dentro (mesmo motivo documentado no comentário do `import fs` de src/log.ts).
 import fsDefault from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -53,7 +53,7 @@ const SettingsSchema = z.looseObject({
 
 // Settings "reais", sanitizados: só a forma de `permissions` e `hooks.PreToolUse`
 // (~/.claude/settings.json), com um comentário pra testar preservação e a
-// entrada alheia `rtk hook claude` (~/.claude/settings.json:92-96).
+// entrada alheia `rtk hook claude` (~/.claude/settings.json).
 function buildSettingsWithRtk(home: string): string {
   return `{
   // example comment, must survive jsonc-parser edits
@@ -80,7 +80,7 @@ function buildSettingsWithRtk(home: string): string {
 `;
 }
 
-// Equivalente mínimo de `own-harness/boot/settings.template.json:9-15`
+// Equivalente mínimo de `own-harness/boot/settings.template.json`
 // renderizado: uma reinstalação do zero, sem nada do hexlog nem do rtk.
 function buildSettingsTemplate(home: string): string {
   return `{

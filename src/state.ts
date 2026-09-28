@@ -87,7 +87,7 @@ type VerdictFields = {
   supersedes?: string[];
 };
 
-function targetOf(line: EventLine): string | undefined {
+export function targetOf(line: EventLine): string | undefined {
   if (line.type === 'milestone') return (line.data as MilestoneFields).target;
   if (line.type === 'verdict') return (line.data as VerdictFields).target;
   return undefined; // tipos custom não têm target e são inertes (S3)

@@ -100,6 +100,18 @@ abertas**: uma sessão iniciada antes da troca de versão mantém o servidor
 antigo carregado em memória e pode continuar chamando o caminho antigo do
 hook mesmo depois de o diretório ser removido.
 
+## Migração 0.2 para 0.3
+
+A 0.3 muda o contrato das tools. Reinstale servidor e skills juntos
+(`node scripts/install.ts`) e reinicie as sessões abertas: servidor antigo em
+memória com skills novas responde `Input validation error`.
+
+- `evaluate_gate`: o campo `gate` passou a se chamar `name`.
+- `evidence` de gate embutido guarda só referências (id + target), não mais o State.
+- `gates[]` rejeita chave desconhecida.
+- `evidence` tem duas formas em disco: a antiga, com o State, e a nova, com
+  referências. Quem consome `events`/`chain` deve tolerar as duas.
+
 ## Instalação concorrente
 
 Se dois processos de instalação rodarem ao mesmo tempo, um deles pode
@@ -210,6 +222,8 @@ e gera o uuid v7. Alternativamente, `id` continua aceitando:
 
 Marco aceita `milestoneType`, `target` (endereço no formato `hex:target:<id>`),
 `count` (`{field, value}`), `dueAt`, `decisions[]` e `trace` (opcional).
+O `<id>` do `target` é sem espaço e sem `:`, usa `.` como separador de subárvore
+(`hex:target:a.b.c`) e o endereço inteiro tem até 200 caracteres.
 `decisions[]` é uma lista de `{item, action, text}`; `action` é vocabulário
 fechado por projeto — os valores aceitos vêm de `list({project, process})`, e
 um valor fora dele é `VOCABULARY_VIOLATED`. Veredito aceita `claim`, `source`
@@ -227,7 +241,7 @@ No Veredito `trace` é obrigatório e entra normalmente na comparação.
 
 ### `evaluate_gate`
 
-Avalia até 20 gates numa única chamada (`gates: [{gate, target, result?}]`) e
+Avalia até 20 gates numa única chamada (`gates: [{name, target, result?}]`) e
 grava cada resultado como um Marco de gate, sob uma **única aquisição de
 lock**: um só snapshot de Estado é lido no início da chamada, e
 todo gate embutido do lote compartilha o mesmo `evaluatedThrough`. Gates
@@ -240,9 +254,10 @@ exigem `result: {passed, evidence}` do agente.
 Todos os gates do lote são validados **antes** de qualquer gravação: se
 qualquer um deles falhar a validação, a chamada inteira falha e nada é
 gravado — o lock nem chega a ser adquirido. A validação também recusa
-`{gate, target}` repetido no lote e lote cujos Marcos somem mais de 24.000
-caracteres canônicos (`INVALID_INPUT`: divida em chamadas menores); cada Marco
-respeita o mesmo teto de 16.000 dos demais eventos (`INVALID_EVENT`). Uma vez
+`{name, target}` repetido no lote e lote cujos Marcos somem mais de 24.000
+caracteres canônicos (`INVALID_INPUT`: divida em chamadas menores); o Marco de
+gate custom respeita o mesmo teto de 16.000 dos demais eventos
+(`INVALID_EVENT`). Uma vez
 iniciada a escrita, um erro de disco genuíno ou um lock roubado (`LOCK_LOST`,
 token revalidado a cada item) deixa os Marcos já gravados persistidos — o log é append-only, sem
 rollback — e a chamada falha com um erro simples (`isError: true`, sem
@@ -251,6 +266,16 @@ foi gravado. A resposta traz `results[]`, um recibo
 `{seq, id, prevHash, passed, evidence, totalEvidenceItems}` por gate, na
 ordem enviada; `echo: true` (padrão `false`, mesmo parâmetro de `register`)
 devolve também o `event` completo em cada item.
+
+Os gates embutidos gravam a prova como referências, sem copiar texto do Estado:
+`no-conflicts` `{target, candidates}`, `no-orphans` `{milestone, target}`,
+`no-forks` `{verdict, successors, target}`, `no-invalid-references`
+`{citedBy, reference, target}` e `chain-intact` `{index, reason}` (`target` é o
+do Veredito citado). O Marco de gate embutido tem teto próprio de 24.000
+caracteres canônicos: se passar, `evidence` é cortada pelo fim até caber e
+`totalEvidenceItems` continua com o total real. O sinal é o mesmo do teto de 50
+itens (`totalEvidenceItems > evidence.length`). Marcos de gate gravados antes
+desta forma (com `claim`/`dueAt`) continuam válidos.
 
 `no-forks` reprova quando um Veredito superado tem 2 ou mais sucessores vivos
 (2+ Vereditos que o citam em `supersedes` e não estão eles mesmos superados) —
@@ -307,6 +332,10 @@ resposta é só `{logThrough, unchanged: true}`, sem nenhuma outra seção. Se o
 log avançou, a resposta é a normal, cheia, e `unchanged` fica ausente —
 `since` não filtra `warnings` nem nenhuma outra seção por dentro da resposta
 cheia, só evita reconstruir uma resposta idêntica à anterior.
+
+`warnings` é cumulativo: cada resposta cheia traz todos os avisos do log, não só
+os posteriores a `since`. Os avisos novos se reconhecem comparando o `event` de
+cada um com os já vistos.
 
 ### `events`
 
@@ -435,7 +464,7 @@ Alguns dos mais comuns:
 | `PROCESS_NOT_FOUND` | o processo informado não tem `process.json` |
 | `INVALID_ID` / `UNKNOWN_ID` / `CONFLICTING_ID` | problemas de `id` em `register` |
 | `TYPE_NOT_PINNED` | tipo custom fora do snapshot fixado do processo |
-| `INVALID_EVENT` | `data` reprovado na validação, ou acima de 16.000 caracteres canônicos |
+| `INVALID_EVENT` | `data` reprovado na validação, ou acima de 16.000 caracteres canônicos (24.000 no Marco de gate embutido, que corta a prova antes) |
 | `RESERVED_FIELD` | Marco com `milestoneType: "gate"` ou chave `gate` fora de `evaluate_gate` |
 | `VOCABULARY_VIOLATED` | `milestoneType`/`decisions[].action` fora do vocabulário fixado (campo fechado); `details[0]` traz `owners` (donos de extensão fixados no processo) e `allowed` (termos que o campo de fato aceita, core ∪ extensões) |
 | `INVALID_FILTER` | filtros de `events` inconsistentes (`milestoneType` fora do vocabulário, `after ≥ before`, `until` além do arquivo) |
@@ -451,6 +480,11 @@ Um aviso, diferente de erro, vem em `warnings[]` numa resposta de sucesso:
 - `NO_BREAKING_CHANGE` num `register_type`/`register_vocabulary`/`register_gate`
   com `breaking: true` cuja mudança, na verdade, não quebra — a versão bumpa
   minor mesmo assim, em vez de forçar major.
+- `CONCURRENT_DIVERGENT_WRITE` num `register_type`/`register_vocabulary`/`register_gate`,
+  quando outro escritor gravou uma versão a partir da mesma base durante a chamada —
+  `details: { versions }` lista as versões divergentes. A base comparada é a da
+  primeira leitura, então quem caiu em `EEXIST` e regravou numa versão seguinte
+  também é avisado. Best-effort: o 1º escritor não é avisado.
 - `STALE_DEFINITIONS` em `create_process`, quando o `process` já existe e o
   snapshot fixado na criação diverge do candidato desta chamada (algo foi
   registrado no projeto depois) — `details: [{ section, name, pinned, current }]`

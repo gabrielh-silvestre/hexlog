@@ -58,53 +58,35 @@ function functionNamesFrom(content: string): string[] {
   return [...content.matchAll(/(?:^|\s)function ([A-Za-z][A-Za-z0-9]*)/g)].map((m) => at(m, 1));
 }
 
-const LINE_CITATION_FORMAT = /^[A-Za-z0-9_.-]+\.ts:\d+(?:-\d+)?$/;
+const SYMBOL_CITATION_FORMAT = /^[A-Za-z0-9_.-]+\.ts#[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** Citações `arquivo.ts:N` ou `arquivo.ts:N-M` entre crase simples em `content`, fora de blocos cercados. */
-function fileCitationsFrom(content: string): string[] {
-  return extractInlineBackticks(content).filter((token) => LINE_CITATION_FORMAT.test(token));
+/** Citações `arquivo.ts#símbolo` entre crase simples em `content`, fora de blocos cercados. */
+function fileSymbolCitationsFrom(content: string): string[] {
+  return extractInlineBackticks(content).filter((token) => SYMBOL_CITATION_FORMAT.test(token));
 }
 
-/** Faz o parse de uma citação `arquivo.ts:N(-M)?` em arquivo + linha inicial/final (1-indexadas, inclusive). */
-function parseCitation(citation: string): { file: string; startLine: number; endLine: number } {
-  const parts = citation.split(':');
-  const file = at(parts, 0);
-  const lines = at(parts, 1);
-  const [start, end] = lines.split('-');
-  return { file, startLine: Number(start), endLine: Number(end ?? start) };
-}
-
-/** Linhas `[startLine, endLine]` (1-indexadas, inclusive) de `content`. */
-function linesInRange(content: string, startLine: number, endLine: number): string {
-  return content
-    .split('\n')
-    .slice(startLine - 1, endLine)
-    .join('\n');
-}
+const DECLARATION_KEYWORDS =
+  '(?:export\\s+)?(?:async\\s+)?(?:function|const|let|type|class|interface)';
 
 /**
- * Linha da declaração `function name(` em `content` e a linha do `}` que a fecha, achada por balanço
- * de chaves — prova que uma citação em faixa (`N-M`) é justa: começa na declaração, termina no
- * fechamento real da função, não em qualquer ponto arbitrário escolhido à mão.
+ * Corpo da declaração ancorada de `symbol` em `content`: da linha da declaração até a anterior à próxima
+ * declaração ancorada (ou o fim do arquivo). Ancorar no início da linha rejeita comentário e variável
+ * local indentada. Devolve `undefined` se a declaração não existe.
  */
-function functionRangeFrom(content: string, name: string): { startLine: number; endLine: number } {
-  const lines = content.split('\n');
-  const startIndex = lines.findIndex((line) => new RegExp(`function ${name}\\(`).test(line));
-  if (startIndex === -1) throw new Error(`função '${name}' não encontrada`);
-  let depth = 0;
-  let opened = false;
-  for (let i = startIndex; i < lines.length; i++) {
-    for (const ch of at(lines, i)) {
-      if (ch === '{') {
-        depth++;
-        opened = true;
-      }
-      if (ch === '}') depth--;
-    }
-    if (opened && depth === 0) return { startLine: startIndex + 1, endLine: i + 1 };
-  }
-  throw new Error(`fechamento de '${name}' não encontrado`);
+function declarationBodyFrom(content: string, symbol: string): string | undefined {
+  const start = new RegExp(`^${DECLARATION_KEYWORDS}\\s+${symbol}\\b`, 'm').exec(content);
+  if (start === null) return undefined;
+  const rest = content.slice(start.index + start[0].length);
+  const next = new RegExp(`^${DECLARATION_KEYWORDS}\\s+\\w+`, 'm').exec(rest);
+  return content.slice(start.index, start.index + start[0].length + (next?.index ?? rest.length));
 }
+
+/** Citação `arquivo:N` de código em `.md` (todas as extensões citadas hoje, incl. `.py` de repositórios externos); exclui nomes de produto com `.js` em prosa. */
+const LINE_NUMBER_CITATION =
+  /(?<![\w./-])(?!(?:Node|Next|Nuxt|Vue|Deno)\.js:)[\w./-]+\.(?:ts|mjs|json|js|yml|md|py):\d+/;
+
+/** Citação de linha em prosa ("linha 12", "linhas ~141"). */
+const LINE_PROSE_CITATION = /\blinhas?\s+~?\d+/i;
 
 describe('extratores (unitário, sobre string literal)', () => {
   test('extractInlineBackticks ignora crase dentro de bloco cercado e pega a de fora', () => {
@@ -132,42 +114,59 @@ describe('extratores (unitário, sobre string literal)', () => {
     expect(functionNamesFrom(content)).toEqual(['minhaFuncao', 'outraFuncao', 'terceira']);
   });
 
-  test('fileCitationsFrom pega só crases no formato arquivo.ts:N ou arquivo.ts:N-M, ignorando outras crases', () => {
+  test('fileSymbolCitationsFrom pega só crases no formato arquivo.ts#símbolo, ignorando outras crases', () => {
     const content =
-      '`definitions.ts:21` e `event-tools.ts:397-402`, mas não `register_type` nem `AGENTS.md:37`';
-    expect(fileCitationsFrom(content)).toEqual(['definitions.ts:21', 'event-tools.ts:397-402']);
+      '`definitions.ts#createProcess` e `events.ts#Name`, mas não `register_type` nem `AGENTS.md`';
+    expect(fileSymbolCitationsFrom(content)).toEqual([
+      'definitions.ts#createProcess',
+      'events.ts#Name',
+    ]);
   });
 
-  test('parseCitation extrai arquivo e linha inicial/final, repetindo a linha única quando não há faixa', () => {
-    expect(parseCitation('definitions.ts:21')).toEqual({
-      file: 'definitions.ts',
-      startLine: 21,
-      endLine: 21,
-    });
-    expect(parseCitation('event-tools.ts:397-402')).toEqual({
-      file: 'event-tools.ts',
-      startLine: 397,
-      endLine: 402,
-    });
-  });
-
-  test('linesInRange devolve só as linhas pedidas, 1-indexadas e inclusive nas duas pontas', () => {
-    const content = 'a\nb\nc\nd';
-    expect(linesInRange(content, 2, 3)).toBe('b\nc');
-  });
-
-  test('functionRangeFrom encontra a declaração e o fechamento por balanço de chaves, ignorando chaves de tipo aninhadas', () => {
+  test('declarationBodyFrom acha a declaração ancorada e vai até a próxima, rejeitando comentário e indentada', () => {
     const content = [
-      'function outraCoisa() {}',
-      'function alvo(): {',
-      '  campo: string;',
-      '} {',
-      '  if (true) {',
-      '    return 1;',
-      '  }',
+      '// function alvo() fantasma',
+      'export async function alvo(): void {',
+      '  const alvo = 1;',
+      '  throw new Error(CODIGO);',
       '}',
+      'export const OUTRA = 1;',
     ].join('\n');
-    expect(functionRangeFrom(content, 'alvo')).toEqual({ startLine: 2, endLine: 8 });
+    const body = declarationBodyFrom(content, 'alvo');
+    expect(body).toContain('CODIGO');
+    expect(body).not.toContain('OUTRA');
+    expect(declarationBodyFrom(content, 'fantasma')).toBeUndefined();
+    expect(declarationBodyFrom('  const alvo = 1;', 'alvo')).toBeUndefined();
+  });
+
+  // literais montados por concatenação: o grep de aceite não pode achar citação neste arquivo
+  test('LINE_NUMBER_CITATION casa arquivo:N e arquivo:N-M em qualquer extensão citada', () => {
+    for (const citation of [
+      'a.ts' + ':12',
+      'a.ts' + ':1-3',
+      'package.json' + ':7',
+      'eslint.config.js' + ':12',
+      'ci.yml' + ':3',
+      'AGENTS.md' + ':39',
+      'server.py' + ':87-98',
+    ]) {
+      expect(LINE_NUMBER_CITATION.test(`veja \`${citation}\` aqui`)).toBe(true);
+    }
+  });
+
+  test('LINE_PROSE_CITATION casa "linha N" e "linhas ~N" e ignora "linha" sem número', () => {
+    for (const text of ['linhas 141–192 de x', 'na linha 12', 'Linhas ~40']) {
+      expect(LINE_PROSE_CITATION.test(text)).toBe(true);
+    }
+    for (const text of ['da linha da declaração', 'uma linha só', 'linhagem 3']) {
+      expect(LINE_PROSE_CITATION.test(text)).toBe(false);
+    }
+  });
+
+  test('LINE_NUMBER_CITATION não casa target hexlog, arquivo#símbolo nem nome de produto com .js', () => {
+    for (const text of ['hex:target:x', 'a.ts#sym', 'Node.js' + ':24', 'Next.js' + ':3000']) {
+      expect(LINE_NUMBER_CITATION.test(text)).toBe(false);
+    }
   });
 });
 
@@ -244,6 +243,10 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'active',
   'targets',
   'trace',
+  // #33: `warnings`/`event` (saída de state) e `since` (entrada de state), citados no aviso cumulativo.
+  'warnings',
+  'since',
+  'event',
   // `sections`/`conflicts` (campos de `state`) e `targetPrefix` (campo novo de `state`/`events`),
   // não funções nem tools.
   'sections',
@@ -258,60 +261,57 @@ const FIELD_NAME_ALLOWLIST = new Set([
 ]);
 
 /**
- * Símbolo esperado dentro do trecho citado, por citação `arquivo.ts:N(-M)?` — mapa explícito em vez de
- * inferir o símbolo a partir de outras crases da mesma linha: a citação `installation.ts:266` (o `);` da
- * chamada de `verifyPreparedArtifact`) não tem identificador próprio na crase da tabela, então "mesma linha"
- * não bastaria para toda citação do arquivo.
+ * Substrings esperadas no corpo da declaração de cada `arquivo.ts#símbolo` citado — mapa explícito em vez
+ * de inferir a partir de outras crases da mesma linha. A substring prova o vínculo símbolo ↔ código de erro
+ * ou mensagem: mover o `throw` para outra função quebra o teste, de propósito. `installation.ts#installArtifact`
+ * espera a chamada de `verifyPreparedArtifact` para provar que a checagem ocorre dentro da instalação.
  */
-const HEXLOG_CITATION_EXPECTATIONS: Record<string, string> = {
-  'definitions.ts:575': 'VOCABULARY_MISSING',
-  'definitions.ts:448-496': 'createProcess',
-  'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
-  'definitions.ts:24': 'RESERVED_TYPE_NAMES',
-  'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
-  'event-tools.ts:595': 'TYPE_NOT_PINNED',
-  'event-tools.ts:720': 'VOCABULARY_VIOLATED',
-  'event-tools.ts:742': 'UNKNOWN_VOCABULARY',
-  'event-tools.ts:597-602': 'RESERVED_FIELD',
-  'event-tools.ts:797-798': 'duplicate {gate, target} in batch',
-  'event-tools.ts:838-841': 'gates batch exceeds',
-  'events.ts:34': 'TargetPrefix',
-  'definition-tools.ts:264-268': 'built-in domain kind',
-  'installation.ts:89': 'verifyPreparedArtifact',
-  'installation.ts:266': 'verifyPreparedArtifact',
+const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
+  'definitions.ts#buildSnapshot': ['VOCABULARY_MISSING'],
+  'definitions.ts#createProcess': ['createProcess'],
+  'definitions.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
+  'definitions.ts#RESERVED_TYPE_NAMES': ['RESERVED_TYPE_NAMES'],
+  'definitions.ts#BUILTIN_GATE_NAMES': ['BUILTIN_GATE_NAMES'],
+  'event-tools.ts#registerEvent': ['TYPE_NOT_PINNED', 'RESERVED_FIELD'],
+  'event-tools.ts#ensureVocabulary': ['VOCABULARY_VIOLATED'],
+  'event-tools.ts#unknownResultWarning': ['UNKNOWN_VOCABULARY'],
+  'event-tools.ts#evaluateGate': ['duplicate {name, target} in batch', 'gates batch exceeds'],
+  'events.ts#TargetPrefix': ['TargetPrefix'],
+  'definition-tools.ts#reservedTypeMessage': ['built-in domain kind'],
+  'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
+  'installation.ts#installArtifact': ['verifyPreparedArtifact'],
 };
 
-const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string> = {
-  'definitions.ts:575': 'VOCABULARY_MISSING',
-  'definitions.ts:21': 'RESERVED_PROCESS_NAMES',
-  'definitions.ts:24': 'RESERVED_TYPE_NAMES',
-  'definitions.ts:27-33': 'BUILTIN_GATE_NAMES',
-  'definitions.ts:667': 'BREAKING_CHANGE',
+const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string[]> = {
+  'definitions.ts#buildSnapshot': ['VOCABULARY_MISSING'],
+  'definitions.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
+  'definitions.ts#RESERVED_TYPE_NAMES': ['RESERVED_TYPE_NAMES'],
+  'definitions.ts#BUILTIN_GATE_NAMES': ['BUILTIN_GATE_NAMES'],
+  'definitions.ts#writeVersionExclusive': ['BREAKING_CHANGE'],
 };
 
-const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string> = {
-  'event-tools.ts:595': 'TYPE_NOT_PINNED',
-  'event-tools.ts:720': 'VOCABULARY_VIOLATED',
-  'event-tools.ts:742': 'UNKNOWN_VOCABULARY',
-  'event-tools.ts:597-602': 'RESERVED_FIELD',
-  'event-tools.ts:673': 'CONFLICTING_ID',
-  'event-tools.ts:891-896': 'INVALID_EVALUATION',
-  'events.ts:27-30': 'Target',
+const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string[]> = {
+  'event-tools.ts#registerEvent': ['TYPE_NOT_PINNED', 'RESERVED_FIELD'],
+  'event-tools.ts#ensureVocabulary': ['VOCABULARY_VIOLATED'],
+  'event-tools.ts#unknownResultWarning': ['UNKNOWN_VOCABULARY'],
+  'event-tools.ts#retryWithFullId': ['CONFLICTING_ID'],
+  'event-tools.ts#resolveGate': ['INVALID_EVALUATION'],
+  'events.ts#Target': ['Target'],
 };
 
-const FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS: Record<string, string> = {
-  'events.ts:10': 'Name',
-  'events.ts:27-30': 'Target',
+const FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS: Record<string, string[]> = {
+  'events.ts#Name': ['Name'],
+  'events.ts#Target': ['Target'],
 };
 
-const TARGET_FORMAT_CITATION_EXPECTATIONS: Record<string, string> = {
-  'events.ts:27-30': 'Target',
+const TARGET_FORMAT_CITATION_EXPECTATIONS: Record<string, string[]> = {
+  'events.ts#Target': ['Target'],
 };
 
 type SkillCase = {
   name: string;
   skillPath: string;
-  citationExpectations: Record<string, string>;
+  citationExpectations: Record<string, string[]>;
 };
 
 const skillCases: SkillCase[] = [
@@ -332,7 +332,7 @@ const skillCases: SkillCase[] = [
   },
 ];
 
-// `references/*.md` só entram na checagem de citação arquivo.ts:N: citam campos do schema
+// `references/*.md` só entram na checagem de citação arquivo.ts#símbolo: citam campos do schema
 // (`phases`, `process`) em crases, que a checagem de identificadores leria como tool inexistente.
 const referenceCases: SkillCase[] = [
   {
@@ -352,7 +352,7 @@ function tokensCitedBy(skillPath: string) {
   const skillContent = fs.readFileSync(skillPath, 'utf8');
   const backtickTokens = extractInlineBackticks(skillContent);
   return {
-    citedFileCitations: fileCitationsFrom(skillContent),
+    citedFileCitations: fileSymbolCitationsFrom(skillContent),
     citedScreamingSnakeTokens: [
       ...new Set(backtickTokens.filter((t) => SCREAMING_SNAKE_CASE.test(t))),
     ],
@@ -413,7 +413,7 @@ describe('fatos de código globais que a skill hexlog cita (não dependem de qua
 });
 
 describe.each([...skillCases, ...referenceCases])(
-  'citações arquivo.ts:N(-M)? na skill × código real em src/ ($name)',
+  'citações arquivo.ts#símbolo na skill × código real em src/ ($name)',
   ({ skillPath, citationExpectations }) => {
     const { citedFileCitations } = tokensCitedBy(skillPath);
 
@@ -425,23 +425,65 @@ describe.each([...skillCases, ...referenceCases])(
       expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(citationExpectations)));
     });
 
-    test('cada citação aponta pra um trecho de src/ que de fato contém o símbolo esperado (detecta deslocamento de linha)', () => {
+    test('cada citação aponta pra um arquivo de src/ cuja declaração do símbolo contém as substrings esperadas', () => {
       for (const citation of citedFileCitations) {
-        const { file, startLine, endLine } = parseCitation(citation);
-        const fileContent = fs.readFileSync(path.join(srcDir, file), 'utf8');
-        const snippet = linesInRange(fileContent, startLine, endLine);
-        expect(snippet).toContain(citationExpectations[citation]);
+        const [file = '', symbol = ''] = citation.split('#');
+        const filePath = path.join(srcDir, file);
+        expect(fs.existsSync(filePath)).toBe(true);
+        const body = declarationBodyFrom(fs.readFileSync(filePath, 'utf8'), symbol);
+        expect(body).toBeDefined();
+        for (const substring of citationExpectations[citation] ?? []) {
+          expect(body).toContain(substring);
+        }
       }
     });
   },
 );
 
-describe('citação de faixa exata (function range) — casos específicos por skill', () => {
-  test('hexlog: definitions.ts:448-496 cobre exatamente da declaração de createProcess até seu fechamento (faixa justa, não arbitrária)', () => {
-    const citation = 'definitions.ts:448-496';
-    expect(HEXLOG_CITATION_EXPECTATIONS[citation]).toBe('createProcess');
-    const { startLine, endLine } = parseCitation(citation);
-    const definitionsContent = fs.readFileSync(path.join(srcDir, 'definitions.ts'), 'utf8');
-    expect(functionRangeFrom(definitionsContent, 'createProcess')).toEqual({ startLine, endLine });
+// ---- trava: documentação nunca cita linha de arquivo (arquivo + símbolo) ----
+
+function markdownFilesUnder(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return markdownFilesUnder(full);
+    return entry.name.endsWith('.md') ? [full] : [];
+  });
+}
+
+/** Todo `AGENTS.md` do repositório, sem entrar em node_modules nem em pastas de ponto (`.git`, `.omc`...). */
+function agentsFilesUnder(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return entry.name === 'node_modules' || entry.name.startsWith('.')
+        ? []
+        : agentsFilesUnder(full);
+    }
+    return entry.name === 'AGENTS.md' ? [full] : [];
+  });
+}
+
+describe('documentação não cita número de linha', () => {
+  test('nenhum .md de skills/, docs/, friction-mining, README.md ou AGENTS.md casa arquivo:N nem "linha N"', () => {
+    const files = [
+      ...markdownFilesUnder(path.join(repoRoot, 'skills')),
+      ...markdownFilesUnder(path.join(repoRoot, 'docs')),
+      ...markdownFilesUnder(path.join(repoRoot, '.claude/skills/friction-mining')),
+      path.join(repoRoot, 'README.md'),
+      ...agentsFilesUnder(repoRoot),
+    ];
+    const hits = files.flatMap((file) =>
+      fs
+        .readFileSync(file, 'utf8')
+        .split('\n')
+        .flatMap((line, index) => {
+          const match = LINE_NUMBER_CITATION.exec(line) ?? LINE_PROSE_CITATION.exec(line);
+          return match === null
+            ? []
+            : [`${path.relative(repoRoot, file)}:${index + 1} → ${match[0]}`];
+        }),
+    );
+    expect(hits).toEqual([]);
   });
 });

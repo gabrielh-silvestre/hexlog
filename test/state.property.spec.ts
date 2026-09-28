@@ -55,7 +55,7 @@ function verdict(
   });
 }
 
-// ---- gerador de intents (porte de evolve.property.spec.ts:26-67, ids/alvos no formato novo) ----
+// ---- gerador de intents (porte de evolve.property.spec.ts, ids/alvos no formato novo) ----
 
 const TARGET_A = 'hex:target:a';
 const TARGET_B = 'hex:target:b';

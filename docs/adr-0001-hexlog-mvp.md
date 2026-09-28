@@ -79,7 +79,7 @@ Integridade sob concorrência de processos do SO; isolamento efetivo sem travar 
 Cada alternativa descartada adiciona arquivo, dependência, build ou estado derivado sem requisito que o exija, ou foi invalidada por evidência:
 
 - probes `arch-jest` t0/f1 falhando e f1c passando;
-- `SDK:mcp-DXXb3Vv3.mjs:1398-1441` (exceção vira texto);
+- `SDK:mcp-DXXb3Vv3.mjs` (exceção vira texto);
 - doc de hooks sobre JSON fora do schema;
 - `randomUUIDv7` `added: v24.16.0` na doc da tag v24.18.1 e verificado em runtime;
 - comparação crua quebrando retentativa com `default`/offset;
@@ -160,24 +160,24 @@ Os casos de teste abaixo foram adaptados da POC (`POC@5703a53`) para o MVP. Cada
 
 | POC@5703a53 (arquivo:linha) | Comportamento | Destino | Adaptação |
 |---|---|---|---|
-| `poc/test/evolve.spec.ts:11` | Estado bate com o fixture | `state.spec` | Fixture no envelope novo, alvos `hex:target:*` |
-| `evolve.spec.ts:32,38` | Pureza; rebuild = incremental | `state.spec` | — |
-| `evolve.spec.ts:55` | Duplicata por id não muda o Estado | `state.spec` | — |
-| `evolve.spec.ts:69,76,85,96` | Avisos por dono | `state.spec` (N4) | Vocabulário `{core, byOwner}` |
-| `evolve.spec.ts:113,120,127` | Hash do vocabulário | `definitions.spec` | JCS ordena chaves |
-| `evolve.spec.ts:136` | aRevisar | `state.spec` | Refs por id |
-| `evolve.spec.ts:163,171,182` | Órfãos (log, a tempo, parede) | `state.spec` | `now = max(injetado, log)` (Q10) |
-| `evolve.spec.ts:195,204,217` | Cadeia íntegra; byte alterado; 1ª linha | `chain.spec` | `predecessor-ausente` → `diverging-seq`/`hash-mismatch` no 1º elo; âncora |
-| `poc/test/supersessao.spec.ts:14,23,35,51,68,90` | Supersessão completa | `state.spec` (N3) | `supersedes` por id (Q2) |
-| `poc/test/evolve.property.spec.ts:77,94,137,158` | Propriedades | `state.property.spec`, `chain.spec` | Ids no formato novo |
-| `poc/test/gate.spec.ts:22,31,41` | Contrato do gate | `gates.spec` | `condicao` → `criteria` |
-| `poc/test/motor.spec.ts:49,63,78,84,95,104,114,127,145` | Ciclo do Marco | `state.spec › ciclo` | Função pura; Marco de gate ignorado (R-3) |
-| `motor.spec.ts:137` | Alvo inválido recusado sem linha | `event-tools.spec › N12` | Regex `hex:target:` (Q1) |
-| `poc/test/append.spec.ts:34,40,47,57,65,79,92,107,188` | Store e lock | `log.spec` | Sem Port/adapter; âncora |
-| `append.spec.ts:140,220` | 2 processos | `stdio.e2e.spec › C1` | 4 servidores + barreira |
-| `append.spec.ts:252,271,288,310` | Linha fora do schema → `.rejected.jsonl` | `chain.spec`, `event-tools.spec › N1` | `invalid-line`/`invalid-data` + `events.invalidLines` |
-| `append.spec.ts:328,346,359` | Disco = memória; adulteração | `event-tools.spec › N1` | Via tool `chain` |
-| `poc/src/cli/operacoes.ts:217-285` | Validação na escrita, vocabulário, id divergente | `event-tools.spec › N2, N4, N9` | Comparação normalizada |
+| `poc/test/evolve.spec.ts` | Estado bate com o fixture | `state.spec` | Fixture no envelope novo, alvos `hex:target:*` |
+| `evolve.spec.ts` | Pureza; rebuild = incremental | `state.spec` | — |
+| `evolve.spec.ts` | Duplicata por id não muda o Estado | `state.spec` | — |
+| `evolve.spec.ts` | Avisos por dono | `state.spec` (N4) | Vocabulário `{core, byOwner}` |
+| `evolve.spec.ts` | Hash do vocabulário | `definitions.spec` | JCS ordena chaves |
+| `evolve.spec.ts` | aRevisar | `state.spec` | Refs por id |
+| `evolve.spec.ts` | Órfãos (log, a tempo, parede) | `state.spec` | `now = max(injetado, log)` (Q10) |
+| `evolve.spec.ts` | Cadeia íntegra; byte alterado; 1ª linha | `chain.spec` | `predecessor-ausente` → `diverging-seq`/`hash-mismatch` no 1º elo; âncora |
+| `poc/test/supersessao.spec.ts` | Supersessão completa | `state.spec` (N3) | `supersedes` por id (Q2) |
+| `poc/test/evolve.property.spec.ts` | Propriedades | `state.property.spec`, `chain.spec` | Ids no formato novo |
+| `poc/test/gate.spec.ts` | Contrato do gate | `gates.spec` | `condicao` → `criteria` |
+| `poc/test/motor.spec.ts` | Ciclo do Marco | `state.spec › ciclo` | Função pura; Marco de gate ignorado (R-3) |
+| `motor.spec.ts` | Alvo inválido recusado sem linha | `event-tools.spec › N12` | Regex `hex:target:` (Q1) |
+| `poc/test/append.spec.ts` | Store e lock | `log.spec` | Sem Port/adapter; âncora |
+| `append.spec.ts` | 2 processos | `stdio.e2e.spec › C1` | 4 servidores + barreira |
+| `append.spec.ts` | Linha fora do schema → `.rejected.jsonl` | `chain.spec`, `event-tools.spec › N1` | `invalid-line`/`invalid-data` + `events.invalidLines` |
+| `append.spec.ts` | Disco = memória; adulteração | `event-tools.spec › N1` | Via tool `chain` |
+| `poc/src/cli/operacoes.ts` | Validação na escrita, vocabulário, id divergente | `event-tools.spec › N2, N4, N9` | Comparação normalizada |
 
 ## Divergências em Relação à Pesquisa
 
@@ -185,7 +185,7 @@ Os casos de teste abaixo foram adaptados da POC (`POC@5703a53`) para o MVP. Cada
 
 ## Decisões do Usuário
 
-Resumo das decisões Q, R, QN, U do plano (linhas 141–192 de ralplan-hexlog.md):
+Resumo das decisões Q, R, QN, U do plano (seção de decisões do `ralplan-hexlog.md`, plano externo ao repositório):
 
 | ID | Decisão |
 |---|---|
@@ -224,6 +224,7 @@ Decisões tomadas durante a execução (Ralph, iterações 1–3):
 - **DE-17:** No hook, o guard de "executado diretamente" compara `path.resolve(process.argv[1])` com `fileURLToPath(import.meta.url)`, funcionando tanto no `.ts` quanto no bundle. Fixture próprio: `test/fixtures/build-hook.ts`. Achado: a latência do hook `.ts` mede ≈ 220 ms (o plano estimava ~80 ms); no bundle instalado a frente 17 mediu 41 ms, então o número que importa para a sessão real vem do passo 12.
 - **DE-18:** Este ADR (`docs/adr-0001-hexlog-mvp.md`) é escrito no passo 11 por um agente `writer`, em commit próprio, aproveitando o tempo ocioso enquanto o passo 7a roda em paralelo.
 - **DE-19:** O `writer` (Haiku) entregou este ADR (commit `a2fc059`) com erros factuais: DE-13/DE-14/DE-16/DE-17 descritas como outras decisões, o arquivo `src/entrypoint.ts` e o script `npm run instalar` citados sem existir no repositório, os passos 14–16 trocados entre si, e a §11 do plano resumida de 15,6 KB para 5,4 KB quando o briefing pedia cópia integral. O ADR é refeito por um `executor` em commit de correção; a documentação restante (README) passa a ir para `executor`, não para `writer`.
+- **DE-20:** A prova dos gates embutidos vira referência por id e `target` (`no-conflicts` `{target, candidates}`, `no-orphans` `{milestone, target}`, `no-forks` e `no-invalid-references` com `target` do Veredito via `targetOfId`, derivado de `verdictById`), sem copiar `claim`/`dueAt`; `chain-intact` fica como estava. O Marco de gate embutido ganha teto próprio `BUILTIN_GATE_DATA_MAX_CHARS` (24.000, opção `maxChars` de `normalizeData` em `src/events.ts`); `DATA_MAX_CHARS` segue em 16.000 para os demais eventos e para o gate custom. `fitBuiltinGateResult` (`src/gates.ts`) corta `evidence` pelo fim até caber, mantendo `totalEvidenceItems`, e o recibo de `evaluate_gate` é lido do `data` normalizado. O teto agregado do lote não muda; eventos antigos continuam válidos.
 
 ## Verificações Reais Pendentes
 

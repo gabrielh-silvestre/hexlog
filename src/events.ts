@@ -133,6 +133,9 @@ export const GateMilestoneData = z.strictObject({
 /** Teto de caracteres canônicos (JCS) para `data` de um evento (§4.4). */
 const DATA_MAX_CHARS = 16_000;
 
+/** Teto próprio do Milestone de gate embutido; não é `PAGE_CHARS_CAP` (teto agregado do lote). */
+export const BUILTIN_GATE_DATA_MAX_CHARS = 24_000;
+
 /**
  * Escolhe o schema de `data` para `type`: nativos fixos (Milestone/Verdict, com o desvio
  * para `GateMilestoneData` quando `milestoneType === 'gate'`) ou o Zod já convertido do snapshot
@@ -159,6 +162,7 @@ export function normalizeData(
   type: string,
   data: unknown,
   customSchemas: Record<string, z.ZodType> = {},
+  options: { maxChars?: number } = {},
 ): Record<string, unknown> {
   const schema = dataSchema(type, data, customSchemas);
   if (isNil(schema)) {
@@ -177,8 +181,9 @@ export function normalizeData(
   // canonicalize só devolve undefined para entradas não serializáveis; `normalized` é
   // sempre um objeto simples pós-parse do Zod.
   const size = (canonicalize(normalized) ?? '').length;
-  if (size > DATA_MAX_CHARS) {
-    throw new HexlogError('INVALID_EVENT', `data exceeds ${DATA_MAX_CHARS} canonical characters`, [
+  const maxChars = options.maxChars ?? DATA_MAX_CHARS;
+  if (size > maxChars) {
+    throw new HexlogError('INVALID_EVENT', `data exceeds ${maxChars} canonical characters`, [
       { path: '/data', code: 'too_big', message: `canonical size ${size}` },
     ]);
   }

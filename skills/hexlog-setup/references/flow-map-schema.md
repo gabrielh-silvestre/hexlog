@@ -10,11 +10,11 @@ contexto durante a entrevista ou a leitura das skills apontadas.
 
 | Campo | Tipo | Obrigatório | Notas |
 |---|---|---|---|
-| `phases` | `Name[]` | sim | Nomes de fase, regex de `Name` (`events.ts:10`): minúsculo, `[a-z0-9-]`, começa com alfanumérico |
+| `phases` | `Name[]` | sim | Nomes de fase, regex de `Name` (`events.ts#Name`): minúsculo, `[a-z0-9-]`, começa com alfanumérico |
 | `process` | `Record<Name, Name>` | sim | Fase → processo. **1:1**: toda fase em `phases` precisa de exatamente um processo mapeado; toda chave aqui precisa existir em `phases` |
 | `skills` | `Record<Name, string[]>` | não (default `{}`) | Fase → skills usadas nessa fase. Nome de skill não é `Name` — aceita namespace com `:` (ex. `oh-my-claudecode:ralph`) |
 | `gate` | `Record<Name, Name>` | não (default `{}`) | Fase → nome do gate custom daquela fase. O nome precisa já existir via `register_gate` — isso não é checado pelo schema, é responsabilidade do passo 3-4 do `SKILL.md` |
-| `targetIdPattern` | `string` | não (default `[^\s:]+`, igual ao regex embutido em `Target`, `events.ts:27-30`) | Regex source do `<id>` de `hex:target:<id>`. Só o `<id>` é configurável — o prefixo `hex:target:` é fixo |
+| `targetIdPattern` | `string` | não (default `[^\s:]+`, igual ao regex embutido em `Target`, `events.ts#Target`) | Regex source do `<id>` de `hex:target:<id>`. Só o `<id>` é configurável — o prefixo `hex:target:` é fixo |
 | `versions` | `FixedVersions` (opcional) | não | Mesmo formato que `create_process` devolve em `versions` — grave aqui o que a chamada do passo 4 retornou |
 | `editedSkills` | `string[]` | não (default `[]`) | Nomes das skills apontadas na descoberta que a `hexlog-setup` efetivamente editou para chamar a `hexlog-flow` — ver o passo opcional do `SKILL.md` |
 

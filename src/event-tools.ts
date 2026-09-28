@@ -23,12 +23,15 @@ import {
   normalizeData,
   Label,
   matchesTargetPrefix,
+  BUILTIN_GATE_DATA_MAX_CHARS,
+  GateMilestoneData as GateMilestoneDataSchema,
 } from './events.ts';
 import {
   allowedTerms,
   effectiveNow,
   isMilestoneGate,
   projectState,
+  targetOf,
   validateField,
   type VocabularyField,
   type State,
@@ -39,6 +42,7 @@ import {
   isBuiltinGate,
   BUILTIN_GATES,
   buildGateMilestoneData,
+  fitBuiltinGateResult,
   normalizeCustomEvidence,
   EVIDENCE_ITEM_MAX_CHARS,
   CUSTOM_EVIDENCE_MAX,
@@ -143,9 +147,14 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         "`no-forks`) does not accept `result`: it is computed from the process's current State. A custom gate, " +
         'fixed in the process, requires `result: {passed, evidence}`. Every gate in `gates` is validated before ' +
         'anything is written: if any one of them fails validation, the whole call fails and nothing is recorded. ' +
-        'Validation also rejects a repeated `{gate, target}` pair and a batch whose Milestones add up to more ' +
-        'than 24000 canonical characters (`INVALID_INPUT`: split it into smaller calls); each Milestone is capped ' +
-        'at 16000 like any other event (`INVALID_EVENT`). ' +
+        'Validation also rejects a repeated `{name, target}` pair and a batch whose Milestones add up to more ' +
+        'than 24000 canonical characters (`INVALID_INPUT`: split it into smaller calls); a custom gate Milestone ' +
+        'is capped at 16000 like any other event (`INVALID_EVENT`). A builtin gate records its evidence as ' +
+        'references, without copying State text: `no-conflicts` `{target, candidates}`, `no-orphans` ' +
+        '`{milestone, target}`, `no-forks` `{verdict, successors, target}`, `no-invalid-references` ' +
+        '`{citedBy, reference, target}`, `chain-intact` `{index, reason}`. Its Milestone has its own cap of ' +
+        '24000: `evidence` is cut from the end until it fits, keeping `totalEvidenceItems` (the same signal as ' +
+        'the 50-item cap: `totalEvidenceItems > evidence.length`). ' +
         'Once writing starts, a genuine disk error or a stolen lock (`LOCK_LOST`) leaves the Milestones written so ' +
         'far persisted — the log is append-only, there is no rollback — and fails the call with a simple error; ' +
         'check `events`/`state` afterward to see what was actually recorded. Returns `results[]`, one receipt ' +
@@ -158,8 +167,8 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         process: Name,
         gates: z
           .array(
-            z.object({
-              gate: Name,
+            z.strictObject({
+              name: Name,
               target: Target,
               result: z
                 .object({
@@ -234,7 +243,9 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
         'if `logThrough` is still `null` or its `seq` is `<= since`, the response is just ' +
         '`{logThrough, unchanged: true}`, none of the other sections. When the log did advance, the ' +
         'response is the normal full one and `unchanged` is absent — this does not filter `warnings` or ' +
-        'any other section by `since`, only short-circuits an unchanged log.',
+        'any other section by `since`, only short-circuits an unchanged log. `warnings` is cumulative ' +
+        '(it carries every warning of the log, not only the ones since `since`); recognize the new ones by ' +
+        'comparing their `event` with the ones already seen.',
       inputSchema: {
         project: Name,
         process: Name,
@@ -757,7 +768,7 @@ type GateResolution =
     };
 
 type GateBatchItem = {
-  gate: string;
+  name: string;
   target: string;
   result?: { passed: boolean; evidence: string | string[] };
 };
@@ -793,10 +804,10 @@ async function evaluateGate(
 ): Promise<{ results: GateReceipt[] }> {
   const { project, process, gates, agent, echo } = args;
 
-  // `{gate, target}` repetido no lote gravaria Milestones redundantes (ou contraditórios, no custom).
-  if (uniqBy(gates, ({ gate, target }) => `${gate}\u0000${target}`).length !== gates.length) {
-    throw new HexlogError('INVALID_INPUT', 'duplicate {gate, target} in batch', [
-      { path: '/gates', code: 'duplicate', message: 'each {gate, target} must appear once' },
+  // `{name, target}` repetido no lote gravaria Milestones redundantes (ou contraditórios, no custom).
+  if (uniqBy(gates, ({ name, target }) => `${name}\u0000${target}`).length !== gates.length) {
+    throw new HexlogError('INVALID_INPUT', 'duplicate {name, target} in batch', [
+      { path: '/gates', code: 'duplicate', message: 'each {name, target} must appear once' },
     ]);
   }
 
@@ -807,25 +818,38 @@ async function evaluateGate(
 
   // Resolve e avalia todos os N gates antes de gravar (sem efeito colateral): qualquer erro aqui
   // propaga sem que o lock chegue a ser adquirido — tudo-ou-nada na validação.
-  const evaluations = gates.map(({ gate, target, result }) => {
-    const resolution = resolveGate(gate, result, loaded.manifest.fixed.gates);
-    const { evaluationResult, criteria } =
-      resolution.origin === 'builtin'
-        ? {
-            evaluationResult: evaluateBuiltin(resolution.name, state),
-            criteria: BUILTIN_GATES[resolution.name].criteria,
-          }
-        : {
-            evaluationResult: evaluateCustomGate(resolution.result, state.logThrough),
-            criteria: resolution.criteria,
-          };
-    // normalizeData aplica ao Milestone de gate o mesmo DATA_MAX_CHARS dos demais eventos.
+  const targetOfId = (id: string): string | undefined => {
+    const verdict = state.verdictById[id];
+    return verdict === undefined ? undefined : targetOf(verdict);
+  };
+  const evaluations = gates.map(({ name, target, result }) => {
+    const resolution = resolveGate(name, result, loaded.manifest.fixed.gates);
+    if (resolution.origin === 'builtin') {
+      const evaluationResult = evaluateBuiltin(resolution.name, state, targetOfId);
+      // Ordem fixa: corta a prova, normaliza com o teto do embutido e só então lê o recibo do
+      // `data` normalizado, para que recibo e evento gravado sejam idênticos.
+      const data = normalizeData(
+        'milestone',
+        fitBuiltinGateResult({
+          name,
+          criteria: BUILTIN_GATES[resolution.name].criteria,
+          target,
+          result: evaluationResult,
+        }),
+        {},
+        { maxChars: BUILTIN_GATE_DATA_MAX_CHARS },
+      );
+      const { evidence, totalEvidenceItems } = GateMilestoneDataSchema.parse(data).gate;
+      return { evaluationResult: { ...evaluationResult, evidence, totalEvidenceItems }, data };
+    }
+    // Custom mantém o DATA_MAX_CHARS dos demais eventos.
+    const evaluationResult = evaluateCustomGate(resolution.result, state.logThrough);
     const data = normalizeData(
       'milestone',
       buildGateMilestoneData({
-        name: gate,
-        origin: resolution.origin,
-        criteria,
+        name,
+        origin: 'custom',
+        criteria: resolution.criteria,
         target,
         result: evaluationResult,
       }),
@@ -868,25 +892,25 @@ async function evaluateGate(
 
 /** §4.11: decide builtin × custom e valida a presença/ausência de `result`, antes de avaliar. */
 function resolveGate(
-  gate: string,
+  name: string,
   result: { passed: boolean; evidence: string | string[] } | undefined,
   gates: Record<string, { criteria: string }>,
 ): GateResolution {
-  if (isBuiltinGate(gate)) {
+  if (isBuiltinGate(name)) {
     if (isNotNil(result)) {
       throw new HexlogError(
         'INVALID_EVALUATION',
         'builtin gate does not accept a result informed by the agent',
       );
     }
-    return { origin: 'builtin', name: gate };
+    return { origin: 'builtin', name };
   }
 
-  const definition = gates[gate];
+  const definition = gates[name];
   if (isNil(definition)) {
     throw new HexlogError(
       'GATE_NOT_REGISTERED',
-      `gate '${gate}' is not fixed in the process nor is it builtin`,
+      `gate '${name}' is not fixed in the process nor is it builtin`,
     );
   }
   if (isNil(result)) {

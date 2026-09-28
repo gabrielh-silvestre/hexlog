@@ -8,9 +8,11 @@ import {
   Name,
   parseId,
   normalizeData,
+  BUILTIN_GATE_DATA_MAX_CHARS,
   matchesTargetPrefix,
   projectFields,
 } from '../src/events.ts';
+import { PAGE_CHARS_CAP } from '../src/mcp.ts';
 import { captureError } from './helpers.ts';
 
 describe('Nome', () => {
@@ -102,6 +104,48 @@ describe('normalizeData (N8: dueAt → UTC Z)', () => {
       dueAt: '2026-09-16T18:00:00-03:00',
     };
     expect(normalizeData('milestone', data).dueAt).toBe('2026-09-16T21:00:00.000Z');
+  });
+});
+
+describe('normalizeData (teto de caracteres, opção maxChars)', () => {
+  const bigMilestone = (chars: number) => ({
+    milestoneType: 'review',
+    target: 'hex:target:u1',
+    // Text aceita até 4.000 caracteres; 7 decisões cobrem de 17.000 a 25.000 no total.
+    decisions: Array.from({ length: 7 }, () => ({
+      item: 'i',
+      action: 'a',
+      text: 'x'.repeat(Math.floor(chars / 7)),
+    })),
+  });
+
+  test('BUILTIN_GATE_DATA_MAX_CHARS é 24.000', () => {
+    expect(BUILTIN_GATE_DATA_MAX_CHARS).toBe(24_000);
+  });
+
+  test('BUILTIN_GATE_DATA_MAX_CHARS não passa de PAGE_CHARS_CAP (senão o teto do lote em evaluateGate rejeita o Milestone embutido)', () => {
+    expect(BUILTIN_GATE_DATA_MAX_CHARS).toBeLessThanOrEqual(PAGE_CHARS_CAP);
+  });
+
+  test('sem maxChars, 17.000 caracteres é INVALID_EVENT (teto de 16.000)', () => {
+    const error = captureError(() => normalizeData('milestone', bigMilestone(17_000)));
+    expect(error).toMatchObject({ code: 'INVALID_EVENT' });
+  });
+
+  test('com maxChars de 24.000, 17.000 caracteres é aceito', () => {
+    expect(() =>
+      normalizeData('milestone', bigMilestone(17_000), {}, { maxChars: 24_000 }),
+    ).not.toThrow();
+  });
+
+  test('com maxChars, acima dele ainda é INVALID_EVENT e a mensagem cita o teto usado', () => {
+    const error = captureError(() =>
+      normalizeData('milestone', bigMilestone(25_000), {}, { maxChars: 24_000 }),
+    );
+    expect(error).toMatchObject({
+      code: 'INVALID_EVENT',
+      message: expect.stringContaining('24000'),
+    });
   });
 });
 
