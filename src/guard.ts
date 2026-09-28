@@ -20,7 +20,7 @@ export interface ExpectedRules {
   serverExec: string;
   serverFile: string;
   versionDir: string;
-  skillFile: string;
+  skillFiles: string[];
 }
 
 export type MissingItem =
@@ -35,14 +35,15 @@ export type MissingItem =
   | 'hook-not-allowing'
   | 'artifact-modified'
   | 'mcp'
-  | 'skill-file';
+  | `skill-file:${string}`;
 
-/** As 4 regras de deny e os caminhos do hook/servidor instalados para uma versão (§4.14, QN4). */
+/** As 4 regras de deny e os caminhos do hook/servidor/skills instalados para uma versão (§4.14, QN4). */
 export function expectedRules(
   D: string,
   home: string,
   execPath: string,
   version: string,
+  skillNames: string[] = [],
 ): ExpectedRules {
   const versionDir = path.join(home, '.local', 'lib', 'hexlog', version);
   const hookFile = path.join(versionDir, 'bash-guard.mjs');
@@ -59,7 +60,7 @@ export function expectedRules(
     serverExec: execPath,
     serverFile,
     versionDir,
-    skillFile: path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md'),
+    skillFiles: skillNames.map((name) => path.join(home, '.claude', 'skills', name, 'SKILL.md')),
   };
 }
 

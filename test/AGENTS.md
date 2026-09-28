@@ -16,16 +16,19 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 | `events.spec.ts` | `Name`, `Target` (`hex:target:*`), `normalizeData` (`dueAt` → UTC `Z`, idempotência via property test), `parseId` (prefixo `project:process:type` vs. id completo com uuid v7). |
 | `state.spec.ts` | `projectState` → State: pureza, dedupe por id, supersessão de Vereditos, Marcos órfãos (relógio injetado), `toReview`, ciclo do Marco, Marco de gate não abre/fecha ciclo, avisos por dono, `validateField`, `VocabularySchema`, eventos custom inertes. Fixtures locais duplicadas de propósito com `state.property.spec.ts`. |
 | `state.property.spec.ts` | Property tests (`fast-check`) de `projectState`: nunca lança e toda vigência é única ou conflito com 2+ candidatos; idempotência de dedupe; ordem de `active` pela 1ª aparição no log. |
-| `gates.spec.ts` | Gates embutidos (os 4 nomes fixos de `BUILTIN_GATE_NAMES`) e gate custom via `buildGateMilestoneData`; prova cortada em 50 itens com o total real preservado. |
+| `gates.spec.ts` | Gates embutidos (os 5 nomes fixos de `BUILTIN_GATE_NAMES`) e gate custom via `buildGateMilestoneData`; prova cortada em 50 itens com o total real preservado. |
 | `definitions.spec.ts` | `registerType`/`registerGate` (`INVALID_SCHEMA`, `RESERVED_NAME`), `createProcess`/`loadProcess` (hashes por parte, `PROCESS_CORRUPTED`), vocabulário, `readProject`. |
 | `search.spec.ts` | `indexableText` (o que cada tipo de evento indexa/exclui), `stripDiacritics`, `isCandidate`, `search` (ordenação, desempate, fallback `OR`); usa `fixtures/corpus.ts`. |
 | `search.budget.spec.ts` | (M13) Orçamento de performance: índice (construção+consulta) ≤ 500 ms e `events{search}` completo ≤ 2000 ms, medianas de 5 rodadas sobre um corpus de 10.000 linhas gerado por `generateCorpus`. |
 | `definition-tools.spec.ts` | As 5 tools de definição (`register_type`, `register_vocabulary`, `register_gate`, `create_process`, `list`) contra o servidor MCP real (`createEnvironment`): validação de entrada, `annotations`, gravação em disco. |
 | `event-tools.spec.ts` | As 10 tools completas contra o servidor MCP real: `tools/list`, validação de entrada, `register`/`evaluate_gate`/`state`/`events`/`chain`; usa `generateCorpus` para volume (paginação, 150+ vigentes). É a maior spec do repositório. |
-| `toolchain.spec.ts` | 3 probes de toolchain: deps carregadas no próprio jest; import real sob Node ESM (`spawnSync` de `fixtures/child-probe.ts`); build real com esbuild (`spawnSync` de `fixtures/build-fixtures.ts`, depois `spawnSync` dos bundles `server-probe.mjs`/`hook-probe.mjs` gerados). |
-| `bash-guard.spec.ts` | (I4/I7) Hook `hook/bash-guard.ts` via `spawnSync` direto (stdin JSON do protocolo PreToolUse): nega acesso a `D`, permite o que não alcança `D`, falha aberto em entrada inválida/exceção. Também constrói o bundle real (via `fixtures/build-hook.ts`) e confirma que não contém o shim do esbuild. |
-| `guard.spec.ts` | A spec mais pesada (1079 linhas): `applyGuard` idempotente, as 4 regras de deny exatas, `verifyGuard` com o hook real instalado, `installArtifact` versionado (inclusive concorrência real de processos via `fixtures/concurrent-install.ts`) e `install.ts --check` como processo real (substitui `claude mcp add/remove` via `fixtures/fake-mcp-install.ts` e `HEXLOG_REGISTER_MCP`). |
+| `skill-coherence.spec.ts` | Coerência de `skills/hexlog/SKILL.md` × código real: extratores próprios (crase fora de bloco cercado, nome de tool em `server.registerTool(`, constantes `SCREAMING_SNAKE_CASE`, catálogo de `ErrorCode`, nomes de função, citações `arquivo.ts:N(-M)?`) testados isolados sobre string literal; depois cruza cada tool/código/função citados contra `definition-tools.ts`/`event-tools.ts`/`definitions.ts`/`src/`, e cada citação `arquivo:linha` contra o trecho real (detecta deslocamento de linha). |
+| `toolchain.spec.ts` | 3 probes de toolchain: deps carregadas no próprio jest; import real sob Node ESM (`spawnSync` de `fixtures/child-probe.ts`); build real com esbuild (`spawnSync` de `fixtures/build-entry.ts`, depois `spawnSync` dos bundles `server-probe.mjs`/`hook-probe.mjs` gerados). |
+| `package.spec.ts` | (N7/S6/N11/M5/M6) Invariantes de manifesto e superfície contra o repo real: sem dependências banidas (`xstate`, `hexnucleus`, `core.poc-motor-log`, `uuid`) nem import fora do repo em `src/`/`hook/`/`scripts/`/`test/`; `zod` fixado em `4.6.5`; `dependencies`/`devDependencies`/`engines.node` batem exatamente com o manifesto de §2.2 (sem faixas `^`/`~`); `VERSION` de `src/version.ts` bate com `package.json.version`; `.gitignore` contém `dist/`; sem `bin`; nenhum arquivo de `src/` importa módulo de servidor de rede nem chama `.listen(`; sem diretório `cli`; sem `console`/`process.stdout.write` em `src/`; `src/directory.ts` só importa `node:*` e `es-toolkit`. |
+| `bash-guard.spec.ts` | (I4/I7) Hook `hook/bash-guard.ts` via `spawnSync` direto (stdin JSON do protocolo PreToolUse): nega acesso a `D`, permite o que não alcança `D`, falha aberto em entrada inválida/exceção. Também constrói o bundle real (via `fixtures/build-entry.ts`) e confirma que não contém o shim do esbuild. |
+| `guard.spec.ts` | A spec mais pesada (1136 linhas): `applyGuard` idempotente, as 4 regras de deny exatas, `verifyGuard` com o hook real instalado, `installArtifact` versionado (inclusive concorrência real de processos via `fixtures/concurrent-install.ts`) e `install.ts --check` como processo real (substitui `claude mcp add/remove` via `fixtures/fake-mcp-install.ts` e `HEXLOG_REGISTER_MCP`). |
 | `stdio.e2e.spec.ts` | (M6/B1/C1) e2e contra o bundle real (`server.mjs`), nunca `src/*.ts`: fala só JSON-RPC 2.0 no stdout via `StdioClientTransport`, uma chamada de cada uma das 10 tools, build reprodutível (mesmo sha256 de cwds diferentes) e 4 servidores concorrentes contra o mesmo diretório de dados. |
+| `insights.spec.ts` | CLI somente-leitura `scripts/insights.ts` via `spawnSync`: filtro posicional (`projeto`/`projeto/processo`), integridade da cadeia, contagem de gates por nome (pass/fail), timeline (duração, eventos por dia, marcos por tipo, maiores intervalos entre eventos), garante que não escreve no `dataDir` (hash/mtime iguais antes/depois) e falha limpo (sem stack trace) com `process.json` corrompido. |
 
 ## Subdirectories
 | Directory | Description |
@@ -42,7 +45,7 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 - Tudo: `npm test` (roda `jest` sobre a suíte inteira).
 - Um arquivo: `npx jest test/<arquivo>.spec.ts` (ou `npm test -- test/<arquivo>.spec.ts`).
 - Node `>= 24.18.1` (mesmo requisito do projeto, `package.json#engines`).
-- Sem timeout customizado: jest usa o padrão (5000 ms por teste). Os specs que constroem bundle ou sobem processos filhos (`toolchain`, `bash-guard`, `guard`, `stdio.e2e`) couberam nesse orçamento nas medições feitas (guard.spec.ts: ~8.5s pra 36 testes; stdio.e2e: ~4s pra 5 testes).
+- Sem timeout customizado: jest usa o padrão (5000 ms por teste). Os specs que constroem bundle ou sobem processos filhos (`toolchain`, `bash-guard`, `guard`, `stdio.e2e`) couberam nesse orçamento nas medições feitas (guard.spec.ts: ~10.5s pra 40 testes; stdio.e2e: ~4s pra 5 testes).
 - `search.budget.spec.ts` é sensível à máquina: os limites (500ms/2000ms) têm folga generosa sobre as medianas observadas (~250ms/~430ms), mas podem estourar num CI muito mais lento.
 - Nenhum requer `npm run build` prévio; os que precisam de bundle o geram por conta própria via processo filho (ver Common Patterns).
 
@@ -56,6 +59,8 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 ### Internal
 - `src/*` — todo o núcleo testado (log, chain, events, state, gates, definitions, search, mcp).
 - `scripts/build.ts` — construído sob demanda pelas specs de artefato, via os fixtures de build.
+- `scripts/install.ts` — rodado como processo real por `guard.spec.ts` (`install.ts --check`).
+- `scripts/insights.ts` — rodado como processo real por `insights.spec.ts`.
 - `hook/bash-guard.ts` — testado direto (fonte) e como bundle.
 
 ### External

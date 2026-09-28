@@ -15,7 +15,7 @@ import { expectedRules, runRealHook } from '../src/guard.ts';
 import {
   installArtifact,
   registerGuard,
-  writeSkill,
+  writeSkillFolder,
   needsMcpRegistration,
   verifyInstallation,
   type Bundles,
@@ -32,6 +32,14 @@ function readPackageJsonVersion(): string {
 
 function readIfExists(file: string): string | null {
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+}
+
+/** Nome de cada pasta em `skills/` (uma por skill instalável, `hexlog` inclusa). */
+function skillNames(): string[] {
+  return fs
+    .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
 }
 
 function currentCommit(): string | null {
@@ -103,7 +111,7 @@ function registerMcp(execPath: string, serverFile: string): void {
 
 async function install(): Promise<void> {
   const version = readPackageJsonVersion();
-  const skillText = fs.readFileSync(path.join(repoRoot, 'skills', 'hexlog', 'SKILL.md'), 'utf8');
+  const names = skillNames();
   const bundles = await buildBundles();
   const home = os.homedir();
 
@@ -120,11 +128,13 @@ async function install(): Promise<void> {
   });
 
   const D = dataDir(process.env);
-  const expected = expectedRules(D, home, process.execPath, version);
+  const expected = expectedRules(D, home, process.execPath, version, names);
   const settingsPath = path.join(home, '.claude', 'settings.json');
   const { changed } = registerGuard({ settingsPath, expected });
 
-  writeSkill(home, skillText);
+  for (const name of names) {
+    writeSkillFolder(home, name, path.join(repoRoot, 'skills', name));
+  }
 
   const claudeJsonText = readIfExists(path.join(home, '.claude.json'));
   if (needsMcpRegistration(claudeJsonText, expected)) {
@@ -151,6 +161,7 @@ async function check(): Promise<void> {
     version,
     execPath: process.execPath,
     D,
+    skillNames: skillNames(),
     currentBundles,
     settingsText,
     claudeJsonText,

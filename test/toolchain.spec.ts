@@ -137,7 +137,12 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
     outdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-build-probe-'));
     const result = spawnSync(
       process.execPath,
-      [path.join(repoRoot, 'test/fixtures/build-fixtures.ts'), outdir],
+      [
+        path.join(repoRoot, 'test/fixtures/build-entry.ts'),
+        outdir,
+        'server-probe=test/fixtures/server-probe.ts',
+        'hook-probe=test/fixtures/hook-probe.ts',
+      ],
       { encoding: 'utf8', cwd: repoRoot },
     );
     if (result.status !== 0) {

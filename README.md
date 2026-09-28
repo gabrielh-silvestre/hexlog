@@ -33,7 +33,7 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 1. Constrói o servidor e o hook com `esbuild` e verifica o artefato preparado
    antes de trocar qualquer coisa (o hook precisa negar o diretório de dados e
    permitir o resto; o servidor precisa subir e anunciar as 10 tools).
-2. Copia os dois bundles para `~/.local/lib/hexlog/<versão>/`, fora da working
+2. Copia os dois bundles (servidor, `bash-guard`) para `~/.local/lib/hexlog/<versão>/`, fora da working
    tree e fora do diretório de dados. É essa cópia que as sessões executam.
 3. Registra as 4 regras de deny e o hook PreToolUse em
    `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog` antes
@@ -43,8 +43,9 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 sessões até rodar o instalador de novo.** As sessões sempre executam a cópia
 de `~/.local/lib/hexlog/<versão>/`, nunca a working tree.
 
-Rodar o instalador de novo sem nada ter mudado imprime que a versão já está
-instalada e íntegra, e não toca em `settings.json` nem no MCP.
+Rodar o instalador de novo sem nada ter mudado imprime
+`version <versão> already installed and intact; nothing to do`, e não toca em
+`settings.json` nem no MCP.
 
 ## Verificação (`--check`)
 
@@ -73,6 +74,7 @@ quebrado. Ele confere, nesta ordem, e cada item pendente aparece como
 | `hook-not-allowing` | o hook instalado não devolveu exit 0 para um comando inofensivo |
 | `mcp` | `~/.claude.json` não tem `mcpServers.hexlog` apontando pro servidor esperado |
 | `artifact-modified` | os bytes de `server.mjs` ou `bash-guard.mjs` instalados divergem do `manifest.json` da própria versão |
+| `skill-file` | falta `~/.claude/skills/hexlog/SKILL.md` |
 
 Qualquer item na lista de faltando encerra o `--check` com exit 1.
 
@@ -98,9 +100,9 @@ hook mesmo depois de o diretório ser removido.
 ## Instalação concorrente
 
 Se dois processos de instalação rodarem ao mesmo tempo, um deles pode
-terminar com a mensagem "outra instalação trocou `<versão>` ao mesmo tempo;
-rode o instalador de novo". Nesse caso, espere a outra instalação terminar e
-rode `node scripts/install.ts` de novo.
+terminar com a mensagem `another installation swapped <versão> at the same
+time; run the installer again`. Nesse caso, espere a outra instalação
+terminar e rode `node scripts/install.ts` de novo.
 
 ## As 10 tools
 

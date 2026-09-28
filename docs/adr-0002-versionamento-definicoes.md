@@ -63,11 +63,11 @@ do cálculo de `hashes`/`verifyHashes`. Continuam sendo exatamente 10 tools.
   MCP podem compartilhar o mesmo `dataDir` — mas não é o que `test/stdio.e2e.spec.ts`
   exercita: o C1 daquele arquivo sobe servidores concorrentes contra `register`
   (registro de evento), que usa o lock cooperativo por diretório
-  (`process.json.lock`), um mecanismo diferente do `linkSync` otimista das
-  escritas de definição; ali os três `register_*` de definição aparecem só em
-  chamadas sequenciais. O caminho `EEXIST` é coberto por
-  `describe('exclusive version write')` em
-  `test/definitions.spec.ts:540-631`.
+  (`events.jsonl.lock`, ao lado do arquivo de eventos — `src/log.ts:61`), um
+  mecanismo diferente do `linkSync` otimista das escritas de definição; ali os
+  três `register_*` de definição aparecem só em chamadas sequenciais. O
+  caminho `EEXIST` é coberto por `describe('exclusive version write')` em
+  `test/definitions.spec.ts:572-663`.
 
 ## Alternatives Considered
 
@@ -167,14 +167,18 @@ considerado.
   (`compareVersions`), nunca ordenação de string — evita `"1.10" < "1.9"`
   lexicográfico.
 - `versions` em `process.json` fica fora de `verifyHashes`, mas não fora da
-  garantia de integridade da cadeia: `anchor()` (`src/chain.ts:41-44`) faz
+  garantia de integridade da cadeia: `anchor()` (`src/chain.ts:41-43`) faz
   `sha256hex(canonicalize(manifest))` sobre o manifesto inteiro, sem filtrar
   campos, então adulterar `versions` muda a âncora e quebra o `prevHash` do
   primeiro evento — `chain.ok: false` em qualquer processo com ao menos um
   evento gravado. A janela que resta é estreita: um processo adulterado antes
   do seu primeiro evento, quando ainda não há elo para expor a divergência.
   `PROCESS_CORRUPTED` continua sem detectar isso porque só olha `hashes`, não
-  a âncora.
+  a âncora (`test/definitions.spec.ts:270`). Nota: o commit `5a27728` tornou
+  `create_process` idempotente — reexecutá-lo sobre um processo já existente
+  compara `hashes` (não `versions`) contra o candidato e, se divergirem,
+  devolve o manifesto existente com o aviso `STALE_DEFINITIONS` em vez de
+  lançar; a checagem de tampering acima não muda (`test/definitions.spec.ts:287`).
 - Nenhum `process.json` gravado antes desta mudança precisa de migração: o
   campo é opcional e sua ausência é tratada como processo legado.
 
@@ -186,24 +190,24 @@ projeto e aponta o teste que cobre cada um.
 
 | # | Critério | Teste |
 | - | -------- | ----- |
-| 1 | `register_vocabulary` 2x só com adições → `1.0`/`1.1` (nome novo) ou `1.1`/`1.2` (nome com legado), ambos os arquivos em disco | `test/definitions.spec.ts:658`, `test/definitions.spec.ts:674` |
-| 2 | Remover termo de `milestoneType` sem `breaking: true` → `BREAKING_CHANGE`, nada escrito | `test/definitions.spec.ts:695` |
-| 3 | Mesma remoção com `breaking: true` → major | `test/definitions.spec.ts:707` |
-| 4 | Remover termo só de `result` → minor, sem exigir a flag | `test/definitions.spec.ts:726` |
-| 5 | `register_gate` com `criteria` diferente → minor, sem exigir a flag | `test/definitions.spec.ts:418` |
-| 6 | `register_type` com schema diferente sem `breaking: true` → `BREAKING_CHANGE`; com a flag → major | `test/definitions.spec.ts:383`, `test/definitions.spec.ts:392` |
-| 7 | Reregistrar conteúdo idêntico ao vigente → `unchanged: true` com a versão vigente, nenhum arquivo novo | `test/definitions.spec.ts:400` (type), `test/definitions.spec.ts:734` (vocabulary) |
-| 8 | `breaking: true` numa mudança compatível → minor com aviso `NO_BREAKING_CHANGE` | `test/definitions.spec.ts:743` |
-| 9 | `create_process` grava `versions` apontando as vigentes; a resposta traz o mesmo bloco | `test/definitions.spec.ts:229` |
-| 10 | Não-regressão do lock: bump major de vocabulário fora do processo não afeta `state`/`events`/`chain` do processo já fixado | `test/event-tools.spec.ts:1207-1244` |
-| 11 | Legado: `vocabulary/<owner>.json` solto é lido como `1.0`; o próximo `register_vocabulary` grava `1.1` sem apagar o legado | `test/definitions.spec.ts:758` |
-| 12 | `process.json` sem `versions` carrega sem `PROCESS_CORRUPTED`; `list` mostra sem o bloco | `test/definitions.spec.ts:239` |
-| 13 | Ordenação numérica: com `1.9` e `1.10` em disco, a vigente é `1.10` | `test/definitions.spec.ts:464` |
-| 14 | `tools/list` continua com exatamente 10 tools; `TOOLS_COUNT` inalterado | `src/installation.ts:41`, `src/installation.ts:103-107`, `test/stdio.e2e.spec.ts:212` |
+| 1 | `register_vocabulary` 2x só com adições → `1.0`/`1.1` (nome novo) ou `1.1`/`1.2` (nome com legado), ambos os arquivos em disco | `test/definitions.spec.ts:690`, `test/definitions.spec.ts:706` |
+| 2 | Remover termo de `milestoneType` sem `breaking: true` → `BREAKING_CHANGE`, nada escrito | `test/definitions.spec.ts:727` |
+| 3 | Mesma remoção com `breaking: true` → major | `test/definitions.spec.ts:739` |
+| 4 | Remover termo só de `result` → minor, sem exigir a flag | `test/definitions.spec.ts:758` |
+| 5 | `register_gate` com `criteria` diferente → minor, sem exigir a flag | `test/definitions.spec.ts:450` |
+| 6 | `register_type` com schema diferente sem `breaking: true` → `BREAKING_CHANGE`; com a flag → major | `test/definitions.spec.ts:415`, `test/definitions.spec.ts:424` |
+| 7 | Reregistrar conteúdo idêntico ao vigente → `unchanged: true` com a versão vigente, nenhum arquivo novo | `test/definitions.spec.ts:432` (type), `test/definitions.spec.ts:766` (vocabulary) |
+| 8 | `breaking: true` numa mudança compatível → minor com aviso `NO_BREAKING_CHANGE` | `test/definitions.spec.ts:775` |
+| 9 | `create_process` grava `versions` apontando as vigentes; a resposta traz o mesmo bloco | `test/definitions.spec.ts:248` |
+| 10 | Não-regressão do lock: bump major de vocabulário fora do processo não afeta `state`/`events`/`chain` do processo já fixado | `test/event-tools.spec.ts:1409-1455` |
+| 11 | Legado: `vocabulary/<owner>.json` solto é lido como `1.0`; o próximo `register_vocabulary` grava `1.1` sem apagar o legado | `test/definitions.spec.ts:790` |
+| 12 | `process.json` sem `versions` carrega sem `PROCESS_CORRUPTED`; `list` mostra sem o bloco | `test/definitions.spec.ts:258` |
+| 13 | Ordenação numérica: com `1.9` e `1.10` em disco, a vigente é `1.10` | `test/definitions.spec.ts:496` |
+| 14 | `tools/list` continua com exatamente 10 tools; `TOOLS_COUNT` inalterado | `src/installation.ts:41`, `src/installation.ts:103-107`, `test/guard.spec.ts:566-595` |
 | 15 | `npm test` e `npm run typecheck` verdes | Critério de processo, não uma asserção de teste — verificado rodando os dois comandos antes do merge, não por um `test/*.spec.ts` |
-| 16 | Concorrência: duas gravações simultâneas do mesmo nome → `1.1`/`1.2`, nunca duas `1.1`, nunca sobrescrita silenciosa | `test/definitions.spec.ts:563` (EEXIST real, via `writeVersionExclusive`); `test/definitions.spec.ts:780-823` (chamadas via `Promise.all`, documentando por que isso não é uma corrida real — ver D1) |
-| 17 | Legado não materializado: após o primeiro registro versionado, `<name>/1.0.json` não existe, o diretório só tem `1.1.json`, e `list` mostra `versions: ["1.0", "1.1"]` | `test/definitions.spec.ts:758` |
-| 18 | Nada além do que já existia é gravado em disco quando `BREAKING_CHANGE` é lançado | `test/definitions.spec.ts:383` |
+| 16 | Concorrência: duas gravações simultâneas do mesmo nome → `1.1`/`1.2`, nunca duas `1.1`, nunca sobrescrita silenciosa | `test/definitions.spec.ts:595` (EEXIST real, via `writeVersionExclusive`); `test/definitions.spec.ts:812-888` (chamadas via `Promise.all`, documentando por que isso não é uma corrida real — ver D1) |
+| 17 | Legado não materializado: após o primeiro registro versionado, `<name>/1.0.json` não existe, o diretório só tem `1.1.json`, e `list` mostra `versions: ["1.0", "1.1"]` | `test/definitions.spec.ts:790` |
+| 18 | Nada além do que já existia é gravado em disco quando `BREAKING_CHANGE` é lançado | `test/definitions.spec.ts:415` |
 
 ## Follow-ups
 

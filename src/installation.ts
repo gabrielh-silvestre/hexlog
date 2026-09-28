@@ -4,7 +4,10 @@
 // (hook, servidor, relógio, log) é injetada — nada aqui chama `claude` nem builda.
 // Não é importado pelo servidor nem pelo hook, só por `scripts/install.ts`.
 import * as path from 'node:path';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+// import default (não `* as fs`): sob esModuleInterop, `* as` copia o módulo com getters
+// não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
+// a partir do teste (mesmo motivo documentado em src/log.ts:2-4).
+import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { isNil } from 'es-toolkit';
 import {
@@ -22,9 +25,11 @@ import { HexlogError } from './errors.ts';
 import { dataDir } from './directory.ts';
 
 export type Bundles = { server: Buffer; hook: Buffer };
+/** sha256 dos 2 artefatos (server/hook) de um build ou de uma instalação. */
+export type BuildShas = { server: string; hook: string };
 export type InstallManifest = {
   version: string;
-  sha256: { server: string; hook: string };
+  sha256: BuildShas;
   builtAt: string;
   commit: string | null;
   dirty: boolean;
@@ -54,12 +59,22 @@ export function readManifest(versionDir: string): InstallManifest | null {
   }
 }
 
-function installedShas(versionDir: string): { server: string | null; hook: string | null } {
+type Shas = { server: string | null; hook: string | null };
+
+function installedShas(versionDir: string): Shas {
   const shaOfFile = (name: string): string | null => {
     const file = path.join(versionDir, name);
     return existsSync(file) ? sha256(readFileSync(file)) : null;
   };
-  return { server: shaOfFile('server.mjs'), hook: shaOfFile('bash-guard.mjs') };
+  return {
+    server: shaOfFile('server.mjs'),
+    hook: shaOfFile('bash-guard.mjs'),
+  };
+}
+
+/** Os 2 artefatos (server/hook) batem entre duas leituras de sha256. */
+function shasEqual(a: Shas, b: Shas): boolean {
+  return a.server === b.server && a.hook === b.hook;
 }
 
 /** `ENOENT` cobre a reinstalação: o primeiro `renameSync(versionDir, old)` acha `versionDir` já
@@ -113,7 +128,7 @@ function resolveConcurrency(
   error: unknown,
   tmp: string,
   versionDir: string,
-  shaBuild: { server: string; hook: string },
+  shaBuild: BuildShas,
   version: string,
 ): { action: 'none'; extraWarning: null } {
   if (!isDirectoryBusyError(error)) {
@@ -122,7 +137,7 @@ function resolveConcurrency(
   }
   const installedNow = installedShas(versionDir);
   rmSync(tmp, { recursive: true, force: true });
-  if (installedNow.server === shaBuild.server && installedNow.hook === shaBuild.hook) {
+  if (shasEqual(installedNow, shaBuild)) {
     return { action: 'none', extraWarning: null };
   }
   throw new HexlogError(
@@ -131,12 +146,27 @@ function resolveConcurrency(
   );
 }
 
+/** Troca atômica de `tmp` para `dst`: se `dst` já existe, move pra `old` antes e só remove
+ * `old` depois do rename de `tmp` ter sucesso; se esse segundo rename falhar, desfaz o
+ * primeiro (`old` -> `dst`) antes de relançar, pra nunca deixar `dst` ausente no meio do caminho. */
+function swapDirectory(tmp: string, dst: string, old: string): void {
+  const existedBefore = existsSync(dst);
+  try {
+    if (existedBefore) fs.renameSync(dst, old);
+    fs.renameSync(tmp, dst);
+    if (existedBefore) rmSync(old, { recursive: true, force: true });
+  } catch (error) {
+    if (existedBefore && existsSync(old) && !existsSync(dst)) fs.renameSync(old, dst);
+    throw error;
+  }
+}
+
 /** Troca atômica de `tmp` para `versionDir` (§4.14), cobrindo instalação nova, reinstalação e concorrência. */
 function swapArtifact(args: {
   versionDir: string;
   tmp: string;
   existedBefore: boolean;
-  shaBuild: { server: string; hook: string };
+  shaBuild: BuildShas;
   modificationDetected: boolean;
   version: string;
 }): { action: 'installed' | 'reinstalled' | 'repaired' | 'none'; extraWarning: string | null } {
@@ -144,7 +174,7 @@ function swapArtifact(args: {
 
   if (!existedBefore) {
     try {
-      renameSync(tmp, versionDir);
+      fs.renameSync(tmp, versionDir);
       return { action: 'installed', extraWarning: null };
     } catch (error) {
       return resolveConcurrency(error, tmp, versionDir, shaBuild, version);
@@ -153,12 +183,8 @@ function swapArtifact(args: {
 
   const old = path.join(path.dirname(versionDir), `.${version}.old-${Date.now()}`);
   try {
-    renameSync(versionDir, old);
-    renameSync(tmp, versionDir);
-    rmSync(old, { recursive: true, force: true });
+    swapDirectory(tmp, versionDir, old);
   } catch (error) {
-    // Desfaz o primeiro rename se o segundo falhou, pra não deixar `versionDir` ausente.
-    if (existsSync(old) && !existsSync(versionDir)) renameSync(old, versionDir);
     return resolveConcurrency(error, tmp, versionDir, shaBuild, version);
   }
   if (modificationDetected) return { action: 'repaired', extraWarning: null };
@@ -187,12 +213,15 @@ export async function installArtifact(args: {
 }> {
   const { home, version, bundles, commit, dirty, clock, runHook, verifyServer, log } = args;
   const versionDir = versionDirOf(home, version);
-  const shaBuild = { server: sha256(bundles.server), hook: sha256(bundles.hook) };
+  const shaBuild = {
+    server: sha256(bundles.server),
+    hook: sha256(bundles.hook),
+  };
   const previousManifest = readManifest(versionDir);
   const installed = installedShas(versionDir);
   const existedBefore = existsSync(versionDir);
 
-  if (installed.server === shaBuild.server && installed.hook === shaBuild.hook) {
+  if (shasEqual(installed, shaBuild)) {
     log(`version ${version} already installed and intact; nothing to do`);
     return {
       action: 'none',
@@ -211,9 +240,7 @@ export async function installArtifact(args: {
   // Divergem do build; se também divergem do próprio manifesto, o artefato instalado foi
   // alterado por fora (não é uma reinstalação normal com bundles novos) — repara e avisa.
   const modificationDetected =
-    !isNil(previousManifest) &&
-    (installed.server !== previousManifest.sha256.server ||
-      installed.hook !== previousManifest.sha256.hook);
+    !isNil(previousManifest) && !shasEqual(installed, previousManifest.sha256);
   const warnings: string[] = [];
   if (modificationDetected) {
     warnings.push('installed artifact modified; repairing');
@@ -272,16 +299,31 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   writeFileSync(`${settingsPath}.bak-hexlog`, oldText);
   const tmp = `${settingsPath}.tmp-${process.pid}`;
   writeFileSync(tmp, newText);
-  renameSync(tmp, settingsPath);
+  fs.renameSync(tmp, settingsPath);
   return { changed: true };
 }
 
-/** Grava a skill do hexlog em `<home>/.claude/skills/hexlog/SKILL.md`, sobrescrevendo sem backup
- * (decisão do usuário; diferente de `registerGuard`, que preserva `.bak-hexlog`). */
-export function writeSkill(home: string, skillText: string): void {
-  const dir = path.join(home, '.claude', 'skills', 'hexlog');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, 'SKILL.md'), skillText);
+/** `name` vira um segmento de path (`<home>/.claude/skills/<name>/`): rejeita o que escaparia dele. */
+function assertValidSkillName(name: string): void {
+  if (name === '' || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+    throw new HexlogError('INTERNAL', `invalid skill name: ${JSON.stringify(name)}`);
+  }
+}
+
+/** Copia a pasta de uma skill (`SKILL.md` + `references/` etc.) para
+ * `<home>/.claude/skills/<name>/`, com troca atômica via `swapDirectory` — mesmo
+ * mecanismo de `swapArtifact`, com rollback incluso — pra uma falha no meio da
+ * cópia ou da troca nunca deixar o destino ausente ou parcial. Sobrescreve sem
+ * backup (decisão do usuário; diferente de `registerGuard`, que preserva
+ * `.bak-hexlog`). */
+export function writeSkillFolder(home: string, name: string, srcDir: string): void {
+  assertValidSkillName(name);
+  const dstDir = path.join(home, '.claude', 'skills', name);
+  const tmp = `${dstDir}.tmp-${process.pid}`;
+  rmSync(tmp, { recursive: true, force: true });
+  cpSync(srcDir, tmp, { recursive: true });
+  const old = `${dstDir}.old-${process.pid}`;
+  swapDirectory(tmp, dstDir, old);
 }
 
 /** `~/.claude.json` ainda não aponta `mcpServers.hexlog` para o servidor esperado. */
@@ -307,6 +349,7 @@ export function verifyInstallation(args: {
   version: string;
   execPath: string;
   D: string;
+  skillNames: string[];
   currentBundles: Bundles | null;
   settingsText: string | null;
   claudeJsonText: string | null;
@@ -318,6 +361,7 @@ export function verifyInstallation(args: {
     version,
     execPath,
     D,
+    skillNames,
     currentBundles,
     settingsText,
     claudeJsonText,
@@ -327,7 +371,7 @@ export function verifyInstallation(args: {
   // Sem settings, tudo dá "faltando" pelas checagens normais de `verifyGuard` — não precisa de um caso especial.
   const textToVerify = settingsText ?? '{}';
   const installedVersion = registeredHookVersion(parseJsonc(textToVerify), home) ?? version;
-  const expected = expectedRules(D, home, execPath, installedVersion);
+  const expected = expectedRules(D, home, execPath, installedVersion, skillNames);
 
   const manifest = readManifest(expected.versionDir);
   const installedBytes = isNil(manifest)
@@ -346,14 +390,17 @@ export function verifyInstallation(args: {
     runHook,
     installedBytes,
   });
-  if (!existsSync(expected.skillFile)) result.missing.push('skill-file');
+  skillNames.forEach((name, index) => {
+    if (!existsSync(expected.skillFiles[index])) result.missing.push(`skill-file:${name}`);
+  });
 
   const warnings: string[] = [];
   if (!isNil(manifest) && !isNil(currentBundles) && !result.missing.includes('artifact-modified')) {
-    const shaBuild = { server: sha256(currentBundles.server), hook: sha256(currentBundles.hook) };
-    const outdated =
-      shaBuild.server !== manifest.sha256.server || shaBuild.hook !== manifest.sha256.hook;
-    if (outdated) {
+    const shaBuild = {
+      server: sha256(currentBundles.server),
+      hook: sha256(currentBundles.hook),
+    };
+    if (!shasEqual(shaBuild, manifest.sha256)) {
       const dirtyText = manifest.dirty ? ' (dirty)' : '';
       const headText = currentHead ?? 'unknown HEAD';
       warnings.push(

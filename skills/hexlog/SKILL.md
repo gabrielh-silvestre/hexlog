@@ -87,7 +87,7 @@ Notas adicionais:
 
 2. create_process({ project: "myproj", process: "onboarding" })
    → { project: "myproj", process: "onboarding", createdAt: "<iso>",
-       hashes: {...}, types: [], owners: ["core"], gates: [],
+       hashes: {...}, types: [], owners: [], gates: [],
        versions: { types: {}, vocabulary: { core: "1.0" }, gates: {} },
        existed: false, warnings: [] }
 
@@ -133,8 +133,8 @@ projeto existente.
 **`--check` não prova o servidor.** `node scripts/install.ts --check` valida
 o hook por execução real e compara o sha256 do manifest — mas nunca conecta
 ao MCP nem reconfere a contagem de tools. Essa garantia é herdada de
-`verifyPreparedArtifact` (`installation.ts:74`), chamada dentro de `install()`
-no momento da instalação (`installation.ts:239`), e não é reverificada depois.
+`verifyPreparedArtifact` (`installation.ts:89`), chamada dentro de `install()`
+no momento da instalação (`installation.ts:266`), e não é reverificada depois.
 Confundir os dois é o erro mais fácil de cometer: um `--check` verde não diz
 nada sobre o servidor MCP responder.
 
@@ -144,7 +144,7 @@ nada sobre o servidor MCP responder.
 |---|---|
 | Descartar `~/.local/share/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
 | Reiniciar a sessão do Claude Code | Cache de `tools/list` do protocolo MCP — fora do alcance de qualquer agente |
-| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:37` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
+| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:38` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
 
 Reinstalar a mesma versão com conteúdo diferente **não bloqueia** — só avisa
 "consider bumping the version".
