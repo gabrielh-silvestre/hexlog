@@ -1,16 +1,6 @@
 // Relatório markdown read-only (integridade, gates, timeline) sobre os logs do hexlog.
 // Uso: node scripts/insights.ts [projeto[/processo]]; diretório de dados via XDG_DATA_HOME.
-import {
-  countBy,
-  head,
-  isNil,
-  isNotNil,
-  last,
-  orderBy,
-  partition,
-  take,
-  windowed,
-} from 'es-toolkit';
+import { countBy, head, isNil, isNotNil, last, orderBy, partition, take, zip } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { isValidLink, verifyChain } from '../src/chain.ts';
 import { listProjects, loadProcess } from '../src/definitions.ts';
@@ -46,14 +36,11 @@ function timelineSection(lines: EventLine[]): string[] {
   const first = head(lines);
   const final = last(lines);
   if (isNil(first) || isNil(final)) return ['- timeline: no events'];
-  // windowed(lines, 2, 1) só produz janelas completas: from/to nunca vêm undefined de fato.
-  const pairs = windowed(lines, 2, 1)
-    .map(([from, to]) =>
-      isNil(from) || isNil(to)
-        ? null
-        : { ms: Date.parse(to.timestamp) - Date.parse(from.timestamp), from: from.seq, to: to.seq },
-    )
-    .filter(isNotNil);
+  const pairs = zip(lines.slice(0, -1), lines.slice(1)).map(([from, to]) => ({
+    ms: Date.parse(to.timestamp) - Date.parse(from.timestamp),
+    from: from.seq,
+    to: to.seq,
+  }));
   const gaps = take(orderBy(pairs, [(gap) => gap.ms], ['desc']), TOP_GAPS);
   const perDay = countBy(lines, (line) => line.timestamp.slice(0, 10));
   const perMilestone = countBy(
