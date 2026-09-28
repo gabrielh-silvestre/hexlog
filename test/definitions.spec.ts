@@ -17,6 +17,7 @@ import {
   RESERVED_PROCESS_NAMES,
   bumpVersion,
   compareVersions,
+  divergenceWarning,
   formatVersion,
   listVersionFiles,
   listVersions,
@@ -571,11 +572,21 @@ describe('exclusive version write', () => {
   const defDir = () => path.join(dir, PROJECT, 'vocabulary', 'ext1');
 
   test("'write' bem-sucedido grava o arquivo e devolve 'written'", () => {
-    const resolveTarget = scriptedResolver({ kind: 'write', version: '1.0', content: { v: 'a' } });
+    const resolveTarget = scriptedResolver({
+      kind: 'write',
+      version: '1.0',
+      content: { v: 'a' },
+      base: null,
+    });
 
     const result = writeVersionExclusive(defDir(), resolveTarget);
 
-    expect(result).toEqual({ kind: 'written', version: '1.0', content: { v: 'a' } });
+    expect(result).toEqual({
+      kind: 'written',
+      version: '1.0',
+      content: { v: 'a' },
+      divergent: [],
+    });
     expect(JSON.parse(fs.readFileSync(path.join(defDir(), '1.0.json'), 'utf8'))).toEqual({
       v: 'a',
     });
@@ -585,13 +596,18 @@ describe('exclusive version write', () => {
     fs.mkdirSync(defDir(), { recursive: true });
     fs.writeFileSync(path.join(defDir(), '1.1.json'), JSON.stringify({ v: 'old' }));
     const resolveTarget = scriptedResolver(
-      { kind: 'write', version: '1.1', content: { v: 'colide' } },
-      { kind: 'write', version: '1.2', content: { v: 'b' } },
+      { kind: 'write', version: '1.1', content: { v: 'colide' }, base: null },
+      { kind: 'write', version: '1.2', content: { v: 'b' }, base: '1.1' },
     );
 
     const result = writeVersionExclusive(defDir(), resolveTarget);
 
-    expect(result).toEqual({ kind: 'written', version: '1.2', content: { v: 'b' } });
+    expect(result).toEqual({
+      kind: 'written',
+      version: '1.2',
+      content: { v: 'b' },
+      divergent: [],
+    });
     expect(JSON.parse(fs.readFileSync(path.join(defDir(), '1.1.json'), 'utf8'))).toEqual({
       v: 'old',
     });
@@ -634,6 +650,7 @@ describe('exclusive version write', () => {
       kind: 'write',
       version: '1.1',
       content: { v: 'tentativa' },
+      base: null,
     }));
 
     const error = captureError(() => writeVersionExclusive(defDir(), resolveTarget, 3));
@@ -648,6 +665,80 @@ describe('exclusive version write', () => {
     ]);
     expect(resolveTarget).toHaveBeenCalledTimes(3);
     expect(fs.readdirSync(defDir())).toEqual(['1.1.json']);
+  });
+
+  test.each([
+    { order: '1.1 → 2.0', first: '1.1', second: '2.0' },
+    { order: '2.0 → 1.1', first: '2.0', second: '1.1' },
+  ])(
+    'corrida com resolveTarget fixos e base 1.0 ($order): só o 2º escritor recebe divergent',
+    ({ first, second }) => {
+      const write = (version: string) =>
+        scriptedResolver({ kind: 'write', version, content: { v: version }, base: '1.0' });
+
+      const firstResult = writeVersionExclusive(defDir(), write(first));
+      const secondResult = writeVersionExclusive(defDir(), write(second));
+
+      expect(firstResult).toMatchObject({ kind: 'written', version: first, divergent: [] });
+      expect(secondResult).toMatchObject({
+        kind: 'written',
+        version: second,
+        divergent: [first],
+      });
+    },
+  );
+
+  test('EEXIST seguido de retry com a base relida não gera falso positivo', () => {
+    fs.mkdirSync(defDir(), { recursive: true });
+    fs.writeFileSync(path.join(defDir(), '1.1.json'), JSON.stringify({ v: 'old' }));
+    const resolveTarget = scriptedResolver(
+      { kind: 'write', version: '1.1', content: { v: 'colide' }, base: '1.0' },
+      { kind: 'write', version: '1.2', content: { v: 'b' }, base: '1.1' },
+    );
+
+    const result = writeVersionExclusive(defDir(), resolveTarget);
+
+    expect(result).toMatchObject({ kind: 'written', version: '1.2', divergent: [] });
+  });
+
+  test('base nula com outras versões presentes: divergent lista todas as outras', () => {
+    fs.mkdirSync(defDir(), { recursive: true });
+    fs.writeFileSync(path.join(defDir(), '1.1.json'), JSON.stringify({ v: 'x' }));
+    fs.writeFileSync(path.join(defDir(), '1.2.json'), JSON.stringify({ v: 'y' }));
+    const resolveTarget = scriptedResolver({
+      kind: 'write',
+      version: '2.0',
+      content: { v: 'z' },
+      base: null,
+    });
+
+    const result = writeVersionExclusive(defDir(), resolveTarget);
+
+    expect(result).toMatchObject({ kind: 'written', divergent: ['1.1', '1.2'] });
+  });
+
+  test('gravações sequenciais normais não geram divergent', () => {
+    const first = writeVersionExclusive(
+      defDir(),
+      scriptedResolver({ kind: 'write', version: '1.0', content: { v: 'a' }, base: null }),
+    );
+    const second = writeVersionExclusive(
+      defDir(),
+      scriptedResolver({ kind: 'write', version: '1.1', content: { v: 'b' }, base: '1.0' }),
+    );
+
+    expect(first).toMatchObject({ divergent: [] });
+    expect(second).toMatchObject({ divergent: [] });
+  });
+
+  test('divergenceWarning: vazio sem versões; CONCURRENT_DIVERGENT_WRITE com details.versions', () => {
+    expect(divergenceWarning([])).toEqual([]);
+    expect(divergenceWarning(['1.1', '2.0'])).toEqual([
+      expect.objectContaining({
+        code: 'CONCURRENT_DIVERGENT_WRITE',
+        details: { versions: ['1.1', '2.0'] },
+      }),
+    ]);
   });
 });
 

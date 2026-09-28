@@ -128,6 +128,15 @@ que um candidato sem quebra contra o vigente inicial escapasse do bloqueio
 contrato final — decisão inteira recomputada a cada tentativa, inclusive a
 primeira — fecha os dois casos.
 
+**Aviso de escrita divergente (best-effort).** Depois do `link`,
+`writeVersionExclusive` lista as versões do diretório que não são a gravada e
+são maiores que a `base` da decisão (base nula = todas as outras). Se houver
+alguma, o `register_*` devolve `CONCURRENT_DIVERGENT_WRITE` em `warnings` com
+`details.versions`: outro escritor partiu da mesma base. O 1º escritor não é
+avisado. Há ainda uma janela residual: se um escritor C linka entre o `link` e
+o `listVersionFiles` de B, B avisa sobre uma versão que veio depois da sua —
+falso positivo inofensivo, pois a divergência é real.
+
 ## D2 — Legado não é materializado
 
 **Decision.** O arquivo legado `<name>.json` permanece a fonte da versão

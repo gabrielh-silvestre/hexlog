@@ -462,6 +462,9 @@ Um aviso, diferente de erro, vem em `warnings[]` numa resposta de sucesso:
 - `NO_BREAKING_CHANGE` num `register_type`/`register_vocabulary`/`register_gate`
   com `breaking: true` cuja mudança, na verdade, não quebra — a versão bumpa
   minor mesmo assim, em vez de forçar major.
+- `CONCURRENT_DIVERGENT_WRITE` num `register_type`/`register_vocabulary`/`register_gate`,
+  quando outro escritor gravou uma versão a partir da mesma base durante a chamada —
+  `details: { versions }` lista as versões divergentes. Best-effort: o 1º escritor não é avisado.
 - `STALE_DEFINITIONS` em `create_process`, quando o `process` já existe e o
   snapshot fixado na criação diverge do candidato desta chamada (algo foi
   registrado no projeto depois) — `details: [{ section, name, pinned, current }]`
