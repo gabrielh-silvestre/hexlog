@@ -200,6 +200,7 @@ function deriveCycle(
 
 function calculateOrphans(lines: EventLine[], now: string): Projection['orphans'] {
   const withTarget = lines.filter((e) => e.type === 'milestone' || e.type === 'verdict');
+  // milestone e verdict sempre carregam target (schemas em events.ts): targetOf nunca é undefined aqui.
   const byTarget = groupBy(withTarget, (e) => targetOf(e)!);
 
   const orphans: Projection['orphans'] = [];
