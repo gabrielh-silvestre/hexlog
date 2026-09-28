@@ -390,6 +390,7 @@ export function verifyInstallation(args: {
     runHook,
     installedBytes,
   });
+  // expected.skillFiles é skillNames.map(...) em guard.ts: mesmo tamanho e ordem por construção.
   zip(skillNames, expected.skillFiles).forEach(([name, file]) => {
     if (!existsSync(file)) result.missing.push(`skill-file:${name}`);
   });

@@ -788,7 +788,7 @@ const VERSION_STRING_RE = /^(\d+)\.(\d+)$/;
 export function parseVersion(v: string): Version {
   const match = VERSION_STRING_RE.exec(v);
   if (isNil(match) || isNil(match[1]) || isNil(match[2])) {
-    throw new HexlogError('PROCESS_CORRUPTED', `malformed version string '${v}'`);
+    throw new HexlogError('INTERNAL', `malformed version string '${v}'`);
   }
   return { major: Number(match[1]), minor: Number(match[2]) };
 }

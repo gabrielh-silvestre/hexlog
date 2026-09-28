@@ -859,6 +859,7 @@ async function evaluateGate(
   );
 
   return {
+    // appendBatch devolve um line por evaluation, na mesma ordem.
     results: zip(lines, evaluations).map(([line, evaluation]) =>
       toGateReceipt(line, evaluation.evaluationResult, echo),
     ),
@@ -1253,9 +1254,9 @@ function resolveRawMode(
   let truncatedByCharCap = false;
   let size = 2; // '[]'
 
-  for (const [offset, lineText] of physicalLines.slice(since, untilLimit).entries()) {
-    const index = since + offset;
-    const rawLine = isValidLink(lineText);
+  for (let index = since; index < untilLimit; index++) {
+    // index < untilLimit <= physicalLines.length, garantido por validateUntil: physicalLines[index] sempre existe.
+    const rawLine = isValidLink(physicalLines[index]!);
     if (isNil(rawLine)) {
       invalidLines.push(index);
       continue;
