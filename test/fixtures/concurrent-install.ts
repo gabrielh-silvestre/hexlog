@@ -24,17 +24,19 @@ if (
 }
 const totalProcesses = Number(totalProcessesText);
 
+const BARRIER_TIMEOUT_MS = 5_000;
+
 // Busy-wait síncrono: qualquer `await`/`setTimeout` aqui dá alguns ms de
 // vantagem sistemática a quem chega por último (o que já viu a barreira cheia
 // não dorme, quem chegou primeiro ainda está no timeout) — isso serializa os
 // processos em vez de fazê-los colidir na troca atômica, que é o que o teste
-// de concorrência (B2(h)) precisa provocar de propósito. Com `timeoutMs`, uma
-// barreira que nunca enche falha em vez de travar o teste.
-const spinBarrier = (name: string, timeoutMs?: number): void => {
+// de concorrência (B2(h)) precisa provocar de propósito. Com `BARRIER_TIMEOUT_MS`,
+// uma barreira que nunca enche falha em vez de travar o teste.
+const spinBarrier = (name: string): void => {
   const barrierDir = path.join(home, name);
   fs.mkdirSync(barrierDir, { recursive: true });
   fs.writeFileSync(path.join(barrierDir, processId), '');
-  const deadline = timeoutMs === undefined ? Infinity : Date.now() + timeoutMs;
+  const deadline = Date.now() + BARRIER_TIMEOUT_MS;
   while (fs.readdirSync(barrierDir).length < totalProcesses) {
     if (Date.now() > deadline) {
       throw new Error(`barrier ${name} timed out`);
@@ -42,7 +44,7 @@ const spinBarrier = (name: string, timeoutMs?: number): void => {
   }
 };
 
-spinBarrier('.barrier', 10_000);
+spinBarrier('.barrier');
 
 const bundles = {
   server: Buffer.from(`server-${variant}`),
@@ -59,7 +61,7 @@ try {
     clock: () => new Date(),
     runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
     verifyServer: () => {
-      spinBarrier('.barrier2', 10_000);
+      spinBarrier('.barrier2');
       return Promise.resolve(10);
     },
     log: () => undefined,

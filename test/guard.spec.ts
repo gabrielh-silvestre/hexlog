@@ -553,7 +553,7 @@ function runConcurrentFixture(
   variant: string,
   processId: number,
   totalProcesses: number,
-): Promise<{ status: number | null; stdout: string }> {
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
@@ -568,9 +568,11 @@ function runConcurrentFixture(
       { cwd: repoRoot },
     );
     let stdout = '';
+    let stderr = '';
     child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
     child.on('error', reject);
-    child.on('close', (status) => resolve({ status, stdout }));
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
   });
 }
 
@@ -880,7 +882,10 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         runConcurrentFixture(sameHome, '0.1.0', 'x', 1, 2),
         runConcurrentFixture(sameHome, '0.1.0', 'x', 2, 2),
       ]);
-      expect([r1.status, r2.status]).toEqual([0, 0]);
+      expect([r1, r2]).toEqual([
+        expect.objectContaining({ status: 0 }),
+        expect.objectContaining({ status: 0 }),
+      ]);
       expect(fs.readdirSync(versionDirOf(sameHome, '0.1.0')).sort()).toEqual([
         'bash-guard.mjs',
         'manifest.json',
@@ -896,7 +901,11 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         runConcurrentFixture(differentHome, '0.1.0', 'x', 1, 2),
         runConcurrentFixture(differentHome, '0.1.0', 'y', 2, 2),
       ]);
-      expect([r1.status, r2.status].sort()).toEqual([0, 1]);
+      const sorted = [r1, r2].sort((a, b) => (a.status ?? -1) - (b.status ?? -1));
+      expect(sorted).toEqual([
+        expect.objectContaining({ status: 0 }),
+        expect.objectContaining({ status: 1 }),
+      ]);
       const loser = r1.status === 1 ? r1 : r2;
       expect(loser.stdout).toContain('at the same time');
       const versionDir = versionDirOf(differentHome, '0.1.0');
@@ -932,7 +941,10 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         runConcurrentFixture(home, '0.1.0', 'new', 2, 2),
       ]);
 
-      expect([r1.status, r2.status]).toEqual([0, 0]);
+      expect([r1, r2]).toEqual([
+        expect.objectContaining({ status: 0 }),
+        expect.objectContaining({ status: 0 }),
+      ]);
       const versionDir = versionDirOf(home, '0.1.0');
       expect(fs.readdirSync(versionDir).sort()).toEqual([
         'bash-guard.mjs',
