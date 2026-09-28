@@ -1,5 +1,7 @@
 ## Frente: Servidores MCP de log/auditoria existentes
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### Perguntas respondidas
 Sim, existem vários: audit/event log com hash chain, decision log/ADR, e o "memory" oficial. Nenhum cobre a combinação hash chain + schemas custom via JSON Schema/Zod + escrita multi-processo no mesmo arquivo + isolamento de leitura do agente. Veredito geral: **Construir**, aproveitando ideias específicas listadas abaixo.
 

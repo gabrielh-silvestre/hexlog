@@ -1,5 +1,7 @@
 ## Frente: RFCs e especificações
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### Tabela
 | Spec | Status / data | Parte que importa | Aplicação no hexlog | Veredito |
 |---|---|---|---|---|

@@ -1,5 +1,7 @@
 ## Frente: Append-only JSONL com lock multi-processo
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### Perguntas respondidas
 - **Seção crítica:** ler último hash/seq + dedupe por id + calcular `prevHash` + escrever = uma única seção crítica (padrão `withLock` da POC: `core.poc-motor-log/src/adapters/fs/appendlog.ts:119-129`, `poc/src/append.ts:23-49`). Lock só no `write` deixaria dois escritores com o mesmo `prevHash`.
 - **Melhor forma em Node 24:** `fs.mkdirSync` atômico como mutex + arquivo `owner` com token (fencing) + `mtime` para lock órfão. Zero deps, validado na POC (`poc/test/append.spec.ts:140-230`) e no probe abaixo.

@@ -1,5 +1,7 @@
 ## Frente 16: Ganhos (e custos) de usar Effect no hexlog
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 - Data: 2026-09-16. Pedido do usuário: "quero entender quais seriam os ganhos".
 - Probes em `scratchpad/effect/` (`lock-native.ts`, `lock-effect.ts`, `driver.ts`, `worker-*.ts`, `lock.test.ts`, `bundle-sample.ts`).
 

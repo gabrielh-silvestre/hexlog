@@ -1,5 +1,7 @@
 ## Frente 12: Alternativas enxutas ao lodash
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 - Data: 2026-09-16. Pedido do usuário, por preferência pessoal (a pergunta é "qual", não "precisa").
 - Medição: `npm view`, GitHub API, `api.npmjs.org/downloads`, esbuild 0.25.5 + gzip, Node 24.18.1 + jest 30.5.1/ts-jest 29.4.12/TS 5.9.2. Probes em `scratchpad/lodash-like/` (`probe.mjs`, `inspect-exports.mjs`, `jest.config*.cjs`).
 - Nota: lodash clássico saiu do congelamento (4.18.0/4.18.1 nesta semana, antes 4.17.21 desde 2021).
@@ -88,7 +90,7 @@ Nenhum benchmark independente verificado; claims de performance são dos própri
 | pick, omit, chunk, debounce, merge, get, keyBy | sem nativo |
 
 ### Recomendação (tamanho > encaixe > manutenção)
-1. **es-toolkit `1.52.0`**: menor bundle no subconjunto mínimo (0,36 KB / 0,21 KB), dual sem mapper, muito ativo. Contras: 18 MB em disco; `get`/`keyBy` só via `es-toolkit/compat`.
+1. **es-toolkit `1.52.0`**: menor bundle no subconjunto mínimo (0,36 KB / 0,21 KB), dual sem mapper, muito ativo. Contras: 18 MB em disco; `get`/`isEmpty` só via `es-toolkit/compat` (`keyBy` já está no core em 1.52.0).
 2. **radashi `12.9.4`**: menor instalado (472 KB), bundle das 12 em 3,19 KB / 1,42 KB, dual sem mapper, ativo. Contras: sem `keyBy`; nomes divergem do lodash (`group`, `cluster`, `sort`); 105 mil downloads/semana.
 3. **lodash-es `4.18.1`**: 12/12 com API idêntica ao lodash. Contras: bundle maior (25–30 KB), sem tipos nativos, exige mapper + transform no jest.
 

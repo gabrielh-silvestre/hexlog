@@ -8,7 +8,7 @@ Entrypoints reais de build, instalação e relatório do hexlog. `build.ts` e
 `install.ts` ligam as funções puras de `src/guard.ts` e `src/installation.ts`
 a I/O de verdade: `esbuild`, `fs`, `child_process` e o cliente MCP.
 `insights.ts` lê os logs já gravados e imprime um relatório, sem escrever
-nada.
+nada; `export.ts` despeja o log de um processo em JSONL, também sem escrever.
 
 ## Key Files
 | File | Description |
@@ -16,6 +16,7 @@ nada.
 | `build.ts` | Builda com `esbuild` os dois entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `hasDynamicRequire()` (detecta o shim de `require` dinâmico que o esbuild injeta para dependência CJS não embutida) |
 | `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 10 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. `node scripts/install.ts --check` só verifica, sem tocar em nada |
 | `insights.ts` | Relatório markdown read-only (integridade da chain, gates, timeline) sobre os logs do hexlog. Uso: `node scripts/insights.ts [projeto[/processo]]`; lê o diretório de dados via `dataDir`/`XDG_DATA_HOME`. Sem script `npm` dedicado; nunca escreve no diretório de dados |
+| `export.ts` | Exportação read-only do log de um processo em JSONL, uma linha por evento válido da chain (linha inválida é omitida). Uso: `node scripts/export.ts <project>/<process> [--fields a,b,c]`; `--fields` projeta só as chaves pedidas e recusa nome fora de `EventLineField`. Erro sai com `export failed: ...` e exit 1. Sem script `npm` dedicado; nunca escreve no diretório de dados |
 
 ## For AI Agents
 ### Working In This Directory
@@ -40,9 +41,11 @@ nada.
   `Bundles` em `src/installation.ts`): um terceiro entrypoint exige tocar
   `build.ts`, `Bundles`, `installArtifact` e
   `verifyInstallation`. Já as skills são dinâmicas: `skillNames()` lê as
-  pastas de `skills/` e `writeSkillFolder` substitui cada uma inteira em
-  `~/.claude/skills/<nome>/` (apaga antes de copiar, sem deixar arquivo
-  órfão). Skill nova não toca `install.ts`.
+  pastas de `skills/` e `writeSkillFolder` copia cada uma para um diretório
+  temporário e troca para `~/.claude/skills/<nome>/` via `swapDirectory`
+  (mesmo mecanismo de `swapArtifact`, com rollback se a troca falhar no
+  meio: o destino nunca fica ausente ou parcial). Sobrescreve sem backup.
+  Skill nova não toca `install.ts`.
 
 ### Testing Requirements
 - `npm test` (jest) roda tudo, incluindo:
@@ -60,6 +63,10 @@ nada.
     posicional`, `integridade`, `gates e timeline`, `read-only` (snapshot do
     diretório de dados antes/depois confirma que nada foi escrito) e
     `process.json corrompido`.
+  - `test/export.spec.ts`: roda `scripts/export.ts` como processo real
+    (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `sem
+    --fields`, `--fields`, `processo inexistente`, `linha inválida` e
+    `read-only`.
 - `npm run typecheck` (`tsc --noEmit`) e `npm run build` (`node
   scripts/build.ts`, equivalente ao passo 1 do instalador) também cabem
   aqui antes de qualquer PR que toque nestes dois arquivos.
@@ -79,6 +86,7 @@ nada.
 - `build.ts`: nenhuma (só resolve caminhos da raiz do repo)
 - `install.ts`: `./build.ts`, `../src/directory.ts`, `../src/guard.ts`, `../src/installation.ts`
 - `insights.ts`: `../src/chain.ts`, `../src/definitions.ts`, `../src/directory.ts`, `../src/errors.ts`, `../src/events.ts`, `../src/log.ts`, `../src/state.ts`
+- `export.ts`: `../src/chain.ts`, `../src/definitions.ts`, `../src/directory.ts`, `../src/errors.ts`, `../src/events.ts`, `../src/log.ts`
 
 ### External
 - `esbuild`

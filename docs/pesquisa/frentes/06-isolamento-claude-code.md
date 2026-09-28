@@ -1,5 +1,7 @@
 ## Frente: Isolamento no Claude Code
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 Consolidado de 2 rodadas do agente (claude-code-guide) + verificação direta do orquestrador na doc em markdown (`code.claude.com/docs/en/*.md`, 2026-09-16). Claude Code local: **2.1.273**. `bwrap` e `socat`: **não instalados**.
 
 ### 1. Sintaxe de caminho em regras Read/Edit — VERIFICADO

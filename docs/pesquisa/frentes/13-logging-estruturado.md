@@ -1,5 +1,7 @@
 ## Frente 13: Logging estruturado enxuto
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 - Data: 2026-09-16. Pedido do usuário (preferência por lib enxuta).
 - Contrato avaliado: plano §4.15 (stderr exclusivo, uma linha JSON por evento, níveis `debug|info|aviso|erro`, campo `evento`, sem filtro de nível, sem perda em `exit`/SIGTERM, logger espião nos testes, logger do Ajv no mesmo canal).
 - Probes em `scratchpad/logging/` (instalação isolada por pacote, versões exatas).

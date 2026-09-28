@@ -1,5 +1,7 @@
 ## Frente: Hook PreToolUse em TypeScript (detecção de caminho) e instalação idempotente
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### 1. Parsers de shell (probe com env `{HOME, XDG_DATA_HOME}` simulado)
 | Caso | shell-quote 1.10.0 | sh-syntax 0.6.0 (mvdan-sh WASM) | regex/normalize |
 |---|---|---|---|

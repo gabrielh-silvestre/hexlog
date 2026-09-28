@@ -1,5 +1,7 @@
 # ADR 0001: hexlog MVP
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 **Status:** Aceito
 
 **Data:** 2026-09-16
@@ -23,6 +25,7 @@ Construir o hexlog como um único servidor MCP stdio em TypeScript (`"type": "mo
 - **Cadeia:** `sha256(prevHash + JCS(linha sem prevHash))` via `canonicalize`, ancorada no manifesto, com predicado de elo único, `seq` relativo ao último elo (mesma função no escritor e no verificador, sem cascata) e verificação que continua depois de linha inválida e reconhece rasgo reparado. Manifesto com `hashes` internos divergentes → `PROCESS_CORRUPTED` em todas as tools, inclusive `chain`.
 - **Definições:** copiadas para `process.json`, criado com `linkSync` exclusivo.
 - **Tools:** 10, com Zod de entrada e saída, erros de domínio devolvidos e tetos de saída. `events` tem modo cru (ordem física) e modo busca (MiniSearch 7.2.0, índice construído por chamada, AND com `fuzzy: 0.1` e fallback OR sinalizado por `combination`, ranking por relevância, paginação estável com `until`), com filtros por igualdade (`target`, `milestoneType` validado, `result` livre por QN3, `type`) e intervalo `after`/`before`. `target` e ids nunca passam pelo índice de texto; não há filtro por id de evento (QN5) (U-6).
+  _Nota (2026-09-28):_ o contrato de `events` cresceu depois do MVP (`targetPrefix` em `dd0887e`, `includeGateMilestones` em `351cb3b`, `fields` com `prevHash` fora do padrão em `0c99764`, `targets` em `3a09aae`, `truncatedByCharCap` em `8956aa6`). A fonte da verdade do contrato atual é a `description` e o `inputSchema` da tool em `src/event-tools.ts`, não esta lista.
 - **Artefato e instalação:** `scripts/build.ts` é a única config de build, com `absWorkingDir` na raiz do repo (bytes independentes do cwd). O instalador constrói, verifica o artefato preparado (sem `Dynamic require of`; hook nega/permite; servidor lista 10 tools), troca atomicamente o diretório da versão, grava `manifest.json` (versão, sha256, `commit`, `dirty`) e só então aponta o hook e o MCP para a cópia instalada. Só pula a instalação quando os **bytes instalados** batem com o build. Versões antigas ficam em disco. O artefato instalado é protegido contra Edit/Write por `Edit(//<home>/.local/lib/hexlog/**)`, e o `--check` acusa bytes instalados diferentes do manifesto (`artifact-modified`, exit 1) (QN4).
 - **Utilitários e logging:** `es-toolkit` com a regra "se existe helper, use" (U-1, U-2); logger nativo em stderr (U-4).
 - **Isolamento:** 4 regras de deny na forma `//` (3 sobre os dados, 1 de Edit sobre o artefato instalado) + hook Bash que nega com exit 2 e sempre falha aberto (cobre glob e brace num segmento com `matchesGlob`, e `**` ou chave com `/` pela regra de prefixo literal), instalados por script idempotente cuja única detecção de ausência ou quebra é o `--check` funcional, que executa o hook.

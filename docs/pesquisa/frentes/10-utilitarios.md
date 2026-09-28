@@ -1,5 +1,7 @@
 ## Frente: Utilitários pequenos
 
+> **Congelado em 2026-09-28.** Registro histórico: não recebe correção, nota nem emenda. A fonte da verdade é o código; o que mudou depois desta data não aparece aqui.
+
 ### 1. Resolução XDG
 - Spec 0.8 (specifications.freedesktop.org/basedir-spec/0.8/): se `$XDG_DATA_HOME` não estiver definida **ou estiver vazia**, usar `$HOME/.local/share`. A spec também exige caminhos absolutos (relativo deve ser ignorado) — nenhuma lib valida isso.
 - `xdg-basedir` 5.1.0: 3 linhas (`env.XDG_DATA_HOME || path.join(home,'.local','share')`), 0 deps.

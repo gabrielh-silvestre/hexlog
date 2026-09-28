@@ -22,7 +22,7 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 10 to
 | `gates.ts` | Os 5 gates embutidos (`no-orphans`, `no-conflicts`, `no-forks`, `chain-intact`, `no-invalid-references`): `evaluateBuiltin`, `buildGateMilestoneData` |
 | `guard.ts` | Regras de deny + hook PreToolUse em `settings.json`: `expectedRules`, `applyGuard`, `verifyGuard`. Puro, só usado por `scripts/install.ts` |
 | `installation.ts` | Instalação versionada do artefato em `~/.local/lib/hexlog/<versão>/`: `installArtifact`, `registerGuard`, `verifyInstallation`. Puro, só usado por `scripts/install.ts` |
-| `log.ts` | Append ao JSONL sob lock exclusivo por diretório: `append`, `readText`, `acquireLock`/`releaseLock` |
+| `log.ts` | Append ao JSONL sob lock exclusivo por diretório: `appendBatch` (N elos numa única aquisição de lock; `append` é o wrapper de 1 item), `readText`, `acquireLock`/`releaseLock` |
 | `mcp.ts` | Monta o `McpServer`: `createServer`, `execute` (envelope de erro + log de toda tool), esquemas Zod compartilhados |
 | `server.ts` | Ponto de entrada: `serveStdio(() => createServer(...))` |
 | `node-types.d.ts` | Augmentation de `node:crypto` com `randomUUIDv7` (ainda não coberto por `@types/node` 24.8.1) |
