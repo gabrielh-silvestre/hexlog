@@ -270,6 +270,10 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string> = {
   'event-tools.ts:720': 'VOCABULARY_VIOLATED',
   'event-tools.ts:742': 'UNKNOWN_VOCABULARY',
   'event-tools.ts:597-602': 'RESERVED_FIELD',
+  'event-tools.ts:797-798': 'duplicate {gate, target} in batch',
+  'event-tools.ts:838-841': 'gates batch exceeds',
+  'events.ts:34': 'TargetPrefix',
+  'definition-tools.ts:264-268': 'built-in domain kind',
   'installation.ts:89': 'verifyPreparedArtifact',
   'installation.ts:266': 'verifyPreparedArtifact',
 };

@@ -44,6 +44,10 @@ que o usuário notar a lacuna.
 | `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts:720` |
 | `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts:742` |
 | `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts:597-602` |
+| `evaluate_gate` com o mesmo `{gate, target}` repetido no lote | `INVALID_INPUT` | `event-tools.ts:797-798` |
+| `evaluate_gate` cujos Milestones somados passam de 24000 caracteres canônicos | `INVALID_INPUT` — dividir em chamadas menores | `event-tools.ts:838-841` |
+| `targetPrefix` terminado em `.` | rejeitado pela validação do schema de entrada, sem código de domínio | `events.ts:34` |
+| `list` com `type: "milestone"` ou `"verdict"` (reservados) | mensagem própria apontando o vocabulário fixo e os campos de Verdict/Milestone, não o erro genérico de tipo | `definition-tools.ts:264-268` |
 
 Notas adicionais:
 
@@ -71,6 +75,9 @@ Notas adicionais:
   exclui — sem precisar de um `events` à parte para achar o vigente de um
   target. `targetPrefix` restringe `active`/`conflicts`/`targets` a uma
   subárvore de endereço (fronteira em `.`), em `state` e em `events`.
+- Esta skill não repete o contrato completo de `state` e `events` (filtros,
+  projeção de campos, atalho de log inalterado, sinais de truncamento): a
+  fonte é a descrição de cada tool e o README do repositório do hexlog.
 - Milestone aceita `trace` (opcional) como os demais eventos, mas ele é
   ignorado na comparação de retentativa idempotente: reenviar o mesmo id
   completo com `trace` diferente ainda deduplica.
@@ -144,7 +151,7 @@ nada sobre o servidor MCP responder.
 |---|---|
 | Descartar `~/.local/share/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
 | Reiniciar a sessão do Claude Code | Cache de `tools/list` do protocolo MCP — fora do alcance de qualquer agente |
-| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:38` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
+| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md:39` sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
 
 Reinstalar a mesma versão com conteúdo diferente **não bloqueia** — só avisa
 "consider bumping the version".

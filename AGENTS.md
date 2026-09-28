@@ -18,7 +18,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 |-----------|---------|
 | `src/` | Servidor MCP, cadeia de hash, log, estado, tools e instalação (see `src/AGENTS.md`) |
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
-| `scripts/` | Build esbuild, instalador e script de insights read-only (see `scripts/AGENTS.md`) |
+| `scripts/` | Build esbuild, instalador e scripts read-only de insights e export (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio e pacote (see `test/AGENTS.md`) |
 | `docs/` | ADR 0001/0002/0005 e pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
 | `skills/` | Três skills, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo pré-código de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e cruza marcos/veredictos contra esse mapa) |

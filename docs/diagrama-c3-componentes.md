@@ -85,7 +85,7 @@ C4Component
 | `definition-tools.ts` | 5 tools: `list`, `register_type`, `register_vocabulary`, `register_gate`, `create_process` |
 | `event-tools.ts` | 5 tools: `register`, `evaluate_gate`, `state`, `events`, `chain` |
 | `definitions.ts` | Persistência: `registerType`, `createProcess`, `loadProcess`, `listProjects` |
-| `gates.ts` | 4 gates embutidos: `no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references` |
+| `gates.ts` | 5 gates embutidos: `no-orphans`, `no-conflicts`, `no-forks`, `chain-intact`, `no-invalid-references` |
 | `chain.ts` | `sha256hex`, `hashLine`, `anchor`, `isValidLink`, `verifyChain` |
 | `log.ts` | Append/readText sob lock por diretório |
 | `state.ts` | `projectState`, `validateField` |
@@ -110,5 +110,5 @@ neste C3:
 ## Fonte
 
 Componentes e relações conferidos contra os imports internos de `src/*.ts`
-em 2026-09-26 (revisão pós PR #1–#4). Atualize este diagrama junto de
+em 2026-09-28 (revisão pós PR #31, #32 e #35). Atualize este diagrama junto de
 `src/AGENTS.md` sempre que um módulo mudar de dependências.

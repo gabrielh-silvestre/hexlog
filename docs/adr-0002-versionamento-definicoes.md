@@ -63,7 +63,7 @@ do cálculo de `hashes`/`verifyHashes`. Continuam sendo exatamente 10 tools.
   MCP podem compartilhar o mesmo `dataDir` — mas não é o que `test/stdio.e2e.spec.ts`
   exercita: o C1 daquele arquivo sobe servidores concorrentes contra `register`
   (registro de evento), que usa o lock cooperativo por diretório
-  (`events.jsonl.lock`, ao lado do arquivo de eventos — `src/log.ts:61`), um
+  (`events.jsonl.lock`, ao lado do arquivo de eventos — `src/log.ts:87`), um
   mecanismo diferente do `linkSync` otimista das escritas de definição; ali os
   três `register_*` de definição aparecem só em chamadas sequenciais. O
   caminho `EEXIST` é coberto por `describe('exclusive version write')` em
@@ -199,11 +199,11 @@ projeto e aponta o teste que cobre cada um.
 | 7 | Reregistrar conteúdo idêntico ao vigente → `unchanged: true` com a versão vigente, nenhum arquivo novo | `test/definitions.spec.ts:432` (type), `test/definitions.spec.ts:766` (vocabulary) |
 | 8 | `breaking: true` numa mudança compatível → minor com aviso `NO_BREAKING_CHANGE` | `test/definitions.spec.ts:775` |
 | 9 | `create_process` grava `versions` apontando as vigentes; a resposta traz o mesmo bloco | `test/definitions.spec.ts:248` |
-| 10 | Não-regressão do lock: bump major de vocabulário fora do processo não afeta `state`/`events`/`chain` do processo já fixado | `test/event-tools.spec.ts:1409-1455` |
+| 10 | Não-regressão do lock: bump major de vocabulário fora do processo não afeta `state`/`events`/`chain` do processo já fixado | `test/event-tools.spec.ts:2384-2430` |
 | 11 | Legado: `vocabulary/<owner>.json` solto é lido como `1.0`; o próximo `register_vocabulary` grava `1.1` sem apagar o legado | `test/definitions.spec.ts:790` |
 | 12 | `process.json` sem `versions` carrega sem `PROCESS_CORRUPTED`; `list` mostra sem o bloco | `test/definitions.spec.ts:258` |
 | 13 | Ordenação numérica: com `1.9` e `1.10` em disco, a vigente é `1.10` | `test/definitions.spec.ts:496` |
-| 14 | `tools/list` continua com exatamente 10 tools; `TOOLS_COUNT` inalterado | `src/installation.ts:41`, `src/installation.ts:103-107`, `test/guard.spec.ts:566-595` |
+| 14 | `tools/list` continua com exatamente 10 tools; `TOOLS_COUNT` inalterado | `src/installation.ts:46`, `src/installation.ts:111-121`, `test/event-tools.spec.ts:139-160` |
 | 15 | `npm test` e `npm run typecheck` verdes | Critério de processo, não uma asserção de teste — verificado rodando os dois comandos antes do merge, não por um `test/*.spec.ts` |
 | 16 | Concorrência: duas gravações simultâneas do mesmo nome → `1.1`/`1.2`, nunca duas `1.1`, nunca sobrescrita silenciosa | `test/definitions.spec.ts:595` (EEXIST real, via `writeVersionExclusive`); `test/definitions.spec.ts:812-888` (chamadas via `Promise.all`, documentando por que isso não é uma corrida real — ver D1) |
 | 17 | Legado não materializado: após o primeiro registro versionado, `<name>/1.0.json` não existe, o diretório só tem `1.1.json`, e `list` mostra `versions: ["1.0", "1.1"]` | `test/definitions.spec.ts:790` |

@@ -28,7 +28,7 @@ node scripts/install.ts
 O `npm ci` precisa ser completo, sem `--omit=dev`: o instalador usa `esbuild`
 e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 
-`node scripts/install.ts` faz três coisas:
+`node scripts/install.ts` faz quatro coisas:
 
 1. Constrói o servidor e o hook com `esbuild` e verifica o artefato preparado
    antes de trocar qualquer coisa (o hook precisa negar o diretório de dados e
@@ -38,6 +38,9 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 3. Registra as 4 regras de deny e o hook PreToolUse em
    `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog` antes
    de qualquer troca) e registra o servidor MCP em escopo `user`.
+4. Copia cada pasta de `skills/` (hoje `hexlog`, `hexlog-flow` e
+   `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
+   backup.
 
 **Mudar código no repositório não afeta nenhuma sessão em andamento nem novas
 sessões até rodar o instalador de novo.** As sessões sempre executam a cópia
@@ -68,13 +71,13 @@ quebrado. Ele confere, nesta ordem, e cada item pendente aparece como
 | `deny-edit` | falta a regra `Edit(/<dados>/**)` |
 | `deny-edit-lib` | falta a regra `Edit(/<home>/.local/lib/hexlog/**)`, que protege o artefato instalado |
 | `hook` | não há entrada do hook do hexlog em `hooks.PreToolUse` |
-| `hook-file` | o `bash-guard.mjs` referenciado no hook não existe em disco |
 | `node` | o executável do Node referenciado no hook não existe |
+| `hook-file` | o `bash-guard.mjs` referenciado no hook não existe em disco |
 | `hook-not-denying` | o hook instalado não devolveu exit 2 para um comando que deveria negar |
 | `hook-not-allowing` | o hook instalado não devolveu exit 0 para um comando inofensivo |
 | `mcp` | `~/.claude.json` não tem `mcpServers.hexlog` apontando pro servidor esperado |
 | `artifact-modified` | os bytes de `server.mjs` ou `bash-guard.mjs` instalados divergem do `manifest.json` da própria versão |
-| `skill-file` | falta `~/.claude/skills/hexlog/SKILL.md` |
+| `skill-file:<nome>` | falta `~/.claude/skills/<nome>/SKILL.md` de alguma das skills de `skills/` (um item por skill) |
 
 Qualquer item na lista de faltando encerra o `--check` com exit 1.
 
@@ -499,8 +502,8 @@ o prefixo não é ancestral do diretório de dados.
    em `hooks.PreToolUse`.
 2. `claude mcp remove hexlog -s user`.
 3. `rm -rf ~/.local/lib/hexlog`.
-4. `rm -rf ~/.claude/skills/hexlog` — o instalador grava essa skill e nenhum
-   dos passos acima a remove.
+4. `rm -rf ~/.claude/skills/hexlog ~/.claude/skills/hexlog-flow ~/.claude/skills/hexlog-setup`
+   — o instalador grava essas skills e nenhum dos passos acima as remove.
 
 Os dados já registrados em `~/.local/share/hexlog` (ou no diretório apontado
 por `XDG_DATA_HOME`) não são apagados por nenhum desses passos.
