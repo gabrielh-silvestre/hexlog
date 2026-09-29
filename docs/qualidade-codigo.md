@@ -15,7 +15,7 @@ fonte antes de adotar qualquer item.
   base de quase toda spec: `test/helpers.ts` (`createEnvironment()`) sobe o
   servidor `hexlog` real e um `Client` MCP ligados por `InMemoryTransport`,
   nunca mocka o servidor; `test/event-tools.spec.ts` (a maior spec do
-  repositório) testa as 10 tools reais. `test/stdio.e2e.spec.ts` complementa
+  repositório) testa as 12 tools reais. `test/stdio.e2e.spec.ts` complementa
   com e2e real via stdio contra o bundle `.mjs`. Não há lacuna aqui.
 - **`npm ci` no CI** (`.github/workflows/ci.yml`) já falha se
   `package-lock.json` estiver fora de sincronia com `package.json` — não

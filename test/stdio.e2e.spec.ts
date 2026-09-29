@@ -192,7 +192,7 @@ describe('M6', () => {
 
 describe('B1', () => {
   describe('(a)', () => {
-    test('uma chamada de cada uma das 10 tools contra o bundle, sem erro, sem INTERNO, sem Dynamic require', async () => {
+    test('uma chamada de cada uma das 12 tools contra o bundle, sem erro, sem INTERNO, sem Dynamic require', async () => {
       const projectName = 'e2e-proj';
       const processName = 'e2e-proc';
       const { client, stderr } = await createClient(
@@ -273,6 +273,12 @@ describe('B1', () => {
         await call('events', { project: projectName, process: processName, search: 'approved' });
         await call('chain', { project: projectName, process: processName });
         await call('list', {});
+        const put = (await call('attachment', { project: projectName, text: 'anexo e2e' })) as {
+          structuredContent: { hash: string };
+        };
+        await call('attachment', { project: projectName, hash: put.structuredContent.hash });
+        await call('timeline', { project: projectName, targets: ['hex:target:e2e1'] });
+        expect((await client.listTools()).tools).toHaveLength(12);
       } finally {
         await client.close();
       }
@@ -309,6 +315,136 @@ describe('B1', () => {
       }
     });
   });
+});
+
+describe('Q1', () => {
+  const PROJECT = 'q1-proj';
+  const TARGET = 'hex:target:q1';
+  // ≥ 200 KB, com acentos, emoji, CRLF, BOM e NUL: tem que atravessar o stdio byte-idêntico
+  const BIG_TEXT = `\uFEFF${'Decisão — ação 😀\r\nlinha com NUL \u0000 no meio\n'.repeat(5_000)}`;
+
+  function runTimelineCli(env: Record<string, string>, ...args: string[]) {
+    const result = spawnSync(process.execPath, ['scripts/timeline.ts', ...args], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      env,
+    });
+    return { code: result.status, out: result.stdout };
+  }
+
+  test('put ≥ 200 KB por text e por path, get paginado, timeline e CLI --full idênticos; adulteração vista sem full', async () => {
+    const env = temporaryEnv();
+    const serverCwd = mkdtempOutside('hexlog-e2e-q1-cwd-');
+    fs.mkdirSync(path.join(serverCwd, '.omc', 'plans'), { recursive: true });
+    fs.writeFileSync(path.join(serverCwd, '.omc', 'plans', 'grande.md'), BIG_TEXT);
+    const { client, stderr } = await createClient(
+      path.join(mainBundle, 'server.mjs'),
+      env,
+      serverCwd,
+    );
+
+    try {
+      const call = async <T>(name: string, args: Record<string, unknown>): Promise<T> => {
+        const result = (await client.callTool({ name, arguments: args })) as {
+          isError?: boolean;
+          structuredContent: T;
+        };
+        expect(result.isError).not.toBe(true);
+        return result.structuredContent;
+      };
+
+      await call('register_vocabulary', {
+        project: PROJECT,
+        owner: 'core',
+        milestoneType: ['approved'],
+        result: ['ok'],
+        action: ['follow'],
+      });
+      await call('register_type', {
+        project: PROJECT,
+        name: 'report',
+        schema: {
+          type: 'object',
+          properties: {
+            target: { type: 'string', pattern: '^hex:target:[^\\s:]+$' },
+            attachment: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+          },
+          required: ['target', 'attachment'],
+          additionalProperties: false,
+        },
+      });
+      await call('create_process', { project: PROJECT, process: 'run' });
+
+      const byText = await call<{ hash: string; bytes: number; deduplicated: boolean }>(
+        'attachment',
+        { project: PROJECT, text: BIG_TEXT },
+      );
+      const byPath = await call<{ hash: string; deduplicated: boolean }>('attachment', {
+        project: PROJECT,
+        path: '.omc/plans/grande.md',
+      });
+      expect(byText.bytes).toBeGreaterThan(200_000);
+      expect(byText.hash).toBe(createHash('sha256').update(BIG_TEXT).digest('hex'));
+      expect(byPath).toEqual({ ...byText, deduplicated: true });
+
+      let joined = '';
+      for (let offset: number | null = 0; offset !== null;) {
+        const page: { text: string; nextOffset: number | null } = await call('attachment', {
+          project: PROJECT,
+          hash: byText.hash,
+          offset,
+          limit: 24_000,
+        });
+        joined += page.text;
+        offset = page.nextOffset;
+      }
+      expect(joined).toBe(BIG_TEXT);
+
+      await call('register', {
+        project: PROJECT,
+        process: 'run',
+        type: 'report',
+        agent: 'e2e-agent',
+        data: { target: TARGET, attachment: byText.hash },
+      });
+
+      type Timeline = {
+        entries: { attachment: { status: string; text?: string; truncated?: boolean } }[];
+        processes: { chain: { ok: boolean } }[];
+      };
+      const viaTool = await call<Timeline>('timeline', {
+        project: PROJECT,
+        targets: [TARGET],
+        full: true,
+      });
+      expect(at(viaTool.entries, 0).attachment).toMatchObject({ status: 'ok', truncated: true });
+
+      const cli = runTimelineCli(env, PROJECT, TARGET, '--full');
+      const header = `----- attachment ${byText.hash} (${byText.bytes} bytes) -----\n`;
+      const start = cli.out.indexOf(header) + header.length;
+      expect(cli.out.slice(start, cli.out.indexOf('\n----- end -----', start))).toBe(BIG_TEXT);
+      expect(cli.code).toBe(0);
+
+      // blob adulterado: visto pela tool e pelo CLI, sem full
+      const blob = path.join(
+        env.XDG_DATA_HOME ?? '',
+        'hexlog',
+        PROJECT,
+        'attachments',
+        byText.hash,
+      );
+      fs.writeFileSync(blob, 'adulterado');
+      const tampered = await call<Timeline>('timeline', { project: PROJECT, targets: [TARGET] });
+      expect(at(tampered.entries, 0).attachment.status).toBe('corrupted');
+      expect(at(tampered.processes, 0).chain.ok).toBe(false);
+      expect(runTimelineCli(env, PROJECT, TARGET).code).toBe(2);
+    } finally {
+      await client.close();
+    }
+
+    expect(stderr.text()).not.toContain('"code":"INTERNAL"');
+  }, 60_000);
 });
 
 describe('C1', () => {

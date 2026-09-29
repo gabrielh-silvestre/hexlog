@@ -19,6 +19,7 @@ import {
   compareVersions,
   divergenceWarning,
   formatVersion,
+  listValidProcesses,
   listVersionFiles,
   listVersions,
   parseVersion,
@@ -165,6 +166,17 @@ describe('createProcess / registerGate — nomes reservados (S8)', () => {
   test('registerGate com nome de gate embutido (no-orphans) → RESERVED_NAME', () => {
     const error = captureError(() => registerGate(dir, PROJECT, 'no-orphans', 'any criteria'));
     expect(error.code).toBe('RESERVED_NAME');
+  });
+});
+
+describe('listValidProcesses — anexos (ADR 0006)', () => {
+  test('o diretório attachments/ do projeto não é um processo', () => {
+    prepareCoreAndType();
+    createProcess(dir, PROJECT, 'p1', () => new Date());
+    fs.mkdirSync(resolveSafePath(dir, PROJECT, 'attachments'));
+    fs.mkdirSync(resolveSafePath(dir, PROJECT, 'sem-manifesto'));
+
+    expect(listValidProcesses(resolveSafePath(dir, PROJECT))).toEqual(['p1']);
   });
 });
 

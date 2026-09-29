@@ -18,7 +18,7 @@ import type { Vocab, Vocabulary } from './state.ts';
 export type { Vocab, Vocabulary };
 
 /** §4.2: nomes de processo reservados para as definições do projeto. */
-export const RESERVED_PROCESS_NAMES = ['schemas', 'vocabulary', 'gates'] as const;
+export const RESERVED_PROCESS_NAMES = ['schemas', 'vocabulary', 'gates', 'attachments'] as const;
 
 /** §4.2: nomes de tipo reservados para os eventos nativos. */
 export const RESERVED_TYPE_NAMES = ['milestone', 'verdict'] as const;
@@ -907,13 +907,31 @@ export function listVersions(partDir: string, name: string): string[] {
   return legacyExists ? ['1.0', ...dirVersions] : dirVersions;
 }
 
-/** Nomes de processo válidos de um projeto: diretórios não reservados com `process.json` legível. */
-function listValidProcesses(projectDir: string): string[] {
+/** Diretórios de processo de um projeto: os não reservados, tenham ou não um `process.json`. */
+function listProcessDirectories(projectDir: string): string[] {
   return listDirectoryNames(
     projectDir,
     (entry) =>
       entry.isDirectory() && !(RESERVED_PROCESS_NAMES as readonly string[]).includes(entry.name),
-  ).filter((name) => !isNil(readJson(path.join(projectDir, name, 'process.json'))));
+  );
+}
+
+/** Nomes de processo válidos de um projeto: diretórios não reservados com `process.json` legível. */
+export function listValidProcesses(projectDir: string): string[] {
+  return listProcessDirectories(projectDir).filter(
+    (name) => !isNil(readJson(path.join(projectDir, name, 'process.json'))),
+  );
+}
+
+/**
+ * Processos de um projeto com `process.json` presente, legível ou não. Diferente de
+ * `listValidProcesses` (que lança `IO_ERROR` num manifesto ilegível), deixa quem carrega o
+ * processo decidir o que fazer com um manifesto corrompido (`loadProcess` lança `PROCESS_CORRUPTED`).
+ */
+export function listProcessesWithManifest(projectDir: string): string[] {
+  return listProcessDirectories(projectDir).filter((name) =>
+    fs.existsSync(path.join(projectDir, name, 'process.json')),
+  );
 }
 
 /** Projetos existentes e seus processos válidos. */

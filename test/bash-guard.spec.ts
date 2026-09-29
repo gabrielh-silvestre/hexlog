@@ -165,7 +165,7 @@ describe('bash-guard (I4): nega o acesso a D por Bash', () => {
     const result = runHook({ command: `cat ${dataDir}/x` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toBe(
-      `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, state, events, chain).`,
+      `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, state, events, chain, timeline, attachment).`,
     );
   });
 });

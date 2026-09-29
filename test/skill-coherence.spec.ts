@@ -172,7 +172,11 @@ describe('extratores (unitário, sobre string literal)', () => {
 
 // ---- catálogo real, extraído do código (nunca copiado à mão) — global ao projeto, não por skill ----
 
-const registeredTools = ['src/definition-tools.ts', 'src/event-tools.ts'].flatMap((relativeFile) =>
+const registeredTools = [
+  'src/definition-tools.ts',
+  'src/event-tools.ts',
+  'src/timeline-tools.ts',
+].flatMap((relativeFile) =>
   toolNamesFrom(fs.readFileSync(path.join(repoRoot, relativeFile), 'utf8')),
 );
 
@@ -258,6 +262,60 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'target',
   'editedSkills',
   'targetIdPattern',
+  // hexlog-flow: parâmetros de `attachment`/`timeline`/`list` e campos de `Entry` citados na skill e em
+  // audit-types.md, não tools (`supersededBy`/`nextCursor`/`limit` de `timeline`, `hash`/`text`/`path`
+  // de `attachment`).
+  'project',
+  'text',
+  'path',
+  'hash',
+  'source',
+  'evidence',
+  'supersededBy',
+  'nextCursor',
+  'limit',
+  // audit-types.md: os cinco tipos de auditoria (`.hexlog/types/`), os marcos/vereditos do fluxo que
+  // eles acompanham e os detalhes de erro citados, não tools nem valores reservados.
+  'planner-adr',
+  'architect-review',
+  'critic-findings',
+  'plan-iteration-diff',
+  'deviation',
+  'plan-review',
+  'plan-drafted',
+  'execution-approval',
+  'not_custom',
+  'too_big',
+  'outside_allowed_root',
+  // audit-types.md: campos e valores de enum dos cinco tipos (`findings`, `attempts`, `trigger`,
+  // `outcome.status`, `decidedBy`, `critic-findings.verdict`, `plan-review.result`), não tools.
+  'findings',
+  'attempts',
+  'trigger',
+  'decidedBy',
+  'relatedEvent',
+  'verification-failure',
+  'plan-deviation',
+  'reviewer-reject',
+  'blocked-dependency',
+  'agent-failure',
+  'other',
+  'resolved',
+  'worked-around',
+  'escalated',
+  'scope-cut',
+  'user-stop',
+  'executor',
+  'lead',
+  'orchestrator',
+  'user',
+  'reject',
+  'revise',
+  'accept',
+  'accept-with-reservations',
+  'approve',
+  'iterate',
+  'request-changes',
 ]);
 
 /**
@@ -308,6 +366,10 @@ const TARGET_FORMAT_CITATION_EXPECTATIONS: Record<string, string[]> = {
   'events.ts#Target': ['Target'],
 };
 
+const AUDIT_TYPES_CITATION_EXPECTATIONS: Record<string, string[]> = {
+  'state.ts#targetOf': ['return undefined'],
+};
+
 type SkillCase = {
   name: string;
   skillPath: string;
@@ -329,6 +391,11 @@ const skillCases: SkillCase[] = [
     name: 'hexlog-flow',
     skillPath: path.join(repoRoot, 'skills/hexlog-flow/SKILL.md'),
     citationExpectations: HEXLOG_FLOW_CITATION_EXPECTATIONS,
+  },
+  {
+    name: 'hexlog-flow/references/audit-types',
+    skillPath: path.join(repoRoot, 'skills/hexlog-flow/references/audit-types.md'),
+    citationExpectations: AUDIT_TYPES_CITATION_EXPECTATIONS,
   },
 ];
 
@@ -373,7 +440,7 @@ describe.each(skillCases)('coerência SKILL.md × código ($name)', ({ skillPath
     expect(citedCamelCaseTokens.length).toBeGreaterThan(0);
   });
 
-  test('toda tool citada na skill está de fato registrada (definition-tools.ts ou event-tools.ts)', () => {
+  test('toda tool citada na skill está de fato registrada (definition-tools.ts, event-tools.ts ou timeline-tools.ts)', () => {
     const known = new Set([...registeredTools, ...reservedNameValues, ...FIELD_NAME_ALLOWLIST]);
     const unknown = citedLowerIdentifiers.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);

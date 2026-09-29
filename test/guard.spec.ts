@@ -545,7 +545,7 @@ async function countRealTools(serverFile: string): Promise<number> {
   }
 }
 
-const fakeVerifyServer = (): Promise<number> => Promise.resolve(10);
+const fakeVerifyServer = (): Promise<number> => Promise.resolve(12);
 
 function runConcurrentFixture(
   home: string,
@@ -804,15 +804,15 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       ).rejects.toThrow(/Dynamic require of/);
       expect(fs.existsSync(versionDirOf(home, '0.1.0'))).toBe(false);
 
-      // servidor preparado que não lista as 10 tools
+      // servidor preparado que não lista as 12 tools
       await expect(
         installArtifact({
           ...baseArgs,
           bundles: realBundles,
           runHook: runRealHookForInstall,
-          verifyServer: () => Promise.resolve(9),
+          verifyServer: () => Promise.resolve(11),
         }),
-      ).rejects.toThrow(/9 tools/);
+      ).rejects.toThrow(/11 tools/);
       expect(fs.existsSync(versionDirOf(home, '0.1.0'))).toBe(false);
 
       // instala com sucesso e confirma que uma falha subsequente não mexe no que já está instalado
@@ -932,7 +932,7 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         dirty: false,
         clock: () => new Date(),
         runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
-        verifyServer: () => Promise.resolve(10),
+        verifyServer: () => Promise.resolve(12),
         log: () => undefined,
       });
 

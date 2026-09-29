@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import canonicalize from 'canonicalize';
 import { isNil, range } from 'es-toolkit';
@@ -136,7 +137,7 @@ afterEach(async () => {
 });
 
 describe('M1', () => {
-  test('tools/list expõe as 10 tools, cada uma com inputSchema e outputSchema', async () => {
+  test('tools/list expõe as 12 tools, cada uma com inputSchema e outputSchema', async () => {
     const { tools } = await environment.client.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual(
       [
@@ -150,6 +151,8 @@ describe('M1', () => {
         'register_gate',
         'register_type',
         'register_vocabulary',
+        'timeline',
+        'attachment',
       ].sort(),
     );
     for (const tool of tools) {
@@ -2848,6 +2851,510 @@ describe('S5', () => {
     expect(
       (at(newGateResult.results, 0).event.data as { gate: { criteria: string } }).gate.criteria,
     ).toBe('v2');
+  });
+});
+
+// ---- anexos (S1/S3/Q2/Q3): tipo custom que declara `attachment` e `supersedes` ----
+
+const SCHEMA_WITH_REFS = {
+  type: 'object',
+  properties: {
+    note: { type: 'string' },
+    target: { type: 'string', pattern: '^hex:target:[^\\s:]+$' },
+    attachment: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+    supersedes: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['note'],
+  additionalProperties: false,
+};
+
+// mtime inteiro em segundos: `utimes` com sub-milissegundo perderia precisão
+const FIXED_TIME = new Date('2026-01-01T00:00:00.000Z');
+
+async function prepareRefs(env: Environment): Promise<void> {
+  await registerCore(env, PROJ);
+  await env.call('register_type', { project: PROJ, name: 'report', schema: SCHEMA_WITH_REFS });
+  await env.call('create_process', { project: PROJ, process: PROC });
+}
+
+async function putText(env: Environment, text: string): Promise<string> {
+  const result = await env.call('attachment', { project: PROJ, text });
+  return (result.structuredContent as { hash: string }).hash;
+}
+
+function registerReport(
+  env: Environment,
+  data: Record<string, unknown>,
+  id?: string,
+): Promise<CallResult> {
+  return env.call('register', {
+    project: PROJ,
+    process: PROC,
+    ...(id === undefined ? { type: 'report' } : { id }),
+    agent: AGENT,
+    data,
+  });
+}
+
+function blobFile(env: Environment, hash: string): string {
+  return path.join(env.dir, PROJ, 'attachments', hash);
+}
+
+async function chainOf(env: Environment) {
+  const result = await env.call('chain', { project: PROJ, process: PROC });
+  return result.structuredContent as Chain;
+}
+
+async function stateChainOk(env: Environment): Promise<boolean> {
+  const result = await env.call('state', { project: PROJ, process: PROC, sections: ['chain'] });
+  return (result.structuredContent as { chain: Chain }).chain.ok;
+}
+
+describe('S1: register com data.attachment', () => {
+  beforeEach(async () => {
+    await prepareRefs(environment);
+  });
+
+  test('blob inexistente → ATTACHMENT_NOT_FOUND, sem linha nova', async () => {
+    const before = environment.tree();
+    expectError(
+      await registerReport(environment, { note: 'n', attachment: 'a'.repeat(64) }),
+      'ATTACHMENT_NOT_FOUND',
+    );
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test('blob existente registra; retentativa por id completo é idempotente', async () => {
+    const attachment = await putText(environment, 'relatório');
+    const data = { note: 'n', attachment };
+    const first = await registerReport(environment, data);
+    expect(first.isError).not.toBe(true);
+    const { id, seq } = first.structuredContent as { id: string; seq: number };
+
+    expectDeduplicated(await registerReport(environment, data, id), seq);
+  });
+
+  test('blob adulterado → ATTACHMENT_CORRUPTED', async () => {
+    const attachment = await putText(environment, 'relatório');
+    fs.writeFileSync(blobFile(environment, attachment), 'outro texto');
+    expectError(
+      await registerReport(environment, { note: 'n', attachment }),
+      'ATTACHMENT_CORRUPTED',
+    );
+  });
+
+  test('a retentativa por id completo repete a validação: blob que sumiu → ATTACHMENT_NOT_FOUND', async () => {
+    const attachment = await putText(environment, 'relatório');
+    const data = { note: 'n', attachment };
+    const { id } = (await registerReport(environment, data)).structuredContent as { id: string };
+
+    fs.rmSync(blobFile(environment, attachment));
+    expectError(await registerReport(environment, data, id), 'ATTACHMENT_NOT_FOUND');
+  });
+});
+
+describe('Q3: supersedes de tipo custom', () => {
+  beforeEach(async () => {
+    await prepareRefs(environment);
+  });
+
+  async function registerNative(type: 'milestone' | 'verdict'): Promise<string> {
+    const result = await environment.call('register', {
+      project: PROJ,
+      process: PROC,
+      type,
+      agent: AGENT,
+      data: type === 'milestone' ? milestoneData() : verdictData(),
+    });
+    return (result.structuredContent as { id: string }).id;
+  }
+
+  test('id inexistente no processo → UNKNOWN_ID com a lista dos ausentes', async () => {
+    const before = environment.tree();
+    const ghost = `${PROJ}:${PROC}:report:${randomUUIDv7()}`;
+    const body = expectError(
+      await registerReport(environment, { note: 'n', supersedes: [ghost] }),
+      'UNKNOWN_ID',
+    );
+    expect(body.message).toContain(ghost);
+    expect(body.details).toEqual([expect.objectContaining({ path: '/data/supersedes/0' })]);
+    expect(environment.tree()).toEqual(before);
+  });
+
+  test.each(['constructor', '__proto__', 'toString'])(
+    'nome do protótipo (%s) em supersedes → UNKNOWN_ID, não "existe" pelo objeto',
+    async (name) => {
+      expectError(
+        await registerReport(environment, { note: 'n', supersedes: [name] }),
+        'UNKNOWN_ID',
+      );
+    },
+  );
+
+  test('id de evento custom do processo registra', async () => {
+    const first = (await registerReport(environment, { note: 'a' })).structuredContent as {
+      id: string;
+    };
+    const second = await registerReport(environment, { note: 'b', supersedes: [first.id] });
+    expect(second.isError).not.toBe(true);
+  });
+
+  test.each(['milestone', 'verdict'] as const)(
+    'id de %s → INVALID_EVENT not_custom',
+    async (type) => {
+      const nativeId = await registerNative(type);
+      const body = expectError(
+        await registerReport(environment, { note: 'n', supersedes: [nativeId] }),
+        'INVALID_EVENT',
+      );
+      expect(at(body.details, 0).code).toBe('not_custom');
+    },
+  );
+
+  test('a retentativa por id completo repete a validação sem efeito colateral', async () => {
+    const first = (await registerReport(environment, { note: 'a' })).structuredContent as {
+      id: string;
+    };
+    const data = { note: 'b', supersedes: [first.id] };
+    const second = (await registerReport(environment, data)).structuredContent as {
+      id: string;
+      seq: number;
+    };
+    const lines = environment.tree();
+
+    expectDeduplicated(await registerReport(environment, data, second.id), second.seq);
+    expect(environment.tree()).toEqual(lines);
+  });
+});
+
+describe('Q2: integridade dos anexos em chain e state', () => {
+  beforeEach(async () => {
+    await prepareRefs(environment);
+  });
+
+  test('chain vê blob adulterado e blob removido', async () => {
+    const attachment = await putText(environment, 'AAAA');
+    await registerReport(environment, { note: 'n', attachment });
+    expect((await chainOf(environment)).ok).toBe(true);
+
+    fs.writeFileSync(blobFile(environment, attachment), 'BBBB');
+    expect((await chainOf(environment)).breaks).toEqual([
+      { index: 0, reason: 'attachment-corrupted', detail: attachment },
+    ]);
+
+    fs.rmSync(blobFile(environment, attachment));
+    expect((await chainOf(environment)).breaks).toEqual([
+      { index: 0, reason: 'attachment-missing', detail: attachment },
+    ]);
+  });
+
+  test('state reporta chain.ok:false para blob adulterado e o gate chain-intact falha', async () => {
+    const attachment = await putText(environment, 'AAAA');
+    await registerReport(environment, { note: 'n', attachment });
+    expect(await stateChainOk(environment)).toBe(true);
+
+    fs.writeFileSync(blobFile(environment, attachment), 'BBBB');
+    expect(await stateChainOk(environment)).toBe(false);
+
+    const gate = await environment.call('evaluate_gate', {
+      project: PROJ,
+      process: PROC,
+      gates: [{ name: 'chain-intact', target: 'hex:target:u1' }],
+      agent: AGENT,
+    });
+    expect(
+      at((gate.structuredContent as { results: { passed: boolean }[] }).results, 0).passed,
+    ).toBe(false);
+  });
+
+  test('state vê a adulteração que preserva size e mtime (memo por ino e ctime); chain também', async () => {
+    const attachment = await putText(environment, 'AAAA');
+    const file = blobFile(environment, attachment);
+    fs.utimesSync(file, FIXED_TIME, FIXED_TIME);
+    await registerReport(environment, { note: 'n', attachment });
+    expect(await stateChainOk(environment)).toBe(true);
+
+    // a granularidade do ctime no kernel é de alguns ms
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    fs.writeFileSync(file, 'BBBB');
+    fs.utimesSync(file, FIXED_TIME, FIXED_TIME);
+
+    expect(await stateChainOk(environment)).toBe(false);
+    expect((await chainOf(environment)).ok).toBe(false);
+  });
+});
+
+describe('S1: tool attachment', () => {
+  test('put por text e get paginado (limit padrão 12.000) reconstituem o original', async () => {
+    await registerCore(environment, PROJ);
+    const text = 'Decisão — ação 😀\n'.repeat(3_000);
+    const put = await environment.call('attachment', { project: PROJ, text });
+    const { hash, bytes, deduplicated } = put.structuredContent as {
+      hash: string;
+      bytes: number;
+      deduplicated: boolean;
+    };
+    expect({ hash, bytes, deduplicated }).toEqual({
+      hash: sha256hex(text),
+      bytes: Buffer.byteLength(text, 'utf8'),
+      deduplicated: false,
+    });
+
+    let joined = '';
+    let offset = 0;
+    let firstPageLength = -1;
+    for (;;) {
+      const page = (
+        await environment.call('attachment', {
+          project: PROJ,
+          hash,
+          ...(offset === 0 ? {} : { offset }),
+        })
+      ).structuredContent as { text: string; total: number; nextOffset: number | null };
+      if (firstPageLength < 0) firstPageLength = page.text.length;
+      expect(page.total).toBe(text.length);
+      joined += page.text;
+      if (page.nextOffset === null) break;
+      offset = page.nextOffset;
+    }
+    expect(joined).toBe(text);
+    expect(firstPageLength).toBeLessThanOrEqual(12_000);
+    expect(firstPageLength).toBeGreaterThan(11_990);
+  });
+
+  test.each([
+    ['nenhum dos três', {}],
+    ['text e hash', { text: 'x', hash: 'a'.repeat(64) }],
+    ['text e path', { text: 'x', path: '.omc/plans/a.md' }],
+    ['offset sem hash', { text: 'x', offset: 1 }],
+    ['limit sem hash', { text: 'x', limit: 10 }],
+  ])('%s → INVALID_INPUT', async (_name, extra) => {
+    await registerCore(environment, PROJ);
+    expectError(await environment.call('attachment', { project: PROJ, ...extra }), 'INVALID_INPUT');
+  });
+
+  test('projeto inexistente → PROJECT_NOT_FOUND, sem criar diretório; hash desconhecido → ATTACHMENT_NOT_FOUND', async () => {
+    expectError(
+      await environment.call('attachment', { project: 'ghost', text: 'x' }),
+      'PROJECT_NOT_FOUND',
+    );
+    expect(fs.existsSync(path.join(environment.dir, 'ghost'))).toBe(false);
+
+    await registerCore(environment, PROJ);
+    expectError(
+      await environment.call('attachment', { project: PROJ, hash: 'a'.repeat(64) }),
+      'ATTACHMENT_NOT_FOUND',
+    );
+  });
+
+  test('limit acima de 24.000 e text acima de 1 MiB em caracteres são recusados na entrada', async () => {
+    await registerCore(environment, PROJ);
+    const hash = await putText(environment, 'x');
+
+    expect(
+      (await environment.call('attachment', { project: PROJ, hash, limit: 24_000 })).isError,
+    ).not.toBe(true);
+    expect(
+      (await environment.call('attachment', { project: PROJ, hash, limit: 24_001 })).isError,
+    ).toBe(true);
+    expect(
+      (await environment.call('attachment', { project: PROJ, text: 'x'.repeat(1_048_577) }))
+        .isError,
+    ).toBe(true);
+  });
+
+  test('put por path usa o cwd do servidor', async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-cwd-'));
+    const withCwd = await createEnvironment({ cwd });
+    try {
+      await registerCore(withCwd, PROJ);
+      fs.mkdirSync(path.join(cwd, '.omc', 'plans'), { recursive: true });
+      fs.writeFileSync(path.join(cwd, '.omc', 'plans', 'plano.md'), '# Plano\n');
+
+      const put = await withCwd.call('attachment', { project: PROJ, path: '.omc/plans/plano.md' });
+      expect((put.structuredContent as { hash: string }).hash).toBe(sha256hex('# Plano\n'));
+
+      expectError(
+        await withCwd.call('attachment', { project: PROJ, path: 'fora.md' }),
+        'INVALID_INPUT',
+      );
+    } finally {
+      await withCwd.close();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('o log da tool tem modo e bytes, nunca o texto', async () => {
+    await registerCore(environment, PROJ);
+    const marker = 'TEXTO-SECRETO-DO-ANEXO';
+    const { hash } = (await environment.call('attachment', { project: PROJ, text: marker }))
+      .structuredContent as { hash: string };
+    await environment.call('attachment', { project: PROJ, hash });
+
+    const toolRecords = environment.records.filter(
+      (record) => record.event === 'tool' && record.name === 'attachment',
+    );
+    expect(toolRecords.map((record) => [record.mode, record.bytes])).toEqual([
+      ['put', marker.length],
+      ['get', marker.length],
+    ]);
+    expect(JSON.stringify(environment.records)).not.toContain(marker);
+  });
+});
+
+describe('S3: tool timeline', () => {
+  const TARGET = 'hex:target:plano';
+
+  async function preparePipeline(): Promise<void> {
+    await registerCore(environment, PROJ);
+    await environment.call('register_type', {
+      project: PROJ,
+      name: 'report',
+      schema: SCHEMA_WITH_REFS,
+    });
+    await environment.call('create_process', { project: PROJ, process: 'first' });
+    await environment.call('create_process', { project: PROJ, process: 'second' });
+  }
+
+  function registerIn(processName: string, data: Record<string, unknown>) {
+    return environment.call('register', {
+      project: PROJ,
+      process: processName,
+      type: 'report',
+      agent: AGENT,
+      data: { ...data },
+    });
+  }
+
+  function timeline(args: Record<string, unknown> = {}) {
+    return environment.call('timeline', { project: PROJ, targets: [TARGET], ...args });
+  }
+
+  type TimelineBody = {
+    entries: {
+      process: string;
+      id: string;
+      summary: { note?: string };
+      supersededBy?: string[];
+      attachment?: { status: string; text?: string; truncated?: boolean; nextOffset?: number };
+    }[];
+    processes: { process: string; chain: { ok: boolean } }[];
+    warnings: { code: string }[];
+    warningsTotal: number;
+    total: number;
+    nextCursor: number | null;
+  };
+
+  test('cruza os dois processos em ordem cronológica e marca o superado', async () => {
+    await preparePipeline();
+    environment.setClock(new Date('2026-01-01T00:00:01.000Z'));
+    const first = (await registerIn('first', { note: 'a', target: TARGET })).structuredContent as {
+      id: string;
+    };
+    environment.setClock(new Date('2026-01-01T00:00:02.000Z'));
+    await registerIn('second', { note: 'b', target: TARGET });
+
+    const body = (await timeline()).structuredContent as TimelineBody;
+    expect(body.entries.map((entry) => [entry.process, entry.summary.note])).toEqual([
+      ['first', 'a'],
+      ['second', 'b'],
+    ]);
+    expect(body.processes.map((entry) => entry.process)).toEqual(['first', 'second']);
+    expect(first.id).toBe(at(body.entries, 0).id);
+  });
+
+  test('projeto inexistente → PROJECT_NOT_FOUND; mais de 20 targets → erro de validação', async () => {
+    expectError(await timeline({ project: 'ghost' }), 'PROJECT_NOT_FOUND');
+
+    await preparePipeline();
+    const many = Array.from({ length: 21 }, (_, index) => `hex:target:t${index}`);
+    expect((await timeline({ targets: many })).isError).toBe(true);
+    expect((await timeline({ targets: [] })).isError).toBe(true);
+  });
+
+  test('full traz o texto do anexo cortado em 8.000 caracteres, com o ponteiro para attachment', async () => {
+    await preparePipeline();
+    const text = 'x'.repeat(20_000);
+    const attachment = await putText(environment, text);
+    await registerIn('first', { note: 'a', target: TARGET, attachment });
+
+    const light = (await timeline()).structuredContent as TimelineBody;
+    expect(at(light.entries, 0).attachment).toEqual({ hash: attachment, status: 'ok' });
+
+    const full = (await timeline({ full: true })).structuredContent as TimelineBody;
+    expect(at(full.entries, 0).attachment).toMatchObject({
+      status: 'ok',
+      truncated: true,
+      nextOffset: 8_000,
+    });
+    expect(at(full.entries, 0).attachment?.text).toHaveLength(8_000);
+  });
+
+  test('linha e blob adulterados aparecem sem full', async () => {
+    await preparePipeline();
+    const attachment = await putText(environment, 'AAAA');
+    await registerIn('first', { note: 'a', target: TARGET, attachment });
+    await registerIn('second', { note: 'b', target: TARGET });
+    await registerIn('second', { note: 'b2', target: TARGET });
+
+    fs.writeFileSync(blobFile(environment, attachment), 'BBBB');
+    const eventsFile = path.join(environment.dir, PROJ, 'second', 'events.jsonl');
+    fs.writeFileSync(eventsFile, fs.readFileSync(eventsFile, 'utf8').replace('"b"', '"c"'));
+
+    const body = (await timeline()).structuredContent as TimelineBody;
+    expect(at(body.entries, 0).attachment?.status).toBe('corrupted');
+    expect(body.processes.map((entry) => [entry.process, entry.chain.ok])).toEqual([
+      ['first', false],
+      ['second', false],
+    ]);
+    expect(body.warnings.map((warning) => warning.code).sort()).toEqual([
+      'ATTACHMENT_CORRUPTED',
+      'CHAIN_BROKEN',
+      'CHAIN_BROKEN',
+    ]);
+  });
+
+  test('process.json ilegível vira aviso PROCESS_CORRUPTED e o processo sai da timeline', async () => {
+    await preparePipeline();
+    await registerIn('first', { note: 'a', target: TARGET });
+    await registerIn('second', { note: 'b', target: TARGET });
+    fs.writeFileSync(
+      path.join(environment.dir, PROJ, 'second', 'process.json'),
+      '{"project":"p1","pro',
+    );
+
+    const body = (await timeline()).structuredContent as TimelineBody;
+
+    expect(body.entries.map((entry) => entry.process)).toEqual(['first']);
+    expect(body.processes.map((entry) => entry.process)).toEqual(['first']);
+    expect(body.warnings.map((warning) => warning.code)).toEqual(['PROCESS_CORRUPTED']);
+  });
+
+  test('o log da tool tem contagens, nunca o texto do anexo', async () => {
+    await preparePipeline();
+    const marker = 'TEXTO-SECRETO-DA-TIMELINE';
+    const attachment = await putText(environment, marker);
+    await registerIn('first', { note: 'a', target: TARGET, attachment });
+
+    await timeline({ full: true });
+    const record = environment.records.find(
+      (entry) => entry.event === 'tool' && entry.name === 'timeline',
+    );
+    expect(record).toMatchObject({ entries: 1, total: 1, warnings: 0 });
+    expect(JSON.stringify(environment.records)).not.toContain(marker);
+  });
+});
+
+describe('descrições das tools de anexo', () => {
+  test('chain documenta a verificação de anexos; attachment e timeline avisam que o texto é dado não confiável', async () => {
+    const { tools } = await environment.client.listTools();
+    const description = (name: string) =>
+      tools.find((tool) => tool.name === name)?.description ?? '';
+
+    expect(description('chain')).toContain('attachment-missing');
+    expect(description('chain')).toContain('attachment-corrupted');
+    expect(description('attachment')).toContain('untrusted data');
+    expect(description('timeline')).toContain('untrusted data');
   });
 });
 

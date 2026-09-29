@@ -7,6 +7,7 @@ import { Break, Chain } from './chain.ts';
 import { type Detail, HexlogError } from './errors.ts';
 import { registerDefinitionTools } from './definition-tools.ts';
 import { registerEventTools } from './event-tools.ts';
+import { registerTimelineTools } from './timeline-tools.ts';
 import { Section, VocabSchema, VocabularySchema } from './state.ts';
 import { Agent, Hash, Instant, Name } from './events.ts';
 import type { Logger, LogRecord } from './log.ts';
@@ -17,6 +18,8 @@ export type Context = {
   dataDir: string;
   clock: () => Date;
   log: Logger;
+  /** `cwd` do servidor, âncora de `attachment({path})`; padrão `process.cwd()` no momento da chamada. */
+  cwd?: string;
 };
 
 /** Cria um logger de linha JSON para `output` (§4.15): nenhuma linha é filtrada, `debug` incluso. */
@@ -122,11 +125,12 @@ function toHexlogError(e: unknown, ctx: Context): HexlogError {
   return new HexlogError('INTERNAL', 'internal error');
 }
 
-/** Monta o servidor MCP `hexlog`: nome fixo, versão de `version.ts`, tools de definição e de eventos. */
+/** Monta o servidor MCP `hexlog`: nome fixo, versão de `version.ts`, tools de definição, de eventos e de anexo/timeline. */
 export function createServer(ctx: Context): McpServer {
   const server = new McpServer({ name: 'hexlog', version: VERSION });
   registerDefinitionTools(server, ctx);
   registerEventTools(server, ctx);
+  registerTimelineTools(server, ctx);
   ctx.log({ level: 'info', event: 'start', dataDir: ctx.dataDir, version: VERSION });
   return server;
 }

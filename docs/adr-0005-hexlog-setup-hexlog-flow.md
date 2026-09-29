@@ -1,6 +1,6 @@
 # ADR 0005: Skills hexlog-setup e hexlog-flow
 
-**Status:** Aceito (emendado em 2026-09-28, ver [Amendment](#amendment-2026-09-28) no fim deste arquivo; invalida partes de Decision, Drivers, Alternatives Considered e Consequences)
+**Status:** Aceito (emendado em 2026-09-28, ver [Amendment](#amendment-2026-09-28) no fim deste arquivo; invalida partes de Decision, Drivers, Alternatives Considered e Consequences; emendado de novo em 2026-09-29, ver [Amendment](#amendment-2026-09-29), sobre o invariante das dez tools)
 
 **Data:** 2026-09-27
 
@@ -196,6 +196,16 @@ tem dois opcionais independentes" do Decision original.
 
 Volta a existir schema/validador de código para `FlowMap` quando surgir o
 primeiro consumidor programático de `.hexlog/flow.md` — não antes.
+
+## Amendment (2026-09-29)
+
+O [ADR 0006](adr-0006-anexos-tipos-timeline.md) acrescenta as tools
+`attachment` e `timeline` e passa o servidor a 12 tools. Isso invalida, no
+texto acima, o invariante das dez tools MCP dos Drivers como
+restrição vigente; o resto da decisão (as duas skills e o mapa
+`.hexlog/flow.md`) segue de pé. A skill `hexlog-flow` foi corrigida e
+ampliada por aquele ADR (registro de desvio e racional, `timeline`).
+Mantido o corpo como registro histórico do que valia em 2026-09-27.
 
 ## Follow-ups
 
