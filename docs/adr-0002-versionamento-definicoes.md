@@ -220,6 +220,16 @@ projeto e aponta o teste que cobre cada um.
 | 17 | Legado não materializado: após o primeiro registro versionado, `<name>/1.0.json` não existe, o diretório só tem `1.1.json`, e `list` mostra `versions: ["1.0", "1.1"]` | `test/definitions.spec.ts`, teste "critérios 11/17: primeiro registro versionado sobre nome só-legado" |
 | 18 | Nada além do que já existia é gravado em disco quando `BREAKING_CHANGE` é lançado | `test/definitions.spec.ts`, teste "critério 6/18: schema diferente sem breaking:true" |
 
+## Amendment (2026-09-29)
+
+O [ADR 0006](adr-0006-anexos-tipos-timeline.md) acrescenta as tools
+`attachment` e `timeline`. Isso invalida, no texto acima, o invariante das
+dez tools (Decision) e o critério 14 da rastreabilidade (`tools/list` com dez
+tools e `TOOLS_COUNT` inalterado): desde a versão 0.4.0 são 12 tools,
+`TOOLS_COUNT` vale 12 e o teste correspondente afirma as 12. O versionamento de definições em si não muda.
+Também por aquele ADR, `attachments` passa a ser nome reservado de processo.
+Mantido o corpo como registro histórico do que valia em 2026-09-17.
+
 ## Follow-ups
 
 - Um campo `versionsHash` (hash isolado do bloco `versions`, cobrindo

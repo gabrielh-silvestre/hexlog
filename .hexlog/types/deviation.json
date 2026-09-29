@@ -1,0 +1,118 @@
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "string",
+      "maxLength": 200,
+      "pattern": "^hex:target:[^\\s:]+$"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "trigger": {
+      "type": "string",
+      "enum": [
+        "verification-failure",
+        "plan-deviation",
+        "reviewer-reject",
+        "blocked-dependency",
+        "agent-failure",
+        "other"
+      ]
+    },
+    "symptom": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 700
+    },
+    "cause": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 700
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "result": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": ["action", "result"],
+        "additionalProperties": false
+      },
+      "maxItems": 8
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "option": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "whyDiscarded": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": ["option", "whyDiscarded"],
+        "additionalProperties": false
+      },
+      "maxItems": 5
+    },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["resolved", "worked-around", "escalated", "scope-cut", "user-stop"]
+        },
+        "decidedBy": {
+          "type": "string",
+          "enum": ["executor", "lead", "orchestrator", "user"]
+        },
+        "affected": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": ["status", "decidedBy", "affected"],
+      "additionalProperties": false
+    },
+    "attachment": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "relatedEvent": {
+      "type": "string",
+      "maxLength": 260,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}:[a-z0-9][a-z0-9-]{0,62}:[a-z0-9][a-z0-9-]{0,62}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  },
+  "required": [
+    "target",
+    "source",
+    "trigger",
+    "symptom",
+    "cause",
+    "attempts",
+    "alternatives",
+    "outcome"
+  ],
+  "additionalProperties": false
+}

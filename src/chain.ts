@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import canonicalize from 'canonicalize';
 import { isNil, isNotNil, omit } from 'es-toolkit';
+import { get } from 'es-toolkit/compat';
 import { z } from 'zod';
 import type { Detail } from './errors.ts';
 import { EventLine, Hash } from './events.ts';
@@ -12,7 +13,14 @@ const MAX_REPAIRED = 100;
 /** Elo quebrado da cadeia (§4.6): schema Zod é a fonte única, mcp.ts só reexporta. */
 export const Break = z.object({
   index: z.number().int(),
-  reason: z.enum(['invalid-line', 'diverging-seq', 'hash-mismatch', 'invalid-data']),
+  reason: z.enum([
+    'invalid-line',
+    'diverging-seq',
+    'hash-mismatch',
+    'invalid-data',
+    'attachment-missing',
+    'attachment-corrupted',
+  ]),
   detail: z.string().optional(),
 });
 export type Break = z.infer<typeof Break>;
@@ -28,8 +36,8 @@ export const Chain = z.object({
 });
 export type Chain = z.infer<typeof Chain>;
 
-export function sha256hex(text: string): string {
-  return createHash('sha256').update(text).digest('hex');
+export function sha256hex(data: string | Uint8Array): string {
+  return createHash('sha256').update(data).digest('hex');
 }
 
 /** `hashLine(l) = sha256hex(l.prevHash + canonicalize(omit(l, 'prevHash')))` (JCS, §4.6). */
@@ -68,15 +76,50 @@ export function nextSeq(lastLink: EventLine | null, n: number): number {
   return isNil(lastLink) ? n : lastLink.seq + 1 + n;
 }
 
+/** Estado de um anexo já verificado no disco pelo chamador (`attachments.ts`); `chain.ts` não faz I/O. */
+export type AttachmentStatus = 'ok' | 'missing' | 'corrupted';
+
+/** `data.attachment` quando é um hash; `attachment` é o nome reservado por convenção para a referência de blob. */
+function attachmentHashOf(data: Record<string, unknown>): string | undefined {
+  return Hash.safeParse(data.attachment).success ? (data.attachment as string) : undefined;
+}
+
+/**
+ * Hashes de `data.attachment` dos elos de `text` cujo tipo declara `properties.attachment` no
+ * snapshot fixado do processo. Puro: quem chama consulta o disco só para esses hashes.
+ */
+export function attachmentRefs(
+  text: string,
+  manifest: { fixed: { types: Record<string, object> } },
+): string[] {
+  const declaring = new Set(
+    Object.entries(manifest.fixed.types)
+      .filter(([, schema]) => isNotNil(get(schema, 'properties.attachment')))
+      .map(([type]) => type),
+  );
+  if (declaring.size === 0) return [];
+
+  const hashes = new Set<string>();
+  for (const line of text.split('\n').slice(0, -1)) {
+    const link = isValidLink(line);
+    const hash = isNil(link) || !declaring.has(link.type) ? undefined : attachmentHashOf(link.data);
+    if (isNotNil(hash)) hashes.add(hash);
+  }
+  return [...hashes];
+}
+
 /**
  * Verifica a cadeia de hash de um log JSONL (§4.6). `validateData`, quando informado, roda
  * sobre `{type, data}` de cada elo e retorna `Detail[]` (reprovado) ou `null` (aprovado);
- * um retorno não nulo vira quebra `invalid-data`.
+ * um retorno não nulo vira quebra `invalid-data`. `attachments`, quando informado, mapeia hash de
+ * anexo para o estado já verificado: elo cujo `data.attachment` está no mapa e não é `ok` vira
+ * quebra `attachment-missing`/`attachment-corrupted`; hash fora do mapa não é checado.
  */
 export function verifyChain(
   text: string,
   manifest: unknown,
   validateData?: (type: string, data: Record<string, unknown>) => Detail[] | null,
+  attachments?: ReadonlyMap<string, AttachmentStatus>,
 ): Chain {
   // A cauda sem '\n' (escrita em andamento, ou rasgo ainda não reparado) é ignorada:
   // split(-1) descarta o último elemento, terminado ou não.
@@ -111,6 +154,11 @@ export function verifyChain(
 
     if (isNotNil(validateData) && isNotNil(validateData(link.type, link.data))) {
       breaks.push({ index, reason: 'invalid-data' });
+    }
+    const hash = attachmentHashOf(link.data);
+    const attachment = isNil(hash) ? undefined : attachments?.get(hash);
+    if (isNotNil(attachment) && attachment !== 'ok') {
+      breaks.push({ index, reason: `attachment-${attachment}`, detail: hash });
     }
 
     lastLink = link;

@@ -42,8 +42,8 @@ function hasDynamicRequire(bytes: Uint8Array): boolean {
   return Buffer.from(bytes).includes('Dynamic require of');
 }
 
-// 5 tools em definition-tools.ts + 5 em event-tools.ts (§4.12/§4.16).
-const TOOLS_COUNT = 10;
+// 5 tools em definition-tools.ts + 5 em event-tools.ts (§4.12/§4.16) + 2 em timeline-tools.ts (ADR 0006).
+const TOOLS_COUNT = 12;
 
 export function versionDirOf(home: string, version: string): string {
   return path.join(home, '.local', 'lib', 'hexlog', version);

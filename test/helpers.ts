@@ -43,8 +43,11 @@ function tree(root: string): string[] {
     .sort();
 }
 
-/** Cria um `dir` de dados temporário, um servidor `hexlog` real e um `Client` MCP conectados em memória. */
-export async function createEnvironment(): Promise<Environment> {
+/**
+ * Cria um `dir` de dados temporário, um servidor `hexlog` real e um `Client` MCP conectados em memória.
+ * `cwd` é o `cwd` do servidor (âncora de `attachment({path})`); sem ele vale o do processo de teste.
+ */
+export async function createEnvironment(options: { cwd?: string } = {}): Promise<Environment> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-'));
   const records: LogRecord[] = [];
   const log: Logger = (record) => {
@@ -53,7 +56,7 @@ export async function createEnvironment(): Promise<Environment> {
   let now = new Date('2026-01-01T00:00:00.000Z');
 
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
-  const server = createServer({ dataDir: dir, clock: () => now, log });
+  const server = createServer({ dataDir: dir, clock: () => now, log, cwd: options.cwd });
   const client = new Client({ name: 'hexlog-test', version: '0.0.0' });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
 

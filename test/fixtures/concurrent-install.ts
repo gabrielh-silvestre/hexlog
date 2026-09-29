@@ -62,7 +62,7 @@ try {
     runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
     verifyServer: () => {
       spinBarrier('.barrier2');
-      return Promise.resolve(10);
+      return Promise.resolve(12);
     },
     log: () => undefined,
   });

@@ -19,7 +19,7 @@ const GLOB_CHARS_REGEX = /[*?[{]/;
 const TILDE_REGEX = /(^|=)~(?=\/|$)/g;
 
 const denialMessage = (d: string): string =>
-  `hexlog: ${d} is only accessible through the hexlog MCP tools (list, state, events, chain).`;
+  `hexlog: ${d} is only accessible through the hexlog MCP tools (list, state, events, chain, timeline, attachment).`;
 
 type RawInput = {
   tool_name?: unknown;

@@ -4,11 +4,13 @@ import fc from 'fast-check';
 import type { EventLine } from '../src/events.ts';
 import {
   anchor,
+  attachmentRefs,
   hashLine,
   expectedPrevHash,
   nextSeq,
   sha256hex,
   verifyChain,
+  type AttachmentStatus,
 } from '../src/chain.ts';
 import { at } from './helpers.ts';
 
@@ -287,5 +289,92 @@ describe('verifyChain: outros casos', () => {
       { index: 0, reason: 'invalid-line' },
       { index: 1, reason: 'invalid-line' },
     ]);
+  });
+});
+
+describe('anexos na cadeia (S1/Q2, puro, sem fs)', () => {
+  const OK_HASH = sha256hex('ok');
+  const MISSING_HASH = sha256hex('sumiu');
+  const CORRUPTED_HASH = sha256hex('adulterado');
+
+  // 'note' declara `attachment` no snapshot; 'plain' não declara.
+  const MANIFEST_WITH_TYPES = {
+    ...MANIFEST,
+    fixed: {
+      types: {
+        note: { type: 'object', properties: { attachment: { type: 'string' } } },
+        plain: { type: 'object', properties: { text: { type: 'string' } } },
+      },
+    },
+  };
+
+  function noteLine(lastLink: EventLine | null, type: string, data: Record<string, unknown>) {
+    return {
+      seq: nextSeq(lastLink, 0),
+      id: `p:proc:${type}:${randomUUIDv7()}`,
+      type,
+      timestamp: '2026-01-01T00:00:00.000Z',
+      agent: 'test-agent',
+      prevHash: expectedPrevHash(lastLink, MANIFEST_WITH_TYPES),
+      data,
+    } satisfies EventLine;
+  }
+
+  function buildNotes(datas: [string, Record<string, unknown>][]): EventLine[] {
+    const lines: EventLine[] = [];
+    for (const [type, data] of datas) {
+      lines.push(noteLine(lines.at(-1) ?? null, type, data));
+    }
+    return lines;
+  }
+
+  const LOG = buildNotes([
+    ['note', { attachment: OK_HASH }],
+    ['note', { attachment: MISSING_HASH }],
+    ['note', { attachment: CORRUPTED_HASH }],
+    ['note', { attachment: OK_HASH }],
+    ['plain', { text: 'sem anexo' }],
+  ]);
+
+  test('attachmentRefs lista só hashes de tipos que declaram `attachment`, sem repetir', () => {
+    expect(attachmentRefs(toText(LOG), MANIFEST_WITH_TYPES)).toEqual([
+      OK_HASH,
+      MISSING_HASH,
+      CORRUPTED_HASH,
+    ]);
+  });
+
+  test('attachmentRefs ignora `attachment` de tipo que não o declara e valor que não é hash', () => {
+    const log = buildNotes([
+      ['plain', { attachment: OK_HASH }],
+      ['note', { attachment: 'não-é-hash' }],
+      ['note', { text: 'sem campo' }],
+    ]);
+    expect(attachmentRefs(toText(log), MANIFEST_WITH_TYPES)).toEqual([]);
+  });
+
+  test('attachmentRefs devolve [] quando nenhum tipo declara `attachment`', () => {
+    expect(attachmentRefs(toText(LOG), { fixed: { types: {} } })).toEqual([]);
+  });
+
+  test('com o Map, elos com anexo ausente ou adulterado quebram com o hash no detail', () => {
+    const attachments = new Map<string, AttachmentStatus>([
+      [OK_HASH, 'ok'],
+      [MISSING_HASH, 'missing'],
+      [CORRUPTED_HASH, 'corrupted'],
+    ]);
+    const result = verifyChain(toText(LOG), MANIFEST_WITH_TYPES, undefined, attachments);
+
+    expect(result.ok).toBe(false);
+    expect(result.breaks).toEqual([
+      { index: 1, reason: 'attachment-missing', detail: MISSING_HASH },
+      { index: 2, reason: 'attachment-corrupted', detail: CORRUPTED_HASH },
+    ]);
+  });
+
+  test('hash fora do Map não é checado; sem o Map o comportamento é o de antes', () => {
+    const partial = new Map<string, AttachmentStatus>([[OK_HASH, 'ok']]);
+    expect(verifyChain(toText(LOG), MANIFEST_WITH_TYPES, undefined, partial).ok).toBe(true);
+    expect(verifyChain(toText(LOG), MANIFEST_WITH_TYPES).ok).toBe(true);
   });
 });

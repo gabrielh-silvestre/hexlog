@@ -1,18 +1,20 @@
 # Regras de cruzamento (v1)
 
 Três regras, decididas no grilling do mapa de fluxo. Nenhuma delas precisa de tool
-nova — todas são combinações das 5 tools de `event-tools.ts` (`register`,
-`evaluate_gate`, `events`, `chain`, `state`) guiadas pela leitura do
-`.hexlog/flow.md`.
+nova — todas são combinações de `register`, `evaluate_gate`, `events`, `chain` e
+`state` (mais `timeline`, para ler vários processos de uma vez) guiadas pela
+leitura do `.hexlog/flow.md`.
 
 ## 1. Mesma fase — conflito ou superado
 
 Dois marcos/vereditos registrados na mesma fase (mesmo `process`, já que fase e
 processo são 1:1) podem entrar em conflito: uma decisão nova invalida ou refina
 uma anterior sobre o mesmo alvo. Registre o novo Veredito com `supersedes`
-apontando para o(s) id(s) que ele substitui — `chain` segue essa cadeia depois, e
-`state` (com `withData: true`) já devolve só o vigente de cada target, sem
-precisar reconstruir a cadeia manualmente.
+apontando para o(s) id(s) que ele substitui. Para seguir essa cadeia depois, use
+`events` (mesmo `process`) ou `timeline` (todos os processos do projeto, com
+`supersededBy` em cada entrada); `chain` só verifica hash e anexos, não segue
+`supersedes`. `state` (com `withData: true`) já devolve só o vigente de cada
+target, sem precisar reconstruir a cadeia manualmente.
 
 Se dois sucessores vivos citarem o mesmo Veredito superado em `supersedes` (um
 fork), o gate embutido `no-forks` reprova. Resolver o fork é registrar mais um
@@ -30,7 +32,8 @@ que essas tools esperam.
 Exemplo: a fase de revisão quer saber se a fase de planejamento já decidiu algo
 sobre um target. Chame `state({project, process: <processo da fase de
 planejamento>})` (ou `events`/`chain` com o mesmo `process`), não o processo da
-fase de revisão.
+fase de revisão. Para o histórico de um target em todas as fases de uma vez,
+`timeline` já cruza os processos do projeto.
 
 ## 3. Lacunas — gate custom por fase
 

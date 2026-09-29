@@ -8,15 +8,18 @@ Entrypoints reais de build, instalação e relatório do hexlog. `build.ts` e
 `install.ts` ligam as funções puras de `src/guard.ts` e `src/installation.ts`
 a I/O de verdade: `esbuild`, `fs`, `child_process` e o cliente MCP.
 `insights.ts` lê os logs já gravados e imprime um relatório, sem escrever
-nada; `export.ts` despeja o log de um processo em JSONL, também sem escrever.
+nada; `export.ts` despeja o log de um processo em JSONL, também sem escrever;
+`timeline.ts` cruza os processos de um projeto por target e imprime a
+timeline (com anexos e estado de integridade), também sem escrever.
 
 ## Key Files
 | File | Description |
 |---|---|
 | `build.ts` | Builda com `esbuild` os dois entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `hasDynamicRequire()` (detecta o shim de `require` dinâmico que o esbuild injeta para dependência CJS não embutida) |
-| `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 10 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. `node scripts/install.ts --check` só verifica, sem tocar em nada |
+| `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 12 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. `node scripts/install.ts --check` só verifica, sem tocar em nada |
 | `insights.ts` | Relatório markdown read-only (integridade da chain, gates, timeline) sobre os logs do hexlog. Uso: `node scripts/insights.ts [projeto[/processo]]`; lê o diretório de dados via `dataDir`/`XDG_DATA_HOME`. Sem script `npm` dedicado; nunca escreve no diretório de dados |
 | `export.ts` | Exportação read-only do log de um processo em JSONL, uma linha por evento válido da chain (linha inválida é omitida). Uso: `node scripts/export.ts <project>/<process> [--fields a,b,c]`; `--fields` projeta só as chaves pedidas e recusa nome fora de `EventLineField`. Erro sai com `export failed: ...` e exit 1. Sem script `npm` dedicado; nunca escreve no diretório de dados |
+| `timeline.ts` | Timeline read-only de targets cruzando todos os processos do projeto (ADR 0006), sem teto de página nem de texto por entrada: o caminho para ler anexo grande. Uso: `node scripts/timeline.ts <project> <target>... [--full] [--json]`. Texto legível por padrão (cabeçalho `chain ok`/`chain BROKEN` por processo, marca `[superado por <id>]`); `--full` imprime cada anexo byte a byte entre `----- attachment <hash> (<n> bytes) -----` e `----- end -----`; `--json` é JSONL (`kind: "chain"` por processo, depois `kind: "entry"`), com os avisos no stderr. Exit 0 íntegro, 2 cadeia/anexo/processo quebrado, 1 uso incorreto ou erro (`timeline failed: CODE: msg`). Sem script `npm` dedicado; nunca escreve no diretório de dados |
 
 ## For AI Agents
 ### Working In This Directory
@@ -67,6 +70,10 @@ nada; `export.ts` despeja o log de um processo em JSONL, também sem escrever.
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `sem
     --fields`, `--fields`, `processo inexistente`, `linha inválida` e
     `read-only`.
+  - `test/timeline-cli.spec.ts`: roda `scripts/timeline.ts` como processo real
+    (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `--full`
+    (texto ≥ 200 KB idêntico entre os delimitadores), `texto legível`,
+    `--json`, `read-only`, `integridade` (exit 2) e `uso incorreto e erros`.
 - `npm run typecheck` (`tsc --noEmit`) e `npm run build` (`node
   scripts/build.ts`, equivalente ao passo 1 do instalador) também cabem
   aqui antes de qualquer PR que toque nestes dois arquivos.
@@ -87,6 +94,7 @@ nada; `export.ts` despeja o log de um processo em JSONL, também sem escrever.
 - `install.ts`: `./build.ts`, `../src/directory.ts`, `../src/guard.ts`, `../src/installation.ts`
 - `insights.ts`: `../src/chain.ts`, `../src/definitions.ts`, `../src/directory.ts`, `../src/errors.ts`, `../src/events.ts`, `../src/log.ts`, `../src/state.ts`
 - `export.ts`: `../src/chain.ts`, `../src/definitions.ts`, `../src/directory.ts`, `../src/errors.ts`, `../src/events.ts`, `../src/log.ts`
+- `timeline.ts`: `../src/directory.ts`, `../src/errors.ts`, `../src/timeline.ts`, `../src/timeline-tools.ts` (`loadTimeline`)
 
 ### External
 - `esbuild`

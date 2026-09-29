@@ -183,6 +183,12 @@ supersession, vocabulário todo livre, dados editáveis e deletáveis pelo agent
 Só estudo. Qualquer item que acrescente tool quebra o "exatamente 10 tools" do
 ADR 0001 e pede um ADR novo; a coluna "Toca" indica onde caberia sem isso.
 
+> **Emenda (2026-09-29):** o [ADR 0006](adr-0006-anexos-tipos-timeline.md)
+> acrescentou as tools `attachment` e `timeline` e reverteu o invariante de 10
+> tools. O texto e a tabela abaixo mantêm a redação de 2026-09-17, quando o
+> invariante valia; uma ideia que acrescente tool hoje pede um ADR novo do
+> mesmo jeito, sobre 12 tools.
+
 | # | Ideia | Origem | Toca | Esforço |
 |---|---|---|---|---|
 | 1 | Resumo de pendências (órfãos, conflitos) na resposta de `register` | mcp-server-decisions (`OUTCOME_GATE`) | `register` | ~2 h |

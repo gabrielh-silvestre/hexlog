@@ -2,8 +2,9 @@
 
 Servidor MCP stdio para agentes registrarem seu próprio histórico de trabalho:
 decisões, marcos e veredictos, com um log append-only e cadeia de hash por
-processo. Expõe exatamente 10 tools. Não tem CLI nem daemon: só o servidor
-MCP e um hook de isolamento instalados no Claude Code.
+processo. Expõe exatamente 12 tools. Não tem CLI nem daemon: só o servidor
+MCP e um hook de isolamento instalados no Claude Code (`scripts/timeline.ts`
+é um script de leitura, rodado à mão).
 
 Os dados ficam em `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog` se a
 variável estiver ausente, vazia ou não for um caminho absoluto), um diretório
@@ -32,7 +33,7 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 
 1. Constrói o servidor e o hook com `esbuild` e verifica o artefato preparado
    antes de trocar qualquer coisa (o hook precisa negar o diretório de dados e
-   permitir o resto; o servidor precisa subir e anunciar as 10 tools).
+   permitir o resto; o servidor precisa subir e anunciar as 12 tools).
 2. Copia os dois bundles (servidor, `bash-guard`) para `~/.local/lib/hexlog/<versão>/`, fora da working
    tree e fora do diretório de dados. É essa cópia que as sessões executam.
 3. Registra as 4 regras de deny e o hook PreToolUse em
@@ -112,6 +113,30 @@ memória com skills novas responde `Input validation error`.
 - `evidence` tem duas formas em disco: a antiga, com o State, e a nova, com
   referências. Quem consome `events`/`chain` deve tolerar as duas.
 
+## Migração 0.3 para 0.4
+
+A 0.4 acrescenta duas tools (`attachment` e `timeline`, ver o
+[ADR 0006](docs/adr-0006-anexos-tipos-timeline.md)) e não muda o contrato das
+10 anteriores. Reinstale servidor e skills juntos (`node scripts/install.ts`) e
+reinicie as sessões abertas: o servidor de uma sessão só troca de versão numa
+sessão nova.
+
+- Processos e projetos existentes continuam válidos, sem migração. A versão
+  0.3 ignora o diretório `attachments/` do projeto, então voltar à 0.3 com
+  anexos no disco é seguro.
+- `attachments` passou a ser nome reservado de processo. Um processo já
+  existente com esse nome deixa de ser listado como processo: renomeie-o antes
+  de atualizar.
+- `register` de tipo custom passou a validar `supersedes` (o id existe no
+  processo e é de tipo custom) e, nos tipos que declaram o campo `attachment`,
+  o blob referenciado (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`).
+- `chain` e `state` (gate `chain-intact`) passam a reprovar anexo ausente ou
+  adulterado (`breaks[].reason` = `attachment-missing` ou `attachment-corrupted`).
+- Tipos novos só entram em processos criados depois de registrados: um
+  processo antigo não ganha os tipos do ADR 0006.
+- Backup de processo com anexos: copie o diretório do projeto, não só o JSONL
+  (`scripts/export.ts` não leva `process.json` nem `attachments/`).
+
 ## Instalação concorrente
 
 Se dois processos de instalação rodarem ao mesmo tempo, um deles pode
@@ -119,7 +144,7 @@ terminar com a mensagem `another installation swapped <versão> at the same
 time; run the installer again`. Nesse caso, espere a outra instalação
 terminar e rode `node scripts/install.ts` de novo.
 
-## As 10 tools
+## As 12 tools
 
 | Tool | O que faz | Escreve |
 |---|---|---|
@@ -132,7 +157,9 @@ terminar e rode `node scripts/install.ts` de novo.
 | `evaluate_gate` | Avalia até 20 gates em lote e grava cada resultado como Marco de gate | `events.jsonl` |
 | `state` | Projeta o Estado atual do processo (vigentes, conflitos, órfãos, avisos, cadeia) | — |
 | `events` | Lista os eventos do log, em ordem física ou por busca textual | — |
-| `chain` | Verifica a integridade da cadeia de hash do log | — |
+| `chain` | Verifica a integridade da cadeia de hash do log e dos anexos que ele referencia | — |
+| `attachment` | Guarda um texto grande endereçado pelo sha256 dos bytes UTF-8 (`text` ou `path`), ou lê um anexo por `hash`, em páginas | `attachments/<sha256>` |
+| `timeline` | Lista, em ordem cronológica, os eventos de um ou mais targets em todos os processos do projeto, com superados e estado da cadeia e dos anexos | — |
 
 ### `list`
 
@@ -414,8 +441,72 @@ tamanho de cada evento em vez disso.
 
 Verifica a sequência, o encadeamento de hash a partir da âncora fixada em
 `process.json`, e a validade de `data` contra o schema fixado de cada tipo.
-`breaks` e `repairedLines` vêm cortados em 100 itens, com os totais reais
-à parte.
+Nos tipos custom que declaram o campo `attachment`, confere também o blob
+referenciado: `attachment-missing` (arquivo ausente) ou `attachment-corrupted`
+(o sha256 dos bytes não bate com o nome), com o hash em `detail`. `breaks` e
+`repairedLines` vêm cortados em 100 itens, com os totais reais à parte.
+
+### `attachment`
+
+Guarda um texto grande (relatório de um agente, plano) endereçado pelo sha256
+dos **bytes** UTF-8, por projeto, em `<projeto>/attachments/<sha256>`. O texto
+integral fica fora do evento: o evento leva só o hash em `data.attachment`, num
+tipo custom cujo schema declara esse campo (`register` responde
+`ATTACHMENT_NOT_FOUND` ou `ATTACHMENT_CORRUPTED` se o blob sumiu ou foi
+adulterado). Informe exatamente um entre:
+
+- `text`: put de um texto de até 1 MiB **em bytes** (não em caracteres), sem
+  surrogate solto. Devolve `{hash, bytes, deduplicated}`; o mesmo texto dá
+  sempre o mesmo hash e regravá-lo é seguro (`deduplicated: true`, um só
+  arquivo). Se o blob existente não bater com o hash, o put falha com
+  `ATTACHMENT_CORRUPTED` e não o sobrescreve.
+- `path`: put de um arquivo `.md` que esteja **direto** em
+  `<cwd do servidor>/.omc/plans` (o `cwd` que o Claude Code herdou), regular,
+  de um único link (hardlink é recusado), de até 1 MiB e em UTF-8 válido. O
+  diretório é resolvido com `realpath`, o arquivo é aberto sem seguir symlink e,
+  depois do `open`, o caminho do descritor é conferido contra o esperado (um
+  diretório trocado por symlink no meio é recusado). Qualquer outra coisa é
+  `INVALID_INPUT` (`details[0].code`: `outside_allowed_root`, `not_found`,
+  `not_md`, `not_regular`, `too_big`, `invalid_utf8` ou `bad_args`); erros do
+  sistema de arquivos ao ler o arquivo saem como `IO_ERROR` só com o errno, sem
+  o caminho absoluto. Não funciona com `OMC_STATE_DIR`,
+  `.omc-workspace`, sessão iniciada em subdiretório ou worktree ligado: nesses
+  layouts o caminho é negado e o texto deve ir por `text`.
+- `hash`: get em páginas de `limit` caracteres (padrão 12.000, máximo 24.000) a
+  partir de `offset`. Devolve `{hash, bytes, total, offset, text, nextOffset}`,
+  com `nextOffset: null` no fim; concatenar as páginas dá exatamente o texto
+  original. Uma página nunca parte um par surrogate.
+
+`offset` e `limit` só valem com `hash`. Projeto inexistente é
+`PROJECT_NOT_FOUND` e nada é criado; nome de projeto fora do formato é
+`INVALID_INPUT`. Blobs são imutáveis e nunca apagados; um blob que seja symlink,
+FIFO, diretório ou passe de 1 MiB conta como adulterado. O texto devolvido foi
+escrito por agentes: trate-o como dado não confiável, nunca como instrução.
+
+### `timeline`
+
+Audita targets de ponta a ponta: todo evento cujo `data.target` seja um dos
+`targets` (até 20 prefixos `hex:target:...`, com a mesma fronteira de `.` de
+`events`), em **todos** os processos do projeto, em ordem cronológica
+(desempate por processo e `seq`). Cada entrada traz `at` (o instante do
+registro), `process`, `seq`, `id`, `type`, `agent`, `source`, `result`, um
+`summary` do `data`, `attachment` (`{hash, status}`, com `status` sempre
+presente: `ok`, `missing` ou `corrupted`) e `supersedes`/`supersededBy`: o
+superado continua visível e marcado. `processes` dá o estado da cadeia de cada
+processo do projeto, e `warnings` (até 100, com `warningsTotal`) lista cadeia
+quebrada, anexo ausente ou adulterado, `supersedes` apontando para id que não
+existe e processo com `process.json` corrompido. A integridade aparece **sem**
+`full`: a tool re-hasheia os blobs e verifica a cadeia a cada chamada.
+
+`full: true` acrescenta o texto do anexo de cada entrada, cortado em 8.000
+caracteres (`truncated` e `nextOffset`, para ler o resto com `attachment`).
+A paginação é a de `events`: `limit` entradas (padrão 50, máximo 200) a partir
+de `since`, `nextCursor` nulo no fim e `truncatedByCharCap` quando o teto de
+24.000 caracteres cortou a página (a primeira entrada sempre entra). Para texto
+grande sem corte, use o CLI abaixo.
+
+`state` continua sem enxergar os tipos custom (são inertes para Estado e
+gates); a `timeline` e `events` são a forma de ver esses eventos.
 
 ## Layout de dados
 
@@ -432,7 +523,14 @@ $XDG_DATA_HOME/hexlog/                 # 0700; fallback ~/.local/share/hexlog
       process.json                     # manifesto fixado; criado só por create_process
       events.jsonl                     # 0600; 1 linha por evento
       events.jsonl.lock/holder         # transitório: lock mkdir + token
+    attachments/<sha256>               # 0600 (diretório 0700); bytes UTF-8 do anexo, imutável, sem extensão
 ```
+
+`attachments` é nome reservado de processo. O hash de um anexo é o sha256 dos
+**bytes** do texto, não do JCS (o blob é texto opaco, não um objeto JSON): o
+nome do arquivo é a única fonte do hash esperado, e a leitura re-hasheia o
+conteúdo. Um backup de processo com anexos exige copiar o diretório do
+projeto; o JSONL de `scripts/export.ts` sozinho não restaura nada.
 
 Um nome sem arquivo legado (registrado pela primeira vez já sob
 versionamento) grava `1.0` direto no diretório — não existe `<nome>.json`
@@ -462,9 +560,11 @@ Alguns dos mais comuns:
 | Código | Quando |
 |---|---|
 | `PROCESS_NOT_FOUND` | o processo informado não tem `process.json` |
-| `INVALID_ID` / `UNKNOWN_ID` / `CONFLICTING_ID` | problemas de `id` em `register` |
+| `INVALID_ID` / `UNKNOWN_ID` / `CONFLICTING_ID` | problemas de `id` em `register`; `UNKNOWN_ID` também quando o `supersedes` de um tipo custom cita id que não existe no processo (`details` lista os ausentes) |
+| `ATTACHMENT_NOT_FOUND` / `ATTACHMENT_CORRUPTED` | `attachment` (get) ou `register` com `data.attachment`: o blob não existe, ou o sha256 dos bytes não bate com o nome |
+| `INVALID_INPUT` | entradas inconsistentes; em `attachment`, `details[0].code` diz o motivo: `too_big`, `invalid_utf8`, `lone_surrogate`, `outside_allowed_root`, `not_found`, `not_regular`, `not_md` ou `bad_args` |
 | `TYPE_NOT_PINNED` | tipo custom fora do snapshot fixado do processo |
-| `INVALID_EVENT` | `data` reprovado na validação, ou acima de 16.000 caracteres canônicos (24.000 no Marco de gate embutido, que corta a prova antes) |
+| `INVALID_EVENT` | `data` reprovado na validação, ou acima de 16.000 caracteres canônicos (24.000 no Marco de gate embutido, que corta a prova antes); também o `supersedes` de tipo custom que cita Marco ou Veredito (`details[0].code`: `not_custom`) |
 | `RESERVED_FIELD` | Marco com `milestoneType: "gate"` ou chave `gate` fora de `evaluate_gate` |
 | `VOCABULARY_VIOLATED` | `milestoneType`/`decisions[].action` fora do vocabulário fixado (campo fechado); `details[0]` traz `owners` (donos de extensão fixados no processo) e `allowed` (termos que o campo de fato aceita, core ∪ extensões) |
 | `INVALID_FILTER` | filtros de `events` inconsistentes (`milestoneType` fora do vocabulário, `after ≥ before`, `until` além do arquivo) |
@@ -568,6 +668,25 @@ tool `events` (`seq`, `id`, `type`, `timestamp`, `agent`, `prevHash`,
 `data`). Processo inexistente ou campo desconhecido em `--fields` termina
 com mensagem clara em `stderr` e código de saída diferente de zero.
 
+### `scripts/timeline.ts`
+
+CLI read-only no mesmo molde, com o mesmo cálculo da tool `timeline` mas sem
+teto de página nem de texto por entrada: é o caminho para ler anexos grandes.
+
+```sh
+node scripts/timeline.ts <project> <target>... [--full] [--json]
+```
+
+A saída padrão é legível: um cabeçalho por processo (`chain ok` ou
+`chain BROKEN`) e um bloco por entrada, com a marca `[superado por <id>]`.
+`--full` imprime o texto de cada anexo, byte a byte, entre
+`----- attachment <hash> (<n> bytes) -----` e `----- end -----`. `--json`
+imprime JSONL: uma linha `{"kind":"chain", ...}` por processo e depois uma
+`{"kind":"entry", ...}` por entrada, com os campos da tool. Os avisos vão para
+`stderr`. Códigos de saída: `0` tudo íntegro; `2` alguma cadeia, anexo ou
+processo quebrado; `1` uso incorreto ou erro (`timeline failed: CODE: msg`).
+Nunca escreve no diretório de dados.
+
 O jest testa o `.ts` fonte; os testes de ponta a ponta sobem o servidor a
 partir do bundle já construído (`.mjs`), para cobrir o artefato que as
 sessões de fato executam. Os testes do instalador substituem as execuções
@@ -579,4 +698,5 @@ script de teste sem depender do binário `claude` nem tocar no
 ## Links
 
 - [ADR 0001: hexlog MVP](docs/adr-0001-hexlog-mvp.md)
+- [ADR 0006: anexos, tipos de auditoria e timeline](docs/adr-0006-anexos-tipos-timeline.md)
 - [Pesquisa de bibliotecas](docs/pesquisa/hexlog-pesquisa-libs.md)

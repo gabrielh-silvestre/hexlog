@@ -1,7 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import canonicalize from 'canonicalize';
-import { isNil, isNotNil, keyBy, omit, sumBy, uniqBy, zip } from 'es-toolkit';
+import { isNil, isNotNil, isString, keyBy, omit, sumBy, uniqBy, zip } from 'es-toolkit';
+import { get } from 'es-toolkit/compat';
 import { z } from 'zod';
+import {
+  assertAttachmentIntact,
+  checkAttachment,
+  checkAttachmentMemoized,
+  checkAttachments,
+} from './attachments.ts';
 import {
   search as runSearch,
   isCandidate,
@@ -9,7 +16,13 @@ import {
   SEARCH_MAX_CHARS,
   type Filters,
 } from './search.ts';
-import { isValidLink, verifyChain, type Chain } from './chain.ts';
+import {
+  attachmentRefs,
+  isValidLink,
+  verifyChain,
+  type AttachmentStatus,
+  type Chain,
+} from './chain.ts';
 import { loadProcess, type LoadedProcess } from './definitions.ts';
 import { issueDetails, HexlogError, type Detail } from './errors.ts';
 import {
@@ -466,8 +479,10 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
       title: 'Chain',
       description:
         "Verifies the process log's hash chain: sequence, linking from the `process.json` anchor, and the " +
-        'validity of `data` against each type’s fixed schema. `breaks` and `repairedLines` come capped at 100 ' +
-        'items, with the real totals.',
+        'validity of `data` against each type’s fixed schema. For custom types whose schema declares an ' +
+        '`attachment` field it also re-hashes the referenced blob: a missing one is a break with reason ' +
+        '`attachment-missing`, an altered one `attachment-corrupted` (the hash is in `detail`). `breaks` and ' +
+        '`repairedLines` come capped at 100 items, with the real totals.',
       inputSchema: { project: Name, process: Name },
       outputSchema: ChainSchema.shape,
       annotations: {
@@ -488,7 +503,7 @@ export function registerEventTools(server: McpServer, ctx: Context): void {
  * Lines de um log (§4.6: cauda sem `\n` descartada): linha que passa no envelope e cujo `data`
  * bate o schema do seu `type` (nativo ou do snapshot). As demais linhas ficam de fora.
  */
-function readLines(text: string, customSchemas: Record<string, z.ZodType>): EventLine[] {
+export function readLines(text: string, customSchemas: Record<string, z.ZodType>): EventLine[] {
   const lines: EventLine[] = [];
   for (const lineText of text.split('\n').slice(0, -1)) {
     const line = isValidLink(lineText);
@@ -503,7 +518,7 @@ function hasValidData(line: EventLine, customSchemas: Record<string, z.ZodType>)
 }
 
 /** `validateData` de `verifyChain` (§4.6): reprova `data` fora do schema fixado do seu `type`. */
-function validateProcessData(
+export function validateProcessData(
   customSchemas: Record<string, z.ZodType>,
 ): (type: string, data: Record<string, unknown>) => Detail[] | null {
   return (type, data) => {
@@ -523,19 +538,40 @@ function validateProcessData(
 }
 
 /**
+ * Estado dos anexos que o log referencia, já lido do disco (`chain.ts` não faz I/O). `check` é
+ * `checkAttachment` (re-hash sempre: `chain`) ou `checkAttachmentMemoized` (`state` e gates).
+ */
+function attachmentStatuses(
+  ctx: Context,
+  project: string,
+  process: LoadedProcess,
+  text: string,
+  check: typeof checkAttachment,
+): Map<string, AttachmentStatus> {
+  return checkAttachments(ctx.dataDir, project, attachmentRefs(text, process.manifest), check);
+}
+
+/**
  * Projeta o State completo do processo (§4.8) a partir do texto atual do log. `verdictById` (P4)
  * é montado aqui, sobre as `lines` já lidas — sem I/O extra — para `resolveState` anexar `data`
- * do Verdict vigente a cada item de `active` quando `withData` for pedido.
+ * do Verdict vigente a cada item de `active` quando `withData` for pedido. `attachments` é o
+ * estado dos blobs referenciados, para `chain-intact` enxergar anexo ausente ou adulterado.
  */
 function buildState(
   process: LoadedProcess,
   text: string,
   clock: () => Date,
+  attachments: ReadonlyMap<string, AttachmentStatus>,
 ): State & { now: string; verdictById: Record<string, EventLine> } {
   const lines = readLines(text, process.customSchemas);
   const now = effectiveNow(clock().toISOString(), lines);
   const projection = projectState(lines, process.manifest.fixed.vocabulary, now);
-  const chain = verifyChain(text, process.manifest, validateProcessData(process.customSchemas));
+  const chain = verifyChain(
+    text,
+    process.manifest,
+    validateProcessData(process.customSchemas),
+    attachments,
+  );
   const verdictById = keyBy(
     lines.filter((line) => line.type === 'verdict'),
     (line) => line.id,
@@ -614,6 +650,7 @@ async function registerEvent(
 
   const normalized = normalizeData(type, data, loaded.customSchemas);
   const warnings = applyVocabulary(type, normalized, loaded.manifest.fixed.vocabulary);
+  ensureCustomReferences(ctx, project, loaded, type, normalized);
 
   if (isNotNil(uuid)) {
     const existing = retryWithFullId(loaded, id, type, agent, normalized);
@@ -635,6 +672,73 @@ async function registerEvent(
     { log: ctx.log, clock: ctx.clock },
   );
   return { ...toReceipt(line, false, echo), warnings };
+}
+
+/**
+ * Referências de um evento de tipo custom: o blob de `attachment` (só nos tipos que declaram o
+ * campo) existe e está íntegro, e cada id de `supersedes` é um evento custom do mesmo processo
+ * (a supersessão de Verdict é só do `state`). Sem efeito colateral, então vale também na
+ * retentativa por id completo.
+ */
+function ensureCustomReferences(
+  ctx: Context,
+  project: string,
+  loaded: LoadedProcess,
+  type: string,
+  data: Record<string, unknown>,
+): void {
+  if (type === 'milestone' || type === 'verdict') return;
+
+  const { attachment, supersedes } = data;
+  const declaresAttachment = isNotNil(
+    get(loaded.manifest.fixed.types[type], 'properties.attachment'),
+  );
+  if (declaresAttachment && isString(attachment)) {
+    assertAttachmentIntact(ctx.dataDir, project, attachment);
+  }
+
+  if (Array.isArray(supersedes) && supersedes.every(isString)) {
+    ensureSupersedesAreCustom(loaded, supersedes);
+  }
+}
+
+function ensureSupersedesAreCustom(loaded: LoadedProcess, ids: string[]): void {
+  // Map, não objeto: `supersedes: ['constructor']` não pode "existir" pelo protótipo
+  const typeById = new Map(
+    readLines(readText(loaded.eventsFile), loaded.customSchemas).map((line) => [
+      line.id,
+      line.type,
+    ]),
+  );
+
+  const missing = ids.flatMap((id, index) => (typeById.has(id) ? [] : [{ id, index }]));
+  if (missing.length > 0) {
+    throw new HexlogError(
+      'UNKNOWN_ID',
+      `supersedes ids not found: ${missing.map(({ id }) => id).join(', ')}`,
+      missing.map(({ id, index }) => ({
+        path: `/data/supersedes/${index}`,
+        code: 'unknown_id',
+        message: `id '${id}' not found in this process`,
+      })),
+    );
+  }
+
+  const native = ids.flatMap((id, index) => {
+    const type = typeById.get(id);
+    return type === 'milestone' || type === 'verdict' ? [{ id, index }] : [];
+  });
+  if (native.length > 0) {
+    throw new HexlogError(
+      'INVALID_EVENT',
+      'supersedes of a custom type must reference custom events only',
+      native.map(({ id, index }) => ({
+        path: `/data/supersedes/${index}`,
+        code: 'not_custom',
+        message: `id '${id}' is a Milestone or Verdict; only Verdicts supersede Verdicts`,
+      })),
+    );
+  }
 }
 
 function validateEventId(
@@ -814,7 +918,13 @@ async function evaluateGate(
   const loaded = loadProcess(ctx.dataDir, project, process);
   // Um único snapshot de State pro lote inteiro: todo gate embutido da mesma chamada compartilha
   // o mesmo `evaluatedThrough`.
-  const state = buildState(loaded, readText(loaded.eventsFile), ctx.clock);
+  const text = readText(loaded.eventsFile);
+  const state = buildState(
+    loaded,
+    text,
+    ctx.clock,
+    attachmentStatuses(ctx, project, loaded, text, checkAttachmentMemoized),
+  );
 
   // Resolve e avalia todos os N gates antes de gravar (sem efeito colateral): qualquer erro aqui
   // propaga sem que o lock chegue a ser adquirido — tudo-ou-nada na validação.
@@ -981,7 +1091,13 @@ function resolveState(
   },
 ) {
   const loaded = loadProcess(ctx.dataDir, project, process);
-  const built = buildState(loaded, readText(loaded.eventsFile), ctx.clock);
+  const text = readText(loaded.eventsFile);
+  const built = buildState(
+    loaded,
+    text,
+    ctx.clock,
+    attachmentStatuses(ctx, project, loaded, text, checkAttachmentMemoized),
+  );
   // #25: log não avançou desde `since` — pula LIST_SECTIONS.map/attachVerdictData/serialização.
   if (isNotNil(since) && (isNil(built.logThrough) || built.logThrough.seq <= since)) {
     return { logThrough: built.logThrough, unchanged: true };
@@ -1414,5 +1530,10 @@ function resolveChain(
 ): Chain {
   const loaded = loadProcess(ctx.dataDir, project, process);
   const text = readText(loaded.eventsFile);
-  return verifyChain(text, loaded.manifest, validateProcessData(loaded.customSchemas));
+  return verifyChain(
+    text,
+    loaded.manifest,
+    validateProcessData(loaded.customSchemas),
+    attachmentStatuses(ctx, project, loaded, text, checkAttachment),
+  );
 }
