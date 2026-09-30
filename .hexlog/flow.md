@@ -6,7 +6,7 @@ process:
   execucao: omc-exec
   verificacao: omc-verify
 skills:
-  descoberta: [oh-my-claudecode:deep-dive, oh-my-claudecode:deep-interview]
+  descoberta: [oh-my-claudecode:deep-interview]
   planejamento: [oh-my-claudecode:plan, oh-my-claudecode:ralplan]
   execucao: [oh-my-claudecode:ralph, oh-my-claudecode:autopilot, oh-my-claudecode:team]
   verificacao: [oh-my-claudecode:verify]
@@ -31,7 +31,6 @@ versions:
     verified: "1.0"
 editedSkills:
   - oh-my-claudecode:deep-interview
-  - oh-my-claudecode:deep-dive
   - oh-my-claudecode:plan
   - oh-my-claudecode:ralplan
   - oh-my-claudecode:ralph
@@ -62,16 +61,15 @@ próprio; para auditar a trilha inteira, `timeline` com os dois (`<spec> <plano>
 
 ## descoberta → `omc-discover`
 
-Skills: `deep-dive` (trace → deep-interview) e `deep-interview`.
+Skill: `deep-interview` (o `deep-dive` foi retirado no OMC 5.0.0).
 
 | Ponto | Evento | Claim / tipo | Result |
 |---|---|---|---|
-| Spec gravada em `.omc/specs/` (`deep-interview:390-490`, `deep-dive:275-283`) | milestone + verdict | `spec-written` / `spec-crystallized` | `pass` (PASSED) \| `fail` (BELOW_THRESHOLD_EARLY_EXIT) |
-| Execution bridge (`deep-interview:496-523`, `deep-dive:319-346`) | verdict | `execution-approval` | `approve` (rota na evidência) \| `request-changes` \| `pending` |
+| Spec gravada em `.omc/specs/` (`deep-interview:390-490`) | milestone + verdict | `spec-written` / `spec-crystallized` | `pass` (PASSED) \| `fail` (BELOW_THRESHOLD_EARLY_EXIT) |
+| Execution bridge (`deep-interview:496-523`) | verdict | `execution-approval` | `approve` (rota na evidência) \| `request-changes` \| `pending` |
 
 Gate `spec-crystallized`: veredito ativo `spec-crystallized=pass` na spec, sem
-`fail` ativo. Atenção: no `deep-dive`, a rota ralplan→autopilot (`:327`) segue
-para o autopilot sem novo gate humano; no `deep-interview` (`:504`, `:752`) ela
+`fail` ativo. No `deep-interview` (`:504`, `:752`), a rota ralplan→autopilot
 para em `pending approval`.
 
 ## planejamento → `omc-plan`
@@ -93,8 +91,7 @@ Gate `execution-approved`: veredito ativo `execution-approval=approve` no plano.
 `pending`, `request-changes` e `reject` barram (`plan:44`, `:240`).
 
 Rotas sem aprovação humana separada registram a aprovação aqui por conta
-própria: a rota 1 do `deep-dive` (ralplan→autopilot) e o `autopilot` invocado
-direto (invocar já é aprovar).
+própria: o `autopilot` invocado direto (invocar já é aprovar).
 
 Fora do mapeamento: o Pre-Execution Gate do `ralplan` (`:82-152`) é decidido
 pelo hook `src/hooks/keyword-detector/index.ts`, não pelo agente; registrá-lo
