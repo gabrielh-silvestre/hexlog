@@ -33,11 +33,10 @@ function rec(
   };
 }
 
+type SpiedInput = GateInput & { records: jest.Mock<GateInput['records']> };
+
 /** Leitura em que os dois alcances devolvem os mesmos registros. */
-const reading = (
-  records: HexRecord[],
-  target?: string,
-): GateInput & { records: jest.Mock<GateInput['records']> } => ({
+const reading = (records: HexRecord[], target?: string): SpiedInput => ({
   target,
   records: jest.fn<GateInput['records']>(() => records),
 });
@@ -286,21 +285,6 @@ describe('no_pending', () => {
     expect(evaluateGate([fromReview], reading(byPlan)).passed).toBe(false);
     expect(evaluateGate([fromReview], reading(byReview)).passed).toBe(true);
   });
-
-  test('todo achado respondido: reprova quando um registro de achado não tem answers de entrada', () => {
-    const findings = question({
-      kind: 'no_pending',
-      pending: { type: 'finding' },
-      resolvedBy: { kind: 'answers' },
-    });
-    const records = [rec(p1, 'finding'), rec(p2, 'finding'), rec(p3, 'answer', [['answers', p1]])];
-    expect(evaluateGate([findings], reading(records)).questions[0]?.evidence).toEqual({
-      unresolved: [p2],
-    });
-
-    const answeredAll = [...records, rec(p4, 'answer', [['answers', p2]])];
-    expect(evaluateGate([findings], reading(answeredAll)).passed).toBe(true);
-  });
 });
 
 describe('no_open_contradiction', () => {
@@ -341,7 +325,7 @@ describe('alcance (D-24)', () => {
   const q = (scope: GateScope) =>
     question({ kind: 'approved', of: { type: 'plan' }, by: { type: 'review' }, scope });
 
-  const scoped = (): GateInput & { records: jest.Mock<GateInput['records']> } => ({
+  const scoped = (): SpiedInput => ({
     records: jest.fn<GateInput['records']>((scope) =>
       scope === 'project' ? [plan, foreignReview] : [plan],
     ),

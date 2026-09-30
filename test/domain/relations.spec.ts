@@ -115,7 +115,7 @@ describe('regras estruturais (D-10)', () => {
     };
   }
 
-  const codeOf = (result: ReturnType<typeof checkRelation>) =>
+  const violationOf = (result: ReturnType<typeof checkRelation>) =>
     'violation' in result ? result.violation : undefined;
 
   test('relação válida devolve o kind', () => {
@@ -127,7 +127,7 @@ describe('regras estruturais (D-10)', () => {
       { kind: 'supports' },
       ctx({ to: { id: id('p', 10), type: 'verdict' } }),
     );
-    expect(codeOf(result)).toEqual({ code: 'self-relation' });
+    expect(violationOf(result)).toEqual({ code: 'self-relation' });
   });
 
   test('as preenche o kind; kind igual ao do nome passa', () => {
@@ -138,50 +138,59 @@ describe('regras estruturais (D-10)', () => {
   });
 
   test('unknown-relation-name, kind-mismatch e missing-kind', () => {
-    expect(codeOf(checkRelation({ as: 'nope' }, ctx()))).toEqual({ code: 'unknown-relation-name' });
-    expect(codeOf(checkRelation({ as: 'based-on', kind: 'contradicts' }, ctx()))).toEqual({
+    expect(violationOf(checkRelation({ as: 'nope' }, ctx()))).toEqual({
+      code: 'unknown-relation-name',
+    });
+    expect(violationOf(checkRelation({ as: 'based-on', kind: 'contradicts' }, ctx()))).toEqual({
       code: 'kind-mismatch',
     });
-    expect(codeOf(checkRelation({}, ctx()))).toEqual({ code: 'missing-kind' });
+    expect(violationOf(checkRelation({}, ctx()))).toEqual({ code: 'missing-kind' });
   });
 
   test('endpoint-type recusa origem ou destino fora das listas do nome', () => {
     const wrongFrom = ctx({ from: { id: id('p', 10), type: 'evidence' } });
     const wrongTo = ctx({ to: { id: e1, type: 'verdict' } });
-    expect(codeOf(checkRelation({ as: 'based-on' }, wrongFrom))).toEqual({ code: 'endpoint-type' });
-    expect(codeOf(checkRelation({ as: 'based-on' }, wrongTo))).toEqual({ code: 'endpoint-type' });
+    expect(violationOf(checkRelation({ as: 'based-on' }, wrongFrom))).toEqual({
+      code: 'endpoint-type',
+    });
+    expect(violationOf(checkRelation({ as: 'based-on' }, wrongTo))).toEqual({
+      code: 'endpoint-type',
+    });
   });
 
   test('pontas sem lista declarada aceitam qualquer tipo', () => {
-    const base = ctx({
-      from: { id: id('p', 10), type: 'evidence' },
-      vigency: buildVigency([rec(e1)]),
-    });
+    const base = ctx({ from: { id: id('p', 10), type: 'evidence' } });
     expect(checkRelation({ as: 'replaces' }, base)).toEqual({ kind: 'supersedes' });
   });
 
   test('cross-process-currency em supersedes e em revokes entre processos', () => {
     const other = { to: { id: id('q', 1), type: 'verdict' } };
-    expect(codeOf(checkRelation({ kind: 'supersedes' }, ctx(other)))).toEqual({
+    expect(violationOf(checkRelation({ kind: 'supersedes' }, ctx(other)))).toEqual({
       code: 'cross-process-currency',
     });
-    expect(codeOf(checkRelation({ kind: 'revokes' }, ctx(other)))).toEqual({
+    expect(violationOf(checkRelation({ kind: 'revokes' }, ctx(other)))).toEqual({
       code: 'cross-process-currency',
     });
   });
 
   test('type-mismatch só em supersedes: revokes aceita outro tipo', () => {
-    expect(codeOf(checkRelation({ kind: 'supersedes' }, ctx()))).toEqual({ code: 'type-mismatch' });
+    expect(violationOf(checkRelation({ kind: 'supersedes' }, ctx()))).toEqual({
+      code: 'type-mismatch',
+    });
     expect(checkRelation({ kind: 'revokes' }, ctx())).toEqual({ kind: 'revokes' });
   });
 
   test('supports-and-contradicts nas duas direções', () => {
     const contradicts = [{ kind: 'contradicts' as const, to: e1 }];
     const supports = [{ kind: 'supports' as const, to: e1 }];
-    expect(codeOf(checkRelation({ kind: 'supports' }, ctx({ siblings: contradicts })))).toEqual({
+    expect(
+      violationOf(checkRelation({ kind: 'supports' }, ctx({ siblings: contradicts }))),
+    ).toEqual({
       code: 'supports-and-contradicts',
     });
-    expect(codeOf(checkRelation({ kind: 'contradicts' }, ctx({ siblings: supports })))).toEqual({
+    expect(
+      violationOf(checkRelation({ kind: 'contradicts' }, ctx({ siblings: supports }))),
+    ).toEqual({
       code: 'supports-and-contradicts',
     });
     expect(
@@ -194,11 +203,11 @@ describe('regras estruturais (D-10)', () => {
   test('stale-destination traz a versão atual da linhagem ou null', () => {
     const replaced = buildVigency([rec(e1), rec(e2, ['supersedes', e1])]);
     const revoked = buildVigency([rec(e1), rec(v1, ['revokes', e1])]);
-    expect(codeOf(checkRelation({ kind: 'supports' }, ctx({ vigency: replaced })))).toEqual({
+    expect(violationOf(checkRelation({ kind: 'supports' }, ctx({ vigency: replaced })))).toEqual({
       code: 'stale-destination',
       current: e2,
     });
-    expect(codeOf(checkRelation({ kind: 'supports' }, ctx({ vigency: revoked })))).toEqual({
+    expect(violationOf(checkRelation({ kind: 'supports' }, ctx({ vigency: revoked })))).toEqual({
       code: 'stale-destination',
       current: null,
     });
@@ -218,18 +227,17 @@ describe('regras estruturais (D-10)', () => {
   });
 
   test('not-current em supersedes e revokes sobre registro já substituído ou revogado', () => {
-    const same = { from: { id: id('p', 10), type: 'evidence' } };
+    const sameType = { from: { id: id('p', 10), type: 'evidence' } };
     const replaced = buildVigency([rec(e1), rec(e2, ['supersedes', e1])]);
     const revoked = buildVigency([rec(e1), rec(v1, ['revokes', e1])]);
-    const to = { to: { id: e1, type: 'evidence' } };
     expect(
-      codeOf(checkRelation({ kind: 'supersedes' }, ctx({ ...same, ...to, vigency: replaced }))),
+      violationOf(checkRelation({ kind: 'supersedes' }, ctx({ ...sameType, vigency: replaced }))),
     ).toEqual({
       code: 'not-current',
       current: e2,
     });
     expect(
-      codeOf(checkRelation({ kind: 'revokes' }, ctx({ ...same, ...to, vigency: revoked }))),
+      violationOf(checkRelation({ kind: 'revokes' }, ctx({ ...sameType, vigency: revoked }))),
     ).toEqual({
       code: 'not-current',
       current: null,
@@ -241,17 +249,17 @@ describe('regras estruturais (D-10)', () => {
       rec(e1),
       rec(id('p', 10), ['supports', e1], ['supersedes', e1]),
     ]);
-    expect(codeOf(checkRelation({ kind: 'supports' }, ctx({ vigency: batchFirst })))).toMatchObject(
-      {
-        code: 'stale-destination',
-      },
-    );
+    expect(
+      violationOf(checkRelation({ kind: 'supports' }, ctx({ vigency: batchFirst }))),
+    ).toMatchObject({
+      code: 'stale-destination',
+    });
     const batchSecond = buildVigency([
       rec(e1),
       rec(id('p', 10), ['supersedes', e1], ['supports', e1]),
     ]);
     expect(
-      codeOf(checkRelation({ kind: 'supports' }, ctx({ vigency: batchSecond }))),
+      violationOf(checkRelation({ kind: 'supports' }, ctx({ vigency: batchSecond }))),
     ).toMatchObject({
       code: 'stale-destination',
     });
@@ -262,7 +270,7 @@ describe('regras estruturais (D-10)', () => {
       to: { id: id('q', 1), type: 'verdict' },
       siblings: [{ kind: 'supports', to: id('q', 1) }],
     });
-    expect(codeOf(checkRelation({ kind: 'supersedes' }, bad))).toEqual({
+    expect(violationOf(checkRelation({ kind: 'supersedes' }, bad))).toEqual({
       code: 'cross-process-currency',
     });
   });

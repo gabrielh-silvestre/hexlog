@@ -76,7 +76,7 @@ describe('P6: árvore nova isolada da raiz legada', () => {
     ['export * from', `export * from '../state.ts';`],
     ['import dinâmico', `export const load = () => import('../storage.ts');`],
     ['import dinâmico não literal', `export const load = (m: string) => import(m);`],
-    ['import()  em tipo', `export type T = import('../chain.ts').Link;`],
+    ['import() em tipo', `export type T = import('../chain.ts').Link;`],
     ['import = require', `import log = require('../log.ts');`],
     ['import só de efeito', `import '../server.ts';`],
   ])('detecta %s', (_label, code) => {

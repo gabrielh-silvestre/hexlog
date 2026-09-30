@@ -4,7 +4,7 @@ import { Name, Target } from './ids.ts';
 import type { RecordId } from './ids.ts';
 import { RelationKind } from './record.ts';
 import type { HexRecord } from './record.ts';
-import { buildVigency } from './relations.ts';
+import { buildVigency, pushTo } from './relations.ts';
 
 /** Valor de `where`: só escalar, para que operadores entrem numa minor sem colidir com objeto. */
 const Scalar = z.union([z.string(), z.number(), z.boolean()]);
@@ -99,9 +99,7 @@ function buildView(records: readonly HexRecord[]): View {
   const incoming = new Map<RecordId, Incoming[]>();
   for (const from of records) {
     for (const { kind, to } of from.relations) {
-      const list = incoming.get(to);
-      if (list) list.push({ kind, from });
-      else incoming.set(to, [{ kind, from }]);
+      pushTo(incoming, to, { kind, from });
     }
   }
   const vigency = buildVigency(records);

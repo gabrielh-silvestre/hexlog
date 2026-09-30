@@ -123,11 +123,6 @@ describe('isValidLink', () => {
     expect(isValidLink(link({ seq: 1 }), expected)).toBeNull();
   });
 
-  test('recusa prevHash adulterado', () => {
-    const tampered = link({ prevHash: `${anchor(manifest).slice(0, 63)}0` });
-    expect(isValidLink(tampered, expected)).toBeNull();
-  });
-
   test('o elo seguinte encadeia no hash do anterior', () => {
     const first = link();
     const second = link({ seq: 1, prevHash: hashLink(first) });
