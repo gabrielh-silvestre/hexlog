@@ -17,14 +17,18 @@ const eslint = new ESLint({
   ],
 });
 
+// Só severidade 2 (error) conta: rebaixar uma regra para 'warn' precisa derrubar o spec.
+const errorRuleIds = (messages: { ruleId: string | null; severity: number }[]) =>
+  messages.filter((message) => message.severity === 2).map((message) => message.ruleId);
+
 async function ruleIdsOfFile(relativePath: string): Promise<(string | null)[]> {
   const [result] = await eslint.lintFiles([relativePath]);
-  return result?.messages.map((message) => message.ruleId) ?? ['sem resultado'];
+  return result ? errorRuleIds(result.messages) : ['sem resultado'];
 }
 
 async function ruleIdsOfText(relativePath: string, code: string): Promise<(string | null)[]> {
   const [result] = await eslint.lintText(code, { filePath: path.join(fixturesRoot, relativePath) });
-  return result?.messages.map((message) => message.ruleId) ?? ['sem resultado'];
+  return result ? errorRuleIds(result.messages) : ['sem resultado'];
 }
 
 const importing = (specifier: string) => `import x from '${specifier}';\nexport default x;\n`;
@@ -48,7 +52,16 @@ const FORBIDDEN_SPECIFIERS = [
   'ajv',
   'ajv-formats',
   'minisearch',
+  'ajv/dist/2020.js',
+  'ajv-formats/dist/x',
+  'minisearch/x',
+  'node:http',
+  'http',
+  'node:worker_threads',
+  '@modelcontextprotocol/server/stdio',
+  '@modelcontextprotocol/client',
   '../adapters/anchor.ts',
+  '../adapters/fs/store.ts',
 ];
 
 describe('travas de fronteira (SF1/TB1)', () => {
@@ -69,6 +82,16 @@ describe('travas de fronteira (SF1/TB1)', () => {
     expect(await ruleIdsOfText(`src/${layer}/probe.ts`, importing(specifier))).toEqual([
       'no-restricted-imports',
     ]);
+  });
+
+  test.each(RESTRICTED_LAYERS)('%s barra o especificador em subdiretório fundo', async (layer) => {
+    expect(await ruleIdsOfText(`src/${layer}/sub/deep/probe.ts`, importing('node:fs'))).toEqual([
+      'no-restricted-imports',
+    ]);
+  });
+
+  test.each(RESTRICTED_LAYERS)('%s permite ./ajv local', async (layer) => {
+    expect(await ruleIdsOfText(`src/${layer}/probe.ts`, importing('./ajv'))).toEqual([]);
   });
 
   test.each(RESTRICTED_LAYERS)('%s não usa import dinâmico', async (layer) => {
@@ -95,13 +118,49 @@ describe('travas de fronteira (SF1/TB1)', () => {
     },
   );
 
-  test.each(['src/mcp/server.ts', 'src/adapters/fs/store.ts', 'src/mcp/tools/process.ts'])(
-    '%s fica fora das travas e pode importar node:fs e o SDK',
-    async (file) => {
-      const code = `import 'node:fs';\nimport '@modelcontextprotocol/server';\n`;
-      expect(await ruleIdsOfText(file, code)).toEqual([]);
+  test('adapters fica fora das travas e pode importar node:fs e o SDK', async () => {
+    const code = `import 'node:fs';\nimport '@modelcontextprotocol/server';\n`;
+    expect(await ruleIdsOfText('src/adapters/fs/store.ts', code)).toEqual([]);
+  });
+
+  test('mcp pode importar o SDK do MCP', async () => {
+    expect(
+      await ruleIdsOfText('src/mcp/server.ts', importing('@modelcontextprotocol/server')),
+    ).toEqual([]);
+  });
+});
+
+describe('domain sem camadas de fora do núcleo (N6)', () => {
+  test.each(['../commands/x.ts', '../queries/x.ts', '../mcp/kernel.ts', '../shared/logger.ts'])(
+    'domain não importa %s',
+    async (specifier) => {
+      expect(await ruleIdsOfText('src/domain/probe.ts', importing(specifier))).toEqual([
+        'no-restricted-imports',
+      ]);
     },
   );
+
+  test.each(['node:crypto', '../errors.ts'])('domain pode importar %s', async (specifier) => {
+    expect(await ruleIdsOfText('src/domain/probe.ts', importing(specifier))).toEqual([]);
+  });
+});
+
+describe('mcp sem builtins nem adapters (N6)', () => {
+  test.each([
+    ['src/mcp/tools/process.ts', '../../adapters/fs/store.ts'],
+    ['src/mcp/tools/process.ts', 'node:fs'],
+    ['src/mcp/server.ts', 'node:os'],
+    ['src/mcp/kernel.ts', 'node:fs'],
+    ['src/mcp/kernel.ts', '../adapters/fs/store.ts'],
+    ['src/mcp/kernel.ts', './tools/process.ts'],
+  ])('%s não importa %s', async (file, specifier) => {
+    expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
+  });
+
+  test('mcp não usa import dinâmico', async () => {
+    const code = `export const load = () => import('node:path');\n`;
+    expect(await ruleIdsOfText('src/mcp/server.ts', code)).toEqual(['no-restricted-syntax']);
+  });
 });
 
 describe('limite de tamanho (SF2/TB2)', () => {
@@ -128,6 +187,10 @@ describe('kernel MCP sem tools (TB3)', () => {
 
   test('kernel.ts que importa só irmãos fora de tools passa', async () => {
     expect(await ruleIdsOfText('src/mcp/kernel.ts', importing('./server.ts'))).toEqual([]);
+  });
+
+  test('server.ts pode importar ./tools/process.ts', async () => {
+    expect(await ruleIdsOfText('src/mcp/server.ts', importing('./tools/process.ts'))).toEqual([]);
   });
 
   test('uma tool pode importar o kernel', async () => {
