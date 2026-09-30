@@ -14,28 +14,20 @@ import { isUndefined, omitBy, range } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { dataDir } from '../src/directory.ts';
 import type { LogRecord } from '../src/log.ts';
-import { at } from './helpers.ts';
+import { at, createTempDir } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const buildPath = path.join(repoRoot, 'scripts/build.ts');
 
 // ---- infra compartilhada ----
 
-const temporaryDirs: string[] = [];
-
-function mkdtempOutside(prefix: string): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  temporaryDirs.push(dir);
-  return dir;
-}
-
 /** `env` de um processo filho isolado: HOME e XDG_DATA_HOME temporários (§9.3); o real nunca é tocado. */
 function temporaryEnv(): Record<string, string> {
   const base = omitBy(process.env, isUndefined) as Record<string, string>;
   return {
     ...base,
-    HOME: mkdtempOutside('hexlog-e2e-home-'),
-    XDG_DATA_HOME: mkdtempOutside('hexlog-e2e-xdg-'),
+    HOME: createTempDir('e2e-home'),
+    XDG_DATA_HOME: createTempDir('e2e-xdg'),
   };
 }
 
@@ -113,9 +105,6 @@ afterAll(() => {
   if (realDirBefore.exists) {
     assert.strictEqual(fs.statSync(realDir).mtimeMs, realDirBefore.mtimeMs);
   }
-  for (const dir of temporaryDirs) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 // ---- bundle principal: compartilhado por M6, B1(a), B1(c) e C1 ----
@@ -123,7 +112,7 @@ afterAll(() => {
 let mainBundle: string;
 
 beforeAll(() => {
-  mainBundle = mkdtempOutside('hexlog-e2e-bundle-');
+  mainBundle = createTempDir('e2e-bundle');
   buildBundle(mainBundle, repoRoot);
 }, 30_000);
 
@@ -301,8 +290,8 @@ describe('B1', () => {
     let tmpBundle: string;
 
     beforeAll(() => {
-      rootBundle = mkdtempOutside('hexlog-e2e-b1d-root-');
-      tmpBundle = mkdtempOutside('hexlog-e2e-b1d-tmp-');
+      rootBundle = createTempDir('e2e-b1d-root');
+      tmpBundle = createTempDir('e2e-b1d-tmp');
       buildBundle(rootBundle, repoRoot);
       buildBundle(tmpBundle, os.tmpdir());
     }, 30_000);
@@ -335,7 +324,7 @@ describe('Q1', () => {
 
   test('put ≥ 200 KB por text e por path, get paginado, timeline e CLI --full idênticos; adulteração vista sem full', async () => {
     const env = temporaryEnv();
-    const serverCwd = mkdtempOutside('hexlog-e2e-q1-cwd-');
+    const serverCwd = createTempDir('e2e-q1-cwd');
     fs.mkdirSync(path.join(serverCwd, '.omc', 'plans'), { recursive: true });
     fs.writeFileSync(path.join(serverCwd, '.omc', 'plans', 'grande.md'), BIG_TEXT);
     const { client, stderr } = await createClient(

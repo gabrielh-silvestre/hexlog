@@ -58,9 +58,10 @@ function functionNamesFrom(content: string): string[] {
   return [...content.matchAll(/(?:^|\s)function ([A-Za-z][A-Za-z0-9]*)/g)].map((m) => at(m, 1));
 }
 
-const SYMBOL_CITATION_FORMAT = /^[A-Za-z0-9_.-]+\.ts#[A-Za-z_][A-Za-z0-9_]*$/;
+/** Caminho relativo a `src/` (zero ou mais diretórios), `.ts`, `#` e o símbolo. */
+const SYMBOL_CITATION_FORMAT = /^(?:[a-z0-9-]+\/)*[A-Za-z0-9_.-]+\.ts#[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** Citações `arquivo.ts#símbolo` entre crase simples em `content`, fora de blocos cercados. */
+/** Citações `[diretório/]arquivo.ts#símbolo` entre crase simples em `content`, fora de blocos cercados. */
 function fileSymbolCitationsFrom(content: string): string[] {
   return extractInlineBackticks(content).filter((token) => SYMBOL_CITATION_FORMAT.test(token));
 }
@@ -121,6 +122,21 @@ describe('extratores (unitário, sobre string literal)', () => {
       'definitions.ts#createProcess',
       'events.ts#Name',
     ]);
+  });
+
+  test('fileSymbolCitationsFrom aceita diretórios relativos a src/ e recusa maiúscula, ../ e raiz absoluta', () => {
+    const content =
+      '`mcp/tools/register.ts#register` e `a/b-2/c.ts#Sym`, mas não `Mcp/x.ts#y`, `../x.ts#y` nem `/x.ts#y`';
+    expect(fileSymbolCitationsFrom(content)).toEqual([
+      'mcp/tools/register.ts#register',
+      'a/b-2/c.ts#Sym',
+    ]);
+  });
+
+  test('tsFilesUnder desce em subpastas e devolve caminhos relativos', () => {
+    const files = tsFilesUnder(path.join(repoRoot, 'test'));
+    expect(files).toContain('skill-coherence.spec.ts');
+    expect(files.some((file) => file.startsWith('fixtures/'))).toBe(true);
   });
 
   test('declarationBodyFrom acha a declaração ancorada e vai até a próxima, rejeitando comentário e indentada', () => {
@@ -188,10 +204,16 @@ const errorCodeCatalog = errorCodeCatalogFrom(
   fs.readFileSync(path.join(repoRoot, 'src/errors.ts'), 'utf8'),
 );
 
-const declaredFunctionNames = fs
-  .readdirSync(srcDir)
-  .filter((file) => file.endsWith('.ts'))
-  .flatMap((file) => functionNamesFrom(fs.readFileSync(path.join(srcDir, file), 'utf8')));
+/** Caminhos `.ts` sob `dir`, relativos a ele, em qualquer profundidade. */
+function tsFilesUnder(dir: string): string[] {
+  return fs
+    .readdirSync(dir, { recursive: true, encoding: 'utf8' })
+    .filter((file) => file.endsWith('.ts'));
+}
+
+const declaredFunctionNames = tsFilesUnder(srcDir).flatMap((file) =>
+  functionNamesFrom(fs.readFileSync(path.join(srcDir, file), 'utf8')),
+);
 
 const reservedNameValues: readonly string[] = [
   ...RESERVED_PROCESS_NAMES,

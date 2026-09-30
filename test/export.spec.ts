@@ -1,16 +1,14 @@
-import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, test } from '@jest/globals';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { at, createEnvironment, registerCore } from './helpers.ts';
+import { at, createEnvironment, createTempDir, registerCore } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const AGENT = 'agent-test';
 
 let xdgHome: string;
-const extraDirs: string[] = [];
 
 function runExport(xdg: string, ...args: string[]) {
   const result = spawnSync(process.execPath, ['scripts/export.ts', ...args], {
@@ -22,9 +20,8 @@ function runExport(xdg: string, ...args: string[]) {
 }
 
 function copyToXdg(source: string): string {
-  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-xdg-'));
+  const xdg = createTempDir('xdg');
   fs.cpSync(source, path.join(xdg, 'hexlog'), { recursive: true });
-  extraDirs.push(xdg);
   return xdg;
 }
 
@@ -48,10 +45,6 @@ beforeAll(async () => {
   }
   xdgHome = copyToXdg(environment.dir);
   await environment.close();
-});
-
-afterAll(() => {
-  for (const dir of [xdgHome, ...extraDirs]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 describe('sem --fields', () => {

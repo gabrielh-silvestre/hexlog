@@ -3,6 +3,7 @@
 // se o MCP precisa ser (re)registrado. Puro e testável: toda execução externa
 // (hook, servidor, relógio, log) é injetada — nada aqui chama `claude` nem builda.
 // Não é importado pelo servidor nem pelo hook, só por `scripts/install.ts`.
+import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 // import default (não `* as fs`): sob esModuleInterop, `* as` copia o módulo com getters
 // não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
@@ -43,7 +44,7 @@ function hasDynamicRequire(bytes: Uint8Array): boolean {
 }
 
 // 5 tools em definition-tools.ts + 5 em event-tools.ts (§4.12/§4.16) + 2 em timeline-tools.ts (ADR 0006).
-const TOOLS_COUNT = 12;
+export const TOOLS_COUNT = 12;
 
 export function versionDirOf(home: string, version: string): string {
   return path.join(home, '.local', 'lib', 'hexlog', version);
@@ -181,7 +182,8 @@ function swapArtifact(args: {
     }
   }
 
-  const old = path.join(path.dirname(versionDir), `.${version}.old-${Date.now()}`);
+  // UUID, não relógio: dois instaladores no mesmo ms dividiriam o backup e um desfaria a troca do outro.
+  const old = path.join(path.dirname(versionDir), `.${version}.old-${randomUUID()}`);
   try {
     swapDirectory(tmp, versionDir, old);
   } catch (error) {
