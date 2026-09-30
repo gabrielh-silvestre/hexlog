@@ -55,6 +55,8 @@ export default defineConfig(
       // temporário: a F6 apaga estes specs
       'test/{attachments,event-tools,log,audit-types,definitions}.spec.ts',
     ],
+    // Flat config não mescla opções de regra: outro bloco com `no-restricted-syntax` que case
+    // `test/**` substitui esta lista (o último vence), então novos seletores entram aqui.
     rules: {
       'no-restricted-syntax': [
         'error',
