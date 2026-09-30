@@ -59,11 +59,19 @@ const spinBarrier = (name: string): void => {
 const signal = (name: string): void => fs.writeFileSync(path.join(home, name), '');
 const waitFor = (name: string): void => spinUntil(name, () => fs.existsSync(path.join(home, name)));
 
+if (mode !== undefined && mode !== 'interleave') {
+  throw new Error(`unknown mode: ${mode}`);
+}
+
+// Quantas vezes o hook casou com o rename do backup: se o nome do backup mudar de prefixo, o
+// hook nunca casa e o teste passaria sem intercalar nada — então o fim do processo falha alto.
+let hooked = 0;
 if (mode === 'interleave') {
   Date.now = () => 0;
   const renameSync = fs.renameSync;
   fs.renameSync = (from, to) => {
     if (!String(to).includes('.old-')) return renameSync(from, to);
+    hooked += 1;
     if (processId === '2') {
       signal('.second-at-backup');
       waitFor('.first-backed-up');
@@ -107,5 +115,8 @@ try {
     JSON.stringify({ ok: false, message: error instanceof Error ? error.message : String(error) }),
   );
   process.exitCode = 1;
+}
+if (mode === 'interleave' && hooked === 0) {
+  throw new Error('interleave hook never matched a backup rename (.old- prefix changed?)');
 }
 if (mode === 'interleave' && processId === '2') signal('.second-finished');

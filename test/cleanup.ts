@@ -10,7 +10,8 @@ export function registerTempDir(dir: string): void {
   createdTempDirs.add(dir);
 }
 
-// `afterAll` roda também quando há teste vermelho, então o diretório não vaza na falha.
+// `afterAll` roda também quando há teste vermelho, então o diretório não vaza na falha. Ele roda
+// antes do `afterAll` do próprio spec, que por isso não lê diretório criado por `createTempDir`.
 afterAll(() => {
   for (const dir of createdTempDirs) {
     fs.rmSync(dir, { recursive: true, force: true });
