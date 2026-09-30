@@ -10,6 +10,12 @@ export const NEW_TREE_DIRS = ['domain', 'shared', 'commands', 'queries', 'adapte
 );
 const NEW_TREE_ROOT_FILES = ['compose.ts', 'archive.ts'].map((name) => path.join(srcRoot, name));
 
+/**
+ * Arquivos que a árvore nova já tem; os specs que a varrem conferem que `listNewTreeFiles` os acha,
+ * senão um âncora ou um filtro quebrado os faria passar sem olhar arquivo nenhum.
+ */
+export const NEW_TREE_KNOWN_FILES = ['domain/chain.ts', 'domain/gate.ts', 'domain/ids.ts'];
+
 /** Arquivos .ts da árvore nova que já existem; pastas e arquivos ausentes são pulados. */
 export function listNewTreeFiles(extraFiles: string[] = []): string[] {
   const inDirs = NEW_TREE_DIRS.filter((dir) => fs.existsSync(dir)).flatMap((dir) =>

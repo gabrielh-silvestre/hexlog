@@ -2,14 +2,25 @@ import { createHash } from 'node:crypto';
 import canonicalize from 'canonicalize';
 import { omit } from 'es-toolkit';
 import { z } from 'zod';
+import { HexlogError } from '../errors.ts';
 import { alias, Hash, RecordId } from './ids.ts';
-import { BatchItem, HexRecord } from './record.ts';
+import { BATCH_MAX, BatchItem, HexRecord } from './record.ts';
+
+/** Tetos de `Batch.key` (caracteres) e `Batch.aliases` (entradas); docs/tetos-dominio-v1.md. */
+export const BATCH_KEY_MAX = 200;
+/** Um alias por item no máximo, então o teto acompanha `BATCH_MAX`. */
+export const BATCH_ALIASES_MAX = BATCH_MAX;
 
 /** D-04: só o 1º elo do lote leva `batch`, dentro do hash. */
 export const Batch = z.strictObject({
   fingerprint: Hash,
-  key: z.string().min(1).optional(),
-  aliases: z.record(alias, RecordId).optional(),
+  key: z.string().min(1).max(BATCH_KEY_MAX).optional(),
+  aliases: z
+    .record(alias, RecordId)
+    .refine((aliases) => Object.keys(aliases).length <= BATCH_ALIASES_MAX, {
+      message: `aliases exceed ${BATCH_ALIASES_MAX} entries`,
+    })
+    .optional(),
 });
 export type Batch = z.infer<typeof Batch>;
 
@@ -24,9 +35,13 @@ export type Link = z.infer<typeof Link>;
 /** Posição que o próximo elo do log precisa ocupar. */
 export type Expected = { seq: number; prevHash: Hash };
 
-// canonicalize só devolve undefined para entradas não serializáveis, que os schemas já recusaram.
+// canonicalize devolve undefined para valor sem forma JSON (undefined, função, símbolo) e lança para
+// NaN, BigInt e surrogate solitário. Devolver '' para o primeiro caso daria o mesmo hash a entradas
+// diferentes, então vira INTERNAL: só chega aqui valor que os schemas não validaram.
 function jcs(value: unknown): string {
-  return canonicalize(value) ?? '';
+  const text = canonicalize(value);
+  if (text === undefined) throw new HexlogError('INTERNAL', 'value is not canonicalizable');
+  return text;
 }
 
 export function sha256hex(data: string | Uint8Array): Hash {
@@ -48,14 +63,32 @@ export function anchor(manifest: unknown): Hash {
   return sha256hex(jcs(manifest));
 }
 
+/** Por que o valor não ocupa a posição esperada: forma inválida, `seq` ou `prevHash` divergentes. */
+export type LinkRejection = 'invalid-line' | 'diverging-seq' | 'hash-mismatch';
+
+export type LinkCheck = { link: Link } | { reasons: LinkRejection[] };
+
+// O parse lança para aninhamento profundo (pilha do zod) e surrogate solitário; ambos são linha inválida.
+function parseLink(value: unknown): Link | undefined {
+  try {
+    const result = Link.safeParse(value);
+    return result.success ? result.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Predicado único de elo (escritor e verificador): o valor tem a forma de `Link` e ocupa a
- * posição esperada (`seq` e `prevHash`); devolve o elo, ou `null`. Continuidade interna do lote
- * e hash são do enquadramento em disco (`shared/loader.ts#isValidLine`, D-05).
+ * Predicado único de elo (escritor e verificador): o valor tem a forma de `Link`, dentro dos tetos,
+ * e ocupa a posição esperada. Devolve o elo, ou as razões: só `invalid-line` quando a forma falha,
+ * e `diverging-seq` e `hash-mismatch` juntas quando as duas posições divergem. Continuidade interna
+ * do lote e hash são do enquadramento em disco (`shared/loader.ts#isValidLine`, D-05).
  */
-export function isValidLink(value: unknown, expected: Expected): Link | null {
-  const result = Link.safeParse(value);
-  if (!result.success) return null;
-  const link = result.data;
-  return link.seq === expected.seq && link.prevHash === expected.prevHash ? link : null;
+export function isValidLink(value: unknown, expected: Expected): LinkCheck {
+  const link = parseLink(value);
+  if (link === undefined) return { reasons: ['invalid-line'] };
+  const reasons: LinkRejection[] = [];
+  if (link.seq !== expected.seq) reasons.push('diverging-seq');
+  if (link.prevHash !== expected.prevHash) reasons.push('hash-mismatch');
+  return reasons.length === 0 ? { link } : { reasons };
 }

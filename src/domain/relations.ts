@@ -1,7 +1,7 @@
 import { processOf } from './ids.ts';
 import type { Name, RecordId } from './ids.ts';
 import { RelationKind } from './record.ts';
-import type { HexRecord, Relation, RelationInput } from './record.ts';
+import type { HexRecord, KindOrAs, Relation } from './record.ts';
 
 export { RelationKind };
 
@@ -114,7 +114,12 @@ export type NeedsReview = { staleIn: RecordId[]; staleOut: RecordId[] };
 /**
  * D-09: um `supports` A → B está vivo enquanto a versão atual de A apoia a versão atual de B.
  * Só registro vigente é marcado, e só pelo apoio que tem (ou recebe) com uma ponta não vigente;
- * o aviso não bloqueia nada.
+ * o aviso não bloqueia nada. Apoio cujo destino não está em `records` é ignorado: a vigência dele
+ * é desconhecida.
+ *
+ * Acompanhamento: com `scope: "process"` (D-24) `records` são só os do processo, então o alerta que
+ * cruza processos não é emitido (a vigência da outra ponta é desconhecida; emitir seria falso
+ * alerta, D-09). Revisitar ao implementar `scope: "project"`.
  */
 export function needsReview(records: readonly Linked[]): Map<RecordId, NeedsReview> {
   const vigency = buildVigency(records);
@@ -142,6 +147,7 @@ export function needsReview(records: readonly Linked[]): Map<RecordId, NeedsRevi
 
   for (const [from, targets] of supported) {
     for (const to of targets) {
+      if (!supported.has(to)) continue;
       const fromCurrent = vigency.isCurrent(from);
       const toCurrent = vigency.isCurrent(to);
       if (fromCurrent === toCurrent || isAlive(from, to)) continue;
@@ -167,6 +173,7 @@ export type RuleCode =
   | 'type-mismatch'
   | 'endpoint-type'
   | 'supports-and-contradicts'
+  | 'supersedes-and-revokes'
   | 'not-current'
   | 'stale-destination';
 
@@ -192,20 +199,21 @@ export type RuleContext = {
   /** Demais relações do mesmo registro, já resolvidas. */
   siblings: readonly Pick<Relation, 'kind' | 'to'>[];
   names: ReadonlyMap<Name, NamedRelation>;
-  /** Vigência depois dos itens anteriores do lote (e do lote inteiro, em `stale-destination`). */
-  vigency: Vigency;
+  /**
+   * D-10: a vigência contra a qual cada tipo de relação confere o destino. `supersedes` e `revokes`
+   * leem os itens anteriores do lote; `supports`, o lote inteiro. Nenhum valor único serve às duas:
+   * o lote `[supersedes → E, supports → E]` exige as duas leituras.
+   */
+  vigencyFor(kind: RelationKind): Vigency;
 };
 
-function resolveKind(
-  input: Pick<RelationInput, 'kind' | 'as'>,
-  names: RuleContext['names'],
-): RelationCheck {
-  const { kind, as } = input;
-  // O schema de `RelationInput` garante `kind` ou `as`; sem `as`, `kind` está presente.
-  if (as === undefined) return { kind: kind! };
-  const named = names.get(as);
+function resolveKind(input: KindOrAs, names: RuleContext['names']): RelationCheck {
+  if (input.as === undefined) return { kind: input.kind };
+  const named = names.get(input.as);
   if (!named) return { violation: { code: 'unknown-relation-name' } };
-  if (kind !== undefined && kind !== named.kind) return { violation: { code: 'kind-mismatch' } };
+  if (input.kind !== undefined && input.kind !== named.kind) {
+    return { violation: { code: 'kind-mismatch' } };
+  }
   return { kind: named.kind };
 }
 
@@ -226,19 +234,24 @@ function checkEndpointTypes(
   return undefined;
 }
 
-function checkContradiction(
-  kind: RelationKind,
-  { to, siblings }: RuleContext,
-): Violation | undefined {
-  const opposite =
-    kind === 'supports' ? 'contradicts' : kind === 'contradicts' ? 'supports' : undefined;
-  if (opposite && siblings.some((other) => other.kind === opposite && other.to === to.id)) {
-    return { code: 'supports-and-contradicts' };
-  }
-  return undefined;
+// Pares que um mesmo registro não pode gravar para o mesmo destino, e o código de cada recusa.
+const CONFLICTS: Partial<Record<RelationKind, { opposite: RelationKind; code: RuleCode }>> = {
+  supports: { opposite: 'contradicts', code: 'supports-and-contradicts' },
+  contradicts: { opposite: 'supports', code: 'supports-and-contradicts' },
+  supersedes: { opposite: 'revokes', code: 'supersedes-and-revokes' },
+  revokes: { opposite: 'supersedes', code: 'supersedes-and-revokes' },
+};
+
+function checkConflict(kind: RelationKind, { to, siblings }: RuleContext): Violation | undefined {
+  const conflict = CONFLICTS[kind];
+  if (!conflict) return undefined;
+  const clashes = siblings.some((other) => other.kind === conflict.opposite && other.to === to.id);
+  return clashes ? { code: conflict.code } : undefined;
 }
 
-function checkVigency(kind: RelationKind, { to, vigency }: RuleContext): Violation | undefined {
+function checkVigency(kind: RelationKind, context: RuleContext): Violation | undefined {
+  const { to } = context;
+  const vigency = context.vigencyFor(kind);
   if (vigency.isCurrent(to.id)) return undefined;
   const current = vigency.currentOf(to.id);
   if (kind === 'supersedes' || kind === 'revokes') return { code: 'not-current', current };
@@ -248,13 +261,11 @@ function checkVigency(kind: RelationKind, { to, vigency }: RuleContext): Violati
 
 /**
  * D-10: resolve o `kind` da relação e devolve a primeira regra estrutural violada, na ordem fixa
- * autorrelação, nome, sucessão, pontas por tipo, apoio e contradição, vigência do destino.
+ * autorrelação, nome, sucessão, pontas por tipo, conflito entre relações do registro (apoio e
+ * contradição, substituição e revogação), vigência do destino.
  * Existência do destino e ciclo ficam com o serviço (`RELATION_NOT_FOUND`, `hasCycle`).
  */
-export function checkRelation(
-  input: Pick<RelationInput, 'kind' | 'as'>,
-  context: RuleContext,
-): RelationCheck {
+export function checkRelation(input: KindOrAs, context: RuleContext): RelationCheck {
   if (context.from.id === context.to.id) return { violation: { code: 'self-relation' } };
   const resolved = resolveKind(input, context.names);
   if ('violation' in resolved) return resolved;
@@ -262,7 +273,7 @@ export function checkRelation(
   const violation =
     checkSuccession(kind, context) ??
     checkEndpointTypes(input.as, context) ??
-    checkContradiction(kind, context) ??
+    checkConflict(kind, context) ??
     checkVigency(kind, context);
   return violation ? { violation } : { kind };
 }

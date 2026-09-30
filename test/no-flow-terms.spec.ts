@@ -2,7 +2,7 @@ import { describe, test, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ts from 'typescript';
-import { listNewTreeFiles, repoRoot } from './new-tree.ts';
+import { listNewTreeFiles, NEW_TREE_KNOWN_FILES, repoRoot, srcRoot } from './new-tree.ts';
 
 const FLOW_TERMS = new Set([
   'phase',
@@ -61,6 +61,11 @@ function findFlowTerms(fileName: string, code: string): string[] {
 }
 
 describe('D1: árvore nova sem termo de fluxo', () => {
+  test('a varredura acha os arquivos da árvore nova', () => {
+    const scanned = listNewTreeFiles().map((file) => path.relative(srcRoot, file));
+    expect(scanned).toEqual(expect.arrayContaining(NEW_TREE_KNOWN_FILES));
+  });
+
   test('nenhum arquivo da árvore nova usa termo de fluxo em identificador ou literal', () => {
     const violations = listNewTreeFiles().flatMap((file) =>
       findFlowTerms(file, fs.readFileSync(file, 'utf8')).map(

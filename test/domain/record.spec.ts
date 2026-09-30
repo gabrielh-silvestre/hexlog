@@ -7,6 +7,7 @@ import {
   BatchItem,
   DATA_MAX_CHARS,
   HexRecord,
+  RELATIONS_MAX,
   Relation,
   RelationInput,
   RelationKind,
@@ -22,9 +23,10 @@ function dataWithCanonicalLength(chars: number) {
 }
 
 describe('tetos', () => {
-  test('teto de data é 16.000 e o de lote é 50', () => {
+  test('teto de data é 16.000, o de lote é 50 e o de relações é 100', () => {
     expect(DATA_MAX_CHARS).toBe(16_000);
     expect(BATCH_MAX).toBe(50);
+    expect(RELATIONS_MAX).toBe(100);
   });
 });
 
@@ -62,6 +64,10 @@ describe('Relation', () => {
     expect(Relation.safeParse({ kind: 'supports', to: id() }).success).toBe(true);
     expect(Relation.safeParse({ kind: 'supports', to: id(), as: 'approves' }).success).toBe(true);
     expect(Relation.safeParse({ to: id() }).success).toBe(false);
+  });
+
+  test('recusa chave desconhecida', () => {
+    expect(Relation.safeParse({ kind: 'supports', to: id(), extra: 1 }).success).toBe(false);
   });
 
   test('to gravado nunca é alias', () => {
@@ -128,6 +134,21 @@ describe('BatchItem', () => {
     ).toBe(false);
   });
 
+  test('data com surrogate solitário é recusado sem lançar', () => {
+    expect(BatchItem.safeParse({ ...item, data: { text: '\ud800' } }).success).toBe(false);
+  });
+
+  test('relations no teto passam e uma a mais cai', () => {
+    const relations = (count: number) =>
+      Array.from({ length: count }, () => ({ to: id(), kind: 'supports' }));
+    expect(BatchItem.safeParse({ ...item, relations: relations(RELATIONS_MAX) }).success).toBe(
+      true,
+    );
+    expect(BatchItem.safeParse({ ...item, relations: relations(RELATIONS_MAX + 1) }).success).toBe(
+      false,
+    );
+  });
+
   test('data que não é JSON é recusado', () => {
     expect(BatchItem.safeParse({ ...item, data: { fn: () => 1 } }).success).toBe(false);
     expect(BatchItem.safeParse({ ...item, data: { missing: undefined } }).success).toBe(false);
@@ -147,6 +168,17 @@ describe('HexRecord', () => {
 
   test('aceita o registro completo', () => {
     expect(HexRecord.safeParse(record).success).toBe(true);
+  });
+
+  test('relations no teto passam e uma a mais cai', () => {
+    const relations = (count: number) =>
+      Array.from({ length: count }, () => ({ kind: 'supports', to: id() }));
+    expect(HexRecord.safeParse({ ...record, relations: relations(RELATIONS_MAX) }).success).toBe(
+      true,
+    );
+    expect(
+      HexRecord.safeParse({ ...record, relations: relations(RELATIONS_MAX + 1) }).success,
+    ).toBe(false);
   });
 
   test.each([

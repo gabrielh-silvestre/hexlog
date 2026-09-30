@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect, jest } from '@jest/globals';
 import {
   buildVigency,
   checkRelation,
@@ -7,9 +7,9 @@ import {
   needsReview,
   RelationKind,
 } from '../../src/domain/relations.ts';
-import type { Linked, NamedRelation, RuleContext } from '../../src/domain/relations.ts';
+import type { Linked, NamedRelation, RuleContext, Vigency } from '../../src/domain/relations.ts';
 import { RelationKind as RecordRelationKind } from '../../src/domain/record.ts';
-import type { RelationKind as Kind } from '../../src/domain/record.ts';
+import type { RelationInput, RelationKind as Kind } from '../../src/domain/record.ts';
 
 const id = (process: string, n: number) => `${process}:${String(n).padStart(8, '0')}`;
 
@@ -75,6 +75,22 @@ describe('vigência e linhagem (D-08)', () => {
     );
     expect(groups).toHaveLength(3);
   });
+
+  test('lineages ignora supersedes para registro não lido e não funde linhagens por ele', () => {
+    const [q1, q2] = [id('q', 1), id('q', 2)];
+    const groups = lineages([rec(e1, ['supersedes', q1]), rec(e2, ['supersedes', q2]), rec(v1)]);
+    expect(groups.map((group) => [...group].sort())).toEqual(
+      expect.arrayContaining([[e1], [e2], [v1]]),
+    );
+    expect(groups).toHaveLength(3);
+  });
+
+  test('currentOf termina e devolve null num ciclo montado à mão', () => {
+    const vigency = buildVigency([rec(e1, ['supersedes', e2]), rec(e2, ['supersedes', e1])]);
+    expect([e1, e2].map((x) => vigency.isCurrent(x))).toEqual([false, false]);
+    expect(vigency.currentOf(e1)).toBeNull();
+    expect(vigency.currentOf(e2)).toBeNull();
+  });
 });
 
 describe('ciclo', () => {
@@ -96,13 +112,33 @@ describe('ciclo', () => {
   test('apoio mútuo não é ciclo de substituição', () => {
     expect(hasCycle([rec(e1, ['supports', e2]), rec(e2, ['supports', e1])])).toBe(false);
   });
+
+  test('ciclo de três registros é ciclo, com ou sem cauda', () => {
+    const ring = [
+      rec(e1, ['supersedes', v1]),
+      rec(e2, ['supersedes', e1]),
+      rec(v1, ['supersedes', e2]),
+    ];
+    expect(hasCycle(ring)).toBe(true);
+    expect(hasCycle([...ring, rec(v2, ['supersedes', v1])])).toBe(true);
+  });
+
+  test('cauda sem fechar o anel não é ciclo', () => {
+    expect(
+      hasCycle([rec(e1), rec(e2, ['supersedes', e1]), rec(v1, ['supersedes', e2]), rec(v2)]),
+    ).toBe(false);
+  });
 });
 
 describe('regras estruturais (D-10)', () => {
   const names = new Map<string, NamedRelation>([
     ['replaces', { kind: 'supersedes' }],
+    ['replaces-doc', { kind: 'supersedes', to: ['doc'] }],
     ['based-on', { kind: 'supports', from: ['verdict'], to: ['evidence'] }],
   ]);
+
+  /** Mesma vigência para qualquer tipo de relação. */
+  const inForce = (vigency: Vigency) => ({ vigencyFor: () => vigency });
 
   function ctx(overrides: Partial<RuleContext> = {}): RuleContext {
     return {
@@ -110,7 +146,7 @@ describe('regras estruturais (D-10)', () => {
       to: { id: e1, type: 'evidence' },
       siblings: [],
       names,
-      vigency: buildVigency([rec(e1)]),
+      ...inForce(buildVigency([rec(e1)])),
       ...overrides,
     };
   }
@@ -202,11 +238,11 @@ describe('regras estruturais (D-10)', () => {
   test('stale-destination traz a versão atual da linhagem ou null', () => {
     const replaced = buildVigency([rec(e1), rec(e2, ['supersedes', e1])]);
     const revoked = buildVigency([rec(e1), rec(v1, ['revokes', e1])]);
-    expect(violationOf(checkRelation({ kind: 'supports' }, ctx({ vigency: replaced })))).toEqual({
+    expect(violationOf(checkRelation({ kind: 'supports' }, ctx(inForce(replaced))))).toEqual({
       code: 'stale-destination',
       current: e2,
     });
-    expect(violationOf(checkRelation({ kind: 'supports' }, ctx({ vigency: revoked })))).toEqual({
+    expect(violationOf(checkRelation({ kind: 'supports' }, ctx(inForce(revoked))))).toEqual({
       code: 'stale-destination',
       current: null,
     });
@@ -221,7 +257,7 @@ describe('regras estruturais (D-10)', () => {
       'complements',
       'reopens',
     ] as const) {
-      expect(checkRelation({ kind }, ctx({ vigency: replaced }))).toEqual({ kind });
+      expect(checkRelation({ kind }, ctx(inForce(replaced)))).toEqual({ kind });
     }
   });
 
@@ -230,48 +266,169 @@ describe('regras estruturais (D-10)', () => {
     const replaced = buildVigency([rec(e1), rec(e2, ['supersedes', e1])]);
     const revoked = buildVigency([rec(e1), rec(v1, ['revokes', e1])]);
     expect(
-      violationOf(checkRelation({ kind: 'supersedes' }, ctx({ ...sameType, vigency: replaced }))),
+      violationOf(
+        checkRelation({ kind: 'supersedes' }, ctx({ ...sameType, ...inForce(replaced) })),
+      ),
     ).toEqual({
       code: 'not-current',
       current: e2,
     });
     expect(
-      violationOf(checkRelation({ kind: 'revokes' }, ctx({ ...sameType, vigency: revoked }))),
+      violationOf(checkRelation({ kind: 'revokes' }, ctx({ ...sameType, ...inForce(revoked) }))),
     ).toEqual({
       code: 'not-current',
       current: null,
     });
   });
 
-  test('vigência depois do lote inteiro: supports e supersedes ao mesmo destino são recusados nas duas ordens', () => {
-    const batchFirst = buildVigency([
-      rec(e1),
-      rec(id('p', 10), ['supports', e1], ['supersedes', e1]),
-    ]);
-    expect(
-      violationOf(checkRelation({ kind: 'supports' }, ctx({ vigency: batchFirst }))),
-    ).toMatchObject({
-      code: 'stale-destination',
-    });
-    const batchSecond = buildVigency([
-      rec(e1),
-      rec(id('p', 10), ['supersedes', e1], ['supports', e1]),
-    ]);
-    expect(
-      violationOf(checkRelation({ kind: 'supports' }, ctx({ vigency: batchSecond }))),
-    ).toMatchObject({
-      code: 'stale-destination',
+  describe('vigência por tipo de relação (U1, D-10)', () => {
+    const sameType = { from: { id: id('p', 10), type: 'evidence' } };
+    const self = id('p', 10);
+
+    /** Um lote de um item: `before` é o que vigora antes dele, `whole` inclui as relações dele. */
+    function checkInBatch(relations: [Kind, string][], index: number) {
+      const [kind, to] = relations[index]!;
+      const before = buildVigency([rec(e1)]);
+      const whole = buildVigency([rec(e1), rec(self, ...relations)]);
+      const vigencyFor = jest.fn((relationKind: Kind) =>
+        relationKind === 'supports' ? whole : before,
+      );
+      const siblings = relations
+        .filter((_, i) => i !== index)
+        .map(([k, t]) => ({ kind: k, to: t }));
+      const result = checkRelation(
+        { kind },
+        ctx({ ...sameType, to: { id: to, type: 'evidence' }, siblings, vigencyFor }),
+      );
+      return { result, vigencyFor };
+    }
+
+    test.each([
+      [
+        'supersedes antes',
+        [
+          ['supersedes', e1],
+          ['supports', e1],
+        ],
+      ],
+      [
+        'supports antes',
+        [
+          ['supports', e1],
+          ['supersedes', e1],
+        ],
+      ],
+    ] as [string, [Kind, string][]][])(
+      'lote [supersedes → E, supports → E], %s: o supersedes passa e o supports é recusado',
+      (_label, relations) => {
+        const supersedesIndex = relations.findIndex(([kind]) => kind === 'supersedes');
+        const supportsIndex = relations.findIndex(([kind]) => kind === 'supports');
+        expect(checkInBatch(relations, supersedesIndex).result).toEqual({ kind: 'supersedes' });
+        expect(violationOf(checkInBatch(relations, supportsIndex).result)).toEqual({
+          code: 'stale-destination',
+          current: self,
+        });
+      },
+    );
+
+    test('checkRelation pede a vigência do próprio tipo da relação', () => {
+      const { vigencyFor: forSupports } = checkInBatch([['supports', e1]], 0);
+      expect(forSupports).toHaveBeenCalledWith('supports');
+      const { vigencyFor: forRevokes } = checkInBatch([['revokes', e1]], 0);
+      expect(forRevokes).toHaveBeenCalledWith('revokes');
     });
   });
 
-  test('a primeira regra violada, na ordem fixa, é a devolvida', () => {
-    const bad = ctx({
-      to: { id: id('q', 1), type: 'verdict' },
-      siblings: [{ kind: 'supports', to: id('q', 1) }],
+  test('supersedes-and-revokes nas duas direções, e só para o mesmo destino', () => {
+    const sameType = { from: { id: id('p', 10), type: 'evidence' } };
+    const revokes = [{ kind: 'revokes' as const, to: e1 }];
+    const supersedes = [{ kind: 'supersedes' as const, to: e1 }];
+    expect(
+      violationOf(checkRelation({ kind: 'supersedes' }, ctx({ ...sameType, siblings: revokes }))),
+    ).toEqual({ code: 'supersedes-and-revokes' });
+    expect(
+      violationOf(checkRelation({ kind: 'revokes' }, ctx({ ...sameType, siblings: supersedes }))),
+    ).toEqual({ code: 'supersedes-and-revokes' });
+    const elsewhere = [{ kind: 'revokes' as const, to: e2 }];
+    expect(
+      checkRelation({ kind: 'supersedes' }, ctx({ ...sameType, siblings: elsewhere })),
+    ).toEqual({ kind: 'supersedes' });
+  });
+
+  describe('ordem fixa das regras (D-06, D-10)', () => {
+    const sameType = { from: { id: id('p', 10), type: 'evidence' } };
+    const otherProcess = { to: { id: id('q', 1), type: 'verdict' } };
+    const replaced = buildVigency([rec(e1), rec(e2, ['supersedes', e1])]);
+
+    // Cada caso viola duas regras vizinhas da ordem; vale a primeira.
+    test.each([
+      [
+        'self-relation antes de unknown-relation-name',
+        { as: 'nope' },
+        { to: { id: id('p', 10), type: 'verdict' } },
+        'self-relation',
+      ],
+      [
+        'kind-mismatch antes de cross-process-currency',
+        { as: 'replaces', kind: 'revokes' },
+        otherProcess,
+        'kind-mismatch',
+      ],
+      [
+        'cross-process-currency antes de type-mismatch',
+        { kind: 'supersedes' },
+        otherProcess,
+        'cross-process-currency',
+      ],
+      ['type-mismatch antes de endpoint-type', { as: 'replaces-doc' }, {}, 'type-mismatch'],
+      [
+        'endpoint-type antes de supports-and-contradicts',
+        { as: 'based-on' },
+        { ...sameType, siblings: [{ kind: 'contradicts', to: e1 }] },
+        'endpoint-type',
+      ],
+      [
+        'supports-and-contradicts antes de stale-destination',
+        { kind: 'supports' },
+        { siblings: [{ kind: 'contradicts', to: e1 }], ...inForce(replaced) },
+        'supports-and-contradicts',
+      ],
+      [
+        'supersedes-and-revokes antes de not-current',
+        { kind: 'supersedes' },
+        { ...sameType, siblings: [{ kind: 'revokes', to: e1 }], ...inForce(replaced) },
+        'supersedes-and-revokes',
+      ],
+    ] as [string, Parameters<typeof checkRelation>[0], Partial<RuleContext>, string][])(
+      '%s',
+      (_label, input, overrides, code) => {
+        expect(violationOf(checkRelation(input, ctx(overrides)))?.code).toBe(code);
+      },
+    );
+
+    test('as vale como o kind do nome nas regras que leem o kind', () => {
+      expect(violationOf(checkRelation({ as: 'replaces' }, ctx(otherProcess)))?.code).toBe(
+        'cross-process-currency',
+      );
+      expect(
+        violationOf(checkRelation({ as: 'replaces' }, ctx({ ...sameType, ...inForce(replaced) }))),
+      ).toEqual({ code: 'not-current', current: e2 });
+      expect(violationOf(checkRelation({ as: 'based-on' }, ctx(inForce(replaced))))).toEqual({
+        code: 'stale-destination',
+        current: e2,
+      });
     });
-    expect(violationOf(checkRelation({ kind: 'supersedes' }, bad))).toEqual({
-      code: 'cross-process-currency',
+  });
+
+  test('kind ou as é obrigatório: o tipo recusa relação sem nenhum dos dois', () => {
+    const parsed: RelationInput = { to: e1, kind: 'supports' };
+    expect(checkRelation(parsed, ctx())).toEqual({ kind: 'supports' });
+    expect(checkRelation({ kind: 'supports', as: 'based-on' }, ctx())).toEqual({
+      kind: 'supports',
     });
+    // @ts-expect-error nem kind nem as
+    const withoutBoth = () => checkRelation({}, ctx());
+    expect(withoutBoth).toBeInstanceOf(Function);
   });
 });
 
@@ -366,5 +523,35 @@ describe('prova vencida pela linhagem (D-09)', () => {
       rec(id('p', 7), ['supersedes', evidence2]),
     ]);
     expect(marks.get(verdict)?.staleOut).toEqual([evidence, evidence2]);
+  });
+
+  test('staleIn também sai ordenada, qualquer que seja a ordem de leitura', () => {
+    const [reviewA, reviewB] = [id('p', 12), id('p', 13)];
+    const marks = needsReview([
+      rec(plan),
+      rec(reviewB, ['supports', plan]),
+      rec(reviewA, ['supports', plan]),
+      rec(id('p', 14), ['supersedes', reviewA]),
+      rec(id('p', 15), ['supersedes', reviewB]),
+    ]);
+    expect(marks.get(plan)?.staleIn).toEqual([reviewA, reviewB]);
+  });
+
+  test('destino que não está em records não gera marca (D-24, D-09)', () => {
+    const unread = id('q', 1);
+    const marks = needsReview([
+      rec(evidence, ['supports', unread]),
+      rec(evidence2, ['supersedes', evidence]),
+    ]);
+    expect(marks.size).toBe(0);
+  });
+
+  test('controle: o mesmo apoio com o destino lido marca a origem vigente', () => {
+    const marks = needsReview([
+      rec(evidence),
+      rec(evidence2, ['supersedes', evidence]),
+      rec(verdict, ['supports', evidence]),
+    ]);
+    expect(marks.get(verdict)).toEqual({ staleIn: [], staleOut: [evidence] });
   });
 });

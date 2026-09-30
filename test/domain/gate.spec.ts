@@ -6,7 +6,7 @@ import {
   matchesTargetPrefix,
   Selector,
 } from '../../src/domain/gate.ts';
-import type { GateInput, GateScope } from '../../src/domain/gate.ts';
+import type { GateInput, GateScope, QuestionResult } from '../../src/domain/gate.ts';
 import { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts';
 import type { HexRecord, RelationKind } from '../../src/domain/record.ts';
 import * as omc from '../fixtures/domains/omc.ts';
@@ -76,6 +76,7 @@ describe('Selector e GateQuestion (schemas)', () => {
       { kind: 'occurred', select: {}, dueAt: '2026-01-01T00:00:00Z' },
       { kind: 'no_pending', pending: {}, resolvedBy: { kind: 'unknown' } },
       { kind: 'no_pending', pending: {}, resolvedBy: { kind: 'answers', from: [] } },
+      { kind: 'no_pending', pending: {}, resolvedBy: { kind: 'answers', from: ['a', 'a'] } },
       { kind: 'occurred', select: {}, scope: 'global' },
     ];
     expect(invalid.map((raw) => GateQuestion.safeParse(raw).success)).toEqual(
@@ -101,6 +102,15 @@ describe('seleção de registros', () => {
     expect(matchesSelector(record, { targetPrefix: 'a.c' })).toBe(false);
     expect(matchesSelector(record, { where: { isRevision: 'true' } })).toBe(false);
     expect(matchesSelector(record, { where: { missing: false } })).toBe(false);
+  });
+
+  // `where` compara por identidade: nenhuma coerção entre número, string e booleano.
+  test.each([
+    ['número contra booleano', { n: 1 }, { n: true }],
+    ['string contra número', { n: '1' }, { n: 1 }],
+    ['zero contra false', { n: 0 }, { n: false }],
+  ])('where não coage tipos: %s', (_label, data, where) => {
+    expect(matchesSelector(rec(p1, 'plan', [], { data }), { where })).toBe(false);
   });
 
   test('targetPrefix omitido herda o target da avaliação, e o próprio prevalece', () => {
@@ -186,6 +196,14 @@ describe('approved', () => {
     const result = evaluateGate([q], reading(records)).questions[0];
     expect(result?.passed).toBe(false);
     expect(result?.evidence).toMatchObject({ unsupported: [p2] });
+  });
+
+  test('by sem targetPrefix herda o target da avaliação, e o apoio fora dele não conta', () => {
+    const plan = rec(p1, 'plan', [], { target: 'a.b' });
+    const outside = [plan, rec(p2, 'review', [['supports', p1]], { target: 'c' })];
+    const inside = [plan, rec(p2, 'review', [['supports', p1]], { target: 'a.c' })];
+    expect(evaluateGate([q], reading(outside, 'a')).passed).toBe(false);
+    expect(evaluateGate([q], reading(inside, 'a')).passed).toBe(true);
   });
 
   test('apoio de tipo que não casa by não conta', () => {
@@ -363,6 +381,18 @@ describe('resultado', () => {
     ]);
   });
 
+  test('o tipo amarra kind à forma da evidência', () => {
+    const mismatched: QuestionResult = {
+      index: 0,
+      passed: true,
+      kind: 'approved',
+      // @ts-expect-error `approved` não carrega `found`
+      evidence: { found: [] },
+    };
+    expect(mismatched.kind).toBe('approved');
+  });
+
+  // A definição recusa gate vazio (Gate.questions `.min(1)`); a avaliação segue vazio-verdadeira.
   test('gate sem perguntas passa e não lê registro', () => {
     const input = reading([]);
     expect(evaluateGate([], input)).toEqual({ passed: true, questions: [] });

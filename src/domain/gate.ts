@@ -1,6 +1,6 @@
 import { uniq } from 'es-toolkit';
 import { z } from 'zod';
-import { Name, Target } from './ids.ts';
+import { Name, Target, TypeNames } from './ids.ts';
 import type { RecordId } from './ids.ts';
 import { RelationKind } from './record.ts';
 import type { HexRecord } from './record.ts';
@@ -38,7 +38,7 @@ export const GateQuestion = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('no_pending'),
     pending: Selector,
-    resolvedBy: z.strictObject({ kind: RelationKind, from: z.array(Name).min(1).optional() }),
+    resolvedBy: z.strictObject({ kind: RelationKind, from: TypeNames.optional() }),
     scope,
   }),
   z.strictObject({ kind: z.literal('no_open_contradiction'), of: Selector.optional(), scope }),
@@ -64,19 +64,35 @@ export function matchesSelector(
   );
 }
 
-/** Ids que sustentam o veredito de cada pergunta; recusado e pendente se distinguem por eles. */
-export type Evidence =
-  | { of: RecordId[]; supports: RecordId[]; contradictions: RecordId[]; unsupported: RecordId[] }
-  | { found: RecordId[] }
-  | { unresolved: RecordId[] }
-  | { conflicting: RecordId[] };
+/**
+ * Resultado de uma pergunta: `kind` amarra a forma de `evidence`, e toda evidência é uma lista de
+ * ids de registros vigentes.
+ *
+ * - `approved`: `of` são os registros vigentes avaliados; `supports` e `contradictions`, as origens
+ *   vigentes de apoio (que casam `by`) e de contradição; `unsupported`, os de `of` sem nenhum apoio.
+ *   `unsupported` separa os dois motivos de reprovar: recusado (`contradictions` não vazio) e
+ *   pendente (`of` vazio ou `unsupported` não vazio, isto é, falta apoio).
+ * - `occurred`: `found` são os registros vigentes que casam o seletor.
+ * - `no_pending`: `unresolved` são os pendentes vigentes sem resolução vigente.
+ * - `no_open_contradiction`: `conflicting` são os vigentes com contradição vigente.
+ */
+export type QuestionResult = { index: number; passed: boolean } & (
+  | {
+      kind: 'approved';
+      evidence: {
+        of: RecordId[];
+        supports: RecordId[];
+        contradictions: RecordId[];
+        unsupported: RecordId[];
+      };
+    }
+  | { kind: 'occurred'; evidence: { found: RecordId[] } }
+  | { kind: 'no_pending'; evidence: { unresolved: RecordId[] } }
+  | { kind: 'no_open_contradiction'; evidence: { conflicting: RecordId[] } }
+);
 
-export type QuestionResult = {
-  index: number;
-  kind: GateQuestion['kind'];
-  passed: boolean;
-  evidence: Evidence;
-};
+/** Ids que sustentam o veredito de cada pergunta; o formato de cada variante está em `QuestionResult`. */
+export type Evidence = QuestionResult['evidence'];
 
 export type GateResult = { passed: boolean; questions: QuestionResult[] };
 
@@ -123,12 +139,15 @@ function currentSources({ view }: Context, id: RecordId, kind: RelationKind): He
 
 const ids = (records: readonly HexRecord[]): RecordId[] => records.map((record) => record.id);
 
-type Outcome = Pick<QuestionResult, 'passed' | 'evidence'>;
+type Outcome<K extends QuestionResult['kind']> = Omit<
+  Extract<QuestionResult, { kind: K }>,
+  'index' | 'kind'
+>;
 
 function approved(
   context: Context,
   question: Extract<GateQuestion, { kind: 'approved' }>,
-): Outcome {
+): Outcome<'approved'> {
   const approvers = question.by;
   const subjects = currentMatching(context, question.of);
   const supports: RecordId[] = [];
@@ -156,7 +175,7 @@ function approved(
 function occurred(
   context: Context,
   question: Extract<GateQuestion, { kind: 'occurred' }>,
-): Outcome {
+): Outcome<'occurred'> {
   const found = ids(currentMatching(context, question.select));
   return { passed: found.length >= (question.min ?? 1), evidence: { found } };
 }
@@ -164,7 +183,7 @@ function occurred(
 function noPending(
   context: Context,
   { pending, resolvedBy }: Extract<GateQuestion, { kind: 'no_pending' }>,
-): Outcome {
+): Outcome<'no_pending'> {
   const unresolved = currentMatching(context, pending).filter(
     ({ id }) =>
       !currentSources(context, id, resolvedBy.kind).some(
@@ -177,23 +196,23 @@ function noPending(
 function noOpenContradiction(
   context: Context,
   question: Extract<GateQuestion, { kind: 'no_open_contradiction' }>,
-): Outcome {
+): Outcome<'no_open_contradiction'> {
   const conflicting = currentMatching(context, question.of ?? {}).filter(
     ({ id }) => currentSources(context, id, 'contradicts').length > 0,
   );
   return { passed: conflicting.length === 0, evidence: { conflicting: ids(conflicting) } };
 }
 
-function answer(context: Context, question: GateQuestion): Outcome {
+function answer(context: Context, question: GateQuestion, index: number): QuestionResult {
   switch (question.kind) {
     case 'approved':
-      return approved(context, question);
+      return { index, kind: 'approved', ...approved(context, question) };
     case 'occurred':
-      return occurred(context, question);
+      return { index, kind: 'occurred', ...occurred(context, question) };
     case 'no_pending':
-      return noPending(context, question);
+      return { index, kind: 'no_pending', ...noPending(context, question) };
     case 'no_open_contradiction':
-      return noOpenContradiction(context, question);
+      return { index, kind: 'no_open_contradiction', ...noOpenContradiction(context, question) };
   }
 }
 
@@ -211,10 +230,8 @@ export function evaluateGate(questions: readonly GateQuestion[], input: GateInpu
     return view;
   };
 
-  const results = questions.map((question, index): QuestionResult => {
-    const view = viewOf(question.scope ?? 'process');
-    const { passed, evidence } = answer({ view, target: input.target }, question);
-    return { index, kind: question.kind, passed, evidence };
-  });
+  const results = questions.map((question, index) =>
+    answer({ view: viewOf(question.scope ?? 'process'), target: input.target }, question, index),
+  );
   return { passed: results.every(({ passed }) => passed), questions: results };
 }

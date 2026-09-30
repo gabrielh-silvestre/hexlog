@@ -24,6 +24,15 @@ const UUID_V7_SRC = '[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 export const RecordId = z.string().regex(new RegExp(`^${NAME_SRC}:${UUID_V7_SRC}$`));
 export type RecordId = z.infer<typeof RecordId>;
 
+/**
+ * Lista de nomes de tipo de registro, sem repetição. Omitida, a ponta que a usa aceita qualquer
+ * tipo; lista vazia nunca significa "nenhum tipo", por isso `.min(1)`.
+ */
+export const TypeNames = z
+  .array(Name)
+  .min(1)
+  .refine((names) => new Set(names).size === names.length, { message: 'duplicate type name' });
+
 /** D-01: apelido de um item do lote, citado pelos itens seguintes como `@<alias>`. */
 export const alias = Name;
 export type Alias = z.infer<typeof alias>;

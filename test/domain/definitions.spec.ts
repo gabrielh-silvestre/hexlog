@@ -1,7 +1,10 @@
 import { describe, test, expect } from '@jest/globals';
+import canonicalize from 'canonicalize';
 import { HexlogError } from '../../src/errors.ts';
 import {
+  GATE_QUESTIONS_MAX,
   Gate,
+  RECORD_TYPE_MAX_CHARS,
   RecordType,
   RelationName,
   attachmentFields,
@@ -12,6 +15,7 @@ import {
   formatVersion,
   parseVersion,
 } from '../../src/domain/definitions.ts';
+import * as omc from '../fixtures/domains/omc.ts';
 
 describe('semver major.minor', () => {
   test('parseVersion lê major e minor como números', () => {
@@ -136,6 +140,81 @@ describe('classifyTypeChange (D-11)', () => {
     const after = { properties: { properties: { type: 'string', minLength: 1 } } };
     expect(classifyTypeChange(before, after)).toBe('breaking');
   });
+
+  // Em `not` e `if` o sentido se inverte: mudança que alarga ali estreita o schema como um todo.
+  describe('posições que estreitam o schema (N2)', () => {
+    test('enum alargado dentro de not é quebra', () => {
+      const before: RecordType = { not: { enum: [1] } };
+      expect(classifyTypeChange(before, { not: { enum: [1, 2] } })).toBe('breaking');
+    });
+
+    test('propriedade nova em if.properties, com else, é quebra', () => {
+      const before: RecordType = {
+        if: { properties: { a: { const: 1 } } },
+        then: { required: ['t'] },
+        else: { required: ['x'] },
+      };
+      const after = { ...before, if: { properties: { a: { const: 1 }, b: { const: 1 } } } };
+      expect(classifyTypeChange(before, after)).toBe('breaking');
+    });
+
+    test('enum alargado dentro de if é quebra', () => {
+      const before: RecordType = {
+        if: { properties: { a: { enum: [1] } } },
+        then: { required: ['t'] },
+      };
+      const after = { ...before, if: { properties: { a: { enum: [1, 2] } } } };
+      expect(classifyTypeChange(before, after)).toBe('breaking');
+    });
+
+    test('enum alargado dentro de anyOf, allOf e oneOf é quebra', () => {
+      for (const keyword of ['anyOf', 'allOf', 'oneOf']) {
+        const before: RecordType = { [keyword]: [{ enum: [1] }] };
+        expect(classifyTypeChange(before, { [keyword]: [{ enum: [1, 2] }] })).toBe('breaking');
+      }
+    });
+
+    // Provado com ajv: nova propriedade em then ou em else recusa o mesmo dado novo que a raiz
+    // recusaria, e a D-11 já aceita a raiz. Por isso o flag `additive` só cai em if, not e nos arrays.
+    test('propriedade nova em then ou em else é compatível, como na raiz', () => {
+      const before: RecordType = {
+        if: { properties: { a: { const: 1 } } },
+        then: { properties: { t: { type: 'string' } } },
+        else: { properties: { e: { type: 'string' } } },
+      };
+      const inThen = {
+        ...before,
+        then: { properties: { t: { type: 'string' }, n: { type: 'string' } } },
+      };
+      const inElse = {
+        ...before,
+        else: { properties: { e: { type: 'string' }, n: { type: 'string' } } },
+      };
+      expect(classifyTypeChange(before, inThen)).toBe('compatible');
+      expect(classifyTypeChange(before, inElse)).toBe('compatible');
+    });
+
+    test('enum alargado em properties dentro de then é compatível', () => {
+      const before: RecordType = {
+        if: { required: ['a'] },
+        then: { properties: { l: { enum: ['x'] } } },
+      };
+      const after = { ...before, then: { properties: { l: { enum: ['x', 'y'] } } } };
+      expect(classifyTypeChange(before, after)).toBe('compatible');
+    });
+
+    test('o plan do fixture omc com propriedade nova em then é compatível', () => {
+      const plan: RecordType = omc.types.plan;
+      const next = {
+        ...plan,
+        then: {
+          ...omc.types.plan.then,
+          properties: { diff: { type: 'string' }, note: { type: 'string' } },
+        },
+      };
+      expect(classifyTypeChange(plan, next)).toBe('compatible');
+    });
+  });
 });
 
 describe('classifyRelationChange (D-11)', () => {
@@ -161,9 +240,9 @@ describe('classifyRelationChange (D-11)', () => {
   });
 
   test('estreitar from ou to é quebra', () => {
-    const wide: RelationName = { ...base, from: ['review', 'audit'] };
-    expect(classifyRelationChange(wide, base)).toBe('breaking');
-    expect(classifyRelationChange(wide, { ...wide, to: [] })).toBe('breaking');
+    const wide: RelationName = { ...base, from: ['review', 'audit'], to: ['doc', 'spec'] };
+    expect(classifyRelationChange(wide, { ...wide, from: ['review'] })).toBe('breaking');
+    expect(classifyRelationChange(wide, { ...wide, to: ['doc'] })).toBe('breaking');
   });
 
   test('passar de sem lista para uma lista é quebra', () => {
@@ -214,9 +293,31 @@ describe('attachmentFields (D-16)', () => {
 });
 
 describe('schemas de definição', () => {
+  /** Objeto cujo JCS tem exatamente `chars` caracteres. */
+  function withCanonicalLength(chars: number) {
+    const overhead = (canonicalize({ k: '' }) ?? '').length;
+    return { k: 'x'.repeat(chars - overhead) };
+  }
+
+  const question = { kind: 'occurred', select: { type: 'review' } };
+
   test('RecordType aceita um objeto JSON e recusa o que não é objeto', () => {
     expect(RecordType.safeParse({ type: 'object' }).success).toBe(true);
     expect(RecordType.safeParse('x').success).toBe(false);
+  });
+
+  test('RecordType no teto canônico passa e um caractere a mais cai (N8)', () => {
+    expect(RECORD_TYPE_MAX_CHARS).toBe(16_000);
+    const atCap = withCanonicalLength(RECORD_TYPE_MAX_CHARS);
+    expect((canonicalize(atCap) ?? '').length).toBe(RECORD_TYPE_MAX_CHARS);
+    expect(RecordType.safeParse(atCap).success).toBe(true);
+    expect(RecordType.safeParse(withCanonicalLength(RECORD_TYPE_MAX_CHARS + 1)).success).toBe(
+      false,
+    );
+  });
+
+  test('RecordType com surrogate solitário é recusado sem lançar', () => {
+    expect(RecordType.safeParse({ description: '\ud800' }).success).toBe(false);
   });
 
   test('RelationName exige name e kind válidos e recusa campo estranho', () => {
@@ -226,10 +327,44 @@ describe('schemas de definição', () => {
     expect(RelationName.safeParse({ name: 'a', kind: 'supports', extra: 1 }).success).toBe(false);
   });
 
+  // Omitida a ponta aceita qualquer tipo; lista vazia nunca quer dizer "nenhum tipo" (N6).
+  test.each([
+    ['from vazio', { from: [] }],
+    ['to vazio', { to: [] }],
+    ['from com duplicata', { from: ['review', 'review'] }],
+    ['to com duplicata', { to: ['doc', 'spec', 'doc'] }],
+  ])('RelationName recusa %s', (_label, ends) => {
+    expect(RelationName.safeParse({ name: 'approves', kind: 'supports', ...ends }).success).toBe(
+      false,
+    );
+  });
+
+  test('RelationName aceita from e to omitidos ou com nomes distintos', () => {
+    expect(RelationName.safeParse({ name: 'a', kind: 'supports', from: ['x', 'y'] }).success).toBe(
+      true,
+    );
+    expect(RelationName.safeParse({ name: 'a', kind: 'supports', to: ['x'] }).success).toBe(true);
+  });
+
   test('Gate exige name e perguntas com kind', () => {
-    const question = { kind: 'occurred', select: { type: 'review' } };
     expect(Gate.safeParse({ name: 'ready', questions: [question] }).success).toBe(true);
     expect(Gate.safeParse({ name: 'ready', questions: [{}] }).success).toBe(false);
     expect(Gate.safeParse({ name: 'ready' }).success).toBe(false);
+  });
+
+  // Gate vazio nunca barra, e D-11 faz toda mudança de gate ser minor: a definição não o admite.
+  test('Gate recusa questions vazio (N5)', () => {
+    expect(Gate.safeParse({ name: 'ready', questions: [] }).success).toBe(false);
+  });
+
+  test('Gate com perguntas no teto passa e uma a mais cai (N8)', () => {
+    const questions = (count: number) => Array.from({ length: count }, () => question);
+    expect(GATE_QUESTIONS_MAX).toBe(50);
+    expect(
+      Gate.safeParse({ name: 'ready', questions: questions(GATE_QUESTIONS_MAX) }).success,
+    ).toBe(true);
+    expect(
+      Gate.safeParse({ name: 'ready', questions: questions(GATE_QUESTIONS_MAX + 1) }).success,
+    ).toBe(false);
   });
 });

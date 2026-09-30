@@ -2,25 +2,39 @@ import { isEqual, isPlainObject } from 'es-toolkit';
 import { z } from 'zod';
 import { HexlogError } from '../errors.ts';
 import { GateQuestion } from './gate.ts';
-import { Name } from './ids.ts';
-import { RelationKind } from './record.ts';
+import { Name, TypeNames } from './ids.ts';
+import { RelationKind, withinCanonicalLimit } from './record.ts';
+
+/** Teto do schema de um tipo em caracteres canônicos (JCS), igual ao do 0.x; docs/tetos-dominio-v1.md. */
+export const RECORD_TYPE_MAX_CHARS = 16_000;
+
+/** Teto de perguntas por gate; docs/tetos-dominio-v1.md. */
+export const GATE_QUESTIONS_MAX = 50;
 
 /** JSON Schema de um tipo de registro (`define_type`); a validade do schema é do adaptador ajv. */
-export const RecordType = z.record(z.string(), z.json());
+export const RecordType = z
+  .record(z.string(), z.json())
+  .refine((schema) => withinCanonicalLimit(schema, RECORD_TYPE_MAX_CHARS), {
+    message: `type schema exceeds ${RECORD_TYPE_MAX_CHARS} canonical characters or is not canonicalizable`,
+  });
 export type RecordType = z.infer<typeof RecordType>;
 
-/** Nome de relação: `from`/`to` são listas de nomes de tipo; omitida, a ponta aceita qualquer tipo. */
+/**
+ * Nome de relação: `from`/`to` são listas de nomes de tipo, não vazias e sem repetição. Omitida, a
+ * ponta aceita qualquer tipo; `[]` não quer dizer "nenhum tipo" e é recusada.
+ */
 export const RelationName = z.strictObject({
   name: Name,
   kind: RelationKind,
-  from: z.array(Name).optional(),
-  to: z.array(Name).optional(),
+  from: TypeNames.optional(),
+  to: TypeNames.optional(),
 });
 export type RelationName = z.infer<typeof RelationName>;
 
 export const Gate = z.strictObject({
   name: Name,
-  questions: z.array(GateQuestion),
+  // Gate vazio nunca barra; evaluateGate([]) segue vazio-verdadeiro, mas a definição não o admite.
+  questions: z.array(GateQuestion).min(1).max(GATE_QUESTIONS_MAX),
 });
 export type Gate = z.infer<typeof Gate>;
 
@@ -59,23 +73,46 @@ export function bumpVersion(current: string, kind: 'major' | 'minor'): Version {
 /** D-11: `unchanged` não grava versão, `compatible` sobe o minor, `breaking` exige `breaking: true`. */
 export type Change = 'unchanged' | 'compatible' | 'breaking';
 
+// Palavras-chave em que mudar o schema pode estreitar o que ele aceita: `if` e `not` invertem o
+// sentido (propriedade nova ou `enum` alargado num deles recusa dado que antes passava), e
+// `anyOf`/`allOf`/`oneOf` compõem o veredito de vários ramos. `then` e `else` ficam de fora de
+// propósito: nova propriedade neles equivale a adicioná-la na raiz, que a D-11 já aceita (provado
+// com ajv, `else` e raiz recusam o mesmo dado novo). `anyOf`/`allOf`/`oneOf` são arrays e já caem
+// em `isEqual`; ficam na lista para seguir valendo se o percurso passar a entrar em arrays.
+const NON_ADDITIVE_KEYWORDS = new Set(['not', 'if', 'anyOf', 'allOf', 'oneOf']);
+
 // `keyword` é a chave pela qual `previous` foi alcançado, ou null na raiz e dentro de um mapa de
-// propriedades (aí as chaves são nomes de campo do projeto, não palavras-chave).
+// propriedades (aí as chaves são nomes de campo do projeto, não palavras-chave). `additive` é falso
+// desde que o percurso entrou numa palavra-chave de NON_ADDITIVE_KEYWORDS: dali em diante vale
+// igualdade estrita, sem chave nova e sem `enum` alargado.
 // ponytail: não distingue schema de valor de dado (`default`, `const`); um mapa `properties` dentro
-// deles também aceita chaves novas. Precisa de um percurso ciente de palavras-chave se isso pesar.
-function onlyAdds(previous: unknown, next: unknown, keyword: string | null): boolean {
+// deles também aceita chaves novas. Também não segue `$ref`: `enum` alargado em `$defs` usado sob
+// `not` passa como compatível. Precisa de um percurso ciente de palavras-chave se isso pesar.
+function onlyAdds(
+  previous: unknown,
+  next: unknown,
+  keyword: string | null,
+  additive: boolean,
+): boolean {
   if (isPlainObject(previous) && isPlainObject(next)) {
     const isPropertyMap = keyword === 'properties';
     const keepsEveryKey = Object.keys(previous).every(
       (key) =>
-        Object.hasOwn(next, key) && onlyAdds(previous[key], next[key], isPropertyMap ? null : key),
+        Object.hasOwn(next, key) &&
+        onlyAdds(
+          previous[key],
+          next[key],
+          isPropertyMap ? null : key,
+          additive && (isPropertyMap || !NON_ADDITIVE_KEYWORDS.has(key)),
+        ),
     );
     return (
       keepsEveryKey &&
-      (isPropertyMap || Object.keys(next).every((key) => Object.hasOwn(previous, key)))
+      ((isPropertyMap && additive) ||
+        Object.keys(next).every((key) => Object.hasOwn(previous, key)))
     );
   }
-  if (keyword === 'enum' && Array.isArray(previous) && Array.isArray(next)) {
+  if (additive && keyword === 'enum' && Array.isArray(previous) && Array.isArray(next)) {
     return previous.every((value) => next.some((candidate) => isEqual(candidate, value)));
   }
   return isEqual(previous, next);
@@ -87,7 +124,7 @@ function onlyAdds(previous: unknown, next: unknown, keyword: string | null): boo
  */
 export function classifyTypeChange(previous: RecordType, next: RecordType): Change {
   if (isEqual(previous, next)) return 'unchanged';
-  return onlyAdds(previous, next, null) ? 'compatible' : 'breaking';
+  return onlyAdds(previous, next, null, true) ? 'compatible' : 'breaking';
 }
 
 /** Ponta ausente aceita qualquer tipo: `next` alarga `previous` quando aceita tudo que ele aceitava. */

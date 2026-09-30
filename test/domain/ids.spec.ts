@@ -85,7 +85,7 @@ describe('RecordId (D-01)', () => {
     'proc-1:',
     `:${randomUUIDv7()}`,
     'proc-1:123e4567-e89b-42d3-a456-426614174000',
-    `proc-1:${randomUUIDv7().toUpperCase()}`,
+    'proc-1:0198F4A0-0000-7000-8000-000000000001',
     `a:b:${randomUUIDv7()}`,
     `Proc:${randomUUIDv7()}`,
   ])('%s é inválido', (value) => {

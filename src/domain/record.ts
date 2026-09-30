@@ -8,6 +8,21 @@ export const DATA_MAX_CHARS = 16_000;
 /** Teto de itens por lote de `register`. */
 export const BATCH_MAX = 50;
 
+/** Teto de relações por registro gravado e por item de lote (docs/tetos-dominio-v1.md). */
+export const RELATIONS_MAX = 100;
+
+/**
+ * Cabe em `max` caracteres canônicos (JCS)? Valor que o `canonicalize` recusa (surrogate solitário)
+ * conta como fora do teto em vez de lançar, para o parse devolver erro de validação.
+ */
+export function withinCanonicalLimit(value: unknown, max: number): boolean {
+  try {
+    return (canonicalize(value) ?? '').length <= max;
+  } catch {
+    return false;
+  }
+}
+
 // Mora aqui, e não em relations.ts, porque Relation e RelationInput precisam dele em tempo de
 // execução e relations.ts importa este arquivo; relations.ts o reexporta.
 export const RelationKind = z.enum([
@@ -56,13 +71,16 @@ export const RelationInput = z
     message: 'relation needs kind or as',
     path: ['kind'],
   });
-export type RelationInput = z.infer<typeof RelationInput>;
+
+/** `kind`, `as` ou os dois: o refine de `RelationInput` garante um deles, e o tipo também. */
+export type KindOrAs = { kind: RelationKind; as?: undefined } | { kind?: RelationKind; as: Name };
+export type RelationInput = z.infer<typeof RelationInput> & KindOrAs;
 
 // canonicalize só devolve undefined para entradas não serializáveis, que z.json() já recusou.
 const Data = z
   .record(z.string(), z.json())
-  .refine((data) => (canonicalize(data) ?? '').length <= DATA_MAX_CHARS, {
-    message: `data exceeds ${DATA_MAX_CHARS} canonical characters`,
+  .refine((data) => withinCanonicalLimit(data, DATA_MAX_CHARS), {
+    message: `data exceeds ${DATA_MAX_CHARS} canonical characters or is not canonicalizable`,
   });
 
 export const HexRecord = z.strictObject({
@@ -72,7 +90,7 @@ export const HexRecord = z.strictObject({
   target: Target,
   author: Author,
   data: Data,
-  relations: z.array(Relation),
+  relations: z.array(Relation).max(RELATIONS_MAX),
 });
 export type HexRecord = z.infer<typeof HexRecord>;
 
@@ -81,6 +99,6 @@ export const BatchItem = z.strictObject({
   type: Name,
   target: Target,
   data: Data,
-  relations: z.array(RelationInput).optional(),
+  relations: z.array(RelationInput).max(RELATIONS_MAX).optional(),
 });
 export type BatchItem = z.infer<typeof BatchItem>;

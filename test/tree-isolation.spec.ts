@@ -2,7 +2,13 @@ import { describe, test, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ts from 'typescript';
-import { NEW_TREE_DIRS, listNewTreeFiles, repoRoot, srcRoot } from './new-tree.ts';
+import {
+  NEW_TREE_DIRS,
+  NEW_TREE_KNOWN_FILES,
+  listNewTreeFiles,
+  repoRoot,
+  srcRoot,
+} from './new-tree.ts';
 
 const PREVIEW_SERVER = path.join(repoRoot, 'test', 'fixtures', 'preview-server.ts');
 const NON_LITERAL = '<non-literal>';
@@ -58,6 +64,13 @@ function forbiddenImports(file: string, code: string): string[] {
 }
 
 describe('P6: árvore nova isolada da raiz legada', () => {
+  test('a varredura acha os arquivos da árvore nova', () => {
+    const scanned = listNewTreeFiles([PREVIEW_SERVER]);
+    expect(scanned.map((file) => path.relative(srcRoot, file))).toEqual(
+      expect.arrayContaining(NEW_TREE_KNOWN_FILES),
+    );
+  });
+
   test('a árvore nova e a entry de prévia só importam errors, directory, version ou a própria árvore', () => {
     const violations = listNewTreeFiles([PREVIEW_SERVER]).flatMap((file) =>
       forbiddenImports(file, fs.readFileSync(file, 'utf8')).map(
@@ -79,6 +92,7 @@ describe('P6: árvore nova isolada da raiz legada', () => {
     ['import() em tipo', `export type T = import('../chain.ts').Link;`],
     ['import = require', `import log = require('../log.ts');`],
     ['import só de efeito', `import '../server.ts';`],
+    ['pasta de nome parecido com a da árvore nova', `import { x } from '../domainx/a.ts';`],
   ])('detecta %s', (_label, code) => {
     expect(forbiddenImports(probe, code)).toHaveLength(1);
   });
