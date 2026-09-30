@@ -28,7 +28,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 
 ### Working In This Directory
 - O log é estritamente append-only, gravado sob lock por diretório (`mkdirSync` exclusivo + token). Nunca crie código que edite ou remova linhas.
-- A cadeia usa um único predicado (`isValidLink` em `src/chain.ts`) para escrita e verificação. Não duplique essa lógica.
+- A cadeia usa um único predicado (`isValidLink` em `src/chain.ts`) para escrita e verificação. Não duplique essa lógica. Na árvore nova (`src/domain/chain.ts`) ele devolve `{ link }` ou `{ reasons }` (`invalid-line`, `diverging-seq`, `hash-mismatch`) em vez de `null`.
 - Toda tool passa por `execute()` em `src/mcp.ts`. `HexlogError` vira `{code, message, details}`, e qualquer outra exceção vira `INTERNAL`, sem stack na resposta.
 - São exatamente 12 tools (ADR 0006). Adicionar ou remover uma quebra testes do instalador e do e2e.
 - Anexo é um blob imutável em `<projeto>/attachments/<sha256>`; o hash é o sha256 dos **bytes** UTF-8, não do JCS. `attachments` é nome reservado de processo. Nunca crie código que escreva por cima de um blob existente.
