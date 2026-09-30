@@ -981,13 +981,22 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         log: () => undefined,
       });
 
-      // o processo 2 perde a troca; o que importa é o 1 concluir e não sobrar backup
-      const [first] = await Promise.all([
+      // o processo 2 perde a troca; o 1 conclui e não sobra backup
+      const [first, second] = await Promise.all([
         runConcurrentFixture(home, '0.1.0', 'new', 1, 2, 'interleave'),
         runConcurrentFixture(home, '0.1.0', 'new', 2, 2, 'interleave'),
       ]);
 
       expect(first).toEqual(expect.objectContaining({ status: 0 }));
+      expect(second).toEqual(
+        expect.objectContaining({
+          status: 1,
+          stdout: expect.stringContaining('another installation swapped'),
+        }),
+      );
+      // os dois marcos provam que a intercalação do fixture de fato aconteceu
+      expect(fs.existsSync(path.join(home, '.first-backed-up'))).toBe(true);
+      expect(fs.existsSync(path.join(home, '.second-finished'))).toBe(true);
       expect(fs.readFileSync(path.join(versionDirOf(home, '0.1.0'), 'server.mjs'), 'utf8')).toBe(
         'server-new',
       );
