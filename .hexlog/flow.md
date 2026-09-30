@@ -1,19 +1,22 @@
 ---
-phases: [descoberta, planejamento, execucao, verificacao]
+phases: [descoberta, planejamento, execucao, revisao, verificacao]
 process:
   descoberta: omc-discover
   planejamento: omc-plan
   execucao: omc-exec
+  revisao: omc-review
   verificacao: omc-verify
 skills:
   descoberta: [oh-my-claudecode:deep-interview]
   planejamento: [oh-my-claudecode:plan, oh-my-claudecode:ralplan]
-  execucao: [oh-my-claudecode:ralph, oh-my-claudecode:autopilot, oh-my-claudecode:team]
+  execucao: [oh-my-claudecode:ralph, oh-my-claudecode:autopilot, oh-my-claudecode:team, oh-my-claudecode:execute]
+  revisao: [oh-my-claudecode:review]
   verificacao: [oh-my-claudecode:verify]
 gate:
   descoberta: spec-crystallized
   planejamento: execution-approved
   execucao: completion-verified
+  revisao: review-approved
   verificacao: verified
 versions:
   types:
@@ -27,6 +30,7 @@ versions:
   gates:
     completion-verified: "1.0"
     execution-approved: "1.0"
+    review-approved: "1.0"
     spec-crystallized: "1.0"
     verified: "1.0"
 editedSkills:
@@ -37,6 +41,8 @@ editedSkills:
   - oh-my-claudecode:autopilot
   - oh-my-claudecode:team
   - oh-my-claudecode:verify
+  - oh-my-claudecode:execute
+  - oh-my-claudecode:review
 ---
 
 # Fluxo do OMC (fork `omc-hexlog`) neste repositório
@@ -99,8 +105,12 @@ exige mudar o hook.
 
 ## execucao → `omc-exec`
 
-Skills: `ralph`, `autopilot` (chama o ralph na Phase 2, `autopilot:96`) e `team`
-(compõe com o ralph, `team:754-805`).
+Skills: `ralph`, `autopilot` (chama o ralph na Phase 2, `autopilot:96`), `team`
+(compõe com o ralph, `team:754-805`) e `execute` (só quando invocada direto,
+fora de ralph/autopilot/team, `execute:23-28`). O `execute` não registra
+`completion-verified`, então o gate da fase `execucao` não fecha por essa rota;
+a aprovação fica nos gates `review-approved` (`revisao`) e `verified`
+(`verificacao`).
 
 | Ponto | Evento | Claim / tipo | Result |
 |---|---|---|---|
@@ -115,6 +125,18 @@ Skills: `ralph`, `autopilot` (chama o ralph na Phase 2, `autopilot:96`) e `team`
 
 Gate `completion-verified`: veredito ativo `completion-verified=approve` e
 nenhum `regression-check=fail` ativo no target.
+
+## revisao → `omc-review`
+
+Skill: `review` (advisory: o gate registra o resultado, não bloqueia o fluxo).
+
+| Ponto | Evento | Claim / tipo | Result |
+|---|---|---|---|
+| Relatório completo do review (`review:23`) | attachment | — | — |
+| Veredito do review (`review:23`) | verdict | `review` | `approve` \| `request-changes` \| `reject` |
+
+Gate `review-approved`: veredito ativo `review=approve`; `request-changes` ou
+`reject` ativos barram. Um re-review depois das correções supera o anterior.
 
 ## verificacao → `omc-verify`
 
