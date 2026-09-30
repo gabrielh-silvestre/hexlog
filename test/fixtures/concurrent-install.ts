@@ -6,11 +6,18 @@
 // barreiras: uma na chegada e outra dentro de `verifyServer`, depois de
 // `existedBefore` e antes do swap — sem a segunda, um processo atrasado lê
 // `existedBefore` depois do swap do irmão e toma outro ramo.
-import * as fs from 'node:fs';
+//
+// Com o 6º argumento posicional `interleave`, o fixture deixa de torcer pela corrida: congela
+// `Date.now` (dois instaladores no mesmo ms) e intercala os dois `renameSync` do
+// backup de forma fixa — o processo 2 chega no rename depois de o 1 já ter movido
+// `versionDir` pra `old` e termina antes de o 1 seguir. Se o nome do backup
+// dependesse do relógio, o rollback do 2 devolveria o backup do 1 a `versionDir`.
+// Import default: o patch de `fs.renameSync` precisa ser visto por `src/installation.ts`, que usa o mesmo import default.
+import fs from 'node:fs';
 import * as path from 'node:path';
-import { installArtifact } from '../../src/installation.ts';
+import { installArtifact, TOOLS_COUNT } from '../../src/installation.ts';
 
-const [, , home, version, variant, processId, totalProcessesText] = process.argv;
+const [, , home, version, variant, processId, totalProcessesText, mode] = process.argv;
 if (
   home === undefined ||
   version === undefined ||
@@ -32,17 +39,42 @@ const BARRIER_TIMEOUT_MS = 5_000;
 // processos em vez de fazê-los colidir na troca atômica, que é o que o teste
 // de concorrência (B2(h)) precisa provocar de propósito. Com `BARRIER_TIMEOUT_MS`,
 // uma barreira que nunca enche falha em vez de travar o teste.
-const spinBarrier = (name: string): void => {
-  const barrierDir = path.join(home, name);
-  fs.mkdirSync(barrierDir, { recursive: true });
-  fs.writeFileSync(path.join(barrierDir, processId), '');
-  const deadline = Date.now() + BARRIER_TIMEOUT_MS;
-  while (fs.readdirSync(barrierDir).length < totalProcesses) {
-    if (Date.now() > deadline) {
+// `performance.now` e não `Date.now`: o modo `interleave` congela o relógio.
+const spinUntil = (name: string, isDone: () => boolean): void => {
+  const deadline = performance.now() + BARRIER_TIMEOUT_MS;
+  while (!isDone()) {
+    if (performance.now() > deadline) {
       throw new Error(`barrier ${name} timed out`);
     }
   }
 };
+
+const spinBarrier = (name: string): void => {
+  const barrierDir = path.join(home, name);
+  fs.mkdirSync(barrierDir, { recursive: true });
+  fs.writeFileSync(path.join(barrierDir, processId), '');
+  spinUntil(name, () => fs.readdirSync(barrierDir).length >= totalProcesses);
+};
+
+const signal = (name: string): void => fs.writeFileSync(path.join(home, name), '');
+const waitFor = (name: string): void => spinUntil(name, () => fs.existsSync(path.join(home, name)));
+
+if (mode === 'interleave') {
+  Date.now = () => 0;
+  const renameSync = fs.renameSync;
+  fs.renameSync = (from, to) => {
+    if (!String(to).includes('.old-')) return renameSync(from, to);
+    if (processId === '2') {
+      signal('.second-at-backup');
+      waitFor('.first-backed-up');
+      return renameSync(from, to);
+    }
+    waitFor('.second-at-backup');
+    renameSync(from, to);
+    signal('.first-backed-up');
+    waitFor('.second-finished');
+  };
+}
 
 spinBarrier('.barrier');
 
@@ -62,7 +94,7 @@ try {
     runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
     verifyServer: () => {
       spinBarrier('.barrier2');
-      return Promise.resolve(12);
+      return Promise.resolve(TOOLS_COUNT);
     },
     log: () => undefined,
   });
@@ -76,3 +108,4 @@ try {
   );
   process.exitCode = 1;
 }
+if (mode === 'interleave' && processId === '2') signal('.second-finished');

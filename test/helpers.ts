@@ -10,6 +10,7 @@ import { HexlogError } from '../src/errors.ts';
 import type { ErrorCode, Detail } from '../src/errors.ts';
 import type { Logger, LogRecord } from '../src/log.ts';
 import { createServer } from '../src/mcp.ts';
+import { registerTempDir } from './cleanup.ts';
 
 /** Environment de teste: servidor `hexlog` real ligado a um `Client` MCP via transporte em memória. */
 export type Environment = {
@@ -44,11 +45,21 @@ function tree(root: string): string[] {
 }
 
 /**
+ * Cria `hexlog-<prefix>-XXXXXX` sob `os.tmpdir()` e registra para `test/cleanup.ts` apagar no `afterAll`.
+ * Só chame dentro de hook ou teste, nunca na coleta do `describe`: a criação na coleta roda até com `-t` e vaza o diretório.
+ */
+export function createTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `hexlog-${prefix}-`));
+  registerTempDir(dir);
+  return dir;
+}
+
+/**
  * Cria um `dir` de dados temporário, um servidor `hexlog` real e um `Client` MCP conectados em memória.
  * `cwd` é o `cwd` do servidor (âncora de `attachment({path})`); sem ele vale o do processo de teste.
  */
 export async function createEnvironment(options: { cwd?: string } = {}): Promise<Environment> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-'));
+  const dir = createTempDir('env');
   const records: LogRecord[] = [];
   const log: Logger = (record) => {
     records.push(record);
