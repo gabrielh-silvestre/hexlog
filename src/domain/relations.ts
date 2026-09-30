@@ -163,7 +163,6 @@ export type RuleCode =
   | 'self-relation'
   | 'unknown-relation-name'
   | 'kind-mismatch'
-  | 'missing-kind'
   | 'cross-process-currency'
   | 'type-mismatch'
   | 'endpoint-type'
@@ -202,9 +201,8 @@ function resolveKind(
   names: RuleContext['names'],
 ): RelationCheck {
   const { kind, as } = input;
-  if (as === undefined) {
-    return kind === undefined ? { violation: { code: 'missing-kind' } } : { kind };
-  }
+  // O schema de `RelationInput` garante `kind` ou `as`; sem `as`, `kind` está presente.
+  if (as === undefined) return { kind: kind! };
   const named = names.get(as);
   if (!named) return { violation: { code: 'unknown-relation-name' } };
   if (kind !== undefined && kind !== named.kind) return { violation: { code: 'kind-mismatch' } };

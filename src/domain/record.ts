@@ -42,12 +42,20 @@ export type Relation = z.infer<typeof Relation>;
 /** Referência a um item anterior do mesmo lote (D-01). */
 export const AliasRef = z.string().regex(new RegExp(`^@${NAME_SRC}$`));
 
-/** Relação como o agente a envia: `to` pode ser `@<alias>` e `kind` pode vir de `as` (D-10). */
-export const RelationInput = z.strictObject({
-  to: z.union([RecordId, AliasRef]),
-  kind: RelationKind.optional(),
-  as: Name.optional(),
-});
+/**
+ * Relação como o agente a envia: `to` pode ser `@<alias>` e `kind` pode vir de `as` (D-10).
+ * Pelo menos um dos dois precisa vir.
+ */
+export const RelationInput = z
+  .strictObject({
+    to: z.union([RecordId, AliasRef]),
+    kind: RelationKind.optional(),
+    as: Name.optional(),
+  })
+  .refine(({ kind, as }) => kind !== undefined || as !== undefined, {
+    message: 'relation needs kind or as',
+    path: ['kind'],
+  });
 export type RelationInput = z.infer<typeof RelationInput>;
 
 // canonicalize só devolve undefined para entradas não serializáveis, que z.json() já recusou.

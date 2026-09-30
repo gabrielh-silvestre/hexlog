@@ -137,14 +137,13 @@ describe('regras estruturais (D-10)', () => {
     });
   });
 
-  test('unknown-relation-name, kind-mismatch e missing-kind', () => {
+  test('unknown-relation-name e kind-mismatch', () => {
     expect(violationOf(checkRelation({ as: 'nope' }, ctx()))).toEqual({
       code: 'unknown-relation-name',
     });
     expect(violationOf(checkRelation({ as: 'based-on', kind: 'contradicts' }, ctx()))).toEqual({
       code: 'kind-mismatch',
     });
-    expect(violationOf(checkRelation({}, ctx()))).toEqual({ code: 'missing-kind' });
   });
 
   test('endpoint-type recusa origem ou destino fora das listas do nome', () => {

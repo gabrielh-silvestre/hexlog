@@ -70,10 +70,21 @@ describe('Relation', () => {
 });
 
 describe('RelationInput', () => {
-  test('aceita id ou @alias em to, com kind e as opcionais', () => {
-    expect(RelationInput.safeParse({ to: id() }).success).toBe(true);
+  test('aceita id ou @alias em to, com kind ou as', () => {
+    expect(RelationInput.safeParse({ to: id(), kind: 'supports' }).success).toBe(true);
     expect(RelationInput.safeParse({ to: '@plan-1', kind: 'supports' }).success).toBe(true);
     expect(RelationInput.safeParse({ to: '@plan-1', as: 'approves' }).success).toBe(true);
+    expect(
+      RelationInput.safeParse({ to: '@plan-1', kind: 'supports', as: 'approves' }).success,
+    ).toBe(true);
+  });
+
+  test('recusa relação sem kind e sem as', () => {
+    const result = RelationInput.safeParse({ to: id() });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({ path: ['kind'], message: 'relation needs kind or as' }),
+    ]);
   });
 
   test.each([{}, { to: 'plan-1' }, { to: '@' }, { to: '@A' }, { to: id(), kind: 'likes' }])(
