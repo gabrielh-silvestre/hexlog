@@ -37,6 +37,13 @@ const FORBIDDEN_SPECIFIERS = [
   'node:fs',
   'fs',
   'node:fs/promises',
+  'fs/promises',
+  'node:child_process',
+  'child_process',
+  'node:os',
+  'os',
+  'node:net',
+  'net',
   '@modelcontextprotocol/server',
   'ajv',
   'ajv-formats',
@@ -62,6 +69,11 @@ describe('travas de fronteira (SF1/TB1)', () => {
     expect(await ruleIdsOfText(`src/${layer}/probe.ts`, importing(specifier))).toEqual([
       'no-restricted-imports',
     ]);
+  });
+
+  test.each(RESTRICTED_LAYERS)('%s não usa import dinâmico', async (layer) => {
+    const code = `export const load = () => import('node:path');\n`;
+    expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual(['no-restricted-syntax']);
   });
 
   test('commands não importa queries', async () => {

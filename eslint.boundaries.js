@@ -6,6 +6,13 @@ const FORBIDDEN_PACKAGES = [
   'node:fs',
   'fs',
   'node:fs/promises',
+  'fs/promises',
+  'node:child_process',
+  'child_process',
+  'node:os',
+  'os',
+  'node:net',
+  'net',
   'ajv',
   'ajv-formats',
   'minisearch',
@@ -14,6 +21,15 @@ const FORBIDDEN_PACKAGES = [
 const FORBIDDEN_GROUPS = [
   { group: ['@modelcontextprotocol/*'], message: 'Só mcp/ conhece o SDK do MCP.' },
   { group: ['**/adapters/**'], message: 'Esta camada depende de portas, nunca de adapters.' },
+];
+
+// `no-restricted-imports` não enxerga `import('...')`, então o import dinâmico é barrado por sintaxe.
+const NO_DYNAMIC_IMPORT = [
+  'error',
+  {
+    selector: 'ImportExpression',
+    message: 'Esta camada não usa import dinâmico: ele contornaria as travas de import.',
+  },
 ];
 
 const MAX_LINES = { 'max-lines': ['error', { max: 800 }] };
@@ -29,6 +45,7 @@ const restrictImports = (files, { extraGroups = [], extraRules = {} } = {}) => (
       'error',
       { paths: FORBIDDEN_PACKAGES, patterns: [...FORBIDDEN_GROUPS, ...extraGroups] },
     ],
+    'no-restricted-syntax': NO_DYNAMIC_IMPORT,
     ...extraRules,
   },
 });
