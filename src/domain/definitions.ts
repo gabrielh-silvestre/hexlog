@@ -1,6 +1,7 @@
 import { isEqual, isPlainObject } from 'es-toolkit';
 import { z } from 'zod';
 import { HexlogError } from '../errors.ts';
+import { GateQuestion } from './gate.ts';
 import { Name } from './ids.ts';
 import { RelationKind } from './record.ts';
 
@@ -17,13 +18,9 @@ export const RelationName = z.strictObject({
 });
 export type RelationName = z.infer<typeof RelationName>;
 
-// Forma mínima enquanto gate.ts não existe: só confere que cada pergunta é um objeto com `kind`.
-// gate.ts troca isto pelo `GateQuestion` completo.
-const GateQuestionShape = z.looseObject({ kind: z.string() });
-
 export const Gate = z.strictObject({
   name: Name,
-  questions: z.array(GateQuestionShape),
+  questions: z.array(GateQuestion),
 });
 export type Gate = z.infer<typeof Gate>;
 

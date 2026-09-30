@@ -227,7 +227,8 @@ describe('schemas de definição', () => {
   });
 
   test('Gate exige name e perguntas com kind', () => {
-    expect(Gate.safeParse({ name: 'ready', questions: [{ kind: 'occurred' }] }).success).toBe(true);
+    const question = { kind: 'occurred', select: { type: 'review' } };
+    expect(Gate.safeParse({ name: 'ready', questions: [question] }).success).toBe(true);
     expect(Gate.safeParse({ name: 'ready', questions: [{}] }).success).toBe(false);
     expect(Gate.safeParse({ name: 'ready' }).success).toBe(false);
   });
