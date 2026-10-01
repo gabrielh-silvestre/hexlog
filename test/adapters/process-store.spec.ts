@@ -9,7 +9,7 @@ import {
   MANIFEST_FILE,
   processPaths,
 } from '../../src/adapters/fs/data-format.ts';
-import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
+import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
 import { anchor } from '../../src/domain/chain.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
@@ -276,6 +276,84 @@ describe('create, read e list', () => {
       details: [{ path: '', code: 'eisdir', message: 'I/O failure' }],
     });
     expect(JSON.stringify(error)).not.toContain(dataDir);
+  });
+
+  describe('teto do log (N8)', () => {
+    /** Log esparso do tamanho pedido: o teto se testa sem gravar 64 MiB de verdade. */
+    const sparseLog = (logFile: string, size: number) => fs.truncateSync(logFile, size);
+
+    test('read de um log com exatamente 64 MiB ainda lê', () => {
+      const { store, ref, logFile } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES);
+
+      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES);
+    });
+
+    test('read de um log 1 byte acima do teto dá PROCESS_TOO_LARGE sem caminho e sem ler o conteúdo', () => {
+      const { dataDir, store, ref, logFile } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES + 1);
+      const readFile = jest.spyOn(fs, 'readFileSync');
+
+      let error: unknown;
+      try {
+        store.read(ref);
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toMatchObject({
+        code: 'PROCESS_TOO_LARGE',
+        details: [{ path: '/process', code: 'too-large', message: expect.any(String) }],
+      });
+      expect(JSON.stringify(error)).not.toContain(dataDir);
+      expect(readFile).not.toHaveBeenCalledWith(logFile, expect.anything());
+    });
+
+    test('write sobre um log acima do teto recusa sem gravar e solta o lock', async () => {
+      const { dataDir, store, ref, logFile, dir } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES + 1);
+      const decide = jest.fn(() => ({ result: undefined }));
+
+      const error = await rejectionOf(store.write(ref, decide), dataDir);
+
+      expect(error.code).toBe('PROCESS_TOO_LARGE');
+      expect(decide).not.toHaveBeenCalled();
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES + 1);
+      expect(locksIn(dir)).toEqual([]);
+    });
+
+    /** Prefixo `\n` (o log esparso termina em byte nulo) mais a linha: o lote tem `LINE.length + 1` bytes. */
+    const LINE = 'x'.repeat(100);
+
+    test('write de um lote que fecha o log em exatamente 64 MiB grava e o processo segue legível', async () => {
+      const { store, ref, logFile } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES - LINE.length - 1);
+
+      await store.write(ref, () => ({ line: LINE, result: undefined }));
+
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES);
+      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES);
+    });
+
+    test('write de um lote que passaria 1 byte do teto recusa, não cresce o arquivo, solta o lock e o read segue', async () => {
+      const { dataDir, store, ref, logFile, dir } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES - LINE.length);
+
+      const error = await rejectionOf(
+        store.write(ref, () => ({ line: LINE, result: undefined })),
+        dataDir,
+      );
+
+      expect(error).toMatchObject({
+        code: 'PROCESS_TOO_LARGE',
+        details: [
+          { path: '/process', code: 'too-large', message: expect.stringContaining('new process') },
+        ],
+      });
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - LINE.length);
+      expect(locksIn(dir)).toEqual([]);
+      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES - LINE.length);
+    });
   });
 
   test('list e listProjects ordenam e ignoram pastas sem manifesto; ausentes dão lista vazia', () => {

@@ -13,7 +13,7 @@ Antes desta decisão só `data` (16.000 caracteres) e o lote (`BATCH_MAX`, 50 it
 | `RecordType` | `canonicalize().length <= 16_000` | precedente (0.x) + medição |
 | `Gate.questions` | `.max(50)` | alinhado a `BATCH_MAX` — **palpite** |
 | `aliases` | `.max(50)` | alinhado a `BATCH_MAX`, para todo item do lote poder ter alias — **palpite** (subiu de 20 na implementação do PR #60, quando 20 conflitou com `BATCH_MAX`) |
-| `records.jsonl` (arquivo inteiro, por processo) | 64 MiB | **palpite**: ~56 mil registros de 1,2 KB, ~50 vezes o maior processo medido; sem medição por trás. Recusa com `PROCESS_TOO_LARGE` (27º código do catálogo), implementada na F3 em `writeLocked` (`size` + tamanho do lote). Rever se o TF6 sair de ~500 ms ou se um processo real passar de ~10 MiB |
+| `records.jsonl` (arquivo inteiro, por processo) | 64 MiB | **palpite**: ~56 mil registros de 1,2 KB, ~50 vezes o maior processo medido; sem medição por trás. Recusa com `PROCESS_TOO_LARGE` (27º código do catálogo 1.0, que fecha em 27 depois do corte da F6), implementada em `src/adapters/fs/process-store.ts#createProcessStore` (`readProcess` confere o tamanho com `stat` antes de ler, então `read` e `write` recusam um log acima do teto; `writeLocked` confere `tamanho do arquivo + bytes do lote > 64 MiB` antes de gravar, então o lote que cruzaria o teto é recusado sem gravar e o processo continua legível; exatamente 64 MiB ainda grava e lê). A `message` (inglês) orienta criar um processo novo para seguir registrando (`supersedes`/`revokes` não atravessam processos; rotação do log fica para um ADR futuro). Rever se o TF6 sair de ~500 ms ou se um processo real passar de ~10 MiB |
 
 Ficam sem teto, de propósito: `Where`, `from` e `to`. Não há dado nem precedente; revisar junto com a F3/F4.
 

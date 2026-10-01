@@ -71,10 +71,23 @@ export type DefinitionStore = {
 
 export type AttachmentStatus = 'ok' | 'missing' | 'corrupted';
 
-/** Blobs imutáveis endereçados pelo sha256 dos bytes UTF-8, em `<projeto>/attachments/<sha256>`. */
+/**
+ * Resultado de gravar um anexo: `deduplicated` é `true` quando o blob com esse hash já existia e foi
+ * só conferido, nunca sobrescrito. A saída de `attach` o repassa (§4.1 do plano).
+ */
+export type AttachmentPut = { hash: Hash; bytes: number; deduplicated: boolean };
+
+/**
+ * Blobs imutáveis endereçados pelo sha256 dos bytes UTF-8, em `<projeto>/attachments/<sha256>`.
+ * D-15: `putPath` só lê arquivo dentro do `cwd` injetado em
+ * `adapters/fs/attachment-store.ts#createAttachmentStore` e fora do `dataDir`; as regras de extensão
+ * e de "exatamente um de `text`/`path`", além de texto vazio e surrogate solto em `putText`, são do
+ * serviço (`commands/attachment.ts`, F4).
+ * D-25: operação síncrona, como as demais portas (só `ProcessStore.write` é `async`).
+ */
 export type AttachmentStore = {
-  putText(project: Name, text: string): { hash: Hash; bytes: number };
-  putPath(project: Name, path: string): { hash: Hash; bytes: number };
+  putText(project: Name, text: string): AttachmentPut;
+  putPath(project: Name, path: string): AttachmentPut;
   status(project: Name, hash: Hash): AttachmentStatus;
   /** `ATTACHMENT_NOT_FOUND` ou `ATTACHMENT_CORRUPTED`; a paginação é do serviço. */
   read(project: Name, hash: Hash): string;
