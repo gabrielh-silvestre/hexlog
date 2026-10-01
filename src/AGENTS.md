@@ -25,6 +25,14 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 12 to
 | `domain/relations.ts` | Relações entre registros: `checkRelation` (regras de relação com `RuleCode`; o `RuleContext` dá a vigência por tipo de relação em `vigencyFor`), `hasCycle`, vigência (`buildVigency`), `lineages` e prova vencida (`needsReview`) |
 | `domain/definitions.ts` | Schemas de `RecordType`/`RelationName`/`Gate`, semver `major.minor` (`parseVersion`, `bumpVersion`, `compareVersions`), `classifyTypeChange`/`classifyRelationChange`, `attachmentFields` e os tetos `RECORD_TYPE_MAX_CHARS` e `GATE_QUESTIONS_MAX` |
 | `domain/gate.ts` | Gate declarativo: `GateQuestion`, `Selector`, `matchesSelector`/`matchesTargetPrefix`, `QuestionResult` (união discriminada por `kind`, da qual deriva `Evidence`) e `evaluateGate`, puro sobre registros já carregados |
+| `ports.ts` | Árvore nova: as portas do núcleo — `ProcessRef`, `Manifest`, `RawProcess`, `Decision`, `ProcessStore` (`create`, `read`, `list`, `listProjects`, `write`), mais `DefinitionStore`, `AttachmentStore`, `Validator` e `SearchIndex` (assinaturas a ratificar na F3) |
+| `adapters/fs/atomic.ts` | Gravação atômica em disco: `writeFileAtomic` (temporário + `fsync` + `rename`, ou `link` exclusivo), `writeSynced` e `errnoCode` |
+| `adapters/fs/data-format.ts` | Formato em disco: `dataRoot` (`<D>/.v1`), `LEGACY_NAME` e `detectLegacy` (detecção positiva do dado 0.x, D-13) |
+| `adapters/fs/lock.ts` | Lock por processo (D-12): `createLockManager` (`acquire`, `confirm`, `release`), `moveAside` e `LOCK_BUDGET_MS`; dono identificado por pid, `bootId` e token, órfão roubado, dono vivo nunca |
+| `adapters/fs/process-store.ts` | `createProcessStore` (D-25): `ProcessStore` sobre `<D>/.v1/<projeto>/<processo>/{process.json,records.jsonl}`, escrita sob o lock com um `fsync` por lote |
+| `shared/loader.ts` | Leitura e verificação do log: `parseLog`, `isValidLine`, `formatLine`, `verifyProcess` e `loadVerified` (o predicado único de leitura e escrita, D-05) |
+| `shared/logger.ts` | `Logger` e `LogRecord`: o único tipo de logger da árvore nova (D-22) |
+| `shared/pages.ts` | `sliceChars`: corte de texto por caracteres sem partir par surrogate |
 | `state.ts` | Projeção pura do Estado (§4.8): `projectState` (active/conflicts/orphans/toReview/invalidReferences/warnings/forks), `validateField` (vocabulário) |
 | `events.ts` | Esquemas Zod do envelope de evento e dos tipos nativos: `EventLine`, `MilestoneData`, `VerdictData`, `GateMilestoneData`, `parseId`, `normalizeData` |
 | `definition-tools.ts` | Registra as 5 tools de definição: `list`, `register_type`, `register_vocabulary`, `register_gate`, `create_process` |

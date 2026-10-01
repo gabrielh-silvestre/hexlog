@@ -43,10 +43,11 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - O instalador copia toda pasta de `skills/` (não uma fixa): uma skill nova só precisa da pasta em `skills/<nome>/SKILL.md` para ser instalada e conferida pelo `--check`.
 
 ### Testing Requirements
-- `npm test` roda tudo. `npx jest test/<arquivo>.spec.ts` roda um spec.
+- `npm test` roda tudo, exceto os specs de orçamento (`*.budget.spec.ts`). `npx jest test/<arquivo>.spec.ts` roda um spec.
+- `npm run test:budget` roda os specs de orçamento em série (`--runInBand`): `test/search.budget.spec.ts` e `test/adapters/load.budget.spec.ts`. O CI roda esse script depois de `npm test`.
 - `npm run typecheck` antes de concluir.
 - Não precisa de `npm run build` prévio: os specs que dependem de bundle constroem o artefato num processo filho.
-- `test/search.budget.spec.ts` mede tempo (índice ≤500ms, busca ≤2000ms) e pode falhar em máquina lenta.
+- `test/search.budget.spec.ts` mede tempo (índice ≤500ms, busca ≤2000ms) e pode falhar em máquina lenta; por isso só roda em `npm run test:budget`.
 
 ### Common Patterns
 - Nomes de módulos, funções e códigos de erro em inglês; comentários e descrições de teste continuam em português (ver `CLAUDE.md`).

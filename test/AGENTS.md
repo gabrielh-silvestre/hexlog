@@ -25,6 +25,12 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 | `domain/vigency.property.spec.ts` | Property tests (`fast-check`) das funções de `src/domain/relations.ts` (`buildVigency`, `checkRelation`, `hasCycle`, `lineages`, `needsReview`). |
 | `domain/definitions.spec.ts` | `src/domain/definitions.ts`: schemas `RecordType`/`RelationName`/`Gate`, semver (`bumpVersion`), classificação de mudança de tipo e de relação e `attachmentFields`. |
 | `domain/gate.spec.ts` | `src/domain/gate.ts`: `GateQuestion`, `Selector`, `matchesSelector`/`matchesTargetPrefix` e `evaluateGate`. |
+| `adapters/atomic.spec.ts` | `src/adapters/fs/atomic.ts`: `writeFileAtomic` (substituição, exclusividade e limpeza do temporário). |
+| `adapters/data-format.spec.ts` | `src/adapters/fs/data-format.ts`: `LEGACY_NAME`, `dataRoot` e `detectLegacy` (TI5). |
+| `adapters/lock.spec.ts` | `src/adapters/fs/lock.ts`: exclusão do lock por pid (D-12, P2) com filhos de `fixtures/lock-holder.ts`, roubo de órfão, dono vivo pausado (TF4) e `lock-lost` sob carga (TF2). |
+| `adapters/process-store.spec.ts` | `src/adapters/fs/process-store.ts`: `create`/`read`/`list`/`write`, `fsync` por lote (TF5), kill -9 no meio do lote (TF1, SE3b, filhos de `fixtures/crash-writer.ts`), truncamento em cada offset (P1) e escrita curta (P9). |
+| `adapters/load.budget.spec.ts` | Orçamento (TF6): carregar e verificar 5.000 registros, com o **mínimo** de 5 medições ≤ 500 ms (ruído de CPU só soma tempo, então o mínimo é a métrica estável), com o corpus de `fixtures/records-corpus.ts`. Só roda em `npm run test:budget`. |
+| `shared/loader.spec.ts` | `src/shared/loader.ts`: `parseLog`, `isValidLine`, `verifyProcess` e `loadVerified`. |
 | `directory.spec.ts` | (I1) `dataDir`: `XDG_DATA_HOME` absoluto, vazio ou relativo → fallback `~/.local/share/hexlog`. |
 | `log.spec.ts` | `append`/`appendBatch`: encadeamento de hash, cauda rasgada (JSON incompleto sem `\n`), lock `mkdir`+token (timeout, lock órfão), fencing; lote gravado numa única aquisição de lock, falha de escrita no meio do lote com o lock liberado no `finally`, troca de token no meio do lote interrompe o resto; e `readText`. |
 | `chain.spec.ts` | `hashLine`/`anchor` (golden fixo), `nextSeq`/`expectedPrevHash`, `verifyChain` (log de 5 elos com corrupções pontuais; com o `Map` de anexos, `attachment-missing`/`attachment-corrupted`) e `attachmentRefs`, sem fs; property test: `JSON.parse(JSON.stringify(l))` preserva o hash. |
@@ -34,7 +40,7 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 | `gates.spec.ts` | Gates embutidos (os 5 nomes fixos de `BUILTIN_GATE_NAMES`) e gate custom via `buildGateMilestoneData`; prova cortada em 50 itens com o total real preservado. |
 | `definitions.spec.ts` | `registerType`/`registerGate` (`INVALID_SCHEMA`, `RESERVED_NAME`), `createProcess`/`loadProcess` (hashes por parte, `PROCESS_CORRUPTED`), vocabulário, `readProject`, `listValidProcesses` (o diretório `attachments/` não é processo). |
 | `search.spec.ts` | `indexableText` (o que cada tipo de evento indexa/exclui), `stripDiacritics`, `isCandidate`, `search` (ordenação, desempate, fallback `OR`); usa `fixtures/corpus.ts`. |
-| `search.budget.spec.ts` | (M13) Orçamento de performance: índice (construção+consulta) ≤ 500 ms e `events{search}` completo ≤ 2000 ms, medianas de 5 rodadas sobre um corpus de 10.000 linhas gerado por `generateCorpus`. |
+| `search.budget.spec.ts` | (M13) Orçamento de performance: índice (construção+consulta) ≤ 500 ms e `events{search}` completo ≤ 2000 ms, medianas de 5 rodadas sobre um corpus de 10.000 linhas gerado por `generateCorpus`. Só roda em `npm run test:budget`. |
 | `definition-tools.spec.ts` | As 5 tools de definição (`register_type`, `register_vocabulary`, `register_gate`, `create_process`, `list`) contra o servidor MCP real (`createEnvironment`): validação de entrada, `annotations`, gravação em disco. |
 | `event-tools.spec.ts` | As 12 tools completas contra o servidor MCP real: `tools/list`, validação de entrada, `register`/`evaluate_gate`/`state`/`events`/`chain`; usa `generateCorpus` para volume (paginação, 150+ vigentes). Também cobre os anexos no `register` (`attachment` inexistente/adulterado, `supersedes` de tipo custom), a integridade dos blobs em `chain`/`state` e as tools `attachment` e `timeline`. É a maior spec do repositório. |
 | `skill-coherence.spec.ts` | Coerência de `skills/hexlog/SKILL.md` × código real: extratores próprios (crase fora de bloco cercado, nome de tool em `server.registerTool(`, constantes `SCREAMING_SNAKE_CASE`, catálogo de `ErrorCode`, nomes de função declarados em `src/**/*.ts` (varredura recursiva), citações `arquivo.ts#símbolo` com diretório opcional relativo a `src/`, citações `arquivo.ts:N(-M)?`) testados isolados sobre string literal; depois cruza cada tool/código/função citados contra `definition-tools.ts`/`event-tools.ts`/`timeline-tools.ts`/`definitions.ts`/`src/`, e cada citação `arquivo:linha` contra o trecho real (detecta deslocamento de linha). |
@@ -63,11 +69,12 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 - `helpers.ts#createTempDir` só dentro de hook ou teste, nunca na coleta do `describe`: a coleta roda até com `-t`, e o `afterAll` de `cleanup.ts` não roda num arquivo sem teste selecionado, então o diretório vazaria.
 
 ### Testing Requirements
-- Tudo: `npm test` (roda `jest` sobre a suíte inteira).
+- Tudo: `npm test` (roda `jest` sobre a suíte, sem os specs `*.budget.spec.ts`).
+- Orçamentos de tempo: `npm run test:budget` (`jest --runInBand` só sobre `search.budget.spec.ts` e `adapters/load.budget.spec.ts`); o CI o roda depois de `npm test`.
 - Um arquivo: `npx jest test/<arquivo>.spec.ts` (ou `npm test -- test/<arquivo>.spec.ts`).
 - Node `>= 24.18.1` (mesmo requisito do projeto, `package.json#engines`).
 - Sem timeout customizado: jest usa o padrão (5000 ms por teste). Os specs que constroem bundle ou sobem processos filhos (`toolchain`, `bash-guard`, `guard`, `stdio.e2e`) couberam nesse orçamento nas medições feitas (guard.spec.ts: ~10.5s pra 40 testes; stdio.e2e: ~4s pra 5 testes).
-- `search.budget.spec.ts` é sensível à máquina: os limites (500ms/2000ms) têm folga generosa sobre as medianas observadas (~250ms/~430ms), mas podem estourar num CI muito mais lento.
+- Os specs de orçamento são sensíveis à máquina e por isso ficam fora do `npm test`, rodando em série no `npm run test:budget`. `search.budget.spec.ts`: os limites (500ms/2000ms) têm folga generosa sobre as medianas observadas (~250ms/~430ms), mas podem estourar num CI muito mais lento. `adapters/load.budget.spec.ts` compara o mínimo das medições, não a mediana.
 - Nenhum requer `npm run build` prévio; os que precisam de bundle o geram por conta própria via processo filho (ver Common Patterns).
 
 ### Common Patterns
