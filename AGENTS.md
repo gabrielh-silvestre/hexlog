@@ -22,7 +22,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `scripts/` | Build esbuild, instalador e scripts read-only de insights, export e timeline (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio e pacote (see `test/AGENTS.md`) |
 | `docs/` | ADR 0001/0002/0005/0006 e pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
-| `skills/` | Três skills, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo pré-código de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e cruza marcos/veredictos contra esse mapa) |
+| `skills/` | As skills de `skills/`, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo pré-código de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e cruza marcos/veredictos contra esse mapa) |
 
 ## For AI Agents
 
@@ -49,7 +49,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `test/search.budget.spec.ts` mede tempo (índice ≤500ms, busca ≤2000ms) e pode falhar em máquina lenta.
 
 ### Common Patterns
-- Nomes de módulos, funções e códigos de erro em inglês; comentários e descrições de teste continuam em português (ver `CLAUDE.md`).
+- Idioma (código em inglês, comentários e testes em pt-BR): ver `CLAUDE.md`.
 - Esquemas Zod para eventos e entradas de tools. O núcleo (chain, state, gates) é puro, e o I/O fica em `log.ts` e `definitions.ts`.
 - IDs nos títulos de teste (M#, N#, S#, B#, I#, C#, Q#, R-#, U-#) remetem a critérios do ADR 0001.
 - Versões de dependências fixadas sem `^`.

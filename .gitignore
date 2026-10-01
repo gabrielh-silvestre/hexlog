@@ -1,7 +1,7 @@
 node_modules/
 coverage/
 dist/
-.omc/*
+**/.omc/*
 !.omc/skills/
 .omc/skills/omc-memory-audit/
 .claude/skills/omc-memory-audit

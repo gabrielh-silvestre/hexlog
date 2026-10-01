@@ -25,5 +25,12 @@
         "ref": "hexlog"
       }
     }
+  },
+  "skillOverrides": {
+    "gitnexus-guide": "user-invocable-only",
+    "gitnexus-exploring": "name-only",
+    "gitnexus-debugging": "name-only",
+    "gitnexus-impact-analysis": "name-only",
+    "gitnexus-refactoring": "name-only"
   }
 }
