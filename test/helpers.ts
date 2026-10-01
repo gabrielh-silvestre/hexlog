@@ -10,6 +10,7 @@ import { HexlogError } from '../src/errors.ts';
 import type { ErrorCode, Detail } from '../src/errors.ts';
 import type { Logger, LogRecord } from '../src/log.ts';
 import { createServer } from '../src/mcp.ts';
+import type { Logger as TreeLogger, LogRecord as TreeLogRecord } from '../src/shared/logger.ts';
 import { registerTempDir } from './cleanup.ts';
 
 /** Environment de teste: servidor `hexlog` real ligado a um `Client` MCP via transporte em memória. */
@@ -136,6 +137,24 @@ export function captureError(fn: () => unknown): HexlogError {
     return error as HexlogError;
   }
   throw new Error('expected the function to throw HexlogError');
+}
+
+/** Espera a rejeição com `HexlogError`, confere que ela não traz `secret` (D-26) e a devolve. */
+export async function rejectionOf(promise: Promise<unknown>, secret: string): Promise<HexlogError> {
+  const error = await promise.then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBeInstanceOf(HexlogError);
+  const { message, details } = error as HexlogError;
+  expect(message + JSON.stringify(details)).not.toContain(secret);
+  return error as HexlogError;
+}
+
+/** Logger da árvore nova que junta os registros em `records`, na ordem em que chegam. */
+export function captureLog(): { records: TreeLogRecord[]; log: TreeLogger } {
+  const records: TreeLogRecord[] = [];
+  return { records, log: (record) => void records.push(record) };
 }
 
 /** Afirma que `result` é um erro de domínio (§4.13) com o `code` esperado, e devolve o corpo estruturado. */

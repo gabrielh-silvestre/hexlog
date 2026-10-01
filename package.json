@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "jest --errorOnDeprecated",
+    "test:budget": "jest --errorOnDeprecated --runInBand --testPathPatterns=budget.spec.ts --testPathIgnorePatterns=/node_modules/",
     "test:coverage": "jest --coverage",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
@@ -37,6 +38,10 @@
         }
       ]
     },
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.budget\\.spec\\.ts$"
+    ],
     "transformIgnorePatterns": [
       "/node_modules/(?!canonicalize/)"
     ],

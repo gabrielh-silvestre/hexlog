@@ -15,7 +15,9 @@ const NON_LITERAL = '<non-literal>';
 
 // Módulos da raiz legada que a árvore nova pode importar, e os arquivos de topo da própria árvore.
 const ALLOWED_TARGETS = new Set(
-  ['errors', 'directory', 'version', 'compose', 'archive'].map((name) => path.join(srcRoot, name)),
+  ['errors', 'directory', 'version', 'ports', 'compose', 'archive'].map((name) =>
+    path.join(srcRoot, name),
+  ),
 );
 
 const stripExtension = (target: string): string => target.replace(/\.(ts|js)$/, '');

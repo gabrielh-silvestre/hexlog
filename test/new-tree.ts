@@ -8,7 +8,9 @@ export const srcRoot = path.join(repoRoot, 'src');
 export const NEW_TREE_DIRS = ['domain', 'shared', 'commands', 'queries', 'adapters', 'mcp'].map(
   (layer) => path.join(srcRoot, layer),
 );
-const NEW_TREE_ROOT_FILES = ['compose.ts', 'archive.ts'].map((name) => path.join(srcRoot, name));
+const NEW_TREE_ROOT_FILES = ['ports.ts', 'compose.ts', 'archive.ts'].map((name) =>
+  path.join(srcRoot, name),
+);
 
 /**
  * Arquivos que a árvore nova já tem; os specs que a varrem conferem que `listNewTreeFiles` os acha,
