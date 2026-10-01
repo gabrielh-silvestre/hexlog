@@ -2,7 +2,7 @@ import { describe, test, expect, jest, afterEach } from '@jest/globals';
 import { anchor, hashLink, sha256hex, type Expected, type Link } from '../../src/domain/chain.ts';
 import type { RecordId } from '../../src/domain/ids.ts';
 import { HexlogError } from '../../src/errors.ts';
-import type { Manifest, ProcessRef, RawProcess } from '../../src/ports.ts';
+import type { ProcessRef, RawProcess } from '../../src/ports.ts';
 import {
   formatLine,
   isValidLine,
@@ -11,16 +11,11 @@ import {
   verifyProcess,
   type Break,
 } from '../../src/shared/loader.ts';
+import { emptyManifest, linkAt } from '../fixtures/chain-line.ts';
 
 const AT = '2026-09-30T12:00:00.000Z';
 
-const manifest: Manifest = {
-  project: 'demo',
-  process: 'proc-1',
-  createdAt: AT,
-  fixed: { types: {}, relations: {}, gates: {} },
-  hashes: { types: sha256hex(''), relations: sha256hex(''), gates: sha256hex('') },
-};
+const manifest = emptyManifest({ project: 'demo', process: 'proc-1' }, AT);
 
 const START: Expected = { seq: 0, prevHash: anchor(manifest) };
 
@@ -33,18 +28,12 @@ function chainOf(count: number, batchOf: (seq: number) => Link['batch'] = () => 
   let expected = START;
   for (let seq = 0; seq < count; seq++) {
     const batch = batchOf(seq);
-    const link: Link = {
-      seq,
+    const link = linkAt(expected, {
       id: recordId(seq + 1),
-      type: 'note',
-      at: AT,
-      target: 'repo.feature',
       author: { agent: 'luffy', client: 'claude-code' },
       data: { text: `registro ${seq}` },
-      relations: [],
-      prevHash: expected.prevHash,
       ...(batch === undefined ? {} : { batch }),
-    };
+    });
     links.push(link);
     expected = { seq: seq + 1, prevHash: hashLink(link) };
   }

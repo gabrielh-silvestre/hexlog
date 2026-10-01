@@ -1,41 +1,37 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { sumBy } from 'es-toolkit';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { dataRoot } from '../../src/adapters/fs/data-format.ts';
+import { LOCK_DIR, LOG_FILE, MANIFEST_FILE } from '../../src/adapters/fs/data-format.ts';
 import { createLockManager, moveAside } from '../../src/adapters/fs/lock.ts';
-import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
-import { sha256hex } from '../../src/domain/chain.ts';
-import { HexlogError } from '../../src/errors.ts';
-import type { ProcessRef } from '../../src/ports.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
-import type { Logger, LogRecord } from '../../src/shared/logger.ts';
-import { createTempDir } from '../helpers.ts';
+import type { LogRecord } from '../../src/shared/logger.ts';
+import { captureLog, createTempDir, rejectionOf } from '../helpers.ts';
+import {
+  createProcess,
+  killChildren,
+  runFixture,
+  runWriteStress,
+  startChild,
+  startHolder,
+} from './lock-helpers.ts';
 
-const FIXTURE = path.join(__dirname, '..', 'fixtures', 'lock-holder.ts');
 const BOOT = 'boot-a';
 const PAUSE_MS = 20_000;
 
-const children: ChildProcess[] = [];
-
 afterEach(() => {
   jest.restoreAllMocks();
-  for (const child of children.splice(0)) child.kill('SIGKILL');
+  killChildren();
 });
-
-function captureLog(): { records: LogRecord[]; log: Logger } {
-  const records: LogRecord[] = [];
-  return { records, log: (record) => void records.push(record) };
-}
 
 const eventsOf = (records: LogRecord[]): string[] => records.map(({ event }) => event);
 
 /** Diretório de trabalho com o caminho do lock, como o `process-store` o usaria ao lado do log. */
 function workspace(): { dir: string; lockDir: string; holderFile: string } {
   const dir = createTempDir('lock');
-  const lockDir = path.join(dir, 'records.jsonl.lock');
+  const lockDir = path.join(dir, LOCK_DIR);
   return { dir, lockDir, holderFile: path.join(lockDir, 'holder') };
 }
 
@@ -51,18 +47,9 @@ function plantLock(lockDir: string, holder: string | object): void {
 const tokenIn = (holderFile: string): string =>
   (JSON.parse(fs.readFileSync(holderFile, 'utf8')) as { token: string }).token;
 
-/** Espera a rejeição com `HexlogError`; confere que ela não traz o caminho do lock (D-26). */
-async function timeoutOf(
-  promise: Promise<unknown>,
-  dir: string,
-): Promise<Pick<HexlogError, 'code' | 'details'>> {
-  const error = await promise.then(
-    () => undefined,
-    (reason: unknown) => reason,
-  );
-  expect(error).toBeInstanceOf(HexlogError);
-  const { code, message, details } = error as HexlogError;
-  expect(message + JSON.stringify(details)).not.toContain(dir);
+/** Espera a rejeição com `HexlogError`, sem `dir` (D-26), e devolve só `code` e `details`. */
+async function timeoutOf(promise: Promise<unknown>, dir: string) {
+  const { code, details } = await rejectionOf(promise, dir);
   return { code, details };
 }
 
@@ -71,59 +58,6 @@ const timeout = (code: string, pid?: number) => ({
   code: 'LOCK_TIMEOUT',
   details: [{ path: '/process', code, message: expect.any(String), ...(pid ? { pid } : {}) }],
 });
-
-function runFixture(
-  args: string[],
-): Promise<{ status: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [FIXTURE, ...args]);
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk) => (stdout += String(chunk)));
-    child.stderr.on('data', (chunk) => (stderr += String(chunk)));
-    child.on('error', reject);
-    child.on('close', (status) => resolve({ status, stdout, stderr }));
-  });
-}
-
-/** Filho real da fixture no `mode` dado; devolve quando ele imprime a primeira linha (`{ pid }`). */
-function startChild(args: string[]): Promise<{ child: ChildProcess; pid: number }> {
-  const child = spawn(process.execPath, [FIXTURE, ...args]);
-  children.push(child);
-  return new Promise((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
-    child.stderr.on('data', (chunk) => (stderr += String(chunk)));
-    child.stdout.on('data', (chunk) => {
-      stdout += String(chunk);
-      if (stdout.includes('\n'))
-        resolve({ child, pid: (JSON.parse(stdout) as { pid: number }).pid });
-    });
-    child.on('error', reject);
-    child.on('exit', (status) =>
-      reject(new Error(`child exited early with ${String(status)}: ${stderr}`)),
-    );
-  });
-}
-
-/** Filho real que adquire o lock e fica vivo; devolve quando ele já é o dono. */
-const startHolder = (lockDir: string) => startChild(['hold', lockDir]);
-
-/** Processo vazio criado pelo `ProcessStore`, com o lock onde o store o usa (ao lado do log). */
-function createProcess() {
-  const dataDir = createTempDir('lock-process');
-  const ref: ProcessRef = { project: 'demo', process: 'proc-1' };
-  const empty = sha256hex('');
-  const store = createProcessStore({ dataDir, log: () => undefined });
-  store.create(ref, {
-    ...ref,
-    createdAt: '2026-09-30T12:00:00.000Z',
-    fixed: { types: {}, relations: {}, gates: {} },
-    hashes: { types: empty, relations: empty, gates: empty },
-  });
-  const dir = path.join(dataRoot(dataDir), ref.project, ref.process);
-  return { dataDir, store, ref, dir, lockDir: path.join(dir, 'records.jsonl.lock') };
-}
 
 describe('exclusão do lock por pid (D-12, P2)', () => {
   describe('entre processos reais', () => {
@@ -149,6 +83,9 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       const tokenBefore = tokenIn(holderFile);
       const { records, log } = captureLog();
 
+      // IMPORTANT: o orçamento de 100 ms inclui o primeiro `tryCreate` (mkdtemp, fsync e rename).
+      // Com pouca CPU ou disco livre na máquina, ele pode estourar antes do `lock-wait` e o teste
+      // falhar de forma intermitente na asserção dos eventos, sem bug no código.
       const error = createLockManager({ log, budgetMs: 100 }).acquire(lockDir);
 
       expect(await timeoutOf(error, dir)).toEqual(timeout('lock-busy', pid));
@@ -183,24 +120,20 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
     });
 
     test('estresse: 8 filhos x 25 gravações no mesmo processo, com lock de dono morto pré-plantado, sem falha crua e com a cadeia íntegra', async () => {
-      const { dataDir, store, ref, dir, lockDir } = createProcess();
-      const dead = await startHolder(lockDir);
-      dead.child.kill('SIGKILL');
-      await once(dead.child, 'exit');
-      expect(fs.existsSync(lockDir)).toBe(true);
-      const barrier = createTempDir('lock-barrier');
-      const args = ['write', dataDir, ref.project, ref.process, '25', barrier, '8'];
-
-      const results = await Promise.all(Array.from({ length: 8 }, () => runFixture(args)));
+      const { store, ref, dir, results } = await runWriteStress();
 
       expect(results.map(({ status, stderr }) => ({ status, stderr }))).toEqual(
         Array.from({ length: 8 }, () => ({ status: 0, stderr: '' })),
       );
-      expect(
-        results.map(({ stdout }) => (JSON.parse(stdout) as { rounds: number }).rounds),
-      ).toEqual(Array(8).fill(25));
+      const counts = results.map(
+        ({ stdout }) => JSON.parse(stdout) as { rounds: number; retries: number },
+      );
+      expect(counts.map(({ rounds }) => rounds)).toEqual(Array(8).fill(25));
+      // só o órfão pré-plantado gera roubo com leitura velha, e cada um dos outros 7 filhos o lê
+      // no máximo uma vez
+      expect(sumBy(counts, ({ retries }) => retries)).toBeLessThanOrEqual(7);
       expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 200 });
-      expect(fs.readdirSync(dir).sort()).toEqual(['process.json', 'records.jsonl']);
+      expect(fs.readdirSync(dir).sort()).toEqual([MANIFEST_FILE, LOG_FILE]);
     }, 120_000);
 
     test('SIGSTOP: dono pausado por 20 s não perde o lock, os outros recebem lock-busy e ele termina íntegro', async () => {
@@ -237,7 +170,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
 
       expect((await exited)[0]).toBe(0);
       expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 1 });
-      expect(fs.readdirSync(dir).sort()).toEqual(['process.json', 'records.jsonl']);
+      expect(fs.readdirSync(dir).sort()).toEqual([MANIFEST_FILE, LOG_FILE]);
     }, 60_000);
   });
 
@@ -256,7 +189,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
         bootId: BOOT,
       });
       expect(fsync).toHaveBeenCalledTimes(1);
-      expect(fs.readdirSync(dir)).toEqual(['records.jsonl.lock']);
+      expect(fs.readdirSync(dir)).toEqual([LOCK_DIR]);
     });
 
     test('sem a opção, o bootId vem de /proc/sys/kernel/random/boot_id (ou é null sem /proc)', async () => {
@@ -358,7 +291,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
 
       expect(tokenIn(holderFile)).toBe(lock.token);
       expect(records).toEqual([{ level: 'warn', event: 'lock-orphan-removed', pid: process.pid }]);
-      expect(fs.readdirSync(dir)).toEqual(['records.jsonl.lock']);
+      expect(fs.readdirSync(dir)).toEqual([LOCK_DIR]);
     });
 
     test('holder com bootId diferente é roubado mesmo com pid vivo e token segurado', async () => {
@@ -380,7 +313,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
         event: 'lock-orphan-removed',
         pid: process.pid,
       });
-      expect(fs.readdirSync(dir)).toEqual(['records.jsonl.lock']);
+      expect(fs.readdirSync(dir)).toEqual([LOCK_DIR]);
     });
 
     test('bootId null (sem /proc) só casa com null', async () => {
@@ -417,7 +350,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(moveAside(lockDir, '.dead-', 'stale', log)).toBe('restored');
 
       expect(JSON.parse(fs.readFileSync(holderFile, 'utf8'))).toEqual(holder);
-      expect(fs.readdirSync(dir)).toEqual(['records.jsonl.lock']);
+      expect(fs.readdirSync(dir)).toEqual([LOCK_DIR]);
       expect(records).toEqual([
         { level: 'error', event: 'lock-lost', pid: process.pid, holderPid: 4242, restored: true },
       ]);
@@ -444,7 +377,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(moveAside(lockDir, '.dead-', 'stale', log)).toBe('discarded');
 
       expect(JSON.parse(fs.readFileSync(holderFile, 'utf8'))).toEqual(newer);
-      expect(fs.readdirSync(dir)).toEqual(['records.jsonl.lock']);
+      expect(fs.readdirSync(dir)).toEqual([LOCK_DIR]);
       expect(records).toEqual([
         { level: 'error', event: 'lock-lost', pid: process.pid, holderPid: 4242, restored: false },
       ]);
@@ -485,7 +418,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(renameSync).not.toHaveBeenCalled();
       expect(records).toEqual([]);
       expect(JSON.parse(fs.readFileSync(holderFile, 'utf8'))).toEqual(other);
-      expect(fs.readdirSync(dir)).toEqual(['records.jsonl.lock']);
+      expect(fs.readdirSync(dir)).toEqual([LOCK_DIR]);
     });
 
     test('se um ladrão troca o lock entre a conferência e o rename, devolve o lock do outro dono', async () => {
@@ -509,10 +442,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       await manager.release(lock);
 
       expect(JSON.parse(fs.readFileSync(holderFile, 'utf8'))).toEqual(newer);
-      expect(fs.readdirSync(dir).sort()).toEqual([
-        'records.jsonl.lock',
-        'records.jsonl.lock.stolen',
-      ]);
+      expect(fs.readdirSync(dir).sort()).toEqual([LOCK_DIR, `${LOCK_DIR}.stolen`]);
       expect(records).toEqual([
         { level: 'error', event: 'lock-lost', pid: process.pid, holderPid: 5151, restored: true },
       ]);

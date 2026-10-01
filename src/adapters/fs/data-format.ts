@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { ProcessRef } from '../../ports.ts';
 import { errnoCode } from './atomic.ts';
 
 /**
@@ -14,6 +15,21 @@ const ARCHIVE_DIR = 'archive';
 /** Raiz do dado 1.0: `<dataDir>/.v1`. */
 export function dataRoot(dataDir: string): string {
   return path.join(dataDir, '.v1');
+}
+
+export const MANIFEST_FILE = 'process.json';
+export const LOG_FILE = 'records.jsonl';
+export const LOCK_DIR = `${LOG_FILE}.lock`;
+
+/** Caminhos de um processo em `<D>/.v1/<project>/<process>/`; `ref` já vem com nomes validados. */
+export function processPaths(dataDir: string, ref: ProcessRef) {
+  const dir = path.join(dataRoot(dataDir), ref.project, ref.process);
+  return {
+    dir,
+    manifest: path.join(dir, MANIFEST_FILE),
+    log: path.join(dir, LOG_FILE),
+    lock: path.join(dir, LOCK_DIR),
+  };
 }
 
 /**

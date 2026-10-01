@@ -1,23 +1,13 @@
-import type { Hash, Instant, Name, RecordId } from './domain/ids.ts';
+import type { Hash, Name, RecordId } from './domain/ids.ts';
 import type { Gate, RecordType, RelationName } from './domain/definitions.ts';
+import type { Manifest } from './domain/manifest.ts';
 import type { HexRecord } from './domain/record.ts';
 import type { Detail } from './errors.ts';
 
+export type { Manifest };
+
 /** Processo = par projeto/nome; o id de um registro carrega só o processo (D-01). */
 export type ProcessRef = { project: Name; process: Name };
-
-/** D-03: `process.json`; a âncora da cadeia é o sha256 do JCS deste objeto. */
-export type Manifest = {
-  project: Name;
-  process: Name;
-  createdAt: Instant;
-  fixed: {
-    types: Record<Name, RecordType>;
-    relations: Record<Name, RelationName>;
-    gates: Record<Name, Gate>;
-  };
-  hashes: { types: Hash; relations: Hash; gates: Hash };
-};
 
 /** Processo como está no disco: o manifesto e os bytes do log, sem interpretar linha nenhuma. */
 export type RawProcess = {

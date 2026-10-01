@@ -28,6 +28,9 @@ if (firstArg === undefined) {
 // `lockDir` nos modos `rounds` e `hold`; `dataDir` nos modos `write` e `write-gated`.
 const lockDir: string = firstArg;
 
+// IMPORTANT: o orçamento padrão do lock (15 s) e a barreira abaixo (10 s) usam relógio real. Com
+// pouca CPU ou disco livre na máquina (carga local, runner de CI lento), os filhos podem estourar
+// esses limites e o teste falhar de forma intermitente, sem bug no código.
 const manager = createLockManager({ log: () => undefined });
 
 const BARRIER_TIMEOUT_MS = 10_000;

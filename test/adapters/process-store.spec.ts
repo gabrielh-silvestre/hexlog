@@ -2,29 +2,26 @@ import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { dataRoot } from '../../src/adapters/fs/data-format.ts';
+import {
+  dataRoot,
+  LOCK_DIR,
+  LOG_FILE,
+  MANIFEST_FILE,
+  processPaths,
+} from '../../src/adapters/fs/data-format.ts';
 import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
-import { anchor, sha256hex } from '../../src/domain/chain.ts';
+import { anchor } from '../../src/domain/chain.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
 import { parseLog, verifyProcess } from '../../src/shared/loader.ts';
-import { createTempDir } from '../helpers.ts';
-import { chainLine } from '../fixtures/chain-line.ts';
+import { chainLine, emptyManifest } from '../fixtures/chain-line.ts';
+import { captureLog, createTempDir, rejectionOf } from '../helpers.ts';
 
 const CRASH_WRITER = path.join(__dirname, '..', 'fixtures', 'crash-writer.ts');
-const AT = '2026-09-30T12:00:00.000Z';
 const BOOT = 'boot-a';
 
 afterEach(() => {
   jest.restoreAllMocks();
-});
-
-const manifestOf = ({ project, process: name }: ProcessRef): Manifest => ({
-  project,
-  process: name,
-  createdAt: AT,
-  fixed: { types: {}, relations: {}, gates: {} },
-  hashes: { types: sha256hex(''), relations: sha256hex(''), gates: sha256hex('') },
 });
 
 /** Processo vazio como o `create` o deixa: ponto de partida para montar linhas sem ler o disco. */
@@ -62,43 +59,27 @@ const resend = (store: ProcessStore, ref: ProcessRef, count: number, key: string
 /** Tudo que o teste precisa de um processo novo num diretório de dados temporário. */
 function setup(budgetMs?: number) {
   const dataDir = createTempDir('process-store');
-  const logged: { event: string }[] = [];
-  const store = createProcessStore({
-    dataDir,
-    log: (record) => logged.push(record),
-    bootId: BOOT,
-    budgetMs,
-  });
+  const { records, log } = captureLog();
+  const store = createProcessStore({ dataDir, log, bootId: BOOT, budgetMs });
   const ref: ProcessRef = { project: 'demo', process: 'proc-1' };
-  const manifest = manifestOf(ref);
+  const manifest = emptyManifest(ref);
   store.create(ref, manifest);
-  const dir = path.join(dataRoot(dataDir), ref.project, ref.process);
+  const paths = processPaths(dataDir, ref);
   return {
     dataDir,
     store,
-    logged,
+    records,
     ref,
     manifest,
-    dir,
-    logFile: path.join(dir, 'records.jsonl'),
-    lockDir: path.join(dir, 'records.jsonl.lock'),
+    dir: paths.dir,
+    manifestFile: paths.manifest,
+    logFile: paths.log,
+    lockDir: paths.lock,
   };
 }
 
 const locksIn = (dir: string): string[] =>
-  fs.readdirSync(dir).filter((name) => name.startsWith('records.jsonl.lock'));
-
-/** Espera a rejeição com `HexlogError`; confere que ela não traz caminho nenhum (D-26). */
-async function rejection(promise: Promise<unknown>, dataDir: string): Promise<HexlogError> {
-  const error = await promise.then(
-    () => undefined,
-    (reason: unknown) => reason,
-  );
-  expect(error).toBeInstanceOf(HexlogError);
-  const { message, details } = error as HexlogError;
-  expect(message + JSON.stringify(details)).not.toContain(dataDir);
-  return error as HexlogError;
-}
+  fs.readdirSync(dir).filter((name) => name.startsWith(LOCK_DIR));
 
 /** Conta os `fsync` dados no arquivo de log (pelo inode: o do lock e o do diretório não entram). */
 function countLogFsyncs(logFile: string): () => number {
@@ -137,16 +118,85 @@ function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: string): v
   });
 }
 
+/** Registra, na ordem, os `write` e `fsync` dados no arquivo de log (pelo inode, como `countLogFsyncs`). */
+function recordLogCalls(logFile: string): string[] {
+  const realWrite = fs.writeSync;
+  const realFsync = fs.fsyncSync;
+  const ino = fs.statSync(logFile).ino;
+  const calls: string[] = [];
+  const onLog = (fd: number, call: string) => {
+    if (fs.fstatSync(fd).ino === ino) calls.push(call);
+  };
+  (
+    jest.spyOn(fs, 'writeSync') as unknown as jest.Mock<
+      (fd: number, buffer: Buffer, offset: number) => number
+    >
+  ).mockImplementation((fd, buffer, offset) => {
+    onLog(fd, 'write');
+    return realWrite(fd, buffer, offset);
+  });
+  jest.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
+    onLog(fd, 'fsync');
+    realFsync(fd);
+  });
+  return calls;
+}
+
 describe('create, read e list', () => {
   test('create grava o manifesto, e uma segunda chamada devolve false sem tocá-lo', () => {
-    const { store, ref, manifest, dir } = setup();
-    const file = path.join(dir, 'process.json');
+    const { store, ref, manifest, dir, manifestFile: file } = setup();
     const before = fs.readFileSync(file, 'utf8');
 
     expect(JSON.parse(before)).toEqual(manifest);
     expect(store.create(ref, { ...manifest, createdAt: '2027-01-01T00:00:00.000Z' })).toBe(false);
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
-    expect(fs.readdirSync(dir).sort()).toEqual(['process.json', 'records.jsonl']);
+    expect(fs.readdirSync(dir).sort()).toEqual([MANIFEST_FILE, LOG_FILE]);
+  });
+
+  test('create abre o log antes do manifesto e dá 1 fsync no diretório (D-25)', () => {
+    const { store } = setup();
+    const other: ProcessRef = { project: 'demo', process: 'proc-2' };
+    const realOpen = fs.openSync;
+    const realFsync = fs.fsyncSync;
+    const opened: string[] = [];
+    const onDirectory: boolean[] = [];
+    // o manifesto nasce como temporário `.process.json.*`, então a ordem vem desse prefixo
+    jest.spyOn(fs, 'openSync').mockImplementation((file, flags, mode) => {
+      opened.push(path.basename(String(file)));
+      return realOpen(file, flags, mode);
+    });
+    jest.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
+      onDirectory.push(fs.fstatSync(fd).isDirectory());
+      realFsync(fd);
+    });
+
+    expect(store.create(other, emptyManifest(other))).toBe(true);
+
+    expect(onDirectory.filter(Boolean)).toHaveLength(1);
+    expect(
+      opened.filter((name) => name === LOG_FILE || name.startsWith(`.${MANIFEST_FILE}.`)),
+    ).toEqual([LOG_FILE, expect.stringContaining(`.${MANIFEST_FILE}.`)]);
+  });
+
+  test('create com erro que não é EEXIST dá IO_ERROR só com o errno (pai do processo é arquivo)', () => {
+    const { dataDir, store } = setup();
+    fs.writeFileSync(path.join(dataRoot(dataDir), 'blocked'), '');
+
+    let error: unknown;
+    try {
+      store.create(
+        { project: 'blocked', process: 'x' },
+        emptyManifest({ project: 'blocked', process: 'x' }),
+      );
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: 'IO_ERROR',
+      details: [{ path: '', code: 'enotdir', message: 'I/O failure' }],
+    });
+    expect(JSON.stringify(error)).not.toContain(dataDir);
   });
 
   test('read de um processo novo devolve log vazio terminado; com cauda rasgada, não terminado', async () => {
@@ -177,9 +227,16 @@ describe('create, read e list', () => {
   test.each([
     ['texto que não é JSON', 'isto nao e json'],
     ['JSON de forma errada', '{"project":"demo"}'],
+    [
+      'campo aninhado inválido (fixed.types.x = 1)',
+      JSON.stringify({
+        ...emptyManifest({ project: 'demo', process: 'proc-1' }),
+        fixed: { types: { x: 1 }, relations: {}, gates: {} },
+      }),
+    ],
   ])('read de manifesto ilegível (%s) dá PROCESS_CORRUPTED sem caminho', (_name, content) => {
-    const { dataDir, store, ref, dir } = setup();
-    fs.writeFileSync(path.join(dir, 'process.json'), content);
+    const { dataDir, store, ref, manifestFile } = setup();
+    fs.writeFileSync(manifestFile, content);
 
     let error: unknown;
     try {
@@ -203,9 +260,9 @@ describe('create, read e list', () => {
   });
 
   test('erro de I/O vira IO_ERROR só com o errno, sem caminho (manifesto que é diretório)', () => {
-    const { dataDir, store, ref, dir } = setup();
-    fs.rmSync(path.join(dir, 'process.json'));
-    fs.mkdirSync(path.join(dir, 'process.json'));
+    const { dataDir, store, ref, manifestFile } = setup();
+    fs.rmSync(manifestFile);
+    fs.mkdirSync(manifestFile);
 
     let error: unknown;
     try {
@@ -239,12 +296,83 @@ describe('create, read e list', () => {
     expect(store.list('demo')).toEqual(['alpha', ref.process]);
     expect(store.listProjects()).toEqual(['abc', 'demo']);
   });
+
+  test('list e listProjects não devolvem pastas criadas à mão com nome inválido', () => {
+    const { dataDir, store, ref, manifest } = setup();
+    for (const name of ['.tmp', 'a.b', 'Bad Name']) {
+      // com manifesto dentro, só o filtro de nome as tira de `list`
+      const stray = path.join(dataRoot(dataDir), ref.project, name);
+      fs.mkdirSync(stray);
+      fs.writeFileSync(path.join(stray, MANIFEST_FILE), JSON.stringify(manifest));
+      fs.mkdirSync(path.join(dataRoot(dataDir), name));
+    }
+
+    expect(store.list(ref.project)).toEqual([ref.process]);
+    expect(store.listProjects()).toEqual([ref.project]);
+  });
+});
+
+describe('nomes e manifesto recusados antes de qualquer I/O (N1, N3)', () => {
+  test.each([
+    ['process com ../', { project: 'demo', process: '../../escaped' }],
+    ['project ..', { project: '..', process: 'proc-1' }],
+    ['process com espaço e maiúscula', { project: 'demo', process: 'Bad Name' }],
+    ['project com espaço e maiúscula', { project: 'Bad Name', process: 'proc-1' }],
+  ])(
+    'create, read e write com %s dão INVALID_INPUT e nada nasce fora de .v1',
+    async (_name, bad) => {
+      const { dataDir, store, ref } = setup();
+      const invalid = expect.objectContaining({ code: 'INVALID_INPUT' });
+
+      expect(() => store.create(bad, emptyManifest(bad))).toThrow(invalid);
+      expect(() => store.read(bad)).toThrow(invalid);
+      await expect(append(store, bad, 1)).rejects.toEqual(invalid);
+
+      expect(fs.readdirSync(dataDir)).toEqual([path.basename(dataRoot(dataDir))]);
+      expect(fs.readdirSync(dataRoot(dataDir))).toEqual([ref.project]);
+      expect(fs.readdirSync(path.join(dataRoot(dataDir), ref.project))).toEqual([ref.process]);
+    },
+  );
+
+  test.each([
+    ['..', '..'],
+    ['com espaço e maiúscula', 'Bad Name'],
+  ])('list com project %s dá INVALID_INPUT sem listar fora de .v1', (_name, project) => {
+    const { store } = setup();
+
+    expect(() => store.list(project)).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
+  });
+
+  test('create com nome reservado de processo dá RESERVED_NAME e não cria a pasta', () => {
+    const { dataDir, store } = setup();
+    const reserved: ProcessRef = { project: 'demo', process: 'attachments' };
+
+    expect(() => store.create(reserved, emptyManifest(reserved))).toThrow(
+      expect.objectContaining({ code: 'RESERVED_NAME' }),
+    );
+    expect(fs.existsSync(path.join(dataRoot(dataDir), 'demo', 'attachments'))).toBe(false);
+  });
+
+  test.each([
+    ['process', { process: 'outro' }],
+    ['project', { project: 'outro' }],
+  ])('create com manifest.%s diferente do ref lança e não cria diretório', (_field, override) => {
+    const { dataDir, store, ref } = setup();
+    const other: ProcessRef = { project: ref.project, process: 'proc-2' };
+
+    expect(() => store.create(other, { ...emptyManifest(other), ...override })).toThrow(
+      expect.objectContaining({ code: 'INTERNAL' }),
+    );
+
+    expect(fs.readdirSync(dataRoot(dataDir))).toEqual([ref.project]);
+    expect(fs.readdirSync(path.join(dataRoot(dataDir), ref.project))).toEqual([ref.process]);
+  });
 });
 
 describe('write', () => {
   test('grava a linha devolvida por decide e devolve o result; decide recebe o log cru', async () => {
     const { store, ref, logFile } = setup();
-    const line = batchLine(emptyRaw(manifestOf(ref)), 2, 'k1');
+    const line = batchLine(emptyRaw(emptyManifest(ref)), 2, 'k1');
     let received: RawProcess | undefined;
 
     const result = await store.write(ref, (raw) => {
@@ -253,7 +381,7 @@ describe('write', () => {
     });
 
     expect(result).toBe('pronto');
-    expect(received).toEqual({ manifest: manifestOf(ref), text: '', endsWithNewline: true });
+    expect(received).toEqual({ manifest: emptyManifest(ref), text: '', endsWithNewline: true });
     expect(fs.readFileSync(logFile, 'utf8')).toBe(line);
   });
 
@@ -276,7 +404,7 @@ describe('write', () => {
     const { dataDir, store, ref } = setup();
     const missing = { ...ref, process: 'outro' };
 
-    const error = await rejection(append(store, missing, 1), dataDir);
+    const error = await rejectionOf(append(store, missing, 1), dataDir);
 
     expect(error.code).toBe('PROCESS_NOT_FOUND');
     expect(fs.existsSync(path.join(dataRoot(dataDir), ref.project, 'outro'))).toBe(false);
@@ -311,9 +439,9 @@ describe('sem linha gravada (SE3c)', () => {
 
   test('token perdido antes do write dá lock-lost, sem linha, e o órfão do próprio processo é tomado depois', async () => {
     const { dataDir, store, ref, logFile, lockDir } = setup();
-    const line = batchLine(emptyRaw(manifestOf(ref)), 1);
+    const line = batchLine(emptyRaw(emptyManifest(ref)), 1);
 
-    const error = await rejection(
+    const error = await rejectionOf(
       store.write(ref, () => {
         // outro dono toma o lock entre a aquisição e a conferência do token
         fs.writeFileSync(
@@ -346,7 +474,7 @@ describe('sem linha gravada (SE3c)', () => {
     );
     const decide = jest.fn(() => ({ line: 'nao deve gravar\n', result: undefined }));
 
-    const error = await rejection(store.write(ref, decide), dataDir);
+    const error = await rejectionOf(store.write(ref, decide), dataDir);
 
     expect(error).toMatchObject({
       code: 'LOCK_TIMEOUT',
@@ -360,9 +488,6 @@ describe('sem linha gravada (SE3c)', () => {
 });
 
 describe('fsync por lote (TF5, D-05)', () => {
-  const median = (values: number[]): number =>
-    [...values].sort((a, b) => a - b)[values.length >> 1] ?? 0;
-
   test('lote de 50 dá 1 fsync no log, e o replay sem linha também dá 1', async () => {
     const { store, ref, logFile } = setup();
     const fsyncs = countLogFsyncs(logFile);
@@ -375,23 +500,17 @@ describe('fsync por lote (TF5, D-05)', () => {
     expect(verifyProcess(store.read(ref)).chain.totalRecords).toBe(50);
   });
 
-  test('lote de 50 custa no máximo 2x o lote de 1 (medianas de 9 rodadas)', async () => {
-    const timeBatch = async (count: number): Promise<number> => {
-      const { store, ref, manifest } = setup();
-      const line = batchLine(emptyRaw(manifest), count);
-      const start = performance.now();
-      await store.write(ref, () => ({ line, result: undefined }));
-      return performance.now() - start;
-    };
-    const single: number[] = [];
-    const fifty: number[] = [];
-    for (let round = 0; round < 9; round += 1) {
-      single.push(await timeBatch(1));
-      fifty.push(await timeBatch(50));
-    }
+  test('o fsync do log vem depois da escrita; o replay sem linha só dá fsync', async () => {
+    const { store, ref, logFile } = setup();
+    const calls = recordLogCalls(logFile);
 
-    expect(median(fifty)).toBeLessThanOrEqual(2 * median(single));
-  }, 30_000);
+    await append(store, ref, 3, 'lote');
+    expect(calls).toEqual(['write', 'fsync']);
+
+    calls.length = 0;
+    await store.write(ref, () => ({ result: undefined }));
+    expect(calls).toEqual(['fsync']);
+  });
 });
 
 describe('kill -9 no meio do lote (TF1, SE3b)', () => {
@@ -466,7 +585,7 @@ describe('kill -9 no meio do lote (TF1, SE3b)', () => {
   }
 
   test('200 execuções mortas com SIGKILL sobre o mesmo log: nenhum meio lote visível, reenvio por key e gravação nova entra', async () => {
-    const { store, ref, dataDir, logged } = setup();
+    const { store, ref, dataDir, records } = setup();
     const resent: string[] = [];
     const ahead: ChildProcess[] = [];
     let childSteals = 0;
@@ -494,7 +613,7 @@ describe('kill -9 no meio do lote (TF1, SE3b)', () => {
 
     const before = verifyProcess(raw);
     expect(before.chain.ok).toBe(true);
-    const parentSteals = logged.filter(({ event }) => event === 'lock-orphan-removed').length;
+    const parentSteals = records.filter(({ event }) => event === 'lock-orphan-removed').length;
     const steals = parentSteals + childSteals;
     process.stdout.write(
       `steals=${steals} (parent ${parentSteals}, children ${childSteals}) repairedLines=${before.chain.repairedLines.length}\n`,
@@ -571,11 +690,11 @@ describe('truncamento em cada offset e falhas consecutivas (rasgo, P1)', () => {
 describe('escrita curta (P9)', () => {
   test('escrita curta e depois ENOSPC dá IO_ERROR sem caminho; duas seguidas e a terceira grava com a cadeia íntegra', async () => {
     const { dataDir, store, ref, logFile } = setup();
-    const line = batchLine(emptyRaw(manifestOf(ref)), 3, 'lote');
+    const line = batchLine(emptyRaw(emptyManifest(ref)), 3, 'lote');
 
     scriptWrites([100, 'enospc', 100, 'enospc'], dataDir);
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const error = await rejection(append(store, ref, 3, 'lote'), dataDir);
+      const error = await rejectionOf(append(store, ref, 3, 'lote'), dataDir);
       expect(error).toMatchObject({
         code: 'IO_ERROR',
         details: [{ path: '', code: 'enospc', message: 'I/O failure' }],
@@ -593,12 +712,23 @@ describe('escrita curta (P9)', () => {
     });
   });
 
+  test('escrita curta e continuação com sucesso: o log recebe exatamente a linha, a partir do offset certo', async () => {
+    const { dataDir, store, ref, manifest, logFile } = setup();
+    const line = batchLine(emptyRaw(manifest), 3, 'lote');
+    scriptWrites([100], dataDir);
+
+    await append(store, ref, 3, 'lote');
+
+    expect(fs.readFileSync(logFile, 'utf8')).toBe(line);
+    expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 3 });
+  });
+
   test('rasgo + escrita curta: sobre uma cauda rasgada, a falha e a gravação seguinte fecham a cadeia', async () => {
     const { dataDir, store, ref, manifest, logFile } = setup();
     fs.writeFileSync(logFile, batchLine(emptyRaw(manifest), 3, 'lote').slice(0, 60));
     scriptWrites([50, 'enospc'], dataDir);
 
-    await rejection(append(store, ref, 3, 'lote'), dataDir);
+    await rejectionOf(append(store, ref, 3, 'lote'), dataDir);
     await append(store, ref, 3, 'lote');
 
     expect(verifyProcess(store.read(ref)).chain).toMatchObject({
@@ -612,7 +742,7 @@ describe('escrita curta (P9)', () => {
     const { dataDir, store, ref, logFile } = setup();
     scriptWrites([-1, 'enospc'], dataDir);
 
-    const error = await rejection(append(store, ref, 3, 'lote'), dataDir);
+    const error = await rejectionOf(append(store, ref, 3, 'lote'), dataDir);
 
     expect(error.code).toBe('IO_ERROR');
     const seen = verifyProcess(store.read(ref));

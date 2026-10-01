@@ -3,36 +3,16 @@
 // configuráveis e o teste acabaria espiando um objeto que este módulo não usa.
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { z } from 'zod';
-import { Hash, Instant, Name } from '../../domain/ids.ts';
+import { Name, RESERVED_PROCESS_NAMES } from '../../domain/ids.ts';
+import { Manifest } from '../../domain/manifest.ts';
 import { HexlogError } from '../../errors.ts';
-import type { Decision, Manifest, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
+import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
-import { dataRoot } from './data-format.ts';
+import { dataRoot, MANIFEST_FILE, processPaths } from './data-format.ts';
 import { createLockManager, type Lock, type LockOptions } from './lock.ts';
 
-const MANIFEST_FILE = 'process.json';
-const LOG_FILE = 'records.jsonl';
-const LOCK_DIR = `${LOG_FILE}.lock`;
-
-/**
- * Só a forma externa: o que `anchor` hasheia é o que está no disco, então o manifesto devolvido é
- * o JSON lido, nunca a saída do parse (que poderia normalizar). Conferir o conteúdo é da cadeia.
- */
-const ManifestShape = z.object({
-  project: Name,
-  process: Name,
-  createdAt: Instant,
-  fixed: z.object({
-    types: z.record(z.string(), z.unknown()),
-    relations: z.record(z.string(), z.unknown()),
-    gates: z.record(z.string(), z.unknown()),
-  }),
-  hashes: z.object({ types: Hash, relations: Hash, gates: Hash }),
-});
-
 export type ProcessStoreOptions = LockOptions & {
-  /** `<D>`; o store grava só em `<D>/.v1/` (D-02). */
+  /** `<D>`; com nomes validados por `safeName`, o store grava só em `<D>/.v1/` (D-02). */
   dataDir: string;
 };
 
@@ -69,6 +49,17 @@ function unreadableManifest(ref: ProcessRef): HexlogError {
   ]);
 }
 
+/** Todo nome que vira segmento de caminho passa por aqui, antes de qualquer I/O. */
+function safeName(value: string, field: string): Name {
+  if (!Name.safeParse(value).success) {
+    const message = 'invalid name';
+    throw new HexlogError('INVALID_INPUT', message, [
+      { path: field, code: 'invalid-name', message },
+    ]);
+  }
+  return value;
+}
+
 /** Lê `file`; arquivo inexistente vira `undefined`, qualquer outro erro sai cru. */
 function readTextIfPresent(file: string): string | undefined {
   try {
@@ -86,16 +77,19 @@ function parseManifest(ref: ProcessRef, text: string): Manifest {
   } catch {
     throw unreadableManifest(ref);
   }
-  if (!ManifestShape.safeParse(value).success) throw unreadableManifest(ref);
-  return value as Manifest;
+  const parsed = Manifest.safeParse(value);
+  if (!parsed.success) throw unreadableManifest(ref);
+  return parsed.data;
 }
 
-/** Diretórios de `dir` que passam em `keep`, em ordem alfabética; `dir` inexistente não tem nenhum. */
+/** Diretórios de `dir` com nome válido que passam em `keep`, em ordem alfabética; `dir` inexistente não tem nenhum. */
 function listDirectories(dir: string, keep: (name: string) => boolean = () => true): Name[] {
   try {
     return fs
       .readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && keep(entry.name))
+      .filter(
+        (entry) => entry.isDirectory() && Name.safeParse(entry.name).success && keep(entry.name),
+      )
       .map((entry) => entry.name)
       .sort();
   } catch (error) {
@@ -132,17 +126,25 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
   const root = dataRoot(dataDir);
   const locks = createLockManager(lockOptions);
 
-  const projectDir = (project: Name) => path.join(root, project);
-  const processDir = (ref: ProcessRef) => path.join(projectDir(ref.project), ref.process);
+  const projectDir = (project: Name) => path.join(root, safeName(project, '/project'));
+  const pathsOf = (ref: ProcessRef) =>
+    processPaths(dataDir, {
+      project: safeName(ref.project, '/project'),
+      process: safeName(ref.process, '/process'),
+    });
 
   function readProcess(ref: ProcessRef): RawProcess {
-    const dir = processDir(ref);
-    const manifestText = readTextIfPresent(path.join(dir, MANIFEST_FILE));
+    const paths = pathsOf(ref);
+    const manifestText = readTextIfPresent(paths.manifest);
     if (manifestText === undefined) throw notFound(ref);
     const manifest = parseManifest(ref, manifestText);
     // `create` grava o log vazio antes do manifesto, então só uma árvore montada à mão fica sem
     // `records.jsonl`; vale como processo vazio.
-    const text = readTextIfPresent(path.join(dir, LOG_FILE)) ?? '';
+    // ponytail: não há teto de tamanho do arquivo; o limite real é o do Node (~512 MiB,
+    // `buffer.constants.MAX_STRING_LENGTH`), onde `ERR_STRING_TOO_LONG` vira `INTERNAL` e não há rota
+    // de recuperação. O teto de 64 MiB com o erro `PROCESS_TOO_LARGE` entra na F3: a recusa fica em
+    // `writeLocked`, checando `size + tamanho do lote` (ver `docs/tetos-dominio-v1.md`).
+    const text = readTextIfPresent(paths.log) ?? '';
     return { manifest, text, endsWithNewline: text === '' || text.endsWith('\n') };
   }
 
@@ -150,10 +152,9 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     ref: ProcessRef,
     decide: (raw: RawProcess) => Decision<T>,
   ): Promise<T> {
-    const dir = processDir(ref);
-    const logFile = path.join(dir, LOG_FILE);
-    if (!fs.existsSync(path.join(dir, MANIFEST_FILE))) throw notFound(ref);
-    const lock = await locks.acquire(path.join(dir, LOCK_DIR));
+    const paths = pathsOf(ref);
+    if (!fs.existsSync(paths.manifest)) throw notFound(ref);
+    const lock = await locks.acquire(paths.lock);
     let result: T;
     try {
       const raw = readProcess(ref);
@@ -163,7 +164,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
           ? undefined
           : `${raw.endsWithNewline ? '' : '\n'}${decision.line}`;
       if (text !== undefined) await locks.confirm(lock);
-      appendAndSync(logFile, text);
+      appendAndSync(paths.log, text);
       result = decision.result;
     } catch (error) {
       await releaseAfterFailure(lock);
@@ -197,14 +198,23 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
 
     create: (ref, manifest) =>
       mapIo(() => {
-        const dir = processDir(ref);
+        const paths = pathsOf(ref);
+        if ((RESERVED_PROCESS_NAMES as readonly string[]).includes(ref.process)) {
+          const message = 'reserved process name';
+          throw new HexlogError('RESERVED_NAME', message, [
+            { path: '/process', code: 'reserved-name', message },
+          ]);
+        }
+        if (manifest.project !== ref.project || manifest.process !== ref.process) {
+          throw new HexlogError('INTERNAL', 'manifest does not match ref');
+        }
         // ponytail: o fsync cobre só o diretório do processo, não o do projeto nem o `.v1`; queda de
         // energia na primeira criação pode perder o processo. Melhoria: fsync da cadeia de pais criados.
-        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        fs.mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
         // O log nasce antes do manifesto: o `fsyncDir` dele torna as duas entradas duráveis juntas.
-        fs.closeSync(fs.openSync(path.join(dir, LOG_FILE), 'a', 0o600));
+        fs.closeSync(fs.openSync(paths.log, 'a', 0o600));
         try {
-          writeFileAtomic(path.join(dir, MANIFEST_FILE), JSON.stringify(manifest), {
+          writeFileAtomic(paths.manifest, JSON.stringify(manifest), {
             exclusive: true,
             fsyncDir: true,
           });
