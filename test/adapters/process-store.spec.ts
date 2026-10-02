@@ -221,6 +221,22 @@ describe('create, read e list', () => {
     expect(store.read(ref)).toMatchObject({ text: '', endsWithNewline: true });
   });
 
+  test('readManifest sem processo dá PROCESS_NOT_FOUND; com manifesto ilegível, PROCESS_CORRUPTED', () => {
+    const { store, ref, manifest, manifestFile } = setup();
+
+    expect(store.readManifest(ref)).toEqual(manifest);
+    expect(() => store.readManifest({ ...ref, process: 'outro' })).toThrow(
+      expect.objectContaining({ code: 'PROCESS_NOT_FOUND' }),
+    );
+    fs.writeFileSync(manifestFile, 'isto nao e json');
+    expect(() => store.readManifest(ref)).toThrow(
+      expect.objectContaining({
+        code: 'PROCESS_CORRUPTED',
+        details: [expect.objectContaining({ code: 'unreadable-manifest' })],
+      }),
+    );
+  });
+
   test.each([
     ['texto que não é JSON', 'isto nao e json'],
     ['JSON de forma errada', '{"project":"demo"}'],
@@ -278,6 +294,15 @@ describe('create, read e list', () => {
   describe('teto do log (N8)', () => {
     /** Log esparso do tamanho pedido: o teto se testa sem gravar 64 MiB de verdade. */
     const sparseLog = (logFile: string, size: number) => fs.truncateSync(logFile, size);
+
+    test('readManifest com o log acima do teto devolve o manifesto sem ler o records.jsonl', () => {
+      const { store, ref, manifest, logFile } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES + 1);
+      const readFile = jest.spyOn(fs, 'readFileSync');
+
+      expect(store.readManifest(ref)).toEqual(manifest);
+      expect(readFile).not.toHaveBeenCalledWith(logFile, expect.anything());
+    });
 
     test('read de um log com exatamente 64 MiB ainda lê', () => {
       const { store, ref, logFile } = setup();

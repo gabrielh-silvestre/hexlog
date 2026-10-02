@@ -12,11 +12,10 @@ Antes desta decisão só `data` (16.000 caracteres) e o lote (`BATCH_MAX`, 50 it
 | `Batch.key` | `.max(200)` | precedente (tools) — **palpite** |
 | `RecordType` | `canonicalize().length <= 16_000` | precedente (0.x) + medição |
 | `Gate.questions` | `.max(50)` | alinhado a `BATCH_MAX` — **palpite** |
+| `RelationName` (`from`/`to`) e `Gate` (`where` das questões) | `canonicalize().length <= 16_000` no objeto inteiro (`RELATION_GATE_MAX_CHARS` em `src/domain/definitions.ts`) | **palpite**: o mesmo número do `RecordType`, ~22 vezes o maior gate real (729 caracteres). Definição é imutável e o dano ao `process.json` seria permanente. A recusa sai como `INVALID_INPUT`, sem código de erro novo |
 | `aliases` | `.max(50)` | alinhado a `BATCH_MAX`, para todo item do lote poder ter alias — **palpite** (subiu de 20 na implementação do PR #60, quando 20 conflitou com `BATCH_MAX`) |
 | `records.jsonl` (arquivo inteiro, por processo) | 64 MiB | **palpite**: ~56 mil registros de 1,2 KB, ~50 vezes o maior processo medido; sem medição por trás. Recusa com `PROCESS_TOO_LARGE` (27º código do catálogo 1.0, que fecha em 27 depois do corte da F6), implementada em `src/adapters/fs/process-store.ts#createProcessStore` (`readProcess` confere o tamanho com `stat` antes de ler, então `read` e `write` recusam um log acima do teto; `writeLocked` confere `tamanho do arquivo + bytes do lote > 64 MiB` antes de gravar, então o lote que cruzaria o teto é recusado sem gravar e o processo continua legível; exatamente 64 MiB ainda grava e lê). A `message` (inglês) orienta criar um processo novo para seguir registrando (`supersedes`/`revokes` não atravessam processos; rotação do log fica para um ADR futuro). Rever se o TF6 sair de ~500 ms ou se um processo real passar de ~10 MiB. **Custo no `search`:** o índice é montado a cada chamada (~0,12 ms por registro), então um processo no teto, com ~55 mil registros, custa ~6-7 s síncronos; cada sessão paga o próprio índice, ~42 MiB por 10.000 registros |
 | `details` do validador (por chamada de `checkSchema`; o `validate` devolve um erro por subschema avaliado: em `anyOf`/`oneOf`/`propertyNames` saem os dos ramos) | 50 | alinhado a `BATCH_MAX` — **palpite**. Os erros são deduplicados por path+code+message e cortados em 50 por `src/adapters/validator.ts#toDetails`; ao cortar, o último `Detail` tem `code` `too-many-errors` e a quantidade omitida na `message`. Os omitidos não são recuperáveis (o validador não guarda estado): o agente corrige e reenvia. Sem o teto, 7.000 itens inválidos davam ~400 KB de `details` |
-
-Ficam sem teto, de propósito: `Where`, `from` e `to`. Não há dado nem precedente; revisar junto com a F3/F4.
 
 ## O que é palpite e o que não é
 
@@ -71,10 +70,11 @@ Motivo: é biblioteca usada em campo e dispensa código próprio de análise de 
 
 ### Limites conhecidos, aceitos
 
-- **Alternância sobreposta:** `(a|aa)+` passa pela `safe-regex2` (falso negativo). O `maxLength` limita o dano.
+- **Alternância sobreposta (risco aceito em 2026-10-02):** `(a|aa)+` e `([a-z]|[a-z0-9])+` passam pela `safe-regex2` (falso negativo). O `maxLength` **não** limita o dano: os dois travam o servidor por cerca de 8 s com 27 caracteres, dez vezes abaixo do teto de 256. Aceito porque a ferramenta é de uso exclusivo de agentes e os 3 formatos em uso nos tipos de `.hexlog/types/` são lineares. O fallback linear do V8 não entrou porque só protege regex sem a flag `u` e exigiria reabrir a exclusão de `setFlagsFromString`/`unicodeRegExp`.
+- **Falso positivo da `safe-regex2`:** ela recusa repetição dentro de grupo repetido mesmo quando a regex é linear (kebab-case `^[a-z]+(?:-[a-z]+)*$`, `^\d+(\.\d+)?$`) e sintaxe que o `ret` não parseia (lookbehind). Passam classe de caractere única (`^[a-z0-9-]+$`) e sequência sem grupo repetido. A `message` de `src/adapters/validator.ts#patternDetails` já diz isso ao agente.
 - **`$ref` com ponteiro JSON para dentro de dado:** `#/const`, `#/default`, `#/enum/0` e `#/examples/0` escondem um `pattern` do percurso. Aceito porque a ferramenta é de uso exclusivo de agentes de IA. A correção barata seria uma allowlist de `$ref`: `#`, `#/$defs/...` e `#/definitions/...`.
 
-O ADR 0009 ainda não existe; esses limites entram na lista da F8.
+O ADR 0009 ainda não existe; esses limites entram na lista da F8, junto de um follow-up: revisar o processo de definição de tipos e avaliar regex ou formatos nomeados prontos, fornecidos pelo hexlog, que o agente só customiza.
 
 ### Consequência
 

@@ -346,6 +346,36 @@ describe('schemas de definição', () => {
     expect(RelationName.safeParse({ name: 'a', kind: 'supports', to: ['x'] }).success).toBe(true);
   });
 
+  // Definição é imutável: sem teto, `from`/`to`/`where` gigantes incham o process.json de todo processo novo (N10).
+  test('RelationName com 100.000 nomes em from é recusada', () => {
+    const from = Array.from({ length: 100_000 }, (_, i) => `t${i}`);
+    expect(RelationName.safeParse({ name: 'approves', kind: 'supports', from }).success).toBe(
+      false,
+    );
+  });
+
+  // Name tem no máximo 63 caracteres: 200 nomes cabem nos 16.000 canônicos e 260 não.
+  test.each([
+    [200, true],
+    [260, false],
+  ])('RelationName com %i nomes de 63 caracteres em from: aceita=%s', (count, accepted) => {
+    const from = Array.from({ length: count }, (_, i) => String(i).padStart(63, 'a'));
+    expect(RelationName.safeParse({ name: 'approves', kind: 'supports', from }).success).toBe(
+      accepted,
+    );
+  });
+
+  test('Gate com where de 100.000 chaves é recusado', () => {
+    const where = Object.fromEntries(Array.from({ length: 100_000 }, (_, i) => [`k${i}`, i]));
+    const heavy = { kind: 'occurred', select: { type: 'review', where } };
+    expect(Gate.safeParse({ name: 'ready', questions: [heavy] }).success).toBe(false);
+  });
+
+  test('Gate pequeno com where real é aceito', () => {
+    const light = { kind: 'occurred', select: { type: 'review', where: { verdict: 'approved' } } };
+    expect(Gate.safeParse({ name: 'ready', questions: [light] }).success).toBe(true);
+  });
+
   test('Gate exige name e perguntas com kind', () => {
     expect(Gate.safeParse({ name: 'ready', questions: [question] }).success).toBe(true);
     expect(Gate.safeParse({ name: 'ready', questions: [{}] }).success).toBe(false);

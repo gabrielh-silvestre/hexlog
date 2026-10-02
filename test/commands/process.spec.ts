@@ -1,6 +1,8 @@
+import * as fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
 import { createDefinitionStore } from '../../src/adapters/fs/definition-store.ts';
-import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
+import { processPaths } from '../../src/adapters/fs/data-format.ts';
+import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
 import { createProcessService } from '../../src/commands/process.ts';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { RESERVED_PROCESS_NAMES, type Name } from '../../src/domain/ids.ts';
@@ -64,7 +66,7 @@ function fakeDefinitions() {
   return { store, add, addEmptyName, reads };
 }
 
-/** `ProcessStore` em memória: só `create` e `read`, que é o que `createProcess` usa. */
+/** `ProcessStore` em memória: só `create` e `readManifest`, que é o que `createProcess` usa. */
 function fakeProcesses() {
   const manifests = new Map<string, Manifest>();
   const creates: Manifest[] = [];
@@ -75,11 +77,12 @@ function fakeProcesses() {
       manifests.set(ref.process, manifest);
       return true;
     },
-    read: (ref) => {
+    readManifest: (ref) => {
       const manifest = manifests.get(ref.process);
       if (manifest === undefined) throw new Error(`sem processo ${ref.process}`);
-      return { manifest, text: '', endsWithNewline: true };
+      return manifest;
     },
+    read: refuse,
     list: refuse,
     listProjects: refuse,
     write: refuse,
@@ -330,5 +333,39 @@ describe('createProcess: processo já existente', () => {
       name === 'note' ? [] : versionsOf(project, kind, name);
 
     expect(create(service).stale).toEqual([{ kind: 'types', name: 'note', current: null }]);
+  });
+
+  test('PROCESS_CORRUPTED unreadable-manifest sobe intacto, não vira created false', () => {
+    const { service, definitions, processes } = setup();
+    definitions.add('types', 'note', '1.0', NOTE_1_0);
+    create(service);
+    const message = 'process manifest is unreadable';
+    const corrupted = new HexlogError('PROCESS_CORRUPTED', message, [
+      { path: '/process', code: 'unreadable-manifest', message, process: 'run-1' },
+    ]);
+    processes.store.readManifest = () => {
+      throw corrupted;
+    };
+
+    expect(captureError(() => create(service))).toBe(corrupted);
+  });
+
+  test('com o log acima do teto devolve created false: só o manifesto é lido', () => {
+    const dataDir = createTempDir('create-process');
+    const definitions = createDefinitionStore({ dataDir });
+    definitions.write(PROJECT, 'types', 'note', '1.0', NOTE_1_0);
+    const service = createProcessService({
+      store: createProcessStore({ dataDir, log: () => undefined }),
+      definitions,
+      ...UNUSED_REGISTER_PORTS,
+      clock: () => NOW,
+    });
+    create(service);
+    fs.truncateSync(
+      processPaths(dataDir, { project: PROJECT, process: 'run-1' }).log,
+      MAX_LOG_BYTES + 1,
+    );
+
+    expect(create(service)).toMatchObject({ created: false, pinned: { types: ['note'] } });
   });
 });

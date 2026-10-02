@@ -1,9 +1,11 @@
-import type { Name, RecordId } from '../domain/ids.ts';
+import type { Marker, Name, RecordId } from '../domain/ids.ts';
 import type { Author, BatchItem } from '../domain/record.ts';
 
-/** D-24: uma entrada por processo lido; `null` para processo vazio. O `register` devolve só a da origem. */
-export type Marker = Record<Name, RecordId | null>;
-
+/**
+ * A entrada chega validada pelos schemas de `domain/record.ts` (`BatchItem`, `Author`, `key`): o
+ * serviço não revalida. Fora do formato, a última barreira (`isValidLine`) devolve `INTERNAL` sem
+ * `details`.
+ */
 export type RegisterInput = {
   project: Name;
   /** Processo de origem: o único que a gravação trava (D-12). */

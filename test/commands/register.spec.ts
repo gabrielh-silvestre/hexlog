@@ -6,6 +6,7 @@ import {
   AUTHOR,
   NOW,
   ORIGIN,
+  PROJECT,
   ghostId,
   note,
   refusal,
@@ -376,16 +377,25 @@ describe('register: chave e precedência de D-06', () => {
   );
 
   test('chave: mesma impressão devolve replayed sem linha, com os ids e apelidos do original e o fsync', async () => {
-    const { register, processes } = setup();
+    const { register, processes, logger } = setup();
     const batch = [note('a', { alias: 'first' }), note('b')];
     const original = await register(batch, { key: 'k' });
     const before = processes.textOf(ORIGIN);
+    expect(logger).not.toHaveBeenCalled();
 
     const again = await register(batch, { key: 'k' });
 
     expect(again).toEqual({ ...original, replayed: true });
     expect(processes.textOf(ORIGIN)).toBe(before);
     expect(processes.counters).toMatchObject({ appends: 1, syncsWithoutLine: 1 });
+    expect(logger).toHaveBeenCalledTimes(1);
+    expect(logger).toHaveBeenCalledWith({
+      level: 'info',
+      event: 'batch-replayed',
+      project: PROJECT,
+      process: ORIGIN,
+      key: 'k',
+    });
   });
 
   test('chave: o replay traz o marker da cabeça lida em decide, não o do lote original', async () => {
@@ -453,7 +463,7 @@ describe('register: chave e precedência de D-06', () => {
   });
 
   test('chave: o reenvio depois de IO_ERROR incerto devolve replayed mesmo com destino e anexo mudados', async () => {
-    const { register, processes, attachments } = setup();
+    const { register, processes, attachments, logger } = setup();
     const hash = sha256hex('anexo');
     processes.add('other');
     attachments.set(hash, 'ok');
@@ -471,11 +481,15 @@ describe('register: chave e precedência de D-06', () => {
       'other',
     );
     attachments.set(hash, 'missing');
+    expect(logger).not.toHaveBeenCalled();
 
     const again = await register(batch, { key: 'k' });
 
     expect(again.replayed).toBe(true);
-    expect(verifiedOf(processes).chain.totalRecords).toBe(2);
+    const verified = verifiedOf(processes);
+    expect(verified.chain.totalRecords).toBe(2);
+    expect(again.records.map(({ id }) => id)).toEqual(verified.records.map(({ id }) => id));
+    expect(logger).toHaveBeenCalledTimes(1);
   });
 
   test('chave: o reenvio devolve replayed mesmo quando um anexo novo passou a casar a guarda unmarked-attachment', async () => {
@@ -503,11 +517,13 @@ describe('register: leitura única do log da origem (SL2)', () => {
     await register([note('b'), note('c')]);
     const lines = processes.textOf(ORIGIN).split('\n').filter(Boolean);
     const parse = jest.spyOn(JSON, 'parse');
+    processes.counters.reads.length = 0;
 
     await register([note('a')], key === undefined ? {} : { key });
 
     const calls = parse.mock.calls.map(([text]) => text);
     expect(lines.map((line) => calls.filter((text) => text === line).length)).toEqual([1, 1]);
+    expect(processes.counters.reads.filter((name) => name === ORIGIN)).toHaveLength(1);
   });
 });
 

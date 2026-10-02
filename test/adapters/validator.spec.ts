@@ -1,4 +1,5 @@
-import { describe, expect, test } from '@jest/globals';
+import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import Ajv2020 from 'ajv/dist/2020.js';
 import { createValidator, PATTERN_MAX_LENGTH } from '../../src/adapters/validator.ts';
 import type { RecordType } from '../../src/domain/definitions.ts';
 
@@ -285,6 +286,41 @@ describe('checkSchema', () => {
       ).toEqual([]);
     });
 
+    // Limite conhecido (falso positivo): a safe-regex2 recusa regex linear com repetição dentro de
+    // grupo repetido. Se uma versão futura da lib passar a aceitá-la, este teste quebra de propósito:
+    // troque a expectativa por `[]` e revise a mensagem de recusa e o JSDoc do validator.
+    test('limite conhecido: kebab-case com grupo repetido é recusado, mesmo linear', () => {
+      expect(
+        validator.checkSchema({
+          type: 'string',
+          pattern: '^[a-z]+(?:-[a-z]+)*$',
+          maxLength: 64,
+        }),
+      ).toEqual(invalidSchema('/pattern'));
+    });
+
+    test('a saída sugerida na mensagem, classe única, é aceita', () => {
+      expect(
+        validator.checkSchema({ type: 'string', pattern: '^[a-z0-9-]+$', maxLength: 64 }),
+      ).toEqual([]);
+    });
+
+    test('a mesma mensagem vale para pattern e para chave de patternProperties', () => {
+      const unsafeKey = '^[a-z]+(?:-[a-z]+)*$';
+      const [fromPattern] = validator.checkSchema({
+        type: 'string',
+        pattern: unsafeKey,
+        maxLength: 64,
+      });
+      const [fromKey] = validator.checkSchema({
+        type: 'object',
+        patternProperties: { [unsafeKey]: { type: 'string' } },
+      });
+
+      expect(fromPattern?.message).toMatch(/single character class/);
+      expect(fromKey?.message).toBe(fromPattern?.message);
+    });
+
     // Limite conhecido e aceito: o percurso do checkSchema não segue $ref, então o pattern que está
     // dentro de dado (const, default, enum, examples) e é alcançado por ponteiro fica sem a
     // safe-regex2 e sem o teto de maxLength. Este teste registra o comportamento observado hoje, não
@@ -361,6 +397,47 @@ describe('validate', () => {
     });
 
     expect(details).toEqual([{ path: '/items/0', code: 'type', message: expect.any(String) }]);
+  });
+
+  describe('compilação por objeto de schema', () => {
+    const compileSpy = () => jest.spyOn(Ajv2020.default.prototype, 'compile');
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('compila uma vez para o mesmo objeto e duas para objetos iguais mas distintos', () => {
+      const spy = compileSpy();
+      const schema = { type: 'object', properties: { text: { type: 'string' } } };
+
+      validator.validate(schema, {});
+      validator.validate(schema, {});
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      validator.validate({ ...schema }, {});
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    test('o segundo validate, já compilado, segue correto para dado válido e inválido', () => {
+      const schema = { type: 'object', properties: { text: {} }, required: ['text'] };
+
+      expect(validator.validate(schema, { text: 'ok' })).toEqual([]);
+      expect(validator.validate(schema, {})).toEqual([
+        { path: '/text', code: 'required', message: expect.any(String) },
+      ]);
+      expect(validator.validate(schema, { text: 'ok' })).toEqual([]);
+    });
+
+    test('dois schemas com o mesmo $id em objetos distintos não colidem', () => {
+      const $id = 'https://example.com/shared-id';
+      const open = { $id, type: 'object' };
+      const strict = { $id, type: 'object', properties: { text: {} }, required: ['text'] };
+
+      expect(validator.validate(open, {})).toEqual([]);
+      expect(validator.validate(strict, {})).toHaveLength(1);
+      expect(validator.validate(open, {})).toEqual([]);
+      expect(validator.validate(strict, { text: 'ok' })).toEqual([]);
+    });
   });
 
   test('recusa $id que o ajv já conhece, como o checkSchema', () => {

@@ -43,6 +43,12 @@ export type ProcessStore = {
    * com `stat` antes de ler.
    */
   read(ref: ProcessRef): RawProcess;
+  /**
+   * Só o `process.json`, sem tocar o `records.jsonl` (nem o teto de `MAX_LOG_BYTES`): para quem só
+   * precisa do manifesto. `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED` (`unreadable-manifest`) como em
+   * `read`.
+   */
+  readManifest(ref: ProcessRef): Manifest;
   /** Nomes dos processos do projeto. */
   list(project: Name): Name[];
   listProjects(): Name[];
@@ -158,7 +164,9 @@ export type Validator = {
    * `pattern` ou chave de `patternProperties` reprovados pela `safe-regex2`, e `pattern` sem
    * `maxLength` de até 256 no mesmo subschema; saem com `path` do campo (relativo ao schema) e
    * `code` `invalid-schema`. Devolve todos os erros do schema. Limite conhecido: a `safe-regex2` é
-   * heurística, e alternância sobreposta como `(a|aa)+` passa. Outro, aceito: o percurso não segue
+   * heurística, e alternância sobreposta como `(a|aa)+` passa (risco aceito em 2026-10-02). A
+   * `safe-regex2` também recusa regex linear com grupo repetido (falso positivo, ex.: kebab-case);
+   * ver `adapters/validator.ts#createValidator`. Outro limite, aceito: o percurso não segue
    * `$ref`, então `$ref` com ponteiro para `const`/`default`/`enum`/`examples` esconde `pattern` da
    * `safe-regex2` e do teto de `maxLength` (`adapters/validator.ts#createValidator`).
    */

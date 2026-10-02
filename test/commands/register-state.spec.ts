@@ -578,23 +578,24 @@ describe('register: ordem das checagens de estado (nível 6)', () => {
 });
 
 describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
-  test('na leitura, antes de decide: log acima do teto recusa mesmo um lote válido, sem gravar', async () => {
+  test('na leitura sob o lock, antes de decide: log acima do teto recusa mesmo um lote válido, sem gravar', async () => {
     const harness = setup();
     harness.processes.flags.tooLarge.add(ORIGIN);
 
     const error = await refusal(harness.register([note()]));
 
     expect(error.code).toBe('PROCESS_TOO_LARGE');
-    expect(harness.processes.counters).toMatchObject({ writes: 0, appends: 0 });
+    expect(harness.processes.counters.appends).toBe(0);
   });
 
-  test('a leitura do log já vem com a do manifesto, então vence a recusa estática', async () => {
+  test('o manifesto vem de readManifest, sem o log: a recusa estática vence PROCESS_TOO_LARGE', async () => {
     const harness = setup();
     harness.processes.flags.tooLarge.add(ORIGIN);
 
     const error = await refusal(harness.register([{ ...note(), data: {} }]));
 
-    expect(error.code).toBe('PROCESS_TOO_LARGE');
+    expect(error.code).toBe('INVALID_RECORD');
+    expect(harness.processes.counters).toMatchObject({ writes: 0, appends: 0 });
   });
 
   test('no veto do lote, depois das checagens: o lote que passaria do teto não grava e o log segue legível', async () => {

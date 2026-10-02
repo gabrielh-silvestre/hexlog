@@ -24,6 +24,9 @@ const UUID_V7_SRC = '[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 export const RecordId = z.string().regex(new RegExp(`^${NAME_SRC}:${UUID_V7_SRC}$`));
 export type RecordId = z.infer<typeof RecordId>;
 
+/** D-24: uma entrada por processo lido; `null` para processo vazio. Só tipo: nenhum consumidor valida. */
+export type Marker = Record<Name, RecordId | null>;
+
 /**
  * Lista de nomes de tipo de registro, sem repetição. Omitida, a ponta que a usa aceita qualquer
  * tipo; lista vazia nunca significa "nenhum tipo", por isso `.min(1)`.

@@ -1,4 +1,4 @@
-import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
+import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { isPlainObject, kebabCase, uniqBy } from 'es-toolkit';
 import safeRegex from 'safe-regex2';
@@ -78,6 +78,16 @@ const SUBSCHEMA_MAP_KEYWORDS = [
 ];
 
 /**
+ * A `safe-regex2` devolve só booleano, então a mensagem cobre todas as causas possíveis da recusa;
+ * o motivo do falso positivo está em `createValidator`.
+ */
+const UNSAFE_REGEX_MESSAGE =
+  'regex rejected by safe-regex2: it may backtrack catastrophically or use syntax it cannot ' +
+  'parse (e.g. lookbehind); a repeated group that contains a repetition, such as (-[a-z]+)*, is ' +
+  'rejected even when linear. Rewrite it with a single character class (^[a-z0-9-]+$) or ' +
+  'without a repeated group';
+
+/**
  * Percorre só as palavras-chave que carregam subschemas (nunca `const`/`enum`/`default`, que são
  * dado) e aponta cada `pattern` e cada chave de `patternProperties` que a `safe-regex2` recusa, e
  * cada `pattern` cujo subschema não tem `maxLength` inteiro até `PATTERN_MAX_LENGTH`.
@@ -92,8 +102,7 @@ function patternDetails(root: unknown): Detail[] {
 
     if (typeof node.pattern === 'string') {
       const path = `${pointer}/pattern`;
-      if (!safeRegex(node.pattern))
-        reject(path, 'pattern is unsafe (possible catastrophic backtracking)');
+      if (!safeRegex(node.pattern)) reject(path, UNSAFE_REGEX_MESSAGE);
       if (typeof node.maxLength !== 'number' || node.maxLength > PATTERN_MAX_LENGTH)
         reject(
           path,
@@ -103,10 +112,7 @@ function patternDetails(root: unknown): Detail[] {
     if (isPlainObject(node.patternProperties)) {
       for (const key of Object.keys(node.patternProperties)) {
         if (!safeRegex(key))
-          reject(
-            `${pointer}/patternProperties/${escapePointerSegment(key)}`,
-            'patternProperties key is unsafe (possible catastrophic backtracking)',
-          );
+          reject(`${pointer}/patternProperties/${escapePointerSegment(key)}`, UNSAFE_REGEX_MESSAGE);
       }
     }
 
@@ -156,8 +162,9 @@ function createCompiler(allErrors: boolean) {
 
 /**
  * Validador JSON Schema (2020-12) com ajv estrito e `ajv-formats`, mais o formato `attachment`.
- * O `$id` de um schema não fica registrado no ajv: cada chamada compila e esquece, então duas
- * versões de um tipo com o mesmo `$id` não colidem.
+ * O `$id` de um schema não fica registrado no ajv: `validate` compila uma vez por objeto de schema
+ * e esquece o `$id`, então duas versões de um tipo com o mesmo `$id` em objetos distintos não
+ * colidem.
  *
  * Duas instâncias do ajv, com a mesma compilação: `checkSchema` usa `allErrors: true` e devolve
  * todos os erros do schema; `validate` usa `allErrors: false` e devolve um erro por subschema
@@ -172,12 +179,17 @@ function createCompiler(allErrors: boolean) {
  * exige `maxLength` inteiro de até `PATTERN_MAX_LENGTH` no mesmo subschema. Esses erros saem com o
  * `path` do campo (`.../pattern`, relativo ao schema) e `code` `invalid-schema`.
  *
- * O `maxLength` protege o `validate`: o ajv o avalia antes do `pattern` e, sem `allErrors`, para no
- * primeiro erro, então o regex nunca roda sobre string acima do teto. Isso não vale para a chave de
- * `patternProperties`, que casa com nomes de propriedade sem teto. Limite conhecido: a `safe-regex2`
- * é heurística (altura de estrela e número de repetições), então alternância sobreposta como
- * `(a|aa)+` passa, e o teto de `PATTERN_MAX_LENGTH` limita o texto que ela consome, sem torná-la
- * barata.
+ * O `maxLength` só impede que o `validate` rode o regex sobre string acima do teto (o ajv o avalia
+ * antes do `pattern` e, sem `allErrors`, para no primeiro erro). Ele NÃO limita o dano de um regex
+ * exponencial que a `safe-regex2` deixa passar: ela é heurística (altura de estrela e número de
+ * repetições), então alternância sobreposta como `(a|aa)+` ou `([a-z]|[a-z0-9])+` passa, e com
+ * 27 caracteres, bem abaixo do teto de `PATTERN_MAX_LENGTH`, a medição deu cerca de 8 s. Risco
+ * aceito pelo usuário em 2026-10-02: a ferramenta é de uso exclusivo de agentes. O teto também não
+ * vale para a chave de `patternProperties`, que casa com nomes de propriedade sem limite.
+ *
+ * A `safe-regex2` também tem falso positivo: recusa regex linear com repetição dentro de grupo
+ * repetido (`^[a-z]+(?:-[a-z]+)*$`) e sintaxe que não parseia (lookbehind). Passam classe única
+ * (`^[a-z0-9-]+$`) e sequência sem grupo repetido; a mensagem de recusa já diz isso.
  *
  * Outro limite conhecido, aceito: o percurso do `checkSchema` não segue `$ref`. Um `$ref` com
  * ponteiro para dentro de dado (`#/const`, `#/default`, `#/enum/N`, `#/examples/N`) compila, e o
@@ -189,6 +201,9 @@ function createCompiler(allErrors: boolean) {
 export function createValidator(): Validator {
   const checker = createCompiler(true);
   const dataValidator = createCompiler(false);
+  // Chave por identidade do objeto: o lote de um `register` repete o mesmo schema e recompilar
+  // custava 200 a 300 ms por lote de 50. Escopo da instância e coletável.
+  const compiled = new WeakMap<object, ValidateFunction>();
 
   return {
     checkSchema(schema) {
@@ -204,7 +219,11 @@ export function createValidator(): Validator {
       }
     },
     validate(schema, data) {
-      const validate = dataValidator.compile(schema);
+      let validate = compiled.get(schema);
+      if (!validate) {
+        validate = dataValidator.compile(schema);
+        compiled.set(schema, validate);
+      }
       return validate(data) ? [] : toDetails(validate.errors ?? []);
     },
   };

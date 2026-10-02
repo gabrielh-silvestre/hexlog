@@ -41,6 +41,7 @@ export function compose({ dataDir, cwd, clock, logger }: ComposeOptions) {
         clock,
         // Id opaco (D-01): usa o relógio real do Node, não o `clock` injetado.
         newUuid: randomUUIDv7,
+        logger,
       }),
     },
     /** D-13: um `readdirSync` por chamada, para pegar dado 0.x que apareça com o servidor de pé. */

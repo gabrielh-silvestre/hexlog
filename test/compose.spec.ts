@@ -1,17 +1,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 import { compose } from '../src/compose.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
+import type { Logger } from '../src/shared/logger.ts';
 import { captureError, createTempDir } from './helpers.ts';
 import { AUTHOR, NOTE, NOW, PROJECT, note } from './commands/register-fakes.ts';
 
 /** `cwd` e `dataDir` distintos; o `dataDir` fica dentro do `cwd` para provar que o `attach` o recusa (D-15). */
-function composed() {
+function composed(logger: Logger = () => undefined) {
   const cwd = createTempDir('compose');
   const dataDir = path.join(cwd, 'data');
   fs.mkdirSync(dataDir);
-  return { cwd, dataDir, ...compose({ dataDir, cwd, clock: () => NOW, logger: () => undefined }) };
+  return { cwd, dataDir, ...compose({ dataDir, cwd, clock: () => NOW, logger }) };
 }
 
 describe('compose', () => {
@@ -42,6 +43,27 @@ describe('compose', () => {
     expect(lines).toHaveLength(1);
     expect(again).toMatchObject({ replayed: true, records: first.records });
     expect(fs.readFileSync(logFile, 'utf8').trimEnd().split('\n')).toEqual(lines);
+  });
+
+  test('o segundo register com a mesma key emite batch-replayed pelo logger da composição', async () => {
+    const logger = jest.fn<Logger>();
+    const { services } = composed(logger);
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.process.createProcess({ project: PROJECT, process: 'run-1' });
+    const input = {
+      project: PROJECT,
+      process: 'run-1',
+      author: AUTHOR,
+      key: 'k1',
+      records: [note()],
+    };
+    const replayed = expect.objectContaining({ event: 'batch-replayed', key: 'k1' });
+
+    await services.process.register(input);
+    expect(logger).not.toHaveBeenCalledWith(replayed);
+    await services.process.register(input);
+
+    expect(logger).toHaveBeenCalledWith(replayed);
   });
 
   test('attach por path dentro do cwd funciona', () => {

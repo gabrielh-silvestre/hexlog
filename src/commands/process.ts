@@ -11,11 +11,12 @@ import type {
   ProcessStore,
   Validator,
 } from '../ports.ts';
+import type { Logger } from '../shared/logger.ts';
 import { createDecide } from './register-state.ts';
 import { checkBatchShape, prepareBatch, relationNames } from './register-static.ts';
 import type { RegisterInput, RegisterResult } from './register-types.ts';
 
-export type { Marker, RegisteredRecord, RegisterInput, RegisterResult } from './register-types.ts';
+export type { RegisteredRecord, RegisterInput, RegisterResult } from './register-types.ts';
 
 export type CreateProcessInput = { project: Name; process: Name };
 
@@ -50,9 +51,12 @@ export type ProcessService = {
    * recusa, a primeira que falha responde: (1) forma do lote, (2) `PROCESS_NOT_FOUND` e
    * `unreadable-manifest`, (3) recusas estáticas (tipo fixado e schema, `as`→`kind`,
    * `cross-process-currency`), (4) `broken-chain`, (5) `key`: `replayed` ou `IDEMPOTENCY_CONFLICT`,
-   * (6) destinos, anexos e regras de D-10. `PROCESS_TOO_LARGE` sai em dois pontos, os dois do
-   * adaptador: ao ler o log (junto com o nível 2, que usa a mesma leitura) e ao gravar uma linha que
+   * (6) destinos, anexos e regras de D-10. `PROCESS_TOO_LARGE` sai do adaptador ao ler o log sob o
+   * lock (o nível 2 lê só o manifesto, então as recusas estáticas vencem) e ao gravar uma linha que
    * passaria do teto (depois do nível 6). Qualquer recusa sai antes de gravar.
+   *
+   * A entrada chega validada (ver `RegisterInput`). Um replay (`replayed: true`) emite
+   * `batch-replayed` no logger (D-22), sem o conteúdo dos registros.
    */
   register(input: RegisterInput): Promise<RegisterResult>;
 };
@@ -144,8 +148,9 @@ export function createProcessService(deps: {
   clock: () => Date;
   /** Uuid v7 do id do registro (D-01): opaco, nenhuma regra lê o tempo dele. */
   newUuid: () => string;
+  logger: Logger;
 }): ProcessService {
-  const { store, definitions, attachments, validator, clock, newUuid } = deps;
+  const { store, definitions, attachments, validator, clock, newUuid, logger } = deps;
 
   return {
     createProcess({ project, process }) {
@@ -164,7 +169,7 @@ export function createProcessService(deps: {
       if (store.create(ref, manifest)) {
         return { project, process, created: true, pinned: namesOf(manifest.fixed) };
       }
-      const existing = store.read(ref).manifest;
+      const existing = store.readManifest(ref);
       const result = { project, process, created: false, pinned: namesOf(existing.fixed) };
       const stale = staleOf(existing.fixed, snapshot);
       return stale.length === 0 ? result : { ...result, stale };
@@ -178,7 +183,7 @@ export function createProcessService(deps: {
     async register({ project, process, author, key, records }) {
       checkBatchShape(records);
       const origin = { project, process };
-      const { manifest } = store.read(origin);
+      const manifest = store.readManifest(origin);
       const items = prepareBatch(manifest, records, validator);
       const decide = createDecide(
         { store, attachments, clock, newUuid },
@@ -192,7 +197,18 @@ export function createProcessService(deps: {
           names: relationNames(manifest),
         },
       );
-      return store.write(origin, decide);
+      const result = await store.write(origin, decide);
+      // Só depois do `write`: o evento sai com o fsync feito e o lock solto, sem "replayed" falso após `IO_ERROR`.
+      if (result.replayed) {
+        logger({
+          level: 'info',
+          event: 'batch-replayed',
+          project,
+          process,
+          ...(key !== undefined && { key }),
+        });
+      }
+      return result;
     },
   };
 }

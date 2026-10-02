@@ -8,6 +8,7 @@ import type { Hash, Name } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
+import type { Logger } from '../../src/shared/logger.ts';
 import { rejectionOf } from '../helpers.ts';
 import type {
   AttachmentStatus,
@@ -117,8 +118,8 @@ export function fakeProcessStore() {
   };
   const counters = { reads: [] as Name[], writes: 0, appends: 0, syncsWithoutLine: 0 };
 
-  const rawOf = (process: Name): RawProcess => {
-    counters.reads.push(process);
+  /** Como `readManifest` do adaptador: só o manifesto, sem o teto do log nem a contagem de leitura do log. */
+  const manifestEntryOf = (process: Name) => {
     const entry = entries.get(process);
     if (entry === undefined) throw notFound(process);
     if (flags.unreadable.has(process)) {
@@ -127,13 +128,19 @@ export function fakeProcessStore() {
         { path: '/process', code: 'unreadable-manifest', message, process },
       ]);
     }
+    return entry;
+  };
+
+  const rawOf = (process: Name): RawProcess => {
+    counters.reads.push(process);
+    const { manifest, text } = manifestEntryOf(process);
     if (flags.tooLarge.has(process)) throw tooLarge();
-    const { manifest, text } = entry;
     return { manifest, text, endsWithNewline: text === '' || text.endsWith('\n') };
   };
 
   const store: ProcessStore = {
     read: (ref) => rawOf(ref.process),
+    readManifest: (ref) => manifestEntryOf(ref.process).manifest,
     list: refuse,
     listProjects: refuse,
     create: refuse,
@@ -215,6 +222,7 @@ export const UNUSED_REGISTER_PORTS = {
   attachments: fakeAttachments().store,
   validator: createValidator(),
   newUuid: createUuids(),
+  logger: () => undefined,
 };
 
 export function setup() {
@@ -222,6 +230,7 @@ export function setup() {
   const attachments = fakeAttachments();
   const validator = createValidator();
   const validate = jest.spyOn(validator, 'validate');
+  const logger = jest.fn<Logger>();
   let now = NOW;
   const service = createProcessService({
     store: processes.store,
@@ -230,10 +239,12 @@ export function setup() {
     validator,
     clock: () => now,
     newUuid: createUuids(),
+    logger,
   });
   processes.add(ORIGIN);
   return {
     service,
+    logger,
     processes,
     attachments,
     validate,
