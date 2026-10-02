@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ProcessRef } from '../../ports.ts';
+import type { DefinitionKind, ProcessRef } from '../../ports.ts';
 import { errnoCode } from './atomic.ts';
 
 /**
@@ -10,7 +10,13 @@ import { errnoCode } from './atomic.ts';
 export const LEGACY_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /** Pasta dos pacotes do arquivamento 0.x: casa `LEGACY_NAME`, mas não é dado 0.x. */
-const ARCHIVE_DIR = 'archive';
+export const ARCHIVE_DIR = 'archive';
+
+/** Pasta dos blobs de anexo de um projeto; nome reservado de processo (`RESERVED_PROCESS_NAMES`). */
+export const ATTACHMENTS_DIR = 'attachments';
+
+/** Sufixo do arquivo de uma versão de definição: `<major>.<minor>.json`. */
+export const VERSION_SUFFIX = '.json';
 
 /** Raiz do dado 1.0: `<dataDir>/.v1`. */
 export function dataRoot(dataDir: string): string {
@@ -30,6 +36,41 @@ export function processPaths(dataDir: string, ref: ProcessRef) {
     log: path.join(dir, LOG_FILE),
     lock: path.join(dir, LOCK_DIR),
   };
+}
+
+/**
+ * Pasta de `kind` num projeto, ou a de um `name` dentro dela (as versões); `project` e `name` já
+ * vêm validados.
+ */
+export function definitionDir(
+  dataDir: string,
+  project: string,
+  kind: DefinitionKind,
+  name?: string,
+): string {
+  const kindDir = path.join(dataRoot(dataDir), project, kind);
+  return name === undefined ? kindDir : path.join(kindDir, name);
+}
+
+/** Arquivo de uma versão de definição; `project`, `name` e `version` já vêm validados. */
+export function definitionFile(
+  dataDir: string,
+  project: string,
+  kind: DefinitionKind,
+  name: string,
+  version: string,
+): string {
+  return path.join(definitionDir(dataDir, project, kind, name), `${version}${VERSION_SUFFIX}`);
+}
+
+/** Pasta dos blobs de anexo de um projeto; `project` já vem validado. */
+export function attachmentsDir(dataDir: string, project: string): string {
+  return path.join(dataRoot(dataDir), project, ATTACHMENTS_DIR);
+}
+
+/** Blob de anexo, nomeado pelo sha256 dos bytes; `project` e `hash` já vêm validados. */
+export function blobFile(dataDir: string, project: string, hash: string): string {
+  return path.join(attachmentsDir(dataDir, project), hash);
 }
 
 /**

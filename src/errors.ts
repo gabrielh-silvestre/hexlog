@@ -5,7 +5,8 @@ import type { RecordId } from './domain/ids.ts';
  * Um item do array `details` de `HexlogError` (§4.13): aponta o campo problemático via JSON Pointer.
  * `owners`/`allowed` são específicos de `VOCABULARY_VIOLATED` (P2): contexto opcional, não usado
  * pelos demais erros. `current`, `process` e `pid` são da 1.0 (D-26): versão vigente da linhagem
- * (`null` se revogada), processo citado e pid do detentor do lock.
+ * (`null` se revogada), processo citado e pid do detentor do lock. `versions` é das definições:
+ * as versões que existem quando a pedida não existe.
  */
 export type Detail = {
   path: string;
@@ -16,6 +17,7 @@ export type Detail = {
   current?: RecordId | null;
   process?: string;
   pid?: number;
+  versions?: string[];
 };
 
 /**
@@ -32,6 +34,7 @@ export type ErrorCode =
   | 'TYPE_NOT_FOUND'
   | 'VOCABULARY_MISSING'
   | 'PROCESS_CORRUPTED'
+  | 'PROCESS_TOO_LARGE'
   | 'INVALID_ID'
   | 'UNKNOWN_ID'
   | 'ATTACHMENT_NOT_FOUND'

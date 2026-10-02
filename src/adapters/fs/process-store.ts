@@ -3,37 +3,19 @@
 // configuráveis e o teste acabaria espiando um objeto que este módulo não usa.
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { Name, RESERVED_PROCESS_NAMES } from '../../domain/ids.ts';
+import { RESERVED_PROCESS_NAMES, type Name } from '../../domain/ids.ts';
 import { Manifest } from '../../domain/manifest.ts';
 import { HexlogError } from '../../errors.ts';
 import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { dataRoot, MANIFEST_FILE, processPaths } from './data-format.ts';
+import { listDirectories, mapIo, readTextIfPresent, safeName, toHexlogError } from './io.ts';
 import { createLockManager, type Lock, type LockOptions } from './lock.ts';
 
 export type ProcessStoreOptions = LockOptions & {
   /** `<D>`; com nomes validados por `safeName`, o store grava só em `<D>/.v1/` (D-02). */
   dataDir: string;
 };
-
-/** D-26: `IO_ERROR` traz só o errno; o `message` do fs carrega o caminho absoluto. */
-function toHexlogError(error: unknown): unknown {
-  const code = errnoCode(error);
-  if (error instanceof HexlogError || code === undefined || !/^E[A-Z0-9]+$/.test(code)) {
-    return error;
-  }
-  return new HexlogError('IO_ERROR', 'I/O failure', [
-    { path: '', code: code.toLowerCase(), message: 'I/O failure' },
-  ]);
-}
-
-function mapIo<T>(operation: () => T): T {
-  try {
-    return operation();
-  } catch (error) {
-    throw toHexlogError(error);
-  }
-}
 
 function notFound(ref: ProcessRef): HexlogError {
   const message = 'process not found';
@@ -49,25 +31,38 @@ function unreadableManifest(ref: ProcessRef): HexlogError {
   ]);
 }
 
-/** Todo nome que vira segmento de caminho passa por aqui, antes de qualquer I/O. */
-function safeName(value: string, field: string): Name {
-  if (!Name.safeParse(value).success) {
-    const message = 'invalid name';
-    throw new HexlogError('INVALID_INPUT', message, [
-      { path: field, code: 'invalid-name', message },
-    ]);
-  }
-  return value;
+/**
+ * Teto do `records.jsonl` de um processo (N8, `docs/tetos-dominio-v1.md`): 64 MiB. O lote que
+ * faria o arquivo passar disso é recusado na escrita com `PROCESS_TOO_LARGE`; exatamente 64 MiB
+ * ainda grava e lê.
+ */
+export const MAX_LOG_BYTES = 64 * 1024 * 1024;
+
+function tooLarge(): HexlogError {
+  const message = 'process log exceeds the size limit; create a new process to keep recording';
+  return new HexlogError('PROCESS_TOO_LARGE', message, [
+    { path: '/process', code: 'too-large', message },
+  ]);
 }
 
-/** Lê `file`; arquivo inexistente vira `undefined`, qualquer outro erro sai cru. */
-function readTextIfPresent(file: string): string | undefined {
+/** Tamanho em bytes do `records.jsonl` (arquivo inexistente vale 0). */
+function logSize(file: string): number {
   try {
-    return fs.readFileSync(file, 'utf8');
+    return fs.statSync(file).size;
   } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return undefined;
+    if (errnoCode(error) === 'ENOENT') return 0;
     throw error;
   }
+}
+
+/**
+ * Lê o `records.jsonl` (arquivo inexistente vale log vazio). O tamanho é conferido com `stat` antes
+ * de ler, então um log acima de `MAX_LOG_BYTES` nunca vira string. Como `write` lê pelo mesmo
+ * `createProcessStore#readProcess`, escrever sobre processo acima do teto recusa sem gravar.
+ */
+function readLogText(file: string): string {
+  if (logSize(file) > MAX_LOG_BYTES) throw tooLarge();
+  return readTextIfPresent(file) ?? '';
 }
 
 function parseManifest(ref: ProcessRef, text: string): Manifest {
@@ -80,22 +75,6 @@ function parseManifest(ref: ProcessRef, text: string): Manifest {
   const parsed = Manifest.safeParse(value);
   if (!parsed.success) throw unreadableManifest(ref);
   return parsed.data;
-}
-
-/** Diretórios de `dir` com nome válido que passam em `keep`, em ordem alfabética; `dir` inexistente não tem nenhum. */
-function listDirectories(dir: string, keep: (name: string) => boolean = () => true): Name[] {
-  try {
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter(
-        (entry) => entry.isDirectory() && Name.safeParse(entry.name).success && keep(entry.name),
-      )
-      .map((entry) => entry.name)
-      .sort();
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return [];
-    throw error;
-  }
 }
 
 /**
@@ -138,13 +117,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     const manifestText = readTextIfPresent(paths.manifest);
     if (manifestText === undefined) throw notFound(ref);
     const manifest = parseManifest(ref, manifestText);
-    // `create` grava o log vazio antes do manifesto, então só uma árvore montada à mão fica sem
-    // `records.jsonl`; vale como processo vazio.
-    // ponytail: não há teto de tamanho do arquivo; o limite real é o do Node (~512 MiB,
-    // `buffer.constants.MAX_STRING_LENGTH`), onde `ERR_STRING_TOO_LONG` vira `INTERNAL` e não há rota
-    // de recuperação. O teto de 64 MiB com o erro `PROCESS_TOO_LARGE` entra na F3: a recusa fica em
-    // `writeLocked`, checando `size + tamanho do lote` (ver `docs/tetos-dominio-v1.md`).
-    const text = readTextIfPresent(paths.log) ?? '';
+    const text = readLogText(paths.log);
     return { manifest, text, endsWithNewline: text === '' || text.endsWith('\n') };
   }
 
@@ -163,7 +136,10 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
         decision.line === undefined
           ? undefined
           : `${raw.endsWithNewline ? '' : '\n'}${decision.line}`;
-      if (text !== undefined) await locks.confirm(lock);
+      if (text !== undefined) {
+        if (logSize(paths.log) + Buffer.byteLength(text) > MAX_LOG_BYTES) throw tooLarge();
+        await locks.confirm(lock);
+      }
       appendAndSync(paths.log, text);
       result = decision.result;
     } catch (error) {

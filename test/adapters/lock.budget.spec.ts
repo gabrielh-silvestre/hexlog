@@ -12,7 +12,20 @@ import { killChildren, runWriteStress } from './lock-helpers.ts';
 // Para rodar só este spec (o `npm run test:budget` roda todos os `*.budget.spec.ts`, e um caminho
 // posicional após `--` vira padrão de ignorados e some do resultado):
 //   npx jest --errorOnDeprecated --runInBand --testPathPatterns=lock.budget --testPathIgnorePatterns=/node_modules/
-const ROUNDS = 20;
+//
+// O número de rodadas vem de `LOCK_BUDGET_ROUNDS` (inteiro positivo; padrão 20, o valor local). O CI
+// define um valor menor em `.github/workflows/ci.yml`.
+const DEFAULT_ROUNDS = 20;
+
+function readRounds(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_ROUNDS;
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new Error(`LOCK_BUDGET_ROUNDS must be a positive integer, got '${raw}'`);
+  }
+  return Number(raw);
+}
+
+const ROUNDS = readRounds(process.env.LOCK_BUDGET_ROUNDS);
 const EXPECTED_RECORDS = 200;
 
 afterEach(killChildren);
