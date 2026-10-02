@@ -1,5 +1,7 @@
-import { isPlainObject, orderBy } from 'es-toolkit';
+import { isPlainObject, orderBy, sumBy } from 'es-toolkit';
 import MiniSearch from 'minisearch';
+import { sha256hex } from '../domain/chain.ts';
+import type { Hash } from '../domain/ids.ts';
 import type { HexRecord } from '../domain/record.ts';
 import type { SearchIndex } from '../ports.ts';
 
@@ -32,29 +34,95 @@ function queryTerms(text: string): string[] {
   return [...new Set(tokenize(text).map(stripDiacritics).filter(Boolean))];
 }
 
+type Engine = MiniSearch<{ index: number; text: string }>;
+
+/** Índice de um processo; `count` e `lastHash` são a chave de validade contra o `records` seguinte. */
+type Entry = { engine: Engine; count: number; lastHash: Hash };
+
 /**
- * Índice MiniSearch montado a cada chamada sobre `records`, sem cache: `AND` + prefixo + `fuzzy`
- * 0.1, com fallback para `OR` quando o `AND` não acha nada e a consulta tem 2+ termos distintos
- * (o `OR` exige que metade dos termos, arredondada para cima, case). A consulta é deduplicada
- * antes de buscar, então repetir um termo não pesa mais na ordenação. Empate de relevância mantém
- * a ordem de `records`.
+ * Orçamento de registros indexados, somados entre os processos em cache (~0,12 ms e ~4 KiB de
+ * memória por registro, então ~7 s de montagem e ~250 MiB no teto). Um processo maior que isso
+ * sozinho não é guardado.
  */
-export function createSearchIndex(): SearchIndex {
+export const SEARCH_INDEX_BUDGET_RECORDS = 60_000;
+
+/** Impressão do conteúdo do registro; o `HexRecord` não carrega o hash da cadeia. */
+const fingerprintOf = (record: HexRecord): Hash => sha256hex(JSON.stringify(record));
+
+const buildEngine = (): Engine =>
+  new MiniSearch({
+    idField: 'index',
+    fields: ['text'],
+    processTerm: (term) => stripDiacritics(term) || null,
+    searchOptions: { combineWith: 'AND', prefix: true, fuzzy: 0.1 },
+  });
+
+/** Documentos de `records` a partir da posição `from`; o `index` é a posição em `records`. */
+const toDocuments = (records: readonly HexRecord[], from: number) =>
+  records.slice(from).map((record, offset) => ({
+    index: from + offset,
+    text: indexableText(record),
+  }));
+
+/**
+ * Índice em cache ainda válido para `records`, já com os registros novos acrescentados; `undefined`
+ * quando o log encolheu ou o registro na última posição indexada mudou (o log é append-only, então
+ * isso só acontece com outro conteúdo sob a mesma chave).
+ */
+function reuseEngine(entry: Entry | undefined, records: readonly HexRecord[]): Engine | undefined {
+  if (!entry || records.length < entry.count) return undefined;
+  if (fingerprintOf(records[entry.count - 1]!) !== entry.lastHash) return undefined;
+  if (records.length > entry.count) entry.engine.addAll(toDocuments(records, entry.count));
+  return entry.engine;
+}
+
+/**
+ * Índice MiniSearch cacheado por processo hexlog: `AND` + prefixo + `fuzzy` 0.1, com fallback para
+ * `OR` quando o `AND` não acha nada e a consulta tem 2+ termos distintos (o `OR` exige que metade
+ * dos termos, arredondada para cima, case). A consulta é deduplicada antes de buscar, então
+ * repetir um termo não pesa mais na ordenação. Empate de relevância mantém a ordem de `records`.
+ *
+ * O cache vive no processo do servidor e é validado por quantidade de registros + impressão do
+ * último: mesmo conjunto reaproveita o índice, log que só cresceu indexa só os registros novos e
+ * qualquer divergência remonta. A soma dos registros em cache respeita `budget` (por padrão
+ * `SEARCH_INDEX_BUDGET_RECORDS`): passou, sai o processo usado há mais tempo; processo maior que
+ * o `budget` sozinho remonta a cada busca.
+ */
+export function createSearchIndex(budget = SEARCH_INDEX_BUDGET_RECORDS): SearchIndex {
+  // A ordem de inserção do Map é a ordem de uso: cada busca reinsere a chave no fim.
+  const entries = new Map<string, Entry>();
+
+  function engineFor(key: string, records: readonly HexRecord[]): Engine {
+    const cached = entries.get(key);
+    entries.delete(key);
+    let engine = reuseEngine(cached, records);
+    if (!engine) {
+      engine = buildEngine();
+      engine.addAll(toDocuments(records, 0));
+    }
+    if (records.length > budget) return engine;
+
+    entries.set(key, {
+      engine,
+      count: records.length,
+      lastHash: fingerprintOf(records[records.length - 1]!),
+    });
+    let total = sumBy([...entries.values()], (entry) => entry.count);
+    for (const [oldestKey, oldest] of entries) {
+      if (total <= budget) break;
+      entries.delete(oldestKey);
+      total -= oldest.count;
+    }
+    return engine;
+  }
+
   return {
-    search(records, text) {
-      // ponytail: o índice é remontado a cada chamada, ~0,12 ms por registro; no teto de 64 MiB
-      // do log (~55 mil registros) são ~6-7 s síncronos por busca, e cada sessão/servidor MCP
-      // paga o próprio índice (~42 MiB por 10.000 registros). Melhoria decidida, para a F4:
-      // índice em memória por processo hexlog, com chave = quantidade de registros + hash do
-      // último registro, `add` incremental (o log é append-only), teto ou LRU de memória, porta
-      // `SearchIndex` com chave de processo e emenda do ADR 0008 sobre o "sem cache".
-      const engine = new MiniSearch<{ index: number; text: string }>({
-        idField: 'index',
-        fields: ['text'],
-        processTerm: (term) => stripDiacritics(term) || null,
-        searchOptions: { combineWith: 'AND', prefix: true, fuzzy: 0.1 },
-      });
-      engine.addAll(records.map((record, index) => ({ index, text: indexableText(record) })));
+    search(process, records, text) {
+      if (records.length === 0) {
+        entries.delete(`${process.project}/${process.process}`);
+        return [];
+      }
+      const engine = engineFor(`${process.project}/${process.process}`, records);
 
       const terms = queryTerms(text);
       const query = terms.join(' ');

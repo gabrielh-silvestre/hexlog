@@ -25,8 +25,8 @@ export type RawProcess = {
 export type Decision<T> = { line?: string; result: T };
 
 /**
- * D-25: toda operação é síncrona, exceto `write`, que é `async` só porque a espera do lock dorme
- * com `setTimeout`. Toda regra de negócio fica em `decide`; o adaptador só sabe de bytes, lock e
+ * D-25: toda operação é síncrona, exceto `ProcessStore.write`, que é `async` só porque a espera do
+ * lock dorme com `setTimeout`. Toda regra de negócio fica em `decide`; o adaptador só sabe de bytes, lock e
  * prefixo `\n`.
  *
  * Erros comuns às quatro portas de armazenamento: falha de disco sai como `IO_ERROR`
@@ -36,7 +36,7 @@ export type Decision<T> = { line?: string; result: T };
  * que o adaptador presume; quando o valor veio do manifesto ou de `records[i].type`, o serviço
  * remapeia o `path`.
  */
-export type ProcessStore = {
+export type ProcessReader = {
   /**
    * `PROCESS_NOT_FOUND` se não existe; `PROCESS_CORRUPTED` (`unreadable-manifest`) se o manifesto não
    * lê; `PROCESS_TOO_LARGE` (`too-large`) se o `records.jsonl` passa de `MAX_LOG_BYTES`, conferido
@@ -52,6 +52,10 @@ export type ProcessStore = {
   /** Nomes dos processos do projeto. */
   list(project: Name): Name[];
   listProjects(): Name[];
+};
+
+/** Lado de escrita de `ProcessReader`; a consulta (`queries/`) só enxerga o lado de leitura. */
+export type ProcessStore = ProcessReader & {
   /**
    * `false` quando o processo já existe: o manifesto existente nunca é tocado. `RESERVED_NAME`
    * (`reserved-name`) para nome reservado de processo; `INTERNAL` se o manifesto gravado não bate
@@ -73,12 +77,16 @@ export type DefinitionKind = 'types' | 'relations' | 'gates';
 /** Definição guardada por pasta (`types/`, `relations/`, `gates/`). */
 export type DefinitionOf = { types: RecordType; relations: RelationName; gates: Gate };
 
-/** Versões imutáveis `<major>.<minor>` de tipos, nomes de relação e gates de um projeto. */
-export type DefinitionStore = {
+/** Leitura que a consulta (`queries/`) faz das definições: só as listagens de `list`. */
+export type DefinitionReader = {
   /** Lista as pastas de nome, inclusive a que ficou sem nenhuma versão (falha no meio de `write`). */
   names(project: Name, kind: DefinitionKind): Name[];
   /** Em ordem numérica crescente (`domain/definitions.ts#compareVersions`); nome sem pasta devolve `[]`. */
   versions(project: Name, kind: DefinitionKind, name: Name): string[];
+};
+
+/** Versões imutáveis `<major>.<minor>` de tipos, nomes de relação e gates de um projeto. */
+export type DefinitionStore = DefinitionReader & {
   /**
    * `TYPE_NOT_FOUND`, `RELATION_NOT_FOUND` ou `GATE_NOT_FOUND` conforme o `kind`: `unknown-name`
    * (`/name`) se o nome não tem nenhuma versão; `unknown-version` (`/version`, com `versions`, nunca
@@ -117,7 +125,22 @@ export type AttachmentStatus = 'ok' | 'missing' | 'corrupted';
 export type AttachmentPut = { hash: Hash; bytes: number; deduplicated: boolean };
 
 /**
- * Blobs imutáveis endereçados pelo sha256 dos bytes UTF-8, em `<projeto>/attachments/<sha256>`.
+ * Leitura de blobs imutáveis endereçados pelo sha256 dos bytes UTF-8, em
+ * `<projeto>/attachments/<sha256>`. `invalid-hash` e `invalid-name` (`INVALID_INPUT`) valem para
+ * `status` e `read`.
+ */
+export type AttachmentReader = {
+  /** Devolve `'corrupted'` em vez de lançar; só `invalid-hash`, `invalid-name` e `IO_ERROR` lançam. */
+  status(project: Name, hash: Hash): AttachmentStatus;
+  /**
+   * `ATTACHMENT_NOT_FOUND` ou `ATTACHMENT_CORRUPTED`; `INVALID_INPUT` (`invalid-hash`,
+   * `invalid-name`). A paginação é do serviço.
+   */
+  read(project: Name, hash: Hash): string;
+};
+
+/**
+ * Lado de escrita de `AttachmentReader`: grava blobs, nunca sobrescreve.
  * D-15: `putPath` só lê arquivo dentro da raiz configurada na construção do adaptador e fora do
  * `dataDir`; as regras de extensão e de "exatamente um de `text`/`path`", além de texto vazio e
  * surrogate solto em `putText`, são do serviço (`commands/attachment.ts`, F4).
@@ -125,7 +148,7 @@ export type AttachmentPut = { hash: Hash; bytes: number; deduplicated: boolean }
  * `invalid-name` (`INVALID_INPUT`) vale para as quatro operações; `invalid-hash`, só para `status` e
  * `read`.
  */
-export type AttachmentStore = {
+export type AttachmentStore = AttachmentReader & {
   /**
    * `INVALID_INPUT` com `too-big` (`/text`) acima de 1 MiB. `ATTACHMENT_CORRUPTED` se o blob com esse
    * hash já existe e não confere (nunca é reparado nem sobrescrito).
@@ -139,13 +162,6 @@ export type AttachmentStore = {
    * sobrescrito).
    */
   putPath(project: Name, path: string): AttachmentPut;
-  /** Devolve `'corrupted'` em vez de lançar; só `invalid-hash`, `invalid-name` e `IO_ERROR` lançam. */
-  status(project: Name, hash: Hash): AttachmentStatus;
-  /**
-   * `ATTACHMENT_NOT_FOUND` ou `ATTACHMENT_CORRUPTED`; `INVALID_INPUT` (`invalid-hash`,
-   * `invalid-name`). A paginação é do serviço.
-   */
-  read(project: Name, hash: Hash): string;
 };
 
 /**
@@ -182,7 +198,12 @@ export type Validator = {
   validate(schema: RecordType, data: HexRecord['data']): Detail[];
 };
 
-/** Índice montado por chamada sobre os registros já carregados; devolve ids por relevância. */
+/**
+ * Índice de texto sobre os registros já carregados; devolve ids por relevância. O `process` é a
+ * chave do cache. `records` pode ser o log inteiro do processo, o prefixo cortado pelo marcador
+ * (cursor e `changesSince`) ou a lista mesclada do projeto sob um `ProcessRef` com `process: '*'`
+ * (`queries/select.ts#indexRef`).
+ */
 export type SearchIndex = {
-  search(records: readonly HexRecord[], text: string): RecordId[];
+  search(process: ProcessRef, records: readonly HexRecord[], text: string): RecordId[];
 };

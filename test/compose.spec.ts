@@ -16,10 +16,27 @@ function composed(logger: Logger = () => undefined) {
 }
 
 describe('compose', () => {
-  test('monta os serviços de escrita sobre os adaptadores reais', () => {
+  test('monta os serviços de escrita e de consulta sobre os adaptadores reais', () => {
     const { services } = composed();
 
-    expect(Object.keys(services).sort()).toEqual(['attachment', 'definition', 'process']);
+    expect(Object.keys(services).sort()).toEqual(['attachment', 'definition', 'process', 'query']);
+  });
+
+  test('query lê o que process gravou', async () => {
+    const { services } = composed();
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.process.createProcess({ project: PROJECT, process: 'run-1' });
+    const { records } = await services.process.register({
+      project: PROJECT,
+      process: 'run-1',
+      author: AUTHOR,
+      key: 'k1',
+      records: [note()],
+    });
+
+    const page = services.query.queryRecords({ project: PROJECT, process: 'run-1' });
+
+    expect(page.records.map(({ id }) => id)).toEqual(records.map(({ id }) => id));
   });
 
   test('createProcess e register gravam uma linha e a mesma key devolve replayed', async () => {

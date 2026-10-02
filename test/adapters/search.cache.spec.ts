@@ -1,0 +1,189 @@
+import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import MiniSearch from 'minisearch';
+import { createSearchIndex, SEARCH_INDEX_BUDGET_RECORDS } from '../../src/adapters/search.ts';
+import type { HexRecord } from '../../src/domain/record.ts';
+import type { ProcessRef } from '../../src/ports.ts';
+
+const PROC_A: ProcessRef = { project: 'proj', process: 'alpha' };
+const PROC_B: ProcessRef = { project: 'proj', process: 'beta' };
+const PROC_C: ProcessRef = { project: 'proj', process: 'gamma' };
+
+let counter = 0;
+
+function makeRecord(text: string): HexRecord {
+  counter += 1;
+  return {
+    id: `proc:0198f4a0-0000-7000-8000-${counter.toString(16).padStart(12, '0')}`,
+    type: 'note',
+    at: '2026-01-01T00:00:00.000Z',
+    target: 'area.topic',
+    author: { agent: 'tester', client: 'test' },
+    data: { text },
+    relations: [],
+  };
+}
+
+const makeRecords = (count: number, text = 'webhook') =>
+  Array.from({ length: count }, () => makeRecord(text));
+
+// Cada `addAll` do MiniSearch é uma montagem ou um acréscimo; os tamanhos dos lotes mostram qual.
+const addAll = jest.spyOn(MiniSearch.prototype, 'addAll');
+const indexedBatches = () => addAll.mock.calls.map(([documents]) => documents.length);
+
+afterEach(() => {
+  addAll.mockClear();
+});
+
+describe('createSearchIndex com cache', () => {
+  test('o orçamento padrão é de 60.000 registros indexados', () => {
+    expect(SEARCH_INDEX_BUDGET_RECORDS).toBe(60_000);
+  });
+
+  test('o mesmo conjunto de registros reaproveita o índice sem remontar', () => {
+    const index = createSearchIndex();
+    const records = makeRecords(3);
+
+    const first = index.search(PROC_A, records, 'webhook');
+    const second = index.search(PROC_A, records, 'webhook');
+
+    expect(second).toEqual(first);
+    expect(indexedBatches()).toEqual([3]);
+  });
+
+  test('cada processo tem o próprio índice, mesmo com os mesmos registros', () => {
+    const index = createSearchIndex();
+    const records = makeRecords(2);
+
+    index.search(PROC_A, records, 'webhook');
+    index.search(PROC_B, records, 'webhook');
+
+    expect(indexedBatches()).toEqual([2, 2]);
+  });
+
+  test('log que só cresceu indexa apenas os registros novos', () => {
+    const index = createSearchIndex();
+    const records = makeRecords(3);
+    index.search(PROC_A, records, 'webhook');
+
+    const grown = [...records, ...makeRecords(2)];
+    const ids = index.search(PROC_A, grown, 'webhook');
+
+    expect(indexedBatches()).toEqual([3, 2]);
+    expect(ids).toEqual(grown.map((record) => record.id));
+  });
+
+  test('último registro com outro conteúdo descarta o índice e remonta', () => {
+    const index = createSearchIndex();
+    const records = [...makeRecords(2, 'webhook'), makeRecord('retry')];
+    index.search(PROC_A, records, 'retry');
+
+    const diverged = [...records.slice(0, 2), makeRecord('timeout')];
+
+    expect(index.search(PROC_A, diverged, 'retry')).toEqual([]);
+    expect(index.search(PROC_A, diverged, 'timeout')).toEqual([diverged[2]!.id]);
+    expect(indexedBatches()).toEqual([3, 3]);
+  });
+
+  test('log que encolheu remonta', () => {
+    const index = createSearchIndex();
+    const records = makeRecords(3);
+    index.search(PROC_A, records, 'webhook');
+
+    expect(index.search(PROC_A, records.slice(0, 2), 'webhook')).toEqual([
+      records[0]!.id,
+      records[1]!.id,
+    ]);
+    expect(indexedBatches()).toEqual([3, 2]);
+  });
+
+  test('processo sem registros devolve vazio e não indexa nada', () => {
+    const index = createSearchIndex();
+
+    expect(index.search(PROC_A, [], 'webhook')).toEqual([]);
+    expect(indexedBatches()).toEqual([]);
+  });
+
+  test('passou do orçamento, apaga o processo usado há mais tempo', () => {
+    const index = createSearchIndex(5);
+    const a = makeRecords(3);
+    const b = makeRecords(2);
+    const c = makeRecords(2);
+    index.search(PROC_A, a, 'webhook');
+    index.search(PROC_B, b, 'webhook');
+    // Usar o A de novo faz do B o menos usado.
+    index.search(PROC_A, a, 'webhook');
+    addAll.mockClear();
+
+    index.search(PROC_C, c, 'webhook');
+    index.search(PROC_A, a, 'webhook');
+    expect(indexedBatches()).toEqual([2]);
+
+    index.search(PROC_B, b, 'webhook');
+    expect(indexedBatches()).toEqual([2, 2]);
+  });
+
+  test('o despejo continua até caber quando o processo novo é grande', () => {
+    const index = createSearchIndex(5);
+    const smallA = makeRecords(2);
+    const smallB = makeRecords(2);
+    const big = makeRecords(5);
+    index.search(PROC_A, smallA, 'webhook');
+    index.search(PROC_B, smallB, 'webhook');
+
+    index.search(PROC_C, big, 'webhook');
+    addAll.mockClear();
+    // O B primeiro: com um despejo só ele ainda estaria em cache, e remontar o A não o tira dali.
+    index.search(PROC_B, smallB, 'webhook');
+    index.search(PROC_A, smallA, 'webhook');
+
+    expect(indexedBatches()).toEqual([2, 2]);
+  });
+
+  test('processo acima do orçamento sozinho não é guardado e remonta a cada busca', () => {
+    const index = createSearchIndex(3);
+    const small = makeRecords(2);
+    const huge = makeRecords(4);
+    index.search(PROC_A, small, 'webhook');
+    addAll.mockClear();
+
+    expect(index.search(PROC_B, huge, 'webhook')).toEqual(huge.map((record) => record.id));
+    index.search(PROC_B, huge, 'webhook');
+    index.search(PROC_A, small, 'webhook');
+
+    // Dois acréscimos completos do B, e o A segue em cache, sem despejo.
+    expect(indexedBatches()).toEqual([4, 4]);
+  });
+
+  test('processo que passa a exceder o orçamento sai do cache', () => {
+    const index = createSearchIndex(3);
+    const records = makeRecords(3);
+    index.search(PROC_A, records, 'webhook');
+
+    const grown = [...records, makeRecord('webhook')];
+    index.search(PROC_A, grown, 'webhook');
+    index.search(PROC_A, grown, 'webhook');
+
+    expect(indexedBatches()).toEqual([3, 1, 4]);
+  });
+
+  test('o resultado com cache é idêntico ao do índice sem cache, em acerto, crescimento e remontagem', () => {
+    const cached = createSearchIndex();
+    const queries = ['webhook', 'webhook retry', 'Webhook webhook', 'authent', 'kubernetes'];
+    const base = [
+      makeRecord('webhook retry with backoff'),
+      makeRecord('webhook'),
+      makeRecord('authentication webhook timeout'),
+      makeRecord('webhook'),
+    ];
+    const grown = [...base, makeRecord('retry webhook'), makeRecord('unrelated words')];
+    const rewritten = [...base.slice(0, 3), makeRecord('retry only')];
+
+    for (const records of [base, base, grown, grown, rewritten]) {
+      for (const query of queries) {
+        expect(cached.search(PROC_A, records, query)).toEqual(
+          createSearchIndex().search(PROC_A, records, query),
+        );
+      }
+    }
+  });
+});
