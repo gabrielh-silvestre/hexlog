@@ -1,6 +1,7 @@
 import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import { kebabCase, uniqBy } from 'es-toolkit';
+import { isPlainObject, kebabCase, uniqBy } from 'es-toolkit';
+import safeRegex from 'safe-regex2';
 import type { Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
 
@@ -33,11 +34,11 @@ function toDetail(error: ErrorObject): Detail {
 const MAX_DETAILS = 50;
 
 /**
- * O ajv repete o mesmo erro (o metaschema é revisitado por `$dynamicRef`), então deduplica por
- * path+code+message e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora.
+ * Deduplica por path+code+message (o ajv repete o mesmo erro, pois o metaschema é revisitado por
+ * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora.
  */
-function toDetails(errors: ErrorObject[]): Detail[] {
-  const unique = uniqBy(errors.map(toDetail), (d) => `${d.path}\0${d.code}\0${d.message}`);
+function capDetails(details: Detail[]): Detail[] {
+  const unique = uniqBy(details, (d) => `${d.path}\0${d.code}\0${d.message}`);
   if (unique.length <= MAX_DETAILS) return unique;
   return [
     ...unique.slice(0, MAX_DETAILS),
@@ -49,13 +50,86 @@ function toDetails(errors: ErrorObject[]): Detail[] {
   ];
 }
 
+const toDetails = (errors: ErrorObject[]): Detail[] => capDetails(errors.map(toDetail));
+
+/** Teto de `maxLength` exigido junto a um `pattern`: limita o texto que a regex pode consumir. */
+export const PATTERN_MAX_LENGTH = 256;
+
+const SUBSCHEMA_KEYWORDS = [
+  'additionalProperties',
+  'items',
+  'contains',
+  'propertyNames',
+  'not',
+  'if',
+  'then',
+  'else',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+];
+const SUBSCHEMA_LIST_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
+const SUBSCHEMA_MAP_KEYWORDS = [
+  'properties',
+  'patternProperties',
+  '$defs',
+  'definitions',
+  'dependentSchemas',
+  'dependencies', // legada, mas o ajv 2020 estrito a aceita e aplica
+];
+
 /**
- * Validador JSON Schema (2020-12) com ajv estrito e `ajv-formats`, mais o formato `attachment`.
- * O `$id` de um schema não fica registrado no ajv: cada chamada compila e esquece, então duas
- * versões de um tipo com o mesmo `$id` não colidem.
+ * Percorre só as palavras-chave que carregam subschemas (nunca `const`/`enum`/`default`, que são
+ * dado) e aponta cada `pattern` e cada chave de `patternProperties` que a `safe-regex2` recusa, e
+ * cada `pattern` cujo subschema não tem `maxLength` inteiro até `PATTERN_MAX_LENGTH`.
  */
-export function createValidator(): Validator {
-  const ajv = new Ajv2020.default({ strict: true, allErrors: true, logger: false });
+function patternDetails(root: unknown): Detail[] {
+  const details: Detail[] = [];
+  const reject = (path: string, message: string) =>
+    details.push({ path, code: 'invalid-schema', message });
+
+  const visit = (node: unknown, pointer: string): void => {
+    if (!isPlainObject(node)) return;
+
+    if (typeof node.pattern === 'string') {
+      const path = `${pointer}/pattern`;
+      if (!safeRegex(node.pattern))
+        reject(path, 'pattern is unsafe (possible catastrophic backtracking)');
+      if (typeof node.maxLength !== 'number' || node.maxLength > PATTERN_MAX_LENGTH)
+        reject(
+          path,
+          `pattern requires a maxLength of at most ${PATTERN_MAX_LENGTH} in the same subschema`,
+        );
+    }
+    if (isPlainObject(node.patternProperties)) {
+      for (const key of Object.keys(node.patternProperties)) {
+        if (!safeRegex(key))
+          reject(
+            `${pointer}/patternProperties/${escapePointerSegment(key)}`,
+            'patternProperties key is unsafe (possible catastrophic backtracking)',
+          );
+      }
+    }
+
+    for (const key of SUBSCHEMA_KEYWORDS) visit(node[key], `${pointer}/${key}`);
+    for (const key of SUBSCHEMA_LIST_KEYWORDS) {
+      const list: unknown = node[key];
+      if (Array.isArray(list)) list.forEach((item, i) => visit(item, `${pointer}/${key}/${i}`));
+    }
+    for (const key of SUBSCHEMA_MAP_KEYWORDS) {
+      const map: unknown = node[key];
+      if (!isPlainObject(map)) continue;
+      for (const [name, child] of Object.entries(map))
+        visit(child, `${pointer}/${key}/${escapePointerSegment(name)}`);
+    }
+  };
+
+  visit(root, '');
+  return capDetails(details);
+}
+
+/** Mesmas opções estritas e mesmos formatos nas duas instâncias; só `allErrors` muda. */
+function createCompiler(allErrors: boolean) {
+  const ajv = new Ajv2020.default({ strict: true, allErrors, logger: false });
   addFormats.default(ajv);
   ajv.addFormat('attachment', ATTACHMENT_FORMAT);
 
@@ -77,21 +151,60 @@ export function createValidator(): Validator {
     }
   };
 
+  return { ajv, compile };
+}
+
+/**
+ * Validador JSON Schema (2020-12) com ajv estrito e `ajv-formats`, mais o formato `attachment`.
+ * O `$id` de um schema não fica registrado no ajv: cada chamada compila e esquece, então duas
+ * versões de um tipo com o mesmo `$id` não colidem.
+ *
+ * Duas instâncias do ajv, com a mesma compilação: `checkSchema` usa `allErrors: true` e devolve
+ * todos os erros do schema; `validate` usa `allErrors: false` e devolve um erro por subschema
+ * avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames` saem os dos ramos).
+ *
+ * O `path` de `checkSchema` é sempre relativo ao documento do schema (raiz = `''`), inclusive nos
+ * erros de compilação, que saem com `path` vazio; quem expõe o erro (o serviço de definição)
+ * prefixa `/schema`.
+ *
+ * Além do metaschema e da compilação, `checkSchema` recusa regex que pode explodir em tempo (ReDoS):
+ * todo `pattern` e toda chave de `patternProperties` passam pela `safe-regex2`, e todo `pattern`
+ * exige `maxLength` inteiro de até `PATTERN_MAX_LENGTH` no mesmo subschema. Esses erros saem com o
+ * `path` do campo (`.../pattern`, relativo ao schema) e `code` `invalid-schema`.
+ *
+ * O `maxLength` protege o `validate`: o ajv o avalia antes do `pattern` e, sem `allErrors`, para no
+ * primeiro erro, então o regex nunca roda sobre string acima do teto. Isso não vale para a chave de
+ * `patternProperties`, que casa com nomes de propriedade sem teto. Limite conhecido: a `safe-regex2`
+ * é heurística (altura de estrela e número de repetições), então alternância sobreposta como
+ * `(a|aa)+` passa, e o teto de `PATTERN_MAX_LENGTH` limita o texto que ela consome, sem torná-la
+ * barata.
+ *
+ * Outro limite conhecido, aceito: o percurso do `checkSchema` não segue `$ref`. Um `$ref` com
+ * ponteiro para dentro de dado (`#/const`, `#/default`, `#/enum/N`, `#/examples/N`) compila, e o
+ * `pattern` que está lá escapa da `safe-regex2` e do teto de `maxLength`. A ferramenta é de uso
+ * exclusivo de agentes de IA, e o único cenário é injeção de prompt, cujo efeito é travar o
+ * servidor, sem vazar dado. A correção barata, se um dia valer, é uma allowlist de `$ref` (`#`,
+ * `#/$defs/...`, `#/definitions/...`).
+ */
+export function createValidator(): Validator {
+  const checker = createCompiler(true);
+  const dataValidator = createCompiler(false);
+
   return {
     checkSchema(schema) {
       try {
-        if (!ajv.validateSchema(schema)) return toDetails(ajv.errors ?? []);
-        compile(schema);
-        return [];
+        if (!checker.ajv.validateSchema(schema)) return toDetails(checker.ajv.errors ?? []);
+        checker.compile(schema);
+        return patternDetails(schema);
       } catch (error) {
-        // Modo estrito (palavra-chave ou formato desconhecido), `$ref` sem destino e `$schema` de
-        // outro rascunho saem como exceção, sem ponto no schema: o erro aponta `/schema`. Os do
-        // metaschema acima seguem relativos ao schema, então o serviço não prefixa `/schema` nestes.
-        return [{ path: '/schema', code: 'invalid-schema', message: (error as Error).message }];
+        // Modo estrito (palavra-chave ou formato desconhecido), `$ref` sem destino, `$schema` de
+        // outro rascunho, `$id` repetido e `$async` saem como exceção, sem ponto no schema: o erro
+        // aponta a raiz do documento (`path` vazio), como os do metaschema são relativos a ele.
+        return [{ path: '', code: 'invalid-schema', message: (error as Error).message }];
       }
     },
     validate(schema, data) {
-      const validate = compile(schema);
+      const validate = dataValidator.compile(schema);
       return validate(data) ? [] : toDetails(validate.errors ?? []);
     },
   };

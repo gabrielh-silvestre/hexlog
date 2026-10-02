@@ -57,6 +57,7 @@
     "es-toolkit": "1.52.0",
     "jsonc-parser": "3.3.1",
     "minisearch": "7.2.0",
+    "safe-regex2": "5.1.1",
     "shell-quote": "1.10.0",
     "zod": "4.6.5"
   },
