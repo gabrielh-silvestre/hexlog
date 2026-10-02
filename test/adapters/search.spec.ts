@@ -106,4 +106,38 @@ describe('createSearchIndex', () => {
   test('uma consulta de um termo só nunca cai para OR', () => {
     expect(index.search([makeRecord({ data: { text: 'webhook' } })], 'retry')).toEqual([]);
   });
+
+  test('repetir um termo não o torna mais pesado que os outros da consulta', () => {
+    const mostlyBeta = makeRecord({ data: { text: 'beta beta beta beta alpha' } });
+    const mostlyAlpha = makeRecord({ data: { text: 'alpha alpha alpha alpha beta' } });
+    const records = [mostlyBeta, mostlyAlpha];
+
+    // Os dois casam igual `alpha beta`; `Alpha alpha` não pode empurrar `mostlyAlpha` para cima.
+    expect(index.search(records, 'Alpha alpha beta')).toEqual(index.search(records, 'alpha beta'));
+    expect(index.search(records, 'alpha beta')).toEqual(idsOf(records));
+  });
+
+  test('termo repetido conta uma vez só no AND e no piso do OR', () => {
+    const both = makeRecord({ data: { text: 'webhook retry' } });
+    const webhookOnly = makeRecord({ data: { text: 'webhook and unrelated words' } });
+
+    // AND: `webhook` repetido não exige nada além de `webhook` e `retry`.
+    expect(index.search([webhookOnly, both], 'webhook webhook retry')).toEqual([both.id]);
+    // OR: 2 termos distintos dão piso 1; contados com a repetição seriam 3 e piso 2.
+    expect(index.search([webhookOnly], 'webhook webhook retry')).toEqual([webhookOnly.id]);
+  });
+
+  test('consulta com o mesmo termo repetido milhares de vezes custa como a de um termo só', () => {
+    const records = Array.from({ length: 5_000 }, () =>
+      makeRecord({ data: { text: 'webhook delivery' } }),
+    );
+
+    const start = performance.now();
+    const ids = index.search(records, 'webhook '.repeat(2_000));
+    const elapsed = performance.now() - start;
+
+    expect(ids).toHaveLength(records.length);
+    // Sem o dedupe passa de 12 s; com ele o custo é o do índice (~100 ms).
+    expect(elapsed).toBeLessThanOrEqual(2_000);
+  });
 });

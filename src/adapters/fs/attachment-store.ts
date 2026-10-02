@@ -8,13 +8,11 @@ import { Hash, Name } from '../../domain/ids.ts';
 import { HexlogError } from '../../errors.ts';
 import type { AttachmentPut, AttachmentStatus, AttachmentStore } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
-import { dataRoot } from './data-format.ts';
+import { blobFile } from './data-format.ts';
 import { mapIo, safeName } from './io.ts';
 
 /** Teto de um anexo, em bytes UTF-8 (não em caracteres). */
 export const ATTACHMENT_MAX_BYTES = 1_048_576;
-
-const ATTACHMENTS_DIR = 'attachments';
 
 // ponytail: mapa limpo ao passar de 1.000 entradas; trocar por LRU se o teto incomodar.
 const MEMO_MAX = 1_000;
@@ -226,12 +224,11 @@ function checkedSegments(project: Name, hash?: Hash): void {
  * serviço `commands/attachment.ts` (F4), conferidas antes de qualquer I/O (D-15).
  */
 export function createAttachmentStore(options: AttachmentStoreOptions): AttachmentStore {
-  const root = dataRoot(options.dataDir);
   const verified = new Map<string, Fingerprint>();
 
-  function blobFile(project: Name, hash: Hash): string {
+  function checkedBlobFile(project: Name, hash: Hash): string {
     checkedSegments(project, hash);
-    return path.join(root, project, ATTACHMENTS_DIR, hash);
+    return blobFile(options.dataDir, project, hash);
   }
 
   /**
@@ -240,7 +237,7 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
    */
   function storeBlob(project: Name, bytes: Buffer): AttachmentPut {
     const hash = sha256hex(bytes);
-    const file = blobFile(project, hash);
+    const file = checkedBlobFile(project, hash);
     try {
       writeFileAtomic(file, bytes, { exclusive: true, fsyncDir: true });
     } catch (error) {
@@ -304,11 +301,11 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
         return storeBlob(project, bytes);
       }),
 
-    status: (project, hash) => mapIo(() => statusOf(blobFile(project, hash), hash)),
+    status: (project, hash) => mapIo(() => statusOf(checkedBlobFile(project, hash), hash)),
 
     read: (project, hash) =>
       mapIo(() => {
-        const blob = readBlob(blobFile(project, hash), hash);
+        const blob = readBlob(checkedBlobFile(project, hash), hash);
         if (blob.status === 'missing') throw attachmentNotFound(hash);
         const text = blob.status === 'ok' ? decodeUtf8(blob.bytes) : undefined;
         if (text === undefined) throw attachmentCorrupted(hash);

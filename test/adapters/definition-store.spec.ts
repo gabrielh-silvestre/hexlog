@@ -2,11 +2,18 @@ import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { createDefinitionStore } from '../../src/adapters/fs/definition-store.ts';
-import { dataRoot } from '../../src/adapters/fs/data-format.ts';
+import {
+  dataRoot,
+  definitionDir,
+  definitionFile,
+  VERSION_SUFFIX,
+} from '../../src/adapters/fs/data-format.ts';
 import type { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts';
 import { HexlogError } from '../../src/errors.ts';
+import type { DefinitionKind } from '../../src/ports.ts';
 import { types } from '../fixtures/domains/omc.ts';
 import { createTempDir } from '../helpers.ts';
+import { countFsyncs } from './fsync-spy.ts';
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -32,8 +39,10 @@ function setup() {
 }
 
 /** Pasta de versões de um nome, como o layout de D-02 a define. */
-const versionsDir = (dataDir: string, kind: string, name: string) =>
-  path.join(dataRoot(dataDir), PROJECT, kind, name);
+const versionsDir = (dataDir: string, kind: DefinitionKind, name: string) =>
+  definitionDir(dataDir, PROJECT, kind, name);
+
+const FIRST_VERSION_FILE = `1.0${VERSION_SUFFIX}`;
 
 /** O que `fn` lança, para conferir o erro de domínio sem depender do `message` do fs. */
 function thrown(fn: () => unknown): HexlogError {
@@ -57,7 +66,7 @@ describe('createDefinitionStore: escrita e leitura', () => {
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
     expect(store.read(PROJECT, 'relations', 'approves', '1.0')).toEqual(relation);
     expect(store.read(PROJECT, 'gates', 'plan-ready', '1.0')).toEqual(gate);
-    expect(fs.existsSync(path.join(versionsDir(dataDir, 'types', 'plan'), '1.0.json'))).toBe(true);
+    expect(fs.existsSync(definitionFile(dataDir, PROJECT, 'types', 'plan', '1.0'))).toBe(true);
   });
 
   test('a escrita não deixa temporário na pasta de versões', () => {
@@ -65,7 +74,7 @@ describe('createDefinitionStore: escrita e leitura', () => {
 
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
 
-    expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual(['1.0.json']);
+    expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual([FIRST_VERSION_FILE]);
   });
 
   test('names lista só as pastas de nome, em ordem alfabética, por tipo de definição', () => {
@@ -122,14 +131,14 @@ describe('createDefinitionStore: imutabilidade', () => {
   test('a segunda escrita da mesma versão devolve false e preserva os bytes', () => {
     const { dataDir, store } = setup();
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
-    const file = path.join(versionsDir(dataDir, 'types', 'plan'), '1.0.json');
+    const file = definitionFile(dataDir, PROJECT, 'types', 'plan', '1.0');
     const before = fs.readFileSync(file);
 
     expect(store.write(PROJECT, 'types', 'plan', '1.0', planV2)).toBe(false);
 
     expect(fs.readFileSync(file).equals(before)).toBe(true);
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
-    expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual(['1.0.json']);
+    expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual([FIRST_VERSION_FILE]);
   });
 
   test('outra versão do mesmo nome grava sem tocar a anterior', () => {
@@ -140,6 +149,17 @@ describe('createDefinitionStore: imutabilidade', () => {
 
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
     expect(store.read(PROJECT, 'types', 'plan', '1.1')).toEqual(planV2);
+  });
+
+  test('faz fsync do diretório só na escrita que publica; a repetida (EEXIST) não dá nenhum', () => {
+    const { store } = setup();
+    const fsyncs = countFsyncs();
+
+    store.write(PROJECT, 'types', 'plan', '1.0', plan);
+    expect(fsyncs().directories).toBe(1);
+
+    expect(store.write(PROJECT, 'types', 'plan', '1.0', planV2)).toBe(false);
+    expect(fsyncs().directories).toBe(1);
   });
 
   test('corrida: o concorrente publica entre o temporário e o link, e só um escritor ganha', () => {
@@ -157,7 +177,7 @@ describe('createDefinitionStore: imutabilidade', () => {
     expect(rivalResult).toBe(true);
     expect(result).toBe(false);
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(planV2);
-    expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual(['1.0.json']);
+    expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual([FIRST_VERSION_FILE]);
   });
 });
 
@@ -279,7 +299,7 @@ describe('createDefinitionStore: erros', () => {
     const { dataDir, store } = setup();
     const dir = versionsDir(dataDir, 'relations', 'approves');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, '1.0.json'), content);
+    fs.writeFileSync(path.join(dir, FIRST_VERSION_FILE), content);
 
     const error = thrown(() => store.read(PROJECT, 'relations', 'approves', '1.0'));
 
@@ -287,6 +307,31 @@ describe('createDefinitionStore: erros', () => {
     expect(error.details[0]?.code).toBe('unreadable-definition');
     expect(JSON.stringify(error)).not.toContain(dataDir);
   });
+
+  test.each([
+    ['types', 'big-type', { type: 'object', description: 'x'.repeat(17_000) }],
+    ['relations', 'approves', { ...relation, kind: 'not-a-kind' }],
+    ['gates', 'plan-ready', { ...gate, questions: [] }],
+  ] as const)(
+    'write de definição que o schema recusa (%s) lança INTERNAL e não grava nada',
+    (kind, name, invalid) => {
+      const { dataDir, store } = setup();
+
+      const error = thrown(() => store.write(PROJECT, kind, name, '1.0', invalid as never));
+
+      expect(error.code).toBe('INTERNAL');
+      expect(error.details).toEqual([
+        {
+          path: '/definition',
+          code: 'invalid-definition',
+          message: 'definition does not match its schema',
+        },
+      ]);
+      expect(JSON.stringify(error)).not.toContain('x'.repeat(100));
+      expect(store.versions(PROJECT, kind, name)).toEqual([]);
+      expect(fs.existsSync(definitionFile(dataDir, PROJECT, kind, name, '1.0'))).toBe(false);
+    },
+  );
 
   test('erro do fs vira IO_ERROR só com o errno em minúsculas, sem o caminho', () => {
     const { dataDir, store } = setup();

@@ -1,6 +1,6 @@
 import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import { kebabCase } from 'es-toolkit';
+import { kebabCase, uniqBy } from 'es-toolkit';
 import type { Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
 
@@ -29,6 +29,26 @@ function toDetail(error: ErrorObject): Detail {
   };
 }
 
+/** Alinhado a `BATCH_MAX` (`docs/tetos-dominio-v1.md`); sem medição por trás. */
+const MAX_DETAILS = 50;
+
+/**
+ * O ajv repete o mesmo erro (o metaschema é revisitado por `$dynamicRef`), então deduplica por
+ * path+code+message e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora.
+ */
+function toDetails(errors: ErrorObject[]): Detail[] {
+  const unique = uniqBy(errors.map(toDetail), (d) => `${d.path}\0${d.code}\0${d.message}`);
+  if (unique.length <= MAX_DETAILS) return unique;
+  return [
+    ...unique.slice(0, MAX_DETAILS),
+    {
+      path: '',
+      code: 'too-many-errors',
+      message: `${unique.length - MAX_DETAILS} more errors omitted`,
+    },
+  ];
+}
+
 /**
  * Validador JSON Schema (2020-12) com ajv estrito e `ajv-formats`, mais o formato `attachment`.
  * O `$id` de um schema não fica registrado no ajv: cada chamada compila e esquece, então duas
@@ -40,8 +60,18 @@ export function createValidator(): Validator {
   ajv.addFormat('attachment', ATTACHMENT_FORMAT);
 
   const compile = (schema: Record<string, unknown>) => {
+    // O `removeSchema` do `finally` apaga por `$id`: com um `$id` que o ajv já conhece (os
+    // metaschemas) ele levaria o schema alheio junto.
+    const id = schema.$id;
+    if (typeof id === 'string' && ajv.getSchema(id)) {
+      throw new Error(`schema with $id "${id}" is already registered`);
+    }
     try {
-      return ajv.compile(schema);
+      const validate = ajv.compile(schema);
+      // `$async` só existe no tipo da função assíncrona; o ajv a devolve com `$async: true`.
+      if ((validate as { $async?: boolean }).$async)
+        throw new Error('async schemas ($async: true) are not supported');
+      return validate;
     } finally {
       ajv.removeSchema(schema);
     }
@@ -50,7 +80,7 @@ export function createValidator(): Validator {
   return {
     checkSchema(schema) {
       try {
-        if (!ajv.validateSchema(schema)) return (ajv.errors ?? []).map(toDetail);
+        if (!ajv.validateSchema(schema)) return toDetails(ajv.errors ?? []);
         compile(schema);
         return [];
       } catch (error) {
@@ -62,7 +92,7 @@ export function createValidator(): Validator {
     },
     validate(schema, data) {
       const validate = compile(schema);
-      return validate(data) ? [] : (validate.errors ?? []).map(toDetail);
+      return validate(data) ? [] : toDetails(validate.errors ?? []);
     },
   };
 }

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  ATTACHMENTS_DIR,
   dataRoot,
   LOCK_DIR,
   LOG_FILE,
@@ -16,6 +17,7 @@ import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../../src/p
 import { parseLog, verifyProcess } from '../../src/shared/loader.ts';
 import { chainLine, emptyManifest } from '../fixtures/chain-line.ts';
 import { captureLog, createTempDir, rejectionOf } from '../helpers.ts';
+import { countFsyncs } from './fsync-spy.ts';
 
 const CRASH_WRITER = path.join(__dirname, '..', 'fixtures', 'crash-writer.ts');
 const BOOT = 'boot-a';
@@ -157,22 +159,17 @@ describe('create, read e list', () => {
     const { store } = setup();
     const other: ProcessRef = { project: 'demo', process: 'proc-2' };
     const realOpen = fs.openSync;
-    const realFsync = fs.fsyncSync;
     const opened: string[] = [];
-    const onDirectory: boolean[] = [];
+    const fsyncs = countFsyncs();
     // o manifesto nasce como temporário `.process.json.*`, então a ordem vem desse prefixo
     jest.spyOn(fs, 'openSync').mockImplementation((file, flags, mode) => {
       opened.push(path.basename(String(file)));
       return realOpen(file, flags, mode);
     });
-    jest.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
-      onDirectory.push(fs.fstatSync(fd).isDirectory());
-      realFsync(fd);
-    });
 
     expect(store.create(other, emptyManifest(other))).toBe(true);
 
-    expect(onDirectory.filter(Boolean)).toHaveLength(1);
+    expect(fsyncs().directories).toBe(1);
     expect(
       opened.filter((name) => name === LOG_FILE || name.startsWith(`.${MANIFEST_FILE}.`)),
     ).toEqual([LOG_FILE, expect.stringContaining(`.${MANIFEST_FILE}.`)]);
@@ -369,7 +366,7 @@ describe('create, read e list', () => {
       { ...manifest, project: 'abc', process: 'zeta' },
     );
     fs.mkdirSync(path.join(dataRoot(dataDir), 'demo', 'types'));
-    fs.mkdirSync(path.join(dataRoot(dataDir), 'demo', 'attachments'));
+    fs.mkdirSync(path.join(dataRoot(dataDir), 'demo', ATTACHMENTS_DIR));
 
     expect(store.list('demo')).toEqual(['alpha', ref.process]);
     expect(store.listProjects()).toEqual(['abc', 'demo']);
@@ -423,12 +420,12 @@ describe('nomes e manifesto recusados antes de qualquer I/O (N1, N3)', () => {
 
   test('create com nome reservado de processo dá RESERVED_NAME e não cria a pasta', () => {
     const { dataDir, store } = setup();
-    const reserved: ProcessRef = { project: 'demo', process: 'attachments' };
+    const reserved: ProcessRef = { project: 'demo', process: ATTACHMENTS_DIR };
 
     expect(() => store.create(reserved, emptyManifest(reserved))).toThrow(
       expect.objectContaining({ code: 'RESERVED_NAME' }),
     );
-    expect(fs.existsSync(path.join(dataRoot(dataDir), 'demo', 'attachments'))).toBe(false);
+    expect(fs.existsSync(path.join(dataRoot(dataDir), 'demo', ATTACHMENTS_DIR))).toBe(false);
   });
 
   test.each([

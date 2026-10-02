@@ -1,7 +1,15 @@
 import { describe, expect, test } from '@jest/globals';
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { LEGACY_NAME, dataRoot, detectLegacy } from '../../src/adapters/fs/data-format.ts';
+import {
+  ARCHIVE_DIR,
+  ATTACHMENTS_DIR,
+  LEGACY_NAME,
+  dataRoot,
+  detectLegacy,
+} from '../../src/adapters/fs/data-format.ts';
+import { RESERVED_PROCESS_NAMES } from '../../src/domain/ids.ts';
+import type { DefinitionKind } from '../../src/ports.ts';
 import { createTempDir } from '../helpers.ts';
 
 /** Cria `<D>` temporário com as entradas dadas: nome terminado em `/` vira diretório, o resto, arquivo. */
@@ -28,6 +36,17 @@ describe('LEGACY_NAME (D-13)', () => {
 describe('dataRoot', () => {
   test('a raiz do dado 1.0 é <D>/.v1', () => {
     expect(dataRoot('/dados/hexlog')).toBe(path.join('/dados/hexlog', '.v1'));
+  });
+});
+
+// Um `DefinitionKind` novo quebra o typecheck aqui, e o teste abaixo cobra a lista de reservados.
+const KINDS = { types: 0, relations: 0, gates: 0 } satisfies Record<DefinitionKind, 0>;
+
+describe('RESERVED_PROCESS_NAMES', () => {
+  test('são exatamente as pastas irmãs de um processo: uma por tipo de definição, anexos e arquivo', () => {
+    expect([...RESERVED_PROCESS_NAMES].sort()).toEqual(
+      [...Object.keys(KINDS), ATTACHMENTS_DIR, ARCHIVE_DIR].sort(),
+    );
   });
 });
 

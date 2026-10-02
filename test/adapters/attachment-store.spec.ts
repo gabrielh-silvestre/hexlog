@@ -8,10 +8,16 @@ import {
   ATTACHMENT_MAX_BYTES,
   createAttachmentStore,
 } from '../../src/adapters/fs/attachment-store.ts';
+import {
+  attachmentsDir as attachmentsDirOf,
+  blobFile,
+  dataRoot,
+} from '../../src/adapters/fs/data-format.ts';
 import { sha256hex } from '../../src/domain/chain.ts';
-import type { AttachmentStore } from '../../src/ports.ts';
+import type { AttachmentPut, AttachmentStore } from '../../src/ports.ts';
 import type { Detail } from '../../src/errors.ts';
 import { captureError, createTempDir } from '../helpers.ts';
+import { countFsyncs } from './fsync-spy.ts';
 
 const PROJECT = 'alpha';
 const PLAN = '.omc/plans/x.md';
@@ -39,11 +45,11 @@ afterEach(() => {
 });
 
 function attachmentsDir(root = dataDir): string {
-  return path.join(root, '.v1', PROJECT, 'attachments');
+  return attachmentsDirOf(root, PROJECT);
 }
 
 function blobPath(hash: string, root = dataDir): string {
-  return path.join(attachmentsDir(root), hash);
+  return blobFile(root, PROJECT, hash);
 }
 
 function writeInCwd(relative: string, content: string | Buffer): string {
@@ -160,6 +166,49 @@ describe('put por texto', () => {
       invalid('/hash', 'invalid-hash'),
     );
     expect(fs.existsSync(dataDir)).toBe(false);
+  });
+
+  test('faz fsync do arquivo e do diretório depois do link; o put deduplicado não dá o do diretório', () => {
+    const fsyncs = countFsyncs();
+
+    store.putText(PROJECT, 'durável');
+    expect(fsyncs()).toEqual({ files: 1, directories: 1 });
+
+    // o temporário é sincronizado antes do `link`, que dá EEXIST antes do fsync do diretório
+    expect(store.putText(PROJECT, 'durável').deduplicated).toBe(true);
+    expect(fsyncs().directories).toBe(1);
+  });
+
+  test.each(['mkdirSync', 'openSync', 'writeFileSync', 'fsyncSync'] as const)(
+    'erro de %s na gravação vira IO_ERROR só com o errno, sem o caminho absoluto',
+    (method) => {
+      (jest.spyOn(fs, method) as jest.Mock).mockImplementation(() => {
+        throw fsError('EIO', attachmentsDir());
+      });
+
+      const error = captureError(() => store.putText(PROJECT, 'io'));
+
+      expect(error.code).toBe('IO_ERROR');
+      expect(error.details).toEqual([{ path: '', code: 'eio', message: 'I/O failure' }]);
+      expect(leaks(error, base)).toBe(false);
+    },
+  );
+
+  test('corrida: o concorrente grava o mesmo texto entre o temporário e o link, e só um put é novo', () => {
+    const rival = createAttachmentStore({ dataDir, cwd });
+    const realLink = fs.linkSync.bind(fs);
+    let rivalResult: AttachmentPut | undefined;
+    jest.spyOn(fs, 'linkSync').mockImplementationOnce((existing, target) => {
+      rivalResult = rival.putText(PROJECT, 'corrida');
+      realLink(existing, target);
+    });
+
+    const result = store.putText(PROJECT, 'corrida');
+
+    expect(rivalResult?.deduplicated).toBe(false);
+    expect(result).toEqual({ ...rivalResult, deduplicated: true });
+    expect(fs.readdirSync(attachmentsDir())).toEqual([result.hash]);
+    expect(store.read(PROJECT, result.hash)).toBe('corrida');
   });
 });
 
@@ -364,7 +413,7 @@ describe('put por path (P16, D-15)', () => {
     });
 
     test('arquivo dentro do dataDir → inside-data-dir, sem gravar', () => {
-      const inside = path.join(dataDir, '.v1', PROJECT, 'x.md');
+      const inside = path.join(dataRoot(dataDir), PROJECT, 'x.md');
       fs.mkdirSync(path.dirname(inside), { recursive: true });
       fs.writeFileSync(inside, 'dentro');
 
@@ -375,7 +424,7 @@ describe('put por path (P16, D-15)', () => {
     });
 
     test('symlink de diretório que aponta para dentro do dataDir → inside-data-dir (depois do realpath)', () => {
-      const inside = path.join(dataDir, '.v1', PROJECT);
+      const inside = path.join(dataRoot(dataDir), PROJECT);
       fs.mkdirSync(inside, { recursive: true });
       fs.writeFileSync(path.join(inside, 'x.md'), 'dentro');
       fs.symlinkSync(inside, path.join(cwd, 'atalho'));

@@ -22,22 +22,32 @@ function indexableText(record: HexRecord): string {
   return [record.type, record.target, ...collectStrings(record.data)].join('\n');
 }
 
-/** Termos distintos da consulta depois do tokenizador padrão do MiniSearch e de `stripDiacritics`. */
-function distinctTerms(text: string): number {
+/**
+ * Termos distintos da consulta depois do tokenizador padrão do MiniSearch e de `stripDiacritics`.
+ * Termo repetido, inclusive só em outra caixa ou acento, entra uma vez: cada ocorrência custaria
+ * uma busca completa por prefixo e `fuzzy`.
+ */
+function queryTerms(text: string): string[] {
   const tokenize = MiniSearch.getDefault('tokenize') as (input: string) => string[];
-  const terms = tokenize(text).map(stripDiacritics).filter(Boolean);
-  return new Set(terms).size;
+  return [...new Set(tokenize(text).map(stripDiacritics).filter(Boolean))];
 }
 
 /**
  * Índice MiniSearch montado a cada chamada sobre `records`, sem cache: `AND` + prefixo + `fuzzy`
  * 0.1, com fallback para `OR` quando o `AND` não acha nada e a consulta tem 2+ termos distintos
- * (o `OR` exige que metade dos termos, arredondada para cima, case). Empate de relevância mantém
+ * (o `OR` exige que metade dos termos, arredondada para cima, case). A consulta é deduplicada
+ * antes de buscar, então repetir um termo não pesa mais na ordenação. Empate de relevância mantém
  * a ordem de `records`.
  */
 export function createSearchIndex(): SearchIndex {
   return {
     search(records, text) {
+      // ponytail: o índice é remontado a cada chamada, ~0,12 ms por registro; no teto de 64 MiB
+      // do log (~55 mil registros) são ~6-7 s síncronos por busca, e cada sessão/servidor MCP
+      // paga o próprio índice (~42 MiB por 10.000 registros). Melhoria decidida, para a F4:
+      // índice em memória por processo hexlog, com chave = quantidade de registros + hash do
+      // último registro, `add` incremental (o log é append-only), teto ou LRU de memória, porta
+      // `SearchIndex` com chave de processo e emenda do ADR 0008 sobre o "sem cache".
       const engine = new MiniSearch<{ index: number; text: string }>({
         idField: 'index',
         fields: ['text'],
@@ -46,12 +56,13 @@ export function createSearchIndex(): SearchIndex {
       });
       engine.addAll(records.map((record, index) => ({ index, text: indexableText(record) })));
 
-      let hits = engine.search(text);
-      const terms = distinctTerms(text);
-      if (hits.length === 0 && terms >= 2) {
-        const floor = Math.ceil(terms / 2);
+      const terms = queryTerms(text);
+      const query = terms.join(' ');
+      let hits = engine.search(query);
+      if (hits.length === 0 && terms.length >= 2) {
+        const floor = Math.ceil(terms.length / 2);
         hits = engine
-          .search(text, { combineWith: 'OR' })
+          .search(query, { combineWith: 'OR' })
           .filter((hit) => new Set(hit.queryTerms).size >= floor);
       }
 

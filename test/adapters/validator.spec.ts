@@ -64,6 +64,41 @@ describe('checkSchema', () => {
     expect(validator.validate(first, {})).toEqual([]);
     expect(validator.validate(second, {})).toHaveLength(1);
   });
+
+  test.each([
+    'https://json-schema.org/draft/2020-12/schema',
+    'https://json-schema.org/draft/2020-12/meta/core',
+    'https://json-schema.org/draft/2020-12/meta/validation',
+  ])('recusa o $id do metaschema %s sem derrubar o ajv', (id) => {
+    const good = { type: 'object' };
+
+    expect(validator.checkSchema({ $id: id, type: 'object' })).toEqual([
+      { path: '/schema', code: 'invalid-schema', message: expect.stringContaining('already') },
+    ]);
+    expect(validator.checkSchema(good)).toEqual([]);
+    expect(validator.validate(good, {})).toEqual([]);
+  });
+
+  test('$id repetido depois de uma compilação que lançou segue limpo', () => {
+    const $id = 'https://example.com/dangling';
+
+    expect(validator.checkSchema({ $id, $ref: 'https://nowhere/x' })).toHaveLength(1);
+    expect(validator.checkSchema({ $id, type: 'object' })).toEqual([]);
+  });
+
+  test('recusa schema $async com um detalhe invalid-schema em /schema', () => {
+    expect(validator.checkSchema({ $async: true, type: 'string' })).toEqual([
+      { path: '/schema', code: 'invalid-schema', message: expect.stringMatching(/async/) },
+    ]);
+  });
+
+  test('aceita $async: false', () => {
+    expect(validator.checkSchema({ $async: false, type: 'string' })).toEqual([]);
+  });
+
+  test('lista curta de erros do metaschema sai sem repetição', () => {
+    expect(validator.checkSchema({ items: [{ type: 'string' }] })).toHaveLength(1);
+  });
 });
 
 describe('validate', () => {
@@ -86,6 +121,27 @@ describe('validate', () => {
 
   test('reúne todos os erros, não só o primeiro', () => {
     expect(validator.validate(noteSchema, { text: 1, count: 'x' })).toHaveLength(2);
+  });
+
+  test('corta em 50 detalhes e avisa quantos ficaram de fora no último', () => {
+    const schema = {
+      type: 'object',
+      properties: { items: { type: 'array', items: { type: 'string' } } },
+    };
+    const details = validator.validate(schema, {
+      items: Array.from({ length: 7_000 }, (_, i) => i),
+    });
+
+    expect(details).toHaveLength(51);
+    expect(details.at(-1)).toEqual({
+      path: '',
+      code: 'too-many-errors',
+      message: '6950 more errors omitted',
+    });
+  });
+
+  test('lança com schema $async, em vez de aprovar o dado', () => {
+    expect(() => validator.validate({ $async: true, type: 'string' }, {})).toThrow(/async/);
   });
 
   test('escapa ~ e / no JSON Pointer', () => {
