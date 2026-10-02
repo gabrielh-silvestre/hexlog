@@ -1,4 +1,4 @@
-// Processo filho do lock por pid (P2, TF2, TF4), com quatro modos:
+// Processo filho do lock por pid (P2, TF2, TF4) e do `register` concorrente (SE5), com cinco modos:
 //  - `rounds <lockDir> <ownerFile> <rounds> <barrierDir> <total>`: espera os `total` irmãos na
 //    barreira e faz `rounds` rodadas de adquirir, criar `ownerFile` com `wx`, apagar e soltar. Um
 //    `EEXIST` no `wx` prova dois donos ao mesmo tempo; imprime `{ rounds, collisions }`.
@@ -11,11 +11,17 @@
 //  - `write-gated <dataDir> <project> <process> <goFile>`: grava 1 elo pelo `ProcessStore`; com o lock
 //    na mão e o lote montado, imprime `{ pid }` e espera (bloqueado, sem devolver ao laço de eventos)
 //    até `goFile` existir. O pai pausa o filho nesse ponto com SIGSTOP (TF4) e depois o libera.
+//  - `register <dataDir> <project> <process> <barrierDir> <total> <inputJson>`: espera os `total`
+//    irmãos na barreira e faz um `register` pelo `compose` real com `inputJson` (`{ key?, records }`).
+//    Imprime `{ ok: true, replayed }` ou, se o domínio recusar, `{ ok: false, code }`; outro erro
+//    derruba o filho (status 1, stderr).
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createLockManager } from '../../src/adapters/fs/lock.ts';
 import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
+import { compose } from '../../src/compose.ts';
+import type { BatchItem } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { ProcessRef, RawProcess } from '../../src/ports.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
@@ -23,7 +29,9 @@ import { chainLine } from './chain-line.ts';
 
 const [, , mode, firstArg, ...rest] = process.argv;
 if (firstArg === undefined) {
-  throw new Error('usage: lock-holder.ts <rounds|hold|write|write-gated> <lockDir|dataDir> ...');
+  throw new Error(
+    'usage: lock-holder.ts <rounds|hold|write|write-gated|register> <lockDir|dataDir> ...',
+  );
 }
 // `lockDir` nos modos `rounds` e `hold`; `dataDir` nos modos `write` e `write-gated`.
 const lockDir: string = firstArg;
@@ -133,6 +141,33 @@ async function runGatedWrite(dataDir: string, ref: ProcessRef, goFile: string) {
   });
 }
 
+async function runRegister(
+  dataDir: string,
+  ref: ProcessRef,
+  barrierDir: string,
+  total: number,
+  input: { key?: string; records: BatchItem[] },
+) {
+  const { services } = compose({
+    dataDir,
+    cwd: dataDir,
+    clock: () => new Date(),
+    logger: () => undefined,
+  });
+  await waitForSiblings(barrierDir, total);
+  try {
+    const { replayed } = await services.process.register({
+      ...ref,
+      author: { agent: 'lock-holder', model: 'test', client: 'test' },
+      ...input,
+    });
+    process.stdout.write(JSON.stringify({ ok: true, replayed }));
+  } catch (error) {
+    if (!(error instanceof HexlogError)) throw error;
+    process.stdout.write(JSON.stringify({ ok: false, code: error.code }));
+  }
+}
+
 if (mode === 'rounds') {
   const [ownerFile, roundsText, barrierDir, totalText] = rest;
   if (
@@ -174,6 +209,26 @@ if (mode === 'rounds') {
     throw new Error('usage: lock-holder.ts write-gated <dataDir> <project> <process> <goFile>');
   }
   await runGatedWrite(firstArg, { project, process: processName }, goFile);
+} else if (mode === 'register') {
+  const [project, processName, barrierDir, totalText, inputJson] = rest;
+  if (
+    project === undefined ||
+    processName === undefined ||
+    barrierDir === undefined ||
+    totalText === undefined ||
+    inputJson === undefined
+  ) {
+    throw new Error(
+      'usage: lock-holder.ts register <dataDir> <project> <process> <barrierDir> <total> <inputJson>',
+    );
+  }
+  await runRegister(
+    firstArg,
+    { project, process: processName },
+    barrierDir,
+    Number(totalText),
+    JSON.parse(inputJson) as { key?: string; records: BatchItem[] },
+  );
 } else {
   throw new Error(`unknown mode: ${String(mode)}`);
 }

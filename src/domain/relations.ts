@@ -207,7 +207,11 @@ export type RuleContext = {
   vigencyFor(kind: RelationKind): Vigency;
 };
 
-function resolveKind(input: KindOrAs, names: RuleContext['names']): RelationCheck {
+/**
+ * D-10: `kind` da relação a partir de `kind` e/ou `as`, ou `unknown-relation-name` e `kind-mismatch`.
+ * Só depende do manifesto, então o serviço a roda antes do lock (`commands/register-static.ts`).
+ */
+export function resolveKind(input: KindOrAs, names: RuleContext['names']): RelationCheck {
   if (input.as === undefined) return { kind: input.kind };
   const named = names.get(input.as);
   if (!named) return { violation: { code: 'unknown-relation-name' } };

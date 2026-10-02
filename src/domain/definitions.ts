@@ -8,6 +8,9 @@ import { RelationKind, withinCanonicalLimit } from './record.ts';
 /** Teto do schema de um tipo em caracteres canônicos (JCS), igual ao do 0.x; docs/tetos-dominio-v1.md. */
 export const RECORD_TYPE_MAX_CHARS = 16_000;
 
+/** Teto de uma relação (`from`/`to`) e de um gate (`where`) em caracteres canônicos (JCS); docs/tetos-dominio-v1.md. */
+export const RELATION_GATE_MAX_CHARS = 16_000;
+
 /** Teto de perguntas por gate; docs/tetos-dominio-v1.md. */
 export const GATE_QUESTIONS_MAX = 50;
 
@@ -23,19 +26,27 @@ export type RecordType = z.infer<typeof RecordType>;
  * Nome de relação: `from`/`to` são listas de nomes de tipo, não vazias e sem repetição. Omitida, a
  * ponta aceita qualquer tipo; `[]` não quer dizer "nenhum tipo" e é recusada.
  */
-export const RelationName = z.strictObject({
-  name: Name,
-  kind: RelationKind,
-  from: TypeNames.optional(),
-  to: TypeNames.optional(),
-});
+export const RelationName = z
+  .strictObject({
+    name: Name,
+    kind: RelationKind,
+    from: TypeNames.optional(),
+    to: TypeNames.optional(),
+  })
+  .refine((relation) => withinCanonicalLimit(relation, RELATION_GATE_MAX_CHARS), {
+    message: `relation exceeds ${RELATION_GATE_MAX_CHARS} canonical characters or is not canonicalizable`,
+  });
 export type RelationName = z.infer<typeof RelationName>;
 
-export const Gate = z.strictObject({
-  name: Name,
-  // Gate vazio nunca barra; evaluateGate([]) segue vazio-verdadeiro, mas a definição não o admite.
-  questions: z.array(GateQuestion).min(1).max(GATE_QUESTIONS_MAX),
-});
+export const Gate = z
+  .strictObject({
+    name: Name,
+    // Gate vazio nunca barra; evaluateGate([]) segue vazio-verdadeiro, mas a definição não o admite.
+    questions: z.array(GateQuestion).min(1).max(GATE_QUESTIONS_MAX),
+  })
+  .refine((gate) => withinCanonicalLimit(gate, RELATION_GATE_MAX_CHARS), {
+    message: `gate exceeds ${RELATION_GATE_MAX_CHARS} canonical characters or is not canonicalizable`,
+  });
 export type Gate = z.infer<typeof Gate>;
 
 /** Um número de versão `major.minor` (ex.: `1.9`). */

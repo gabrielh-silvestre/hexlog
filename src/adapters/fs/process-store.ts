@@ -112,12 +112,15 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
       process: safeName(ref.process, '/process'),
     });
 
-  function readProcess(ref: ProcessRef): RawProcess {
-    const paths = pathsOf(ref);
-    const manifestText = readTextIfPresent(paths.manifest);
+  function readManifest(ref: ProcessRef): Manifest {
+    const manifestText = readTextIfPresent(pathsOf(ref).manifest);
     if (manifestText === undefined) throw notFound(ref);
-    const manifest = parseManifest(ref, manifestText);
-    const text = readLogText(paths.log);
+    return parseManifest(ref, manifestText);
+  }
+
+  function readProcess(ref: ProcessRef): RawProcess {
+    const manifest = readManifest(ref);
+    const text = readLogText(pathsOf(ref).log);
     return { manifest, text, endsWithNewline: text === '' || text.endsWith('\n') };
   }
 
@@ -161,6 +164,8 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
 
   return {
     read: (ref) => mapIo(() => readProcess(ref)),
+
+    readManifest: (ref) => mapIo(() => readManifest(ref)),
 
     list: (project) =>
       mapIo(() =>
