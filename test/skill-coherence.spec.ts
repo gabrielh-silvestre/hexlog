@@ -1,11 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import {
-  RESERVED_PROCESS_NAMES,
-  RESERVED_TYPE_NAMES,
-  BUILTIN_GATE_NAMES,
-} from '../src/definitions.ts';
+import { RESERVED_PROCESS_NAMES } from '../src/domain/ids.ts';
 import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -188,20 +184,26 @@ describe('extratores (unitário, sobre string literal)', () => {
 
 // ---- catálogo real, extraído do código (nunca copiado à mão) — global ao projeto, não por skill ----
 
-const registeredTools = [
-  'src/definition-tools.ts',
-  'src/event-tools.ts',
-  'src/timeline-tools.ts',
-].flatMap((relativeFile) =>
-  toolNamesFrom(fs.readFileSync(path.join(repoRoot, relativeFile), 'utf8')),
+/** TB5: a 1.0 expõe exatamente 11 tools. */
+const EXPECTED_TOOL_COUNT = 11;
+
+/** TM4: 35 códigos da transição menos os 8 legados. */
+const EXPECTED_ERROR_CODE_COUNT = 27;
+
+const toolsDir = path.join(srcDir, 'mcp/tools');
+
+const registeredTools = tsFilesUnder(toolsDir).flatMap((file) =>
+  toolNamesFrom(fs.readFileSync(path.join(toolsDir, file), 'utf8')),
 );
 
-const exportedConstantNames = exportedConstantNamesFrom(
-  fs.readFileSync(path.join(repoRoot, 'src/definitions.ts'), 'utf8'),
-);
+// Constantes exportadas do domínio e do kernel MCP: as skills citam as de `domain/` e de `mcp/kernel.ts`.
+const exportedConstantNames = [
+  ...tsFilesUnder(path.join(srcDir, 'domain')).map((file) => path.join(srcDir, 'domain', file)),
+  path.join(srcDir, 'mcp/kernel.ts'),
+].flatMap((file) => exportedConstantNamesFrom(fs.readFileSync(file, 'utf8')));
 
 const errorCodeCatalog = errorCodeCatalogFrom(
-  fs.readFileSync(path.join(repoRoot, 'src/errors.ts'), 'utf8'),
+  fs.readFileSync(path.join(srcDir, 'errors.ts'), 'utf8'),
 );
 
 /** Caminhos `.ts` sob `dir`, relativos a ele, em qualquer profundidade. */
@@ -215,129 +217,146 @@ const declaredFunctionNames = tsFilesUnder(srcDir).flatMap((file) =>
   functionNamesFrom(fs.readFileSync(path.join(srcDir, file), 'utf8')),
 );
 
-const reservedNameValues: readonly string[] = [
-  ...RESERVED_PROCESS_NAMES,
-  ...RESERVED_TYPE_NAMES,
-  ...BUILTIN_GATE_NAMES,
-];
+const reservedNameValues: readonly string[] = RESERVED_PROCESS_NAMES;
 
 /**
- * SCREAMING_SNAKE_CASE citados nas skills que não pertencem ao catálogo de `ErrorCode` por desenho, não
- * por erro de digitação:
- * - `UNKNOWN_VOCABULARY`: código de **aviso** (campo `result` do Veredito, vocabulário aberto), não um
- *   `ErrorCode` — a skill `hexlog` documenta essa distinção de propósito (ver teste dedicado abaixo).
- * - `TYPE_NOT_FIXED`: citado de propósito como contraste ("não `TYPE_NOT_FIXED`, esse código não
- *   existe") — a skill afirma que ele NÃO existe; exigi-lo no catálogo inverteria a checagem.
- * - `STALE_DEFINITIONS`: código de **aviso** de `create_process` (P3), quando o processo já existe
- *   com um snapshot de definições diferente do candidato desta chamada — não um `ErrorCode`.
- */
-const DELIBERATE_NON_ERROR_CODES = new Set([
-  'UNKNOWN_VOCABULARY',
-  'TYPE_NOT_FIXED',
-  'STALE_DEFINITIONS',
-]);
-
-/**
- * Palavras de domínio (campo/valor de exemplo) citadas nas skills em crase que coincidem em forma
- * (lowercase, sem hífen) com nome de tool ou de valor reservado, mas não são nenhum dos dois — allow-
- * list explícita em vez de afrouxar o regex de identificador. Global ao projeto (as skills compartilham
- * o mesmo vocabulário de campos de entrada/saída do servidor), não por skill.
+ * Campos de entrada/saída, relações, valores de enum e exemplos citados em crase nas skills que coincidem em
+ * forma com nome de tool ou de valor reservado, mas não são nenhum dos dois — allowlist explícita em vez de
+ * afrouxar o regex de identificador. Global ao projeto, não por skill.
  */
 const FIELD_NAME_ALLOWLIST = new Set([
-  'owner',
-  'name',
-  'result',
-  'gate',
-  'id',
   'type',
-  'agent',
-  'data',
-  'process',
-  // campos de schema (z.object), não funções: `milestoneType` em event-tools.ts,
-  // `builtinGates` em definition-tools.ts, `versions` (bloco de versionamento,
-  // leva 8) em definition-tools.ts/definitions.ts.
-  'milestoneType',
-  'builtinGates',
-  'versions',
-  // P1-P5: campos de saída/entrada citados na skill hexlog, não tools nem valores reservados.
-  // `owners`/`allowed` (details de VOCABULARY_VIOLATED, P2), `supersedes`/`active`
-  // (Verdict/state, contexto do `no-forks`, P1), `targets` (state, P4), `trace`
-  // (Milestone, P5).
-  'owners',
-  'allowed',
-  'supersedes',
-  'active',
-  'targets',
-  'trace',
-  // #33: `warnings`/`event` (saída de state) e `since` (entrada de state), citados no aviso cumulativo.
-  'warnings',
-  'since',
-  'event',
-  // `sections`/`conflicts` (campos de `state`) e `targetPrefix` (campo novo de `state`/`events`),
-  // não funções nem tools.
-  'sections',
-  'conflicts',
-  'targetPrefix',
-  // hexlog-setup/hexlog-flow: `target` (singular, campo de entrada de register/evaluate_gate/
-  // events/chain), `editedSkills` e `targetIdPattern` (campos do frontmatter FlowMap,
-  // ver skills/hexlog-setup/references/flow-map-schema.md).
+  'as',
   'target',
-  'editedSkills',
-  'targetIdPattern',
-  // hexlog-flow: parâmetros de `attachment`/`timeline`/`list` e campos de `Entry` citados na skill e em
-  // audit-types.md, não tools (`supersededBy`/`nextCursor`/`limit` de `timeline`, `hash`/`text`/`path`
-  // de `attachment`).
-  'project',
-  'text',
+  'data',
+  'id',
+  'supersedes',
+  'revokes',
+  'pinned',
+  'stale',
+  'process',
+  'breaking',
+  'enum',
+  'required',
+  'format',
+  'from',
+  'to',
+  'kind',
+  'approved',
+  'occurred',
   'path',
+  'details',
+  'project',
+  'result',
+  'run',
+  'holder-unreadable',
+  'gate',
+  'agent',
+  'key',
+  'where',
+  'text',
+  'ids',
+  'in',
+  'out',
+  'marker',
   'hash',
-  'source',
-  'evidence',
-  'supersededBy',
-  'nextCursor',
-  'limit',
-  // audit-types.md: os cinco tipos de auditoria (`.hexlog/types/`), os marcos/vereditos do fluxo que
-  // eles acompanham e os detalhes de erro citados, não tools nem valores reservados.
-  'planner-adr',
-  'architect-review',
-  'critic-findings',
-  'plan-iteration-diff',
+  'offset',
+  'next',
+  'cursor',
+  'author',
+  'alias',
+  'current',
+  'supports',
+  'replayed',
+  'code',
+  'self-relation',
+  'type-mismatch',
+  'cross-process-currency',
+  'contradicts',
+  'supports-and-contradicts',
+  'supersedes-and-revokes',
+  'unknown-relation-name',
+  'kind-mismatch',
+  'endpoint-type',
+  'stale-destination',
+  'missing',
+  'destination-corrupted',
+  'complements',
+  'answers',
+  'reopens',
+  'scope',
+  'no_open_contradiction',
+  'entered',
+  'left',
+  'reason',
+  'lock-busy',
+  'lock-lost',
+  'broken-chain',
+  'unreadable-manifest',
+  'outside-allowed-root',
+  'inside-data-dir',
+  'bad-extension',
+  'not-regular',
+  'not-found',
+  'too-big',
+  'bad-args',
+  'ok',
+  'corrupted',
+  'unmarked-attachment',
+  'diff',
+  'plan',
+  'review',
+  'no_pending',
   'deviation',
-  'plan-review',
-  'plan-drafted',
-  'execution-approval',
-  'not_custom',
-  'too_big',
-  'outside_allowed_root',
-  // audit-types.md: campos e valores de enum dos cinco tipos (`findings`, `attempts`, `trigger`,
-  // `outcome.status`, `decidedBy`, `critic-findings.verdict`, `plan-review.result`), não tools.
-  'findings',
-  'attempts',
+  'document',
+  'report',
+  'verdict',
+  'evidence',
+  'unsupported',
+  'contradictions',
+  'unresolved',
+  'summary',
   'trigger',
-  'decidedBy',
-  'relatedEvent',
+  'other',
+  'status',
+  'worked-around',
+  'name',
+  'accept',
+  'approves',
+  'accept-with-reservations',
+  'lead',
+  'orchestrator',
+  'revise',
+  'reject',
+  'rejects',
+  'escalated',
+  'plan-ready',
+  'attempts',
+  'executor',
+  'user',
   'verification-failure',
+  'resolved',
   'plan-deviation',
+  'scope-cut',
   'reviewer-reject',
   'blocked-dependency',
   'agent-failure',
-  'other',
-  'resolved',
-  'worked-around',
-  'escalated',
-  'scope-cut',
   'user-stop',
-  'executor',
-  'lead',
-  'orchestrator',
-  'user',
-  'reject',
-  'revise',
-  'accept',
-  'accept-with-reservations',
-  'approve',
-  'iterate',
-  'request-changes',
+  'settles',
+  'limit',
+  'includeNonCurrent',
+  'readOnlyHint',
+  'targetPrefix',
+  'targetIdPattern',
+  'changesSince',
+  'attachmentStatus',
+  'staleOut',
+  'staleIn',
+  'derivesFrom',
+  'attachmentBreaks',
+  'isRevision',
+  'decidedBy',
+  'editedSkills',
 ]);
 
 /**
@@ -347,49 +366,45 @@ const FIELD_NAME_ALLOWLIST = new Set([
  * espera a chamada de `verifyPreparedArtifact` para provar que a checagem ocorre dentro da instalação.
  */
 const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'definitions.ts#buildSnapshot': ['VOCABULARY_MISSING'],
-  'definitions.ts#createProcess': ['createProcess'],
-  'definitions.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
-  'definitions.ts#RESERVED_TYPE_NAMES': ['RESERVED_TYPE_NAMES'],
-  'definitions.ts#BUILTIN_GATE_NAMES': ['BUILTIN_GATE_NAMES'],
-  'event-tools.ts#registerEvent': ['TYPE_NOT_PINNED', 'RESERVED_FIELD'],
-  'event-tools.ts#ensureVocabulary': ['VOCABULARY_VIOLATED'],
-  'event-tools.ts#unknownResultWarning': ['UNKNOWN_VOCABULARY'],
-  'event-tools.ts#evaluateGate': ['duplicate {name, target} in batch', 'gates batch exceeds'],
-  'events.ts#TargetPrefix': ['TargetPrefix'],
-  'definition-tools.ts#reservedTypeMessage': ['built-in domain kind'],
+  'commands/process.ts#assertSomethingRegistered': ['TYPE_NOT_FOUND'],
+  'domain/ids.ts#Name': ['Name'],
+  'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
+  'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
+  'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
+  'commands/register-static.ts#pinnedSchema': ['TYPE_NOT_PINNED'],
+  'commands/register-static.ts#checkData': ['checkData'],
+  'queries/query-service.ts#gateNotFound': ['GATE_NOT_FOUND'],
   'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
   'installation.ts#installArtifact': ['verifyPreparedArtifact'],
 };
 
 const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'definitions.ts#buildSnapshot': ['VOCABULARY_MISSING'],
-  'definitions.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
-  'definitions.ts#RESERVED_TYPE_NAMES': ['RESERVED_TYPE_NAMES'],
-  'definitions.ts#BUILTIN_GATE_NAMES': ['BUILTIN_GATE_NAMES'],
-  'definitions.ts#writeVersionExclusive': ['BREAKING_CHANGE'],
+  'commands/process.ts#assertSomethingRegistered': ['TYPE_NOT_FOUND'],
+  'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
+  'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
+  'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
 };
 
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'event-tools.ts#registerEvent': ['TYPE_NOT_PINNED', 'RESERVED_FIELD'],
-  'event-tools.ts#ensureVocabulary': ['VOCABULARY_VIOLATED'],
-  'event-tools.ts#unknownResultWarning': ['UNKNOWN_VOCABULARY'],
-  'event-tools.ts#retryWithFullId': ['CONFLICTING_ID'],
-  'event-tools.ts#resolveGate': ['INVALID_EVALUATION'],
-  'events.ts#Target': ['Target'],
+  'commands/register-state.ts#assertSameBatch': ['IDEMPOTENCY_CONFLICT'],
+  'commands/register-errors.ts#ruleRefusal': ['FORK_REJECTED'],
+  'adapters/fs/lock.ts#lockTimeout': ['LOCK_TIMEOUT'],
+  'commands/register-attachments.ts#checkAttachments': ['unmarked-attachment'],
 };
 
 const FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'events.ts#Name': ['Name'],
-  'events.ts#Target': ['Target'],
+  'domain/ids.ts#Name': ['Name'],
+  'domain/ids.ts#Target': ['Target'],
 };
 
 const TARGET_FORMAT_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'events.ts#Target': ['Target'],
+  'domain/ids.ts#Target': ['Target'],
+  'domain/gate.ts#matchesTargetPrefix': ['target'],
 };
 
 const AUDIT_TYPES_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'state.ts#targetOf': ['return undefined'],
+  'domain/definitions.ts#attachmentFields': ['attachmentFields'],
+  'domain/gate.ts#evaluateGate': ['evaluateGate'],
 };
 
 type SkillCase = {
@@ -462,18 +477,14 @@ describe.each(skillCases)('coerência SKILL.md × código ($name)', ({ skillPath
     expect(citedCamelCaseTokens.length).toBeGreaterThan(0);
   });
 
-  test('toda tool citada na skill está de fato registrada (definition-tools.ts, event-tools.ts ou timeline-tools.ts)', () => {
+  test('toda tool citada na skill está de fato registrada (src/mcp/tools/)', () => {
     const known = new Set([...registeredTools, ...reservedNameValues, ...FIELD_NAME_ALLOWLIST]);
     const unknown = citedLowerIdentifiers.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);
   });
 
-  test('todo código SCREAMING_SNAKE_CASE citado existe no catálogo de erros, é constante exportada de definitions.ts, ou é um dos avisos/negativos documentados', () => {
-    const known = new Set([
-      ...errorCodeCatalog,
-      ...exportedConstantNames,
-      ...DELIBERATE_NON_ERROR_CODES,
-    ]);
+  test('todo código SCREAMING_SNAKE_CASE citado existe no catálogo de erros ou é constante exportada de src/domain/ ou de mcp/kernel.ts', () => {
+    const known = new Set([...errorCodeCatalog, ...exportedConstantNames]);
     const unknown = citedScreamingSnakeTokens.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);
   });
@@ -485,19 +496,15 @@ describe.each(skillCases)('coerência SKILL.md × código ($name)', ({ skillPath
   });
 });
 
-describe('fatos de código globais que a skill hexlog cita (não dependem de qual skill citou)', () => {
-  test('UNKNOWN_VOCABULARY não pertence ao catálogo de ErrorCode e é usado como código de aviso em event-tools.ts', () => {
-    expect(errorCodeCatalog).not.toContain('UNKNOWN_VOCABULARY');
-    const eventTools = fs.readFileSync(path.join(repoRoot, 'src/event-tools.ts'), 'utf8');
-    expect(eventTools).toMatch(/code:\s*'UNKNOWN_VOCABULARY'/);
+describe('catálogo real extraído do código', () => {
+  test(`src/mcp/tools/ registra exatamente ${EXPECTED_TOOL_COUNT} tools, sem repetição (TB5)`, () => {
+    expect(registeredTools).toHaveLength(EXPECTED_TOOL_COUNT);
+    expect(new Set(registeredTools).size).toBe(EXPECTED_TOOL_COUNT);
   });
 
-  // A skill afirma que `TYPE_NOT_FIXED` não existe. Sem esta asserção ele só passaria pela
-  // allow-list: alguém poderia acrescentar o código ao catálogo e a afirmação da skill viraria
-  // mentira sem nada acusar.
-  test('TYPE_NOT_FIXED continua ausente do código, como a skill afirma', () => {
-    expect(errorCodeCatalog).not.toContain('TYPE_NOT_FIXED');
-    expect(exportedConstantNames).not.toContain('TYPE_NOT_FIXED');
+  test(`src/errors.ts declara exatamente ${EXPECTED_ERROR_CODE_COUNT} códigos de erro (TM4)`, () => {
+    expect(errorCodeCatalog).toHaveLength(EXPECTED_ERROR_CODE_COUNT);
+    expect(new Set(errorCodeCatalog).size).toBe(EXPECTED_ERROR_CODE_COUNT);
   });
 });
 

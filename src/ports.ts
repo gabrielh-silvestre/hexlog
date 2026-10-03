@@ -189,7 +189,7 @@ export type Validator = {
   checkSchema(schema: RecordType): Detail[];
   /**
    * Pressupõe um schema que já passou em `checkSchema`: com schema que não compila lança `Error` cru
-   * (vira `INTERNAL` na borda, `mcp.ts#execute`). O `path` dos detalhes é relativo a `data`.
+   * (vira `INTERNAL` na borda, `mcp/kernel.ts#execute`). O `path` dos detalhes é relativo a `data`.
    * Devolve um erro por subschema avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames`
    * saem os dos ramos). O `maxLength` é avaliado antes do `pattern` e o ajv para aí em cada
    * ramo, então o regex nunca roda sobre string acima do teto. Isso não cobre

@@ -6,7 +6,7 @@ import { HexlogError, type ErrorCode } from '../../errors.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { definitionDir, definitionFile, VERSION_SUFFIX } from './data-format.ts';
-import { listDirectories, mapIo, readTextIfPresent, safeName } from './io.ts';
+import { listDirectories, mapIo, readIfPresent, safeName } from './io.ts';
 
 export type DefinitionStoreOptions = {
   /** `<D>`; o store grava só em `<D>/.v1/<projeto>/{types,relations,gates}/` (D-02). */
@@ -115,7 +115,7 @@ export function createDefinitionStore({ dataDir }: DefinitionStoreOptions): Defi
 
     read: <K extends DefinitionKind>(project: Name, kind: K, name: Name, version: string) =>
       mapIo(() => {
-        const text = readTextIfPresent(versionFile(project, kind, name, version));
+        const text = readIfPresent(versionFile(project, kind, name, version));
         if (text === undefined) {
           throw definitionNotFound(kind, readVersions(nameDir(project, kind, name)));
         }

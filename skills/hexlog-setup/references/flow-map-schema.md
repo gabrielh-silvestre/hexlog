@@ -10,13 +10,17 @@ contexto durante a entrevista ou a leitura das skills apontadas.
 
 | Campo | Tipo | Obrigatório | Notas |
 |---|---|---|---|
-| `phases` | `Name[]` | sim | Nomes de fase, regex de `Name` (`events.ts#Name`): minúsculo, `[a-z0-9-]`, começa com alfanumérico |
+| `phases` | `Name[]` | sim | Nomes de fase, regex de `Name` (`domain/ids.ts#Name`): minúsculo, `[a-z0-9-]`, começa com alfanumérico |
 | `process` | `Record<Name, Name>` | sim | Fase → processo. **1:1**: toda fase em `phases` precisa de exatamente um processo mapeado; toda chave aqui precisa existir em `phases` |
 | `skills` | `Record<Name, string[]>` | não (default `{}`) | Fase → skills usadas nessa fase. Nome de skill não é `Name` — aceita namespace com `:` (ex. `oh-my-claudecode:ralph`) |
-| `gate` | `Record<Name, Name>` | não (default `{}`) | Fase → nome do gate custom daquela fase. O nome precisa já existir via `register_gate` — isso não é checado pelo schema, é responsabilidade do passo 3-4 do `SKILL.md` |
-| `targetIdPattern` | `string` | não (default `[^\s:]+`, igual ao regex embutido em `Target`, `events.ts#Target`) | Regex source do `<id>` de `hex:target:<id>`. Só o `<id>` é configurável — o prefixo `hex:target:` é fixo |
-| `versions` | `FixedVersions` (opcional) | não | Mesmo formato que `create_process` devolve em `versions` — grave aqui o que a chamada do passo 4 retornou |
+| `gate` | `Record<Name, Name>` | não (default `{}`) | Fase → nome do gate daquela fase. O nome precisa já existir via `define_gate` **e** estar fixado no processo da fase (definido antes do `create_process`) — isso não é checado pelo schema, é responsabilidade do passo 3-4 do `SKILL.md` |
+| `targetIdPattern` | `string` | não | Regex source que restringe o rótulo inteiro do `target` (a sintaxe de `Target`, `domain/ids.ts#Target`, vale sempre). Ausente, só a sintaxe do `Target` vale; ver `skills/hexlog-flow/references/target-format.md` |
 | `editedSkills` | `string[]` | não (default `[]`) | Nomes das skills apontadas na descoberta que a `hexlog-setup` efetivamente editou para chamar a `hexlog-flow` — ver o passo opcional do `SKILL.md` |
+
+O campo `versions` do 0.x não existe mais: o `create_process` devolve só os nomes
+fixados (`pinned`), e as versões das definições se leem com `list`. Um
+`.hexlog/flow.md` antigo que ainda o traga continua legível — a `hexlog-flow` só lê
+os campos acima.
 
 ## Validação cruzada
 
@@ -44,10 +48,13 @@ editedSkills: []
 
 # Fluxo pré-código deste projeto
 
+Projeto hexlog: `meu-projeto`
+
 <corpo em markdown com a semântica de cada fase, escrito pela hexlog-setup>
 ```
 
 O corpo markdown depois do frontmatter é livre — é onde a semântica de cada fase
-vive (o servidor guarda só estrutura, não descrição). Ao regravar o frontmatter,
-preserve o corpo existente; não gere um corpo genérico por cima do que já foi
-escrito numa rodada anterior desta mesma sessão de setup.
+vive (o servidor guarda só estrutura, não descrição), e onde fica a frase "Projeto
+hexlog: `<nome>`" de que a `hexlog-flow` tira o `project`. Ao regravar o
+frontmatter, preserve o corpo existente; não gere um corpo genérico por cima do que
+já foi escrito numa rodada anterior desta mesma sessão de setup.

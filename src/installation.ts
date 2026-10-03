@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 // import default (não `* as fs`): sob esModuleInterop, `* as` copia o módulo com getters
 // não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
-// a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/log.ts).
+// a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/adapters/fs/process-store.ts).
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 import { isNil, memoize, zip } from 'es-toolkit';
@@ -45,8 +45,8 @@ function hasDynamicRequire(bytes: Uint8Array): boolean {
   return Buffer.from(bytes).includes('Dynamic require of');
 }
 
-// 5 tools em definition-tools.ts + 5 em event-tools.ts (§4.12/§4.16) + 2 em timeline-tools.ts (ADR 0006).
-export const TOOLS_COUNT = 12;
+// As 11 tools registradas em src/mcp/tools/ (§4.12).
+export const TOOLS_COUNT = 11;
 
 export function versionDirOf(home: string, version: string): string {
   return path.join(home, '.local', 'lib', 'hexlog', version);

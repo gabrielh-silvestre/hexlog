@@ -5,7 +5,14 @@ import type { AttachmentService } from '../commands/attachment.ts';
 import type { DefinitionService } from '../commands/definition.ts';
 import type { ProcessService } from '../commands/process.ts';
 import { type Author, isWellFormed } from '../domain/record.ts';
-import { capDetails, type Detail, HexlogError, issueDetails, pointer } from '../errors.ts';
+import {
+  capDetails,
+  type Detail,
+  HexlogError,
+  issueDetails,
+  legacyDataError,
+  pointer,
+} from '../errors.ts';
 import type {
   Changes,
   GateEvaluation,
@@ -27,9 +34,6 @@ export const CHANGES_ITEMS_CAP = 100;
 
 /** Ids por lista de `evidence` de uma pergunta de `evaluate_gate`; corte igual ao de `changes`, também palpite. */
 export const EVIDENCE_ITEMS_CAP = 100;
-
-/** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */
-const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
 
 /** Os quatro serviços que `compose.ts#compose` monta; o kernel só os repassa às tools. */
 export type Services = {
@@ -174,11 +178,7 @@ export async function execute<Input, Output>(
   };
 
   try {
-    if (deps.isLegacy()) {
-      throw new HexlogError('LEGACY_DATA', 'legacy 0.x data found; archive it first', [
-        { path: '', code: 'run', message: ARCHIVE_COMMAND },
-      ]);
-    }
+    if (deps.isLegacy()) throw legacyDataError();
     const reserved = reservedKeyDetails(call.args);
     if (reserved.length > 0) throw new HexlogError('INVALID_INPUT', 'invalid input', reserved);
     const parsed = call.schema.safeParse(call.args ?? {});

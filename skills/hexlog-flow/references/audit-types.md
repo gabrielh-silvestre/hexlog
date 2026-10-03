@@ -1,161 +1,204 @@
-# Tipos de auditoria: racional do planejamento e desvios da execução
+# Exemplo trabalhado: o fluxo OMC como tipos, relações e gate
 
-Contrato dos cinco tipos custom que deixam o processo auditável por um humano depois
-da execução: `planner-adr`, `architect-review`, `critic-findings` e
-`plan-iteration-diff` (o porquê do planejamento) e `deviation` (o desvio do caminho
-feliz na execução). Carregue este arquivo antes de registrar qualquer um deles e
-antes de escolher o `result` do `plan-review`.
+O hexlog não traz tipo, relação nem gate: o projeto os define. Este arquivo mostra
+um conjunto completo para o fluxo de planejamento e execução do OMC — o plano com
+suas revisões, as revisões do architect e do Critic, os desvios da execução e o
+gate que diz se o plano está pronto —, com a ordem das chamadas. Use-o como modelo
+para o projeto; o que está definido no processo (`list` com `project` e
+`process`) é a fonte de verdade, e vale o servidor se este arquivo divergir dele
+(`INVALID_RECORD` aponta o campo).
 
-## Quando vale
+O exemplo é ilustrativo: ele é mais rico que o fixture de testes do repositório
+(test/fixtures/domains/omc.ts), que é só a configuração mínima testada e não usa a
+relação `rejects`. As convenções abaixo (veredito `accept` e `accept-with-reservations`
+do Critic viram `approves`, `revise` e `reject` viram `rejects`, desvio fechado por
+revisão no mesmo lote com `settles`, revisão do architect ligada ao plano por
+`complements`) valem como documentação; nenhum spec confere o exemplo contra as
+definições.
 
-Só num processo que fixou os cinco tipos (`list` com `project` e `process` mostra o
-que ele fixou). Tipo fora do snapshot dá `TYPE_NOT_PINNED`: nesse caso a trilha não
-se aplica, e o que se registra é só o marco ou o veredito do fluxo normal.
+Tipo, relação ou gate que o processo não fixou dá `TYPE_NOT_PINNED`,
+`INVALID_RECORD` (`unknown-relation-name`) ou `GATE_NOT_FOUND`: nesse caso a
+trilha não se aplica, e o que se registra é só o que o processo conhece.
 
-## Os cinco tipos
+## Os três tipos
 
-| Tipo | Registre quando | `attachment` |
-|---|---|---|
-| `planner-adr` | O planejador entrega um plano (iteração 1) ou um plano revisado (iteração 2 em diante): opções, decisão e porquê | O arquivo do plano (`path`) |
-| `architect-review` | Depois que o Critic da mesma iteração devolveu: antítese, tradeoffs e síntese do architect | O relatório integral do architect (`text`) |
-| `critic-findings` | Logo depois do `architect-review`: veredito e achados do Critic | O relatório integral do Critic (`text`) |
-| `plan-iteration-diff` | Só da iteração 2 em diante: o que mudou no plano e qual achado motivou cada mudança | Opcional |
-| `deviation` | Um desvio do caminho feliz na execução terminou (ver "Desvios") | Opcional: o texto do `## Deviations` do executor |
-
-Os cinco tipos exigem `target` (`hex:target:<id>`, o mesmo dos marcos e vereditos do
-fluxo) e `source` (quem escreveu o texto, até 100 caracteres, ex.:
-`oh-my-claudecode:architect`; o `agent` do `register` continua sendo a skill que
-disparou). Campos de cada tipo, além desses dois: `?` = opcional; `[n..m]` = tamanho
-do array; `(n)` = máximo de caracteres:
+Todo campo que guarda hash de anexo tem `format: "attachment"` (a palavra-chave que
+`domain/definitions.ts#attachmentFields` procura). Os campos que um gate filtra com
+`where` ficam no primeiro nível de `data` e são escalares.
 
 ```
-planner-adr          iteration (>=1), principles?[0..5](200), drivers?[0..5](200),
-                     options?[0..6]{name(80), pros(250), cons(250)}, chosen(240),
-                     why(1000), attachment (hash do plano)
-architect-review     iteration (>=1), antithesis(1500), tradeoffs[1..5](350),
-                     synthesis(1500), verdict(200, texto livre),
-                     attachment (hash do relatório integral)
-critic-findings      iteration (>=1), verdict (reject|revise|accept-with-reservations|accept),
-                     justification(1200),
-                     findings[0..12]{severity (critical|major|minor), finding(220), whyItMatters(220)},
-                     attachment (hash do relatório integral)
-plan-iteration-diff  iteration (>=2), changed[1..10]{change(250), motivatedBy{finding(250), event?}},
-                     supersedes[1..4] (ids completos), attachment?
-deviation            trigger (verification-failure|plan-deviation|reviewer-reject|
-                              blocked-dependency|agent-failure|other),
-                     symptom(700), cause(700),
-                     attempts[0..8]{action(200), result(200)},
-                     alternatives[0..5]{option(200), whyDiscarded(200)},
-                     outcome{status (resolved|worked-around|escalated|scope-cut|user-stop),
-                             decidedBy (executor|lead|orchestrator|user), affected(200)},
-                     attachment?, relatedEvent? (id completo)
+define_type({ project, name: "plan", schema: {
+  type: "object",
+  properties: {
+    summary:    { type: "string" },
+    isRevision: { type: "boolean" },
+    diff:       { type: "string" },
+    document:   { type: "string", format: "attachment" }
+  },
+  required: ["isRevision", "document"],
+  if:   { properties: { isRevision: { const: true } } },
+  then: { properties: { diff: { type: "string" } }, required: ["diff"] }
+} })
+
+define_type({ project, name: "review", schema: {
+  type: "object",
+  properties: {
+    reviewer: { enum: ["architect", "critic", "lead", "orchestrator", "user"] },
+    verdict:  { enum: ["accept", "accept-with-reservations", "revise", "reject"] },
+    summary:  { type: "string" },
+    report:   { type: "string", format: "attachment" }
+  },
+  required: ["reviewer", "summary"]
+} })
+
+define_type({ project, name: "deviation", schema: {
+  type: "object",
+  properties: {
+    trigger:  { enum: ["verification-failure", "plan-deviation", "reviewer-reject",
+                       "blocked-dependency", "agent-failure", "other"] },
+    symptom:  { type: "string" },
+    cause:    { type: "string" },
+    attempts: { type: "array", items: { type: "object",
+                properties: { action: { type: "string" }, result: { type: "string" } },
+                required: ["action", "result"] } },
+    alternatives: { type: "array", items: { type: "object",
+                properties: { option: { type: "string" }, whyDiscarded: { type: "string" } },
+                required: ["option", "whyDiscarded"] } },
+    status:    { enum: ["resolved", "worked-around", "escalated", "scope-cut", "user-stop"] },
+    decidedBy: { enum: ["executor", "lead", "orchestrator", "user"] },
+    report:    { type: "string", format: "attachment" }
+  },
+  required: ["trigger", "symptom", "cause", "status", "decidedBy"]
+} })
 ```
 
-Os campos são resumos: o texto integral vai no anexo. `findings` vem por severidade
-decrescente; o que não couber fica só no anexo. O `verdict` do `architect-review` é
-texto livre e não vira veredito no `state`. O schema fixado no processo é a fonte de
-verdade: se este arquivo e o servidor divergirem, vale o servidor (`INVALID_EVENT`
-aponta o campo).
+O `diff` é um **campo condicional** do `plan`: a cláusula condicional o exige quando
+`isRevision` é verdadeiro, então uma revisão sem diff é recusada na gravação
+(`INVALID_RECORD`) e a trilha fica completa por construção. O validador é estrito:
+a propriedade `diff` se declara de novo dentro da cláusula then. O `diff` diz o que mudou
+e qual achado motivou cada mudança.
 
-## Ordem das chamadas: `attachment` antes de `register`
+## Os nomes de relação e o gate
 
-O `register` de um tipo que declara `attachment` exige o blob já gravado. Sempre:
+```
+define_relation({ project, name: "approves", kind: "supports",    from: ["review"], to: ["plan"] })
+define_relation({ project, name: "rejects",  kind: "contradicts", from: ["review"], to: ["plan"] })
+define_relation({ project, name: "settles",  kind: "answers",     to: ["deviation"] })
 
-1. `attachment` com `text` (texto que veio de um agente) ou `path` (arquivo `.md`
-   em `.omc/plans`, como o plano); guarde o `hash` devolvido.
-2. `register` do tipo, com `data.attachment` = esse `hash`.
+define_gate({ project, name: "plan-ready", questions: [
+  { kind: "approved", of: { type: "plan" }, by: { type: "review" } },
+  { kind: "no_pending", pending: { type: "deviation" }, resolvedBy: { kind: "answers" } }
+] })
+```
+
+O gate cobra a **prontidão**: só a revisão vigente do plano precisa de aprovação
+(`domain/gate.ts#evaluateGate`); a completude das revisões substituídas vem do
+schema. `approved` passa quando todo plano vigente tem um `supports` vigente de um
+`review` e nenhum `contradicts` vigente; `no_pending`, quando todo `deviation`
+vigente tem um registro que o responde (`answers`).
+
+Todas as definições entram **antes** do `create_process`. Se o flow map usa um
+processo por fase, o `deviation` vive no processo da fase de execução, e a
+pergunta de gate que precisa vê-lo, vindo de outro processo, declara `scope:
+"project"` (o alcance processo não vê relação de outro processo nem avisa).
+
+## Ordem das chamadas: `attach` antes de `register`
+
+O `register` de um registro que cita anexo exige o blob já guardado. Sempre:
+
+1. `attach` com `path` (arquivo `.md`/`.txt` que já existe, como o plano) ou `text`
+   (texto que veio de um agente); guarde o `hash` devolvido.
+2. `register` com esse `hash` no campo marcado (`document`, `report`).
 
 Numa iteração de planejamento:
 
-1. O planejador entrega o plano:
-   - Iteração 1, depois do marco `plan-drafted`: `attachment` com `path` do arquivo do
-     plano; `planner-adr` com esse `hash`. Guarde o `id` que o `register` devolveu.
-   - Iteração 2 em diante, nesta ordem: `attachment` com `path` do plano **revisado**
-     (o conteúdo mudou, então o `hash` é outro); `planner-adr` da nova iteração citando
-     esse `hash` novo, nunca o da iteração 1 (guarde o `id` devolvido);
-     `plan-iteration-diff` com `supersedes` = o `id` que o `register` do `planner-adr`
-     da iteração anterior devolveu. Cada item de `changed[].motivatedBy` cita o achado
-     e o id completo do evento que o levantou.
-2. O architect devolve: `attachment` com `text` = o relatório integral. Guarde só o
-   `hash` e escreva o breadcrumb `target=<slug> iter=<N> architect=<hash>` em
+1. **O planejador entrega o plano.**
+   - Iteração 1: `attach` com o `path` do plano; `register` de um `plan` com
+     `isRevision: false` e `document` = o `hash`. Guarde o `id` devolvido.
+   - Iteração 2 em diante: `attach` com o `path` do plano **revisado** (o conteúdo
+     mudou, então o `hash` é outro); `register` de um `plan` com `isRevision:
+     true`, `diff` e o `hash` novo, com as relações `supersedes` → o `id` do plano
+     anterior e `derivesFrom` → o `review` do Critic que motivou a revisão
+     (`derivesFrom`, porque esse `review` pode já não ser o vigente). Use a `key`
+     `<alvo>:plano-<n>`.
+2. **O architect devolve.** `attach` com `text` = o relatório integral. Guarde só o
+   `hash` e escreva o breadcrumb `target=<alvo> iter=<n> architect=<hash>` em
    `.omc/state/hexlog-audit-pending.txt`: uma linha por target, e ao escrever você
-   substitui só a linha deste target, sem tocar nas dos outros.
-   **Nenhum evento ainda.**
-3. O Critic devolve (ele não consulta o hexlog): `architect-review` com o `hash`
-   guardado, e então apague só a linha deste target do breadcrumb; `attachment` com
-   `text` = o relatório integral do Critic; `critic-findings`; `plan-review`. O
-   `architect-review` só vem depois do Critic para que a revisão do architect não
-   esteja legível enquanto o Critic trabalha.
-4. Fim do loop de plan ou ralplan, antes do `execution-approval`: `attachment` com
-   `path` do plano final aprovado (depois de aplicadas as melhorias); `timeline` do
-   target para conferir que cada iteração tem `planner-adr`, `architect-review` e
-   `critic-findings` (lacuna = registre agora, dizendo em `source` que foi tardio);
-   `execution-approval` com esse `hash` na `evidence`. O `timeline` é paginado: repita
-   a chamada com `since` = `nextCursor` até `nextCursor` ser nulo antes de declarar
-   uma lacuna, porque página cortada não é lacuna. Cadeia ou anexo quebrado na saída:
-   pare e avise o usuário.
+   substitui só a linha deste target. **Nenhum registro ainda.**
+3. **O Critic devolve** (ele não consulta o hexlog). `attach` com `text` = o
+   relatório integral do Critic. Depois, **um só `register`** com os dois `review`
+   (o lote é atômico): o do architect (`reviewer: "architect"`, `report` = o `hash`
+   guardado, relação `complements` → o plano) e o do Critic (`reviewer: "critic"`,
+   `verdict`, `report`, e a relação do quadro abaixo). Apague só a linha deste
+   target do breadcrumb. O architect só entra depois do Critic para que a revisão
+   dele não esteja legível enquanto o Critic trabalha.
+4. **Fim do loop de plan ou ralplan, antes de executar.** `attach` com o `path` do
+   plano final (depois de aplicadas as melhorias, se houve); `evaluate_gate` com
+   `gate: "plan-ready"` e `target` = o alvo do plano. `passed: false` barra a
+   execução: a `evidence` de cada pergunta diz o que falta (`unsupported`,
+   `contradictions`, `unresolved`). Audite o alvo (abaixo) e registre agora a
+   lacuna que achar, dizendo no `summary` que o registro foi tardio.
 
-O passo 4 vale só para o fluxo plan/ralplan. O planejamento interno do autopilot não
-tem `architect-review`: ali se registra o `planner-adr` (anexo por `path`) e, só se um
-Critic de fato retornou, `critic-findings` e `plan-review`; a conferência não cobra
-os outros tipos.
+O passo 4 vale só para o fluxo plan/ralplan. O planejamento interno do autopilot
+não tem architect: ali se registra o `plan` (anexo por `path`) e, só se um Critic de
+fato retornou, o `review` dele.
 
-Sessão que morre entre os passos 2 e 3: o `hash` está no breadcrumb. Leia o blob com
-`attachment` com `hash` (em páginas, até esgotá-las) para remontar os campos do
-`architect-review` tardio; registre-o com `source` dizendo isso e apague só a linha
-deste target. Sem breadcrumb, recupere o relatório entregue (não o recap) e refaça o
-`attachment` (idempotente); nunca reexecute o architect.
+Sessão que morre entre os passos 2 e 3: o `hash` está no breadcrumb. Leia o blob
+com `read_attachment` (em páginas, até esgotá-las) para remontar o `review` do
+architect tardio; registre-o dizendo isso no `summary` e apague só a linha deste
+target. Sem breadcrumb, recupere o relatório entregue (não o recap) e refaça o
+`attach` (idempotente); nunca reexecute o architect.
 
-`path` negado (`INVALID_INPUT` com `outside_allowed_root`: o arquivo do plano não está
-em `.omc/plans` do diretório de trabalho do servidor): copie o plano para
-`.omc/plans/<slug>.iter<N>.md` e tente `path` na cópia. Se ainda for negado, registre
-um `deviation` (`trigger` `other`, `outcome.status` `worked-around`) e anexe por `text`
-um texto-ponteiro com o caminho, o tamanho em bytes e o sha256 da cópia, no lugar do
-plano.
+`path` negado (`INVALID_INPUT` com `outside-allowed-root`: o plano não está no
+diretório de trabalho do servidor): copie o plano com cp para dentro dele e
+anexe a cópia. Se ainda for negado, registre um `deviation` (`trigger` `other`,
+`status` `worked-around`) e anexe por `text` um texto-ponteiro com o caminho, o
+tamanho em bytes e o sha256 da cópia, no lugar do plano.
 
 ## Fonte do texto anexado
 
-O anexo de `architect-review` e `critic-findings` é o relatório integral que o agente
-entregou ao orquestrador, colado sem resumir, cortar nem reformatar:
+O anexo de uma revisão do architect ou do Critic é o relatório integral que o
+agente entregou ao orquestrador, colado sem resumir, cortar nem reformatar:
 
 - o retorno da Task; ou
 - o corpo do `SendMessage` ao lead, quando o agente tem `name`, sem o invólucro
   `<teammate-message>`.
 
-Nunca o resumo da notificação de ociosidade (idle_notification), um recap final nem um
-texto de trabalho do agente. O hash é o sha256 dos bytes: qualquer reformatação muda o
-hash, e a trilha deixa de provar que aquele foi o texto do agente.
+Nunca o resumo da notificação de ociosidade (idle_notification), um recap final nem
+um texto de trabalho do agente. O hash é o sha256 dos bytes: qualquer reformatação
+muda o hash, e a trilha deixa de provar que aquele foi o texto do agente.
 
 ## Contrato de fluxo do Critic
 
-`critic-findings.verdict` é o rótulo da linha `VERDICT:` do Critic, copiado em
-minúsculas e sem tradução; rótulo fora da escala dá `INVALID_EVENT`, então releia a
-linha. `plan-review.result` **não traduz o rótulo**: registra o que o orquestrador
-fez com ele. A `evidence` do `plan-review` cita o id completo do `critic-findings` e o
-hash do anexo do Critic.
+`verdict` é o rótulo da linha `VERDICT:` do Critic, copiado em minúsculas e sem
+tradução; rótulo fora do `enum` dá `INVALID_RECORD`, então releia a linha. O que o
+orquestrador faz com o rótulo é a decisão dele, e vira registro:
 
-| Rótulo do Critic | O que o orquestrador faz | `result` do `plan-review` |
+| Rótulo do Critic | O que o orquestrador faz | Relação do `review` do Critic com o plano |
 |---|---|---|
-| `accept` | fecha o loop | `approve` |
-| `accept-with-reservations` | aplica as melhorias ao plano e fecha o loop, sem nova rodada; as reservas ficam em `findings` | `approve` (`iterate` só se optar por redigir de novo: então existe o `planner-adr` seguinte) |
-| `revise` ou `reject`, com iteração restante | redige de novo e abre a iteração seguinte | `iterate` |
-| `revise` ou `reject`, no teto de iterações | não abre iteração: marco `escalated` mais um `deviation`; sem `execution-approval` | `reject` |
-| `plan --review` (só o Critic, sem loop) | devolve o veredito ao usuário; sem re-redação nem nova iteração | `approve` (`accept` ou `accept-with-reservations`), `request-changes` (`revise`) ou `reject` (`reject`), com `evidence` "returned to the user"; nunca `iterate` |
+| `accept` | fecha o loop | `approves` |
+| `accept-with-reservations` | aplica as melhorias, grava o plano revisado (`isRevision: true`, `diff` com as melhorias) e fecha o loop; as reservas ficam no `summary` e no `report`. A aprovação do plano final vem de um `review` do `lead` ou do `orchestrator` que `approves` a revisão, com `derivesFrom` → o `review` do Critic | `approves` |
+| `revise` ou `reject`, com iteração restante | redige de novo e abre a iteração seguinte (`plan` com `supersedes`) | `rejects` |
+| `revise` ou `reject`, no teto de iterações | não abre iteração: grava um `deviation` (`status` `escalated`) e **não** aprova o plano; o gate `plan-ready` fica barrado | `rejects` |
+| `plan --review` (só o Critic, sem loop) | devolve o veredito ao usuário; sem re-redação nem nova iteração | `approves` (`accept`, `accept-with-reservations`) ou `rejects` (`revise`, `reject`), com o `summary` "returned to the user" |
 
-Conferência, no loop: `iterate` exige o `planner-adr` da iteração seguinte (ou o
-`escalated`); `approve` exige o `execution-approval`; `reject` exige o `escalated`.
-Em `plan --review`, `request-changes` não tem `planner-adr` seguinte.
+`supports` só aponta para registro vigente: o `review` aprova a revisão que está
+vigente **agora**. Se o plano for substituído depois, a aprovação antiga deixa de
+valer: o plano novo exige o seu próprio `review`, e o `review` antigo, ainda
+vigente, ganha `needsReview` com `staleOut` (apoia um plano substituído). A
+aprovação do usuário é um `review` com `reviewer: "user"` que `approves` o plano
+vigente, com `key` (decisão de seguir).
 
 ## Desvios (`deviation`)
 
-**Granularidade.** Uma ocorrência = sintoma → tentativas → desfecho, registrada quando
-termina (resolvida ou terminal), com as tentativas em ordem em `attempts`. Não é um
-evento por tentativa nem por linha de log.
+**Granularidade.** Uma ocorrência = sintoma → tentativas → desfecho, registrada
+quando termina (resolvida ou terminal), com as tentativas em ordem em `attempts`.
+Não é um registro por tentativa nem por linha de log.
 
-**Causa e resolução.** `trigger` diz a causa; `outcome.status`, como acabou;
-`decidedBy` diz quem decidiu (`executor`, `lead` do team, `orchestrator` ou `user`):
+**Causa e desfecho.** `trigger` diz a causa; `status`, como acabou; `decidedBy` diz
+quem decidiu (`executor`, `lead` do team, `orchestrator` ou `user`):
 
-| Situação | `trigger` | `outcome.status` |
+| Situação | `trigger` | `status` |
 |---|---|---|
 | Retry depois de falha de verificação | `verification-failure` | `resolved`; `worked-around` se contornou sem corrigir; `escalated` se parou aí |
 | Desvio do plano | `plan-deviation` | `resolved` ou `worked-around` |
@@ -167,22 +210,27 @@ evento por tentativa nem por linha de log.
 | Parada que exige o usuário | a causa | `user-stop`, com `decidedBy` `user` |
 | Causa sem nome | `other` | o que couber |
 
-**Anexo e `relatedEvent`.** Quando o desvio veio do `## Deviations` do executor,
-anexe esse texto integral. `relatedEvent` é opcional: o id completo do evento que
-gerou o sintoma, quando se sabe; o carimbo do `deviation` é o do registro, não o do
-sintoma.
+**Fechar o desvio.** O gate cobra que todo `deviation` vigente tenha um registro que
+o responda. Quem decide o desfecho (o orchestrator, o lead ou o usuário) grava, no
+mesmo lote, um `review` com a relação `settles` → o `deviation` (por `@alias`).
+Um `escalated` ou `user-stop` sem resposta é o que mantém o gate barrado, de
+propósito.
 
-**Quem registra.** Só quem recebe o resultado do executor registra os desvios dele: o
-ralph (inclusive quando o autopilot o chama) ou o lead do team. A skill externa
+**Anexo e origem.** Quando o desvio veio do `## Deviations` do executor, anexe esse
+texto integral em `report`. O registro que gerou o sintoma, quando se sabe, entra
+como relação `complements` → o `id` dele.
+
+**Quem registra.** Só quem recebe o resultado do executor registra os desvios dele:
+o ralph (inclusive quando o autopilot o chama) ou o lead do team. A skill externa
 registra só os loops próprios. O executor não chama tools do hexlog, e o mesmo
 incidente não é registrado duas vezes.
 
-## O que `state` omite
+## Auditar um alvo ponta a ponta
 
-`state` só enxerga Marco e Veredito (`state.ts#targetOf` não devolve `target` para os
-outros tipos): os cinco tipos ficam de fora dele e dos gates de conteúdo (`no-orphans`,
-`no-conflicts`, `no-forks`, `no-invalid-references`). Em especial, o `architect-review`
-não tem veredito companheiro e não pode colidir com o `plan-review` no gate
-`no-conflicts`. A cadeia e os anexos deles continuam cobertos por `chain` e pelo gate
-`chain-intact`. Para ler, use `events` (o filtro `target` acha qualquer tipo; `type`
-filtra por um) ou `timeline`.
+`query` com `scope: "project"`, `targetPrefix` = o alvo e `includeNonCurrent: true`
+traz os registros de todos os processos do projeto, vigentes e substituídos, em
+ordem de instante. É paginado (`limit` até 200): repita com `cursor` até não vir
+`cursor`, e só depois de esgotar as páginas dá para concluir que um registro falta
+— página cortada não é lacuna. Confira que cada iteração tem o `plan`, o `review` do
+architect e o do Critic. Depois, `verify_chain` em cada processo: `ok: false` ou
+`attachmentBreaks` não vazio é motivo para parar e avisar o usuário.

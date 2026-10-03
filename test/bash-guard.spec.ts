@@ -190,11 +190,11 @@ describe('bash-guard (I4): nega o acesso a D por Bash', () => {
     expect(result.stderr).toContain(dataDirXdg);
   });
 
-  test('mensagem de negação completa cita os nomes novos das tools de leitura', () => {
+  test('mensagem de deny completa cita os nomes novos das tools de leitura', () => {
     const result = runHook({ command: `cat ${dataDir}/x` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toBe(
-      `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, state, events, chain, timeline, attachment).`,
+      `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, query, verify_chain, read_attachment, evaluate_gate).`,
     );
   });
 });
