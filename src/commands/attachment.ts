@@ -1,4 +1,5 @@
 import type { Name } from '../domain/ids.ts';
+import { isWellFormed } from '../domain/record.ts';
 import { HexlogError } from '../errors.ts';
 import type { AttachmentPut, AttachmentStore } from '../ports.ts';
 
@@ -19,9 +20,6 @@ const ALLOWED_EXTENSIONS = ['.md', '.txt'];
 // NAME_MAX do Linux, em bytes UTF-8: acima disso o `open` falha com ENAMETOOLONG, que viraria IO_ERROR.
 const NAME_MAX_BYTES = 255;
 
-// Surrogate alto sem baixo depois, ou baixo sem alto antes (sem a flag `u`, a string é lida por unidade).
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
 function invalidInput(pointer: string, code: string, message: string): HexlogError {
   return new HexlogError('INVALID_INPUT', message, [{ path: pointer, code, message }]);
 }
@@ -39,7 +37,7 @@ function hasAllowedExtension(candidate: string): boolean {
 
 function checkedText(text: string): void {
   if (text.length === 0) throw invalidInput('/text', 'bad-args', 'text must not be empty');
-  if (LONE_SURROGATE.test(text)) {
+  if (!isWellFormed(text)) {
     throw invalidInput('/text', 'lone-surrogate', 'text contains a lone surrogate');
   }
 }

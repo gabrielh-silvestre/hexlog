@@ -11,6 +11,12 @@ export const BATCH_MAX = 50;
 /** Teto de relações por registro gravado e por item de lote (docs/tetos-dominio-v1.md). */
 export const RELATIONS_MAX = 100;
 
+// Surrogate alto sem baixo depois, ou baixo sem alto antes (sem a flag `u`, a string é lida por unidade).
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/** Surrogate solitário não vira UTF-8: o JCS do hash o recusa, então a borda o rejeita antes (TM3). */
+export const isWellFormed = (text: string): boolean => !LONE_SURROGATE.test(text);
+
 /**
  * Cabe em `max` caracteres canônicos (JCS)? Valor que o `canonicalize` recusa (surrogate solitário)
  * conta como fora do teto em vez de lançar, para o parse devolver erro de validação.
