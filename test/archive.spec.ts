@@ -178,6 +178,8 @@ describe('archiveLegacy (dado 0.x)', () => {
     );
     expect(detectLegacy(dataDir)).toEqual([]);
     expect(packages()).toEqual(['hexlog-0x-20261003T120000Z.tar']);
+    expect(fs.statSync(result.tarPath!).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.dirname(result.tarPath!)).mode & 0o777).toBe(0o700);
   });
 
   test('arquiva a fixture real das tools 0.x e deixa só o archive', () => {
@@ -299,6 +301,45 @@ describe('archiveLegacy (dado 0.x)', () => {
     expect(resumed.tarPath).toBe(path.join(dataDir, 'archive', original!));
     expect(packages()).toEqual([original]);
     expect(detectLegacy(dataDir)).toEqual([]);
+  });
+
+  describe('retomada com .tar antigo que não cobre os arquivos', () => {
+    const OLD_TAR = 'hexlog-0x-29990101T000000Z.tar';
+
+    function plantStaleTar(kind: 'other-sha' | 'partial' | 'garbage'): void {
+      const archiveDir = path.join(dataDir, 'archive');
+      fs.mkdirSync(archiveDir, { recursive: true });
+      const tarFile = path.join(archiveDir, OLD_TAR);
+      if (kind === 'garbage') {
+        fs.writeFileSync(tarFile, 'not a tar');
+        return;
+      }
+      const staging = createTempDir('archive-stale');
+      const [first, ...rest] = Object.keys(TREE);
+      const names = kind === 'partial' ? [first!] : [first!, ...rest];
+      for (const name of names) {
+        const absolute = path.join(staging, name);
+        fs.mkdirSync(path.dirname(absolute), { recursive: true });
+        fs.writeFileSync(absolute, kind === 'other-sha' ? 'other content' : TREE[name]!);
+      }
+      tar.create({ file: tarFile, cwd: staging, sync: true, portable: true }, names);
+    }
+
+    test.each(['other-sha', 'partial', 'garbage'] as const)(
+      'arquiva gera pacote novo e deixa o .tar velho intacto (%s)',
+      (kind) => {
+        plant();
+        plantStaleTar(kind);
+        const staleBytes = fs.readFileSync(path.join(dataDir, 'archive', OLD_TAR));
+
+        const result = archiveLegacy(dataDir, options);
+
+        expect(result.tarPath).not.toBe(path.join(dataDir, 'archive', OLD_TAR));
+        expect(packages()).toHaveLength(2);
+        expect(fs.readFileSync(path.join(dataDir, 'archive', OLD_TAR))).toEqual(staleBytes);
+        expect(detectLegacy(dataDir)).toEqual([]);
+      },
+    );
   });
 
   test('arquiva retomada confere de novo os originais e aborta se algum mudou', () => {

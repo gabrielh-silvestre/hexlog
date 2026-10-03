@@ -156,7 +156,7 @@ function readCmdline(procDir: string, pid: string): string[] {
   }
 }
 
-/** O holder do 0.x (`src/log.ts#createLock`) é `<pid>-<hex>`; holder ausente é lock criado e nunca preenchido. */
+/** O holder do 0.x (o `createLock` do log 0.x) é `<pid>-<hex>`; holder ausente é lock criado e nunca preenchido. */
 function assertLockHolderDead(holderFile: string): void {
   let token: string;
   try {
@@ -244,7 +244,7 @@ function createPackage(dataDir: string, files: LegacyFile[], now: () => Date): s
   const tarPath = path.join(archiveDir, `hexlog-0x-${stamp}.tar`);
   const partial = `${tarPath}.partial`;
   tar.create(
-    { file: partial, cwd: dataDir, sync: true, portable: true },
+    { file: partial, cwd: dataDir, sync: true, portable: true, mode: 0o600 },
     files.map((file) => file.path),
   );
   fsyncDirectory(partial);

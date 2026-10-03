@@ -354,6 +354,77 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
+  describe('deny em linha única (jsonc-parser não remove o último elemento com o colchete na mesma linha)', () => {
+    const currentRules = [
+      expected.denyReadDir,
+      expected.denyRead,
+      expected.denyEdit,
+      expected.denyEditLib,
+    ];
+    const inline = (deny: string[]) => `{"permissions":{"deny":${JSON.stringify(deny)}}}`;
+
+    test('trio antigo no fim do array', () => {
+      const result = applyGuard(inline(['Bash(rm:*)', ...trioOf(oldD)]), expected);
+      expect(denyOf(result)).toEqual(['Bash(rm:*)', ...currentRules]);
+    });
+
+    test('só o trio antigo no array', () => {
+      const result = applyGuard(inline(trioOf(oldD)), expected);
+      expect(denyOf(result)).toEqual(currentRules);
+    });
+
+    test('trio antigo espalhado entre regras avulsas', () => {
+      const [readDir, read, edit] = trioOf(oldD);
+      const result = applyGuard(
+        inline([readDir!, 'Bash(rm:*)', read!, 'Bash(ls:*)', edit!]),
+        expected,
+      );
+      expect(denyOf(result)).toEqual(['Bash(rm:*)', 'Bash(ls:*)', ...currentRules]);
+    });
+  });
+
+  test('deny: <D> antigo que ainda existe no disco mantém o trio; ausente, remove', () => {
+    const text = settingsWithDeny(trioOf(oldD));
+    const kept = applyGuard(text, expected, (candidate) => candidate === oldD);
+    expect(denyOf(kept)).toEqual(expect.arrayContaining(trioOf(oldD)));
+    const removed = applyGuard(text, expected, () => false);
+    expect(denyOf(removed)).not.toContain(`Read(/${oldD})`);
+  });
+
+  test('deny: registerGuard mantém o trio de um <D> antigo que existe em disco', () => {
+    const tmpHome = createTempDir('deny-old-exists');
+    try {
+      const existingOldD = path.join(tmpHome, 'hexlog');
+      fs.mkdirSync(existingOldD);
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      fs.writeFileSync(settingsPath, settingsWithDeny(trioOf(existingOldD)));
+
+      expect(registerGuard({ settingsPath, expected })).toMatchObject({ removed: [] });
+      expect(denyOf(fs.readFileSync(settingsPath, 'utf8'))).toEqual(
+        expect.arrayContaining(trioOf(existingOldD)),
+      );
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
+  test('deny: registerGuard recusa gravar settings.json inválido e não toca o original', () => {
+    const tmpHome = createTempDir('deny-invalid');
+    try {
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      const broken = '{"permissions":{"deny":["x"]}';
+      fs.writeFileSync(settingsPath, broken);
+
+      expect(() => registerGuard({ settingsPath, expected })).toThrow(
+        'refusing to write invalid settings.json',
+      );
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(broken);
+      expect(fs.readdirSync(tmpHome)).toEqual(['settings.json']);
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
   test('deny: aplicar duas vezes produz o mesmo texto (I5)', () => {
     const first = applyGuard(settingsWithDeny(trioOf(oldD)), expected);
     expect(applyGuard(first, expected)).toBe(first);

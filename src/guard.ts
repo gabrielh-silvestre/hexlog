@@ -98,15 +98,20 @@ function applyMissingDeny(settingsText: string, expected: ExpectedRules): string
 
 /**
  * Regras de deny de um `<D>` antigo que o instalador pode remover: só o trio de `expectedRules`
- * (`denyReadDir`, `denyRead`, `denyEdit`) de um mesmo `X` com basename `hexlog` e `X` diferente do
- * `<D>` atual. Um trio incompleto, outro basename ou regra avulsa do usuário nunca entra.
+ * (`denyReadDir`, `denyRead`, `denyEdit`) de um mesmo `X` com basename `hexlog`, `X` diferente do
+ * `<D>` atual e `X` ausente do disco (`exists`): um `X` que ainda existe pode guardar log, e o deny
+ * é o isolamento dele. Um trio incompleto, outro basename ou regra avulsa do usuário nunca entra.
  */
-export function staleDenyRules(currentDeny: unknown[], expected: ExpectedRules): Set<string> {
+export function staleDenyRules(
+  currentDeny: unknown[],
+  expected: ExpectedRules,
+  exists: (path: string) => boolean = () => false,
+): Set<string> {
   const stale = new Set<string>();
   for (const rule of currentDeny) {
     if (!isString(rule) || !rule.startsWith('Read(/') || !rule.endsWith(')')) continue;
     const oldD = rule.slice('Read(/'.length, -')'.length);
-    if (path.basename(oldD) !== 'hexlog' || oldD === extractD(expected)) continue;
+    if (path.basename(oldD) !== 'hexlog' || oldD === extractD(expected) || exists(oldD)) continue;
     // `home`, `execPath` e `version` não entram nas três regras de `<D>`.
     const trio = expectedRules(oldD, '', '', '');
     const rules = [trio.denyReadDir, trio.denyRead, trio.denyEdit];
@@ -115,21 +120,25 @@ export function staleDenyRules(currentDeny: unknown[], expected: ExpectedRules):
   return stale;
 }
 
-/** Remove de `permissions.deny` o trio de um `<D>` antigo (ver `staleDenyRules`); idempotente. */
-function removeStaleDeny(settingsText: string, expected: ExpectedRules): string {
+/**
+ * Remove de `permissions.deny` o trio de um `<D>` antigo (ver `staleDenyRules`); idempotente.
+ * Regrava o array inteiro: `modify` por índice do `jsonc-parser` devolve edição errada ao remover o
+ * último elemento com o `]` na mesma linha. Custo: comentários dentro de `deny` não sobrevivem.
+ */
+function removeStaleDeny(
+  settingsText: string,
+  expected: ExpectedRules,
+  exists: (path: string) => boolean,
+): string {
   const data = parse(settingsText) as SettingsData | undefined;
   const currentDeny: unknown[] = data?.permissions?.deny ?? [];
-  const stale = staleDenyRules(currentDeny, expected);
-  let text = settingsText;
-  // Do fim para o início: remover um índice não desloca os anteriores.
-  for (let index = currentDeny.length - 1; index >= 0; index--) {
-    if (!stale.has(currentDeny[index] as string)) continue;
-    text = applyEdits(
-      text,
-      modify(text, ['permissions', 'deny', index], undefined, FORMATTING_OPTIONS),
-    );
-  }
-  return text;
+  const stale = staleDenyRules(currentDeny, expected, exists);
+  if (stale.size === 0) return settingsText;
+  const kept = currentDeny.filter((rule) => !(isString(rule) && stale.has(rule)));
+  return applyEdits(
+    settingsText,
+    modify(settingsText, ['permissions', 'deny'], kept, FORMATTING_OPTIONS),
+  );
 }
 
 /** `file` é um `bash-guard.mjs` sob `<home>/.local/lib/hexlog/<qualquer versão>`? Chave estável entre versões. */
@@ -200,8 +209,12 @@ function applyHook(settingsText: string, expected: ExpectedRules): string {
 }
 
 /** Aplica as 4 regras de deny e o hook faltantes e remove o deny de um `<D>` antigo, sem tocar em mais nada (I5). */
-export function applyGuard(settingsText: string, expected: ExpectedRules): string {
-  const withDeny = applyMissingDeny(removeStaleDeny(settingsText, expected), expected);
+export function applyGuard(
+  settingsText: string,
+  expected: ExpectedRules,
+  exists: (path: string) => boolean = () => false,
+): string {
+  const withDeny = applyMissingDeny(removeStaleDeny(settingsText, expected, exists), expected);
   return applyHook(withDeny, expected);
 }
 

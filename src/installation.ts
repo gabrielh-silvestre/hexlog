@@ -9,8 +9,8 @@ import * as path from 'node:path';
 // não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
 // a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/log.ts).
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { parse as parseJsonc } from 'jsonc-parser';
-import { isNil, zip } from 'es-toolkit';
+import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
+import { isNil, memoize, zip } from 'es-toolkit';
 import {
   expectedRules,
   applyGuard,
@@ -301,12 +301,19 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
     throw new HexlogError('INTERNAL', 'install the harness before installing hexlog');
   }
   const oldText = readFileSync(settingsPath, 'utf8');
-  const newText = applyGuard(oldText, expected);
+  // `exists` memoizado: `applyGuard` e `removed` precisam ver o mesmo disco.
+  const exists = memoize(existsSync);
+  const newText = applyGuard(oldText, expected, exists);
   if (newText === oldText) return { changed: false, removed: [] };
+  const parseErrors: ParseError[] = [];
+  parseJsonc(newText, parseErrors);
+  if (parseErrors.length > 0) {
+    throw new HexlogError('INTERNAL', 'refusing to write invalid settings.json');
+  }
 
   const oldDeny = (parseJsonc(oldText) as { permissions?: { deny?: unknown[] } } | undefined)
     ?.permissions?.deny;
-  const removed = [...staleDenyRules(oldDeny ?? [], expected)];
+  const removed = [...staleDenyRules(oldDeny ?? [], expected, exists)];
   writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText);
   writeFileAtomic(settingsPath, newText);
   return { changed: true, removed };
