@@ -2,7 +2,7 @@
 
 Estudo para quando o hexlog virar repositório público no GitHub. **Nada daqui
 está instalado.** O CI atual (`.github/workflows/ci.yml`) roda só `typecheck`,
-`lint`, `format:check` e `test`.
+`lint`, `format:check`, `test` e `test:budget`.
 
 Fontes consultadas em **2026-09-17**. Preço e plano mudam; reconfira a fonte
 antes de adotar qualquer item.
@@ -28,7 +28,7 @@ Adotar um por vez, cada um no próprio PR, quando o repo tiver tração.
 | SonarQube Cloud | Sim, plano OSS sem limite de LOC para público (o "Free" de 50k LOC é o de privado) | Conta + GitHub App + step no CI | ~20–30 min | Smells, duplicação, hotspots e quality gate no PR; cobre o que o CodeQL não cobre | [planos](https://docs.sonarsource.com/sonarqube-cloud/administering-sonarcloud/managing-subscription/subscription-plans), [preços](https://www.sonarsource.com/plans-and-pricing/sonarcloud/) |
 | Codecov | Sim, uploads ilimitados em repo público | Conta + GitHub App + upload de cobertura (hoje o CI não gera cobertura) | ~15 min | Diff de cobertura comentado no PR | [preços](https://about.codecov.io/pricing/) |
 | knip | Sim (ISC, CLI local) | `npm i -D knip` + config | ~15–30 min para calibrar ignores | Arquivo, export e dependência sem uso | [knip.dev](https://knip.dev/) |
-| dependency-cruiser | Sim (MIT, CLI local) | `npm i -D dependency-cruiser` + `.dependency-cruiser.js` | ~30–60 min para escrever regras úteis | Barra ciclo e import entre camadas | [repo](https://github.com/sverweij/dependency-cruiser) |
+| dependency-cruiser | Sim (MIT, CLI local) | `npm i -D dependency-cruiser` + `.dependency-cruiser.js` | ~30–60 min para escrever regras úteis | Barra ciclo; o import entre camadas já é travado por `eslint.boundaries.js` (`boundaryBlocks`) | [repo](https://github.com/sverweij/dependency-cruiser) |
 | Semgrep CE | Sim; a CLI (LGPL-2.1) com regras da comunidade não pede conta nem tem limite. O limite de 10 repos/10 contribuidores é da plataforma cloud, opcional | Job no CI com `semgrep` e ruleset da comunidade | ~15–20 min | Segundo motor de SAST, com cobertura de regra diferente da do CodeQL | [Community Edition](https://semgrep.dev/products/community-edition/), [preços](https://semgrep.dev/pricing/) |
 
 Opengrep ([repo](https://github.com/opengrep/opengrep)) é o fork LGPL-2.1 do

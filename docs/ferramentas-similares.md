@@ -180,14 +180,18 @@ supersession, vocabulário todo livre, dados editáveis e deletáveis pelo agent
 
 ## O que levar para o hexlog
 
-Só estudo. Qualquer item que acrescente tool quebra o "exatamente 10 tools" do
-ADR 0001 e pede um ADR novo; a coluna "Toca" indica onde caberia sem isso.
+Só estudo. Em 2026-09-17, qualquer item que acrescente tool quebrava o
+invariante de "exatamente 10 tools" do 0.x; a coluna "Toca" indica onde caberia
+sem isso.
 
-> **Emenda (2026-09-29):** o [ADR 0006](adr-0006-anexos-tipos-timeline.md)
-> acrescentou as tools `attachment` e `timeline` e reverteu o invariante de 10
-> tools. O texto e a tabela abaixo mantêm a redação de 2026-09-17, quando o
-> invariante valia; uma ideia que acrescente tool hoje pede um ADR novo do
-> mesmo jeito, sobre 12 tools.
+> **Emenda (2026-10-03):** o 0.x passou por 12 tools e a 1.0 tem 11. O texto e a
+> tabela abaixo mantêm a redação de 2026-09-17, e a coluna "Toca" cita tools
+> do 0.x (`state`, `register_type`, `register_vocabulary`, `register_gate`), que
+> a 1.0 trocou por `query` e `define_type`, `define_relation` e `define_gate`. O ponto de partida para reavaliar uma ideia são os ADRs
+> da 1.0: [0007](adr-0007-dominio.md) (domínio),
+> [0008](adr-0008-servicos.md) (serviços) e
+> [0009](adr-0009-ferramental.md) (ferramental). Uma ideia que acrescente tool
+> hoje pede um ADR novo, sobre as 11 tools.
 
 | # | Ideia | Origem | Toca | Esforço |
 |---|---|---|---|---|

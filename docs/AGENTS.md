@@ -1,20 +1,20 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-09-17 -->
+<!-- Generated: 2026-09-17 | Updated: 2026-10-03 -->
 
 # docs
 
 ## Purpose
-Registro histórico das decisões do hexlog (ADRs) e a pesquisa de libs/padrões que fundamentou essas decisões.
+Registro das decisões do hexlog (ADRs 0007 a 0009, da 1.0) e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
 
 ## Key Files
 | File | Description |
 |---|---|
-| `adr-0001-hexlog-mvp.md` | ADR 0001, status Aceito: decide construir o hexlog como servidor MCP stdio único em TypeScript (Node ≥ 24.18.1), com núcleo puro, store JSONL com lock `mkdir`+token+`mtime`, cadeia sha256+JCS via `canonicalize`, tools com Zod (dez na origem; doze desde o ADR 0006), busca via MiniSearch, e instalação como bundle esbuild em `~/.local/lib/hexlog/<versão>/` fora da working tree. Registra alternativas descartadas, consequências, testes portados da POC (`5703a53`) e decisões de execução (DE-01 a DE-19). |
-| `adr-0002-versionamento-definicoes.md` | ADR 0002, status Aceito: `register_type`/`register_vocabulary`/`register_gate` passam a versionar em semver `major.minor` (`<nome>/<versão>.json`) em vez de sobrescrever, com o legado `<nome>.json` nunca migrado. Decisões estruturais D1 (escrita exclusiva por `linkSync` + retry que refaz a decisão inteira) e D2 (legado não materializado). |
-| `adr-0005-hexlog-setup-hexlog-flow.md` | ADR 0005, status Aceito: duas skills novas (`hexlog-setup`, `hexlog-flow`) e o mapa `.hexlog/flow.md` do repositório alvo, que generalizam o instalador de uma skill fixa para N pastas de `skills/`. Emenda de 2026-09-28: o hook opcional `flow-reminder` e o schema Zod `FlowMap` (`src/flow-map.ts`) descritos na decisão original foram retirados do v1 por decisão do usuário — sem consumidor programático do flow map, instalador volta a dois bundles. Emenda de 2026-09-29: o invariante de dez tools cai com o ADR 0006. |
-| `adr-0006-anexos-tipos-timeline.md` | ADR 0006, status Aceito: anexos endereçados por sha256 dos bytes (tool `attachment`, `path` restrito a `<cwd>/.omc/plans`), tool e CLI `timeline` cruzando os processos por target, `supersedes` de tipo custom validado no `register`, cinco tipos custom de auditoria (`.hexlog/types/*.json`) e o contrato de veredito do Critic. Passa o servidor a 12 tools e reverte a rejeição de "tool nova de busca multi-processo" do ADR 0001 (congelado, sem emenda). Emenda os ADR 0002 e 0005 sobre o invariante de dez tools. |
-| `adr-0009-ferramental.md` | ADR 0009, status Proposto: ferramental da 1.0 depois do corte da F6 — 11 tools e alcance do `attach`, premissa de pid e taxas aceitas de `lock-lost`/`lock-busy` do lock, orçamentos só no CI, contrato dos scripts de leitura por `compose.ts` (item 5), SE8 do insights com o G4 e o limite do replay sem rastro (item 6) e os 27 códigos de erro (item 7, `INVALID_ID`/`UNKNOWN_ID` em aberto). |
+| `adr-0007-dominio.md` | ADR 0007, status Proposto: domínio da 1.0 — catálogo de entidades, regra "`supersedes`/`revokes` só no processo", vigência e conferência do destino de `supports`, `revokes` sobre não vigente recusado com `FORK_REJECTED`, anexo por palavra-chave de schema e guarda `unmarked-attachment`, versionamento (gate sem detecção de quebra, processo novo depois de `breaking: true`) e as quatro perguntas de gate (21 decisões numeradas, com a seção de emendas). |
+| `adr-0008-servicos.md` | ADR 0008, status Proposto: serviços da 1.0 — emendas às specs (vigência só no processo, lock só da origem, E5 e `CYCLE_REJECTED`, cursor, teto de `text` e a reversão do "sem cache"), reavaliação do lock, precedência dos erros do `register` em seis níveis (D-06), regra de leitura D-24, ordem de saída da `query`, cegueira do alcance processo e reprodução do gate só pelo marcador (D-19) e limites aceitos da busca (7). |
+| `adr-0009-ferramental.md` | ADR 0009, status Proposto: ferramental da 1.0 (criado na F6, estendido na F8) — 11 tools e alcance do `attach` (item 1), premissa de pid e taxas aceitas do lock (itens 2 e 3), orçamentos só no CI (4), contrato dos scripts de leitura por `compose.ts` (5), SE8 do insights (6), os 25 códigos de erro (7, `INVALID_ID`/`UNKNOWN_ID` removidos), ponto de retorno (8), raiz `.v1` e detecção positiva (9), emenda da regra de sequência (10), `details` (11), tetos do `register` (12), ampliações sobre a spec (13), `attach` por `path` (14), trilha 0.x só no `.tar` (15), mensagem do hook (16), ADR só recebe emenda (17), tetos do lock com destravamento manual (18) recuperação manual de processo corrompido (19) e limites aceitos do validador, ReDoS e `$ref` (20). |
 | `tetos-dominio-v1.md` | Decisão N8 do PR #60: tetos de `relations`, `Batch.key`, `RecordType`, `Gate.questions` e `aliases` no domínio da v1, com o dado medido no 0.x (2026-09-30), quais números são precedente e quais são palpite, e como refazer a medição. |
+| `friction-mining.md` | Como a skill `friction-mining` minera transcripts do Claude Code atrás de atrito no uso de uma tool MCP, e como portá-la a outro projeto. |
+| `piloto-omc-fork.md` | Piloto do `oh-my-claudecode@omc-hexlog` (fork com hexlog) ligado só neste repositório, no lugar do upstream. |
 | `qualidade-ci.md` | Estudo (nada instalado) de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17. |
 | `qualidade-codigo.md` | Estudo (nada instalado) de qualidade de código e teste — TypeScript, ESLint, jest, property-based testing, mutação — consultado em 2026-09-17. |
 | `ferramentas-similares.md` | Estudo (nada adotado) de decisionlog.ai, mcp-server-decisions e ConPort comparados ao hexlog, com fontes primárias consultadas em 2026-09-17 e 5 ideias ranqueadas. |
@@ -23,20 +23,20 @@ Registro histórico das decisões do hexlog (ADRs) e a pesquisa de libs/padrões
 ## Subdirectories
 | Directory | Description |
 |---|---|
-| `pesquisa/` | Pesquisa de libs e padrões (17 frentes) que embasou o ADR 0001 (see `pesquisa/AGENTS.md`) |
+| `pesquisa/` | Pesquisa de libs e padrões (17 frentes) que embasou as decisões do 0.x (see `pesquisa/AGENTS.md`) |
 
 ## For AI Agents
 ### Working In This Directory
-- Os demais ADRs aceitos (`adr-0002-versionamento-definicoes.md`, `adr-0005-hexlog-setup-hexlog-flow.md`, `adr-0006-anexos-tipos-timeline.md`) são registro histórico: não reescreva o corpo para refletir mudanças futuras. Uma mudança de rumo emenda com uma seção nova (ex.: "Amendment") ou um ADR seguinte (`adr-000N-...md`), nunca reescrevendo Decision/Consequences já registrados.
-- Antes de propor trocar uma lib ou abordagem já decidida, confira a frente de pesquisa correspondente em `pesquisa/frentes/` e a linha do ADR que a descartou ou adotou — a maioria das alternativas já foi avaliada e tem motivo registrado.
+- A partir da 1.0, ADR não é refeito nem apagado: uma mudança de rumo emenda com uma seção nova (ex.: "Amendment") ou um ADR seguinte (`adr-000N-...md`), nunca reescrevendo Decision/Consequences já registrados. A troca dos ADRs 0001, 0002, 0005 e 0006 pelos 0007 a 0009 foi a exceção única. Os ADRs 0007 a 0009 estão Propostos até o usuário aprovar.
+- Antes de propor trocar uma lib ou abordagem já decidida, confira a frente de pesquisa correspondente em `pesquisa/frentes/` e o ADR 0007, 0008 ou 0009 que a trata — a maioria das alternativas já foi avaliada e tem motivo registrado.
 
 ### Common Patterns
 - IDs de decisão (`Q1`, `R-1`, `QN2`, `U-1`, `DE-01`, ...) citados no ADR remetem a decisões do usuário ou de execução tomadas durante o planejamento/Ralph; são referenciados por esses códigos em todo o repositório.
 
 ## Dependencies
 ### Internal
-O ADR 0001 registra as decisões que originaram a arquitetura de `src/` (núcleo, store, cadeia, tools, instalação) e o formato do log (envelope de evento, manifesto `process.json`, cadeia de hash). A fonte da verdade do estado atual é o código.
+Os ADRs 0007 a 0009 registram as decisões da arquitetura de `src/` (domínio, serviços, ferramental) e o formato do log. A fonte da verdade do estado atual é o código.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
 
-- **Congelados em 2026-09-28:** `adr-0001-hexlog-mvp.md` e tudo em `pesquisa/` (inclusive os `AGENTS.md` de lá). Não edite esses arquivos, nem para corrigir, anotar ou emendar; revisões de doc contra o código os ignoram. Mudança de rumo sobre o que o ADR 0001 decidiu vai num ADR novo.
+- **`pesquisa/` segue congelado** desde 2026-09-28 (inclusive os `AGENTS.md` de lá): não edite esses arquivos, nem para corrigir, anotar ou emendar; revisões de doc contra o código os ignoram. O ADR 0001 foi substituído pelos ADRs 0007 a 0009, e os links de `pesquisa/` para ele ficam mortos de propósito. Mudança de rumo sobre o que o ADR 0001 decidiu vai num ADR novo.
