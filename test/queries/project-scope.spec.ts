@@ -6,7 +6,7 @@ import { idsOf, querySetup } from './query-setup.ts';
 describe('SL8: o alcance projeto com não vigentes reproduz a timeline 0.x de um alvo', () => {
   /**
    * Dois processos no mesmo alvo `run.step`. A ordem esperada abaixo vem do comportamento de
-   * `src/timeline.ts#projectTimeline` (instante, depois nome do processo, depois `seq`), não do
+   * `projectTimeline` do 0.x (instante, depois nome do processo, depois `seq`), não do
    * serviço de consulta.
    */
   async function scenario() {

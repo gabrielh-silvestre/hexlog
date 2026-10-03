@@ -2,7 +2,27 @@ import { describe, test, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ts from 'typescript';
-import { listNewTreeFiles, NEW_TREE_KNOWN_FILES, repoRoot, srcRoot } from './new-tree.ts';
+
+const repoRoot = path.resolve(__dirname, '..');
+const SCANNED_DIRS = ['src', 'hook', 'scripts'];
+
+// Arquivos que a varredura tem de achar, senão um filtro quebrado a faria passar sem olhar nada.
+const KNOWN_FILES = [
+  'src/domain/chain.ts',
+  'src/mcp/kernel.ts',
+  'hook/bash-guard.ts',
+  'scripts/build.ts',
+];
+
+/** Arquivos .ts de src/, hook/ e scripts/, em qualquer profundidade. */
+function listScannedFiles(): string[] {
+  return SCANNED_DIRS.flatMap((dir) =>
+    fs
+      .readdirSync(path.join(repoRoot, dir), { recursive: true, encoding: 'utf8' })
+      .filter((entry) => entry.endsWith('.ts'))
+      .map((entry) => path.join(repoRoot, dir, entry)),
+  );
+}
 
 const FLOW_TERMS = new Set([
   'phase',
@@ -60,14 +80,14 @@ function findFlowTerms(fileName: string, code: string): string[] {
   return found;
 }
 
-describe('D1: árvore nova sem termo de fluxo', () => {
-  test('a varredura acha os arquivos da árvore nova', () => {
-    const scanned = listNewTreeFiles().map((file) => path.relative(srcRoot, file));
-    expect(scanned).toEqual(expect.arrayContaining(NEW_TREE_KNOWN_FILES));
+describe('D1: src/, hook/ e scripts/ sem termo de fluxo', () => {
+  test('a varredura acha os arquivos de src/, hook/ e scripts/', () => {
+    const scanned = listScannedFiles().map((file) => path.relative(repoRoot, file));
+    expect(scanned).toEqual(expect.arrayContaining(KNOWN_FILES));
   });
 
-  test('nenhum arquivo da árvore nova usa termo de fluxo em identificador ou literal', () => {
-    const violations = listNewTreeFiles().flatMap((file) =>
+  test('nenhum arquivo de src/, hook/ ou scripts/ usa termo de fluxo em identificador ou literal', () => {
+    const violations = listScannedFiles().flatMap((file) =>
       findFlowTerms(file, fs.readFileSync(file, 'utf8')).map(
         (hit) => `${path.relative(repoRoot, file)}: ${hit}`,
       ),
