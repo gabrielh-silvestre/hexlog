@@ -1,0 +1,59 @@
+{
+  "project": "alpha",
+  "process": "main",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "fixed": {
+    "types": {
+      "note": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "attachment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "vocabulary": {
+      "core": {
+        "milestoneType": [
+          "approved"
+        ],
+        "result": [
+          "ok"
+        ],
+        "action": [
+          "follow"
+        ]
+      },
+      "byOwner": {}
+    },
+    "gates": {
+      "custom-gate": {
+        "criteria": "any criteria"
+      }
+    }
+  },
+  "hashes": {
+    "schemas": "3db390c61fd5ced0b50bdfea1e8aaef4a3c3df1877b45b8aae75908e6222bd07",
+    "vocabulary": "f91bf369c023eefbdb3ffe5da27b6e1dbd8f51030deb73144d37c517297643d6",
+    "gates": "eacd04ab5cf96bd87eae660782d7d2cab251dca30edafa61590b32a3fddc08bd"
+  },
+  "versions": {
+    "types": {
+      "note": "1.0"
+    },
+    "vocabulary": {
+      "core": "1.0"
+    },
+    "gates": {
+      "custom-gate": "1.0"
+    }
+  }
+}

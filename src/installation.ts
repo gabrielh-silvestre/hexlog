@@ -9,11 +9,12 @@ import * as path from 'node:path';
 // não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
 // a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/log.ts).
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { parse as parseJsonc } from 'jsonc-parser';
-import { isNil, zip } from 'es-toolkit';
+import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
+import { isNil, memoize, zip } from 'es-toolkit';
 import {
   expectedRules,
   applyGuard,
+  staleDenyRules,
   verifyGuard,
   findHookEntry,
   mcpRegistered,
@@ -24,6 +25,7 @@ import {
 } from './guard.ts';
 import { HexlogError } from './errors.ts';
 import { dataDir } from './directory.ts';
+import { writeFileAtomic } from './adapters/fs/atomic.ts';
 
 export type Bundles = { server: Buffer; hook: Buffer };
 /** sha256 dos 2 artefatos (server/hook) de um build ou de uma instalação. */
@@ -286,23 +288,35 @@ export async function installArtifact(args: {
   return { action, versionDir, manifest: finalManifest, warnings };
 }
 
-/** Aplica o guard em `settings.json` (backup + troca atômica), só se algo mudou. */
+/**
+ * Aplica o guard em `settings.json` (backup + troca atômica), só se algo mudou. `removed` lista as
+ * regras de deny de um `<D>` antigo que o guard tirou, para o instalador não removê-las em silêncio.
+ */
 export function registerGuard(args: { settingsPath: string; expected: ExpectedRules }): {
   changed: boolean;
+  removed: string[];
 } {
   const { settingsPath, expected } = args;
   if (!existsSync(settingsPath)) {
     throw new HexlogError('INTERNAL', 'install the harness before installing hexlog');
   }
   const oldText = readFileSync(settingsPath, 'utf8');
-  const newText = applyGuard(oldText, expected);
-  if (newText === oldText) return { changed: false };
+  // `exists` memoizado: `applyGuard` e `removed` precisam ver o mesmo disco.
+  const exists = memoize(existsSync);
+  const newText = applyGuard(oldText, expected, exists);
+  if (newText === oldText) return { changed: false, removed: [] };
+  const parseErrors: ParseError[] = [];
+  parseJsonc(newText, parseErrors);
+  if (parseErrors.length > 0) {
+    throw new HexlogError('INTERNAL', 'refusing to write invalid settings.json');
+  }
 
-  writeFileSync(`${settingsPath}.bak-hexlog`, oldText);
-  const tmp = `${settingsPath}.tmp-${process.pid}`;
-  writeFileSync(tmp, newText);
-  fs.renameSync(tmp, settingsPath);
-  return { changed: true };
+  const oldDeny = (parseJsonc(oldText) as { permissions?: { deny?: unknown[] } } | undefined)
+    ?.permissions?.deny;
+  const removed = [...staleDenyRules(oldDeny ?? [], expected, exists)];
+  writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText);
+  writeFileAtomic(settingsPath, newText);
+  return { changed: true, removed };
 }
 
 /** `name` vira um segmento de path (`<home>/.claude/skills/<name>/`): rejeita o que escaparia dele. */
