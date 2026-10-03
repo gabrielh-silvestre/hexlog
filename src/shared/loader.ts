@@ -12,7 +12,7 @@ import { HexlogError } from '../errors.ts';
 import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../ports.ts';
 
 // Tetos de saída da verificação de cadeia, como no 0.x.
-const MAX_BREAKS = 100;
+export const MAX_BREAKS = 100;
 const MAX_REPAIRED = 100;
 
 /** Elo quebrado: `index` é a posição da linha no arquivo, contada a partir de 0. */

@@ -3,10 +3,12 @@ import { createAttachmentStore } from './adapters/fs/attachment-store.ts';
 import { createDefinitionStore } from './adapters/fs/definition-store.ts';
 import { detectLegacy } from './adapters/fs/data-format.ts';
 import { createProcessStore } from './adapters/fs/process-store.ts';
+import { createSearchIndex } from './adapters/search.ts';
 import { createValidator } from './adapters/validator.ts';
 import { createAttachmentService } from './commands/attachment.ts';
 import { createDefinitionService } from './commands/definition.ts';
 import { createProcessService } from './commands/process.ts';
+import { createQueryService } from './queries/query-service.ts';
 import type { Logger } from './shared/logger.ts';
 
 export type ComposeOptions = {
@@ -20,8 +22,8 @@ export type ComposeOptions = {
 
 /**
  * Raiz de composição (D-25): o único lugar, fora de `adapters/`, que conhece os adaptadores de disco.
- * Liga os adaptadores reais aos serviços de escrita; `server.ts`, os scripts e os testes só recebem
- * o que sai daqui.
+ * Liga os adaptadores reais aos serviços de escrita e de consulta; `server.ts`, os scripts e os
+ * testes só recebem o que sai daqui.
  */
 export function compose({ dataDir, cwd, clock, logger }: ComposeOptions) {
   const validator = createValidator();
@@ -41,6 +43,14 @@ export function compose({ dataDir, cwd, clock, logger }: ComposeOptions) {
         clock,
         // Id opaco (D-01): usa o relógio real do Node, não o `clock` injetado.
         newUuid: randomUUIDv7,
+        logger,
+      }),
+      query: createQueryService({
+        store: processes,
+        definitions,
+        attachments,
+        search: createSearchIndex(),
+        clock,
         logger,
       }),
     },

@@ -1,8 +1,8 @@
 import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import { isPlainObject, kebabCase, uniqBy } from 'es-toolkit';
+import { isPlainObject, kebabCase } from 'es-toolkit';
 import safeRegex from 'safe-regex2';
-import type { Detail } from '../errors.ts';
+import { capDetails, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
 
 /** Formato `attachment` (D-16): sha256 em hexadecimal minúsculo, igual a `Hash` em `domain/ids.ts`. */
@@ -28,26 +28,6 @@ function toDetail(error: ErrorObject): Detail {
     code: kebabCase(error.keyword),
     message: error.message ?? 'schema validation failed',
   };
-}
-
-/** Alinhado a `BATCH_MAX` (`docs/tetos-dominio-v1.md`); sem medição por trás. */
-const MAX_DETAILS = 50;
-
-/**
- * Deduplica por path+code+message (o ajv repete o mesmo erro, pois o metaschema é revisitado por
- * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora.
- */
-function capDetails(details: Detail[]): Detail[] {
-  const unique = uniqBy(details, (d) => `${d.path}\0${d.code}\0${d.message}`);
-  if (unique.length <= MAX_DETAILS) return unique;
-  return [
-    ...unique.slice(0, MAX_DETAILS),
-    {
-      path: '',
-      code: 'too-many-errors',
-      message: `${unique.length - MAX_DETAILS} more errors omitted`,
-    },
-  ];
 }
 
 const toDetails = (errors: ErrorObject[]): Detail[] => capDetails(errors.map(toDetail));

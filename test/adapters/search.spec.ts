@@ -1,8 +1,14 @@
 import { describe, expect, test } from '@jest/globals';
 import { createSearchIndex } from '../../src/adapters/search.ts';
+import type { RecordId } from '../../src/domain/ids.ts';
 import type { HexRecord } from '../../src/domain/record.ts';
+import type { ProcessRef } from '../../src/ports.ts';
 
-const index = createSearchIndex();
+const PROCESS: ProcessRef = { project: 'proj', process: 'proc' };
+
+// Índice novo por chamada: cada caso mede a busca sem cache; o que o cache muda está em search.cache.spec.ts.
+const search = (records: HexRecord[], text: string, allowed?: ReadonlySet<RecordId>) =>
+  createSearchIndex().search(PROCESS, records, text, allowed);
 
 let counter = 0;
 
@@ -24,8 +30,8 @@ const idsOf = (records: HexRecord[]) => records.map((record) => record.id);
 
 describe('createSearchIndex', () => {
   test('não acha nada em lista vazia nem sem correspondência', () => {
-    expect(index.search([], 'anything')).toEqual([]);
-    expect(index.search([makeRecord({ data: { text: 'webhook' } })], 'kubernetes')).toEqual([]);
+    expect(search([], 'anything')).toEqual([]);
+    expect(search([makeRecord({ data: { text: 'webhook' } })], 'kubernetes')).toEqual([]);
   });
 
   test('indexa type, target e as strings de data, inclusive as aninhadas', () => {
@@ -35,10 +41,10 @@ describe('createSearchIndex', () => {
     const nested = makeRecord({ data: { deep: { list: [{ note: 'quarantine' }] } } });
     const records = [byType, byTarget, byData, nested];
 
-    expect(index.search(records, 'decision')).toEqual([byType.id]);
-    expect(index.search(records, 'invoice')).toEqual([byTarget.id]);
-    expect(index.search(records, 'refund')).toEqual([byData.id]);
-    expect(index.search(records, 'quarantine')).toEqual([nested.id]);
+    expect(search(records, 'decision')).toEqual([byType.id]);
+    expect(search(records, 'invoice')).toEqual([byTarget.id]);
+    expect(search(records, 'refund')).toEqual([byData.id]);
+    expect(search(records, 'quarantine')).toEqual([nested.id]);
   });
 
   test('não indexa id, autor, relações, chaves de data nem valores que não são string', () => {
@@ -49,7 +55,7 @@ describe('createSearchIndex', () => {
     });
 
     for (const term of ['secretkey', 'zebra', 'quokka', 'supports', 'proc']) {
-      expect(index.search([record], term)).toEqual([]);
+      expect(search([record], term)).toEqual([]);
     }
   });
 
@@ -58,37 +64,37 @@ describe('createSearchIndex', () => {
     const strong = makeRecord({ data: { text: 'webhook' }, target: 'webhook.retry' });
     const none = makeRecord({ data: { text: 'unrelated' } });
 
-    expect(index.search([weak, none, strong], 'webhook')).toEqual([strong.id, weak.id]);
+    expect(search([weak, none, strong], 'webhook')).toEqual([strong.id, weak.id]);
   });
 
   test('empate de relevância mantém a ordem dos registros', () => {
     const records = [1, 2, 3].map(() => makeRecord({ data: { text: 'webhook' } }));
 
-    expect(index.search(records, 'webhook')).toEqual(idsOf(records));
-    expect(index.search([...records].reverse(), 'webhook')).toEqual(idsOf(records).reverse());
+    expect(search(records, 'webhook')).toEqual(idsOf(records));
+    expect(search([...records].reverse(), 'webhook')).toEqual(idsOf(records).reverse());
   });
 
   test('ignora acento e caixa, na consulta e no texto', () => {
     const record = makeRecord({ data: { text: 'Configuração Crítica' } });
 
-    expect(index.search([record], 'configuracao critica')).toEqual([record.id]);
-    expect(
-      index.search([makeRecord({ data: { text: 'configuracao' } })], 'CONFIGURAÇÃO'),
-    ).toHaveLength(1);
+    expect(search([record], 'configuracao critica')).toEqual([record.id]);
+    expect(search([makeRecord({ data: { text: 'configuracao' } })], 'CONFIGURAÇÃO')).toHaveLength(
+      1,
+    );
   });
 
   test('casa por prefixo e tolera um erro de digitação', () => {
     const record = makeRecord({ data: { text: 'authentication' } });
 
-    expect(index.search([record], 'authent')).toEqual([record.id]);
-    expect(index.search([record], 'authentcation')).toEqual([record.id]);
+    expect(search([record], 'authent')).toEqual([record.id]);
+    expect(search([record], 'authentcation')).toEqual([record.id]);
   });
 
   test('exige todos os termos (AND) quando algum registro os tem todos', () => {
     const both = makeRecord({ data: { text: 'webhook retry' } });
     const one = makeRecord({ data: { text: 'webhook only' } });
 
-    expect(index.search([one, both], 'webhook retry')).toEqual([both.id]);
+    expect(search([one, both], 'webhook retry')).toEqual([both.id]);
   });
 
   test('cai para OR quando o AND não acha nada, exigindo metade dos termos arredondada para cima', () => {
@@ -96,15 +102,38 @@ describe('createSearchIndex', () => {
     const webhookAndTimeout = makeRecord({ data: { text: 'webhook timeout' } });
 
     // 2 termos: o piso é 1, qualquer um dos dois basta.
-    expect(index.search([webhookOnly], 'webhook retry')).toEqual([webhookOnly.id]);
+    expect(search([webhookOnly], 'webhook retry')).toEqual([webhookOnly.id]);
     // 3 termos: o piso é 2, e só o registro com dois dos três entra.
-    expect(index.search([webhookOnly, webhookAndTimeout], 'webhook timeout retry')).toEqual([
+    expect(search([webhookOnly, webhookAndTimeout], 'webhook timeout retry')).toEqual([
       webhookAndTimeout.id,
     ]);
   });
 
+  test('com `allowed`, o AND e o piso do OR decidem sobre os registros permitidos (paridade com o 0.x)', () => {
+    const doc = makeRecord({ type: 'doc', data: { text: 'banana uva' } });
+    const banana = makeRecord({ data: { text: 'banana' } });
+    const uva = makeRecord({ data: { text: 'uva' } });
+    const records = [doc, banana, uva];
+
+    // Sem o filtro o doc casa os dois termos e o OR nunca roda.
+    expect(search(records, 'banana uva')).toEqual([doc.id]);
+    // Só as notas permitidas: nenhuma casa os dois, então o OR devolve as duas.
+    expect(search(records, 'banana uva', new Set([banana.id, uva.id]))).toEqual([
+      banana.id,
+      uva.id,
+    ]);
+  });
+
+  test('`allowed` vazio não devolve nada e um permitido que não casa não entra', () => {
+    const banana = makeRecord({ data: { text: 'banana' } });
+    const other = makeRecord({ data: { text: 'laranja' } });
+
+    expect(search([banana, other], 'banana', new Set())).toEqual([]);
+    expect(search([banana, other], 'banana', new Set([other.id]))).toEqual([]);
+  });
+
   test('uma consulta de um termo só nunca cai para OR', () => {
-    expect(index.search([makeRecord({ data: { text: 'webhook' } })], 'retry')).toEqual([]);
+    expect(search([makeRecord({ data: { text: 'webhook' } })], 'retry')).toEqual([]);
   });
 
   test('repetir um termo não o torna mais pesado que os outros da consulta', () => {
@@ -113,8 +142,8 @@ describe('createSearchIndex', () => {
     const records = [mostlyBeta, mostlyAlpha];
 
     // Os dois casam igual `alpha beta`; `Alpha alpha` não pode empurrar `mostlyAlpha` para cima.
-    expect(index.search(records, 'Alpha alpha beta')).toEqual(index.search(records, 'alpha beta'));
-    expect(index.search(records, 'alpha beta')).toEqual(idsOf(records));
+    expect(search(records, 'Alpha alpha beta')).toEqual(search(records, 'alpha beta'));
+    expect(search(records, 'alpha beta')).toEqual(idsOf(records));
   });
 
   test('termo repetido conta uma vez só no AND e no piso do OR', () => {
@@ -122,9 +151,9 @@ describe('createSearchIndex', () => {
     const webhookOnly = makeRecord({ data: { text: 'webhook and unrelated words' } });
 
     // AND: `webhook` repetido não exige nada além de `webhook` e `retry`.
-    expect(index.search([webhookOnly, both], 'webhook webhook retry')).toEqual([both.id]);
+    expect(search([webhookOnly, both], 'webhook webhook retry')).toEqual([both.id]);
     // OR: 2 termos distintos dão piso 1; contados com a repetição seriam 3 e piso 2.
-    expect(index.search([webhookOnly], 'webhook webhook retry')).toEqual([webhookOnly.id]);
+    expect(search([webhookOnly], 'webhook webhook retry')).toEqual([webhookOnly.id]);
   });
 
   test('consulta com o mesmo termo repetido milhares de vezes custa como a de um termo só', () => {
@@ -133,7 +162,7 @@ describe('createSearchIndex', () => {
     );
 
     const start = performance.now();
-    const ids = index.search(records, 'webhook '.repeat(2_000));
+    const ids = search(records, 'webhook '.repeat(2_000));
     const elapsed = performance.now() - start;
 
     expect(ids).toHaveLength(records.length);
