@@ -31,7 +31,9 @@ Registro das decisões do hexlog (ADRs 0007 a 0009, da 1.0) e a pesquisa de libs
 - Antes de propor trocar uma lib ou abordagem já decidida, confira a frente de pesquisa correspondente em `pesquisa/frentes/` e o ADR 0007, 0008 ou 0009 que a trata — a maioria das alternativas já foi avaliada e tem motivo registrado.
 
 ### Common Patterns
-- IDs de decisão (`Q1`, `R-1`, `QN2`, `U-1`, `DE-01`, ...) citados no ADR remetem a decisões do usuário ou de execução tomadas durante o planejamento/Ralph; são referenciados por esses códigos em todo o repositório.
+- IDs de decisão remetem a decisões do usuário ou de execução tomadas durante o planejamento/Ralph e vêm em duas famílias, nenhuma delas definida nos ADRs 0007 a 0009:
+  - 0.x (`Q#`, `QN#`, `R-#`, `U-#`, `DE-##`, `M#`, `N#`, `S#`, `B#`, `I#`, `C#`): definidos só no ADR 0001, removido na F8; leia com `git show 87237c3:docs/adr-0001-hexlog-mvp.md` (commit ancestral da `main`, estável).
+  - 1.0 (`D-##`, `E#`, `G#`, `L#`, `f#`, `Constraint N`, `P#`, `TM#`, `TB#`, `TF#`, `SL#`, `SE#`): vivem nas specs e no plano em `.omc/`, ignorado pelo git; só `D-##` tem sentido inline, nos ADRs 0008 e 0009 e em `docs/tetos-dominio-v1.md`. Os demais ficam como rótulo sem destino versionado; versionar as specs e o plano é decisão do dono, em aberto.
 
 ## Dependencies
 ### Internal

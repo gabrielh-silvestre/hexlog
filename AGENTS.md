@@ -27,7 +27,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## For AI Agents
 
 ### Working In This Directory
-- O log é estritamente append-only, gravado sob lock por processo (`mkdir` exclusivo com dono por pid, `bootId` e token, `src/adapters/fs/lock.ts`). Nunca crie código que edite ou remova linhas.
+- O log é estritamente append-only, gravado sob lock por processo (publicado por `rename`, com dono por pid, `bootId` e token, `src/adapters/fs/lock.ts`). Nunca crie código que edite ou remova linhas.
 - A leitura e a escrita do log usam um único predicado (`isValidLine` em `src/shared/loader.ts`). Não duplique essa lógica. Ele devolve `LineCheck`: `valid` (elos e próximo esperado), `torn` (linha que nem é JSON) ou `rejected` com `reasons` (`invalid-line`, `diverging-seq`, `hash-mismatch`), conferidas por `isValidLink` (`src/domain/chain.ts`), que devolve `{ link }` ou `{ reasons }`.
 - Toda tool passa por `execute()` em `src/mcp/kernel.ts`. `HexlogError` vira `{code, message, details}`, e qualquer outra exceção vira `INTERNAL`, sem stack na resposta.
 - São exatamente 11 tools (`docs/adr-0009-ferramental.md`). Adicionar ou remover uma quebra testes do instalador e do e2e.
@@ -49,7 +49,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ### Common Patterns
 - Nomes de módulos, funções e códigos de erro em inglês; comentários e descrições de teste continuam em português (ver `CLAUDE.md`).
 - Esquemas Zod para registros e entradas de tools. O núcleo (`src/domain/`, `src/shared/`) é puro, e o I/O fica em `src/adapters/`.
-- IDs nos títulos de teste (M#, N#, S#, B#, I#, C#, Q#, R-#, U-#) remetem a critérios de aceite dos ADRs 0007 a 0009 e do plano da 1.0.
+- IDs nos títulos de teste (M#, N#, S#, B#, I#, C#, Q#, R-#, U-#) remetem a critérios de aceite das duas famílias de IDs descritas em `docs/AGENTS.md#Common Patterns` (0.x no ADR 0001 removido, 1.0 no plano em `.omc/`), não aos ADRs 0007 a 0009.
 - Versões de dependências fixadas sem `^`.
 - Documentação (`.md`) e comentários citam arquivo + símbolo, nunca número de linha; `test/skill-coherence.spec.ts` trava a regra nos `.md`. Nas skills o formato é `caminho/arquivo.ts#símbolo`, com o caminho relativo a `src/` (ex.: `mcp/kernel.ts#execute`), conferido contra `src/`.
 

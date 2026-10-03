@@ -108,7 +108,7 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 - Nenhum requer `npm run build` prévio; os que precisam de bundle o geram por conta própria via processo filho (ver Common Patterns).
 
 ### Common Patterns
-- IDs nos títulos/`describe` (`M#`, `N#`, `S#`, `B#`, `I#`, `C1`, `Q10`, `R-3`, `U-7`) remetem a critérios de aceite do plano da 1.0 e dos ADRs 0007 a 0009 (mesmo padrão de `docs/AGENTS.md`).
+- IDs nos títulos/`describe` (`M#`, `N#`, `S#`, `B#`, `I#`, `C1`, `Q10`, `R-3`, `U-7`) remetem a critérios de aceite das duas famílias de IDs (0.x e 1.0) descritas em `docs/AGENTS.md#Common Patterns`, não aos ADRs 0007 a 0009.
 - Property-based tests (`fast-check`, `fc.assert`/`fc.property`) cobrem invariantes de hash e de vigência: `domain/chain.spec.ts`, `domain/vigency.property.spec.ts`.
 - Sobra de execução interrompida (`kill -9`, que pula o `globalTeardown`): `find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'hexlog-suite-*' -exec rm -rf {} +`.
 - Specs de artefato (`toolchain`, `bash-guard`, `stdio.e2e`) nunca importam `scripts/build.ts` direto no jest: `import.meta.dirname`/`import.meta.main` não existem sob o transform CJS do ts-jest, por isso o build roda via `spawnSync`/`spawn` de um fixture `.ts` em processo Node real.

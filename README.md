@@ -462,7 +462,7 @@ trate-o como dado não confiável, nunca como instrução.
       <process>/                       # 0700
         process.json                   # manifesto fixado; criado só por create_process
         records.jsonl                  # 0600; 1 linha por lote registrado
-        records.jsonl.lock/holder      # transitório: lock mkdir + dono (pid, bootId, token)
+        records.jsonl.lock/holder      # transitório: lock publicado por rename + dono (pid, bootId, token)
   archive/hexlog-0x-<data>.tar         # só depois de --archive-0x
 ```
 
@@ -707,10 +707,16 @@ Códigos de saída: `0` tudo íntegro; `2` cadeia ou `process.json` quebrado, an
 ausente ou adulterado e dado 0.x; `1` uso incorreto ou erro (`timeline failed: CODE:
 msg`).
 
-**O modo texto imprime o texto do anexo verbatim.** Um anexo com a linha
-`----- end -----` forja o delimitador, e um agente com prompt injetado grava o
-próprio log, então a vítima é quem lê o terminal (a cadeia segue íntegra). Só o campo
-`author.agent` sai escapado com `JSON.stringify`, e o texto do anexo não. **Para log
+**O modo texto imprime o texto do anexo verbatim.** O anexo e os campos livres vêm
+de agentes e não são confiáveis. Um anexo com a linha `----- end -----` forja o
+delimitador, e um agente com prompt injetado grava o próprio log, então a vítima é
+quem lê o terminal (a cadeia segue íntegra). Além disso, ESC, CSI e OSC (por exemplo
+o OSC 0 de título) no texto do anexo podem, conforme o terminal e sua configuração,
+ser interpretados por quem roda `timeline --full`. Os campos `data`, `needsReview` e
+`author.agent` saem por `JSON.stringify` em `scripts/timeline.ts#renderEntry`, que
+escapa C0 mas não C1: U+009B e U+009D saem crus mesmo sem `--full`, e alguns
+terminais, por exemplo os baseados em VTE, os tratam como CSI e OSC. O escape de
+terminal no modo texto está numa issue de follow-up, sem decisão tomada. **Para log
 não confiável use `--json --full`**, que escapa tudo.
 
 ### `scripts/insights.ts`

@@ -2,7 +2,7 @@
 
 Estudo do que dá para melhorar em qualidade/confiabilidade do hexlog no nível
 de código e teste — TypeScript, ESLint, jest, property-based testing,
-mutação. **Nada daqui está instalado.** Para plataformas de CI/CD (CodeQL,
+mutação. **O tier "Agora" já está instalado; o resto é estudo, nada instalado.** Para plataformas de CI/CD (CodeQL,
 Dependabot, npm audit, SonarQube Cloud, Codecov, knip, dependency-cruiser,
 Semgrep), ver [`qualidade-ci.md`](./qualidade-ci.md) — não repetido aqui.
 
@@ -40,10 +40,10 @@ Baixo custo, zero conta externa, todos tocam arquivos que o repo já tem
 
 | Item | Esforço | Valor | Fonte |
 |---|---|---|---|
-| `noUncheckedIndexedAccess` + `noImplicitOverride` no tsconfig | ~20–40 min | Undefined explícito em acesso a índice; única classe do repo protegida contra override silencioso | [tsconfig noUncheckedIndexedAccess](https://www.typescriptlang.org/tsconfig/#noUncheckedIndexedAccess), [noImplicitOverride](https://www.typescriptlang.org/tsconfig/#noImplicitOverride) |
+| `noUncheckedIndexedAccess` + `noImplicitOverride` no tsconfig | ~20–40 min | Undefined explícito em acesso a índice; as classes do repo (`HexlogError`, `ArchiveError`) ficam protegidas contra override silencioso | [tsconfig noUncheckedIndexedAccess](https://www.typescriptlang.org/tsconfig/#noUncheckedIndexedAccess), [noImplicitOverride](https://www.typescriptlang.org/tsconfig/#noImplicitOverride) |
 | `tseslint.configs.stylisticTypeChecked` | ~15 min | Regras de estilo type-aware, maioria autofixável por `eslint --fix` | [typescript-eslint shared configs](https://typescript-eslint.io/users/configs/) |
 | `eslint-plugin-n` (`flat/recommended-module`) | ~15–20 min | Barra API deprecada/não suportada no piso de Node declarado em `engines` (`package.json`, `engines.node`) | [eslint-plugin-n README](https://github.com/eslint-community/eslint-plugin-n) |
-| `eslint-plugin-jest` (`flat/recommended`, escopado a `test/**`) | ~10 min | Pega `no-conditional-expect`, `no-disabled-tests`, `valid-expect` numa suíte com specs de até 859 linhas (`test/adapters/process-store.spec.ts`) | [eslint-plugin-jest README](https://github.com/jest-community/eslint-plugin-jest) |
+| `eslint-plugin-jest` (`flat/recommended`, escopado a `test/**`) | ~10 min | Pega `no-conditional-expect`, `no-disabled-tests`, `valid-expect` numa suíte com specs de até 1722 linhas (`test/guard.spec.ts`) | [eslint-plugin-jest README](https://github.com/jest-community/eslint-plugin-jest) |
 | jest hardening (`collectCoverage` local sem gate, `--errorOnDeprecated`, `--ci` no CI) | ~10 min | Visibilidade de cobertura sem travar PR; erro cedo em API deprecada; snapshot novo falha em vez de gravar sozinho no CI | [jest configuration](https://jestjs.io/docs/configuration), [jest CLI](https://jestjs.io/docs/cli) |
 
 ### `noUncheckedIndexedAccess` + `noImplicitOverride`
@@ -142,7 +142,7 @@ Linhas `Depois` (Stryker) e `Nunca` revalidadas em 2026-10-03 contra a árvore 1
 
 ## Ordem sugerida
 
-1. `noUncheckedIndexedAccess` + `noImplicitOverride` no `tsconfig.json` — maior valor imediato, zero conta externa.
-2. `stylisticTypeChecked` + `eslint-plugin-n` + `eslint-plugin-jest` no mesmo PR, já que os três só tocam `eslint.config.js`.
-3. jest hardening (`collectCoverage` local, `--ci`, `--errorOnDeprecated`).
+1. Instalado: `noUncheckedIndexedAccess` + `noImplicitOverride` no `tsconfig.json`.
+2. Instalado: `stylisticTypeChecked` + `eslint-plugin-n` + `eslint-plugin-jest`.
+3. Instalado, sem `--ci`: jest hardening (`test:coverage` local, `--errorOnDeprecated`).
 4. Reavaliar `strictTypeChecked`, `eslint-plugin-unicorn`, Stryker e o resto da camada **Depois** quando a base de código crescer.
