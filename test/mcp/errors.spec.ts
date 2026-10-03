@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import MiniSearch from 'minisearch';
-import { expectError } from '../helpers.ts';
-import { createEnvironment } from './environment.ts';
+import { createEnvironment, expectError } from './environment.ts';
 import type { Environment } from './environment.ts';
 
 const PROJECT = 'alpha';
@@ -280,6 +279,55 @@ describe('N5: nome herdado de Object.prototype', () => {
     });
 
     expectError(result, 'GATE_NOT_FOUND');
+  });
+});
+
+describe('N5: chave própria __proto__ nos args crus', () => {
+  // JSON.parse cria `__proto__` como chave própria, o que um literal de objeto não faz.
+  const hostile = (json: string): unknown => JSON.parse(json);
+  const cases: [string, Record<string, unknown>, string][] = [
+    [
+      'register',
+      registerInput({ records: [item({ data: hostile('{"__proto__":{"a":1},"text":"x"}') })] }),
+      '/records/0/data/__proto__',
+    ],
+    [
+      'query',
+      { project: PROJECT, process: PROCESS, where: hostile('{"__proto__":"x"}') },
+      '/where/__proto__',
+    ],
+    [
+      'define_gate',
+      {
+        project: PROJECT,
+        name: 'gate',
+        questions: [{ kind: 'occurred', select: { where: hostile('{"__proto__":"x"}') } }],
+      },
+      '/questions/0/select/where/__proto__',
+    ],
+  ];
+
+  test.each(cases)(
+    '%s recusa a chave com INVALID_INPUT e reserved-key',
+    async (tool, args, path) => {
+      const result = await environment.call(tool, args);
+
+      const body = expectError(result, 'INVALID_INPUT');
+      expect(body.details).toEqual([expect.objectContaining({ path, code: 'reserved-key' })]);
+    },
+  );
+
+  test('register recusado não grava nada', async () => {
+    await environment.call('define_type', { project: PROJECT, name: 'note', schema: NOTE });
+    await environment.call('create_process', { project: PROJECT, process: PROCESS });
+
+    await environment.call('register', cases[0]![1]);
+
+    const page = await environment.ok<{ records: unknown[] }>('query', {
+      project: PROJECT,
+      process: PROCESS,
+    });
+    expect(page.records).toEqual([]);
   });
 });
 

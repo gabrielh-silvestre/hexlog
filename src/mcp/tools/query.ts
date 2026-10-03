@@ -6,6 +6,7 @@ import { QUERY_TEXT_MAX_CHARS } from '../../queries/query-service.ts';
 import {
   advertise,
   execute,
+  gatePage,
   queryPage,
   type ToolDeps,
   WELL_FORMED,
@@ -108,6 +109,7 @@ const EvaluateGateOutput = z.object({
       kind: z.string(),
       passed: z.boolean(),
       evidence: z.unknown(),
+      omitted: z.record(z.string(), z.number()).optional(),
     }),
   ),
   marker: MarkerOutput,
@@ -140,14 +142,18 @@ const QUERY_DESCRIPTION =
   'attachmentStatus for the attachments it cites. A page holds at most limit records (default 50, ' +
   'max 200) and also stops at a size cap, always with at least one record; pass the returned cursor ' +
   'to continue. marker is the head of every process read: pass it back as changesSince to get ' +
-  'changes (entered, left with reason) since then. Fails with MARKER_NOT_FOUND or INVALID_CURSOR ' +
-  'when marker, changesSince or cursor do not match the data read.';
+  'changes (entered, left with reason) since then, on the first page only. changes lists at most 100 ' +
+  'ids in entered and in left; when omitted (the count left out per list) comes back, the lists are ' +
+  'partial and that marker must not be reused as changesSince, because the omitted ids never show ' +
+  'again: reread everything instead (records by cursor, left with includeNonCurrent). Fails with ' +
+  'MARKER_NOT_FOUND or INVALID_CURSOR when marker, changesSince or cursor do not match the data read.';
 
 const EVALUATE_GATE_DESCRIPTION =
   'Evaluate a gate pinned in a process, without writing anything. Returns passed and one result per ' +
   'question (index, kind, passed, evidence: the record ids behind the answer) plus the marker of ' +
   'what was read. target is inherited by selectors without targetPrefix. Pass a marker from an ' +
-  'earlier read to replay the evaluation over the records that existed then.';
+  'earlier read to replay the evaluation over the records that existed then. Each evidence list holds ' +
+  'at most 100 ids and omitted counts the rest per list; a narrower select or where reaches them.';
 
 const VERIFY_CHAIN_DESCRIPTION =
   'Check the integrity of a process: the hash chain of its log and the attachments its records cite. ' +
@@ -188,7 +194,7 @@ export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
     },
     (args, ctx) =>
       execute(deps, { name: 'evaluate_gate', schema: EvaluateGateInput, args, ctx }, (input) =>
-        deps.services.query.evaluateGate(input),
+        gatePage(deps.services.query.evaluateGate(input)),
       ),
   );
 

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import { decodeCursor, encodeCursor } from '../../src/queries/cursor.ts';
-import { expectError } from '../helpers.ts';
-import { createEnvironment } from './environment.ts';
+import { createEnvironment, errorBodyOf, expectError } from './environment.ts';
 import type { Environment } from './environment.ts';
 
 const PROJECT = 'alpha';
@@ -104,8 +103,7 @@ describe('TM5: cursor inválido dá INVALID_CURSOR', () => {
   test('cursor acima de 65.536 caracteres é recusado com path /cursor', async () => {
     const result = await queryRun1({ cursor: 'a'.repeat(65_537) });
 
-    expect(result.isError).toBe(true);
-    const body = result.structuredContent as { code: string; details: { path: string }[] };
+    const body = errorBodyOf(result);
     expect(['INVALID_CURSOR', 'INVALID_INPUT']).toContain(body.code);
     expect(body.details).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: '/cursor' })]),

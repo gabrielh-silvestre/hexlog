@@ -72,6 +72,7 @@ async function connect(xdg: string) {
     (await client.callTool({ name, arguments: args })) as {
       isError?: boolean;
       structuredContent?: Record<string, unknown>;
+      content?: { type: string; text?: string }[];
     };
   return { client, call, stderr: () => stderr };
 }
@@ -124,7 +125,8 @@ describe('P8 e TM1: bundle da prévia por stdio', () => {
         records: [{ type: 'note', target: 'run.step' }],
       });
       expect(invalid.isError).toBe(true);
-      expect(invalid.structuredContent).toMatchObject({
+      expect(invalid).not.toHaveProperty('structuredContent');
+      expect(JSON.parse(invalid.content?.[0]?.text ?? '')).toMatchObject({
         code: 'INVALID_INPUT',
         details: [{ path: '/limit' }],
       });
@@ -143,7 +145,8 @@ describe('P8 e TM1: bundle da prévia por stdio', () => {
       const refused = await call('list');
 
       expect(refused.isError).toBe(true);
-      expect(refused.structuredContent).toMatchObject({
+      expect(refused).not.toHaveProperty('structuredContent');
+      expect(JSON.parse(refused.content?.[0]?.text ?? '')).toMatchObject({
         code: 'LEGACY_DATA',
         details: [{ code: 'run' }],
       });

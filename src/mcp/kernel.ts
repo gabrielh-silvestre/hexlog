@@ -5,8 +5,14 @@ import type { AttachmentService } from '../commands/attachment.ts';
 import type { DefinitionService } from '../commands/definition.ts';
 import type { ProcessService } from '../commands/process.ts';
 import { type Author, isWellFormed } from '../domain/record.ts';
-import { type Detail, HexlogError, issueDetails } from '../errors.ts';
-import type { Changes, QueryInput, QueryResult, QueryService } from '../queries/query-service.ts';
+import { capDetails, type Detail, HexlogError, issueDetails, pointer } from '../errors.ts';
+import type {
+  Changes,
+  GateEvaluation,
+  QueryInput,
+  QueryResult,
+  QueryService,
+} from '../queries/query-service.ts';
 import type { Logger } from '../shared/logger.ts';
 
 /** Surrogate solitário não vira UTF-8: o JCS do hash lançaria e a tool devolveria INTERNAL (TM3). */
@@ -18,6 +24,9 @@ export const PAGE_CHARS_CAP = 24_000;
 
 /** Itens de `changes.entered` e de `changes.left` que cabem no envelope da tool (M4 da herança do PR-5). */
 export const CHANGES_ITEMS_CAP = 100;
+
+/** Ids por lista de `evidence` de uma pergunta de `evaluate_gate`; corte igual ao de `changes`, também palpite. */
+export const EVIDENCE_ITEMS_CAP = 100;
 
 /** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */
 const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
@@ -62,14 +71,14 @@ export type ToolCall<Input> = {
   ctx: ServerContext;
 };
 
-/** Corpo de sucesso ou erro que uma tool devolve ao SDK (§4.13): nunca uma exceção. */
+/**
+ * Corpo de sucesso ou erro que uma tool devolve ao SDK: nunca uma exceção. O erro leva o JSON
+ * `{code, message, details}` só em `content[0].text`: o SDK 1.x valida `structuredContent` contra o
+ * `outputSchema` de sucesso mesmo com `isError` e lançaria `-32602` no cliente.
+ */
 export type ToolResult<Output> =
   | { structuredContent: Output; content: [{ type: 'text'; text: string }] }
-  | {
-      isError: true;
-      structuredContent: { code: string; message: string; details: Detail[] };
-      content: [{ type: 'text'; text: string }];
-    };
+  | { isError: true; content: [{ type: 'text'; text: string }] };
 
 /**
  * Ponte zod → SDK: anuncia o JSON Schema do próprio zod (`~standard.jsonSchema`), mas troca o
@@ -89,6 +98,32 @@ export function toHexlogError(e: unknown, logger: Logger): HexlogError {
     stack: e instanceof Error ? e.stack : String(e),
   });
   return new HexlogError('INTERNAL', 'internal error');
+}
+
+/**
+ * O `z.record` do zod 4 descarta em silêncio a chave própria `__proto__` (`register` selaria no log um
+ * registro diferente do enviado; `query.where` falharia aberto), e nenhum refine a enxerga depois do
+ * parse. Por isso a recusa varre os args crus, em profundidade, antes do `safeParse`.
+ */
+function reservedKeyDetails(args: unknown): Detail[] {
+  const found: Detail[] = [];
+  const pending: { value: unknown; path: string }[] = [{ value: args, path: '' }];
+  for (let item = pending.pop(); item !== undefined; item = pending.pop()) {
+    const { value, path } = item;
+    if (typeof value !== 'object' || value === null) continue;
+    for (const [key, child] of Object.entries(value)) {
+      const childPath = path + pointer([key]);
+      if (key === '__proto__') {
+        found.push({
+          path: childPath,
+          code: 'reserved-key',
+          message: 'must not use the key __proto__',
+        });
+      }
+      pending.push({ value: child, path: childPath });
+    }
+  }
+  return capDetails(found);
 }
 
 const ClientInfo = z.object({
@@ -116,8 +151,9 @@ function callerOf(ctx: ServerContext): Caller {
 
 /**
  * Toda tool passa por aqui e `execute` nunca lança para o SDK. Ordem: `isLegacy()` antes de qualquer
- * outra coisa (`LEGACY_DATA` com o comando de arquivamento em `details`), depois valida a entrada
- * crua com `schema` (`INVALID_INPUT` com `details[{path,code,message}]`), depois `run`.
+ * outra coisa (`LEGACY_DATA` com o comando de arquivamento em `details`), recusa a chave `__proto__`
+ * em qualquer nível dos args crus (`INVALID_INPUT`, `reserved-key`), depois valida a entrada crua com
+ * `schema` (`INVALID_INPUT` com `details[{path,code,message}]`), depois `run`.
  * `HexlogError` vira `{code, message, details}`; qualquer outra exceção vira `INTERNAL`, sem stack.
  * Emite um log `tool` com `name`, `ms` e `code?`, nunca o conteúdo da entrada.
  */
@@ -143,6 +179,8 @@ export async function execute<Input, Output>(
         { path: '', code: 'run', message: ARCHIVE_COMMAND },
       ]);
     }
+    const reserved = reservedKeyDetails(call.args);
+    if (reserved.length > 0) throw new HexlogError('INVALID_INPUT', 'invalid input', reserved);
     const parsed = call.schema.safeParse(call.args ?? {});
     if (!parsed.success) {
       throw new HexlogError(
@@ -158,11 +196,7 @@ export async function execute<Input, Output>(
     const error = toHexlogError(e, deps.logger);
     const body = { code: error.code, message: error.message, details: error.details };
     log('error', error.code);
-    return {
-      isError: true,
-      structuredContent: body,
-      content: [{ type: 'text', text: JSON.stringify(body) }],
-    };
+    return { isError: true, content: [{ type: 'text', text: JSON.stringify(body) }] };
   }
 }
 
@@ -191,4 +225,44 @@ export function queryPage(
 ): Omit<QueryResult, 'changes'> & { changes?: PagedChanges } {
   const { changes, ...page } = query.queryRecords({ ...input, maxChars: PAGE_CHARS_CAP });
   return changes === undefined ? page : { ...page, changes: capChanges(changes) };
+}
+
+type PagedQuestion = {
+  index: number;
+  kind: string;
+  passed: boolean;
+  evidence: Record<string, string[]>;
+  omitted?: Record<string, number>;
+};
+
+/** Corta cada lista de `evidence` em `EVIDENCE_ITEMS_CAP` ids; `omitted` conta o que ficou de fora por lista. */
+function capEvidence({
+  evidence,
+  ...question
+}: GateEvaluation['questions'][number]): PagedQuestion {
+  const lists = Object.entries<string[]>(evidence);
+  const omitted = Object.fromEntries(
+    lists
+      .map(([name, ids]) => [name, ids.length - EVIDENCE_ITEMS_CAP] as const)
+      .filter(([, count]) => count > 0),
+  );
+  if (Object.keys(omitted).length === 0) return { ...question, evidence };
+  return {
+    ...question,
+    evidence: Object.fromEntries(
+      lists.map(([name, ids]) => [name, ids.slice(0, EVIDENCE_ITEMS_CAP)]),
+    ),
+    omitted,
+  };
+}
+
+/**
+ * Única porta de `evaluateGate` para as tools: a evidência não tem teto no domínio, então o envelope
+ * corta cada lista. `passed` e `marker` seguem intactos; o gate é sem estado, e o excedente sai com
+ * um `select`/`where` mais estreito.
+ */
+export function gatePage(
+  evaluation: GateEvaluation,
+): Omit<GateEvaluation, 'questions'> & { questions: PagedQuestion[] } {
+  return { ...evaluation, questions: evaluation.questions.map(capEvidence) };
 }

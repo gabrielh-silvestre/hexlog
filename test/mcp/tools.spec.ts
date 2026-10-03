@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import { compose } from '../../src/compose.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
-import { CHANGES_ITEMS_CAP, PAGE_CHARS_CAP } from '../../src/mcp/kernel.ts';
+import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP, PAGE_CHARS_CAP } from '../../src/mcp/kernel.ts';
 import type { Defined } from '../../src/commands/definition.ts';
 import type { CreateProcessResult, RegisterResult } from '../../src/commands/process.ts';
 import type { AttachmentPut } from '../../src/ports.ts';
@@ -12,8 +12,8 @@ import type {
   QueryResult,
   VerifyChainResult,
 } from '../../src/queries/query-service.ts';
-import { at, expectError } from '../helpers.ts';
-import { type Environment, createEnvironment } from './environment.ts';
+import { at } from '../helpers.ts';
+import { type Environment, createEnvironment, expectError } from './environment.ts';
 
 const PROJECT = 'alpha';
 const NOTE = {
@@ -136,6 +136,14 @@ describe('TM2: descrição das tools', () => {
 
     expect(outOfRange).toEqual([]);
   });
+
+  test('query avisa o teto de changes e evaluate_gate o de evidence', async () => {
+    const { tools } = await environment.client.listTools();
+    const descriptionOf = (name: string) => tools.find((tool) => tool.name === name)?.description;
+
+    expect(descriptionOf('query')).toMatch(/at most 100 ids.*omitted.*must not be reused/s);
+    expect(descriptionOf('evaluate_gate')).toMatch(/at most 100 ids.*omitted/s);
+  });
 });
 
 describe('TM7: outputSchema anunciado', () => {
@@ -231,6 +239,40 @@ describe('um fluxo feliz por tool', () => {
     expect(result.marker).toEqual({ 'run-1': saved?.id });
   });
 
+  test('register com a mesma chave e o mesmo lote devolve replayed com os mesmos ids, sem gravar de novo', async () => {
+    await prepareProcess();
+    const input = {
+      project: PROJECT,
+      process: 'run-1',
+      agent: 'executor',
+      key: 'lote-1',
+      records: [{ type: 'note', target: 'run.step', data: { text: 'olá' } }],
+    };
+
+    const first = await succeed<RegisterResult>('register', input);
+    const replay = await succeed<RegisterResult>('register', input);
+    const page = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
+
+    expect(replay).toEqual({ ...first, replayed: true });
+    expect(page.records).toHaveLength(1);
+  });
+
+  test('register com a mesma chave e outro lote dá IDEMPOTENCY_CONFLICT', async () => {
+    await prepareProcess();
+    const input = (text: string) => ({
+      project: PROJECT,
+      process: 'run-1',
+      agent: 'executor',
+      key: 'lote-1',
+      records: [{ type: 'note', target: 'run.step', data: { text } }],
+    });
+    await succeed('register', input('olá'));
+
+    const result = await environment.call('register', input('outro'));
+
+    expectError(result, 'IDEMPOTENCY_CONFLICT');
+  });
+
   test('attach guarda o texto e a repetição vem como deduplicated', async () => {
     const first = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
     const second = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
@@ -293,6 +335,97 @@ describe('um fluxo feliz por tool', () => {
 
     expect(page.changes?.entered).toHaveLength(CHANGES_ITEMS_CAP);
     expect(page.changes).toMatchObject({ omitted: { entered: 1, left: 0 } });
+  });
+
+  test('N1: com omitted, reusar o marker perde os ids cortados e a releitura completa os devolve', async () => {
+    await prepareProcess();
+    await registerNote('run-1', 'primeira');
+    const { marker } = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
+    const registered: string[] = [];
+    for (let batch = 0; batch < 3; batch += 1) {
+      const { records } = await succeed<RegisterResult>('register', {
+        project: PROJECT,
+        process: 'run-1',
+        agent: 'executor',
+        records: Array.from({ length: BATCH_MAX }, (_, i) => ({
+          type: 'note',
+          target: 'run.step',
+          data: { text: `n${batch}-${i}` },
+        })),
+      });
+      registered.push(...records.map(({ id }) => id));
+    }
+
+    const first = await succeed<QueryResult>('query', {
+      project: PROJECT,
+      process: 'run-1',
+      changesSince: marker,
+    });
+    const reused = await succeed<QueryResult>('query', {
+      project: PROJECT,
+      process: 'run-1',
+      changesSince: first.marker,
+    });
+    const reread: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page: QueryResult = await succeed('query', {
+        project: PROJECT,
+        process: 'run-1',
+        cursor,
+      });
+      reread.push(...page.records.map(({ id }) => id));
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+
+    const omittedIds = registered.filter((id) => !first.changes?.entered.includes(id));
+    expect(first.changes).toMatchObject({ omitted: { entered: omittedIds.length, left: 0 } });
+    expect(omittedIds).toHaveLength(registered.length - CHANGES_ITEMS_CAP);
+    expect(reused.changes?.entered).toEqual([]);
+    expect(reread).toEqual(expect.arrayContaining(omittedIds));
+  });
+
+  test('evaluate_gate corta cada lista de evidence em EVIDENCE_ITEMS_CAP e informa omitted', async () => {
+    await prepareProcess();
+    for (let batch = 0; batch < 3; batch += 1) {
+      await succeed<RegisterResult>('register', {
+        project: PROJECT,
+        process: 'run-1',
+        agent: 'executor',
+        records: Array.from({ length: BATCH_MAX }, (_, i) => ({
+          type: 'note',
+          target: 'run.step',
+          data: { text: `n${batch}-${i}` },
+        })),
+      });
+    }
+
+    const result = await succeed<GateEvaluation & { questions: { omitted?: unknown }[] }>(
+      'evaluate_gate',
+      { project: PROJECT, process: 'run-1', gate: 'has-note' },
+    );
+
+    const [question] = result.questions;
+    expect(result.passed).toBe(true);
+    expect(question).toMatchObject({
+      passed: true,
+      evidence: { found: expect.any(Array) },
+      omitted: { found: BATCH_MAX * 3 - EVIDENCE_ITEMS_CAP },
+    });
+    expect(question?.evidence).toHaveProperty('found.length', EVIDENCE_ITEMS_CAP);
+  });
+
+  test('evaluate_gate abaixo do teto não leva omitted', async () => {
+    await prepareProcess();
+    await registerNote('run-1', 'olá');
+
+    const result = await succeed<GateEvaluation>('evaluate_gate', {
+      project: PROJECT,
+      process: 'run-1',
+      gate: 'has-note',
+    });
+
+    expect(result.questions[0]).not.toHaveProperty('omitted');
   });
 
   test('evaluate_gate com marker de sucesso reavalia sobre o que existia então', async () => {

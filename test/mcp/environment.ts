@@ -14,12 +14,29 @@ export type ClientInfo = { name: string; version: string };
 
 export type ErrorBody = { code: ErrorCode; message: string; details: Detail[] };
 
-/** Resultado cru de `tools/call`: `structuredContent` é o corpo tipado, de sucesso ou de erro. */
+/** Resultado cru de `tools/call`: `structuredContent` é o corpo de sucesso; o erro vem em `content[0].text`. */
 export type CallResult = {
   isError?: boolean;
   structuredContent?: unknown;
   content?: { type: string; text?: string }[];
 };
+
+/**
+ * Corpo `{ code, message, details }` de um resultado com `isError`. Trava a forma: erro nunca leva
+ * `structuredContent`, que o SDK 1.x validaria contra o `outputSchema` de sucesso (`-32602`).
+ */
+export function errorBodyOf(result: CallResult): ErrorBody {
+  expect(result.isError).toBe(true);
+  expect(result).not.toHaveProperty('structuredContent');
+  return JSON.parse(result.content?.[0]?.text ?? '') as ErrorBody;
+}
+
+/** Afirma que `result` é um erro de domínio com o `code` esperado e devolve o corpo. */
+export function expectError(result: CallResult, code: ErrorCode): ErrorBody {
+  const body = errorBodyOf(result);
+  expect(body.code).toBe(code);
+  return body;
+}
 
 export type Environment = {
   /** `<D>`: a área de dados do servidor sob teste. */
@@ -30,7 +47,7 @@ export type Environment = {
   call: (name: string, args?: Record<string, unknown>) => Promise<CallResult>;
   /** Chama a tool, afirma sucesso e devolve o `structuredContent` tipado. */
   ok: <T>(name: string, args?: Record<string, unknown>) => Promise<T>;
-  /** Chama a tool, afirma erro de domínio e devolve o corpo `{ code, message, details }`. */
+  /** Chama a tool, afirma erro de domínio e devolve o corpo `{ code, message, details }` de `content[0].text`. */
   fail: (name: string, args?: Record<string, unknown>) => Promise<ErrorBody>;
   /** Cria em `<D>` uma entrada de nome minúsculo, o que a detecção do dado 0.x enxerga (D-13). */
   seedLegacy: (name?: string) => void;
@@ -90,8 +107,7 @@ export async function createEnvironment(options: EnvironmentOptions = {}): Promi
     },
     fail: async (name, args) => {
       const result = await call(name, args);
-      expect(result.isError).toBe(true);
-      return result.structuredContent as ErrorBody;
+      return errorBodyOf(result);
     },
     seedLegacy: (name = 'legacy-project') => {
       fs.mkdirSync(path.join(dataDir, name), { recursive: true });

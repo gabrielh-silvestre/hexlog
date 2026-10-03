@@ -12,6 +12,7 @@ import {
   type ToolDeps,
 } from '../../src/mcp/kernel.ts';
 import type { QueryResult, QueryService } from '../../src/queries/query-service.ts';
+import { errorBodyOf } from './environment.ts';
 
 const Input = z.strictObject({ project: z.string().min(1), count: z.number().int() });
 
@@ -69,17 +70,28 @@ describe('execute', () => {
     const result = await execute(deps, callOf({ project: '', count: 'x', extra: 1 }), run);
 
     expect(run).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      isError: true,
-      structuredContent: {
-        code: 'INVALID_INPUT',
-        details: expect.arrayContaining([
-          expect.objectContaining({ path: '/project', code: 'too_small' }),
-          expect.objectContaining({ path: '/count', code: 'invalid_type' }),
-        ]),
-      },
+    expect(errorBodyOf(result)).toMatchObject({
+      code: 'INVALID_INPUT',
+      details: expect.arrayContaining([
+        expect.objectContaining({ path: '/project', code: 'too_small' }),
+        expect.objectContaining({ path: '/count', code: 'invalid_type' }),
+      ]),
     });
     expect(JSON.stringify(result)).not.toContain('Input validation error');
+  });
+
+  test('chave própria __proto__ em qualquer nível vira INVALID_INPUT reserved-key, sem chamar run', async () => {
+    const { deps } = makeDeps();
+    const run = jest.fn(() => ({}));
+    const args: unknown = JSON.parse('{"project":"p","count":1,"deep":[{"a/b":{"__proto__":1}}]}');
+
+    const result = await execute(deps, callOf(args), run);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(errorBodyOf(result)).toMatchObject({
+      code: 'INVALID_INPUT',
+      details: [{ path: '/deep/0/a~1b/__proto__', code: 'reserved-key' }],
+    });
   });
 
   test('args ausente é tratado como objeto vazio', async () => {
@@ -87,10 +99,7 @@ describe('execute', () => {
 
     const result = await execute(deps, callOf(undefined), () => ({}));
 
-    expect(result).toMatchObject({
-      isError: true,
-      structuredContent: { code: 'INVALID_INPUT' },
-    });
+    expect(errorBodyOf(result)).toMatchObject({ code: 'INVALID_INPUT' });
   });
 
   test('HexlogError da operação sai como {code, message, details}', async () => {
@@ -101,9 +110,10 @@ describe('execute', () => {
       throw new HexlogError('PROJECT_NOT_FOUND', 'project not found', details);
     });
 
-    expect(result).toMatchObject({
-      isError: true,
-      structuredContent: { code: 'PROJECT_NOT_FOUND', message: 'project not found', details },
+    expect(errorBodyOf(result)).toEqual({
+      code: 'PROJECT_NOT_FOUND',
+      message: 'project not found',
+      details,
     });
     expect(logger).toHaveBeenCalledWith(
       expect.objectContaining({ level: 'error', event: 'tool', code: 'PROJECT_NOT_FOUND' }),
@@ -117,9 +127,10 @@ describe('execute', () => {
       Promise.reject(new TypeError('boom')),
     );
 
-    expect(result).toMatchObject({
-      isError: true,
-      structuredContent: { code: 'INTERNAL', message: 'internal error', details: [] },
+    expect(errorBodyOf(result)).toEqual({
+      code: 'INTERNAL',
+      message: 'internal error',
+      details: [],
     });
     expect(JSON.stringify(result)).not.toMatch(/boom|at .*kernel/);
     expect(logger).toHaveBeenCalledWith(
@@ -139,12 +150,9 @@ describe('LEGACY_DATA', () => {
     const result = await execute(deps, callOf({ lixo: true }), run);
 
     expect(run).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      isError: true,
-      structuredContent: {
-        code: 'LEGACY_DATA',
-        details: [{ path: '', code: 'run', message: ARCHIVE_COMMAND }],
-      },
+    expect(errorBodyOf(result)).toMatchObject({
+      code: 'LEGACY_DATA',
+      details: [{ path: '', code: 'run', message: ARCHIVE_COMMAND }],
     });
   });
 
@@ -158,7 +166,7 @@ describe('LEGACY_DATA', () => {
     legacy = false;
     const after = await execute(live, callOf(valid), () => ({ ok: true }));
 
-    expect(before).toMatchObject({ isError: true, structuredContent: { code: 'LEGACY_DATA' } });
+    expect(errorBodyOf(before)).toMatchObject({ code: 'LEGACY_DATA' });
     expect(after).toEqual({
       structuredContent: { ok: true },
       content: [{ type: 'text', text: '{"ok":true}' }],
@@ -176,7 +184,7 @@ describe('LEGACY_DATA', () => {
 
     const result = await execute(broken, callOf({ project: 'p', count: 1 }), () => ({}));
 
-    expect(result).toMatchObject({ isError: true, structuredContent: { code: 'INTERNAL' } });
+    expect(errorBodyOf(result)).toMatchObject({ code: 'INTERNAL' });
   });
 });
 
@@ -217,7 +225,7 @@ describe('caller', () => {
     expect(without).toMatchObject({
       structuredContent: { agent: 'luffy', client: 'claude-code' },
     });
-    expect(without.structuredContent).not.toHaveProperty('model');
+    expect(without).not.toHaveProperty('structuredContent.model');
     expect(withModel).toMatchObject({ structuredContent: { model: 'sonnet' } });
   });
 });
