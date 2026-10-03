@@ -3,6 +3,14 @@ import { jcs, sha256hex } from '../domain/chain.ts';
 import { Hash, Name, RecordId } from '../domain/ids.ts';
 import { HexlogError, issueDetails } from '../errors.ts';
 
+/**
+ * Teto do texto do cursor, conferido antes do `split` e do sha256. **Palpite**: um cursor real tem
+ * ~2.200 caracteres, e o pior caso (o nome de cada processo no marcador e no hash de cabeça, sem
+ * teto de processos por projeto) passa de 400 caracteres por processo; 65.536 cobre ~160 processos
+ * de nome máximo. Ver `docs/tetos-dominio-v1.md`.
+ */
+export const CURSOR_MAX_CHARS = 65_536;
+
 /** Hex do checksum: 8 bytes do sha256 do trecho base64url. */
 const CHECKSUM_HEX_LENGTH = 16;
 const CHECKSUM = new RegExp(`^[0-9a-f]{${CHECKSUM_HEX_LENGTH}}$`);
@@ -64,6 +72,9 @@ function parseJson(body: string): unknown {
 
 /** D-20: checksum, JSON ou campo inválido dão `INVALID_CURSOR`; alcance, filtros e marcador são do serviço. */
 export function decodeCursor(text: string): CursorPayload {
+  if (text.length > CURSOR_MAX_CHARS) {
+    throw invalidCursor('too-long', `Cursor must have at most ${CURSOR_MAX_CHARS} characters`);
+  }
   const result = CursorPayload.safeParse(parseJson(verifiedBody(text)));
   if (!result.success) {
     throw new HexlogError(

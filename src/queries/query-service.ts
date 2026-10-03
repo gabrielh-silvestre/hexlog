@@ -21,7 +21,7 @@ import type {
   ProcessReader,
   SearchIndex,
 } from '../ports.ts';
-import { loadVerified, MAX_BREAKS, type Break, type Chain } from '../shared/loader.ts';
+import { loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
 import type { Logger } from '../shared/logger.ts';
 import { sliceChars } from '../shared/pages.ts';
 import { decodeCursor, encodeCursor, filtersHash, type CursorPayload } from './cursor.ts';
@@ -41,6 +41,12 @@ import {
 } from './select.ts';
 
 const DEFAULT_LIMIT = 50;
+/**
+ * Teto de `text` em caracteres: o custo da busca cresce com os termos distintos (AND mais o
+ * fallback OR; 183 KB deram 2,4 s sobre 5.000 registros). Mesmo número do 0.x
+ * (`SEARCH_MAX_CHARS`); a F5 reusa a constante no `.max()` do zod.
+ */
+export const QUERY_TEXT_MAX_CHARS = 200;
 /** D-20: o mesmo teto de página do `query`; o kernel MCP (F5) passa o seu em `maxChars`. */
 const ATTACHMENT_PAGE_CHARS = 24_000;
 
@@ -106,10 +112,14 @@ export type AttachmentBreak = {
   reason: 'attachment-missing' | 'attachment-corrupted';
 };
 
-/** Quebra da cadeia do log ou anexo citado ausente ou corrompido. */
-export type ChainBreak = Break | AttachmentBreak;
-
-export type VerifyChainResult = Omit<Chain, 'breaks'> & { breaks: ChainBreak[] };
+/**
+ * `breaks` e `totalBreaks` são só da cadeia do log; os anexos vão em `attachmentBreaks` e
+ * `totalAttachmentBreaks`, cada lista cortada em `MAX_BREAKS`. `ok` exige as duas vazias.
+ */
+export type VerifyChainResult = Chain & {
+  attachmentBreaks: AttachmentBreak[];
+  totalAttachmentBreaks: number;
+};
 
 export type ListInput = { project?: Name; process?: Name };
 
@@ -158,7 +168,7 @@ export type QueryService = {
    * registro. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de `lastId`
    * sobre a leitura da página 1.
    *
-   * `INVALID_FILTER` (`/process`, `/limit`, `/text`), `INVALID_CURSOR`, `MARKER_NOT_FOUND`,
+   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: em branco ou acima de `QUERY_TEXT_MAX_CHARS`), `INVALID_CURSOR`, `MARKER_NOT_FOUND`,
    * `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED` (com `details[0].process`).
    */
   queryRecords(input: QueryInput): QueryResult;
@@ -173,8 +183,8 @@ export type QueryService = {
   evaluateGate(input: EvaluateGateInput): GateEvaluation;
   /**
    * Diagnóstico sem gravar: a cadeia do processo e os anexos que os registros citam (D-16). Quebra
-   * não lança, vira `ok: false` com `breaks`; anexo ausente ou corrompido entra como
-   * `attachment-missing`/`attachment-corrupted`. `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED`
+   * não lança, vira `ok: false` com `breaks` (cadeia); anexo ausente ou corrompido entra em
+   * `attachmentBreaks` como `attachment-missing`/`attachment-corrupted`. `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED`
    * (`unreadable-manifest`) vêm da leitura do manifesto.
    */
   verifyChain(input: VerifyChainInput): VerifyChainResult;
@@ -225,6 +235,13 @@ function assertValid({ limit, text }: QueryInput): void {
   if (text?.trim() === '') {
     throw invalidFilter('/text', 'blank', 'text must have at least one non-blank character');
   }
+  if (text !== undefined && text.length > QUERY_TEXT_MAX_CHARS) {
+    throw invalidFilter(
+      '/text',
+      'too-long',
+      `text must have at most ${QUERY_TEXT_MAX_CHARS} characters`,
+    );
+  }
 }
 
 const FILTER_KEYS = [
@@ -269,8 +286,9 @@ function assertSameContent(cursor: CursorPayload, reading: Reading): void {
   ]);
   for (const name of names) {
     // Processo que nasceu depois da página 1 é lido como vazio e não está no cursor.
-    const seen = cursor.markerHashes[name] ?? null;
-    if (seen !== (reading.markerHashes[name] ?? null)) {
+    const seen = Object.hasOwn(cursor.markerHashes, name) ? cursor.markerHashes[name] : null;
+    const read = Object.hasOwn(reading.markerHashes, name) ? reading.markerHashes[name] : null;
+    if (seen !== read) {
       throw invalidCursor('marker-hash-mismatch', 'Cursor marker does not match the process log');
     }
   }
@@ -321,7 +339,10 @@ export function createQueryService(deps: {
     filters: Filters,
     now: { view: View; selected: readonly Link[]; marker: Marker },
   ): Changes {
-    const past = buildView(readScope(store, target, input.changesSince), target.scope);
+    const past = buildView(
+      readScope(store, target, input.changesSince, '/changesSince'),
+      target.scope,
+    );
     const before = select(past, filters, search, indexRef(target));
     const beforeIds = new Set(before.map(({ id }) => id));
     const nowIds = new Set(now.selected.map(({ id }) => id));
@@ -343,7 +364,7 @@ export function createQueryService(deps: {
       const cursor = input.cursor === undefined ? undefined : decodeCursor(input.cursor);
       if (cursor !== undefined) assertSameQuery(cursor, target, input.process, hash);
 
-      const reading = readScope(store, target, cursor?.marker);
+      const reading = readScope(store, target, cursor?.marker, '/cursor');
       if (cursor !== undefined) assertSameContent(cursor, reading);
       const view = buildView(reading, target.scope);
       const selected = select(view, filters, search, indexRef(target));
@@ -400,8 +421,9 @@ export function createQueryService(deps: {
     },
 
     evaluateGate({ project, process, gate: name, target, marker }) {
-      const gate = store.readManifest({ project, process }).fixed.gates[name];
-      if (gate === undefined) throw gateNotFound();
+      const { gates } = store.readManifest({ project, process }).fixed;
+      if (!Object.hasOwn(gates, name)) throw gateNotFound();
+      const gate = gates[name]!;
       const scope: ReadTarget = gate.questions.some((question) => question.scope === 'project')
         ? { project, scope: 'project' }
         : { project, scope: 'process', process };
@@ -429,8 +451,8 @@ export function createQueryService(deps: {
       return {
         ...chain,
         ok: chain.ok && broken.length === 0,
-        breaks: [...chain.breaks, ...broken].slice(0, MAX_BREAKS),
-        totalBreaks: chain.totalBreaks + broken.length,
+        attachmentBreaks: broken.slice(0, MAX_BREAKS),
+        totalAttachmentBreaks: broken.length,
       };
     },
 

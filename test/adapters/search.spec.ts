@@ -1,13 +1,14 @@
 import { describe, expect, test } from '@jest/globals';
 import { createSearchIndex } from '../../src/adapters/search.ts';
+import type { RecordId } from '../../src/domain/ids.ts';
 import type { HexRecord } from '../../src/domain/record.ts';
 import type { ProcessRef } from '../../src/ports.ts';
 
 const PROCESS: ProcessRef = { project: 'proj', process: 'proc' };
 
 // Índice novo por chamada: cada caso mede a busca sem cache; o que o cache muda está em search.cache.spec.ts.
-const search = (records: HexRecord[], text: string) =>
-  createSearchIndex().search(PROCESS, records, text);
+const search = (records: HexRecord[], text: string, allowed?: ReadonlySet<RecordId>) =>
+  createSearchIndex().search(PROCESS, records, text, allowed);
 
 let counter = 0;
 
@@ -106,6 +107,29 @@ describe('createSearchIndex', () => {
     expect(search([webhookOnly, webhookAndTimeout], 'webhook timeout retry')).toEqual([
       webhookAndTimeout.id,
     ]);
+  });
+
+  test('com `allowed`, o AND e o piso do OR decidem sobre os registros permitidos (paridade com o 0.x)', () => {
+    const doc = makeRecord({ type: 'doc', data: { text: 'banana uva' } });
+    const banana = makeRecord({ data: { text: 'banana' } });
+    const uva = makeRecord({ data: { text: 'uva' } });
+    const records = [doc, banana, uva];
+
+    // Sem o filtro o doc casa os dois termos e o OR nunca roda.
+    expect(search(records, 'banana uva')).toEqual([doc.id]);
+    // Só as notas permitidas: nenhuma casa os dois, então o OR devolve as duas.
+    expect(search(records, 'banana uva', new Set([banana.id, uva.id]))).toEqual([
+      banana.id,
+      uva.id,
+    ]);
+  });
+
+  test('`allowed` vazio não devolve nada e um permitido que não casa não entra', () => {
+    const banana = makeRecord({ data: { text: 'banana' } });
+    const other = makeRecord({ data: { text: 'laranja' } });
+
+    expect(search([banana, other], 'banana', new Set())).toEqual([]);
+    expect(search([banana, other], 'banana', new Set([other.id]))).toEqual([]);
   });
 
   test('uma consulta de um termo só nunca cai para OR', () => {

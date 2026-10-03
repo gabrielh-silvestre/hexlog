@@ -167,7 +167,7 @@ export type AttachmentStore = AttachmentReader & {
 /**
  * JSON Schema: `Detail[]` vazio = aprovado. `checkSchema` devolve no máximo 50 detalhes, sem repetição
  * de path+code+message; quando corta, acrescenta como último um `Detail` com `code`
- * `too-many-errors` e a quantidade omitida na `message` (`adapters/validator.ts#toDetails`). Os
+ * `too-many-errors` e a quantidade omitida na `message` (`errors.ts#capDetails`). Os
  * omitidos não são recuperáveis: o validador não guarda estado, então o chamador não trunca de novo.
  */
 export type Validator = {
@@ -198,12 +198,22 @@ export type Validator = {
   validate(schema: RecordType, data: HexRecord['data']): Detail[];
 };
 
+/** Chave do índice de busca do alcance projeto; não é um `Name`, então nunca colide com processo. */
+export const PROJECT_INDEX = '*';
+
 /**
  * Índice de texto sobre os registros já carregados; devolve ids por relevância. O `process` é a
  * chave do cache. `records` pode ser o log inteiro do processo, o prefixo cortado pelo marcador
- * (cursor e `changesSince`) ou a lista mesclada do projeto sob um `ProcessRef` com `process: '*'`
- * (`queries/select.ts#indexRef`).
+ * (cursor e `changesSince`) ou a lista mesclada do projeto sob um `ProcessRef` com
+ * `process: PROJECT_INDEX` (`queries/select.ts#indexRef`). `allowed`, quando passado, restringe o
+ * resultado a esses ids e também decide o fallback `OR`: o conjunto devolvido é o dos registros
+ * permitidos que casam (`adapters/search.ts#createSearchIndex`).
  */
 export type SearchIndex = {
-  search(process: ProcessRef, records: readonly HexRecord[], text: string): RecordId[];
+  search(
+    process: ProcessRef,
+    records: readonly HexRecord[],
+    text: string,
+    allowed?: ReadonlySet<RecordId>,
+  ): RecordId[];
 };

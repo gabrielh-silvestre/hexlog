@@ -1,3 +1,4 @@
+import { uniqBy } from 'es-toolkit';
 import type { z } from 'zod';
 import type { RecordId } from './domain/ids.ts';
 
@@ -81,11 +82,33 @@ function pointer(path: PropertyKey[]): string {
     .join('');
 }
 
-/** Converte `issues` do Zod em `details[]`, prefixando o ponteiro (ex.: `/dados`). */
+/** Alinhado a `BATCH_MAX` (`docs/tetos-dominio-v1.md`); sem medição por trás. */
+const MAX_DETAILS = 50;
+
+/**
+ * Deduplica por path+code+message (o ajv repete o mesmo erro, pois o metaschema é revisitado por
+ * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora.
+ */
+export function capDetails(details: Detail[]): Detail[] {
+  const unique = uniqBy(details, (d) => `${d.path}\0${d.code}\0${d.message}`);
+  if (unique.length <= MAX_DETAILS) return unique;
+  return [
+    ...unique.slice(0, MAX_DETAILS),
+    {
+      path: '',
+      code: 'too-many-errors',
+      message: `${unique.length - MAX_DETAILS} more errors omitted`,
+    },
+  ];
+}
+
+/** Converte `issues` do Zod em `details[]`, prefixando o ponteiro (ex.: `/dados`); no máximo `MAX_DETAILS`. */
 export function issueDetails(issues: z.core.$ZodIssue[], prefix: string): Detail[] {
-  return issues.map((issue) => ({
-    path: prefix + pointer(issue.path),
-    code: issue.code,
-    message: issue.message,
-  }));
+  return capDetails(
+    issues.map((issue) => ({
+      path: prefix + pointer(issue.path),
+      code: issue.code,
+      message: issue.message,
+    })),
+  );
 }

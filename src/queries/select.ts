@@ -4,7 +4,7 @@ import { matchesSelector, type Selector } from '../domain/gate.ts';
 import { processOf, type Name, type RecordId } from '../domain/ids.ts';
 import type { RelationKind } from '../domain/record.ts';
 import { buildVigency, pushTo, type Vigency } from '../domain/relations.ts';
-import type { ProcessRef, SearchIndex } from '../ports.ts';
+import { PROJECT_INDEX, type ProcessRef, type SearchIndex } from '../ports.ts';
 import type { Reading, ReadTarget } from './read.ts';
 
 /** Filtros de `query` que dependem só dos registros lidos (o alcance e o cursor ficam fora). */
@@ -63,9 +63,6 @@ function relatedTo(view: View, id: RecordId): Set<RecordId> {
   return new Set([...from, ...to]);
 }
 
-/** Chave do índice de busca do alcance projeto; não é um `Name`, então nunca colide com processo. */
-const PROJECT_INDEX = '*';
-
 /**
  * Registros que passam nos filtros, na ordem de saída; com `text`, por relevância, e o empate da
  * busca já vem na ordem de saída porque o índice recebe `view.records`.
@@ -88,7 +85,10 @@ export function select(
   );
   if (text === undefined) return matching;
 
-  const rank = new Map(search.search(indexOf, view.records, text).map((id, at) => [id, at]));
+  const allowed = new Set(matching.map(({ id }) => id));
+  const rank = new Map(
+    search.search(indexOf, view.records, text, allowed).map((id, at) => [id, at]),
+  );
   return orderBy(
     matching.filter((link) => rank.has(link.id)),
     [(link) => rank.get(link.id)!],

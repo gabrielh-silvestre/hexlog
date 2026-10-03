@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
-import type { RecordId } from '../../src/domain/ids.ts';
-import { note } from '../commands/register-fakes.ts';
+import type { Marker, RecordId } from '../../src/domain/ids.ts';
+import { ghostId, note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { cursorOf, idsOf, querySetup } from './query-setup.ts';
 
@@ -157,6 +157,47 @@ describe('queryRecords: changesSince (SL7)', () => {
     expect(second.changes).toBeUndefined();
     expect(other.code).toBe('INVALID_CURSOR');
     expect(at(other.details, 0).code).toBe('filters-mismatch');
+  });
+
+  test('alcance processo: marcador sem a entrada do processo lido é MARKER_NOT_FOUND em /changesSince', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    const head = await registerOne('run-1', note('a'), 1);
+
+    const malformed: Marker[] = [{}, { 'run-9': head }, { 'run-1': head, 'run-9': head }];
+    for (const changesSince of malformed) {
+      const error = captureError(() => query({ process: 'run-1', changesSince }));
+      expect(error.code).toBe('MARKER_NOT_FOUND');
+      expect(error.details).toEqual([
+        expect.objectContaining({ path: '/changesSince', code: 'process-not-found' }),
+      ]);
+    }
+  });
+
+  test('alcance projeto: id marcado inexistente é MARKER_NOT_FOUND em /changesSince', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    await registerOne('run-1', note('a'), 1);
+
+    const error = captureError(() =>
+      query({ scope: 'project', changesSince: { 'run-1': ghostId('run-1') } }),
+    );
+
+    expect(error.code).toBe('MARKER_NOT_FOUND');
+    expect(error.details).toEqual([expect.objectContaining({ path: '/changesSince' })]);
+  });
+
+  test('processo chamado `constructor` nascido depois do marcador conta como vazio', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    await registerOne('run-1', note('a'), 1);
+    const snapshot = query({ scope: 'project' });
+    createProcess('constructor');
+    const born = await registerOne('constructor', note('nasceu depois'), 2);
+
+    const page = query({ scope: 'project', changesSince: snapshot.marker });
+
+    expect(page.changes?.entered).toEqual([born]);
   });
 
   test('no alcance projeto, processo ausente do marcador conta como vazio e marcador de processo inexistente é recusado', async () => {

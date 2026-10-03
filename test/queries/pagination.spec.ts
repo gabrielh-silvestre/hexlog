@@ -1,7 +1,7 @@
 import { describe, expect, test } from '@jest/globals';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { decodeCursor, encodeCursor } from '../../src/queries/cursor.ts';
-import { note } from '../commands/register-fakes.ts';
+import { ghostId, note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { cursorOf, idsOf, querySetup } from './query-setup.ts';
 
@@ -91,6 +91,37 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(idsOf(second)).toEqual([c, d]);
   });
 
+  test('SL6: processo chamado `constructor` nascido entre as páginas não derruba o cursor do projeto', async () => {
+    const { createProcess, registerOne, query, a, b, c, d } = await twoProcesses();
+    const first = query({ scope: 'project', limit: 2 });
+    createProcess('constructor');
+    await registerOne('constructor', note('nasceu depois'), 5);
+
+    const second = query({ scope: 'project', limit: 10, cursor: cursorOf(first) });
+
+    expect(idsOf(first)).toEqual([a, b]);
+    expect(idsOf(second)).toEqual([c, d]);
+  });
+
+  test('cursor com `text` de 2+ termos e `type`: mesma ordem e `lastId` presente com append entre páginas', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    await registerOne('run-1', { type: 'doc', target: 'run.doc', data: { note: 'banana uva' } }, 1);
+    const ids = [];
+    for (const [minute, text] of ['banana', 'uva', 'banana', 'uva'].entries()) {
+      ids.push(await registerOne('run-1', note(text), 2 + minute));
+    }
+    const filters = { process: 'run-1', type: 'note', text: 'banana uva', limit: 2 } as const;
+
+    const first = query(filters);
+    await registerOne('run-1', note('banana uva'), 9);
+    const second = query({ ...filters, cursor: cursorOf(first) });
+
+    expect(idsOf(first)).toEqual(ids.slice(0, 2));
+    expect(idsOf(second)).toEqual(ids.slice(2));
+    expect(second.cursor).toBeUndefined();
+  });
+
   test('o cursor do alcance projeto cobre todos os processos lidos', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
@@ -167,7 +198,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
       captureError(() =>
         query({ process: 'run-1', cursor: encodeCursor({ ...issued, ...patch }) }),
       );
-    const ghost = 'run-1:00000000-0000-7000-8000-00000000ffff';
+    const ghost = ghostId('run-1', 0xffff);
 
     const hash = forged({ markerHashes: { 'run-1': sha256hex('outro') } });
     const marker = forged({ marker: { 'run-1': ghost } });
@@ -176,6 +207,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(hash.code).toBe('INVALID_CURSOR');
     expect(at(hash.details, 0).code).toBe('marker-hash-mismatch');
     expect(marker.code).toBe('MARKER_NOT_FOUND');
+    expect(at(marker.details, 0).path).toBe('/cursor');
     expect(last.code).toBe('INVALID_CURSOR');
     expect(at(last.details, 0).code).toBe('last-id-not-found');
     expect(ids).toHaveLength(5);

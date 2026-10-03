@@ -8,8 +8,11 @@ import { emptyManifest } from './chain-line.ts';
 
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
 const FIRST_MS = Date.parse(CREATED_AT);
-/** Texto de cada registro; com os demais campos da linha dá ~1,2 KB. */
-const TEXT_CHARS = 850;
+/**
+ * Texto de cada registro, medido num log real (~840 caracteres por registro típico); com os demais
+ * campos da linha dá ~1,2 KB. Um registro típico custa ao índice de busca 7 a 10 KiB e ~0,25 ms.
+ */
+const TEXT_CHARS = 840;
 
 const TYPES = ['note', 'milestone', 'verdict', 'decision'];
 const TARGET_AREAS = ['account', 'order', 'payment', 'session', 'login'];
@@ -54,12 +57,19 @@ const WORDS = [
 
 const hex = (value: number, width: number): string => value.toString(16).padStart(width, '0');
 
-/** Texto indexável e determinístico: palavras do banco em ordem pseudoaleatória fixa por posição. */
+/**
+ * Texto indexável e determinístico, de vocabulário aberto: palavras do banco em ordem
+ * pseudoaleatória fixa por posição, alternadas com termos únicos por registro (o vocabulário de um
+ * log real cresce com o log; só 36 palavras subestimam a memória e o custo do índice).
+ */
 function textFor(processIndex: number, seq: number): string {
   const words: string[] = [];
   let length = 0;
   for (let step = 0; length < TEXT_CHARS; step += 1) {
-    const word = WORDS[(seq * 7 + step * 13 + processIndex * 5) % WORDS.length]!;
+    const word =
+      step % 2 === 1
+        ? `t${(processIndex * 1_000_003 + seq * 101 + step).toString(36)}`
+        : WORDS[(seq * 7 + step * 13 + processIndex * 5) % WORDS.length]!;
     words.push(word);
     length += word.length + 1;
   }

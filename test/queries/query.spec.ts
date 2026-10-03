@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from '@jest/globals';
 import type { BatchItem } from '../../src/domain/record.ts';
+import { QUERY_TEXT_MAX_CHARS } from '../../src/queries/query-service.ts';
 import { note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { idsOf, PROJECT, querySetup, seeded } from './query-setup.ts';
@@ -50,6 +51,49 @@ describe('queryRecords: filtros e dados embutidos', () => {
     });
 
     expect(idsOf(page)).toEqual([task]);
+  });
+
+  test('`text` de 2+ termos com `type`: o fallback OR decide sobre os registros que passam nos filtros', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    await registerOne('run-1', doc({ note: 'banana uva' }), 1);
+    const banana = await registerOne('run-1', note('banana'), 2);
+    const uva = await registerOne('run-1', note('uva'), 3);
+
+    const page = query({ process: 'run-1', type: 'note', text: 'banana uva' });
+
+    expect(idsOf(page)).toEqual([banana, uva]);
+  });
+
+  test('`text` de 2+ termos: o fallback OR também decide sobre a vigência', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    const old = await registerOne('run-1', note('banana uva'), 1);
+    const banana = await registerOne('run-1', note('banana'), 2);
+    const uva = await registerOne('run-1', note('uva'), 3);
+    await registerOne(
+      'run-1',
+      note('laranja', { relations: [{ to: old, kind: 'supersedes' }] }),
+      4,
+    );
+
+    expect(idsOf(query({ process: 'run-1', text: 'banana uva' }))).toEqual([banana, uva]);
+    expect(idsOf(query({ process: 'run-1', text: 'banana uva', includeNonCurrent: true }))).toEqual(
+      [old],
+    );
+  });
+
+  test('`text` acima do teto é INVALID_FILTER `too-long`, e no teto passa', () => {
+    const { createProcess, query } = querySetup();
+    createProcess('run-1');
+
+    const error = captureError(() =>
+      query({ process: 'run-1', text: 'a'.repeat(QUERY_TEXT_MAX_CHARS + 1) }),
+    );
+
+    expect(error.code).toBe('INVALID_FILTER');
+    expect(error.details).toEqual([expect.objectContaining({ path: '/text', code: 'too-long' })]);
+    expect(query({ process: 'run-1', text: 'a'.repeat(QUERY_TEXT_MAX_CHARS) }).records).toEqual([]);
   });
 
   test('`limit` fora do intervalo e `text` em branco são INVALID_FILTER', () => {

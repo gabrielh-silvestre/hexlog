@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { describe, expect, jest, test } from '@jest/globals';
+import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import MiniSearch from 'minisearch';
 import { compose } from '../src/compose.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { Logger } from '../src/shared/logger.ts';
@@ -14,6 +15,13 @@ function composed(logger: Logger = () => undefined) {
   fs.mkdirSync(dataDir);
   return { cwd, dataDir, ...compose({ dataDir, cwd, clock: () => NOW, logger }) };
 }
+
+// Cada `addAll` é uma montagem do índice de busca: o sensor de que a composição reaproveita o cache.
+const addAll = jest.spyOn(MiniSearch.prototype, 'addAll');
+
+afterEach(() => {
+  addAll.mockClear();
+});
 
 describe('compose', () => {
   test('monta os serviços de escrita e de consulta sobre os adaptadores reais', () => {
@@ -37,6 +45,25 @@ describe('compose', () => {
     const page = services.query.queryRecords({ project: PROJECT, process: 'run-1' });
 
     expect(page.records.map(({ id }) => id)).toEqual(records.map(({ id }) => id));
+  });
+
+  test('duas consultas com text pelo query da composição indexam uma vez só', async () => {
+    const { services } = composed();
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.process.createProcess({ project: PROJECT, process: 'run-1' });
+    await services.process.register({
+      project: PROJECT,
+      process: 'run-1',
+      author: AUTHOR,
+      key: 'k1',
+      records: [note('webhook')],
+    });
+    const input = { project: PROJECT, process: 'run-1', text: 'webhook' };
+
+    services.query.queryRecords(input);
+    services.query.queryRecords(input);
+
+    expect(addAll).toHaveBeenCalledTimes(1);
   });
 
   test('createProcess e register gravam uma linha e a mesma key devolve replayed', async () => {

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import type { Gate } from '../../src/domain/definitions.ts';
+import type { Marker } from '../../src/domain/ids.ts';
 import { GateQuestion } from '../../src/domain/gate.ts';
 import type { EvaluateGateInput } from '../../src/queries/query-service.ts';
 import { NOTE, note, refusal } from '../commands/register-fakes.ts';
@@ -28,6 +29,35 @@ const PROPOSED: Gate = {
   name: 'proposed-approved',
   questions: [{ kind: 'approved', of: { type: 'note', where: { text: 'proposta' } } }],
 };
+
+describe('evaluateGate: marcador e nomes herdados', () => {
+  test('alcance processo: marcador sem a entrada do processo lido é MARKER_NOT_FOUND em /marker, não vacuidade', async () => {
+    const { createProcess, registerOne, evaluate } = gateSetup(PROPOSED);
+    createProcess('run-1');
+    const head = await registerOne('run-1', note('proposta'));
+
+    const malformed: Marker[] = [{}, { 'run-2': null }, { 'run-1': head, 'run-2': null }];
+    for (const marker of malformed) {
+      const error = captureError(() => evaluate('run-1', PROPOSED.name, { marker }));
+      expect(error.code).toBe('MARKER_NOT_FOUND');
+      expect(error.details).toEqual([
+        expect.objectContaining({ path: '/marker', code: 'process-not-found' }),
+      ]);
+    }
+    expect(evaluate('run-1', PROPOSED.name, { marker: { 'run-1': null } }).marker).toEqual({
+      'run-1': null,
+    });
+  });
+
+  test('gate chamado `constructor` e não fixado é GATE_NOT_FOUND, não INTERNAL', () => {
+    const { createProcess, evaluate } = gateSetup(PROPOSED);
+    createProcess('run-1');
+
+    const error = captureError(() => evaluate('run-1', 'constructor'));
+
+    expect(error.code).toBe('GATE_NOT_FOUND');
+  });
+});
 
 describe('evaluateGate: não grava, marcador e reprodução', () => {
   test('avaliar o gate não grava: o log fica byte a byte igual', async () => {

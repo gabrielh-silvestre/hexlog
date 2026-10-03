@@ -3,6 +3,7 @@ import { describe, expect, test } from '@jest/globals';
 import { blobFile, processPaths } from '../../src/adapters/fs/data-format.ts';
 import type { Hash } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
+import { MAX_BREAKS } from '../../src/shared/loader.ts';
 import { note } from '../commands/register-fakes.ts';
 import { captureError } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
@@ -86,7 +87,13 @@ describe('verifyChain: anexos citados (D-16)', () => {
     const { registerOne, doc, stored, verify } = verifySetup();
     await registerOne('run-1', doc({ body: stored('texto') }));
 
-    expect(verify()).toMatchObject({ ok: true, breaks: [] });
+    expect(verify()).toMatchObject({
+      ok: true,
+      breaks: [],
+      totalBreaks: 0,
+      attachmentBreaks: [],
+      totalAttachmentBreaks: 0,
+    });
   });
 
   test('anexo ausente vira quebra attachment-missing e anexo corrompido, attachment-corrupted', async () => {
@@ -100,17 +107,17 @@ describe('verifyChain: anexos citados (D-16)', () => {
     const result = verify();
 
     expect(result.ok).toBe(false);
-    expect(result.totalBreaks).toBe(2);
-    expect(result.breaks).toEqual([
+    expect(result).toMatchObject({ breaks: [], totalBreaks: 0, totalAttachmentBreaks: 2 });
+    expect(result.attachmentBreaks).toEqual([
       { id: record, hash: gone, reason: 'attachment-missing' },
       { id: record, hash: bad, reason: 'attachment-corrupted' },
     ]);
   });
 
-  test('quebra da cadeia e anexo ausente somam no mesmo diagnóstico', async () => {
+  test('quebra da cadeia e anexo ausente saem em listas separadas, cada uma com o seu total', async () => {
     const { registerOne, doc, stored, blobOf, verify, tamper } = verifySetup();
     const gone = stored('sumiu');
-    await registerOne('run-1', doc({ body: gone }));
+    const record = await registerOne('run-1', doc({ body: gone }));
     await registerOne('run-1', note('a'), 1);
     await registerOne('run-1', note('b'), 2);
     fs.rmSync(blobOf(gone));
@@ -118,9 +125,41 @@ describe('verifyChain: anexos citados (D-16)', () => {
 
     const result = verify();
 
-    expect(result.breaks.map((entry) => entry.reason)).toEqual(
-      expect.arrayContaining(['hash-mismatch', 'attachment-missing']),
-    );
+    expect(result.ok).toBe(false);
+    expect(result.breaks.map((entry) => entry.reason)).toContain('hash-mismatch');
     expect(result.totalBreaks).toBe(result.breaks.length);
+    expect(result.attachmentBreaks).toEqual([
+      { id: record, hash: gone, reason: 'attachment-missing' },
+    ]);
+    expect(result.totalAttachmentBreaks).toBe(1);
+  });
+
+  test('com a cadeia já no teto de quebras, a quebra de anexo ainda aparece na sua lista', async () => {
+    const { registerOne, doc, stored, blobOf, verify, logFile } = verifySetup();
+    const gone = stored('sumiu');
+    await registerOne('run-1', doc({ body: gone }));
+    fs.rmSync(blobOf(gone));
+    // Cada linha com JSON válido e sem `links` é uma quebra `invalid-line`.
+    fs.appendFileSync(logFile(), '{}\n'.repeat(MAX_BREAKS + 1));
+
+    const result = verify();
+
+    expect(result.breaks).toHaveLength(MAX_BREAKS);
+    expect(result.totalBreaks).toBe(MAX_BREAKS + 1);
+    expect(result.attachmentBreaks).toHaveLength(1);
+    expect(result.totalAttachmentBreaks).toBe(1);
+  });
+
+  test('mais quebras de anexo que o teto saem cortadas no teto, com o total certo', async () => {
+    const { registerOne, doc, stored, blobOf, verify } = verifySetup();
+    const hashes = Array.from({ length: MAX_BREAKS + 1 }, (_, n) => stored(`anexo ${n}`));
+    await registerOne('run-1', doc({ files: hashes }));
+    for (const hash of hashes) fs.rmSync(blobOf(hash));
+
+    const result = verify();
+
+    expect(result.ok).toBe(false);
+    expect(result.attachmentBreaks).toHaveLength(MAX_BREAKS);
+    expect(result.totalAttachmentBreaks).toBe(MAX_BREAKS + 1);
   });
 });

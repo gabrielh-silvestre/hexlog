@@ -2,6 +2,7 @@ import { describe, test, expect } from '@jest/globals';
 import { omit } from 'es-toolkit';
 import { sha256hex } from '../../src/domain/chain.ts';
 import {
+  CURSOR_MAX_CHARS,
   CursorPayload,
   decodeCursor,
   encodeCursor,
@@ -57,6 +58,25 @@ describe('cursor: ida e volta', () => {
 
   test('o cursor é texto opaco de base64url e checksum de 8 bytes em hex', () => {
     expect(encodeCursor(payload)).toMatch(/^[A-Za-z0-9_-]+\.[0-9a-f]{16}$/);
+  });
+});
+
+describe('cursor: tetos de entrada', () => {
+  test('texto acima de CURSOR_MAX_CHARS é recusado como too-long antes de checksum e JSON', () => {
+    const error = invalidCursorOf(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS + 1)));
+
+    expect(error.details).toEqual([
+      { path: '/cursor', code: 'too-long', message: expect.any(String) },
+    ]);
+  });
+
+  test('mil campos inválidos dão no máximo 51 details, o último too-many-errors', () => {
+    const marker = Object.fromEntries(Array.from({ length: 1_000 }, (_, n) => [`p${n}`, 'x']));
+
+    const error = invalidCursorOf(() => decodeCursor(forge({ ...payload, marker })));
+
+    expect(error.details).toHaveLength(51);
+    expect(error.details.at(-1)).toMatchObject({ code: 'too-many-errors' });
   });
 });
 

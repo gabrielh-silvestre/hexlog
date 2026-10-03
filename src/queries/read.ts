@@ -32,16 +32,32 @@ export function projectNotFound(): HexlogError {
   ]);
 }
 
-function markerProcessNotFound(process: Name): HexlogError {
-  const message = 'marker names a process that does not exist';
+function markerProcessNotFound(
+  process: Name,
+  message = 'marker names a process that does not exist',
+): HexlogError {
   return new HexlogError('MARKER_NOT_FOUND', message, [
     { path: '/marker', code: 'process-not-found', message, process },
   ]);
 }
 
-/** D-24: ordem de nome por unidade de código, que é a do `sort` padrão. */
+/**
+ * D-24: alcance processo, o marcador tem exatamente uma entrada, a do processo lido; ausente ou
+ * extra é entrada malformada (ler como vazio faria o gate passar por vacuidade). Alcance projeto,
+ * ordem de nome por unidade de código, que é a do `sort` padrão.
+ */
 function namesOf(store: ProcessReader, target: ReadTarget, marker?: Marker): Name[] {
-  if (target.scope === 'process') return [target.process];
+  if (target.scope === 'process') {
+    if (marker === undefined) return [target.process];
+    if (!Object.hasOwn(marker, target.process)) {
+      throw markerProcessNotFound(target.process, 'marker has no entry for the read process');
+    }
+    const extra = Object.keys(marker).find((name) => name !== target.process);
+    if (extra !== undefined) {
+      throw markerProcessNotFound(extra, 'marker names a process that was not read');
+    }
+    return [target.process];
+  }
   if (!store.listProjects().includes(target.project)) throw projectNotFound();
   const names = store.list(target.project).sort();
   const missing = Object.keys(marker ?? {}).find((name) => !names.includes(name));
@@ -72,12 +88,34 @@ function loadCut(
 
 /**
  * D-24: lê e verifica o alcance pedido, pelo carregador único. Com `marker`, cada processo é lido
- * até o id marcado e o ausente do marcador é lido como vazio (nasceu depois). Quebra de cadeia dá
- * `PROCESS_CORRUPTED` nomeando o processo, nos dois alcances: nada é avaliado sobre leitura parcial.
+ * até o id marcado; só no alcance projeto o ausente do marcador é lido como vazio (nasceu depois),
+ * no alcance processo a falta da entrada do processo lido é `MARKER_NOT_FOUND`. Quebra de cadeia
+ * dá `PROCESS_CORRUPTED` nomeando o processo, nos dois alcances: nada é avaliado sobre leitura
+ * parcial. `markerPath` é o campo da entrada que traz o marcador (D-26) e vai no `path` do
+ * `MARKER_NOT_FOUND`: `/marker`, `/cursor` ou `/changesSince`.
  */
-export function readScope(store: ProcessReader, target: ReadTarget, marker?: Marker): Reading {
+export function readScope(
+  store: ProcessReader,
+  target: ReadTarget,
+  marker?: Marker,
+  markerPath = '/marker',
+): Reading {
+  try {
+    return readCut(store, target, marker);
+  } catch (error) {
+    if (!(error instanceof HexlogError) || error.code !== 'MARKER_NOT_FOUND') throw error;
+    throw new HexlogError(
+      error.code,
+      error.message,
+      error.details.map((detail) => ({ ...detail, path: markerPath })),
+    );
+  }
+}
+
+function readCut(store: ProcessReader, target: ReadTarget, marker?: Marker): Reading {
   const processes = namesOf(store, target, marker).map((name): LoadedProcess => {
-    const cutAt = marker === undefined ? undefined : (marker[name] ?? null);
+    const cutAt =
+      marker === undefined ? undefined : Object.hasOwn(marker, name) ? marker[name] : null;
     const verified = loadCut(store, { project: target.project, process: name }, cutAt);
     if (!verified.chain.ok) throw brokenChain(name);
     return { name, verified };

@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import MiniSearch from 'minisearch';
-import { createSearchIndex, SEARCH_INDEX_BUDGET_RECORDS } from '../../src/adapters/search.ts';
+import { createSearchIndex, SEARCH_INDEX_BUDGET_CHARS } from '../../src/adapters/search.ts';
 import type { HexRecord } from '../../src/domain/record.ts';
-import type { ProcessRef } from '../../src/ports.ts';
+import { PROJECT_INDEX, type ProcessRef } from '../../src/ports.ts';
 
 const PROC_A: ProcessRef = { project: 'proj', process: 'alpha' };
 const PROC_B: ProcessRef = { project: 'proj', process: 'beta' };
 const PROC_C: ProcessRef = { project: 'proj', process: 'gamma' };
+const PROJECT: ProcessRef = { project: 'proj', process: PROJECT_INDEX };
+
+// Texto indexável de `makeRecord('webhook')`: type, target e o texto, juntos por quebra de linha.
+const RECORD_CHARS = 'note\narea.topic\nwebhook'.length;
 
 let counter = 0;
 
@@ -35,8 +39,8 @@ afterEach(() => {
 });
 
 describe('createSearchIndex com cache', () => {
-  test('o orçamento padrão é de 60.000 registros indexados', () => {
-    expect(SEARCH_INDEX_BUDGET_RECORDS).toBe(60_000);
+  test('o orçamento padrão é de 24 milhões de caracteres indexados', () => {
+    expect(SEARCH_INDEX_BUDGET_CHARS).toBe(24_000_000);
   });
 
   test('o mesmo conjunto de registros reaproveita o índice sem remontar', () => {
@@ -104,7 +108,7 @@ describe('createSearchIndex com cache', () => {
   });
 
   test('passou do orçamento, apaga o processo usado há mais tempo', () => {
-    const index = createSearchIndex(5);
+    const index = createSearchIndex(5 * RECORD_CHARS);
     const a = makeRecords(3);
     const b = makeRecords(2);
     const c = makeRecords(2);
@@ -123,7 +127,7 @@ describe('createSearchIndex com cache', () => {
   });
 
   test('o despejo continua até caber quando o processo novo é grande', () => {
-    const index = createSearchIndex(5);
+    const index = createSearchIndex(5 * RECORD_CHARS);
     const smallA = makeRecords(2);
     const smallB = makeRecords(2);
     const big = makeRecords(5);
@@ -140,7 +144,7 @@ describe('createSearchIndex com cache', () => {
   });
 
   test('processo acima do orçamento sozinho não é guardado e remonta a cada busca', () => {
-    const index = createSearchIndex(3);
+    const index = createSearchIndex(3 * RECORD_CHARS);
     const small = makeRecords(2);
     const huge = makeRecords(4);
     index.search(PROC_A, small, 'webhook');
@@ -154,8 +158,35 @@ describe('createSearchIndex com cache', () => {
     expect(indexedBatches()).toEqual([4, 4]);
   });
 
+  test('o orçamento conta texto: um processo de poucos registros longos despeja os curtos', () => {
+    const index = createSearchIndex(6 * RECORD_CHARS);
+    const shortA = makeRecords(2);
+    const shortB = makeRecords(2);
+    const long = [makeRecord('webhook '.repeat(10))];
+    index.search(PROC_A, shortA, 'webhook');
+    index.search(PROC_B, shortB, 'webhook');
+
+    // Um só registro, mas com texto de sobra para tirar os dois processos curtos do cache.
+    index.search(PROC_C, long, 'webhook');
+    addAll.mockClear();
+    index.search(PROC_A, shortA, 'webhook');
+    index.search(PROC_B, shortB, 'webhook');
+
+    expect(indexedBatches()).toEqual([2, 2]);
+  });
+
+  test('processo cujo texto sozinho passa do orçamento não é guardado, mesmo com poucos registros', () => {
+    const index = createSearchIndex(3 * RECORD_CHARS);
+    const long = [makeRecord('webhook '.repeat(30))];
+
+    index.search(PROC_A, long, 'webhook');
+    index.search(PROC_A, long, 'webhook');
+
+    expect(indexedBatches()).toEqual([1, 1]);
+  });
+
   test('processo que passa a exceder o orçamento sai do cache', () => {
-    const index = createSearchIndex(3);
+    const index = createSearchIndex(3 * RECORD_CHARS);
     const records = makeRecords(3);
     index.search(PROC_A, records, 'webhook');
 
@@ -164,6 +195,33 @@ describe('createSearchIndex com cache', () => {
     index.search(PROC_A, grown, 'webhook');
 
     expect(indexedBatches()).toEqual([3, 1, 4]);
+  });
+
+  test('o alcance projeto não é guardado: duas buscas montam duas vezes', () => {
+    const index = createSearchIndex(3 * RECORD_CHARS);
+    const records = makeRecords(3);
+
+    index.search(PROJECT, records, 'webhook');
+    index.search(PROJECT, records, 'webhook');
+
+    expect(indexedBatches()).toEqual([3, 3]);
+  });
+
+  test('o alcance projeto não conta no orçamento nem despeja os processos quentes', () => {
+    const index = createSearchIndex(4 * RECORD_CHARS);
+    const a = makeRecords(2);
+    const b = makeRecords(2);
+    const project = [...a, ...b];
+    index.search(PROC_A, a, 'webhook');
+    index.search(PROC_B, b, 'webhook');
+    addAll.mockClear();
+
+    index.search(PROJECT, project, 'webhook');
+    index.search(PROC_A, a, 'webhook');
+    index.search(PROJECT, project, 'webhook');
+    index.search(PROC_B, b, 'webhook');
+
+    expect(indexedBatches()).toEqual([4, 4]);
   });
 
   test('o resultado com cache é idêntico ao do índice sem cache, em acerto, crescimento e remontagem', () => {
