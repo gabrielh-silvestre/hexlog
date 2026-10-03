@@ -9,7 +9,7 @@ import { HexlogError } from '../../errors.ts';
 import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { dataRoot, MANIFEST_FILE, processPaths } from './data-format.ts';
-import { listDirectories, mapIo, readTextIfPresent, safeName, toHexlogError } from './io.ts';
+import { listDirectories, mapIo, readIfPresent, safeName, toHexlogError } from './io.ts';
 import { createLockManager, type Lock, type LockOptions } from './lock.ts';
 
 export type ProcessStoreOptions = LockOptions & {
@@ -62,7 +62,7 @@ function logSize(file: string): number {
  */
 function readLogText(file: string): string {
   if (logSize(file) > MAX_LOG_BYTES) throw tooLarge();
-  return readTextIfPresent(file) ?? '';
+  return readIfPresent(file) ?? '';
 }
 
 function parseManifest(ref: ProcessRef, text: string): Manifest {
@@ -113,7 +113,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     });
 
   function readManifest(ref: ProcessRef): Manifest {
-    const manifestText = readTextIfPresent(pathsOf(ref).manifest);
+    const manifestText = readIfPresent(pathsOf(ref).manifest);
     if (manifestText === undefined) throw notFound(ref);
     return parseManifest(ref, manifestText);
   }

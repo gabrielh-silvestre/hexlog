@@ -35,7 +35,7 @@ export function safeName(value: string, field: string): Name {
 }
 
 /** Lê `file`; arquivo inexistente vira `undefined`, qualquer outro erro sai cru. */
-export function readTextIfPresent(file: string): string | undefined {
+export function readIfPresent(file: string): string | undefined {
   try {
     return fs.readFileSync(file, 'utf8');
   } catch (error) {

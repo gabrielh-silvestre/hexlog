@@ -4,27 +4,21 @@ import type { RecordId } from './domain/ids.ts';
 
 /**
  * Um item do array `details` de `HexlogError` (§4.13): aponta o campo problemático via JSON Pointer.
- * `owners`/`allowed` são específicos de `VOCABULARY_VIOLATED` (P2): contexto opcional, não usado
- * pelos demais erros. `current`, `process` e `pid` são da 1.0 (D-26): versão vigente da linhagem
- * (`null` se revogada), processo citado e pid do detentor do lock. `versions` é das definições:
- * as versões que existem quando a pedida não existe.
+ * `current`, `process` e `pid` são da 1.0 (D-26): versão vigente da linhagem (`null` se revogada),
+ * processo citado e pid do detentor do lock. `versions` é das definições: as versões que existem
+ * quando a pedida não existe.
  */
 export type Detail = {
   path: string;
   code: string;
   message: string;
-  owners?: string[];
-  allowed?: string[];
   current?: RecordId | null;
   process?: string;
   pid?: number;
   versions?: string[];
 };
 
-/**
- * Catálogo de códigos de erro de domínio (§4.13). Na transição a união é aditiva: os códigos da 1.0
- * convivem com os legados, que saem no corte.
- */
+/** Catálogo de códigos de erro de domínio (§4.13): a união literal única de 27 códigos. */
 export type ErrorCode =
   | 'INVALID_INPUT'
   | 'INVALID_FILTER'
@@ -33,22 +27,14 @@ export type ErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'PROCESS_NOT_FOUND'
   | 'TYPE_NOT_FOUND'
-  | 'VOCABULARY_MISSING'
   | 'PROCESS_CORRUPTED'
   | 'PROCESS_TOO_LARGE'
   | 'INVALID_ID'
   | 'UNKNOWN_ID'
   | 'ATTACHMENT_NOT_FOUND'
   | 'ATTACHMENT_CORRUPTED'
-  | 'CONFLICTING_ID'
   | 'TYPE_NOT_PINNED'
-  | 'INVALID_EVENT'
-  | 'RESERVED_FIELD'
-  | 'VOCABULARY_VIOLATED'
-  | 'GATE_NOT_REGISTERED'
-  | 'INVALID_EVALUATION'
   | 'LOCK_TIMEOUT'
-  | 'LOCK_LOST'
   | 'IO_ERROR'
   | 'INTERNAL'
   | 'BREAKING_CHANGE'
@@ -73,6 +59,16 @@ export class HexlogError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+/** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */
+const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
+
+/** Recusa de dado 0.x em `<D>` (D-13): a mesma para o kernel MCP e para os scripts de leitura (P11). */
+export function legacyDataError(): HexlogError {
+  return new HexlogError('LEGACY_DATA', 'legacy 0.x data found; archive it first', [
+    { path: '', code: 'run', message: ARCHIVE_COMMAND },
+  ]);
 }
 
 /** JSON Pointer (RFC 6901) de um `path` do Zod, escapando `~` e `/` na ordem correta. */
