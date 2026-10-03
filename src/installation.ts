@@ -14,6 +14,7 @@ import { isNil, zip } from 'es-toolkit';
 import {
   expectedRules,
   applyGuard,
+  staleDenyRules,
   verifyGuard,
   findHookEntry,
   mcpRegistered,
@@ -24,6 +25,7 @@ import {
 } from './guard.ts';
 import { HexlogError } from './errors.ts';
 import { dataDir } from './directory.ts';
+import { writeFileAtomic } from './adapters/fs/atomic.ts';
 
 export type Bundles = { server: Buffer; hook: Buffer };
 /** sha256 dos 2 artefatos (server/hook) de um build ou de uma instalação. */
@@ -286,9 +288,13 @@ export async function installArtifact(args: {
   return { action, versionDir, manifest: finalManifest, warnings };
 }
 
-/** Aplica o guard em `settings.json` (backup + troca atômica), só se algo mudou. */
+/**
+ * Aplica o guard em `settings.json` (backup + troca atômica), só se algo mudou. `removed` lista as
+ * regras de deny de um `<D>` antigo que o guard tirou, para o instalador não removê-las em silêncio.
+ */
 export function registerGuard(args: { settingsPath: string; expected: ExpectedRules }): {
   changed: boolean;
+  removed: string[];
 } {
   const { settingsPath, expected } = args;
   if (!existsSync(settingsPath)) {
@@ -296,13 +302,14 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   }
   const oldText = readFileSync(settingsPath, 'utf8');
   const newText = applyGuard(oldText, expected);
-  if (newText === oldText) return { changed: false };
+  if (newText === oldText) return { changed: false, removed: [] };
 
-  writeFileSync(`${settingsPath}.bak-hexlog`, oldText);
-  const tmp = `${settingsPath}.tmp-${process.pid}`;
-  writeFileSync(tmp, newText);
-  fs.renameSync(tmp, settingsPath);
-  return { changed: true };
+  const oldDeny = (parseJsonc(oldText) as { permissions?: { deny?: unknown[] } } | undefined)
+    ?.permissions?.deny;
+  const removed = [...staleDenyRules(oldDeny ?? [], expected)];
+  writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText);
+  writeFileAtomic(settingsPath, newText);
+  return { changed: true, removed };
 }
 
 /** `name` vira um segmento de path (`<home>/.claude/skills/<name>/`): rejeita o que escaparia dele. */

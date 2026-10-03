@@ -96,6 +96,42 @@ function applyMissingDeny(settingsText: string, expected: ExpectedRules): string
   return text;
 }
 
+/**
+ * Regras de deny de um `<D>` antigo que o instalador pode remover: só o trio de `expectedRules`
+ * (`denyReadDir`, `denyRead`, `denyEdit`) de um mesmo `X` com basename `hexlog` e `X` diferente do
+ * `<D>` atual. Um trio incompleto, outro basename ou regra avulsa do usuário nunca entra.
+ */
+export function staleDenyRules(currentDeny: unknown[], expected: ExpectedRules): Set<string> {
+  const stale = new Set<string>();
+  for (const rule of currentDeny) {
+    if (!isString(rule) || !rule.startsWith('Read(/') || !rule.endsWith(')')) continue;
+    const oldD = rule.slice('Read(/'.length, -')'.length);
+    if (path.basename(oldD) !== 'hexlog' || oldD === extractD(expected)) continue;
+    // `home`, `execPath` e `version` não entram nas três regras de `<D>`.
+    const trio = expectedRules(oldD, '', '', '');
+    const rules = [trio.denyReadDir, trio.denyRead, trio.denyEdit];
+    if (rules.every((r) => currentDeny.includes(r))) rules.forEach((r) => stale.add(r));
+  }
+  return stale;
+}
+
+/** Remove de `permissions.deny` o trio de um `<D>` antigo (ver `staleDenyRules`); idempotente. */
+function removeStaleDeny(settingsText: string, expected: ExpectedRules): string {
+  const data = parse(settingsText) as SettingsData | undefined;
+  const currentDeny: unknown[] = data?.permissions?.deny ?? [];
+  const stale = staleDenyRules(currentDeny, expected);
+  let text = settingsText;
+  // Do fim para o início: remover um índice não desloca os anteriores.
+  for (let index = currentDeny.length - 1; index >= 0; index--) {
+    if (!stale.has(currentDeny[index] as string)) continue;
+    text = applyEdits(
+      text,
+      modify(text, ['permissions', 'deny', index], undefined, FORMATTING_OPTIONS),
+    );
+  }
+  return text;
+}
+
 /** `file` é um `bash-guard.mjs` sob `<home>/.local/lib/hexlog/<qualquer versão>`? Chave estável entre versões. */
 function isHexlogHookFile(file: string, versionDir: string): boolean {
   const hexlogLibDir = path.dirname(versionDir);
@@ -163,9 +199,9 @@ function applyHook(settingsText: string, expected: ExpectedRules): string {
   return applyEdits(settingsText, edits);
 }
 
-/** Aplica as 4 regras de deny e o hook faltantes sobre `settings.json`, sem tocar em mais nada (I5). */
+/** Aplica as 4 regras de deny e o hook faltantes e remove o deny de um `<D>` antigo, sem tocar em mais nada (I5). */
 export function applyGuard(settingsText: string, expected: ExpectedRules): string {
-  const withDeny = applyMissingDeny(settingsText, expected);
+  const withDeny = applyMissingDeny(removeStaleDeny(settingsText, expected), expected);
   return applyHook(withDeny, expected);
 }
 

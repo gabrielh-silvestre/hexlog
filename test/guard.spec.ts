@@ -303,6 +303,100 @@ describe('I6: as 4 regras de deny exatas (QN4)', () => {
   });
 });
 
+describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
+  const home = '/home/test-user';
+  const D = path.join(home, '.local', 'share', 'hexlog');
+  const expected = expectedRules(D, home, '/usr/bin/node', '0.1.0');
+  const trioOf = (oldD: string) => {
+    const old = expectedRules(oldD, home, '/usr/bin/node', '0.1.0');
+    return [old.denyReadDir, old.denyRead, old.denyEdit];
+  };
+  const settingsWithDeny = (deny: string[]) =>
+    JSON.stringify({ permissions: { deny } }, null, 2) + '\n';
+  const DenySchema = z.object({ permissions: z.object({ deny: z.array(z.string()) }) });
+  const denyOf = (text: string) => parseJson(DenySchema, text).permissions.deny;
+  const oldD = '/mnt/old/data/hexlog';
+
+  test('deny: remove as três regras de um <D> antigo com basename hexlog', () => {
+    const result = applyGuard(settingsWithDeny(trioOf(oldD)), expected);
+    expect(denyOf(result)).toEqual([
+      expected.denyReadDir,
+      expected.denyRead,
+      expected.denyEdit,
+      expected.denyEditLib,
+    ]);
+  });
+
+  test('deny: mantém as regras do <D> atual quando há um <D> antigo ao lado', () => {
+    const current = trioOf(D);
+    const result = applyGuard(settingsWithDeny([...trioOf(oldD), ...current]), expected);
+    expect(denyOf(result)).toEqual([...current, expected.denyEditLib]);
+  });
+
+  test('deny: regra avulsa do usuário sobrevive, mesmo parecida com a do <D> antigo', () => {
+    const stray = ['Read(//mnt/old/data/hexlog/secret)', 'Bash(rm:*)', 'Edit(//mnt/old/**)'];
+    const result = applyGuard(settingsWithDeny([...stray, ...trioOf(oldD)]), expected);
+    expect(denyOf(result)).toEqual(expect.arrayContaining(stray));
+    expect(denyOf(result)).not.toContain(`Read(/${oldD})`);
+  });
+
+  test('deny: <D> antigo com basename diferente de hexlog não é removido', () => {
+    const foreign = trioOf('/mnt/old/data/other');
+    const result = applyGuard(settingsWithDeny(foreign), expected);
+    expect(denyOf(result)).toEqual(expect.arrayContaining(foreign));
+  });
+
+  test('deny: trio incompleto (uma ou duas regras) não é removido', () => {
+    const [readDir, read] = trioOf(oldD);
+    for (const partial of [[readDir], [readDir, read]] as string[][]) {
+      const result = applyGuard(settingsWithDeny(partial), expected);
+      expect(denyOf(result)).toEqual(expect.arrayContaining(partial));
+    }
+  });
+
+  test('deny: aplicar duas vezes produz o mesmo texto (I5)', () => {
+    const first = applyGuard(settingsWithDeny(trioOf(oldD)), expected);
+    expect(applyGuard(first, expected)).toBe(first);
+  });
+
+  test('deny: registerGuard grava .bak-hexlog e settings.json por writeFileAtomic', () => {
+    const tmpHome = createTempDir('deny-atomic');
+    const fsyncSpy = jest.spyOn(fsDefault, 'fsyncSync');
+    try {
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      const before = settingsWithDeny(trioOf(oldD));
+      fs.writeFileSync(settingsPath, before);
+
+      expect(registerGuard({ settingsPath, expected })).toEqual({
+        changed: true,
+        removed: trioOf(oldD),
+      });
+
+      // `writeFileAtomic` dá fsync no temporário antes do rename: uma vez por arquivo gravado.
+      expect(fsyncSpy).toHaveBeenCalledTimes(2);
+      expect(fs.readFileSync(`${settingsPath}.bak-hexlog`, 'utf8')).toBe(before);
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(applyGuard(before, expected));
+      expect(denyOf(fs.readFileSync(settingsPath, 'utf8'))).not.toContain(`Read(/${oldD})`);
+      expect(fs.readdirSync(tmpHome).sort()).toEqual(['settings.json', 'settings.json.bak-hexlog']);
+    } finally {
+      fsyncSpy.mockRestore();
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
+  test('deny: registerGuard devolve removed vazio quando não há <D> antigo', () => {
+    const tmpHome = createTempDir('deny-removed-empty');
+    try {
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      fs.writeFileSync(settingsPath, settingsWithDeny(trioOf(D)));
+
+      expect(registerGuard({ settingsPath, expected })).toEqual({ changed: true, removed: [] });
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('I7: verificação com execução real do hook instalado', () => {
   // Prefixo com espaço (Critic iter3-7): o `command` do settings precisa
   // sobreviver ao ciclo `shellQuote.quote` (instalador) → `shellQuote.parse`
@@ -1183,6 +1277,8 @@ describe('B3: install.ts --check (processo real)', () => {
       env: {
         ...process.env,
         HOME: home,
+        // Fixa o <D> no HOME temporário: um XDG_DATA_HOME herdado com dado 0.x faria o instalador sair 2.
+        XDG_DATA_HOME: path.join(home, '.local', 'share'),
         HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
       },
     });
@@ -1204,7 +1300,7 @@ describe('B3: install.ts --check (processo real)', () => {
       {
         cwd: opts.cwd ?? repoRoot,
         encoding: 'utf8',
-        env: { ...process.env, HOME: home },
+        env: { ...process.env, HOME: home, XDG_DATA_HOME: path.join(home, '.local', 'share') },
       },
     );
     return { status: result.status, stdout: result.stdout };
@@ -1334,4 +1430,46 @@ describe('B3: install.ts --check (processo real)', () => {
     expect(fromOtherCwd.status).toBe(fromRepo.status);
     expect(fromOtherCwd.stdout).toBe(fromRepo.stdout);
   }, 15_000);
+
+  test('--check com <D> ilegível (ENOTDIR) ainda verifica, sem abortar cru', () => {
+    const blocker = path.join(home, 'not-a-dir');
+    fs.writeFileSync(blocker, '');
+    const result = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts/install.ts'), '--check'],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, HOME: home, XDG_DATA_HOME: blocker },
+      },
+    );
+
+    expect(result.stderr).not.toContain('ENOTDIR');
+    expect(result.stdout).toContain('missing:');
+  }, 15_000);
+
+  test('argumento desconhecido sai 1 com a mensagem em stderr e nada escrito', () => {
+    const disposableHome = createTempDir('b3-unknown-arg');
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [path.join(repoRoot, 'scripts/install.ts'), '--archive0x'],
+        {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            HOME: disposableHome,
+            XDG_DATA_HOME: path.join(disposableHome, 'data'),
+          },
+        },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('unknown argument: --archive0x');
+      expect(fs.readdirSync(disposableHome)).toEqual([]);
+    } finally {
+      fs.rmSync(disposableHome, { recursive: true, force: true });
+    }
+  });
 });
