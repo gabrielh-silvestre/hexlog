@@ -590,6 +590,31 @@ Um aviso, diferente de erro, vem em `warnings[]` numa resposta de sucesso:
   registrado no projeto depois) — `details: [{ section, name, pinned, current }]`
   lista o que mudou. `existed: true` de qualquer forma, com ou sem esse aviso.
 
+## Destravar um processo (`holder-unreadable`)
+
+`LOCK_TIMEOUT` com `code: "holder-unreadable"` quer dizer que o arquivo `holder` do
+lock do processo está vazio, não é JSON ou não traz `pid` e `token`. Repetir a
+chamada nunca resolve, e o servidor não rouba esse lock. O lock é o diretório
+`records.jsonl.lock/` dentro da pasta do processo, em `<D>/.v1/<projeto>/<processo>/`
+(`<D>` é `$XDG_DATA_HOME/hexlog`, ou `~/.local/share/hexlog`). O Bash do agente não
+alcança `<D>`, então o destravamento é feito pelo usuário, num terminal próprio:
+
+1. Feche as sessões do Claude Code que usam o hexlog, para nenhum servidor estar
+   gravando nesse processo.
+2. Confira o `holder`: `cat <D>/.v1/<projeto>/<processo>/records.jsonl.lock/holder`.
+   Se ele traz um `pid` vivo (`ps -p <pid>`), esse servidor é o dono e o lock é
+   legítimo: espere ou feche-o.
+3. Com o `holder` ilegível ou o `pid` morto, apague o lock:
+   `rm -r <D>/.v1/<projeto>/<processo>/records.jsonl.lock`.
+4. Rode `node scripts/export.ts <projeto>/<processo>` para conferir que o processo
+   lê e a cadeia está íntegra (cadeia adulterada sai com 2).
+
+O servidor cria o lock por `rename` com `fsync` do `holder`, então um `holder`
+ilegível não é um estado transitório: só aparece depois de uma falha do disco ou de
+edição por fora. Restos `*.tmp-*`, `*.dead-*` e `*.released-*` ao lado do lock só
+sobram se um processo morreu no meio da troca; nenhum leitor os abre e podem ser
+apagados.
+
 ## Lacunas de isolamento
 
 O isolamento do hexlog combina 4 regras de deny (`Read`/`Edit` sobre o
