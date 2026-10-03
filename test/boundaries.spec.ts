@@ -235,4 +235,12 @@ describe('scripts de leitura só leem por compose.ts', () => {
   ])('%s pode importar %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
   });
+
+  test.each([
+    ['scripts/probe.ts', ['no-restricted-syntax']],
+    ['scripts/install.ts', []],
+  ])('%s com import() de adapters resulta em %j', async (file, expected) => {
+    const code = `export const load = () => import('../src/adapters/fs/process-store.ts');\n`;
+    expect(await ruleIdsOfText(file, code)).toEqual(expected);
+  });
 });

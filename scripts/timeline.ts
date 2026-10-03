@@ -17,20 +17,15 @@ type Entry = { record: QueryRecord; texts: Record<Hash, string> };
 type Section = { target: string; entries: Entry[] };
 
 function recordsOf(query: QueryService, project: string, target: string): QueryRecord[] {
-  const records: QueryRecord[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = query.queryRecords({
-      project,
-      scope: 'project',
-      targetPrefix: target,
-      includeNonCurrent: true,
-      ...(cursor === undefined ? {} : { cursor }),
-    });
-    records.push(...page.records);
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-  return records;
+  // chamada única: cada página refaria a leitura e a verificação do log inteiro (custo quadrático).
+  // O teto de 64 MiB vale por processo e o alcance projeto soma todos eles (limite listado para a F8)
+  return query.queryRecords({
+    project,
+    scope: 'project',
+    targetPrefix: target,
+    includeNonCurrent: true,
+    limit: Number.MAX_SAFE_INTEGER,
+  }).records;
 }
 
 /** Texto inteiro do anexo, página a página (`next` é o offset da página seguinte). */
@@ -81,7 +76,7 @@ function markOf({ in: incoming }: QueryRecord): string {
 
 function renderEntry({ record, texts }: Entry): string {
   const lines = [
-    `${[record.at, record.id, record.type, record.author.agent].join('  ')}${markOf(record)}`,
+    `${[record.at, record.id, record.type, JSON.stringify(record.author.agent)].join('  ')}${markOf(record)}`,
     `  target: ${record.target}`,
     `  data: ${JSON.stringify(record.data)}`,
     ...record.in.map(({ kind, from }) => `  in: ${kind} <- ${from}`),

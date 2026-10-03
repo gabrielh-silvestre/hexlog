@@ -107,7 +107,7 @@ describe('sem --fields', () => {
     expect(code).toBe(0);
   });
 
-  test('processo com mais registros que uma página sai inteiro, pelo cursor', () => {
+  test('processo com mais registros que uma página sai inteiro, em uma chamada só', () => {
     const xdg = createTempDir('xdg');
     const corpus = writeRecordsCorpus(path.join(xdg, 'hexlog'), { recordsPerProcess: 120 });
     const { project, process: processName } = at(corpus.refs, 0);

@@ -7,7 +7,7 @@ import { formatCliError } from './cli-error.ts';
 import { compose } from '../src/compose.ts';
 import type { Link } from '../src/domain/chain.ts';
 import { dataDir } from '../src/directory.ts';
-import { type HexlogError, legacyDataError } from '../src/errors.ts';
+import { legacyDataError } from '../src/errors.ts';
 
 const TOP_GAPS = 3;
 const TOP_SIGNALS = 5;
@@ -135,7 +135,7 @@ function processReport(composed: Composed, project: string, processName: string)
       ],
     };
   } catch (error) {
-    return { ok: false, lines: [title, `- load failed: ${(error as Error).message}`, ''] };
+    return { ok: false, lines: [title, `- ${formatCliError('insights', error).text}`, ''] };
   }
 }
 
@@ -165,8 +165,7 @@ function main(filter: string | undefined): number {
   try {
     targets = listTargets(composed, filter);
   } catch (error) {
-    const { code, message } = error as HexlogError;
-    console.error(`insights failed: ${code ?? 'ERROR'}: ${message}`);
+    console.error(formatCliError('insights', error).text);
     return 1;
   }
 

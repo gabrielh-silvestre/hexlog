@@ -155,6 +155,46 @@ describe('relatório de integridade e linha do tempo', () => {
   });
 });
 
+describe('linha do tempo', () => {
+  // intervalos de 10 min, 1 h, 2 h e 5 min, atravessando a meia-noite: dois dias e 4 intervalos
+  // distintos, para a ordem e o corte do top 3 serem observáveis
+  const OFFSETS = [0, 10 * MINUTE, 70 * MINUTE, 190 * MINUTE, 195 * MINUTE];
+
+  test('primeiro e último registro, registros por dia e os maiores intervalos em ordem, cortados no top 3', async () => {
+    const { xdg, dataDir } = newDataHome();
+    const first = Date.parse('2026-01-01T22:00:00.000Z');
+    let now = first;
+    const { services } = compose({
+      dataDir,
+      cwd: xdg,
+      clock: () => new Date(now),
+      logger: () => undefined,
+    });
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.process.createProcess({ project: PROJECT, process: 'run-t' });
+    for (const [index, offset] of OFFSETS.entries()) {
+      now = first + offset;
+      await services.process.register({
+        project: PROJECT,
+        process: 'run-t',
+        author: AUTHOR,
+        records: [note(`t${index}`)],
+      });
+    }
+
+    const { code, out } = runInsights(xdg, 'alpha/run-t');
+
+    expect(out).toContain('- first record: 2026-01-01T22:00:00.000Z');
+    expect(out).toContain('- last record: 2026-01-02T01:15:00.000Z');
+    expect(out).toContain('- records per day:\n  - 2026-01-01: 3\n  - 2026-01-02: 2\n');
+    expect(out).toContain(
+      '- largest gaps (top 3):\n  - 2.0 h between seq 2 and 3\n  - 1.0 h between seq 1 and 2\n  - 10.0 min between seq 0 and 1\n',
+    );
+    expect(out).not.toContain('between seq 3 and 4');
+    expect(code).toBe(0);
+  });
+});
+
 describe('sinais da chave (SE8)', () => {
   test('aponta a possível duplicata sem chave com o registro original', () => {
     const { out } = runInsights(xdgHome, 'alpha/run-1');
@@ -225,7 +265,7 @@ describe('cadeia adulterada (SL1)', () => {
     expect(code).toBe(1);
   });
 
-  test('falha ao ler o log de um processo: load failed e saída 1, sem derrubar os outros', () => {
+  test('falha ao ler o log de um processo: linha com o código e saída 1, sem derrubar os outros', () => {
     const xdg = copyOf(xdgHome);
     const { log } = processPaths(path.join(xdg, 'hexlog'), { project: PROJECT, process: 'run-3' });
     fs.rmSync(log);
@@ -233,12 +273,12 @@ describe('cadeia adulterada (SL1)', () => {
 
     const { code, out } = runInsights(xdg);
 
-    expect(out).toMatch(/## alpha\/run-3\n- load failed: /);
+    expect(out).toMatch(/## alpha\/run-3\n- insights failed: IO_ERROR: /);
     expect(out).toContain('## alpha/run-1\n- chain: ok');
     expect(code).toBe(1);
   });
 
-  test('process.json truncado: erro com o código no stderr e saída 1', () => {
+  test('process.json truncado: PROCESS_CORRUPTED nomeando o processo no stderr e saída 1', () => {
     const xdg = copyOf(xdgHome);
     const { manifest } = processPaths(path.join(xdg, 'hexlog'), {
       project: PROJECT,
@@ -248,7 +288,7 @@ describe('cadeia adulterada (SL1)', () => {
 
     const { code, err } = runInsights(xdg);
 
-    expect(err).toContain('insights failed: ');
+    expect(err).toMatch(/insights failed: PROCESS_CORRUPTED: .*run-3/);
     expect(code).toBe(1);
   });
 });

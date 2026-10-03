@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { QueryResult } from '../src/queries/query-service.ts';
+import { VERSION } from '../src/version.ts';
 import { at, createTempDir } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -73,12 +74,14 @@ async function connect(options: { xdg?: string; clientName?: string } = {}) {
   });
   const clientName = options.clientName ?? 'hexlog-e2e';
   const client = new Client({ name: clientName, version: '0.0.0' });
+  const transportErrors: Error[] = [];
+  client.onerror = (error) => transportErrors.push(error);
   await client.connect(transport);
   // O envelope vai por `_meta` em cada chamada: é de onde o servidor lê o `client` do autor (D-21).
   const _meta = { [CLIENT_INFO_META_KEY]: { name: clientName, version: '0.0.0' } };
   const call = async (name: string, args: Record<string, unknown> = {}) =>
     (await client.callTool({ name, arguments: args, _meta })) as CallResult;
-  return { client, call, stderr: () => stderr };
+  return { client, call, stderr: () => stderr, transportErrors };
 }
 
 /** Corpo `{ code, details }` de um resultado com `isError`, lido de `content[0].text`. */
@@ -110,6 +113,16 @@ async function seedNotes(call: Awaited<ReturnType<typeof connect>>['call'], coun
     })),
   });
   expect(registered.isError).not.toBe(true);
+}
+
+/** Cada linha do stderr tem de ser um registro JSON do logger; só vale depois do `client.close()`. */
+function stderrRecords(
+  stderr: string,
+): { level: string; event: string; [field: string]: unknown }[] {
+  return stderr
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line) as { level: string; event: string });
 }
 
 describe('P8 e TM1: bundle real por stdio', () => {
@@ -204,5 +217,50 @@ describe('P8 e TM1: bundle real por stdio', () => {
     } finally {
       await client.close();
     }
+  }, 20_000);
+
+  test('uma chamada de cada tool no bundle: stdout só JSON-RPC, stderr JSON estruturado e sem Dynamic require', async () => {
+    const xdg = createTempDir('e2e-xdg');
+    const { client, call, stderr, transportErrors } = await connect({ xdg });
+    try {
+      // `create_process` fixa os gates do projeto: o gate vem antes dele
+      const gate = await call('define_gate', {
+        project: PROJECT,
+        name: 'has-note',
+        questions: [{ kind: 'occurred', select: { type: 'note' } }],
+      });
+      await seedNotes(call, 1);
+      const attached = await call('attach', { project: PROJECT, text: 'relatório do e2e' });
+      const { hash } = attached.structuredContent as { hash: string };
+      const results = [
+        gate,
+        attached,
+        await call('read_attachment', { project: PROJECT, hash }),
+        await call('define_relation', { project: PROJECT, name: 'rel', kind: 'supports' }),
+        await call('evaluate_gate', { project: PROJECT, process: PROCESS, gate: 'has-note' }),
+        await call('verify_chain', { project: PROJECT, process: PROCESS }),
+      ];
+
+      expect(results.filter((result) => result.isError === true)).toEqual([]);
+    } finally {
+      await client.close();
+    }
+
+    const records = stderrRecords(stderr());
+    expect(transportErrors).toEqual([]);
+    expect(stderr()).not.toContain('Dynamic require of');
+    expect(stderr()).not.toContain('"code":"INTERNAL"');
+    for (const record of records) {
+      expect(['debug', 'info', 'warn', 'error']).toContain(record.level);
+      expect(typeof record.event).toBe('string');
+    }
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        event: 'start',
+        dataDir: path.join(xdg, 'hexlog'),
+        version: VERSION,
+      }),
+    );
+    expect(records.filter(({ event }) => event === 'tool').length).toBeGreaterThanOrEqual(9);
   }, 20_000);
 });

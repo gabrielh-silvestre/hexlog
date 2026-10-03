@@ -102,6 +102,7 @@ const scriptsBlock = {
         ],
       },
     ],
+    'no-restricted-syntax': NO_DYNAMIC_IMPORT,
   },
 };
 

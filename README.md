@@ -460,18 +460,21 @@ adulterado). Informe exatamente um entre:
   sempre o mesmo hash e regravá-lo é seguro (`deduplicated: true`, um só
   arquivo). Se o blob existente não bater com o hash, o put falha com
   `ATTACHMENT_CORRUPTED` e não o sobrescreve.
-- `path`: put de um arquivo `.md` que esteja **direto** em
-  `<cwd do servidor>/.omc/plans` (o `cwd` que o Claude Code herdou), regular,
-  de um único link (hardlink é recusado), de até 1 MiB e em UTF-8 válido. O
-  diretório é resolvido com `realpath`, o arquivo é aberto sem seguir symlink e,
-  depois do `open`, o caminho do descritor é conferido contra o esperado (um
-  diretório trocado por symlink no meio é recusado). Qualquer outra coisa é
-  `INVALID_INPUT` (`details[0].code`: `outside_allowed_root`, `not_found`,
-  `not_md`, `not_regular`, `too_big`, `invalid_utf8` ou `bad_args`); erros do
-  sistema de arquivos ao ler o arquivo saem como `IO_ERROR` só com o errno, sem
-  o caminho absoluto. Não funciona com `OMC_STATE_DIR`,
-  `.omc-workspace`, sessão iniciada em subdiretório ou worktree ligado: nesses
-  layouts o caminho é negado e o texto deve ir por `text`.
+- `path`: put de um arquivo `.md` ou `.txt` em qualquer subpasta de
+  `realpath(<cwd do servidor>)` (o `cwd` que o Claude Code herdou) e fora de
+  `realpath(<D>)`, regular, de um único link (hardlink é recusado), de até 1 MiB
+  e em UTF-8 válido. O teto é o `cwd`: com a sessão iniciada em `$HOME`, todo
+  `.md` e `.txt` sob ele fica ao alcance e o conteúdo volta ao modelo por
+  `read_attachment`; esse caminho escapa dos `Read(...)` de deny e do hook, então
+  o `cwd` é a fronteira de confidencialidade. Só `.md` e `.txt` por não
+  carregarem credencial como `.json`, `.log` e `.env`; ampliar o alcance exige
+  um ADR novo. O diretório é resolvido com `realpath`, o arquivo é aberto sem
+  seguir symlink e, depois do `open`, o caminho do descritor é conferido contra
+  o esperado (um diretório trocado por symlink no meio é recusado). Qualquer
+  outra coisa é `INVALID_INPUT` (`details[0].code`: `outside-allowed-root`,
+  `inside-data-dir`, `not-found`, `bad-extension`, `not-regular`, `too-big` ou
+  `bad-args`); erros do sistema de arquivos ao ler o arquivo saem como
+  `IO_ERROR` só com o errno, sem o caminho absoluto.
 - `hash`: get em páginas de `limit` caracteres (padrão 12.000, máximo 24.000) a
   partir de `offset`. Devolve `{hash, bytes, total, offset, text, nextOffset}`,
   com `nextOffset: null` no fim; concatenar as páginas dá exatamente o texto
@@ -675,42 +678,55 @@ npm run typecheck # tsc --noEmit
 npm run build     # esbuild, gera os bundles .mjs (equivalente ao passo 1 do instalador)
 ```
 
-### `scripts/export.ts`
+### Scripts de leitura
 
-CLI read-only, sem tool MCP correspondente, no mesmo molde de
-`scripts/insights.ts`: roda direto com `node`, lê `XDG_DATA_HOME` como as
-tools, e não recebe o caminho do diretório de dados na linha de comando.
+`scripts/insights.ts`, `scripts/export.ts` e `scripts/timeline.ts` são CLIs
+read-only, sem tool MCP correspondente: rodam direto com `node`, leem
+`XDG_DATA_HOME` como as tools, não recebem o caminho do diretório de dados na
+linha de comando e leem só pelo `compose`, que verifica a cadeia na leitura.
+Nunca escrevem no diretório de dados. Dado 0.x em `<D>` e cadeia adulterada
+saem com 2 em `export` e `timeline`; a tabela de exit codes dos três está em
+`scripts/AGENTS.md`.
+
+### `scripts/export.ts`
 
 ```sh
 node scripts/export.ts <project>/<process> [--fields a,b,c]
 ```
 
-Imprime em stdout uma linha JSON por evento válido do processo, na ordem
-física do arquivo (JSONL). Sem `--fields`, a saída é idêntica ao
-`events.jsonl` do processo (linhas inválidas ficam de fora). Com `--fields`,
-cada linha só traz as chaves pedidas — mesmas chaves de topo aceitas pela
-tool `events` (`seq`, `id`, `type`, `timestamp`, `agent`, `prevHash`,
-`data`). Processo inexistente ou campo desconhecido em `--fields` termina
-com mensagem clara em `stderr` e código de saída diferente de zero.
+Imprime em stdout uma linha JSON por registro do processo, vigentes ou não
+(JSONL), com os campos de `QueryRecord` (`id`, `type`, `at`, `target`,
+`author`, `data`, `in`, `out`, `needsReview`, `attachmentStatus`). Com
+`--fields`, cada linha só traz as chaves pedidas; `seq`, `timestamp`, `agent` e
+`prevHash`, do 0.x, são recusados como campo desconhecido. O processo sai
+numa consulta só, carregado inteiro em memória (o teto de 64 MiB por processo
+limita o tamanho). Erro de uso, processo inexistente e campo desconhecido
+saem com `export failed: ...` em `stderr` e código `1`.
 
 ### `scripts/timeline.ts`
 
-CLI read-only no mesmo molde, com o mesmo cálculo da tool `timeline` mas sem
+Consulta de alcance projeto com os registros não vigentes e as relações, sem
 teto de página nem de texto por entrada: é o caminho para ler anexos grandes.
 
 ```sh
-node scripts/timeline.ts <project> <target>... [--full] [--json]
+node scripts/timeline.ts <project> <target-prefix>... [--full] [--json]
 ```
 
-A saída padrão é legível: um cabeçalho por processo (`chain ok` ou
-`chain BROKEN`) e um bloco por entrada, com a marca `[superado por <id>]`.
-`--full` imprime o texto de cada anexo, byte a byte, entre
-`----- attachment <hash> (<n> bytes) -----` e `----- end -----`. `--json`
-imprime JSONL: uma linha `{"kind":"chain", ...}` por processo e depois uma
-`{"kind":"entry", ...}` por entrada, com os campos da tool. Os avisos vão para
-`stderr`. Códigos de saída: `0` tudo íntegro; `2` alguma cadeia, anexo ou
-processo quebrado; `1` uso incorreto ou erro (`timeline failed: CODE: msg`).
-Nunca escreve no diretório de dados.
+A saída padrão é legível: uma seção por prefixo de target e um bloco por
+registro, com as marcas `[superseded by <id>]` e `[revoked by <id>]` e as
+relações de entrada e saída. `--full` imprime o texto de cada anexo, byte a
+byte, entre `----- attachment <hash> (<n> bytes) -----` e `----- end -----`.
+`--json` imprime JSONL: uma linha `{"kind":"record", ...}` por registro, com o
+prefixo consultado em `query` e, com `--full`, o texto dos anexos em
+`attachmentText`. Os avisos vão para `stderr`. Códigos de saída: `0` tudo
+íntegro; `2` cadeia, `process.json` ou anexo quebrado e dado 0.x; `1` uso
+incorreto ou erro (`timeline failed: CODE: msg`).
+
+O modo texto imprime o texto do anexo verbatim: um anexo com a linha
+`----- end -----` forja o delimitador, e um agente com prompt injetado grava o
+próprio log, então a vítima é quem lê o terminal (a cadeia segue íntegra). O
+campo `agent` sai escapado com `JSON.stringify`, mas o texto do anexo não: para
+log não confiável use `--json --full`, que escapa tudo.
 
 O jest testa o `.ts` fonte; os testes de ponta a ponta sobem o servidor a
 partir do bundle já construído (`.mjs`), para cobrir o artefato que as

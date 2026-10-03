@@ -60,19 +60,17 @@ function main(target: string | undefined, fieldsArg: string | undefined): number
       logger: () => undefined,
     });
     if (isLegacy()) throw legacyDataError();
-    let cursor: string | undefined;
-    do {
-      const page = services.query.queryRecords({
-        project: project.data,
-        process: processName.data,
-        includeNonCurrent: true,
-        ...(cursor === undefined ? {} : { cursor }),
-      });
-      for (const record of page.records) {
-        console.log(JSON.stringify(isNil(fields) ? record : pick(record, fields)));
-      }
-      cursor = page.cursor;
-    } while (cursor !== undefined);
+    // chamada única: cada página refaria a leitura e a verificação do log inteiro (custo quadrático);
+    // o teto de 64 MiB por processo limita a memória
+    const { records } = services.query.queryRecords({
+      project: project.data,
+      process: processName.data,
+      includeNonCurrent: true,
+      limit: Number.MAX_SAFE_INTEGER,
+    });
+    for (const record of records) {
+      console.log(JSON.stringify(isNil(fields) ? record : pick(record, fields)));
+    }
     return 0;
   } catch (error) {
     const { text, exitCode } = formatCliError('export', error);

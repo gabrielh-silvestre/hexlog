@@ -32,7 +32,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - Toda tool passa por `execute()` em `src/mcp/kernel.ts`. `HexlogError` vira `{code, message, details}`, e qualquer outra exceção vira `INTERNAL`, sem stack na resposta.
 - São exatamente 11 tools (ADR 0009). Adicionar ou remover uma quebra testes do instalador e do e2e.
 - Anexo é um blob imutável em `<projeto>/attachments/<sha256>`; o hash é o sha256 dos **bytes** UTF-8, não do JCS. `attachments` é nome reservado de processo. Nunca crie código que escreva por cima de um blob existente.
-- A tool `attach` aceita `text` ou `path` de um arquivo `.md`/`.txt` dentro do `cwd` do servidor e fora de `<D>` (ADR 0009); não amplie esse alcance sem um ADR novo.
+- A tool `attach` aceita `text` ou `path` de um arquivo `.md`/`.txt` dentro do `cwd` do servidor e fora de `<D>` (ADR 0009); o `cwd` é o teto (sessão em `$HOME` alcança todo `.md`/`.txt`) e só essas extensões entram por não carregarem credencial (`.json`, `.log`, `.env` ficam fora). Não amplie esse alcance sem um ADR novo.
 - `define_type`/`define_relation`/`define_gate` versionam em semver `major.minor` em `<nome>/<versão>.json`, nunca sobrescrevem e não deixam arquivo legado. Os dados 1.0 vivem em `<D>/.v1/`.
 - Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0001-hexlog-mvp.md`, `docs/adr-0002-versionamento-definicoes.md`, `docs/adr-0005-hexlog-setup-hexlog-flow.md`, `docs/adr-0006-anexos-tipos-timeline.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`.
 - `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica.

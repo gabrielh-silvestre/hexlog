@@ -193,6 +193,66 @@ describe('texto legível', () => {
   });
 });
 
+describe('agent hostil', () => {
+  test('agent com quebra de linha e ESC sai escapado no cabeçalho, sem forjar linha nem terminal', async () => {
+    const xdg = createTempDir('xdg');
+    const dataDir = path.join(xdg, 'hexlog');
+    fs.mkdirSync(dataDir);
+    const { services } = compose({ dataDir, cwd: xdg, clock: () => NOW, logger: () => undefined });
+    services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
+    services.process.createProcess({ project: PROJECT, process: 'evil' });
+    const agent = 'evil\n  target: ok.fake\u001b[31mRED';
+    await services.process.register({
+      project: PROJECT,
+      process: 'evil',
+      author: { ...AUTHOR, agent },
+      key: 'evil',
+      records: [{ type: 'doc', target: TARGET, data: { note: 'x' }, relations: [] }],
+    });
+
+    const { code, out } = runTimeline(xdg, PROJECT, TARGET);
+
+    expect(out).toContain(JSON.stringify(agent));
+    expect(out).not.toContain('\u001b');
+    expect(out.split('\n').filter((line) => line.startsWith('  target:'))).toEqual([
+      `  target: ${TARGET}`,
+    ]);
+    expect(code).toBe(0);
+  });
+});
+
+describe('muitos registros', () => {
+  test('alcance projeto com mais registros que uma página de 50 sai inteiro, numa chamada só', async () => {
+    const xdg = createTempDir('xdg');
+    const dataDir = path.join(xdg, 'hexlog');
+    fs.mkdirSync(dataDir);
+    const { services } = compose({ dataDir, cwd: xdg, clock: () => NOW, logger: () => undefined });
+    services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
+    services.process.createProcess({ project: PROJECT, process: 'many' });
+    const registerBatch = (key: string) =>
+      services.process.register({
+        project: PROJECT,
+        process: 'many',
+        author: AUTHOR,
+        key,
+        records: Array.from({ length: 30 }, (_, index) => ({
+          type: 'doc',
+          target: TARGET,
+          data: { note: `registro ${key} ${index}` },
+          relations: [],
+        })),
+      });
+    const ids = [...(await registerBatch('a')).records, ...(await registerBatch('b')).records].map(
+      ({ id }) => id,
+    );
+
+    const { code, out } = runTimeline(xdg, PROJECT, TARGET, '--json');
+
+    expect(jsonRecords(out).map(({ id }) => id)).toEqual(ids);
+    expect(code).toBe(0);
+  });
+});
+
 describe('--json', () => {
   test('toda linha é um registro, por (at, processo, seq), com attachmentText igual ao original', () => {
     const { code, out } = runTimeline(xdgHome, PROJECT, TARGET, '--full', '--json');
