@@ -80,7 +80,7 @@ function readHolder(dir: string): HolderRead {
 }
 
 /** `EPERM` conta como vivo: o pid existe, só não é nosso. */
-function isPidAlive(pid: number): boolean {
+export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
