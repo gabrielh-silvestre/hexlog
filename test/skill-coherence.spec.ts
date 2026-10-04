@@ -371,8 +371,8 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
   'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
   'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
   'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-  'commands/register-static.ts#pinnedSchema': ['TYPE_NOT_PINNED'],
-  'commands/register-static.ts#checkData': ['checkData'],
+  'commands/register/static.ts#pinnedSchema': ['TYPE_NOT_PINNED'],
+  'commands/register/static.ts#checkData': ['checkData'],
   'queries/query-service.ts#gateNotFound': ['GATE_NOT_FOUND'],
   'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
   'installation.ts#installArtifact': ['verifyPreparedArtifact'],
@@ -386,10 +386,10 @@ const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string[]> = {
 };
 
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'commands/register-state.ts#assertSameBatch': ['IDEMPOTENCY_CONFLICT'],
-  'commands/register-errors.ts#ruleRefusal': ['FORK_REJECTED'],
+  'commands/register/state.ts#assertSameBatch': ['IDEMPOTENCY_CONFLICT'],
+  'commands/register/errors.ts#ruleRefusal': ['FORK_REJECTED'],
   'adapters/fs/lock.ts#lockTimeout': ['LOCK_TIMEOUT'],
-  'commands/register-attachments.ts#checkAttachments': ['unmarked-attachment'],
+  'commands/register/attachments.ts#checkAttachments': ['unmarked-attachment'],
 };
 
 const FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS: Record<string, string[]> = {

@@ -314,7 +314,10 @@ projeto. **Idempotente por nome**: se o processo já existe, devolve o existente
 sem alterar nada (`created: false`), com `stale` listando as definições que mudaram
 desde a fixação (`{kind, name, current}`). Projeto sem nenhuma definição é
 `TYPE_NOT_FOUND`, sem criar nada. Nomes reservados de processo (`types`,
-`relations`, `gates`, `attachments`, `archive`) são `RESERVED_NAME`.
+`relations`, `gates`, `attachments`, `archive`) são `RESERVED_NAME`. A ordem das
+recusas é: nome reservado, depois projeto sem definição e só então a criação ou o
+`created: false`; por isso um processo que já existe, num projeto que ficou sem
+definição, também recebe `TYPE_NOT_FOUND`.
 
 ### `register`
 

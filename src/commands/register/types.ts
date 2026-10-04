@@ -1,5 +1,5 @@
-import type { Marker, Name, RecordId } from '../domain/ids.ts';
-import type { Author, BatchItem } from '../domain/record.ts';
+import type { Marker, Name, RecordId } from '../../domain/ids.ts';
+import type { Author, BatchItem } from '../../domain/record.ts';
 
 /**
  * A entrada chega validada pelos schemas de `domain/record.ts` (`BatchItem`, `Author`, `key`): o

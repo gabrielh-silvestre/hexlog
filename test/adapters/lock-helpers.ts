@@ -35,7 +35,7 @@ export function runFixture<Mode extends keyof LockHolderArgs>(
   });
 }
 
-/** Filho real da fixture no `mode` dado; devolve quando ele imprime a primeira linha (`{ pid }`). */
+/** Filho real da fixture no `mode` dado; devolve quando ele imprime a primeira linha (um JSON com `pid`; no `register`, o `lock-wait` com o pid do dono). */
 export function startChild<Mode extends keyof LockHolderArgs>(
   mode: Mode,
   args: LockHolderArgs[Mode],
@@ -45,11 +45,14 @@ export function startChild<Mode extends keyof LockHolderArgs>(
   return new Promise((resolve, reject) => {
     let stdout = '';
     let stderr = '';
+    let started = false;
     child.stderr.on('data', (chunk) => (stderr += String(chunk)));
     child.stdout.on('data', (chunk) => {
       stdout += String(chunk);
-      if (stdout.includes('\n'))
-        resolve({ child, pid: (JSON.parse(stdout) as { pid: number }).pid });
+      const lineEnd = stdout.indexOf('\n');
+      if (started || lineEnd === -1) return;
+      started = true;
+      resolve({ child, pid: (JSON.parse(stdout.slice(0, lineEnd)) as { pid: number }).pid });
     });
     child.on('error', reject);
     child.on('exit', (status) =>

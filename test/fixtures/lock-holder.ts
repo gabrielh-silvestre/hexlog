@@ -13,7 +13,8 @@
 //    `{ pid }` e espera (bloqueado, sem devolver ao laço de eventos) até `goFile` existir. O pai
 //    pausa o filho nesse ponto com SIGSTOP (TF4) e depois o libera.
 //  - `register`: espera os `total` irmãos na barreira e faz um `register` pelo `compose` real com
-//    `input` (`{ key?, records }`). Imprime `{ ok: true, replayed }` ou, se o domínio recusar,
+//    `input` (`{ key?, records }`). Imprime uma linha com o registro de log `lock-wait` quando espera
+//    o lock de outro dono e, por último, `{ ok: true, replayed }` ou, se o domínio recusar,
 //    `{ ok: false, code }`; outro erro derruba o filho (status 1, stderr).
 import fs from 'node:fs';
 import * as path from 'node:path';
@@ -164,7 +165,10 @@ async function runRegister({
     dataDir,
     cwd: dataDir,
     clock: () => new Date(),
-    logger: () => undefined,
+    // Só o `lock-wait` sai (uma linha): é o sinal de que o `register` está parado no lock de outro dono.
+    logger: (record) => {
+      if (record.event === 'lock-wait') process.stdout.write(`${JSON.stringify(record)}\n`);
+    },
   });
   await waitForSiblings(barrierDir, total);
   try {

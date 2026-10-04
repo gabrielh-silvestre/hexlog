@@ -17,7 +17,15 @@ import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../../src/p
 import { parseLog, verifyProcess } from '../../src/shared/loader.ts';
 import { chainLine, emptyManifest } from '../fixtures/chain-line.ts';
 import type { CrashWriterArgs } from '../fixtures/fixture-args.ts';
-import { captureError, captureLog, createTempDir, expectNoLeak, rejectionOf } from '../helpers.ts';
+import {
+  captureError,
+  captureLog,
+  createTempDir,
+  expectNoLeak,
+  rejectionOf,
+  scriptWrites,
+  spyOnWriteSync,
+} from '../helpers.ts';
 import { countFsyncs } from './fsync-spy.ts';
 import { killChildren, liveForeignPid } from './lock-helpers.ts';
 
@@ -100,34 +108,6 @@ function countLogFsyncs(logFile: string): () => number {
     realFsync(fd);
   });
   return () => count;
-}
-
-/** `fs.writeSync` tem sobrecargas e o mock herdaria só a última; o store usa `(fd, buffer, offset)`, e o espião tipa essa. */
-function spyOnWriteSync(
-  implementation: (fd: number, buffer: Buffer, offset: number) => number,
-): void {
-  jest.spyOn(fs, 'writeSync').mockImplementation(implementation as typeof fs.writeSync);
-}
-
-/**
- * P9, exceção declarada ao princípio 3: roteiro de `fs.writeSync` do log. Cada chamada consome um
- * passo: `n >= 0` grava só `n` bytes (de verdade) e devolve `n`; `n < 0` grava `tamanho + n`;
- * `'enospc'` lança `ENOSPC` com o caminho na mensagem, como o fs real. Sem passos, grava tudo.
- */
-function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: string): void {
-  const real = fs.writeSync;
-  let call = 0;
-  spyOnWriteSync((fd, buffer, offset) => {
-    const step = steps[call++];
-    if (step === undefined) return real(fd, buffer, offset);
-    if (step === 'enospc') {
-      throw Object.assign(new Error(`ENOSPC: no space left on device, write '${dataDir}'`), {
-        code: 'ENOSPC',
-      });
-    }
-    const length = buffer.length - offset;
-    return real(fd, buffer, offset, step < 0 ? length + step : Math.min(step, length));
-  });
 }
 
 /** Registra, na ordem, os `write` e `fsync` dados no arquivo de log (pelo inode, como `countLogFsyncs`). */

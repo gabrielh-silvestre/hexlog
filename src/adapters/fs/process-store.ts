@@ -1,7 +1,7 @@
 // Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { RESERVED_PROCESS_NAMES, type Name } from '../../domain/ids.ts';
+import { isReservedProcessName, type Name } from '../../domain/ids.ts';
 import { Manifest } from '../../domain/manifest.ts';
 import { HexlogError } from '../../errors.ts';
 import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
@@ -180,7 +180,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     create: (ref, manifest) =>
       mapIo(() => {
         const paths = pathsOf(ref);
-        if ((RESERVED_PROCESS_NAMES as readonly string[]).includes(ref.process)) {
+        if (isReservedProcessName(ref.process)) {
           const message = 'reserved process name';
           throw new HexlogError('RESERVED_NAME', message, [
             { path: '/process', code: 'reserved-name', message },

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AttachmentService } from '../commands/attachment.ts';
 import type { DefinitionService } from '../commands/definition.ts';
 import type { ProcessService } from '../commands/process.ts';
-import { type Author, isWellFormed } from '../domain/record.ts';
+import type { Author } from '../domain/record.ts';
 import {
   capDetails,
   type Detail,
@@ -24,7 +24,8 @@ import type { Logger } from '../shared/logger.ts';
 
 /** Surrogate solitário não vira UTF-8: o JCS do hash lançaria e a tool devolveria INTERNAL (TM3). */
 export const WELL_FORMED = 'must not contain a lone surrogate';
-export const wellFormed = (strings: readonly string[]): boolean => strings.every(isWellFormed);
+export const wellFormed = (strings: readonly string[]): boolean =>
+  strings.every((text) => text.isWellFormed());
 
 /** D-20: teto de caracteres do JSON de uma página de `query` e de `read_attachment`. */
 export const PAGE_CHARS_CAP = 24_000;

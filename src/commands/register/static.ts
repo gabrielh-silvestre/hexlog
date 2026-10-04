@@ -1,32 +1,29 @@
-import type { RecordType } from '../domain/definitions.ts';
-import { processOf, type Name } from '../domain/ids.ts';
+import type { RecordType } from '../../domain/definitions.ts';
+import { processOf, type Name } from '../../domain/ids.ts';
 import {
   BATCH_MAX,
   type BatchItem,
   type RelationInput,
   type RelationKind,
-} from '../domain/record.ts';
-import { resolveKind, type NamedRelation } from '../domain/relations.ts';
-import { HexlogError, invalidInput } from '../errors.ts';
-import type { Manifest, Validator } from '../ports.ts';
-import { invalidRecord, ruleRefusal } from './register-errors.ts';
+} from '../../domain/record.ts';
+import { resolveKind, type NamedRelation } from '../../domain/relations.ts';
+import { HexlogError, invalidInput } from '../../errors.ts';
+import type { Manifest, Validator } from '../../ports.ts';
+import { invalidRecord, ruleRefusal } from './errors.ts';
 
 /** Relação com o `kind` já resolvido; `input` é como o agente a enviou (`to` ainda pode ser `@alias`). */
-export type PreparedRelation = { input: RelationInput; kind: RelationKind };
+type PreparedRelation = { input: RelationInput; kind: RelationKind };
 
 export type PreparedItem = { item: BatchItem; schema: RecordType; relations: PreparedRelation[] };
 
 /** D-01: `to` de relação que cita um item anterior do mesmo lote. */
 export const isAliasRef = (to: string): boolean => to.startsWith('@');
 
-/** Posição de cada apelido no lote. */
-export type AliasIndex = ReadonlyMap<Name, number>;
-
 /**
  * D-06 nível 1: forma do lote (`INVALID_INPUT`): de 1 a 50 itens, apelidos únicos e `@alias` só para
  * item anterior. Só olha a entrada.
  */
-export function checkBatchShape(records: readonly BatchItem[]): AliasIndex {
+export function checkBatchShape(records: readonly BatchItem[]): void {
   if (records.length < 1 || records.length > BATCH_MAX) {
     throw invalidInput(
       '/records',
@@ -53,7 +50,6 @@ export function checkBatchShape(records: readonly BatchItem[]): AliasIndex {
       }
     }
   }
-  return aliasIndex;
 }
 
 /** Nomes de relação fixados no processo, no formato que `domain/relations.ts` espera. */

@@ -1,9 +1,9 @@
-import { attachmentFields } from '../domain/definitions.ts';
-import { Hash, type Name } from '../domain/ids.ts';
-import { HexlogError } from '../errors.ts';
-import type { AttachmentStatus, AttachmentStore } from '../ports.ts';
-import { invalidRecord, withPath } from './register-errors.ts';
-import type { PreparedItem } from './register-static.ts';
+import { attachmentFields } from '../../domain/definitions.ts';
+import { Hash, type Name } from '../../domain/ids.ts';
+import { HexlogError } from '../../errors.ts';
+import type { AttachmentStatus, AttachmentStore } from '../../ports.ts';
+import { invalidRecord, withPath } from './errors.ts';
+import type { PreparedItem } from './static.ts';
 
 // Mensagem fixa de D-16: aponta as duas saídas para quem ficou preso a um tipo sem a marca.
 const UNMARKED_MESSAGE =

@@ -194,14 +194,14 @@ export type RuleContext = {
    * leem os itens anteriores do lote; `supports`, o lote inteiro. Nenhum valor único serve às duas:
    * o lote `[supersedes → E, supports → E]` exige as duas leituras. Para destino de outro processo,
    * a vigência vem dos registros do processo do destino, não dos do registro que grava
-   * (`commands/register-state.ts#loadDestination`).
+   * (`commands/register/state.ts#loadDestination`).
    */
   vigencyFor(kind: RelationKind): Vigency;
 };
 
 /**
  * D-10: `kind` da relação a partir de `kind` e/ou `as`, ou `unknown-relation-name` e `kind-mismatch`.
- * Só depende do manifesto, então o serviço a roda antes do lock (`commands/register-static.ts`).
+ * Só depende do manifesto, então o serviço a roda antes do lock (`commands/register/static.ts`).
  */
 export function resolveKind(input: KindOrAs, names: RuleContext['names']): RelationCheck {
   if (input.as === undefined) return { kind: input.kind };

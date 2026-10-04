@@ -99,6 +99,19 @@ describe('checkSchema', () => {
     expect(validator.checkSchema({ $id, type: 'object' })).toEqual([]);
   });
 
+  test.each(['', '#'])(
+    '$id %j não nomeia schema: passa mesmo depois de um schema sem $id',
+    (id) => {
+      const fresh = createValidator();
+      const schema = { $id: id, type: 'object' };
+
+      expect(fresh.checkSchema({ type: 'object' })).toEqual([]);
+      expect(fresh.validate({ type: 'object' }, {})).toEqual([]);
+      expect(fresh.checkSchema(schema)).toEqual([]);
+      expect(fresh.validate(schema, {})).toEqual([]);
+    },
+  );
+
   test('recusa schema $async com um detalhe invalid-schema na raiz do schema', () => {
     expect(validator.checkSchema({ $async: true, type: 'string' })).toEqual([
       { path: '', code: 'invalid-schema', message: expect.stringMatching(/async/) },

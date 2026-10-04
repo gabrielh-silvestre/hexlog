@@ -120,9 +120,10 @@ function createCompiler(allErrors: boolean) {
 
   const compile = (schema: Record<string, unknown>) => {
     // O `removeSchema` do `finally` apaga por `$id`: com um `$id` que o ajv já conhece (os
-    // metaschemas) ele levaria o schema alheio junto.
+    // metaschemas) ele levaria o schema alheio junto. `$id` vazio ou `#` não nomeia nada (o ajv o
+    // trata como ausente) e `getSchema` devolveria o resíduo que um schema anterior sem `$id` deixa.
     const id = schema.$id;
-    if (typeof id === 'string' && ajv.getSchema(id)) {
+    if (typeof id === 'string' && id !== '' && id !== '#' && ajv.getSchema(id)) {
       throw new Error(`schema with $id "${id}" is already registered`);
     }
     try {

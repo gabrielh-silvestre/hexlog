@@ -48,9 +48,14 @@ export function sha256hex(data: string | Uint8Array): Hash {
   return createHash('sha256').update(data).digest('hex');
 }
 
+/** sha256 do JCS do valor: o hash de conteúdo de manifesto, definição e lote. */
+export function hashOfJcs(value: unknown): Hash {
+  return sha256hex(jcs(value));
+}
+
 /** D-06: sha256 do JCS dos itens de entrada, sem `key` e sem `agent`/`model`. */
 export function fingerprint(items: readonly BatchItem[]): Hash {
-  return sha256hex(jcs(items));
+  return hashOfJcs(items);
 }
 
 /** D-04: `hashLink(l) = sha256hex(l.prevHash + JCS(l sem prevHash))`. */
@@ -60,7 +65,7 @@ export function hashLink(link: Link): Hash {
 
 /** D-03: âncora da cadeia de um processo, `sha256hex(JCS(manifesto))`. */
 export function anchor(manifest: unknown): Hash {
-  return sha256hex(jcs(manifest));
+  return hashOfJcs(manifest);
 }
 
 /** Por que o valor não ocupa a posição esperada: forma inválida, `seq` ou `prevHash` divergentes. */

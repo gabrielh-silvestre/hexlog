@@ -228,6 +228,21 @@ describe('createProcess: recusas', () => {
     expect(processes.creates).toEqual([]);
   });
 
+  test('projeto que ficou sem definição recusa com TYPE_NOT_FOUND mesmo com o processo já criado, em vez de created: false', () => {
+    const { service, definitions, processes } = setup();
+    definitions.add('types', 'note', '1.0', NOTE_1_0);
+    create(service);
+    definitions.store.names = () => [];
+
+    const error = captureError(() => create(service));
+
+    expect(error).toMatchObject({
+      code: 'TYPE_NOT_FOUND',
+      details: [{ path: '/project', code: 'unknown-name' }],
+    });
+    expect(processes.creates).toHaveLength(1);
+  });
+
   test('pasta de nome sem versão não conta como definição registrada', () => {
     const { service, definitions, processes } = setup();
     definitions.addEmptyName('types', 'orphan');

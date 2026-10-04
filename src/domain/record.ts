@@ -15,22 +15,22 @@ export const BATCH_MAX = 50;
 /** Teto de relações por registro gravado e por item de lote (docs/tetos-dominio-v1.md). */
 export const RELATIONS_MAX = 100;
 
-// Surrogate alto sem baixo depois, ou baixo sem alto antes (sem a flag `u`, a string é lida por unidade).
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-/** Surrogate solitário não vira UTF-8: o JCS do hash o recusa, então a borda o rejeita antes (TM3). */
-export const isWellFormed = (text: string): boolean => !LONE_SURROGATE.test(text);
-
 /**
- * Cabe em `max` caracteres canônicos (JCS)? Valor que o `canonicalize` recusa (surrogate solitário)
- * conta como fora do teto em vez de lançar, para o parse devolver erro de validação.
+ * Exige que o valor caiba em `max` caracteres canônicos (JCS); `what` abre a mensagem de recusa.
+ * Valor que o `canonicalize` recusa (surrogate solitário) conta como fora do teto em vez de lançar,
+ * para o parse devolver erro de validação.
  */
-export function withinCanonicalLimit(value: unknown, max: number): boolean {
-  try {
-    return (canonicalize(value) ?? '').length <= max;
-  } catch {
-    return false;
-  }
+export function withCanonicalLimit<T extends z.ZodType>(schema: T, max: number, what: string): T {
+  return schema.refine(
+    (value) => {
+      try {
+        return (canonicalize(value) ?? '').length <= max;
+      } catch {
+        return false;
+      }
+    },
+    { message: `${what} exceeds ${max} canonical characters or is not canonicalizable` },
+  );
 }
 
 // Mora aqui, e não em relations.ts, porque Relation e RelationInput precisam dele em tempo de
@@ -87,11 +87,7 @@ export type KindOrAs = { kind: RelationKind; as?: undefined } | { kind?: Relatio
 export type RelationInput = z.infer<typeof RelationInput> & KindOrAs;
 
 // canonicalize só devolve undefined para entradas não serializáveis, que z.json() já recusou.
-const Data = z
-  .record(z.string(), z.json())
-  .refine((data) => withinCanonicalLimit(data, DATA_MAX_CHARS), {
-    message: `data exceeds ${DATA_MAX_CHARS} canonical characters or is not canonicalizable`,
-  });
+const Data = withCanonicalLimit(z.record(z.string(), z.json()), DATA_MAX_CHARS, 'data');
 
 export const HexRecord = z.strictObject({
   id: RecordId,

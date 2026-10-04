@@ -52,3 +52,6 @@ export const RESERVED_PROCESS_NAMES = [
   'attachments',
   'archive',
 ] as const;
+
+export const isReservedProcessName = (name: string): boolean =>
+  (RESERVED_PROCESS_NAMES as readonly string[]).includes(name);

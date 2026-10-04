@@ -19,6 +19,7 @@ import {
 type Harness = ReturnType<typeof setup>;
 
 const OTHER = 'other-run';
+const THIRD = 'third-run';
 const doc = (data: BatchItem['data']): BatchItem => ({
   type: 'doc',
   target: 'run.doc',
@@ -53,6 +54,46 @@ describe('register: destinos de outro processo (D-10)', () => {
     expect(verifiedOf(harness.processes).records[0]?.relations).toEqual([
       { kind: 'supports', to: target },
     ]);
+  });
+
+  test('dois destinos distintos: cada um é lido uma vez, mesmo com várias relações para ele', async () => {
+    const harness = setup();
+    const first = await seed(harness, OTHER, 'a');
+    const second = await seed(harness, THIRD, 'b');
+    const { counters } = harness.processes;
+    const readsOf = (process: string) => counters.reads.filter((read) => read === process).length;
+    const before = { [OTHER]: readsOf(OTHER), [THIRD]: readsOf(THIRD) };
+
+    const result = await harness.register([
+      relating(first, 'supports'),
+      relating(second, 'supports'),
+      relating(first, 'derivesFrom'),
+      relating(second, 'derivesFrom'),
+    ]);
+
+    expect(result.replayed).toBe(false);
+    expect(readsOf(OTHER)).toBe(before[OTHER] + 1);
+    expect(readsOf(THIRD)).toBe(before[THIRD] + 1);
+  });
+
+  test('a segunda relação para o mesmo destino viola uma regra sem ler o destino de novo', async () => {
+    const harness = setup();
+    const target = await seed(harness, OTHER);
+    const readsBefore = harness.processes.counters.reads.filter((read) => read === OTHER).length;
+
+    const error = await refusal(
+      harness.register([
+        relating(target, 'supports'),
+        note('b', { relations: [{ to: target, as: 'only-tasks' }] }),
+      ]),
+    );
+
+    expect(error).toMatchObject({
+      code: 'INVALID_RECORD',
+      details: [{ path: '/records/1/relations/0', code: 'endpoint-type' }],
+    });
+    const readsNow = harness.processes.counters.reads.filter((read) => read === OTHER).length;
+    expect(readsNow).toBe(readsBefore + 1);
   });
 
   test('processo-destino inexistente é RELATION_NOT_FOUND missing, no path da relação', async () => {
@@ -147,14 +188,37 @@ describe('register: destinos de outro processo (D-10)', () => {
     });
   });
 
-  test('erro das portas na leitura do destino sai intacto (PROCESS_TOO_LARGE)', async () => {
+  test('PROCESS_TOO_LARGE na leitura do destino aponta o `to` da relação e nomeia o destino', async () => {
     const harness = setup();
     const target = await seed(harness, OTHER);
     harness.processes.flags.tooLarge.add(OTHER);
 
     const error = await refusal(harness.register([relating(target, 'supports')]));
 
-    expect(error.code).toBe('PROCESS_TOO_LARGE');
+    expect(error).toMatchObject({
+      code: 'PROCESS_TOO_LARGE',
+      details: [{ path: '/records/0/relations/0/to', code: 'too-large', process: OTHER }],
+    });
+  });
+
+  test('IO_ERROR na leitura do destino aponta o `to` da relação e nomeia o destino', async () => {
+    const harness = setup();
+    const target = await seed(harness, OTHER);
+    const { store } = harness.processes;
+    const read = store.read.bind(store);
+    store.read = (ref) => {
+      if (ref.process !== OTHER) return read(ref);
+      throw new HexlogError('IO_ERROR', 'I/O failure', [
+        { path: '', code: 'eio', message: 'I/O failure' },
+      ]);
+    };
+
+    const error = await refusal(harness.register([relating(target, 'supports')]));
+
+    expect(error).toMatchObject({
+      code: 'IO_ERROR',
+      details: [{ path: '/records/0/relations/0/to', code: 'eio', process: OTHER }],
+    });
   });
 });
 
@@ -455,6 +519,32 @@ describe('register: anexos (D-16)', () => {
     expect(harness.attachments.calls).toEqual([hash]);
   });
 
+  test('um registro com dois campos marcados (body e files): os dois são conferidos', async () => {
+    const harness = setup();
+    const other = sha256hex('outro anexo');
+    harness.attachments.set(hash, 'ok');
+    harness.attachments.set(other, 'ok');
+
+    const result = await harness.register([doc({ body: hash, files: [other] })]);
+
+    expect(result.replayed).toBe(false);
+    expect(harness.attachments.calls).toEqual([hash, other]);
+  });
+
+  test('um registro com dois campos marcados: o segundo ausente é recusado no path dele', async () => {
+    const harness = setup();
+    harness.attachments.set(hash, 'ok');
+
+    const error = await refusal(
+      harness.register([doc({ body: hash, files: [sha256hex('outro anexo')] })]),
+    );
+
+    expect(error).toMatchObject({
+      code: 'ATTACHMENT_NOT_FOUND',
+      details: [{ path: '/records/0/data/files', code: 'not-found' }],
+    });
+  });
+
   test.each([
     ['inexistente', 'missing', 'ATTACHMENT_NOT_FOUND', 'not-found'],
     ['corrompido', 'corrupted', 'ATTACHMENT_CORRUPTED', 'corrupted'],
@@ -588,6 +678,19 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
     expect(harness.processes.counters.appends).toBe(0);
   });
 
+  test('a forma do lote (nível 1) vem antes de qualquer leitura: lote malformado em origem acima do teto dá INVALID_INPUT', async () => {
+    const harness = setup();
+    harness.processes.flags.tooLarge.add(ORIGIN);
+
+    const error = await refusal(harness.register([]));
+
+    expect(error).toMatchObject({
+      code: 'INVALID_INPUT',
+      details: [{ path: '/records', code: 'batch-size' }],
+    });
+    expect(harness.processes.counters.reads).toEqual([]);
+  });
+
   test('o manifesto vem de readManifest, sem o log: a recusa estática vence PROCESS_TOO_LARGE', async () => {
     const harness = setup();
     harness.processes.flags.tooLarge.add(ORIGIN);
@@ -609,6 +712,25 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
     expect(error.code).toBe('PROCESS_TOO_LARGE');
     expect(harness.processes.textOf(ORIGIN)).toBe(before);
     expect(verifiedOf(harness.processes).chain).toMatchObject({ ok: true, totalRecords: 1 });
+  });
+
+  test('o teto é inclusivo: o lote que fecha o log em exatamente maxBytes grava, um byte a menos é vetado', async () => {
+    const probe = setup();
+    await probe.register([note('a')]);
+    await probe.register([note('b')]);
+    const exact = Buffer.byteLength(probe.processes.textOf(ORIGIN));
+    const fits = setup();
+    await fits.register([note('a')]);
+    fits.processes.flags.maxBytes = exact;
+    const over = setup();
+    await over.register([note('a')]);
+    over.processes.flags.maxBytes = exact - 1;
+
+    const written = await fits.register([note('b')]);
+    const vetoed = await refusal(over.register([note('b')]));
+
+    expect(written.replayed).toBe(false);
+    expect(vetoed.code).toBe('PROCESS_TOO_LARGE');
   });
 
   test('o veto vem depois das checagens: lote que viola D-10 e passaria do teto dá a violação', async () => {

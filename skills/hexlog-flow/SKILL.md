@@ -74,7 +74,7 @@ V apoiava.
 
 `key` torna o reenvio seguro: a mesma `key` com o mesmo lote devolve o resultado
 guardado com `replayed: true`, sem gravar de novo; a mesma `key` com lote
-diferente é `IDEMPOTENCY_CONFLICT` (`commands/register-state.ts#assertSameBatch`). A `key` vale dentro do processo, tem até 200
+diferente é `IDEMPOTENCY_CONFLICT` (`commands/register/state.ts#assertSameBatch`). A `key` vale dentro do processo, tem até 200
 caracteres e identifica a **intenção**, não a tentativa: derive-a do que o lote
 faz (ex.: `<target>:abertura`), nunca gere uma nova para reenviar.
 
@@ -98,7 +98,7 @@ substituído.
 ## Regras de relação que o servidor impõe
 
 Cada violação é `INVALID_RECORD` com `details[].code` = a regra e `details[].path`
-= `/records/<i>/relations/<j>`, nada gravado (`commands/register-errors.ts#ruleRefusal`):
+= `/records/<i>/relations/<j>`, nada gravado (`commands/register/errors.ts#ruleRefusal`):
 
 | Regra | `code` |
 |---|---|
@@ -196,7 +196,7 @@ casam com o dado dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`.
 
 ### Anexo sem marca: `unmarked-attachment`
 
-O `register` recusa (`commands/register-attachments.ts#checkAttachments`) com
+O `register` recusa (`commands/register/attachments.ts#checkAttachments`) com
 `INVALID_RECORD` e `details[0].code` `unmarked-attachment` um campo **sem** `format: "attachment"` cujo valor é o hash de um anexo que
 existe (`details[0].path` = `/records/<i>/data/<campo>`; nada gravado). O processo
 fixou o tipo sem a marca e é imutável: `create_process` não refixa, então ele

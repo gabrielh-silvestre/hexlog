@@ -398,6 +398,34 @@ describe('register: chave e precedência de D-06', () => {
     });
   });
 
+  test.each([
+    ['mesma impressão', [note('a')]],
+    ['impressão diferente', [note('b')]],
+  ])(
+    'chave: a mesma key em outra origem não colide, a busca é por origem (%s)',
+    async (_case, batch) => {
+      const { register, processes } = setup();
+      processes.add('run-2');
+      await register([note('a')], { key: 'k' });
+
+      const other = await register(batch, { key: 'k' }, 'run-2');
+
+      expect(other.replayed).toBe(false);
+      expect(verifiedOf(processes, 'run-2').records).toHaveLength(1);
+      expect(verifiedOf(processes).records).toHaveLength(1);
+    },
+  );
+
+  test('chave: a mesma impressão com outra key grava um lote novo, não é replay', async () => {
+    const { register, processes } = setup();
+    await register([note('a')], { key: 'k1' });
+
+    const again = await register([note('a')], { key: 'k2' });
+
+    expect(again.replayed).toBe(false);
+    expect(verifiedOf(processes).records).toHaveLength(2);
+  });
+
   test('chave: o replay traz o marker da cabeça lida em decide, não o do lote original', async () => {
     const { register } = setup();
     const original = await register([note('a')], { key: 'k' });

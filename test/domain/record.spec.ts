@@ -7,7 +7,6 @@ import {
   BatchItem,
   DATA_MAX_CHARS,
   HexRecord,
-  isWellFormed,
   RELATIONS_MAX,
   Relation,
   RelationInput,
@@ -196,17 +195,5 @@ describe('HexRecord', () => {
     { ...record, seq: 1 },
   ])('%j é inválido', (value) => {
     expect(HexRecord.safeParse(value).success).toBe(false);
-  });
-});
-
-describe('isWellFormed', () => {
-  test.each([
-    ['texto comum', 'olá', true],
-    ['par substituto completo', 'a😀b', true],
-    ['surrogate alto solto', 'a\ud800b', false],
-    ['surrogate baixo solto', 'a\udc00b', false],
-    ['surrogate alto no fim', 'a\ud800', false],
-  ])('%s', (_title, text, expected) => {
-    expect(isWellFormed(text)).toBe(expected);
   });
 });

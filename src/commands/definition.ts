@@ -1,5 +1,5 @@
 import type { ZodType } from 'zod';
-import { anchor as hashOf } from '../domain/chain.ts';
+import { hashOfJcs } from '../domain/chain.ts';
 import {
   bumpVersion,
   classifyRelationChange,
@@ -155,7 +155,7 @@ function defineVersioned<K extends DefinitionKind>(
   breaking: boolean,
 ): Defined {
   const next = rule.shape(candidate);
-  const hash = hashOf(next);
+  const hash = hashOfJcs(next);
   let firstBase: string | undefined;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -165,7 +165,7 @@ function defineVersioned<K extends DefinitionKind>(
       latest === undefined
         ? undefined
         : { version: latest, definition: store.read(project, rule.kind, name, latest) };
-    if (previous !== undefined && hashOf(previous.definition) === hash) {
+    if (previous !== undefined && hashOfJcs(previous.definition) === hash) {
       return { name, version: previous.version, hash, created: false };
     }
 

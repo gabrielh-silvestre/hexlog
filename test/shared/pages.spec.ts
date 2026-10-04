@@ -1,5 +1,4 @@
 import { describe, expect, test } from '@jest/globals';
-import { isWellFormed } from '../../src/domain/record.ts';
 import { sliceChars } from '../../src/shared/pages.ts';
 
 // '😀' ocupa duas unidades UTF-16 (um par surrogate).
@@ -44,7 +43,7 @@ describe('sliceChars', () => {
       }
 
       expect(pages.join('')).toBe(text);
-      expect(pages.every(isWellFormed)).toBe(true);
+      expect(pages.every((page) => page.isWellFormed())).toBe(true);
     },
   );
 });

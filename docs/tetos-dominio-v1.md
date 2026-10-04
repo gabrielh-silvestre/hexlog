@@ -66,7 +66,7 @@ Decisão da entrevista de 2026-10-02 sobre ReDoS em `pattern` de schema de tipo.
 
 ### Por que
 
-Um `pattern` como `^(\w+\s?)*$` trava o servidor, que é de thread única: ~800 ms com 37 caracteres, e o tempo dobra a cada caractere a mais. O tipo gravado por `define_type` é imutável, então um `pattern` patológico aceito hoje fica no log para sempre.
+Um `pattern` como `^(\w+\s?)*$` trava o servidor, que é de thread única: ~700 ms com 26 caracteres (medido), e o tempo dobra a cada caractere a mais. O tipo gravado por `define_type` é imutável, então um `pattern` patológico aceito hoje fica no log para sempre.
 
 ### Alternativas avaliadas
 
@@ -90,6 +90,7 @@ Motivo: é biblioteca usada em campo e dispensa código próprio de análise de 
 
 - **Alternância sobreposta (risco aceito em 2026-10-02):** `(a|aa)+` e `([a-z]|[a-z0-9])+` passam pela `safe-regex2` (falso negativo). O `maxLength` **não** limita o dano: os dois travam o servidor por cerca de 8 s com 27 caracteres, dez vezes abaixo do teto de 256. Aceito porque a ferramenta é de uso exclusivo de agentes e os 3 formatos em uso nos tipos de `.hexlog/types/` são lineares. O fallback linear do V8 não entrou porque só protege regex sem a flag `u` e exigiria reabrir a exclusão de `setFlagsFromString`/`unicodeRegExp`.
 - **Falso positivo da `safe-regex2`:** ela recusa repetição dentro de grupo repetido mesmo quando a regex é linear (kebab-case `^[a-z]+(?:-[a-z]+)*$`, `^\d+(\.\d+)?$`) e sintaxe que o `ret` não parseia (lookbehind). Passam classe de caractere única (`^[a-z0-9-]+$`) e sequência sem grupo repetido. A `message` de `src/adapters/validator.ts#patternDetails` já diz isso ao agente.
+- **Formatos do `ajv-formats`:** `src/adapters/validator.ts#createCompiler` liga todos (`addFormats`), inclusive os que validam com regex (`email`, `uri`, `hostname`, `date-time`). Nenhum passa pela `safe-regex2` nem exige `maxLength`; o único limite sobre o tempo deles é o teto de `data` (16.000 caracteres canônicos). O custo de ReDoS desses formatos não foi medido: vale o que o `ajv-formats` entrega. Aceito pelo mesmo motivo do `$ref` abaixo: a ferramenta é de uso exclusivo de agentes. Se pesar, ligar só os formatos usados (`addFormats(ajv, { formats: [...] })`).
 - **`$ref` com ponteiro JSON para dentro de dado:** `#/const`, `#/default`, `#/enum/0` e `#/examples/0` escondem um `pattern` do percurso. Aceito porque a ferramenta é de uso exclusivo de agentes de IA. A correção barata seria uma allowlist de `$ref`: `#`, `#/$defs/...` e `#/definitions/...`.
 
 O ADR 0009 (item 20) registra esses limites como risco aceito; as medições ficam aqui. Pendência aberta, sem ADR, junto de um follow-up: revisar o processo de definição de tipos e avaliar regex ou formatos nomeados prontos, fornecidos pelo hexlog, que o agente só customiza.

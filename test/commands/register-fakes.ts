@@ -2,7 +2,7 @@ import { jest } from '@jest/globals';
 import { createValidator } from '../../src/adapters/validator.ts';
 import { createProcessService } from '../../src/commands/process.ts';
 import type { RegisterInput } from '../../src/commands/process.ts';
-import { anchor } from '../../src/domain/chain.ts';
+import { hashOfJcs } from '../../src/domain/chain.ts';
 import type { RecordType, RelationName } from '../../src/domain/definitions.ts';
 import type { Hash, Name } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
@@ -68,7 +68,11 @@ export function manifestOf(
     process,
     createdAt: NOW.toISOString(),
     fixed,
-    hashes: { types: anchor(fixed.types), relations: anchor(fixed.relations), gates: anchor({}) },
+    hashes: {
+      types: hashOfJcs(fixed.types),
+      relations: hashOfJcs(fixed.relations),
+      gates: hashOfJcs({}),
+    },
   };
 }
 
@@ -93,7 +97,7 @@ function notFound(process: Name): HexlogError {
 }
 
 function tooLarge(): HexlogError {
-  const message = 'process log exceeds the size limit';
+  const message = 'process log exceeds the size limit; create a new process to keep recording';
   return new HexlogError('PROCESS_TOO_LARGE', message, [
     { path: '/process', code: 'too-large', message },
   ]);
@@ -135,12 +139,16 @@ export function fakeProcessStore() {
     counters.reads.push(process);
     const { manifest, text } = manifestEntryOf(process);
     if (flags.tooLarge.has(process)) throw tooLarge();
-    return { manifest, text, endsWithNewline: text === '' || text.endsWith('\n') };
+    return {
+      manifest: structuredClone(manifest),
+      text,
+      endsWithNewline: text === '' || text.endsWith('\n'),
+    };
   };
 
   const store: ProcessStore = {
     read: (ref) => rawOf(ref.process),
-    readManifest: (ref) => manifestEntryOf(ref.process).manifest,
+    readManifest: (ref) => structuredClone(manifestEntryOf(ref.process).manifest),
     list: refuse,
     listProjects: refuse,
     create: refuse,

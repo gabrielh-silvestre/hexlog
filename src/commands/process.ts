@@ -1,6 +1,6 @@
-import { isEqual, union } from 'es-toolkit';
-import { anchor as sha256OfJcs, fingerprint } from '../domain/chain.ts';
-import { RESERVED_PROCESS_NAMES, type Name } from '../domain/ids.ts';
+import { isEqual, mapValues, union } from 'es-toolkit';
+import { fingerprint, hashOfJcs } from '../domain/chain.ts';
+import { isReservedProcessName, type Name } from '../domain/ids.ts';
 import { HexlogError } from '../errors.ts';
 import type {
   AttachmentStore,
@@ -12,11 +12,11 @@ import type {
   Validator,
 } from '../ports.ts';
 import type { Logger } from '../shared/logger.ts';
-import { createDecide } from './register-state.ts';
-import { checkBatchShape, prepareBatch, relationNames } from './register-static.ts';
-import type { RegisterInput, RegisterResult } from './register-types.ts';
+import { createDecide } from './register/state.ts';
+import { checkBatchShape, prepareBatch, relationNames } from './register/static.ts';
+import type { RegisterInput, RegisterResult } from './register/types.ts';
 
-export type { RegisteredRecord, RegisterInput, RegisterResult } from './register-types.ts';
+export type { RegisteredRecord, RegisterInput, RegisterResult } from './register/types.ts';
 
 export type CreateProcessInput = { project: Name; process: Name };
 
@@ -44,6 +44,10 @@ export type ProcessService = {
    * intacto (`created: false`), com `stale` nas definições que mudaram desde a fixação. Projeto sem
    * nenhum tipo, relação ou gate recusa com `TYPE_NOT_FOUND` `unknown-name` em `/project`, sem criar
    * nada. Erro das portas (`TYPE_NOT_FOUND` etc., D-26) sai intacto, sem criar nada.
+   *
+   * Precedência: `RESERVED_NAME`, depois `TYPE_NOT_FOUND` do projeto vazio e só então a criação ou o
+   * `created: false`. A checagem do projeto vazio roda antes de `store.create`, então um processo que
+   * já existe num projeto que ficou sem definição também recusa com `TYPE_NOT_FOUND`.
    */
   createProcess(input: CreateProcessInput): CreateProcessResult;
   /**
@@ -57,6 +61,10 @@ export type ProcessService = {
    *
    * A entrada chega validada (ver `RegisterInput`). Um replay (`replayed: true`) emite
    * `batch-replayed` no logger (D-22), sem o conteúdo dos registros.
+   *
+   * O lock é solto depois do `fsync`: se `release` falha, o lote já está gravado e `register` lança
+   * `IO_ERROR` mesmo assim. Reenviar com a mesma `key` devolve `replayed`; reenviar sem `key` duplica
+   * o lote.
    */
   register(input: RegisterInput): Promise<RegisterResult>;
 };
@@ -75,15 +83,16 @@ function latestOf<K extends DefinitionKind>(
   project: Name,
   kind: K,
 ): { byName: Record<Name, DefinitionOf[K]>; versions: Map<Name, string> } {
-  const byName: Record<Name, DefinitionOf[K]> = {};
-  const versions = new Map<Name, string>();
+  const latest = new Map<Name, { version: string; definition: DefinitionOf[K] }>();
   for (const name of definitions.names(project, kind)) {
     const version = definitions.versions(project, kind, name).at(-1);
     if (version === undefined) continue;
-    byName[name] = definitions.read(project, kind, name, version);
-    versions.set(name, version);
+    latest.set(name, { version, definition: definitions.read(project, kind, name, version) });
   }
-  return { byName, versions };
+  return {
+    byName: Object.fromEntries([...latest].map(([name, { definition }]) => [name, definition])),
+    versions: new Map([...latest].map(([name, { version }]) => [name, version])),
+  };
 }
 
 function takeSnapshot(definitions: DefinitionStore, project: Name): Snapshot {
@@ -96,21 +105,11 @@ function takeSnapshot(definitions: DefinitionStore, project: Name): Snapshot {
   };
 }
 
-function hashesOf(fixed: Manifest['fixed']): Manifest['hashes'] {
-  return {
-    types: sha256OfJcs(fixed.types),
-    relations: sha256OfJcs(fixed.relations),
-    gates: sha256OfJcs(fixed.gates),
-  };
-}
+const hashesOf = (fixed: Manifest['fixed']): Manifest['hashes'] =>
+  mapValues(fixed, (byName) => hashOfJcs(byName));
 
-function namesOf(fixed: Manifest['fixed']): Record<DefinitionKind, Name[]> {
-  return {
-    types: Object.keys(fixed.types),
-    relations: Object.keys(fixed.relations),
-    gates: Object.keys(fixed.gates),
-  };
-}
+const namesOf = (fixed: Manifest['fixed']): Record<DefinitionKind, Name[]> =>
+  mapValues(fixed, (byName) => Object.keys(byName));
 
 /** Nome presente só de um lado, ou com conteúdo diferente, conta como mudado. */
 function staleOf(pinned: Manifest['fixed'], snapshot: Snapshot): StaleDefinition[] {
@@ -124,7 +123,7 @@ function staleOf(pinned: Manifest['fixed'], snapshot: Snapshot): StaleDefinition
 }
 
 function assertNotReserved(processName: Name): void {
-  if (!(RESERVED_PROCESS_NAMES as readonly string[]).includes(processName)) return;
+  if (!isReservedProcessName(processName)) return;
   const message = 'reserved process name';
   throw new HexlogError('RESERVED_NAME', message, [
     { path: '/process', code: 'reserved-name', message },
@@ -176,10 +175,12 @@ export function createProcessService(deps: {
     },
 
     // ponytail: o lock da origem fica preso durante a leitura de cada processo-destino distinto
-    // (~500 ms por destino de 5.000 registros). Acima de ~30 destinos desse tamanho quem espera
-    // recebe `LOCK_TIMEOUT` `lock-busy` e o servidor fica ocupado no `decide` síncrono. Melhoria: ler
-    // os destinos, que são append-only, antes do lock e, sob o lock, verificar só os bytes novos a
-    // partir do marcador lido; ou limitar os destinos distintos por lote.
+    // (~154 ms por destino de 5.000 registros). Acima de ~100 destinos desse tamanho quem espera
+    // recebe `LOCK_TIMEOUT` `lock-busy` e o servidor fica ocupado no `decide` síncrono. O replay por
+    // `key` também paga o lock e o `verifyProcess` completo do log da origem, e `prepareBatch`
+    // compila o schema de cada tipo distinto do lote, tudo antes de devolver `replayed`. Melhoria:
+    // ler os destinos, que são append-only, antes do lock e, sob o lock, verificar só os bytes novos
+    // a partir do marcador lido; ou limitar os destinos distintos por lote.
     async register({ project, process, author, key, records }) {
       checkBatchShape(records);
       const origin = { project, process };
