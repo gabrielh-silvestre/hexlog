@@ -4,12 +4,11 @@
 # fixtures
 
 ## Purpose
-Corpus determinístico para busca/volume, scripts que constroem bundles sob demanda (fora do transform do jest) e probes/stand-ins executados como processo filho pelas specs de `test/`.
+Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bundles sob demanda (fora do transform do jest) e probes/stand-ins executados como processo filho pelas specs de `test/`.
 
 ## Key Files
 | File | Description |
 |---|---|
-| `corpus.ts` | `generateCorpus()`/`writeCorpus()`: corpus determinístico (`fc.sample`, seed fixa 42) com cadeia de hash válida, ~40% Marco / ~40% Veredito / ~20% custom, mais as âncoras fixas exigidas pelos ACs M11/M12. Devolve as linhas, o texto JSONL já serializado e o gabarito de termos com os índices esperados por busca textual. Único arquivo daqui importado direto (não spawnado); usado por `search.spec.ts`, `search.budget.spec.ts` e `event-tools.spec.ts`. |
 | `child-probe.ts` | Probe de import real sob Node ESM (type stripping), fora do transform do jest: importa todas as deps de runtime do manifesto e imprime só JSON no stdout (qualquer warning apareceria no stderr). Rodado via `spawnSync` direto do `.ts`, sem build. Usado por `toolchain.spec.ts`. |
 | `server-probe.ts` | Entrypoint de probe para o bundle esbuild do servidor: um `McpServer` stdio mínimo com 1 tool (`echo`) que importa as mesmas deps de runtime do servidor real (`ajv`, `ajv-formats`, `canonicalize`, `es-toolkit`, `minisearch`, `shell-quote`, `randomUUIDv7`) pra provar que o bundle não tem `Dynamic require of`. `jsonc-parser` fica de fora de propósito — é dependência só do instalador. Construído via `build-entry.ts`. |
 | `hook-probe.ts` | Entrypoint de probe para o bundle esbuild do hook: importa `shell-quote`, `es-toolkit` e `src/directory.ts` (`dataDir`), sai com código diferente conforme reconhece (ou não) o comando recebido em `argv[2]`. Construído via `build-entry.ts`. |
@@ -23,11 +22,10 @@ Corpus determinístico para busca/volume, scripts que constroem bundles sob dema
 | `crash-writer.ts` | Processo filho do kill -9 (TF1, SE3b): grava lotes de 10 registros sem parar pelo `ProcessStore` real e imprime a `key` de cada lote antes de gravar; o pai mata com SIGKILL no meio do lote. Usado por `adapters/process-store.spec.ts`. |
 | `lock-holder.ts` | Processo filho do lock por pid (P2, TF2, TF4) e do `register` concorrente (SE5) em cinco modos: `rounds`, `hold`, `write`, `write-gated` e `register` (sobre o `compose` real). Usado por `adapters/lock.spec.ts` e `commands/register.concurrency.spec.ts`. |
 | `records-corpus.ts` | `writeRecordsCorpus`: corpus 1.0 determinístico gravado direto em `<dataDir>/.v1/` (cadeia por `hashLink`, linhas por `formatLine`), sem passar pelo `ProcessStore`; a opção `gates` fixa gates no manifesto de cada processo (o hash dos gates acompanha). Importado direto pelo jest (`adapters/load.budget.spec.ts`, `adapters/search.budget.spec.ts`, `queries/query.budget.spec.ts` e `queries/project.budget.spec.ts`), não spawnado. |
-| `preview-server.ts` | Entry descartável da prévia da F5: `compose` + `createServer` (`src/mcp/server.ts`) + `serveStdio`, com `dataDir(process.env)` e `process.cwd()`, o que o `src/server.ts` 1.0 fará. Só importa a árvore nova e a raiz permitida (P6). Construído via `build-entry.ts` por `mcp/stdio-preview.e2e.spec.ts`. |
 
 ## For AI Agents
 ### Working In This Directory
-- Todo arquivo aqui, exceto `corpus.ts`, `records-corpus.ts`, `chain-line.ts`, `boundaries/`, `domains/` e `legacy-0x/`, é pensado para rodar como **processo filho** (`spawn`/`spawnSync`), nunca `import`ado pelo jest — várias APIs usadas (`import.meta.dirname`/`main`) não sobrevivem ao transform CJS do ts-jest.
+- Todo arquivo aqui, exceto `records-corpus.ts`, `chain-line.ts`, `boundaries/`, `domains/` e `legacy-0x/`, é pensado para rodar como **processo filho** (`spawn`/`spawnSync`), nunca `import`ado pelo jest — várias APIs usadas (`import.meta.dirname`/`main`) não sobrevivem ao transform CJS do ts-jest.
 - `argv`/`env` de cada probe são o contrato com quem o spawna: mudar a assinatura de um fixture exige atualizar a chamada correspondente em `test/*.spec.ts` no mesmo commit.
 - `server-probe.ts` e `child-probe.ts` existem para provar que o **manifesto de deps de runtime** (§2.2) sobrevive ao bundle/ao ESM real; ao adicionar uma dependência de runtime ao servidor, replique-a aqui.
 
@@ -39,7 +37,7 @@ Corpus determinístico para busca/volume, scripts que constroem bundles sob dema
 
 ### Common Patterns
 - Nome do arquivo indica o papel: `*-probe.ts` roda como processo filho pra inspecionar um artefato; `build-entry.ts` só invoca `scripts/build.ts#build()` fora do jest; `fake-mcp-install.ts`/`concurrent-install.ts` são stand-ins/cenários pro instalador real testado em `guard.spec.ts`.
-- `corpus.ts` é a única fonte de dados de volume: specs que precisam de muitas linhas (`search.spec.ts`, `search.budget.spec.ts`, `event-tools.spec.ts`) chamam `generateCorpus()` em vez de montar eventos um a um.
+- `records-corpus.ts` é a única fonte de dados de volume: specs que precisam de muitos registros (`adapters/load.budget.spec.ts`, `queries/query.budget.spec.ts`, `queries/project.budget.spec.ts`, `insights.spec.ts`, `export.spec.ts`) chamam `writeRecordsCorpus()` em vez de montar registros um a um.
 
 ## Dependencies
 ### Internal
@@ -51,6 +49,5 @@ Corpus determinístico para busca/volume, scripts que constroem bundles sob dema
 ### External
 - `@modelcontextprotocol/server` (`McpServer`, `serveStdio` em `server-probe.ts`; `McpServer`, `StdioServerTransport` em `child-probe.ts`) — usado por ambos os probes.
 - `ajv`, `ajv-formats`, `canonicalize`, `es-toolkit`, `minisearch`, `shell-quote`, `zod`, `jsonc-parser` (só em `child-probe.ts`) — deps de runtime replicadas nos probes para provar que sobrevivem ao bundle.
-- `fast-check` — usado por `corpus.ts` (`fc.sample`) para gerar o corpus determinístico.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

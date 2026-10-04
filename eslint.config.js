@@ -49,12 +49,7 @@ export default defineConfig(
   },
   {
     files: ['test/**/*.ts'],
-    ignores: [
-      'test/helpers.ts',
-      'test/global-setup.ts',
-      // temporário: a F6 apaga estes specs
-      'test/{attachments,event-tools,log,audit-types,definitions}.spec.ts',
-    ],
+    ignores: ['test/helpers.ts', 'test/global-setup.ts'],
     // Flat config não mescla opções de regra: outro bloco com `no-restricted-syntax` que case
     // `test/**` substitui esta lista (o último vence), então novos seletores entram aqui.
     rules: {

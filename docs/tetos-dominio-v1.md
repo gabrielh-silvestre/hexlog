@@ -83,7 +83,7 @@ Motivo: é biblioteca usada em campo e dispensa código próprio de análise de 
 - **Falso positivo da `safe-regex2`:** ela recusa repetição dentro de grupo repetido mesmo quando a regex é linear (kebab-case `^[a-z]+(?:-[a-z]+)*$`, `^\d+(\.\d+)?$`) e sintaxe que o `ret` não parseia (lookbehind). Passam classe de caractere única (`^[a-z0-9-]+$`) e sequência sem grupo repetido. A `message` de `src/adapters/validator.ts#patternDetails` já diz isso ao agente.
 - **`$ref` com ponteiro JSON para dentro de dado:** `#/const`, `#/default`, `#/enum/0` e `#/examples/0` escondem um `pattern` do percurso. Aceito porque a ferramenta é de uso exclusivo de agentes de IA. A correção barata seria uma allowlist de `$ref`: `#`, `#/$defs/...` e `#/definitions/...`.
 
-O ADR 0009 ainda não existe; esses limites entram na lista da F8, junto de um follow-up: revisar o processo de definição de tipos e avaliar regex ou formatos nomeados prontos, fornecidos pelo hexlog, que o agente só customiza.
+O ADR 0009 (ferramental da F6, Proposto) não cobre esses limites; eles entram na lista da F8, junto de um follow-up: revisar o processo de definição de tipos e avaliar regex ou formatos nomeados prontos, fornecidos pelo hexlog, que o agente só customiza.
 
 ### Consequência
 

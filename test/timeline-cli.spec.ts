@@ -1,34 +1,34 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
+import type { ServerContext } from '@modelcontextprotocol/server';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { sha256hex } from '../src/chain.ts';
-import { at, createEnvironment, createTempDir, registerCore, type Environment } from './helpers.ts';
+import { z } from 'zod';
+import { blobFile, processPaths } from '../src/adapters/fs/data-format.ts';
+import { sha256hex } from '../src/domain/chain.ts';
+import { compose } from '../src/compose.ts';
+import { execute, type Services } from '../src/mcp/kernel.ts';
+import { AUTHOR, DOC, NOW, PROJECT } from './commands/register-fakes.ts';
+import { at, createTempDir } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
-const PROJECT = 'alpha';
-const AGENT = 'agent-test';
-const TARGET = 'hex:target:plano';
-
-const REPORT_SCHEMA = {
-  type: 'object',
-  properties: {
-    note: { type: 'string' },
-    target: { type: 'string', pattern: '^hex:target:[^\\s:]+$' },
-    attachment: { type: 'string', pattern: '^[0-9a-f]{64}$' },
-    supersedes: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['note', 'target'],
-  additionalProperties: false,
-};
+const TARGET = 'plan.f6';
+const REVOKE_TARGET = 'revoke.case';
 
 // texto grande (> 200 KB), com acentos, emoji, CRLF, BOM e NUL: tem que sair byte-idêntico
 const BIG_TEXT = `\uFEFF${'Decisão — ação 😀\r\nlinha com NUL \u0000 no meio\n'.repeat(5_000)}`;
 const SMALL_TEXT = 'relatório curto';
 
 let xdgHome: string;
-let ids: { first: string; second: string; other: string; superseder: string };
+let ids: {
+  first: string;
+  second: string;
+  other: string;
+  superseder: string;
+  unrelated: string;
+  revoker: string;
+};
 let hashes: { big: string; small: string };
 
 function runTimeline(xdg: string, ...args: string[]) {
@@ -41,6 +41,7 @@ function runTimeline(xdg: string, ...args: string[]) {
   return { code: result.status, out: result.stdout, err: result.stderr };
 }
 
+/** `<xdg>/hexlog` é o `<D>` que o script resolve; `source` vira o conteúdo dele. */
 function copyToXdg(source: string): string {
   const xdg = createTempDir('xdg');
   fs.cpSync(source, path.join(xdg, 'hexlog'), { recursive: true });
@@ -64,51 +65,80 @@ function snapshot(root: string): Record<string, string> {
   return Object.fromEntries(entries);
 }
 
-async function put(environment: Environment, text: string): Promise<string> {
-  const result = await environment.call('attachment', { project: PROJECT, text });
-  return (result.structuredContent as { hash: string }).hash;
+/** O corpo que o servidor devolve para `LEGACY_DATA`: o script tem de dizer o mesmo. */
+async function serverLegacyBody(): Promise<{ message: string; details: { message: string }[] }> {
+  const result = await execute(
+    { services: {} as Services, isLegacy: () => true, logger: () => undefined },
+    { name: 'list', schema: z.object({}), args: {}, ctx: {} as ServerContext },
+    () => ({}),
+  );
+  return JSON.parse(at(result.content, 0).text) as {
+    message: string;
+    details: { message: string }[];
+  };
 }
 
-async function report(
-  environment: Environment,
-  processName: string,
-  data: Record<string, unknown>,
-): Promise<string> {
-  const result = await environment.call('register', {
-    project: PROJECT,
-    process: processName,
-    type: 'report',
-    agent: AGENT,
-    data: { target: TARGET, ...data },
-  });
-  return (result.structuredContent as { id: string }).id;
-}
+type JsonRecord = {
+  kind: string;
+  target: string;
+  id: string;
+  in: { kind: string; from: string }[];
+  attachmentText?: Record<string, string>;
+};
 
-// alpha: dois processos no mesmo target; o 3º evento do `first` supersede o 1º.
+const jsonRecords = (out: string): JsonRecord[] =>
+  out
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as JsonRecord);
+
+// alpha: dois processos sob o mesmo target; o 3º registro de `first` supersede o 1º.
 beforeAll(async () => {
-  const environment = await createEnvironment();
-  await registerCore(environment, PROJECT);
-  await environment.call('register_type', {
-    project: PROJECT,
-    name: 'report',
-    schema: REPORT_SCHEMA,
-  });
-  await environment.call('create_process', { project: PROJECT, process: 'first' });
-  await environment.call('create_process', { project: PROJECT, process: 'second' });
+  const xdg = createTempDir('xdg');
+  const dataDir = path.join(xdg, 'hexlog');
+  fs.mkdirSync(dataDir);
+  let now = NOW;
+  const { services } = compose({ dataDir, cwd: xdg, clock: () => now, logger: () => undefined });
+  services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
+  services.process.createProcess({ project: PROJECT, process: 'first' });
+  services.process.createProcess({ project: PROJECT, process: 'second' });
 
-  hashes = { big: await put(environment, BIG_TEXT), small: await put(environment, SMALL_TEXT) };
-  environment.setClock(new Date('2026-01-01T00:00:01.000Z'));
-  const first = await report(environment, 'first', { note: 'grande', attachment: hashes.big });
-  environment.setClock(new Date('2026-01-01T00:00:02.000Z'));
-  const second = await report(environment, 'first', { note: 'pequeno', attachment: hashes.small });
-  environment.setClock(new Date('2026-01-01T00:00:03.000Z'));
-  const other = await report(environment, 'second', { note: 'outro processo' });
-  environment.setClock(new Date('2026-01-01T00:00:04.000Z'));
-  const superseder = await report(environment, 'first', { note: 'novo', supersedes: [first] });
+  hashes = {
+    big: services.attachment.attach({ project: PROJECT, text: BIG_TEXT }).hash,
+    small: services.attachment.attach({ project: PROJECT, text: SMALL_TEXT }).hash,
+  };
+  let seq = 0;
+  const register = async (
+    process: string,
+    target: string,
+    data: Record<string, string>,
+    relations: { to: string; kind: 'supersedes' | 'revokes' }[] = [],
+  ) => {
+    now = new Date(NOW.getTime() + (seq += 1) * 1000);
+    const { records } = await services.process.register({
+      project: PROJECT,
+      process,
+      author: AUTHOR,
+      key: `k${seq}`,
+      records: [{ type: 'doc', target, data, relations }],
+    });
+    return at(records, 0).id;
+  };
+  const first = await register('first', TARGET, { note: 'grande', body: hashes.big });
+  const second = await register('first', TARGET, { note: 'pequeno', body: hashes.small });
+  const other = await register('second', `${TARGET}.sub`, { note: 'outro processo' });
+  const superseder = await register('first', TARGET, { note: 'novo' }, [
+    { to: first, kind: 'supersedes' },
+  ]);
+  const unrelated = await register('second', 'other.thing', { note: 'fora do target' });
 
-  ids = { first, second, other, superseder };
-  xdgHome = copyToXdg(environment.dir);
-  await environment.close();
+  const revoked = await register('second', REVOKE_TARGET, { note: 'revogado' });
+  const revoker = await register('second', REVOKE_TARGET, { note: 'revogador' }, [
+    { to: revoked, kind: 'revokes' },
+  ]);
+
+  ids = { first, second, other, superseder, unrelated, revoker };
+  xdgHome = xdg;
 });
 
 describe('--full', () => {
@@ -136,70 +166,120 @@ describe('--full', () => {
 });
 
 describe('texto legível', () => {
-  test('cabeçalho por processo com chain ok e marca [superado por <id>]', () => {
+  test('alcance projeto: registros dos dois processos, o não vigente com a marca [superseded by <id>]', () => {
     const { code, out } = runTimeline(xdgHome, PROJECT, TARGET);
 
-    expect(out).toContain('process first: chain ok (3 lines)');
-    expect(out).toContain('process second: chain ok (1 lines)');
-    expect(out).toContain(`[superado por ${ids.superseder}]`);
-    expect(out).toContain(`supersedes: ${ids.first}`);
+    expect(out).toContain(`target ${TARGET}: 4 records`);
+    for (const id of [ids.first, ids.second, ids.other, ids.superseder]) expect(out).toContain(id);
+    expect(out).not.toContain(ids.unrelated);
+    expect(out).toContain(`[superseded by ${ids.superseder}]`);
+    expect(out).toContain(`out: supersedes -> ${ids.first}`);
+    expect(code).toBe(0);
+  });
+
+  test('registro revogado leva a marca [revoked by <id>]', () => {
+    const { code, out } = runTimeline(xdgHome, PROJECT, REVOKE_TARGET);
+
+    expect(out).toContain(`[revoked by ${ids.revoker}]`);
+    expect(code).toBe(0);
+  });
+
+  test('mais de um target gera uma seção por target', () => {
+    const { code, out } = runTimeline(xdgHome, PROJECT, TARGET, 'other.thing');
+
+    expect(out).toContain(`target ${TARGET}: 4 records`);
+    expect(out).toContain('target other.thing: 1 records');
+    expect(code).toBe(0);
+  });
+});
+
+describe('agent hostil', () => {
+  test('agent com quebra de linha e ESC sai escapado no cabeçalho, sem forjar linha nem terminal', async () => {
+    const xdg = createTempDir('xdg');
+    const dataDir = path.join(xdg, 'hexlog');
+    fs.mkdirSync(dataDir);
+    const { services } = compose({ dataDir, cwd: xdg, clock: () => NOW, logger: () => undefined });
+    services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
+    services.process.createProcess({ project: PROJECT, process: 'evil' });
+    const agent = 'evil\n  target: ok.fake\u001b[31mRED';
+    await services.process.register({
+      project: PROJECT,
+      process: 'evil',
+      author: { ...AUTHOR, agent },
+      key: 'evil',
+      records: [{ type: 'doc', target: TARGET, data: { note: 'x' }, relations: [] }],
+    });
+
+    const { code, out } = runTimeline(xdg, PROJECT, TARGET);
+
+    expect(out).toContain(JSON.stringify(agent));
+    expect(out).not.toContain('\u001b');
+    expect(out.split('\n').filter((line) => line.startsWith('  target:'))).toEqual([
+      `  target: ${TARGET}`,
+    ]);
+    expect(code).toBe(0);
+  });
+});
+
+describe('muitos registros', () => {
+  test('alcance projeto com mais registros que uma página de 50 sai inteiro, numa chamada só', async () => {
+    const xdg = createTempDir('xdg');
+    const dataDir = path.join(xdg, 'hexlog');
+    fs.mkdirSync(dataDir);
+    const { services } = compose({ dataDir, cwd: xdg, clock: () => NOW, logger: () => undefined });
+    services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
+    services.process.createProcess({ project: PROJECT, process: 'many' });
+    const registerBatch = (key: string) =>
+      services.process.register({
+        project: PROJECT,
+        process: 'many',
+        author: AUTHOR,
+        key,
+        records: Array.from({ length: 30 }, (_, index) => ({
+          type: 'doc',
+          target: TARGET,
+          data: { note: `registro ${key} ${index}` },
+          relations: [],
+        })),
+      });
+    const ids = [...(await registerBatch('a')).records, ...(await registerBatch('b')).records].map(
+      ({ id }) => id,
+    );
+
+    const { code, out } = runTimeline(xdg, PROJECT, TARGET, '--json');
+
+    expect(jsonRecords(out).map(({ id }) => id)).toEqual(ids);
     expect(code).toBe(0);
   });
 });
 
 describe('--json', () => {
-  test('toda linha é JSON: chain por processo, depois entry, com attachment.text === original', () => {
+  test('toda linha é um registro, por (at, processo, seq), com attachmentText igual ao original', () => {
     const { code, out } = runTimeline(xdgHome, PROJECT, TARGET, '--full', '--json');
-    const lines = out
-      .trim()
-      .split('\n')
-      .map(
-        (line) => JSON.parse(line) as Record<string, unknown> & { attachment?: { text?: string } },
-      );
+    const lines = jsonRecords(out);
 
-    expect(lines.map((line) => line.kind)).toEqual([
-      'chain',
-      'chain',
-      'entry',
-      'entry',
-      'entry',
-      'entry',
-    ]);
-    expect(Object.keys(at(lines, 0)).sort()).toEqual(
-      ['breaks', 'kind', 'ok', 'process', 'totalBreaks', 'totalLines'].sort(),
-    );
-    expect(at(lines, 0)).toMatchObject({
-      process: 'first',
-      ok: true,
-      totalLines: 3,
-      totalBreaks: 0,
-    });
-
-    const entries = lines.filter((line) => line.kind === 'entry');
-    expect(entries.map((entry) => entry.id)).toEqual([
+    expect(lines.map((line) => line.kind)).toEqual(['record', 'record', 'record', 'record']);
+    expect(lines.map((line) => line.id)).toEqual([
       ids.first,
       ids.second,
       ids.other,
       ids.superseder,
     ]);
-    expect(at(entries, 0)).toMatchObject({
-      at: '2026-01-01T00:00:01.000Z',
-      process: 'first',
-      seq: 0,
-      type: 'report',
-      agent: AGENT,
-      target: TARGET,
-      supersededBy: [ids.superseder],
+    expect(at(lines, 0)).toMatchObject({
+      query: TARGET,
+      in: [{ kind: 'supersedes', from: ids.superseder }],
     });
-    expect(at(entries, 0).attachment?.text).toBe(BIG_TEXT);
-    expect(at(entries, 3)).toMatchObject({ supersedes: [ids.first] });
+    expect(at(lines, 0).attachmentText).toEqual({ [hashes.big]: BIG_TEXT });
+    expect(at(lines, 1).attachmentText).toEqual({ [hashes.small]: SMALL_TEXT });
     expect(code).toBe(0);
   });
 
-  test('sem --full o attachment não traz text', () => {
+  test('sem --full não há attachmentText, e o status do anexo continua', () => {
     const { out } = runTimeline(xdgHome, PROJECT, TARGET, '--json');
-    const entry = JSON.parse(at(out.trim().split('\n'), 2)) as { attachment: object };
-    expect(entry.attachment).toEqual({ hash: hashes.big, status: 'ok' });
+    const entry = at(jsonRecords(out), 0);
+
+    expect(entry).not.toHaveProperty('attachmentText');
+    expect(entry).toMatchObject({ attachmentStatus: { [hashes.big]: 'ok' } });
   });
 });
 
@@ -215,9 +295,9 @@ describe('read-only', () => {
 describe('integridade', () => {
   test('blob adulterado → exit 2, corrupted na saída, aviso no stderr', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
-    fs.writeFileSync(path.join(xdg, 'hexlog', PROJECT, 'attachments', hashes.small), 'adulterado');
+    fs.writeFileSync(blobFile(path.join(xdg, 'hexlog'), PROJECT, hashes.small), 'adulterado');
 
-    const { code, out, err } = runTimeline(xdg, PROJECT, TARGET);
+    const { code, out, err } = runTimeline(xdg, PROJECT, TARGET, '--full');
 
     expect(code).toBe(2);
     expect(out).toContain(`attachment: ${hashes.small} (corrupted)`);
@@ -226,59 +306,53 @@ describe('integridade', () => {
 
   test('blob removido → exit 2 e missing', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
-    fs.rmSync(path.join(xdg, 'hexlog', PROJECT, 'attachments', hashes.small));
+    fs.rmSync(blobFile(path.join(xdg, 'hexlog'), PROJECT, hashes.small));
 
     const { code, out } = runTimeline(xdg, PROJECT, TARGET, '--json');
 
     expect(code).toBe(2);
-    expect(out).toContain('"status":"missing"');
+    expect(out).toContain('"missing"');
   });
 
-  test('linha adulterada → exit 2 e chain BROKEN, sem --full', () => {
+  test('cadeia adulterada → exit 2 e PROCESS_CORRUPTED nomeando o processo, sem saída', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
-    const eventsFile = path.join(xdg, 'hexlog', PROJECT, 'first', 'events.jsonl');
-    fs.writeFileSync(
-      eventsFile,
-      fs.readFileSync(eventsFile, 'utf8').replace('"grande"', '"trocado"'),
-    );
+    const { log } = processPaths(path.join(xdg, 'hexlog'), { project: PROJECT, process: 'first' });
+    fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"grande"', '"trocado"'));
 
     const { code, out, err } = runTimeline(xdg, PROJECT, TARGET);
 
+    expect(err).toContain('timeline failed: PROCESS_CORRUPTED: process chain is broken (first:');
+    expect(out).toBe('');
     expect(code).toBe(2);
-    expect(out).toContain('process first: chain BROKEN');
-    expect(err).toContain('warning CHAIN_BROKEN');
+  });
+
+  test('process.json truncado → exit 2 e PROCESS_CORRUPTED', () => {
+    const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
+    const { manifest } = processPaths(path.join(xdg, 'hexlog'), {
+      project: PROJECT,
+      process: 'second',
+    });
+    fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').slice(0, 20));
+
+    const { code, out, err } = runTimeline(xdg, PROJECT, TARGET);
+
+    expect(err).toContain('timeline failed: PROCESS_CORRUPTED:');
+    expect(out).toBe('');
+    expect(code).toBe(2);
   });
 });
 
-describe('process.json corrompido', () => {
-  test.each([
-    ['truncado', (manifest: string) => manifest.slice(0, 20)],
-    [
-      'hash divergente',
-      (manifest: string) =>
-        manifest.replace(/"schemas": "[0-9a-f]{64}"/, () => `"schemas": "${'0'.repeat(64)}"`),
-    ],
-  ])('%s → exit 2, aviso no stderr e o processo fora do --json', (_name, corrupt) => {
-    const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
-    const manifest = path.join(xdg, 'hexlog', PROJECT, 'second', 'process.json');
-    fs.writeFileSync(manifest, corrupt(fs.readFileSync(manifest, 'utf8')));
+describe('dado 0.x', () => {
+  test('P11: <D> com dado 0.x sai com 2 e a mesma mensagem do LEGACY_DATA do servidor', async () => {
+    const xdg = copyToXdg(path.join(__dirname, 'fixtures', 'legacy-0x'));
+    const { message, details } = await serverLegacyBody();
 
-    const { code, out, err } = runTimeline(xdg, PROJECT, TARGET, '--json');
-    const lines = out
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line) as { kind: string; process: string });
+    const { code, out, err } = runTimeline(xdg, PROJECT, TARGET);
 
+    expect(err).toContain(`timeline failed: LEGACY_DATA: ${message}`);
+    expect(err).toContain(at(details, 0).message);
+    expect(out).toBe('');
     expect(code).toBe(2);
-    expect(err).toContain("warning PROCESS_CORRUPTED: process 'second'");
-    expect(lines.filter((line) => line.kind === 'chain').map((line) => line.process)).toEqual([
-      'first',
-    ]);
-    expect(lines.filter((line) => line.kind === 'entry').map((line) => line.process)).toEqual([
-      'first',
-      'first',
-      'first',
-    ]);
   });
 });
 
@@ -309,7 +383,7 @@ describe('uso incorreto e erros', () => {
   );
 
   test('target fora do formato → timeline failed: INVALID_INPUT, exit 1', () => {
-    const { code, err } = runTimeline(xdgHome, PROJECT, 'plano');
+    const { code, err } = runTimeline(xdgHome, PROJECT, 'Plano.F6');
     expect(err).toContain('timeline failed: INVALID_INPUT:');
     expect(code).toBe(1);
   });

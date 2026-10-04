@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, afterAll, jest } from '@jest/globals
 import * as fs from 'node:fs';
 // import default separado (não `* as fs`, já usado acima): precisa ser o mesmo objeto que
 // src/installation.ts usa, para `jest.spyOn(fsDefault, 'renameSync')` interceptar de fato a
-// chamada feita lá dentro (mesmo motivo documentado no comentário do `import fs` de src/log.ts).
+// chamada feita lá dentro (mesmo motivo documentado no comentário do `import fs` de src/adapters/fs/process-store.ts).
 import fsDefault from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -12,6 +12,7 @@ import { quote as shellQuoteQuote } from 'shell-quote';
 import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { detectLegacy } from '../src/adapters/fs/data-format.ts';
 import {
   expectedRules,
   applyGuard,
@@ -1542,5 +1543,180 @@ describe('B3: install.ts --check (processo real)', () => {
     } finally {
       fs.rmSync(disposableHome, { recursive: true, force: true });
     }
+  });
+});
+
+describe('F6: install.ts sobre dado 0.x (processo real)', () => {
+  const installScript = path.join(repoRoot, 'scripts/install.ts');
+  const legacyFixture = path.join(repoRoot, 'test/fixtures/legacy-0x');
+  const readToolNames = ['list', 'query', 'verify_chain', 'read_attachment', 'evaluate_gate'];
+  const DenySchema = z.looseObject({ permissions: z.looseObject({ deny: z.array(z.string()) }) });
+  const strayRule = 'Bash(rm:*)';
+
+  // `<D>` fica sob o XDG_DATA_HOME fixado no HOME temporário: nunca o dado real do usuário.
+  function createInstallHome(prefix: string): { home: string; D: string } {
+    const home = createTempDir(prefix);
+    return { home, D: path.join(home, '.local', 'share', 'hexlog') };
+  }
+
+  function runInstaller(home: string, D: string, args: string[]) {
+    return spawnSync(process.execPath, [installScript, ...args], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        XDG_DATA_HOME: path.dirname(D),
+        HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
+      },
+    });
+  }
+
+  function snapshotTree(root: string): Record<string, string | null> {
+    return Object.fromEntries(
+      fs
+        .readdirSync(root, { recursive: true })
+        .map(String)
+        .sort()
+        .map((relative) => {
+          const absolute = path.join(root, relative);
+          return [
+            relative,
+            fs.statSync(absolute).isDirectory() ? null : fs.readFileSync(absolute).toString('hex'),
+          ];
+        }),
+    );
+  }
+
+  const packagesOf = (D: string): string[] => fs.readdirSync(path.join(D, 'archive')).sort();
+
+  test('lista: sem flag sobre dado 0.x sai 2, lista o que arquivaria e deixa <D> intacto', () => {
+    const { home, D } = createInstallHome('f6-lista');
+    fs.cpSync(legacyFixture, D, { recursive: true });
+    const before = snapshotTree(D);
+
+    const result = runInstaller(home, D, []);
+
+    expect(result.status).toBe(2);
+    expect(result.stdout).toContain('rerun with --archive-0x');
+    expect(result.stdout).toContain('file: alpha/main/events.jsonl');
+    expect(result.stdout).toContain('dir: alpha');
+    expect(snapshotTree(D)).toEqual(before);
+    expect(fs.readdirSync(home)).toEqual(['.local']);
+  }, 30_000);
+
+  test('archive-0x: lock 0.x vivo sai 1 sem instalar e sem apagar', () => {
+    const { home, D } = createInstallHome('f6-archive-lock');
+    fs.cpSync(legacyFixture, D, { recursive: true });
+    const lockDir = path.join(D, 'alpha', 'main', 'events.jsonl.lock');
+    fs.mkdirSync(lockDir);
+    // o pid do processo de teste está vivo enquanto o instalador roda
+    fs.writeFileSync(path.join(lockDir, 'holder'), `${process.pid}-deadbeef`);
+    const before = snapshotTree(D);
+
+    const result = runInstaller(home, D, ['--archive-0x']);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('lock is held by a live process');
+    expect(snapshotTree(D)).toEqual(before);
+    expect(fs.readdirSync(home)).toEqual(['.local']);
+  }, 30_000);
+
+  test('archive-0x: --check --archive-0x só verifica, nada é escrito (D7)', () => {
+    const { home, D } = createInstallHome('f6-archive-check');
+    fs.cpSync(legacyFixture, D, { recursive: true });
+    const before = snapshotTree(home);
+
+    const result = runInstaller(home, D, ['--check', '--archive-0x']);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('missing:');
+    expect(snapshotTree(home)).toEqual(before);
+  }, 30_000);
+
+  describe('instalação 1.0 ponta a ponta depois do arquivamento', () => {
+    let home: string;
+    let D: string;
+    let version: string;
+    let oldDenyRules: string[];
+    let first: ReturnType<typeof runInstaller>;
+
+    // uma só instalação (build + servidor real) alimenta os testes do grupo
+    beforeAll(() => {
+      version = parseJson(
+        z.looseObject({ version: z.string() }),
+        fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'),
+      ).version;
+      ({ home, D } = createInstallHome('f6-archive'));
+      fs.cpSync(legacyFixture, D, { recursive: true });
+      // <D> antigo que não existe em disco: só então o trio dele pode sair
+      const old = expectedRules(
+        path.join(home, 'old-data', 'hexlog'),
+        home,
+        process.execPath,
+        version,
+      );
+      oldDenyRules = [old.denyReadDir, old.denyRead, old.denyEdit];
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.writeFileSync(
+        path.join(home, '.claude', 'settings.json'),
+        JSON.stringify({ permissions: { deny: [strayRule, ...oldDenyRules] } }),
+      );
+
+      first = runInstaller(home, D, ['--archive-0x']);
+    }, 60_000);
+
+    test('archive-0x: arquiva o dado 0.x em <D>/archive e depois instala a 1.0', () => {
+      expect(first.status).toBe(0);
+      expect(first.stdout).toMatch(/archived \d+ file\(s\) of 0\.x data into .*hexlog-0x-.*\.tar/);
+      expect(first.stdout).toContain(`hexlog ${version}: `);
+      expect(detectLegacy(D)).toEqual([]);
+      expect(packagesOf(D)).toHaveLength(1);
+      expect(fs.existsSync(path.join(versionDirOf(home, version), 'server.mjs'))).toBe(true);
+    });
+
+    test('deny: imprime uma linha removed deny rule por regra do <D> antigo e preserva a avulsa', () => {
+      const printed = first.stdout
+        .split('\n')
+        .filter((line) => line.includes('removed deny rule:'));
+      expect(printed).toEqual(oldDenyRules.map((rule) => `  removed deny rule: ${rule}`));
+
+      const deny = parseJson(
+        DenySchema,
+        fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'),
+      ).permissions.deny;
+      expect(deny).toContain(strayRule);
+      for (const rule of oldDenyRules) expect(deny).not.toContain(rule);
+    });
+
+    test('deny: a mensagem do hook instalado cita os nomes novos das tools de leitura', () => {
+      const hook = spawnSync(
+        process.execPath,
+        [path.join(versionDirOf(home, version), 'bash-guard.mjs')],
+        {
+          encoding: 'utf8',
+          input: JSON.stringify({
+            tool_name: 'Bash',
+            tool_input: { command: `cat ${D}/archive` },
+            cwd: repoRoot,
+          }),
+          env: { ...process.env, HOME: home, XDG_DATA_HOME: path.dirname(D) },
+        },
+      );
+
+      expect(hook.status).toBe(2);
+      for (const name of readToolNames) expect(hook.stderr).toContain(name);
+    });
+
+    test('0.x: a segunda execução com --archive-0x não arquiva de novo e reinstala sem erro', () => {
+      const packagesBefore = packagesOf(D);
+
+      const second = runInstaller(home, D, ['--archive-0x']);
+
+      expect(second.status).toBe(0);
+      expect(second.stdout).not.toContain('archived');
+      expect(second.stdout).not.toContain('removed deny rule');
+      expect(packagesOf(D)).toEqual(packagesBefore);
+    }, 60_000);
   });
 });

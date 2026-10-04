@@ -28,7 +28,7 @@ export type View = {
 
 /**
  * D-24: alcance processo por `seq` (a ordem do log, que o relógio não muda); alcance projeto por
- * (`at` como instante, processo por unidade de código, `seq`), a chave de `src/timeline.ts`.
+ * (`at` como instante, processo por unidade de código, `seq`), a mesma ordem da timeline do 0.x.
  */
 export function inOutputOrder(reading: Reading, scope: ReadTarget['scope']): Link[] {
   const [only] = reading.processes;

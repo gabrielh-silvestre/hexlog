@@ -217,3 +217,30 @@ describe('kernel MCP sem tools (TB3)', () => {
     expect(await ruleIdsOfText('src/mcp/tools/process.ts', importing('../kernel.ts'))).toEqual([]);
   });
 });
+
+describe('scripts de leitura só leem por compose.ts', () => {
+  test.each([
+    ['scripts/probe.ts', '../src/adapters/fs/process-store.ts'],
+    ['scripts/probe.ts', '../src/mcp/kernel.ts'],
+  ])('%s não importa %s', async (file, specifier) => {
+    expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
+  });
+
+  test.each([
+    ['scripts/probe.ts', '../src/compose.ts'],
+    ['scripts/probe.ts', '../src/errors.ts'],
+    ['scripts/probe.ts', '../src/directory.ts'],
+    ['scripts/install.ts', '../src/adapters/fs/data-format.ts'],
+    ['scripts/build.ts', '../src/mcp/server.ts'],
+  ])('%s pode importar %s', async (file, specifier) => {
+    expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
+  });
+
+  test.each([
+    ['scripts/probe.ts', ['no-restricted-syntax']],
+    ['scripts/install.ts', []],
+  ])('%s com import() de adapters resulta em %j', async (file, expected) => {
+    const code = `export const load = () => import('../src/adapters/fs/process-store.ts');\n`;
+    expect(await ruleIdsOfText(file, code)).toEqual(expected);
+  });
+});
