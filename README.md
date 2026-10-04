@@ -59,6 +59,9 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
    backup.
 
+Com dado 0.x em `<D>`, o comando só lista o que arquivaria (`scripts/install.ts#listLegacy`)
+e sai com 2, sem instalar nada: veja "Dado 0.x" abaixo.
+
 **Mudar código no repositório não afeta nenhuma sessão em andamento nem novas
 sessões até rodar o instalador de novo.** As sessões sempre executam a cópia
 de `~/.local/lib/hexlog/<versão>/`, nunca a working tree. Depois de instalar,
@@ -93,6 +96,8 @@ nome de projeto 0.x (minúsculas, dígitos e hífen, exceto `archive`) conta com
 dado 0.x. Com dado 0.x em `<D>`, o servidor recusa toda tool com `LEGACY_DATA`
 (o `details` traz o comando de arquivamento) e os scripts de leitura saem com 2.
 O arquivador é só Linux: acha servidor 0.x vivo por `/proc` (macOS não foi testado).
+Nos comandos desta seção, o diretório de dados é
+`D=${XDG_DATA_HOME:-$HOME/.local/share}/hexlog`.
 
 Para arquivar:
 
@@ -123,7 +128,7 @@ instalar e sem apagar nada que não esteja no `.tar` verificado.
   em vez de reescrever o anterior, então `<D>/archive/` pode ter mais de um. O
   nome tem resolução de segundo: dois arquivamentos no mesmo segundo que precisem
   de pacote novo sobrescrevem o anterior (teto aceito no ADR 0009).
-- **Cópia manual antes:** `cp -a ~/.local/share/hexlog ~/hexlog-0x-backup-$(date +%F)`.
+- **Cópia manual antes:** `cp -a "$D" ~/hexlog-0x-backup-$(date +%F)`.
   Ensaie primeiro numa cópia (`XDG_DATA_HOME` e `HOME` apontando para um diretório
   temporário), e confira o pacote só pelos arquivos regulares, porque o `tar` pode
   gravar ou não as entradas de diretório.
@@ -136,9 +141,10 @@ Sem passo novo na instalação: extraia os `.tar` numa pasta descartável e suba
 servidor 0.x só para ela, com o seu `XDG_DATA_HOME`.
 
 ```sh
+D=${XDG_DATA_HOME:-$HOME/.local/share}/hexlog
 R=$(mktemp -d); mkdir -p "$R/hexlog" "$R/src"
-for t in $(ls -tr ~/.local/share/hexlog/archive/hexlog-0x-*.tar); do tar -xf "$t" -C "$R/hexlog"; done
-git archive v0.4.0 | tar -x -C "$R/src"        # ou 87237c3 no lugar da tag
+for t in $(ls -tr "$D"/archive/hexlog-0x-*.tar); do tar -xf "$t" -C "$R/hexlog"; done
+git archive 87237c3 | tar -x -C "$R/src"        # ou v0.4.0, o atalho para o mesmo código
 (cd "$R/src" && npm ci && node scripts/build.ts --outdir "$R/bin")
 ```
 
@@ -157,17 +163,17 @@ trataria o segundo como nome de membro, por isso o laço. O `<D>` real não é t
 
 Se algo falhar depois do arquivamento:
 
-1. Feche as sessões do Claude Code.
-2. Tire o dado 1.0 do caminho, para não se misturar: `mv ~/.local/share/hexlog/.v1 ~/hexlog-1x-aside-$(date +%F)`.
+1. Feche as sessões do Claude Code e defina `D=${XDG_DATA_HOME:-$HOME/.local/share}/hexlog`.
+2. Tire o dado 1.0 do caminho, para não se misturar: `mv "$D/.v1" ~/hexlog-1x-aside-$(date +%F)`.
 3. Restaure o 0.x, cada `.tar` do mais velho para o mais novo (ou use a cópia manual):
-   `for t in $(ls -tr ~/.local/share/hexlog/archive/hexlog-0x-*.tar); do tar -xf "$t" -C ~/.local/share/hexlog; done`.
+   `for t in $(ls -tr "$D"/archive/hexlog-0x-*.tar); do tar -xf "$t" -C "$D"; done`.
    O `tar -x` devolve os diretórios de projeto com modo 0755 (o 0.x criava 0700), então
-   rode `chmod -R go-rwx ~/.local/share/hexlog`, e não recria diretório 0.x vazio
+   rode `chmod -R go-rwx "$D"`, e não recria diretório 0.x vazio
    (o `.tar` guarda só arquivos regulares).
 4. Tire `archive/` do caminho, porque o 0.x o listaria como um projeto vazio:
-   `mv ~/.local/share/hexlog/archive ~/hexlog-archive-aside-$(date +%F)`.
-5. Reinstale o 0.x: `git checkout v0.4.0 && npm ci && node scripts/install.ts`
-   (ou `87237c3` no lugar da tag) e reinicie o Claude Code.
+   `mv "$D/archive" ~/hexlog-archive-aside-$(date +%F)`.
+5. Reinstale o 0.x: `git checkout 87237c3 && npm ci && node scripts/install.ts`
+   (ou `v0.4.0`, o atalho para o mesmo código) e reinicie o Claude Code.
 
 ## Verificação (`--check`)
 
@@ -575,8 +581,18 @@ pelo usuário, num terminal fora do Claude Code:
    Se ele traz um `pid` vivo de um servidor hexlog (`ps -p <pid>`), esse servidor é o
    dono e o lock é legítimo: espere ou feche-o.
 3. Com o `holder` ilegível, o `pid` morto ou o `pid` vivo de um processo que não é
-   servidor hexlog (reuso de pid), apague o lock:
-   `rm -r <D>/.v1/<projeto>/<processo>/records.jsonl.lock`.
+   servidor hexlog (reuso de pid), apague o lock. Ele é um diretório com só o `holder`
+   dentro (`src/adapters/fs/lock.ts#tryCreate`), então confira o alvo e apague em
+   passos separados, sem `rm -r`:
+
+   ```sh
+   D=${XDG_DATA_HOME:-$HOME/.local/share}/hexlog
+   L="$D/.v1/<projeto>/<processo>/records.jsonl.lock"   # troque <projeto> e <processo>
+   ls -d "$L"        # confere o alvo antes de apagar
+   rm "$L/holder"
+   rmdir "$L"        # falha se sobrou algo além do holder: pare e confira
+   ```
+
 4. Confira que `records.jsonl.lock` não está mais na pasta do processo
    (`ls <D>/.v1/<projeto>/<processo>`). A prova de que o processo volta a gravar é o
    próximo `register` numa sessão nova; `export.ts` e `verify_chain` leem sem o lock,
@@ -772,4 +788,4 @@ script de teste sem depender do binário `claude` nem tocar no
 - [ADR 0008: serviços](docs/adr-0008-servicos.md)
 - [ADR 0009: ferramental](docs/adr-0009-ferramental.md)
 - [Tetos de tamanho do domínio](docs/tetos-dominio-v1.md)
-- [Pesquisa de bibliotecas](docs/pesquisa/hexlog-pesquisa-libs.md)
+- [Pesquisa de bibliotecas](docs/pesquisa/hexlog-pesquisa-libs.md): fundamenta decisões do 0.x; o ADR 0001 que ela cita só existe no git (`git show 87237c3:docs/adr-0001-hexlog-mvp.md`)

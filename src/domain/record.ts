@@ -76,7 +76,9 @@ export const AliasRef = z.string().regex(new RegExp(`^@${NAME_SRC}$`));
 
 /**
  * Relação como o agente a envia: `to` pode ser `@<alias>` e `kind` pode vir de `as` (D-10).
- * Pelo menos um dos dois precisa vir.
+ * Pelo menos um dos dois precisa vir. O JSON Schema anunciado exige só `to`: "kind ou as" vive neste
+ * refine e em `mcp/tools/process.ts#REGISTER_DESCRIPTION`, e o erro é barato (lote recusado antes de
+ * gravar). Se o log mostrar recusas, a evolução barata é `anyOf` via `.meta` aqui.
  */
 export const RelationInput = z
   .strictObject({

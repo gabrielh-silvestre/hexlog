@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-17 | Updated: 2026-09-17 -->
+<!-- Generated: 2026-09-17 | Updated: 2026-10-04 -->
 
 # hexlog
 
@@ -34,8 +34,8 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - Anexo é um blob imutável em `<projeto>/attachments/<sha256>`; o hash é o sha256 dos **bytes** UTF-8, não do JCS. `attachments` é nome reservado de processo. Nunca crie código que escreva por cima de um blob existente.
 - A tool `attach` aceita `text` ou `path` de um arquivo `.md`/`.txt` dentro do `cwd` do servidor e fora de `<D>` (`docs/adr-0009-ferramental.md`); o `cwd` é o teto (sessão em `$HOME` alcança todo `.md`/`.txt`) e só essas extensões entram por não carregarem credencial (`.json`, `.log`, `.env` ficam fora). Não amplie esse alcance sem um ADR novo.
 - `define_type`/`define_relation`/`define_gate` versionam em semver `major.minor` em `<nome>/<versão>.json`, nunca sobrescrevem e não deixam arquivo legado. Os dados 1.0 vivem em `<D>/.v1/`.
-- Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0007-dominio.md`, `docs/adr-0008-servicos.md`, `docs/adr-0009-ferramental.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`.
-- A partir da 1.0, ADR não é refeito nem apagado, só recebe emenda (seção nova ou ADR seguinte). A troca dos ADRs 0001, 0002, 0005 e 0006 pelos 0007 a 0009 foi a exceção única.
+- Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0007-dominio.md`, `docs/adr-0008-servicos.md`, `docs/adr-0009-ferramental.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`; para decisão do 0.x, o ADR 0001 está só no git (`git show 87237c3:docs/adr-0001-hexlog-mvp.md`).
+- A partir da 1.0, ADR não é refeito nem apagado, só recebe emenda (seção nova ou ADR seguinte). Na aprovação só o cabeçalho muda (Status passa a Aceito e Deciders inclui quem aprovou); depois de Aceito, o corpo só muda por emenda datada. A troca dos ADRs 0001, 0002, 0005 e 0006 pelos 0007 a 0009 foi a exceção única.
 - `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica. Com dado 0.x em `<D>`, sem flag só lista e sai 2; `--archive-0x` arquiva em `<D>/archive/` e segue para a instalação (`src/archive.ts`; recusas e retomada no README, seção "Dado 0.x"). Só Linux: o arquivador e o lock dependem de `/proc`, hard link e `fsync` de diretório; macOS não foi testado.
 - O instalador copia toda pasta de `skills/` (não uma fixa): uma skill nova só precisa da pasta em `skills/<nome>/SKILL.md` para ser instalada e conferida pelo `--check`.
 
@@ -81,7 +81,8 @@ Direção permitida de dependência:
 - `adapters/` só implementa portas: não importa `commands/`, `queries/` nem `mcp/` (`eslint.boundaries.js#adaptersBlock`); builtins do Node e libs de infraestrutura são o que ele existe para usar.
 - `mcp/` chama só serviços: não importa `adapters/`, builtin do Node nem `compose.ts`; `mcp/kernel.ts` também não importa `mcp/tools/`.
 - Só `server.ts`, os scripts e os testes importam `compose.ts`. Scripts de leitura passam por `compose.ts#composeReader` (só o lado de leitura, sem serviço de escrita: "script de leitura não grava" é garantia de tipo) e não importam `adapters/` nem `mcp/` (`scripts/install.ts` e `scripts/build.ts` ficam de fora).
-- Travas mecânicas: `eslint.boundaries.js#scriptsBlock` e os demais blocos de `boundaryBlocks`, `NO_DYNAMIC_IMPORT` (import dinâmico barrado em toda camada, porque contornaria as travas de import) e `test/boundaries.spec.ts`.
+- Travas mecânicas: `eslint.boundaries.js#scriptsBlock` e os demais blocos de `boundaryBlocks`, `NO_DYNAMIC_IMPORT` (import dinâmico barrado nas camadas com bloco: `domain/`, `shared/`, `ports.ts`, `commands/`, `queries/`, `mcp/` e `scripts/**` menos `install.ts` e `build.ts`, porque contornaria as travas de import) e `test/boundaries.spec.ts`.
+- Fora dos blocos (`adapters/`, `hook/` e os arquivos de raiz de `src/`, exceto `ports.ts`) o lint não barra `import()`; a convenção é não usá-lo, e hoje nenhum arquivo usa.
 
 Checklist de review:
 - Serviço recebendo caminho de configuração (`dataDir`, `cwd`): quem conhece caminho é o adaptador, e o serviço recebe a porta.

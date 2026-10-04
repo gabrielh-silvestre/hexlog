@@ -42,7 +42,7 @@ function exportedConstantNamesFrom(content: string): string[] {
     .filter((name) => SCREAMING_SNAKE_CASE.test(name));
 }
 
-/** Códigos do union literal `export type ErrorCode = 'A' | 'B' | ...;` em `content` (§4.13). */
+/** Códigos do union literal `export type ErrorCode = 'A' | 'B' | ...;` em `content` (ADR 0009 item 7). */
 function errorCodeCatalogFrom(content: string): string[] {
   const start = content.indexOf('export type ErrorCode =');
   const unionBlock = content.slice(start, content.indexOf(';', start));

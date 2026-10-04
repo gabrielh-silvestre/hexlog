@@ -57,7 +57,8 @@ function checkLinks(values: readonly unknown[], start: Expected): LineCheck {
       }
       check.reasons.forEach((reason) => reasons.add(reason));
     }
-    // Só chega aqui elo de forma válida; o parse repete o de `isValidLink`, e só no caminho de quebra.
+    // Invariante: sem `invalid-line` em `reasons`, o valor passou em `parseLink`; o parse repete esse
+    // resultado, e só no caminho de quebra.
     const link = 'link' in check ? check.link : Link.parse(value);
     links.push(link);
     expected = after(link);

@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-09-27 -->
+<!-- Generated: 2026-09-17 | Updated: 2026-10-04 -->
 
 # hook
 
@@ -12,7 +12,7 @@ tokeniza o comando recebido; nunca executa nada.
 ## Key Files
 | File | Description |
 |---|---|
-| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal fora de qualquer token isolado (rede de segurança). Falha aberto: qualquer exceção interna, Node ausente ou stdin inválido cai em exit 0 (R-1). A mensagem de negação é o literal de `denialMessage` e lista as tools atuais |
+| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal fora de qualquer token isolado (rede de segurança). Falha aberto: qualquer exceção interna, Node ausente ou stdin inválido cai em exit 0 (R-1). A mensagem de negação é o literal de `denialMessage` e lista as tools de leitura (5 das 11) |
 
 ## For AI Agents
 ### Working In This Directory

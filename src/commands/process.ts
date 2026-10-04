@@ -174,13 +174,16 @@ export function createProcessService(deps: {
       return stale.length === 0 ? result : { ...result, stale };
     },
 
-    // ponytail: o lock da origem fica preso durante a leitura de cada processo-destino distinto
-    // (~154 ms por destino de 5.000 registros). Acima de ~100 destinos desse tamanho quem espera
-    // recebe `LOCK_TIMEOUT` `lock-busy` e o servidor fica ocupado no `decide` síncrono. O replay por
-    // `key` também paga o lock e o `verifyProcess` completo do log da origem, e `prepareBatch`
-    // compila o schema de cada tipo distinto do lote, tudo antes de devolver `replayed`. Melhoria:
-    // ler os destinos, que são append-only, antes do lock e, sob o lock, verificar só os bytes novos
-    // a partir do marcador lido; ou limitar os destinos distintos por lote.
+    // ponytail: o lock da origem fica preso durante a leitura de cada processo-destino distinto. O
+    // custo é por bytes: ~150 ms por destino de 5.000 registros (~100 destinos até os 15 s de
+    // `LOCK_BUDGET_MS`) e ~2,2 a 2,5 s por destino no teto de 64 MiB (~6 a 7 destinos, extrapolado).
+    // Acima disso quem espera recebe `LOCK_TIMEOUT` `lock-busy` e o servidor fica ocupado no `decide`
+    // síncrono. O replay por `key` também paga o lock e o `verifyProcess` completo do log da origem,
+    // e `prepareBatch` compila o schema de cada tipo distinto do lote, tudo antes de devolver
+    // `replayed`. Melhoria: ler os destinos, que são append-only, antes do lock e, sob o lock,
+    // verificar só os bytes novos a partir do marcador lido; ou um orçamento em bytes lidos (um
+    // teto por contagem de destinos não protege onde importa). Reabrir no primeiro `lock-timeout`
+    // real em `register` com relação cruzada, ou com processo real acima de ~10 MiB.
     async register({ project, process, author, key, records }) {
       checkBatchShape(records);
       const origin = { project, process };

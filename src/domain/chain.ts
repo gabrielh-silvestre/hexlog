@@ -87,7 +87,9 @@ function parseLink(value: unknown): Link | undefined {
  * Predicado único de elo (escritor e verificador): o valor tem a forma de `Link`, dentro dos tetos,
  * e ocupa a posição esperada. Devolve o elo, ou as razões: só `invalid-line` quando a forma falha,
  * e `diverging-seq` e `hash-mismatch` juntas quando as duas posições divergem. Continuidade interna
- * do lote e hash são do enquadramento em disco (`shared/loader.ts#isValidLine`, D-05).
+ * do lote e hash são do enquadramento em disco (`shared/loader.ts#isValidLine`, D-05). Invariante:
+ * sem `invalid-line` em `reasons`, o valor passou em `parseLink`, então `Link.parse` não lança; o
+ * chamador que precisa do elo rejeitado repete o parse (`shared/loader.ts#checkLinks`).
  */
 export function isValidLink(value: unknown, expected: Expected): LinkCheck {
   const link = parseLink(value);
