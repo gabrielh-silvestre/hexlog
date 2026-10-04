@@ -1,7 +1,6 @@
-import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, test, expect, beforeAll } from '@jest/globals';
 import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { matchesGlob } from 'node:path';
 import { randomUUIDv7 } from 'node:crypto';
@@ -17,7 +16,7 @@ import MiniSearch from 'minisearch';
 import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
 import { dataDir } from '../src/directory.ts';
-import { parseJson } from './helpers.ts';
+import { createTempDir, parseJson } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const REGEX_UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -134,7 +133,7 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
   beforeAll(() => {
     // mkdtemp fora do repo: garante que o bundle não alcança node_modules
     // por um caminho relativo acidental.
-    outdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-build-probe-'));
+    outdir = createTempDir('build-probe');
     const result = spawnSync(
       process.execPath,
       [
@@ -148,10 +147,6 @@ describe('probe de build com esbuild (sub-passo 6b, U-7)', () => {
     if (result.status !== 0) {
       throw new Error(`probe build failed: ${result.stderr}`);
     }
-  });
-
-  afterAll(() => {
-    fs.rmSync(outdir, { recursive: true, force: true });
   });
 
   test('nenhum dos dois bundles contém o shim "Dynamic require of"', () => {

@@ -1,11 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, test } from '@jest/globals';
 import { keyBy, mapValues } from 'es-toolkit';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { type Environment, createEnvironment, registerCore } from './helpers.ts';
+import { type Environment, createEnvironment, createTempDir, registerCore } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const AGENT = 'agent-test';
@@ -13,7 +12,6 @@ const MINUTE = 60_000;
 const START = Date.parse('2026-01-01T00:00:00.000Z');
 
 let xdgHome: string;
-const extraDirs: string[] = [];
 
 function runInsights(xdg: string, ...args: string[]) {
   const result = spawnSync(process.execPath, ['scripts/insights.ts', ...args], {
@@ -37,9 +35,8 @@ function snapshot(dir: string): Record<string, string> {
 }
 
 function copyToXdg(source: string): string {
-  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-xdg-'));
+  const xdg = createTempDir('xdg');
   fs.cpSync(source, path.join(xdg, 'hexlog'), { recursive: true });
-  extraDirs.push(xdg);
   return xdg;
 }
 
@@ -100,10 +97,6 @@ beforeAll(async () => {
   await environment.close();
 });
 
-afterAll(() => {
-  for (const dir of [xdgHome, ...extraDirs]) fs.rmSync(dir, { recursive: true, force: true });
-});
-
 describe('filtro posicional', () => {
   test('sem argumento cobre todos os processos; chain ok e forks vazio', () => {
     const { code, out } = runInsights(xdgHome);
@@ -137,8 +130,7 @@ describe('filtro posicional', () => {
   });
 
   test('diretório de dados sem processos imprime mensagem e sai com 0', () => {
-    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-empty-'));
-    extraDirs.push(empty);
+    const empty = createTempDir('empty');
     const { code, out } = runInsights(empty);
     expect(out).toContain('No processes found');
     expect(code).toBe(0);
@@ -209,8 +201,7 @@ describe('read-only', () => {
 
 describe('process.json corrompido', () => {
   test('falha com mensagem clara no stderr, sem stack trace', () => {
-    const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-xdg-'));
-    extraDirs.push(xdg);
+    const xdg = createTempDir('xdg');
     const processDir = path.join(xdg, 'hexlog', 'alpha', 'broken');
     fs.mkdirSync(processDir, { recursive: true });
     fs.writeFileSync(path.join(processDir, 'process.json'), '{bad');
