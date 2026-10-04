@@ -18,7 +18,7 @@ export type Detail = {
   versions?: string[];
 };
 
-/** Catálogo de códigos de erro de domínio (§4.13): a união literal única de 27 códigos. */
+/** Catálogo de códigos de erro de domínio (§4.13): a união literal única de 25 códigos. */
 export type ErrorCode =
   | 'INVALID_INPUT'
   | 'INVALID_FILTER'
@@ -29,8 +29,6 @@ export type ErrorCode =
   | 'TYPE_NOT_FOUND'
   | 'PROCESS_CORRUPTED'
   | 'PROCESS_TOO_LARGE'
-  | 'INVALID_ID'
-  | 'UNKNOWN_ID'
   | 'ATTACHMENT_NOT_FOUND'
   | 'ATTACHMENT_CORRUPTED'
   | 'TYPE_NOT_PINNED'

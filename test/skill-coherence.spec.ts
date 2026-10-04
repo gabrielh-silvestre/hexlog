@@ -187,8 +187,8 @@ describe('extratores (unitário, sobre string literal)', () => {
 /** TB5: a 1.0 expõe exatamente 11 tools. */
 const EXPECTED_TOOL_COUNT = 11;
 
-/** TM4: 35 códigos da transição menos os 8 legados. */
-const EXPECTED_ERROR_CODE_COUNT = 27;
+/** TM4: 35 códigos da transição menos os 8 legados e os 2 sem uso (`INVALID_ID`, `UNKNOWN_ID`). */
+const EXPECTED_ERROR_CODE_COUNT = 25;
 
 const toolsDir = path.join(srcDir, 'mcp/tools');
 
