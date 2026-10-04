@@ -2,7 +2,11 @@ import canonicalize from 'canonicalize';
 import { z } from 'zod';
 import { alias, Instant, NAME_SRC, Name, RecordId, Target } from './ids.ts';
 
-/** Teto de `data` em caracteres canônicos (JCS), igual ao do 0.x. */
+/**
+ * Teto de `data` em caracteres canônicos (JCS), igual ao do 0.x. Conta unidades UTF-16 do JCS, então
+ * um emoji vale 2. `isValidLink` reaplica este schema na releitura: apertar o teto, uma regex ou um
+ * `strictObject` invalida linha já gravada, e por isso é mudança de formato (major).
+ */
 export const DATA_MAX_CHARS = 16_000;
 
 /** Teto de itens por lote de `register`. */
@@ -30,7 +34,7 @@ export function withinCanonicalLimit(value: unknown, max: number): boolean {
 }
 
 // Mora aqui, e não em relations.ts, porque Relation e RelationInput precisam dele em tempo de
-// execução e relations.ts importa este arquivo; relations.ts o reexporta.
+// execução e relations.ts importa este arquivo.
 export const RelationKind = z.enum([
   'supersedes',
   'revokes',

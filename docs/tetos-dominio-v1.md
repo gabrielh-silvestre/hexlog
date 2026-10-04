@@ -4,7 +4,7 @@ Registro da decisão N8 da revisão do PR #60 (F1 da v1, camada pura em `src/dom
 
 ## Decisão
 
-Antes desta decisão só `data` (16.000 caracteres) e o lote (`BATCH_MAX`, 50 itens) tinham teto. Sem teto nos demais campos, um agente com bug gravava uma linha de 13,2 MB no log imutável (provado com 200.000 relações). O domínio passa a recusar, e `isValidLink` (`src/domain/chain.ts`) recusa a linha relida que passar dos mesmos tetos.
+Antes desta decisão só `data` (16.000 caracteres) e o lote (`BATCH_MAX`, 50 itens) tinham teto. Sem teto nos demais campos, um agente com bug gravava uma linha de 13,2 MB no log imutável (provado com 200.000 relações). O domínio passa a recusar, e `isValidLink` (`src/domain/chain.ts`) recusa a linha relida que passar dos mesmos tetos. Como `isValidLink` reaplica os schemas estritos na releitura, apertar um teto, uma regex ou um `strictObject` invalida linha já gravada: é mudança de formato (major), nunca ajuste de teto.
 
 | Campo | Teto | Origem |
 |---|---|---|

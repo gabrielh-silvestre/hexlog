@@ -22,8 +22,18 @@ describe('semver major.minor', () => {
     expect(parseVersion('1.10')).toEqual({ major: 1, minor: 10 });
   });
 
-  test.each(['1', '1.0.0', 'a.b', '1.', '.1', ''])('parseVersion recusa %j', (value) => {
-    expect(() => parseVersion(value)).toThrow(HexlogError);
+  test.each(['1', '1.0.0', 'a.b', '1.', '.1', '', '01.7', '1.07', '1234567.0', '1.1234567'])(
+    'parseVersion recusa %j',
+    (value) => {
+      expect(() => parseVersion(value)).toThrow(HexlogError);
+    },
+  );
+
+  test.each([
+    ['0.0', { major: 0, minor: 0 }],
+    ['999999.999999', { major: 999_999, minor: 999_999 }],
+  ])('parseVersion aceita %j', (value, expected) => {
+    expect(parseVersion(value)).toEqual(expected);
   });
 
   test('formatVersion é o inverso de parseVersion', () => {

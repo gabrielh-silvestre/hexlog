@@ -5,11 +5,10 @@ import {
   hasCycle,
   lineages,
   needsReview,
-  RelationKind,
 } from '../../src/domain/relations.ts';
 import type { Linked, NamedRelation, RuleContext, Vigency } from '../../src/domain/relations.ts';
-import { RelationKind as RecordRelationKind } from '../../src/domain/record.ts';
 import type { RelationInput, RelationKind as Kind } from '../../src/domain/record.ts';
+import * as rdsc from '../fixtures/domains/rdsc.ts';
 
 const id = (process: string, n: number) => `${process}:${String(n).padStart(8, '0')}`;
 
@@ -18,12 +17,6 @@ function rec(recordId: string, ...relations: [Kind, string][]): Linked {
 }
 
 const [e1, e2, v1, v2] = [id('p', 1), id('p', 2), id('p', 3), id('p', 4)];
-
-describe('RelationKind', () => {
-  test('é o mesmo de record.ts, reexportado sem duplicar', () => {
-    expect(RelationKind).toBe(RecordRelationKind);
-  });
-});
 
 describe('vigência e linhagem (D-08)', () => {
   test('registro sem relação de entrada é vigente, e id desconhecido também', () => {
@@ -132,9 +125,8 @@ describe('ciclo', () => {
 
 describe('regras estruturais (D-10)', () => {
   const names = new Map<string, NamedRelation>([
-    ['replaces', { kind: 'supersedes' }],
+    ...rdsc.relations.map((relation): [string, NamedRelation] => [relation.name, relation]),
     ['replaces-doc', { kind: 'supersedes', to: ['doc'] }],
-    ['based-on', { kind: 'supports', from: ['verdict'], to: ['evidence'] }],
   ]);
 
   /** Mesma vigência para qualquer tipo de relação. */

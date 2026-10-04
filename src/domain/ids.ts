@@ -8,7 +8,7 @@ export type Name = z.infer<typeof Name>;
 export const Hash = z.string().regex(/^[0-9a-f]{64}$/);
 export type Hash = z.infer<typeof Hash>;
 
-export const Instant = z.iso.datetime();
+export const Instant = z.iso.datetime({ precision: 3 });
 export type Instant = z.infer<typeof Instant>;
 
 /** D-07: segmentos `Name` separados por `.`, no máximo 200 caracteres, sem ponto final. */
@@ -38,7 +38,6 @@ export const TypeNames = z
 
 /** D-01: apelido de um item do lote, citado pelos itens seguintes como `@<alias>`. */
 export const alias = Name;
-export type Alias = z.infer<typeof alias>;
 
 /** Processo dono do registro: o trecho do id antes do `:`, sem leitura de disco (Q1). */
 export function processOf(id: RecordId): Name {

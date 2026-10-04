@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import type { ZodType } from 'zod';
-import { Gate, RecordType, RelationName, compareVersions } from '../../domain/definitions.ts';
+import {
+  CANONICAL_VERSION,
+  Gate,
+  RecordType,
+  RelationName,
+  compareVersions,
+} from '../../domain/definitions.ts';
 import type { Name } from '../../domain/ids.ts';
 import { HexlogError, type ErrorCode } from '../../errors.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore } from '../../ports.ts';
@@ -24,9 +30,6 @@ const NOT_FOUND: Record<DefinitionKind, ErrorCode> = {
   relations: 'RELATION_NOT_FOUND',
   gates: 'GATE_NOT_FOUND',
 };
-
-// Forma canônica: sem zero à esquerda, senão `01.0` e `1.0` seriam dois arquivos da mesma versão.
-const CANONICAL_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 /** A versão vira nome de arquivo, então passa por aqui antes de qualquer I/O. */
 function safeVersion(version: string): string {

@@ -135,6 +135,13 @@ describe('BatchItem', () => {
     ).toBe(false);
   });
 
+  test('o teto de data conta unidades UTF-16 do JCS: com emoji (2 unidades), 7996 cabem e 7997 não', () => {
+    const emojis = (count: number) => ({ k: '😀'.repeat(count) });
+    expect((canonicalize(emojis(7996)) ?? '').length).toBe(DATA_MAX_CHARS);
+    expect(BatchItem.safeParse({ ...item, data: emojis(7996) }).success).toBe(true);
+    expect(BatchItem.safeParse({ ...item, data: emojis(7997) }).success).toBe(false);
+  });
+
   test('data com surrogate solitário é recusado sem lançar', () => {
     expect(BatchItem.safeParse({ ...item, data: { text: '\ud800' } }).success).toBe(false);
   });

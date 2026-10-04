@@ -1,16 +1,10 @@
+import type { RelationName } from './definitions.ts';
 import { processOf } from './ids.ts';
 import type { Name, RecordId } from './ids.ts';
-import { RelationKind } from './record.ts';
-import type { HexRecord, KindOrAs, Relation } from './record.ts';
-
-export { RelationKind };
+import type { HexRecord, KindOrAs, Relation, RelationKind } from './record.ts';
 
 /** O que a vigência e a prova vencida leem de um registro: o id e as relações gravadas. */
 export type Linked = Pick<HexRecord, 'id' | 'relations'>;
-
-function compareIds(a: RecordId, b: RecordId): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
 
 export function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
@@ -39,7 +33,7 @@ export function buildVigency(records: readonly Linked[]): Vigency {
       if (kind === 'revokes') revoked.add(to);
     }
   }
-  for (const list of successors.values()) list.sort(compareIds);
+  for (const list of successors.values()) list.sort();
 
   const isCurrent = (id: RecordId) => !revoked.has(id) && !successors.has(id);
 
@@ -159,7 +153,7 @@ export function needsReview(records: readonly Linked[]): Map<RecordId, NeedsRevi
   return new Map(
     [...marks].map(([id, { staleIn, staleOut }]) => [
       id,
-      { staleIn: [...staleIn].sort(compareIds), staleOut: [...staleOut].sort(compareIds) },
+      { staleIn: [...staleIn].sort(), staleOut: [...staleOut].sort() },
     ]),
   );
 }
@@ -183,11 +177,7 @@ export type Violation = { code: RuleCode; current?: RecordId | null };
 export type RelationCheck = { kind: RelationKind } | { violation: Violation };
 
 /** Nome de relação fixado no processo; `from`/`to` são listas de tipos, quando declaradas. */
-export type NamedRelation = {
-  kind: RelationKind;
-  from?: readonly Name[];
-  to?: readonly Name[];
-};
+export type NamedRelation = Pick<RelationName, 'kind' | 'from' | 'to'>;
 
 export type RelationEnd = { id: RecordId; type: Name };
 
@@ -202,7 +192,9 @@ export type RuleContext = {
   /**
    * D-10: a vigência contra a qual cada tipo de relação confere o destino. `supersedes` e `revokes`
    * leem os itens anteriores do lote; `supports`, o lote inteiro. Nenhum valor único serve às duas:
-   * o lote `[supersedes → E, supports → E]` exige as duas leituras.
+   * o lote `[supersedes → E, supports → E]` exige as duas leituras. Para destino de outro processo,
+   * a vigência vem dos registros do processo do destino, não dos do registro que grava
+   * (`commands/register-state.ts#loadDestination`).
    */
   vigencyFor(kind: RelationKind): Vigency;
 };

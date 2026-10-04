@@ -260,20 +260,27 @@ describe('createDefinitionStore: erros', () => {
     ]);
   });
 
-  test.each(['', '1', '1.', '1.0.0', '01.0', '1.-1', '../1.0', '1.0/../../x', 'a.b'])(
-    'versão malformada %j é recusada antes de qualquer I/O',
-    (version) => {
-      const { dataDir, store } = setup();
+  test.each([
+    '',
+    '1',
+    '1.',
+    '1.0.0',
+    '01.0',
+    '1.07',
+    '1234567.0',
+    '1.-1',
+    '../1.0',
+    '1.0/../../x',
+    'a.b',
+  ])('versão malformada %j é recusada antes de qualquer I/O', (version) => {
+    const { dataDir, store } = setup();
 
-      expect(thrown(() => store.write(PROJECT, 'types', 'plan', version, plan)).code).toBe(
-        'INVALID_INPUT',
-      );
-      expect(thrown(() => store.read(PROJECT, 'types', 'plan', version)).code).toBe(
-        'INVALID_INPUT',
-      );
-      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
-    },
-  );
+    expect(thrown(() => store.write(PROJECT, 'types', 'plan', version, plan)).code).toBe(
+      'INVALID_INPUT',
+    );
+    expect(thrown(() => store.read(PROJECT, 'types', 'plan', version)).code).toBe('INVALID_INPUT');
+    expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
+  });
 
   test.each(['..', 'a/b', 'A', '', '.hidden'])(
     'nome ou projeto %j que escapa do layout é recusado',

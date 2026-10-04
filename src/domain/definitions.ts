@@ -52,11 +52,16 @@ export type Gate = z.infer<typeof Gate>;
 /** Um número de versão `major.minor` (ex.: `1.9`). */
 export type Version = { major: number; minor: number };
 
-const VERSION_STRING_RE = /^(\d+)\.(\d+)$/;
+/**
+ * Gramática canônica de versão, única para o domínio e para o nome de arquivo no store: sem zero à
+ * esquerda (`01.0` e `1.0` seriam duas versões da mesma definição) e até 6 dígitos por segmento
+ * (o número cabe em `Number` sem perda).
+ */
+export const CANONICAL_VERSION = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/;
 
 /** Converte `"1.9"` em `{ major: 1, minor: 9 }`. */
 export function parseVersion(v: string): Version {
-  const match = VERSION_STRING_RE.exec(v);
+  const match = CANONICAL_VERSION.exec(v);
   if (match === null) {
     throw new HexlogError('INTERNAL', `malformed version string '${v}'`);
   }
