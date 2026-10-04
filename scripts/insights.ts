@@ -1,14 +1,14 @@
 // Relatório markdown read-only (integridade, linha do tempo e sinais da `key`) sobre os logs do hexlog.
 // Uso: node scripts/insights.ts [projeto[/processo]]; diretório de dados via XDG_DATA_HOME.
-// Saída 1: cadeia quebrada ou falha de leitura; saída 2: dado 0.x em <D> (D-13).
+// Saída 2: dado quebrado (cadeia ou anexo adulterado, `PROCESS_CORRUPTED`, dado 0.x em <D>, D-13);
+// saída 1: o resto (uso incorreto, filtro sem resultado, falha de leitura); o maior código vence.
 import { countBy, groupBy, head, isNil, last, orderBy, take, zip } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
-import { formatCliError } from './cli-error.ts';
-import { compose } from '../src/compose.ts';
+import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
 import type { Link } from '../src/domain/chain.ts';
 import { dataDir } from '../src/directory.ts';
-import { legacyDataError } from '../src/errors.ts';
 
+const USAGE = 'usage: node scripts/insights.ts [project[/process]]';
 const TOP_GAPS = 3;
 const TOP_SIGNALS = 5;
 
@@ -19,10 +19,12 @@ function formatDuration(ms: number): string {
   return `${(ms / 3_600_000).toFixed(1)} h`;
 }
 
-function timelineSection(records: Link[]): string[] {
+function timelineSection(records: Link[], chainBroken: boolean): string[] {
   const first = head(records);
   const final = last(records);
-  if (isNil(first) || isNil(final)) return ['- timeline: no records'];
+  if (isNil(first) || isNil(final)) {
+    return [chainBroken ? '- timeline: unavailable (chain broken)' : '- timeline: no records'];
+  }
   const pairs = zip(records.slice(0, -1), records.slice(1)).map(([from, to]) => ({
     ms: Date.parse(to.at) - Date.parse(from.at),
     from: from.seq,
@@ -108,75 +110,81 @@ function keySection(batches: BatchInfo[]): string[] {
   ];
 }
 
-type Composed = ReturnType<typeof compose>;
-type Report = { lines: string[]; ok: boolean };
+type Reader = ReturnType<typeof openReadOnly>;
+type Report = { lines: string[]; exitCode: number };
 
-function processReport(composed: Composed, project: string, processName: string): Report {
+function processReport(reader: Reader, project: string, processName: string): Report {
   const title = `## ${project}/${processName}`;
   try {
     const ref = { project, process: processName };
-    const health = composed.services.query.verifyChain(ref);
-    const { records } = composed.loadProcess(ref);
+    const health = reader.query.verifyChain(ref);
+    const { records } = reader.loadProcess(ref);
     const breaks = health.breaks.map((brk) => `${brk.reason}@${brk.index}`).join(', ');
     const attachmentBreaks = health.attachmentBreaks
       .map((brk) => `${brk.hash} ${brk.reason}`)
       .join(', ');
+    const chainBroken = health.totalBreaks > 0;
+    const chain = chainBroken
+      ? `BROKEN (${health.totalBreaks} breaks: ${breaks}), ${health.totalRecords} valid records`
+      : `ok, ${health.totalRecords} records`;
     return {
-      ok: health.ok,
+      exitCode: health.ok ? 0 : 2,
       lines: [
         title,
-        `- chain: ${health.totalBreaks === 0 ? 'ok' : `BROKEN (${health.totalBreaks} breaks: ${breaks})`}, ${health.totalRecords} records, repaired lines: ${health.repairedLines.length}`,
+        `- chain: ${chain}, repaired lines: ${health.repairedLines.length}`,
         health.totalAttachmentBreaks === 0
           ? '- attachments: ok'
           : `- attachments: BROKEN (${health.totalAttachmentBreaks}: ${attachmentBreaks})`,
-        ...timelineSection(records),
+        ...timelineSection(records, chainBroken),
         ...keySection(batchesOf(records)),
         '',
       ],
     };
   } catch (error) {
-    return { ok: false, lines: [title, `- ${formatCliError('insights', error).text}`, ''] };
+    const { text, exitCode } = formatCliError('insights', error);
+    return { exitCode, lines: [title, `- ${text}`, ''] };
   }
 }
 
-function listTargets(composed: Composed, filter: string | undefined) {
+function listTargets(reader: Reader, filter: string | undefined) {
   const [projectFilter, processFilter] = filter?.split('/') ?? [];
-  const { query } = composed.services;
-  return (query.list({}).projects ?? [])
-    .filter((project) => isNil(projectFilter) || project.name === projectFilter)
+  return reader
+    .listProjects()
+    .filter((project) => isNil(projectFilter) || project === projectFilter)
     .flatMap((project) =>
-      (query.list({ project: project.name }).project?.processes ?? [])
-        .filter(({ name }) => isNil(processFilter) || name === processFilter)
-        .map(({ name }) => ({ project: project.name, process: name })),
+      reader
+        .list(project)
+        .filter((name) => isNil(processFilter) || name === processFilter)
+        .map((name) => ({ project, process: name })),
     );
 }
 
-function main(filter: string | undefined): number {
-  const dir = dataDir(process.env);
-  const logger = () => undefined;
-  const composed = compose({ dataDir: dir, cwd: process.cwd(), clock: () => new Date(), logger });
-  if (composed.isLegacy()) {
-    const { text, exitCode } = formatCliError('insights', legacyDataError());
-    console.error(text);
-    return exitCode;
-  }
-
-  let targets: ReturnType<typeof listTargets>;
-  try {
-    targets = listTargets(composed, filter);
-  } catch (error) {
-    console.error(formatCliError('insights', error).text);
+function main(argv: string[]): number {
+  const args = parseCliArgs(argv, {});
+  const [filter, ...extra] = args?.positionals ?? [];
+  if (isNil(args) || extra.length > 0) {
+    console.error(`insights failed: ${USAGE}`);
     return 1;
   }
 
-  if (isEmpty(targets)) {
-    console.log(`No processes found in ${dir}${isNil(filter) ? '' : ` matching '${filter}'`}.`);
-    return isNil(filter) ? 0 : 1;
-  }
+  try {
+    const reader = openReadOnly();
+    const targets = listTargets(reader, filter);
+    if (isEmpty(targets)) {
+      console.log(
+        `No processes found in ${dataDir(process.env)}${isNil(filter) ? '' : ` matching '${filter}'`}.`,
+      );
+      return isNil(filter) ? 0 : 1;
+    }
 
-  const reports = targets.map((target) => processReport(composed, target.project, target.process));
-  console.log(['# hexlog insights', '', ...reports.flatMap((report) => report.lines)].join('\n'));
-  return reports.every((report) => report.ok) ? 0 : 1;
+    const reports = targets.map((target) => processReport(reader, target.project, target.process));
+    console.log(['# hexlog insights', '', ...reports.flatMap((report) => report.lines)].join('\n'));
+    return Math.max(...reports.map((report) => report.exitCode));
+  } catch (error) {
+    const { text, exitCode } = formatCliError('insights', error);
+    console.error(text);
+    return exitCode;
+  }
 }
 
-process.exitCode = main(process.argv[2]);
+process.exitCode = main(process.argv.slice(2));

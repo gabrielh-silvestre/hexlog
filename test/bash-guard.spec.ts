@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createTempDir } from './helpers.ts';
+import { createEnvironment } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const hookPath = path.join(repoRoot, 'hook/bash-guard.ts');
@@ -196,6 +197,23 @@ describe('bash-guard (I4): nega o acesso a D por Bash', () => {
     expect(result.stderr).toBe(
       `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, query, verify_chain, read_attachment, evaluate_gate).`,
     );
+  });
+
+  test('as tools citadas na mensagem são exatamente as que o servidor anuncia com readOnlyHint', async () => {
+    const environment = await createEnvironment();
+    try {
+      const { tools } = await environment.client.listTools();
+      const readOnly = tools
+        .filter(({ annotations }) => annotations?.readOnlyHint === true)
+        .map(({ name }) => name);
+
+      const { stderr } = runHook({ command: `cat ${dataDir}/x` }, envBase);
+
+      const cited = /\(([^()]*)\)\.$/.exec(stderr)?.[1]?.split(', ');
+      expect(cited?.sort()).toEqual(readOnly.sort());
+    } finally {
+      await environment.close();
+    }
   });
 });
 

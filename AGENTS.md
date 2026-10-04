@@ -80,9 +80,8 @@ Direção permitida de dependência:
 - `shared/`, `commands/` e `queries/` dependem de `domain/` e das portas, nunca de `adapters/`; `commands/` e `queries/` não se importam.
 - `adapters/` só implementa portas: não importa `commands/`, `queries/` nem `mcp/` (`eslint.boundaries.js#adaptersBlock`); builtins do Node e libs de infraestrutura são o que ele existe para usar.
 - `mcp/` chama só serviços: não importa `adapters/`, builtin do Node nem `compose.ts`; `mcp/kernel.ts` também não importa `mcp/tools/`.
-- Só `server.ts`, os scripts e os testes importam `compose.ts`. Scripts de leitura passam por `compose.ts` e não importam `adapters/` nem `mcp/` (`scripts/install.ts` e `scripts/build.ts` ficam de fora).
+- Só `server.ts`, os scripts e os testes importam `compose.ts`. Scripts de leitura passam por `compose.ts#composeReader` (só o lado de leitura, sem serviço de escrita: "script de leitura não grava" é garantia de tipo) e não importam `adapters/` nem `mcp/` (`scripts/install.ts` e `scripts/build.ts` ficam de fora).
 - Travas mecânicas: `eslint.boundaries.js#scriptsBlock` e os demais blocos de `boundaryBlocks`, `NO_DYNAMIC_IMPORT` (import dinâmico barrado em toda camada, porque contornaria as travas de import) e `test/boundaries.spec.ts`.
-- Pendência M12 da issue #75, em aberto: `compose()` entrega os serviços de escrita aos scripts, então "script de leitura não grava" é convenção, não estrutura; um `composeReader()` com as fatias `*Reader` de `src/ports.ts` fecharia isso, e a decisão é do autor.
 
 Checklist de review:
 - Serviço recebendo caminho de configuração (`dataDir`, `cwd`): quem conhece caminho é o adaptador, e o serviço recebe a porta.

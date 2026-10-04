@@ -8,6 +8,7 @@ import { createValidator } from './adapters/validator.ts';
 import { createAttachmentService } from './commands/attachment.ts';
 import { createDefinitionService } from './commands/definition.ts';
 import { createProcessService } from './commands/process.ts';
+import type { Name } from './domain/ids.ts';
 import { createQueryService } from './queries/query-service.ts';
 import { loadVerified } from './shared/loader.ts';
 import type { Logger } from './shared/logger.ts';
@@ -22,16 +23,41 @@ export type ComposeOptions = {
   logger: Logger;
 };
 
+export type ComposeReaderOptions = Omit<ComposeOptions, 'clock'>;
+
+/** Adaptadores de disco e o lado de leitura que `compose` e `composeReader` compartilham. */
+function wire({ dataDir, cwd, logger }: ComposeReaderOptions) {
+  const definitions = createDefinitionStore({ dataDir });
+  const attachments = createAttachmentStore({ dataDir, cwd });
+  const processes = createProcessStore({ dataDir, log: logger });
+
+  const reader = {
+    query: createQueryService({
+      store: processes,
+      definitions,
+      attachments,
+      search: createSearchIndex(),
+    }),
+    /** Processo lido e verificado pelo carregador único (SL2), para os scripts que precisam dos elos crus. */
+    loadProcess: (ref: ProcessRef) => loadVerified(processes, ref),
+    /** D-13: um `readdirSync` por chamada, para pegar dado 0.x que apareça com o servidor de pé. */
+    isLegacy: (): boolean => detectLegacy(dataDir).length > 0,
+    /** Enumeração sem ler o manifesto: um `process.json` ilegível não derruba a listagem. */
+    list: (project: Name) => processes.list(project),
+    listProjects: () => processes.listProjects(),
+  };
+  return { definitions, attachments, processes, reader };
+}
+
 /**
  * Raiz de composição (D-25): o único lugar, fora de `adapters/`, que conhece os adaptadores de disco.
  * Liga os adaptadores reais aos serviços de escrita e de consulta; `server.ts`, os scripts e os
  * testes só recebem o que sai daqui.
  */
-export function compose({ dataDir, cwd, clock, logger }: ComposeOptions) {
+export function compose(options: ComposeOptions) {
+  const { clock, logger } = options;
+  const { definitions, attachments, processes, reader } = wire(options);
   const validator = createValidator();
-  const definitions = createDefinitionStore({ dataDir });
-  const attachments = createAttachmentStore({ dataDir, cwd });
-  const processes = createProcessStore({ dataDir, log: logger });
 
   return {
     services: {
@@ -47,16 +73,17 @@ export function compose({ dataDir, cwd, clock, logger }: ComposeOptions) {
         newUuid: randomUUIDv7,
         logger,
       }),
-      query: createQueryService({
-        store: processes,
-        definitions,
-        attachments,
-        search: createSearchIndex(),
-      }),
+      query: reader.query,
     },
-    /** Processo lido e verificado pelo carregador único (SL2), para os scripts que precisam dos elos crus. */
-    loadProcess: (ref: ProcessRef) => loadVerified(processes, ref),
-    /** D-13: um `readdirSync` por chamada, para pegar dado 0.x que apareça com o servidor de pé. */
-    isLegacy: (): boolean => detectLegacy(dataDir).length > 0,
+    loadProcess: reader.loadProcess,
+    isLegacy: reader.isLegacy,
   };
+}
+
+/**
+ * Só o lado de leitura de `compose`, para os scripts de leitura: o tipo de retorno não tem serviço de
+ * escrita, então "script de leitura não grava" é garantia de tipo.
+ */
+export function composeReader(options: ComposeReaderOptions) {
+  return wire(options).reader;
 }

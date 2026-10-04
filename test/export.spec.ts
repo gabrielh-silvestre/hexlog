@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
-import type { ServerContext } from '@modelcontextprotocol/server';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -56,7 +55,7 @@ function snapshot(root: string): Record<string, string> {
 async function serverLegacyBody(): Promise<{ message: string; details: { message: string }[] }> {
   const result = await execute(
     { services: {} as Services, isLegacy: () => true, logger: () => undefined },
-    { name: 'list', schema: z.object({}), args: {}, ctx: {} as ServerContext },
+    { name: 'list', schema: z.object({}), args: {}, ctx: { mcpReq: {} } },
     () => ({}),
   );
   return JSON.parse(at(result.content, 0).text) as {
@@ -141,6 +140,14 @@ describe('--fields', () => {
     expect(err).toContain('invalid field(s): bogus');
     expect(code).toBe(1);
   });
+
+  test('--fields sem valor falha com o uso em vez de exportar tudo', () => {
+    const { code, out, err } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields');
+
+    expect(err).toContain('export failed: usage:');
+    expect(out).toBe('');
+    expect(code).toBe(1);
+  });
 });
 
 describe('uso incorreto e processo inexistente', () => {
@@ -149,6 +156,8 @@ describe('uso incorreto e processo inexistente', () => {
     ['sem barra', [PROJECT]],
     ['nome inválido', ['A/b']],
     ['três partes', ['a/b/c']],
+    ['flag desconhecida', [`${PROJECT}/${PROCESS}`, '--bogus']],
+    ['argumento a mais', [`${PROJECT}/${PROCESS}`, 'extra']],
   ])('%s → exit 1 com o uso no stderr', (_name, args) => {
     const { code, err } = runExport(xdgHome, ...args);
     expect(err).toContain('export failed: usage:');

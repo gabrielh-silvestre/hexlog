@@ -300,6 +300,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'not-found',
   'too-big',
   'bad-args',
+  'invalid-utf8',
   'ok',
   'corrupted',
   'unmarked-attachment',

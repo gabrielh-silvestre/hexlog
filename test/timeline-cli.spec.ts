@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
-import type { ServerContext } from '@modelcontextprotocol/server';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -8,6 +7,7 @@ import { z } from 'zod';
 import { blobFile, processPaths } from '../src/adapters/fs/data-format.ts';
 import { sha256hex } from '../src/domain/chain.ts';
 import { compose } from '../src/compose.ts';
+import { escapeControls } from '../scripts/escape-controls.ts';
 import { execute, type Services } from '../src/mcp/kernel.ts';
 import { AUTHOR, DOC, NOW, PROJECT } from './commands/register-fakes.ts';
 import { at, createTempDir } from './helpers.ts';
@@ -69,7 +69,7 @@ function snapshot(root: string): Record<string, string> {
 async function serverLegacyBody(): Promise<{ message: string; details: { message: string }[] }> {
   const result = await execute(
     { services: {} as Services, isLegacy: () => true, logger: () => undefined },
-    { name: 'list', schema: z.object({}), args: {}, ctx: {} as ServerContext },
+    { name: 'list', schema: z.object({}), args: {}, ctx: { mcpReq: {} } },
     () => ({}),
   );
   return JSON.parse(at(result.content, 0).text) as {
@@ -142,9 +142,9 @@ beforeAll(async () => {
 });
 
 describe('--full', () => {
-  test('imprime o texto contíguo e idêntico entre os delimitadores (≥ 200 KB)', () => {
+  test('com --raw imprime o texto contíguo e idêntico entre os delimitadores (≥ 200 KB)', () => {
     expect(BIG_TEXT.length).toBeGreaterThan(200_000);
-    const { code, out } = runTimeline(xdgHome, PROJECT, TARGET, '--full');
+    const { code, out } = runTimeline(xdgHome, PROJECT, TARGET, '--full', '--raw');
 
     const header = `----- attachment ${hashes.big} (${Buffer.byteLength(BIG_TEXT, 'utf8')} bytes) -----\n`;
     const start = out.indexOf(header);
@@ -161,6 +161,58 @@ describe('--full', () => {
     const { code, out } = runTimeline(xdgHome, PROJECT, TARGET);
     expect(out).not.toContain('-----');
     expect(out).toContain(`attachment: ${hashes.big} (ok)`);
+    expect(code).toBe(0);
+  });
+});
+
+describe('escape de terminal', () => {
+  // ESC, OSC 0, BEL, CSI C1, CR, RLO bidi, DEL; TAB e LF passam
+  const HOSTILE = 'a\u001b]0;x\u0007b\u009bc\rd\u202ee\u007ff\tg\nh';
+  let xdg: string;
+  let hash: string;
+
+  beforeAll(async () => {
+    xdg = createTempDir('xdg');
+    const dataDir = path.join(xdg, 'hexlog');
+    fs.mkdirSync(dataDir);
+    const { services } = compose({ dataDir, cwd: xdg, clock: () => NOW, logger: () => undefined });
+    services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
+    services.process.createProcess({ project: PROJECT, process: 'evil' });
+    hash = services.attachment.attach({ project: PROJECT, text: HOSTILE }).hash;
+    await services.process.register({
+      project: PROJECT,
+      process: 'evil',
+      author: AUTHOR,
+      key: 'evil',
+      records: [
+        { type: 'doc', target: TARGET, data: { note: HOSTILE, body: hash }, relations: [] },
+      ],
+    });
+  });
+
+  test('sem --raw o texto sai com os controles trocados por \\uXXXX visível, e TAB e LF intactos', () => {
+    const { code, out } = runTimeline(xdg, PROJECT, TARGET, '--full');
+
+    expect(out).toContain('a\\u001b]0;x\\u0007b\\u009bc\\u000dd\\u202ee\\u007ff\tg\nh');
+    expect(escapeControls(out)).toBe(out);
+    expect(code).toBe(0);
+  });
+
+  test('--raw imprime o byte exato, controles inclusos', () => {
+    const { code, out } = runTimeline(xdg, PROJECT, TARGET, '--full', '--raw');
+
+    expect(out).toContain(
+      `----- attachment ${hash} (${Buffer.byteLength(HOSTILE, 'utf8')} bytes) -----\n${HOSTILE}\n`,
+    );
+    expect(code).toBe(0);
+  });
+
+  test('--json escapa o C1 e o bidi que o JSON.stringify deixa crus, e o JSON.parse devolve o original', () => {
+    const { code, out } = runTimeline(xdg, PROJECT, TARGET, '--full', '--json');
+
+    expect(escapeControls(out)).toBe(out);
+    expect(out).toContain('\\u009b');
+    expect(at(jsonRecords(out), 0).attachmentText).toEqual({ [hash]: HOSTILE });
     expect(code).toBe(0);
   });
 });
@@ -369,7 +421,7 @@ describe('uso incorreto e erros', () => {
 
   test('projeto inexistente → timeline failed: PROJECT_NOT_FOUND, exit 1', () => {
     const { code, err } = runTimeline(xdgHome, 'ghost', TARGET);
-    expect(err).toContain('timeline failed: PROJECT_NOT_FOUND:');
+    expect(err.trim()).toBe('timeline failed: PROJECT_NOT_FOUND: project not found');
     expect(code).toBe(1);
   });
 

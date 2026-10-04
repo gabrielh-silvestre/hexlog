@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import MiniSearch from 'minisearch';
-import { compose } from '../src/compose.ts';
+import { compose, composeReader } from '../src/compose.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { Logger } from '../src/shared/logger.ts';
 import { captureError, createTempDir } from './helpers.ts';
@@ -143,5 +143,61 @@ describe('compose', () => {
     fs.mkdirSync(path.join(dataDir, 'meu-projeto'));
 
     expect(isLegacy()).toBe(true);
+  });
+});
+
+describe('composeReader', () => {
+  const REF = { project: PROJECT, process: 'run-1' };
+
+  async function seeded() {
+    const { services, cwd, dataDir } = composed();
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.process.createProcess(REF);
+    const { records } = await services.process.register({
+      ...REF,
+      author: AUTHOR,
+      key: 'k1',
+      records: [note()],
+    });
+    return { reader: composeReader({ cwd, dataDir, logger: () => undefined }), dataDir, records };
+  }
+
+  test('só expõe o lado de leitura, sobre o que compose gravou', async () => {
+    const { reader, records } = await seeded();
+
+    expect(Object.keys(reader).sort()).toEqual([
+      'isLegacy',
+      'list',
+      'listProjects',
+      'loadProcess',
+      'query',
+    ]);
+    expect(reader.listProjects()).toEqual([PROJECT]);
+    expect(reader.list(PROJECT)).toEqual(['run-1']);
+    expect(reader.loadProcess(REF).records.map(({ id }) => id)).toEqual(
+      records.map(({ id }) => id),
+    );
+    expect(reader.query.queryRecords(REF).records.map(({ id }) => id)).toEqual(
+      records.map(({ id }) => id),
+    );
+  });
+
+  test('list enumera o processo com process.json ilegível, que o list da consulta recusa', async () => {
+    const { reader, dataDir } = await seeded();
+    fs.writeFileSync(processPaths(dataDir, REF).manifest, '{');
+
+    expect(reader.list(PROJECT)).toEqual(['run-1']);
+    expect(captureError(() => reader.query.list({ project: PROJECT }))).toMatchObject({
+      code: 'PROCESS_CORRUPTED',
+    });
+  });
+
+  test('isLegacy é verdadeiro com layout 0.x', async () => {
+    const { reader, dataDir } = await seeded();
+    expect(reader.isLegacy()).toBe(false);
+
+    fs.mkdirSync(path.join(dataDir, 'meu-projeto'));
+
+    expect(reader.isLegacy()).toBe(true);
   });
 });

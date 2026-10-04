@@ -181,10 +181,10 @@ dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`.
   gravado em disco) se anexa por `path`, sem reescrever o texto: o blob é cópia
   exata e o conteúdo não passa pelo modelo. `path` é relativo ao diretório de
   trabalho do servidor (ou absoluto), fica dentro dele e fora de `<D>`, termina
-  em `.md` ou `.txt` (minúsculo) e é arquivo regular, sem symlink, de até 1 MiB.
-  Recusa: `INVALID_INPUT` com `details[0].code` `outside-allowed-root`,
-  `inside-data-dir`, `bad-extension`, `not-regular`, `not-found`, `too-big` ou
-  `bad-args`. Com `outside-allowed-root`, copie o arquivo com cp (não o
+  em `.md` ou `.txt` (minúsculo) e é arquivo regular, sem symlink, de até 1 MiB
+  e UTF-8 válido. Recusa: `INVALID_INPUT` com `details[0].code`
+  `outside-allowed-root`, `inside-data-dir`, `bad-extension`, `not-regular`,
+  `not-found`, `too-big`, `invalid-utf8` ou `bad-args`. Com `outside-allowed-root`, copie o arquivo com cp (não o
   reescreva) para dentro do diretório do servidor e anexe a cópia.
 - **Texto que não existe em arquivo** (relatório que um agente devolveu) se anexa
   por `text`, colado sem resumir, cortar nem reformatar. `text` ou `path`, nunca
@@ -195,6 +195,10 @@ dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`.
   `register` confere os anexos antes de gravar: `ATTACHMENT_NOT_FOUND` se o blob
   não existe (chame `attach` antes), `ATTACHMENT_CORRUPTED` se os bytes mudaram
   depois de gravados (não regrave por cima: avise o usuário).
+- O `data` de um registro cabe em até 16.000 caracteres canônicos (o JSON
+  canônico do objeto, contado em unidades UTF-16: um emoji vale 2); acima disso
+  o `register` recusa com `INVALID_INPUT`, sem gravar nada. Texto grande vai
+  por `attach`, e o registro cita só o `hash`.
 - `query` devolve `attachmentStatus` (`ok`, `missing` ou `corrupted`) por hash
   citado, e `verify_chain` lista o anexo ausente ou corrompido em
   `attachmentBreaks`.
