@@ -13,6 +13,7 @@ import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 import { isNil, memoize, zip } from 'es-toolkit';
 import {
   expectedRules,
+  libDirOf,
   applyGuard,
   staleDenyRules,
   verifyGuard,
@@ -49,7 +50,7 @@ function hasDynamicRequire(bytes: Uint8Array): boolean {
 export const TOOLS_COUNT = 11;
 
 export function versionDirOf(home: string, version: string): string {
-  return path.join(home, '.local', 'lib', 'hexlog', version);
+  return path.join(libDirOf(home), version);
 }
 
 export function readManifest(versionDir: string): InstallManifest | null {
@@ -354,7 +355,7 @@ export function needsMcpRegistration(
 function registeredHookVersion(settingsData: unknown, home: string): string | undefined {
   // `findHookEntry` só usa `dirname(versionDir)` (o diretório `.local/lib/hexlog`) para
   // reconhecer o hook do hexlog em qualquer versão — o segmento de versão em si é irrelevante aqui.
-  const anyVersionDir = path.join(home, '.local', 'lib', 'hexlog', '_');
+  const anyVersionDir = path.join(libDirOf(home), '_');
   const found = findHookEntry(settingsData, anyVersionDir);
   return isNil(found) ? undefined : path.basename(path.dirname(found.file));
 }

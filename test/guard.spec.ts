@@ -35,6 +35,7 @@ import {
 import { at, createTempDir, parseJson } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
+const installScript = path.join(repoRoot, 'scripts/install.ts');
 
 // Forma mínima de `~/.claude/settings.json` lida nos testes: só os campos
 // que as asserções acessam, com passthrough pro resto (timeout, etc.).
@@ -1329,8 +1330,23 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
   });
 });
 
+/** Roda `scripts/install.ts` como processo real, com `HOME` e `<D>` (via `XDG_DATA_HOME`) descartáveis. */
+function runInstaller(home: string, D: string, args: string[], cwd = repoRoot) {
+  return spawnSync(process.execPath, [installScript, ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: home,
+      XDG_DATA_HOME: path.dirname(D),
+      HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
+    },
+  });
+}
+
 describe('B3: install.ts --check (processo real)', () => {
   let home: string;
+  let D: string;
   let version: string;
 
   beforeAll(() => {
@@ -1340,20 +1356,12 @@ describe('B3: install.ts --check (processo real)', () => {
       }
     ).version;
     home = createTempDir('b3');
+    // Fixa o <D> no HOME temporário: um XDG_DATA_HOME herdado com dado 0.x faria o instalador sair 2.
+    D = path.join(home, '.local', 'share', 'hexlog');
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(home, '.claude', 'settings.json'), buildSettingsTemplate(home));
 
-    const installation = spawnSync(process.execPath, [path.join(repoRoot, 'scripts/install.ts')], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        HOME: home,
-        // Fixa o <D> no HOME temporário: um XDG_DATA_HOME herdado com dado 0.x faria o instalador sair 2.
-        XDG_DATA_HOME: path.join(home, '.local', 'share'),
-        HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
-      },
-    });
+    const installation = runInstaller(home, D, []);
     if (installation.status !== 0) {
       throw new Error(
         `real baseline installation (B3) failed: ${installation.stderr}\n${installation.stdout}`,
@@ -1366,16 +1374,8 @@ describe('B3: install.ts --check (processo real)', () => {
   });
 
   function runCheck(opts: { cwd?: string } = {}): { status: number | null; stdout: string } {
-    const result = spawnSync(
-      process.execPath,
-      [path.join(repoRoot, 'scripts/install.ts'), '--check'],
-      {
-        cwd: opts.cwd ?? repoRoot,
-        encoding: 'utf8',
-        env: { ...process.env, HOME: home, XDG_DATA_HOME: path.join(home, '.local', 'share') },
-      },
-    );
-    return { status: result.status, stdout: result.stdout };
+    const { status, stdout } = runInstaller(home, D, ['--check'], opts.cwd);
+    return { status, stdout };
   }
 
   test('instalação completa: exit 0, sem artifact-modified nem artifact-outdated', () => {
@@ -1435,7 +1435,6 @@ describe('B3: install.ts --check (processo real)', () => {
     const settingsPath = path.join(home, '.claude', 'settings.json');
     const original = fs.readFileSync(settingsPath, 'utf8');
     const data = parseJson(SettingsSchema, original);
-    const D = path.join(home, '.local', 'share', 'hexlog');
     const expected = expectedRules(D, home, process.execPath, version);
     data.permissions.deny = data.permissions.deny.filter((r: string) => r !== expected.denyEditLib);
     fs.writeFileSync(settingsPath, JSON.stringify(data));
@@ -1459,7 +1458,6 @@ describe('B3: install.ts --check (processo real)', () => {
     try {
       const versionDir = versionDirOf(home, version);
       const manifest = readManifest(versionDir)!;
-      const D = path.join(home, '.local', 'share', 'hexlog');
       const expected = expectedRules(D, home, process.execPath, version);
       const settingsText = fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8');
       const claudeJsonText = fs.readFileSync(path.join(home, '.claude.json'), 'utf8');
@@ -1506,15 +1504,7 @@ describe('B3: install.ts --check (processo real)', () => {
   test('--check com <D> ilegível (ENOTDIR) ainda verifica, sem abortar cru', () => {
     const blocker = path.join(home, 'not-a-dir');
     fs.writeFileSync(blocker, '');
-    const result = spawnSync(
-      process.execPath,
-      [path.join(repoRoot, 'scripts/install.ts'), '--check'],
-      {
-        cwd: repoRoot,
-        encoding: 'utf8',
-        env: { ...process.env, HOME: home, XDG_DATA_HOME: blocker },
-      },
-    );
+    const result = runInstaller(home, path.join(blocker, 'hexlog'), ['--check']);
 
     expect(result.stderr).not.toContain('ENOTDIR');
     expect(result.stdout).toContain('missing:');
@@ -1523,19 +1513,9 @@ describe('B3: install.ts --check (processo real)', () => {
   test('argumento desconhecido sai 1 com a mensagem em stderr e nada escrito', () => {
     const disposableHome = createTempDir('b3-unknown-arg');
     try {
-      const result = spawnSync(
-        process.execPath,
-        [path.join(repoRoot, 'scripts/install.ts'), '--archive0x'],
-        {
-          cwd: repoRoot,
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            HOME: disposableHome,
-            XDG_DATA_HOME: path.join(disposableHome, 'data'),
-          },
-        },
-      );
+      const result = runInstaller(disposableHome, path.join(disposableHome, 'data', 'hexlog'), [
+        '--archive0x',
+      ]);
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('unknown argument: --archive0x');
@@ -1547,7 +1527,6 @@ describe('B3: install.ts --check (processo real)', () => {
 });
 
 describe('F6: install.ts sobre dado 0.x (processo real)', () => {
-  const installScript = path.join(repoRoot, 'scripts/install.ts');
   const legacyFixture = path.join(repoRoot, 'test/fixtures/legacy-0x');
   const readToolNames = ['list', 'query', 'verify_chain', 'read_attachment', 'evaluate_gate'];
   const DenySchema = z.looseObject({ permissions: z.looseObject({ deny: z.array(z.string()) }) });
@@ -1557,19 +1536,6 @@ describe('F6: install.ts sobre dado 0.x (processo real)', () => {
   function createInstallHome(prefix: string): { home: string; D: string } {
     const home = createTempDir(prefix);
     return { home, D: path.join(home, '.local', 'share', 'hexlog') };
-  }
-
-  function runInstaller(home: string, D: string, args: string[]) {
-    return spawnSync(process.execPath, [installScript, ...args], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        HOME: home,
-        XDG_DATA_HOME: path.dirname(D),
-        HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
-      },
-    });
   }
 
   function snapshotTree(root: string): Record<string, string | null> {

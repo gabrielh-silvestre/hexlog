@@ -36,7 +36,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `define_type`/`define_relation`/`define_gate` versionam em semver `major.minor` em `<nome>/<versão>.json`, nunca sobrescrevem e não deixam arquivo legado. Os dados 1.0 vivem em `<D>/.v1/`.
 - Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0007-dominio.md`, `docs/adr-0008-servicos.md`, `docs/adr-0009-ferramental.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`.
 - A partir da 1.0, ADR não é refeito nem apagado, só recebe emenda (seção nova ou ADR seguinte). A troca dos ADRs 0001, 0002, 0005 e 0006 pelos 0007 a 0009 foi a exceção única.
-- `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica.
+- `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica. Com dado 0.x em `<D>`, sem flag só lista e sai 2; `--archive-0x` arquiva em `<D>/archive/` e segue para a instalação (`src/archive.ts`; recusas e retomada no README, seção "Dado 0.x"). Só Linux: o arquivador e o lock dependem de `/proc`, hard link e `fsync` de diretório; macOS não foi testado.
 - O instalador copia toda pasta de `skills/` (não uma fixa): uma skill nova só precisa da pasta em `skills/<nome>/SKILL.md` para ser instalada e conferida pelo `--check`.
 
 ### Testing Requirements

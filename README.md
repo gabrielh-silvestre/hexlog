@@ -52,7 +52,9 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 3. Registra as 4 regras de deny e o hook PreToolUse em
    `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog` antes
    de qualquer troca) e registra o servidor MCP em escopo `user`. A regra de deny
-   de um `<D>` antigo que o guard remove é impressa (`removed deny rule: <regra>`).
+   de um `<D>` antigo que o guard remove é impressa (`removed deny rule: <regra>`),
+   e só sai se esse diretório sumiu do disco: um `<D>` antigo que ainda existe
+   mantém as regras, porque o deny é o isolamento do dado que ele guarda.
 4. Copia cada pasta de `skills/` (hoje `hexlog`, `hexlog-flow` e
    `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
    backup.
@@ -90,6 +92,7 @@ projetos direto em `<D>`, e a detecção é positiva: qualquer entrada de `<D>` 
 nome de projeto 0.x (minúsculas, dígitos e hífen, exceto `archive`) conta como
 dado 0.x. Com dado 0.x em `<D>`, o servidor recusa toda tool com `LEGACY_DATA`
 (o `details` traz o comando de arquivamento) e os scripts de leitura saem com 2.
+O arquivador é só Linux: acha servidor 0.x vivo por `/proc` (macOS não foi testado).
 
 Para arquivar:
 
@@ -106,10 +109,13 @@ diretórios vazios, sem recursão). Qualquer divergência aborta com exit 1, sem
 instalar e sem apagar nada que não esteja no `.tar` verificado.
 
 - **Recusas:** servidor 0.x vivo (processo com `server.mjs` de uma versão 0.x em
-  `~/.local/lib/hexlog/`), `/proc` ilegível (não dá para confirmar que nenhum
-  servidor roda), lock 0.x com dono vivo ou com `holder` fora do formato
-  `<pid>-<hex>`, e symlink ou arquivo especial no dado 0.x. Feche as sessões do
-  Claude Code antes.
+  `~/.local/lib/hexlog/`), `/proc` ilegível ou `cmdline` ilegível por motivo que não
+  seja permissão ou processo que sumiu (não dá para confirmar que nenhum servidor
+  roda), lock 0.x com dono vivo ou com `holder` fora do formato `<pid>-<hex>` (um
+  `holder` ausente ou de 0 byte conta como lock morto), e symlink, hard link ou
+  arquivo especial no dado 0.x. Feche as sessões do Claude Code antes. Com todas
+  fechadas e a recusa de lock mantida (pid reaproveitado, `holder` ilegível),
+  remova à mão a pasta `events.jsonl.lock/` que a mensagem cita e rode de novo.
 - **Retomada:** se a execução cair depois de gerar o `.tar`, rodar de novo reusa o
   `.tar` mais novo que contém todo arquivo restante com o mesmo sha256, em vez de
   gerar outro.
@@ -155,6 +161,9 @@ Se algo falhar depois do arquivamento:
 2. Tire o dado 1.0 do caminho, para não se misturar: `mv ~/.local/share/hexlog/.v1 ~/hexlog-1x-aside-$(date +%F)`.
 3. Restaure o 0.x, cada `.tar` do mais velho para o mais novo (ou use a cópia manual):
    `for t in $(ls -tr ~/.local/share/hexlog/archive/hexlog-0x-*.tar); do tar -xf "$t" -C ~/.local/share/hexlog; done`.
+   O `tar -x` devolve os diretórios de projeto com modo 0755 (o 0.x criava 0700), então
+   rode `chmod -R go-rwx ~/.local/share/hexlog`, e não recria diretório 0.x vazio
+   (o `.tar` guarda só arquivos regulares).
 4. Tire `archive/` do caminho, porque o 0.x o listaria como um projeto vazio:
    `mv ~/.local/share/hexlog/archive ~/hexlog-archive-aside-$(date +%F)`.
 5. Reinstale o 0.x: `git checkout v0.4.0 && npm ci && node scripts/install.ts`

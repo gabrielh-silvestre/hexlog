@@ -44,7 +44,7 @@ export function writeFileAtomic(
     writeSynced(tmp, content);
     if (exclusive) fs.linkSync(tmp, file);
     else fs.renameSync(tmp, file);
-    if (fsyncDir) fsyncDirectory(dir);
+    if (fsyncDir) fsyncPath(dir);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
@@ -61,9 +61,9 @@ export function writeSynced(file: string, content: string | Uint8Array): void {
   }
 }
 
-/** `fsync` de um diretório (ou de qualquer caminho abrível em leitura); `archive.ts` reusa. */
-export function fsyncDirectory(dir: string): void {
-  const fd = fs.openSync(dir, 'r');
+/** `fsync` de um arquivo ou diretório (qualquer caminho abrível em leitura); `archive.ts` reusa. */
+export function fsyncPath(target: string): void {
+  const fd = fs.openSync(target, 'r');
   try {
     fs.fsyncSync(fd);
   } finally {

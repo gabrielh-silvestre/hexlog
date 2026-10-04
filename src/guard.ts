@@ -37,6 +37,11 @@ export type MissingItem =
   | 'mcp'
   | `skill-file:${string}`;
 
+/** Pasta das versões instaladas (`~/.local/lib/hexlog`); `archive.ts` e o instalador também a usam. */
+export function libDirOf(home: string): string {
+  return path.join(home, '.local', 'lib', 'hexlog');
+}
+
 /** As 4 regras de deny e os caminhos do hook/servidor/skills instalados para uma versão (§4.14, QN4). */
 export function expectedRules(
   D: string,
@@ -45,14 +50,14 @@ export function expectedRules(
   version: string,
   skillNames: string[] = [],
 ): ExpectedRules {
-  const versionDir = path.join(home, '.local', 'lib', 'hexlog', version);
+  const versionDir = path.join(libDirOf(home), version);
   const hookFile = path.join(versionDir, 'bash-guard.mjs');
   const serverFile = path.join(versionDir, 'server.mjs');
   return {
     denyReadDir: `Read(/${D})`,
     denyRead: `Read(/${D}/**)`,
     denyEdit: `Edit(/${D}/**)`,
-    denyEditLib: `Edit(/${home}/.local/lib/hexlog/**)`,
+    denyEditLib: `Edit(/${libDirOf(home)}/**)`,
     hookExec: execPath,
     hookFile,
     // O `command` do settings é interpretado por shell: caminho com espaço precisa de aspas.
@@ -108,10 +113,11 @@ export function staleDenyRules(
   exists: (path: string) => boolean = () => false,
 ): Set<string> {
   const stale = new Set<string>();
+  const currentD = extractD(expected);
   for (const rule of currentDeny) {
     if (!isString(rule) || !rule.startsWith('Read(/') || !rule.endsWith(')')) continue;
     const oldD = rule.slice('Read(/'.length, -')'.length);
-    if (path.basename(oldD) !== 'hexlog' || oldD === extractD(expected) || exists(oldD)) continue;
+    if (path.basename(oldD) !== 'hexlog' || oldD === currentD || exists(oldD)) continue;
     // `home`, `execPath` e `version` não entram nas três regras de `<D>`.
     const trio = expectedRules(oldD, '', '', '');
     const rules = [trio.denyReadDir, trio.denyRead, trio.denyEdit];
