@@ -332,18 +332,15 @@ describe('N5: chave própria __proto__ nos args crus', () => {
 });
 
 describe('exceção que não é HexlogError', () => {
-  const addAll = jest.spyOn(MiniSearch.prototype, 'addAll');
-
   afterEach(() => {
-    addAll.mockReset();
-    addAll.mockRestore();
+    jest.restoreAllMocks();
   });
 
   test('vira INTERNAL sem stack nem texto da exceção na resposta', async () => {
     await environment.call('define_type', { project: PROJECT, name: 'note', schema: NOTE });
     await environment.call('create_process', { project: PROJECT, process: PROCESS });
     await environment.call('register', registerInput());
-    addAll.mockImplementation(() => {
+    jest.spyOn(MiniSearch.prototype, 'addAll').mockImplementation(() => {
       throw new Error('boom');
     });
 

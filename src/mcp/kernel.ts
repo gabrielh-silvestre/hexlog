@@ -1,10 +1,10 @@
 import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
-import type { ServerContext, StandardSchemaWithJSON } from '@modelcontextprotocol/server';
+import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { AttachmentService } from '../commands/attachment.ts';
 import type { DefinitionService } from '../commands/definition.ts';
 import type { ProcessService } from '../commands/process.ts';
-import type { Author } from '../domain/record.ts';
+import { Author } from '../domain/record.ts';
 import {
   capDetails,
   type Detail,
@@ -13,28 +13,25 @@ import {
   legacyDataError,
   pointer,
 } from '../errors.ts';
-import type {
-  Changes,
-  GateEvaluation,
-  QueryInput,
-  QueryResult,
-  QueryService,
-} from '../queries/query-service.ts';
-import type { Logger } from '../shared/logger.ts';
+import { ATTACHMENT_PAGE_CHARS, type QueryService } from '../queries/query-service.ts';
+import type { Logger, LogRecord } from '../shared/logger.ts';
 
-/** Surrogate solitário não vira UTF-8: o JCS do hash lançaria e a tool devolveria INTERNAL (TM3). */
-export const WELL_FORMED = 'must not contain a lone surrogate';
-export const wellFormed = (strings: readonly string[]): boolean =>
-  strings.every((text) => text.isWellFormed());
+/** D-20: teto de caracteres do JSON de uma página de `query` e de `read_attachment`; o mesmo padrão do serviço. */
+export const PAGE_CHARS_CAP = ATTACHMENT_PAGE_CHARS;
 
-/** D-20: teto de caracteres do JSON de uma página de `query` e de `read_attachment`. */
-export const PAGE_CHARS_CAP = 24_000;
+/** Marcador no fio: uma entrada por processo lido, `null` para processo vazio (D-24). */
+export const MarkerRecord = z.record(z.string(), z.string().nullable());
 
-/** Itens de `changes.entered` e de `changes.left` que cabem no envelope da tool (M4 da herança do PR-5). */
-export const CHANGES_ITEMS_CAP = 100;
+/** Tool que grava: não destrói, repetir a chamada não muda o resultado, não fala com nada fora do hexlog. */
+export const WRITE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
 
-/** Ids por lista de `evidence` de uma pergunta de `evaluate_gate`; corte igual ao de `changes`, também palpite. */
-export const EVIDENCE_ITEMS_CAP = 100;
+/** Tool de leitura; `destructiveHint` e `idempotentHint` só valem com `readOnlyHint` falso. */
+export const READ_ANNOTATIONS = { readOnlyHint: true, openWorldHint: false };
 
 /** Os quatro serviços que `compose.ts#compose` monta; o kernel só os repassa às tools. */
 export type Services = {
@@ -67,19 +64,24 @@ export type Caller = {
   author(fields: { agent: string; model?: string }): Author;
 };
 
+/** O que o kernel lê do `ServerContext` do SDK: só o envelope da requisição. */
+export type CallContext = { mcpReq: { envelope?: Record<string, unknown> } };
+
 /** O que `execute` precisa de uma chamada: `args` é a entrada crua que o SDK repassou. */
 export type ToolCall<Input> = {
   /** Nome literal da tool, o mesmo do `registerTool`. */
   name: string;
   schema: z.ZodType<Input>;
   args: unknown;
-  ctx: ServerContext;
+  ctx: CallContext;
 };
 
 /**
  * Corpo de sucesso ou erro que uma tool devolve ao SDK: nunca uma exceção. O erro leva o JSON
  * `{code, message, details}` só em `content[0].text`: o SDK 1.x valida `structuredContent` contra o
- * `outputSchema` de sucesso mesmo com `isError` e lançaria `-32602` no cliente.
+ * `outputSchema` de sucesso mesmo com `isError` e lançaria `-32602` no cliente. "Nunca uma exceção" vale
+ * para o handler: o SDK valida o `outputSchema` depois dele, e saída fora do schema volta como `isError`
+ * com o texto livre `Output validation error: ...`, sem `code` (risco aceito, ADR 0009).
  */
 export type ToolResult<Output> =
   | { structuredContent: Output; content: [{ type: 'text'; text: string }] }
@@ -89,15 +91,26 @@ export type ToolResult<Output> =
  * Ponte zod → SDK: anuncia o JSON Schema do próprio zod (`~standard.jsonSchema`), mas troca o
  * `validate` por um que deixa a entrada crua passar. Quem valida de verdade é `execute`, para o erro
  * sair como `INVALID_INPUT` com `details[]` (D-26) e não como "Input validation error" do SDK.
+ * Depende de `schema['~standard']` trazer `jsonSchema` (zod 4.6.5) e de o SDK 2.0.0 exigir
+ * `StandardSchemaWithJSON`: bump de zod ou do SDK exige rodar `test/mcp/kernel.spec.ts`.
  */
 export function advertise(schema: z.ZodType): StandardSchemaWithJSON {
   return { '~standard': { ...schema['~standard'], validate: (value) => ({ value }) } };
 }
 
+/** O log não pode derrubar a chamada: um `register` já gravado não volta `INTERNAL` porque o logger lançou. */
+function logSafely(logger: Logger, record: LogRecord): void {
+  try {
+    logger(record);
+  } catch {
+    // Sem canal melhor: o próprio logger falhou.
+  }
+}
+
 /** `HexlogError` passa direto; qualquer outra exceção vira `INTERNAL`, com a stack só no log `internal-error`. */
 export function toHexlogError(e: unknown, logger: Logger): HexlogError {
   if (e instanceof HexlogError) return e;
-  logger({
+  logSafely(logger, {
     level: 'error',
     event: 'internal-error',
     stack: e instanceof Error ? e.stack : String(e),
@@ -131,22 +144,15 @@ function reservedKeyDetails(args: unknown): Detail[] {
   return capDetails(found);
 }
 
-const ClientInfo = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(100)
-    .refine((name) => wellFormed([name]), WELL_FORMED),
-});
+const ClientInfo = z.object({ name: Author.shape.client });
 
 /** D-21: `io.modelcontextprotocol/clientInfo.name` do envelope, ou `unknown` (cliente sem envelope). */
-function clientOf(ctx: ServerContext): string {
-  const envelope: Record<string, unknown> | undefined = ctx.mcpReq.envelope;
-  const parsed = ClientInfo.safeParse(envelope?.[CLIENT_INFO_META_KEY]);
+function clientOf(ctx: CallContext): string {
+  const parsed = ClientInfo.safeParse(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY]);
   return parsed.success ? parsed.data.name : 'unknown';
 }
 
-function callerOf(ctx: ServerContext): Caller {
+function callerOf(ctx: CallContext): Caller {
   const client = clientOf(ctx);
   return {
     client,
@@ -169,7 +175,7 @@ export async function execute<Input, Output>(
 ): Promise<ToolResult<Output>> {
   const start = Date.now();
   const log = (level: 'info' | 'error', code?: string) => {
-    deps.logger({
+    logSafely(deps.logger, {
       level,
       event: 'tool',
       name: call.name,
@@ -199,71 +205,4 @@ export async function execute<Input, Output>(
     log('error', error.code);
     return { isError: true, content: [{ type: 'text', text: JSON.stringify(body) }] };
   }
-}
-
-type PagedChanges = Changes & { omitted?: { entered: number; left: number } };
-
-/** M4: corta `entered` e `left` em `CHANGES_ITEMS_CAP` e conta o que ficou de fora em `omitted`. */
-function capChanges(changes: Changes): PagedChanges {
-  const entered = changes.entered.length - CHANGES_ITEMS_CAP;
-  const left = changes.left.length - CHANGES_ITEMS_CAP;
-  if (entered <= 0 && left <= 0) return changes;
-  return {
-    ...changes,
-    entered: changes.entered.slice(0, CHANGES_ITEMS_CAP),
-    left: changes.left.slice(0, CHANGES_ITEMS_CAP),
-    omitted: { entered: Math.max(entered, 0), left: Math.max(left, 0) },
-  };
-}
-
-/**
- * Única porta de `query` para as tools: passa `maxChars` (`PAGE_CHARS_CAP`) em toda chamada, porque o
- * serviço usa `Infinity` sem ele (D-20), e corta `changes` no envelope, que fica fora do teto de página.
- */
-export function queryPage(
-  query: QueryService,
-  input: Omit<QueryInput, 'maxChars'>,
-): Omit<QueryResult, 'changes'> & { changes?: PagedChanges } {
-  const { changes, ...page } = query.queryRecords({ ...input, maxChars: PAGE_CHARS_CAP });
-  return changes === undefined ? page : { ...page, changes: capChanges(changes) };
-}
-
-type PagedQuestion = {
-  index: number;
-  kind: string;
-  passed: boolean;
-  evidence: Record<string, string[]>;
-  omitted?: Record<string, number>;
-};
-
-/** Corta cada lista de `evidence` em `EVIDENCE_ITEMS_CAP` ids; `omitted` conta o que ficou de fora por lista. */
-function capEvidence({
-  evidence,
-  ...question
-}: GateEvaluation['questions'][number]): PagedQuestion {
-  const lists = Object.entries<string[]>(evidence);
-  const omitted = Object.fromEntries(
-    lists
-      .map(([name, ids]) => [name, ids.length - EVIDENCE_ITEMS_CAP] as const)
-      .filter(([, count]) => count > 0),
-  );
-  if (Object.keys(omitted).length === 0) return { ...question, evidence };
-  return {
-    ...question,
-    evidence: Object.fromEntries(
-      lists.map(([name, ids]) => [name, ids.slice(0, EVIDENCE_ITEMS_CAP)]),
-    ),
-    omitted,
-  };
-}
-
-/**
- * Única porta de `evaluateGate` para as tools: a evidência não tem teto no domínio, então o envelope
- * corta cada lista. `passed` e `marker` seguem intactos; o gate é sem estado, e o excedente sai com
- * um `select`/`where` mais estreito.
- */
-export function gatePage(
-  evaluation: GateEvaluation,
-): Omit<GateEvaluation, 'questions'> & { questions: PagedQuestion[] } {
-  return { ...evaluation, questions: evaluation.questions.map(capEvidence) };
 }

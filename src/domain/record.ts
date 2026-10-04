@@ -47,7 +47,14 @@ export const RelationKind = z.enum([
 ]);
 export type RelationKind = z.infer<typeof RelationKind>;
 
-const AuthorField = z.string().min(1).max(100);
+/** Surrogate solitário não vira UTF-8: o JCS do hash lançaria e a tool devolveria INTERNAL (TM3). */
+export const WELL_FORMED = 'must not contain a lone surrogate';
+
+const AuthorField = z
+  .string()
+  .min(1)
+  .max(100)
+  .refine((text) => text.isWellFormed(), WELL_FORMED);
 
 export const Author = z.strictObject({
   agent: AuthorField,

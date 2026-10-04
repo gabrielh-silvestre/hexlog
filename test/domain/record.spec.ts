@@ -57,6 +57,10 @@ describe('Author', () => {
       expect(Author.safeParse(value).success).toBe(false);
     },
   );
+
+  test.each(['agent', 'model', 'client'])('%s com surrogate solitário é inválido', (field) => {
+    expect(Author.safeParse({ ...author, [field]: 'x\ud800' }).success).toBe(false);
+  });
 });
 
 describe('Relation', () => {

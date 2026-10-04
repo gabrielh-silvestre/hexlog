@@ -2,13 +2,15 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { Gate, RecordType, RelationName } from '../../domain/definitions.ts';
 import { Hash, Name } from '../../domain/ids.ts';
-import { advertise, execute } from '../kernel.ts';
-import type { ToolDeps } from '../kernel.ts';
+import { advertise, execute, type ToolDeps, WRITE_ANNOTATIONS } from '../kernel.ts';
 
 const Breaking = z
   .boolean()
   .optional()
-  .describe('Required when the change breaks compatibility; raises the major version.');
+  .describe(
+    'Required when the change breaks compatibility; raises the major version, except for a definition ' +
+      'identical to the current one (a replay, `created: false`).',
+  );
 
 // D-17: sem array `warnings`; a divergência é o campo tipado `divergentVersions`.
 const Defined = z.object({
@@ -32,13 +34,6 @@ const DefineRelation = RelationName.safeExtend({ project: Name, breaking: Breaki
 
 const DefineGate = Gate.safeExtend({ project: Name, breaking: Breaking });
 
-const ANNOTATIONS = {
-  readOnlyHint: false,
-  destructiveHint: false,
-  idempotentHint: true,
-  openWorldHint: false,
-};
-
 /** Registra `define_type`, `define_relation` e `define_gate`: versões imutáveis de definição do projeto. */
 export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
@@ -53,7 +48,7 @@ export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void
         'the hash of an attachment.',
       inputSchema: advertise(DefineType),
       outputSchema: Defined,
-      annotations: ANNOTATIONS,
+      annotations: WRITE_ANNOTATIONS,
     },
     (args, ctx) =>
       execute(deps, { name: 'define_type', schema: DefineType, args, ctx }, (input) =>
@@ -72,7 +67,7 @@ export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void
         'again is a replay (`created: false`).',
       inputSchema: advertise(DefineRelation),
       outputSchema: Defined,
-      annotations: ANNOTATIONS,
+      annotations: WRITE_ANNOTATIONS,
     },
     (args, ctx) =>
       execute(deps, { name: 'define_relation', schema: DefineRelation, args, ctx }, (input) =>
@@ -91,7 +86,7 @@ export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void
         'is a replay (`created: false`).',
       inputSchema: advertise(DefineGate),
       outputSchema: Defined,
-      annotations: ANNOTATIONS,
+      annotations: WRITE_ANNOTATIONS,
     },
     (args, ctx) =>
       execute(deps, { name: 'define_gate', schema: DefineGate, args, ctx }, (input) =>

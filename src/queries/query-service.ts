@@ -52,8 +52,8 @@ const DEFAULT_LIMIT = 50;
  * (`SEARCH_MAX_CHARS`); a F5 reusa a constante no `.max()` do zod.
  */
 export const QUERY_TEXT_MAX_CHARS = 200;
-/** Padrão de `readAttachment` chamado sem `maxChars`; o kernel MCP sempre passa `PAGE_CHARS_CAP` (D-20). */
-const ATTACHMENT_PAGE_CHARS = 24_000;
+/** Padrão de `readAttachment` chamado sem `maxChars`; o kernel MCP o reusa como `PAGE_CHARS_CAP` (D-20). */
+export const ATTACHMENT_PAGE_CHARS = 24_000;
 
 export type QueryInput = Filters & {
   project: Name;

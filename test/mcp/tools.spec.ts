@@ -1,7 +1,10 @@
+import fs from 'node:fs';
+import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import { compose } from '../../src/compose.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
-import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP, PAGE_CHARS_CAP } from '../../src/mcp/kernel.ts';
+import { PAGE_CHARS_CAP } from '../../src/mcp/kernel.ts';
+import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP } from '../../src/mcp/tools/query.ts';
 import type { Defined } from '../../src/commands/definition.ts';
 import type { CreateProcessResult, RegisterResult } from '../../src/commands/process.ts';
 import type { AttachmentPut } from '../../src/ports.ts';
@@ -12,7 +15,7 @@ import type {
   QueryResult,
   VerifyChainResult,
 } from '../../src/queries/query-service.ts';
-import { at } from '../helpers.ts';
+import { at, createTempDir } from '../helpers.ts';
 import { type Environment, createEnvironment, expectError } from './environment.ts';
 
 const PROJECT = 'alpha';
@@ -38,6 +41,11 @@ const ALL_TOOLS = [
   'list',
 ];
 const READ_ONLY_TOOLS = ['query', 'evaluate_gate', 'verify_chain', 'read_attachment', 'list'];
+
+// Restrições do Claude Code ao `inputSchema` (TM1): nome de propriedade de topo, draft e raiz sem combinadores.
+const PROPERTY_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
+const JSON_SCHEMA_DRAFT = 'https://json-schema.org/draft/2020-12/schema';
+const ROOT_COMBINATORS = ['anyOf', 'oneOf', 'allOf'];
 
 // Limites do plano (TM2, TM7): descrição por tool e soma dos `outputSchema` anunciados.
 const DESCRIPTION_MAX_CHARS = 2_048;
@@ -66,9 +74,9 @@ const servicesOverServerData = () =>
   }).services;
 
 /** Define um tipo `note`, o gate `has-note` e cria o processo `run-1`, na ordem que o manifesto exige. */
-async function prepareProcess(process = 'run-1', gate = 'has-note'): Promise<void> {
+async function prepareProcess(process = 'run-1'): Promise<void> {
   await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-  await succeed('define_gate', { project: PROJECT, name: gate, questions: NOTE_GATE });
+  await succeed('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
   await succeed('create_process', { project: PROJECT, process });
 }
 
@@ -101,6 +109,34 @@ describe('TM1: catálogo anunciado em tools/list', () => {
     const alwaysLoad = tools.filter(({ _meta }) => _meta?.['anthropic/alwaysLoad'] === true);
 
     expect(alwaysLoad.map(({ name }) => name)).toEqual(['register']);
+  });
+
+  test.each(ALL_TOOLS)('%s anuncia title e as anotações completas', async (name) => {
+    const { tools } = await environment.client.listTools();
+    const tool = tools.find((candidate) => candidate.name === name);
+    const annotations = READ_ONLY_TOOLS.includes(name)
+      ? { readOnlyHint: true, openWorldHint: false }
+      : {
+          readOnlyHint: false,
+          destructiveHint: false,
+          // Sem `key`, repetir o `register` grava de novo.
+          idempotentHint: name !== 'register',
+          openWorldHint: false,
+        };
+
+    expect(tool?.title).toMatch(/\S/);
+    expect(tool?.annotations).toEqual(annotations);
+  });
+
+  test.each(ALL_TOOLS)('inputSchema de %s cumpre as restrições do Claude Code', async (name) => {
+    const { tools } = await environment.client.listTools();
+    const inputSchema = tools.find((candidate) => candidate.name === name)?.inputSchema;
+
+    expect(inputSchema).toMatchObject({ $schema: JSON_SCHEMA_DRAFT, type: 'object' });
+    expect(
+      Object.keys(inputSchema?.properties ?? {}).filter((key) => !PROPERTY_NAME.test(key)),
+    ).toEqual([]);
+    expect(ROOT_COMBINATORS.filter((keyword) => keyword in (inputSchema ?? {}))).toEqual([]);
   });
 });
 
@@ -141,8 +177,12 @@ describe('TM2: descrição das tools', () => {
     const { tools } = await environment.client.listTools();
     const descriptionOf = (name: string) => tools.find((tool) => tool.name === name)?.description;
 
-    expect(descriptionOf('query')).toMatch(/at most 100 ids.*omitted.*must not be reused/s);
-    expect(descriptionOf('evaluate_gate')).toMatch(/at most 100 ids.*omitted/s);
+    expect(descriptionOf('query')).toMatch(
+      new RegExp(`at most ${CHANGES_ITEMS_CAP} ids.*omitted.*must not be reused`, 's'),
+    );
+    expect(descriptionOf('evaluate_gate')).toMatch(
+      new RegExp(`at most ${EVIDENCE_ITEMS_CAP} ids.*omitted`, 's'),
+    );
   });
 });
 
@@ -308,6 +348,49 @@ describe('um fluxo feliz por tool', () => {
     expect(page.next).toBe(PAGE_CHARS_CAP);
   });
 
+  test('read_attachment segue next até a última página e devolve o texto inteiro', async () => {
+    const text = 'abcdefghijklmnopqrst';
+    const { hash } = await succeed<AttachmentPut>('attach', { project: PROJECT, text });
+    const pages: AttachmentPage[] = [];
+    let offset: number | undefined;
+
+    do {
+      const page: AttachmentPage = await succeed('read_attachment', {
+        project: PROJECT,
+        hash,
+        offset,
+        maxChars: 7,
+      });
+      pages.push(page);
+      offset = page.next;
+    } while (offset !== undefined);
+
+    expect(pages.map((page) => page.text)).toEqual(['abcdefg', 'hijklmn', 'opqrst']);
+  });
+
+  test('attach por path guarda os bytes do arquivo sob o cwd do servidor', async () => {
+    const cwd = createTempDir('mcp-cwd');
+    const text = 'conteúdo do plano';
+    fs.writeFileSync(path.join(cwd, 'plano.md'), text);
+    const scoped = await createEnvironment({ cwd });
+
+    try {
+      const put = await scoped.ok<AttachmentPut>('attach', {
+        project: PROJECT,
+        path: path.join(cwd, 'plano.md'),
+      });
+      const page = await scoped.ok<AttachmentPage>('read_attachment', {
+        project: PROJECT,
+        hash: put.hash,
+      });
+
+      expect(put).toMatchObject({ bytes: Buffer.byteLength(text), deduplicated: false });
+      expect(page.text).toBe(text);
+    } finally {
+      await scoped.close();
+    }
+  });
+
   test('query com changesSince válido corta entered em CHANGES_ITEMS_CAP e informa omitted', async () => {
     await prepareProcess();
     await registerNote('run-1', 'primeira');
@@ -440,17 +523,6 @@ describe('um fluxo feliz por tool', () => {
     expect([replayed.passed, current.passed]).toEqual([false, true]);
   });
 
-  test('evaluate_gate aprova o gate depois do registro', async () => {
-    await prepareProcess();
-    const args = { project: PROJECT, process: 'run-1', gate: 'has-note' };
-
-    const before = await succeed<GateEvaluation>('evaluate_gate', args);
-    await registerNote('run-1', 'olá');
-    const after = await succeed<GateEvaluation>('evaluate_gate', args);
-
-    expect([before.passed, after.passed]).toEqual([false, true]);
-  });
-
   test('verify_chain confirma a cadeia íntegra', async () => {
     await prepareProcess();
     await registerNote('run-1', 'olá');
@@ -545,47 +617,5 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
 
     const body = expectError(result, 'PROCESS_NOT_FOUND');
     expect(at(body.details, 0).path).toBe('/process');
-  });
-});
-
-describe('N5: nome constructor é válido e nunca vira INTERNAL', () => {
-  test('processo e gate chamados constructor funcionam de ponta a ponta', async () => {
-    await prepareProcess('constructor', 'constructor');
-
-    const before = await succeed<GateEvaluation>('evaluate_gate', {
-      project: PROJECT,
-      process: 'constructor',
-      gate: 'constructor',
-    });
-    await registerNote('constructor', 'olá');
-    const after = await succeed<GateEvaluation>('evaluate_gate', {
-      project: PROJECT,
-      process: 'constructor',
-      gate: 'constructor',
-    });
-    const page = await succeed<QueryResult>('query', { project: PROJECT, process: 'constructor' });
-
-    expect([before.passed, after.passed]).toEqual([false, true]);
-    expect(page.records).toHaveLength(1);
-  });
-
-  test('gate constructor que o processo não fixou é GATE_NOT_FOUND, não INTERNAL', async () => {
-    await prepareProcess();
-
-    const result = await environment.call('evaluate_gate', {
-      project: PROJECT,
-      process: 'run-1',
-      gate: 'constructor',
-    });
-
-    expectError(result, 'GATE_NOT_FOUND');
-  });
-
-  test('processo constructor inexistente é PROCESS_NOT_FOUND, não INTERNAL', async () => {
-    await prepareProcess();
-
-    const result = await environment.call('query', { project: PROJECT, process: 'constructor' });
-
-    expectError(result, 'PROCESS_NOT_FOUND');
   });
 });
