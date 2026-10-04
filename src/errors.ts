@@ -1,9 +1,11 @@
 import type { z } from 'zod';
+import type { RecordId } from './domain/ids.ts';
 
 /**
  * Um item do array `details` de `HexlogError` (§4.13): aponta o campo problemático via JSON Pointer.
  * `owners`/`allowed` são específicos de `VOCABULARY_VIOLATED` (P2): contexto opcional, não usado
- * pelos demais erros.
+ * pelos demais erros. `current`, `process` e `pid` são da 1.0 (D-26): versão vigente da linhagem
+ * (`null` se revogada), processo citado e pid do detentor do lock.
  */
 export type Detail = {
   path: string;
@@ -11,9 +13,15 @@ export type Detail = {
   message: string;
   owners?: string[];
   allowed?: string[];
+  current?: RecordId | null;
+  process?: string;
+  pid?: number;
 };
 
-/** Catálogo de códigos de erro de domínio (§4.13). */
+/**
+ * Catálogo de códigos de erro de domínio (§4.13). Na transição a união é aditiva: os códigos da 1.0
+ * convivem com os legados, que saem no corte.
+ */
 export type ErrorCode =
   | 'INVALID_INPUT'
   | 'INVALID_FILTER'
@@ -39,7 +47,16 @@ export type ErrorCode =
   | 'LOCK_LOST'
   | 'IO_ERROR'
   | 'INTERNAL'
-  | 'BREAKING_CHANGE';
+  | 'BREAKING_CHANGE'
+  | 'INVALID_RECORD'
+  | 'GATE_NOT_FOUND'
+  | 'IDEMPOTENCY_CONFLICT'
+  | 'LEGACY_DATA'
+  | 'INVALID_CURSOR'
+  | 'MARKER_NOT_FOUND'
+  | 'FORK_REJECTED'
+  | 'CYCLE_REJECTED'
+  | 'RELATION_NOT_FOUND';
 
 /** Erro de domínio do hexlog: todo handler MCP captura este tipo e devolve `{code, message, details}` (§4.13). */
 export class HexlogError extends Error {
