@@ -1,14 +1,18 @@
 import * as fs from 'node:fs';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import { anchor, hashLink, sha256hex, type Expected, type Link } from '../../src/domain/chain.ts';
-import type { ProcessRef } from '../../src/ports.ts';
+import type { Gate } from '../../src/domain/definitions.ts';
+import type { Manifest, ProcessRef } from '../../src/ports.ts';
 import { formatLine } from '../../src/shared/loader.ts';
 import { emptyManifest } from './chain-line.ts';
 
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
 const FIRST_MS = Date.parse(CREATED_AT);
-/** Texto de cada registro; com os demais campos da linha dá ~1,2 KB. */
-const TEXT_CHARS = 850;
+/**
+ * Texto de cada registro, medido num log real (~840 caracteres por registro típico); com os demais
+ * campos da linha dá ~1,2 KB. Um registro típico custa ao índice de busca 7 a 10 KiB e ~0,25 ms.
+ */
+const TEXT_CHARS = 840;
 
 const TYPES = ['note', 'milestone', 'verdict', 'decision'];
 const TARGET_AREAS = ['account', 'order', 'payment', 'session', 'login'];
@@ -53,12 +57,19 @@ const WORDS = [
 
 const hex = (value: number, width: number): string => value.toString(16).padStart(width, '0');
 
-/** Texto indexável e determinístico: palavras do banco em ordem pseudoaleatória fixa por posição. */
+/**
+ * Texto indexável e determinístico, de vocabulário aberto: palavras do banco em ordem
+ * pseudoaleatória fixa por posição, alternadas com termos únicos por registro (o vocabulário de um
+ * log real cresce com o log; só 36 palavras subestimam a memória e o custo do índice).
+ */
 function textFor(processIndex: number, seq: number): string {
   const words: string[] = [];
   let length = 0;
   for (let step = 0; length < TEXT_CHARS; step += 1) {
-    const word = WORDS[(seq * 7 + step * 13 + processIndex * 5) % WORDS.length]!;
+    const word =
+      step % 2 === 1
+        ? `t${(processIndex * 1_000_003 + seq * 101 + step).toString(36)}`
+        : WORDS[(seq * 7 + step * 13 + processIndex * 5) % WORDS.length]!;
     words.push(word);
     length += word.length + 1;
   }
@@ -95,11 +106,22 @@ function linkOf(ref: ProcessRef, processIndex: number, expected: Expected, batch
   return link;
 }
 
+/** Manifesto vazio, com `gates` fixados quando houver (o hash dos gates acompanha). */
+function manifestOf(ref: ProcessRef, gates: readonly Gate[]): Manifest {
+  const empty = emptyManifest(ref, CREATED_AT);
+  const fixed = Object.fromEntries(gates.map((gate) => [gate.name, gate]));
+  return {
+    ...empty,
+    fixed: { ...empty.fixed, gates: fixed },
+    hashes: { ...empty.hashes, gates: gates.length === 0 ? empty.hashes.gates : anchor(fixed) },
+  };
+}
+
 /** Processo encadeado de `count` elos em linhas de 1 a 3 elos (as de 2 ou mais levam `batch.key`). */
-function buildProcess(ref: ProcessRef, processIndex: number, count: number) {
+function buildProcess(ref: ProcessRef, processIndex: number, count: number, manifest: Manifest) {
   const records: Link[] = [];
   const lines: string[] = [];
-  let expected: Expected = { seq: 0, prevHash: anchor(emptyManifest(ref, CREATED_AT)) };
+  let expected: Expected = { seq: 0, prevHash: anchor(manifest) };
   for (let lineNumber = 0; records.length < count; lineNumber += 1) {
     const size = Math.min(1 + (lineNumber % 3), count - records.length);
     const links: Link[] = [];
@@ -120,6 +142,8 @@ export type RecordsCorpusOptions = {
   project?: string;
   processes?: string[];
   recordsPerProcess: number;
+  /** Gates fixados no manifesto de cada processo. */
+  gates?: Gate[];
 };
 
 export type RecordsCorpus = {
@@ -134,13 +158,14 @@ export type RecordsCorpus = {
  * linhas por `formatLine`, sem passar pelo `ProcessStore`.
  */
 export function writeRecordsCorpus(dataDir: string, options: RecordsCorpusOptions): RecordsCorpus {
-  const { project = 'budget', processes = ['proc1'], recordsPerProcess } = options;
+  const { project = 'budget', processes = ['proc1'], recordsPerProcess, gates = [] } = options;
   const refs = processes.map((name) => ({ project, process: name }));
   const records = refs.flatMap((ref, processIndex) => {
-    const built = buildProcess(ref, processIndex, recordsPerProcess);
+    const manifest = manifestOf(ref, gates);
+    const built = buildProcess(ref, processIndex, recordsPerProcess, manifest);
     const paths = processPaths(dataDir, ref);
     fs.mkdirSync(paths.dir, { recursive: true });
-    fs.writeFileSync(paths.manifest, JSON.stringify(emptyManifest(ref, CREATED_AT)));
+    fs.writeFileSync(paths.manifest, JSON.stringify(manifest));
     fs.writeFileSync(paths.log, built.text);
     return built.records;
   });

@@ -38,7 +38,7 @@ export type Expected = { seq: number; prevHash: Hash };
 // canonicalize devolve undefined para valor sem forma JSON (undefined, função, símbolo) e lança para
 // NaN, BigInt e surrogate solitário. Devolver '' para o primeiro caso daria o mesmo hash a entradas
 // diferentes, então vira INTERNAL: só chega aqui valor que os schemas não validaram.
-function jcs(value: unknown): string {
+export function jcs(value: unknown): string {
   const text = canonicalize(value);
   if (text === undefined) throw new HexlogError('INTERNAL', 'value is not canonicalizable');
   return text;
