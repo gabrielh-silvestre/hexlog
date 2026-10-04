@@ -57,7 +57,8 @@ export function writeSynced(file: string, content: string | Uint8Array): void {
   }
 }
 
-function fsyncDirectory(dir: string): void {
+/** `fsync` de um diretório (ou de qualquer caminho abrível em leitura); `archive.ts` reusa. */
+export function fsyncDirectory(dir: string): void {
   const fd = fs.openSync(dir, 'r');
   try {
     fs.fsyncSync(fd);

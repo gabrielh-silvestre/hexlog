@@ -138,6 +138,7 @@ describe('N11', () => {
     'eslint-config-prettier': '10.1.8',
     husky: '9.1.7',
     'lint-staged': '17.5.1',
+    tar: '7.5.22',
   };
 
   test('dependencies bate exatamente com o manifesto de §2.2 (sem ^/~/faixas)', () => {

@@ -10,6 +10,8 @@ import { execFileSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { build } from './build.ts';
+import { detectLegacy } from '../src/adapters/fs/data-format.ts';
+import { archiveLegacy, inspectLegacy } from '../src/archive.ts';
 import { dataDir } from '../src/directory.ts';
 import { expectedRules, runRealHook } from '../src/guard.ts';
 import {
@@ -18,6 +20,7 @@ import {
   writeSkillFolder,
   needsMcpRegistration,
   verifyInstallation,
+  versionDirOf,
   type Bundles,
 } from '../src/installation.ts';
 
@@ -130,7 +133,7 @@ async function install(): Promise<void> {
   const D = dataDir(process.env);
   const expected = expectedRules(D, home, process.execPath, version, names);
   const settingsPath = path.join(home, '.claude', 'settings.json');
-  const { changed } = registerGuard({ settingsPath, expected });
+  const { changed, removed } = registerGuard({ settingsPath, expected });
 
   for (const name of names) {
     writeSkillFolder(home, name, path.join(repoRoot, 'skills', name));
@@ -145,6 +148,7 @@ async function install(): Promise<void> {
   console.log(`  server sha256: ${result.manifest.sha256.server}`);
   console.log(`  hook sha256: ${result.manifest.sha256.hook}`);
   console.log(`  settings.json: ${changed ? 'updated' : 'already correct'}`);
+  for (const rule of removed) console.log(`  removed deny rule: ${rule}`);
   for (const warning of result.warnings) console.log(`  warning: ${warning}`);
 }
 
@@ -175,14 +179,59 @@ async function check(): Promise<void> {
   process.exitCode = result.exit;
 }
 
+const KNOWN_FLAGS = new Set(['--check', '--archive-0x']);
+
+type Mode = 'check' | 'list' | 'archive' | 'install';
+
+/**
+ * `--check` nunca arquiva; dado 0.x sem `--archive-0x` só lista; sem dado 0.x instala como sempre.
+ * `hasLegacy` é função para `--check` nem tocar em `<D>` (um `<D>` ilegível faria `detectLegacy` lançar).
+ */
+function pickMode(args: string[], hasLegacy: () => boolean): Mode {
+  if (args.includes('--check')) return 'check';
+  if (!hasLegacy()) return 'install';
+  return args.includes('--archive-0x') ? 'archive' : 'list';
+}
+
+function listLegacy(D: string): void {
+  const { files, dirs } = inspectLegacy(D);
+  console.log(`0.x data found in ${D}; rerun with --archive-0x to archive it into ${D}/archive/`);
+  for (const dir of dirs) console.log(`  dir: ${dir}`);
+  for (const file of files)
+    console.log(`  file: ${file.path} (${file.size} bytes) sha256 ${file.sha256}`);
+  process.exitCode = 2;
+}
+
 async function main(): Promise<void> {
   try {
-    if (process.argv.includes('--check')) {
+    const args = process.argv.slice(2);
+    const unknown = args.find((arg) => !KNOWN_FLAGS.has(arg));
+    if (unknown !== undefined) {
+      throw new Error(`unknown argument: ${unknown} (accepted: --check, --archive-0x)`);
+    }
+    const D = dataDir(process.env);
+    const mode = pickMode(args, () => detectLegacy(D).length > 0);
+    if (mode === 'check') {
       await check();
+    } else if (mode === 'list') {
+      listLegacy(D);
     } else {
+      if (mode === 'archive') {
+        const libDir = path.dirname(versionDirOf(os.homedir(), readPackageJsonVersion()));
+        const { archived, tarPath, files, dirs } = archiveLegacy(D, {
+          libDir,
+          now: () => new Date(),
+        });
+        if (archived && tarPath !== undefined) {
+          console.log(`archived ${files} file(s) of 0.x data into ${tarPath}`);
+        } else if (archived) {
+          console.log(`removed ${dirs} empty 0.x directories`);
+        }
+      }
       await install();
     }
   } catch (error) {
+    // `ArchiveError` também cai aqui: mensagem em stderr, exit 1 e nenhuma instalação.
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   }
