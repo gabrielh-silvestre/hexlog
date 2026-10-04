@@ -18,10 +18,14 @@ Corpus determinístico para busca/volume, scripts que constroem bundles sob dema
 | `boundaries/` | Árvore `src/**` de fixtures lintada por `boundaries.spec.ts` (nunca importada nem spawnada): uma violação por regra de `eslint.boundaries.js`, arquivos limpos e arquivos-âncora que o `tsc` tipa. Fora do `eslint .` do repo (`eslint.config.js` a ignora). |
 | `domains/` | `omc.ts` e `rdsc.ts`: configuração de cada fluxo (tipos, nomes de relação e gates) como dado (`types`, `relations`, `gates`); usados por `domain/gate.spec.ts`. Importados direto pelo jest, não rodam como processo filho. |
 | `fake-mcp-install.ts` | Substitui `claude mcp add`/`remove` via `HEXLOG_REGISTER_MCP`: grava `mcpServers.hexlog` em `~/.claude.json` na mesma forma real (`command`+`args`+`env`), sem exigir o binário `claude`. Usado por `guard.spec.ts`. |
+| `chain-line.ts` | `chainLine`: lote de `count` elos encadeados a partir do fim do log, numa linha só; `linkAt`: elo com os campos de teste (`overrides` troca qualquer um), base de `chainLine` e de `chainOf` em `shared/loader.spec.ts`; `emptyManifest`: manifesto sem definições fixas com os três hashes do conjunto vazio, único construtor do manifesto vazio (inclusive em `records-corpus.ts`). Importado pelo jest (`adapters/process-store.spec.ts`) e pelos filhos `crash-writer.ts` e `lock-holder.ts`. |
+| `crash-writer.ts` | Processo filho do kill -9 (TF1, SE3b): grava lotes de 10 registros sem parar pelo `ProcessStore` real e imprime a `key` de cada lote antes de gravar; o pai mata com SIGKILL no meio do lote. Usado por `adapters/process-store.spec.ts`. |
+| `lock-holder.ts` | Processo filho do lock por pid (P2, TF2, TF4) em quatro modos: `rounds`, `hold`, `write` e `write-gated`. Usado por `adapters/lock.spec.ts`. |
+| `records-corpus.ts` | `writeRecordsCorpus`: corpus 1.0 determinístico gravado direto em `<dataDir>/.v1/` (cadeia por `hashLink`, linhas por `formatLine`), sem passar pelo `ProcessStore`. Importado direto pelo jest (`adapters/load.budget.spec.ts`), não spawnado. |
 
 ## For AI Agents
 ### Working In This Directory
-- Todo arquivo aqui, exceto `corpus.ts`, `boundaries/` e `domains/`, é pensado para rodar como **processo filho** (`spawn`/`spawnSync`), nunca `import`ado pelo jest — várias APIs usadas (`import.meta.dirname`/`main`) não sobrevivem ao transform CJS do ts-jest.
+- Todo arquivo aqui, exceto `corpus.ts`, `records-corpus.ts`, `chain-line.ts`, `boundaries/` e `domains/`, é pensado para rodar como **processo filho** (`spawn`/`spawnSync`), nunca `import`ado pelo jest — várias APIs usadas (`import.meta.dirname`/`main`) não sobrevivem ao transform CJS do ts-jest.
 - `argv`/`env` de cada probe são o contrato com quem o spawna: mudar a assinatura de um fixture exige atualizar a chamada correspondente em `test/*.spec.ts` no mesmo commit.
 - `server-probe.ts` e `child-probe.ts` existem para provar que o **manifesto de deps de runtime** (§2.2) sobrevive ao bundle/ao ESM real; ao adicionar uma dependência de runtime ao servidor, replique-a aqui.
 
