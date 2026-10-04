@@ -67,6 +67,8 @@ export type QueryInput = Filters & {
    * Marcador de uma consulta anterior: `changes` diz o que entrou e saiu do resultado desde então,
    * só na 1ª página. Entra no hash dos filtros que o cursor prende (`hashOf`): da página 2 em diante,
    * reenvie o mesmo `changesSince` com o `cursor`, senão `INVALID_CURSOR` (`filters-mismatch`).
+   * O marcador vale só para o alcance em que foi emitido: no alcance projeto, o que ele não nomeia
+   * é lido como vazio (o do `register` nomeia um processo só e acrescenta ids a `changes.entered`).
    */
   changesSince?: Marker;
   /** Teto de caracteres do JSON da página (D-20); o 1º registro sai inteiro mesmo acima dele. */
@@ -178,7 +180,8 @@ export type QueryService = {
    * `records: []`. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de
    * `lastId` sobre a leitura da página 1.
    *
-   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: em branco ou acima de `QUERY_TEXT_MAX_CHARS`),
+   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: acima de `QUERY_TEXT_MAX_CHARS` ou sem termo
+   * pesquisável, `no-terms`, como `''`, `'  '` e `'!!!'`),
    * `INVALID_CURSOR`, `MARKER_NOT_FOUND`, `PROJECT_NOT_FOUND` (alcance projeto), `PROCESS_NOT_FOUND`,
    * `PROCESS_CORRUPTED` (com `details[0].process`), `PROCESS_TOO_LARGE` e `IO_ERROR`.
    */
@@ -235,18 +238,24 @@ function targetOf({ project, scope = 'process', process }: QueryInput): ReadTarg
   return { project, scope, process };
 }
 
-function assertValid({ limit, text }: QueryInput): void {
+/** `no-terms` vem depois de `too-long` para nunca tokenizar um texto acima do teto. */
+function assertValid({ limit, text }: QueryInput, search: SearchIndex): void {
   if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1)) {
     throw invalidFilter('/limit', 'out-of-range', 'limit must be a positive integer');
   }
-  if (text?.trim() === '') {
-    throw invalidFilter('/text', 'blank', 'text must have at least one non-blank character');
-  }
-  if (text !== undefined && text.length > QUERY_TEXT_MAX_CHARS) {
+  if (text === undefined) return;
+  if (text.length > QUERY_TEXT_MAX_CHARS) {
     throw invalidFilter(
       '/text',
       'too-long',
       `text must have at most ${QUERY_TEXT_MAX_CHARS} characters`,
+    );
+  }
+  if (search.terms(text).length === 0) {
+    throw invalidFilter(
+      '/text',
+      'no-terms',
+      'text must have at least one searchable term; spaces and punctuation alone match nothing',
     );
   }
 }
@@ -368,7 +377,7 @@ export function createQueryService(deps: {
 
   return {
     queryRecords(input) {
-      assertValid(input);
+      assertValid(input, search);
       const target = targetOf(input);
       const filters: Filters = omitBy(pick(input, FILTER_KEYS), isUndefined);
       const hash = hashOf(filters, input.changesSince);

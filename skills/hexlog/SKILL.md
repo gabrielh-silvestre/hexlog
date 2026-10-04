@@ -71,7 +71,8 @@ relação; a de gate é do agente:
 | `define_relation` | Alargar `from` ou `to` | Trocar `kind` ou estreitar as listas |
 | `define_gate` | Toda mudança é minor: o servidor não detecta quebra | **Você julga**: mande `breaking: true` quando a mudança aperta o gate, como pergunta nova ou seletor mais estreito em `approved` ou `occurred` |
 
-`breaking: true` sempre sobe o major, mesmo que a mudança fosse compatível.
+`breaking: true` sempre sobe o major, mesmo que a mudança fosse compatível, exceto
+com definição idêntica à vigente (replay, `created: false`).
 
 **Anexo e `breaking`.** Acrescentar `format: "attachment"` a um campo que já
 existia é quebra de tipo: a versão marcada se define com `breaking: true`. Por

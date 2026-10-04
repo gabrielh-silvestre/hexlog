@@ -493,6 +493,23 @@ describe('create, read e list', () => {
   });
 });
 
+// Fixa o comportamento atual, não uma proteção: `<D>` é confiável (ADR 0009, item 9) e o store não
+// recusa symlink. Se o endurecimento de `io.ts#readIfPresent` entrar, este teste vira recusa.
+describe('records.jsonl que é symlink (decisão do #63 M12)', () => {
+  test('o store lê e grava pelo destino do link, que segue um symlink', async () => {
+    const { store, ref, logFile } = setup();
+    const target = path.join(createTempDir('process-store-target'), 'real.jsonl');
+    fs.renameSync(logFile, target);
+    fs.symlinkSync(target, logFile);
+
+    await append(store, ref, 1);
+
+    expect(fs.lstatSync(logFile).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(target, 'utf8')).not.toBe('');
+    expect(store.read(ref).text).toBe(fs.readFileSync(target, 'utf8'));
+  });
+});
+
 describe('nomes e manifesto recusados antes de qualquer I/O (N1, N3)', () => {
   test.each([
     ['process com ../', { project: 'demo', process: '../../escaped' }],

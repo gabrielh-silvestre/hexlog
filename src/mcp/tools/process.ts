@@ -53,7 +53,8 @@ const REGISTER_DESCRIPTION =
   'the same process. Pass key to make a retry safe: the same key with the same batch returns the ' +
   'stored result with replayed=true; with a different batch it fails with IDEMPOTENCY_CONFLICT. After ' +
   'IO_ERROR the outcome is uncertain: resend with the same key. Returns the ids in input order and ' +
-  'the marker (head of the process) to read from afterwards.';
+  'the marker (head of the process) to read from afterwards. A marker covers exactly the processes ' +
+  'it names; in project scope, any process it does not name is read as empty.';
 
 /** `create_process` e `register`: cada uma só repassa a entrada validada ao serviço de processo. */
 export function registerProcessTools(server: McpServer, deps: ToolDeps): void {

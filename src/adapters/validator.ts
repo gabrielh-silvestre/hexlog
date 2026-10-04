@@ -2,6 +2,7 @@ import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.
 import addFormats from 'ajv-formats';
 import { isPlainObject, kebabCase } from 'es-toolkit';
 import safeRegex from 'safe-regex2';
+import { ATTACHMENT_FORMAT } from '../domain/definitions.ts';
 import { Hash } from '../domain/ids.ts';
 import { capDetails, pointer as jsonPointer, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
@@ -65,10 +66,19 @@ const UNSAFE_REGEX_MESSAGE =
   'rejected even when linear. Rewrite it with a single character class (^[a-z0-9-]+$) or ' +
   'without a repeated group';
 
+/** As duas posições em que `attachmentFields` reconhece a marca: o campo e os itens dele. */
+const ATTACHMENT_MARK_POSITION = /^\/properties\/[^/]+(\/items)?$/;
+
+const MISPLACED_ATTACHMENT_MESSAGE =
+  `format "${ATTACHMENT_FORMAT}" is only recognised on a top-level property ` +
+  '(/properties/<field>) or on the items of a top-level list (/properties/<field>/items); ' +
+  'for an optional attachment use type: ["string","null"], or a list whose items carry the mark';
+
 /**
  * Percorre só as palavras-chave que carregam subschemas (nunca `const`/`enum`/`default`, que são
- * dado) e aponta cada `pattern` e cada chave de `patternProperties` que a `safe-regex2` recusa, e
- * cada `pattern` cujo subschema não tem `maxLength` inteiro até `PATTERN_MAX_LENGTH`.
+ * dado) e aponta cada `pattern` e cada chave de `patternProperties` que a `safe-regex2` recusa, cada
+ * `pattern` cujo subschema não tem `maxLength` inteiro até `PATTERN_MAX_LENGTH` e cada
+ * `format: "attachment"` fora das posições que `attachmentFields` reconhece.
  */
 function patternDetails(root: unknown): Detail[] {
   const details: Detail[] = [];
@@ -77,6 +87,9 @@ function patternDetails(root: unknown): Detail[] {
 
   const visit = (node: unknown, pointer: string): void => {
     if (!isPlainObject(node)) return;
+
+    if (node.format === ATTACHMENT_FORMAT && !ATTACHMENT_MARK_POSITION.test(pointer))
+      reject(`${pointer}/format`, MISPLACED_ATTACHMENT_MESSAGE);
 
     if (typeof node.pattern === 'string') {
       const path = `${pointer}/pattern`;
@@ -116,7 +129,7 @@ function createCompiler(allErrors: boolean) {
   const ajv = new Ajv2020.default({ strict: true, allErrors, logger: false });
   addFormats.default(ajv);
   // Formato `attachment` (D-16): o mesmo `Hash` do domínio (sha256 em hexadecimal minúsculo).
-  ajv.addFormat('attachment', (value: string) => Hash.safeParse(value).success);
+  ajv.addFormat(ATTACHMENT_FORMAT, (value: string) => Hash.safeParse(value).success);
 
   const compile = (schema: Record<string, unknown>) => {
     // O `removeSchema` do `finally` apaga por `$id`: com um `$id` que o ajv já conhece (os
@@ -164,6 +177,10 @@ function messageOf(error: unknown): string {
  * todo `pattern` e toda chave de `patternProperties` passam pela `safe-regex2`, e todo `pattern`
  * exige `maxLength` inteiro de até `PATTERN_MAX_LENGTH` no mesmo subschema. Esses erros saem com o
  * `path` do campo (`.../pattern`, relativo ao schema) e `code` `invalid-schema`.
+ *
+ * A marca `format: "attachment"` só vale em `/properties/<campo>` e `/properties/<campo>/items`,
+ * as duas posições que `attachmentFields` reconhece; em qualquer outra (aninhada, `anyOf`, `$defs`)
+ * o `checkSchema` recusa com `.../format`, porque o `register` nunca conferiria o anexo ali.
  *
  * O `maxLength` só impede que o `validate` rode o regex sobre string acima do teto (o ajv o avalia
  * antes do `pattern` e, sem `allErrors`, para no primeiro erro). Ele NÃO limita o dano de um regex

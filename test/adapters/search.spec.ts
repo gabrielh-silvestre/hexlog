@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
+import fc from 'fast-check';
 import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { RecordId } from '../../src/domain/ids.ts';
 import type { HexRecord } from '../../src/domain/record.ts';
@@ -166,6 +167,29 @@ describe('createSearchIndex', () => {
     expect(ids).toHaveLength(records.length);
     // Sem o dedupe passa de 12 s; com ele o custo é o do índice (~100 ms).
     expect(elapsed).toBeLessThanOrEqual(2_000);
+  });
+});
+
+describe('createSearchIndex: terms', () => {
+  test('devolve os termos distintos da consulta, sem acento e em minúsculas', () => {
+    expect(createSearchIndex().terms('Ação ação, WEBHOOK')).toEqual(['acao', 'webhook']);
+  });
+
+  // Garante que `terms` nunca recusa texto que o motor casaria: sem termo a busca é vazia, e com
+  // termo o registro que contém o próprio texto é achado.
+  test('propriedade: texto sem termo não acha nada, e com termo acha o registro que o contém', () => {
+    const symbols = fc.string({ unit: fc.constantFrom(...'aB9é!&:§ ,.=+$-́ 😀'), maxLength: 12 });
+    const index = createSearchIndex();
+
+    fc.assert(
+      fc.property(fc.oneof(symbols, fc.string({ unit: 'grapheme', maxLength: 12 })), (text) => {
+        const record = makeRecord({ data: { text } });
+
+        const found = index.search(PROCESS, [record], text).length === 1;
+
+        expect(found).toBe(index.terms(text).length > 0);
+      }),
+    );
   });
 });
 

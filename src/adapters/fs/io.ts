@@ -39,7 +39,12 @@ export function orIfMissing<T, F>(operation: () => T, fallback: F): T | F {
   }
 }
 
-/** Lê `file`; arquivo inexistente vira `undefined`, qualquer outro erro sai cru. */
+/**
+ * Lê `file`; arquivo inexistente vira `undefined`, qualquer outro erro sai cru. `ponytail:` segue
+ * symlink e um FIFO trava o servidor (`<D>` é confiável, ADR 0009 item 9); se `<D>` deixar de ser,
+ * abrir com `O_NOFOLLOW` e recusar arquivo não regular, aqui e nos outros pontos que seguem link
+ * (`statSync` do tamanho do log, `openSync` de append).
+ */
 export function readIfPresent(file: string): string | undefined {
   return orIfMissing(() => fs.readFileSync(file, 'utf8'), undefined);
 }

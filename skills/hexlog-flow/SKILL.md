@@ -154,8 +154,11 @@ fechado: `PROCESS_CORRUPTED` com o processo em `details[0].process`.
 Toda leitura devolve `marker` (a cabeça de cada processo lido). Passe-o como
 `changesSince` para saber o que `entered` e o que `left` (com `reason`) desde
 então, e como `marker` do `evaluate_gate` para reproduzir a avaliação sobre os
-registros daquele instante. A lista de novidades vem só na primeira página; nas
-seguintes, reenvie o mesmo `changesSince` junto do `cursor`, senão
+registros daquele instante. O marcador cobre exatamente os processos que nomeia:
+no alcance projeto, o que ele não nomeia é lido como vazio. O `marker` do
+`register` nomeia só o processo gravado, então use-o como `changesSince` ou como
+`marker` de gate apenas no alcance processo. A lista de novidades vem só na
+primeira página; nas seguintes, reenvie o mesmo `changesSince` junto do `cursor`, senão
 `INVALID_CURSOR`. Se a resposta traz `changes.omitted`, as listas são parciais e
 esse marcador não deve ser reusado: releia tudo (`cursor`, e `includeNonCurrent`
 para o que saiu). Cursor, marcador ou `changesSince` que não casam com o dado

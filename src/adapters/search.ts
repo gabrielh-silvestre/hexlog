@@ -153,6 +153,7 @@ export function createSearchIndex(budget = SEARCH_INDEX_BUDGET_CHARS): SearchInd
   }
 
   return {
+    terms: queryTerms,
     search(process, records, text, allowed) {
       const key = `${process.project}/${process.process}`;
       if (records.length === 0) return [];

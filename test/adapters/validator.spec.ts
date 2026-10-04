@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { createValidator, PATTERN_MAX_LENGTH } from '../../src/adapters/validator.ts';
-import type { RecordType } from '../../src/domain/definitions.ts';
+import { attachmentFields, type RecordType } from '../../src/domain/definitions.ts';
 
 const validator = createValidator();
 
@@ -140,6 +140,84 @@ describe('checkSchema', () => {
     });
   });
 
+  describe('format attachment (D-16)', () => {
+    const mark = { type: 'string', format: 'attachment' };
+    const misplaced = (path: string) => [
+      { path, code: 'invalid-schema', message: expect.stringContaining('["string","null"]') },
+    ];
+
+    test('aceita a marca no campo de primeiro nível e nos itens da lista', () => {
+      expect(
+        validator.checkSchema({
+          type: 'object',
+          properties: { file: mark, files: { type: 'array', items: mark } },
+        }),
+      ).toEqual([]);
+    });
+
+    test('aceita a marca em campo opcional escrito como type ["string","null"]', () => {
+      expect(
+        validator.checkSchema({
+          type: 'object',
+          properties: { file: { type: ['string', 'null'], format: 'attachment' } },
+        }),
+      ).toEqual([]);
+    });
+
+    test('recusa a marca em objeto aninhado, com o path do campo e a saída na mensagem', () => {
+      const schema = {
+        type: 'object',
+        properties: { outer: { type: 'object', properties: { file: mark } } },
+      };
+
+      expect(validator.checkSchema(schema)).toEqual(
+        misplaced('/properties/outer/properties/file/format'),
+      );
+    });
+
+    test('recusa a marca em anyOf dentro de campo de primeiro nível', () => {
+      const schema = {
+        type: 'object',
+        properties: { file: { anyOf: [mark, { type: 'null' }] } },
+      };
+
+      expect(validator.checkSchema(schema)).toEqual(misplaced('/properties/file/anyOf/0/format'));
+    });
+
+    // As marcas que o checkSchema aceita têm de ser as que attachmentFields devolve: marca aceita e
+    // ignorada nunca seria conferida pelo register.
+    test.each<[string, RecordType, boolean]>([
+      ['campo', { type: 'object', properties: { a: mark } }, true],
+      [
+        'itens do campo',
+        { type: 'object', properties: { a: { type: 'array', items: mark } } },
+        true,
+      ],
+      [
+        'campo anulável',
+        { type: 'object', properties: { a: { type: ['string', 'null'], format: 'attachment' } } },
+        true,
+      ],
+      [
+        'objeto aninhado',
+        { type: 'object', properties: { b: { type: 'object', properties: { a: mark } } } },
+        false,
+      ],
+      ['anyOf do campo', { type: 'object', properties: { a: { anyOf: [mark] } } }, false],
+      ['oneOf do campo', { type: 'object', properties: { a: { oneOf: [mark] } } }, false],
+      ['allOf do campo', { type: 'object', properties: { a: { allOf: [mark] } } }, false],
+      [
+        '$defs',
+        { type: 'object', properties: { a: { type: 'string' } }, $defs: { a: mark } },
+        false,
+      ],
+      ['additionalProperties', { type: 'object', additionalProperties: mark }, false],
+    ])('marca em %s: aceita só se attachmentFields a reconhece', (_position, schema, accepted) => {
+      expect(validator.checkSchema(schema)).toHaveLength(accepted ? 0 : 1);
+      expect(attachmentFields(schema)).toEqual(accepted ? ['a'] : []);
+    });
+  });
+
   describe('regex (ReDoS)', () => {
     const unsafe = '^(\\w+\\s?)*$';
     const invalidSchema = (path: string) => [
@@ -252,6 +330,17 @@ describe('checkSchema', () => {
         expect(validator.checkSchema(schema)).toEqual([]);
       });
     });
+
+    describe.each(keywordCases.filter(([keyword]) => keyword !== 'properties'))(
+      'format attachment dentro de %s',
+      (_keyword, wrap, base) => {
+        test('recusa a marca, com o ponteiro do format', () => {
+          const schema = wrap({ type: 'string', format: 'attachment' });
+
+          expect(validator.checkSchema(schema)).toEqual(invalidSchema(`${base}/format`));
+        });
+      },
+    );
 
     test('ignora os valores em array de dependencies, que não são subschema', () => {
       expect(validator.checkSchema({ type: 'object', dependencies: { a: ['b'] } })).toEqual([]);

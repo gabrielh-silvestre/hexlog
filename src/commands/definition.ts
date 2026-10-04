@@ -122,7 +122,11 @@ const gateRule: Rule<'gates'> = {
   classify: () => 'compatible',
 };
 
-/** Versão a gravar sobre `previous` (D-11); `breaking: true` sobe o major mesmo sem quebra. */
+/**
+ * Versão a gravar sobre `previous` (D-11); `breaking: true` sobe o major mesmo sem quebra. A única
+ * exceção é a definição idêntica à vigente: `defineVersioned` a devolve como replay
+ * (`created: false`) antes de chamar esta função.
+ */
 function targetVersion<K extends DefinitionKind>(
   rule: Rule<K>,
   previous: { version: string; definition: DefinitionOf[K] } | undefined,

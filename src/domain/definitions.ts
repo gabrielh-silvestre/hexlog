@@ -158,7 +158,7 @@ export function classifyRelationChange(previous: RelationName, next: RelationNam
   return keepsShape ? 'compatible' : 'breaking';
 }
 
-const ATTACHMENT_FORMAT = 'attachment';
+export const ATTACHMENT_FORMAT = 'attachment';
 
 function hasAttachmentFormat(fieldSchema: unknown): boolean {
   if (!isPlainObject(fieldSchema)) return false;

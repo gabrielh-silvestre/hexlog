@@ -227,4 +227,10 @@ export type SearchIndex = {
     text: string,
     allowed?: ReadonlySet<RecordId>,
   ): RecordId[];
+  /**
+   * Termos pesquisáveis de `text`, pelo mesmo tokenizador de `search` (distintos, sem acento, em
+   * minúsculas). Vazio quando `text` não tem nenhum (só espaço ou pontuação): `search` não casaria
+   * nada, e quem consulta recusa em vez de devolver `[]`.
+   */
+  terms(text: string): string[];
 };

@@ -32,7 +32,7 @@ describe('queries/ só enxerga o lado de leitura das portas (ISP)', () => {
       store: { read: unused, readManifest: unused, list: () => [], listProjects: () => ['p'] },
       definitions: { names: () => [], versions: () => [] },
       attachments: { status: unused, read: unused },
-      search: { search: () => [] },
+      search: { search: () => [], terms: () => [] },
     });
 
     expect(service.list({})).toEqual({ projects: [{ name: 'p', processes: 0 }] });

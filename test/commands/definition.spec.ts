@@ -3,7 +3,11 @@ import canonicalize from 'canonicalize';
 import { omit } from 'es-toolkit';
 import { createValidator } from '../../src/adapters/validator.ts';
 import { createDefinitionService } from '../../src/commands/definition.ts';
-import type { DefineGateInput, DefineRelationInput } from '../../src/commands/definition.ts';
+import type {
+  DefineGateInput,
+  DefineRelationInput,
+  Defined,
+} from '../../src/commands/definition.ts';
 import { hashOfJcs } from '../../src/domain/chain.ts';
 import { compareVersions } from '../../src/domain/definitions.ts';
 import type { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts';
@@ -248,9 +252,53 @@ describe('replay idempotente', () => {
     expect(replay).toEqual({ ...first, created: false });
     expect(writes).toEqual([]);
   });
+
+  test.each<[string, (s: ReturnType<typeof setup>['service']) => Defined, DefinitionKind, string]>([
+    [
+      'tipo',
+      (s) => s.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA, breaking: true }),
+      'types',
+      NAME,
+    ],
+    ['gate', (s) => s.defineGate(gate({ breaking: true })), 'gates', 'ready'],
+  ])(
+    '%s: breaking: true com a definição idêntica à vigente é replay, sem subir a major',
+    (_kind, define, kind, name) => {
+      const { service, writes, versions } = setup();
+      const first = define(service);
+      writes.length = 0;
+
+      const replay = define(service);
+
+      expect(replay).toEqual({ ...first, created: false });
+      expect(replay.version).toBe('1.0');
+      expect(writes).toEqual([]);
+      expect(versions(kind, name)).toEqual(['1.0']);
+    },
+  );
 });
 
 describe('escritor concorrente ocupa a versão alvo', () => {
+  test('primeira versão de nome novo com breaking: true converge para 1.0 como replay', () => {
+    const { service, seed, racing, versions } = setup();
+    racing(() => seed('types', NAME, '1.0', BASE_SCHEMA));
+
+    const defined = service.defineType({
+      project: PROJECT,
+      name: NAME,
+      schema: BASE_SCHEMA,
+      breaking: true,
+    });
+
+    expect(defined).toEqual({
+      name: NAME,
+      version: '1.0',
+      hash: hashOfJcs(BASE_SCHEMA),
+      created: false,
+    });
+    expect(versions('types', NAME)).toEqual(['1.0']);
+  });
+
   test('mesma definição gravada por outro escritor vira replay', () => {
     const { service, seed, racing, versions } = setup();
     service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });

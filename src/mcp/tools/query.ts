@@ -19,7 +19,8 @@ const LIMIT_MAX = 200;
 // Tetos de entrada da query (docs/tetos-dominio-v1.md): palpites de CPU e de tamanho de mensagem.
 const IDS_MAX = 200;
 const WHERE_KEYS_MAX = 50;
-// O marcador tem uma chave por processo lido e é devolvido pelo servidor: o teto fica acima do que o cursor suporta.
+// O marcador tem uma chave por processo lido e é devolvido pelo servidor. Só com nomes de ~42 caracteres
+// ou mais o teto fica acima do que o cursor suporta; com nomes menores o cursor pagina além de 200 e o zod recusa antes.
 const MARKER_KEYS_MAX = 200;
 const TOO_MANY_KEYS = 'has too many keys';
 
@@ -146,15 +147,19 @@ const QUERY_DESCRIPTION =
   'changesSince with the cursor on later pages, or INVALID_CURSOR. changes lists at most 100 ' +
   'ids in entered and in left; when omitted (the count left out per list) comes back, the lists are ' +
   'partial and that marker must not be reused as changesSince, because the omitted ids never show ' +
-  'again: reread everything instead (records by cursor, left with includeNonCurrent). Fails with ' +
-  'MARKER_NOT_FOUND or INVALID_CURSOR when marker, changesSince or cursor do not match the data read.';
+  'again: reread everything instead (records by cursor, left with includeNonCurrent). A marker ' +
+  'covers exactly the processes it names; in project scope, any process it does not name is read ' +
+  'as empty. Fails with MARKER_NOT_FOUND or INVALID_CURSOR when marker, changesSince or cursor do ' +
+  'not match the data read.';
 
 const EVALUATE_GATE_DESCRIPTION =
   'Evaluate a gate pinned in a process, without writing anything. Returns passed and one result per ' +
   'question (index, kind, passed, evidence: the record ids behind the answer) plus the marker of ' +
   'what was read. target is inherited by selectors without targetPrefix. Pass a marker from an ' +
-  'earlier read to replay the evaluation over the records that existed then. Each evidence list holds ' +
-  'at most 100 ids and omitted counts the rest per list; a narrower select or where reaches them.';
+  'earlier read to replay the evaluation over the records that existed then; a marker covers ' +
+  'exactly the processes it names, and in project scope any process it does not name is read as ' +
+  'empty. Each evidence list holds at most 100 ids and omitted counts the rest per list; a ' +
+  'narrower select or where reaches them.';
 
 const VERIFY_CHAIN_DESCRIPTION =
   'Check the integrity of a process: the hash chain of its log and the attachments its records cite. ' +

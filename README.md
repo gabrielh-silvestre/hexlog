@@ -13,7 +13,9 @@ sistema de arquivos com hard link e semântica POSIX (`rename` e `link` atômico
 1.0 mora só em `<D>/.v1/`: um diretório por projeto e, dentro dele, um log JSONL
 por processo. Cada linha do log referencia o hash da anterior, então qualquer
 alteração ou remoção de linha quebra a cadeia de forma detectável pela tool
-`verify_chain`.
+`verify_chain`. `<D>` é confiável: só o servidor escreve nele e o hook de isolamento
+bloqueia o agente, então o servidor segue symlink e um FIFO no lugar de um arquivo o
+trava; restaure `<D>` por cópia, sem link (`cp -a`, `rsync -a`).
 
 As decisões de projeto estão nos ADRs: o domínio no [ADR 0007](docs/adr-0007-dominio.md),
 os serviços no [ADR 0008](docs/adr-0008-servicos.md) e o ferramental (tools, lock,
@@ -326,7 +328,8 @@ entram ou nenhum. Cada item traz `type` (um tipo fixado no processo), `target`,
 `data` (validado pelo schema do tipo, até 16.000 caracteres canônicos), `alias`
 opcional e `relations` opcionais. Devolve `{records, replayed, marker}`: os ids na
 ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabeça do
-processo, para ler dali em diante.
+processo, para ler dali em diante. O marcador cobre exatamente os processos que nomeia:
+no alcance projeto, o que ele não nomeia é lido como vazio.
 
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
 mesmo lote, e leva `kind` (`supersedes`, `revokes`, `supports`, `contradicts`,
@@ -500,7 +503,7 @@ entrada, vazio quando o erro é da chamada toda). O catálogo completo é
 | Código | Quando |
 |---|---|
 | `INVALID_INPUT` | entrada fora do schema, chave desconhecida, `__proto__`, ou `attach` com `path` recusado (o motivo vem em `details[0].code`) |
-| `INVALID_FILTER` | filtro da `query` inconsistente (`process` ausente no alcance processo, `text` em branco ou acima de 200 caracteres, `limit` inválido) |
+| `INVALID_FILTER` | filtro da `query` inconsistente (`process` ausente no alcance processo, `text` sem termo pesquisável (`no-terms`: só espaço ou pontuação) ou acima de 200 caracteres, `limit` inválido) |
 | `INVALID_CURSOR` / `MARKER_NOT_FOUND` | `cursor`, `changesSince` ou `marker` que não batem com o dado lido |
 | `RESERVED_NAME` | nome de processo reservado |
 | `INVALID_SCHEMA` | schema de tipo que o `ajv` recusa, `pattern` sem `maxLength` ou com regex catastrófico |

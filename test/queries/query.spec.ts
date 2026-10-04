@@ -106,15 +106,28 @@ describe('queryRecords: filtros e dados embutidos', () => {
     expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
   });
 
-  test('`text` em branco é INVALID_FILTER em /text', () => {
-    const { createProcess, query } = querySetup();
-    createProcess('run-1');
+  test.each(['', '  ', '!!!', '&&', '::', '§', '́', ' '])(
+    '`text` %j sem termo pesquisável é INVALID_FILTER `no-terms` em /text',
+    (text) => {
+      const { createProcess, query } = querySetup();
+      createProcess('run-1');
 
-    const error = captureError(() => query({ process: 'run-1', text: '  ' }));
+      const error = captureError(() => query({ process: 'run-1', text }));
 
-    expect(error.code).toBe('INVALID_FILTER');
-    expect(at(error.details, 0)).toMatchObject({ path: '/text', code: 'blank' });
-  });
+      expect(error.code).toBe('INVALID_FILTER');
+      expect(at(error.details, 0)).toMatchObject({ path: '/text', code: 'no-terms' });
+    },
+  );
+
+  test.each(['=>', '+++', '$$$', 'C++', '😀'])(
+    '`text` %j tem termo: devolve vazio, sem erro',
+    (text) => {
+      const { createProcess, query } = querySetup();
+      createProcess('run-1');
+
+      expect(query({ process: 'run-1', text }).records).toEqual([]);
+    },
+  );
 
   test('`ids` com id inexistente ou repetido devolve cada registro uma vez, na ordem de saída', async () => {
     const { query, task, other } = await seeded();
