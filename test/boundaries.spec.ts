@@ -55,6 +55,8 @@ const FORBIDDEN_SPECIFIERS = [
   'ajv/dist/2020.js',
   'ajv-formats/dist/x',
   'minisearch/x',
+  'safe-regex2',
+  'safe-regex2/lib/x',
   'node:http',
   'http',
   'node:worker_threads',
@@ -62,6 +64,7 @@ const FORBIDDEN_SPECIFIERS = [
   '@modelcontextprotocol/client',
   '../adapters/anchor.ts',
   '../adapters/fs/store.ts',
+  '../compose.ts',
 ];
 
 describe('travas de fronteira (SF1/TB1)', () => {
@@ -155,6 +158,23 @@ describe('mcp sem builtins nem adapters (N6)', () => {
     ['src/mcp/kernel.ts', './tools/process.ts'],
   ])('%s não importa %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
+  });
+
+  test.each([
+    ['src/mcp/server.ts', '../compose.ts'],
+    ['src/mcp/tools/process.ts', '../../compose.ts'],
+  ])(
+    '%s não importa %s (só server.ts, scripts e testes usam compose.ts)',
+    async (file, specifier) => {
+      expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
+    },
+  );
+
+  test.each([
+    ['src/server.ts', './compose.ts'],
+    ['src/adapters/probe.ts', '../compose.ts'],
+  ])('%s pode importar %s (o compose.ts de src/)', async (file, specifier) => {
+    expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
   });
 
   test('mcp não usa import dinâmico', async () => {

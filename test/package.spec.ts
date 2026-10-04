@@ -114,6 +114,9 @@ describe('N11', () => {
     'jsonc-parser': '3.3.1',
     'es-toolkit': '1.52.0',
     minisearch: '7.2.0',
+    // Não consta no manifesto original de §2.2: entrou pela decisão N1 (ReDoS em `pattern`,
+    // `Validator.checkSchema`); o plano deve ser emendado na F8.
+    'safe-regex2': '5.1.1',
   };
   const EXPECTED_DEV_DEPENDENCIES = {
     '@modelcontextprotocol/client': '2.0.0',

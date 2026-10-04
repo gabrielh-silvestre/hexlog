@@ -43,6 +43,12 @@ export type ProcessStore = {
    * com `stat` antes de ler.
    */
   read(ref: ProcessRef): RawProcess;
+  /**
+   * Só o `process.json`, sem tocar o `records.jsonl` (nem o teto de `MAX_LOG_BYTES`): para quem só
+   * precisa do manifesto. `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED` (`unreadable-manifest`) como em
+   * `read`.
+   */
+  readManifest(ref: ProcessRef): Manifest;
   /** Nomes dos processos do projeto. */
   list(project: Name): Name[];
   listProjects(): Name[];
@@ -143,22 +149,35 @@ export type AttachmentStore = {
 };
 
 /**
- * JSON Schema: `Detail[]` vazio = aprovado. O adaptador devolve no máximo 50 detalhes, sem repetição
+ * JSON Schema: `Detail[]` vazio = aprovado. `checkSchema` devolve no máximo 50 detalhes, sem repetição
  * de path+code+message; quando corta, acrescenta como último um `Detail` com `code`
  * `too-many-errors` e a quantidade omitida na `message` (`adapters/validator.ts#toDetails`). Os
  * omitidos não são recuperáveis: o validador não guarda estado, então o chamador não trunca de novo.
  */
 export type Validator = {
   /**
-   * Os erros do metaschema saem com `path` relativo ao schema; os de compilação (palavra-chave ou
-   * formato desconhecido, `$ref` sem destino, `$schema` de outro rascunho, `$id` de metaschema,
-   * `$async: true`) saem como um só `Detail` com `path` `/schema` e `code` `invalid-schema`. O
-   * serviço não prefixa `/schema` de novo.
+   * Todo `path` é relativo ao documento do schema, e o serviço prefixa `/schema`. Os erros do
+   * metaschema saem com o ponto do schema; os de compilação (palavra-chave ou formato desconhecido,
+   * `$ref` sem destino, `$schema` de outro rascunho, `$id` de metaschema, `$async: true`) saem como
+   * um só `Detail` com `path` vazio (a raiz) e `code` `invalid-schema`. Também recusa regex que
+   * pode explodir em tempo (ReDoS):
+   * `pattern` ou chave de `patternProperties` reprovados pela `safe-regex2`, e `pattern` sem
+   * `maxLength` de até 256 no mesmo subschema; saem com `path` do campo (relativo ao schema) e
+   * `code` `invalid-schema`. Devolve todos os erros do schema. Limite conhecido: a `safe-regex2` é
+   * heurística, e alternância sobreposta como `(a|aa)+` passa (risco aceito em 2026-10-02). A
+   * `safe-regex2` também recusa regex linear com grupo repetido (falso positivo, ex.: kebab-case);
+   * ver `adapters/validator.ts#createValidator`. Outro limite, aceito: o percurso não segue
+   * `$ref`, então `$ref` com ponteiro para `const`/`default`/`enum`/`examples` esconde `pattern` da
+   * `safe-regex2` e do teto de `maxLength` (`adapters/validator.ts#createValidator`).
    */
   checkSchema(schema: RecordType): Detail[];
   /**
    * Pressupõe um schema que já passou em `checkSchema`: com schema que não compila lança `Error` cru
    * (vira `INTERNAL` na borda, `mcp.ts#execute`). O `path` dos detalhes é relativo a `data`.
+   * Devolve um erro por subschema avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames`
+   * saem os dos ramos). O `maxLength` é avaliado antes do `pattern` e o ajv para aí em cada
+   * ramo, então o regex nunca roda sobre string acima do teto. Isso não cobre
+   * a chave de `patternProperties` (nomes de propriedade não têm teto); ali só vale a `safe-regex2`.
    */
   validate(schema: RecordType, data: HexRecord['data']): Detail[];
 };

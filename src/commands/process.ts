@@ -1,0 +1,214 @@
+import { isEqual, union } from 'es-toolkit';
+import { anchor as sha256OfJcs, fingerprint } from '../domain/chain.ts';
+import { RESERVED_PROCESS_NAMES, type Name } from '../domain/ids.ts';
+import { HexlogError } from '../errors.ts';
+import type {
+  AttachmentStore,
+  DefinitionKind,
+  DefinitionOf,
+  DefinitionStore,
+  Manifest,
+  ProcessStore,
+  Validator,
+} from '../ports.ts';
+import type { Logger } from '../shared/logger.ts';
+import { createDecide } from './register-state.ts';
+import { checkBatchShape, prepareBatch, relationNames } from './register-static.ts';
+import type { RegisterInput, RegisterResult } from './register-types.ts';
+
+export type { RegisteredRecord, RegisterInput, RegisterResult } from './register-types.ts';
+
+export type CreateProcessInput = { project: Name; process: Name };
+
+/**
+ * Definição fixada no processo que difere da vigente agora: `current` é a versão vigente, ou `null`
+ * quando o nome não tem mais versão no projeto. O manifesto guarda o conteúdo fixado, não a versão
+ * (D-03), então a versão fixada não é reportada.
+ */
+export type StaleDefinition = { kind: DefinitionKind; name: Name; current: string | null };
+
+export type CreateProcessResult = {
+  project: Name;
+  process: Name;
+  created: boolean;
+  /** Nomes fixados no manifesto do processo (o recém-criado ou o que já existia). */
+  pinned: Record<DefinitionKind, Name[]>;
+  /** Só quando o processo já existia e alguma definição vigente diverge da fixada. */
+  stale?: StaleDefinition[];
+};
+
+export type ProcessService = {
+  /**
+   * D-18: idempotente por nome. Fixa a versão vigente de cada tipo, nome de relação e gate do projeto
+   * num manifesto novo (`created: true`); se o processo já existe, devolve o manifesto existente
+   * intacto (`created: false`), com `stale` nas definições que mudaram desde a fixação. Projeto sem
+   * nenhum tipo, relação ou gate recusa com `TYPE_NOT_FOUND` `unknown-name` em `/project`, sem criar
+   * nada. Erro das portas (`TYPE_NOT_FOUND` etc., D-26) sai intacto, sem criar nada.
+   */
+  createProcess(input: CreateProcessInput): CreateProcessResult;
+  /**
+   * D-06: grava o lote numa única linha do log de `process`, sob o lock só da origem. Ordem de
+   * recusa, a primeira que falha responde: (1) forma do lote, (2) `PROCESS_NOT_FOUND` e
+   * `unreadable-manifest`, (3) recusas estáticas (tipo fixado e schema, `as`→`kind`,
+   * `cross-process-currency`), (4) `broken-chain`, (5) `key`: `replayed` ou `IDEMPOTENCY_CONFLICT`,
+   * (6) destinos, anexos e regras de D-10. `PROCESS_TOO_LARGE` sai do adaptador ao ler o log sob o
+   * lock (o nível 2 lê só o manifesto, então as recusas estáticas vencem) e ao gravar uma linha que
+   * passaria do teto (depois do nível 6). Qualquer recusa sai antes de gravar.
+   *
+   * A entrada chega validada (ver `RegisterInput`). Um replay (`replayed: true`) emite
+   * `batch-replayed` no logger (D-22), sem o conteúdo dos registros.
+   */
+  register(input: RegisterInput): Promise<RegisterResult>;
+};
+
+const KINDS = ['types', 'relations', 'gates'] as const satisfies readonly DefinitionKind[];
+
+type Snapshot = {
+  fixed: Manifest['fixed'];
+  /** Versão vigente de cada nome fixado, por tipo de definição. */
+  versions: Record<DefinitionKind, Map<Name, string>>;
+};
+
+/** Pasta de nome sem nenhuma versão (falha no meio de `DefinitionStore.write`) não tem vigente: fica de fora. */
+function latestOf<K extends DefinitionKind>(
+  definitions: DefinitionStore,
+  project: Name,
+  kind: K,
+): { byName: Record<Name, DefinitionOf[K]>; versions: Map<Name, string> } {
+  const byName: Record<Name, DefinitionOf[K]> = {};
+  const versions = new Map<Name, string>();
+  for (const name of definitions.names(project, kind)) {
+    const version = definitions.versions(project, kind, name).at(-1);
+    if (version === undefined) continue;
+    byName[name] = definitions.read(project, kind, name, version);
+    versions.set(name, version);
+  }
+  return { byName, versions };
+}
+
+function takeSnapshot(definitions: DefinitionStore, project: Name): Snapshot {
+  const types = latestOf(definitions, project, 'types');
+  const relations = latestOf(definitions, project, 'relations');
+  const gates = latestOf(definitions, project, 'gates');
+  return {
+    fixed: { types: types.byName, relations: relations.byName, gates: gates.byName },
+    versions: { types: types.versions, relations: relations.versions, gates: gates.versions },
+  };
+}
+
+function hashesOf(fixed: Manifest['fixed']): Manifest['hashes'] {
+  return {
+    types: sha256OfJcs(fixed.types),
+    relations: sha256OfJcs(fixed.relations),
+    gates: sha256OfJcs(fixed.gates),
+  };
+}
+
+function namesOf(fixed: Manifest['fixed']): Record<DefinitionKind, Name[]> {
+  return {
+    types: Object.keys(fixed.types),
+    relations: Object.keys(fixed.relations),
+    gates: Object.keys(fixed.gates),
+  };
+}
+
+/** Nome presente só de um lado, ou com conteúdo diferente, conta como mudado. */
+function staleOf(pinned: Manifest['fixed'], snapshot: Snapshot): StaleDefinition[] {
+  return KINDS.flatMap((kind) => {
+    const before: Record<string, unknown> = pinned[kind];
+    const now: Record<string, unknown> = snapshot.fixed[kind];
+    return union(Object.keys(before), Object.keys(now))
+      .filter((name) => !isEqual(before[name], now[name]))
+      .map((name) => ({ kind, name, current: snapshot.versions[kind].get(name) ?? null }));
+  });
+}
+
+function assertNotReserved(processName: Name): void {
+  if (!(RESERVED_PROCESS_NAMES as readonly string[]).includes(processName)) return;
+  const message = 'reserved process name';
+  throw new HexlogError('RESERVED_NAME', message, [
+    { path: '/process', code: 'reserved-name', message },
+  ]);
+}
+
+/** Manifesto vazio é imutável e todo `register` daria `TYPE_NOT_PINNED`: melhor recusar a criar o processo. */
+function assertSomethingRegistered(fixed: Manifest['fixed']): void {
+  if (KINDS.some((kind) => Object.keys(fixed[kind]).length > 0)) return;
+  const message = 'no definition registered in the project; run the setup to register them';
+  throw new HexlogError('TYPE_NOT_FOUND', message, [
+    { path: '/project', code: 'unknown-name', message },
+  ]);
+}
+
+export function createProcessService(deps: {
+  store: ProcessStore;
+  definitions: DefinitionStore;
+  attachments: AttachmentStore;
+  validator: Validator;
+  clock: () => Date;
+  /** Uuid v7 do id do registro (D-01): opaco, nenhuma regra lê o tempo dele. */
+  newUuid: () => string;
+  logger: Logger;
+}): ProcessService {
+  const { store, definitions, attachments, validator, clock, newUuid, logger } = deps;
+
+  return {
+    createProcess({ project, process }) {
+      assertNotReserved(process);
+      const snapshot = takeSnapshot(definitions, project);
+      assertSomethingRegistered(snapshot.fixed);
+      const manifest: Manifest = {
+        project,
+        process,
+        createdAt: clock().toISOString(),
+        fixed: snapshot.fixed,
+        hashes: hashesOf(snapshot.fixed),
+      };
+      const ref = { project, process };
+
+      if (store.create(ref, manifest)) {
+        return { project, process, created: true, pinned: namesOf(manifest.fixed) };
+      }
+      const existing = store.readManifest(ref);
+      const result = { project, process, created: false, pinned: namesOf(existing.fixed) };
+      const stale = staleOf(existing.fixed, snapshot);
+      return stale.length === 0 ? result : { ...result, stale };
+    },
+
+    // ponytail: o lock da origem fica preso durante a leitura de cada processo-destino distinto
+    // (~500 ms por destino de 5.000 registros). Acima de ~30 destinos desse tamanho quem espera
+    // recebe `LOCK_TIMEOUT` `lock-busy` e o servidor fica ocupado no `decide` síncrono. Melhoria: ler
+    // os destinos, que são append-only, antes do lock e, sob o lock, verificar só os bytes novos a
+    // partir do marcador lido; ou limitar os destinos distintos por lote.
+    async register({ project, process, author, key, records }) {
+      checkBatchShape(records);
+      const origin = { project, process };
+      const manifest = store.readManifest(origin);
+      const items = prepareBatch(manifest, records, validator);
+      const decide = createDecide(
+        { store, attachments, clock, newUuid },
+        {
+          project,
+          process,
+          author,
+          key,
+          fingerprint: fingerprint(records),
+          items,
+          names: relationNames(manifest),
+        },
+      );
+      const result = await store.write(origin, decide);
+      // Só depois do `write`: o evento sai com o fsync feito e o lock solto, sem "replayed" falso após `IO_ERROR`.
+      if (result.replayed) {
+        logger({
+          level: 'info',
+          event: 'batch-replayed',
+          project,
+          process,
+          ...(key !== undefined && { key }),
+        });
+      }
+      return result;
+    },
+  };
+}

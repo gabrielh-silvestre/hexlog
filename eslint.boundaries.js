@@ -10,7 +10,7 @@ const FORBIDDEN_BUILTINS = [...new Set(builtinModules.map((name) => name.replace
   .filter((name) => name !== 'crypto')
   .flatMap((name) => [name, `node:${name}`]);
 
-const INFRA_PACKAGES = ['ajv', 'ajv-formats', 'minisearch'];
+const INFRA_PACKAGES = ['ajv', 'ajv-formats', 'minisearch', 'safe-regex2'];
 
 const NO_IO_MESSAGE = 'Esta camada não acessa I/O nem libs de infraestrutura.';
 
@@ -24,10 +24,16 @@ const INFRA_SUBPATHS = {
   message: NO_IO_MESSAGE,
 };
 
+const COMPOSE_ONLY_ROOT = {
+  group: ['**/compose.ts'],
+  message: 'Só server.ts, scripts e testes importam compose.ts.',
+};
+
 const FORBIDDEN_GROUPS = [
   INFRA_SUBPATHS,
   { group: ['@modelcontextprotocol/*'], message: 'Só mcp/ conhece o SDK do MCP.' },
   { group: ['**/adapters/**'], message: 'Esta camada depende de portas, nunca de adapters.' },
+  COMPOSE_ONLY_ROOT,
 ];
 
 // `no-restricted-imports` não enxerga `import('...')`, então o import dinâmico é barrado por sintaxe.
@@ -72,6 +78,7 @@ const mcpBlock = (files, extraGroups = []) => ({
         paths: toPaths(FORBIDDEN_BUILTINS),
         patterns: [
           { group: ['**/adapters/**'], message: 'mcp chama serviços, nunca adapters.' },
+          COMPOSE_ONLY_ROOT,
           ...extraGroups,
         ],
       },
