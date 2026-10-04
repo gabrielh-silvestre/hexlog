@@ -76,7 +76,7 @@ export class HexlogError extends Error {
 }
 
 /** JSON Pointer (RFC 6901) de um `path` do Zod, escapando `~` e `/` na ordem correta. */
-function pointer(path: PropertyKey[]): string {
+export function pointer(path: PropertyKey[]): string {
   return path
     .map((segment) => `/${String(segment).replace(/~/g, '~0').replace(/\//g, '~1')}`)
     .join('');

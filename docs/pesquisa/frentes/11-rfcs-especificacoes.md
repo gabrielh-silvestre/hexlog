@@ -24,7 +24,7 @@
 | W3C PROV-O / PROV-DM | W3C Recommendation, 2013-04-30 | Entity/Activity/Agent, `wasDerivedFrom`, `wasAssociatedWith` | Nomes de proveniência do Veredito (`origin`, `source`, `trace`) | Adotar ideia (nomenclatura) |
 | in-toto Attestation v1.2 + SLSA v1.2 | Linux Foundation; SLSA v1.1 Retired, v1.2 Approved | Statement `{_type, subject:[{name,digest}], predicateType, predicate}` | Molde para o campo `evidence` do Veredito | Adotar ideia fortemente (sem DSSE) |
 | XDG Base Directory 0.8 | freedesktop.org | `$XDG_DATA_HOME` padrão `$HOME/.local/share` | Já usado | Adotar integral |
-| Spec MCP **2026-07-28** (corrente) | modelcontextprotocol.io | `structuredContent` + `outputSchema`; `isError: true` no result = erro de execução, distinto de erro JSON-RPC de protocolo; annotations | Confirma `isError + {code, message, details[]}` via `structuredContent`; `readOnlyHint` em `state`/`events`/`chain`/`list` | Adotar integral |
+| Spec MCP **2026-07-28** (corrente) | modelcontextprotocol.io | `structuredContent` + `outputSchema`; `isError: true` no result = erro de execução, distinto de erro JSON-RPC de protocolo; annotations | Confirma `isError + {code, message, details[]}`, com o corpo em `content[0].text` (o SDK 1.x lança `-32602` se o erro vier em `structuredContent` contra o `outputSchema` de sucesso); `readOnlyHint` em `state`/`events`/`chain`/`list` | Adotar integral |
 | SemVer 2.0.0 | semver.org | MAJOR.MINOR.PATCH | Só no catálogo de schemas; dentro do processo o hash é a âncora | Adotar só no catálogo |
 
 ### Recomendações de design (top 5)

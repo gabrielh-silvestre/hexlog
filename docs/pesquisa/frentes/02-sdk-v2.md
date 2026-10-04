@@ -39,7 +39,7 @@ Não existem pacotes `/types`, `/inmemory`, `/stdio` avulsos (404).
 - Migração v1→v2 (`docs/migration/upgrade-to-v2.md`): `server.tool(...)` → `server.registerTool(name, {description, inputSchema: z.object(shape)}, cb)`; `McpError`→`ProtocolError`; `ErrorCode`→`ProtocolErrorCode`; `InMemoryTransport` exportado de `/client` e `/server` com estado separado — **não misturar as pontas entre pacotes**.
 
 ### Riscos e armadilhas
-- `outputSchema` só valida quando `isError` ≠ true → erro `{code, message, details[]}` em `structuredContent` é seguro mesmo com outputSchema de sucesso.
+- SDK 2.0.0: `outputSchema` só valida quando `isError` ≠ true. O SDK 1.x (cliente) valida `structuredContent` contra o `outputSchema` também com `isError` e lança `McpError -32602` (reproduzido com 1.32.0): o erro `{code, message, details[]}` vai só em `content[0].text`, sem `structuredContent`.
 - `content` tem default `[]`; SDK injeta texto quando `structuredContent` não é objeto (SEP-2106).
 - Exemplos v1 na web usam `server.tool(...)`/`McpError` — não copiar.
 - Claude Code: limite `MAX_MCP_OUTPUT_TOKENS` (default 25000) e `_meta["anthropic/maxResultSizeChars"]` por tool — relevante para `events` em logs grandes (paginar). Renderização de `structuredContent`/`isError` na UI não documentada em detalhe.

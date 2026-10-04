@@ -22,6 +22,7 @@ Corpus determinístico para busca/volume, scripts que constroem bundles sob dema
 | `crash-writer.ts` | Processo filho do kill -9 (TF1, SE3b): grava lotes de 10 registros sem parar pelo `ProcessStore` real e imprime a `key` de cada lote antes de gravar; o pai mata com SIGKILL no meio do lote. Usado por `adapters/process-store.spec.ts`. |
 | `lock-holder.ts` | Processo filho do lock por pid (P2, TF2, TF4) e do `register` concorrente (SE5) em cinco modos: `rounds`, `hold`, `write`, `write-gated` e `register` (sobre o `compose` real). Usado por `adapters/lock.spec.ts` e `commands/register.concurrency.spec.ts`. |
 | `records-corpus.ts` | `writeRecordsCorpus`: corpus 1.0 determinístico gravado direto em `<dataDir>/.v1/` (cadeia por `hashLink`, linhas por `formatLine`), sem passar pelo `ProcessStore`; a opção `gates` fixa gates no manifesto de cada processo (o hash dos gates acompanha). Importado direto pelo jest (`adapters/load.budget.spec.ts`, `adapters/search.budget.spec.ts`, `queries/query.budget.spec.ts` e `queries/project.budget.spec.ts`), não spawnado. |
+| `preview-server.ts` | Entry descartável da prévia da F5: `compose` + `createServer` (`src/mcp/server.ts`) + `serveStdio`, com `dataDir(process.env)` e `process.cwd()`, o que o `src/server.ts` 1.0 fará. Só importa a árvore nova e a raiz permitida (P6). Construído via `build-entry.ts` por `mcp/stdio-preview.e2e.spec.ts`. |
 
 ## For AI Agents
 ### Working In This Directory
