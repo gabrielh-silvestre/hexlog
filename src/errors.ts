@@ -59,6 +59,11 @@ export class HexlogError extends Error {
   }
 }
 
+/** `INVALID_INPUT` com um único `Detail` em `path`; `message` é a do erro e a do `Detail`. */
+export function invalidInput(path: string, code: string, message: string): HexlogError {
+  return new HexlogError('INVALID_INPUT', message, [{ path, code, message }]);
+}
+
 /** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */
 const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
 

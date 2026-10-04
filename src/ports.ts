@@ -104,11 +104,12 @@ export type DefinitionStore = DefinitionReader & {
     version: string,
   ): DefinitionOf[K];
   /**
-   * `false` quando a versão já existe: uma versão gravada nunca é sobrescrita. `INVALID_INPUT`
-   * (`invalid-version`) se a versão não é `<major>.<minor>` canônica. Valida a definição contra o
-   * schema de domínio do `kind` antes de gravar e lança `INTERNAL` (`invalid-definition`, `path`
-   * `/definition`, sem o conteúdo) se não passar, para não gravar uma versão que o próprio `read`
-   * recusaria.
+   * `false` quando a versão já existe: uma versão gravada nunca é sobrescrita. O `false` não
+   * distingue replay (a mesma definição) de conflito (outra): quem chama relê com `versions` e
+   * `read` e compara. `INVALID_INPUT` (`invalid-version`) se a versão não é `<major>.<minor>`
+   * canônica. Valida a definição contra o schema de domínio do `kind` antes de gravar e lança
+   * `INTERNAL` (`invalid-definition`, `path` `/definition`, sem o conteúdo) se não passar, para não
+   * gravar uma versão que o próprio `read` recusaria.
    */
   write<K extends DefinitionKind>(
     project: Name,
@@ -123,7 +124,7 @@ export type AttachmentStatus = 'ok' | 'missing' | 'corrupted';
 
 /**
  * Resultado de gravar um anexo: `deduplicated` é `true` quando o blob com esse hash já existia e foi
- * só conferido, nunca sobrescrito. A saída de `attach` o repassa (§4.1 do plano).
+ * só conferido, nunca sobrescrito. A saída de `attach` o repassa.
  */
 export type AttachmentPut = { hash: Hash; bytes: number; deduplicated: boolean };
 

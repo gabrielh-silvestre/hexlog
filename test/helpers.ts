@@ -47,15 +47,19 @@ export function captureError(fn: () => unknown): HexlogError {
   throw new Error('expected the function to throw HexlogError');
 }
 
-/** Espera a rejeição com `HexlogError`, confere que ela não traz `secret` (D-26) e a devolve. */
+/** Confere que nem `message` nem `details` do erro trazem `secret` (D-26); `JSON.stringify(error)` não vê o `message`. */
+export function expectNoLeak(error: HexlogError, secret: string): void {
+  expect(error.message + JSON.stringify(error.details)).not.toContain(secret);
+}
+
+/** Espera a rejeição com `HexlogError`, aplica `expectNoLeak` com `secret` (D-26) e a devolve. */
 export async function rejectionOf(promise: Promise<unknown>, secret: string): Promise<HexlogError> {
   const error = await promise.then(
     () => undefined,
     (reason: unknown) => reason,
   );
   expect(error).toBeInstanceOf(HexlogError);
-  const { message, details } = error as HexlogError;
-  expect(message + JSON.stringify(details)).not.toContain(secret);
+  expectNoLeak(error as HexlogError, secret);
   return error as HexlogError;
 }
 

@@ -1,6 +1,6 @@
 import type { Name } from '../domain/ids.ts';
 import { isWellFormed } from '../domain/record.ts';
-import { HexlogError } from '../errors.ts';
+import { invalidInput } from '../errors.ts';
 import type { AttachmentPut, AttachmentStore } from '../ports.ts';
 
 export type AttachInput = { project: Name; text?: string; path?: string };
@@ -19,10 +19,6 @@ const ALLOWED_EXTENSIONS = ['.md', '.txt'];
 
 // NAME_MAX do Linux, em bytes UTF-8: acima disso o `open` falha com ENAMETOOLONG, que viraria IO_ERROR.
 const NAME_MAX_BYTES = 255;
-
-function invalidInput(pointer: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_INPUT', message, [{ path: pointer, code, message }]);
-}
 
 /**
  * Mesma regra de `path.extname` sobre o último componente (barras finais não contam): `.md` puro

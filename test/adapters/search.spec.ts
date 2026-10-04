@@ -1,8 +1,10 @@
-import { describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, test } from '@jest/globals';
 import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { RecordId } from '../../src/domain/ids.ts';
 import type { HexRecord } from '../../src/domain/record.ts';
 import type { ProcessRef } from '../../src/ports.ts';
+import { writeRecordsCorpus } from '../fixtures/records-corpus.ts';
+import { createTempDir } from '../helpers.ts';
 
 const PROCESS: ProcessRef = { project: 'proj', process: 'proc' };
 
@@ -132,6 +134,10 @@ describe('createSearchIndex', () => {
     expect(search([banana, other], 'banana', new Set([other.id]))).toEqual([]);
   });
 
+  test.each(['', '   ', '\n\t', '!!! ---'])('consulta em branco %j não acha nada', (text) => {
+    expect(search([makeRecord({ data: { text: 'webhook' } })], text)).toEqual([]);
+  });
+
   test('uma consulta de um termo só nunca cai para OR', () => {
     expect(search([makeRecord({ data: { text: 'webhook' } })], 'retry')).toEqual([]);
   });
@@ -168,5 +174,57 @@ describe('createSearchIndex', () => {
     expect(ids).toHaveLength(records.length);
     // Sem o dedupe passa de 12 s; com ele o custo é o do índice (~100 ms).
     expect(elapsed).toBeLessThanOrEqual(2_000);
+  });
+});
+
+describe('createSearchIndex sobre o corpus de writeRecordsCorpus (N9)', () => {
+  let corpus: HexRecord[];
+
+  beforeAll(() => {
+    corpus = writeRecordsCorpus(createTempDir('search-corpus'), { recordsPerProcess: 300 }).records;
+  });
+
+  /** Gabarito: registros cujo `data.text` tem `word` como palavra inteira. */
+  const withWord = (word: string) =>
+    corpus.filter((record) => {
+      const { text } = record.data;
+      return typeof text === 'string' && new RegExp(`\\b${word}\\b`).test(text);
+    });
+
+  test('recall 1,0 com um erro de digitação: acha todo registro da palavra "authentication"', () => {
+    const expected = idsOf(withWord('authentication'));
+    expect(expected.length).toBeGreaterThan(0);
+
+    expect(search(corpus, 'authentcation')).toEqual(expect.arrayContaining(expected));
+  });
+
+  test('precisão 1,0: a palavra "authentication" devolve só os registros que a têm', () => {
+    const expected = idsOf(withWord('authentication'));
+
+    expect([...search(corpus, 'authentication')].sort()).toEqual([...expected].sort());
+  });
+
+  test('precisão 1,0 no AND: "webhook retry" devolve só quem tem as duas palavras', () => {
+    const retry = new Set(idsOf(withWord('retry')));
+    const expected = idsOf(withWord('webhook')).filter((id) => retry.has(id));
+    expect(expected.length).toBeGreaterThan(0);
+
+    expect([...search(corpus, 'webhook retry')].sort()).toEqual([...expected].sort());
+  });
+
+  test('um termo que não está no corpus não acha nada', () => {
+    expect(search(corpus, 'zzqxwv')).toEqual([]);
+  });
+
+  test('determinismo: o índice frio, o cacheado e um índice novo devolvem o mesmo resultado', () => {
+    const index = createSearchIndex();
+    const calls = [
+      index.search(PROCESS, corpus, 'webhook retry', undefined),
+      index.search(PROCESS, corpus, 'webhook retry', undefined),
+      ...Array.from({ length: 3 }, () => search(corpus, 'webhook retry')),
+    ];
+
+    expect(calls[0]).not.toHaveLength(0);
+    for (const call of calls) expect(call).toEqual(calls[0]);
   });
 });

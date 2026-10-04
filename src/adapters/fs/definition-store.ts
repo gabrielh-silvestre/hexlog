@@ -8,11 +8,11 @@ import {
   compareVersions,
 } from '../../domain/definitions.ts';
 import type { Name } from '../../domain/ids.ts';
-import { HexlogError, type ErrorCode } from '../../errors.ts';
+import { HexlogError, invalidInput, type ErrorCode } from '../../errors.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { definitionDir, definitionFile, VERSION_SUFFIX } from './data-format.ts';
-import { listDirectories, mapIo, readIfPresent, safeName } from './io.ts';
+import { listDirectories, mapIo, orIfMissing, readIfPresent, safeName } from './io.ts';
 
 export type DefinitionStoreOptions = {
   /** `<D>`; o store grava só em `<D>/.v1/<projeto>/{types,relations,gates}/` (D-02). */
@@ -34,21 +34,18 @@ const NOT_FOUND: Record<DefinitionKind, ErrorCode> = {
 /** A versão vira nome de arquivo, então passa por aqui antes de qualquer I/O. */
 function safeVersion(version: string): string {
   if (!CANONICAL_VERSION.test(version)) {
-    const message = 'invalid version';
-    throw new HexlogError('INVALID_INPUT', message, [
-      { path: '/version', code: 'invalid-version', message },
-    ]);
+    throw invalidInput('/version', 'invalid-version', 'invalid version');
   }
   return version;
 }
 
 /**
- * Definição ausente: sem `existing` ou com a lista vazia, o nome não tem nenhuma versão (pasta
- * inexistente ou vazia: `unknown-name`); com versões, o nome existe e a pedida não
- * (`unknown-version`, listando as que existem, nunca vazia).
+ * Definição ausente: com a lista `existing` vazia, o nome não tem nenhuma versão (pasta inexistente
+ * ou vazia: `unknown-name`); com versões, o nome existe e a pedida não (`unknown-version`,
+ * listando as que existem, nunca vazia).
  */
-function definitionNotFound(kind: DefinitionKind, existing: string[] | undefined): HexlogError {
-  if (!existing?.length) {
+function definitionNotFound(kind: DefinitionKind, existing: string[]): HexlogError {
+  if (existing.length === 0) {
     const message = 'definition name not found';
     return new HexlogError(NOT_FOUND[kind], message, [
       { path: '/name', code: 'unknown-name', message },
@@ -60,16 +57,9 @@ function definitionNotFound(kind: DefinitionKind, existing: string[] | undefined
   ]);
 }
 
-/** Versões canônicas em `dir`, da menor para a maior; `undefined` se a pasta não existe. */
-function readVersions(dir: string): string[] | undefined {
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return undefined;
-    throw error;
-  }
-  return entries
+/** Versões canônicas em `dir`, da menor para a maior; pasta inexistente não tem nenhuma. */
+function readVersions(dir: string): string[] {
+  return orIfMissing(() => fs.readdirSync(dir, { withFileTypes: true }), [])
     .filter((entry) => entry.isFile() && entry.name.endsWith(VERSION_SUFFIX))
     .map((entry) => entry.name.slice(0, -VERSION_SUFFIX.length))
     .filter((version) => CANONICAL_VERSION.test(version))
@@ -113,8 +103,7 @@ export function createDefinitionStore({ dataDir }: DefinitionStoreOptions): Defi
   return {
     names: (project, kind) => mapIo(() => listDirectories(kindDir(project, kind))),
 
-    versions: (project, kind, name) =>
-      mapIo(() => readVersions(nameDir(project, kind, name)) ?? []),
+    versions: (project, kind, name) => mapIo(() => readVersions(nameDir(project, kind, name))),
 
     read: <K extends DefinitionKind>(project: Name, kind: K, name: Name, version: string) =>
       mapIo(() => {

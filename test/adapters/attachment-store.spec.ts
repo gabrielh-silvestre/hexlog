@@ -15,10 +15,11 @@ import {
 } from '../../src/adapters/fs/data-format.ts';
 import { sha256hex } from '../../src/domain/chain.ts';
 import type { AttachmentPut, AttachmentStore } from '../../src/ports.ts';
-import type { Detail } from '../../src/errors.ts';
-import { captureError, createTempDir } from '../helpers.ts';
+import type { AttachmentProbeArgs } from '../fixtures/fixture-args.ts';
+import { captureError, createTempDir, expectNoLeak } from '../helpers.ts';
 import { countFsyncs } from './fsync-spy.ts';
 
+const PROBE = path.join(__dirname, '..', 'fixtures', 'attachment-probe.ts');
 const PROJECT = 'alpha';
 const PLAN = '.omc/plans/x.md';
 // mtime inteiro em segundos: `utimes` com sub-milissegundo perderia precisão e o teste não reproduziria o mtime.
@@ -64,15 +65,37 @@ function fsError(code: string, file: string): Error {
   return Object.assign(new Error(`${code}: boom, open '${file}'`), { code });
 }
 
-/** Nada do que o erro devolve ao agente (mensagem e details) contém `secret`. */
-function leaks(error: { message: string; details: unknown }, secret: string): boolean {
-  return JSON.stringify([error.message, error.details]).includes(secret);
+/**
+ * Roda `args.call` do `AttachmentStore` num filho: um `open` que travasse num FIFO estoura o
+ * `timeout` (o filho é morto e o `execFileSync` lança) em vez de congelar a thread do jest.
+ */
+function probe(call: { call: 'status'; hash: string } | { call: 'putPath'; path: string }) {
+  const args: AttachmentProbeArgs = { dataDir, cwd, project: PROJECT, ...call };
+  const stdout = execFileSync(process.execPath, [PROBE, JSON.stringify(args)], {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  return JSON.parse(stdout) as { result?: string; error?: { code: string; details: unknown[] } };
 }
 
-/** O `code` e os `details` do `HexlogError` que `fn` lança. */
-function refusalOf(fn: () => unknown): { code: string; details: Detail[] } {
-  const { code, details } = captureError(fn);
-  return { code, details };
+/** O `fstat` passa a declarar `size` bytes, como um arquivo que cresceu depois dele. */
+function understateSize(size: number): void {
+  const realFstat = fs.fstatSync.bind(fs);
+  jest.spyOn(fs, 'fstatSync').mockImplementation(((fd: number) =>
+    Object.assign(Object.create(realFstat(fd) as object) as object, {
+      size,
+    })) as unknown as typeof fs.fstatSync);
+}
+
+/**
+ * Repõe `FIXED_TIME` até o ctime sair de `previousCtimeMs`: o ctime só avança quando o relógio do
+ * kernel (granularidade de alguns ms) avançou, então um único `utimes` pode deixá-lo igual. Teto de 2 s.
+ */
+function restoreTimesUntilCtimeChanges(file: string, previousCtimeMs: number): void {
+  const deadline = Date.now() + 2_000;
+  do {
+    fs.utimesSync(file, FIXED_TIME, FIXED_TIME);
+  } while (fs.statSync(file).ctimeMs === previousCtimeMs && Date.now() < deadline);
 }
 
 /** O `INVALID_INPUT` esperado: um único `detail` em `pointer`, de `code` kebab-case. */
@@ -145,38 +168,53 @@ describe('put por texto', () => {
   test('o teto é 1 MiB em bytes, não em caracteres', () => {
     const atCeiling = 'a'.repeat(ATTACHMENT_MAX_BYTES);
     expect(store.putText(PROJECT, atCeiling).bytes).toBe(ATTACHMENT_MAX_BYTES);
+    // 2 bytes por caractere: metade do teto em caracteres cabe, exatamente, em bytes
+    expect(store.putText(PROJECT, 'ã'.repeat(ATTACHMENT_MAX_BYTES / 2)).bytes).toBe(
+      ATTACHMENT_MAX_BYTES,
+    );
 
-    expect(refusalOf(() => store.putText(PROJECT, `${atCeiling}a`))).toEqual(
+    expect(captureError(() => store.putText(PROJECT, `${atCeiling}a`))).toMatchObject(
       invalid('/text', 'too-big'),
     );
     // metade do teto em caracteres, mas acima dele em bytes
     expect(
-      refusalOf(() => store.putText(PROJECT, 'ã'.repeat(ATTACHMENT_MAX_BYTES / 2 + 1))),
-    ).toEqual(invalid('/text', 'too-big'));
+      captureError(() => store.putText(PROJECT, 'ã'.repeat(ATTACHMENT_MAX_BYTES / 2 + 1))),
+    ).toMatchObject(invalid('/text', 'too-big'));
   });
 
   test('nome de projeto e hash inválidos nunca chegam ao disco', () => {
-    expect(refusalOf(() => store.putText('../fora', 'x'))).toEqual(
+    expect(captureError(() => store.putText('../fora', 'x'))).toMatchObject(
       invalid('/project', 'invalid-name'),
     );
-    expect(refusalOf(() => store.status(PROJECT, '../x'))).toEqual(
+    expect(captureError(() => store.status(PROJECT, '../x'))).toMatchObject(
       invalid('/hash', 'invalid-hash'),
     );
-    expect(refusalOf(() => store.read(PROJECT, 'A'.repeat(64)))).toEqual(
+    expect(captureError(() => store.read(PROJECT, 'A'.repeat(64)))).toMatchObject(
       invalid('/hash', 'invalid-hash'),
     );
     expect(fs.existsSync(dataDir)).toBe(false);
   });
 
-  test('faz fsync do arquivo e do diretório depois do link; o put deduplicado não dá o do diretório', () => {
+  test('faz fsync do arquivo e do diretório depois do link; o put deduplicado não dá nenhum', () => {
     const fsyncs = countFsyncs();
 
     store.putText(PROJECT, 'durável');
     expect(fsyncs()).toEqual({ files: 1, directories: 1 });
 
-    // o temporário é sincronizado antes do `link`, que dá EEXIST antes do fsync do diretório
+    // o `lstat` acha o blob antes de criar o temporário, então não há o que sincronizar
     expect(store.putText(PROJECT, 'durável').deduplicated).toBe(true);
-    expect(fsyncs().directories).toBe(1);
+    expect(fsyncs()).toEqual({ files: 1, directories: 1 });
+  });
+
+  test('o put deduplicado só abre o blob, para reler: não cria temporário', () => {
+    const { hash } = store.putText(PROJECT, 'repetido');
+    const opens = jest.spyOn(fs, 'openSync');
+
+    expect(store.putText(PROJECT, 'repetido').deduplicated).toBe(true);
+
+    expect(opens).toHaveBeenCalledTimes(1);
+    expect(opens).toHaveBeenCalledWith(blobPath(hash), expect.anything());
+    expect(fs.readdirSync(attachmentsDir())).toEqual([hash]);
   });
 
   test.each(['mkdirSync', 'openSync', 'writeFileSync', 'fsyncSync'] as const)(
@@ -190,7 +228,7 @@ describe('put por texto', () => {
 
       expect(error.code).toBe('IO_ERROR');
       expect(error.details).toEqual([{ path: '', code: 'eio', message: 'I/O failure' }]);
-      expect(leaks(error, base)).toBe(false);
+      expectNoLeak(error, base);
     },
   );
 
@@ -209,6 +247,16 @@ describe('put por texto', () => {
     expect(result).toEqual({ ...rivalResult, deduplicated: true });
     expect(fs.readdirSync(attachmentsDir())).toEqual([result.hash]);
     expect(store.read(PROJECT, result.hash)).toBe('corrida');
+  });
+
+  test('corrida: o link dá EEXIST mas o blob sumiu antes da releitura → ATTACHMENT_CORRUPTED', () => {
+    jest.spyOn(fs, 'linkSync').mockImplementationOnce(() => {
+      throw fsError('EEXIST', attachmentsDir());
+    });
+
+    expect(captureError(() => store.putText(PROJECT, 'sumiu')).code).toBe('ATTACHMENT_CORRUPTED');
+    // nada publicado e o temporário foi removido
+    expect(fs.readdirSync(attachmentsDir())).toEqual([]);
   });
 });
 
@@ -254,11 +302,23 @@ describe('status e read', () => {
     fs.mkdirSync(blobPath(directory));
     fs.writeFileSync(blobPath(big), Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61));
 
-    expect([fifo, directory, big].map((hash) => store.status(PROJECT, hash))).toEqual([
-      'corrupted',
+    expect(probe({ call: 'status', hash: fifo })).toEqual({ result: 'corrupted' });
+    expect([directory, big].map((hash) => store.status(PROJECT, hash))).toEqual([
       'corrupted',
       'corrupted',
     ]);
+  });
+
+  test('blob que cresce entre o fstat e a leitura → corrupted, mesmo com o sha256 dos bytes certo', () => {
+    // blob legítimo de 11 bytes; o `fstat` diz 10: a releitura vê 11 e recusa, embora o hash bata
+    const bytes = Buffer.alloc(11, 0x61);
+    const hash = sha256hex(bytes);
+    fs.mkdirSync(attachmentsDir(), { recursive: true });
+    fs.writeFileSync(blobPath(hash), bytes);
+    understateSize(10);
+
+    expect(store.status(PROJECT, hash)).toBe('corrupted');
+    expect(captureError(() => store.read(PROJECT, hash)).code).toBe('ATTACHMENT_CORRUPTED');
   });
 
   test('erro de leitura do blob vira IO_ERROR só com o errno, sem o caminho absoluto', () => {
@@ -271,7 +331,7 @@ describe('status e read', () => {
 
     expect(error.code).toBe('IO_ERROR');
     expect(error.details).toEqual([{ path: '', code: 'eio', message: 'I/O failure' }]);
-    expect(leaks(error, base)).toBe(false);
+    expectNoLeak(error, base);
   });
 });
 
@@ -289,35 +349,18 @@ describe('memo de verificação do status', () => {
     expect(opens).toHaveBeenCalledTimes(2);
   });
 
-  test('adulteração que preserva size e mtime é vista pelo ctime', async () => {
+  test('adulteração que preserva size e mtime é vista pelo ctime', () => {
     const { hash } = store.putText(PROJECT, 'AAAA');
     fs.utimesSync(blobPath(hash), FIXED_TIME, FIXED_TIME);
     const before = fs.statSync(blobPath(hash));
     expect(store.status(PROJECT, hash)).toBe('ok');
 
-    // a granularidade do ctime no kernel é de alguns ms
-    await new Promise((resolve) => setTimeout(resolve, 30));
     fs.writeFileSync(blobPath(hash), 'BBBB');
-    fs.utimesSync(blobPath(hash), FIXED_TIME, FIXED_TIME);
+    restoreTimesUntilCtimeChanges(blobPath(hash), before.ctimeMs);
 
     const after = fs.statSync(blobPath(hash));
     expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
-    expect(store.status(PROJECT, hash)).toBe('corrupted');
-  });
-
-  test('troca do arquivo por outro inode com mesmo size e mtime é vista', async () => {
-    const { hash } = store.putText(PROJECT, 'AAAA');
-    fs.utimesSync(blobPath(hash), FIXED_TIME, FIXED_TIME);
-    const before = fs.statSync(blobPath(hash));
-    expect(store.status(PROJECT, hash)).toBe('ok');
-
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    const substitute = path.join(attachmentsDir(), '.substituto');
-    fs.writeFileSync(substitute, 'BBBB');
-    fs.utimesSync(substitute, FIXED_TIME, FIXED_TIME);
-    fs.renameSync(substitute, blobPath(hash));
-
-    expect(fs.statSync(blobPath(hash)).ino).not.toBe(before.ino);
+    expect(after.ctimeMs).not.toBe(before.ctimeMs);
     expect(store.status(PROJECT, hash)).toBe('corrupted');
   });
 
@@ -333,7 +376,7 @@ describe('memo de verificação do status', () => {
 
 describe('put por path (P16, D-15)', () => {
   test('guarda os bytes exatos de um arquivo em pasta de ponto, por caminho relativo e absoluto', () => {
-    const text = 'Decisão longa — ação\r\n﻿'.repeat(11_000);
+    const text = 'Decisão longa — ação\r\n\uFEFF'.repeat(11_000);
     const file = writeInCwd(PLAN, text);
 
     const relative = store.putPath(PROJECT, PLAN);
@@ -372,10 +415,10 @@ describe('put por path (P16, D-15)', () => {
   test('../ e caminho absoluto fora do cwd → outside-allowed-root, sem gravar', () => {
     fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
 
-    expect(refusalOf(() => store.putPath(PROJECT, '../outside/x.md'))).toEqual(
+    expect(captureError(() => store.putPath(PROJECT, '../outside/x.md'))).toMatchObject(
       invalid('/path', 'outside-allowed-root'),
     );
-    expect(refusalOf(() => store.putPath(PROJECT, path.join(outside, 'x.md')))).toEqual(
+    expect(captureError(() => store.putPath(PROJECT, path.join(outside, 'x.md')))).toMatchObject(
       invalid('/path', 'outside-allowed-root'),
     );
     expectNothingStored();
@@ -385,7 +428,7 @@ describe('put por path (P16, D-15)', () => {
     fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
     fs.symlinkSync(outside, path.join(cwd, 'atalho'));
 
-    expect(refusalOf(() => store.putPath(PROJECT, 'atalho/x.md'))).toEqual(
+    expect(captureError(() => store.putPath(PROJECT, 'atalho/x.md'))).toMatchObject(
       invalid('/path', 'outside-allowed-root'),
     );
     expectNothingStored();
@@ -401,9 +444,36 @@ describe('put por path (P16, D-15)', () => {
     for (const error of [missingDirectory, missingCwd]) {
       expect(error.code).toBe('INVALID_INPUT');
       expect(error.details.map((detail) => detail.code)).toEqual(['outside-allowed-root']);
-      expect(leaks(error, base)).toBe(false);
-      expect(leaks(error, 'ENOENT')).toBe(false);
+      expectNoLeak(error, base);
+      expectNoLeak(error, 'ENOENT');
     }
+  });
+
+  test('cwd que é symlink: a raiz é o destino resolvido, dentro lê e fora segue recusado', () => {
+    const linkedCwd = path.join(base, 'cwd-link');
+    fs.symlinkSync(cwd, linkedCwd);
+    writeInCwd(PLAN, 'via symlink');
+    fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
+    const linked = createAttachmentStore({ dataDir, cwd: linkedCwd });
+
+    expect(linked.putPath(PROJECT, PLAN).hash).toBe(sha256hex('via symlink'));
+    expect(captureError(() => linked.putPath(PROJECT, path.join(outside, 'x.md')))).toMatchObject(
+      invalid('/path', 'outside-allowed-root'),
+    );
+  });
+
+  test('dataDir que é symlink para dentro do cwd: arquivo no destino → inside-data-dir', () => {
+    const real = path.join(cwd, 'dados');
+    const linkedDataDir = path.join(base, 'dados-link');
+    fs.mkdirSync(real);
+    fs.symlinkSync(real, linkedDataDir);
+    fs.writeFileSync(path.join(real, 'x.md'), 'dentro');
+    const linked = createAttachmentStore({ dataDir: linkedDataDir, cwd });
+
+    expect(captureError(() => linked.putPath(PROJECT, 'dados/x.md'))).toMatchObject(
+      invalid('/path', 'inside-data-dir'),
+    );
+    expect(fs.existsSync(attachmentsDir(real))).toBe(false);
   });
 
   describe('com o dataDir dentro do cwd', () => {
@@ -417,7 +487,7 @@ describe('put por path (P16, D-15)', () => {
       fs.mkdirSync(path.dirname(inside), { recursive: true });
       fs.writeFileSync(inside, 'dentro');
 
-      expect(refusalOf(() => store.putPath(PROJECT, inside))).toEqual(
+      expect(captureError(() => store.putPath(PROJECT, inside))).toMatchObject(
         invalid('/path', 'inside-data-dir'),
       );
       expect(fs.existsSync(attachmentsDir())).toBe(false);
@@ -429,7 +499,7 @@ describe('put por path (P16, D-15)', () => {
       fs.writeFileSync(path.join(inside, 'x.md'), 'dentro');
       fs.symlinkSync(inside, path.join(cwd, 'atalho'));
 
-      expect(refusalOf(() => store.putPath(PROJECT, 'atalho/x.md'))).toEqual(
+      expect(captureError(() => store.putPath(PROJECT, 'atalho/x.md'))).toMatchObject(
         invalid('/path', 'inside-data-dir'),
       );
       expect(fs.existsSync(attachmentsDir())).toBe(false);
@@ -439,7 +509,7 @@ describe('put por path (P16, D-15)', () => {
       fs.mkdirSync(dataDir);
       writeInCwd(PLAN, 'fora do dataDir');
 
-      expect(refusalOf(() => store.putPath(PROJECT, 'dados/nao-existe.md'))).toEqual(
+      expect(captureError(() => store.putPath(PROJECT, 'dados/nao-existe.md'))).toMatchObject(
         invalid('/path', 'inside-data-dir'),
       );
       expect(store.putPath(PROJECT, PLAN).hash).toBe(sha256hex('fora do dataDir'));
@@ -454,9 +524,9 @@ describe('put por path (P16, D-15)', () => {
   });
 
   test('outside-allowed-root vem antes de not-found', () => {
-    expect(refusalOf(() => store.putPath(PROJECT, path.join(outside, 'nao-existe.md')))).toEqual(
-      invalid('/path', 'outside-allowed-root'),
-    );
+    expect(
+      captureError(() => store.putPath(PROJECT, path.join(outside, 'nao-existe.md'))),
+    ).toMatchObject(invalid('/path', 'outside-allowed-root'));
   });
 
   test('arquivo inexistente → not-found, sem errno nem caminho', () => {
@@ -464,69 +534,78 @@ describe('put por path (P16, D-15)', () => {
 
     expect(error.code).toBe('INVALID_INPUT');
     expect(error.details.map((detail) => detail.code)).toEqual(['not-found']);
-    expect(leaks(error, base)).toBe(false);
-    expect(leaks(error, 'ENOENT')).toBe(false);
+    expectNoLeak(error, base);
+    expectNoLeak(error, 'ENOENT');
     expectNothingStored();
   });
 
-  test('symlink no componente final → not-regular, mesmo apontando para dentro do cwd', () => {
-    writeInCwd('alvo.md', 'alvo');
-    fs.symlinkSync(path.join(cwd, 'alvo.md'), path.join(cwd, '.omc', 'plans', 'link.md'));
+  // No filho (`probe`): o FIFO travaria a thread do jest se o `open` perdesse o `O_NONBLOCK`.
+  test.each([
+    [
+      'symlink no componente final, mesmo apontando para dentro do cwd',
+      () => {
+        writeInCwd('alvo.md', 'alvo');
+        fs.symlinkSync(path.join(cwd, 'alvo.md'), path.join(cwd, '.omc', 'plans', 'link.md'));
+        return '.omc/plans/link.md';
+      },
+    ],
+    [
+      'diretório chamado *.md',
+      () => {
+        fs.mkdirSync(path.join(cwd, 'pasta.md'));
+        return 'pasta.md';
+      },
+    ],
+    [
+      'FIFO chamado *.md',
+      () => {
+        execFileSync('mkfifo', [path.join(cwd, 'fila.md')]);
+        return 'fila.md';
+      },
+    ],
+    [
+      'hardlink (nlink > 1)',
+      () => {
+        writeInCwd('segredo.md', 'segredo');
+        fs.linkSync(path.join(cwd, 'segredo.md'), path.join(cwd, '.omc', 'plans', 'link.md'));
+        return '.omc/plans/link.md';
+      },
+    ],
+  ])('%s → not-regular, sem gravar', (_name, prepare) => {
+    const candidate = prepare();
 
-    expect(refusalOf(() => store.putPath(PROJECT, '.omc/plans/link.md'))).toEqual(
-      invalid('/path', 'not-regular'),
-    );
-    expectNothingStored();
-  });
-
-  test('diretório e FIFO chamados *.md → not-regular', () => {
-    fs.mkdirSync(path.join(cwd, 'pasta.md'));
-    execFileSync('mkfifo', [path.join(cwd, 'fila.md')]);
-
-    expect(refusalOf(() => store.putPath(PROJECT, 'pasta.md'))).toEqual(
-      invalid('/path', 'not-regular'),
-    );
-    expect(refusalOf(() => store.putPath(PROJECT, 'fila.md'))).toEqual(
-      invalid('/path', 'not-regular'),
-    );
-  });
-
-  test('hardlink (nlink > 1) → not-regular, sem gravar', () => {
-    writeInCwd('segredo.md', 'segredo');
-    fs.linkSync(path.join(cwd, 'segredo.md'), path.join(cwd, '.omc', 'plans', 'link.md'));
-
-    expect(refusalOf(() => store.putPath(PROJECT, '.omc/plans/link.md'))).toEqual(
-      invalid('/path', 'not-regular'),
-    );
+    expect(probe({ call: 'putPath', path: candidate })).toEqual({
+      error: invalid('/path', 'not-regular'),
+    });
     expectNothingStored();
   });
 
   test('arquivo acima de 1 MiB → too-big, sem gravar', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61));
 
-    expect(refusalOf(() => store.putPath(PROJECT, PLAN))).toEqual(invalid('/path', 'too-big'));
+    expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
+      invalid('/path', 'too-big'),
+    );
     expectNothingStored();
   });
 
   test('arquivo que cresce entre o fstat e a leitura → too-big', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61));
-    const realFstat = fs.fstatSync.bind(fs);
-    jest.spyOn(fs, 'fstatSync').mockImplementation(((fd: number) =>
-      Object.assign(Object.create(realFstat(fd) as object) as object, {
-        size: 10,
-      })) as unknown as typeof fs.fstatSync);
+    understateSize(10);
 
-    expect(refusalOf(() => store.putPath(PROJECT, PLAN))).toEqual(invalid('/path', 'too-big'));
+    expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
+      invalid('/path', 'too-big'),
+    );
   });
 
   test('arquivo vazio → bad-args; bytes que não são UTF-8 → invalid-utf8', () => {
     writeInCwd('vazio.md', '');
     writeInCwd('binario.md', Buffer.from([0x61, 0xff, 0xfe]));
 
-    expect(refusalOf(() => store.putPath(PROJECT, 'vazio.md'))).toEqual(
+    expect(captureError(() => store.putPath(PROJECT, 'vazio.md'))).toMatchObject(
       invalid('/path', 'bad-args'),
     );
-    expect(refusalOf(() => store.putPath(PROJECT, 'binario.md'))).toEqual(
+    expect(captureError(() => store.putPath(PROJECT, 'binario.md'))).toMatchObject(
       invalid('/path', 'invalid-utf8'),
     );
     expectNothingStored();
@@ -542,7 +621,7 @@ describe('put por path (P16, D-15)', () => {
 
     expect(error.code).toBe('IO_ERROR');
     expect(error.details).toEqual([{ path: '', code: 'eio', message: 'I/O failure' }]);
-    expect(leaks(error, base)).toBe(false);
+    expectNoLeak(error, base);
   });
 
   describe('diretório trocado por symlink entre o realpath e o open', () => {
@@ -577,7 +656,7 @@ describe('put por path (P16, D-15)', () => {
     test('com /proc: outside-allowed-root, sem gravar', () => {
       swapDirectoryOnOpen();
 
-      expect(refusalOf(() => store.putPath(PROJECT, PLAN))).toEqual(
+      expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
         invalid('/path', 'outside-allowed-root'),
       );
       expectNothingStored();
@@ -587,7 +666,7 @@ describe('put por path (P16, D-15)', () => {
       withoutProc();
       swapDirectoryOnOpen();
 
-      expect(refusalOf(() => store.putPath(PROJECT, PLAN))).toEqual(
+      expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
         invalid('/path', 'outside-allowed-root'),
       );
       expectNothingStored();

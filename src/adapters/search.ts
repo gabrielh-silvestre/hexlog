@@ -5,7 +5,7 @@ import type { Hash } from '../domain/ids.ts';
 import type { HexRecord } from '../domain/record.ts';
 import { PROJECT_INDEX, type SearchIndex } from '../ports.ts';
 
-const DIACRITICS_RE = /[̀-ͯ]/g;
+const DIACRITICS_RE = /[\u0300-\u036f]/g;
 
 /** Remove acentos e normaliza para minúsculas, no índice e na consulta. */
 const stripDiacritics = (term: string): string =>
@@ -34,7 +34,7 @@ function queryTerms(text: string): string[] {
   return [...new Set(tokenize(text).map(stripDiacritics).filter(Boolean))];
 }
 
-type Engine = MiniSearch<{ index: number; text: string }>;
+type Engine = MiniSearch<{ id: number; text: string }>;
 
 /** Índice de um processo com o que o orçamento mede (`chars`); `count` e `lastHash` são a chave de validade. */
 type Built = { engine: Engine; chars: number };
@@ -55,16 +55,15 @@ const fingerprintOf = (record: HexRecord): Hash => sha256hex(JSON.stringify(reco
 
 const buildEngine = (): Engine =>
   new MiniSearch({
-    idField: 'index',
     fields: ['text'],
     processTerm: (term) => stripDiacritics(term) || null,
     searchOptions: { combineWith: 'AND', prefix: true, fuzzy: 0.1 },
   });
 
-/** Documentos de `records` a partir da posição `from`; o `index` é a posição em `records`. */
+/** Documentos de `records` a partir da posição `from`; o `id` é a posição em `records`. */
 const toDocuments = (records: readonly HexRecord[], from: number) =>
   records.slice(from).map((record, offset) => ({
-    index: from + offset,
+    id: from + offset,
     text: indexableText(record),
   }));
 
@@ -93,7 +92,8 @@ function reuse(entry: Entry | undefined, records: readonly HexRecord[]): Built |
 }
 
 /**
- * Índice MiniSearch cacheado por processo hexlog: `AND` + prefixo + `fuzzy` 0.1, com fallback para
+ * Índice MiniSearch cacheado por processo hexlog: `AND` + prefixo + `fuzzy` 0.1 (fração do
+ * comprimento do termo: um termo de 5 caracteres tolera 1 edição, um de 4 nenhuma), com fallback para
  * `OR` quando o `AND` não acha nada e a consulta tem 2+ termos distintos (o `OR` exige que metade
  * dos termos, arredondada para cima, case). A consulta é deduplicada antes de buscar, então
  * repetir um termo não pesa mais na ordenação. Empate de relevância mantém a ordem de `records`.
@@ -111,6 +111,11 @@ function reuse(entry: Entry | undefined, records: readonly HexRecord[]): Built |
  * que o `budget` sozinho remonta a cada busca. O alcance projeto (`PROJECT_INDEX`) nunca é
  * guardado: cada registro já está no índice do seu processo, então guardá-lo contaria em
  * duplicidade e despejaria os processos quentes; ele monta um motor efêmero a cada busca.
+ *
+ * `addAll` do MiniSearch não é atômico e lança `duplicate ID` se o `id` já está no índice: se
+ * lançar no meio, os documentos anteriores ficam indexados. Por isso `engineFor` apaga a entrada do
+ * cache antes de `reuse`: um índice que falhou nunca volta ao cache meio atualizado, e a próxima
+ * busca o remonta do zero.
  */
 export function createSearchIndex(budget = SEARCH_INDEX_BUDGET_CHARS): SearchIndex {
   // A ordem de inserção do Map é a ordem de uso: cada busca reinsere a chave no fim.

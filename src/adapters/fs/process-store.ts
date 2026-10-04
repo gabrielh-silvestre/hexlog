@@ -52,12 +52,7 @@ function tooLarge(): HexlogError {
 
 /** Tamanho em bytes do `records.jsonl` (arquivo inexistente vale 0). */
 function logSize(file: string): number {
-  try {
-    return fs.statSync(file).size;
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return 0;
-    throw error;
-  }
+  return fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
 }
 
 /**

@@ -8,7 +8,8 @@ scripts de `scripts/` (`export`, `timeline`, `insights`) são de leitura, rodado
 mão.
 
 Os dados ficam em `<D>`, que é `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog`
-se a variável estiver ausente, vazia ou não for um caminho absoluto). O dado da
+se a variável estiver ausente, vazia ou não for um caminho absoluto). `<D>` precisa de um
+sistema de arquivos com hard link e semântica POSIX (`rename` e `link` atômicos). O dado da
 1.0 mora só em `<D>/.v1/`: um diretório por projeto e, dentro dele, um log JSONL
 por processo. Cada linha do log referencia o hash da anterior, então qualquer
 alteração ou remoção de linha quebra a cadeia de forma detectável pela tool

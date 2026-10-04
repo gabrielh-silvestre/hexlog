@@ -43,6 +43,18 @@ describe('checkSchema', () => {
     ]);
   });
 
+  test('recusa $ref cíclico com uma mensagem legível e segue funcionando', () => {
+    const cyclic = {
+      $defs: { a: { $ref: '#/$defs/b' }, b: { $ref: '#/$defs/a' } },
+      $ref: '#/$defs/a',
+    };
+
+    expect(validator.checkSchema(cyclic)).toEqual([
+      { path: '', code: 'invalid-schema', message: expect.stringContaining('cyclic $ref') },
+    ]);
+    expect(validator.checkSchema({ type: 'object' })).toEqual([]);
+  });
+
   test('a mensagem de recusa não vaza caminho absoluto', () => {
     const messages = validator
       .checkSchema({ $ref: 'file:///etc/passwd' })
@@ -448,6 +460,15 @@ describe('validate', () => {
 
   test('lança com schema $async, em vez de aprovar o dado', () => {
     expect(() => validator.validate({ $async: true, type: 'string' }, {})).toThrow(/async/);
+  });
+
+  test('aponta o nome da propriedade que o propertyNames recusa', () => {
+    const schema = { type: 'object', propertyNames: { maxLength: 3 } };
+
+    expect(validator.validate(schema, { abcd: 1 })).toEqual([
+      expect.objectContaining({ path: '/abcd', code: 'max-length' }),
+      expect.objectContaining({ path: '/abcd', code: 'property-names' }),
+    ]);
   });
 
   test('escapa ~ e / no JSON Pointer', () => {

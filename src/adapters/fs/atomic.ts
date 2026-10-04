@@ -24,6 +24,9 @@ export type WriteFileAtomicOptions = {
  * Erros de I/O saem crus (`ErrnoException`); mapeá-los para `IO_ERROR` cabe ao chamador.
  * `ponytail:` só Linux: `exclusive` depende de hard link (`linkSync`) e `fsyncDir` de `fsync` de
  * diretório, então FAT, exFAT, drvfs (`/mnt/c` no WSL) e Windows ficam fora; macOS não foi testado.
+ * `ponytail:` um kill entre o temporário e o `rename`/`link` deixa o temporário órfão na pasta
+ * (nenhuma rotina o varre), e `fsyncDir` sincroniza só a pasta folha, não os pais que o `mkdir`
+ * criou. Teto aceito; melhoria: varrer temporários antigos e dar `fsync` na cadeia de pais criados.
  */
 export function writeFileAtomic(
   file: string,

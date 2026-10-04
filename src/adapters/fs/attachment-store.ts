@@ -1,10 +1,10 @@
 // Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
+import { isUtf8 } from 'node:buffer';
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { isEqual } from 'es-toolkit';
 import { sha256hex } from '../../domain/chain.ts';
 import { Hash, Name } from '../../domain/ids.ts';
-import { HexlogError } from '../../errors.ts';
+import { HexlogError, invalidInput } from '../../errors.ts';
 import type { AttachmentPut, AttachmentStatus, AttachmentStore } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { blobFile } from './data-format.ts';
@@ -23,13 +23,7 @@ export type AttachmentStoreOptions = {
   cwd: string;
 };
 
-type Blob = { status: 'ok'; bytes: Buffer } | { status: 'missing' } | { status: 'corrupted' };
-
-type Fingerprint = { ino: number; size: number; mtimeMs: number; ctimeMs: number };
-
-function invalidInput(pointer: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_INPUT', message, [{ path: pointer, code, message }]);
-}
+type BlobRead = { status: 'ok'; bytes: Buffer } | { status: 'missing' } | { status: 'corrupted' };
 
 function attachmentNotFound(hash: string): HexlogError {
   return new HexlogError('ATTACHMENT_NOT_FOUND', `attachment '${hash}' not found`);
@@ -46,11 +40,11 @@ function openForRead(file: string): number {
 }
 
 /**
- * Lê o fd até o fim, mas no máximo `ATTACHMENT_MAX_BYTES + 1` bytes: um resultado acima do teto
- * sinaliza arquivo grande demais (ou que cresceu depois do `fstat`) sem carregá-lo inteiro.
+ * Lê o fd até o fim, mas no máximo `size + 1` bytes (`size` é o do `fstat`): um resultado maior que
+ * `size` sinaliza que o arquivo cresceu depois do `fstat`, sem carregar o excedente.
  */
-function readBounded(fd: number): Buffer {
-  const buffer = Buffer.allocUnsafe(ATTACHMENT_MAX_BYTES + 1);
+function readBounded(fd: number, size: number): Buffer {
+  const buffer = Buffer.allocUnsafe(size + 1);
   let length = 0;
   while (length < buffer.length) {
     const read = fs.readSync(fd, buffer, length, buffer.length - length, null);
@@ -64,7 +58,7 @@ function readBounded(fd: number): Buffer {
  * Lê o blob e confere o sha256 dos bytes contra o nome do arquivo. Symlink, arquivo que não é
  * regular (FIFO, diretório) ou acima do teto contam como `corrupted`: nunca são seguidos nem lidos.
  */
-function readBlob(file: string, hash: Hash): Blob {
+function readBlob(file: string, hash: Hash): BlobRead {
   let fd: number;
   try {
     fd = openForRead(file);
@@ -78,8 +72,8 @@ function readBlob(file: string, hash: Hash): Blob {
   try {
     const stat = fs.fstatSync(fd);
     if (!stat.isFile() || stat.size > ATTACHMENT_MAX_BYTES) return { status: 'corrupted' };
-    const bytes = readBounded(fd);
-    const intact = bytes.length <= ATTACHMENT_MAX_BYTES && sha256hex(bytes) === hash;
+    const bytes = readBounded(fd, stat.size);
+    const intact = bytes.length === stat.size && sha256hex(bytes) === hash;
     return intact ? { status: 'ok', bytes } : { status: 'corrupted' };
   } finally {
     fs.closeSync(fd);
@@ -147,16 +141,11 @@ function openCandidate(file: string): number {
   }
 }
 
-/** Caminho que o kernel resolveu para `fd`, ou `undefined` sem /proc (macOS, contêiner restrito). */
-function procPathOf(fd: number): string | undefined {
-  return realpathOrUndefined(`/proc/self/fd/${fd}`);
-}
-
 /**
  * O `fd` aberto é mesmo `file`? O `realpath` do diretório e o `open` são duas chamadas, e um
  * componente do diretório pode virar symlink entre elas: com /proc, o kernel diz o caminho do fd;
- * sem /proc, `recheckDirectory` refaz a checagem do diretório e o `dev`/`ino` do fd é comparado
- * com o do caminho resolvido.
+ * sem /proc (macOS, contêiner restrito), `recheckDirectory` refaz a checagem do diretório e o
+ * `dev`/`ino` do fd é comparado com o do caminho resolvido.
  */
 function isOpenedAt(
   fd: number,
@@ -164,7 +153,7 @@ function isOpenedAt(
   stat: fs.Stats,
   recheckDirectory: () => string,
 ): boolean {
-  const opened = procPathOf(fd);
+  const opened = realpathOrUndefined(`/proc/self/fd/${fd}`);
   if (opened !== undefined) return opened === file;
   try {
     const current = fs.statSync(file);
@@ -200,19 +189,11 @@ function readFileWithin(options: AttachmentStoreOptions, candidate: string): Buf
     }
     if (stat.size > ATTACHMENT_MAX_BYTES) throw tooBigFile();
 
-    const bytes = readBounded(fd);
-    if (bytes.length > ATTACHMENT_MAX_BYTES) throw tooBigFile();
+    const bytes = readBounded(fd, stat.size);
+    if (bytes.length > stat.size) throw tooBigFile();
     return bytes;
   } finally {
     fs.closeSync(fd);
-  }
-}
-
-/** Nome de projeto e hash viram segmento de caminho: passam por aqui antes de qualquer I/O. */
-function checkedSegments(project: Name, hash?: Hash): void {
-  safeName(project, '/project');
-  if (hash !== undefined && !Hash.safeParse(hash).success) {
-    throw invalidInput('/hash', 'invalid-hash', 'invalid hash');
   }
 }
 
@@ -223,28 +204,35 @@ function checkedSegments(project: Name, hash?: Hash): void {
  * serviço `commands/attachment.ts` (F4), conferidas antes de qualquer I/O (D-15).
  */
 export function createAttachmentStore(options: AttachmentStoreOptions): AttachmentStore {
-  const verified = new Map<string, Fingerprint>();
+  const verified = new Map<string, string>();
 
+  /** Nome de projeto e hash viram segmento de caminho: passam por aqui antes de qualquer I/O. */
   function checkedBlobFile(project: Name, hash: Hash): string {
-    checkedSegments(project, hash);
+    safeName(project, '/project');
+    if (!Hash.safeParse(hash).success) {
+      throw invalidInput('/hash', 'invalid-hash', 'invalid hash');
+    }
     return blobFile(options.dataDir, project, hash);
   }
 
   /**
-   * Publica `bytes` com `link` exclusivo. `EEXIST` é dedupe: o blob existente é relido e comparado,
-   * nunca sobrescrito; se não confere, `ATTACHMENT_CORRUPTED`.
+   * Publica `bytes` com `link` exclusivo. Blob que já existe é dedupe: relido e comparado, nunca
+   * sobrescrito (se não confere, `ATTACHMENT_CORRUPTED`). O `lstat` antes poupa o temporário e os
+   * `fsync` no caso comum; o `EEXIST` do `link` cobre quem publica entre o `lstat` e o `link`.
    */
   function storeBlob(project: Name, bytes: Buffer): AttachmentPut {
     const hash = sha256hex(bytes);
     const file = checkedBlobFile(project, hash);
-    try {
-      writeFileAtomic(file, bytes, { exclusive: true, fsyncDir: true });
-    } catch (error) {
-      if (errnoCode(error) !== 'EEXIST') throw error;
-      if (readBlob(file, hash).status !== 'ok') throw attachmentCorrupted(hash);
-      return { hash, bytes: bytes.length, deduplicated: true };
+    if (fs.lstatSync(file, { throwIfNoEntry: false }) === undefined) {
+      try {
+        writeFileAtomic(file, bytes, { exclusive: true, fsyncDir: true });
+        return { hash, bytes: bytes.length, deduplicated: false };
+      } catch (error) {
+        if (errnoCode(error) !== 'EEXIST') throw error;
+      }
     }
-    return { hash, bytes: bytes.length, deduplicated: false };
+    if (readBlob(file, hash).status !== 'ok') throw attachmentCorrupted(hash);
+    return { hash, bytes: bytes.length, deduplicated: true };
   }
 
   /**
@@ -253,21 +241,11 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
    * é visto; o resíduo é falsificar o `ctime`.
    */
   function statusOf(file: string, hash: Hash): AttachmentStatus {
-    let stat: fs.Stats;
-    try {
-      stat = fs.lstatSync(file);
-    } catch (error) {
-      if (errnoCode(error) === 'ENOENT') return 'missing';
-      throw error;
-    }
+    const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (stat === undefined) return 'missing';
 
-    const fingerprint = {
-      ino: stat.ino,
-      size: stat.size,
-      mtimeMs: stat.mtimeMs,
-      ctimeMs: stat.ctimeMs,
-    };
-    if (isEqual(verified.get(file), fingerprint)) return 'ok';
+    const fingerprint = `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    if (verified.get(file) === fingerprint) return 'ok';
 
     const { status } = readBlob(file, hash);
     if (status !== 'ok') {
@@ -282,7 +260,7 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
   return {
     putText: (project, text) =>
       mapIo(() => {
-        checkedSegments(project);
+        safeName(project, '/project');
         if (Buffer.byteLength(text, 'utf8') > ATTACHMENT_MAX_BYTES) {
           throw invalidInput('/text', 'too-big', `text exceeds ${ATTACHMENT_MAX_BYTES} bytes`);
         }
@@ -291,12 +269,10 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
 
     putPath: (project, candidate) =>
       mapIo(() => {
-        checkedSegments(project);
+        safeName(project, '/project');
         const bytes = readFileWithin(options, candidate);
         if (bytes.length === 0) throw invalidInput('/path', 'bad-args', 'file is empty');
-        if (decodeUtf8(bytes) === undefined) {
-          throw invalidInput('/path', 'invalid-utf8', 'file is not valid UTF-8');
-        }
+        if (!isUtf8(bytes)) throw invalidInput('/path', 'invalid-utf8', 'file is not valid UTF-8');
         return storeBlob(project, bytes);
       }),
 

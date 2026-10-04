@@ -1,6 +1,7 @@
 import type { BatchItem } from '../../src/domain/record.ts';
 
-// Contrato de `argv` dos processos filhos de `lock-holder.ts` e `crash-writer.ts`: cada um recebe um
+// Contrato de `argv` dos processos filhos de `lock-holder.ts`, `crash-writer.ts` e
+// `attachment-probe.ts`: cada um recebe um
 // único argumento JSON com o formato abaixo. Só tipos: o pai (`adapters/lock-helpers.ts`, os specs) e
 // o filho importam o mesmo contrato, e o `import type` some na execução, então nenhum filho roda
 // dentro do jest.
@@ -41,3 +42,8 @@ export type LockHolderArgs = {
 
 /** Argumento JSON de `crash-writer.ts`; `run` rotula as `key` dos lotes que o filho grava. */
 export type CrashWriterArgs = { dataDir: string; project: string; process: string; run: number };
+
+/** Argumento JSON de `attachment-probe.ts`: a chamada do `AttachmentStore` que o filho executa. */
+export type AttachmentProbeArgs = { dataDir: string; cwd: string; project: string } & (
+  { call: 'status'; hash: string } | { call: 'putPath'; path: string }
+);

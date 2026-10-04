@@ -2,19 +2,19 @@ import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.
 import addFormats from 'ajv-formats';
 import { isPlainObject, kebabCase } from 'es-toolkit';
 import safeRegex from 'safe-regex2';
-import { capDetails, type Detail } from '../errors.ts';
+import { Hash } from '../domain/ids.ts';
+import { capDetails, pointer as jsonPointer, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
-
-/** Formato `attachment` (D-16): sha256 em hexadecimal minúsculo, igual a `Hash` em `domain/ids.ts`. */
-const ATTACHMENT_FORMAT = /^[0-9a-f]{64}$/;
-
-const escapePointerSegment = (segment: string): string =>
-  segment.replace(/~/g, '~0').replace(/\//g, '~1');
 
 /** Propriedade que o ajv só cita em `params`: o `instancePath` do erro aponta para o objeto pai. */
 function offendingProperty(error: ErrorObject): string | undefined {
   const params = error.params as Record<string, unknown>;
-  const name = params.missingProperty ?? params.additionalProperty ?? params.unevaluatedProperty;
+  const name =
+    params.missingProperty ??
+    params.additionalProperty ??
+    params.unevaluatedProperty ??
+    params.propertyName ??
+    error.propertyName;
   return typeof name === 'string' ? name : undefined;
 }
 
@@ -22,9 +22,7 @@ function toDetail(error: ErrorObject): Detail {
   const property = offendingProperty(error);
   return {
     path:
-      property === undefined
-        ? error.instancePath
-        : `${error.instancePath}/${escapePointerSegment(property)}`,
+      property === undefined ? error.instancePath : error.instancePath + jsonPointer([property]),
     code: kebabCase(error.keyword),
     message: error.message ?? 'schema validation failed',
   };
@@ -92,7 +90,7 @@ function patternDetails(root: unknown): Detail[] {
     if (isPlainObject(node.patternProperties)) {
       for (const key of Object.keys(node.patternProperties)) {
         if (!safeRegex(key))
-          reject(`${pointer}/patternProperties/${escapePointerSegment(key)}`, UNSAFE_REGEX_MESSAGE);
+          reject(`${pointer}/patternProperties${jsonPointer([key])}`, UNSAFE_REGEX_MESSAGE);
       }
     }
 
@@ -105,7 +103,7 @@ function patternDetails(root: unknown): Detail[] {
       const map: unknown = node[key];
       if (!isPlainObject(map)) continue;
       for (const [name, child] of Object.entries(map))
-        visit(child, `${pointer}/${key}/${escapePointerSegment(name)}`);
+        visit(child, `${pointer}/${key}${jsonPointer([name])}`);
     }
   };
 
@@ -117,7 +115,8 @@ function patternDetails(root: unknown): Detail[] {
 function createCompiler(allErrors: boolean) {
   const ajv = new Ajv2020.default({ strict: true, allErrors, logger: false });
   addFormats.default(ajv);
-  ajv.addFormat('attachment', ATTACHMENT_FORMAT);
+  // Formato `attachment` (D-16): o mesmo `Hash` do domínio (sha256 em hexadecimal minúsculo).
+  ajv.addFormat('attachment', (value: string) => Hash.safeParse(value).success);
 
   const compile = (schema: Record<string, unknown>) => {
     // O `removeSchema` do `finally` apaga por `$id`: com um `$id` que o ajv já conhece (os
@@ -138,6 +137,12 @@ function createCompiler(allErrors: boolean) {
   };
 
   return { ajv, compile };
+}
+
+/** O ajv estoura a pilha ao compilar `$ref` cíclico (`a` aponta `b`, `b` aponta `a`): `RangeError` cru não ajuda o agente. */
+function messageOf(error: unknown): string {
+  if (error instanceof RangeError) return 'schema has a cyclic $ref or is nested too deeply';
+  return (error as Error).message;
 }
 
 /**
@@ -188,6 +193,8 @@ export function createValidator(): Validator {
   return {
     checkSchema(schema) {
       try {
+        // `validateSchema` antes de `compile`: o `compile` também confere o metaschema, mas lança um
+        // texto único (`schema is invalid: ...`); aqui os erros saem estruturados, cada um com o seu path.
         if (!checker.ajv.validateSchema(schema)) return toDetails(checker.ajv.errors ?? []);
         checker.compile(schema);
         return patternDetails(schema);
@@ -195,7 +202,7 @@ export function createValidator(): Validator {
         // Modo estrito (palavra-chave ou formato desconhecido), `$ref` sem destino, `$schema` de
         // outro rascunho, `$id` repetido e `$async` saem como exceção, sem ponto no schema: o erro
         // aponta a raiz do documento (`path` vazio), como os do metaschema são relativos a ele.
-        return [{ path: '', code: 'invalid-schema', message: (error as Error).message }];
+        return [{ path: '', code: 'invalid-schema', message: messageOf(error) }];
       }
     },
     validate(schema, data) {

@@ -11,7 +11,7 @@ import {
   type Target,
 } from '../domain/ids.ts';
 import { needsReview as staleReviews, type NeedsReview } from '../domain/relations.ts';
-import { HexlogError } from '../errors.ts';
+import { HexlogError, invalidInput } from '../errors.ts';
 import type {
   AttachmentReader,
   AttachmentStatus,
@@ -207,10 +207,6 @@ function invalidFilter(path: string, code: string, message: string): HexlogError
 
 function invalidCursor(code: string, message: string): HexlogError {
   return new HexlogError('INVALID_CURSOR', 'Invalid cursor', [{ path: '/cursor', code, message }]);
-}
-
-function invalidInput(path: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_INPUT', message, [{ path, code, message }]);
 }
 
 function gateNotFound(): HexlogError {

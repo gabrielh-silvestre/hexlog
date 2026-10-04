@@ -1,10 +1,6 @@
 import type { RuleCode, Violation } from '../domain/relations.ts';
 import { HexlogError, type Detail } from '../errors.ts';
 
-export function invalidInput(path: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_INPUT', message, [{ path, code, message }]);
-}
-
 export function invalidRecord(details: Detail[]): HexlogError {
   return new HexlogError('INVALID_RECORD', 'record violates a type or relation rule', details);
 }

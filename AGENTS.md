@@ -78,6 +78,7 @@ Direção permitida de dependência:
 - `domain/` não importa `shared/`, `commands/`, `queries/`, `mcp/` nem `adapters/`, nem builtin do Node (salvo `crypto`) nem lib de infraestrutura. Exceção: importa `src/errors.ts` (`HexlogError` em `domain/definitions.ts` e `domain/chain.ts`), e `errors.ts` importa de volta só o tipo `RecordId` (ciclo só de tipo). `eslint.boundaries.js` não proíbe `errors.ts` nem `ports.ts` dentro de `domain/`, então essa parte é convenção.
 - `adapters/`, `compose.ts` e `server.ts` também importam `shared/` (hoje só `shared/logger.ts` e `shared/loader.ts`); `mcp/` importa `shared/logger.ts`.
 - `shared/`, `commands/` e `queries/` dependem de `domain/` e das portas, nunca de `adapters/`; `commands/` e `queries/` não se importam.
+- `adapters/` só implementa portas: não importa `commands/`, `queries/` nem `mcp/` (`eslint.boundaries.js#adaptersBlock`); builtins do Node e libs de infraestrutura são o que ele existe para usar.
 - `mcp/` chama só serviços: não importa `adapters/`, builtin do Node nem `compose.ts`; `mcp/kernel.ts` também não importa `mcp/tools/`.
 - Só `server.ts`, os scripts e os testes importam `compose.ts`. Scripts de leitura passam por `compose.ts` e não importam `adapters/` nem `mcp/` (`scripts/install.ts` e `scripts/build.ts` ficam de fora).
 - Travas mecânicas: `eslint.boundaries.js#scriptsBlock` e os demais blocos de `boundaryBlocks`, `NO_DYNAMIC_IMPORT` (import dinâmico barrado em toda camada, porque contornaria as travas de import) e `test/boundaries.spec.ts`.

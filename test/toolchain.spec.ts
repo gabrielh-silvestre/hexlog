@@ -72,7 +72,11 @@ describe('probe de dependências no jest (sub-passo 5)', () => {
   test('minisearch busca com acento normalizado via processTerm', () => {
     const index = new MiniSearch<{ id: number; text: string }>({
       fields: ['text'],
-      processTerm: (term) => term.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(),
+      processTerm: (term) =>
+        term
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase(),
     });
     index.addAll([
       { id: 1, text: 'cafe order approved' },

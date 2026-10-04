@@ -7,9 +7,9 @@ import {
   type RelationKind,
 } from '../domain/record.ts';
 import { resolveKind, type NamedRelation } from '../domain/relations.ts';
-import { HexlogError } from '../errors.ts';
+import { HexlogError, invalidInput } from '../errors.ts';
 import type { Manifest, Validator } from '../ports.ts';
-import { invalidInput, invalidRecord, ruleRefusal } from './register-errors.ts';
+import { invalidRecord, ruleRefusal } from './register-errors.ts';
 
 /** Relação com o `kind` já resolvido; `input` é como o agente a enviou (`to` ainda pode ser `@alias`). */
 export type PreparedRelation = { input: RelationInput; kind: RelationKind };

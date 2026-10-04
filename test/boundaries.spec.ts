@@ -164,6 +164,21 @@ describe('ports.ts na raiz de src/ (M6)', () => {
   });
 });
 
+describe('adapters sem commands, queries nem mcp (M30)', () => {
+  test.each(['commands', 'queries', 'mcp'])('adapters não importa %s', async (layer) => {
+    expect(
+      await ruleIdsOfText('src/adapters/fs/probe.ts', importing(`../../${layer}/x.ts`)),
+    ).toEqual(['no-restricted-imports']);
+  });
+
+  test('adapters pode importar domain, ports e errors', async () => {
+    const code = ['../../domain/ids.ts', '../../ports.ts', '../../errors.ts']
+      .map((specifier) => `import '${specifier}';\n`)
+      .join('');
+    expect(await ruleIdsOfText('src/adapters/fs/probe.ts', code)).toEqual([]);
+  });
+});
+
 describe('mcp sem builtins nem adapters (N6)', () => {
   test.each([
     ['src/mcp/tools/process.ts', '../../adapters/fs/store.ts'],
