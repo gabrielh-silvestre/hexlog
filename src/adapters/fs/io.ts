@@ -1,4 +1,4 @@
-// Import padrão (não `import * as fs`): o spy do jest só intercepta assim (ver `process-store.ts`).
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import { Name } from '../../domain/ids.ts';
 import { HexlogError } from '../../errors.ts';
@@ -42,6 +42,11 @@ export function readIfPresent(file: string): string | undefined {
     if (errnoCode(error) === 'ENOENT') return undefined;
     throw error;
   }
+}
+
+/** `fs.existsSync` que só trata `ENOENT` como ausente: `EACCES`, `EIO` e afins saem crus em vez de virar `false`. */
+export function existsStrict(file: string): boolean {
+  return fs.statSync(file, { throwIfNoEntry: false }) !== undefined;
 }
 
 /** Diretórios de `dir` com nome válido que passam em `keep`, em ordem alfabética; `dir` inexistente não tem nenhum. */

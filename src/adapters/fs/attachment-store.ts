@@ -1,5 +1,4 @@
-// Import padrão (não `import * as fs`): o spy de `fstatSync`/`openSync` dos testes só intercepta
-// assim, porque sob `esModuleInterop` o namespace copia o módulo com getters não configuráveis.
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { isEqual } from 'es-toolkit';

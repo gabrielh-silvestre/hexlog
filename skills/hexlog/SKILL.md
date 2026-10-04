@@ -144,6 +144,10 @@ os seletores sem `targetPrefix` herdam esse alvo (a fronteira é o `.`).
 
 ## Diagnóstico de saúde
 
+**Plataforma: só Linux.** O lock por pid, a gravação atômica e o arquivador dependem de /proc, de
+hard link e de fsync de diretório. macOS não foi testado; Windows e FAT, exFAT e drvfs (/mnt/c no
+WSL) ficam fora.
+
 **A prova real de que o servidor está vivo é chamar `list` sem parâmetros.**
 Ele responde os projetos e a contagem de processos de cada um, sem precisar de
 nenhum projeto existente.
@@ -161,7 +165,7 @@ de cometer: um `--check` verde não diz nada sobre o servidor MCP responder.
 | Ação | Motivo técnico |
 |---|---|
 | Arquivar o dado 0.x (`node scripts/install.ts --archive-0x`, a partir do repositório hexlog) | Enquanto houver dado 0.x em `<D>`, toda tool responde `LEGACY_DATA`, com `details[0].code` `run` e o comando na mensagem. O agente não roda `node scripts/install.ts` sem pedido explícito: escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
-| Destravar um processo com `LOCK_TIMEOUT` `holder-unreadable` | O dono do lock não pode ser lido, e repetir nunca resolve. O diretório do lock mora em `<D>`, fora do alcance do Bash do agente; o destravamento manual está no README do repositório hexlog |
+| Destravar um processo com `LOCK_TIMEOUT` `holder-unreadable` | O dono do lock não pode ser lido, e repetir nunca resolve. O diretório do lock (`<D>/.v1/<project>/<process>/records.jsonl.lock`) mora em `<D>`, fora do alcance do Bash do agente; o destravamento manual está no README do repositório hexlog |
 | Descartar `$XDG_DATA_HOME/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
 | Reiniciar a sessão do Claude Code | Cache de `tools/list` do protocolo MCP — fora do alcance de qualquer agente |
 

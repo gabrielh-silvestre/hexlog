@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-// Import padrão (não `import * as fs`): o spy do jest só intercepta assim (ver `adapters/fs/atomic.ts`).
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { isEqual } from 'es-toolkit';

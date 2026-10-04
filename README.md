@@ -20,6 +20,9 @@ scripts, arquivamento) no [ADR 0009](docs/adr-0009-ferramental.md).
 
 ## Requisitos
 
+- Linux. O lock por pid, a gravação atômica e o arquivador dependem de `/proc`, de hard link e de
+  `fsync` de diretório (`src/adapters/fs/atomic.ts#writeFileAtomic`): macOS não foi testado, e
+  Windows, FAT, exFAT e drvfs (`/mnt/c` no WSL) ficam fora.
 - Node `>= 24.18.1`.
 - Claude Code, com `~/.claude/settings.json` já existente (o instalador grava
   nele; harness não instalado = instalação falha com uma mensagem explícita).

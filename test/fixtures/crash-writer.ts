@@ -1,4 +1,5 @@
-// Processo filho do kill -9 (TF1, SE3b): `crash-writer.ts <dataDir> <project> <process> <run>`.
+// Processo filho do kill -9 (TF1, SE3b): `crash-writer.ts <json>`, com o argumento JSON de
+// `fixture-args.ts#CrashWriterArgs`.
 // Carrega os módulos e espera uma linha no stdin (o pai sobe os filhos adiantados, porque o
 // carregamento custa ~340 ms); depois grava lotes de 10 registros, um atrás do outro, pelo
 // `ProcessStore` real, sem parar. Antes de cada gravação (dentro de `decide`, com o lote montado e
@@ -8,18 +9,13 @@ import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
 import type { RawProcess } from '../../src/ports.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import { chainLine } from './chain-line.ts';
+import type { CrashWriterArgs } from './fixture-args.ts';
 
 const BATCH_SIZE = 10;
 
-const [, , dataDir, project, processName, run] = process.argv;
-if (
-  dataDir === undefined ||
-  project === undefined ||
-  processName === undefined ||
-  run === undefined
-) {
-  throw new Error('usage: crash-writer.ts <dataDir> <project> <process> <run>');
-}
+const [, , argsJson] = process.argv;
+if (argsJson === undefined) throw new Error('usage: crash-writer.ts <json>');
+const { dataDir, project, process: processName, run } = JSON.parse(argsJson) as CrashWriterArgs;
 
 /** Lote de 10 elos encadeados a partir do fim do log lido, com `batch.key` no primeiro. */
 const batchLine = (raw: RawProcess, key: string): string =>

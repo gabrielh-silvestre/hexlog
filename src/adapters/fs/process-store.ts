@@ -1,6 +1,4 @@
-// Import padrão (não `import * as fs`): o spy de `writeSync` do P9 (`jest.spyOn(fs, 'writeSync')`) só
-// intercepta assim, porque sob `esModuleInterop` o namespace copia o módulo com getters não
-// configuráveis e o teste acabaria espiando um objeto que este módulo não usa.
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { RESERVED_PROCESS_NAMES, type Name } from '../../domain/ids.ts';
@@ -9,7 +7,14 @@ import { HexlogError } from '../../errors.ts';
 import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { dataRoot, MANIFEST_FILE, processPaths } from './data-format.ts';
-import { listDirectories, mapIo, readIfPresent, safeName, toHexlogError } from './io.ts';
+import {
+  existsStrict,
+  listDirectories,
+  mapIo,
+  readIfPresent,
+  safeName,
+  toHexlogError,
+} from './io.ts';
 import { createLockManager, type Lock, type LockOptions } from './lock.ts';
 
 export type ProcessStoreOptions = LockOptions & {
@@ -129,7 +134,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     decide: (raw: RawProcess) => Decision<T>,
   ): Promise<T> {
     const paths = pathsOf(ref);
-    if (!fs.existsSync(paths.manifest)) throw notFound(ref);
+    if (!existsStrict(paths.manifest)) throw notFound(ref);
     const lock = await locks.acquire(paths.lock);
     let result: T;
     try {
@@ -171,7 +176,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
       mapIo(() =>
         listDirectories(projectDir(project), (name) =>
           // Pastas de definição e anexos do projeto não têm manifesto.
-          fs.existsSync(path.join(projectDir(project), name, MANIFEST_FILE)),
+          existsStrict(path.join(projectDir(project), name, MANIFEST_FILE)),
         ),
       ),
 

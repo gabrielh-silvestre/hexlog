@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
-// Import padrão (não `import * as fs`): o spy de `fsyncSync` do teste só intercepta assim,
-// porque sob `esModuleInterop` o namespace copia o módulo com getters não configuráveis.
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -23,6 +22,8 @@ export type WriteFileAtomicOptions = {
  * depois `rename` (substitui) ou `link` (exclusivo, vence quem chega primeiro). Nunca deixa
  * `file` pela metade, e o temporário é removido com sucesso ou com falha.
  * Erros de I/O saem crus (`ErrnoException`); mapeá-los para `IO_ERROR` cabe ao chamador.
+ * `ponytail:` só Linux: `exclusive` depende de hard link (`linkSync`) e `fsyncDir` de `fsync` de
+ * diretório, então FAT, exFAT, drvfs (`/mnt/c` no WSL) e Windows ficam fora; macOS não foi testado.
  */
 export function writeFileAtomic(
   file: string,
@@ -34,7 +35,7 @@ export function writeFileAtomic(
 
   const tmp = path.join(
     dir,
-    `.${path.basename(file)}.${process.pid}.${randomBytes(4).toString('hex')}`,
+    `.${path.basename(file)}.${process.pid}.${randomBytes(8).toString('hex')}`,
   );
   try {
     writeSynced(tmp, content);

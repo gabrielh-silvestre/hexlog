@@ -114,6 +114,8 @@ export const boundaryBlocks = [
     })),
   }),
   restrictImports(['src/shared/**/*.ts']),
+  // `ports.ts` está na raiz de `src/`, fora de qualquer glob de camada: só declara contratos.
+  restrictImports(['src/ports.ts']),
   restrictImports(['src/commands/**/*.ts'], {
     extraGroups: [{ group: ['**/queries/**'], message: 'commands não importa queries.' }],
     extraRules: MAX_LINES,

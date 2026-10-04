@@ -34,15 +34,14 @@ function setup() {
     const barrier = createTempDir('register-barrier');
     const results = await Promise.all(
       inputs.map((input) =>
-        runFixture([
-          'register',
+        runFixture('register', {
           dataDir,
-          PROJECT,
+          project: PROJECT,
           process,
-          barrier,
-          String(inputs.length),
-          JSON.stringify(input),
-        ]),
+          barrierDir: barrier,
+          total: inputs.length,
+          input,
+        }),
       ),
     );
     expect(results.map(({ status, stderr }) => ({ status, stderr }))).toEqual(

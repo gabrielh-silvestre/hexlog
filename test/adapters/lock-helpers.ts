@@ -7,6 +7,7 @@ import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
 import type { ProcessRef } from '../../src/ports.ts';
 import { emptyManifest } from '../fixtures/chain-line.ts';
+import type { LockHolderArgs } from '../fixtures/fixture-args.ts';
 import { createTempDir } from '../helpers.ts';
 
 const FIXTURE = path.join(__dirname, '..', 'fixtures', 'lock-holder.ts');
@@ -18,11 +19,12 @@ export function killChildren(): void {
   for (const child of children.splice(0)) child.kill('SIGKILL');
 }
 
-export function runFixture(
-  args: string[],
+export function runFixture<Mode extends keyof LockHolderArgs>(
+  mode: Mode,
+  args: LockHolderArgs[Mode],
 ): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [FIXTURE, ...args]);
+    const child = spawn(process.execPath, [FIXTURE, mode, JSON.stringify(args)]);
     children.push(child);
     let stdout = '';
     let stderr = '';
@@ -34,8 +36,11 @@ export function runFixture(
 }
 
 /** Filho real da fixture no `mode` dado; devolve quando ele imprime a primeira linha (`{ pid }`). */
-export function startChild(args: string[]): Promise<{ child: ChildProcess; pid: number }> {
-  const child = spawn(process.execPath, [FIXTURE, ...args]);
+export function startChild<Mode extends keyof LockHolderArgs>(
+  mode: Mode,
+  args: LockHolderArgs[Mode],
+): Promise<{ child: ChildProcess; pid: number }> {
+  const child = spawn(process.execPath, [FIXTURE, mode, JSON.stringify(args)]);
   children.push(child);
   return new Promise((resolve, reject) => {
     let stdout = '';
@@ -54,7 +59,13 @@ export function startChild(args: string[]): Promise<{ child: ChildProcess; pid: 
 }
 
 /** Filho real que adquire o lock e fica vivo; devolve quando ele já é o dono. */
-export const startHolder = (lockDir: string) => startChild(['hold', lockDir]);
+export const startHolder = (lockDir: string) => startChild('hold', { lockDir });
+
+/** Pid de um filho real e vivo, que não é este processo: o "outro dono vivo" sem emprestar `process.ppid` nem o pid 1 do ambiente. */
+export async function liveForeignPid(): Promise<number> {
+  const { pid } = await startHolder(path.join(createTempDir('lock-foreign'), 'lock'));
+  return pid;
+}
 
 /** Processo vazio criado pelo `ProcessStore`, com o lock onde o store o usa (ao lado do log). */
 export function createProcess() {
@@ -75,9 +86,16 @@ export async function runWriteStress() {
   await once(dead.child, 'exit');
   expect(fs.existsSync(lockDir)).toBe(true);
   const barrier = createTempDir('lock-barrier');
-  const args = ['write', dataDir, ref.project, ref.process, '25', barrier, '8'];
+  const args = {
+    dataDir,
+    project: ref.project,
+    process: ref.process,
+    rounds: 25,
+    barrierDir: barrier,
+    total: 8,
+  };
 
-  const results = await Promise.all(Array.from({ length: 8 }, () => runFixture(args)));
+  const results = await Promise.all(Array.from({ length: 8 }, () => runFixture('write', args)));
 
   return { ...created, results };
 }

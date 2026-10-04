@@ -71,6 +71,7 @@ describe('travas de fronteira (SF1/TB1)', () => {
   test.each([
     'src/domain/violates-fs.ts',
     'src/shared/violates-sdk.ts',
+    'src/ports.ts',
     'src/commands/violates-adapter.ts',
     'src/queries/violates-minisearch.ts',
   ])('fixture %s falha em no-restricted-imports', async (file) => {
@@ -145,6 +146,21 @@ describe('domain sem camadas de fora do núcleo (N6)', () => {
 
   test.each(['node:crypto', '../errors.ts'])('domain pode importar %s', async (specifier) => {
     expect(await ruleIdsOfText('src/domain/probe.ts', importing(specifier))).toEqual([]);
+  });
+});
+
+describe('ports.ts na raiz de src/ (M6)', () => {
+  test.each(['node:fs', '../adapters/fs/store.ts', '@modelcontextprotocol/server', './compose.ts'])(
+    'ports.ts não importa %s',
+    async (specifier) => {
+      expect(await ruleIdsOfText('src/ports.ts', importing(specifier))).toEqual([
+        'no-restricted-imports',
+      ]);
+    },
+  );
+
+  test.each(['./domain/ids.ts', './errors.ts'])('ports.ts pode importar %s', async (specifier) => {
+    expect(await ruleIdsOfText('src/ports.ts', importing(specifier))).toEqual([]);
   });
 });
 

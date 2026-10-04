@@ -67,7 +67,10 @@ export type ProcessStore = ProcessReader & {
    * grava `line` (se houver), faz fsync, solta o lock e devolve `result`. O erro lançado por
    * `decide` sai intacto. `PROCESS_NOT_FOUND` se o processo não existe; `PROCESS_TOO_LARGE` se
    * `line` faria o arquivo passar de `MAX_LOG_BYTES` (o lote é recusado sem gravar e o processo
-   * continua legível).
+   * continua legível). Se o `release` falha depois do `fsync`, a linha já é durável e mesmo assim
+   * `write` lança `IO_ERROR`: reenviar com a mesma `key` vira `replayed` (D-06) e sem `key` duplica o
+   * lote. Se `decide` ou a gravação já falharam, o erro delas sai inalterado e a falha do
+   * `release` vai só ao log (`release-failed`).
    */
   write<T>(ref: ProcessRef, decide: (raw: RawProcess) => Decision<T>): Promise<T>;
 };
