@@ -22,3 +22,5 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run test:budget
+        env:
+          LOCK_BUDGET_ROUNDS: 5

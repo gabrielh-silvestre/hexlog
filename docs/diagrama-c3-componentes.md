@@ -91,7 +91,7 @@ C4Component
 | `state.ts` | `projectState`, `validateField` |
 | `search.ts` | Índice MiniSearch sob demanda |
 | `events.ts` | Esquemas Zod: `EventLine`, `MilestoneData`, `VerdictData`, `GateMilestoneData` |
-| `errors.ts` | `HexlogError`, `ErrorCode` (23 códigos), `issueDetails` |
+| `errors.ts` | `HexlogError`, `ErrorCode` (35 códigos), `issueDetails` |
 | `storage.ts` | `resolveSafePath`, `writeJsonAtomic`, `readJson` |
 | `directory.ts` | `dataDir(env)` — resolve `$XDG_DATA_HOME/hexlog` (fallback `~/.local/share/hexlog`) |
 | `version.ts` | `VERSION` — versão do servidor, reportada no handshake MCP e no log `start` |

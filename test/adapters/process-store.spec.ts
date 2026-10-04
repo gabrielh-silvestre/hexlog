@@ -3,19 +3,21 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  ATTACHMENTS_DIR,
   dataRoot,
   LOCK_DIR,
   LOG_FILE,
   MANIFEST_FILE,
   processPaths,
 } from '../../src/adapters/fs/data-format.ts';
-import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
+import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
 import { anchor } from '../../src/domain/chain.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
 import { parseLog, verifyProcess } from '../../src/shared/loader.ts';
 import { chainLine, emptyManifest } from '../fixtures/chain-line.ts';
 import { captureLog, createTempDir, rejectionOf } from '../helpers.ts';
+import { countFsyncs } from './fsync-spy.ts';
 
 const CRASH_WRITER = path.join(__dirname, '..', 'fixtures', 'crash-writer.ts');
 const BOOT = 'boot-a';
@@ -157,22 +159,17 @@ describe('create, read e list', () => {
     const { store } = setup();
     const other: ProcessRef = { project: 'demo', process: 'proc-2' };
     const realOpen = fs.openSync;
-    const realFsync = fs.fsyncSync;
     const opened: string[] = [];
-    const onDirectory: boolean[] = [];
+    const fsyncs = countFsyncs();
     // o manifesto nasce como temporário `.process.json.*`, então a ordem vem desse prefixo
     jest.spyOn(fs, 'openSync').mockImplementation((file, flags, mode) => {
       opened.push(path.basename(String(file)));
       return realOpen(file, flags, mode);
     });
-    jest.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
-      onDirectory.push(fs.fstatSync(fd).isDirectory());
-      realFsync(fd);
-    });
 
     expect(store.create(other, emptyManifest(other))).toBe(true);
 
-    expect(onDirectory.filter(Boolean)).toHaveLength(1);
+    expect(fsyncs().directories).toBe(1);
     expect(
       opened.filter((name) => name === LOG_FILE || name.startsWith(`.${MANIFEST_FILE}.`)),
     ).toEqual([LOG_FILE, expect.stringContaining(`.${MANIFEST_FILE}.`)]);
@@ -278,6 +275,84 @@ describe('create, read e list', () => {
     expect(JSON.stringify(error)).not.toContain(dataDir);
   });
 
+  describe('teto do log (N8)', () => {
+    /** Log esparso do tamanho pedido: o teto se testa sem gravar 64 MiB de verdade. */
+    const sparseLog = (logFile: string, size: number) => fs.truncateSync(logFile, size);
+
+    test('read de um log com exatamente 64 MiB ainda lê', () => {
+      const { store, ref, logFile } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES);
+
+      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES);
+    });
+
+    test('read de um log 1 byte acima do teto dá PROCESS_TOO_LARGE sem caminho e sem ler o conteúdo', () => {
+      const { dataDir, store, ref, logFile } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES + 1);
+      const readFile = jest.spyOn(fs, 'readFileSync');
+
+      let error: unknown;
+      try {
+        store.read(ref);
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toMatchObject({
+        code: 'PROCESS_TOO_LARGE',
+        details: [{ path: '/process', code: 'too-large', message: expect.any(String) }],
+      });
+      expect(JSON.stringify(error)).not.toContain(dataDir);
+      expect(readFile).not.toHaveBeenCalledWith(logFile, expect.anything());
+    });
+
+    test('write sobre um log acima do teto recusa sem gravar e solta o lock', async () => {
+      const { dataDir, store, ref, logFile, dir } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES + 1);
+      const decide = jest.fn(() => ({ result: undefined }));
+
+      const error = await rejectionOf(store.write(ref, decide), dataDir);
+
+      expect(error.code).toBe('PROCESS_TOO_LARGE');
+      expect(decide).not.toHaveBeenCalled();
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES + 1);
+      expect(locksIn(dir)).toEqual([]);
+    });
+
+    /** Prefixo `\n` (o log esparso termina em byte nulo) mais a linha: o lote tem `LINE.length + 1` bytes. */
+    const LINE = 'x'.repeat(100);
+
+    test('write de um lote que fecha o log em exatamente 64 MiB grava e o processo segue legível', async () => {
+      const { store, ref, logFile } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES - LINE.length - 1);
+
+      await store.write(ref, () => ({ line: LINE, result: undefined }));
+
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES);
+      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES);
+    });
+
+    test('write de um lote que passaria 1 byte do teto recusa, não cresce o arquivo, solta o lock e o read segue', async () => {
+      const { dataDir, store, ref, logFile, dir } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES - LINE.length);
+
+      const error = await rejectionOf(
+        store.write(ref, () => ({ line: LINE, result: undefined })),
+        dataDir,
+      );
+
+      expect(error).toMatchObject({
+        code: 'PROCESS_TOO_LARGE',
+        details: [
+          { path: '/process', code: 'too-large', message: expect.stringContaining('new process') },
+        ],
+      });
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - LINE.length);
+      expect(locksIn(dir)).toEqual([]);
+      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES - LINE.length);
+    });
+  });
+
   test('list e listProjects ordenam e ignoram pastas sem manifesto; ausentes dão lista vazia', () => {
     const { dataDir, store, ref, manifest } = setup();
     expect(
@@ -291,7 +366,7 @@ describe('create, read e list', () => {
       { ...manifest, project: 'abc', process: 'zeta' },
     );
     fs.mkdirSync(path.join(dataRoot(dataDir), 'demo', 'types'));
-    fs.mkdirSync(path.join(dataRoot(dataDir), 'demo', 'attachments'));
+    fs.mkdirSync(path.join(dataRoot(dataDir), 'demo', ATTACHMENTS_DIR));
 
     expect(store.list('demo')).toEqual(['alpha', ref.process]);
     expect(store.listProjects()).toEqual(['abc', 'demo']);
@@ -345,12 +420,12 @@ describe('nomes e manifesto recusados antes de qualquer I/O (N1, N3)', () => {
 
   test('create com nome reservado de processo dá RESERVED_NAME e não cria a pasta', () => {
     const { dataDir, store } = setup();
-    const reserved: ProcessRef = { project: 'demo', process: 'attachments' };
+    const reserved: ProcessRef = { project: 'demo', process: ATTACHMENTS_DIR };
 
     expect(() => store.create(reserved, emptyManifest(reserved))).toThrow(
       expect.objectContaining({ code: 'RESERVED_NAME' }),
     );
-    expect(fs.existsSync(path.join(dataRoot(dataDir), 'demo', 'attachments'))).toBe(false);
+    expect(fs.existsSync(path.join(dataRoot(dataDir), 'demo', ATTACHMENTS_DIR))).toBe(false);
   });
 
   test.each([
