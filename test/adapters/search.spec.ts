@@ -5,28 +5,13 @@ import type { HexRecord } from '../../src/domain/record.ts';
 import type { ProcessRef } from '../../src/ports.ts';
 import { writeRecordsCorpus } from '../fixtures/records-corpus.ts';
 import { createTempDir } from '../helpers.ts';
+import { makeRecord } from './search-helpers.ts';
 
 const PROCESS: ProcessRef = { project: 'proj', process: 'proc' };
 
 // Índice novo por chamada: cada caso mede a busca sem cache; o que o cache muda está em search.cache.spec.ts.
 const search = (records: HexRecord[], text: string, allowed?: ReadonlySet<RecordId>) =>
   createSearchIndex().search(PROCESS, records, text, allowed);
-
-let counter = 0;
-
-function makeRecord(overrides: Partial<HexRecord> = {}): HexRecord {
-  counter += 1;
-  return {
-    id: `proc:0198f4a0-0000-7000-8000-${counter.toString(16).padStart(12, '0')}`,
-    type: 'note',
-    at: '2026-01-01T00:00:00.000Z',
-    target: 'area.topic',
-    author: { agent: 'tester', client: 'test' },
-    data: {},
-    relations: [],
-    ...overrides,
-  };
-}
 
 const idsOf = (records: HexRecord[]) => records.map((record) => record.id);
 
@@ -83,6 +68,13 @@ describe('createSearchIndex', () => {
     expect(search([makeRecord({ data: { text: 'configuracao' } })], 'CONFIGURAÇÃO')).toHaveLength(
       1,
     );
+  });
+
+  test('termo que some depois de tirar o acento não é indexado, e o resto do registro continua achável', () => {
+    const record = makeRecord({ data: { text: '\u0301 webhook' } });
+
+    expect(search([record], 'webhook')).toEqual([record.id]);
+    expect(search([record], '\u0301')).toEqual([]);
   });
 
   test('casa por prefixo e tolera um erro de digitação', () => {

@@ -1,6 +1,6 @@
 import { uniqBy } from 'es-toolkit';
 import type { z } from 'zod';
-import type { RecordId } from './domain/ids.ts';
+import type { Name, RecordId } from './domain/ids.ts';
 
 /**
  * Um item do array `details` de `HexlogError` (§4.13): aponta o campo problemático via JSON Pointer.
@@ -62,6 +62,17 @@ export class HexlogError extends Error {
 /** `INVALID_INPUT` com um único `Detail` em `path`; `message` é a do erro e a do `Detail`. */
 export function invalidInput(path: string, code: string, message: string): HexlogError {
   return new HexlogError('INVALID_INPUT', message, [{ path, code, message }]);
+}
+
+/**
+ * Cadeia do processo quebrada (`PROCESS_CORRUPTED`, `broken-chain`, `details[0].process`): a mesma
+ * para a leitura (`queries/`) e para a escrita (`commands/`), que não podem se importar.
+ */
+export function brokenChain(process: Name): HexlogError {
+  const message = 'process chain is broken';
+  return new HexlogError('PROCESS_CORRUPTED', message, [
+    { path: '/process', code: 'broken-chain', message, process },
+  ]);
 }
 
 /** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */

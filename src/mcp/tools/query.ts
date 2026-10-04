@@ -142,7 +142,8 @@ const QUERY_DESCRIPTION =
   'attachmentStatus for the attachments it cites. A page holds at most limit records (default 50, ' +
   'max 200) and also stops at a size cap, always with at least one record; pass the returned cursor ' +
   'to continue. marker is the head of every process read: pass it back as changesSince to get ' +
-  'changes (entered, left with reason) since then, on the first page only. changes lists at most 100 ' +
+  'changes (entered, left with reason) since then, on the first page only; resend the same ' +
+  'changesSince with the cursor on later pages, or INVALID_CURSOR. changes lists at most 100 ' +
   'ids in entered and in left; when omitted (the count left out per list) comes back, the lists are ' +
   'partial and that marker must not be reused as changesSince, because the omitted ids never show ' +
   'again: reread everything instead (records by cursor, left with includeNonCurrent). Fails with ' +

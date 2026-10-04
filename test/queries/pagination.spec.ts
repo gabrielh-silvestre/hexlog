@@ -1,9 +1,10 @@
 import { describe, expect, test } from '@jest/globals';
+import fc from 'fast-check';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { decodeCursor, encodeCursor } from '../../src/queries/cursor.ts';
 import { ghostId, note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
-import { cursorOf, idsOf, querySetup } from './query-setup.ts';
+import { cursorOf, idsOf, querySetup, walkPages } from './query-setup.ts';
 
 describe('queryRecords: página e cursor (D-20)', () => {
   async function fiveNotes() {
@@ -39,6 +40,51 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect([...idsOf(first), ...idsOf(second), ...idsOf(third)]).toEqual(ids);
     expect(first.cursor).toBeDefined();
     expect(third.cursor).toBeUndefined();
+  });
+
+  test('para qualquer `limit`, as páginas somam a lista inteira, na mesma ordem e sem repetir', async () => {
+    const { query, ids } = await fiveNotes();
+
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 7 }), (limit) => {
+        const walked = walkPages(query, { process: 'run-1', limit }).flatMap(idsOf);
+
+        expect(walked).toEqual(ids);
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  test('`limit` igual ao que resta fecha a lista sem cursor, e um a menos deixa o cursor', async () => {
+    const { query, ids } = await fiveNotes();
+
+    const exact = query({ process: 'run-1', limit: 5 });
+    const short = query({ process: 'run-1', limit: 4 });
+
+    expect(idsOf(exact)).toEqual(ids);
+    expect(exact.cursor).toBeUndefined();
+    expect(idsOf(short)).toEqual(ids.slice(0, 4));
+    expect(short.cursor).toBeDefined();
+  });
+
+  test('o teto de caracteres na última página devolve o registro que resta e nenhum cursor', async () => {
+    const { query, ids } = await fiveNotes();
+    const first = query({ process: 'run-1', limit: 4 });
+
+    const last = query({ process: 'run-1', maxChars: 1, cursor: cursorOf(first) });
+
+    expect(idsOf(last)).toEqual([at(ids, 4)]);
+    expect(last.cursor).toBeUndefined();
+  });
+
+  test('consulta sem resultado devolve `records` vazio, sem cursor e com o marcador do que leu', async () => {
+    const { query } = await fiveNotes();
+
+    const page = query({ process: 'run-1', type: 'doc' });
+
+    expect(page.records).toEqual([]);
+    expect(page.cursor).toBeUndefined();
+    expect(Object.keys(page.marker)).toEqual(['run-1']);
   });
 
   test('as páginas do alcance projeto também somam a lista inteira, sem repetir', async () => {
@@ -149,12 +195,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
   test('registro maior que o teto sai sozinho e o cursor avança até a última página (alcance projeto)', async () => {
     const { query, a, b, c, d } = await twoProcesses();
 
-    const pages = [query({ scope: 'project', maxChars: 1 })];
-    while (pages.at(-1)?.cursor !== undefined) {
-      pages.push(
-        query({ scope: 'project', maxChars: 1, cursor: cursorOf(at(pages, pages.length - 1)) }),
-      );
-    }
+    const pages = walkPages(query, { scope: 'project', maxChars: 1 });
 
     expect(pages.map(idsOf)).toEqual([[a], [b], [c], [d]]);
   });
@@ -166,6 +207,18 @@ describe('queryRecords: página e cursor (D-20)', () => {
     const page = query({ process: 'run-1', maxChars: one * 2 + 1 });
 
     expect(idsOf(page)).toEqual(ids.slice(0, 2));
+  });
+
+  test('cursor de outro projeto dá INVALID_CURSOR `project-mismatch`', async () => {
+    const { query, queries } = await fiveNotes();
+    const cursor = cursorOf(query({ process: 'run-1', limit: 2 }));
+
+    const error = captureError(() =>
+      queries.queryRecords({ project: 'other', process: 'run-1', cursor }),
+    );
+
+    expect(error.code).toBe('INVALID_CURSOR');
+    expect(at(error.details, 0).code).toBe('project-mismatch');
   });
 
   test('cursor mexido, de outro filtro, alcance ou processo dá INVALID_CURSOR', async () => {
@@ -192,7 +245,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
   });
 
   test('cursor com marcador de outro log, id marcado inexistente ou lastId fora do resultado é recusado', async () => {
-    const { query, ids } = await fiveNotes();
+    const { query } = await fiveNotes();
     const issued = decodeCursor(cursorOf(query({ process: 'run-1', limit: 2 })));
     const forged = (patch: Partial<typeof issued>) =>
       captureError(() =>
@@ -210,6 +263,5 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(at(marker.details, 0).path).toBe('/cursor');
     expect(last.code).toBe('INVALID_CURSOR');
     expect(at(last.details, 0).code).toBe('last-id-not-found');
-    expect(ids).toHaveLength(5);
   });
 });

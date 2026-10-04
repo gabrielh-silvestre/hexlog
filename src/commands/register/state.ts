@@ -12,7 +12,7 @@ import {
   type RuleContext,
   type Vigency,
 } from '../../domain/relations.ts';
-import { HexlogError } from '../../errors.ts';
+import { brokenChain, HexlogError } from '../../errors.ts';
 import type {
   AttachmentStore,
   Decision,
@@ -60,13 +60,6 @@ type Site = { index: number; at: number; draft: Draft; relation: DraftRelation }
 
 /** Registros de um processo-destino que as relações podem citar, e a vigência deles. */
 type Destination = { types: ReadonlyMap<RecordId, Name>; vigency: Vigency };
-
-function brokenChain(process: Name): HexlogError {
-  const message = 'process chain is broken';
-  return new HexlogError('PROCESS_CORRUPTED', message, [
-    { path: '/process', code: 'broken-chain', message, process },
-  ]);
-}
 
 /** D-06 nível 5: a mesma `key` com outra impressão é conflito; com a mesma, o chamador faz o replay. */
 function assertSameBatch(prior: BatchEntry, fingerprint: Hash): void {

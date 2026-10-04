@@ -11,7 +11,7 @@ import type { Gate, RecordType, RelationName } from '../../src/domain/definition
 import type { Name, RecordId } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { createQueryService } from '../../src/queries/query-service.ts';
-import type { QueryInput } from '../../src/queries/query-service.ts';
+import type { QueryInput, QueryResult } from '../../src/queries/query-service.ts';
 import type { DefinitionStore } from '../../src/ports.ts';
 import { AUTHOR, DOC, NOTE, PROJECT, createUuids, note } from '../commands/register-fakes.ts';
 import { at, createTempDir } from '../helpers.ts';
@@ -21,33 +21,36 @@ export { PROJECT };
 /** Instante de teste: `minutes` depois de 12:00 de 2026-10-02. */
 export const instant = (minutes: number): Date => new Date(Date.UTC(2026, 9, 2, 12, minutes));
 
+/** Os três stores de disco de `dataDir`: o que a escrita grava é o que a consulta lê. */
+export function diskStores(dataDir: string) {
+  return {
+    store: createProcessStore({ dataDir, log: () => undefined }),
+    definitions: createDefinitionStore({ dataDir }),
+    attachments: createAttachmentStore({ dataDir, cwd: dataDir }),
+  };
+}
+
+/** Serviço de consulta sobre `dataDir` com índice de busca novo: o cache não esconde o custo de montá-lo. */
+export const diskQueryService = (dataDir: string) =>
+  createQueryService({ ...diskStores(dataDir), search: createSearchIndex() });
+
 /**
  * Os serviços de escrita e de consulta sobre os adaptadores de disco de verdade, num diretório
  * temporário e com relógio injetado: o que cada spec grava é lido de volta pelo `queryRecords`.
  */
 export function querySetup({ defaults = true } = {}) {
   const dataDir = createTempDir('queries');
-  const store = createProcessStore({ dataDir, log: () => undefined });
-  const definitions = createDefinitionStore({ dataDir });
-  const attachments = createAttachmentStore({ dataDir, cwd: dataDir });
+  const stores = diskStores(dataDir);
+  const { definitions, attachments } = stores;
   let now = instant(0);
   const writer = createProcessService({
-    store,
-    definitions,
-    attachments,
+    ...stores,
     validator: createValidator(),
     clock: () => now,
     newUuid: createUuids(),
     logger: () => undefined,
   });
-  const queries = createQueryService({
-    store,
-    definitions,
-    attachments,
-    search: createSearchIndex(),
-    clock: () => now,
-    logger: () => undefined,
-  });
+  const queries = createQueryService({ ...stores, search: createSearchIndex() });
   if (defaults) {
     definitions.write(PROJECT, 'types', 'note', '1.0', NOTE);
     definitions.write(PROJECT, 'types', 'doc', '1.0', DOC);
@@ -58,6 +61,7 @@ export function querySetup({ defaults = true } = {}) {
   }
 
   const createProcess = (process: string) => writer.createProcess({ project: PROJECT, process });
+  const logPath = (process: string) => processPaths(dataDir, { project: PROJECT, process }).log;
 
   /** Grava `records` em `process` no instante `minutes` e devolve os ids, na ordem do lote. */
   async function register(process: string, records: BatchItem[], minutes = 0): Promise<RecordId[]> {
@@ -77,14 +81,16 @@ export function querySetup({ defaults = true } = {}) {
     createProcess,
     register,
     registerOne,
+    /** Arquivo do log de `process`. */
+    logPath,
     /** Corrompe o log trocando o texto de uma linha já gravada (cadeia quebrada). */
     tamper: (process: string) => {
-      const log = processPaths(dataDir, { project: PROJECT, process }).log;
+      const log = logPath(process);
       fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"text":"', '"text":"x'));
     },
     /** Como `tamper`, mas na linha `index` (base 0): a seguinte passa a ser rejeitada pelo encadeamento. */
     tamperLine: (process: string, index: number) => {
-      const log = processPaths(dataDir, { project: PROJECT, process }).log;
+      const log = logPath(process);
       const lines = fs.readFileSync(log, 'utf8').split('\n');
       lines[index] = at(lines, index).replace('"text":"', '"text":"x');
       fs.writeFileSync(log, lines.join('\n'));
@@ -116,6 +122,18 @@ export const idsOf = (page: { records: readonly { id: RecordId }[] }): RecordId[
 export function cursorOf(page: { cursor?: string }): string {
   if (page.cursor === undefined) throw new Error('a página deveria ter cursor');
   return page.cursor;
+}
+
+/** Todas as páginas de `input`, da 1ª até a que não traz cursor. */
+export function walkPages(
+  query: (input: Omit<QueryInput, 'project'>) => QueryResult,
+  input: Omit<QueryInput, 'project'>,
+): QueryResult[] {
+  const pages = [query(input)];
+  while (pages.at(-1)?.cursor !== undefined) {
+    pages.push(query({ ...input, cursor: cursorOf(at(pages, pages.length - 1)) }));
+  }
+  return pages;
 }
 
 /**

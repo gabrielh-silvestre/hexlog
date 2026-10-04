@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
-import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import type { Gate } from '../../src/domain/definitions.ts';
 import type { Marker } from '../../src/domain/ids.ts';
 import { GateQuestion } from '../../src/domain/gate.ts';
@@ -21,9 +20,6 @@ function gateSetup(...gates: Gate[]) {
     setup.queries.evaluateGate({ project: PROJECT, process, gate, ...extra });
   return { ...setup, evaluate };
 }
-
-const logOf = (dataDir: string, process: string): Buffer =>
-  fs.readFileSync(processPaths(dataDir, { project: PROJECT, process }).log);
 
 const PROPOSED: Gate = {
   name: 'proposed-approved',
@@ -61,15 +57,15 @@ describe('evaluateGate: marcador e nomes herdados', () => {
 
 describe('evaluateGate: não grava, marcador e reprodução', () => {
   test('avaliar o gate não grava: o log fica byte a byte igual', async () => {
-    const { dataDir, createProcess, registerOne, evaluate } = gateSetup(PROPOSED);
+    const { logPath, createProcess, registerOne, evaluate } = gateSetup(PROPOSED);
     createProcess('run-1');
     await registerOne('run-1', note('proposta'));
-    const before = logOf(dataDir, 'run-1');
+    const before = fs.readFileSync(logPath('run-1'));
 
     evaluate('run-1', PROPOSED.name);
     evaluate('run-1', PROPOSED.name);
 
-    expect(logOf(dataDir, 'run-1').equals(before)).toBe(true);
+    expect(fs.readFileSync(logPath('run-1')).equals(before)).toBe(true);
   });
 
   test('o marcador cobre só o processo da chamada, mesmo com outros no projeto', async () => {

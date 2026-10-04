@@ -49,8 +49,9 @@ export type ProcessReader = {
    * `read`.
    */
   readManifest(ref: ProcessRef): Manifest;
-  /** Nomes dos processos do projeto. */
+  /** Nomes dos processos do projeto, em ordem de unidade de código (a do `sort` padrão). */
   list(project: Name): Name[];
+  /** Nomes dos projetos, na mesma ordem de `list`. */
   listProjects(): Name[];
 };
 
@@ -212,6 +213,12 @@ export const PROJECT_INDEX = '*';
  * `process: PROJECT_INDEX` (`queries/select.ts#indexRef`). `allowed`, quando passado, restringe o
  * resultado a esses ids e também decide o fallback `OR`: o conjunto devolvido é o dos registros
  * permitidos que casam (`adapters/search.ts#createSearchIndex`).
+ *
+ * Invariantes do chamador: `PROJECT_INDEX` (`'*'`) não é um `Name` e só compila porque `Name` é
+ * `string`; `records` vêm de leitura de cadeia verificada (`queries/read.ts#readScope`); e as
+ * listas sucessivas de um mesmo processo são prefixos do mesmo log append-only, que é o que torna
+ * a contagem mais a impressão do último registro uma chave de validade correta. A impressão é o
+ * `JSON.stringify` do registro (`adapters/search.ts#fingerprintOf`), não o JCS da cadeia.
  */
 export type SearchIndex = {
   search(

@@ -13,7 +13,8 @@ export const CURSOR_MAX_CHARS = 65_536;
 
 /** Hex do checksum: 8 bytes do sha256 do trecho base64url. */
 const CHECKSUM_HEX_LENGTH = 16;
-const CHECKSUM = new RegExp(`^[0-9a-f]{${CHECKSUM_HEX_LENGTH}}$`);
+/** `<base64url>.<checksum hex>`: o ponto não existe no alfabeto base64url, então separa sem ambiguidade. */
+const CURSOR_SHAPE = new RegExp(`^([A-Za-z0-9_-]+)\\.([0-9a-f]{${CHECKSUM_HEX_LENGTH}})$`);
 
 /**
  * D-20: o que o cursor fixa para a página seguinte recomeçar igual. `marker` e `markerHashes`
@@ -30,30 +31,30 @@ export const CursorPayload = z.strictObject({
 });
 export type CursorPayload = z.infer<typeof CursorPayload>;
 
+/**
+ * Pega cursor truncado ou editado sem recalcular o checksum, mas não autentica: o sha256 truncado
+ * não tem chave, então quem recalcula o checksum forja um cursor. A barreira contra forja é a
+ * releitura do serviço (`query-service.ts#assertSameQuery`, `assertSameContent`).
+ */
 function checksumOf(body: string): string {
   return sha256hex(body).slice(0, CHECKSUM_HEX_LENGTH);
 }
 
-/** D-20: `base64url(JCS(payload)).checksum`; o ponto não existe no alfabeto base64url. */
+/** D-20: `base64url(JCS(payload)).checksum`. */
 export function encodeCursor(payload: CursorPayload): string {
   const body = Buffer.from(jcs(payload), 'utf8').toString('base64url');
   return `${body}.${checksumOf(body)}`;
 }
 
-function invalidCursor(code: string, message: string): HexlogError {
+/** `INVALID_CURSOR` com um único `Detail` em `/cursor`. */
+export function invalidCursor(code: string, message: string): HexlogError {
   return new HexlogError('INVALID_CURSOR', 'Invalid cursor', [{ path: '/cursor', code, message }]);
 }
 
 /** Separa corpo e checksum e confere o checksum, sem tocar no conteúdo do corpo. */
 function verifiedBody(text: string): string {
-  const parts = text.split('.');
-  const [body, checksum] = parts;
-  if (
-    parts.length !== 2 ||
-    body === undefined ||
-    checksum === undefined ||
-    !CHECKSUM.test(checksum)
-  ) {
+  const [, body, checksum] = CURSOR_SHAPE.exec(text) ?? [];
+  if (body === undefined || checksum === undefined) {
     throw invalidCursor('malformed', 'Cursor must be <payload>.<checksum>');
   }
   if (checksumOf(body) !== checksum) {

@@ -1,5 +1,5 @@
 import type { Hash, Marker, Name, RecordId } from '../domain/ids.ts';
-import { HexlogError } from '../errors.ts';
+import { brokenChain, HexlogError } from '../errors.ts';
 import type { ProcessReader, ProcessRef } from '../ports.ts';
 import { loadVerified, type VerifiedProcess } from '../shared/loader.ts';
 
@@ -17,13 +17,6 @@ export type Reading = {
   /** Hash da cabeça lida de cada processo (`null` se vazio): prende o cursor ao conteúdo (D-20). */
   markerHashes: Record<Name, Hash | null>;
 };
-
-function brokenChain(process: Name): HexlogError {
-  const message = 'process chain is broken';
-  return new HexlogError('PROCESS_CORRUPTED', message, [
-    { path: '/process', code: 'broken-chain', message, process },
-  ]);
-}
 
 export function projectNotFound(): HexlogError {
   const message = 'project not found';
@@ -44,7 +37,7 @@ function markerProcessNotFound(
 /**
  * D-24: alcance processo, o marcador tem exatamente uma entrada, a do processo lido; ausente ou
  * extra é entrada malformada (ler como vazio faria o gate passar por vacuidade). Alcance projeto,
- * ordem de nome por unidade de código, que é a do `sort` padrão.
+ * ordem de nome por unidade de código, a mesma que `ProcessReader.list` devolve.
  */
 function namesOf(store: ProcessReader, target: ReadTarget, marker?: Marker): Name[] {
   if (target.scope === 'process') {
@@ -59,7 +52,7 @@ function namesOf(store: ProcessReader, target: ReadTarget, marker?: Marker): Nam
     return [target.process];
   }
   if (!store.listProjects().includes(target.project)) throw projectNotFound();
-  const names = store.list(target.project).sort();
+  const names = store.list(target.project);
   const missing = Object.keys(marker ?? {}).find((name) => !names.includes(name));
   if (missing !== undefined) throw markerProcessNotFound(missing);
   return names;

@@ -40,12 +40,14 @@ export function inOutputOrder(reading: Reading, scope: ReadTarget['scope']): Lin
   );
 }
 
+const withAs = (as: Name | undefined) => (as === undefined ? {} : { as });
+
 export function buildView(reading: Reading, scope: ReadTarget['scope']): View {
   const records = inOutputOrder(reading, scope);
   const incoming = new Map<RecordId, Incoming[]>();
   for (const { id, relations } of records) {
     for (const { kind, to, as } of relations) {
-      pushTo(incoming, to, { kind, from: id, ...(as === undefined ? {} : { as }) });
+      pushTo(incoming, to, { kind, from: id, ...withAs(as) });
     }
   }
   return {
@@ -121,8 +123,6 @@ export type InRelation = { kind: RelationKind; as?: Name; from: RecordId; curren
  * lido (D-24: alcance processo não lê o processo de um destino de outro processo).
  */
 export type OutRelation = { kind: RelationKind; as?: Name; to: RecordId; current?: boolean };
-
-const withAs = (as: Name | undefined) => (as === undefined ? {} : { as });
 
 /** D-24: relações de entrada (de quem foi lido) e de saída (as gravadas) de `link`. */
 export function relationsOf(view: View, link: Link): { in: InRelation[]; out: OutRelation[] } {

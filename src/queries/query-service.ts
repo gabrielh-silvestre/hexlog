@@ -1,7 +1,7 @@
-import { isUndefined, omitBy, once, pick } from 'es-toolkit';
+import { isUndefined, omitBy, pick } from 'es-toolkit';
 import type { Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
-import { evaluateGate as answerQuestions, type GateResult } from '../domain/gate.ts';
+import { evaluateGate, type GateResult } from '../domain/gate.ts';
 import {
   Hash,
   processOf,
@@ -10,7 +10,7 @@ import {
   type RecordId,
   type Target,
 } from '../domain/ids.ts';
-import { needsReview as staleReviews, type NeedsReview } from '../domain/relations.ts';
+import { needsReview, type NeedsReview } from '../domain/relations.ts';
 import { HexlogError, invalidInput } from '../errors.ts';
 import type {
   AttachmentReader,
@@ -22,9 +22,14 @@ import type {
   SearchIndex,
 } from '../ports.ts';
 import { loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
-import type { Logger } from '../shared/logger.ts';
 import { sliceChars } from '../shared/pages.ts';
-import { decodeCursor, encodeCursor, filtersHash, type CursorPayload } from './cursor.ts';
+import {
+  decodeCursor,
+  encodeCursor,
+  filtersHash,
+  invalidCursor,
+  type CursorPayload,
+} from './cursor.ts';
 import { projectNotFound, readScope, type Reading, type ReadTarget } from './read.ts';
 import {
   buildView,
@@ -58,7 +63,11 @@ export type QueryInput = Filters & {
   /** Registros por página (padrão 50); `maxChars` pode encurtar a página. */
   limit?: number;
   cursor?: string;
-  /** Marcador de uma consulta anterior: `changes` diz o que entrou e saiu do resultado desde então. */
+  /**
+   * Marcador de uma consulta anterior: `changes` diz o que entrou e saiu do resultado desde então,
+   * só na 1ª página. Entra no hash dos filtros que o cursor prende (`hashOf`): da página 2 em diante,
+   * reenvie o mesmo `changesSince` com o `cursor`, senão `INVALID_CURSOR` (`filters-mismatch`).
+   */
   changesSince?: Marker;
   /** Teto de caracteres do JSON da página (D-20); o 1º registro sai inteiro mesmo acima dele. */
   maxChars?: number;
@@ -164,49 +173,51 @@ export type QueryService = {
    * D-24: lê o alcance pedido pelo carregador único e devolve os registros vigentes que passam nos
    * filtros (todos, com `includeNonCurrent`), com relações de entrada e saída, `needsReview` e
    * `attachmentStatus`. Ordem de saída: alcance processo por `seq`, alcance projeto por (`at`,
-   * processo, `seq`), com `text` por relevância e o mesmo desempate. Toda página leva ao menos um
-   * registro. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de `lastId`
-   * sobre a leitura da página 1.
+   * processo, `seq`), com `text` por relevância e o mesmo desempate. Página com resultado leva ao
+   * menos um registro (o 1º sai inteiro mesmo acima de `maxChars`); consulta sem resultado devolve
+   * `records: []`. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de
+   * `lastId` sobre a leitura da página 1.
    *
-   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: em branco ou acima de `QUERY_TEXT_MAX_CHARS`), `INVALID_CURSOR`, `MARKER_NOT_FOUND`,
-   * `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED` (com `details[0].process`).
+   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: em branco ou acima de `QUERY_TEXT_MAX_CHARS`),
+   * `INVALID_CURSOR`, `MARKER_NOT_FOUND`, `PROJECT_NOT_FOUND` (alcance projeto), `PROCESS_NOT_FOUND`,
+   * `PROCESS_CORRUPTED` (com `details[0].process`), `PROCESS_TOO_LARGE` e `IO_ERROR`.
    */
   queryRecords(input: QueryInput): QueryResult;
   /**
    * D-24: só calcula, nunca grava. Lê o processo do gate e, se alguma pergunta declara
    * `scope: "project"`, o projeto inteiro, pelo mesmo carregador de `queryRecords`; o marcador
-   * devolvido cobre exatamente o que foi lido. A cadeia é verificada sempre (`PROCESS_CORRUPTED`).
+   * devolvido cobre exatamente o que foi lido. A cadeia é verificada até onde a leitura vai: com
+   * `marker`, só o prefixo até o id marcado: quebra depois dele não é vista.
    *
    * `PROCESS_NOT_FOUND`, `GATE_NOT_FOUND` (`unknown-name` em `/gate`: o gate não está fixado no
-   * processo), `MARKER_NOT_FOUND` e `PROCESS_CORRUPTED` (com `details[0].process`).
+   * processo), `MARKER_NOT_FOUND`, `PROCESS_CORRUPTED` (com `details[0].process`),
+   * `PROCESS_TOO_LARGE` e `IO_ERROR`.
    */
   evaluateGate(input: EvaluateGateInput): GateEvaluation;
   /**
    * Diagnóstico sem gravar: a cadeia do processo e os anexos que os registros citam (D-16). Quebra
    * não lança, vira `ok: false` com `breaks` (cadeia); anexo ausente ou corrompido entra em
-   * `attachmentBreaks` como `attachment-missing`/`attachment-corrupted`. `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED`
-   * (`unreadable-manifest`) vêm da leitura do manifesto.
+   * `attachmentBreaks` como `attachment-missing`/`attachment-corrupted`. `PROCESS_NOT_FOUND` e
+   * `PROCESS_CORRUPTED` (`unreadable-manifest`) vêm da leitura do manifesto; `PROCESS_TOO_LARGE` e
+   * `IO_ERROR`, da leitura do log.
    */
   verifyChain(input: VerifyChainInput): VerifyChainResult;
   /**
    * Sem `project`, os projetos; com `project`, os processos e as definições dele; com `project` e
-   * `process`, o que o manifesto fixou. `PROJECT_NOT_FOUND`, `PROCESS_NOT_FOUND` e `INVALID_INPUT`
-   * (`/project`, `/process` sem `project`).
+   * `process`, o que o manifesto fixou. `PROJECT_NOT_FOUND`, `PROCESS_NOT_FOUND`, `INVALID_INPUT`
+   * (`/project`, `/process` sem `project`), `PROCESS_CORRUPTED` (`unreadable-manifest`) e `IO_ERROR`.
    */
   list(input: ListInput): ListResult;
   /**
    * Uma página do texto do anexo, já conferido contra o sha256 dos bytes pela porta.
-   * `ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED` e `INVALID_INPUT` (`/offset` além do fim).
+   * `ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`, `INVALID_INPUT` (`/offset` além do fim) e
+   * `IO_ERROR`.
    */
   readAttachment(input: ReadAttachmentInput): AttachmentPage;
 };
 
 function invalidFilter(path: string, code: string, message: string): HexlogError {
   return new HexlogError('INVALID_FILTER', 'Invalid filter', [{ path, code, message }]);
-}
-
-function invalidCursor(code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_CURSOR', 'Invalid cursor', [{ path: '/cursor', code, message }]);
 }
 
 function gateNotFound(): HexlogError {
@@ -250,10 +261,16 @@ const FILTER_KEYS = [
   'relatedTo',
 ] as const;
 
-/** D-20: o hash prende os filtros e `changesSince`, não a página (`limit`, `maxChars`). */
+/**
+ * D-20: o hash prende os filtros e `changesSince`, não a página (`limit`, `maxChars`). O JCS descarta
+ * chave `undefined`, então filtro ou `changesSince` ausente não entra no hash.
+ */
 function hashOf(filters: Filters, changesSince: Marker | undefined): Hash {
-  const fixed = { ...filters, includeNonCurrent: filters.includeNonCurrent ?? false, changesSince };
-  return filtersHash(omitBy(fixed, isUndefined));
+  return filtersHash({
+    ...filters,
+    includeNonCurrent: filters.includeNonCurrent ?? false,
+    changesSince,
+  });
 }
 
 /** D-20: alcance, projeto, processo e filtros da página têm de ser os do cursor. */
@@ -301,8 +318,6 @@ export function createQueryService(deps: {
   definitions: DefinitionReader;
   attachments: AttachmentReader;
   search: SearchIndex;
-  clock: () => Date;
-  logger: Logger;
 }): QueryService {
   const { store, definitions, attachments, search } = deps;
 
@@ -365,12 +380,12 @@ export function createQueryService(deps: {
       const view = buildView(reading, target.scope);
       const selected = select(view, filters, search, indexRef(target));
 
-      const reviews = once(() => staleReviews(view.records));
+      const reviews = needsReview(view.records);
       const manifests = new Map(
         reading.processes.map(({ name, verified }) => [name, verified.manifest]),
       );
       const render = (link: Link): QueryRecord => {
-        const review = reviews().get(link.id);
+        const review = reviews.get(link.id);
         const status = attachmentStatusOf(target.project, manifests.get(processOf(link.id)), link);
         return {
           ...pick(link, ['id', 'type', 'at', 'target', 'author', 'data']),
@@ -424,7 +439,7 @@ export function createQueryService(deps: {
         ? { project, scope: 'project' }
         : { project, scope: 'process', process };
       const reading = readScope(store, scope, marker);
-      const result = answerQuestions(gate.questions, {
+      const result = evaluateGate(gate.questions, {
         target,
         records: (questionScope) =>
           questionScope === 'project'

@@ -52,8 +52,6 @@ export function compose({ dataDir, cwd, clock, logger }: ComposeOptions) {
         definitions,
         attachments,
         search: createSearchIndex(),
-        clock,
-        logger,
       }),
     },
     /** Processo lido e verificado pelo carregador único (SL2), para os scripts que precisam dos elos crus. */

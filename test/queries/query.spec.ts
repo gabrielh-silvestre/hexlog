@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, test } from '@jest/globals';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { QUERY_TEXT_MAX_CHARS } from '../../src/queries/query-service.ts';
-import { note } from '../commands/register-fakes.ts';
+import { ghostId, note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { idsOf, PROJECT, querySetup, seeded } from './query-setup.ts';
 
@@ -96,17 +96,47 @@ describe('queryRecords: filtros e dados embutidos', () => {
     expect(query({ process: 'run-1', text: 'a'.repeat(QUERY_TEXT_MAX_CHARS) }).records).toEqual([]);
   });
 
-  test('`limit` fora do intervalo e `text` em branco são INVALID_FILTER', () => {
+  test.each([0, -1, 1.5, NaN, Infinity])('`limit` %p é INVALID_FILTER em /limit', (limit) => {
     const { createProcess, query } = querySetup();
     createProcess('run-1');
 
-    const limit = captureError(() => query({ process: 'run-1', limit: 0 }));
-    const text = captureError(() => query({ process: 'run-1', text: '  ' }));
+    const error = captureError(() => query({ process: 'run-1', limit }));
 
-    expect(limit.code).toBe('INVALID_FILTER');
-    expect(at(limit.details, 0).path).toBe('/limit');
-    expect(text.code).toBe('INVALID_FILTER');
-    expect(at(text.details, 0).path).toBe('/text');
+    expect(error.code).toBe('INVALID_FILTER');
+    expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
+  });
+
+  test('`text` em branco é INVALID_FILTER em /text', () => {
+    const { createProcess, query } = querySetup();
+    createProcess('run-1');
+
+    const error = captureError(() => query({ process: 'run-1', text: '  ' }));
+
+    expect(error.code).toBe('INVALID_FILTER');
+    expect(at(error.details, 0)).toMatchObject({ path: '/text', code: 'blank' });
+  });
+
+  test('`ids` com id inexistente ou repetido devolve cada registro uma vez, na ordem de saída', async () => {
+    const { query, task, other } = await seeded();
+
+    const page = query({ process: 'run-1', ids: [other, ghostId('run-1'), task, other] });
+
+    expect(idsOf(page)).toEqual([task, other]);
+  });
+
+  test('`relatedTo` com âncora de outro processo acha quem a cita; âncora que não existe não acha nada', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    createProcess('run-2');
+    const anchor = await registerOne('run-2', note('âncora'), 1);
+    const citing = await registerOne(
+      'run-1',
+      note('cita', { relations: [{ to: anchor, kind: 'supports' }] }),
+      2,
+    );
+
+    expect(idsOf(query({ process: 'run-1', relatedTo: anchor }))).toEqual([citing]);
+    expect(idsOf(query({ process: 'run-1', relatedTo: ghostId('run-1') }))).toEqual([]);
   });
 });
 

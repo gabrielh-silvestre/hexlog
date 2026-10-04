@@ -33,8 +33,6 @@ describe('queries/ só enxerga o lado de leitura das portas (ISP)', () => {
       definitions: { names: () => [], versions: () => [] },
       attachments: { status: unused, read: unused },
       search: { search: () => [] },
-      clock: () => new Date(0),
-      logger: () => undefined,
     });
 
     expect(service.list({})).toEqual({ projects: [{ name: 'p', processes: 0 }] });
