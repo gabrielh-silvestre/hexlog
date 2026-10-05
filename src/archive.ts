@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 // Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { isEqual } from 'es-toolkit';
+import { isEqual, isNotNil, isSubset, isUndefined } from 'es-toolkit';
 import * as tar from 'tar';
 import { errnoCode, fsyncPath } from './adapters/fs/atomic.ts';
 import { ARCHIVE_DIR, detectLegacy } from './adapters/fs/data-format.ts';
@@ -97,7 +97,7 @@ function asArchiveError<T>(dataDir: string, run: () => T): T {
     return run();
   } catch (error) {
     const code = errnoCode(error);
-    if (code === undefined) throw error;
+    if (isUndefined(code)) throw error;
     const target = (error as { path?: string }).path ?? dataDir;
     throw new ArchiveError(
       code === 'ENOENT'
@@ -161,7 +161,7 @@ function assertNoLiveServer(libDir: string, procDir: string): void {
         serverPrefixes.some((prefix) => arg.startsWith(prefix)),
     ),
   );
-  if (live !== undefined) {
+  if (isNotNil(live)) {
     throw new ArchiveError(
       `a 0.x server is running (pid ${live}); close every Claude Code session and retry`,
     );
@@ -202,7 +202,7 @@ function readCmdline(procDir: string, pid: string): string[] {
     return fs.readFileSync(file, 'utf8').split('\0');
   } catch (error) {
     const code = errnoCode(error);
-    if (code !== undefined && UNSEEN_PROCESS_ERRNO.has(code)) return [];
+    if (isNotNil(code) && UNSEEN_PROCESS_ERRNO.has(code)) return [];
     throw new ArchiveError(
       `cannot confirm that no 0.x server is running: cannot read ${file} (${code ?? 'unknown error'})`,
     );
@@ -273,8 +273,7 @@ function findReusablePackage(archiveDir: string, files: LegacyFile[]): string | 
     .reverse()
     .map((name) => path.join(archiveDir, name))
     .find((tarFile) => {
-      const packaged = new Set(readPackage(tarFile));
-      return wanted.every((signature) => packaged.has(signature));
+      return isSubset(readPackage(tarFile), wanted);
     });
 }
 

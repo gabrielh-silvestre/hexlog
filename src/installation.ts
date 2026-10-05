@@ -10,7 +10,7 @@ import * as path from 'node:path';
 // a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/adapters/fs/process-store.ts).
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
-import { isNil } from 'es-toolkit';
+import { isError, isNil } from 'es-toolkit';
 import {
   expectedRules,
   libDirOf,
@@ -113,7 +113,7 @@ async function verifyPreparedArtifact(args: {
   try {
     toolsCount = await verifyServer(path.join(tmp, 'server.mjs'));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = isError(error) ? error.message : String(error);
     throw new HexlogError('INTERNAL', `prepared server failed to start: ${message}`);
   }
   if (toolsCount !== TOOLS_COUNT) {

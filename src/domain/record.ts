@@ -1,4 +1,5 @@
 import canonicalize from 'canonicalize';
+import { isUndefined } from 'es-toolkit';
 import { z } from 'zod';
 import { alias, Instant, NAME_SRC, Name, RecordId, Target } from './ids.ts';
 
@@ -86,7 +87,7 @@ export const RelationInput = z
     kind: RelationKind.optional(),
     as: Name.optional(),
   })
-  .refine(({ kind, as }) => kind !== undefined || as !== undefined, {
+  .refine(({ kind, as }) => !isUndefined(kind) || !isUndefined(as), {
     message: 'relation needs kind or as',
     path: ['kind'],
   });

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import * as path from 'node:path';
+import { isUndefined } from 'es-toolkit';
 import type { DefinitionKind, ProcessRef } from '../../ports.ts';
 import { orIfMissing } from './io.ts';
 
@@ -49,7 +50,7 @@ export function definitionDir(
   name?: string,
 ): string {
   const kindDir = path.join(dataRoot(dataDir), project, kind);
-  return name === undefined ? kindDir : path.join(kindDir, name);
+  return isUndefined(name) ? kindDir : path.join(kindDir, name);
 }
 
 /** Arquivo de uma versão de definição; `project`, `name` e `version` já vêm validados. */

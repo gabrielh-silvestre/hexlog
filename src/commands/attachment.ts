@@ -1,3 +1,4 @@
+import { isUndefined, trimEnd } from 'es-toolkit';
 import type { Name } from '../domain/ids.ts';
 import { invalidInput } from '../errors.ts';
 import type { AttachmentPut, AttachmentStore } from '../ports.ts';
@@ -26,7 +27,7 @@ const utf8 = new TextEncoder();
  * não tem extensão, `x.MD` não casa. Não usa `node:path` porque `commands/` não importa builtin.
  */
 function hasAllowedExtension(candidate: string): boolean {
-  const name = candidate.replace(/\/+$/, '').split('/').pop() ?? '';
+  const name = trimEnd(candidate, '/').split('/').pop() ?? '';
   return ALLOWED_EXTENSIONS.some(
     (extension) => name.length > extension.length && name.endsWith(extension),
   );
@@ -54,11 +55,11 @@ export function createAttachmentService(deps: { store: AttachmentStore }): Attac
 
   return {
     attach({ project, text, path }) {
-      if (path !== undefined && text === undefined) {
+      if (!isUndefined(path) && isUndefined(text)) {
         checkedPath(path);
         return store.putPath(project, path);
       }
-      if (text !== undefined && path === undefined) {
+      if (!isUndefined(text) && isUndefined(path)) {
         checkedText(text);
         return store.putText(project, text);
       }

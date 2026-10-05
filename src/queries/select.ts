@@ -1,4 +1,4 @@
-import { orderBy } from 'es-toolkit';
+import { isUndefined, orderBy } from 'es-toolkit';
 import type { Link } from '../domain/chain.ts';
 import { matchesSelector, type Selector } from '../domain/gate.ts';
 import { processOf, type Name, type RecordId } from '../domain/ids.ts';
@@ -32,7 +32,7 @@ export type View = {
  */
 export function inOutputOrder(reading: Reading, scope: ReadTarget['scope']): Link[] {
   const [only] = reading.processes;
-  if (scope === 'process' && only !== undefined) return only.verified.records;
+  if (scope === 'process' && !isUndefined(only)) return only.verified.records;
   return orderBy(
     reading.processes.flatMap(({ verified }) => verified.records),
     [(link) => Date.parse(link.at), (link) => processOf(link.id), (link) => link.seq],
@@ -40,7 +40,7 @@ export function inOutputOrder(reading: Reading, scope: ReadTarget['scope']): Lin
   );
 }
 
-const withAs = (as: Name | undefined) => (as === undefined ? {} : { as });
+const withAs = (as: Name | undefined) => (isUndefined(as) ? {} : { as });
 
 export function buildView(reading: Reading, scope: ReadTarget['scope']): View {
   const records = inOutputOrder(reading, scope);
@@ -84,8 +84,8 @@ export function select(
   target: ReadTarget,
 ): Link[] {
   const { includeNonCurrent = false, text, ids, relatedTo: anchor } = filters;
-  const wanted = ids === undefined ? undefined : new Set(ids);
-  const related = anchor === undefined ? undefined : relatedTo(view, anchor);
+  const wanted = isUndefined(ids) ? undefined : new Set(ids);
+  const related = isUndefined(anchor) ? undefined : relatedTo(view, anchor);
   const matching = view.records.filter(
     (link) =>
       (includeNonCurrent || view.vigency.isCurrent(link.id)) &&
@@ -93,7 +93,7 @@ export function select(
       (wanted?.has(link.id) ?? true) &&
       (related?.has(link.id) ?? true),
   );
-  if (text === undefined) return matching;
+  if (isUndefined(text)) return matching;
 
   const allowed = new Set(matching.map(({ id }) => id));
   const rank = new Map(

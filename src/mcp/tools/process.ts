@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import { isUndefined } from 'es-toolkit';
 import { z } from 'zod';
 import { BatchKey } from '../../domain/chain.ts';
 import { Name } from '../../domain/ids.ts';
@@ -89,7 +90,7 @@ export function registerProcessTools(server: McpServer, deps: ToolDeps): void {
     ({ agent, model, ...input }, client) =>
       deps.services.process.register({
         ...input,
-        author: { agent, client, ...(model === undefined ? {} : { model }) },
+        author: { agent, client, ...(isUndefined(model) ? {} : { model }) },
       }),
   );
 }

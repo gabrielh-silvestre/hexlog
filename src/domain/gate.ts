@@ -1,4 +1,4 @@
-import { uniq } from 'es-toolkit';
+import { isUndefined, memoize, uniq } from 'es-toolkit';
 import { z } from 'zod';
 import { Name, Target, TypeNames } from './ids.ts';
 import type { RecordId } from './ids.ts';
@@ -58,8 +58,8 @@ export function matchesSelector(
   inheritedTarget?: Target,
 ): boolean {
   const prefix = selector.targetPrefix ?? inheritedTarget;
-  if (selector.type !== undefined && record.type !== selector.type) return false;
-  if (prefix !== undefined && !matchesTargetPrefix(record.target, prefix)) return false;
+  if (!isUndefined(selector.type) && record.type !== selector.type) return false;
+  if (!isUndefined(prefix) && !matchesTargetPrefix(record.target, prefix)) return false;
   return Object.entries(selector.where ?? {}).every(
     ([field, value]) => record.data[field] === value,
   );
@@ -152,7 +152,7 @@ function approved(
   const unsupported: RecordId[] = [];
   for (const { id } of subjects) {
     const supporters = currentSources(context, id, 'supports').filter(
-      (source) => approvers === undefined || matchesSelector(source, approvers, context.target),
+      (source) => isUndefined(approvers) || matchesSelector(source, approvers, context.target),
     );
     supports.push(...ids(supporters));
     contradictions.push(...ids(currentSources(context, id, 'contradicts')));
@@ -184,7 +184,7 @@ function noPending(
   const unresolved = currentMatching(context, pending).filter(
     ({ id }) =>
       !currentSources(context, id, resolvedBy.kind).some(
-        (source) => resolvedBy.from === undefined || resolvedBy.from.includes(source.type),
+        (source) => isUndefined(resolvedBy.from) || resolvedBy.from.includes(source.type),
       ),
   );
   return { passed: unresolved.length === 0, evidence: { unresolved: ids(unresolved) } };
@@ -218,14 +218,9 @@ function answer(context: Context, question: GateQuestion, index: number): Questi
  * Só registro vigente conta, inclusive como origem de apoio, contradição ou resolução.
  */
 export function evaluateGate(questions: readonly GateQuestion[], input: GateInput): GateResult {
-  const views = new Map<GateScope, View>();
-  const viewOf = (questionScope: GateScope): View => {
-    const cached = views.get(questionScope);
-    if (cached) return cached;
-    const view = buildView(input.records(questionScope));
-    views.set(questionScope, view);
-    return view;
-  };
+  const viewOf = memoize((questionScope: GateScope): View =>
+    buildView(input.records(questionScope)),
+  );
 
   const results = questions.map((question, index) =>
     answer({ view: viewOf(question.scope ?? 'process'), target: input.target }, question, index),

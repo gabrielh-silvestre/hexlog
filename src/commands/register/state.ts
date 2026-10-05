@@ -1,4 +1,4 @@
-import { invert, memoize, once } from 'es-toolkit';
+import { invert, isUndefined, memoize, omitBy, once } from 'es-toolkit';
 import { hashLink, type Batch, type Link } from '../../domain/chain.ts';
 import { processOf, type Hash, type Marker, type Name, type RecordId } from '../../domain/ids.ts';
 import type { Author, BatchItem, Relation, RelationInput } from '../../domain/record.ts';
@@ -99,7 +99,7 @@ function registeredOf(links: readonly Link[]): RegisteredRecord[] {
   const aliasOf = invert(aliases);
   return links.map(({ id }) => {
     const alias = aliasOf[id];
-    return alias === undefined ? { id } : { alias, id };
+    return isUndefined(alias) ? { id } : { alias, id };
   });
 }
 
@@ -111,7 +111,7 @@ function draftItems({ process, items }: DecideCall, newUuid: () => string): Draf
   const ided = items.map((prepared) => ({ prepared, id: `${process}:${newUuid()}` }));
   const aliasIds = new Map(
     ided.flatMap(({ prepared, id }) =>
-      prepared.item.alias === undefined ? [] : [[prepared.item.alias, id] as const],
+      isUndefined(prepared.item.alias) ? [] : [[prepared.item.alias, id] as const],
     ),
   );
   const drafts = ided.map(({ prepared: { item, relations }, id }) => ({
@@ -119,7 +119,7 @@ function draftItems({ process, items }: DecideCall, newUuid: () => string): Draf
     item,
     relations: relations.map(({ input, kind }) => {
       const to = isAliasRef(input.to) ? aliasIds.get(input.to.slice(1))! : input.to;
-      return { input, stored: { kind, to, ...(input.as !== undefined && { as: input.as }) } };
+      return { input, stored: { kind, to, ...omitBy({ as: input.as }, isUndefined) } };
     }),
   }));
   return { drafts, aliases: Object.fromEntries(aliasIds) };
@@ -207,17 +207,18 @@ function checkOtherProcesses(
   enforcer: Enforcer,
   drafts: readonly Draft[],
 ): void {
-  const destinations = new Map<Name, Destination>();
-  for (const site of sitesOf(drafts)) {
+  // `site` é o do laço corrente: só o primeiro a citar o destino o usa, na mensagem de erro.
+  let site!: Site;
+  const destinationOf = memoize((destinationProcess: Name) =>
+    loadDestination(deps.store, { project, process: destinationProcess }, pathOf(site)),
+  );
+  for (site of sitesOf(drafts)) {
     const { to } = site.relation.stored;
     const destinationProcess = processOf(to);
     if (destinationProcess === process) continue;
-    const destination =
-      destinations.get(destinationProcess) ??
-      loadDestination(deps.store, { project, process: destinationProcess }, pathOf(site));
-    destinations.set(destinationProcess, destination);
+    const destination = destinationOf(destinationProcess);
     const type = destination.types.get(to);
-    if (type === undefined) throw relationNotFound(pathOf(site), 'missing');
+    if (isUndefined(type)) throw relationNotFound(pathOf(site), 'missing');
     enforcer.inDestination(site, { id: to, type }, destination);
   }
 }
@@ -238,7 +239,7 @@ function checkOwnProcess(
     const { to } = site.relation.stored;
     if (processOf(to) !== process) continue;
     const type = types.get(to);
-    if (type === undefined) throw relationNotFound(pathOf(site), 'missing');
+    if (isUndefined(type)) throw relationNotFound(pathOf(site), 'missing');
     enforcer.inOrigin(site, { id: to, type });
   }
 }
@@ -259,12 +260,12 @@ function linkItems(
   const { author, key, fingerprint } = call;
   const batch: Batch = {
     fingerprint,
-    ...(key !== undefined && { key }),
+    ...omitBy({ key }, isUndefined),
     ...(Object.keys(aliases).length > 0 && { aliases }),
   };
   const stored = {
     agent: author.agent,
-    ...(author.model !== undefined && { model: author.model }),
+    ...omitBy({ model: author.model }, isUndefined),
     client: author.client,
   };
   let prevHash = verified.end.prevHash;
@@ -300,8 +301,8 @@ export function createDecide(
     const verified = verifyProcess(raw);
     if (!verified.chain.ok) throw brokenChain(process);
 
-    const prior = key === undefined ? undefined : verified.batches.get(key);
-    if (prior !== undefined) {
+    const prior = isUndefined(key) ? undefined : verified.batches.get(key);
+    if (!isUndefined(prior)) {
       assertSameBatch(prior, fingerprint);
       const head = verified.records.at(-1)?.id ?? null;
       return {

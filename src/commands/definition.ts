@@ -1,3 +1,4 @@
+import { isUndefined, omitBy } from 'es-toolkit';
 import type { ZodType } from 'zod';
 import { hashOfJcs } from '../domain/chain.ts';
 import {
@@ -132,7 +133,7 @@ function targetVersion<K extends DefinitionKind>(
   next: DefinitionOf[K],
   breaking: boolean,
 ): string {
-  if (previous === undefined) return FIRST_VERSION;
+  if (isUndefined(previous)) return FIRST_VERSION;
   const broken = rule.classify(previous.definition, next) === 'breaking';
   if (broken && !breaking) {
     const message = 'change requires breaking: true';
@@ -164,11 +165,10 @@ function defineVersioned<K extends DefinitionKind>(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const latest = store.versions(project, rule.kind, name).at(-1);
     if (attempt === 0) firstBase = latest;
-    const previous =
-      latest === undefined
-        ? undefined
-        : { version: latest, definition: store.read(project, rule.kind, name, latest) };
-    if (previous !== undefined && hashOfJcs(previous.definition) === hash) {
+    const previous = isUndefined(latest)
+      ? undefined
+      : { version: latest, definition: store.read(project, rule.kind, name, latest) };
+    if (!isUndefined(previous) && hashOfJcs(previous.definition) === hash) {
       return { name, version: previous.version, hash, created: false };
     }
 
@@ -179,14 +179,14 @@ function defineVersioned<K extends DefinitionKind>(
       .versions(project, rule.kind, name)
       .filter(
         (other) =>
-          other !== version && (firstBase === undefined || compareVersions(other, firstBase) > 0),
+          other !== version && (isUndefined(firstBase) || compareVersions(other, firstBase) > 0),
       );
     return {
       name,
       version,
       hash,
       created: true,
-      ...(latest !== undefined && { previousVersion: latest }),
+      ...omitBy({ previousVersion: latest }, isUndefined),
       ...(divergent.length > 0 && { divergentVersions: divergent }),
     };
   }

@@ -1,3 +1,4 @@
+import { isUndefined, omitBy } from 'es-toolkit';
 import type { RuleCode, Violation } from '../../domain/relations.ts';
 import { HexlogError, type Detail } from '../../errors.ts';
 
@@ -24,7 +25,7 @@ const RULE_MESSAGES: Record<RuleCode, string> = {
  */
 export function ruleRefusal(path: string, { code, current }: Violation): HexlogError {
   const message = RULE_MESSAGES[code];
-  const detail: Detail = { path, code, message, ...(current !== undefined && { current }) };
+  const detail: Detail = { path, code, message, ...omitBy({ current }, isUndefined) };
   if (code === 'not-current') return new HexlogError('FORK_REJECTED', message, [detail]);
   return invalidRecord([detail]);
 }
@@ -36,7 +37,7 @@ export function relationNotFound(
 ): HexlogError {
   const message =
     code === 'missing' ? 'relation destination not found' : 'relation destination is corrupted';
-  const detail: Detail = { path, code, message, ...(process !== undefined && { process }) };
+  const detail: Detail = { path, code, message, ...omitBy({ process }, isUndefined) };
   return new HexlogError('RELATION_NOT_FOUND', message, [detail]);
 }
 
@@ -50,6 +51,6 @@ export function withPath(error: unknown, path: string, process?: string): unknow
   return new HexlogError(
     error.code,
     error.message,
-    error.details.map((detail) => ({ ...detail, path, ...(process !== undefined && { process }) })),
+    error.details.map((detail) => ({ ...detail, path, ...omitBy({ process }, isUndefined) })),
   );
 }

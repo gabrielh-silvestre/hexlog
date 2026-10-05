@@ -1,7 +1,7 @@
 // Exportação read-only dos registros de um processo em JSONL, lidos pelo `composeReader` (a cadeia é
 // verificada na leitura; adulterada, o script sai com 2). Inclui os registros não vigentes.
 // Uso: node scripts/export.ts <project>/<process> [--fields a,b,c]
-import { isNil, pick } from 'es-toolkit';
+import { difference, isNil, pick } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
 import { Name } from '../src/domain/ids.ts';
@@ -26,7 +26,7 @@ type Field = (typeof FIELDS)[number];
 function parseFields(raw: string | undefined): { fields: Field[] | null; invalid: string[] } {
   if (isNil(raw)) return { fields: null, invalid: [] };
   const fields = raw.split(',').map((field) => field.trim());
-  const invalid = fields.filter((field) => !(FIELDS as readonly string[]).includes(field));
+  const invalid = difference(fields, FIELDS);
   return { fields: fields as Field[], invalid };
 }
 

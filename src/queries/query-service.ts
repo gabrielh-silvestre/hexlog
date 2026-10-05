@@ -1,4 +1,4 @@
-import { isUndefined, mapValues, omitBy, pick } from 'es-toolkit';
+import { differenceBy, isUndefined, mapValues, omitBy, pick, uniq, union } from 'es-toolkit';
 import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
 import { evaluateGate, type GateResult } from '../domain/gate.ts';
@@ -229,7 +229,7 @@ function gateNotFound(): HexlogError {
 
 function targetOf({ project, scope = 'process', process }: QueryInput): ReadTarget {
   if (scope === 'project') return { project, scope };
-  if (process === undefined) {
+  if (isUndefined(process)) {
     throw invalidFilter('/process', 'required', 'process is required with scope "process"');
   }
   return { project, scope, process };
@@ -237,10 +237,10 @@ function targetOf({ project, scope = 'process', process }: QueryInput): ReadTarg
 
 /** `no-terms` vem depois de `too-long` para nunca tokenizar um texto acima do teto. */
 function assertValid({ limit, text }: QueryInput, search: SearchIndex): void {
-  if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1)) {
+  if (!isUndefined(limit) && !(Number.isInteger(limit) && limit >= 1)) {
     throw invalidFilter('/limit', 'out-of-range', 'limit must be a positive integer');
   }
-  if (text === undefined) return;
+  if (isUndefined(text)) return;
   if (text.length > QUERY_TEXT_MAX_CHARS) {
     throw invalidFilter(
       '/text',
@@ -292,17 +292,14 @@ function assertSameQuery(
     { differs: cursor.process !== process, code: 'process-mismatch' },
     { differs: cursor.filtersHash !== hash, code: 'filters-mismatch' },
   ].find(({ differs }) => differs);
-  if (mismatch !== undefined) {
+  if (!isUndefined(mismatch)) {
     throw invalidCursor(mismatch.code, 'Cursor was issued for a different query');
   }
 }
 
 /** D-20: o conteúdo lido até o marcador tem de ser o que o cursor viu (mesmo hash de cabeça). */
 function assertSameContent(cursor: CursorPayload, reading: Reading): void {
-  const names = new Set([
-    ...Object.keys(cursor.markerHashes),
-    ...Object.keys(reading.markerHashes),
-  ]);
+  const names = union(Object.keys(cursor.markerHashes), Object.keys(reading.markerHashes));
   for (const name of names) {
     // Processo que nasceu depois da página 1 é lido como vazio e não está no cursor.
     const seen = Object.hasOwn(cursor.markerHashes, name) ? cursor.markerHashes[name] : null;
@@ -342,12 +339,14 @@ export function createQueryService(deps: {
     link: Link,
   ): Record<Hash, AttachmentStatus> | undefined {
     const schema = manifest?.fixed.types[link.type];
-    if (schema === undefined) return undefined;
+    if (isUndefined(schema)) return undefined;
     const hashes = attachmentFields(schema)
       .flatMap((field) => [link.data[field]].flat())
       .filter((value): value is Hash => Hash.safeParse(value).success);
     if (hashes.length === 0) return undefined;
-    return Object.fromEntries(hashes.map((hash) => [hash, attachments.status(project, hash)]));
+    return Object.fromEntries(
+      uniq(hashes).map((hash) => [hash, attachments.status(project, hash)]),
+    );
   }
 
   /** D-26: o que mudou no resultado entre o marcador de `changesSince` e a leitura de agora. */
@@ -362,13 +361,13 @@ export function createQueryService(deps: {
       target.scope,
     );
     const before = select(past, filters, search, target);
-    const beforeIds = new Set(before.map(({ id }) => id));
-    const nowIds = new Set(now.selected.map(({ id }) => id));
+    const byId = ({ id }: Link) => id;
     return {
-      entered: now.selected.filter(({ id }) => !beforeIds.has(id)).map(({ id }) => id),
-      left: before
-        .filter(({ id }) => !nowIds.has(id))
-        .map(({ id }) => ({ id, reason: leftReason(now.view, id) })),
+      entered: differenceBy(now.selected, before, byId).map(byId),
+      left: differenceBy(before, now.selected, byId).map(({ id }) => ({
+        id,
+        reason: leftReason(now.view, id),
+      })),
       marker: now.marker,
     };
   }
@@ -379,11 +378,11 @@ export function createQueryService(deps: {
       const target = targetOf(input);
       const filters: Filters = omitBy(pick(input, FILTER_KEYS), isUndefined);
       const hash = hashOf(filters, input.changesSince);
-      const cursor = input.cursor === undefined ? undefined : decodeCursor(input.cursor);
-      if (cursor !== undefined) assertSameQuery(cursor, target, input.process, hash);
+      const cursor = isUndefined(input.cursor) ? undefined : decodeCursor(input.cursor);
+      if (!isUndefined(cursor)) assertSameQuery(cursor, target, input.process, hash);
 
       const reading = readScope(store, target, cursor?.marker, '/cursor');
-      if (cursor !== undefined) assertSameContent(cursor, reading);
+      if (!isUndefined(cursor)) assertSameContent(cursor, reading);
       const view = buildView(reading, target.scope);
       const selected = select(view, filters, search, target);
 
@@ -397,12 +396,12 @@ export function createQueryService(deps: {
         return {
           ...pick(link, ['id', 'type', 'at', 'target', 'author', 'data']),
           ...relationsOf(view, link),
-          ...(review === undefined ? {} : { needsReview: review }),
-          ...(status === undefined ? {} : { attachmentStatus: status }),
+          ...(isUndefined(review) ? {} : { needsReview: review }),
+          ...(isUndefined(status) ? {} : { attachmentStatus: status }),
         };
       };
 
-      const start = cursor === undefined ? 0 : startAfter(selected, cursor.lastId);
+      const start = isUndefined(cursor) ? 0 : startAfter(selected, cursor.lastId);
       const { limit = DEFAULT_LIMIT, maxChars = Infinity } = input;
       const records: QueryRecord[] = [];
       let chars = 0;
@@ -414,12 +413,12 @@ export function createQueryService(deps: {
       }
 
       const last = records.at(-1);
-      const more = last !== undefined && start + records.length < selected.length;
+      const more = !isUndefined(last) && start + records.length < selected.length;
       const next: CursorPayload | undefined = more
         ? {
             scope: target.scope,
             project: target.project,
-            ...(input.process === undefined ? {} : { process: input.process }),
+            ...(isUndefined(input.process) ? {} : { process: input.process }),
             marker: reading.marker,
             markerHashes: reading.markerHashes,
             filtersHash: hash,
@@ -427,14 +426,14 @@ export function createQueryService(deps: {
           }
         : undefined;
       const changes =
-        cursor === undefined && input.changesSince !== undefined
+        isUndefined(cursor) && !isUndefined(input.changesSince)
           ? changesOf(input, target, filters, { view, selected, marker: reading.marker })
           : undefined;
       return {
         records,
-        ...(next === undefined ? {} : { cursor: encodeCursor(next) }),
+        ...(isUndefined(next) ? {} : { cursor: encodeCursor(next) }),
         marker: reading.marker,
-        ...(changes === undefined ? {} : { changes }),
+        ...(isUndefined(changes) ? {} : { changes }),
       };
     },
 
@@ -475,8 +474,8 @@ export function createQueryService(deps: {
     },
 
     list({ project, process }) {
-      if (project === undefined) {
-        if (process !== undefined) {
+      if (isUndefined(project)) {
+        if (!isUndefined(process)) {
           throw invalidInput('/project', 'required', 'project is required with process');
         }
         return {
@@ -486,7 +485,7 @@ export function createQueryService(deps: {
         };
       }
       if (!store.listProjects().includes(project)) throw projectNotFound();
-      if (process !== undefined) {
+      if (!isUndefined(process)) {
         const { createdAt, fixed, hashes } = store.readManifest({ project, process });
         return {
           process: {

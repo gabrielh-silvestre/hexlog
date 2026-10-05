@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { isUndefined } from 'es-toolkit';
 import type { ZodType } from 'zod';
 import {
   CANONICAL_VERSION,
@@ -108,7 +109,7 @@ export function createDefinitionStore({ dataDir }: DefinitionStoreOptions): Defi
     read: <K extends DefinitionKind>(project: Name, kind: K, name: Name, version: string) =>
       mapIo(() => {
         const text = readIfPresent(versionFile(project, kind, name, version));
-        if (text === undefined) {
+        if (isUndefined(text)) {
           throw definitionNotFound(kind, readVersions(nameDir(project, kind, name)));
         }
         let value: unknown;

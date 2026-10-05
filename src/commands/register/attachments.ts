@@ -1,3 +1,4 @@
+import { isString, isUndefined } from 'es-toolkit';
 import { attachmentFields } from '../../domain/definitions.ts';
 import { Hash, type Name } from '../../domain/ids.ts';
 import { HexlogError } from '../../errors.ts';
@@ -11,8 +12,8 @@ const UNMARKED_MESSAGE =
 
 /** Strings de primeiro nível de `data`: o próprio valor, ou os itens string de uma lista. */
 function stringsOf(value: unknown): string[] {
-  if (typeof value === 'string') return [value];
-  return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : [];
+  if (isString(value)) return [value];
+  return Array.isArray(value) ? value.filter(isString) : [];
 }
 
 function missingOrCorrupted(path: string, hash: Hash, status: AttachmentStatus): HexlogError {
@@ -39,7 +40,7 @@ export function checkAttachments(
   const statuses = new Map<Hash, AttachmentStatus>();
   const statusOf = (hash: Hash, path: string): AttachmentStatus => {
     const known = statuses.get(hash);
-    if (known !== undefined) return known;
+    if (!isUndefined(known)) return known;
     try {
       const status = attachments.status(project, hash);
       statuses.set(hash, status);

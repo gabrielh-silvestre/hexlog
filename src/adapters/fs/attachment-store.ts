@@ -2,6 +2,7 @@
 import { isUtf8 } from 'node:buffer';
 import fs from 'node:fs';
 import * as path from 'node:path';
+import { isUndefined, pick } from 'es-toolkit';
 import { sha256hex } from '../../domain/chain.ts';
 import { Hash, Name } from '../../domain/ids.ts';
 import { HexlogError, invalidInput } from '../../errors.ts';
@@ -121,11 +122,11 @@ function realpathOrUndefined(target: string): string | undefined {
 function allowedDirectory({ cwd, dataDir }: AttachmentStoreOptions, directory: string): string {
   const real = realpathOrUndefined(directory);
   const root = realpathOrUndefined(cwd);
-  if (real === undefined || root === undefined || !isWithin(root, real)) {
+  if (isUndefined(real) || isUndefined(root) || !isWithin(root, real)) {
     throw outsideAllowedRoot();
   }
   const data = realpathOrUndefined(dataDir);
-  if (data !== undefined && isWithin(data, real)) {
+  if (!isUndefined(data) && isWithin(data, real)) {
     throw invalidInput('/path', 'inside-data-dir', 'path is inside the data directory');
   }
   return real;
@@ -155,7 +156,7 @@ function isOpenedAt(
   recheckDirectory: () => string,
 ): boolean {
   const opened = realpathOrUndefined(`/proc/self/fd/${fd}`);
-  if (opened !== undefined) return opened === file;
+  if (!isUndefined(opened)) return opened === file;
   try {
     const current = fs.statSync(file);
     return (
@@ -224,7 +225,7 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
   function storeBlob(project: Name, bytes: Buffer): AttachmentPut {
     const hash = sha256hex(bytes);
     const file = checkedBlobFile(project, hash);
-    if (fs.lstatSync(file, { throwIfNoEntry: false }) === undefined) {
+    if (isUndefined(fs.lstatSync(file, { throwIfNoEntry: false }))) {
       try {
         writeFileAtomic(file, bytes, { exclusive: true, fsyncDir: true });
         return { hash, bytes: bytes.length, deduplicated: false };
@@ -243,9 +244,9 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
    */
   function statusOf(file: string, hash: Hash): AttachmentStatus {
     const stat = fs.lstatSync(file, { throwIfNoEntry: false });
-    if (stat === undefined) return 'missing';
+    if (isUndefined(stat)) return 'missing';
 
-    const fingerprint = `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    const fingerprint = Object.values(pick(stat, ['ino', 'size', 'mtimeMs', 'ctimeMs'])).join(':');
     if (verified.get(file) === fingerprint) return 'ok';
 
     const { status } = readBlob(file, hash);
@@ -285,7 +286,7 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
         if (blob.status === 'missing') throw attachmentNotFound(hash);
         const text =
           blob.status === 'ok' && isUtf8(blob.bytes) ? blob.bytes.toString('utf8') : undefined;
-        if (text === undefined) throw attachmentCorrupted(hash);
+        if (isUndefined(text)) throw attachmentCorrupted(hash);
         return text;
       }),
   };

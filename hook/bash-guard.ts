@@ -6,7 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as shellQuoteParse, type ParseEntry } from 'shell-quote';
-import { isNil, isString } from 'es-toolkit';
+import { isNil, isString, take, takeWhile } from 'es-toolkit';
 import { dataDir } from '../src/directory.ts';
 
 // Segmento com `**` ou uma chave `{a/b,c}` com barra dentro: o `path.matchesGlob`
@@ -44,11 +44,6 @@ function extractCwd(input: unknown): string | undefined {
 
 function expandTilde(token: string, home: string): string {
   return token.replace(TILDE_REGEX, `$1${home}`);
-}
-
-/** Índice do primeiro segmento com caractere de glob, ou -1 se nenhum. */
-function firstGlobIndex(segments: string[]): number {
-  return segments.findIndex((segment) => GLOB_CHARS_REGEX.test(segment));
 }
 
 /** Só os tokens texto e os padrões `{op: 'glob', pattern}` interessam à checagem. */
@@ -92,9 +87,11 @@ function tokenReachesDirectory(
 
   const hasSlashKey = SLASH_KEY_REGEX.test(token);
   if (token.includes('**') || hasSlashKey) {
-    const segments = resolvedPath.split(sep);
-    const globIndex = firstGlobIndex(segments);
-    const prefix = globIndex === -1 ? resolvedPath : segments.slice(0, globIndex).join(sep);
+    // prefixo literal: os segmentos até o primeiro com caractere de glob (todos, se nenhum)
+    const prefix = takeWhile(
+      resolvedPath.split(sep),
+      (segment) => !GLOB_CHARS_REGEX.test(segment),
+    ).join(sep);
     return (
       prefix === dataDir || dataDir.startsWith(prefix + sep) || prefix.startsWith(dataDir + sep)
     );
@@ -102,7 +99,7 @@ function tokenReachesDirectory(
 
   if (GLOB_CHARS_REGEX.test(token)) {
     const dirDepth = dataDir.split(sep).length;
-    const truncated = resolvedPath.split(sep).slice(0, dirDepth).join(sep);
+    const truncated = take(resolvedPath.split(sep), dirDepth).join(sep);
     return path.matchesGlob(dataDir, truncated);
   }
 

@@ -1,3 +1,4 @@
+import { isUndefined } from 'es-toolkit';
 import type { RecordType } from '../../domain/definitions.ts';
 import { processOf, type Name } from '../../domain/ids.ts';
 import type { Manifest } from '../../domain/manifest.ts';
@@ -34,7 +35,7 @@ export function checkBatchShape(records: readonly BatchItem[]): void {
   }
   const aliasIndex = new Map<Name, number>();
   for (const [index, { alias }] of records.entries()) {
-    if (alias === undefined) continue;
+    if (isUndefined(alias)) continue;
     if (aliasIndex.has(alias)) {
       throw invalidInput(`/records/${index}/alias`, 'duplicate-alias', 'alias is already used');
     }
@@ -45,7 +46,7 @@ export function checkBatchShape(records: readonly BatchItem[]): void {
       if (!isAliasRef(to)) continue;
       const path = `/records/${index}/relations/${at}/to`;
       const target = aliasIndex.get(to.slice(1));
-      if (target === undefined) throw invalidInput(path, 'unknown-alias', 'no such alias in batch');
+      if (isUndefined(target)) throw invalidInput(path, 'unknown-alias', 'no such alias in batch');
       if (target >= index) {
         throw invalidInput(path, 'forward-alias', 'alias must name an earlier record of the batch');
       }
@@ -61,7 +62,7 @@ export function relationNames(manifest: Manifest): ReadonlyMap<Name, NamedRelati
 function pinnedSchema(manifest: Manifest, item: BatchItem, index: number): RecordType {
   const { types } = manifest.fixed;
   const schema = Object.hasOwn(types, item.type) ? types[item.type] : undefined;
-  if (schema !== undefined) return schema;
+  if (!isUndefined(schema)) return schema;
   const message = `type '${item.type}' is not pinned in the process`;
   throw new HexlogError('TYPE_NOT_PINNED', message, [
     { path: `/records/${index}/type`, code: 'not-pinned', message },

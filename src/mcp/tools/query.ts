@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import { isString, isUndefined, mapValues, pickBy } from 'es-toolkit';
 import { z } from 'zod';
 import { Selector, Where } from '../../domain/gate.ts';
 import { Hash, Name, RecordId, Target } from '../../domain/ids.ts';
@@ -39,7 +40,7 @@ const boundedWellFormed = <V>(schema: z.ZodType<Record<string, V>>, max: number)
       (record) =>
         Object.entries(record)
           .flat()
-          .every((value) => typeof value !== 'string' || value.isWellFormed()),
+          .every((value) => !isString(value) || value.isWellFormed()),
       WELL_FORMED,
     );
 
@@ -195,7 +196,7 @@ export function queryPage(
   input: Omit<QueryServiceInput, 'maxChars'>,
 ): Omit<QueryResult, 'changes'> & { changes?: PagedChanges } {
   const { changes, ...page } = query.queryRecords({ ...input, maxChars: PAGE_CHARS_CAP });
-  return changes === undefined ? page : { ...page, changes: capChanges(changes) };
+  return isUndefined(changes) ? page : { ...page, changes: capChanges(changes) };
 }
 
 type PagedQuestion = {
@@ -211,18 +212,15 @@ function capEvidence({
   evidence,
   ...question
 }: GateEvaluation['questions'][number]): PagedQuestion {
-  const lists = Object.entries<string[]>(evidence);
-  const omitted = Object.fromEntries(
-    lists
-      .map(([name, ids]) => [name, ids.length - EVIDENCE_ITEMS_CAP] as const)
-      .filter(([, count]) => count > 0),
-  );
+  const lists: Record<string, string[]> = evidence;
+  const omitted = pickBy(
+    mapValues(lists, (ids) => ids.length - EVIDENCE_ITEMS_CAP),
+    (count) => count > 0,
+  ) as Record<string, number>;
   if (Object.keys(omitted).length === 0) return { ...question, evidence };
   return {
     ...question,
-    evidence: Object.fromEntries(
-      lists.map(([name, ids]) => [name, ids.slice(0, EVIDENCE_ITEMS_CAP)]),
-    ),
+    evidence: mapValues(lists, (ids) => ids.slice(0, EVIDENCE_ITEMS_CAP)),
     omitted,
   };
 }

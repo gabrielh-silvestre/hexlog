@@ -1,6 +1,6 @@
-import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
+import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import { isPlainObject, kebabCase } from 'es-toolkit';
+import { isPlainObject, isUndefined, kebabCase, memoize, type MemoizeCache } from 'es-toolkit';
 import safeRegex from 'safe-regex2';
 import { ATTACHMENT_FORMAT } from '../domain/definitions.ts';
 import { Hash } from '../domain/ids.ts';
@@ -22,8 +22,7 @@ function offendingProperty(error: ErrorObject): string | undefined {
 function toDetail(error: ErrorObject): Detail {
   const property = offendingProperty(error);
   return {
-    path:
-      property === undefined ? error.instancePath : error.instancePath + jsonPointer([property]),
+    path: isUndefined(property) ? error.instancePath : error.instancePath + jsonPointer([property]),
     code: kebabCase(error.keyword),
     message: error.message ?? 'schema validation failed',
   };
@@ -216,8 +215,14 @@ export function createValidator(): Validator {
   const checker = createCompiler(true);
   const dataValidator = createCompiler(false);
   // Chave por identidade do objeto: o lote de um `register` repete o mesmo schema e recompilar
-  // custava 200 a 300 ms por lote de 50. Escopo da instância e coletável.
-  const compiled = new WeakMap<object, ValidateFunction>();
+  // custava 200 a 300 ms por lote de 50. Escopo da instância e coletável: o `WeakMap` não tem
+  // `size`, que `MemoizeCache` exige no tipo mas o `memoize` nunca lê, então o cast é necessário.
+  const compiled = memoize((schema: Record<string, unknown>) => dataValidator.compile(schema), {
+    cache: new WeakMap() as unknown as MemoizeCache<
+      object,
+      ReturnType<typeof dataValidator.compile>
+    >,
+  });
 
   return {
     checkSchema(schema) {
@@ -235,11 +240,7 @@ export function createValidator(): Validator {
       }
     },
     validate(schema, data) {
-      let validate = compiled.get(schema);
-      if (!validate) {
-        validate = dataValidator.compile(schema);
-        compiled.set(schema, validate);
-      }
+      const validate = compiled(schema);
       return validate(data) ? [] : toDetails(validate.errors ?? []);
     },
   };

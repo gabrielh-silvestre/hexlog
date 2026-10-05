@@ -2,7 +2,17 @@
 // Uso: node scripts/insights.ts [projeto[/processo]]; diretório de dados via XDG_DATA_HOME.
 // Saída 2: dado quebrado (cadeia ou anexo adulterado, `PROCESS_CORRUPTED`, dado 0.x em <D>, D-13);
 // saída 1: o resto (uso incorreto, filtro sem resultado, falha de leitura); o maior código vence.
-import { countBy, groupBy, head, isNil, last, orderBy, take, zip } from 'es-toolkit';
+import {
+  countBy,
+  groupBy,
+  head,
+  isNil,
+  isUndefined,
+  last,
+  orderBy,
+  take,
+  windowed,
+} from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
 import type { Link } from '../src/domain/chain.ts';
@@ -25,11 +35,10 @@ function timelineSection(records: Link[], chainBroken: boolean): string[] {
   if (isNil(first) || isNil(final)) {
     return [chainBroken ? '- timeline: unavailable (chain broken)' : '- timeline: no records'];
   }
-  const pairs = zip(records.slice(0, -1), records.slice(1)).map(([from, to]) => ({
-    ms: Date.parse(to.at) - Date.parse(from.at),
-    from: from.seq,
-    to: to.seq,
-  }));
+  const pairs = windowed(records, 2).map((pair) => {
+    const [from, to] = pair as [Link, Link];
+    return { ms: Date.parse(to.at) - Date.parse(from.at), from: from.seq, to: to.seq };
+  });
   const gaps = take(orderBy(pairs, [(gap) => gap.ms], ['desc']), TOP_GAPS);
   const perDay = countBy(records, (record) => record.at.slice(0, 10));
   const perType = countBy(records, (record) => record.type);
@@ -56,9 +65,9 @@ function batchesOf(records: Link[]): BatchInfo[] {
   const batches: BatchInfo[] = [];
   for (const { batch, seq, type } of records) {
     const current = batches.at(-1);
-    if (batch !== undefined) {
+    if (!isUndefined(batch)) {
       batches.push({ seq, type, key: batch.key, fingerprint: batch.fingerprint, size: 1 });
-    } else if (current !== undefined) {
+    } else if (!isUndefined(current)) {
       current.size += 1;
     }
   }
@@ -85,8 +94,8 @@ function keySection(batches: BatchInfo[]): string[] {
   const duplicates: string[] = [];
   for (const batch of batches) {
     const original = firstOf.get(batch.fingerprint);
-    if (original === undefined) firstOf.set(batch.fingerprint, batch);
-    else if (batch.key === undefined) {
+    if (isUndefined(original)) firstOf.set(batch.fingerprint, batch);
+    else if (isUndefined(batch.key)) {
       duplicates.push(`seq ${batch.seq} repeats seq ${original.seq} (${batch.type})`);
     }
   }
@@ -94,11 +103,11 @@ function keySection(batches: BatchInfo[]): string[] {
   const excess = batches
     .filter(
       (batch) =>
-        batch.key !== undefined && batch.size === 1 && occurrences[batch.fingerprint] === 1,
+        !isUndefined(batch.key) && batch.size === 1 && occurrences[batch.fingerprint] === 1,
     )
     .map((batch) => `seq ${batch.seq} (${batch.type})`);
   const perType = Object.entries(groupBy(batches, (batch) => batch.type)).map(([type, group]) => {
-    const keyed = group.filter((batch) => batch.key !== undefined).length;
+    const keyed = group.filter((batch) => !isUndefined(batch.key)).length;
     return `    - ${type}: ${keyed}/${group.length} batches with key (${((keyed / group.length) * 100).toFixed(1)}%)`;
   });
   return [
