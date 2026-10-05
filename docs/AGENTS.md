@@ -13,6 +13,12 @@ Registro das decisões do hexlog (ADRs 0007 a 0009, da 1.0) e a pesquisa de libs
 | `adr-0008-servicos.md` | ADR 0008, status Aceito: serviços da 1.0 — emendas às specs (vigência só no processo, lock só da origem, E5 e `CYCLE_REJECTED`, cursor, teto de `text` e a reversão do "sem cache"), reavaliação do lock, precedência dos erros do `register` em seis níveis (D-06), regra de leitura D-24, ordem de saída da `query`, cegueira do alcance processo e reprodução do gate só pelo marcador (D-19) e limites aceitos da busca (7). |
 | `adr-0009-ferramental.md` | ADR 0009, status Aceito: ferramental da 1.0 (tools expostas, lock, scripts de leitura, catálogo de erros, ponto de retorno e arquivamento do 0.x, limites aceitos do validador e do anexo), em itens numerados; a numeração só cresce, e os ADRs e esta pasta citam item por número. |
 | `tetos-dominio-v1.md` | Decisão N8 do PR #60: tetos de `relations`, `Batch.key`, `RecordType`, `Gate.questions` e `aliases` no domínio da v1, com o dado medido no 0.x (2026-09-30), quais números são precedente e quais são palpite, e como refazer a medição. |
+| `uso.md` | Caminho de um projeto novo em 5 passos, exemplo completo das chamadas e tabela das 11 tools, com as convenções de nomes e `target`. |
+| `tools.md` | Referência de entrada, saída e erros de cada uma das 11 tools; o mapa geral está em `uso.md`. |
+| `instalacao.md` | Requisitos, instalação e atualização, instalação concorrente, versões antigas, verificação (`--check`) e como reverter. |
+| `migracao.md` | Arquivamento do dado 0.x (`--archive-0x`), releitura da trilha arquivada, volta ao 0.x e migração 0.x para 1.0. |
+| `dados.md` | Layout de dados em `<D>`, erros e avisos, tetos do lock, destravamento manual, recuperação de `PROCESS_CORRUPTED` e lacunas de isolamento. |
+| `desenvolvimento.md` | Comandos de desenvolvimento, scripts de leitura (`insights`, `export`, `timeline`) e como os testes se organizam. |
 | `friction-mining.md` | Como a skill `friction-mining` minera transcripts do Claude Code atrás de atrito no uso de uma tool MCP, e como portá-la a outro projeto. |
 | `piloto-omc-fork.md` | Piloto do `oh-my-claudecode@omc-hexlog` (fork com hexlog) ligado só neste repositório, no lugar do upstream. |
 | `qualidade-ci.md` | Estudo (nada instalado) de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17. |

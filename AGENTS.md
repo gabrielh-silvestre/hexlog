@@ -15,7 +15,8 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `.prettierrc`, `.prettierignore`, `.editorconfig` | Formatação (aspas simples, vírgula final, 100 colunas); `*.md` e `package-lock.json` ficam fora do Prettier |
 | `.husky/pre-commit` | Roda `lint-staged` (`eslint --fix` e `prettier --write` nos `*.ts` do commit) |
 | `.github/workflows/ci.yml` | CI: `typecheck`, `lint`, `format:check`, `test` e `test:budget` (Node 24.18.1) |
-| `README.md` | Documentação de uso, instalação, tools e formato dos dados |
+| `README.md` | Porta de entrada enxuta: o que é, instalação, exemplo mínimo, como funciona e índice de `docs/` (a referência de tools, dados, migração e instalação avançada mora em `docs/`) |
+| `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
 | `.hexlog/` | Mapa do fluxo do OMC (`flow.md`) e os schemas dos cinco tipos custom de auditoria (`types/*.json`): fonte versionada dos tipos e do cálculo offline de `hashes.schemas`; o mapa e os schemas ainda descrevem o 0.x (`register_type`) e a F9 (passo 8) os regenera para `define_type` |
 
@@ -41,7 +42,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `define_type`/`define_relation`/`define_gate` versionam em semver `major.minor` em `<nome>/<versão>.json`, nunca sobrescrevem e não deixam arquivo legado. Os dados 1.0 vivem em `<D>/.v1/`.
 - Trocar uma lib ou uma decisão exige conferir antes `docs/adr-0007-dominio.md`, `docs/adr-0008-servicos.md`, `docs/adr-0009-ferramental.md` e `docs/pesquisa/hexlog-pesquisa-libs.md`; para decisão do 0.x, o ADR 0001 está só no git (`git show 87237c3:docs/adr-0001-hexlog-mvp.md`).
 - A partir da 1.0, ADR não é refeito nem apagado, só recebe emenda (seção nova ou ADR seguinte). Na aprovação só o cabeçalho muda (Status passa a Aceito e Deciders inclui quem aprovou); depois de Aceito, o corpo só muda por emenda datada. A troca dos ADRs 0001, 0002, 0005 e 0006 pelos 0007 a 0009 foi a exceção única.
-- `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica. Com dado 0.x em `<D>`, sem flag só lista e sai 2; `--archive-0x` arquiva em `<D>/archive/` e segue para a instalação (`src/archive.ts`; recusas e retomada no README, seção "Dado 0.x"). Só Linux: o arquivador e o lock dependem de `/proc`, hard link e `fsync` de diretório; macOS não foi testado.
+- `node scripts/install.ts` escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Não rode sem pedido explícito. `--check` só verifica. Com dado 0.x em `<D>`, sem flag só lista e sai 2; `--archive-0x` arquiva em `<D>/archive/` e segue para a instalação (`src/archive.ts`; recusas e retomada em `docs/migracao.md`, seção "Dado 0.x"). Só Linux: o arquivador e o lock dependem de `/proc`, hard link e `fsync` de diretório; macOS não foi testado.
 - O instalador copia toda pasta de `skills/` (não uma fixa): uma skill nova só precisa da pasta em `skills/<nome>/SKILL.md` para ser instalada e conferida pelo `--check`.
 
 ### Testing Requirements
