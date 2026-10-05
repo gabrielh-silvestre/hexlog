@@ -28,7 +28,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `scripts/` | Build esbuild, instalador e scripts read-only de insights, export e timeline (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio sobre o bundle real e pacote (see `test/AGENTS.md`) |
 | `docs/` | ADR 0007 (domínio), 0008 (serviços) e 0009 (ferramental) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
-| `skills/` | Três skills, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e consulta registros e gates contra esse mapa) |
+| `skills/` | As skills de `skills/`, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e consulta registros e gates contra esse mapa) |
 
 ## For AI Agents
 
@@ -53,7 +53,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - Os testes lentos do `npm test` são TF1 (kill -9 no meio do lote), TF4 (dono do lock vivo pausado), P1 e o estresse 8x25 do lock; `npm test` termina em até 300 s (P5). Os specs de orçamento medem tempo e podem falhar em máquina lenta; por isso só rodam em `npm run test:budget`.
 
 ### Common Patterns
-- Nomes de módulos, funções e códigos de erro em inglês; comentários e descrições de teste continuam em português (ver `CLAUDE.md`).
+- Idioma (código em inglês, comentários e testes em pt-BR): ver `CLAUDE.md`.
 - Esquemas Zod para registros e entradas de tools. O núcleo (`src/domain/`, `src/shared/`) é puro, e o I/O fica em `src/adapters/`.
 - IDs nos títulos de teste (M#, N#, S#, B#, I#, C#, Q#, R-#, U-#) remetem a critérios de aceite das duas famílias de IDs descritas em `docs/AGENTS.md#Common Patterns` (0.x no ADR 0001 removido, 1.0 no plano em `.omc/`), não aos ADRs 0007 a 0009.
 - Versões de dependências fixadas sem `^`.

@@ -1,19 +1,22 @@
 ---
-phases: [descoberta, planejamento, execucao, verificacao]
+phases: [descoberta, planejamento, execucao, revisao, verificacao]
 process:
   descoberta: omc-discover
   planejamento: omc-plan
   execucao: omc-exec
+  revisao: omc-review
   verificacao: omc-verify
 skills:
-  descoberta: [oh-my-claudecode:deep-dive, oh-my-claudecode:deep-interview]
+  descoberta: [oh-my-claudecode:deep-interview]
   planejamento: [oh-my-claudecode:plan, oh-my-claudecode:ralplan]
-  execucao: [oh-my-claudecode:ralph, oh-my-claudecode:autopilot, oh-my-claudecode:team]
+  execucao: [oh-my-claudecode:ralph, oh-my-claudecode:autopilot, oh-my-claudecode:team, oh-my-claudecode:execute]
+  revisao: [oh-my-claudecode:review]
   verificacao: [oh-my-claudecode:verify]
 gate:
   descoberta: spec-crystallized
   planejamento: execution-approved
   execucao: completion-verified
+  revisao: review-approved
   verificacao: verified
 versions:
   types:
@@ -27,17 +30,19 @@ versions:
   gates:
     completion-verified: "1.0"
     execution-approved: "1.0"
+    review-approved: "1.0"
     spec-crystallized: "1.0"
     verified: "1.0"
 editedSkills:
   - oh-my-claudecode:deep-interview
-  - oh-my-claudecode:deep-dive
   - oh-my-claudecode:plan
   - oh-my-claudecode:ralplan
   - oh-my-claudecode:ralph
   - oh-my-claudecode:autopilot
   - oh-my-claudecode:team
   - oh-my-claudecode:verify
+  - oh-my-claudecode:execute
+  - oh-my-claudecode:review
 ---
 
 # Fluxo do OMC (fork `omc-hexlog`) neste repositório
@@ -62,16 +67,15 @@ próprio; para auditar a trilha inteira, `timeline` com os dois (`<spec> <plano>
 
 ## descoberta → `omc-discover`
 
-Skills: `deep-dive` (trace → deep-interview) e `deep-interview`.
+Skill: `deep-interview` (o `deep-dive` foi retirado no OMC 5.0.0).
 
 | Ponto | Evento | Claim / tipo | Result |
 |---|---|---|---|
-| Spec gravada em `.omc/specs/` (`deep-interview:390-490`, `deep-dive:275-283`) | milestone + verdict | `spec-written` / `spec-crystallized` | `pass` (PASSED) \| `fail` (BELOW_THRESHOLD_EARLY_EXIT) |
-| Execution bridge (`deep-interview:496-523`, `deep-dive:319-346`) | verdict | `execution-approval` | `approve` (rota na evidência) \| `request-changes` \| `pending` |
+| Spec gravada em `.omc/specs/` (`deep-interview:390-490`) | milestone + verdict | `spec-written` / `spec-crystallized` | `pass` (PASSED) \| `fail` (BELOW_THRESHOLD_EARLY_EXIT) |
+| Execution bridge (`deep-interview:496-523`) | verdict | `execution-approval` | `approve` (rota na evidência) \| `request-changes` \| `pending` |
 
 Gate `spec-crystallized`: veredito ativo `spec-crystallized=pass` na spec, sem
-`fail` ativo. Atenção: no `deep-dive`, a rota ralplan→autopilot (`:327`) segue
-para o autopilot sem novo gate humano; no `deep-interview` (`:504`, `:752`) ela
+`fail` ativo. No `deep-interview` (`:504`, `:752`), a rota ralplan→autopilot
 para em `pending approval`.
 
 ## planejamento → `omc-plan`
@@ -93,8 +97,7 @@ Gate `execution-approved`: veredito ativo `execution-approval=approve` no plano.
 `pending`, `request-changes` e `reject` barram (`plan:44`, `:240`).
 
 Rotas sem aprovação humana separada registram a aprovação aqui por conta
-própria: a rota 1 do `deep-dive` (ralplan→autopilot) e o `autopilot` invocado
-direto (invocar já é aprovar).
+própria: o `autopilot` invocado direto (invocar já é aprovar).
 
 Fora do mapeamento: o Pre-Execution Gate do `ralplan` (`:82-152`) é decidido
 pelo hook `src/hooks/keyword-detector/index.ts`, não pelo agente; registrá-lo
@@ -102,8 +105,12 @@ exige mudar o hook.
 
 ## execucao → `omc-exec`
 
-Skills: `ralph`, `autopilot` (chama o ralph na Phase 2, `autopilot:96`) e `team`
-(compõe com o ralph, `team:754-805`).
+Skills: `ralph`, `autopilot` (chama o ralph na Phase 2, `autopilot:96`), `team`
+(compõe com o ralph, `team:754-805`) e `execute` (só quando invocada direto,
+fora de ralph/autopilot/team, `execute:23-28`). O `execute` não registra
+`completion-verified`, então o gate da fase `execucao` não fecha por essa rota;
+a aprovação fica nos gates `review-approved` (`revisao`) e `verified`
+(`verificacao`).
 
 | Ponto | Evento | Claim / tipo | Result |
 |---|---|---|---|
@@ -118,6 +125,18 @@ Skills: `ralph`, `autopilot` (chama o ralph na Phase 2, `autopilot:96`) e `team`
 
 Gate `completion-verified`: veredito ativo `completion-verified=approve` e
 nenhum `regression-check=fail` ativo no target.
+
+## revisao → `omc-review`
+
+Skill: `review` (advisory: o gate registra o resultado, não bloqueia o fluxo).
+
+| Ponto | Evento | Claim / tipo | Result |
+|---|---|---|---|
+| Relatório completo do review (`review:23`) | attachment | — | — |
+| Veredito do review (`review:23`) | verdict | `review` | `approve` \| `request-changes` \| `reject` |
+
+Gate `review-approved`: veredito ativo `review=approve`; `request-changes` ou
+`reject` ativos barram. Um re-review depois das correções supera o anterior.
 
 ## verificacao → `omc-verify`
 
