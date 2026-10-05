@@ -4,7 +4,6 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { matchesGlob } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as shellQuoteParse, type ParseEntry } from 'shell-quote';
 import { isNil, isString } from 'es-toolkit';
@@ -104,7 +103,7 @@ function tokenReachesDirectory(
   if (GLOB_CHARS_REGEX.test(token)) {
     const dirDepth = dataDir.split(sep).length;
     const truncated = resolvedPath.split(sep).slice(0, dirDepth).join(sep);
-    return matchesGlob(dataDir, truncated);
+    return path.matchesGlob(dataDir, truncated);
   }
 
   return false;
@@ -115,7 +114,7 @@ function decide(
   input: unknown,
   env: NodeJS.ProcessEnv,
   defaultCwd: string,
-): { deny: boolean; reason?: string } {
+): { deny: false } | { deny: true; reason: string } {
   const command = extractCommand(input);
   if (isNil(command)) return { deny: false };
 
@@ -123,10 +122,9 @@ function decide(
   const home = os.homedir();
   const cwd = extractCwd(input) ?? defaultCwd;
 
-  const tokens = tryTokenize(command, home, env);
-  const reachedByTokens = isNil(tokens)
-    ? false
-    : tokensAsStrings(tokens).some((token) => tokenReachesDirectory(token, cwd, dataDirPath, home));
+  const reachedByTokens = tokensAsStrings(tryTokenize(command, home, env) ?? []).some((token) =>
+    tokenReachesDirectory(token, cwd, dataDirPath, home),
+  );
 
   // Rede de segurança (§4.14): também decide sozinha quando o
   // parse lança, e cobre o comando citando D fora de qualquer token isolado.
@@ -146,9 +144,9 @@ function isExecutedDirectly(): boolean {
 function run(): void {
   const stdinInput = fs.readFileSync(0, 'utf8');
   const input: unknown = JSON.parse(stdinInput);
-  const { deny, reason } = decide(input, process.env, process.cwd());
-  if (deny) {
-    process.stderr.write(reason ?? '');
+  const decision = decide(input, process.env, process.cwd());
+  if (decision.deny) {
+    process.stderr.write(decision.reason);
     process.exitCode = 2;
   }
 }
@@ -159,6 +157,5 @@ if (isExecutedDirectly()) {
   } catch {
     // R-1: falha aberto — Node ausente, JSON inválido ou qualquer erro
     // interno nunca deve bloquear o Bash tool.
-    process.exitCode = 0;
   }
 }

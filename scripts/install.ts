@@ -9,31 +9,25 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { build } from './build.ts';
+import { build, repoRoot } from './build.ts';
 import { detectLegacy } from '../src/adapters/fs/data-format.ts';
+import { readIfPresent } from '../src/adapters/fs/io.ts';
 import { archiveLegacy, inspectLegacy } from '../src/archive.ts';
 import { dataDir } from '../src/directory.ts';
-import { expectedRules, libDirOf, runRealHook } from '../src/guard.ts';
+import { expectedRules, libDirOf, mcpRegistered, runRealHook } from '../src/guard.ts';
 import {
   installArtifact,
   registerGuard,
   writeSkillFolder,
-  needsMcpRegistration,
   verifyInstallation,
   type Bundles,
 } from '../src/installation.ts';
-
-const repoRoot = path.resolve(import.meta.dirname, '..');
 
 function readPackageJsonVersion(): string {
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
     version: string;
   };
   return pkg.version;
-}
-
-function readIfExists(file: string): string | null {
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
 }
 
 /** Nome de cada pasta em `skills/` (uma por skill instalável, `hexlog` inclusa). */
@@ -126,10 +120,9 @@ async function install(D: string): Promise<void> {
     clock: () => new Date(),
     runHook: (hookFile, stdin) => runRealHook(process.execPath, hookFile, stdin),
     verifyServer: countTools,
-    log: (message) => console.log(message),
   });
 
-  const expected = expectedRules(D, home, process.execPath, version, names);
+  const expected = expectedRules(D, home, process.execPath, version);
   const settingsPath = path.join(home, '.claude', 'settings.json');
   const { changed, removed } = registerGuard({ settingsPath, expected });
 
@@ -137,8 +130,8 @@ async function install(D: string): Promise<void> {
     writeSkillFolder(home, name, path.join(repoRoot, 'skills', name));
   }
 
-  const claudeJsonText = readIfExists(path.join(home, '.claude.json'));
-  if (needsMcpRegistration(claudeJsonText, expected)) {
+  const claudeJsonText = readIfPresent(path.join(home, '.claude.json')) ?? null;
+  if (!mcpRegistered(claudeJsonText, expected)) {
     registerMcp(process.execPath, expected.serverFile);
   }
 
@@ -153,8 +146,8 @@ async function install(D: string): Promise<void> {
 async function check(D: string): Promise<void> {
   const home = os.homedir();
   const version = readPackageJsonVersion();
-  const settingsText = readIfExists(path.join(home, '.claude', 'settings.json'));
-  const claudeJsonText = readIfExists(path.join(home, '.claude.json'));
+  const settingsText = readIfPresent(path.join(home, '.claude', 'settings.json')) ?? null;
+  const claudeJsonText = readIfPresent(path.join(home, '.claude.json')) ?? null;
   const currentBundles = await buildBundles();
 
   const result = verifyInstallation({

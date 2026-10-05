@@ -17,7 +17,7 @@ dado 0.x com exit 2.
 ## Key Files
 | File | Description |
 |---|---|
-| `build.ts` | Builda com `esbuild` os dois entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `hasDynamicRequire()` (detecta o shim de `require` dinâmico que o esbuild injeta para dependência CJS não embutida) |
+| `build.ts` | Builda com `esbuild` os dois entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `repoRoot` |
 | `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 11 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. `node scripts/install.ts --check` só verifica, sem tocar em nada: ignora `--archive-0x` e nem chama `detectLegacy`, então um `<D>` ilegível (`EACCES`, `ENOTDIR`) não o derruba. Regra de `permissions.deny` de um `<D>` antigo que o guard tira é impressa (`removed deny rule: <regra>`), nunca em silêncio. Com dado 0.x em `<D>` (`adapters/fs/data-format.ts#detectLegacy`), sem flag lista o que `src/archive.ts#inspectLegacy` arquivaria e sai 2 sem alterar `<D>` nem a instalação; `--archive-0x` roda `archiveLegacy` e segue para a instalação (imprime arquivos e caminho do `.tar`, ou `removed N empty 0.x directories` quando só havia diretórios vazios; `ArchiveError`: stderr, exit 1, sem instalar). A listagem cita `<D>/archive/` porque o nome do `.tar` só existe depois de `archiveLegacy`. Argumento desconhecido é recusado com exit 1 antes de qualquer escrita (decisão da issue #71, fora do plano; coberta em `test/guard.spec.ts`, describe B3) |
 | `cli-error.ts` | `formatCliError(prefix, error)`: a linha `<prefix> failed: CODE: message (detalhes)` e o exit code (2 para `LEGACY_DATA` e `PROCESS_CORRUPTED`, 1 para o resto) dos três scripts de leitura; a recusa de dado 0.x vem de `src/errors.ts#legacyDataError`, a mesma do kernel MCP (P11). Omite o detalhe que só repete a mensagem (`project not found (project not found)`) e mantém o `processo:` do `PROCESS_CORRUPTED`. `openReadOnly()` abre o `composeReader` sobre o `<D>` de `XDG_DATA_HOME` e lança `LEGACY_DATA` com dado 0.x (o preâmbulo único dos três scripts). `parseCliArgs(argv, options)` é o `node:util#parseArgs` estrito: opção desconhecida ou sem valor devolve `undefined`, e o script imprime o uso com exit 1 |
 | `escape-controls.ts` | `escapeControls(text)`: troca C0 (menos LF e TAB), DEL, C1 e os controles bidi por `\uXXXX` visível (minúsculo, como o `JSON.stringify`). Mora em módulo próprio porque importar `timeline.ts` executaria o `main`; só o `timeline.ts` o usa |
@@ -38,8 +38,8 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 ### Working In This Directory
 - A lógica de negócio dos dois scripts vive em `src/guard.ts`
   (`expectedRules`, `applyGuard`, `verifyGuard`, `hookProbes`,
-  `sha256`) e `src/installation.ts` (`installArtifact`, `registerGuard`,
-  `needsMcpRegistration`, `verifyInstallation`) — esses módulos são puros e
+  `mcpRegistered`) e `src/installation.ts` (`installArtifact`, `registerGuard`,
+  `verifyInstallation`) — esses módulos são puros e
   testáveis, sem chamar `esbuild`/`claude` de verdade (`src/installation.ts`
   já chama `fs` real: é quem grava os arquivos instalados). `install.ts` é só
   a fiação: injeta `runRealHook`, `countTools` (sobe o servidor num
@@ -99,9 +99,9 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 ### Common Patterns
 - `import.meta.main`/`import.meta.dirname` são usados nos dois scripts para
   o modo executável direto — incompatíveis com o transform CJS do ts-jest,
-  por isso `src/installation.ts` duplica `hasDynamicRequire` em vez de
+  por isso `src/installation.ts` tem a sua `hasDynamicRequire` em vez de
   importar de `build.ts`.
-- Toda execução externa (`runHook`, `verifyServer`, `clock`, `log`)
+- Toda execução externa (`runHook`, `verifyServer`, `clock`)
   é passada por parâmetro para as funções de `src/`, nunca chamada direto —
   é isso que torna `installArtifact`/`verifyInstallation` testáveis sem
   processo real.

@@ -27,25 +27,16 @@ function recordsOf(query: QueryService, project: string, target: string): QueryR
   }).records;
 }
 
-/** Texto inteiro do anexo, página a página (`next` é o offset da página seguinte). */
-function textOf(query: QueryService, project: string, hash: Hash): string {
-  let text = '';
-  let offset: number | undefined = 0;
-  do {
-    const page = query.readAttachment({ project, hash, offset });
-    text += page.text;
-    offset = page.next;
-  } while (offset !== undefined);
-  return text;
-}
-
-/** Só os anexos `ok` têm texto a ler; os outros aparecem pelo status. */
+/** Só os anexos `ok` têm texto a ler (inteiro, numa chamada: `maxChars` sem teto); os outros aparecem pelo status. */
 function textsOf(query: QueryService, project: string, record: QueryRecord): Record<Hash, string> {
   const cited = Object.entries(record.attachmentStatus ?? {});
   return Object.fromEntries(
     cited
       .filter(([, status]) => status === 'ok')
-      .map(([hash]) => [hash, textOf(query, project, hash)]),
+      .map(([hash]) => [
+        hash,
+        query.readAttachment({ project, hash, maxChars: Number.MAX_SAFE_INTEGER }).text,
+      ]),
   );
 }
 

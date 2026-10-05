@@ -13,12 +13,12 @@ import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { detectLegacy } from '../src/adapters/fs/data-format.ts';
+import { sha256hex } from '../src/domain/chain.ts';
 import {
   expectedRules,
   applyGuard,
   verifyGuard,
   runRealHook,
-  sha256,
   type ExpectedRules,
   type MissingItem,
 } from '../src/guard.ts';
@@ -115,7 +115,7 @@ function buildSettingsTemplate(home: string): string {
 function buildFullClaudeJson(expected: ExpectedRules): string {
   return JSON.stringify({
     mcpServers: {
-      hexlog: { command: expected.serverExec, args: [expected.serverFile], env: {} },
+      hexlog: { command: expected.execPath, args: [expected.serverFile], env: {} },
     },
   });
 }
@@ -138,6 +138,10 @@ function buildFullSettings(expectedForDeny: ExpectedRules, hookCommand: string):
   });
 }
 
+function noneExist(): boolean {
+  return false;
+}
+
 function alwaysExists(): boolean {
   return true;
 }
@@ -155,13 +159,13 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
   const expected = expectedRules(D, home, '/usr/bin/node', '0.1.0');
 
   test('applyGuard duas vezes produz o mesmo texto', () => {
-    const first = applyGuard(buildSettingsTemplate(home), expected);
-    const second = applyGuard(first, expected);
+    const first = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
+    const second = applyGuard(first, expected, noneExist).text;
     expect(second).toBe(first);
   });
 
   test('sobre o settings regenerado do template, restaura as 4 regras e o hook', () => {
-    const result = applyGuard(buildSettingsTemplate(home), expected);
+    const result = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     const verification = verifyGuard({
       settingsText: result,
       claudeJsonText: buildFullClaudeJson(expected),
@@ -173,7 +177,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
   });
 
   test('preserva entradas alheias (rtk hook claude e as regras/allow existentes)', () => {
-    const result = applyGuard(buildSettingsWithRtk(home), expected);
+    const result = applyGuard(buildSettingsWithRtk(home), expected, noneExist).text;
     const data = parseJson(SettingsSchema, result);
     expect(data.permissions.allow).toEqual(['mcp__hindsight__*']);
     expect(data.permissions.deny).toEqual(
@@ -192,8 +196,8 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
 
   test('substitui a entrada com command de versão antiga sem duplicar', () => {
     const oldExpected = expectedRules(D, home, '/usr/bin/node', '0.0.9');
-    const withOldVersion = applyGuard(buildSettingsTemplate(home), oldExpected);
-    const result = applyGuard(withOldVersion, expected);
+    const withOldVersion = applyGuard(buildSettingsTemplate(home), oldExpected, noneExist).text;
+    const result = applyGuard(withOldVersion, expected, noneExist).text;
     const data = parseJson(SettingsSchema, result);
     const hexlogEntries = data.hooks.PreToolUse.filter((entry: { hooks: { command: string }[] }) =>
       entry.hooks.some(
@@ -205,7 +209,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
   });
 
   test('JSON resultante é válido e preserva comentários existentes', () => {
-    const result = applyGuard(buildSettingsWithRtk(home), expected);
+    const result = applyGuard(buildSettingsWithRtk(home), expected, noneExist).text;
     const errors: ParseError[] = [];
     parseJsonc(result, errors);
     expect(errors).toHaveLength(0);
@@ -213,14 +217,14 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
   });
 
   test('settings sem comentários continua JSON.parse válido depois de applyGuard', () => {
-    const result = applyGuard(buildSettingsTemplate(home), expected);
+    const result = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     expect(() => {
       JSON.parse(result);
     }).not.toThrow();
   });
 
   test('verifyGuard lista cada regra de deny quando removida individualmente', () => {
-    const full = applyGuard(buildSettingsTemplate(home), expected);
+    const full = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     const claudeJson = buildFullClaudeJson(expected);
     const cases: [string, MissingItem][] = [
       [expected.denyReadDir, 'deny-read-dir'],
@@ -243,7 +247,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
   });
 
   test('verifyGuard aponta "hook" quando a entrada do hook é removida', () => {
-    const full = applyGuard(buildSettingsTemplate(home), expected);
+    const full = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     const data = parseJson(SettingsSchema, full);
     data.hooks.PreToolUse = data.hooks.PreToolUse.filter(
       (entry: { hooks: { command: string }[] }) =>
@@ -291,7 +295,7 @@ describe('I6: as 4 regras de deny exatas (QN4)', () => {
   });
 
   test('sem a quarta regra, verifyGuard aponta deny-edit-lib', () => {
-    const full = applyGuard(buildSettingsTemplate(home), expected);
+    const full = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     const data = parseJson(SettingsSchema, full);
     data.permissions.deny = data.permissions.deny.filter((r: string) => r !== expected.denyEditLib);
     const verification = verifyGuard({
@@ -320,7 +324,7 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
   const oldD = '/mnt/old/data/hexlog';
 
   test('deny: remove as três regras de um <D> antigo com basename hexlog', () => {
-    const result = applyGuard(settingsWithDeny(trioOf(oldD)), expected);
+    const result = applyGuard(settingsWithDeny(trioOf(oldD)), expected, noneExist).text;
     expect(denyOf(result)).toEqual([
       expected.denyReadDir,
       expected.denyRead,
@@ -331,27 +335,35 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
 
   test('deny: mantém as regras do <D> atual quando há um <D> antigo ao lado', () => {
     const current = trioOf(D);
-    const result = applyGuard(settingsWithDeny([...trioOf(oldD), ...current]), expected);
+    const result = applyGuard(
+      settingsWithDeny([...trioOf(oldD), ...current]),
+      expected,
+      noneExist,
+    ).text;
     expect(denyOf(result)).toEqual([...current, expected.denyEditLib]);
   });
 
   test('deny: regra avulsa do usuário sobrevive, mesmo parecida com a do <D> antigo', () => {
     const stray = ['Read(//mnt/old/data/hexlog/secret)', 'Bash(rm:*)', 'Edit(//mnt/old/**)'];
-    const result = applyGuard(settingsWithDeny([...stray, ...trioOf(oldD)]), expected);
+    const result = applyGuard(
+      settingsWithDeny([...stray, ...trioOf(oldD)]),
+      expected,
+      noneExist,
+    ).text;
     expect(denyOf(result)).toEqual(expect.arrayContaining(stray));
     expect(denyOf(result)).not.toContain(`Read(/${oldD})`);
   });
 
   test('deny: <D> antigo com basename diferente de hexlog não é removido', () => {
     const foreign = trioOf('/mnt/old/data/other');
-    const result = applyGuard(settingsWithDeny(foreign), expected);
+    const result = applyGuard(settingsWithDeny(foreign), expected, noneExist).text;
     expect(denyOf(result)).toEqual(expect.arrayContaining(foreign));
   });
 
   test('deny: trio incompleto (uma ou duas regras) não é removido', () => {
     const [readDir, read] = trioOf(oldD);
     for (const partial of [[readDir], [readDir, read]] as string[][]) {
-      const result = applyGuard(settingsWithDeny(partial), expected);
+      const result = applyGuard(settingsWithDeny(partial), expected, noneExist).text;
       expect(denyOf(result)).toEqual(expect.arrayContaining(partial));
     }
   });
@@ -366,12 +378,12 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     const inline = (deny: string[]) => `{"permissions":{"deny":${JSON.stringify(deny)}}}`;
 
     test('trio antigo no fim do array', () => {
-      const result = applyGuard(inline(['Bash(rm:*)', ...trioOf(oldD)]), expected);
+      const result = applyGuard(inline(['Bash(rm:*)', ...trioOf(oldD)]), expected, noneExist).text;
       expect(denyOf(result)).toEqual(['Bash(rm:*)', ...currentRules]);
     });
 
     test('só o trio antigo no array', () => {
-      const result = applyGuard(inline(trioOf(oldD)), expected);
+      const result = applyGuard(inline(trioOf(oldD)), expected, noneExist).text;
       expect(denyOf(result)).toEqual(currentRules);
     });
 
@@ -380,16 +392,17 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
       const result = applyGuard(
         inline([readDir!, 'Bash(rm:*)', read!, 'Bash(ls:*)', edit!]),
         expected,
-      );
+        noneExist,
+      ).text;
       expect(denyOf(result)).toEqual(['Bash(rm:*)', 'Bash(ls:*)', ...currentRules]);
     });
   });
 
   test('deny: <D> antigo que ainda existe no disco mantém o trio; ausente, remove', () => {
     const text = settingsWithDeny(trioOf(oldD));
-    const kept = applyGuard(text, expected, (candidate) => candidate === oldD);
+    const kept = applyGuard(text, expected, (candidate) => candidate === oldD).text;
     expect(denyOf(kept)).toEqual(expect.arrayContaining(trioOf(oldD)));
-    const removed = applyGuard(text, expected, () => false);
+    const removed = applyGuard(text, expected, noneExist).text;
     expect(denyOf(removed)).not.toContain(`Read(/${oldD})`);
   });
 
@@ -428,8 +441,8 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
   });
 
   test('deny: aplicar duas vezes produz o mesmo texto (I5)', () => {
-    const first = applyGuard(settingsWithDeny(trioOf(oldD)), expected);
-    expect(applyGuard(first, expected)).toBe(first);
+    const first = applyGuard(settingsWithDeny(trioOf(oldD)), expected, noneExist).text;
+    expect(applyGuard(first, expected, noneExist).text).toBe(first);
   });
 
   test('deny: registerGuard grava .bak-hexlog e settings.json por writeFileAtomic', () => {
@@ -448,7 +461,9 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
       // `writeFileAtomic` dá fsync no temporário antes do rename: uma vez por arquivo gravado.
       expect(fsyncSpy).toHaveBeenCalledTimes(2);
       expect(fs.readFileSync(`${settingsPath}.bak-hexlog`, 'utf8')).toBe(before);
-      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(applyGuard(before, expected));
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(
+        applyGuard(before, expected, noneExist).text,
+      );
       expect(denyOf(fs.readFileSync(settingsPath, 'utf8'))).not.toContain(`Read(/${oldD})`);
       expect(fs.readdirSync(tmpHome).sort()).toEqual(['settings.json', 'settings.json.bak-hexlog']);
     } finally {
@@ -625,25 +640,15 @@ describe('I7: verificação com execução real do hook instalado', () => {
     }
   });
 
-  test('artifact-modified quando o hash do hook instalado diverge do manifesto', () => {
+  test('artifact-modified quando os bytes instalados divergem do manifesto', () => {
     const settings = buildFullSettings(expected, expected.hookCommand);
-    const divergentManifest = {
-      sha256: {
-        server: sha256(Buffer.from('expected server')),
-        hook: sha256(Buffer.from('different bytes')),
-      },
-    };
     const verification = verifyGuard({
       settingsText: settings,
       claudeJsonText: buildFullClaudeJson(expected),
       expected,
       exists: fs.existsSync,
       runHook: runRealHook,
-      installedBytes: {
-        server: null,
-        hook: realBundle,
-        manifest: divergentManifest,
-      },
+      artifactModified: true,
     });
     expect(verification.missing).toContain('artifact-modified');
   });
@@ -652,7 +657,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
     const settings = buildFullSettings(expected, expected.hookCommand);
     const wrongClaudeJson = JSON.stringify({
       mcpServers: {
-        hexlog: { command: expected.serverExec, args: ['/wrong/path/server.mjs'] },
+        hexlog: { command: expected.execPath, args: ['/wrong/path/server.mjs'] },
       },
     });
     for (const claudeJsonText of [null, wrongClaudeJson]) {
@@ -765,7 +770,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date('2026-01-01T00:00:00.000Z'),
         runHook: runRealHookForInstall,
         verifyServer: countRealTools,
-        log: () => undefined,
       });
       expect(result.action).toBe('installed');
       const versionDir = versionDirOf(home, '0.1.0');
@@ -775,8 +779,8 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect(readManifest(versionDir)).toEqual({
         version: '0.1.0',
         sha256: {
-          server: sha256(realBundles.server),
-          hook: sha256(realBundles.hook),
+          server: sha256hex(realBundles.server),
+          hook: sha256hex(realBundles.hook),
         },
         builtAt: '2026-01-01T00:00:00.000Z',
         commit: 'test-commit',
@@ -829,7 +833,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       };
       const first = await installArtifact(args);
       const mtimeBefore = fs.statSync(first.versionDir).mtimeMs;
@@ -868,7 +871,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       });
       const first = await installArtifact(argsFor('0.1.0'));
       const second = await installArtifact(argsFor('0.2.0'));
@@ -915,7 +917,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       });
       await installArtifact(argsFor(realBundles));
       const differentHook = Buffer.concat([
@@ -950,7 +951,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         commit: null,
         dirty: false,
         clock: () => new Date(),
-        log: () => undefined,
       };
 
       // hook preparado que não nega (cópia que sempre "permite")
@@ -1031,7 +1031,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       };
       const first = await installArtifact(args);
       const installedHookFile = path.join(first.versionDir, 'bash-guard.mjs');
@@ -1109,7 +1108,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       });
 
       const [r1, r2] = await Promise.all([
@@ -1145,7 +1143,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       });
 
       // o processo 2 perde a troca; o 1 conclui e não sobra backup

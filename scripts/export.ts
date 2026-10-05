@@ -22,14 +22,12 @@ const FIELDS = [
 ] as const satisfies readonly (keyof QueryRecord)[];
 type Field = (typeof FIELDS)[number];
 
-function parseFields(raw: string | undefined): Field[] | null {
-  if (isNil(raw)) return null;
+/** `fields` só vale se `invalid` vier vazio. */
+function parseFields(raw: string | undefined): { fields: Field[] | null; invalid: string[] } {
+  if (isNil(raw)) return { fields: null, invalid: [] };
   const fields = raw.split(',').map((field) => field.trim());
   const invalid = fields.filter((field) => !(FIELDS as readonly string[]).includes(field));
-  if (!isEmpty(invalid)) {
-    throw new Error(`invalid field(s): ${invalid.join(', ')} (allowed: ${FIELDS.join(', ')})`);
-  }
-  return fields as Field[];
+  return { fields: fields as Field[], invalid };
 }
 
 function main(argv: string[]): number {
@@ -49,11 +47,11 @@ function main(argv: string[]): number {
     return 1;
   }
 
-  let fields: Field[] | null;
-  try {
-    fields = parseFields(args.values.fields);
-  } catch (error) {
-    console.error(`export failed: ${(error as Error).message}`);
+  const { fields, invalid } = parseFields(args.values.fields);
+  if (!isEmpty(invalid)) {
+    console.error(
+      `export failed: invalid field(s): ${invalid.join(', ')} (allowed: ${FIELDS.join(', ')})`,
+    );
     return 1;
   }
 

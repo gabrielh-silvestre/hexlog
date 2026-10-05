@@ -7,6 +7,7 @@ import * as tar from 'tar';
 import { errnoCode, fsyncPath } from './adapters/fs/atomic.ts';
 import { ARCHIVE_DIR, detectLegacy } from './adapters/fs/data-format.ts';
 import { isPidAlive } from './adapters/fs/lock.ts';
+import { sha256hex } from './domain/chain.ts';
 
 /** Arquivo regular do dado 0.x; `path` relativo a `<D>`. */
 export type LegacyFile = { path: string; size: number; sha256: string };
@@ -131,15 +132,11 @@ function walkLegacy(dataDir: string): Listing {
   return listing;
 }
 
-function sha256Of(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
 function hashListing(dataDir: string, { files, dirs }: Listing): LegacyInventory {
   return {
     files: files.map((file) => {
       const bytes = fs.readFileSync(path.join(dataDir, file));
-      return { path: file, size: bytes.length, sha256: sha256Of(bytes) };
+      return { path: file, size: bytes.length, sha256: sha256hex(bytes) };
     }),
     dirs,
   };

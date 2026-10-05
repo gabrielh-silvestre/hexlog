@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hash } from 'node:crypto';
 import canonicalize from 'canonicalize';
 import { omit } from 'es-toolkit';
 import { z } from 'zod';
@@ -48,7 +48,7 @@ function jcs(value: unknown): string {
 }
 
 export function sha256hex(data: string | Uint8Array): Hash {
-  return createHash('sha256').update(data).digest('hex');
+  return hash('sha256', data);
 }
 
 /** sha256 do JCS do valor: o hash de conteúdo de manifesto, definição e lote. */
