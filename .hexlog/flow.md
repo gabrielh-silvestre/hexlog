@@ -10,7 +10,7 @@ skills:
   descoberta: [oh-my-claudecode:deep-interview]
   planejamento: [oh-my-claudecode:plan, oh-my-claudecode:ralplan]
   execucao: [oh-my-claudecode:ralph, oh-my-claudecode:autopilot, oh-my-claudecode:team, oh-my-claudecode:execute]
-  revisao: [oh-my-claudecode:review]
+  revisao: [oh-my-claudecode:review, review-pr, deliver-phase]
   verificacao: [oh-my-claudecode:verify]
 gate:
   descoberta: spec-crystallized
@@ -23,6 +23,7 @@ versions:
     architect-review: "1.0"
     critic-findings: "1.0"
     deviation: "1.0"
+    orchestrator-decision: "1.0"
     plan-iteration-diff: "1.0"
     planner-adr: "1.0"
   vocabulary:
@@ -137,6 +138,30 @@ Skill: `review` (advisory: o gate registra o resultado, não bloqueia o fluxo).
 
 Gate `review-approved`: veredito ativo `review=approve`; `request-changes` ou
 `reject` ativos barram. Um re-review depois das correções supera o anterior.
+
+Nas fases da v1, a revisão roda pela skill do repositório
+[deliver-phase](../.claude/skills/deliver-phase/SKILL.md), que chama `review-pr`
+(harness pessoal; `review-pr` em si não registra nada). O target é o da fase
+(`hex:target:v1-f<N>`):
+
+| Ponto | Evento | Claim / tipo | Result |
+|---|---|---|---|
+| Veredito do painel postado pelo `pr-verdict` (bloco 2) | attachment + verdict | `review` | `request-changes` \| `approve` |
+| Decisões da entrevista aplicadas e pushadas (bloco 3) | attachment + verdict (`supersedes` o do bloco 2) | `review` | `approve` |
+| Desvio entre o decidido e o aplicado (bloco 3) | tipo | `deviation` | — |
+| Issue de MINIMAL e handoff da fase seguinte (bloco 4) | milestone | `handoff` | — |
+
+### Entrega autônoma da v1 → `omc-orchestrate`
+
+Com `deliver-phase --autonomo`, lançada pela maestro [deliver-v1](../.claude/skills/deliver-v1/SKILL.md), os gates não têm humano: cada decisão vira um registro no processo `omc-orchestrate`, além dos eventos da tabela acima. O schema do tipo fica em [orchestrator-decision.schema.json](../.claude/skills/deliver-v1/references/orchestrator-decision.schema.json), fora de `types/`, que guarda só os cinco tipos do ADR 0006. Spec: [deliver-v1-autonomo.md](../.omc/specs/deliver-v1-autonomo.md).
+
+| Ponto | Evento | Claim / tipo | Result |
+|---|---|---|---|
+| Gate de conteúdo (pendência pré-PR, item da revisão, suíte vermelha) decidido por decisor, pesquisa ou júri | attachment (dossiê) + tipo | `orchestrator-decision` | — |
+| Gate de processo (commit/PR, veredito, commit de ajuste) por regra | attachment + tipo (`decidedBy: rule`) | `orchestrator-decision` | — |
+| Correção da conferência da TeamLead | tipo (`gate: team-lead-check`) | `orchestrator-decision` | — |
+| Prompt recusado pela maestro | tipo (`gate: blocked`) + `deviation` | `orchestrator-decision` | — |
+| Decisão que contraria decisão do usuário | tipo | `deviation` (`decidedBy: orchestrator`) | — |
 
 ## verificacao → `omc-verify`
 
