@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-// Import padrão (não `import * as fs`): os specs interceptam `fs` com `jest.spyOn`, como em `atomic.ts`.
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -14,9 +14,12 @@ export const LOCK_BUDGET_MS = 15_000;
 const POLL_MS = 10;
 const BOOT_ID_FILE = '/proc/sys/kernel/random/boot_id';
 
+/** Maior `pid_max` do Linux (2^22): acima disso `process.kill` lança erro que não é `ESRCH`, e o dono contaria como vivo. */
+const PID_MAX = 2 ** 22;
+
 /** `bootId` é `null` sem `/proc`; `null` só casa com `null`. */
 const HolderSchema = z.object({
-  pid: z.int().positive(),
+  pid: z.int().positive().max(PID_MAX),
   token: z.string().min(1),
   bootId: z.string().nullable().default(null),
 });
@@ -40,7 +43,7 @@ export type LockOptions = {
  * leitura estava velha e o lock movido era de outro dono vivo; foi devolvido ou, se já existe lock
  * novo, apagado. `gone`: o lock já não existia.
  */
-export type MoveAsideResult = 'removed' | 'restored' | 'discarded' | 'gone';
+type MoveAsideResult = 'removed' | 'restored' | 'discarded' | 'gone';
 
 // Tokens que este processo segura agora. A entrada e a saída acontecem na mesma sequência síncrona
 // do `rename` de aquisição e de liberação (sem `await` no meio), então duas chamadas do mesmo
@@ -79,20 +82,33 @@ function readHolder(dir: string): HolderRead {
   }
 }
 
-/** `EPERM` conta como vivo: o pid existe, só não é nosso. */
+/** Estado de `/proc/<pid>/stat`: a letra depois do último `)`, porque `comm` pode ter parênteses; `null` sem `/proc`. */
+function readProcState(pid: number): string | null {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const afterComm = stat.lastIndexOf(')') + 2;
+    return stat.slice(afterComm, afterComm + 1);
+  } catch {
+    return null;
+  }
+}
+
+/** `EPERM` conta como vivo: o pid existe, só não é nosso. Zumbi (`Z`) já morreu e só espera o pai: conta como morto. */
 export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
     return errnoCode(error) !== 'ESRCH';
   }
+  return readProcState(pid) !== 'Z';
 }
 
 /**
  * Órfão: dono de outro boot (qualquer que seja o pid, que o reboot renumera); ou, no mesmo boot,
  * pid morto; ou o pid é o deste processo e o token não é um dos que ele segura (só ele pode afirmar,
- * sem risco de reuso de pid). `ponytail:` reuso de pid por processo alheio no mesmo boot deixa o
+ * sem risco de reuso de pid). Premissa (ADR 0009, item 2): todo servidor que grava em `<D>` roda no
+ * mesmo namespace de pid; com `<D>` dividido entre containers, `kill(pid, 0)` dá `ESRCH` para dono
+ * vivo e o lock vivo é roubado. `ponytail:` reuso de pid por processo alheio no mesmo boot deixa o
  * lock preso até intervenção manual; melhoria: comparar `starttime` de `/proc/<pid>/stat`.
  */
 function isOrphan(holder: Holder, bootId: string | null): boolean {
@@ -112,7 +128,9 @@ function lockTimeout(
 
 /**
  * Publica o lock atomicamente: o `holder` nasce completo e com fsync num temporário, e o `rename`
- * do diretório só vence se `dir` não existe. `false` quando já existe um lock.
+ * do diretório só vence se `dir` não existe. `false` quando já existe um lock. `ponytail:` o `.tmp-`
+ * só sobra se o processo morrer entre `mkdtempSync` e `rename`, e não há limpeza automática;
+ * melhoria: varrer `<dir>.tmp-*` antigos no `acquire`.
  */
 function tryCreate(dir: string, holder: Holder): boolean {
   const tmp = fs.mkdtempSync(`${dir}.tmp-`);
@@ -143,7 +161,9 @@ function giveBack(aside: string, dir: string): boolean {
 /**
  * Tira o lock do caminho (roubo de órfão e liberação) e confere o dono pelo `holder` do movido,
  * porque a leitura que levou a decisão pode estar velha. Nunca apaga no lugar: `dir` não fica vazio
- * no meio, senão dois escritores poderiam adquirir.
+ * no meio, senão dois escritores poderiam adquirir. `ponytail:` o `.dead-`/`.released-` só sobra se o
+ * processo morrer entre o `rename` e o `rmSync`, e não há limpeza automática; melhoria: varrer
+ * `<dir>.dead-*` e `<dir>.released-*` antigos no `acquire`.
  */
 export function moveAside(
   dir: string,
@@ -199,7 +219,10 @@ export function createLockManager({
       if (tryCreate(dir, holder)) return { dir, token: holder.token };
       const current = readHolder(dir);
       if (current.kind === 'unreadable') {
-        throw lockTimeout('holder-unreadable', 'lock holder is unreadable; manual unlock required');
+        throw lockTimeout(
+          'holder-unreadable',
+          'lock holder file is unreadable; ask the user to remove the lock (see README, holder-unreadable)',
+        );
       }
       if (current.kind === 'missing') {
         if (performance.now() >= deadline) throw timedOut();

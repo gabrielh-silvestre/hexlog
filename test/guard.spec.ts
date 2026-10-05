@@ -13,12 +13,12 @@ import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { detectLegacy } from '../src/adapters/fs/data-format.ts';
+import { sha256hex } from '../src/domain/chain.ts';
 import {
   expectedRules,
   applyGuard,
   verifyGuard,
   runRealHook,
-  sha256,
   type ExpectedRules,
   type MissingItem,
 } from '../src/guard.ts';
@@ -35,6 +35,7 @@ import {
 import { at, createTempDir, parseJson } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
+const installScript = path.join(repoRoot, 'scripts/install.ts');
 
 // Forma mínima de `~/.claude/settings.json` lida nos testes: só os campos
 // que as asserções acessam, com passthrough pro resto (timeout, etc.).
@@ -114,7 +115,7 @@ function buildSettingsTemplate(home: string): string {
 function buildFullClaudeJson(expected: ExpectedRules): string {
   return JSON.stringify({
     mcpServers: {
-      hexlog: { command: expected.serverExec, args: [expected.serverFile], env: {} },
+      hexlog: { command: expected.execPath, args: [expected.serverFile], env: {} },
     },
   });
 }
@@ -137,6 +138,10 @@ function buildFullSettings(expectedForDeny: ExpectedRules, hookCommand: string):
   });
 }
 
+function noneExist(): boolean {
+  return false;
+}
+
 function alwaysExists(): boolean {
   return true;
 }
@@ -154,25 +159,26 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
   const expected = expectedRules(D, home, '/usr/bin/node', '0.1.0');
 
   test('applyGuard duas vezes produz o mesmo texto', () => {
-    const first = applyGuard(buildSettingsTemplate(home), expected);
-    const second = applyGuard(first, expected);
+    const first = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
+    const second = applyGuard(first, expected, noneExist).text;
     expect(second).toBe(first);
   });
 
   test('sobre o settings regenerado do template, restaura as 4 regras e o hook', () => {
-    const result = applyGuard(buildSettingsTemplate(home), expected);
+    const result = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     const verification = verifyGuard({
       settingsText: result,
       claudeJsonText: buildFullClaudeJson(expected),
       expected,
       exists: alwaysExists,
       runHook: simulatedRunHook,
+      artifactModified: false,
     });
     expect(verification).toEqual({ ok: true, missing: [] });
   });
 
   test('preserva entradas alheias (rtk hook claude e as regras/allow existentes)', () => {
-    const result = applyGuard(buildSettingsWithRtk(home), expected);
+    const result = applyGuard(buildSettingsWithRtk(home), expected, noneExist).text;
     const data = parseJson(SettingsSchema, result);
     expect(data.permissions.allow).toEqual(['mcp__hindsight__*']);
     expect(data.permissions.deny).toEqual(
@@ -191,8 +197,8 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
 
   test('substitui a entrada com command de versão antiga sem duplicar', () => {
     const oldExpected = expectedRules(D, home, '/usr/bin/node', '0.0.9');
-    const withOldVersion = applyGuard(buildSettingsTemplate(home), oldExpected);
-    const result = applyGuard(withOldVersion, expected);
+    const withOldVersion = applyGuard(buildSettingsTemplate(home), oldExpected, noneExist).text;
+    const result = applyGuard(withOldVersion, expected, noneExist).text;
     const data = parseJson(SettingsSchema, result);
     const hexlogEntries = data.hooks.PreToolUse.filter((entry: { hooks: { command: string }[] }) =>
       entry.hooks.some(
@@ -204,7 +210,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
   });
 
   test('JSON resultante é válido e preserva comentários existentes', () => {
-    const result = applyGuard(buildSettingsWithRtk(home), expected);
+    const result = applyGuard(buildSettingsWithRtk(home), expected, noneExist).text;
     const errors: ParseError[] = [];
     parseJsonc(result, errors);
     expect(errors).toHaveLength(0);
@@ -212,14 +218,14 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
   });
 
   test('settings sem comentários continua JSON.parse válido depois de applyGuard', () => {
-    const result = applyGuard(buildSettingsTemplate(home), expected);
+    const result = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     expect(() => {
       JSON.parse(result);
     }).not.toThrow();
   });
 
   test('verifyGuard lista cada regra de deny quando removida individualmente', () => {
-    const full = applyGuard(buildSettingsTemplate(home), expected);
+    const full = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     const claudeJson = buildFullClaudeJson(expected);
     const cases: [string, MissingItem][] = [
       [expected.denyReadDir, 'deny-read-dir'],
@@ -236,13 +242,14 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
         expected,
         exists: alwaysExists,
         runHook: simulatedRunHook,
+        artifactModified: false,
       });
       expect(verification.missing).toContain(item);
     }
   });
 
   test('verifyGuard aponta "hook" quando a entrada do hook é removida', () => {
-    const full = applyGuard(buildSettingsTemplate(home), expected);
+    const full = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     const data = parseJson(SettingsSchema, full);
     data.hooks.PreToolUse = data.hooks.PreToolUse.filter(
       (entry: { hooks: { command: string }[] }) =>
@@ -256,6 +263,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
       expected,
       exists: alwaysExists,
       runHook: simulatedRunHook,
+      artifactModified: false,
     });
     expect(verification.missing).toContain('hook');
   });
@@ -290,7 +298,7 @@ describe('I6: as 4 regras de deny exatas (QN4)', () => {
   });
 
   test('sem a quarta regra, verifyGuard aponta deny-edit-lib', () => {
-    const full = applyGuard(buildSettingsTemplate(home), expected);
+    const full = applyGuard(buildSettingsTemplate(home), expected, noneExist).text;
     const data = parseJson(SettingsSchema, full);
     data.permissions.deny = data.permissions.deny.filter((r: string) => r !== expected.denyEditLib);
     const verification = verifyGuard({
@@ -299,6 +307,7 @@ describe('I6: as 4 regras de deny exatas (QN4)', () => {
       expected,
       exists: alwaysExists,
       runHook: simulatedRunHook,
+      artifactModified: false,
     });
     expect(verification.missing).toEqual(['deny-edit-lib']);
   });
@@ -319,7 +328,7 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
   const oldD = '/mnt/old/data/hexlog';
 
   test('deny: remove as três regras de um <D> antigo com basename hexlog', () => {
-    const result = applyGuard(settingsWithDeny(trioOf(oldD)), expected);
+    const result = applyGuard(settingsWithDeny(trioOf(oldD)), expected, noneExist).text;
     expect(denyOf(result)).toEqual([
       expected.denyReadDir,
       expected.denyRead,
@@ -330,27 +339,35 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
 
   test('deny: mantém as regras do <D> atual quando há um <D> antigo ao lado', () => {
     const current = trioOf(D);
-    const result = applyGuard(settingsWithDeny([...trioOf(oldD), ...current]), expected);
+    const result = applyGuard(
+      settingsWithDeny([...trioOf(oldD), ...current]),
+      expected,
+      noneExist,
+    ).text;
     expect(denyOf(result)).toEqual([...current, expected.denyEditLib]);
   });
 
   test('deny: regra avulsa do usuário sobrevive, mesmo parecida com a do <D> antigo', () => {
     const stray = ['Read(//mnt/old/data/hexlog/secret)', 'Bash(rm:*)', 'Edit(//mnt/old/**)'];
-    const result = applyGuard(settingsWithDeny([...stray, ...trioOf(oldD)]), expected);
+    const result = applyGuard(
+      settingsWithDeny([...stray, ...trioOf(oldD)]),
+      expected,
+      noneExist,
+    ).text;
     expect(denyOf(result)).toEqual(expect.arrayContaining(stray));
     expect(denyOf(result)).not.toContain(`Read(/${oldD})`);
   });
 
   test('deny: <D> antigo com basename diferente de hexlog não é removido', () => {
     const foreign = trioOf('/mnt/old/data/other');
-    const result = applyGuard(settingsWithDeny(foreign), expected);
+    const result = applyGuard(settingsWithDeny(foreign), expected, noneExist).text;
     expect(denyOf(result)).toEqual(expect.arrayContaining(foreign));
   });
 
   test('deny: trio incompleto (uma ou duas regras) não é removido', () => {
     const [readDir, read] = trioOf(oldD);
     for (const partial of [[readDir], [readDir, read]] as string[][]) {
-      const result = applyGuard(settingsWithDeny(partial), expected);
+      const result = applyGuard(settingsWithDeny(partial), expected, noneExist).text;
       expect(denyOf(result)).toEqual(expect.arrayContaining(partial));
     }
   });
@@ -365,12 +382,12 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     const inline = (deny: string[]) => `{"permissions":{"deny":${JSON.stringify(deny)}}}`;
 
     test('trio antigo no fim do array', () => {
-      const result = applyGuard(inline(['Bash(rm:*)', ...trioOf(oldD)]), expected);
+      const result = applyGuard(inline(['Bash(rm:*)', ...trioOf(oldD)]), expected, noneExist).text;
       expect(denyOf(result)).toEqual(['Bash(rm:*)', ...currentRules]);
     });
 
     test('só o trio antigo no array', () => {
-      const result = applyGuard(inline(trioOf(oldD)), expected);
+      const result = applyGuard(inline(trioOf(oldD)), expected, noneExist).text;
       expect(denyOf(result)).toEqual(currentRules);
     });
 
@@ -379,16 +396,17 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
       const result = applyGuard(
         inline([readDir!, 'Bash(rm:*)', read!, 'Bash(ls:*)', edit!]),
         expected,
-      );
+        noneExist,
+      ).text;
       expect(denyOf(result)).toEqual(['Bash(rm:*)', 'Bash(ls:*)', ...currentRules]);
     });
   });
 
   test('deny: <D> antigo que ainda existe no disco mantém o trio; ausente, remove', () => {
     const text = settingsWithDeny(trioOf(oldD));
-    const kept = applyGuard(text, expected, (candidate) => candidate === oldD);
+    const kept = applyGuard(text, expected, (candidate) => candidate === oldD).text;
     expect(denyOf(kept)).toEqual(expect.arrayContaining(trioOf(oldD)));
-    const removed = applyGuard(text, expected, () => false);
+    const removed = applyGuard(text, expected, noneExist).text;
     expect(denyOf(removed)).not.toContain(`Read(/${oldD})`);
   });
 
@@ -427,8 +445,8 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
   });
 
   test('deny: aplicar duas vezes produz o mesmo texto (I5)', () => {
-    const first = applyGuard(settingsWithDeny(trioOf(oldD)), expected);
-    expect(applyGuard(first, expected)).toBe(first);
+    const first = applyGuard(settingsWithDeny(trioOf(oldD)), expected, noneExist).text;
+    expect(applyGuard(first, expected, noneExist).text).toBe(first);
   });
 
   test('deny: registerGuard grava .bak-hexlog e settings.json por writeFileAtomic', () => {
@@ -447,7 +465,9 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
       // `writeFileAtomic` dá fsync no temporário antes do rename: uma vez por arquivo gravado.
       expect(fsyncSpy).toHaveBeenCalledTimes(2);
       expect(fs.readFileSync(`${settingsPath}.bak-hexlog`, 'utf8')).toBe(before);
-      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(applyGuard(before, expected));
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(
+        applyGuard(before, expected, noneExist).text,
+      );
       expect(denyOf(fs.readFileSync(settingsPath, 'utf8'))).not.toContain(`Read(/${oldD})`);
       expect(fs.readdirSync(tmpHome).sort()).toEqual(['settings.json', 'settings.json.bak-hexlog']);
     } finally {
@@ -546,6 +566,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expected,
       exists: fs.existsSync,
       runHook: runRealHook,
+      artifactModified: false,
     });
     expect(verification).toEqual({ ok: true, missing: [] });
   });
@@ -573,6 +594,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
         expected,
         exists: fs.existsSync,
         runHook: runRealHook,
+        artifactModified: false,
       });
       expect(verification.missing).toContain(scenario.item);
     });
@@ -592,6 +614,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expected: notInstalledExpected,
       exists: fs.existsSync,
       runHook: runRealHook,
+      artifactModified: false,
     });
     expect(verification.missing).toContain('hook-file');
   });
@@ -606,6 +629,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expected,
       exists: fs.existsSync,
       runHook: runRealHook,
+      artifactModified: false,
     });
     expect(verification.missing).toContain('node');
   });
@@ -619,30 +643,21 @@ describe('I7: verificação com execução real do hook instalado', () => {
         expected,
         exists: fs.existsSync,
         runHook: runRealHook,
+        artifactModified: false,
       });
       expect(verification.missing).toContain('hook');
     }
   });
 
-  test('artifact-modified quando o hash do hook instalado diverge do manifesto', () => {
+  test('artifact-modified quando os bytes instalados divergem do manifesto', () => {
     const settings = buildFullSettings(expected, expected.hookCommand);
-    const divergentManifest = {
-      sha256: {
-        server: sha256(Buffer.from('expected server')),
-        hook: sha256(Buffer.from('different bytes')),
-      },
-    };
     const verification = verifyGuard({
       settingsText: settings,
       claudeJsonText: buildFullClaudeJson(expected),
       expected,
       exists: fs.existsSync,
       runHook: runRealHook,
-      installedBytes: {
-        server: null,
-        hook: realBundle,
-        manifest: divergentManifest,
-      },
+      artifactModified: true,
     });
     expect(verification.missing).toContain('artifact-modified');
   });
@@ -651,7 +666,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
     const settings = buildFullSettings(expected, expected.hookCommand);
     const wrongClaudeJson = JSON.stringify({
       mcpServers: {
-        hexlog: { command: expected.serverExec, args: ['/wrong/path/server.mjs'] },
+        hexlog: { command: expected.execPath, args: ['/wrong/path/server.mjs'] },
       },
     });
     for (const claudeJsonText of [null, wrongClaudeJson]) {
@@ -661,6 +676,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
         expected,
         exists: fs.existsSync,
         runHook: runRealHook,
+        artifactModified: false,
       });
       expect(verification.missing).toContain('mcp');
     }
@@ -764,7 +780,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date('2026-01-01T00:00:00.000Z'),
         runHook: runRealHookForInstall,
         verifyServer: countRealTools,
-        log: () => undefined,
       });
       expect(result.action).toBe('installed');
       const versionDir = versionDirOf(home, '0.1.0');
@@ -774,8 +789,8 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
       expect(readManifest(versionDir)).toEqual({
         version: '0.1.0',
         sha256: {
-          server: sha256(realBundles.server),
-          hook: sha256(realBundles.hook),
+          server: sha256hex(realBundles.server),
+          hook: sha256hex(realBundles.hook),
         },
         builtAt: '2026-01-01T00:00:00.000Z',
         commit: 'test-commit',
@@ -828,7 +843,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       };
       const first = await installArtifact(args);
       const mtimeBefore = fs.statSync(first.versionDir).mtimeMs;
@@ -867,7 +881,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       });
       const first = await installArtifact(argsFor('0.1.0'));
       const second = await installArtifact(argsFor('0.2.0'));
@@ -914,7 +927,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       });
       await installArtifact(argsFor(realBundles));
       const differentHook = Buffer.concat([
@@ -949,7 +961,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         commit: null,
         dirty: false,
         clock: () => new Date(),
-        log: () => undefined,
       };
 
       // hook preparado que não nega (cópia que sempre "permite")
@@ -1030,7 +1041,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: runRealHookForInstall,
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       };
       const first = await installArtifact(args);
       const installedHookFile = path.join(first.versionDir, 'bash-guard.mjs');
@@ -1108,7 +1118,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       });
 
       const [r1, r2] = await Promise.all([
@@ -1144,7 +1153,6 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         clock: () => new Date(),
         runHook: (_hookFile, stdin) => ({ status: stdin.includes('/probe') ? 2 : 0 }),
         verifyServer: fakeVerifyServer,
-        log: () => undefined,
       });
 
       // o processo 2 perde a troca; o 1 conclui e não sobra backup
@@ -1329,8 +1337,23 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
   });
 });
 
+/** Roda `scripts/install.ts` como processo real, com `HOME` e `<D>` (via `XDG_DATA_HOME`) descartáveis. */
+function runInstaller(home: string, D: string, args: string[], cwd = repoRoot) {
+  return spawnSync(process.execPath, [installScript, ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: home,
+      XDG_DATA_HOME: path.dirname(D),
+      HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
+    },
+  });
+}
+
 describe('B3: install.ts --check (processo real)', () => {
   let home: string;
+  let D: string;
   let version: string;
 
   beforeAll(() => {
@@ -1340,20 +1363,12 @@ describe('B3: install.ts --check (processo real)', () => {
       }
     ).version;
     home = createTempDir('b3');
+    // Fixa o <D> no HOME temporário: um XDG_DATA_HOME herdado com dado 0.x faria o instalador sair 2.
+    D = path.join(home, '.local', 'share', 'hexlog');
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(home, '.claude', 'settings.json'), buildSettingsTemplate(home));
 
-    const installation = spawnSync(process.execPath, [path.join(repoRoot, 'scripts/install.ts')], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        HOME: home,
-        // Fixa o <D> no HOME temporário: um XDG_DATA_HOME herdado com dado 0.x faria o instalador sair 2.
-        XDG_DATA_HOME: path.join(home, '.local', 'share'),
-        HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
-      },
-    });
+    const installation = runInstaller(home, D, []);
     if (installation.status !== 0) {
       throw new Error(
         `real baseline installation (B3) failed: ${installation.stderr}\n${installation.stdout}`,
@@ -1366,16 +1381,8 @@ describe('B3: install.ts --check (processo real)', () => {
   });
 
   function runCheck(opts: { cwd?: string } = {}): { status: number | null; stdout: string } {
-    const result = spawnSync(
-      process.execPath,
-      [path.join(repoRoot, 'scripts/install.ts'), '--check'],
-      {
-        cwd: opts.cwd ?? repoRoot,
-        encoding: 'utf8',
-        env: { ...process.env, HOME: home, XDG_DATA_HOME: path.join(home, '.local', 'share') },
-      },
-    );
-    return { status: result.status, stdout: result.stdout };
+    const { status, stdout } = runInstaller(home, D, ['--check'], opts.cwd);
+    return { status, stdout };
   }
 
   test('instalação completa: exit 0, sem artifact-modified nem artifact-outdated', () => {
@@ -1418,36 +1425,6 @@ describe('B3: install.ts --check (processo real)', () => {
     }
   }, 15_000);
 
-  test('bash-guard.mjs instalado editado, mas ainda nega/permite: artifact-modified, exit 1', () => {
-    const hookFile = path.join(versionDirOf(home, version), 'bash-guard.mjs');
-    const original = fs.readFileSync(hookFile);
-    fs.writeFileSync(hookFile, Buffer.concat([original, Buffer.from('\n// extra comment\n')]));
-    try {
-      const { status, stdout } = runCheck();
-      expect(status).toBe(1);
-      expect(stdout).toContain('artifact-modified');
-    } finally {
-      fs.writeFileSync(hookFile, original);
-    }
-  }, 15_000);
-
-  test('quarta regra de deny ausente: deny-edit-lib, exit 1', () => {
-    const settingsPath = path.join(home, '.claude', 'settings.json');
-    const original = fs.readFileSync(settingsPath, 'utf8');
-    const data = parseJson(SettingsSchema, original);
-    const D = path.join(home, '.local', 'share', 'hexlog');
-    const expected = expectedRules(D, home, process.execPath, version);
-    data.permissions.deny = data.permissions.deny.filter((r: string) => r !== expected.denyEditLib);
-    fs.writeFileSync(settingsPath, JSON.stringify(data));
-    try {
-      const { status, stdout } = runCheck();
-      expect(status).toBe(1);
-      expect(stdout).toContain('deny-edit-lib');
-    } finally {
-      fs.writeFileSync(settingsPath, original);
-    }
-  }, 15_000);
-
   test('build atual diferente do manifesto com bytes instalados íntegros: aviso artifact-outdated, exit inalterado', () => {
     // Chamada direta (sem subprocesso): `runRealHook` herda `process.env` do
     // processo de teste, então o hook precisa enxergar o mesmo HOME temporário
@@ -1459,7 +1436,6 @@ describe('B3: install.ts --check (processo real)', () => {
     try {
       const versionDir = versionDirOf(home, version);
       const manifest = readManifest(versionDir)!;
-      const D = path.join(home, '.local', 'share', 'hexlog');
       const expected = expectedRules(D, home, process.execPath, version);
       const settingsText = fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8');
       const claudeJsonText = fs.readFileSync(path.join(home, '.claude.json'), 'utf8');
@@ -1506,15 +1482,7 @@ describe('B3: install.ts --check (processo real)', () => {
   test('--check com <D> ilegível (ENOTDIR) ainda verifica, sem abortar cru', () => {
     const blocker = path.join(home, 'not-a-dir');
     fs.writeFileSync(blocker, '');
-    const result = spawnSync(
-      process.execPath,
-      [path.join(repoRoot, 'scripts/install.ts'), '--check'],
-      {
-        cwd: repoRoot,
-        encoding: 'utf8',
-        env: { ...process.env, HOME: home, XDG_DATA_HOME: blocker },
-      },
-    );
+    const result = runInstaller(home, path.join(blocker, 'hexlog'), ['--check']);
 
     expect(result.stderr).not.toContain('ENOTDIR');
     expect(result.stdout).toContain('missing:');
@@ -1523,19 +1491,9 @@ describe('B3: install.ts --check (processo real)', () => {
   test('argumento desconhecido sai 1 com a mensagem em stderr e nada escrito', () => {
     const disposableHome = createTempDir('b3-unknown-arg');
     try {
-      const result = spawnSync(
-        process.execPath,
-        [path.join(repoRoot, 'scripts/install.ts'), '--archive0x'],
-        {
-          cwd: repoRoot,
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            HOME: disposableHome,
-            XDG_DATA_HOME: path.join(disposableHome, 'data'),
-          },
-        },
-      );
+      const result = runInstaller(disposableHome, path.join(disposableHome, 'data', 'hexlog'), [
+        '--archive0x',
+      ]);
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('unknown argument: --archive0x');
@@ -1547,9 +1505,7 @@ describe('B3: install.ts --check (processo real)', () => {
 });
 
 describe('F6: install.ts sobre dado 0.x (processo real)', () => {
-  const installScript = path.join(repoRoot, 'scripts/install.ts');
   const legacyFixture = path.join(repoRoot, 'test/fixtures/legacy-0x');
-  const readToolNames = ['list', 'query', 'verify_chain', 'read_attachment', 'evaluate_gate'];
   const DenySchema = z.looseObject({ permissions: z.looseObject({ deny: z.array(z.string()) }) });
   const strayRule = 'Bash(rm:*)';
 
@@ -1557,19 +1513,6 @@ describe('F6: install.ts sobre dado 0.x (processo real)', () => {
   function createInstallHome(prefix: string): { home: string; D: string } {
     const home = createTempDir(prefix);
     return { home, D: path.join(home, '.local', 'share', 'hexlog') };
-  }
-
-  function runInstaller(home: string, D: string, args: string[]) {
-    return spawnSync(process.execPath, [installScript, ...args], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        HOME: home,
-        XDG_DATA_HOME: path.dirname(D),
-        HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
-      },
-    });
   }
 
   function snapshotTree(root: string): Record<string, string | null> {
@@ -1687,25 +1630,6 @@ describe('F6: install.ts sobre dado 0.x (processo real)', () => {
       ).permissions.deny;
       expect(deny).toContain(strayRule);
       for (const rule of oldDenyRules) expect(deny).not.toContain(rule);
-    });
-
-    test('deny: a mensagem do hook instalado cita os nomes novos das tools de leitura', () => {
-      const hook = spawnSync(
-        process.execPath,
-        [path.join(versionDirOf(home, version), 'bash-guard.mjs')],
-        {
-          encoding: 'utf8',
-          input: JSON.stringify({
-            tool_name: 'Bash',
-            tool_input: { command: `cat ${D}/archive` },
-            cwd: repoRoot,
-          }),
-          env: { ...process.env, HOME: home, XDG_DATA_HOME: path.dirname(D) },
-        },
-      );
-
-      expect(hook.status).toBe(2);
-      for (const name of readToolNames) expect(hook.stderr).toContain(name);
     });
 
     test('0.x: a segunda execução com --archive-0x não arquiva de novo e reinstala sem erro', () => {

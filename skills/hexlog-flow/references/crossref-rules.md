@@ -18,7 +18,9 @@ registro que já não é vigente dá `FORK_REJECTED`, com `details[0].current` =
 versão atual da linhagem (ou nulo, se foi revogada). Não existe gate de
 "bifurcação" nem como "cancelar" um registro já gravado: o log é append-only, e
 anular é um `revokes`. Para seguir a linhagem, `query` com `includeNonCurrent:
-true` e `relatedTo` = o `id`; cada registro traz `in` e `out`.
+true` e `relatedTo` = o `id`. O `relatedTo` devolve só os vizinhos diretos, por
+qualquer relação, de entrada ou de saída, sem o próprio `id`; cada registro traz `in`
+e `out`, e a cadeia se percorre por eles, um salto por vez.
 
 Substituir e revogar só valem **dentro do processo** (`cross-process-currency`).
 

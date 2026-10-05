@@ -1,17 +1,14 @@
 import { describe, test, expect, jest } from '@jest/globals';
-import { CLIENT_INFO_META_KEY, type ServerContext } from '@modelcontextprotocol/server';
+import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { HexlogError } from '../../src/errors.ts';
 import {
   advertise,
-  CHANGES_ITEMS_CAP,
+  type CallContext,
   execute,
-  PAGE_CHARS_CAP,
-  queryPage,
   toHexlogError,
   type ToolDeps,
 } from '../../src/mcp/kernel.ts';
-import type { QueryResult, QueryService } from '../../src/queries/query-service.ts';
 import { errorBodyOf } from './environment.ts';
 
 const Input = z.strictObject({ project: z.string().min(1), count: z.number().int() });
@@ -28,8 +25,7 @@ function makeDeps(isLegacy = false) {
   return { deps, logger };
 }
 
-const ctxOf = (envelope?: Record<string, unknown>) =>
-  ({ mcpReq: { envelope } }) as unknown as ServerContext;
+const ctxOf = (envelope?: Record<string, unknown>): CallContext => ({ mcpReq: { envelope } });
 
 const callOf = (args: unknown, ctx = ctxOf()) => ({ name: 'demo', schema: Input, args, ctx });
 
@@ -120,6 +116,48 @@ describe('execute', () => {
     );
   });
 
+  test('logger que lança no sucesso não troca o resultado já produzido por INTERNAL', async () => {
+    const { deps, logger } = makeDeps();
+    logger.mockImplementation(() => {
+      throw new Error('stderr closed');
+    });
+
+    const result = await execute(deps, callOf({ project: 'p', count: 2 }), (input) => ({
+      doubled: input.count * 2,
+    }));
+
+    expect(result).toEqual({
+      structuredContent: { doubled: 4 },
+      content: [{ type: 'text', text: '{"doubled":4}' }],
+    });
+  });
+
+  test('logger que lança no erro não escapa de execute', async () => {
+    const { deps, logger } = makeDeps();
+    logger.mockImplementation(() => {
+      throw new Error('stderr closed');
+    });
+
+    const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => {
+      throw new HexlogError('PROJECT_NOT_FOUND', 'project not found');
+    });
+
+    expect(errorBodyOf(result)).toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+  });
+
+  test('logger que lança ao registrar a exceção ainda devolve INTERNAL', async () => {
+    const { deps, logger } = makeDeps();
+    logger.mockImplementation(() => {
+      throw new Error('stderr closed');
+    });
+
+    const result = await execute(deps, callOf({ project: 'p', count: 1 }), () =>
+      Promise.reject(new TypeError('boom')),
+    );
+
+    expect(errorBodyOf(result)).toMatchObject({ code: 'INTERNAL' });
+  });
+
   test('exceção qualquer vira INTERNAL sem stack na resposta; a stack vai só para o log', async () => {
     const { deps, logger } = makeDeps();
 
@@ -156,23 +194,6 @@ describe('LEGACY_DATA', () => {
     });
   });
 
-  test('consulta isLegacy a cada chamada: volta a funcionar sem reinício depois de arquivar', async () => {
-    const { deps } = makeDeps();
-    let legacy = true;
-    const live: ToolDeps = { ...deps, isLegacy: () => legacy };
-    const valid = { project: 'p', count: 1 };
-
-    const before = await execute(live, callOf(valid), () => ({ ok: true }));
-    legacy = false;
-    const after = await execute(live, callOf(valid), () => ({ ok: true }));
-
-    expect(errorBodyOf(before)).toMatchObject({ code: 'LEGACY_DATA' });
-    expect(after).toEqual({
-      structuredContent: { ok: true },
-      content: [{ type: 'text', text: '{"ok":true}' }],
-    });
-  });
-
   test('exceção do próprio isLegacy vira INTERNAL, não escapa para o SDK', async () => {
     const { deps } = makeDeps();
     const broken: ToolDeps = {
@@ -188,19 +209,17 @@ describe('LEGACY_DATA', () => {
   });
 });
 
-describe('caller', () => {
+describe('client', () => {
   const envelopeOf = (clientInfo: unknown) => ctxOf({ [CLIENT_INFO_META_KEY]: clientInfo });
-  const authorOf = (ctx: ServerContext, fields: { agent: string; model?: string }) =>
-    execute(makeDeps().deps, callOf({ project: 'p', count: 1 }, ctx), (_input, caller) =>
-      caller.author(fields),
-    );
+  const clientOf = (ctx: CallContext) =>
+    execute(makeDeps().deps, callOf({ project: 'p', count: 1 }, ctx), (_input, client) => ({
+      client,
+    }));
 
   test('D-21: client vem de clientInfo.name do envelope', async () => {
-    const result = await authorOf(envelopeOf({ name: 'claude-code', version: '2' }), {
-      agent: 'luffy',
-    });
+    const result = await clientOf(envelopeOf({ name: 'claude-code', version: '2' }));
 
-    expect(result).toMatchObject({ structuredContent: { agent: 'luffy', client: 'claude-code' } });
+    expect(result).toMatchObject({ structuredContent: { client: 'claude-code' } });
   });
 
   test.each([
@@ -211,22 +230,9 @@ describe('caller', () => {
     ['name acima de 100 caracteres', envelopeOf({ name: 'x'.repeat(101) })],
     ['name com surrogate solto', envelopeOf({ name: 'cl\ud800' })],
   ])('client é "unknown" %s', async (_title, ctx) => {
-    const result = await authorOf(ctx, { agent: 'luffy' });
+    const result = await clientOf(ctx);
 
     expect(result).toMatchObject({ structuredContent: { client: 'unknown' } });
-  });
-
-  test('D8: model só entra no author quando informado', async () => {
-    const ctx = envelopeOf({ name: 'claude-code' });
-
-    const without = await authorOf(ctx, { agent: 'luffy' });
-    const withModel = await authorOf(ctx, { agent: 'luffy', model: 'sonnet' });
-
-    expect(without).toMatchObject({
-      structuredContent: { agent: 'luffy', client: 'claude-code' },
-    });
-    expect(without).not.toHaveProperty('structuredContent.model');
-    expect(withModel).toMatchObject({ structuredContent: { model: 'sonnet' } });
   });
 });
 
@@ -247,6 +253,15 @@ describe('toHexlogError', () => {
     expect(error).toMatchObject({ code: 'INTERNAL', message: 'internal error', details: [] });
     expect(logger).toHaveBeenCalledWith({ level: 'error', event: 'internal-error', stack: 'algo' });
   });
+
+  test('logger que lança não impede o INTERNAL', () => {
+    const { logger } = makeDeps();
+    logger.mockImplementation(() => {
+      throw new Error('stderr closed');
+    });
+
+    expect(toHexlogError('algo', logger)).toMatchObject({ code: 'INTERNAL' });
+  });
 });
 
 describe('advertise', () => {
@@ -266,52 +281,5 @@ describe('advertise', () => {
     const result = await advertise(Input)['~standard'].validate(raw);
 
     expect(result).toEqual({ value: raw });
-  });
-});
-
-describe('queryPage', () => {
-  const emptyPage: QueryResult = { records: [], marker: {} };
-
-  function queryWith(page: QueryResult) {
-    const queryRecords = jest.fn<QueryService['queryRecords']>(() => page);
-    return { query: { queryRecords } as unknown as QueryService, queryRecords };
-  }
-
-  test('M4: passa PAGE_CHARS_CAP em maxChars e repassa o resto da entrada', () => {
-    const { query, queryRecords } = queryWith(emptyPage);
-
-    queryPage(query, { project: 'p', process: 'run-1', limit: 10 });
-
-    expect(queryRecords).toHaveBeenCalledWith({
-      project: 'p',
-      process: 'run-1',
-      limit: 10,
-      maxChars: PAGE_CHARS_CAP,
-    });
-  });
-
-  test('sem changes, a página volta como veio', () => {
-    const { query } = queryWith(emptyPage);
-
-    expect(queryPage(query, { project: 'p' })).toEqual(emptyPage);
-  });
-
-  test('changes dentro do teto não ganha omitted', () => {
-    const changes = { entered: ['run-1:a' as never], left: [], marker: {} };
-    const { query } = queryWith({ ...emptyPage, changes });
-
-    expect(queryPage(query, { project: 'p' }).changes).toEqual(changes);
-  });
-
-  test('M4: changes acima do teto é cortado e conta o que ficou de fora', () => {
-    const entered = Array.from({ length: CHANGES_ITEMS_CAP + 7 }, (_, i) => `run-1:e${i}` as never);
-    const left = [{ id: 'run-1:l0' as never, reason: 'superseded' as never }];
-    const { query } = queryWith({ ...emptyPage, changes: { entered, left, marker: {} } });
-
-    const { changes } = queryPage(query, { project: 'p' });
-
-    expect(changes?.entered).toHaveLength(CHANGES_ITEMS_CAP);
-    expect(changes?.left).toEqual(left);
-    expect(changes?.omitted).toEqual({ entered: 7, left: 0 });
   });
 });

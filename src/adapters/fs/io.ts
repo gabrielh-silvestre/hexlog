@@ -1,7 +1,7 @@
-// Import padrão (não `import * as fs`): o spy do jest só intercepta assim (ver `process-store.ts`).
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import { Name } from '../../domain/ids.ts';
-import { HexlogError } from '../../errors.ts';
+import { HexlogError, invalidInput } from '../../errors.ts';
 import { errnoCode } from './atomic.ts';
 
 /** D-26: `IO_ERROR` traz só o errno; o `message` do fs carrega o caminho absoluto. */
@@ -25,37 +25,41 @@ export function mapIo<T>(operation: () => T): T {
 
 /** Todo nome que vira segmento de caminho passa por aqui, antes de qualquer I/O. */
 export function safeName(value: string, field: string): Name {
-  if (!Name.safeParse(value).success) {
-    const message = 'invalid name';
-    throw new HexlogError('INVALID_INPUT', message, [
-      { path: field, code: 'invalid-name', message },
-    ]);
-  }
+  if (!Name.safeParse(value).success) throw invalidInput(field, 'invalid-name', 'invalid name');
   return value;
 }
 
-/** Lê `file`; arquivo inexistente vira `undefined`, qualquer outro erro sai cru. */
-export function readIfPresent(file: string): string | undefined {
+/** Resultado de `operation`, ou `fallback` se ela falha com `ENOENT`; qualquer outro erro sai cru. */
+export function orIfMissing<T, F>(operation: () => T, fallback: F): T | F {
   try {
-    return fs.readFileSync(file, 'utf8');
+    return operation();
   } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return undefined;
+    if (errnoCode(error) === 'ENOENT') return fallback;
     throw error;
   }
+}
+
+/**
+ * Lê `file`; arquivo inexistente vira `undefined`, qualquer outro erro sai cru. `ponytail:` segue
+ * symlink e um FIFO trava o servidor (`<D>` é confiável, ADR 0009 item 9); se `<D>` deixar de ser,
+ * abrir com `O_NOFOLLOW` e recusar arquivo não regular, aqui e nos outros pontos que seguem link
+ * (`statSync` do tamanho do log, `openSync` de append).
+ */
+export function readIfPresent(file: string): string | undefined {
+  return orIfMissing(() => fs.readFileSync(file, 'utf8'), undefined);
+}
+
+/** `fs.existsSync` que só trata `ENOENT` como ausente: `EACCES`, `EIO` e afins saem crus em vez de virar `false`. */
+export function existsStrict(file: string): boolean {
+  return fs.statSync(file, { throwIfNoEntry: false }) !== undefined;
 }
 
 /** Diretórios de `dir` com nome válido que passam em `keep`, em ordem alfabética; `dir` inexistente não tem nenhum. */
 export function listDirectories(dir: string, keep: (name: string) => boolean = () => true): Name[] {
-  try {
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter(
-        (entry) => entry.isDirectory() && Name.safeParse(entry.name).success && keep(entry.name),
-      )
-      .map((entry) => entry.name)
-      .sort();
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return [];
-    throw error;
-  }
+  return orIfMissing(() => fs.readdirSync(dir, { withFileTypes: true }), [])
+    .filter(
+      (entry) => entry.isDirectory() && Name.safeParse(entry.name).success && keep(entry.name),
+    )
+    .map((entry) => entry.name)
+    .sort();
 }

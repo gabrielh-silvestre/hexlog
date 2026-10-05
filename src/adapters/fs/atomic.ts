@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
-// Import padrão (não `import * as fs`): o spy de `fsyncSync` do teste só intercepta assim,
-// porque sob `esModuleInterop` o namespace copia o módulo com getters não configuráveis.
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -23,6 +22,11 @@ export type WriteFileAtomicOptions = {
  * depois `rename` (substitui) ou `link` (exclusivo, vence quem chega primeiro). Nunca deixa
  * `file` pela metade, e o temporário é removido com sucesso ou com falha.
  * Erros de I/O saem crus (`ErrnoException`); mapeá-los para `IO_ERROR` cabe ao chamador.
+ * `ponytail:` só Linux: `exclusive` depende de hard link (`linkSync`) e `fsyncDir` de `fsync` de
+ * diretório, então FAT, exFAT, drvfs (`/mnt/c` no WSL) e Windows ficam fora; macOS não foi testado.
+ * `ponytail:` um kill entre o temporário e o `rename`/`link` deixa o temporário órfão na pasta
+ * (nenhuma rotina o varre), e `fsyncDir` sincroniza só a pasta folha, não os pais que o `mkdir`
+ * criou. Teto aceito; melhoria: varrer temporários antigos e dar `fsync` na cadeia de pais criados.
  */
 export function writeFileAtomic(
   file: string,
@@ -34,13 +38,13 @@ export function writeFileAtomic(
 
   const tmp = path.join(
     dir,
-    `.${path.basename(file)}.${process.pid}.${randomBytes(4).toString('hex')}`,
+    `.${path.basename(file)}.${process.pid}.${randomBytes(8).toString('hex')}`,
   );
   try {
     writeSynced(tmp, content);
     if (exclusive) fs.linkSync(tmp, file);
     else fs.renameSync(tmp, file);
-    if (fsyncDir) fsyncDirectory(dir);
+    if (fsyncDir) fsyncPath(dir);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
@@ -57,9 +61,9 @@ export function writeSynced(file: string, content: string | Uint8Array): void {
   }
 }
 
-/** `fsync` de um diretório (ou de qualquer caminho abrível em leitura); `archive.ts` reusa. */
-export function fsyncDirectory(dir: string): void {
-  const fd = fs.openSync(dir, 'r');
+/** `fsync` de um arquivo ou diretório (qualquer caminho abrível em leitura); `archive.ts` reusa. */
+export function fsyncPath(target: string): void {
+  const fd = fs.openSync(target, 'r');
   try {
     fs.fsyncSync(fd);
   } finally {

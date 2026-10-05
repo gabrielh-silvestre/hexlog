@@ -14,11 +14,13 @@ contexto durante a entrevista ou a leitura das skills apontadas.
 | `process` | `Record<Name, Name>` | sim | Fase → processo. **1:1**: toda fase em `phases` precisa de exatamente um processo mapeado; toda chave aqui precisa existir em `phases` |
 | `skills` | `Record<Name, string[]>` | não (default `{}`) | Fase → skills usadas nessa fase. Nome de skill não é `Name` — aceita namespace com `:` (ex. `oh-my-claudecode:ralph`) |
 | `gate` | `Record<Name, Name>` | não (default `{}`) | Fase → nome do gate daquela fase. O nome precisa já existir via `define_gate` **e** estar fixado no processo da fase (definido antes do `create_process`) — isso não é checado pelo schema, é responsabilidade do passo 3-4 do `SKILL.md` |
-| `targetIdPattern` | `string` | não | Regex source que restringe o rótulo inteiro do `target` (a sintaxe de `Target`, `domain/ids.ts#Target`, vale sempre). Ausente, só a sintaxe do `Target` vale; ver `skills/hexlog-flow/references/target-format.md` |
+| `targetIdPattern` | `string` | não | Regex source que restringe o rótulo inteiro do `target` (a sintaxe de `Target`, `domain/ids.ts#Target`, vale sempre). Ausente, só a sintaxe do `Target` vale; ver [`../../hexlog-flow/references/target-format.md`](../../hexlog-flow/references/target-format.md) |
 | `editedSkills` | `string[]` | não (default `[]`) | Nomes das skills apontadas na descoberta que a `hexlog-setup` efetivamente editou para chamar a `hexlog-flow` — ver o passo opcional do `SKILL.md` |
 
-O campo `versions` do 0.x não existe mais: o `create_process` devolve só os nomes
-fixados (`pinned`), e as versões das definições se leem com `list`. Um
+O campo `versions` do 0.x não existe mais: nenhuma tool devolve a versão que o
+processo fixou. O `create_process` devolve só os nomes (`pinned`), e `list` com
+`project` e `process` traz `pinned` (os nomes) e `hashes` (um por tipo de
+definição). Um
 `.hexlog/flow.md` antigo que ainda o traga continua legível — a `hexlog-flow` só lê
 os campos acima.
 

@@ -1,9 +1,10 @@
 import { uniqBy } from 'es-toolkit';
 import type { z } from 'zod';
-import type { RecordId } from './domain/ids.ts';
+import type { Name, RecordId } from './domain/ids.ts';
 
 /**
- * Um item do array `details` de `HexlogError` (§4.13): aponta o campo problemático via JSON Pointer.
+ * Um item do array `details` de `HexlogError` (ADR 0009 item 11): aponta o campo problemático via
+ * JSON Pointer.
  * `current`, `process` e `pid` são da 1.0 (D-26): versão vigente da linhagem (`null` se revogada),
  * processo citado e pid do detentor do lock. `versions` é das definições: as versões que existem
  * quando a pedida não existe.
@@ -18,7 +19,7 @@ export type Detail = {
   versions?: string[];
 };
 
-/** Catálogo de códigos de erro de domínio (§4.13): a união literal única de 25 códigos. */
+/** Catálogo de códigos de erro de domínio (ADR 0009 item 7): a união literal única. */
 export type ErrorCode =
   | 'INVALID_INPUT'
   | 'INVALID_FILTER'
@@ -46,7 +47,10 @@ export type ErrorCode =
   | 'CYCLE_REJECTED'
   | 'RELATION_NOT_FOUND';
 
-/** Erro de domínio do hexlog: todo handler MCP captura este tipo e devolve `{code, message, details}` (§4.13). */
+/**
+ * Erro de domínio do hexlog: todo handler MCP captura este tipo e devolve `{code, message, details}`
+ * (ADR 0009 item 11).
+ */
 export class HexlogError extends Error {
   readonly code: ErrorCode;
   readonly details: Detail[];
@@ -57,6 +61,30 @@ export class HexlogError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+/** `INVALID_INPUT` com um único `Detail` em `path`; `message` é a do erro e a do `Detail`. */
+export function invalidInput(path: string, code: string, message: string): HexlogError {
+  return new HexlogError('INVALID_INPUT', message, [{ path, code, message }]);
+}
+
+/**
+ * Cadeia do processo quebrada (`PROCESS_CORRUPTED`, `broken-chain`, `details[0].process`): a mesma
+ * para a leitura (`queries/`) e para a escrita (`commands/`), que não podem se importar.
+ */
+export function brokenChain(process: Name): HexlogError {
+  const message = 'process chain is broken';
+  return new HexlogError('PROCESS_CORRUPTED', message, [
+    { path: '/process', code: 'broken-chain', message, process },
+  ]);
+}
+
+/** `RESERVED_NAME` de nome de processo reservado (`domain/ids.ts#isReservedProcessName`): a mesma para o serviço e o adaptador. */
+export function reservedName(): HexlogError {
+  const message = 'reserved process name';
+  return new HexlogError('RESERVED_NAME', message, [
+    { path: '/process', code: 'reserved-name', message },
+  ]);
 }
 
 /** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */

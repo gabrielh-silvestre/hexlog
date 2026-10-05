@@ -75,6 +75,48 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual(['pasta']);
   });
 
+  test('falha do fsync do arquivo sai crua, não publica o arquivo e não deixa temporário', () => {
+    const dir = createTempDir('atomic');
+    const file = path.join(dir, 'f.txt');
+    jest.spyOn(fs, 'fsyncSync').mockImplementation(() => {
+      throw Object.assign(new Error('EIO: /abs/secret/path'), { code: 'EIO' });
+    });
+
+    expect(() => writeFileAtomic(file, 'v')).toThrow(expect.objectContaining({ code: 'EIO' }));
+
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  test('com exclusive, link negado (EPERM, sem hard link no sistema de arquivos) sai cru e não deixa temporário', () => {
+    const dir = createTempDir('atomic');
+    const file = path.join(dir, 'f.txt');
+    jest.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('EPERM: /abs/secret/path'), { code: 'EPERM' });
+    });
+
+    expect(() => writeFileAtomic(file, 'v', { exclusive: true })).toThrow(
+      expect.objectContaining({ code: 'EPERM' }),
+    );
+
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  test('o temporário leva pid e 8 bytes aleatórios (16 hex) no nome, para dois escritores não colidirem', () => {
+    const dir = createTempDir('atomic');
+    const realOpen = fs.openSync;
+    const opened: string[] = [];
+    jest.spyOn(fs, 'openSync').mockImplementation((file, flags, mode) => {
+      opened.push(path.basename(String(file)));
+      return realOpen(file, flags, mode);
+    });
+
+    writeFileAtomic(path.join(dir, 'f.txt'), 'v');
+
+    expect(opened).toEqual([
+      expect.stringMatching(new RegExp(`^\\.f\\.txt\\.${process.pid}\\.[0-9a-f]{16}$`)),
+    ]);
+  });
+
   test('o arquivo nasce com modo 0o600', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');

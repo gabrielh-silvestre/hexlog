@@ -1,4 +1,4 @@
-// Instalador versionado do hexlog (§4.14). Entrypoint real: liga `build`
+// Instalador versionado do hexlog. Entrypoint real: liga `build`
 // (esbuild), `Client`/`StdioClientTransport` (devDependency) e `claude mcp` às
 // funções puras de `src/installation.ts` e `src/guard.ts`. Os testes
 // (`test/guard.spec.ts`, describes B2/B3) chamam `installArtifact`/
@@ -9,32 +9,25 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { build } from './build.ts';
+import { build, repoRoot } from './build.ts';
 import { detectLegacy } from '../src/adapters/fs/data-format.ts';
+import { readIfPresent } from '../src/adapters/fs/io.ts';
 import { archiveLegacy, inspectLegacy } from '../src/archive.ts';
 import { dataDir } from '../src/directory.ts';
-import { expectedRules, runRealHook } from '../src/guard.ts';
+import { expectedRules, libDirOf, mcpRegistered, runRealHook } from '../src/guard.ts';
 import {
   installArtifact,
   registerGuard,
   writeSkillFolder,
-  needsMcpRegistration,
   verifyInstallation,
-  versionDirOf,
   type Bundles,
 } from '../src/installation.ts';
-
-const repoRoot = path.resolve(import.meta.dirname, '..');
 
 function readPackageJsonVersion(): string {
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
     version: string;
   };
   return pkg.version;
-}
-
-function readIfExists(file: string): string | null {
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
 }
 
 /** Nome de cada pasta em `skills/` (uma por skill instalável, `hexlog` inclusa). */
@@ -112,7 +105,7 @@ function registerMcp(execPath: string, serverFile: string): void {
   });
 }
 
-async function install(): Promise<void> {
+async function install(D: string): Promise<void> {
   const version = readPackageJsonVersion();
   const names = skillNames();
   const bundles = await buildBundles();
@@ -127,11 +120,9 @@ async function install(): Promise<void> {
     clock: () => new Date(),
     runHook: (hookFile, stdin) => runRealHook(process.execPath, hookFile, stdin),
     verifyServer: countTools,
-    log: (message) => console.log(message),
   });
 
-  const D = dataDir(process.env);
-  const expected = expectedRules(D, home, process.execPath, version, names);
+  const expected = expectedRules(D, home, process.execPath, version);
   const settingsPath = path.join(home, '.claude', 'settings.json');
   const { changed, removed } = registerGuard({ settingsPath, expected });
 
@@ -139,12 +130,14 @@ async function install(): Promise<void> {
     writeSkillFolder(home, name, path.join(repoRoot, 'skills', name));
   }
 
-  const claudeJsonText = readIfExists(path.join(home, '.claude.json'));
-  if (needsMcpRegistration(claudeJsonText, expected)) {
+  const claudeJsonText = readIfPresent(path.join(home, '.claude.json')) ?? null;
+  if (!mcpRegistered(claudeJsonText, expected)) {
     registerMcp(process.execPath, expected.serverFile);
   }
 
-  console.log(`hexlog ${version}: ${result.action}`);
+  const summary =
+    result.action === 'none' ? 'already installed and intact; nothing to do' : result.action;
+  console.log(`hexlog ${version}: ${summary}`);
   console.log(`  server sha256: ${result.manifest.sha256.server}`);
   console.log(`  hook sha256: ${result.manifest.sha256.hook}`);
   console.log(`  settings.json: ${changed ? 'updated' : 'already correct'}`);
@@ -152,12 +145,11 @@ async function install(): Promise<void> {
   for (const warning of result.warnings) console.log(`  warning: ${warning}`);
 }
 
-async function check(): Promise<void> {
+async function check(D: string): Promise<void> {
   const home = os.homedir();
   const version = readPackageJsonVersion();
-  const D = dataDir(process.env);
-  const settingsText = readIfExists(path.join(home, '.claude', 'settings.json'));
-  const claudeJsonText = readIfExists(path.join(home, '.claude.json'));
+  const settingsText = readIfPresent(path.join(home, '.claude', 'settings.json')) ?? null;
+  const claudeJsonText = readIfPresent(path.join(home, '.claude.json')) ?? null;
   const currentBundles = await buildBundles();
 
   const result = verifyInstallation({
@@ -202,6 +194,17 @@ function listLegacy(D: string): void {
   process.exitCode = 2;
 }
 
+/** `--archive-0x`: arquiva o dado 0.x e imprime o que fez; `ArchiveError` sobe para o `catch` de `main`. */
+function archiveAndReport(D: string): void {
+  const result = archiveLegacy(D, { libDir: libDirOf(os.homedir()), now: () => new Date() });
+  if (!result.archived) return;
+  console.log(
+    result.tarPath === undefined
+      ? `removed ${result.dirs} empty 0.x directories`
+      : `archived ${result.files} file(s) of 0.x data into ${result.tarPath}`,
+  );
+}
+
 async function main(): Promise<void> {
   try {
     const args = process.argv.slice(2);
@@ -212,23 +215,12 @@ async function main(): Promise<void> {
     const D = dataDir(process.env);
     const mode = pickMode(args, () => detectLegacy(D).length > 0);
     if (mode === 'check') {
-      await check();
+      await check(D);
     } else if (mode === 'list') {
       listLegacy(D);
     } else {
-      if (mode === 'archive') {
-        const libDir = path.dirname(versionDirOf(os.homedir(), readPackageJsonVersion()));
-        const { archived, tarPath, files, dirs } = archiveLegacy(D, {
-          libDir,
-          now: () => new Date(),
-        });
-        if (archived && tarPath !== undefined) {
-          console.log(`archived ${files} file(s) of 0.x data into ${tarPath}`);
-        } else if (archived) {
-          console.log(`removed ${dirs} empty 0.x directories`);
-        }
-      }
-      await install();
+      if (mode === 'archive') archiveAndReport(D);
+      await install(D);
     }
   } catch (error) {
     // `ArchiveError` também cai aqui: mensagem em stderr, exit 1 e nenhuma instalação.

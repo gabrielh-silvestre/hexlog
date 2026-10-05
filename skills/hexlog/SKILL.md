@@ -19,7 +19,7 @@ avaliar) é da skill hexlog-flow.
 - **Registro** = `type` + `target` + `data` (validado pelo schema do tipo) +
   `relations`. O servidor atribui o `id` (`<process>:<uuid v7>`); o agente nunca
   o escolhe. O `target` é um rótulo `a.b.c` (ver
-  `skills/hexlog-flow/references/target-format.md`).
+  [`../hexlog-flow/references/target-format.md`](../hexlog-flow/references/target-format.md)).
 - **Vigente**: um registro deixa de ser vigente quando outro o `supersedes` ou o
   `revokes`. Tudo que o hexlog responde (gates, `query`) olha só o vigente, salvo
   `includeNonCurrent`.
@@ -71,7 +71,8 @@ relação; a de gate é do agente:
 | `define_relation` | Alargar `from` ou `to` | Trocar `kind` ou estreitar as listas |
 | `define_gate` | Toda mudança é minor: o servidor não detecta quebra | **Você julga**: mande `breaking: true` quando a mudança aperta o gate, como pergunta nova ou seletor mais estreito em `approved` ou `occurred` |
 
-`breaking: true` sempre sobe o major, mesmo que a mudança fosse compatível.
+`breaking: true` sempre sobe o major, mesmo que a mudança fosse compatível, exceto
+com definição idêntica à vigente (replay, `created: false`).
 
 **Anexo e `breaking`.** Acrescentar `format: "attachment"` a um campo que já
 existia é quebra de tipo: a versão marcada se define com `breaking: true`. Por
@@ -83,10 +84,11 @@ fazer quando um processo já ficou preso a um tipo sem a marca.
 | Situação | Resultado | Onde |
 |---|---|---|
 | `create_process` com nome em `RESERVED_PROCESS_NAMES` (`types`, `relations`, `gates`, `attachments`, `archive`) | `RESERVED_NAME` | `domain/ids.ts#RESERVED_PROCESS_NAMES` |
-| `define_type` com schema que não é JSON Schema válido, ou cuja raiz não é `"type": "object"` | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
+| Qualquer tool com nome fora da regex `Name`, campo desconhecido, ou relação sem `kind` nem `as` | `INVALID_INPUT`: corrija o campo de `details[].path` e reenvie | a validação de entrada de cada tool |
+| `define_type` com schema que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` sem `maxLength` de até 256; `patternProperties` sem `propertyNames.maxLength` de até 256; regex que a `safe-regex2` recusa (inclusive `^[a-z]+(?:-[a-z]+)*$`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
 | `define_*` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `commands/definition.ts#targetVersion` |
-| `register` com `type` fora do que o processo fixou (definido depois, ou nunca) | `TYPE_NOT_PINNED` | `commands/register-static.ts#pinnedSchema` |
-| `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` de cada violação em `details` | `commands/register-static.ts#checkData` |
+| `register` com `type` fora do que o processo fixou (definido depois, ou nunca) | `TYPE_NOT_PINNED` | `commands/register/static.ts#pinnedSchema` |
+| `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` de cada violação em `details` | `commands/register/static.ts#checkData` |
 | `evaluate_gate` com gate que o processo não fixou | `GATE_NOT_FOUND` | `queries/query-service.ts#gateNotFound` |
 | Qualquer tool com dado 0.x ainda em `$XDG_DATA_HOME/hexlog` | `LEGACY_DATA` | só um humano resolve (ver abaixo) |
 
@@ -144,6 +146,10 @@ os seletores sem `targetPrefix` herdam esse alvo (a fronteira é o `.`).
 
 ## Diagnóstico de saúde
 
+**Plataforma: só Linux.** O lock por pid, a gravação atômica e o arquivador dependem de /proc, de
+hard link e de fsync de diretório. macOS não foi testado; Windows e FAT, exFAT e drvfs (/mnt/c no
+WSL) ficam fora.
+
 **A prova real de que o servidor está vivo é chamar `list` sem parâmetros.**
 Ele responde os projetos e a contagem de processos de cada um, sem precisar de
 nenhum projeto existente.
@@ -161,7 +167,7 @@ de cometer: um `--check` verde não diz nada sobre o servidor MCP responder.
 | Ação | Motivo técnico |
 |---|---|
 | Arquivar o dado 0.x (`node scripts/install.ts --archive-0x`, a partir do repositório hexlog) | Enquanto houver dado 0.x em `<D>`, toda tool responde `LEGACY_DATA`, com `details[0].code` `run` e o comando na mensagem. O agente não roda `node scripts/install.ts` sem pedido explícito: escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
-| Destravar um processo com `LOCK_TIMEOUT` `holder-unreadable` | O dono do lock não pode ser lido, e repetir nunca resolve. O diretório do lock mora em `<D>`, fora do alcance do Bash do agente; o destravamento manual está no README do repositório hexlog |
+| Destravar um processo com `LOCK_TIMEOUT` `holder-unreadable` | O dono do lock não pode ser lido, e repetir nunca resolve. O diretório do lock (`<D>/.v1/<project>/<process>/records.jsonl.lock`) mora em `<D>`, fora do alcance do Bash do agente; o destravamento manual está no README do repositório hexlog |
 | Descartar `$XDG_DATA_HOME/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
 | Reiniciar a sessão do Claude Code | Cache de `tools/list` do protocolo MCP — fora do alcance de qualquer agente |
 

@@ -1,6 +1,4 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
-import { keyBy, mapValues } from 'es-toolkit';
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -8,7 +6,7 @@ import { blobFile, processPaths } from '../src/adapters/fs/data-format.ts';
 import { compose } from '../src/compose.ts';
 import { AUTHOR, DOC, NOTE, note } from './commands/register-fakes.ts';
 import { writeRecordsCorpus } from './fixtures/records-corpus.ts';
-import { createTempDir } from './helpers.ts';
+import { createTempDir, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const legacyFixture = path.join(__dirname, 'fixtures', 'legacy-0x');
@@ -24,18 +22,6 @@ function runInsights(xdg: string, ...args: string[]) {
     env: { ...process.env, HOME: xdg, XDG_DATA_HOME: xdg },
   });
   return { code: result.status, out: result.stdout, err: result.stderr };
-}
-
-function snapshot(dir: string): Record<string, string> {
-  const entries = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
-  const files = keyBy(
-    entries.filter((entry) => entry.isFile()),
-    (entry) => path.join(entry.parentPath, entry.name),
-  );
-  return mapValues(files, (_entry, file) => {
-    const hash = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-    return `${hash}:${fs.statSync(file).mtimeMs}`;
-  });
 }
 
 /** Cria o `<D>` de um `XDG_DATA_HOME` temporário; devolve os dois. */
@@ -244,25 +230,52 @@ describe('sinais da chave (SE8)', () => {
 });
 
 describe('cadeia adulterada (SL1)', () => {
-  test('conteúdo adulterado no log é detectado: BROKEN e saída 1', () => {
+  test('conteúdo adulterado no log é detectado: BROKEN e saída 2', () => {
     const xdg = copyOf(xdgHome);
     const log = processPaths(path.join(xdg, 'hexlog'), { project: PROJECT, process: 'run-1' }).log;
     fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"text":"dup"', '"text":"dux"'));
 
     const { code, out } = runInsights(xdg, 'alpha/run-1');
 
-    expect(out).toMatch(/- chain: BROKEN \(\d+ breaks: .*hash-mismatch@\d+/);
-    expect(code).toBe(1);
+    expect(out).toMatch(/- chain: BROKEN \(\d+ breaks: .*hash-mismatch@\d+\), \d+ valid records/);
+    expect(code).toBe(2);
   });
 
-  test('blob de anexo adulterado: attachments BROKEN e saída 1', () => {
+  test('primeiro elo quebrado: nenhum registro válido e linha do tempo indisponível, não vazia', async () => {
+    const { xdg, dataDir } = newDataHome();
+    const { services } = compose({
+      dataDir,
+      cwd: xdg,
+      clock: () => new Date(START),
+      logger: () => undefined,
+    });
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.process.createProcess({ project: PROJECT, process: 'run-b' });
+    await services.process.register({
+      project: PROJECT,
+      process: 'run-b',
+      author: AUTHOR,
+      records: [note('b')],
+    });
+    const { log } = processPaths(dataDir, { project: PROJECT, process: 'run-b' });
+    fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"seq":0', '"seq":9'));
+
+    const { code, out } = runInsights(xdg, 'alpha/run-b');
+
+    expect(out).toMatch(/- chain: BROKEN \(.*diverging-seq@0.*\), 0 valid records/);
+    expect(out).toContain('- timeline: unavailable (chain broken)');
+    expect(out).not.toContain('no records');
+    expect(code).toBe(2);
+  });
+
+  test('blob de anexo adulterado: attachments BROKEN e saída 2', () => {
     const xdg = copyOf(xdgHome);
     fs.writeFileSync(blobFile(path.join(xdg, 'hexlog'), PROJECT, attachmentHash), 'adulterado');
 
     const { code, out } = runInsights(xdg, 'alpha/run-3');
 
     expect(out).toContain(`- attachments: BROKEN (1: ${attachmentHash} attachment-corrupted)`);
-    expect(code).toBe(1);
+    expect(code).toBe(2);
   });
 
   test('falha ao ler o log de um processo: linha com o código e saída 1, sem derrubar os outros', () => {
@@ -278,7 +291,26 @@ describe('cadeia adulterada (SL1)', () => {
     expect(code).toBe(1);
   });
 
-  test('process.json truncado: PROCESS_CORRUPTED nomeando o processo no stderr e saída 1', () => {
+  test('falha de leitura (1) misturada com cadeia quebrada (2): o maior código vence', () => {
+    const xdg = copyOf(xdgHome);
+    const dir = path.join(xdg, 'hexlog');
+    const unreadable = processPaths(dir, { project: PROJECT, process: 'run-3' }).log;
+    fs.rmSync(unreadable);
+    fs.mkdirSync(unreadable);
+    const tampered = processPaths(dir, { project: PROJECT, process: 'run-1' }).log;
+    fs.writeFileSync(
+      tampered,
+      fs.readFileSync(tampered, 'utf8').replace('"text":"dup"', '"text":"dux"'),
+    );
+
+    const { code, out } = runInsights(xdg);
+
+    expect(out).toMatch(/## alpha\/run-3\n- insights failed: IO_ERROR: /);
+    expect(out).toContain('- chain: BROKEN');
+    expect(code).toBe(2);
+  });
+
+  test('process.json truncado: relatório completo com o processo marcado PROCESS_CORRUPTED e saída 2', () => {
     const xdg = copyOf(xdgHome);
     const { manifest } = processPaths(path.join(xdg, 'hexlog'), {
       project: PROJECT,
@@ -286,9 +318,25 @@ describe('cadeia adulterada (SL1)', () => {
     });
     fs.writeFileSync(manifest, '{');
 
-    const { code, err } = runInsights(xdg);
+    const { code, out, err } = runInsights(xdg);
 
-    expect(err).toMatch(/insights failed: PROCESS_CORRUPTED: .*run-3/);
+    expect(out).toMatch(/## alpha\/run-3\n- insights failed: PROCESS_CORRUPTED: .*run-3/);
+    expect(out).toContain('## alpha/run-1\n- chain: ok');
+    expect(out).toContain('## alpha/run-2\n- chain: ok');
+    expect(err).toBe('');
+    expect(code).toBe(2);
+  });
+});
+
+describe('uso incorreto', () => {
+  test.each([
+    ['flag desconhecida', ['--bogus']],
+    ['mais de um filtro', ['alpha/run-1', 'alpha/run-2']],
+  ])('%s → exit 1 com o uso no stderr e nada no stdout', (_name, args) => {
+    const { code, out, err } = runInsights(xdgHome, ...args);
+
+    expect(err).toContain('insights failed: usage:');
+    expect(out).toBe('');
     expect(code).toBe(1);
   });
 });
@@ -305,12 +353,5 @@ describe('dado 0.x (P11)', () => {
     expect(err).toContain('LEGACY_DATA');
     expect(err).toContain('legacy 0.x data found; archive it first');
     expect(err).toContain('node scripts/install.ts --archive-0x (from the hexlog repository)');
-  });
-
-  test('a recusa de dado 0.x vale também com filtro de processo', () => {
-    const xdg = createTempDir('xdg');
-    fs.cpSync(legacyFixture, path.join(xdg, 'hexlog'), { recursive: true });
-
-    expect(runInsights(xdg, 'alpha/run-1').code).toBe(2);
   });
 });

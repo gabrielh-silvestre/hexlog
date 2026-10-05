@@ -8,6 +8,7 @@ import {
   Batch,
   fingerprint,
   hashLink,
+  hashOfJcs,
   isValidLink,
   sha256hex,
   type Expected,
@@ -76,6 +77,15 @@ describe('anchor', () => {
   ])('valor sem forma JSON (%s) lança INTERNAL em vez de dar o hash de ""', (_label, value) => {
     expect(() => anchor(value)).toThrow(HexlogError);
     expect(() => anchor(value)).toThrow(expect.objectContaining({ code: 'INTERNAL' }));
+  });
+});
+
+describe('hashOfJcs', () => {
+  test('é o sha256 do JCS do valor, e a âncora é o mesmo hash do manifesto', () => {
+    const definition = { type: 'object', properties: { b: {}, a: {} } };
+
+    expect(hashOfJcs(definition)).toBe(sha256hex(canonicalize(definition) ?? ''));
+    expect(anchor(manifest)).toBe(hashOfJcs(manifest));
   });
 });
 

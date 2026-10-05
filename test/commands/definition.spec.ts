@@ -1,13 +1,19 @@
 import { describe, expect, test } from '@jest/globals';
 import canonicalize from 'canonicalize';
+import { omit } from 'es-toolkit';
 import { createValidator } from '../../src/adapters/validator.ts';
 import { createDefinitionService } from '../../src/commands/definition.ts';
-import type { DefineGateInput, DefineRelationInput } from '../../src/commands/definition.ts';
-import { anchor } from '../../src/domain/chain.ts';
+import type {
+  DefineGateInput,
+  DefineRelationInput,
+  Defined,
+} from '../../src/commands/definition.ts';
+import { hashOfJcs } from '../../src/domain/chain.ts';
 import { compareVersions } from '../../src/domain/definitions.ts';
 import type { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore } from '../../src/ports.ts';
 import { captureError } from '../helpers.ts';
+import { refuse } from './register-fakes.ts';
 
 const PROJECT = 'alpha';
 const NAME = 'note';
@@ -44,10 +50,6 @@ function fakeStore() {
     files.set(key, found);
     return found;
   };
-  const refuse = (): never => {
-    throw new Error('operação fora do escopo deste spec');
-  };
-
   const store: DefinitionStore = {
     names: refuse,
     versions: (_project, kind, name) => [...versionsOf(kind, name).keys()].sort(compareVersions),
@@ -99,6 +101,15 @@ const gate = (overrides: Partial<DefineGateInput> = {}): DefineGateInput => ({
   ...overrides,
 });
 
+/** Relação de exatamente `chars` caracteres canônicos: `from` de nomes distintos de 40 caracteres (43 canônicos cada) e um `name` que acerta o resto. */
+function relationOfLength(chars: number): DefineRelationInput {
+  for (let count = 1; ; count += 1) {
+    const from = Array.from({ length: count }, (_, i) => `t${i}`.padEnd(40, 'x'));
+    const rest = chars - canonicalize(omit(relation({ from }), ['project']))!.length;
+    if (rest >= 0 && rest <= 58) return relation({ from, name: 'b'.repeat(5 + rest) });
+  }
+}
+
 describe('defineType: versões imutáveis', () => {
   test('primeira versão é 1.0, com o hash do schema canônico', () => {
     const { service, stored } = setup();
@@ -108,7 +119,7 @@ describe('defineType: versões imutáveis', () => {
     expect(defined).toEqual({
       name: NAME,
       version: '1.0',
-      hash: anchor(BASE_SCHEMA),
+      hash: hashOfJcs(BASE_SCHEMA),
       created: true,
     });
     expect(stored('types', NAME, '1.0')).toEqual(BASE_SCHEMA);
@@ -241,9 +252,53 @@ describe('replay idempotente', () => {
     expect(replay).toEqual({ ...first, created: false });
     expect(writes).toEqual([]);
   });
+
+  test.each<[string, (s: ReturnType<typeof setup>['service']) => Defined, DefinitionKind, string]>([
+    [
+      'tipo',
+      (s) => s.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA, breaking: true }),
+      'types',
+      NAME,
+    ],
+    ['gate', (s) => s.defineGate(gate({ breaking: true })), 'gates', 'ready'],
+  ])(
+    '%s: breaking: true com a definição idêntica à vigente é replay, sem subir a major',
+    (_kind, define, kind, name) => {
+      const { service, writes, versions } = setup();
+      const first = define(service);
+      writes.length = 0;
+
+      const replay = define(service);
+
+      expect(replay).toEqual({ ...first, created: false });
+      expect(replay.version).toBe('1.0');
+      expect(writes).toEqual([]);
+      expect(versions(kind, name)).toEqual(['1.0']);
+    },
+  );
 });
 
 describe('escritor concorrente ocupa a versão alvo', () => {
+  test('primeira versão de nome novo com breaking: true converge para 1.0 como replay', () => {
+    const { service, seed, racing, versions } = setup();
+    racing(() => seed('types', NAME, '1.0', BASE_SCHEMA));
+
+    const defined = service.defineType({
+      project: PROJECT,
+      name: NAME,
+      schema: BASE_SCHEMA,
+      breaking: true,
+    });
+
+    expect(defined).toEqual({
+      name: NAME,
+      version: '1.0',
+      hash: hashOfJcs(BASE_SCHEMA),
+      created: false,
+    });
+    expect(versions('types', NAME)).toEqual(['1.0']);
+  });
+
   test('mesma definição gravada por outro escritor vira replay', () => {
     const { service, seed, racing, versions } = setup();
     service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
@@ -254,7 +309,7 @@ describe('escritor concorrente ocupa a versão alvo', () => {
     expect(defined).toEqual({
       name: NAME,
       version: '1.1',
-      hash: anchor(WITH_OPTIONAL),
+      hash: hashOfJcs(WITH_OPTIONAL),
       created: false,
     });
     expect(versions('types', NAME)).toEqual(['1.0', '1.1']);
@@ -358,6 +413,37 @@ describe('definição fora do teto ou da forma não chega a gravar', () => {
     const defined = service.defineType({ project: PROJECT, name: NAME, schema });
 
     expect(defined).toMatchObject({ version: '1.0', created: true });
+  });
+
+  test('defineRelation com 16.001 caracteres canônicos', () => {
+    const { service, writes } = setup();
+    const input = relationOfLength(16_001);
+    expect(canonicalize(omit(input, ['project']))).toHaveLength(16_001);
+
+    const error = captureError(() => service.defineRelation(input));
+
+    expect(error).toMatchObject({
+      code: 'INVALID_INPUT',
+      details: [{ message: expect.stringContaining('relation exceeds 16000') }],
+    });
+    expect(writes).toEqual([]);
+  });
+
+  test('defineGate com 16.001 caracteres canônicos', () => {
+    const { service, writes } = setup();
+    const withText = (text: string) =>
+      gate({ questions: [{ kind: 'occurred', select: { where: { text } } }] });
+    const base = canonicalize(omit(withText(''), ['project']))!.length;
+    const input = withText('x'.repeat(16_001 - base));
+    expect(canonicalize(omit(input, ['project']))).toHaveLength(16_001);
+
+    const error = captureError(() => service.defineGate(input));
+
+    expect(error).toMatchObject({
+      code: 'INVALID_INPUT',
+      details: [{ message: expect.stringContaining('gate exceeds 16000') }],
+    });
+    expect(writes).toEqual([]);
   });
 
   test.each([

@@ -40,12 +40,14 @@ export function inOutputOrder(reading: Reading, scope: ReadTarget['scope']): Lin
   );
 }
 
+const withAs = (as: Name | undefined) => (as === undefined ? {} : { as });
+
 export function buildView(reading: Reading, scope: ReadTarget['scope']): View {
   const records = inOutputOrder(reading, scope);
   const incoming = new Map<RecordId, Incoming[]>();
   for (const { id, relations } of records) {
     for (const { kind, to, as } of relations) {
-      pushTo(incoming, to, { kind, from: id, ...(as === undefined ? {} : { as }) });
+      pushTo(incoming, to, { kind, from: id, ...withAs(as) });
     }
   }
   return {
@@ -63,6 +65,14 @@ function relatedTo(view: View, id: RecordId): Set<RecordId> {
   return new Set([...from, ...to]);
 }
 
+/** Ref do índice de busca: o do processo, ou o do projeto inteiro no alcance projeto. */
+function indexRef(target: ReadTarget): ProcessRef {
+  return {
+    project: target.project,
+    process: target.scope === 'process' ? target.process : PROJECT_INDEX,
+  };
+}
+
 /**
  * Registros que passam nos filtros, na ordem de saída; com `text`, por relevância, e o empate da
  * busca já vem na ordem de saída porque o índice recebe `view.records`.
@@ -71,7 +81,7 @@ export function select(
   view: View,
   filters: Filters,
   search: SearchIndex,
-  indexOf: ProcessRef,
+  target: ReadTarget,
 ): Link[] {
   const { includeNonCurrent = false, text, ids, relatedTo: anchor } = filters;
   const wanted = ids === undefined ? undefined : new Set(ids);
@@ -87,21 +97,13 @@ export function select(
 
   const allowed = new Set(matching.map(({ id }) => id));
   const rank = new Map(
-    search.search(indexOf, view.records, text, allowed).map((id, at) => [id, at]),
+    search.search(indexRef(target), view.records, text, allowed).map((id, at) => [id, at]),
   );
   return orderBy(
     matching.filter((link) => rank.has(link.id)),
     [(link) => rank.get(link.id)!],
     ['asc'],
   );
-}
-
-/** Ref do índice de busca: o do processo, ou o do projeto inteiro no alcance projeto. */
-export function indexRef(target: ReadTarget): ProcessRef {
-  return {
-    project: target.project,
-    process: target.scope === 'process' ? target.process : PROJECT_INDEX,
-  };
 }
 
 export type LeftReason = 'superseded' | 'revoked' | 'no-longer-matches';
@@ -121,8 +123,6 @@ export type InRelation = { kind: RelationKind; as?: Name; from: RecordId; curren
  * lido (D-24: alcance processo não lê o processo de um destino de outro processo).
  */
 export type OutRelation = { kind: RelationKind; as?: Name; to: RecordId; current?: boolean };
-
-const withAs = (as: Name | undefined) => (as === undefined ? {} : { as });
 
 /** D-24: relações de entrada (de quem foi lido) e de saída (as gravadas) de `link`. */
 export function relationsOf(view: View, link: Link): { in: InRelation[]; out: OutRelation[] } {

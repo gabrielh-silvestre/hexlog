@@ -87,6 +87,23 @@ const mcpBlock = (files, extraGroups = []) => ({
   },
 });
 
+// adapters implementam portas: nunca importam a camada de serviços nem a MCP. Sem as travas de
+// builtin, de infra e de SDK das outras camadas: é aqui que o I/O mora.
+const adaptersBlock = {
+  files: ['src/adapters/**/*.ts'],
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        patterns: ['commands', 'queries', 'mcp'].map((layer) => ({
+          group: [`**/${layer}/**`],
+          message: `adapters implementam portas, nunca importam ${layer}.`,
+        })),
+      },
+    ],
+  },
+};
+
 // Scripts de leitura passam por compose.ts (D-25): nunca importam adapters nem a camada MCP.
 // install.ts (arquivamento e instalação) e build.ts (bundle) são a exceção.
 const scriptsBlock = {
@@ -114,6 +131,8 @@ export const boundaryBlocks = [
     })),
   }),
   restrictImports(['src/shared/**/*.ts']),
+  // `ports.ts` está na raiz de `src/`, fora de qualquer glob de camada: só declara contratos.
+  restrictImports(['src/ports.ts']),
   restrictImports(['src/commands/**/*.ts'], {
     extraGroups: [{ group: ['**/queries/**'], message: 'commands não importa queries.' }],
     extraRules: MAX_LINES,
@@ -122,6 +141,7 @@ export const boundaryBlocks = [
     extraGroups: [{ group: ['**/commands/**'], message: 'queries não importa commands.' }],
     extraRules: MAX_LINES,
   }),
+  adaptersBlock,
   mcpBlock(['src/mcp/**/*.ts']),
   mcpBlock(
     ['src/mcp/kernel.ts'],

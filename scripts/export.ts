@@ -1,13 +1,10 @@
-// Exportação read-only dos registros de um processo em JSONL, lidos pelo `compose` (a cadeia é
+// Exportação read-only dos registros de um processo em JSONL, lidos pelo `composeReader` (a cadeia é
 // verificada na leitura; adulterada, o script sai com 2). Inclui os registros não vigentes.
 // Uso: node scripts/export.ts <project>/<process> [--fields a,b,c]
 import { isNil, pick } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
-import { formatCliError } from './cli-error.ts';
-import { compose } from '../src/compose.ts';
-import { dataDir } from '../src/directory.ts';
+import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
 import { Name } from '../src/domain/ids.ts';
-import { legacyDataError } from '../src/errors.ts';
 import type { QueryRecord } from '../src/queries/query-service.ts';
 
 const USAGE = 'usage: node scripts/export.ts <project>/<process> [--fields a,b,c]';
@@ -25,44 +22,44 @@ const FIELDS = [
 ] as const satisfies readonly (keyof QueryRecord)[];
 type Field = (typeof FIELDS)[number];
 
-function parseFields(raw: string | undefined): Field[] | null {
-  if (isNil(raw)) return null;
+/** `fields` só vale se `invalid` vier vazio. */
+function parseFields(raw: string | undefined): { fields: Field[] | null; invalid: string[] } {
+  if (isNil(raw)) return { fields: null, invalid: [] };
   const fields = raw.split(',').map((field) => field.trim());
   const invalid = fields.filter((field) => !(FIELDS as readonly string[]).includes(field));
-  if (!isEmpty(invalid)) {
-    throw new Error(`invalid field(s): ${invalid.join(', ')} (allowed: ${FIELDS.join(', ')})`);
-  }
-  return fields as Field[];
+  return { fields: fields as Field[], invalid };
 }
 
-function main(target: string | undefined, fieldsArg: string | undefined): number {
+function main(argv: string[]): number {
+  const args = parseCliArgs(argv, { fields: { type: 'string' } });
+  const [target, ...extra] = args?.positionals ?? [];
   const [projectArg, processArg, ...rest] = target?.split('/') ?? [];
   const project = Name.safeParse(projectArg);
   const processName = Name.safeParse(processArg);
-  if (!project.success || !processName.success || rest.length > 0) {
+  if (
+    isNil(args) ||
+    extra.length > 0 ||
+    !project.success ||
+    !processName.success ||
+    rest.length > 0
+  ) {
     console.error(`export failed: ${USAGE}`);
     return 1;
   }
 
-  let fields: Field[] | null;
-  try {
-    fields = parseFields(fieldsArg);
-  } catch (error) {
-    console.error(`export failed: ${(error as Error).message}`);
+  const { fields, invalid } = parseFields(args.values.fields);
+  if (!isEmpty(invalid)) {
+    console.error(
+      `export failed: invalid field(s): ${invalid.join(', ')} (allowed: ${FIELDS.join(', ')})`,
+    );
     return 1;
   }
 
   try {
-    const { services, isLegacy } = compose({
-      dataDir: dataDir(process.env),
-      cwd: process.cwd(),
-      clock: () => new Date(),
-      logger: () => undefined,
-    });
-    if (isLegacy()) throw legacyDataError();
+    const { query } = openReadOnly();
     // chamada única: cada página refaria a leitura e a verificação do log inteiro (custo quadrático);
     // o teto de 64 MiB por processo limita a memória
-    const { records } = services.query.queryRecords({
+    const { records } = query.queryRecords({
       project: project.data,
       process: processName.data,
       includeNonCurrent: true,
@@ -79,8 +76,4 @@ function main(target: string | undefined, fieldsArg: string | undefined): number
   }
 }
 
-const args = process.argv.slice(2);
-const fieldsFlagIndex = args.indexOf('--fields');
-const fieldsArg = fieldsFlagIndex === -1 ? undefined : args[fieldsFlagIndex + 1];
-
-process.exitCode = main(args[0], fieldsArg);
+process.exitCode = main(process.argv.slice(2));

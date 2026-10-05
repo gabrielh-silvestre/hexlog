@@ -1,34 +1,22 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import MiniSearch from 'minisearch';
-import { createSearchIndex, SEARCH_INDEX_BUDGET_CHARS } from '../../src/adapters/search.ts';
+import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { HexRecord } from '../../src/domain/record.ts';
 import { PROJECT_INDEX, type ProcessRef } from '../../src/ports.ts';
+import { makeRecord } from './search-helpers.ts';
 
 const PROC_A: ProcessRef = { project: 'proj', process: 'alpha' };
 const PROC_B: ProcessRef = { project: 'proj', process: 'beta' };
 const PROC_C: ProcessRef = { project: 'proj', process: 'gamma' };
 const PROJECT: ProcessRef = { project: 'proj', process: PROJECT_INDEX };
 
-// Texto indexável de `makeRecord('webhook')`: type, target e o texto, juntos por quebra de linha.
+// Texto indexável de `textRecord('webhook')`: type, target e o texto, juntos por quebra de linha.
 const RECORD_CHARS = 'note\narea.topic\nwebhook'.length;
 
-let counter = 0;
-
-function makeRecord(text: string): HexRecord {
-  counter += 1;
-  return {
-    id: `proc:0198f4a0-0000-7000-8000-${counter.toString(16).padStart(12, '0')}`,
-    type: 'note',
-    at: '2026-01-01T00:00:00.000Z',
-    target: 'area.topic',
-    author: { agent: 'tester', client: 'test' },
-    data: { text },
-    relations: [],
-  };
-}
+const textRecord = (text: string): HexRecord => makeRecord({ data: { text } });
 
 const makeRecords = (count: number, text = 'webhook') =>
-  Array.from({ length: count }, () => makeRecord(text));
+  Array.from({ length: count }, () => textRecord(text));
 
 // Cada `addAll` do MiniSearch é uma montagem ou um acréscimo; os tamanhos dos lotes mostram qual.
 const addAll = jest.spyOn(MiniSearch.prototype, 'addAll');
@@ -39,10 +27,6 @@ afterEach(() => {
 });
 
 describe('createSearchIndex com cache', () => {
-  test('o orçamento padrão é de 24 milhões de caracteres indexados', () => {
-    expect(SEARCH_INDEX_BUDGET_CHARS).toBe(24_000_000);
-  });
-
   test('o mesmo conjunto de registros reaproveita o índice sem remontar', () => {
     const index = createSearchIndex();
     const records = makeRecords(3);
@@ -78,17 +62,17 @@ describe('createSearchIndex com cache', () => {
 
   test('último registro com outro conteúdo descarta o índice e remonta', () => {
     const index = createSearchIndex();
-    const records = [...makeRecords(2, 'webhook'), makeRecord('retry')];
+    const records = [...makeRecords(2, 'webhook'), textRecord('retry')];
     index.search(PROC_A, records, 'retry');
 
-    const diverged = [...records.slice(0, 2), makeRecord('timeout')];
+    const diverged = [...records.slice(0, 2), textRecord('timeout')];
 
     expect(index.search(PROC_A, diverged, 'retry')).toEqual([]);
     expect(index.search(PROC_A, diverged, 'timeout')).toEqual([diverged[2]!.id]);
     expect(indexedBatches()).toEqual([3, 3]);
   });
 
-  test('log que encolheu remonta', () => {
+  test('log menor que o indexado é um prefixo: monta um motor efêmero e o índice quente continua em cache', () => {
     const index = createSearchIndex();
     const records = makeRecords(3);
     index.search(PROC_A, records, 'webhook');
@@ -97,13 +81,20 @@ describe('createSearchIndex com cache', () => {
       records[0]!.id,
       records[1]!.id,
     ]);
+    expect(index.search(PROC_A, records, 'webhook')).toEqual(records.map((record) => record.id));
+
     expect(indexedBatches()).toEqual([3, 2]);
   });
 
-  test('processo sem registros devolve vazio e não indexa nada', () => {
+  test('processo sem registros devolve vazio, não indexa nada e não apaga o índice quente', () => {
     const index = createSearchIndex();
+    const records = makeRecords(3);
+    index.search(PROC_A, records, 'webhook');
+    addAll.mockClear();
 
     expect(index.search(PROC_A, [], 'webhook')).toEqual([]);
+    index.search(PROC_A, records, 'webhook');
+
     expect(indexedBatches()).toEqual([]);
   });
 
@@ -162,7 +153,7 @@ describe('createSearchIndex com cache', () => {
     const index = createSearchIndex(6 * RECORD_CHARS);
     const shortA = makeRecords(2);
     const shortB = makeRecords(2);
-    const long = [makeRecord('webhook '.repeat(10))];
+    const long = [textRecord('webhook '.repeat(10))];
     index.search(PROC_A, shortA, 'webhook');
     index.search(PROC_B, shortB, 'webhook');
 
@@ -177,7 +168,7 @@ describe('createSearchIndex com cache', () => {
 
   test('processo cujo texto sozinho passa do orçamento não é guardado, mesmo com poucos registros', () => {
     const index = createSearchIndex(3 * RECORD_CHARS);
-    const long = [makeRecord('webhook '.repeat(30))];
+    const long = [textRecord('webhook '.repeat(30))];
 
     index.search(PROC_A, long, 'webhook');
     index.search(PROC_A, long, 'webhook');
@@ -190,7 +181,7 @@ describe('createSearchIndex com cache', () => {
     const records = makeRecords(3);
     index.search(PROC_A, records, 'webhook');
 
-    const grown = [...records, makeRecord('webhook')];
+    const grown = [...records, textRecord('webhook')];
     index.search(PROC_A, grown, 'webhook');
     index.search(PROC_A, grown, 'webhook');
 
@@ -228,13 +219,13 @@ describe('createSearchIndex com cache', () => {
     const cached = createSearchIndex();
     const queries = ['webhook', 'webhook retry', 'Webhook webhook', 'authent', 'kubernetes'];
     const base = [
-      makeRecord('webhook retry with backoff'),
-      makeRecord('webhook'),
-      makeRecord('authentication webhook timeout'),
-      makeRecord('webhook'),
+      textRecord('webhook retry with backoff'),
+      textRecord('webhook'),
+      textRecord('authentication webhook timeout'),
+      textRecord('webhook'),
     ];
-    const grown = [...base, makeRecord('retry webhook'), makeRecord('unrelated words')];
-    const rewritten = [...base.slice(0, 3), makeRecord('retry only')];
+    const grown = [...base, textRecord('retry webhook'), textRecord('unrelated words')];
+    const rewritten = [...base.slice(0, 3), textRecord('retry only')];
 
     for (const records of [base, base, grown, grown, rewritten]) {
       for (const query of queries) {

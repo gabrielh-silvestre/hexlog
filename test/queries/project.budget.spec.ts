@@ -1,13 +1,9 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
 import { median } from 'es-toolkit';
-import { createAttachmentStore } from '../../src/adapters/fs/attachment-store.ts';
-import { createDefinitionStore } from '../../src/adapters/fs/definition-store.ts';
-import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
-import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { Gate } from '../../src/domain/definitions.ts';
-import { createQueryService } from '../../src/queries/query-service.ts';
 import { writeRecordsCorpus } from '../fixtures/records-corpus.ts';
 import { createTempDir } from '../helpers.ts';
+import { diskQueryService } from './query-setup.ts';
 
 const PROCESSES = 10;
 const PER_PROCESS = 500;
@@ -50,15 +46,7 @@ describe('P7', () => {
     first = refs[0]!.process;
   });
 
-  const service = () =>
-    createQueryService({
-      store: createProcessStore({ dataDir, log: () => undefined }),
-      definitions: createDefinitionStore({ dataDir }),
-      attachments: createAttachmentStore({ dataDir, cwd: dataDir }),
-      search: createSearchIndex(),
-      clock: () => new Date(),
-      logger: () => undefined,
-    });
+  const service = () => diskQueryService(dataDir);
 
   function time(call: (queries: ReturnType<typeof service>) => void): number {
     const queries = service();

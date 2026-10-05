@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import MiniSearch from 'minisearch';
-import { compose } from '../src/compose.ts';
+import { compose, composeReader } from '../src/compose.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { Logger } from '../src/shared/logger.ts';
 import { captureError, createTempDir } from './helpers.ts';
@@ -28,23 +28,6 @@ describe('compose', () => {
     const { services } = composed();
 
     expect(Object.keys(services).sort()).toEqual(['attachment', 'definition', 'process', 'query']);
-  });
-
-  test('query lê o que process gravou', async () => {
-    const { services } = composed();
-    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
-    services.process.createProcess({ project: PROJECT, process: 'run-1' });
-    const { records } = await services.process.register({
-      project: PROJECT,
-      process: 'run-1',
-      author: AUTHOR,
-      key: 'k1',
-      records: [note()],
-    });
-
-    const page = services.query.queryRecords({ project: PROJECT, process: 'run-1' });
-
-    expect(page.records.map(({ id }) => id)).toEqual(records.map(({ id }) => id));
   });
 
   test('duas consultas com text pelo query da composição indexam uma vez só', async () => {
@@ -110,32 +93,6 @@ describe('compose', () => {
     expect(logger).toHaveBeenCalledWith(replayed);
   });
 
-  test('attach por path dentro do cwd funciona', () => {
-    const { services, cwd } = composed();
-    fs.writeFileSync(path.join(cwd, 'plan.md'), 'conteúdo do plano');
-
-    const put = services.attachment.attach({ project: PROJECT, path: 'plan.md' });
-
-    expect(put).toMatchObject({
-      bytes: Buffer.byteLength('conteúdo do plano'),
-      deduplicated: false,
-    });
-  });
-
-  test('attach por path dentro do dataDir é recusado (D-15)', () => {
-    const { services, dataDir } = composed();
-    fs.writeFileSync(path.join(dataDir, 'stolen.md'), 'segredo');
-
-    const error = captureError(() =>
-      services.attachment.attach({ project: PROJECT, path: path.join(dataDir, 'stolen.md') }),
-    );
-
-    expect(error).toMatchObject({
-      code: 'INVALID_INPUT',
-      details: [{ code: 'inside-data-dir' }],
-    });
-  });
-
   test('isLegacy é falso com o dataDir vazio e verdadeiro com layout 0.x', () => {
     const { isLegacy, dataDir } = composed();
     expect(isLegacy()).toBe(false);
@@ -143,5 +100,52 @@ describe('compose', () => {
     fs.mkdirSync(path.join(dataDir, 'meu-projeto'));
 
     expect(isLegacy()).toBe(true);
+  });
+});
+
+describe('composeReader', () => {
+  const REF = { project: PROJECT, process: 'run-1' };
+
+  async function seeded() {
+    const { services, cwd, dataDir } = composed();
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.process.createProcess(REF);
+    const { records } = await services.process.register({
+      ...REF,
+      author: AUTHOR,
+      key: 'k1',
+      records: [note()],
+    });
+    return { reader: composeReader({ cwd, dataDir, logger: () => undefined }), dataDir, records };
+  }
+
+  test('só expõe o lado de leitura, sobre o que compose gravou', async () => {
+    const { reader, records } = await seeded();
+
+    expect(Object.keys(reader).sort()).toEqual([
+      'isLegacy',
+      'list',
+      'listProjects',
+      'loadProcess',
+      'query',
+    ]);
+    expect(reader.listProjects()).toEqual([PROJECT]);
+    expect(reader.list(PROJECT)).toEqual(['run-1']);
+    expect(reader.loadProcess(REF).records.map(({ id }) => id)).toEqual(
+      records.map(({ id }) => id),
+    );
+    expect(reader.query.queryRecords(REF).records.map(({ id }) => id)).toEqual(
+      records.map(({ id }) => id),
+    );
+  });
+
+  test('list enumera o processo com process.json ilegível, que o list da consulta recusa', async () => {
+    const { reader, dataDir } = await seeded();
+    fs.writeFileSync(processPaths(dataDir, REF).manifest, '{');
+
+    expect(reader.list(PROJECT)).toEqual(['run-1']);
+    expect(captureError(() => reader.query.list({ project: PROJECT }))).toMatchObject({
+      code: 'PROCESS_CORRUPTED',
+    });
   });
 });

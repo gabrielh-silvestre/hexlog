@@ -7,7 +7,6 @@ import {
   BatchItem,
   DATA_MAX_CHARS,
   HexRecord,
-  isWellFormed,
   RELATIONS_MAX,
   Relation,
   RelationInput,
@@ -58,6 +57,10 @@ describe('Author', () => {
       expect(Author.safeParse(value).success).toBe(false);
     },
   );
+
+  test.each(['agent', 'model', 'client'])('%s com surrogate solitário é inválido', (field) => {
+    expect(Author.safeParse({ ...author, [field]: 'x\ud800' }).success).toBe(false);
+  });
 });
 
 describe('Relation', () => {
@@ -135,6 +138,13 @@ describe('BatchItem', () => {
     ).toBe(false);
   });
 
+  test('o teto de data conta unidades UTF-16 do JCS: com emoji (2 unidades), 7996 cabem e 7997 não', () => {
+    const emojis = (count: number) => ({ k: '😀'.repeat(count) });
+    expect((canonicalize(emojis(7996)) ?? '').length).toBe(DATA_MAX_CHARS);
+    expect(BatchItem.safeParse({ ...item, data: emojis(7996) }).success).toBe(true);
+    expect(BatchItem.safeParse({ ...item, data: emojis(7997) }).success).toBe(false);
+  });
+
   test('data com surrogate solitário é recusado sem lançar', () => {
     expect(BatchItem.safeParse({ ...item, data: { text: '\ud800' } }).success).toBe(false);
   });
@@ -189,17 +199,5 @@ describe('HexRecord', () => {
     { ...record, seq: 1 },
   ])('%j é inválido', (value) => {
     expect(HexRecord.safeParse(value).success).toBe(false);
-  });
-});
-
-describe('isWellFormed', () => {
-  test.each([
-    ['texto comum', 'olá', true],
-    ['par substituto completo', 'a😀b', true],
-    ['surrogate alto solto', 'a\ud800b', false],
-    ['surrogate baixo solto', 'a\udc00b', false],
-    ['surrogate alto no fim', 'a\ud800', false],
-  ])('%s', (_title, text, expected) => {
-    expect(isWellFormed(text)).toBe(expected);
   });
 });

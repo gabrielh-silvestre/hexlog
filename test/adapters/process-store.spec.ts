@@ -13,17 +13,30 @@ import {
 import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
 import { anchor } from '../../src/domain/chain.ts';
 import { HexlogError } from '../../src/errors.ts';
-import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
+import type { Manifest } from '../../src/domain/manifest.ts';
+import type { ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
 import { parseLog, verifyProcess } from '../../src/shared/loader.ts';
 import { chainLine, emptyManifest } from '../fixtures/chain-line.ts';
-import { captureLog, createTempDir, rejectionOf } from '../helpers.ts';
+import type { CrashWriterArgs } from '../fixtures/fixture-args.ts';
+import {
+  captureError,
+  captureLog,
+  createTempDir,
+  errno,
+  expectNoLeak,
+  rejectionOf,
+  scriptWrites,
+  spyOnWriteSync,
+} from '../helpers.ts';
 import { countFsyncs } from './fsync-spy.ts';
+import { killChildren, liveForeignPid } from './lock-helpers.ts';
 
 const CRASH_WRITER = path.join(__dirname, '..', 'fixtures', 'crash-writer.ts');
 const BOOT = 'boot-a';
 
 afterEach(() => {
   jest.restoreAllMocks();
+  killChildren();
 });
 
 /** Processo vazio como o `create` o deixa: ponto de partida para montar linhas sem ler o disco. */
@@ -95,31 +108,6 @@ function countLogFsyncs(logFile: string): () => number {
   return () => count;
 }
 
-/**
- * P9, exceção declarada ao princípio 3: roteiro de `fs.writeSync` do log. Cada chamada consome um
- * passo: `n >= 0` grava só `n` bytes (de verdade) e devolve `n`; `n < 0` grava `tamanho + n`;
- * `'enospc'` lança `ENOSPC` com o caminho na mensagem, como o fs real. Sem passos, grava tudo.
- */
-function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: string): void {
-  const real = fs.writeSync;
-  let call = 0;
-  (
-    jest.spyOn(fs, 'writeSync') as unknown as jest.Mock<
-      (fd: number, buffer: Buffer, offset: number) => number
-    >
-  ).mockImplementation((fd, buffer, offset) => {
-    const step = steps[call++];
-    if (step === undefined) return real(fd, buffer, offset);
-    if (step === 'enospc') {
-      throw Object.assign(new Error(`ENOSPC: no space left on device, write '${dataDir}'`), {
-        code: 'ENOSPC',
-      });
-    }
-    const length = buffer.length - offset;
-    return real(fd, buffer, offset, step < 0 ? length + step : Math.min(step, length));
-  });
-}
-
 /** Registra, na ordem, os `write` e `fsync` dados no arquivo de log (pelo inode, como `countLogFsyncs`). */
 function recordLogCalls(logFile: string): string[] {
   const realWrite = fs.writeSync;
@@ -129,11 +117,7 @@ function recordLogCalls(logFile: string): string[] {
   const onLog = (fd: number, call: string) => {
     if (fs.fstatSync(fd).ino === ino) calls.push(call);
   };
-  (
-    jest.spyOn(fs, 'writeSync') as unknown as jest.Mock<
-      (fd: number, buffer: Buffer, offset: number) => number
-    >
-  ).mockImplementation((fd, buffer, offset) => {
+  spyOnWriteSync((fd, buffer, offset) => {
     onLog(fd, 'write');
     return realWrite(fd, buffer, offset);
   });
@@ -179,21 +163,18 @@ describe('create, read e list', () => {
     const { dataDir, store } = setup();
     fs.writeFileSync(path.join(dataRoot(dataDir), 'blocked'), '');
 
-    let error: unknown;
-    try {
+    const error = captureError(() =>
       store.create(
         { project: 'blocked', process: 'x' },
         emptyManifest({ project: 'blocked', process: 'x' }),
-      );
-    } catch (caught) {
-      error = caught;
-    }
+      ),
+    );
 
     expect(error).toMatchObject({
       code: 'IO_ERROR',
       details: [{ path: '', code: 'enotdir', message: 'I/O failure' }],
     });
-    expect(JSON.stringify(error)).not.toContain(dataDir);
+    expectNoLeak(error, dataDir);
   });
 
   test('read de um processo novo devolve log vazio terminado; com cauda rasgada, não terminado', async () => {
@@ -251,12 +232,7 @@ describe('create, read e list', () => {
     const { dataDir, store, ref, manifestFile } = setup();
     fs.writeFileSync(manifestFile, content);
 
-    let error: unknown;
-    try {
-      store.read(ref);
-    } catch (caught) {
-      error = caught;
-    }
+    const error = captureError(() => store.read(ref));
 
     expect(error).toMatchObject({
       code: 'PROCESS_CORRUPTED',
@@ -269,7 +245,7 @@ describe('create, read e list', () => {
         },
       ],
     });
-    expect(JSON.stringify((error as HexlogError).details)).not.toContain(dataDir);
+    expectNoLeak(error, dataDir);
   });
 
   test('erro de I/O vira IO_ERROR só com o errno, sem caminho (manifesto que é diretório)', () => {
@@ -277,23 +253,21 @@ describe('create, read e list', () => {
     fs.rmSync(manifestFile);
     fs.mkdirSync(manifestFile);
 
-    let error: unknown;
-    try {
-      store.read(ref);
-    } catch (caught) {
-      error = caught;
-    }
+    const error = captureError(() => store.read(ref));
 
     expect(error).toMatchObject({
       code: 'IO_ERROR',
       details: [{ path: '', code: 'eisdir', message: 'I/O failure' }],
     });
-    expect(JSON.stringify(error)).not.toContain(dataDir);
+    expectNoLeak(error, dataDir);
   });
 
   describe('teto do log (N8)', () => {
     /** Log esparso do tamanho pedido: o teto se testa sem gravar 64 MiB de verdade. */
     const sparseLog = (logFile: string, size: number) => fs.truncateSync(logFile, size);
+
+    /** Ler 64 MiB como string leva centenas de ms; sob carga o limite padrão de 5 s não basta. */
+    const LARGE_LOG_TIMEOUT_MS = 30_000;
 
     test('readManifest com o log acima do teto devolve o manifesto sem ler o records.jsonl', () => {
       const { store, ref, manifest, logFile } = setup();
@@ -304,30 +278,33 @@ describe('create, read e list', () => {
       expect(readFile).not.toHaveBeenCalledWith(logFile, expect.anything());
     });
 
-    test('read de um log com exatamente 64 MiB ainda lê', () => {
-      const { store, ref, logFile } = setup();
-      sparseLog(logFile, MAX_LOG_BYTES);
+    test(
+      'read de um log com exatamente 64 MiB ainda lê',
+      () => {
+        const { store, ref, logFile } = setup();
+        sparseLog(logFile, MAX_LOG_BYTES);
 
-      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES);
-    });
+        // `toHaveLength` imprimiria os 64 MiB na falha.
+        expect(store.read(ref).text.length).toBe(MAX_LOG_BYTES);
+      },
+      LARGE_LOG_TIMEOUT_MS,
+    );
 
     test('read de um log 1 byte acima do teto dá PROCESS_TOO_LARGE sem caminho e sem ler o conteúdo', () => {
       const { dataDir, store, ref, logFile } = setup();
       sparseLog(logFile, MAX_LOG_BYTES + 1);
       const readFile = jest.spyOn(fs, 'readFileSync');
 
-      let error: unknown;
-      try {
-        store.read(ref);
-      } catch (caught) {
-        error = caught;
-      }
+      const error = captureError(() => store.read(ref));
 
       expect(error).toMatchObject({
         code: 'PROCESS_TOO_LARGE',
-        details: [{ path: '/process', code: 'too-large', message: expect.any(String) }],
+        details: [
+          { path: '/process', code: 'too-large', message: expect.any(String), process: 'proc-1' },
+        ],
       });
-      expect(JSON.stringify(error)).not.toContain(dataDir);
+      expect(error.message).toBe("process 'proc-1' log exceeds 64 MiB");
+      expectNoLeak(error, dataDir);
       expect(readFile).not.toHaveBeenCalledWith(logFile, expect.anything());
     });
 
@@ -338,7 +315,11 @@ describe('create, read e list', () => {
 
       const error = await rejectionOf(store.write(ref, decide), dataDir);
 
-      expect(error.code).toBe('PROCESS_TOO_LARGE');
+      expect(error).toMatchObject({
+        code: 'PROCESS_TOO_LARGE',
+        details: [{ code: 'too-large', process: 'proc-1' }],
+      });
+      expect(error.message).toContain('create a new process');
       expect(decide).not.toHaveBeenCalled();
       expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES + 1);
       expect(locksIn(dir)).toEqual([]);
@@ -347,34 +328,88 @@ describe('create, read e list', () => {
     /** Prefixo `\n` (o log esparso termina em byte nulo) mais a linha: o lote tem `LINE.length + 1` bytes. */
     const LINE = 'x'.repeat(100);
 
-    test('write de um lote que fecha o log em exatamente 64 MiB grava e o processo segue legível', async () => {
-      const { store, ref, logFile } = setup();
-      sparseLog(logFile, MAX_LOG_BYTES - LINE.length - 1);
+    test(
+      'write de um lote que fecha o log em exatamente 64 MiB grava e o processo segue legível',
+      async () => {
+        const { store, ref, logFile } = setup();
+        sparseLog(logFile, MAX_LOG_BYTES - LINE.length - 1);
 
-      await store.write(ref, () => ({ line: LINE, result: undefined }));
+        await store.write(ref, () => ({ line: LINE, result: undefined }));
 
-      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES);
-      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES);
-    });
+        expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES);
+        expect(store.read(ref).text.length).toBe(MAX_LOG_BYTES);
+      },
+      LARGE_LOG_TIMEOUT_MS,
+    );
 
-    test('write de um lote que passaria 1 byte do teto recusa, não cresce o arquivo, solta o lock e o read segue', async () => {
-      const { dataDir, store, ref, logFile, dir } = setup();
-      sparseLog(logFile, MAX_LOG_BYTES - LINE.length);
+    test(
+      'write sem line (replay) sobre um log em exatamente 64 MiB devolve o resultado sem gravar',
+      async () => {
+        const { store, ref, logFile, dir } = setup();
+        sparseLog(logFile, MAX_LOG_BYTES);
+
+        await expect(store.write(ref, () => ({ result: 'replayed' }))).resolves.toBe('replayed');
+
+        expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES);
+        expect(locksIn(dir)).toEqual([]);
+      },
+      LARGE_LOG_TIMEOUT_MS,
+    );
+
+    test(
+      'write de um lote que passaria 1 byte do teto recusa, não cresce o arquivo, solta o lock e o read segue',
+      async () => {
+        const { dataDir, store, ref, logFile, dir } = setup();
+        sparseLog(logFile, MAX_LOG_BYTES - LINE.length);
+
+        const error = await rejectionOf(
+          store.write(ref, () => ({ line: LINE, result: undefined })),
+          dataDir,
+        );
+
+        expect(error).toMatchObject({
+          code: 'PROCESS_TOO_LARGE',
+          details: [
+            {
+              path: '/process',
+              code: 'too-large',
+              message: expect.stringContaining('new process'),
+              process: 'proc-1',
+            },
+          ],
+        });
+        expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - LINE.length);
+        expect(locksIn(dir)).toEqual([]);
+        expect(store.read(ref).text.length).toBe(MAX_LOG_BYTES - LINE.length);
+      },
+      LARGE_LOG_TIMEOUT_MS,
+    );
+
+    /** 50 caracteres e 100 bytes (`ç` e `ã` ocupam 2 bytes cada); com o `\n` de prefixo o lote tem 101 bytes. */
+    const MULTIBYTE = 'çã'.repeat(25);
+
+    test('o teto conta bytes, não caracteres: lote com ç e ã que só cabe contado em caracteres é recusado', async () => {
+      const { dataDir, store, ref, logFile } = setup();
+      // sobram 60 bytes: o lote caberia em caracteres (51), mas não em bytes (101)
+      sparseLog(logFile, MAX_LOG_BYTES - 60);
 
       const error = await rejectionOf(
-        store.write(ref, () => ({ line: LINE, result: undefined })),
+        store.write(ref, () => ({ line: MULTIBYTE, result: undefined })),
         dataDir,
       );
 
-      expect(error).toMatchObject({
-        code: 'PROCESS_TOO_LARGE',
-        details: [
-          { path: '/process', code: 'too-large', message: expect.stringContaining('new process') },
-        ],
-      });
-      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - LINE.length);
-      expect(locksIn(dir)).toEqual([]);
-      expect(store.read(ref).text).toHaveLength(MAX_LOG_BYTES - LINE.length);
+      expect(error.code).toBe('PROCESS_TOO_LARGE');
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - 60);
+    });
+
+    test('lote com ç e ã que fecha o log em exatamente 64 MiB em bytes grava', async () => {
+      const { store, ref, logFile } = setup();
+      sparseLog(logFile, MAX_LOG_BYTES - 101);
+
+      await store.write(ref, () => ({ line: MULTIBYTE, result: undefined }));
+
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES);
+      expect(fs.readFileSync(logFile, 'utf8').endsWith(MULTIBYTE)).toBe(true);
     });
   });
 
@@ -397,6 +432,58 @@ describe('create, read e list', () => {
     expect(store.listProjects()).toEqual(['abc', 'demo']);
   });
 
+  test('list e listProjects com erro de I/O que não é ENOENT dão IO_ERROR só com o errno (diretório que é arquivo)', () => {
+    const { dataDir, store } = setup();
+    fs.writeFileSync(path.join(dataRoot(dataDir), 'blocked'), '');
+    const flatDir = createTempDir('process-store-flat');
+    fs.writeFileSync(dataRoot(flatDir), '');
+    const flat = createProcessStore({ dataDir: flatDir, log: () => undefined });
+    const ioError = expect.objectContaining({
+      code: 'IO_ERROR',
+      details: [{ path: '', code: 'enotdir', message: 'I/O failure' }],
+    });
+
+    expect(() => store.list('blocked')).toThrow(ioError);
+    expect(() => flat.listProjects()).toThrow(ioError);
+  });
+
+  describe('só ENOENT vale "processo ausente" (M11)', () => {
+    /** O `stat` do manifesto falha com `EACCES`, como numa pasta sem permissão de busca. */
+    function denyManifestStat(): void {
+      const realStat = fs.statSync;
+      jest.spyOn(fs, 'statSync').mockImplementation((...args: Parameters<typeof fs.statSync>) => {
+        if (String(args[0]).endsWith(MANIFEST_FILE)) throw errno('EACCES');
+        return realStat(...args);
+      });
+    }
+
+    test('list não omite em silêncio o processo cujo manifesto dá EACCES: dá IO_ERROR', () => {
+      const { store, ref } = setup();
+      denyManifestStat();
+
+      expect(() => store.list(ref.project)).toThrow(
+        expect.objectContaining({
+          code: 'IO_ERROR',
+          details: [{ path: '', code: 'eacces', message: 'I/O failure' }],
+        }),
+      );
+    });
+
+    test('write com o manifesto em EACCES dá IO_ERROR, não PROCESS_NOT_FOUND, e não chama decide', async () => {
+      const { dataDir, store, ref } = setup();
+      denyManifestStat();
+      const decide = jest.fn(() => ({ result: undefined }));
+
+      const error = await rejectionOf(store.write(ref, decide), dataDir);
+
+      expect(error).toMatchObject({
+        code: 'IO_ERROR',
+        details: [{ path: '', code: 'eacces', message: 'I/O failure' }],
+      });
+      expect(decide).not.toHaveBeenCalled();
+    });
+  });
+
   test('list e listProjects não devolvem pastas criadas à mão com nome inválido', () => {
     const { dataDir, store, ref, manifest } = setup();
     for (const name of ['.tmp', 'a.b', 'Bad Name']) {
@@ -409,6 +496,23 @@ describe('create, read e list', () => {
 
     expect(store.list(ref.project)).toEqual([ref.process]);
     expect(store.listProjects()).toEqual([ref.project]);
+  });
+});
+
+// Fixa o comportamento atual, não uma proteção: `<D>` é confiável (ADR 0009, item 9) e o store não
+// recusa symlink. Se o endurecimento de `io.ts#readIfPresent` entrar, este teste vira recusa.
+describe('records.jsonl que é symlink (decisão do #63 M12)', () => {
+  test('o store lê e grava pelo destino do link, que segue um symlink', async () => {
+    const { store, ref, logFile } = setup();
+    const target = path.join(createTempDir('process-store-target'), 'real.jsonl');
+    fs.renameSync(logFile, target);
+    fs.symlinkSync(target, logFile);
+
+    await append(store, ref, 1);
+
+    expect(fs.lstatSync(logFile).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(target, 'utf8')).not.toBe('');
+    expect(store.read(ref).text).toBe(fs.readFileSync(target, 'utf8'));
   });
 });
 
@@ -566,11 +670,11 @@ describe('sem linha gravada (SE3c)', () => {
   test('lock-busy de dono vivo não chama decide e não deixa linha', async () => {
     const { dataDir, ref, logFile, lockDir } = setup();
     const store = createProcessStore({ dataDir, log: () => undefined, bootId: BOOT, budgetMs: 50 });
-    // o pai do jest está vivo e não é este processo
+    const pid = await liveForeignPid();
     fs.mkdirSync(lockDir);
     fs.writeFileSync(
       path.join(lockDir, 'holder'),
-      JSON.stringify({ pid: process.ppid, token: 'alheio', bootId: BOOT }),
+      JSON.stringify({ pid, token: 'alheio', bootId: BOOT }),
     );
     const decide = jest.fn(() => ({ line: 'nao deve gravar\n', result: undefined }));
 
@@ -578,9 +682,7 @@ describe('sem linha gravada (SE3c)', () => {
 
     expect(error).toMatchObject({
       code: 'LOCK_TIMEOUT',
-      details: [
-        { path: '/process', code: 'lock-busy', message: expect.any(String), pid: process.ppid },
-      ],
+      details: [{ path: '/process', code: 'lock-busy', message: expect.any(String), pid }],
     });
     expect(decide).not.toHaveBeenCalled();
     expect(fs.readFileSync(logFile, 'utf8')).toBe('');
@@ -626,13 +728,8 @@ describe('kill -9 no meio do lote (TF1, SE3b)', () => {
 
   /** Filho já carregado e parado à espera do `go`; um a menos por rodada é o que esconde o custo de subir. */
   function spawnWriter(dataDir: string, ref: ProcessRef, run: number): ChildProcess {
-    const child = spawn(process.execPath, [
-      CRASH_WRITER,
-      dataDir,
-      ref.project,
-      ref.process,
-      String(run),
-    ]);
+    const args: CrashWriterArgs = { dataDir, project: ref.project, process: ref.process, run };
+    const child = spawn(process.execPath, [CRASH_WRITER, JSON.stringify(args)]);
     children.push(child);
     return child;
   }
@@ -685,7 +782,7 @@ describe('kill -9 no meio do lote (TF1, SE3b)', () => {
   }
 
   test('200 execuções mortas com SIGKILL sobre o mesmo log: nenhum meio lote visível, reenvio por key e gravação nova entra', async () => {
-    const { store, ref, dataDir, records } = setup();
+    const { store, ref, dataDir, dir, records } = setup();
     const resent: string[] = [];
     const ahead: ChildProcess[] = [];
     let childSteals = 0;
@@ -724,6 +821,8 @@ describe('kill -9 no meio do lote (TF1, SE3b)', () => {
     const after = verifyProcess(store.read(ref));
     expect(after.chain).toMatchObject({ ok: true, totalRecords: before.chain.totalRecords + 1 });
     expect(after.records.at(-1)?.seq).toBe(before.chain.totalRecords);
+    // sem asserção: o kill pode deixar `.tmp-`, `.dead-` ou `.released-` e não há limpeza automática (`lock.ts`, `ponytail:`)
+    process.stdout.write(`lock residues: ${JSON.stringify(locksIn(dir))}\n`);
   }, 240_000);
 });
 
@@ -766,6 +865,37 @@ describe('truncamento em cada offset e falhas consecutivas (rasgo, P1)', () => {
 
     expect(problems).toEqual([]);
   }, 120_000);
+
+  test('lote com ç e ã cortado em cada byte, inclusive no meio do UTF-8: só o corte sem o \\n deixa o lote visível', async () => {
+    const { store, ref, manifest, logFile } = setup();
+    const bytes = Buffer.from(
+      chainLine(ref.process, verifyProcess(emptyRaw(manifest)).end, 1, {
+        ...lineOptions,
+        text: () => 'çã'.repeat(40),
+        key: 'lote',
+      }),
+    );
+    const problems: string[] = [];
+
+    for (let cut = 0; cut < bytes.length; cut += 1) {
+      fs.writeFileSync(logFile, bytes.subarray(0, cut));
+      const { chain, records } = verifyProcess(store.read(ref));
+      const got = { ok: chain.ok, records: records.length };
+      const want = { ok: true, records: cut === bytes.length - 1 ? 1 : 0 };
+      if (JSON.stringify(got) !== JSON.stringify(want))
+        problems.push(`${cut}: ${JSON.stringify(got)}`);
+    }
+    expect(problems).toEqual([]);
+
+    // a gravação seguinte a um corte depois do primeiro byte de um `ç` entra e fecha a cadeia
+    fs.writeFileSync(logFile, bytes.subarray(0, bytes.indexOf(0xc3) + 1));
+    await append(store, ref, 1);
+    expect(verifyProcess(store.read(ref)).chain).toMatchObject({
+      ok: true,
+      totalRecords: 1,
+      repairedLines: [0],
+    });
+  });
 
   describe('falhas consecutivas a partir de um resto rasgado', () => {
     const torn = (line: string): string => line.slice(0, 40);

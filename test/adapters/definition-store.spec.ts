@@ -9,10 +9,9 @@ import {
   VERSION_SUFFIX,
 } from '../../src/adapters/fs/data-format.ts';
 import type { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts';
-import { HexlogError } from '../../src/errors.ts';
 import type { DefinitionKind } from '../../src/ports.ts';
 import { types } from '../fixtures/domains/omc.ts';
-import { createTempDir } from '../helpers.ts';
+import { captureError, createTempDir, expectNoLeak } from '../helpers.ts';
 import { countFsyncs } from './fsync-spy.ts';
 
 afterEach(() => {
@@ -43,17 +42,6 @@ const versionsDir = (dataDir: string, kind: DefinitionKind, name: string) =>
   definitionDir(dataDir, PROJECT, kind, name);
 
 const FIRST_VERSION_FILE = `1.0${VERSION_SUFFIX}`;
-
-/** O que `fn` lança, para conferir o erro de domínio sem depender do `message` do fs. */
-function thrown(fn: () => unknown): HexlogError {
-  try {
-    fn();
-  } catch (error) {
-    expect(error).toBeInstanceOf(HexlogError);
-    return error as HexlogError;
-  }
-  throw new Error('expected the call to throw');
-}
 
 describe('createDefinitionStore: escrita e leitura', () => {
   test('grava e lê de volta cada tipo de definição, no layout de D-02', () => {
@@ -88,6 +76,14 @@ describe('createDefinitionStore: escrita e leitura', () => {
     expect(store.names(PROJECT, 'gates')).toEqual(['plan-ready']);
     expect(store.names(PROJECT, 'relations')).toEqual([]);
     expect(store.names('outro', 'types')).toEqual([]);
+  });
+
+  test('names lista a pasta de nome que ficou sem nenhuma versão (falha no meio de write)', () => {
+    const { dataDir, store } = setup();
+    fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
+
+    expect(store.names(PROJECT, 'types')).toEqual(['empty']);
+    expect(store.versions(PROJECT, 'types', 'empty')).toEqual([]);
   });
 });
 
@@ -196,7 +192,9 @@ describe('createDefinitionStore: arquivo legado', () => {
 
     expect(store.names(PROJECT, 'types')).toEqual([]);
     expect(store.versions(PROJECT, 'types', 'plan')).toEqual([]);
-    expect(thrown(() => store.read(PROJECT, 'types', 'plan', '1.0')).code).toBe('TYPE_NOT_FOUND');
+    expect(captureError(() => store.read(PROJECT, 'types', 'plan', '1.0')).code).toBe(
+      'TYPE_NOT_FOUND',
+    );
     expect(store.write(PROJECT, 'types', 'plan', '1.0', plan)).toBe(true);
 
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
@@ -214,13 +212,13 @@ describe('createDefinitionStore: erros', () => {
     (kind, code) => {
       const { dataDir, store } = setup();
 
-      const error = thrown(() => store.read(PROJECT, kind, 'missing', '1.0'));
+      const error = captureError(() => store.read(PROJECT, kind, 'missing', '1.0'));
 
       expect(error.code).toBe(code);
       expect(error.details).toEqual([
         { path: '/name', code: 'unknown-name', message: 'definition name not found' },
       ]);
-      expect(JSON.stringify(error)).not.toContain(dataDir);
+      expectNoLeak(error, dataDir);
     },
   );
 
@@ -236,7 +234,7 @@ describe('createDefinitionStore: erros', () => {
         store.write(PROJECT, kind, 'known', version, definition);
       }
 
-      const error = thrown(() => store.read(PROJECT, kind, 'known', '2.0'));
+      const error = captureError(() => store.read(PROJECT, kind, 'known', '2.0'));
 
       expect(error.code).toBe(code);
       expect(error.details).toEqual([
@@ -247,7 +245,7 @@ describe('createDefinitionStore: erros', () => {
           versions: ['1.0', '1.2', '1.10'],
         },
       ]);
-      expect(JSON.stringify(error)).not.toContain(dataDir);
+      expectNoLeak(error, dataDir);
     },
   );
 
@@ -255,39 +253,48 @@ describe('createDefinitionStore: erros', () => {
     const { dataDir, store } = setup();
     fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
 
-    expect(thrown(() => store.read(PROJECT, 'types', 'empty', '1.0')).details).toEqual([
+    expect(captureError(() => store.read(PROJECT, 'types', 'empty', '1.0')).details).toEqual([
       { path: '/name', code: 'unknown-name', message: 'definition name not found' },
     ]);
   });
 
-  test.each(['', '1', '1.', '1.0.0', '01.0', '1.-1', '../1.0', '1.0/../../x', 'a.b'])(
-    'versão malformada %j é recusada antes de qualquer I/O',
-    (version) => {
-      const { dataDir, store } = setup();
+  test.each([
+    '',
+    '1',
+    '1.',
+    '1.0.0',
+    '01.0',
+    '1.07',
+    '1234567.0',
+    '1.-1',
+    '../1.0',
+    '1.0/../../x',
+    'a.b',
+  ])('versão malformada %j é recusada antes de qualquer I/O', (version) => {
+    const { dataDir, store } = setup();
 
-      expect(thrown(() => store.write(PROJECT, 'types', 'plan', version, plan)).code).toBe(
-        'INVALID_INPUT',
-      );
-      expect(thrown(() => store.read(PROJECT, 'types', 'plan', version)).code).toBe(
-        'INVALID_INPUT',
-      );
-      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
-    },
-  );
+    expect(captureError(() => store.write(PROJECT, 'types', 'plan', version, plan)).code).toBe(
+      'INVALID_INPUT',
+    );
+    expect(captureError(() => store.read(PROJECT, 'types', 'plan', version)).code).toBe(
+      'INVALID_INPUT',
+    );
+    expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
+  });
 
   test.each(['..', 'a/b', 'A', '', '.hidden'])(
     'nome ou projeto %j que escapa do layout é recusado',
     (name) => {
       const { dataDir, store } = setup();
 
-      expect(thrown(() => store.write(name, 'types', 'plan', '1.0', plan)).code).toBe(
+      expect(captureError(() => store.write(name, 'types', 'plan', '1.0', plan)).code).toBe(
         'INVALID_INPUT',
       );
-      expect(thrown(() => store.write(PROJECT, 'types', name, '1.0', plan)).code).toBe(
+      expect(captureError(() => store.write(PROJECT, 'types', name, '1.0', plan)).code).toBe(
         'INVALID_INPUT',
       );
-      expect(thrown(() => store.versions(PROJECT, 'types', name)).code).toBe('INVALID_INPUT');
-      expect(thrown(() => store.names(name, 'types')).code).toBe('INVALID_INPUT');
+      expect(captureError(() => store.versions(PROJECT, 'types', name)).code).toBe('INVALID_INPUT');
+      expect(captureError(() => store.names(name, 'types')).code).toBe('INVALID_INPUT');
       expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
     },
   );
@@ -301,11 +308,11 @@ describe('createDefinitionStore: erros', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, FIRST_VERSION_FILE), content);
 
-    const error = thrown(() => store.read(PROJECT, 'relations', 'approves', '1.0'));
+    const error = captureError(() => store.read(PROJECT, 'relations', 'approves', '1.0'));
 
     expect(error.code).toBe('INTERNAL');
     expect(error.details[0]?.code).toBe('unreadable-definition');
-    expect(JSON.stringify(error)).not.toContain(dataDir);
+    expectNoLeak(error, dataDir);
   });
 
   test.each([
@@ -317,7 +324,7 @@ describe('createDefinitionStore: erros', () => {
     (kind, name, invalid) => {
       const { dataDir, store } = setup();
 
-      const error = thrown(() => store.write(PROJECT, kind, name, '1.0', invalid as never));
+      const error = captureError(() => store.write(PROJECT, kind, name, '1.0', invalid as never));
 
       expect(error.code).toBe('INTERNAL');
       expect(error.details).toEqual([
@@ -327,7 +334,7 @@ describe('createDefinitionStore: erros', () => {
           message: 'definition does not match its schema',
         },
       ]);
-      expect(JSON.stringify(error)).not.toContain('x'.repeat(100));
+      expectNoLeak(error, 'x'.repeat(100));
       expect(store.versions(PROJECT, kind, name)).toEqual([]);
       expect(fs.existsSync(definitionFile(dataDir, PROJECT, kind, name, '1.0'))).toBe(false);
     },
@@ -339,10 +346,10 @@ describe('createDefinitionStore: erros', () => {
     fs.mkdirSync(dataRoot(dataDir), { recursive: true });
     fs.writeFileSync(path.join(dataRoot(dataDir), PROJECT), 'not a directory');
 
-    const error = thrown(() => store.write(PROJECT, 'types', 'plan', '1.0', plan));
+    const error = captureError(() => store.write(PROJECT, 'types', 'plan', '1.0', plan));
 
     expect(error.code).toBe('IO_ERROR');
     expect(error.details).toEqual([{ path: '', code: 'enotdir', message: 'I/O failure' }]);
-    expect(JSON.stringify(error)).not.toContain(dataDir);
+    expectNoLeak(error, dataDir);
   });
 });

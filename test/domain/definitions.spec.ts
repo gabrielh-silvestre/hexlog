@@ -12,7 +12,6 @@ import {
   classifyRelationChange,
   classifyTypeChange,
   compareVersions,
-  formatVersion,
   parseVersion,
 } from '../../src/domain/definitions.ts';
 import * as omc from '../fixtures/domains/omc.ts';
@@ -22,12 +21,18 @@ describe('semver major.minor', () => {
     expect(parseVersion('1.10')).toEqual({ major: 1, minor: 10 });
   });
 
-  test.each(['1', '1.0.0', 'a.b', '1.', '.1', ''])('parseVersion recusa %j', (value) => {
-    expect(() => parseVersion(value)).toThrow(HexlogError);
-  });
+  test.each(['1', '1.0.0', 'a.b', '1.', '.1', '', '01.7', '1.07', '1234567.0', '1.1234567'])(
+    'parseVersion recusa %j',
+    (value) => {
+      expect(() => parseVersion(value)).toThrow(HexlogError);
+    },
+  );
 
-  test('formatVersion é o inverso de parseVersion', () => {
-    expect(formatVersion(parseVersion('3.7'))).toBe('3.7');
+  test.each([
+    ['0.0', { major: 0, minor: 0 }],
+    ['999999.999999', { major: 999_999, minor: 999_999 }],
+  ])('parseVersion aceita %j', (value, expected) => {
+    expect(parseVersion(value)).toEqual(expected);
   });
 
   test('compareVersions compara por número e não por string', () => {
@@ -37,11 +42,15 @@ describe('semver major.minor', () => {
   });
 
   test('bumpVersion minor soma ao minor', () => {
-    expect(bumpVersion('1.9', 'minor')).toEqual({ major: 1, minor: 10 });
+    expect(bumpVersion('1.9', 'minor')).toBe('1.10');
+  });
+
+  test('bumpVersion devolve a versão pronta, com major de dois dígitos', () => {
+    expect(bumpVersion('9.9', 'major')).toBe('10.0');
   });
 
   test('bumpVersion major soma ao major e zera o minor', () => {
-    expect(bumpVersion('1.9', 'major')).toEqual({ major: 2, minor: 0 });
+    expect(bumpVersion('1.9', 'major')).toBe('2.0');
   });
 });
 

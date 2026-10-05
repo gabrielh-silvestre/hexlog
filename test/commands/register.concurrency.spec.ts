@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test } from '@jest/globals';
+import { once } from 'node:events';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
 import { compose } from '../../src/compose.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
-import { killChildren, runFixture } from '../adapters/lock-helpers.ts';
+import { killChildren, runFixture, startChild } from '../adapters/lock-helpers.ts';
 import { createTempDir } from '../helpers.ts';
 import { AUTHOR, NOTE, PROJECT, note } from './register-fakes.ts';
 
@@ -34,26 +37,28 @@ function setup() {
     const barrier = createTempDir('register-barrier');
     const results = await Promise.all(
       inputs.map((input) =>
-        runFixture([
-          'register',
+        runFixture('register', {
           dataDir,
-          PROJECT,
+          project: PROJECT,
           process,
-          barrier,
-          String(inputs.length),
-          JSON.stringify(input),
-        ]),
+          barrierDir: barrier,
+          total: inputs.length,
+          input,
+        }),
       ),
     );
     expect(results.map(({ status, stderr }) => ({ status, stderr }))).toEqual(
       inputs.map(() => ({ status: 0, stderr: '' })),
     );
-    return results.map(({ stdout }) => JSON.parse(stdout) as ChildOutcome);
+    // O resultado é a última linha: o filho que esperou o lock imprime antes uma linha de `lock-wait`.
+    return results.map(
+      ({ stdout }) => JSON.parse(stdout.trim().split('\n').at(-1) ?? '') as ChildOutcome,
+    );
   }
 
   const verified = (process: string) => verifyProcess(store.read({ project: PROJECT, process }));
 
-  return { services, registerTwice, verified };
+  return { dataDir, services, registerTwice, verified };
 }
 
 describe('register concorrente em processos filhos (SE5, SE3c)', () => {
@@ -111,6 +116,41 @@ describe('register concorrente em processos filhos (SE5, SE3c)', () => {
         );
         expect(verified(process).records).toHaveLength(1);
       }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    'register espera o lock de um dono vivo e só grava depois que ele solta',
+    async () => {
+      const { dataDir, services, verified } = setup();
+      services.process.createProcess({ project: PROJECT, process: 'run-1' });
+      const goFile = path.join(createTempDir('register-go'), 'go');
+      const holder = await startChild('write-gated', {
+        dataDir,
+        project: PROJECT,
+        process: 'run-1',
+        goFile,
+      });
+
+      // O filho só devolve depois da linha `lock-wait`: sem o lock, ele gravaria e sairia sem ela.
+      const { child } = await startChild('register', {
+        dataDir,
+        project: PROJECT,
+        process: 'run-1',
+        barrierDir: createTempDir('register-barrier'),
+        total: 1,
+        input: { records: [note('depois')] },
+      });
+      expect(verified('run-1').records).toHaveLength(0);
+      const closed = once(child, 'close');
+      fs.writeFileSync(goFile, '');
+
+      expect(await closed).toEqual([0, null]);
+      expect(verified('run-1').records.map(({ data }) => data.text)).toEqual([
+        `gated-${holder.pid}`,
+        'depois',
+      ]);
     },
     TIMEOUT_MS,
   );

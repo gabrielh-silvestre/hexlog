@@ -1,8 +1,10 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
+import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { Marker, RecordId } from '../../src/domain/ids.ts';
+import { createQueryService } from '../../src/queries/query-service.ts';
 import { ghostId, note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
-import { cursorOf, idsOf, querySetup } from './query-setup.ts';
+import { cursorOf, diskStores, idsOf, PROJECT, querySetup } from './query-setup.ts';
 
 const supersedes = (to: RecordId) => ({ to, kind: 'supersedes' as const });
 const revokes = (to: RecordId) => ({ to, kind: 'revokes' as const });
@@ -38,21 +40,6 @@ describe('queryRecords: changesSince (SL7)', () => {
       ],
       marker: page.marker,
     });
-  });
-
-  test('SL7: o entered é a diferença entre a lista de agora e a da foto anterior', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    await registerOne('run-1', note('a'), 1);
-    const snapshot = query({ process: 'run-1' });
-    await registerOne('run-1', note('b'), 2);
-    await registerOne('run-1', note('c'), 3);
-
-    const now = query({ process: 'run-1' });
-    const changes = query({ process: 'run-1', changesSince: snapshot.marker }).changes;
-
-    expect(changes?.entered).toEqual(idsOf(now).filter((id) => !idsOf(snapshot).includes(id)));
-    expect(changes?.left).toEqual([]);
   });
 
   test('SL7: a foto anterior mais entered, menos left, dá a mesma lista de uma foto nova (alcance processo)', async () => {
@@ -159,6 +146,26 @@ describe('queryRecords: changesSince (SL7)', () => {
     expect(at(other.details, 0).code).toBe('filters-mismatch');
   });
 
+  // Exceção estreita à SL2 (ADR 0008, decisão 3): o log é lido duas vezes só na 1ª página com
+  // `changesSince`, uma para o estado de agora e outra para o do marcador.
+  test('a 1ª página com `changesSince` lê o log duas vezes e as demais, uma', async () => {
+    const { dataDir, createProcess, register, query } = querySetup();
+    createProcess('run-1');
+    const snapshot = query({ process: 'run-1' });
+    await register('run-1', [note('a'), note('b'), note('c')], 1);
+    const stores = diskStores(dataDir);
+    const read = jest.spyOn(stores.store, 'read');
+    const counted = createQueryService({ ...stores, search: createSearchIndex() });
+    const input = { project: PROJECT, process: 'run-1', limit: 2, changesSince: snapshot.marker };
+
+    const first = counted.queryRecords(input);
+    expect(read).toHaveBeenCalledTimes(2);
+    read.mockClear();
+    counted.queryRecords({ ...input, cursor: cursorOf(first) });
+
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
   test('alcance processo: marcador sem a entrada do processo lido é MARKER_NOT_FOUND em /changesSince', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
@@ -185,6 +192,26 @@ describe('queryRecords: changesSince (SL7)', () => {
 
     expect(error.code).toBe('MARKER_NOT_FOUND');
     expect(error.details).toEqual([expect.objectContaining({ path: '/changesSince' })]);
+  });
+
+  test('alcance projeto: o MARKER_NOT_FOUND nomeia o processo cujo id marcado não existe', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    createProcess('run-2');
+    const first = await registerOne('run-1', note('a'), 1);
+    await registerOne('run-2', note('b'), 2);
+
+    const error = captureError(() =>
+      query({
+        scope: 'project',
+        changesSince: { 'run-1': first, 'run-2': ghostId('run-2') },
+      }),
+    );
+
+    expect(error.code).toBe('MARKER_NOT_FOUND');
+    expect(error.details).toEqual([
+      expect.objectContaining({ path: '/changesSince', process: 'run-2' }),
+    ]);
   });
 
   test('processo chamado `constructor` nascido depois do marcador conta como vazio', async () => {

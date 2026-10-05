@@ -9,8 +9,8 @@ const SIZE = 10_000;
 const ROUNDS = 5;
 // O teto é do corpus de ~1,2 KB por registro e vocabulário aberto, que custa ~0,2 ms de índice por
 // registro (medido em 2026-10-03: ~1,85 s para 10.000); o teto de 500 ms herdado do 0.x media
-// frases curtas. O SL4 da F4 (750 ms, 5.000 registros) segue aberto e mede o caminho completo,
-// não este.
+// frases curtas. O SL4 da F4 (`queries/query.budget.spec.ts`: 750 ms com o índice em cache e 2.000 ms
+// frio, 5.000 registros) mede o caminho completo, não este.
 const MEDIAN_CEILING_MS = 4_000;
 const MAX_CEILING_MS = 7_000;
 // Busca repetida sobre o índice já em cache: só a consulta, sem montar nada.

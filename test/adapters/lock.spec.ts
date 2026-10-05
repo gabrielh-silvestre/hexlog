@@ -1,17 +1,20 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import { sumBy } from 'es-toolkit';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { LOCK_DIR, LOG_FILE, MANIFEST_FILE } from '../../src/adapters/fs/data-format.ts';
-import { createLockManager, moveAside } from '../../src/adapters/fs/lock.ts';
+import { createLockManager, isPidAlive, moveAside } from '../../src/adapters/fs/lock.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import type { LogRecord } from '../../src/shared/logger.ts';
-import { captureLog, createTempDir, rejectionOf } from '../helpers.ts';
+import { chainLine } from '../fixtures/chain-line.ts';
+import { captureLog, createTempDir, errno, rejectionOf } from '../helpers.ts';
 import {
   createProcess,
   killChildren,
+  liveForeignPid,
   runFixture,
   runWriteStress,
   startChild,
@@ -44,6 +47,24 @@ function plantLock(lockDir: string, holder: string | object): void {
   );
 }
 
+/**
+ * Filho que já morreu e que o pai ainda não colheu (zumbi): o `sh` solta um `sleep` curto e vira
+ * `sleep 30`, que nunca dá `wait`. Quem chama mata `parent` no fim.
+ */
+async function zombieChild(): Promise<{ pid: number; parent: ChildProcess }> {
+  const parent = spawn('sh', ['-c', 'sleep 0.1 & echo $!; exec sleep 30']);
+  const pid = await new Promise<number>((resolve, reject) => {
+    parent.once('error', reject);
+    parent.stdout.once('data', (chunk) => resolve(Number(String(chunk).trim())));
+  });
+  const deadline = performance.now() + 5000;
+  while (!fs.readFileSync(`/proc/${pid}/stat`, 'utf8').includes(') Z ')) {
+    if (performance.now() > deadline) throw new Error('child did not become a zombie');
+    await sleep(20);
+  }
+  return { pid, parent };
+}
+
 const tokenIn = (holderFile: string): string =>
   (JSON.parse(fs.readFileSync(holderFile, 'utf8')) as { token: string }).token;
 
@@ -64,9 +85,17 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
     test('8 filhos x 25 rodadas de aquisição e liberação nunca têm dois donos nem deixam resto', async () => {
       const { dir, lockDir } = workspace();
       const barrier = createTempDir('lock-barrier');
-      const args = ['rounds', lockDir, path.join(dir, 'owner'), '25', barrier, '8'];
+      const args = {
+        lockDir,
+        ownerFile: path.join(dir, 'owner'),
+        rounds: 25,
+        barrierDir: barrier,
+        total: 8,
+      };
 
-      const results = await Promise.all(Array.from({ length: 8 }, () => runFixture(args)));
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () => runFixture('rounds', args)),
+      );
 
       expect(results.map(({ status, stderr }) => ({ status, stderr }))).toEqual(
         Array.from({ length: 8 }, () => ({ status: 0, stderr: '' })),
@@ -111,12 +140,35 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(fs.readdirSync(dir)).toEqual([]);
     });
 
+    test('órfão: store.write depois do kill -9 do dono entra em menos de 1 s e a cadeia fecha (TF3)', async () => {
+      const { store, ref, lockDir } = createProcess();
+      const { child } = await startHolder(lockDir);
+      child.kill('SIGKILL');
+      await once(child, 'exit');
+
+      const started = performance.now();
+      await store.write(ref, (raw) => ({
+        line: chainLine(ref.process, verifyProcess(raw).end, 1, {
+          agent: 'lock-spec',
+          text: () => 'depois do kill',
+        }),
+        result: undefined,
+      }));
+
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 1 });
+    });
+
     test('pid que o kernel nega sinalizar (EPERM) conta como vivo', async () => {
       const { dir, lockDir } = workspace();
-      plantLock(lockDir, { pid: 1, token: 'init', bootId: BOOT });
+      const pid = await liveForeignPid();
+      plantLock(lockDir, { pid, token: 'foreign', bootId: BOOT });
+      jest.spyOn(process, 'kill').mockImplementation(() => {
+        throw errno('EPERM');
+      });
       const manager = createLockManager({ log: captureLog().log, budgetMs: 50, bootId: BOOT });
 
-      expect(await timeoutOf(manager.acquire(lockDir), dir)).toEqual(timeout('lock-busy', 1));
+      expect(await timeoutOf(manager.acquire(lockDir), dir)).toEqual(timeout('lock-busy', pid));
     });
 
     test('estresse: 8 filhos x 25 gravações no mesmo processo, com lock de dono morto pré-plantado, sem falha crua e com a cadeia íntegra', async () => {
@@ -140,13 +192,12 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       const { dataDir, store, ref, dir, lockDir } = createProcess();
       const holderFile = path.join(lockDir, 'holder');
       const goFile = path.join(createTempDir('lock-go'), 'go');
-      const { child, pid } = await startChild([
-        'write-gated',
+      const { child, pid } = await startChild('write-gated', {
         dataDir,
-        ref.project,
-        ref.process,
+        project: ref.project,
+        process: ref.process,
         goFile,
-      ]);
+      });
       const exited = once(child, 'exit');
       const tokenBefore = tokenIn(holderFile);
       const pausedAt = performance.now();
@@ -231,6 +282,7 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       ['não-JSON', '{not json'],
       ['sem pid', '{"token":"t","bootId":null}'],
       ['sem token', '{"pid":4242,"bootId":null}'],
+      ['pid acima do pid_max do Linux (2^22)', '{"pid":4194305,"token":"t","bootId":null}'],
     ])('holder %s dá holder-unreadable na hora, sem espera e sem roubo', async (_name, content) => {
       const { dir, lockDir, holderFile } = workspace();
       plantLock(lockDir, content);
@@ -241,8 +293,47 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       const error = manager.acquire(lockDir);
 
       expect(await timeoutOf(error, dir)).toEqual(timeout('holder-unreadable'));
+      expect((await rejectionOf(error, dir)).details[0]?.message).toContain(
+        'ask the user to remove the lock',
+      );
       expect(fs.readFileSync(holderFile, 'utf8')).toBe(content);
       expect(records).toEqual([]);
+    });
+  });
+
+  describe('erros de I/O e lock sem holder (M20)', () => {
+    test('lock sem holder (só um arquivo estranho dentro) espera o orçamento e dá lock-busy sem pid', async () => {
+      const { dir, lockDir } = workspace();
+      // `rename` sobre diretório vazio vence, então o lock sem holder só pesa se não estiver vazio
+      fs.mkdirSync(lockDir);
+      fs.writeFileSync(path.join(lockDir, 'stray'), '');
+      const { records, log } = captureLog();
+      const manager = createLockManager({ log, budgetMs: 50, bootId: BOOT });
+
+      expect(await timeoutOf(manager.acquire(lockDir), dir)).toEqual(timeout('lock-busy'));
+      expect(eventsOf(records)).toEqual(['lock-timeout']);
+    });
+
+    test('holder que não dá para ler por outro motivo que ENOENT sai cru, sem roubo', async () => {
+      const { lockDir } = workspace();
+      fs.mkdirSync(path.join(lockDir, 'holder'), { recursive: true });
+      const manager = createLockManager({ log: captureLog().log, bootId: BOOT });
+
+      await expect(manager.acquire(lockDir)).rejects.toMatchObject({ code: 'EISDIR' });
+      expect(fs.existsSync(lockDir)).toBe(true);
+    });
+
+    test('publicação do lock que falha por outro motivo que "ocupado" sai crua e não deixa .tmp-', async () => {
+      const { dir, lockDir } = workspace();
+      const renameSync = fs.renameSync;
+      jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+        if (to === lockDir) throw errno('EIO');
+        renameSync(from, to);
+      });
+      const manager = createLockManager({ log: captureLog().log, bootId: BOOT });
+
+      await expect(manager.acquire(lockDir)).rejects.toMatchObject({ code: 'EIO' });
+      expect(fs.readdirSync(dir)).toEqual([]);
     });
   });
 
@@ -294,6 +385,23 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(fs.readdirSync(dir)).toEqual([LOCK_DIR]);
     });
 
+    test('zumbi (morto que o pai ainda não colheu) conta como dono morto e o lock é roubado', async () => {
+      const { lockDir, holderFile } = workspace();
+      const { pid, parent } = await zombieChild();
+      try {
+        expect(isPidAlive(pid)).toBe(false);
+        plantLock(lockDir, { pid, token: 'zombie', bootId: BOOT });
+        const { records, log } = captureLog();
+
+        const lock = await createLockManager({ log, bootId: BOOT }).acquire(lockDir);
+
+        expect(tokenIn(holderFile)).toBe(lock.token);
+        expect(records).toContainEqual({ level: 'warn', event: 'lock-orphan-removed', pid });
+      } finally {
+        parent.kill('SIGKILL');
+      }
+    });
+
     test('holder com bootId diferente é roubado mesmo com pid vivo e token segurado', async () => {
       const { dir, lockDir, holderFile } = workspace();
       const { records, log } = captureLog();
@@ -318,10 +426,11 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
 
     test('bootId null (sem /proc) só casa com null', async () => {
       const { dir, lockDir, holderFile } = workspace();
-      plantLock(lockDir, { pid: 1, token: 'init', bootId: null });
+      const pid = await liveForeignPid();
+      plantLock(lockDir, { pid, token: 'foreign', bootId: null });
 
       const sameBoot = createLockManager({ log: captureLog().log, budgetMs: 50, bootId: null });
-      expect(await timeoutOf(sameBoot.acquire(lockDir), dir)).toEqual(timeout('lock-busy', 1));
+      expect(await timeoutOf(sameBoot.acquire(lockDir), dir)).toEqual(timeout('lock-busy', pid));
 
       const otherBoot = createLockManager({ log: captureLog().log, bootId: BOOT });
       const lock = await otherBoot.acquire(lockDir);
@@ -381,6 +490,42 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(records).toEqual([
         { level: 'error', event: 'lock-lost', pid: process.pid, holderPid: 4242, restored: false },
       ]);
+    });
+
+    test('rename que falha por outro motivo que ENOENT sai cru e o lock fica onde está', () => {
+      const { dir, lockDir } = workspace();
+      plantLock(lockDir, { pid: 4242, token: 'owner', bootId: BOOT });
+      const renameSync = fs.renameSync;
+      jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+        if (from === lockDir) throw errno('EIO');
+        renameSync(from, to);
+      });
+      const { records, log } = captureLog();
+
+      expect(() => moveAside(lockDir, '.dead-', 'owner', log)).toThrow(
+        expect.objectContaining({ code: 'EIO' }),
+      );
+
+      expect(fs.readdirSync(dir)).toEqual([LOCK_DIR]);
+      expect(records).toEqual([]);
+    });
+
+    test('devolução que falha por outro motivo que "já existe lock novo" sai crua e o movido fica', () => {
+      const { dir, lockDir } = workspace();
+      plantLock(lockDir, { pid: 4242, token: 'owner', bootId: BOOT });
+      const renameSync = fs.renameSync;
+      jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+        if (to === lockDir) throw errno('EIO');
+        renameSync(from, to);
+      });
+      const { records, log } = captureLog();
+
+      expect(() => moveAside(lockDir, '.dead-', 'stale', log)).toThrow(
+        expect.objectContaining({ code: 'EIO' }),
+      );
+
+      expect(fs.readdirSync(dir)).toEqual([expect.stringContaining(`${LOCK_DIR}.dead-`)]);
+      expect(records).toEqual([]);
     });
 
     test('sem lock devolve gone e não loga', () => {

@@ -23,7 +23,8 @@ export type CallResult = {
 
 /**
  * Corpo `{ code, message, details }` de um resultado com `isError`. Trava a forma: erro nunca leva
- * `structuredContent`, que o SDK 1.x validaria contra o `outputSchema` de sucesso (`-32602`).
+ * `structuredContent`, que descreveria o erro como saída do `outputSchema` de sucesso; o
+ * `validateToolOutput` do SDK 2.0 já retorna cedo com `isError`, e o teste guarda a invariante.
  */
 export function errorBodyOf(result: CallResult): ErrorBody {
   expect(result.isError).toBe(true);

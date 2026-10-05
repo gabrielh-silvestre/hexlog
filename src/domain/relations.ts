@@ -1,16 +1,10 @@
+import type { RelationName } from './definitions.ts';
 import { processOf } from './ids.ts';
 import type { Name, RecordId } from './ids.ts';
-import { RelationKind } from './record.ts';
-import type { HexRecord, KindOrAs, Relation } from './record.ts';
-
-export { RelationKind };
+import type { HexRecord, KindOrAs, Relation, RelationKind } from './record.ts';
 
 /** O que a vigência e a prova vencida leem de um registro: o id e as relações gravadas. */
 export type Linked = Pick<HexRecord, 'id' | 'relations'>;
-
-function compareIds(a: RecordId, b: RecordId): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
 
 export function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
@@ -39,7 +33,7 @@ export function buildVigency(records: readonly Linked[]): Vigency {
       if (kind === 'revokes') revoked.add(to);
     }
   }
-  for (const list of successors.values()) list.sort(compareIds);
+  for (const list of successors.values()) list.sort();
 
   const isCurrent = (id: RecordId) => !revoked.has(id) && !successors.has(id);
 
@@ -58,29 +52,6 @@ export function buildVigency(records: readonly Linked[]): Vigency {
   };
 
   return { isCurrent, currentOf };
-}
-
-/** D-08: linhagens, isto é, os conjuntos de registros ligados por `supersedes`. */
-export function lineages(records: readonly Linked[]): RecordId[][] {
-  const parent = new Map<RecordId, RecordId>(records.map(({ id }) => [id, id]));
-  const rootOf = (id: RecordId): RecordId => {
-    let root = id;
-    while (parent.get(root) !== root) root = parent.get(root)!;
-    for (let node = id; node !== root;) {
-      const next = parent.get(node)!;
-      parent.set(node, root);
-      node = next;
-    }
-    return root;
-  };
-  for (const { id, relations } of records) {
-    for (const { kind, to } of relations) {
-      if (kind === 'supersedes' && parent.has(to)) parent.set(rootOf(id), rootOf(to));
-    }
-  }
-  const groups = new Map<RecordId, RecordId[]>();
-  for (const { id } of records) pushTo(groups, rootOf(id), id);
-  return [...groups.values()];
 }
 
 /** Guarda contra ciclo de substituição (Kahn sobre as arestas `supersedes` entre registros lidos). */
@@ -117,12 +88,15 @@ export type NeedsReview = { staleIn: RecordId[]; staleOut: RecordId[] };
  * o aviso não bloqueia nada. Apoio cujo destino não está em `records` é ignorado: a vigência dele
  * é desconhecida.
  *
- * Acompanhamento: com `scope: "process"` (D-24) `records` são só os do processo, então o alerta que
- * cruza processos não é emitido (a vigência da outra ponta é desconhecida; emitir seria falso
- * alerta, D-09). Revisitar ao implementar `scope: "project"`.
+ * Alcance (D-24): com `scope: "process"`, `records` são só os do processo, então o alerta que cruza
+ * processos não é emitido (a vigência da outra ponta é desconhecida; emitir seria falso alerta,
+ * D-09). Com `scope: "project"`, `records` são os de todos os processos do projeto e o alerta que
+ * cruza processos sai.
  */
-export function needsReview(records: readonly Linked[]): Map<RecordId, NeedsReview> {
-  const vigency = buildVigency(records);
+export function needsReview(
+  records: readonly Linked[],
+  vigency: Vigency = buildVigency(records),
+): Map<RecordId, NeedsReview> {
   const supported = new Map<RecordId, Set<RecordId>>();
   for (const { id, relations } of records) {
     supported.set(
@@ -159,7 +133,7 @@ export function needsReview(records: readonly Linked[]): Map<RecordId, NeedsRevi
   return new Map(
     [...marks].map(([id, { staleIn, staleOut }]) => [
       id,
-      { staleIn: [...staleIn].sort(compareIds), staleOut: [...staleOut].sort(compareIds) },
+      { staleIn: [...staleIn].sort(), staleOut: [...staleOut].sort() },
     ]),
   );
 }
@@ -180,14 +154,10 @@ export type RuleCode =
 /** `current` só sai em `not-current` e `stale-destination`: versão atual da linhagem ou `null`. */
 export type Violation = { code: RuleCode; current?: RecordId | null };
 
-export type RelationCheck = { kind: RelationKind } | { violation: Violation };
+type RelationCheck = { kind: RelationKind } | { violation: Violation };
 
 /** Nome de relação fixado no processo; `from`/`to` são listas de tipos, quando declaradas. */
-export type NamedRelation = {
-  kind: RelationKind;
-  from?: readonly Name[];
-  to?: readonly Name[];
-};
+export type NamedRelation = Pick<RelationName, 'kind' | 'from' | 'to'>;
 
 export type RelationEnd = { id: RecordId; type: Name };
 
@@ -202,14 +172,16 @@ export type RuleContext = {
   /**
    * D-10: a vigência contra a qual cada tipo de relação confere o destino. `supersedes` e `revokes`
    * leem os itens anteriores do lote; `supports`, o lote inteiro. Nenhum valor único serve às duas:
-   * o lote `[supersedes → E, supports → E]` exige as duas leituras.
+   * o lote `[supersedes → E, supports → E]` exige as duas leituras. Para destino de outro processo,
+   * a vigência vem dos registros do processo do destino, não dos do registro que grava
+   * (`commands/register/state.ts#loadDestination`).
    */
   vigencyFor(kind: RelationKind): Vigency;
 };
 
 /**
  * D-10: `kind` da relação a partir de `kind` e/ou `as`, ou `unknown-relation-name` e `kind-mismatch`.
- * Só depende do manifesto, então o serviço a roda antes do lock (`commands/register-static.ts`).
+ * Só depende do manifesto, então o serviço a roda antes do lock (`commands/register/static.ts`).
  */
 export function resolveKind(input: KindOrAs, names: RuleContext['names']): RelationCheck {
   if (input.as === undefined) return { kind: input.kind };

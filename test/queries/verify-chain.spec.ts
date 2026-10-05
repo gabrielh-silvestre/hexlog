@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
-import { blobFile, processPaths } from '../../src/adapters/fs/data-format.ts';
+import { blobFile } from '../../src/adapters/fs/data-format.ts';
 import type { Hash } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { MAX_BREAKS } from '../../src/shared/loader.ts';
@@ -12,7 +12,7 @@ function verifySetup() {
   const setup = querySetup();
   setup.createProcess('run-1');
   const verify = (process = 'run-1') => setup.queries.verifyChain({ project: PROJECT, process });
-  const logFile = () => processPaths(setup.dataDir, { project: PROJECT, process: 'run-1' }).log;
+  const logFile = () => setup.logPath('run-1');
   const blobOf = (hash: Hash) => blobFile(setup.dataDir, PROJECT, hash);
   const stored = (text: string): Hash => setup.attachments.putText(PROJECT, text).hash;
   const doc = (data: BatchItem['data']): BatchItem => ({

@@ -1,6 +1,5 @@
 import type { Name } from '../domain/ids.ts';
-import { isWellFormed } from '../domain/record.ts';
-import { HexlogError } from '../errors.ts';
+import { invalidInput } from '../errors.ts';
 import type { AttachmentPut, AttachmentStore } from '../ports.ts';
 
 export type AttachInput = { project: Name; text?: string; path?: string };
@@ -20,9 +19,7 @@ const ALLOWED_EXTENSIONS = ['.md', '.txt'];
 // NAME_MAX do Linux, em bytes UTF-8: acima disso o `open` falha com ENAMETOOLONG, que viraria IO_ERROR.
 const NAME_MAX_BYTES = 255;
 
-function invalidInput(pointer: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_INPUT', message, [{ path: pointer, code, message }]);
-}
+const utf8 = new TextEncoder();
 
 /**
  * Mesma regra de `path.extname` sobre o último componente (barras finais não contam): `.md` puro
@@ -37,14 +34,14 @@ function hasAllowedExtension(candidate: string): boolean {
 
 function checkedText(text: string): void {
   if (text.length === 0) throw invalidInput('/text', 'bad-args', 'text must not be empty');
-  if (!isWellFormed(text)) {
+  if (!text.isWellFormed()) {
     throw invalidInput('/text', 'lone-surrogate', 'text contains a lone surrogate');
   }
 }
 
 function checkedPath(candidate: string): void {
   if (candidate.includes('\0')) throw invalidInput('/path', 'bad-args', 'path contains NUL');
-  if (candidate.split('/').some((segment) => Buffer.byteLength(segment, 'utf8') > NAME_MAX_BYTES)) {
+  if (candidate.split('/').some((segment) => utf8.encode(segment).length > NAME_MAX_BYTES)) {
     throw invalidInput('/path', 'bad-args', `path segment exceeds ${NAME_MAX_BYTES} bytes`);
   }
   if (!hasAllowedExtension(candidate)) {

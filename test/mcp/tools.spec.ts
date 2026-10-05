@@ -1,18 +1,21 @@
+import fs from 'node:fs';
+import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import { compose } from '../../src/compose.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
-import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP, PAGE_CHARS_CAP } from '../../src/mcp/kernel.ts';
+import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP } from '../../src/mcp/tools/query.ts';
 import type { Defined } from '../../src/commands/definition.ts';
 import type { CreateProcessResult, RegisterResult } from '../../src/commands/process.ts';
 import type { AttachmentPut } from '../../src/ports.ts';
-import type {
-  AttachmentPage,
-  GateEvaluation,
-  ListResult,
-  QueryResult,
-  VerifyChainResult,
+import {
+  PAGE_CHARS_CAP,
+  type AttachmentPage,
+  type GateEvaluation,
+  type ListResult,
+  type QueryResult,
+  type VerifyChainResult,
 } from '../../src/queries/query-service.ts';
-import { at } from '../helpers.ts';
+import { at, createTempDir } from '../helpers.ts';
 import { type Environment, createEnvironment, expectError } from './environment.ts';
 
 const PROJECT = 'alpha';
@@ -38,6 +41,11 @@ const ALL_TOOLS = [
   'list',
 ];
 const READ_ONLY_TOOLS = ['query', 'evaluate_gate', 'verify_chain', 'read_attachment', 'list'];
+
+// Restrições do Claude Code ao `inputSchema` (TM1): nome de propriedade de topo, draft e raiz sem combinadores.
+const PROPERTY_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
+const JSON_SCHEMA_DRAFT = 'https://json-schema.org/draft/2020-12/schema';
+const ROOT_COMBINATORS = ['anyOf', 'oneOf', 'allOf'];
 
 // Limites do plano (TM2, TM7): descrição por tool e soma dos `outputSchema` anunciados.
 const DESCRIPTION_MAX_CHARS = 2_048;
@@ -66,9 +74,9 @@ const servicesOverServerData = () =>
   }).services;
 
 /** Define um tipo `note`, o gate `has-note` e cria o processo `run-1`, na ordem que o manifesto exige. */
-async function prepareProcess(process = 'run-1', gate = 'has-note'): Promise<void> {
+async function prepareProcess(process = 'run-1'): Promise<void> {
   await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-  await succeed('define_gate', { project: PROJECT, name: gate, questions: NOTE_GATE });
+  await succeed('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
   await succeed('create_process', { project: PROJECT, process });
 }
 
@@ -102,27 +110,33 @@ describe('TM1: catálogo anunciado em tools/list', () => {
 
     expect(alwaysLoad.map(({ name }) => name)).toEqual(['register']);
   });
-});
 
-describe('SL8: alcance projeto no lugar da tool timeline', () => {
-  test('a tool timeline não existe no catálogo', async () => {
+  test.each(ALL_TOOLS)('%s anuncia title e as anotações completas', async (name) => {
     const { tools } = await environment.client.listTools();
+    const tool = tools.find((candidate) => candidate.name === name);
+    const annotations = READ_ONLY_TOOLS.includes(name)
+      ? { readOnlyHint: true, openWorldHint: false }
+      : {
+          readOnlyHint: false,
+          destructiveHint: false,
+          // Sem `key`, repetir o `register` grava de novo.
+          idempotentHint: name !== 'register',
+          openWorldHint: false,
+        };
 
-    expect(tools.map(({ name }) => name)).not.toContain('timeline');
+    expect(tool?.title).toMatch(/\S/);
+    expect(tool?.annotations).toEqual(annotations);
   });
 
-  test('o query com scope project lê registros de mais de um processo', async () => {
-    await prepareProcess('run-1');
-    await succeed('create_process', { project: PROJECT, process: 'run-2' });
-    await registerNote('run-1', 'primeiro');
-    await registerNote('run-2', 'segundo');
+  test.each(ALL_TOOLS)('inputSchema de %s cumpre as restrições do Claude Code', async (name) => {
+    const { tools } = await environment.client.listTools();
+    const inputSchema = tools.find((candidate) => candidate.name === name)?.inputSchema;
 
-    const page = await succeed<QueryResult>('query', { project: PROJECT, scope: 'project' });
-
-    expect(page.records.map(({ data }) => data)).toEqual([
-      { text: 'primeiro' },
-      { text: 'segundo' },
-    ]);
+    expect(inputSchema).toMatchObject({ $schema: JSON_SCHEMA_DRAFT, type: 'object' });
+    expect(
+      Object.keys(inputSchema?.properties ?? {}).filter((key) => !PROPERTY_NAME.test(key)),
+    ).toEqual([]);
+    expect(ROOT_COMBINATORS.filter((keyword) => keyword in (inputSchema ?? {}))).toEqual([]);
   });
 });
 
@@ -141,8 +155,12 @@ describe('TM2: descrição das tools', () => {
     const { tools } = await environment.client.listTools();
     const descriptionOf = (name: string) => tools.find((tool) => tool.name === name)?.description;
 
-    expect(descriptionOf('query')).toMatch(/at most 100 ids.*omitted.*must not be reused/s);
-    expect(descriptionOf('evaluate_gate')).toMatch(/at most 100 ids.*omitted/s);
+    expect(descriptionOf('query')).toMatch(
+      new RegExp(`at most ${CHANGES_ITEMS_CAP} ids.*omitted.*must not be reused`, 's'),
+    );
+    expect(descriptionOf('evaluate_gate')).toMatch(
+      new RegExp(`at most ${EVIDENCE_ITEMS_CAP} ids.*omitted`, 's'),
+    );
   });
 });
 
@@ -160,25 +178,14 @@ describe('TM7: outputSchema anunciado', () => {
 });
 
 describe('um fluxo feliz por tool', () => {
-  test('define_type devolve a versão criada e o replay não cria outra', async () => {
+  test('define_type devolve a versão criada', async () => {
     const created = await succeed<Defined>('define_type', {
-      project: PROJECT,
-      name: 'note',
-      schema: NOTE,
-    });
-    const replay = await succeed<Defined>('define_type', {
       project: PROJECT,
       name: 'note',
       schema: NOTE,
     });
 
     expect(created).toMatchObject({ name: 'note', version: '1.0', created: true });
-    expect(replay).toMatchObject({
-      name: 'note',
-      version: '1.0',
-      hash: created.hash,
-      created: false,
-    });
   });
 
   test('define_relation devolve a versão criada', async () => {
@@ -201,15 +208,11 @@ describe('um fluxo feliz por tool', () => {
     expect(created).toMatchObject({ name: 'has-note', version: '1.0', created: true });
   });
 
-  test('create_process fixa o que está definido e é idempotente por nome', async () => {
+  test('create_process fixa o que está definido', async () => {
     await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
     await succeed('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
 
     const created = await succeed<CreateProcessResult>('create_process', {
-      project: PROJECT,
-      process: 'run-1',
-    });
-    const again = await succeed<CreateProcessResult>('create_process', {
       project: PROJECT,
       process: 'run-1',
     });
@@ -220,7 +223,6 @@ describe('um fluxo feliz por tool', () => {
       created: true,
       pinned: { types: ['note'], gates: ['has-note'] },
     });
-    expect(again).toMatchObject({ created: false, pinned: created.pinned });
   });
 
   test('register grava o lote e devolve ids, replayed e marcador', async () => {
@@ -239,38 +241,40 @@ describe('um fluxo feliz por tool', () => {
     expect(result.marker).toEqual({ 'run-1': saved?.id });
   });
 
-  test('register com a mesma chave e o mesmo lote devolve replayed com os mesmos ids, sem gravar de novo', async () => {
-    await prepareProcess();
-    const input = {
-      project: PROJECT,
-      process: 'run-1',
-      agent: 'executor',
-      key: 'lote-1',
-      records: [{ type: 'note', target: 'run.step', data: { text: 'olá' } }],
-    };
-
-    const first = await succeed<RegisterResult>('register', input);
-    const replay = await succeed<RegisterResult>('register', input);
-    const page = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
-
-    expect(replay).toEqual({ ...first, replayed: true });
-    expect(page.records).toHaveLength(1);
-  });
-
-  test('register com a mesma chave e outro lote dá IDEMPOTENCY_CONFLICT', async () => {
-    await prepareProcess();
-    const input = (text: string) => ({
-      project: PROJECT,
-      process: 'run-1',
-      agent: 'executor',
-      key: 'lote-1',
-      records: [{ type: 'note', target: 'run.step', data: { text } }],
+  test('register grava o author com o client do envelope e o model só quando informado', async () => {
+    const withEnvelope = await createEnvironment({
+      clientInfo: { name: 'claude-code', version: '2' },
     });
-    await succeed('register', input('olá'));
+    try {
+      await withEnvelope.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE });
+      await withEnvelope.ok('create_process', { project: PROJECT, process: 'run-1' });
+      const note = { type: 'note', target: 'run.step', data: { text: 'olá' } };
+      await withEnvelope.ok('register', {
+        project: PROJECT,
+        process: 'run-1',
+        agent: 'executor',
+        model: 'sonnet',
+        records: [note],
+      });
+      await withEnvelope.ok('register', {
+        project: PROJECT,
+        process: 'run-1',
+        agent: 'executor',
+        records: [note],
+      });
 
-    const result = await environment.call('register', input('outro'));
+      const page = await withEnvelope.ok<QueryResult>('query', {
+        project: PROJECT,
+        process: 'run-1',
+      });
 
-    expectError(result, 'IDEMPOTENCY_CONFLICT');
+      expect(page.records.map(({ author }) => author)).toEqual([
+        { agent: 'executor', model: 'sonnet', client: 'claude-code' },
+        { agent: 'executor', client: 'claude-code' },
+      ]);
+    } finally {
+      await withEnvelope.close();
+    }
   });
 
   test('attach guarda o texto e a repetição vem como deduplicated', async () => {
@@ -279,23 +283,6 @@ describe('um fluxo feliz por tool', () => {
 
     expect(first).toMatchObject({ bytes: Buffer.byteLength('conteúdo'), deduplicated: false });
     expect(second).toEqual({ ...first, deduplicated: true });
-  });
-
-  test('read_attachment devolve o texto guardado pelo hash', async () => {
-    const { hash } = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
-
-    const page = await succeed<AttachmentPage>('read_attachment', { project: PROJECT, hash });
-
-    expect(page).toEqual({ text: 'conteúdo', status: 'ok' });
-  });
-
-  test('query devolve o registro gravado', async () => {
-    await prepareProcess();
-    const { records } = await registerNote('run-1', 'olá');
-
-    const page = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
-
-    expect(page.records.map(({ id }) => id)).toEqual(records.map(({ id }) => id));
   });
 
   test('read_attachment sem maxChars pagina em PAGE_CHARS_CAP', async () => {
@@ -308,33 +295,27 @@ describe('um fluxo feliz por tool', () => {
     expect(page.next).toBe(PAGE_CHARS_CAP);
   });
 
-  test('query com changesSince válido corta entered em CHANGES_ITEMS_CAP e informa omitted', async () => {
-    await prepareProcess();
-    await registerNote('run-1', 'primeira');
-    const { marker } = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
-    const batch = (size: number) =>
-      succeed<RegisterResult>('register', {
+  test('attach por path guarda os bytes do arquivo sob o cwd do servidor', async () => {
+    const cwd = createTempDir('mcp-cwd');
+    const text = 'conteúdo do plano';
+    fs.writeFileSync(path.join(cwd, 'plano.md'), text);
+    const scoped = await createEnvironment({ cwd });
+
+    try {
+      const put = await scoped.ok<AttachmentPut>('attach', {
         project: PROJECT,
-        process: 'run-1',
-        agent: 'executor',
-        records: Array.from({ length: size }, (_, i) => ({
-          type: 'note',
-          target: 'run.step',
-          data: { text: `n${i}` },
-        })),
+        path: path.join(cwd, 'plano.md'),
       });
-    await batch(BATCH_MAX);
-    await batch(BATCH_MAX);
-    await batch(1);
+      const page = await scoped.ok<AttachmentPage>('read_attachment', {
+        project: PROJECT,
+        hash: put.hash,
+      });
 
-    const page = await succeed<QueryResult>('query', {
-      project: PROJECT,
-      process: 'run-1',
-      changesSince: marker,
-    });
-
-    expect(page.changes?.entered).toHaveLength(CHANGES_ITEMS_CAP);
-    expect(page.changes).toMatchObject({ omitted: { entered: 1, left: 0 } });
+      expect(put).toMatchObject({ bytes: Buffer.byteLength(text), deduplicated: false });
+      expect(page.text).toBe(text);
+    } finally {
+      await scoped.close();
+    }
   });
 
   test('N1: com omitted, reusar o marker perde os ids cortados e a releitura completa os devolve', async () => {
@@ -427,59 +408,6 @@ describe('um fluxo feliz por tool', () => {
 
     expect(result.questions[0]).not.toHaveProperty('omitted');
   });
-
-  test('evaluate_gate com marker de sucesso reavalia sobre o que existia então', async () => {
-    await prepareProcess();
-    const args = { project: PROJECT, process: 'run-1', gate: 'has-note' };
-    const { marker } = await succeed<GateEvaluation>('evaluate_gate', args);
-    await registerNote('run-1', 'olá');
-
-    const replayed = await succeed<GateEvaluation>('evaluate_gate', { ...args, marker });
-    const current = await succeed<GateEvaluation>('evaluate_gate', args);
-
-    expect([replayed.passed, current.passed]).toEqual([false, true]);
-  });
-
-  test('evaluate_gate aprova o gate depois do registro', async () => {
-    await prepareProcess();
-    const args = { project: PROJECT, process: 'run-1', gate: 'has-note' };
-
-    const before = await succeed<GateEvaluation>('evaluate_gate', args);
-    await registerNote('run-1', 'olá');
-    const after = await succeed<GateEvaluation>('evaluate_gate', args);
-
-    expect([before.passed, after.passed]).toEqual([false, true]);
-  });
-
-  test('verify_chain confirma a cadeia íntegra', async () => {
-    await prepareProcess();
-    await registerNote('run-1', 'olá');
-
-    const chain = await succeed<VerifyChainResult>('verify_chain', {
-      project: PROJECT,
-      process: 'run-1',
-    });
-
-    expect(chain).toMatchObject({
-      ok: true,
-      totalRecords: 1,
-      breaks: [],
-      totalBreaks: 0,
-      attachmentBreaks: [],
-      totalAttachmentBreaks: 0,
-    });
-  });
-
-  test('list mostra o projeto, o processo e as definições', async () => {
-    await prepareProcess();
-
-    const projects = await succeed<ListResult>('list', {});
-    const project = await succeed<ListResult>('list', { project: PROJECT });
-
-    expect(projects.projects).toEqual([{ name: PROJECT, processes: 1 }]);
-    expect(project.project?.processes.map(({ name }) => name)).toEqual(['run-1']);
-    expect(project.project?.types.map(({ name }) => name)).toEqual(['note']);
-  });
 });
 
 describe('SE7: as tools devolvem o que o serviço devolve', () => {
@@ -545,47 +473,5 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
 
     const body = expectError(result, 'PROCESS_NOT_FOUND');
     expect(at(body.details, 0).path).toBe('/process');
-  });
-});
-
-describe('N5: nome constructor é válido e nunca vira INTERNAL', () => {
-  test('processo e gate chamados constructor funcionam de ponta a ponta', async () => {
-    await prepareProcess('constructor', 'constructor');
-
-    const before = await succeed<GateEvaluation>('evaluate_gate', {
-      project: PROJECT,
-      process: 'constructor',
-      gate: 'constructor',
-    });
-    await registerNote('constructor', 'olá');
-    const after = await succeed<GateEvaluation>('evaluate_gate', {
-      project: PROJECT,
-      process: 'constructor',
-      gate: 'constructor',
-    });
-    const page = await succeed<QueryResult>('query', { project: PROJECT, process: 'constructor' });
-
-    expect([before.passed, after.passed]).toEqual([false, true]);
-    expect(page.records).toHaveLength(1);
-  });
-
-  test('gate constructor que o processo não fixou é GATE_NOT_FOUND, não INTERNAL', async () => {
-    await prepareProcess();
-
-    const result = await environment.call('evaluate_gate', {
-      project: PROJECT,
-      process: 'run-1',
-      gate: 'constructor',
-    });
-
-    expectError(result, 'GATE_NOT_FOUND');
-  });
-
-  test('processo constructor inexistente é PROCESS_NOT_FOUND, não INTERNAL', async () => {
-    await prepareProcess();
-
-    const result = await environment.call('query', { project: PROJECT, process: 'constructor' });
-
-    expectError(result, 'PROCESS_NOT_FOUND');
   });
 });

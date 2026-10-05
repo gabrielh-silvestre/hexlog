@@ -4,8 +4,6 @@ import type { Manifest } from './domain/manifest.ts';
 import type { HexRecord } from './domain/record.ts';
 import type { Detail } from './errors.ts';
 
-export type { Manifest };
-
 /** Processo = par projeto/nome; o id de um registro carrega só o processo (D-01). */
 export type ProcessRef = { project: Name; process: Name };
 
@@ -49,8 +47,9 @@ export type ProcessReader = {
    * `read`.
    */
   readManifest(ref: ProcessRef): Manifest;
-  /** Nomes dos processos do projeto. */
+  /** Nomes dos processos do projeto, em ordem de unidade de código (a do `sort` padrão). */
   list(project: Name): Name[];
+  /** Nomes dos projetos, na mesma ordem de `list`. */
   listProjects(): Name[];
 };
 
@@ -67,7 +66,10 @@ export type ProcessStore = ProcessReader & {
    * grava `line` (se houver), faz fsync, solta o lock e devolve `result`. O erro lançado por
    * `decide` sai intacto. `PROCESS_NOT_FOUND` se o processo não existe; `PROCESS_TOO_LARGE` se
    * `line` faria o arquivo passar de `MAX_LOG_BYTES` (o lote é recusado sem gravar e o processo
-   * continua legível).
+   * continua legível). Se o `release` falha depois do `fsync`, a linha já é durável e mesmo assim
+   * `write` lança `IO_ERROR`: reenviar com a mesma `key` vira `replayed` (D-06) e sem `key` duplica o
+   * lote. Se `decide` ou a gravação já falharam, o erro delas sai inalterado e a falha do
+   * `release` vai só ao log (`release-failed`).
    */
   write<T>(ref: ProcessRef, decide: (raw: RawProcess) => Decision<T>): Promise<T>;
 };
@@ -101,11 +103,12 @@ export type DefinitionStore = DefinitionReader & {
     version: string,
   ): DefinitionOf[K];
   /**
-   * `false` quando a versão já existe: uma versão gravada nunca é sobrescrita. `INVALID_INPUT`
-   * (`invalid-version`) se a versão não é `<major>.<minor>` canônica. Valida a definição contra o
-   * schema de domínio do `kind` antes de gravar e lança `INTERNAL` (`invalid-definition`, `path`
-   * `/definition`, sem o conteúdo) se não passar, para não gravar uma versão que o próprio `read`
-   * recusaria.
+   * `false` quando a versão já existe: uma versão gravada nunca é sobrescrita. O `false` não
+   * distingue replay (a mesma definição) de conflito (outra): quem chama relê com `versions` e
+   * `read` e compara. `INVALID_INPUT` (`invalid-version`) se a versão não é `<major>.<minor>`
+   * canônica. Valida a definição contra o schema de domínio do `kind` antes de gravar e lança
+   * `INTERNAL` (`invalid-definition`, `path` `/definition`, sem o conteúdo) se não passar, para não
+   * gravar uma versão que o próprio `read` recusaria.
    */
   write<K extends DefinitionKind>(
     project: Name,
@@ -120,7 +123,7 @@ export type AttachmentStatus = 'ok' | 'missing' | 'corrupted';
 
 /**
  * Resultado de gravar um anexo: `deduplicated` é `true` quando o blob com esse hash já existia e foi
- * só conferido, nunca sobrescrito. A saída de `attach` o repassa (§4.1 do plano).
+ * só conferido, nunca sobrescrito. A saída de `attach` o repassa.
  */
 export type AttachmentPut = { hash: Hash; bytes: number; deduplicated: boolean };
 
@@ -177,8 +180,9 @@ export type Validator = {
    * `$ref` sem destino, `$schema` de outro rascunho, `$id` de metaschema, `$async: true`) saem como
    * um só `Detail` com `path` vazio (a raiz) e `code` `invalid-schema`. Também recusa regex que
    * pode explodir em tempo (ReDoS):
-   * `pattern` ou chave de `patternProperties` reprovados pela `safe-regex2`, e `pattern` sem
-   * `maxLength` de até 256 no mesmo subschema; saem com `path` do campo (relativo ao schema) e
+   * `pattern` ou chave de `patternProperties` reprovados pela `safe-regex2`, `pattern` sem
+   * `maxLength` de até 256 no mesmo subschema e `patternProperties` sem `propertyNames.maxLength`
+   * de até 256 no mesmo subschema; saem com `path` do campo (relativo ao schema) e
    * `code` `invalid-schema`. Devolve todos os erros do schema. Limite conhecido: a `safe-regex2` é
    * heurística, e alternância sobreposta como `(a|aa)+` passa (risco aceito em 2026-10-02). A
    * `safe-regex2` também recusa regex linear com grupo repetido (falso positivo, ex.: kebab-case);
@@ -192,8 +196,8 @@ export type Validator = {
    * (vira `INTERNAL` na borda, `mcp/kernel.ts#execute`). O `path` dos detalhes é relativo a `data`.
    * Devolve um erro por subschema avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames`
    * saem os dos ramos). O `maxLength` é avaliado antes do `pattern` e o ajv para aí em cada
-   * ramo, então o regex nunca roda sobre string acima do teto. Isso não cobre
-   * a chave de `patternProperties` (nomes de propriedade não têm teto); ali só vale a `safe-regex2`.
+   * ramo, então o regex nunca roda sobre string acima do teto; o `propertyNames.maxLength` exigido
+   * junto de `patternProperties` limita da mesma forma o nome que a chave de regex avalia.
    */
   validate(schema: RecordType, data: HexRecord['data']): Detail[];
 };
@@ -205,9 +209,15 @@ export const PROJECT_INDEX = '*';
  * Índice de texto sobre os registros já carregados; devolve ids por relevância. O `process` é a
  * chave do cache. `records` pode ser o log inteiro do processo, o prefixo cortado pelo marcador
  * (cursor e `changesSince`) ou a lista mesclada do projeto sob um `ProcessRef` com
- * `process: PROJECT_INDEX` (`queries/select.ts#indexRef`). `allowed`, quando passado, restringe o
+ * `process: PROJECT_INDEX` (`queries/select.ts#select`). `allowed`, quando passado, restringe o
  * resultado a esses ids e também decide o fallback `OR`: o conjunto devolvido é o dos registros
  * permitidos que casam (`adapters/search.ts#createSearchIndex`).
+ *
+ * Invariantes do chamador: `PROJECT_INDEX` (`'*'`) não é um `Name` e só compila porque `Name` é
+ * `string`; `records` vêm de leitura de cadeia verificada (`queries/read.ts#readScope`); e as
+ * listas sucessivas de um mesmo processo são prefixos do mesmo log append-only, que é o que torna
+ * a contagem mais a impressão do último registro uma chave de validade correta. A impressão é o
+ * `JSON.stringify` do registro (`adapters/search.ts#fingerprintOf`), não o JCS da cadeia.
  */
 export type SearchIndex = {
   search(
@@ -216,4 +226,10 @@ export type SearchIndex = {
     text: string,
     allowed?: ReadonlySet<RecordId>,
   ): RecordId[];
+  /**
+   * Termos pesquisáveis de `text`, pelo mesmo tokenizador de `search` (distintos, sem acento, em
+   * minúsculas). Vazio quando `text` não tem nenhum (só espaço ou pontuação): `search` não casaria
+   * nada, e quem consulta recusa em vez de devolver `[]`.
+   */
+  terms(text: string): string[];
 };

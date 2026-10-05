@@ -1,7 +1,7 @@
-import { once } from 'es-toolkit';
-import { hashLink, type Batch, type Link } from '../domain/chain.ts';
-import { processOf, type Hash, type Name, type RecordId } from '../domain/ids.ts';
-import type { BatchItem, Relation, RelationInput } from '../domain/record.ts';
+import { invert, memoize, once } from 'es-toolkit';
+import { hashLink, type Batch, type Link } from '../../domain/chain.ts';
+import { processOf, type Hash, type Marker, type Name, type RecordId } from '../../domain/ids.ts';
+import type { Author, BatchItem, Relation, RelationInput } from '../../domain/record.ts';
 import {
   buildVigency,
   checkRelation,
@@ -11,9 +11,15 @@ import {
   type RelationEnd,
   type RuleContext,
   type Vigency,
-} from '../domain/relations.ts';
-import { HexlogError } from '../errors.ts';
-import type { AttachmentStore, Decision, ProcessRef, ProcessStore, RawProcess } from '../ports.ts';
+} from '../../domain/relations.ts';
+import { brokenChain, HexlogError } from '../../errors.ts';
+import type {
+  AttachmentStore,
+  Decision,
+  ProcessReader,
+  ProcessRef,
+  RawProcess,
+} from '../../ports.ts';
 import {
   formatLine,
   isValidLine,
@@ -21,21 +27,45 @@ import {
   verifyProcess,
   type BatchEntry,
   type VerifiedProcess,
-} from '../shared/loader.ts';
-import { checkAttachments } from './register-attachments.ts';
-import { relationNotFound, ruleRefusal, withPath } from './register-errors.ts';
-import { isAliasRef, type PreparedItem } from './register-static.ts';
-import type { RegisteredRecord, RegisterInput, RegisterResult } from './register-types.ts';
+} from '../../shared/loader.ts';
+import { checkAttachments } from './attachments.ts';
+import { relationNotFound, ruleRefusal, withPath } from './errors.ts';
+import { isAliasRef, type PreparedItem } from './static.ts';
 
-export type DecideDeps = {
-  store: Pick<ProcessStore, 'read'>;
+/**
+ * A entrada chega validada pelos schemas de `domain/record.ts` (`BatchItem`, `Author`, `key`): o
+ * serviço não revalida. Fora do formato, a última barreira (`isValidLine`) devolve `INTERNAL` sem
+ * `details`.
+ */
+export type RegisterInput = {
+  project: Name;
+  /** Processo de origem: o único que a gravação trava (D-12). */
+  process: Name;
+  /** D-21: `author.client` chega do adaptador, o serviço nunca o descobre sozinho. */
+  author: Author;
+  /** Idempotência (D-06): mesma `key` com a mesma impressão devolve o lote já gravado. */
+  key?: string;
+  records: readonly BatchItem[];
+};
+
+type RegisteredRecord = { alias?: Name; id: RecordId };
+
+export type RegisterResult = {
+  records: RegisteredRecord[];
+  replayed: boolean;
+  /** Cabeça da origem lida em `decide`: o último id gravado (ou, no replay, o da cabeça atual). */
+  marker: Marker;
+};
+
+type DecideDeps = {
+  store: ProcessReader;
   attachments: AttachmentStore;
   clock: () => Date;
   newUuid: () => string;
 };
 
 /** O que `decide` sabe da chamada, já com o que as checagens estáticas resolveram. */
-export type DecideCall = Pick<RegisterInput, 'project' | 'process' | 'author' | 'key'> & {
+type DecideCall = Pick<RegisterInput, 'project' | 'process' | 'author' | 'key'> & {
   fingerprint: Hash;
   items: readonly PreparedItem[];
   names: ReadonlyMap<Name, NamedRelation>;
@@ -46,18 +76,14 @@ type DraftRelation = { stored: Relation; input: RelationInput };
 /** Item do lote com id atribuído e relações resolvidas: `to` já é um id, `kind` sempre preenchido. */
 type Draft = { id: RecordId; item: BatchItem; relations: DraftRelation[] };
 
+/** Os itens do lote com id, e o mapa apelido para id deles. */
+type Drafted = { drafts: Draft[]; aliases: Record<Name, RecordId> };
+
 /** Uma relação de um item do lote, com a posição que os `path` de erro apontam. */
 type Site = { index: number; at: number; draft: Draft; relation: DraftRelation };
 
 /** Registros de um processo-destino que as relações podem citar, e a vigência deles. */
 type Destination = { types: ReadonlyMap<RecordId, Name>; vigency: Vigency };
-
-function brokenChain(process: Name): HexlogError {
-  const message = 'process chain is broken';
-  return new HexlogError('PROCESS_CORRUPTED', message, [
-    { path: '/process', code: 'broken-chain', message, process },
-  ]);
-}
 
 /** D-06 nível 5: a mesma `key` com outra impressão é conflito; com a mesma, o chamador faz o replay. */
 function assertSameBatch(prior: BatchEntry, fingerprint: Hash): void {
@@ -70,22 +96,25 @@ function assertSameBatch(prior: BatchEntry, fingerprint: Hash): void {
 
 function registeredOf(links: readonly Link[]): RegisteredRecord[] {
   const aliases = links[0]?.batch?.aliases ?? {};
-  const aliasOf = new Map(Object.entries(aliases).map(([alias, id]) => [id, alias]));
+  const aliasOf = invert(aliases);
   return links.map(({ id }) => {
-    const alias = aliasOf.get(id);
+    const alias = aliasOf[id];
     return alias === undefined ? { id } : { alias, id };
   });
 }
 
-/** Atribui os ids e resolve `@alias` e `kind`; as checagens estáticas já garantiram que o alias existe. */
-function draftItems({ process, items }: DecideCall, newUuid: () => string): Draft[] {
+/**
+ * Atribui os ids e resolve `@alias` e `kind`; as checagens estáticas já garantiram que o alias
+ * existe. `aliases` é o mapa apelido para id que `linkItems` grava no `batch` do primeiro elo.
+ */
+function draftItems({ process, items }: DecideCall, newUuid: () => string): Drafted {
   const ided = items.map((prepared) => ({ prepared, id: `${process}:${newUuid()}` }));
   const aliasIds = new Map(
     ided.flatMap(({ prepared, id }) =>
       prepared.item.alias === undefined ? [] : [[prepared.item.alias, id] as const],
     ),
   );
-  return ided.map(({ prepared: { item, relations }, id }) => ({
+  const drafts = ided.map(({ prepared: { item, relations }, id }) => ({
     id,
     item,
     relations: relations.map(({ input, kind }) => {
@@ -93,6 +122,7 @@ function draftItems({ process, items }: DecideCall, newUuid: () => string): Draf
       return { input, stored: { kind, to, ...(input.as !== undefined && { as: input.as }) } };
     }),
   }));
+  return { drafts, aliases: Object.fromEntries(aliasIds) };
 }
 
 function* sitesOf(drafts: readonly Draft[]): Generator<Site> {
@@ -118,13 +148,9 @@ function createEnforcer(
     relations: relations.map(({ stored }) => stored),
   }));
   const wholeBatch = once(() => buildVigency([...verified.records, ...batchLinks]));
-  const priorItems = new Map<number, Vigency>();
-  const before = (index: number): Vigency => {
-    const known =
-      priorItems.get(index) ?? buildVigency([...verified.records, ...batchLinks.slice(0, index)]);
-    priorItems.set(index, known);
-    return known;
-  };
+  const before = memoize((index: number) =>
+    buildVigency([...verified.records, ...batchLinks.slice(0, index)]),
+  );
 
   const enforce = (site: Site, to: RelationEnd, vigencyFor: RuleContext['vigencyFor']) => {
     const { draft, relation, at } = site;
@@ -152,11 +178,7 @@ function createEnforcer(
 type Enforcer = ReturnType<typeof createEnforcer>;
 
 /** Leitura verificada do processo-destino; ausente, ilegível ou com quebra é `RELATION_NOT_FOUND`. */
-function loadDestination(
-  store: Pick<ProcessStore, 'read'>,
-  ref: ProcessRef,
-  path: string,
-): Destination {
+function loadDestination(store: ProcessReader, ref: ProcessRef, path: string): Destination {
   let verified: VerifiedProcess;
   try {
     verified = loadVerified(store, ref);
@@ -167,8 +189,9 @@ function loadDestination(
     if (error instanceof HexlogError && error.code === 'PROCESS_CORRUPTED') {
       throw relationNotFound(path, 'destination-corrupted', ref.process);
     }
-    // O nome veio do `to` da relação, não do campo `/process` que a porta presume.
-    throw withPath(error, `${path}/to`);
+    // O nome veio do `to` da relação, não do campo `/process` que a porta presume, e o erro é da
+    // leitura do destino, não da origem: `process` o nomeia.
+    throw withPath(error, `${path}/to`, ref.process);
   }
   if (!verified.chain.ok) throw relationNotFound(path, 'destination-corrupted', ref.process);
   return {
@@ -230,12 +253,10 @@ function linkItems(
   call: DecideCall,
   verified: VerifiedProcess,
   drafts: readonly Draft[],
+  aliases: Drafted['aliases'],
   at: string,
 ): Link[] {
   const { author, key, fingerprint } = call;
-  const aliases = Object.fromEntries(
-    drafts.flatMap(({ id, item }) => (item.alias === undefined ? [] : [[item.alias, id]])),
-  );
   const batch: Batch = {
     fingerprint,
     ...(key !== undefined && { key }),
@@ -288,14 +309,14 @@ export function createDecide(
       };
     }
 
-    const drafts = draftItems(call, deps.newUuid);
+    const { drafts, aliases } = draftItems(call, deps.newUuid);
     const enforcer = createEnforcer(names, verified, drafts);
     checkOtherProcesses(deps, call, enforcer, drafts);
     checkAttachments(project, items, deps.attachments);
     checkOwnProcess(call, enforcer, verified, drafts);
     if (hasCycle([...verified.records, ...enforcer.batchLinks])) throw cycleRejected();
 
-    const links = linkItems(call, verified, drafts, deps.clock().toISOString());
+    const links = linkItems(call, verified, drafts, aliases, deps.clock().toISOString());
     const line = formatLine(links);
     if (isValidLine(line, verified.end).status !== 'valid') {
       throw new HexlogError('INTERNAL', 'built an invalid batch line');

@@ -1,15 +1,8 @@
 import { describe, test, expect, jest } from '@jest/globals';
-import {
-  buildVigency,
-  checkRelation,
-  hasCycle,
-  lineages,
-  needsReview,
-  RelationKind,
-} from '../../src/domain/relations.ts';
+import { buildVigency, checkRelation, hasCycle, needsReview } from '../../src/domain/relations.ts';
 import type { Linked, NamedRelation, RuleContext, Vigency } from '../../src/domain/relations.ts';
-import { RelationKind as RecordRelationKind } from '../../src/domain/record.ts';
 import type { RelationInput, RelationKind as Kind } from '../../src/domain/record.ts';
+import * as rdsc from '../fixtures/domains/rdsc.ts';
 
 const id = (process: string, n: number) => `${process}:${String(n).padStart(8, '0')}`;
 
@@ -18,12 +11,6 @@ function rec(recordId: string, ...relations: [Kind, string][]): Linked {
 }
 
 const [e1, e2, v1, v2] = [id('p', 1), id('p', 2), id('p', 3), id('p', 4)];
-
-describe('RelationKind', () => {
-  test('é o mesmo de record.ts, reexportado sem duplicar', () => {
-    expect(RelationKind).toBe(RecordRelationKind);
-  });
-});
 
 describe('vigência e linhagem (D-08)', () => {
   test('registro sem relação de entrada é vigente, e id desconhecido também', () => {
@@ -61,28 +48,6 @@ describe('vigência e linhagem (D-08)', () => {
     const records = [rec(e1), rec(e2, ['supersedes', e1]), rec(v1, ['supersedes', e2])];
     const vigency = buildVigency([...records].reverse());
     expect(vigency.currentOf(e1)).toBe(v1);
-  });
-
-  test('lineages agrupa por supersedes, e revokes não junta linhagens', () => {
-    const groups = lineages([
-      rec(e1),
-      rec(e2, ['supersedes', e1]),
-      rec(v1),
-      rec(v2, ['revokes', v1]),
-    ]);
-    expect(groups.map((group) => [...group].sort())).toEqual(
-      expect.arrayContaining([[e1, e2], [v1], [v2]]),
-    );
-    expect(groups).toHaveLength(3);
-  });
-
-  test('lineages ignora supersedes para registro não lido e não funde linhagens por ele', () => {
-    const [q1, q2] = [id('q', 1), id('q', 2)];
-    const groups = lineages([rec(e1, ['supersedes', q1]), rec(e2, ['supersedes', q2]), rec(v1)]);
-    expect(groups.map((group) => [...group].sort())).toEqual(
-      expect.arrayContaining([[e1], [e2], [v1]]),
-    );
-    expect(groups).toHaveLength(3);
   });
 
   test('currentOf termina e devolve null num ciclo montado à mão', () => {
@@ -132,9 +97,8 @@ describe('ciclo', () => {
 
 describe('regras estruturais (D-10)', () => {
   const names = new Map<string, NamedRelation>([
-    ['replaces', { kind: 'supersedes' }],
+    ...rdsc.relations.map((relation): [string, NamedRelation] => [relation.name, relation]),
     ['replaces-doc', { kind: 'supersedes', to: ['doc'] }],
-    ['based-on', { kind: 'supports', from: ['verdict'], to: ['evidence'] }],
   ]);
 
   /** Mesma vigência para qualquer tipo de relação. */

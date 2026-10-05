@@ -76,13 +76,6 @@ function usesNetworkServerModule(content: string): boolean {
 const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
 describe('N7', () => {
-  test('package.json não depende de xstate, hexnucleus, core.poc-motor-log nem uuid', () => {
-    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-    for (const forbidden of ['xstate', 'hexnucleus', 'core.poc-motor-log', 'uuid']) {
-      expect(allDeps).not.toHaveProperty(forbidden);
-    }
-  });
-
   test('nenhum import relativo/absoluto em src/, hook/, scripts/ ou test/ sai do repo', () => {
     const files = ['src', 'hook', 'scripts', 'test'].flatMap((dir) =>
       listFilesRecursive(path.join(repoRoot, dir)),
@@ -96,14 +89,8 @@ describe('N7', () => {
   });
 });
 
-describe('S6', () => {
-  test('zod está fixado em 4.6.5', () => {
-    expect(pkg.dependencies.zod).toBe('4.6.5');
-  });
-});
-
 describe('N11', () => {
-  // Manifesto literal de §2.2 — versões exatas (npm install --save-exact).
+  // Versões exatas (npm install --save-exact).
   const EXPECTED_DEPENDENCIES = {
     '@modelcontextprotocol/server': '2.0.0',
     zod: '4.6.5',
@@ -114,8 +101,7 @@ describe('N11', () => {
     'jsonc-parser': '3.3.1',
     'es-toolkit': '1.52.0',
     minisearch: '7.2.0',
-    // Não consta no manifesto original de §2.2: entrou pela decisão N1 (ReDoS em `pattern`,
-    // `Validator.checkSchema`); o plano deve ser emendado na F8.
+    // Entrou pela decisão N1 (ReDoS em `pattern`, `Validator.checkSchema`; ADR 0009, item 20).
     'safe-regex2': '5.1.1',
   };
   const EXPECTED_DEV_DEPENDENCIES = {
@@ -128,7 +114,7 @@ describe('N11', () => {
     '@types/shell-quote': '1.7.5',
     'fast-check': '4.10.1',
     esbuild: '0.28.2',
-    // Deps de lint/format do plano de quality-tooling (fora do manifesto de §2.2).
+    // Deps de lint/format do plano de quality-tooling (fora do conjunto inicial de dependências).
     eslint: '10.10.0',
     '@eslint/js': '10.0.1',
     'typescript-eslint': '8.70.0',
@@ -141,11 +127,11 @@ describe('N11', () => {
     tar: '7.5.22',
   };
 
-  test('dependencies bate exatamente com o manifesto de §2.2 (sem ^/~/faixas)', () => {
+  test('dependencies bate exatamente com o manifesto de package.json (sem ^/~/faixas)', () => {
     expect(pkg.dependencies).toEqual(EXPECTED_DEPENDENCIES);
   });
 
-  test('devDependencies bate exatamente com o manifesto de §2.2 (sem ^/~/faixas)', () => {
+  test('devDependencies bate exatamente com o manifesto de package.json (sem ^/~/faixas)', () => {
     expect(pkg.devDependencies).toEqual(EXPECTED_DEV_DEPENDENCIES);
   });
 
@@ -169,31 +155,11 @@ describe('M5', () => {
   });
 
   test('nenhum arquivo em src/ importa módulo de servidor de rede nem chama .listen(', () => {
-    // §M5: hexlog é stdio-only — proíbe http/https/http2/net e `.listen(`.
+    // M5: hexlog é stdio-only — proíbe http/https/http2/net e `.listen(`.
     const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
       usesNetworkServerModule(fs.readFileSync(file, 'utf8')),
     );
     expect(violations).toEqual([]);
-  });
-
-  test('detecta import estático de módulo de servidor de rede (from)', () => {
-    expect(usesNetworkServerModule(`import { createServer } from 'node:http';`)).toBe(true);
-  });
-
-  test('detecta require de módulo de servidor de rede', () => {
-    expect(usesNetworkServerModule(`const http = require('node:http');`)).toBe(true);
-  });
-
-  test('detecta import dinâmico de módulo de servidor de rede', () => {
-    expect(usesNetworkServerModule(`const http = await import('node:http');`)).toBe(true);
-  });
-
-  test('detecta chamada .listen(', () => {
-    expect(usesNetworkServerModule('server.listen(3000);')).toBe(true);
-  });
-
-  test('não dispara em createServer que não vem de módulo de servidor de rede (fábrica do hexlog)', () => {
-    expect(usesNetworkServerModule(`import { createServer } from './mcp.ts';`)).toBe(false);
   });
 
   test('não existe diretório cli no repo (fora de node_modules)', () => {

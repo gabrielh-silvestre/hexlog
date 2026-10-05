@@ -5,6 +5,7 @@ import type { RecordId } from './ids.ts';
 import { RelationKind } from './record.ts';
 import type { HexRecord } from './record.ts';
 import { buildVigency, pushTo } from './relations.ts';
+import type { Vigency } from './relations.ts';
 
 /** Valor de `where`: só escalar, para que operadores entrem numa minor sem colidir com objeto. */
 const Scalar = z.union([z.string(), z.number(), z.boolean()]);
@@ -91,9 +92,6 @@ export type QuestionResult = { index: number; passed: boolean } & (
   | { kind: 'no_open_contradiction'; evidence: { conflicting: RecordId[] } }
 );
 
-/** Ids que sustentam o veredito de cada pergunta; o formato de cada variante está em `QuestionResult`. */
-export type Evidence = QuestionResult['evidence'];
-
 export type GateResult = { passed: boolean; questions: QuestionResult[] };
 
 export type GateInput = {
@@ -107,7 +105,7 @@ type Incoming = { kind: RelationKind; from: HexRecord };
 
 type View = {
   records: readonly HexRecord[];
-  isCurrent: (id: RecordId) => boolean;
+  vigency: Vigency;
   incoming: ReadonlyMap<RecordId, Incoming[]>;
 };
 
@@ -118,22 +116,21 @@ function buildView(records: readonly HexRecord[]): View {
       pushTo(incoming, to, { kind, from });
     }
   }
-  const vigency = buildVigency(records);
-  return { records, isCurrent: (id) => vigency.isCurrent(id), incoming };
+  return { records, vigency: buildVigency(records), incoming };
 }
 
 type Context = { view: View; target?: Target };
 
 function currentMatching({ view, target }: Context, selector: Selector): HexRecord[] {
   return view.records.filter(
-    (record) => view.isCurrent(record.id) && matchesSelector(record, selector, target),
+    (record) => view.vigency.isCurrent(record.id) && matchesSelector(record, selector, target),
   );
 }
 
 /** Registros vigentes que apontam para `id` com a relação `kind`. */
 function currentSources({ view }: Context, id: RecordId, kind: RelationKind): HexRecord[] {
   return (view.incoming.get(id) ?? [])
-    .filter((edge) => edge.kind === kind && view.isCurrent(edge.from.id))
+    .filter((edge) => edge.kind === kind && view.vigency.isCurrent(edge.from.id))
     .map((edge) => edge.from);
 }
 

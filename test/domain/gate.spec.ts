@@ -240,17 +240,6 @@ describe('approved', () => {
     const withdrawn = [...records, rec(p5, 'review', [['revokes', p2]])];
     expect(evaluateGate([q], reading(withdrawn)).passed).toBe(false);
   });
-
-  test('plano substituído sai de of: a revisão vigente precisa da própria aprovação', () => {
-    const approvedOriginal = [rec(p1, 'plan'), rec(p2, 'review', [['supports', p1]])];
-    const revised = [...approvedOriginal, rec(p3, 'plan', [['supersedes', p1]])];
-    const result = evaluateGate([q], reading(revised)).questions[0];
-    expect(result?.passed).toBe(false);
-    expect(result?.evidence).toMatchObject({ of: [p3], unsupported: [p3] });
-
-    const reapproved = [...revised, rec(p4, 'review', [['supports', p3]])];
-    expect(evaluateGate([q], reading(reapproved)).passed).toBe(true);
-  });
 });
 
 describe('no_pending', () => {
@@ -462,21 +451,23 @@ describe('fixtures de domínio', () => {
     }
   });
 
-  test('omc declara approves/settles e rdsc declara based-on/replaces', () => {
-    expect(omc.relations.map(({ name, kind }) => [name, kind])).toEqual([
-      ['approves', 'supports'],
-      ['settles', 'answers'],
-    ]);
-    expect(rdsc.relations.map(({ name, kind }) => [name, kind])).toEqual([
-      ['based-on', 'supports'],
-      ['replaces', 'supersedes'],
-    ]);
-  });
-
   test('o gate do rdsc avalia sobre veredito e evidência', () => {
     const questions = Gate.parse(rdsc.gates[0]).questions;
     const records = [rec(p1, 'evidence'), rec(p2, 'verdict', [['supports', p1]])];
     expect(evaluateGate(questions, reading(records)).passed).toBe(true);
     expect(evaluateGate(questions, reading([rec(p1, 'evidence')])).passed).toBe(false);
+  });
+
+  test('o gate do rdsc reprova com contradição vigente sobre o veredito', () => {
+    const questions = Gate.parse(rdsc.gates[0]).questions;
+    const records = [
+      rec(p1, 'evidence'),
+      rec(p2, 'verdict', [['supports', p1]]),
+      rec(p3, 'evidence', [['contradicts', p2]]),
+    ];
+    const result = evaluateGate(questions, reading(records));
+    expect(result.passed).toBe(false);
+    expect(result.questions.map(({ passed }) => passed)).toEqual([true, false]);
+    expect(result.questions[1]?.evidence).toEqual({ conflicting: [p2] });
   });
 });

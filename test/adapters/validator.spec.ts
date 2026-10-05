@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { createValidator, PATTERN_MAX_LENGTH } from '../../src/adapters/validator.ts';
-import type { RecordType } from '../../src/domain/definitions.ts';
+import { attachmentFields, type RecordType } from '../../src/domain/definitions.ts';
 
 const validator = createValidator();
 
@@ -41,6 +41,18 @@ describe('checkSchema', () => {
     expect(validator.checkSchema(schema)).toEqual([
       { path: '', code: 'invalid-schema', message: expect.any(String) },
     ]);
+  });
+
+  test('recusa $ref cíclico com uma mensagem legível e segue funcionando', () => {
+    const cyclic = {
+      $defs: { a: { $ref: '#/$defs/b' }, b: { $ref: '#/$defs/a' } },
+      $ref: '#/$defs/a',
+    };
+
+    expect(validator.checkSchema(cyclic)).toEqual([
+      { path: '', code: 'invalid-schema', message: expect.stringContaining('cyclic $ref') },
+    ]);
+    expect(validator.checkSchema({ type: 'object' })).toEqual([]);
   });
 
   test('a mensagem de recusa não vaza caminho absoluto', () => {
@@ -87,6 +99,19 @@ describe('checkSchema', () => {
     expect(validator.checkSchema({ $id, type: 'object' })).toEqual([]);
   });
 
+  test.each(['', '#'])(
+    '$id %j não nomeia schema: passa mesmo depois de um schema sem $id',
+    (id) => {
+      const fresh = createValidator();
+      const schema = { $id: id, type: 'object' };
+
+      expect(fresh.checkSchema({ type: 'object' })).toEqual([]);
+      expect(fresh.validate({ type: 'object' }, {})).toEqual([]);
+      expect(fresh.checkSchema(schema)).toEqual([]);
+      expect(fresh.validate(schema, {})).toEqual([]);
+    },
+  );
+
   test('recusa schema $async com um detalhe invalid-schema na raiz do schema', () => {
     expect(validator.checkSchema({ $async: true, type: 'string' })).toEqual([
       { path: '', code: 'invalid-schema', message: expect.stringMatching(/async/) },
@@ -112,6 +137,84 @@ describe('checkSchema', () => {
       path: '',
       code: 'too-many-errors',
       message: expect.stringMatching(/^\d+ more errors omitted$/),
+    });
+  });
+
+  describe('format attachment (D-16)', () => {
+    const mark = { type: 'string', format: 'attachment' };
+    const misplaced = (path: string) => [
+      { path, code: 'invalid-schema', message: expect.stringContaining('["string","null"]') },
+    ];
+
+    test('aceita a marca no campo de primeiro nível e nos itens da lista', () => {
+      expect(
+        validator.checkSchema({
+          type: 'object',
+          properties: { file: mark, files: { type: 'array', items: mark } },
+        }),
+      ).toEqual([]);
+    });
+
+    test('aceita a marca em campo opcional escrito como type ["string","null"]', () => {
+      expect(
+        validator.checkSchema({
+          type: 'object',
+          properties: { file: { type: ['string', 'null'], format: 'attachment' } },
+        }),
+      ).toEqual([]);
+    });
+
+    test('recusa a marca em objeto aninhado, com o path do campo e a saída na mensagem', () => {
+      const schema = {
+        type: 'object',
+        properties: { outer: { type: 'object', properties: { file: mark } } },
+      };
+
+      expect(validator.checkSchema(schema)).toEqual(
+        misplaced('/properties/outer/properties/file/format'),
+      );
+    });
+
+    test('recusa a marca em anyOf dentro de campo de primeiro nível', () => {
+      const schema = {
+        type: 'object',
+        properties: { file: { anyOf: [mark, { type: 'null' }] } },
+      };
+
+      expect(validator.checkSchema(schema)).toEqual(misplaced('/properties/file/anyOf/0/format'));
+    });
+
+    // As marcas que o checkSchema aceita têm de ser as que attachmentFields devolve: marca aceita e
+    // ignorada nunca seria conferida pelo register.
+    test.each<[string, RecordType, boolean]>([
+      ['campo', { type: 'object', properties: { a: mark } }, true],
+      [
+        'itens do campo',
+        { type: 'object', properties: { a: { type: 'array', items: mark } } },
+        true,
+      ],
+      [
+        'campo anulável',
+        { type: 'object', properties: { a: { type: ['string', 'null'], format: 'attachment' } } },
+        true,
+      ],
+      [
+        'objeto aninhado',
+        { type: 'object', properties: { b: { type: 'object', properties: { a: mark } } } },
+        false,
+      ],
+      ['anyOf do campo', { type: 'object', properties: { a: { anyOf: [mark] } } }, false],
+      ['oneOf do campo', { type: 'object', properties: { a: { oneOf: [mark] } } }, false],
+      ['allOf do campo', { type: 'object', properties: { a: { allOf: [mark] } } }, false],
+      [
+        '$defs',
+        { type: 'object', properties: { a: { type: 'string' } }, $defs: { a: mark } },
+        false,
+      ],
+      ['additionalProperties', { type: 'object', additionalProperties: mark }, false],
+    ])('marca em %s: aceita só se attachmentFields a reconhece', (_position, schema, accepted) => {
+      expect(validator.checkSchema(schema)).toHaveLength(accepted ? 0 : 1);
+      expect(attachmentFields(schema)).toEqual(accepted ? ['a'] : []);
     });
   });
 
@@ -165,7 +268,11 @@ describe('checkSchema', () => {
       ['properties', (c) => ({ type: 'object', properties: { a: c } }), '/properties/a'],
       [
         'patternProperties',
-        (c) => ({ type: 'object', patternProperties: { '^a': c } }),
+        (c) => ({
+          type: 'object',
+          propertyNames: { maxLength: PATTERN_MAX_LENGTH },
+          patternProperties: { '^a': c },
+        }),
         '/patternProperties/^a',
       ],
       ['$defs', (c) => ({ $defs: { a: c } }), '/$defs/a'],
@@ -228,6 +335,17 @@ describe('checkSchema', () => {
       });
     });
 
+    describe.each(keywordCases.filter(([keyword]) => keyword !== 'properties'))(
+      'format attachment dentro de %s',
+      (_keyword, wrap, base) => {
+        test('recusa a marca, com o ponteiro do format', () => {
+          const schema = wrap({ type: 'string', format: 'attachment' });
+
+          expect(validator.checkSchema(schema)).toEqual(invalidSchema(`${base}/format`));
+        });
+      },
+    );
+
     test('ignora os valores em array de dependencies, que não são subschema', () => {
       expect(validator.checkSchema({ type: 'object', dependencies: { a: ['b'] } })).toEqual([]);
     });
@@ -253,16 +371,35 @@ describe('checkSchema', () => {
       ]);
     });
 
-    test('recusa chave perigosa de patternProperties, sem exigir maxLength', () => {
+    test('recusa chave perigosa de patternProperties, sem exigir maxLength no valor', () => {
       expect(
         validator.checkSchema({
           type: 'object',
+          propertyNames: { maxLength: 64 },
           patternProperties: { [unsafe]: { type: 'string' } },
         }),
       ).toEqual(invalidSchema(`/patternProperties/${unsafe.replace(/\//g, '~1')}`));
       expect(
-        validator.checkSchema({ type: 'object', patternProperties: { '^x-': { type: 'string' } } }),
+        validator.checkSchema({
+          type: 'object',
+          propertyNames: { maxLength: 64 },
+          patternProperties: { '^x-': { type: 'string' } },
+        }),
       ).toEqual([]);
+    });
+
+    test('patternProperties aceita com propertyNames.maxLength no teto, recusa sem ele ou acima', () => {
+      const withNames = (propertyNames?: RecordType): RecordType => ({
+        type: 'object',
+        ...(propertyNames && { propertyNames }),
+        patternProperties: { '^x-': { type: 'string' } },
+      });
+
+      expect(validator.checkSchema(withNames({ maxLength: PATTERN_MAX_LENGTH }))).toEqual([]);
+      expect(validator.checkSchema(withNames())).toEqual(invalidSchema('/patternProperties'));
+      expect(validator.checkSchema(withNames({ maxLength: PATTERN_MAX_LENGTH + 1 }))).toEqual(
+        invalidSchema('/patternProperties'),
+      );
     });
 
     test('não trata dado (const, enum, default) como subschema', () => {
@@ -314,6 +451,7 @@ describe('checkSchema', () => {
       });
       const [fromKey] = validator.checkSchema({
         type: 'object',
+        propertyNames: { maxLength: 64 },
         patternProperties: { [unsafeKey]: { type: 'string' } },
       });
 
@@ -448,6 +586,15 @@ describe('validate', () => {
 
   test('lança com schema $async, em vez de aprovar o dado', () => {
     expect(() => validator.validate({ $async: true, type: 'string' }, {})).toThrow(/async/);
+  });
+
+  test('aponta o nome da propriedade que o propertyNames recusa', () => {
+    const schema = { type: 'object', propertyNames: { maxLength: 3 } };
+
+    expect(validator.validate(schema, { abcd: 1 })).toEqual([
+      expect.objectContaining({ path: '/abcd', code: 'max-length' }),
+      expect.objectContaining({ path: '/abcd', code: 'property-names' }),
+    ]);
   });
 
   test('escapa ~ e / no JSON Pointer', () => {

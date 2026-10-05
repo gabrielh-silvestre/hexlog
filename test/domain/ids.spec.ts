@@ -42,11 +42,18 @@ describe('Hash', () => {
 });
 
 describe('Instant', () => {
-  test('aceita ISO 8601 em UTC', () => {
+  test('aceita ISO 8601 em UTC com milissegundos', () => {
     expect(Instant.safeParse(new Date().toISOString()).success).toBe(true);
   });
 
-  test.each(['2026-09-30', '2026-09-30T10:00:00', 'ontem'])('%s é inválido', (value) => {
+  test.each([
+    '2026-09-30',
+    '2026-09-30T10:00:00',
+    '2026-09-30T10:00:00Z',
+    '2026-09-30T10:00:00.123456789Z',
+    '2026-09-30T10:00:00.123+02:00',
+    'ontem',
+  ])('%s é inválido', (value) => {
     expect(Instant.safeParse(value).success).toBe(false);
   });
 });

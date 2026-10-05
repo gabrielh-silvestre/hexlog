@@ -2,7 +2,11 @@ import canonicalize from 'canonicalize';
 import { z } from 'zod';
 import { alias, Instant, NAME_SRC, Name, RecordId, Target } from './ids.ts';
 
-/** Teto de `data` em caracteres canônicos (JCS), igual ao do 0.x. */
+/**
+ * Teto de `data` em caracteres canônicos (JCS), igual ao do 0.x. Conta unidades UTF-16 do JCS, então
+ * um emoji vale 2. `isValidLink` reaplica este schema na releitura: apertar o teto, uma regex ou um
+ * `strictObject` invalida linha já gravada, e por isso é mudança de formato (major).
+ */
 export const DATA_MAX_CHARS = 16_000;
 
 /** Teto de itens por lote de `register`. */
@@ -11,26 +15,26 @@ export const BATCH_MAX = 50;
 /** Teto de relações por registro gravado e por item de lote (docs/tetos-dominio-v1.md). */
 export const RELATIONS_MAX = 100;
 
-// Surrogate alto sem baixo depois, ou baixo sem alto antes (sem a flag `u`, a string é lida por unidade).
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-/** Surrogate solitário não vira UTF-8: o JCS do hash o recusa, então a borda o rejeita antes (TM3). */
-export const isWellFormed = (text: string): boolean => !LONE_SURROGATE.test(text);
-
 /**
- * Cabe em `max` caracteres canônicos (JCS)? Valor que o `canonicalize` recusa (surrogate solitário)
- * conta como fora do teto em vez de lançar, para o parse devolver erro de validação.
+ * Exige que o valor caiba em `max` caracteres canônicos (JCS); `what` abre a mensagem de recusa.
+ * Valor que o `canonicalize` recusa (surrogate solitário) conta como fora do teto em vez de lançar,
+ * para o parse devolver erro de validação.
  */
-export function withinCanonicalLimit(value: unknown, max: number): boolean {
-  try {
-    return (canonicalize(value) ?? '').length <= max;
-  } catch {
-    return false;
-  }
+export function withCanonicalLimit<T extends z.ZodType>(schema: T, max: number, what: string): T {
+  return schema.refine(
+    (value) => {
+      try {
+        return (canonicalize(value) ?? '').length <= max;
+      } catch {
+        return false;
+      }
+    },
+    { message: `${what} exceeds ${max} canonical characters or is not canonicalizable` },
+  );
 }
 
 // Mora aqui, e não em relations.ts, porque Relation e RelationInput precisam dele em tempo de
-// execução e relations.ts importa este arquivo; relations.ts o reexporta.
+// execução e relations.ts importa este arquivo.
 export const RelationKind = z.enum([
   'supersedes',
   'revokes',
@@ -43,7 +47,14 @@ export const RelationKind = z.enum([
 ]);
 export type RelationKind = z.infer<typeof RelationKind>;
 
-const AuthorField = z.string().min(1).max(100);
+/** Surrogate solitário não vira UTF-8: o JCS do hash lançaria e a tool devolveria INTERNAL (TM3). */
+export const WELL_FORMED = 'must not contain a lone surrogate';
+
+const AuthorField = z
+  .string()
+  .min(1)
+  .max(100)
+  .refine((text) => text.isWellFormed(), WELL_FORMED);
 
 export const Author = z.strictObject({
   agent: AuthorField,
@@ -65,7 +76,9 @@ export const AliasRef = z.string().regex(new RegExp(`^@${NAME_SRC}$`));
 
 /**
  * Relação como o agente a envia: `to` pode ser `@<alias>` e `kind` pode vir de `as` (D-10).
- * Pelo menos um dos dois precisa vir.
+ * Pelo menos um dos dois precisa vir. O JSON Schema anunciado exige só `to`: "kind ou as" vive neste
+ * refine e em `mcp/tools/process.ts#REGISTER_DESCRIPTION`, e o erro é barato (lote recusado antes de
+ * gravar). Se o log mostrar recusas, a evolução barata é `anyOf` via `.meta` aqui.
  */
 export const RelationInput = z
   .strictObject({
@@ -83,11 +96,7 @@ export type KindOrAs = { kind: RelationKind; as?: undefined } | { kind?: Relatio
 export type RelationInput = z.infer<typeof RelationInput> & KindOrAs;
 
 // canonicalize só devolve undefined para entradas não serializáveis, que z.json() já recusou.
-const Data = z
-  .record(z.string(), z.json())
-  .refine((data) => withinCanonicalLimit(data, DATA_MAX_CHARS), {
-    message: `data exceeds ${DATA_MAX_CHARS} canonical characters or is not canonicalizable`,
-  });
+const Data = withCanonicalLimit(z.record(z.string(), z.json()), DATA_MAX_CHARS, 'data');
 
 export const HexRecord = z.strictObject({
   id: RecordId,

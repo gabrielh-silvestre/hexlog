@@ -1,7 +1,7 @@
-import * as fs from 'node:fs';
+import fs from 'node:fs';
 import * as path from 'node:path';
 import type { DefinitionKind, ProcessRef } from '../../ports.ts';
-import { errnoCode } from './atomic.ts';
+import { orIfMissing } from './io.ts';
 
 /**
  * Padrão de nome do 0.4.0 (`NAME_SRC`): o conjunto de nomes que o 0.x cria em `<D>`.
@@ -79,12 +79,6 @@ export function blobFile(dataDir: string, project: string, hash: string): string
  * Teto aceito: um projeto 0.x chamado `archive` não é detectado.
  */
 export function detectLegacy(dataDir: string): string[] {
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(dataDir);
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return [];
-    throw error;
-  }
+  const entries = orIfMissing(() => fs.readdirSync(dataDir), []);
   return entries.filter((name) => name !== ARCHIVE_DIR && LEGACY_NAME.test(name)).sort();
 }

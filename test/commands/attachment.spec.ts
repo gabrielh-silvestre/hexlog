@@ -5,6 +5,7 @@ import { createAttachmentStore } from '../../src/adapters/fs/attachment-store.ts
 import { createAttachmentService, type AttachInput } from '../../src/commands/attachment.ts';
 import type { AttachmentPut, AttachmentStore } from '../../src/ports.ts';
 import { captureError, createTempDir } from '../helpers.ts';
+import { refuse } from './register-fakes.ts';
 
 const PROJECT = 'alpha';
 const PUT: AttachmentPut = { hash: 'a'.repeat(64), bytes: 3, deduplicated: false };
@@ -12,9 +13,6 @@ const PUT: AttachmentPut = { hash: 'a'.repeat(64), bytes: 3, deduplicated: false
 /** Porta falsa: só conta as chamadas de gravação, que o serviço nunca deve fazer ao recusar. */
 function fakeStore(): { store: AttachmentStore; puts: string[] } {
   const puts: string[] = [];
-  const refuse = (): never => {
-    throw new Error('operação fora do escopo deste spec');
-  };
   const store: AttachmentStore = {
     putText: (_project, text) => (puts.push(`text:${text}`), PUT),
     putPath: (_project, file) => (puts.push(`path:${file}`), PUT),

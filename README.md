@@ -8,11 +8,14 @@ scripts de `scripts/` (`export`, `timeline`, `insights`) são de leitura, rodado
 mão.
 
 Os dados ficam em `<D>`, que é `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog`
-se a variável estiver ausente, vazia ou não for um caminho absoluto). O dado da
+se a variável estiver ausente, vazia ou não for um caminho absoluto). `<D>` precisa de um
+sistema de arquivos com hard link e semântica POSIX (`rename` e `link` atômicos). O dado da
 1.0 mora só em `<D>/.v1/`: um diretório por projeto e, dentro dele, um log JSONL
-por processo. Cada linha do log referencia o hash da anterior, então qualquer
-alteração ou remoção de linha quebra a cadeia de forma detectável pela tool
-`verify_chain`.
+por processo. Cada registro do log é um elo que referencia o hash do anterior, então
+qualquer alteração ou remoção de linha quebra a cadeia de forma detectável pela tool
+`verify_chain`. `<D>` é confiável: só o servidor escreve nele e o hook de isolamento
+bloqueia o agente, então o servidor segue symlink e um FIFO no lugar de um arquivo o
+trava; restaure `<D>` por cópia, sem link (`cp -a`, `rsync -a`).
 
 As decisões de projeto estão nos ADRs: o domínio no [ADR 0007](docs/adr-0007-dominio.md),
 os serviços no [ADR 0008](docs/adr-0008-servicos.md) e o ferramental (tools, lock,
@@ -20,6 +23,9 @@ scripts, arquivamento) no [ADR 0009](docs/adr-0009-ferramental.md).
 
 ## Requisitos
 
+- Linux. O lock por pid, a gravação atômica e o arquivador dependem de `/proc`, de hard link e de
+  `fsync` de diretório (`src/adapters/fs/atomic.ts#writeFileAtomic`): macOS não foi testado, e
+  Windows, FAT, exFAT e drvfs (`/mnt/c` no WSL) ficam fora.
 - Node `>= 24.18.1`.
 - Claude Code, com `~/.claude/settings.json` já existente (o instalador grava
   nele; harness não instalado = instalação falha com uma mensagem explícita).
@@ -46,19 +52,29 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 3. Registra as 4 regras de deny e o hook PreToolUse em
    `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog` antes
    de qualquer troca) e registra o servidor MCP em escopo `user`. A regra de deny
-   de um `<D>` antigo que o guard remove é impressa (`removed deny rule: <regra>`).
+   de um `<D>` antigo que o guard remove é impressa (`removed deny rule: <regra>`),
+   e só sai se esse diretório sumiu do disco: um `<D>` antigo que ainda existe
+   mantém as regras, porque o deny é o isolamento do dado que ele guarda.
 4. Copia cada pasta de `skills/` (hoje `hexlog`, `hexlog-flow` e
    `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
-   backup.
+   backup, em toda execução, mesmo sem mudança no artefato.
+
+Com dado 0.x em `<D>`, o comando só lista o que arquivaria (`scripts/install.ts#listLegacy`)
+e sai com 2, sem instalar nada: veja "Dado 0.x" abaixo.
 
 **Mudar código no repositório não afeta nenhuma sessão em andamento nem novas
 sessões até rodar o instalador de novo.** As sessões sempre executam a cópia
 de `~/.local/lib/hexlog/<versão>/`, nunca a working tree. Depois de instalar,
 reinicie o Claude Code: a lista de tools é cache da sessão.
 
-Rodar o instalador de novo sem nada ter mudado imprime
-`version <versão> already installed and intact; nothing to do`, e não toca em
-`settings.json` nem no MCP. Argumento desconhecido é recusado com exit 1 antes
+A saída do instalador é um resumo: `hexlog <versão>: installed`, `reinstalled`,
+`repaired` ou `already installed and intact; nothing to do`, os sha256 do servidor e
+do hook, `settings.json: updated` ou `already correct` e, se houver, linhas
+`warning: ...`. Os avisos do instalador são `installed artifact modified; repairing`
+(o artefato instalado divergia do próprio manifesto) e `version <versão> reinstalled
+with different content; consider bumping the version`. Rodar de novo sem nada ter
+mudado não reinstala o artefato, não reescreve `settings.json` nem registra o MCP outra
+vez; só as skills são recopiadas. Argumento desconhecido é recusado com exit 1 antes
 de qualquer escrita; os aceitos são `--check` e `--archive-0x`.
 
 ### Instalação concorrente
@@ -84,6 +100,9 @@ projetos direto em `<D>`, e a detecção é positiva: qualquer entrada de `<D>` 
 nome de projeto 0.x (minúsculas, dígitos e hífen, exceto `archive`) conta como
 dado 0.x. Com dado 0.x em `<D>`, o servidor recusa toda tool com `LEGACY_DATA`
 (o `details` traz o comando de arquivamento) e os scripts de leitura saem com 2.
+O arquivador é só Linux: acha servidor 0.x vivo por `/proc` (macOS não foi testado).
+Nos comandos desta seção, o diretório de dados é
+`D=${XDG_DATA_HOME:-$HOME/.local/share}/hexlog`.
 
 Para arquivar:
 
@@ -100,10 +119,13 @@ diretórios vazios, sem recursão). Qualquer divergência aborta com exit 1, sem
 instalar e sem apagar nada que não esteja no `.tar` verificado.
 
 - **Recusas:** servidor 0.x vivo (processo com `server.mjs` de uma versão 0.x em
-  `~/.local/lib/hexlog/`), `/proc` ilegível (não dá para confirmar que nenhum
-  servidor roda), lock 0.x com dono vivo ou com `holder` fora do formato
-  `<pid>-<hex>`, e symlink ou arquivo especial no dado 0.x. Feche as sessões do
-  Claude Code antes.
+  `~/.local/lib/hexlog/`), `/proc` ilegível ou `cmdline` ilegível por motivo que não
+  seja permissão ou processo que sumiu (não dá para confirmar que nenhum servidor
+  roda), lock 0.x com dono vivo ou com `holder` fora do formato `<pid>-<hex>` (um
+  `holder` ausente ou de 0 byte conta como lock morto), e symlink, hard link ou
+  arquivo especial no dado 0.x. Feche as sessões do Claude Code antes. Com todas
+  fechadas e a recusa de lock mantida (pid reaproveitado, `holder` ilegível),
+  remova à mão a pasta `events.jsonl.lock/` que a mensagem cita e rode de novo.
 - **Retomada:** se a execução cair depois de gerar o `.tar`, rodar de novo reusa o
   `.tar` mais novo que contém todo arquivo restante com o mesmo sha256, em vez de
   gerar outro.
@@ -111,7 +133,7 @@ instalar e sem apagar nada que não esteja no `.tar` verificado.
   em vez de reescrever o anterior, então `<D>/archive/` pode ter mais de um. O
   nome tem resolução de segundo: dois arquivamentos no mesmo segundo que precisem
   de pacote novo sobrescrevem o anterior (teto aceito no ADR 0009).
-- **Cópia manual antes:** `cp -a ~/.local/share/hexlog ~/hexlog-0x-backup-$(date +%F)`.
+- **Cópia manual antes:** `cp -a "$D" ~/hexlog-0x-backup-$(date +%F)`.
   Ensaie primeiro numa cópia (`XDG_DATA_HOME` e `HOME` apontando para um diretório
   temporário), e confira o pacote só pelos arquivos regulares, porque o `tar` pode
   gravar ou não as entradas de diretório.
@@ -124,9 +146,10 @@ Sem passo novo na instalação: extraia os `.tar` numa pasta descartável e suba
 servidor 0.x só para ela, com o seu `XDG_DATA_HOME`.
 
 ```sh
+D=${XDG_DATA_HOME:-$HOME/.local/share}/hexlog
 R=$(mktemp -d); mkdir -p "$R/hexlog" "$R/src"
-for t in $(ls -tr ~/.local/share/hexlog/archive/hexlog-0x-*.tar); do tar -xf "$t" -C "$R/hexlog"; done
-git archive v0.4.0 | tar -x -C "$R/src"        # ou 87237c3 no lugar da tag
+for t in $(ls -tr "$D"/archive/hexlog-0x-*.tar); do tar -xf "$t" -C "$R/hexlog"; done
+git archive 87237c3 | tar -x -C "$R/src"        # ou v0.4.0, o atalho para o mesmo código
 (cd "$R/src" && npm ci && node scripts/build.ts --outdir "$R/bin")
 ```
 
@@ -145,14 +168,17 @@ trataria o segundo como nome de membro, por isso o laço. O `<D>` real não é t
 
 Se algo falhar depois do arquivamento:
 
-1. Feche as sessões do Claude Code.
-2. Tire o dado 1.0 do caminho, para não se misturar: `mv ~/.local/share/hexlog/.v1 ~/hexlog-1x-aside-$(date +%F)`.
+1. Feche as sessões do Claude Code e defina `D=${XDG_DATA_HOME:-$HOME/.local/share}/hexlog`.
+2. Tire o dado 1.0 do caminho, para não se misturar: `mv "$D/.v1" ~/hexlog-1x-aside-$(date +%F)`.
 3. Restaure o 0.x, cada `.tar` do mais velho para o mais novo (ou use a cópia manual):
-   `for t in $(ls -tr ~/.local/share/hexlog/archive/hexlog-0x-*.tar); do tar -xf "$t" -C ~/.local/share/hexlog; done`.
+   `for t in $(ls -tr "$D"/archive/hexlog-0x-*.tar); do tar -xf "$t" -C "$D"; done`.
+   O `tar -x` devolve os diretórios de projeto com modo 0755 (o 0.x criava 0700), então
+   rode `chmod -R go-rwx "$D"`, e não recria diretório 0.x vazio
+   (o `.tar` guarda só arquivos regulares).
 4. Tire `archive/` do caminho, porque o 0.x o listaria como um projeto vazio:
-   `mv ~/.local/share/hexlog/archive ~/hexlog-archive-aside-$(date +%F)`.
-5. Reinstale o 0.x: `git checkout v0.4.0 && npm ci && node scripts/install.ts`
-   (ou `87237c3` no lugar da tag) e reinicie o Claude Code.
+   `mv "$D/archive" ~/hexlog-archive-aside-$(date +%F)`.
+5. Reinstale o 0.x: `git checkout 87237c3 && npm ci && node scripts/install.ts`
+   (ou `v0.4.0`, o atalho para o mesmo código) e reinicie o Claude Code.
 
 ## Verificação (`--check`)
 
@@ -162,8 +188,8 @@ node scripts/install.ts --check
 
 Rode isso depois de: reinstalar o harness do Claude Code, trocar de versão do
 Node pelo nvm, mexer manualmente em `~/.local/lib/hexlog/`, ou quando uma
-instalação anterior avisou `artifact-outdated`. O `--check` não arquiva e nem
-olha `<D>` em busca de dado 0.x.
+instalação avisou `installed artifact modified; repairing` ou `reinstalled with
+different content`. O `--check` não arquiva e nem olha `<D>` em busca de dado 0.x.
 
 O `--check` é o único mecanismo que detecta o guard ausente, alterado ou
 quebrado. Ele confere, nesta ordem, e cada item pendente aparece como
@@ -189,12 +215,15 @@ Qualquer item na lista de faltando encerra o `--check` com exit 1.
 `artifact-modified` significa que o artefato instalado foi modificado por
 fora do instalador (por exemplo, um `cp` ou `node -e` direto no arquivo).
 Resolve rodando o instalador de novo: ele detecta a divergência, repara o
-artefato e registra isso na saída como `repaired`.
+artefato e registra isso na saída como `repaired`, com o aviso `installed artifact
+modified; repairing`.
 
-Já o aviso `artifact-outdated` (impresso como `warning: ...`, sem afetar o
-exit) só diz que o commit da working tree diverge do commit registrado no
-`manifest.json` da versão instalada. Não quebra o isolamento; é só um
-lembrete de que existe um build mais novo disponível.
+Já o aviso `artifact-outdated` só sai no `--check` (o instalador nunca o emite), impresso
+como `warning: artifact-outdated: ...`, sem afetar o exit: o build da working tree
+produz bundles diferentes dos que o `manifest.json` da versão instalada registra, e a
+mensagem cita o commit instalado e o `HEAD` atual. Não quebra o isolamento; é só um
+lembrete de que existe um build mais novo disponível. Sem item pendente nem aviso, o
+`--check` imprime `ok`.
 
 ## Migração 0.x para 1.0
 
@@ -230,6 +259,24 @@ memória com skills novas responde `Input validation error`.
 - Backup de processo com anexos: copie o diretório do projeto em `<D>/.v1/`, não só
   o JSONL; `scripts/export.ts` não leva `process.json`, as definições nem
   `attachments/`.
+
+## Uso em 5 passos
+
+Com o hexlog instalado e as sessões reiniciadas, o caminho de um projeto novo é:
+
+1. `define_type`: um tipo de registro, como JSON Schema. Projeto sem nenhuma definição
+   recusa o `create_process` (`TYPE_NOT_FOUND`).
+2. Opcional: `define_relation` (nomes de relação com os tipos permitidos nas pontas) e
+   `define_gate` (perguntas sobre os registros).
+3. `create_process`: cria o processo e fixa a versão vigente de cada definição.
+4. `register`: grava lotes de registros, com `key` para repetir a chamada com segurança.
+5. `query` para ler os registros vigentes e `evaluate_gate` para checar um gate.
+
+Adotar uma definição nova, ou uma versão nova, exige um processo novo: o manifesto não
+repina, e `create_process` sobre um processo que já existe devolve `created: false` e
+`stale`. As skills instaladas guiam o resto: `hexlog` (instalação e diagnóstico),
+`hexlog-setup` (roda uma vez por repositório, entrevista o fluxo e grava o mapa em
+`.hexlog/flow.md`) e `hexlog-flow` (registra marcos e vereditos contra esse mapa).
 
 ## As 11 tools
 
@@ -276,7 +323,9 @@ Todas devolvem `{name, version, hash, created, previousVersion?, divergentVersio
 - **Conteúdo idêntico ao vigente:** replay, `created: false`, nada é gravado.
 - **Mudança compatível:** sobe o minor.
 - **Mudança que quebra:** exige `breaking: true` e sobe o major; sem a flag, é
-  `BREAKING_CHANGE`.
+  `BREAKING_CHANGE`. `breaking: true` sobe o major mesmo sem quebra detectada, é
+  opcional em gate e é ignorado na primeira versão e com conteúdo idêntico ao vigente
+  (replay).
 - **Escritor concorrente** na mesma versão-alvo: a decisão é refeita contra o que
   ele gravou, e `divergentVersions` lista as versões divergentes.
 
@@ -288,8 +337,13 @@ minor e `breaking: true` marca o gate que ficou mais estrito.
 `define_type` recebe um JSON Schema com raiz `type: "object"`. Uma propriedade com
 `format: "attachment"` guarda o hash de um anexo (ver `attach`). Todo `pattern`
 passa por checagem de regex catastrófico (`safe-regex2`) e exige `maxLength` no
-mesmo subschema, com até 256; schema que o `ajv` não compila ou `$async` é
-`INVALID_SCHEMA`, e o limite da checagem está em
+mesmo subschema, com até 256, e todo `patternProperties` exige `propertyNames` com
+`maxLength` até 256 no mesmo subschema (as chaves dele passam pela `safe-regex2`).
+Também são `INVALID_SCHEMA`: schema que o `ajv` não compila, `$async`, raiz diferente de
+`object` (`/schema/type`, `invalid-type`) e a marca `attachment` fora de uma propriedade
+de primeiro nível ou dos itens de um array de primeiro nível (`.../format`). A
+`safe-regex2` também recusa regex linear com repetição dentro de grupo repetido
+(`^[a-z]+(?:-[a-z]+)*$`; use `^[a-z0-9-]+$`). O limite da checagem está em
 [`docs/tetos-dominio-v1.md`](docs/tetos-dominio-v1.md). Um tipo fica de até 16.000
 caracteres canônicos.
 
@@ -303,28 +357,39 @@ Um gate tem 1 a 50 perguntas de quatro formas, todas com seletor
 | `no_pending` | todo registro vigente de `pending` tem uma resolução vigente (relação `resolvedBy.kind`, de `resolvedBy.from`) |
 | `no_open_contradiction` | nenhum registro vigente (de `of`, se informado) tem contradição vigente |
 
+O `scope` de uma pergunta é `process` (o padrão: só enxerga relações vindas do processo do
+gate) ou `project` (enxerga relações entre processos).
+
 ### `create_process`
 
 Cria um processo e fixa para sempre a versão vigente de cada tipo, relação e gate do
 projeto. **Idempotente por nome**: se o processo já existe, devolve o existente
 sem alterar nada (`created: false`), com `stale` listando as definições que mudaram
-desde a fixação (`{kind, name, current}`). Projeto sem nenhuma definição é
+desde a fixação (`{kind, name, current}`): `stale` quer dizer que há versão mais nova e
+que o fixado é imutável, então a adoção exige um processo novo, e `current: null` é um nome
+sem versão no projeto. Projeto sem nenhuma definição é
 `TYPE_NOT_FOUND`, sem criar nada. Nomes reservados de processo (`types`,
-`relations`, `gates`, `attachments`, `archive`) são `RESERVED_NAME`.
+`relations`, `gates`, `attachments`, `archive`) são `RESERVED_NAME`. A ordem das
+recusas é: nome reservado, depois projeto sem definição e só então a criação ou o
+`created: false`; por isso um processo que já existe, num projeto que ficou sem
+definição, também recebe `TYPE_NOT_FOUND`.
 
 ### `register`
 
-Grava um lote de 1 a 50 registros numa **única linha** do log, atômico: ou todos
-entram ou nenhum. Cada item traz `type` (um tipo fixado no processo), `target`,
+Grava um lote de 1 a 50 registros numa **única linha** do log (`{"links":[...]}`, um elo
+por registro), atômico: ou todos entram ou nenhum. A entrada traz `project`, `process`,
+`agent` (1 a 100 caracteres: o agente ou a skill que chama), `model` (opcional,
+autodeclarado), `key` opcional e `records`; o `client` o servidor preenche. Cada item traz `type` (um tipo fixado no processo), `target`,
 `data` (validado pelo schema do tipo, até 16.000 caracteres canônicos), `alias`
 opcional e `relations` opcionais. Devolve `{records, replayed, marker}`: os ids na
 ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabeça do
-processo, para ler dali em diante.
+processo, para ler dali em diante. O marcador cobre exatamente os processos que nomeia:
+no alcance projeto, o que ele não nomeia é lido como vazio.
 
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
 mesmo lote, e leva `kind` (`supersedes`, `revokes`, `supports`, `contradicts`,
-`answers`, `derivesFrom`, `complements`, `reopens`), `as` (um nome de relação definido
-no projeto) ou os dois. Até 100 relações por registro. As regras:
+`answers`, `derivesFrom`, `complements`, `reopens`), `as` (um nome de relação fixado
+no processo, não só definido no projeto) ou os dois. Até 100 relações por registro. As regras:
 
 - `supersedes` e `revokes` só alcançam registros **do mesmo processo**
   (`cross-process-currency`), e só o vigente: sobre um destino que já foi superado ou
@@ -332,9 +397,13 @@ no projeto) ou os dois. Até 100 relações por registro. As regras:
 - `supersedes` exige o mesmo tipo (`type-mismatch`).
 - `supports` só aceita destino vigente (`stale-destination`); pode cruzar processos.
 - Um registro não pode apoiar e contradizer, nem superar e revogar, o mesmo destino.
-- Relação para si mesmo, `as` que não existe fixado no processo e `kind` que não
-  bate com o do nome são `INVALID_RECORD`; ciclo é `CYCLE_REJECTED`; destino
-  inexistente é `RELATION_NOT_FOUND`.
+- Relação para si mesmo, `as` que não existe fixado no processo, `kind` que não bate com
+  o do nome e tipo de uma ponta fora do `from`/`to` do nome de relação (`endpoint-type`)
+  são `INVALID_RECORD`; ciclo é `CYCLE_REJECTED`; destino inexistente é
+  `RELATION_NOT_FOUND`.
+- Só `supersedes`, `revokes` e `supports` conferem a vigência do destino. `contradicts`
+  só tem a regra de conflito com `supports`; `answers`, `derivesFrom`, `complements` e
+  `reopens` não têm regra própria e só entram em `resolvedBy.kind` e nos filtros.
 - Citar o hash de um anexo num campo com `format: "attachment"` exige o anexo
   guardado e íntegro (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`); um hash de anexo
   guardado num campo sem a marca é recusado (`unmarked-attachment`).
@@ -366,22 +435,33 @@ processo em `details[0].process`.
   evidência de outro processo declara `scope: "project"`.
 - **Filtros:** `type`, `targetPrefix`, `where` (igualdade em campos de primeiro nível
   de `data`, valor escalar, até 50 chaves), `text` (busca textual, até 200
-  caracteres, por relevância), `ids` (até 200), `relatedTo` (registros ligados a um id)
-  e `includeNonCurrent` (traz também os superados e revogados). Uma consulta com `text`
-  monta o índice na própria chamada.
+  caracteres, por relevância), `ids` (até 200), `relatedTo` (os vizinhos diretos de um id,
+  por qualquer relação, de entrada ou de saída, sem o próprio id) e `includeNonCurrent`
+  (traz também os superados e revogados). O `targetPrefix` casa na fronteira de `.`. A
+  busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
+  busca o monta, e o alcance projeto o monta a cada busca.
 - **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data`, as relações
   de entrada (`in`) e de saída (`out`), `needsReview` (registro vigente cujo apoio
   morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`, `missing` ou
   `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como status, não
-  como erro.
-- **Ordem:** por `seq` no alcance processo, por (`at`, processo, `seq`) no alcance
-  projeto, e por relevância com `text`.
+  como erro. Cada relação de entrada é `{kind, as?, from, current}` e cada relação de
+  saída é `{kind, as?, to, current?}`: `current` diz se a outra ponta é vigente, e na
+  saída só sai quando o destino foi lido.
+- **Ordem:** por `seq` no alcance processo e por (`at`, processo, `seq`) no alcance
+  projeto; com `text`, por relevância, com a ordem do alcance como desempate.
 - **Paginação:** até `limit` registros (padrão 50, máximo 200), e a página também para
-  num teto de 24.000 caracteres, sempre com ao menos um registro. Passe o `cursor`
-  devolvido para continuar; o cursor prende a consulta e o marcador da primeira página,
-  então `INVALID_CURSOR` ou `MARKER_NOT_FOUND` indicam que a consulta ou o dado mudou.
+  num teto de 24.000 caracteres do JSON dos registros, sempre com ao menos um registro.
+  Passe o `cursor` devolvido para continuar, com a mesma consulta: só o `limit` pode
+  mudar, e com `changesSince` a página 2 reenvia o mesmo `changesSince`, senão
+  `INVALID_CURSOR` (`scope-mismatch`, `project-mismatch`, `process-mismatch` ou
+  `filters-mismatch`). O cursor é o JSON do estado em `base64url`, sem assinatura (até
+  65.536 caracteres): cursor truncado ou editado cai em `malformed`, no schema do cursor,
+  em `marker-hash-mismatch` ou em `last-id-not-found`, sempre `INVALID_CURSOR`, e a
+  barreira é a releitura do serviço, que prende a consulta e o marcador da primeira
+  página. `INVALID_CURSOR` ou `MARKER_NOT_FOUND` indicam que a consulta ou o dado mudou.
 - **Mudanças:** `marker` é a cabeça de cada processo lido. Devolvido como
-  `changesSince` numa consulta nova, a primeira página traz `changes` (`entered` e
+  `changesSince` numa consulta nova (a página 2 reenvia o mesmo `changesSince` com o
+  `cursor`), a primeira página traz `changes` (`entered` e
   `left` com o motivo: `superseded`, `revoked` ou `no-longer-matches`). Cada lista vai
   até 100 ids; quando vem `omitted`, as listas são parciais e esse marcador não deve
   ser reusado como `changesSince`: releia tudo.
@@ -390,7 +470,9 @@ processo em `details[0].process`.
 
 Calcula um gate fixado no processo, **sem gravar nada**. Devolve `passed`, o
 resultado de cada pergunta (`index`, `kind`, `passed`, `evidence` com os ids que
-sustentam a resposta) e o `marker` do que foi lido. `target` é herdado pelos
+sustentam a resposta) e o `marker` do que foi lido. A `evidence` tem listas por `kind`:
+`approved` traz `of`, `supports`, `contradictions` e `unsupported`; `occurred`, `found`;
+`no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. `target` é herdado pelos
 seletores sem `targetPrefix`. Com um `marker` de uma leitura anterior, a avaliação se
 reproduz sobre os registros que existiam então. Cada lista de evidência vai até 100
 ids, com `omitted` contando o resto; um `select` ou `where` mais estreito alcança o
@@ -404,7 +486,9 @@ não erro: `ok` só é `true` com `breaks` e `attachmentBreaks` vazios. Devolve
 `totalRecords`, `head`, `breaks` e `totalBreaks` (da cadeia, com `reason`
 `invalid-line`, `diverging-seq` ou `hash-mismatch`), `attachmentBreaks` e
 `totalAttachmentBreaks` (`attachment-missing` ou `attachment-corrupted`, por registro
-e hash) e `repairedLines`. Cada lista vai até 100 itens, com o total real ao lado.
+e hash) e `repairedLines`. `breaks[].index` e `repairedLines` são posições de linha do
+arquivo, contadas a partir de 0, e não `seq`. `breaks` e `attachmentBreaks` vão até 100
+itens, com o total real ao lado; `repairedLines` também vai até 100, sem total.
 Restos de gravações que falharam não quebram a cadeia: a cauda sem `\n` entra se for um elo
 válido (o lote ficou inteiro e só faltou o `\n`), e linhas rasgadas seguidas de um elo
 válido aparecem em `repairedLines`; o resto rasgado no fim é ignorado e não consome `seq`. Trocar, remover ou
@@ -418,7 +502,8 @@ integral fica fora do registro: o registro leva só o hash, num campo do tipo ma
 com `format: "attachment"`. Informe exatamente um entre:
 
 - `text`: um texto de até 1 MiB **em bytes** (não em caracteres), não vazio e sem
-  surrogate solto. Devolve `{hash, bytes, deduplicated}`; o mesmo texto dá sempre o
+  surrogate solto; acima de 1 MiB é `INVALID_INPUT` em `/text` com `too-big`. Devolve
+  `{hash, bytes, deduplicated}`; o mesmo texto dá sempre o
   mesmo hash e regravá-lo é seguro (`deduplicated: true`, um só arquivo). Se o blob
   existente não bater com o hash, o put falha com `ATTACHMENT_CORRUPTED` e não o
   sobrescreve.
@@ -436,13 +521,14 @@ com `format: "attachment"`. Informe exatamente um entre:
   trocado por symlink no meio é recusado). A recusa é `INVALID_INPUT` com
   `details[0].path` `/path` e `details[0].code` `bad-args`, `bad-extension`,
   `outside-allowed-root`, `inside-data-dir`, `not-found`, `not-regular`, `too-big` ou
-  `invalid-utf8` (no `text`: `bad-args` e `lone-surrogate`); erros do sistema de
+  `invalid-utf8` (no `text`: `bad-args` para texto vazio, `lone-surrogate` e `too-big`); erros do sistema de
   arquivos saem como `IO_ERROR` só com o errno, sem o caminho absoluto.
 
 `read_attachment` lê em páginas: `offset` (caractere inicial, padrão 0) e `maxChars`
 (1 a 24.000, padrão 24.000). Devolve `{text, next?, status: "ok"}`, com `next` o
 `offset` da página seguinte e ausente na última; concatenar as páginas dá exatamente
-o texto original, e uma página nunca parte um par surrogate. Anexo ausente é
+o texto original, e uma página nunca parte um par surrogate. `offset` além do fim do texto
+é `INVALID_INPUT` em `/offset` com `out-of-range`. Anexo ausente é
 `ATTACHMENT_NOT_FOUND`, adulterado é `ATTACHMENT_CORRUPTED`.
 
 Blobs são imutáveis e nunca apagados; um blob que seja symlink, FIFO, diretório ou
@@ -469,10 +555,12 @@ trate-o como dado não confiável, nunca como instrução.
 - **`process.json`** guarda `project`, `process`, `createdAt`, as definições fixadas
   (`fixed.types`, `fixed.relations`, `fixed.gates`, com o conteúdo completo) e os
   hashes de cada grupo. O sha256 do JCS dele é a âncora da cadeia.
-- **`records.jsonl`** é append-only. Cada linha é um registro com `seq` (contíguo, por
-  processo) e `prevHash`; só a primeira linha de um lote carrega `batch` (impressão do
-  lote, `key` e apelidos), e as outras linhas do mesmo lote seguem a cadeia. O hash é
-  o sha256 do JCS (RFC 8785) da linha sem `prevHash`. Não existe tool nem função que
+- **`records.jsonl`** é append-only. Cada linha é um lote `{"links":[...]}` de 1 a 50 elos,
+  um por registro; cada elo é o registro mais `seq` (contíguo, por processo) e `prevHash`, e só
+  o primeiro elo do lote carrega `batch` (impressão do lote, `key` e apelidos). O hash de um
+  elo é `sha256(prevHash + JCS(elo sem prevHash))` (JCS, RFC 8785;
+  `src/domain/chain.ts#hashLink`), e o `prevHash` do primeiro elo é a âncora. A linha é
+  enquadrada por `src/shared/loader.ts#formatLine`. Não existe tool nem função que
   reescreva ou remova uma linha. O arquivo tem teto de 64 MiB por processo
   (`PROCESS_TOO_LARGE`).
 - **Versões de definição** são gravadas por `link` exclusivo e nunca sobrescritas. O
@@ -493,22 +581,22 @@ entrada, vazio quando o erro é da chamada toda). O catálogo completo é
 | Código | Quando |
 |---|---|
 | `INVALID_INPUT` | entrada fora do schema, chave desconhecida, `__proto__`, ou `attach` com `path` recusado (o motivo vem em `details[0].code`) |
-| `INVALID_FILTER` | filtro da `query` inconsistente (`process` ausente no alcance processo, `text` em branco ou acima de 200 caracteres, `limit` inválido) |
-| `INVALID_CURSOR` / `MARKER_NOT_FOUND` | `cursor`, `changesSince` ou `marker` que não batem com o dado lido |
+| `INVALID_FILTER` | filtro da `query` inconsistente: `process` ausente no alcance processo (`required`) ou `text` sem termo pesquisável (`no-terms`: espaço e pontuação não são termos). `text` acima de 200 caracteres e `limit` fora de 1 a 200 saem como `INVALID_INPUT`, porque o zod da tool barra antes; `too-long` e `out-of-range` só saem pelo serviço, nos scripts |
+| `INVALID_CURSOR` / `MARKER_NOT_FOUND` | `cursor`, `changesSince` ou `marker` que não batem com o dado lido. `INVALID_CURSOR`: `malformed`, `too-long`, campo do cursor inválido, `scope-mismatch`, `project-mismatch`, `process-mismatch`, `filters-mismatch`, `marker-hash-mismatch` ou `last-id-not-found`, e a mensagem manda reexecutar a consulta sem `cursor`. `MARKER_NOT_FOUND`: `marker-not-found` (o id não está no log do processo) ou `process-not-found` (o marcador nomeia processo inexistente ou não lido); os dois levam `process`, o processo cujo marcador falhou |
 | `RESERVED_NAME` | nome de processo reservado |
-| `INVALID_SCHEMA` | schema de tipo que o `ajv` recusa, `pattern` sem `maxLength` ou com regex catastrófico |
+| `INVALID_SCHEMA` | schema de tipo que o `ajv` recusa, `$async`, raiz diferente de `object`, `pattern` sem `maxLength` até 256, `patternProperties` sem `propertyNames.maxLength`, regex recusada pela `safe-regex2` ou marca `attachment` fora do primeiro nível (`path` `.../format`) |
 | `BREAKING_CHANGE` | `define_*` com mudança que quebra, sem `breaking: true` |
 | `PROJECT_NOT_FOUND` / `PROCESS_NOT_FOUND` | projeto ou processo inexistente |
-| `TYPE_NOT_FOUND` / `GATE_NOT_FOUND` / `RELATION_NOT_FOUND` | definição ou versão inexistente (`details[0].code` `unknown-name` ou `unknown-version`, com `versions`), ou destino de relação inexistente |
+| `TYPE_NOT_FOUND` / `GATE_NOT_FOUND` / `RELATION_NOT_FOUND` | `TYPE_NOT_FOUND`: `create_process` em projeto sem nenhuma definição (`/project`, `unknown-name`). `GATE_NOT_FOUND`: gate não fixado no processo (`/gate`). `RELATION_NOT_FOUND`: destino de relação que não existe (`missing`) ou de processo com cadeia quebrada ou manifesto ilegível (`destination-corrupted`, com `process`). Nenhuma tool recebe versão, então `unknown-version` não sai por tool |
 | `TYPE_NOT_PINNED` | tipo que o processo não fixou |
 | `INVALID_RECORD` | `data` reprovado pelo schema, ou relação que viola uma regra (item, relação e regra no `path`) |
 | `FORK_REJECTED` | `supersedes` ou `revokes` sobre registro que já não é vigente (`current` traz a versão atual, ou `null`) |
 | `CYCLE_REJECTED` | relação que fecharia um ciclo |
 | `IDEMPOTENCY_CONFLICT` | mesma `key` com outro lote |
-| `ATTACHMENT_NOT_FOUND` / `ATTACHMENT_CORRUPTED` | o blob não existe, ou o sha256 dos bytes não bate com o nome |
-| `PROCESS_CORRUPTED` | cadeia quebrada (`broken-chain`) ou `process.json` ilegível (`unreadable-manifest`); ver "Recuperar um processo corrompido" |
-| `PROCESS_TOO_LARGE` | `records.jsonl` no teto de 64 MiB |
-| `LOCK_TIMEOUT` | `lock-busy` (dono vivo por mais de 15 s, com o `pid`), `lock-lost` (o lock foi perdido antes da gravação) ou `holder-unreadable`; ver abaixo |
+| `ATTACHMENT_NOT_FOUND` / `ATTACHMENT_CORRUPTED` | o blob não existe, ou o sha256 dos bytes não bate com o nome: `details` traz `/hash` com `not-found` ou `corrupted`, e no `register` o `path` do campo de `data` |
+| `PROCESS_CORRUPTED` | cadeia quebrada (`broken-chain`) ou `process.json` ilegível (`unreadable-manifest`), com o processo em `details[0].process`; ver "Recuperar um processo corrompido" |
+| `PROCESS_TOO_LARGE` | `records.jsonl` no teto de 64 MiB, na escrita e também na leitura (do próprio processo ou de um destino de relação): `details[0]` é `{path: '/process', code: 'too-large', process}`. Só a escrita do próprio processo do `register` manda criar um processo novo; na leitura e no destino a mensagem é neutra |
+| `LOCK_TIMEOUT` | `lock-busy` (dono vivo por mais de 15 s, com o `pid`), `lock-lost` (o lock foi perdido antes da gravação) ou `holder-unreadable` (a mensagem manda pedir ao usuário que remova o lock); ver abaixo |
 | `LEGACY_DATA` | há dado 0.x em `<D>`; ver "Dado 0.x: arquivamento" |
 | `IO_ERROR` | erro de disco, só com o errno |
 | `INTERNAL` | exceção inesperada, sem stack na resposta |
@@ -556,8 +644,18 @@ pelo usuário, num terminal fora do Claude Code:
    Se ele traz um `pid` vivo de um servidor hexlog (`ps -p <pid>`), esse servidor é o
    dono e o lock é legítimo: espere ou feche-o.
 3. Com o `holder` ilegível, o `pid` morto ou o `pid` vivo de um processo que não é
-   servidor hexlog (reuso de pid), apague o lock:
-   `rm -r <D>/.v1/<projeto>/<processo>/records.jsonl.lock`.
+   servidor hexlog (reuso de pid), apague o lock. Ele é um diretório com só o `holder`
+   dentro (`src/adapters/fs/lock.ts#tryCreate`), então confira o alvo e apague em
+   passos separados, sem `rm -r`:
+
+   ```sh
+   D=${XDG_DATA_HOME:-$HOME/.local/share}/hexlog
+   L="$D/.v1/<projeto>/<processo>/records.jsonl.lock"   # troque <projeto> e <processo>
+   ls -d "$L"        # confere o alvo antes de apagar
+   rm "$L/holder"
+   rmdir "$L"        # falha se sobrou algo além do holder: pare e confira
+   ```
+
 4. Confira que `records.jsonl.lock` não está mais na pasta do processo
    (`ls <D>/.v1/<projeto>/<processo>`). A prova de que o processo volta a gravar é o
    próximo `register` numa sessão nova; `export.ts` e `verify_chain` leem sem o lock,
@@ -661,12 +759,14 @@ em série em `npm run test:budget`, no CI.
 `scripts/insights.ts`, `scripts/export.ts` e `scripts/timeline.ts` são CLIs
 read-only, sem tool MCP correspondente: rodam direto com `node`, leem
 `XDG_DATA_HOME` como as tools, não recebem o caminho do diretório de dados na
-linha de comando e leem só por `src/compose.ts`, que verifica a cadeia na leitura. Nunca
+linha de comando e leem só por `src/compose.ts#composeReader`, o lado de leitura de
+`compose`, que verifica a cadeia na leitura e não tem serviço de escrita. Nunca
 importam `src/adapters/**` nem `src/mcp/**` e nunca escrevem no diretório de dados. A
-tabela de exit codes dos três está em `scripts/AGENTS.md`; em resumo, dado 0.x em `<D>`
-(`LEGACY_DATA`) sai com 2 nos três, e `PROCESS_CORRUPTED` (cadeia adulterada incluída)
-sai com 2 em `export` e `timeline`, mas com 1 em `insights`, que reporta integridade
-quebrada como achado do relatório.
+tabela de exit codes dos três está em `scripts/AGENTS.md`; a regra é uma só: `2` é dado
+quebrado (dado 0.x em `<D>`, `PROCESS_CORRUPTED` com cadeia adulterada ou `process.json`
+ilegível, e anexo ausente ou adulterado em `timeline` e `insights`), `1` é o resto
+(uso incorreto, erro, filtro sem resultado) e `0` é íntegro. Argumento desconhecido,
+opção sem valor ou argumento a mais saem com o uso e `1`.
 
 ### `scripts/export.ts`
 
@@ -680,9 +780,11 @@ Imprime em stdout uma linha JSON por registro do processo, vigentes ou não
 nem `relations`: a relação sai como `in` e `out`. Com `--fields`, cada linha só traz
 as chaves pedidas, e `seq`, `timestamp`, `agent` e `prevHash`, do 0.x, são recusados
 como campo desconhecido. O processo sai numa consulta só, carregado inteiro em
-memória (o teto de 64 MiB por processo limita o tamanho). Erro de uso, processo
-inexistente e campo desconhecido saem com `export failed: ...` em `stderr` e código
-`1`.
+memória (o teto de 64 MiB por processo limita o tamanho). Erro de uso (inclusive
+`--fields` sem valor e flag desconhecida), processo inexistente e campo desconhecido
+saem com `export failed: ...` em `stderr` e código `1`. A saída não escapa controles de
+terminal (o `JSON.stringify` deixa C1 e bidi crus): é feita para pipe de máquina, e o
+`timeline` é o script que escapa.
 
 ### `scripts/timeline.ts`
 
@@ -690,14 +792,14 @@ Consulta de alcance projeto com os registros não vigentes e as relações, sem 
 página nem de texto por entrada: é o caminho para ler anexos grandes.
 
 ```sh
-node scripts/timeline.ts <project> <target-prefix>... [--full] [--json]
+node scripts/timeline.ts <project> <target-prefix>... [--full] [--json] [--raw]
 ```
 
 Cada argumento depois do projeto é um prefixo de target, com a fronteira de `.`. A
 saída padrão é legível: uma seção `target <prefixo>: <n> records` por prefixo e um
 bloco por registro, com as marcas `[superseded by <id>]` e `[revoked by <id>]` e as
 relações de entrada e saída; não há linhas de cadeia (a leitura de alcance projeto já
-falha fechada). `--full` imprime o texto de cada anexo íntegro, byte a byte, entre
+falha fechada). `--full` imprime o texto de cada anexo íntegro entre
 `----- attachment <hash> (<n> bytes) -----` e `----- end -----`. `--json` imprime
 JSONL: uma linha `{"kind":"record", ...}` por registro, com o prefixo consultado em
 `query` e, com `--full`, o texto dos anexos em `attachmentText`. O alcance projeto lê
@@ -707,17 +809,15 @@ Códigos de saída: `0` tudo íntegro; `2` cadeia ou `process.json` quebrado, an
 ausente ou adulterado e dado 0.x; `1` uso incorreto ou erro (`timeline failed: CODE:
 msg`).
 
-**O modo texto imprime o texto do anexo verbatim.** O anexo e os campos livres vêm
-de agentes e não são confiáveis. Um anexo com a linha `----- end -----` forja o
-delimitador, e um agente com prompt injetado grava o próprio log, então a vítima é
-quem lê o terminal (a cadeia segue íntegra). Além disso, ESC, CSI e OSC (por exemplo
-o OSC 0 de título) no texto do anexo podem, conforme o terminal e sua configuração,
-ser interpretados por quem roda `timeline --full`. Os campos `data`, `needsReview` e
-`author.agent` saem por `JSON.stringify` em `scripts/timeline.ts#renderEntry`, que
-escapa C0 mas não C1: U+009B e U+009D saem crus mesmo sem `--full`, e alguns
-terminais, por exemplo os baseados em VTE, os tratam como CSI e OSC. O escape de
-terminal no modo texto está numa issue de follow-up, sem decisão tomada. **Para log
-não confiável use `--json --full`**, que escapa tudo.
+**A saída escapa os controles de terminal por padrão.** O anexo e os campos livres
+vêm de agentes e não são confiáveis, e um agente com prompt injetado grava o próprio
+log, então a vítima é quem lê o terminal (a cadeia segue íntegra). Na string final, no
+modo texto e no `--json`, `scripts/escape-controls.ts#escapeControls` troca C0 (menos LF
+e TAB), DEL, C1 e os controles bidi por `\uXXXX` visível: ESC, CSI, OSC (por exemplo o
+OSC 0 de título), U+009B e U+009D não chegam crus ao terminal, e o `JSON.parse` do
+`--json` devolve o texto original. `--raw` imprime o byte exato (com `--full --raw` o
+texto do anexo entre os delimitadores é idêntico ao anexo) e deixa o risco com quem lê.
+Um anexo com a linha `----- end -----` ainda forja o delimitador no modo texto.
 
 ### `scripts/insights.ts`
 
@@ -727,8 +827,11 @@ node scripts/insights.ts [projeto[/processo]]
 
 Relatório markdown de integridade da cadeia, linha do tempo e sinais da `key` (possível
 duplicata sem chave, chave em excesso e percentual de lotes com chave por tipo) sobre
-os registros do hexlog. Sai `1` com cadeia ou anexo quebrado, falha de leitura ou
-filtro sem resultado, e `2` com dado 0.x em `<D>`. A chave em excesso é um proxy: o
+os registros do hexlog. Sai `2` com dado quebrado (cadeia ou anexo adulterado,
+`process.json` ilegível, dado 0.x em `<D>`) e `1` com uso incorreto, falha de leitura de
+um processo ou filtro sem resultado; com os dois no mesmo relatório vale o maior. Um
+`process.json` ilegível não derruba o relatório: o processo sai marcado com
+`insights failed: PROCESS_CORRUPTED` e os demais seguem. A chave em excesso é um proxy: o
 reenvio com a mesma `key` devolve `replayed` sem gravar, então o log não registra
 "nunca teve reenvio" (ADR 0009).
 
@@ -748,4 +851,4 @@ script de teste sem depender do binário `claude` nem tocar no
 - [ADR 0008: serviços](docs/adr-0008-servicos.md)
 - [ADR 0009: ferramental](docs/adr-0009-ferramental.md)
 - [Tetos de tamanho do domínio](docs/tetos-dominio-v1.md)
-- [Pesquisa de bibliotecas](docs/pesquisa/hexlog-pesquisa-libs.md)
+- [Pesquisa de bibliotecas](docs/pesquisa/hexlog-pesquisa-libs.md): fundamenta decisões do 0.x; o ADR 0001 que ela cita só existe no git (`git show 87237c3:docs/adr-0001-hexlog-mvp.md`)

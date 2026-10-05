@@ -6,12 +6,12 @@ import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process
 import { createProcessService } from '../../src/commands/process.ts';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { RESERVED_PROCESS_NAMES, type Name } from '../../src/domain/ids.ts';
+import type { Manifest } from '../../src/domain/manifest.ts';
 import { HexlogError, type Detail, type ErrorCode } from '../../src/errors.ts';
 import type {
   DefinitionKind,
   DefinitionOf,
   DefinitionStore,
-  Manifest,
   ProcessStore,
 } from '../../src/ports.ts';
 import { captureError, createTempDir } from '../helpers.ts';
@@ -40,7 +40,12 @@ type Versions = Record<string, Record<string, unknown>>;
 
 /** `DefinitionStore` em memória: só leitura, e `add` planta uma versão (a ordem de inserção é a numérica). */
 function fakeDefinitions() {
-  const data: Record<DefinitionKind, Versions> = { types: {}, relations: {}, gates: {} };
+  // Sem protótipo: um nome como `constructor` não pode ler `Object.prototype`.
+  const data: Record<DefinitionKind, Versions> = {
+    types: Object.create(null) as Versions,
+    relations: Object.create(null) as Versions,
+    gates: Object.create(null) as Versions,
+  };
   const reads: string[] = [];
   const store: DefinitionStore = {
     names: (_project, kind) => Object.keys(data[kind]),
@@ -222,10 +227,25 @@ describe('createProcess: recusas', () => {
 
     expect(error).toMatchObject({
       code: 'TYPE_NOT_FOUND',
-      message: expect.stringContaining('run the setup'),
+      message: expect.stringContaining('call define_type first'),
       details: [{ path: '/project', code: 'unknown-name' }],
     });
     expect(processes.creates).toEqual([]);
+  });
+
+  test('projeto que ficou sem definição recusa com TYPE_NOT_FOUND mesmo com o processo já criado, em vez de created: false', () => {
+    const { service, definitions, processes } = setup();
+    definitions.add('types', 'note', '1.0', NOTE_1_0);
+    create(service);
+    definitions.store.names = () => [];
+
+    const error = captureError(() => create(service));
+
+    expect(error).toMatchObject({
+      code: 'TYPE_NOT_FOUND',
+      details: [{ path: '/project', code: 'unknown-name' }],
+    });
+    expect(processes.creates).toHaveLength(1);
   });
 
   test('pasta de nome sem versão não conta como definição registrada', () => {
@@ -321,6 +341,15 @@ describe('createProcess: processo já existente', () => {
     definitions.add('types', 'task', '1.1', NOTE_1_1);
 
     expect(create(service).stale).toEqual([{ kind: 'types', name: 'task', current: '1.1' }]);
+  });
+
+  test('nome `constructor` criado depois da fixação é stale, sem ler o protótipo', () => {
+    const { service, definitions } = setup();
+    definitions.add('types', 'note', '1.0', NOTE_1_0);
+    create(service);
+    definitions.add('types', 'constructor', '1.0', NOTE_1_0);
+
+    expect(create(service).stale).toEqual([{ kind: 'types', name: 'constructor', current: '1.0' }]);
   });
 
   test('nome fixado que não tem mais versão no projeto é stale com current null', () => {

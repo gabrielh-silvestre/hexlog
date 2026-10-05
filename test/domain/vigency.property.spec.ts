@@ -4,8 +4,8 @@ import {
   buildVigency,
   checkRelation,
   hasCycle,
-  lineages,
   needsReview,
+  pushTo,
 } from '../../src/domain/relations.ts';
 import type { Linked } from '../../src/domain/relations.ts';
 import type { RelationKind } from '../../src/domain/record.ts';
@@ -24,6 +24,24 @@ const op = fc.record<Op>({
   type: fc.constantFrom('x', 'x', 'x', 'y'),
   relations: fc.array(rel, { maxLength: 2 }),
 });
+
+/** Oráculo das propriedades: as linhagens, isto é, os conjuntos de registros ligados por `supersedes`. */
+function lineages(records: readonly Linked[]): string[][] {
+  const parent = new Map<string, string>(records.map(({ id }) => [id, id]));
+  const rootOf = (id: string): string => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    return root;
+  };
+  for (const { id, relations } of records) {
+    for (const { kind, to } of relations) {
+      if (kind === 'supersedes' && parent.has(to)) parent.set(rootOf(id), rootOf(to));
+    }
+  }
+  const groups = new Map<string, string[]>();
+  for (const { id } of records) pushTo(groups, rootOf(id), id);
+  return [...groups.values()];
+}
 
 type Written = Linked & { type: string };
 

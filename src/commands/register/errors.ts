@@ -1,9 +1,5 @@
-import type { RuleCode, Violation } from '../domain/relations.ts';
-import { HexlogError, type Detail } from '../errors.ts';
-
-export function invalidInput(path: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_INPUT', message, [{ path, code, message }]);
-}
+import type { RuleCode, Violation } from '../../domain/relations.ts';
+import { HexlogError, type Detail } from '../../errors.ts';
 
 export function invalidRecord(details: Detail[]): HexlogError {
   return new HexlogError('INVALID_RECORD', 'record violates a type or relation rule', details);
@@ -45,14 +41,15 @@ export function relationNotFound(
 }
 
 /**
- * As portas apontam o campo da tool que presumem (`/process`, `/hash`...). Quando o valor veio de
- * `records[i]`, o serviço refaz o `path` para o campo certo do lote.
+ * As portas apontam o campo da tool que presumem (`/process`, `/hash`...) ou nenhum (`IO_ERROR`).
+ * Quando o valor veio de `records[i]`, o serviço refaz o `path` de qualquer erro de porta para o
+ * campo certo do lote e, se o erro é de outro processo que o da chamada, `process` o nomeia.
  */
-export function withPath(error: unknown, path: string): unknown {
-  if (!(error instanceof HexlogError) || error.code !== 'INVALID_INPUT') return error;
+export function withPath(error: unknown, path: string, process?: string): unknown {
+  if (!(error instanceof HexlogError)) return error;
   return new HexlogError(
     error.code,
     error.message,
-    error.details.map((detail) => ({ ...detail, path })),
+    error.details.map((detail) => ({ ...detail, path, ...(process !== undefined && { process }) })),
   );
 }

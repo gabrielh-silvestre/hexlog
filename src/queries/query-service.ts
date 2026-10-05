@@ -1,7 +1,7 @@
-import { isUndefined, omitBy, once, pick } from 'es-toolkit';
-import type { Link } from '../domain/chain.ts';
+import { isUndefined, mapValues, omitBy, pick } from 'es-toolkit';
+import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
-import { evaluateGate as answerQuestions, type GateResult } from '../domain/gate.ts';
+import { evaluateGate, type GateResult } from '../domain/gate.ts';
 import {
   Hash,
   processOf,
@@ -10,25 +10,24 @@ import {
   type RecordId,
   type Target,
 } from '../domain/ids.ts';
-import { needsReview as staleReviews, type NeedsReview } from '../domain/relations.ts';
-import { HexlogError } from '../errors.ts';
+import { needsReview, type NeedsReview } from '../domain/relations.ts';
+import { HexlogError, invalidInput } from '../errors.ts';
+import type { Manifest } from '../domain/manifest.ts';
 import type {
   AttachmentReader,
   AttachmentStatus,
   DefinitionKind,
   DefinitionReader,
-  Manifest,
   ProcessReader,
   SearchIndex,
 } from '../ports.ts';
+import { latestVersions } from '../shared/latest.ts';
 import { loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
-import type { Logger } from '../shared/logger.ts';
 import { sliceChars } from '../shared/pages.ts';
-import { decodeCursor, encodeCursor, filtersHash, type CursorPayload } from './cursor.ts';
+import { decodeCursor, encodeCursor, invalidCursor, type CursorPayload } from './cursor.ts';
 import { projectNotFound, readScope, type Reading, type ReadTarget } from './read.ts';
 import {
   buildView,
-  indexRef,
   inOutputOrder,
   leftReason,
   relationsOf,
@@ -47,8 +46,11 @@ const DEFAULT_LIMIT = 50;
  * (`SEARCH_MAX_CHARS`); a F5 reusa a constante no `.max()` do zod.
  */
 export const QUERY_TEXT_MAX_CHARS = 200;
-/** Padrão de `readAttachment` chamado sem `maxChars`; o kernel MCP sempre passa `PAGE_CHARS_CAP` (D-20). */
-const ATTACHMENT_PAGE_CHARS = 24_000;
+/**
+ * D-20: teto de uma página. Na `query` conta os caracteres do JSON dos registros (as tools o passam em
+ * `maxChars`); no `readAttachment`, os do `text`, e é o padrão sem `maxChars`.
+ */
+export const PAGE_CHARS_CAP = 24_000;
 
 export type QueryInput = Filters & {
   project: Name;
@@ -58,7 +60,13 @@ export type QueryInput = Filters & {
   /** Registros por página (padrão 50); `maxChars` pode encurtar a página. */
   limit?: number;
   cursor?: string;
-  /** Marcador de uma consulta anterior: `changes` diz o que entrou e saiu do resultado desde então. */
+  /**
+   * Marcador de uma consulta anterior: `changes` diz o que entrou e saiu do resultado desde então,
+   * só na 1ª página. Entra no hash dos filtros que o cursor prende (`hashOf`): da página 2 em diante,
+   * reenvie o mesmo `changesSince` com o `cursor`, senão `INVALID_CURSOR` (`filters-mismatch`).
+   * O marcador vale só para o alcance em que foi emitido: no alcance projeto, o que ele não nomeia
+   * é lido como vazio (o do `register` nomeia um processo só e acrescenta ids a `changes.entered`).
+   */
   changesSince?: Marker;
   /** Teto de caracteres do JSON da página (D-20); o 1º registro sai inteiro mesmo acima dele. */
   maxChars?: number;
@@ -106,7 +114,7 @@ export type GateEvaluation = GateResult & { marker: Marker };
 export type VerifyChainInput = { project: Name; process: Name };
 
 /** D-16: anexo citado por um registro que não está inteiro no projeto. */
-export type AttachmentBreak = {
+type AttachmentBreak = {
   id: RecordId;
   hash: Hash;
   reason: 'attachment-missing' | 'attachment-corrupted';
@@ -124,7 +132,7 @@ export type VerifyChainResult = Chain & {
 export type ListInput = { project?: Name; process?: Name };
 
 /** Definição do projeto: `version` é a mais nova, `versions` todas em ordem crescente. */
-export type DefinitionSummary = { name: Name; version: string; versions: string[] };
+type DefinitionSummary = { name: Name; version: string; versions: string[] };
 
 export type ListResult = {
   /** Sem `project`: um item por projeto. */
@@ -143,7 +151,7 @@ export type ListResult = {
   };
 };
 
-export type ReadAttachmentInput = {
+type ReadAttachmentInput = {
   project: Name;
   hash: Hash;
   /** Posição em caracteres; o `next` da página anterior. */
@@ -164,53 +172,52 @@ export type QueryService = {
    * D-24: lê o alcance pedido pelo carregador único e devolve os registros vigentes que passam nos
    * filtros (todos, com `includeNonCurrent`), com relações de entrada e saída, `needsReview` e
    * `attachmentStatus`. Ordem de saída: alcance processo por `seq`, alcance projeto por (`at`,
-   * processo, `seq`), com `text` por relevância e o mesmo desempate. Toda página leva ao menos um
-   * registro. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de `lastId`
-   * sobre a leitura da página 1.
+   * processo, `seq`), com `text` por relevância e o mesmo desempate. Página com resultado leva ao
+   * menos um registro (o 1º sai inteiro mesmo acima de `maxChars`); consulta sem resultado devolve
+   * `records: []`. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de
+   * `lastId` sobre a leitura da página 1.
    *
-   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: em branco ou acima de `QUERY_TEXT_MAX_CHARS`), `INVALID_CURSOR`, `MARKER_NOT_FOUND`,
-   * `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED` (com `details[0].process`).
+   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: acima de `QUERY_TEXT_MAX_CHARS` ou sem termo
+   * pesquisável, `no-terms`, como `''`, `'  '` e `'!!!'`),
+   * `INVALID_CURSOR`, `MARKER_NOT_FOUND`, `PROJECT_NOT_FOUND` (alcance projeto), `PROCESS_NOT_FOUND`,
+   * `PROCESS_CORRUPTED` (com `details[0].process`), `PROCESS_TOO_LARGE` e `IO_ERROR`.
    */
   queryRecords(input: QueryInput): QueryResult;
   /**
    * D-24: só calcula, nunca grava. Lê o processo do gate e, se alguma pergunta declara
    * `scope: "project"`, o projeto inteiro, pelo mesmo carregador de `queryRecords`; o marcador
-   * devolvido cobre exatamente o que foi lido. A cadeia é verificada sempre (`PROCESS_CORRUPTED`).
+   * devolvido cobre exatamente o que foi lido. A cadeia é verificada até onde a leitura vai: com
+   * `marker`, só o prefixo até o id marcado: quebra depois dele não é vista.
    *
    * `PROCESS_NOT_FOUND`, `GATE_NOT_FOUND` (`unknown-name` em `/gate`: o gate não está fixado no
-   * processo), `MARKER_NOT_FOUND` e `PROCESS_CORRUPTED` (com `details[0].process`).
+   * processo), `MARKER_NOT_FOUND`, `PROCESS_CORRUPTED` (com `details[0].process`),
+   * `PROCESS_TOO_LARGE` e `IO_ERROR`.
    */
   evaluateGate(input: EvaluateGateInput): GateEvaluation;
   /**
    * Diagnóstico sem gravar: a cadeia do processo e os anexos que os registros citam (D-16). Quebra
    * não lança, vira `ok: false` com `breaks` (cadeia); anexo ausente ou corrompido entra em
-   * `attachmentBreaks` como `attachment-missing`/`attachment-corrupted`. `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED`
-   * (`unreadable-manifest`) vêm da leitura do manifesto.
+   * `attachmentBreaks` como `attachment-missing`/`attachment-corrupted`. `PROCESS_NOT_FOUND` e
+   * `PROCESS_CORRUPTED` (`unreadable-manifest`) vêm da leitura do manifesto; `PROCESS_TOO_LARGE` e
+   * `IO_ERROR`, da leitura do log.
    */
   verifyChain(input: VerifyChainInput): VerifyChainResult;
   /**
    * Sem `project`, os projetos; com `project`, os processos e as definições dele; com `project` e
-   * `process`, o que o manifesto fixou. `PROJECT_NOT_FOUND`, `PROCESS_NOT_FOUND` e `INVALID_INPUT`
-   * (`/project`, `/process` sem `project`).
+   * `process`, o que o manifesto fixou. `PROJECT_NOT_FOUND`, `PROCESS_NOT_FOUND`, `INVALID_INPUT`
+   * (`/project`, `/process` sem `project`), `PROCESS_CORRUPTED` (`unreadable-manifest`) e `IO_ERROR`.
    */
   list(input: ListInput): ListResult;
   /**
    * Uma página do texto do anexo, já conferido contra o sha256 dos bytes pela porta.
-   * `ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED` e `INVALID_INPUT` (`/offset` além do fim).
+   * `ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`, `INVALID_INPUT` (`/offset` além do fim) e
+   * `IO_ERROR`.
    */
   readAttachment(input: ReadAttachmentInput): AttachmentPage;
 };
 
 function invalidFilter(path: string, code: string, message: string): HexlogError {
   return new HexlogError('INVALID_FILTER', 'Invalid filter', [{ path, code, message }]);
-}
-
-function invalidCursor(code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_CURSOR', 'Invalid cursor', [{ path: '/cursor', code, message }]);
-}
-
-function invalidInput(path: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_INPUT', message, [{ path, code, message }]);
 }
 
 function gateNotFound(): HexlogError {
@@ -228,18 +235,24 @@ function targetOf({ project, scope = 'process', process }: QueryInput): ReadTarg
   return { project, scope, process };
 }
 
-function assertValid({ limit, text }: QueryInput): void {
+/** `no-terms` vem depois de `too-long` para nunca tokenizar um texto acima do teto. */
+function assertValid({ limit, text }: QueryInput, search: SearchIndex): void {
   if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1)) {
     throw invalidFilter('/limit', 'out-of-range', 'limit must be a positive integer');
   }
-  if (text?.trim() === '') {
-    throw invalidFilter('/text', 'blank', 'text must have at least one non-blank character');
-  }
-  if (text !== undefined && text.length > QUERY_TEXT_MAX_CHARS) {
+  if (text === undefined) return;
+  if (text.length > QUERY_TEXT_MAX_CHARS) {
     throw invalidFilter(
       '/text',
       'too-long',
       `text must have at most ${QUERY_TEXT_MAX_CHARS} characters`,
+    );
+  }
+  if (search.terms(text).length === 0) {
+    throw invalidFilter(
+      '/text',
+      'no-terms',
+      'text has no searchable terms (spaces and punctuation are not terms)',
     );
   }
 }
@@ -254,10 +267,16 @@ const FILTER_KEYS = [
   'relatedTo',
 ] as const;
 
-/** D-20: o hash prende os filtros e `changesSince`, não a página (`limit`, `maxChars`). */
+/**
+ * D-20: o hash prende os filtros e `changesSince`, não a página (`limit`, `maxChars`). O JCS descarta
+ * chave `undefined`, então filtro ou `changesSince` ausente não entra no hash.
+ */
 function hashOf(filters: Filters, changesSince: Marker | undefined): Hash {
-  const fixed = { ...filters, includeNonCurrent: filters.includeNonCurrent ?? false, changesSince };
-  return filtersHash(omitBy(fixed, isUndefined));
+  return hashOfJcs({
+    ...filters,
+    includeNonCurrent: filters.includeNonCurrent ?? false,
+    changesSince,
+  });
 }
 
 /** D-20: alcance, projeto, processo e filtros da página têm de ser os do cursor. */
@@ -289,14 +308,19 @@ function assertSameContent(cursor: CursorPayload, reading: Reading): void {
     const seen = Object.hasOwn(cursor.markerHashes, name) ? cursor.markerHashes[name] : null;
     const read = Object.hasOwn(reading.markerHashes, name) ? reading.markerHashes[name] : null;
     if (seen !== read) {
-      throw invalidCursor('marker-hash-mismatch', 'Cursor marker does not match the process log');
+      throw invalidCursor(
+        'marker-hash-mismatch',
+        `Cursor marker does not match the log of process '${name}'`,
+      );
     }
   }
 }
 
 function startAfter(selected: readonly Link[], lastId: RecordId): number {
   const at = selected.findIndex((link) => link.id === lastId);
-  if (at === -1) throw invalidCursor('last-id-not-found', 'Cursor record is not in the result');
+  if (at === -1) {
+    throw invalidCursor('last-id-not-found', 'Cursor record is not in the result');
+  }
   return at + 1;
 }
 
@@ -305,17 +329,11 @@ export function createQueryService(deps: {
   definitions: DefinitionReader;
   attachments: AttachmentReader;
   search: SearchIndex;
-  clock: () => Date;
-  logger: Logger;
 }): QueryService {
   const { store, definitions, attachments, search } = deps;
 
   const summariesOf = (project: Name, kind: DefinitionKind): DefinitionSummary[] =>
-    definitions.names(project, kind).flatMap((name) => {
-      const versions = definitions.versions(project, kind, name);
-      const version = versions.at(-1);
-      return version === undefined ? [] : [{ name, version, versions }];
-    });
+    latestVersions(definitions, project, kind);
 
   /** D-16: estado dos anexos que `link` cita nos campos marcados do tipo fixado no processo dele. */
   function attachmentStatusOf(
@@ -343,7 +361,7 @@ export function createQueryService(deps: {
       readScope(store, target, input.changesSince, '/changesSince'),
       target.scope,
     );
-    const before = select(past, filters, search, indexRef(target));
+    const before = select(past, filters, search, target);
     const beforeIds = new Set(before.map(({ id }) => id));
     const nowIds = new Set(now.selected.map(({ id }) => id));
     return {
@@ -357,7 +375,7 @@ export function createQueryService(deps: {
 
   return {
     queryRecords(input) {
-      assertValid(input);
+      assertValid(input, search);
       const target = targetOf(input);
       const filters: Filters = omitBy(pick(input, FILTER_KEYS), isUndefined);
       const hash = hashOf(filters, input.changesSince);
@@ -367,14 +385,14 @@ export function createQueryService(deps: {
       const reading = readScope(store, target, cursor?.marker, '/cursor');
       if (cursor !== undefined) assertSameContent(cursor, reading);
       const view = buildView(reading, target.scope);
-      const selected = select(view, filters, search, indexRef(target));
+      const selected = select(view, filters, search, target);
 
-      const reviews = once(() => staleReviews(view.records));
+      const reviews = needsReview(view.records, view.vigency);
       const manifests = new Map(
         reading.processes.map(({ name, verified }) => [name, verified.manifest]),
       );
       const render = (link: Link): QueryRecord => {
-        const review = reviews().get(link.id);
+        const review = reviews.get(link.id);
         const status = attachmentStatusOf(target.project, manifests.get(processOf(link.id)), link);
         return {
           ...pick(link, ['id', 'type', 'at', 'target', 'author', 'data']),
@@ -428,7 +446,7 @@ export function createQueryService(deps: {
         ? { project, scope: 'project' }
         : { project, scope: 'process', process };
       const reading = readScope(store, scope, marker);
-      const result = answerQuestions(gate.questions, {
+      const result = evaluateGate(gate.questions, {
         target,
         records: (questionScope) =>
           questionScope === 'project'
@@ -474,11 +492,7 @@ export function createQueryService(deps: {
           process: {
             name: process,
             createdAt,
-            pinned: {
-              types: Object.keys(fixed.types),
-              relations: Object.keys(fixed.relations),
-              gates: Object.keys(fixed.gates),
-            },
+            pinned: mapValues(fixed, (byName) => Object.keys(byName)),
             hashes,
           },
         };
@@ -497,7 +511,7 @@ export function createQueryService(deps: {
       };
     },
 
-    readAttachment({ project, hash, offset = 0, maxChars = ATTACHMENT_PAGE_CHARS }) {
+    readAttachment({ project, hash, offset = 0, maxChars = PAGE_CHARS_CAP }) {
       const text = attachments.read(project, hash);
       if (offset > text.length) {
         throw invalidInput('/offset', 'out-of-range', 'offset is past the end of the attachment');

@@ -1,8 +1,9 @@
 import { describe, test, expect, jest, afterEach } from '@jest/globals';
 import { anchor, hashLink, sha256hex, type Expected, type Link } from '../../src/domain/chain.ts';
 import type { RecordId } from '../../src/domain/ids.ts';
+import { BATCH_MAX } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
-import type { ProcessRef, RawProcess } from '../../src/ports.ts';
+import type { ProcessReader, ProcessRef, RawProcess } from '../../src/ports.ts';
 import {
   formatLine,
   isValidLine,
@@ -80,6 +81,24 @@ describe('formatLine e isValidLine', () => {
       });
     },
   );
+
+  test('chave além de links é rejeitada como invalid-line (a linha é estrita)', () => {
+    expect(isValidLine(JSON.stringify({ links: [A], extra: 1 }), START)).toEqual({
+      status: 'rejected',
+      reasons: ['invalid-line'],
+    });
+  });
+
+  test('uma linha leva no máximo BATCH_MAX elos: o último que cabe passa, o seguinte é invalid-line', () => {
+    const full = chainOf(BATCH_MAX);
+    const [extra] = chainOf(BATCH_MAX + 1).slice(-1);
+
+    expect(isValidLine(JSON.stringify({ links: full }), START)).toMatchObject({ status: 'valid' });
+    expect(isValidLine(JSON.stringify({ links: [...full, extra] }), START)).toEqual({
+      status: 'rejected',
+      reasons: ['invalid-line'],
+    });
+  });
 
   test('elo que não ocupa a posição é rejeitado com as razões, e a cadeia segue dele', () => {
     const forged = { ...B, prevHash: sha256hex('forjado') };
@@ -164,6 +183,23 @@ describe('parseLog: as regras (1)-(5) de D-05', () => {
       repaired: [],
     },
     {
+      name: 'rasgo + linha invalid-line sem next: a pendente vira quebra e a posição não anda',
+      text: `${lineOf(A)}${TORN}\n{"foo":1}\n${lineOf(B)}`,
+      seqs: [0, 1],
+      breaks: [
+        { index: 1, reason: 'invalid-line' },
+        { index: 2, reason: 'invalid-line' },
+      ],
+      repaired: [],
+    },
+    {
+      name: 'terminadores \\r\\n: o \\r que sobra no segmento é espaço para o JSON',
+      text: `${lineOf(A).replace(/\n$/, '\r\n')}${lineOf(B).replace(/\n$/, '\r\n')}`,
+      seqs: [0, 1],
+      breaks: [],
+      repaired: [],
+    },
+    {
       name: 'linha inválida que parseia',
       text: `${lineOf(A)}{"foo":1}\n${lineOf(B)}`,
       seqs: [0, 1],
@@ -216,6 +252,25 @@ describe('parseLog: as regras (1)-(5) de D-05', () => {
     expect(parsed.lines.flatMap((line) => line.links.map((link) => link.seq))).toEqual(seqs);
     expect(parsed.breaks).toEqual(breaks);
     expect(parsed.repairedLines).toEqual(repaired);
+  });
+
+  /** A gravação seguinte do `process-store`: um elo em `end`, com o `\n` de prefixo se o log não termina nele. */
+  const appendNext = (text: string, end: Expected): string => {
+    const link = linkAt(end, {
+      id: recordId(end.seq + 1),
+      author: { agent: 'luffy', client: 'claude-code' },
+    });
+    return `${text}${text === '' || text.endsWith('\n') ? '' : '\n'}${lineOf(link)}`;
+  };
+
+  test.each(cases)('a gravação seguinte entra depois de: $name', ({ text }) => {
+    const before = parseLog(text, START.prevHash);
+
+    const after = parseLog(appendNext(text, before.end), START.prevHash);
+
+    expect(after.breaks).toEqual(before.breaks);
+    expect(after.lines.at(-1)?.links.map((link) => link.seq)).toEqual([before.end.seq]);
+    expect(after.end.seq).toBe(before.end.seq + 1);
   });
 
   test('rasgo no fim do arquivo não consome seq: a posição final é a do último elo válido', () => {
@@ -344,6 +399,12 @@ describe('verifyProcess', () => {
       });
     });
 
+    test('marcador numa linha rejeitada dá MARKER_NOT_FOUND: só linha aceita pode ser marcada', () => {
+      expect(() => verifyProcess(rawOf(`${lineOf(A)}${forgedLine(B)}`), B.id)).toThrow(
+        expect.objectContaining({ code: 'MARKER_NOT_FOUND' }),
+      );
+    });
+
     test('marcador que não está no log dá MARKER_NOT_FOUND', () => {
       expect(() => verifyProcess(rawOf(lineOf(A)), B.id)).toThrow(
         expect.objectContaining({
@@ -373,10 +434,10 @@ describe('SL2: cada linha é parseada uma vez por chamada', () => {
 
     verifyProcess(rawOf(segments.join('\n')), C.id);
 
-    const parsedSegments = spy.mock.calls
-      .map(([text]) => text)
-      .filter((text) => segments.includes(text));
-    expect(parsedSegments).toEqual(segments);
+    expect(spy).toHaveBeenCalledTimes(segments.length);
+    segments.forEach((segment, index) => {
+      expect(spy).toHaveBeenNthCalledWith(index + 1, segment);
+    });
   });
 });
 
@@ -384,12 +445,12 @@ describe('loadVerified', () => {
   test('lê o processo cru da porta uma vez e verifica o que veio', () => {
     const ref: ProcessRef = { project: 'demo', process: 'proc-1' };
     const raw = rawOf(lineOf(A, B));
-    const store = { read: jest.fn<(ref: ProcessRef) => RawProcess>().mockReturnValue(raw) };
+    const read = jest.fn<(ref: ProcessRef) => RawProcess>().mockReturnValue(raw);
 
-    const verified = loadVerified(store, ref, A.id);
+    const verified = loadVerified({ read } as unknown as ProcessReader, ref, A.id);
 
-    expect(store.read).toHaveBeenCalledTimes(1);
-    expect(store.read).toHaveBeenCalledWith(ref);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(ref);
     expect(verified).toEqual(verifyProcess(raw, A.id));
   });
 });

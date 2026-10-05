@@ -8,7 +8,7 @@ export type Name = z.infer<typeof Name>;
 export const Hash = z.string().regex(/^[0-9a-f]{64}$/);
 export type Hash = z.infer<typeof Hash>;
 
-export const Instant = z.iso.datetime();
+export const Instant = z.iso.datetime({ precision: 3 });
 export type Instant = z.infer<typeof Instant>;
 
 /** D-07: segmentos `Name` separados por `.`, no máximo 200 caracteres, sem ponto final. */
@@ -24,7 +24,11 @@ const UUID_V7_SRC = '[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 export const RecordId = z.string().regex(new RegExp(`^${NAME_SRC}:${UUID_V7_SRC}$`));
 export type RecordId = z.infer<typeof RecordId>;
 
-/** D-24: uma entrada por processo lido; `null` para processo vazio. Só tipo: nenhum consumidor valida. */
+/**
+ * D-24: uma entrada por processo lido; `null` para processo vazio. O marcador cobre exatamente os
+ * processos que nomeia: no alcance projeto, o que ele não nomeia é lido como vazio. Só tipo: nenhum
+ * consumidor valida.
+ */
 export type Marker = Record<Name, RecordId | null>;
 
 /**
@@ -38,7 +42,6 @@ export const TypeNames = z
 
 /** D-01: apelido de um item do lote, citado pelos itens seguintes como `@<alias>`. */
 export const alias = Name;
-export type Alias = z.infer<typeof alias>;
 
 /** Processo dono do registro: o trecho do id antes do `:`, sem leitura de disco (Q1). */
 export function processOf(id: RecordId): Name {
@@ -53,3 +56,6 @@ export const RESERVED_PROCESS_NAMES = [
   'attachments',
   'archive',
 ] as const;
+
+export const isReservedProcessName = (name: string): boolean =>
+  (RESERVED_PROCESS_NAMES as readonly string[]).includes(name);

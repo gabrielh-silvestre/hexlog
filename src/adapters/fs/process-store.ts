@@ -1,15 +1,20 @@
-// Import padrão (não `import * as fs`): o spy de `writeSync` do P9 (`jest.spyOn(fs, 'writeSync')`) só
-// intercepta assim, porque sob `esModuleInterop` o namespace copia o módulo com getters não
-// configuráveis e o teste acabaria espiando um objeto que este módulo não usa.
+// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { RESERVED_PROCESS_NAMES, type Name } from '../../domain/ids.ts';
+import { isReservedProcessName, type Name } from '../../domain/ids.ts';
 import { Manifest } from '../../domain/manifest.ts';
-import { HexlogError } from '../../errors.ts';
+import { HexlogError, reservedName } from '../../errors.ts';
 import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { dataRoot, MANIFEST_FILE, processPaths } from './data-format.ts';
-import { listDirectories, mapIo, readIfPresent, safeName, toHexlogError } from './io.ts';
+import {
+  existsStrict,
+  listDirectories,
+  mapIo,
+  readIfPresent,
+  safeName,
+  toHexlogError,
+} from './io.ts';
 import { createLockManager, type Lock, type LockOptions } from './lock.ts';
 
 export type ProcessStoreOptions = LockOptions & {
@@ -38,21 +43,18 @@ function unreadableManifest(ref: ProcessRef): HexlogError {
  */
 export const MAX_LOG_BYTES = 64 * 1024 * 1024;
 
-function tooLarge(): HexlogError {
-  const message = 'process log exceeds the size limit; create a new process to keep recording';
+/** A recomendação de criar outro processo só vale para quem grava: leitura e destino de relação ficam neutros. */
+function tooLarge(ref: ProcessRef, advice = false): HexlogError {
+  const base = `process '${ref.process}' log exceeds ${MAX_LOG_BYTES / 2 ** 20} MiB`;
+  const message = advice ? `${base}; create a new process to keep recording` : base;
   return new HexlogError('PROCESS_TOO_LARGE', message, [
-    { path: '/process', code: 'too-large', message },
+    { path: '/process', code: 'too-large', message, process: ref.process },
   ]);
 }
 
 /** Tamanho em bytes do `records.jsonl` (arquivo inexistente vale 0). */
 function logSize(file: string): number {
-  try {
-    return fs.statSync(file).size;
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return 0;
-    throw error;
-  }
+  return fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
 }
 
 /**
@@ -60,8 +62,8 @@ function logSize(file: string): number {
  * de ler, então um log acima de `MAX_LOG_BYTES` nunca vira string. Como `write` lê pelo mesmo
  * `createProcessStore#readProcess`, escrever sobre processo acima do teto recusa sem gravar.
  */
-function readLogText(file: string): string {
-  if (logSize(file) > MAX_LOG_BYTES) throw tooLarge();
+function readLogText(file: string, ref: ProcessRef, advice: boolean): string {
+  if (logSize(file) > MAX_LOG_BYTES) throw tooLarge(ref, advice);
   return readIfPresent(file) ?? '';
 }
 
@@ -78,22 +80,13 @@ function parseManifest(ref: ProcessRef, text: string): Manifest {
 }
 
 /**
- * D-05: grava até somar o tamanho do buffer (o POSIX permite escrita parcial; o retorno de
- * `writeSync` não pode ser ignorado). Erro no meio deixa o que já entrou: resto que o leitor trata.
- */
-function writeFully(fd: number, buffer: Buffer): void {
-  let offset = 0;
-  while (offset < buffer.length) offset += fs.writeSync(fd, buffer, offset);
-}
-
-/**
  * Anexa `text` (se houver) e dá o único `fsync` do lote. Sem `text` (replay, D-05) só dá `fsync`,
  * porque um lote de cauda válida pode nunca ter passado por um.
  */
 function appendAndSync(file: string, text: string | undefined): void {
   const fd = fs.openSync(file, 'a', 0o600);
   try {
-    if (text !== undefined) writeFully(fd, Buffer.from(text));
+    if (text !== undefined) fs.writeFileSync(fd, Buffer.from(text));
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -118,9 +111,9 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     return parseManifest(ref, manifestText);
   }
 
-  function readProcess(ref: ProcessRef): RawProcess {
+  function readProcess(ref: ProcessRef, advice = false): RawProcess {
     const manifest = readManifest(ref);
-    const text = readLogText(pathsOf(ref).log);
+    const text = readLogText(pathsOf(ref).log, ref, advice);
     return { manifest, text, endsWithNewline: text === '' || text.endsWith('\n') };
   }
 
@@ -129,18 +122,18 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     decide: (raw: RawProcess) => Decision<T>,
   ): Promise<T> {
     const paths = pathsOf(ref);
-    if (!fs.existsSync(paths.manifest)) throw notFound(ref);
+    if (!existsStrict(paths.manifest)) throw notFound(ref);
     const lock = await locks.acquire(paths.lock);
     let result: T;
     try {
-      const raw = readProcess(ref);
+      const raw = readProcess(ref, true);
       const decision = decide(raw);
       const text =
         decision.line === undefined
           ? undefined
           : `${raw.endsWithNewline ? '' : '\n'}${decision.line}`;
       if (text !== undefined) {
-        if (logSize(paths.log) + Buffer.byteLength(text) > MAX_LOG_BYTES) throw tooLarge();
+        if (logSize(paths.log) + Buffer.byteLength(text) > MAX_LOG_BYTES) throw tooLarge(ref, true);
         await locks.confirm(lock);
       }
       appendAndSync(paths.log, text);
@@ -168,24 +161,18 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     readManifest: (ref) => mapIo(() => readManifest(ref)),
 
     list: (project) =>
-      mapIo(() =>
-        listDirectories(projectDir(project), (name) =>
-          // Pastas de definição e anexos do projeto não têm manifesto.
-          fs.existsSync(path.join(projectDir(project), name, MANIFEST_FILE)),
-        ),
-      ),
+      mapIo(() => {
+        const dir = projectDir(project);
+        // Pastas de definição e anexos do projeto não têm manifesto.
+        return listDirectories(dir, (name) => existsStrict(path.join(dir, name, MANIFEST_FILE)));
+      }),
 
     listProjects: () => mapIo(() => listDirectories(root)),
 
     create: (ref, manifest) =>
       mapIo(() => {
         const paths = pathsOf(ref);
-        if ((RESERVED_PROCESS_NAMES as readonly string[]).includes(ref.process)) {
-          const message = 'reserved process name';
-          throw new HexlogError('RESERVED_NAME', message, [
-            { path: '/process', code: 'reserved-name', message },
-          ]);
-        }
+        if (isReservedProcessName(ref.process)) throw reservedName();
         if (manifest.project !== ref.project || manifest.process !== ref.process) {
           throw new HexlogError('INTERNAL', 'manifest does not match ref');
         }

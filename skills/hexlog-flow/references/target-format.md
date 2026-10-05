@@ -21,7 +21,7 @@ consulta por `targetPrefix` = o slug traz o item inteiro, e o `target` do
 ## `targetIdPattern` customizado por projeto
 
 O `.hexlog/flow.md` pode restringir o formato do target via `targetIdPattern` no
-frontmatter (ver `skills/hexlog-setup/references/flow-map-schema.md`): uma regex
+frontmatter (ver [`../../hexlog-setup/references/flow-map-schema.md`](../../hexlog-setup/references/flow-map-schema.md)): uma regex
 sobre o **rótulo inteiro**, mais estreita que a sintaxe acima — por exemplo, um
 projeto que numera tarefas como `proj-123` e as divide em partes declara
 `targetIdPattern: 'proj-[0-9]+(\.[a-z0-9-]+)*'`. Quando o campo está ausente, vale só a

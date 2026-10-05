@@ -1,11 +1,10 @@
 import type { ZodType } from 'zod';
-import { anchor as hashOf } from '../domain/chain.ts';
+import { hashOfJcs } from '../domain/chain.ts';
 import {
   bumpVersion,
   classifyRelationChange,
   classifyTypeChange,
   compareVersions,
-  formatVersion,
   Gate,
   RecordType,
   RelationName,
@@ -17,7 +16,7 @@ import type { DefinitionKind, DefinitionOf, DefinitionStore, Validator } from '.
 
 type Breaking = { breaking?: boolean };
 
-export type DefineTypeInput = { project: Name; name: Name; schema: RecordType } & Breaking;
+type DefineTypeInput = { project: Name; name: Name; schema: RecordType } & Breaking;
 export type DefineRelationInput = { project: Name } & RelationName & Breaking;
 export type DefineGateInput = { project: Name } & Gate & Breaking;
 
@@ -122,7 +121,11 @@ const gateRule: Rule<'gates'> = {
   classify: () => 'compatible',
 };
 
-/** Versão a gravar sobre `previous` (D-11); `breaking: true` sobe o major mesmo sem quebra. */
+/**
+ * Versão a gravar sobre `previous` (D-11); `breaking: true` sobe o major mesmo sem quebra. A única
+ * exceção é a definição idêntica à vigente: `defineVersioned` a devolve como replay
+ * (`created: false`) antes de chamar esta função.
+ */
 function targetVersion<K extends DefinitionKind>(
   rule: Rule<K>,
   previous: { version: string; definition: DefinitionOf[K] } | undefined,
@@ -137,7 +140,7 @@ function targetVersion<K extends DefinitionKind>(
       { path: rule.breakingPath, code: 'breaking-change', message },
     ]);
   }
-  return formatVersion(bumpVersion(previous.version, broken || breaking ? 'major' : 'minor'));
+  return bumpVersion(previous.version, broken || breaking ? 'major' : 'minor');
 }
 
 /**
@@ -155,7 +158,7 @@ function defineVersioned<K extends DefinitionKind>(
   breaking: boolean,
 ): Defined {
   const next = rule.shape(candidate);
-  const hash = hashOf(next);
+  const hash = hashOfJcs(next);
   let firstBase: string | undefined;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -165,7 +168,7 @@ function defineVersioned<K extends DefinitionKind>(
       latest === undefined
         ? undefined
         : { version: latest, definition: store.read(project, rule.kind, name, latest) };
-    if (previous !== undefined && hashOf(previous.definition) === hash) {
+    if (previous !== undefined && hashOfJcs(previous.definition) === hash) {
       return { name, version: previous.version, hash, created: false };
     }
 

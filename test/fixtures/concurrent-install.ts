@@ -104,7 +104,6 @@ try {
       spinBarrier('.barrier2');
       return Promise.resolve(TOOLS_COUNT);
     },
-    log: () => undefined,
   });
   process.stdout.write(JSON.stringify({ ok: true, action: result.action }));
   // process.exitCode em vez de process.exit(): mesmo código de saída, sem sair

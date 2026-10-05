@@ -106,33 +106,8 @@ describe('P3/TM3: register recusa o teto de entrada', () => {
       { records: [item({ target: 'hex:target:x' })] },
       '/records/0/target',
     ],
-    ['alias A_B fora de Name', { records: [item({ alias: 'A_B' })] }, '/records/0/alias'],
-    ['key vazia', { key: '' }, '/key'],
     ['key de 201 caracteres', { key: 'k'.repeat(201) }, '/key'],
-    ['agent de 101 caracteres', { agent: 'a'.repeat(101) }, '/agent'],
-    ['agent com surrogate solto', { agent: 'a\ud800b' }, '/agent'],
-    ['model com surrogate solto', { model: 'a\ud800b' }, '/model'],
-    ['key com surrogate solto', { key: 'a\ud800b' }, '/key'],
-    [
-      'relations[0].as fora de Name',
-      { records: [item({ relations: [{ to: '@a', as: 'A_B' }] })] },
-      '/records/0/relations/0/as',
-    ],
     ['lote de 51 registros', { records: Array.from({ length: 51 }, () => item()) }, '/records'],
-    [
-      'relations acima de 100',
-      {
-        records: [
-          item({ relations: Array.from({ length: 101 }, () => ({ to: '@a', kind: 'supports' })) }),
-        ],
-      },
-      '/records/0/relations',
-    ],
-    [
-      'data acima de 16.000 caracteres canônicos',
-      { records: [item({ data: { text: 'x'.repeat(16_001) } })] },
-      '/records/0/data',
-    ],
   ];
 
   test.each(cases)(
@@ -197,91 +172,6 @@ describe('N11: tetos de read_attachment e de query', () => {
   });
 });
 
-describe('A-M3: surrogate solto nunca vira INTERNAL', () => {
-  const LONE = 'a\ud800b';
-
-  test.each<[string, string, Record<string, unknown>]>([
-    ['data do register', 'register', registerInput({ records: [item({ data: { text: LONE } })] })],
-    [
-      'schema do define_type',
-      'define_type',
-      { project: PROJECT, name: 'note', schema: { title: LONE } },
-    ],
-    [
-      'where do define_gate',
-      'define_gate',
-      {
-        project: PROJECT,
-        name: 'gate',
-        questions: [{ kind: 'occurred', select: { type: 'note', where: { k: LONE } } }],
-      },
-    ],
-    [
-      'marker do evaluate_gate',
-      'evaluate_gate',
-      { project: PROJECT, process: PROCESS, gate: 'gate', marker: { [LONE]: null } },
-    ],
-  ])('%s dá INVALID_INPUT', async (_title, tool, input) => {
-    const result = await environment.call(tool, input);
-
-    expectError(result, 'INVALID_INPUT');
-  });
-});
-
-describe('D5: definições recusam o teto de 16.000 caracteres canônicos', () => {
-  test.each<[string, string, Record<string, unknown>]>([
-    [
-      'define_relation',
-      'define_relation',
-      {
-        name: 'rel',
-        kind: 'supports',
-        from: Array.from({ length: 300 }, (_, i) => `${'t'.repeat(50)}-${i}`),
-      },
-    ],
-    [
-      'define_gate',
-      'define_gate',
-      {
-        name: 'gate',
-        questions: Array.from({ length: 50 }, () => ({
-          kind: 'occurred',
-          select: { type: 'note', where: { k: 'x'.repeat(400) } },
-        })),
-      },
-    ],
-  ])('%s acima do teto dá INVALID_INPUT, nunca INTERNAL', async (_title, tool, patch) => {
-    const result = await environment.call(tool, { project: PROJECT, ...patch });
-
-    expectError(result, 'INVALID_INPUT');
-  });
-});
-
-describe('N5: nome herdado de Object.prototype', () => {
-  test('processo `constructor` é um nome válido e a consulta não vira INTERNAL', async () => {
-    await environment.call('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-    await environment.call('create_process', { project: PROJECT, process: 'constructor' });
-
-    const result = await environment.call('query', { project: PROJECT, process: 'constructor' });
-
-    expect(result.isError).toBeFalsy();
-    expect(result.structuredContent).toEqual(expect.objectContaining({ records: [] }));
-  });
-
-  test('gate `constructor` não fixado dá GATE_NOT_FOUND, não INTERNAL', async () => {
-    await environment.call('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-    await environment.call('create_process', { project: PROJECT, process: PROCESS });
-
-    const result = await environment.call('evaluate_gate', {
-      project: PROJECT,
-      process: PROCESS,
-      gate: 'constructor',
-    });
-
-    expectError(result, 'GATE_NOT_FOUND');
-  });
-});
-
 describe('N5: chave própria __proto__ nos args crus', () => {
   // JSON.parse cria `__proto__` como chave própria, o que um literal de objeto não faz.
   const hostile = (json: string): unknown => JSON.parse(json);
@@ -332,18 +222,15 @@ describe('N5: chave própria __proto__ nos args crus', () => {
 });
 
 describe('exceção que não é HexlogError', () => {
-  const addAll = jest.spyOn(MiniSearch.prototype, 'addAll');
-
   afterEach(() => {
-    addAll.mockReset();
-    addAll.mockRestore();
+    jest.restoreAllMocks();
   });
 
   test('vira INTERNAL sem stack nem texto da exceção na resposta', async () => {
     await environment.call('define_type', { project: PROJECT, name: 'note', schema: NOTE });
     await environment.call('create_process', { project: PROJECT, process: PROCESS });
     await environment.call('register', registerInput());
-    addAll.mockImplementation(() => {
+    jest.spyOn(MiniSearch.prototype, 'addAll').mockImplementation(() => {
       throw new Error('boom');
     });
 

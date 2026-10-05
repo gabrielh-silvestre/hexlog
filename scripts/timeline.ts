@@ -1,17 +1,16 @@
-// Timeline read-only de targets: consulta de alcance projeto pelo `compose`, com os registros não
-// vigentes e as relações. A cadeia de todos os processos do projeto é verificada na leitura
-// (adulterada, o script sai com 2), e anexo ausente ou corrompido também sai com 2.
-// Uso: node scripts/timeline.ts <project> <target-prefix>... [--full] [--json]
+// Timeline read-only de targets: consulta de alcance projeto pelo `composeReader`, com os registros
+// não vigentes e as relações. A cadeia de todos os processos do projeto é verificada na leitura
+// (adulterada, o script sai com 2), e anexo ausente ou corrompido também sai com 2. A saída escapa
+// os controles de terminal (`escapeControls`); `--raw` imprime o byte exato.
+// Uso: node scripts/timeline.ts <project> <target-prefix>... [--full] [--json] [--raw]
 import { isNil } from 'es-toolkit';
-import { formatCliError } from './cli-error.ts';
-import { compose } from '../src/compose.ts';
-import { dataDir } from '../src/directory.ts';
+import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
+import { escapeControls } from './escape-controls.ts';
 import { Name, Target, type Hash } from '../src/domain/ids.ts';
-import { legacyDataError } from '../src/errors.ts';
 import type { QueryRecord, QueryService } from '../src/queries/query-service.ts';
 
-const USAGE = 'usage: node scripts/timeline.ts <project> <target-prefix>... [--full] [--json]';
-const FLAGS = ['--full', '--json'];
+const USAGE =
+  'usage: node scripts/timeline.ts <project> <target-prefix>... [--full] [--json] [--raw]';
 
 type Entry = { record: QueryRecord; texts: Record<Hash, string> };
 type Section = { target: string; entries: Entry[] };
@@ -28,25 +27,16 @@ function recordsOf(query: QueryService, project: string, target: string): QueryR
   }).records;
 }
 
-/** Texto inteiro do anexo, página a página (`next` é o offset da página seguinte). */
-function textOf(query: QueryService, project: string, hash: Hash): string {
-  let text = '';
-  let offset: number | undefined = 0;
-  do {
-    const page = query.readAttachment({ project, hash, offset });
-    text += page.text;
-    offset = page.next;
-  } while (offset !== undefined);
-  return text;
-}
-
-/** Só os anexos `ok` têm texto a ler; os outros aparecem pelo status. */
+/** Só os anexos `ok` têm texto a ler (inteiro, numa chamada: `maxChars` sem teto); os outros aparecem pelo status. */
 function textsOf(query: QueryService, project: string, record: QueryRecord): Record<Hash, string> {
   const cited = Object.entries(record.attachmentStatus ?? {});
   return Object.fromEntries(
     cited
       .filter(([, status]) => status === 'ok')
-      .map(([hash]) => [hash, textOf(query, project, hash)]),
+      .map(([hash]) => [
+        hash,
+        query.readAttachment({ project, hash, maxChars: Number.MAX_SAFE_INTEGER }).text,
+      ]),
   );
 }
 
@@ -121,9 +111,13 @@ function renderJson(sections: Section[], full: boolean): string {
 }
 
 function main(argv: string[]): number {
-  const [projectArg, ...targetArgs] = argv.filter((arg) => !arg.startsWith('--'));
-  const flags = argv.filter((arg) => arg.startsWith('--'));
-  if (isNil(projectArg) || targetArgs.length === 0 || flags.some((flag) => !FLAGS.includes(flag))) {
+  const args = parseCliArgs(argv, {
+    full: { type: 'boolean' },
+    json: { type: 'boolean' },
+    raw: { type: 'boolean' },
+  });
+  const [projectArg, ...targetArgs] = args?.positionals ?? [];
+  if (isNil(args) || isNil(projectArg) || targetArgs.length === 0) {
     console.error(`timeline failed: ${USAGE}`);
     return 1;
   }
@@ -132,26 +126,19 @@ function main(argv: string[]): number {
     console.error('timeline failed: INVALID_INPUT: project and targets must be valid names');
     return 1;
   }
-  const full = flags.includes('--full');
+  const { full = false, json = false, raw = false } = args.values;
 
   try {
-    const { services, isLegacy } = compose({
-      dataDir: dataDir(process.env),
-      cwd: process.cwd(),
-      clock: () => new Date(),
-      logger: () => undefined,
-    });
-    if (isLegacy()) throw legacyDataError();
+    const { query } = openReadOnly();
     const sections = targetArgs.map((target): Section => ({
       target,
-      entries: recordsOf(services.query, project.data, target).map((record) => ({
+      entries: recordsOf(query, project.data, target).map((record) => ({
         record,
-        texts: full ? textsOf(services.query, project.data, record) : {},
+        texts: full ? textsOf(query, project.data, record) : {},
       })),
     }));
-    process.stdout.write(
-      flags.includes('--json') ? renderJson(sections, full) : renderText(sections),
-    );
+    const output = json ? renderJson(sections, full) : renderText(sections);
+    process.stdout.write(raw ? output : escapeControls(output));
     // avisos no stderr: o stdout do --json fica só com as linhas `record`
     const warnings = brokenAttachments(sections);
     for (const warning of warnings) console.error(warning);

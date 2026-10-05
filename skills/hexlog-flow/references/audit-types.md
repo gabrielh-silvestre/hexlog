@@ -4,9 +4,10 @@ O hexlog não traz tipo, relação nem gate: o projeto os define. Este arquivo m
 um conjunto completo para o fluxo de planejamento e execução do OMC — o plano com
 suas revisões, as revisões do architect e do Critic, os desvios da execução e o
 gate que diz se o plano está pronto —, com a ordem das chamadas. Use-o como modelo
-para o projeto; o que está definido no processo (`list` com `project` e
-`process`) é a fonte de verdade, e vale o servidor se este arquivo divergir dele
-(`INVALID_RECORD` aponta o campo).
+para o projeto. O `list` com `project` e `process` diz só os nomes fixados no
+processo, e o conteúdo da definição não volta por tool nenhuma: se este arquivo
+divergir do que o projeto definiu, vale o servidor (`INVALID_RECORD` aponta o
+campo).
 
 O exemplo é ilustrativo: ele é mais rico que o fixture de testes do repositório
 (test/fixtures/domains/omc.ts), que é só a configuração mínima testada e não usa a
@@ -97,9 +98,17 @@ schema. `approved` passa quando todo plano vigente tem um `supports` vigente de 
 `review` e nenhum `contradicts` vigente; `no_pending`, quando todo `deviation`
 vigente tem um registro que o responde (`answers`).
 
-Todas as definições entram **antes** do `create_process`. Se o flow map usa um
-processo por fase, o `deviation` vive no processo da fase de execução, e a
-pergunta de gate que precisa vê-lo, vindo de outro processo, declara `scope:
+Todas as definições entram **antes** do `create_process`.
+
+O `target` do `plan`, do `review` e do `deviation` do mesmo item é o do plano ou uma
+subárvore dele (`<alvo>.revisao`): o `evaluate_gate` herda o `target` nos seletores
+sem `targetPrefix`, e um `review` fora dessa subárvore não conta como aprovador
+(`domain/gate.ts#evaluateGate`), então o gate volta `passed: false`.
+
+Se o flow map usa um processo por fase, o `deviation` tem dois casos. O de
+planejamento (o loop que desistiu, `escalated`) fica no processo de planejamento, e
+o gate o vê sem `scope`. O de execução vive no processo da fase de execução, e só
+entra num gate de outro processo se a pergunta `no_pending` declara `scope:
 "project"` (o alcance processo não vê relação de outro processo nem avisa).
 
 ## Ordem das chamadas: `attach` antes de `register`
@@ -136,7 +145,8 @@ Numa iteração de planejamento:
    plano final (depois de aplicadas as melhorias, se houve); `evaluate_gate` com
    `gate: "plan-ready"` e `target` = o alvo do plano. `passed: false` barra a
    execução: a `evidence` de cada pergunta diz o que falta (`unsupported`,
-   `contradictions`, `unresolved`). Audite o alvo (abaixo) e registre agora a
+   `contradictions`, `unresolved`). Se vier `omitted`, a lista é parcial: um
+   `select` ou `where` mais estreito alcança o resto. Audite o alvo (abaixo) e registre agora a
    lacuna que achar, dizendo no `summary` que o registro foi tardio.
 
 O passo 4 vale só para o fluxo plan/ralplan. O planejamento interno do autopilot

@@ -5,7 +5,7 @@ import type { Hash } from '../domain/ids.ts';
 import type { HexRecord } from '../domain/record.ts';
 import { PROJECT_INDEX, type SearchIndex } from '../ports.ts';
 
-const DIACRITICS_RE = /[̀-ͯ]/g;
+const DIACRITICS_RE = /[\u0300-\u036f]/g;
 
 /** Remove acentos e normaliza para minúsculas, no índice e na consulta. */
 const stripDiacritics = (term: string): string =>
@@ -34,7 +34,7 @@ function queryTerms(text: string): string[] {
   return [...new Set(tokenize(text).map(stripDiacritics).filter(Boolean))];
 }
 
-type Engine = MiniSearch<{ index: number; text: string }>;
+type Engine = MiniSearch<{ id: number; text: string }>;
 
 /** Índice de um processo com o que o orçamento mede (`chars`); `count` e `lastHash` são a chave de validade. */
 type Built = { engine: Engine; chars: number };
@@ -48,25 +48,31 @@ type Entry = Built & { count: number; lastHash: Hash };
  * guardado, e a montagem a frio acima do teto é aceita (~0,3 µs por caractere, ~7 s síncronos em
  * 24M), igual a cada busca.
  */
-export const SEARCH_INDEX_BUDGET_CHARS = 24_000_000;
+const SEARCH_INDEX_BUDGET_CHARS = 24_000_000;
 
 /** Impressão do conteúdo do registro; o `HexRecord` não carrega o hash da cadeia. */
 const fingerprintOf = (record: HexRecord): Hash => sha256hex(JSON.stringify(record));
 
 const buildEngine = (): Engine =>
   new MiniSearch({
-    idField: 'index',
     fields: ['text'],
-    processTerm: (term) => stripDiacritics(term) || null,
+    processTerm: stripDiacritics,
     searchOptions: { combineWith: 'AND', prefix: true, fuzzy: 0.1 },
   });
 
-/** Documentos de `records` a partir da posição `from`; o `index` é a posição em `records`. */
+/** Documentos de `records` a partir da posição `from`; o `id` é a posição em `records`. */
 const toDocuments = (records: readonly HexRecord[], from: number) =>
   records.slice(from).map((record, offset) => ({
-    index: from + offset,
+    id: from + offset,
     text: indexableText(record),
   }));
+
+/** `built` como entrada de cache de `records`: a chave de validade é a contagem e a impressão do último. */
+const entryOf = (built: Built, records: readonly HexRecord[]): Entry => ({
+  ...built,
+  count: records.length,
+  lastHash: fingerprintOf(records[records.length - 1]!),
+});
 
 const charsOf = (documents: readonly { text: string }[]): number =>
   sumBy(documents, (document) => document.text.length);
@@ -79,21 +85,23 @@ function buildFrom(records: readonly HexRecord[]): Built {
 }
 
 /**
- * Índice em cache ainda válido para `records`, já com os registros novos acrescentados; `undefined`
- * quando o log encolheu ou o registro na última posição indexada mudou (o log é append-only, então
- * isso só acontece com outro conteúdo sob a mesma chave).
+ * Entrada em cache ainda válida para `records`, já com os registros novos acrescentados;
+ * `undefined` quando o registro na última posição indexada mudou (o log é append-only, então isso
+ * só acontece com outro conteúdo sob a mesma chave). `records` não pode ser menor que a entrada:
+ * `engineFor` trata o prefixo antes.
  */
-function reuse(entry: Entry | undefined, records: readonly HexRecord[]): Built | undefined {
-  if (!entry || records.length < entry.count) return undefined;
+function reuse(entry: Entry | undefined, records: readonly HexRecord[]): Entry | undefined {
+  if (!entry) return undefined;
   if (fingerprintOf(records[entry.count - 1]!) !== entry.lastHash) return undefined;
   if (records.length === entry.count) return entry;
   const added = toDocuments(records, entry.count);
   entry.engine.addAll(added);
-  return { engine: entry.engine, chars: entry.chars + charsOf(added) };
+  return entryOf({ engine: entry.engine, chars: entry.chars + charsOf(added) }, records);
 }
 
 /**
- * Índice MiniSearch cacheado por processo hexlog: `AND` + prefixo + `fuzzy` 0.1, com fallback para
+ * Índice MiniSearch cacheado por processo hexlog: `AND` + prefixo + `fuzzy` 0.1 (fração do
+ * comprimento do termo: um termo de 5 caracteres tolera 1 edição, um de 4 nenhuma), com fallback para
  * `OR` quando o `AND` não acha nada e a consulta tem 2+ termos distintos (o `OR` exige que metade
  * dos termos, arredondada para cima, case). A consulta é deduplicada antes de buscar, então
  * repetir um termo não pesa mais na ordenação. Empate de relevância mantém a ordem de `records`.
@@ -106,43 +114,49 @@ function reuse(entry: Entry | undefined, records: readonly HexRecord[]): Built |
  *
  * O cache vive no processo do servidor e é validado por quantidade de registros + impressão do
  * último: mesmo conjunto reaproveita o índice, log que só cresceu indexa só os registros novos e
- * qualquer divergência remonta. A soma dos caracteres indexados em cache respeita `budget` (por
+ * qualquer divergência remonta. `records` menor que o indexado é um prefixo do log (cursor ou
+ * `changesSince`): monta um motor efêmero e deixa o índice quente no cache; `records` vazio devolve
+ * `[]` sem tocar o cache. A soma dos caracteres indexados em cache respeita `budget` (por
  * padrão `SEARCH_INDEX_BUDGET_CHARS`): passou, sai o processo usado há mais tempo; processo maior
  * que o `budget` sozinho remonta a cada busca. O alcance projeto (`PROJECT_INDEX`) nunca é
  * guardado: cada registro já está no índice do seu processo, então guardá-lo contaria em
  * duplicidade e despejaria os processos quentes; ele monta um motor efêmero a cada busca.
+ *
+ * `addAll` do MiniSearch não é atômico e lança `duplicate ID` se o `id` já está no índice: se
+ * lançar no meio, os documentos anteriores ficam indexados. Por isso `engineFor` apaga a entrada do
+ * cache antes de `reuse`: um índice que falhou nunca volta ao cache meio atualizado, e a próxima
+ * busca o remonta do zero.
  */
 export function createSearchIndex(budget = SEARCH_INDEX_BUDGET_CHARS): SearchIndex {
-  // A ordem de inserção do Map é a ordem de uso: cada busca reinsere a chave no fim.
+  // A ordem de inserção do Map é a ordem de uso: cada busca que usa o cache reinsere a chave no fim.
   const entries = new Map<string, Entry>();
 
   function engineFor(key: string, records: readonly HexRecord[]): Engine {
     const cached = entries.get(key);
-    entries.delete(key);
-    const built = reuse(cached, records) ?? buildFrom(records);
-    if (built.chars > budget) return built.engine;
+    if (cached && records.length < cached.count) return buildFrom(records).engine;
 
-    entries.set(key, {
-      ...built,
-      count: records.length,
-      lastHash: fingerprintOf(records[records.length - 1]!),
-    });
-    let total = sumBy([...entries.values()], (entry) => entry.chars);
-    for (const [oldestKey, oldest] of entries) {
-      if (total <= budget) break;
-      entries.delete(oldestKey);
-      total -= oldest.chars;
+    entries.delete(key);
+    const entry = reuse(cached, records) ?? entryOf(buildFrom(records), records);
+    if (entry.chars > budget) return entry.engine;
+
+    entries.set(key, entry);
+    // Só soma e despeja quando a entrada é nova ou cresceu: a busca quente não muda o total.
+    if (entry !== cached) {
+      let total = sumBy([...entries.values()], (kept) => kept.chars);
+      for (const [oldestKey, oldest] of entries) {
+        if (total <= budget) break;
+        entries.delete(oldestKey);
+        total -= oldest.chars;
+      }
     }
-    return built.engine;
+    return entry.engine;
   }
 
   return {
+    terms: queryTerms,
     search(process, records, text, allowed) {
       const key = `${process.project}/${process.process}`;
-      if (records.length === 0) {
-        entries.delete(key);
-        return [];
-      }
+      if (records.length === 0) return [];
       const engine =
         process.process === PROJECT_INDEX ? buildFrom(records).engine : engineFor(key, records);
 

@@ -1,12 +1,11 @@
 import { describe, test, expect } from '@jest/globals';
 import { omit } from 'es-toolkit';
-import { sha256hex } from '../../src/domain/chain.ts';
+import { hashOfJcs } from '../../src/domain/chain.ts';
 import {
   CURSOR_MAX_CHARS,
   CursorPayload,
   decodeCursor,
   encodeCursor,
-  filtersHash,
 } from '../../src/queries/cursor.ts';
 import { HexlogError } from '../../src/errors.ts';
 
@@ -24,10 +23,9 @@ const payload: CursorPayload = {
   lastId: ID_A,
 };
 
-/** Monta um cursor com o checksum correto para um corpo arbitrário. */
+/** Monta um cursor para um corpo arbitrário. */
 function forge(body: unknown): string {
-  const encoded = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
-  return `${encoded}.${sha256hex(encoded).slice(0, 16)}`;
+  return Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
 }
 
 function invalidCursorOf(run: () => unknown): HexlogError {
@@ -51,18 +49,13 @@ describe('cursor: ida e volta', () => {
     expect(decodeCursor(encodeCursor(payload)).marker.gamma).toBeNull();
   });
 
-  test('a ordem das chaves do payload não muda o cursor', () => {
-    const reordered = Object.fromEntries(Object.entries(payload).reverse()) as CursorPayload;
-    expect(encodeCursor(reordered)).toBe(encodeCursor(payload));
-  });
-
-  test('o cursor é texto opaco de base64url e checksum de 8 bytes em hex', () => {
-    expect(encodeCursor(payload)).toMatch(/^[A-Za-z0-9_-]+\.[0-9a-f]{16}$/);
+  test('o cursor é texto opaco de base64url, sem separador nem checksum', () => {
+    expect(encodeCursor(payload)).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
 
 describe('cursor: tetos de entrada', () => {
-  test('texto acima de CURSOR_MAX_CHARS é recusado como too-long antes de checksum e JSON', () => {
+  test('texto acima de CURSOR_MAX_CHARS é recusado como too-long antes da decodificação', () => {
     const error = invalidCursorOf(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS + 1)));
 
     expect(error.details).toEqual([
@@ -92,19 +85,29 @@ describe('cursor: adulteração', () => {
   };
 
   test.each(Object.keys(tampered))(
-    'campo %s alterado sem refazer o checksum dá checksum-mismatch',
+    'campo %s alterado, com o resto válido, decodifica o que foi editado',
     (field) => {
-      const checksum = encodeCursor(payload).split('.')[1] ?? '';
       const changed = { ...payload, [field]: tampered[field] };
-      const forged = `${Buffer.from(JSON.stringify(changed)).toString('base64url')}.${checksum}`;
 
-      const error = invalidCursorOf(() => decodeCursor(forged));
-      expect(error.code).toBe('INVALID_CURSOR');
-      expect(error.details).toEqual([
-        { path: '/cursor', code: 'checksum-mismatch', message: expect.any(String) },
-      ]);
+      expect(decodeCursor(forge(changed))).toEqual(changed);
     },
   );
+
+  test('cursor truncado cai em malformed', () => {
+    const error = invalidCursorOf(() => decodeCursor(encodeCursor(payload).slice(0, -8)));
+
+    expect(error.details).toEqual([
+      { path: '/cursor', code: 'malformed', message: expect.any(String) },
+    ]);
+  });
+
+  test('toda mensagem de INVALID_CURSOR manda reexecutar a consulta sem cursor', () => {
+    const malformed = invalidCursorOf(() => decodeCursor('x.y'));
+    const badField = invalidCursorOf(() => decodeCursor(forge({ ...payload, scope: 'global' })));
+
+    expect(malformed.details[0]?.message).toContain('rerun the query without cursor');
+    expect(badField.details[0]?.message).toContain('rerun the query without cursor');
+  });
 
   test.each([
     ['scope', { scope: 'global' }],
@@ -114,20 +117,17 @@ describe('cursor: adulteração', () => {
     ['markerHashes', { markerHashes: { alpha: 'abc' } }],
     ['filtersHash', { filtersHash: 'abc' }],
     ['lastId', { lastId: null }],
-  ])(
-    'campo %s de tipo ou formato errado, com checksum válido, é apontado em details',
-    (field, bad) => {
-      const error = invalidCursorOf(() => decodeCursor(forge({ ...payload, ...bad })));
+  ])('campo %s de tipo ou formato errado, é apontado em details', (field, bad) => {
+    const error = invalidCursorOf(() => decodeCursor(forge({ ...payload, ...bad })));
 
-      expect(error.code).toBe('INVALID_CURSOR');
-      expect(error.details.map(({ path }) => path.split('/')[2])).toContain(field);
-      expect(error.details[0]).toEqual({
-        path: expect.stringMatching(/^\/cursor\//),
-        code: expect.any(String),
-        message: expect.any(String),
-      });
-    },
-  );
+    expect(error.code).toBe('INVALID_CURSOR');
+    expect(error.details.map(({ path }) => path.split('/')[2])).toContain(field);
+    expect(error.details[0]).toEqual({
+      path: expect.stringMatching(/^\/cursor\//),
+      code: expect.any(String),
+      message: expect.any(String),
+    });
+  });
 
   test.each(['scope', 'project', 'marker', 'markerHashes', 'filtersHash', 'lastId'])(
     'campo obrigatório %s ausente é apontado em details',
@@ -153,9 +153,9 @@ describe('cursor: adulteração', () => {
     expect(invalidCursorOf(() => decodeCursor(forge(null))).code).toBe('INVALID_CURSOR');
   });
 
-  test('base64url com checksum válido mas JSON inválido dá malformed', () => {
+  test('base64url com JSON inválido dá malformed', () => {
     const body = Buffer.from('{not json', 'utf8').toString('base64url');
-    const error = invalidCursorOf(() => decodeCursor(`${body}.${sha256hex(body).slice(0, 16)}`));
+    const error = invalidCursorOf(() => decodeCursor(body));
 
     expect(error.details).toEqual([
       { path: '/cursor', code: 'malformed', message: expect.any(String) },
@@ -164,10 +164,8 @@ describe('cursor: adulteração', () => {
 
   test.each([
     ['vazio', ''],
-    ['sem checksum', 'abc'],
-    ['checksum curto', 'abc.0123'],
-    ['checksum não hex', `abc.${'z'.repeat(16)}`],
-    ['três partes', 'a.b.c'],
+    ['não é base64url de JSON', 'abc'],
+    ['com separador', 'a.b.c'],
   ])('formato inválido (%s) dá malformed', (_label, text) => {
     const error = invalidCursorOf(() => decodeCursor(text));
 
@@ -177,20 +175,20 @@ describe('cursor: adulteração', () => {
   });
 
   test('o erro não traz stack nem caminho absoluto nos details', () => {
-    const error = invalidCursorOf(() => decodeCursor('x.0123456789abcdef'));
+    const error = invalidCursorOf(() => decodeCursor('x.y'));
     expect(JSON.stringify(error.details)).not.toMatch(/\/home|\.ts/);
   });
 });
 
-describe('filtersHash', () => {
+describe('hash dos filtros (hashOfJcs)', () => {
   test('a ordem das chaves, em qualquer nível, não muda o hash', () => {
-    expect(filtersHash({ types: ['note'], where: { a: 1, b: 2 } })).toBe(
-      filtersHash({ where: { b: 2, a: 1 }, types: ['note'] }),
+    expect(hashOfJcs({ types: ['note'], where: { a: 1, b: 2 } })).toBe(
+      hashOfJcs({ where: { b: 2, a: 1 }, types: ['note'] }),
     );
   });
 
   test('é um sha256 hex de 64 caracteres', () => {
-    expect(filtersHash({})).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashOfJcs({})).toMatch(/^[0-9a-f]{64}$/);
   });
 
   test.each([
@@ -199,12 +197,10 @@ describe('filtersHash', () => {
     ['ordem de uma lista', { types: ['a', 'b'] }, { types: ['b', 'a'] }],
     ['null contra ausente', { target: null }, {}],
   ])('muda quando muda: %s', (_label, left, right) => {
-    expect(filtersHash(left)).not.toBe(filtersHash(right));
+    expect(hashOfJcs(left)).not.toBe(hashOfJcs(right));
   });
 
   test('chave com undefined equivale a chave ausente', () => {
-    expect(filtersHash({ text: undefined, types: ['note'] })).toBe(
-      filtersHash({ types: ['note'] }),
-    );
+    expect(hashOfJcs({ text: undefined, types: ['note'] })).toBe(hashOfJcs({ types: ['note'] }));
   });
 });

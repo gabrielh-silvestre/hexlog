@@ -5,7 +5,7 @@ import * as path from 'node:path';
 // (instalador, e2e ou `npm run build`), evitando falso "artifact-outdated".
 export const repoRoot = path.resolve(import.meta.dirname, '..');
 
-export const entries: Record<string, string> = {
+const entries: Record<string, string> = {
   server: 'src/server.ts',
   'bash-guard': 'hook/bash-guard.ts',
 };
@@ -34,11 +34,6 @@ export function build({
     logLevel: 'warning',
   });
 }
-
-// Ocorrência do shim de `require` dinâmico que o esbuild injeta para uma
-// dependência CJS não embutida (só lança quando o caminho é executado).
-export const hasDynamicRequire = (bytes: Uint8Array): boolean =>
-  Buffer.from(bytes).includes('Dynamic require of');
 
 // eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine >=24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
 if (import.meta.main) {

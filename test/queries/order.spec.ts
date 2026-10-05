@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
 import { note } from '../commands/register-fakes.ts';
-import { idsOf, querySetup } from './query-setup.ts';
+import { idsOf, querySetup, walkPages } from './query-setup.ts';
 
 describe('P15: ordem de saída da consulta (D-24)', () => {
   test('o alcance processo sai por seq, mesmo com o relógio andando para trás', async () => {
@@ -63,13 +63,7 @@ describe('P15: ordem de saída da consulta (D-24)', () => {
 
     for (const filters of [{}, { text: 'webhook' }]) {
       const whole = idsOf(query({ scope: 'project', ...filters }));
-      const walked: string[] = [];
-      let cursor: string | undefined;
-      do {
-        const page = query({ scope: 'project', limit: 2, cursor, ...filters });
-        walked.push(...idsOf(page));
-        cursor = page.cursor;
-      } while (cursor !== undefined);
+      const walked = walkPages(query, { scope: 'project', limit: 2, ...filters }).flatMap(idsOf);
 
       expect(walked).toEqual(whole);
     }

@@ -6,7 +6,13 @@ import fs from 'node:fs';
 import * as path from 'node:path';
 import * as tar from 'tar';
 import { detectLegacy } from '../src/adapters/fs/data-format.ts';
-import { ArchiveError, archiveLegacy, inspectLegacy, type ArchiveOptions } from '../src/archive.ts';
+import {
+  ArchiveError,
+  archiveLegacy,
+  inspectLegacy,
+  type ArchiveOptions,
+  type ArchiveResult,
+} from '../src/archive.ts';
 import { createTempDir } from './helpers.ts';
 
 const FIXTURE = path.resolve(__dirname, 'fixtures', 'legacy-0x');
@@ -53,15 +59,40 @@ function withoutArchive(tree: Record<string, string | null>): Record<string, str
   return Object.fromEntries(Object.entries(tree).filter(([key]) => !key.startsWith('archive')));
 }
 
-/** Sobe um processo cujo `cmdline` aponta para `<libDir>/0.4.0/server.mjs`, como o servidor 0.x instalado. */
-function spawnLegacyServer(): ChildProcess {
-  const child = spawn(
-    process.execPath,
-    ['-e', 'setInterval(() => {}, 1000)', path.join(libDir, '0.4.0', 'server.mjs')],
-    { stdio: 'ignore' },
-  );
+/** Sobe um processo cujo `cmdline` termina em `file`; o padrão é o servidor 0.x instalado (`<libDir>/0.4.0/server.mjs`). */
+function spawnLegacyServer(file = path.join(libDir, '0.4.0', 'server.mjs')): ChildProcess {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', file], {
+    stdio: 'ignore',
+  });
   children.push(child);
   return child;
+}
+
+/** `archiveLegacy` de um `<D>` que tem dado 0.x: estreita o resultado para ler `tarPath` e `dirs`. */
+function archivedResult(): Extract<ArchiveResult, { archived: true }> {
+  const result = archiveLegacy(dataDir, options);
+  if (!result.archived) throw new Error('expected 0.x data to be archived');
+  return result;
+}
+
+/** Planta `<D>/archive/<name>` com o formato de `tar` que o arquivador gera, variando o que ele contém. */
+function plantTar(kind: 'complete' | 'other-sha' | 'partial' | 'garbage', name: string): void {
+  const archiveDir = path.join(dataDir, 'archive');
+  fs.mkdirSync(archiveDir, { recursive: true });
+  const tarFile = path.join(archiveDir, name);
+  if (kind === 'garbage') {
+    fs.writeFileSync(tarFile, 'not a tar');
+    return;
+  }
+  const staging = createTempDir('archive-stale');
+  const [first, ...rest] = Object.keys(TREE);
+  const names = kind === 'partial' ? [first!] : [first!, ...rest];
+  for (const entry of names) {
+    const absolute = path.join(staging, entry);
+    fs.mkdirSync(path.dirname(absolute), { recursive: true });
+    fs.writeFileSync(absolute, kind === 'other-sha' ? 'other content' : TREE[entry]!);
+  }
+  tar.create({ file: tarFile, cwd: staging, sync: true, portable: true }, names);
 }
 
 function plantLock(project: string, token: string | undefined): void {
@@ -78,11 +109,10 @@ function packages(): string[] {
   return fs.readdirSync(path.join(dataDir, 'archive')).sort();
 }
 
-/** Primeira chamada de `target.method` com `when` verdadeiro roda `before`/`after` em volta da original. */
-function spyOnce<K extends 'renameSync' | 'unlinkSync' | 'readdirSync' | 'fsyncSync'>(
-  method: K,
-  hook: (args: unknown[], real: () => unknown) => unknown,
-): void {
+/** Troca `fs[method]` por um spy: `hook` recebe os argumentos de cada chamada e `real()`, que roda a original. */
+function spyOnce<
+  K extends 'renameSync' | 'unlinkSync' | 'readdirSync' | 'fsyncSync' | 'readFileSync',
+>(method: K, hook: (args: unknown[], real: () => unknown) => unknown): void {
   const original = fs[method] as (...args: unknown[]) => unknown;
   jest
     .spyOn(fs, method)
@@ -153,7 +183,7 @@ describe('archiveLegacy (dado 0.x)', () => {
     plant();
     const inventory = inspectLegacy(dataDir);
 
-    const result = archiveLegacy(dataDir, options);
+    const result = archivedResult();
 
     expect(result).toEqual({
       archived: true,
@@ -295,7 +325,7 @@ describe('archiveLegacy (dado 0.x)', () => {
     jest.restoreAllMocks();
     const [original] = packages();
 
-    const resumed = archiveLegacy(dataDir, options);
+    const resumed = archivedResult();
 
     expect(resumed.files).toBe(Object.keys(TREE).length - 2);
     expect(resumed.tarPath).toBe(path.join(dataDir, 'archive', original!));
@@ -306,33 +336,14 @@ describe('archiveLegacy (dado 0.x)', () => {
   describe('retomada com .tar antigo que não cobre os arquivos', () => {
     const OLD_TAR = 'hexlog-0x-29990101T000000Z.tar';
 
-    function plantStaleTar(kind: 'other-sha' | 'partial' | 'garbage'): void {
-      const archiveDir = path.join(dataDir, 'archive');
-      fs.mkdirSync(archiveDir, { recursive: true });
-      const tarFile = path.join(archiveDir, OLD_TAR);
-      if (kind === 'garbage') {
-        fs.writeFileSync(tarFile, 'not a tar');
-        return;
-      }
-      const staging = createTempDir('archive-stale');
-      const [first, ...rest] = Object.keys(TREE);
-      const names = kind === 'partial' ? [first!] : [first!, ...rest];
-      for (const name of names) {
-        const absolute = path.join(staging, name);
-        fs.mkdirSync(path.dirname(absolute), { recursive: true });
-        fs.writeFileSync(absolute, kind === 'other-sha' ? 'other content' : TREE[name]!);
-      }
-      tar.create({ file: tarFile, cwd: staging, sync: true, portable: true }, names);
-    }
-
     test.each(['other-sha', 'partial', 'garbage'] as const)(
       'arquiva gera pacote novo e deixa o .tar velho intacto (%s)',
       (kind) => {
         plant();
-        plantStaleTar(kind);
+        plantTar(kind, OLD_TAR);
         const staleBytes = fs.readFileSync(path.join(dataDir, 'archive', OLD_TAR));
 
-        const result = archiveLegacy(dataDir, options);
+        const result = archivedResult();
 
         expect(result.tarPath).not.toBe(path.join(dataDir, 'archive', OLD_TAR));
         expect(packages()).toHaveLength(2);
@@ -381,6 +392,103 @@ describe('archiveLegacy (dado 0.x)', () => {
     expect(archiveLegacy(dataDir, options)).toEqual({ archived: false, files: 0 });
   });
 
+  test('arquiva retomada reaproveita o .tar válido mais novo e não toca nos outros', () => {
+    plant();
+    plantTar('complete', 'hexlog-0x-20200101T000000Z.tar');
+    plantTar('complete', 'hexlog-0x-29990101T000000Z.tar');
+
+    const result = archivedResult();
+
+    expect(result.tarPath).toBe(path.join(dataDir, 'archive', 'hexlog-0x-29990101T000000Z.tar'));
+    expect(packages()).toHaveLength(2);
+    expect(detectLegacy(dataDir)).toEqual([]);
+  });
+
+  test('arquiva arquivo de 0 byte entra no .tar e sai do <D>', () => {
+    plant({ 'alpha/main/events.jsonl': '' });
+
+    const result = archivedResult();
+
+    const packaged: string[] = [];
+    tar.list({
+      file: result.tarPath!,
+      sync: true,
+      onReadEntry: (entry) => packaged.push(entry.path),
+    });
+    expect(result.files).toBe(1);
+    expect(packaged).toContain('alpha/main/events.jsonl');
+    expect(detectLegacy(dataDir)).toEqual([]);
+  });
+
+  test('arquiva fixa o pacote no disco antes de apagar o primeiro original', () => {
+    plant();
+    const calls: string[] = [];
+    for (const method of ['renameSync', 'fsyncSync', 'unlinkSync'] as const) {
+      spyOnce(method, (args, real) => {
+        calls.push(method);
+        return real();
+      });
+    }
+
+    archiveLegacy(dataDir, options);
+
+    jest.restoreAllMocks();
+    expect(calls.slice(calls.indexOf('renameSync'), calls.indexOf('unlinkSync'))).toEqual([
+      'renameSync',
+      'fsyncSync',
+    ]);
+  });
+
+  test('arquiva hard link no dado 0.x aborta citando o caminho e não apaga nada', () => {
+    plant();
+    fs.linkSync(
+      path.join(dataDir, 'alpha/main/events.jsonl'),
+      path.join(dataDir, 'alpha/main/events.link'),
+    );
+    const before = snapshot(dataDir);
+
+    expect(() => archiveLegacy(dataDir, options)).toThrow(
+      /hard link\): alpha\/main\/events\.jsonl/,
+    );
+
+    expect(snapshot(dataDir)).toEqual(before);
+  });
+
+  test('arquiva arquivo que some entre a lista e a releitura aborta citando o caminho e mantém o .tar', () => {
+    plant();
+    const events = path.join(dataDir, 'alpha/main/events.jsonl');
+    let reads = 0;
+    spyOnce('readFileSync', (args, real) => {
+      if (args[0] === events && ++reads === 2) {
+        throw Object.assign(new Error('ENOENT: no such file or directory'), {
+          code: 'ENOENT',
+          path: events,
+        });
+      }
+      return real();
+    });
+
+    expect(() => archiveLegacy(dataDir, options)).toThrow(
+      /vanished while archiving: .*events\.jsonl; rerun to resume/,
+    );
+
+    jest.restoreAllMocks();
+    expect(packages()).toHaveLength(1);
+    expect(inspectLegacy(dataDir).files).toHaveLength(Object.keys(TREE).length);
+  });
+
+  test('arquiva com archive que é arquivo regular aborta citando o errno e não apaga nada', () => {
+    plant();
+    fs.writeFileSync(path.join(dataDir, 'archive'), 'not a dir');
+    const before = snapshot(dataDir);
+
+    expect(() => archiveLegacy(dataDir, options)).toThrow(
+      /0\.x archiving failed \(ENOTDIR\): .*archive/,
+    );
+
+    expect(snapshot(dataDir)).toEqual(before);
+  });
+
   test('arquiva apaga .partial velho e não toca no que não está na lista', () => {
     plant();
     fs.mkdirSync(path.join(dataDir, '.v1', 'alpha'), { recursive: true });
@@ -406,7 +514,9 @@ describe('archiveLegacy lock vivo (dado 0.x)', () => {
     plantLock('alpha', `${process.pid}-deadbeef`);
     const before = snapshot(dataDir);
 
-    expect(() => archiveLegacy(dataDir, options)).toThrow(/lock is held by a live process/);
+    expect(() => archiveLegacy(dataDir, options)).toThrow(
+      /lock is held by a live process.*pid was reused: remove .*events\.jsonl\.lock by hand/,
+    );
 
     expect(snapshot(dataDir)).toEqual(before);
   });
@@ -415,8 +525,26 @@ describe('archiveLegacy lock vivo (dado 0.x)', () => {
     plant();
     plantLock('alpha', 'not-a-token');
 
+    expect(() => archiveLegacy(dataDir, options)).toThrow(
+      /unreadable holder.*remove .*events\.jsonl\.lock by hand/,
+    );
+    expect(fs.existsSync(path.join(dataDir, 'alpha/main/process.json'))).toBe(true);
+  });
+
+  test('lock com pid fora de int32 aborta como holder ilegível, não como processo vivo', () => {
+    plant();
+    plantLock('alpha', '99999999999-deadbeef');
+
     expect(() => archiveLegacy(dataDir, options)).toThrow(/unreadable holder/);
     expect(fs.existsSync(path.join(dataDir, 'alpha/main/process.json'))).toBe(true);
+  });
+
+  test('lock com holder de 0 byte conta como morto e não impede o arquivamento', () => {
+    plant();
+    plantLock('alpha', '');
+
+    expect(archiveLegacy(dataDir, options)).toMatchObject({ archived: true });
+    expect(detectLegacy(dataDir)).toEqual([]);
   });
 
   test('lock morto com pid que já saiu não impede o arquivamento', () => {
@@ -463,15 +591,38 @@ describe('archiveLegacy servidor vivo (dado 0.x)', () => {
 
   test('servidor vivo de outro libDir não impede o arquivamento', () => {
     plant();
-    const other = createTempDir('archive-other-lib');
-    const child = spawn(
-      process.execPath,
-      ['-e', 'setInterval(() => {}, 1000)', path.join(other, '0.4.0', 'server.mjs')],
-      { stdio: 'ignore' },
-    );
-    children.push(child);
+    spawnLegacyServer(path.join(createTempDir('archive-other-lib'), '0.4.0', 'server.mjs'));
 
     expect(archiveLegacy(dataDir, options)).toMatchObject({ archived: true });
+  });
+
+  test.each(['1.0.0/server.mjs', '0.4.0/bash-guard.mjs'])(
+    'processo vivo em <libDir>/%s não impede o arquivamento',
+    (file) => {
+      plant();
+      spawnLegacyServer(path.join(libDir, file));
+
+      expect(archiveLegacy(dataDir, options)).toMatchObject({ archived: true });
+    },
+  );
+
+  test('servidor vivo achado pelo libDir por symlink quando o cmdline usa o caminho real', () => {
+    plant();
+    const link = path.join(createTempDir('archive-link'), 'lib');
+    fs.symlinkSync(libDir, link);
+    spawnLegacyServer();
+
+    expect(() => archiveLegacy(dataDir, { ...options, libDir: link })).toThrow(
+      /a 0\.x server is running/,
+    );
+  });
+
+  test('libDir que não existe não derruba a checagem de servidor vivo', () => {
+    plant();
+
+    expect(
+      archiveLegacy(dataDir, { ...options, libDir: path.join(libDir, 'missing') }),
+    ).toMatchObject({ archived: true });
   });
 
   test('servidor vivo não confirmável sem /proc aborta sem apagar', () => {
@@ -484,6 +635,43 @@ describe('archiveLegacy servidor vivo (dado 0.x)', () => {
 
     expect(snapshot(dataDir)).toEqual(before);
   });
+
+  test('servidor vivo não confirmável com /proc sem nenhum pid aborta sem apagar', () => {
+    plant();
+    const before = snapshot(dataDir);
+
+    expect(() =>
+      archiveLegacy(dataDir, { ...options, procDir: createTempDir('archive-proc') }),
+    ).toThrow(/cannot confirm/);
+
+    expect(snapshot(dataDir)).toEqual(before);
+  });
+
+  test('servidor vivo com cmdline ilegível por errno que não é de permissão aborta sem apagar', () => {
+    plant();
+    const procDir = createTempDir('archive-proc');
+    fs.mkdirSync(path.join(procDir, '123', 'cmdline'), { recursive: true });
+    const before = snapshot(dataDir);
+
+    expect(() => archiveLegacy(dataDir, { ...options, procDir })).toThrow(
+      /cannot confirm.*cannot read .*cmdline \(EISDIR\)/,
+    );
+
+    expect(snapshot(dataDir)).toEqual(before);
+  });
+
+  test.each(['ENOENT', 'ESRCH', 'EACCES', 'EPERM'])(
+    'servidor vivo com cmdline negado (%s) não impede o arquivamento',
+    (code) => {
+      plant();
+      spyOnce('readFileSync', (args, real) => {
+        if (String(args[0]).endsWith('/cmdline')) throw Object.assign(new Error(code), { code });
+        return real();
+      });
+
+      expect(archiveLegacy(dataDir, options)).toMatchObject({ archived: true });
+    },
+  );
 
   test('servidor vivo que surge durante a geração do pacote aborta na segunda checagem', () => {
     plant();

@@ -1,6 +1,8 @@
+import fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
+import { MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
 import { note } from '../commands/register-fakes.ts';
-import { at } from '../helpers.ts';
+import { at, captureError } from '../helpers.ts';
 import { idsOf, querySetup } from './query-setup.ts';
 
 describe('SL8: o alcance projeto com não vigentes reproduz a timeline 0.x de um alvo', () => {
@@ -65,5 +67,23 @@ describe('SL8: o alcance projeto com não vigentes reproduz a timeline 0.x de um
       { id: a2, incoming: [], out: [{ kind: 'supersedes', to: a1, current: false }] },
       { id: b2, incoming: [], out: [{ kind: 'supersedes', to: b1, current: false }] },
     ]);
+  });
+});
+
+describe('alcance projeto: PROCESS_TOO_LARGE nomeia o processo cujo log passou do teto', () => {
+  test('o processo gigante é o `process` do detalhe, sem recomendar criar outro', async () => {
+    const { createProcess, registerOne, logPath, query } = querySetup();
+    createProcess('run-1');
+    createProcess('run-2');
+    await registerOne('run-1', note('a'), 1);
+    fs.truncateSync(logPath('run-2'), MAX_LOG_BYTES + 1);
+
+    const error = captureError(() => query({ scope: 'project' }));
+
+    expect(error).toMatchObject({
+      code: 'PROCESS_TOO_LARGE',
+      message: "process 'run-2' log exceeds 64 MiB",
+      details: [{ path: '/process', code: 'too-large', process: 'run-2' }],
+    });
   });
 });

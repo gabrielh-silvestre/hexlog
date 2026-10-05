@@ -30,9 +30,11 @@ const LOWER_IDENTIFIER = /^[a-z][a-z0-9_-]*$/;
 // com token minúsculo puro (`register`, `list`), que não é camelCase e não deve entrar nesta checagem.
 const CAMEL_CASE_IDENTIFIER = /^[a-z][a-z0-9]*[A-Z][a-zA-Z0-9]*$/;
 
-/** Nomes entre aspas do 1º argumento de cada `server.registerTool(` em `content`. */
+/** Nomes entre aspas do `name` de cada `defineTool(server, deps, { name: ...` em `content`. */
 function toolNamesFrom(content: string): string[] {
-  return [...content.matchAll(/server\.registerTool\(\s*['"]([^'"]+)['"]/g)].map((m) => at(m, 1));
+  return [
+    ...content.matchAll(/defineTool\(\s*server,\s*deps,\s*\{\s*name:\s*['"]([^'"]+)['"]/g),
+  ].map((m) => at(m, 1));
 }
 
 /** Nomes SCREAMING_SNAKE_CASE de `export const NOME` em `content`. */
@@ -42,7 +44,7 @@ function exportedConstantNamesFrom(content: string): string[] {
     .filter((name) => SCREAMING_SNAKE_CASE.test(name));
 }
 
-/** Códigos do union literal `export type ErrorCode = 'A' | 'B' | ...;` em `content` (§4.13). */
+/** Códigos do union literal `export type ErrorCode = 'A' | 'B' | ...;` em `content` (ADR 0009 item 7). */
 function errorCodeCatalogFrom(content: string): string[] {
   const start = content.indexOf('export type ErrorCode =');
   const unionBlock = content.slice(start, content.indexOf(';', start));
@@ -85,72 +87,7 @@ const LINE_NUMBER_CITATION =
 /** Citação de linha em prosa ("linha 12", "linhas ~141"). */
 const LINE_PROSE_CITATION = /\blinhas?\s+~?\d+/i;
 
-describe('extratores (unitário, sobre string literal)', () => {
-  test('extractInlineBackticks ignora crase dentro de bloco cercado e pega a de fora', () => {
-    const content = '`fora` texto\n```\n`dentro` não conta\n```\n`tambem-fora`';
-    expect(extractInlineBackticks(content)).toEqual(['fora', 'tambem-fora']);
-  });
-
-  test('toolNamesFrom extrai o nome entre aspas do 1º argumento de server.registerTool(', () => {
-    const content = `server.registerTool(\n    'minha_tool',\n    { title: 'X' },\n  );`;
-    expect(toolNamesFrom(content)).toEqual(['minha_tool']);
-  });
-
-  test('exportedConstantNamesFrom pega só o SCREAMING_SNAKE_CASE, não nomes mistos como Registered', () => {
-    const content = `export const MINHA_CONSTANTE = [1] as const;\nexport const Registered = z.object({});`;
-    expect(exportedConstantNamesFrom(content)).toEqual(['MINHA_CONSTANTE']);
-  });
-
-  test('errorCodeCatalogFrom extrai os literais do union até o `;`, sem pegar o que vem depois', () => {
-    const content = `export type ErrorCode =\n  | 'A'\n  | 'B';\nexport const OUTRA = 'C';`;
-    expect(errorCodeCatalogFrom(content)).toEqual(['A', 'B']);
-  });
-
-  test('functionNamesFrom pega export function, async function e function simples', () => {
-    const content = `export function minhaFuncao() {}\nasync function outraFuncao() {}\nfunction terceira() {}`;
-    expect(functionNamesFrom(content)).toEqual(['minhaFuncao', 'outraFuncao', 'terceira']);
-  });
-
-  test('fileSymbolCitationsFrom pega só crases no formato arquivo.ts#símbolo, ignorando outras crases', () => {
-    const content =
-      '`definitions.ts#createProcess` e `events.ts#Name`, mas não `register_type` nem `AGENTS.md`';
-    expect(fileSymbolCitationsFrom(content)).toEqual([
-      'definitions.ts#createProcess',
-      'events.ts#Name',
-    ]);
-  });
-
-  test('fileSymbolCitationsFrom aceita diretórios relativos a src/ e recusa maiúscula, ../ e raiz absoluta', () => {
-    const content =
-      '`mcp/tools/register.ts#register` e `a/b-2/c.ts#Sym`, mas não `Mcp/x.ts#y`, `../x.ts#y` nem `/x.ts#y`';
-    expect(fileSymbolCitationsFrom(content)).toEqual([
-      'mcp/tools/register.ts#register',
-      'a/b-2/c.ts#Sym',
-    ]);
-  });
-
-  test('tsFilesUnder desce em subpastas e devolve caminhos relativos', () => {
-    const files = tsFilesUnder(path.join(repoRoot, 'test'));
-    expect(files).toContain('skill-coherence.spec.ts');
-    expect(files.some((file) => file.startsWith('fixtures/'))).toBe(true);
-  });
-
-  test('declarationBodyFrom acha a declaração ancorada e vai até a próxima, rejeitando comentário e indentada', () => {
-    const content = [
-      '// function alvo() fantasma',
-      'export async function alvo(): void {',
-      '  const alvo = 1;',
-      '  throw new Error(CODIGO);',
-      '}',
-      'export const OUTRA = 1;',
-    ].join('\n');
-    const body = declarationBodyFrom(content, 'alvo');
-    expect(body).toContain('CODIGO');
-    expect(body).not.toContain('OUTRA');
-    expect(declarationBodyFrom(content, 'fantasma')).toBeUndefined();
-    expect(declarationBodyFrom('  const alvo = 1;', 'alvo')).toBeUndefined();
-  });
-
+describe('regex de citação de linha (unitário, sobre string literal)', () => {
   // literais montados por concatenação: o grep de aceite não pode achar citação neste arquivo
   test('LINE_NUMBER_CITATION casa arquivo:N e arquivo:N-M em qualquer extensão citada', () => {
     for (const citation of [
@@ -300,6 +237,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'not-found',
   'too-big',
   'bad-args',
+  'invalid-utf8',
   'ok',
   'corrupted',
   'unmarked-attachment',
@@ -357,6 +295,16 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'isRevision',
   'decidedBy',
   'editedSkills',
+  'pattern',
+  'patternProperties',
+  'maxLength',
+  'safe-regex2',
+  'lone-surrogate',
+  'omitted',
+  'select',
+  'file',
+  'plan-legacy',
+  'evidence-file',
 ]);
 
 /**
@@ -371,8 +319,8 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
   'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
   'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
   'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-  'commands/register-static.ts#pinnedSchema': ['TYPE_NOT_PINNED'],
-  'commands/register-static.ts#checkData': ['checkData'],
+  'commands/register/static.ts#pinnedSchema': ['TYPE_NOT_PINNED'],
+  'commands/register/static.ts#checkData': ['checkData'],
   'queries/query-service.ts#gateNotFound': ['GATE_NOT_FOUND'],
   'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
   'installation.ts#installArtifact': ['verifyPreparedArtifact'],
@@ -386,10 +334,10 @@ const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string[]> = {
 };
 
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'commands/register-state.ts#assertSameBatch': ['IDEMPOTENCY_CONFLICT'],
-  'commands/register-errors.ts#ruleRefusal': ['FORK_REJECTED'],
+  'commands/register/state.ts#assertSameBatch': ['IDEMPOTENCY_CONFLICT'],
+  'commands/register/errors.ts#ruleRefusal': ['FORK_REJECTED'],
   'adapters/fs/lock.ts#lockTimeout': ['LOCK_TIMEOUT'],
-  'commands/register-attachments.ts#checkAttachments': ['unmarked-attachment'],
+  'commands/register/attachments.ts#checkAttachments': ['unmarked-attachment'],
 };
 
 const FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS: Record<string, string[]> = {

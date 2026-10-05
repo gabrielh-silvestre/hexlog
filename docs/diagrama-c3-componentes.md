@@ -41,10 +41,13 @@ C4Component
     Rel(mcp, queries, "chama")
     Rel(mcp, domain, "usa")
     Rel(mcp, shared, "usa")
+    Rel(mcp, config, "usa")
     Rel(compose, adapters, "liga")
     Rel(compose, commands, "cria")
     Rel(compose, queries, "cria")
     Rel(compose, shared, "usa")
+    Rel(compose, ports, "usa")
+    Rel(compose, domain, "usa")
     Rel(adapters, shared, "usa")
     Rel(serverTs, shared, "usa")
     Rel(commands, ports, "usa")
@@ -63,23 +66,23 @@ C4Component
 
 Toda camada importa `errors.ts`; as arestas ficam fora do desenho para não
 estourar o limite de PNG. `domain/` não importa camada nenhuma acima, só
-`errors.ts` (`domain/definitions.ts` usa `HexlogError`), e `errors.ts` importa de
-volta só o tipo `RecordId`, sem ciclo em runtime.
+`errors.ts` (`domain/definitions.ts` e `domain/chain.ts` usam `HexlogError`), e
+`errors.ts` importa de volta só os tipos `Name` e `RecordId`, sem ciclo em runtime.
 
 | Componente | O que faz |
 |---|---|
 | `server.ts` | Entry point: `compose`, log `start` (`dataDir` e `version`), `createServer` e `serveStdio` |
-| `compose.ts` | `compose`: a raiz de composição; único módulo, fora de `adapters/`, que conhece os adaptadores de disco; liga validador, stores e `createSearchIndex` aos quatro serviços |
+| `compose.ts` | `compose`: a raiz de composição; único módulo do servidor em runtime, fora de `adapters/`, que conhece os adaptadores de disco; liga validador, stores e `createSearchIndex` aos quatro serviços |
 | `mcp/kernel.ts`, `mcp/server.ts` | `execute()` (envelope de erro e log de toda tool) e `createServer` (`McpServer` com as 11 tools) |
 | `mcp/tools/` | `process.ts`, `definition.ts`, `attachment.ts` e `query.ts`: uma `register*Tools` por família |
-| `commands/` | `createProcessService` (`createProcess`, `register`), `createDefinitionService` (`defineType`, `defineRelation`, `defineGate`) e `createAttachmentService` (`attach`); as etapas do `register` ficam em `register-*.ts` |
+| `commands/` | `createProcessService` (`createProcess`, `register`), `createDefinitionService` (`defineType`, `defineRelation`, `defineGate`) e `createAttachmentService` (`attach`); as etapas do `register` ficam em `commands/register/` |
 | `queries/` | `createQueryService` (`queryRecords`, `evaluateGate`, `verifyChain`, `list`, `readAttachment`), mais `select.ts`, `read.ts` e `cursor.ts#encodeCursor` |
 | `shared/` | `loader.ts` (`parseLog`, `verifyProcess`, `loadVerified`), `logger.ts` (`Logger`) e `pages.ts` (`sliceChars`) |
 | `ports.ts` | As portas do núcleo: `ProcessStore`, `DefinitionStore`, `AttachmentStore`, `Validator` e `SearchIndex` |
 | `domain/` | Núcleo puro: `ids.ts`, `record.ts`, `chain.ts` (`hashLink`, `anchor`, `isValidLink`), `relations.ts` (`checkRelation`), `definitions.ts`, `gate.ts` (`evaluateGate`) e `manifest.ts` |
-| `adapters/fs/` | `process-store.ts`, `definition-store.ts`, `attachment-store.ts`, `lock.ts` (`createLockManager`), `atomic.ts` (`writeFileAtomic`) e `data-format.ts` (`dataRoot`: `<D>/.v1`) |
+| `adapters/fs/` | Stores de processo, definição e anexo, lock, gravação atômica, formato em disco (`<D>/.v1`) e helpers de I/O; um módulo por linha em [`src/AGENTS.md`](../src/AGENTS.md) |
 | `adapters/validator.ts`, `adapters/search.ts` | `createValidator` (ajv e `safe-regex2`) e `createSearchIndex` (MiniSearch cacheado por processo) |
-| `errors.ts` | `HexlogError`, `ErrorCode` (25 códigos), `issueDetails` |
+| `errors.ts` | `HexlogError`, `ErrorCode`, `issueDetails` |
 | `directory.ts` | `dataDir(env)`: resolve `$XDG_DATA_HOME/hexlog` (fallback `~/.local/share/hexlog`) |
 | `version.ts` | `VERSION`: versão do servidor, reportada no handshake MCP e no log `start` |
 
@@ -93,7 +96,9 @@ processo MCP em runtime; entram no C2 (containers) do projeto, não neste C3:
 
 - **`guard.ts`, `installation.ts` e `archive.ts`** (em `src/`): usados só por
   `scripts/install.ts`. Não são importados por `server.ts` nem pelo hook.
-  `archive.ts` (`inspectLegacy`, `archiveLegacy`) arquiva o dado 0.x.
+  `archive.ts` (`inspectLegacy`, `archiveLegacy`) arquiva o dado 0.x. `installation.ts`,
+  `archive.ts` e `scripts/install.ts` também importam `adapters/fs/`, o que não fere a
+  regra de `compose.ts`: nenhum deles roda dentro do servidor.
 - **`hook/bash-guard.ts`**: processo `PreToolUse` separado, registrado no
   `settings.json` do Claude Code; consome só `directory.ts` do servidor.
 

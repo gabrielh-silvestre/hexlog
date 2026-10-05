@@ -8,8 +8,10 @@ import {
   type LinkRejection,
 } from '../domain/chain.ts';
 import type { Hash, RecordId } from '../domain/ids.ts';
+import type { Manifest } from '../domain/manifest.ts';
+import { BATCH_MAX } from '../domain/record.ts';
 import { HexlogError } from '../errors.ts';
-import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../ports.ts';
+import type { ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
 
 // Tetos de saída da verificação de cadeia, como no 0.x.
 export const MAX_BREAKS = 100;
@@ -29,8 +31,8 @@ export type Chain = {
   repairedLines: number[];
 };
 
-/** D-04: a linha do log é `{ links: [Link…] }`; o conteúdo de cada elo é validado por `isValidLink`. */
-const LineShape = z.strictObject({ links: z.array(z.unknown()).min(1) });
+/** D-04: a linha do log é `{ links: [Link…] }`, de 1 a `BATCH_MAX` elos; o conteúdo de cada um é validado por `isValidLink`. */
+const LineShape = z.strictObject({ links: z.array(z.unknown()).min(1).max(BATCH_MAX) });
 
 /** Posição esperada do elo seguinte a `link`. */
 function after(link: Link): Expected {
@@ -56,7 +58,8 @@ function checkLinks(values: readonly unknown[], start: Expected): LineCheck {
       }
       check.reasons.forEach((reason) => reasons.add(reason));
     }
-    // Só chega aqui elo de forma válida; o parse repete o de `isValidLink`, e só no caminho de quebra.
+    // Invariante: sem `invalid-line` em `reasons`, o valor passou em `parseLink`; o parse repete esse
+    // resultado, e só no caminho de quebra.
     const link = 'link' in check ? check.link : Link.parse(value);
     links.push(link);
     expected = after(link);
@@ -222,7 +225,7 @@ export function verifyProcess(raw: RawProcess, marker?: RecordId | null): Verifi
 
 /** `verifyProcess` sobre a leitura crua de `store`: o único carregador de processo da árvore nova. */
 export function loadVerified(
-  store: Pick<ProcessStore, 'read'>,
+  store: ProcessReader,
   ref: ProcessRef,
   marker?: RecordId | null,
 ): VerifiedProcess {
