@@ -1,0 +1,123 @@
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "string",
+      "maxLength": 200,
+      "pattern": "^hex:target:[^\\s:]+$"
+    },
+    "gate": {
+      "type": "string",
+      "enum": ["pre-pr", "review-item", "process", "suite-red", "team-lead-check", "blocked"]
+    },
+    "item": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 700
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      },
+      "minItems": 1,
+      "maxItems": 8
+    },
+    "chosen": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "action": {
+      "type": "string",
+      "enum": ["apply", "downgrade-minimal", "discard", "accept-risk", "defer", "doc-only", "proceed", "scope-cut"]
+    },
+    "decidedBy": {
+      "type": "string",
+      "enum": ["decisor", "jury", "rule", "team-lead", "maestro"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["alta", "media", "baixa"]
+    },
+    "precedents": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      },
+      "maxItems": 12
+    },
+    "policyRules": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^R[0-9]{1,2}$"
+      },
+      "maxItems": 16
+    },
+    "researchTriggered": {
+      "type": "boolean"
+    },
+    "researchConclusive": {
+      "type": "boolean"
+    },
+    "juryConvened": {
+      "type": "boolean"
+    },
+    "juryVerdict": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "contrariesUser": {
+      "type": "boolean"
+    },
+    "contrariedDecision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "deferredTo": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "justification": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1500
+    },
+    "attachment": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "target",
+    "gate",
+    "item",
+    "question",
+    "options",
+    "chosen",
+    "action",
+    "decidedBy",
+    "confidence",
+    "precedents",
+    "policyRules",
+    "researchTriggered",
+    "juryConvened",
+    "contrariesUser",
+    "justification",
+    "attachment"
+  ],
+  "additionalProperties": false
+}
