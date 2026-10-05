@@ -4,8 +4,6 @@ import type { Manifest } from './domain/manifest.ts';
 import type { HexRecord } from './domain/record.ts';
 import type { Detail } from './errors.ts';
 
-export type { Manifest };
-
 /** Processo = par projeto/nome; o id de um registro carrega só o processo (D-01). */
 export type ProcessRef = { project: Name; process: Name };
 

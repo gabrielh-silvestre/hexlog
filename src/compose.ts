@@ -75,7 +75,6 @@ export function compose(options: ComposeOptions) {
       }),
       query: reader.query,
     },
-    loadProcess: reader.loadProcess,
     isLegacy: reader.isLegacy,
   };
 }

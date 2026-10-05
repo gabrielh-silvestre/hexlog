@@ -10,12 +10,12 @@ import { HexlogError } from '../../src/errors.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import type { Logger } from '../../src/shared/logger.ts';
 import { rejectionOf } from '../helpers.ts';
+import type { Manifest } from '../../src/domain/manifest.ts';
 import type {
   AttachmentStatus,
   AttachmentStore,
   Decision,
   DefinitionStore,
-  Manifest,
   ProcessRef,
   ProcessStore,
   RawProcess,

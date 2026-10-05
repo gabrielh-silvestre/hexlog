@@ -1,7 +1,10 @@
 import { describe, expect, jest, test } from '@jest/globals';
-import { PAGE_CHARS_CAP } from '../../src/mcp/kernel.ts';
 import { CHANGES_ITEMS_CAP, queryPage } from '../../src/mcp/tools/query.ts';
-import type { QueryResult, QueryService } from '../../src/queries/query-service.ts';
+import {
+  PAGE_CHARS_CAP,
+  type QueryResult,
+  type QueryService,
+} from '../../src/queries/query-service.ts';
 
 const idOf = (n: number) => `run-1:00000000-0000-7000-8000-${n.toString(16).padStart(12, '0')}`;
 

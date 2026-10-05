@@ -43,7 +43,7 @@ export type LockOptions = {
  * leitura estava velha e o lock movido era de outro dono vivo; foi devolvido ou, se já existe lock
  * novo, apagado. `gone`: o lock já não existia.
  */
-export type MoveAsideResult = 'removed' | 'restored' | 'discarded' | 'gone';
+type MoveAsideResult = 'removed' | 'restored' | 'discarded' | 'gone';
 
 // Tokens que este processo segura agora. A entrada e a saída acontecem na mesma sequência síncrona
 // do `rename` de aquisição e de liberação (sem `await` no meio), então duas chamadas do mesmo

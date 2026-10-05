@@ -30,9 +30,11 @@ const LOWER_IDENTIFIER = /^[a-z][a-z0-9_-]*$/;
 // com token minúsculo puro (`register`, `list`), que não é camelCase e não deve entrar nesta checagem.
 const CAMEL_CASE_IDENTIFIER = /^[a-z][a-z0-9]*[A-Z][a-zA-Z0-9]*$/;
 
-/** Nomes entre aspas do 1º argumento de cada `server.registerTool(` em `content`. */
+/** Nomes entre aspas do `name` de cada `defineTool(server, deps, { name: ...` em `content`. */
 function toolNamesFrom(content: string): string[] {
-  return [...content.matchAll(/server\.registerTool\(\s*['"]([^'"]+)['"]/g)].map((m) => at(m, 1));
+  return [
+    ...content.matchAll(/defineTool\(\s*server,\s*deps,\s*\{\s*name:\s*['"]([^'"]+)['"]/g),
+  ].map((m) => at(m, 1));
 }
 
 /** Nomes SCREAMING_SNAKE_CASE de `export const NOME` em `content`. */
@@ -91,8 +93,8 @@ describe('extratores (unitário, sobre string literal)', () => {
     expect(extractInlineBackticks(content)).toEqual(['fora', 'tambem-fora']);
   });
 
-  test('toolNamesFrom extrai o nome entre aspas do 1º argumento de server.registerTool(', () => {
-    const content = `server.registerTool(\n    'minha_tool',\n    { title: 'X' },\n  );`;
+  test('toolNamesFrom extrai o name entre aspas de defineTool(server, deps, { name: ...', () => {
+    const content = `defineTool(\n    server,\n    deps,\n    {\n      name: 'minha_tool',\n      title: 'X',\n    },\n  );`;
     expect(toolNamesFrom(content)).toEqual(['minha_tool']);
   });
 

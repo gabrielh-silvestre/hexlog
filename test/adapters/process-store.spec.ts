@@ -13,7 +13,8 @@ import {
 import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
 import { anchor } from '../../src/domain/chain.ts';
 import { HexlogError } from '../../src/errors.ts';
-import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
+import type { Manifest } from '../../src/domain/manifest.ts';
+import type { ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
 import { parseLog, verifyProcess } from '../../src/shared/loader.ts';
 import { chainLine, emptyManifest } from '../fixtures/chain-line.ts';
 import type { CrashWriterArgs } from '../fixtures/fixture-args.ts';

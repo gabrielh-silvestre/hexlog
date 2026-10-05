@@ -6,12 +6,12 @@ import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process
 import { createProcessService } from '../../src/commands/process.ts';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { RESERVED_PROCESS_NAMES, type Name } from '../../src/domain/ids.ts';
+import type { Manifest } from '../../src/domain/manifest.ts';
 import { HexlogError, type Detail, type ErrorCode } from '../../src/errors.ts';
 import type {
   DefinitionKind,
   DefinitionOf,
   DefinitionStore,
-  Manifest,
   ProcessStore,
 } from '../../src/ports.ts';
 import { captureError, createTempDir } from '../helpers.ts';

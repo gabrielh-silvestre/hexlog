@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import { MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
-import { compose } from '../../src/compose.ts';
+import { compose, composeReader } from '../../src/compose.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { at, createTempDir, rejectionOf, scriptWrites } from '../helpers.ts';
 import { AUTHOR, DOC, NOTE, NOW, PROJECT, note, refusal } from './register-fakes.ts';
@@ -14,12 +14,13 @@ afterEach(() => {
 /** Os serviços da composição real, num diretório de dados temporário. */
 function realSetup() {
   const dataDir = createTempDir('register-real');
-  const { services, loadProcess } = compose({
+  const { services } = compose({
     dataDir,
     cwd: dataDir,
     clock: () => NOW,
     logger: () => undefined,
   });
+  const { loadProcess } = composeReader({ dataDir, cwd: dataDir, logger: () => undefined });
   services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
   services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
   services.definition.defineRelation({ project: PROJECT, name: 'approves', kind: 'supports' });

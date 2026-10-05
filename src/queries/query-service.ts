@@ -12,12 +12,12 @@ import {
 } from '../domain/ids.ts';
 import { needsReview, type NeedsReview } from '../domain/relations.ts';
 import { HexlogError, invalidInput } from '../errors.ts';
+import type { Manifest } from '../domain/manifest.ts';
 import type {
   AttachmentReader,
   AttachmentStatus,
   DefinitionKind,
   DefinitionReader,
-  Manifest,
   ProcessReader,
   SearchIndex,
 } from '../ports.ts';
@@ -46,8 +46,11 @@ const DEFAULT_LIMIT = 50;
  * (`SEARCH_MAX_CHARS`); a F5 reusa a constante no `.max()` do zod.
  */
 export const QUERY_TEXT_MAX_CHARS = 200;
-/** Padrão de `readAttachment` chamado sem `maxChars`; o kernel MCP o reusa como `PAGE_CHARS_CAP` (D-20). */
-export const ATTACHMENT_PAGE_CHARS = 24_000;
+/**
+ * D-20: teto de uma página. Na `query` conta os caracteres do JSON dos registros (as tools o passam em
+ * `maxChars`); no `readAttachment`, os do `text`, e é o padrão sem `maxChars`.
+ */
+export const PAGE_CHARS_CAP = 24_000;
 
 export type QueryInput = Filters & {
   project: Name;
@@ -503,7 +506,7 @@ export function createQueryService(deps: {
       };
     },
 
-    readAttachment({ project, hash, offset = 0, maxChars = ATTACHMENT_PAGE_CHARS }) {
+    readAttachment({ project, hash, offset = 0, maxChars = PAGE_CHARS_CAP }) {
       const text = attachments.read(project, hash);
       if (offset > text.length) {
         throw invalidInput('/offset', 'out-of-range', 'offset is past the end of the attachment');

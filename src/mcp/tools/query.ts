@@ -6,19 +6,13 @@ import { WELL_FORMED } from '../../domain/record.ts';
 import {
   type Changes,
   type GateEvaluation,
+  PAGE_CHARS_CAP,
   QUERY_TEXT_MAX_CHARS,
   type QueryInput as QueryServiceInput,
   type QueryResult,
   type QueryService,
 } from '../../queries/query-service.ts';
-import {
-  advertise,
-  execute,
-  MarkerRecord,
-  PAGE_CHARS_CAP,
-  READ_ANNOTATIONS,
-  type ToolDeps,
-} from '../kernel.ts';
+import { defineTool, MarkerRecord, READ_ANNOTATIONS, type ToolDeps } from '../kernel.ts';
 
 /** Teto de `limit` no zod da tool; o serviço só exige inteiro >= 1. */
 const LIMIT_MAX = 200;
@@ -141,7 +135,8 @@ const QUERY_DESCRIPTION =
   'fields, scalar values only), text (full-text search, at most 200 characters, ordered by relevance), ' +
   'ids, relatedTo (records linked to an id) and includeNonCurrent (also superseded or revoked ones). ' +
   'Each record carries its in and out relations, needsReview when its support is dead and ' +
-  'attachmentStatus for the attachments it cites. A page holds at most limit records (default 50, ' +
+  'attachmentStatus for the attachments it cites; in process scope only the relations from that ' +
+  'process are seen, so use scope project to see cross-process support. A page holds at most limit records (default 50, ' +
   'max 200) and also stops at a size cap, always with at least one record; pass the returned cursor ' +
   'to continue. marker is the head of every process read: pass it back as changesSince to get ' +
   'changes (entered, left with reason) since then, on the first page only; resend the same ' +
@@ -150,17 +145,20 @@ const QUERY_DESCRIPTION =
   'partial and that marker must not be reused as changesSince, because the omitted ids never show ' +
   'again: reread everything instead (records by cursor, left with includeNonCurrent). A marker ' +
   'covers exactly the processes it names; in project scope, any process it does not name is read ' +
-  'as empty. Fails with MARKER_NOT_FOUND or INVALID_CURSOR when marker, changesSince or cursor do ' +
-  'not match the data read.';
+  'as empty. Fails with MARKER_NOT_FOUND or INVALID_CURSOR when changesSince or cursor do not match ' +
+  'the data read.';
 
 const EVALUATE_GATE_DESCRIPTION =
-  'Evaluate a gate pinned in a process, without writing anything. Returns passed and one result per ' +
-  'question (index, kind, passed, evidence: the record ids behind the answer) plus the marker of ' +
-  'what was read. target is inherited by selectors without targetPrefix. Pass a marker from an ' +
-  'earlier read to replay the evaluation over the records that existed then; a marker covers ' +
-  'exactly the processes it names, and in project scope any process it does not name is read as ' +
-  `empty. Each evidence list holds at most ${EVIDENCE_ITEMS_CAP} ids and omitted counts the rest per list; a ` +
-  'narrower select or where reaches them.';
+  'Evaluate a gate pinned in a process (GATE_NOT_FOUND otherwise), without writing anything. Returns ' +
+  'passed and one result per question (index, kind, passed, evidence: the record ids behind the ' +
+  'answer, in lists named by kind: approved has of, supports, contradictions and unsupported; ' +
+  'occurred has found; no_pending has unresolved; no_open_contradiction has conflicting) plus the ' +
+  'marker of what was read. target is inherited by selectors without targetPrefix. Pass a marker ' +
+  'from an earlier read to replay the evaluation over the records that existed then; a marker ' +
+  'covers exactly the processes it names, and in project scope any process it does not name is read ' +
+  'as empty. A gate without project-scope questions reads one process: the marker must name only ' +
+  `it (else MARKER_NOT_FOUND). Each evidence list holds at most ${EVIDENCE_ITEMS_CAP} ids and omitted counts the ` +
+  'rest per list; a narrower select or where reaches them.';
 
 const VERIFY_CHAIN_DESCRIPTION =
   'Check the integrity of a process: the hash chain of its log and the attachments its records cite. ' +
@@ -242,63 +240,59 @@ export function gatePage(
 
 /** Registra as quatro tools de leitura (`readOnlyHint`); cada uma só repassa a entrada ao serviço. */
 export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
-  server.registerTool(
-    'query',
+  defineTool(
+    server,
+    deps,
     {
+      name: 'query',
+      schema: QueryInput,
       title: 'Query',
       description: QUERY_DESCRIPTION,
-      inputSchema: advertise(QueryInput),
       outputSchema: QueryOutput,
       annotations: READ_ANNOTATIONS,
     },
-    (args, ctx) =>
-      execute(deps, { name: 'query', schema: QueryInput, args, ctx }, (input) =>
-        queryPage(deps.services.query, input),
-      ),
+    (input) => queryPage(deps.services.query, input),
   );
 
-  server.registerTool(
-    'evaluate_gate',
+  defineTool(
+    server,
+    deps,
     {
+      name: 'evaluate_gate',
+      schema: EvaluateGateInput,
       title: 'Evaluate gate',
       description: EVALUATE_GATE_DESCRIPTION,
-      inputSchema: advertise(EvaluateGateInput),
       outputSchema: EvaluateGateOutput,
       annotations: READ_ANNOTATIONS,
     },
-    (args, ctx) =>
-      execute(deps, { name: 'evaluate_gate', schema: EvaluateGateInput, args, ctx }, (input) =>
-        gatePage(deps.services.query.evaluateGate(input)),
-      ),
+    (input) => gatePage(deps.services.query.evaluateGate(input)),
   );
 
-  server.registerTool(
-    'verify_chain',
+  defineTool(
+    server,
+    deps,
     {
+      name: 'verify_chain',
+      schema: VerifyChainInput,
       title: 'Verify chain',
       description: VERIFY_CHAIN_DESCRIPTION,
-      inputSchema: advertise(VerifyChainInput),
       outputSchema: VerifyChainOutput,
       annotations: READ_ANNOTATIONS,
     },
-    (args, ctx) =>
-      execute(deps, { name: 'verify_chain', schema: VerifyChainInput, args, ctx }, (input) =>
-        deps.services.query.verifyChain(input),
-      ),
+    (input) => deps.services.query.verifyChain(input),
   );
 
-  server.registerTool(
-    'list',
+  defineTool(
+    server,
+    deps,
     {
+      name: 'list',
+      schema: ListInput,
       title: 'List',
       description: LIST_DESCRIPTION,
-      inputSchema: advertise(ListInput),
       outputSchema: ListOutput,
       annotations: READ_ANNOTATIONS,
     },
-    (args, ctx) =>
-      execute(deps, { name: 'list', schema: ListInput, args, ctx }, (input) =>
-        deps.services.query.list(input),
-      ),
+    (input) => deps.services.query.list(input),
   );
 }

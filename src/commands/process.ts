@@ -1,13 +1,13 @@
 import { isEqual, mapValues, union } from 'es-toolkit';
 import { fingerprint, hashOfJcs } from '../domain/chain.ts';
 import { isReservedProcessName, type Name } from '../domain/ids.ts';
+import type { Manifest } from '../domain/manifest.ts';
 import { HexlogError, reservedName } from '../errors.ts';
 import type {
   AttachmentStore,
   DefinitionKind,
   DefinitionOf,
   DefinitionStore,
-  Manifest,
   ProcessStore,
   Validator,
 } from '../ports.ts';

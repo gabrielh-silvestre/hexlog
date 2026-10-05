@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import { anchor, hashLink, sha256hex, type Expected, type Link } from '../../src/domain/chain.ts';
 import type { Gate } from '../../src/domain/definitions.ts';
-import type { Manifest, ProcessRef } from '../../src/ports.ts';
+import type { Manifest } from '../../src/domain/manifest.ts';
+import type { ProcessRef } from '../../src/ports.ts';
 import { formatLine } from '../../src/shared/loader.ts';
 import { emptyManifest } from './chain-line.ts';
 

@@ -80,15 +80,6 @@ function readBlob(file: string, hash: Hash): BlobRead {
   }
 }
 
-/** Decodifica UTF-8 estrito, mantendo o BOM; `undefined` se os bytes não forem UTF-8 válido. */
-function decodeUtf8(bytes: Uint8Array): string | undefined {
-  try {
-    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-  } catch {
-    return undefined;
-  }
-}
-
 function isWithin(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return relative !== '..' && !relative.startsWith(`..${path.sep}`);
@@ -282,7 +273,8 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
       mapIo(() => {
         const blob = readBlob(checkedBlobFile(project, hash), hash);
         if (blob.status === 'missing') throw attachmentNotFound(hash);
-        const text = blob.status === 'ok' ? decodeUtf8(blob.bytes) : undefined;
+        const text =
+          blob.status === 'ok' && isUtf8(blob.bytes) ? blob.bytes.toString('utf8') : undefined;
         if (text === undefined) throw attachmentCorrupted(hash);
         return text;
       }),

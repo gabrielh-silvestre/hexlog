@@ -226,19 +226,17 @@ describe('LEGACY_DATA', () => {
   });
 });
 
-describe('caller', () => {
+describe('client', () => {
   const envelopeOf = (clientInfo: unknown) => ctxOf({ [CLIENT_INFO_META_KEY]: clientInfo });
-  const authorOf = (ctx: CallContext, fields: { agent: string; model?: string }) =>
-    execute(makeDeps().deps, callOf({ project: 'p', count: 1 }, ctx), (_input, caller) =>
-      caller.author(fields),
-    );
+  const clientOf = (ctx: CallContext) =>
+    execute(makeDeps().deps, callOf({ project: 'p', count: 1 }, ctx), (_input, client) => ({
+      client,
+    }));
 
   test('D-21: client vem de clientInfo.name do envelope', async () => {
-    const result = await authorOf(envelopeOf({ name: 'claude-code', version: '2' }), {
-      agent: 'luffy',
-    });
+    const result = await clientOf(envelopeOf({ name: 'claude-code', version: '2' }));
 
-    expect(result).toMatchObject({ structuredContent: { agent: 'luffy', client: 'claude-code' } });
+    expect(result).toMatchObject({ structuredContent: { client: 'claude-code' } });
   });
 
   test.each([
@@ -249,22 +247,9 @@ describe('caller', () => {
     ['name acima de 100 caracteres', envelopeOf({ name: 'x'.repeat(101) })],
     ['name com surrogate solto', envelopeOf({ name: 'cl\ud800' })],
   ])('client é "unknown" %s', async (_title, ctx) => {
-    const result = await authorOf(ctx, { agent: 'luffy' });
+    const result = await clientOf(ctx);
 
     expect(result).toMatchObject({ structuredContent: { client: 'unknown' } });
-  });
-
-  test('D8: model só entra no author quando informado', async () => {
-    const ctx = envelopeOf({ name: 'claude-code' });
-
-    const without = await authorOf(ctx, { agent: 'luffy' });
-    const withModel = await authorOf(ctx, { agent: 'luffy', model: 'sonnet' });
-
-    expect(without).toMatchObject({
-      structuredContent: { agent: 'luffy', client: 'claude-code' },
-    });
-    expect(without).not.toHaveProperty('structuredContent.model');
-    expect(withModel).toMatchObject({ structuredContent: { model: 'sonnet' } });
   });
 });
 

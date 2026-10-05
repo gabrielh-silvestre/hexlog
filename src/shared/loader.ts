@@ -8,9 +8,10 @@ import {
   type LinkRejection,
 } from '../domain/chain.ts';
 import type { Hash, RecordId } from '../domain/ids.ts';
+import type { Manifest } from '../domain/manifest.ts';
 import { BATCH_MAX } from '../domain/record.ts';
 import { HexlogError } from '../errors.ts';
-import type { Manifest, ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
+import type { ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
 
 // Tetos de saída da verificação de cadeia, como no 0.x.
 export const MAX_BREAKS = 100;

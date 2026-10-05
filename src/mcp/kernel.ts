@@ -1,5 +1,9 @@
 import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
-import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
+import type {
+  McpServer,
+  StandardSchemaWithJSON,
+  ToolAnnotations,
+} from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { AttachmentService } from '../commands/attachment.ts';
 import type { DefinitionService } from '../commands/definition.ts';
@@ -13,11 +17,8 @@ import {
   legacyDataError,
   pointer,
 } from '../errors.ts';
-import { ATTACHMENT_PAGE_CHARS, type QueryService } from '../queries/query-service.ts';
+import type { QueryService } from '../queries/query-service.ts';
 import type { Logger, LogRecord } from '../shared/logger.ts';
-
-/** D-20: teto de caracteres do JSON de uma página de `query` e de `read_attachment`; o mesmo padrão do serviço. */
-export const PAGE_CHARS_CAP = ATTACHMENT_PAGE_CHARS;
 
 /** Marcador no fio: uma entrada por processo lido, `null` para processo vazio (D-24). */
 export const MarkerRecord = z.record(z.string(), z.string().nullable());
@@ -46,10 +47,11 @@ export type Services = {
  * chamada, para o servidor voltar a funcionar sem reinício depois de arquivar o dado 0.x.
  *
  * Contrato das tools (`src/mcp/tools/<x>.ts`): cada arquivo exporta
- * `register<X>Tools(server: McpServer, deps: ToolDeps): void`, que chama
- * `server.registerTool('<nome literal>', { inputSchema: advertise(Entrada), ... }, (args, ctx) =>
- * execute(deps, { name: '<nome literal>', schema: Entrada, args, ctx }, (input, caller) =>
- * deps.services.<serviço>.<operação>(...)))` e mais nada: nenhuma regra de negócio na tool.
+ * `register<X>Tools(server: McpServer, deps: ToolDeps): void`, que chama `defineTool` uma vez por tool,
+ * com o nome e o schema de entrada declarados uma só vez, e um `run` que repassa a entrada validada ao
+ * serviço. Nenhuma regra de negócio na tool; a exceção é a montagem de página e o corte do envelope
+ * (decisão 12), que moram na própria tool (`tools/query.ts#queryPage`, `gatePage`, `capChanges` e
+ * `capEvidence`).
  */
 export type ToolDeps = {
   services: Services;
@@ -57,18 +59,11 @@ export type ToolDeps = {
   logger: Logger;
 };
 
-/** Quem chamou: `client` vem do envelope do MCP (D-21), nunca do agente. */
-export type Caller = {
-  client: string;
-  /** D8: monta o `Author` com o `client` do envelope; `model` só entra quando informado. */
-  author(fields: { agent: string; model?: string }): Author;
-};
-
 /** O que o kernel lê do `ServerContext` do SDK: só o envelope da requisição. */
 export type CallContext = { mcpReq: { envelope?: Record<string, unknown> } };
 
 /** O que `execute` precisa de uma chamada: `args` é a entrada crua que o SDK repassou. */
-export type ToolCall<Input> = {
+type ToolCall<Input> = {
   /** Nome literal da tool, o mesmo do `registerTool`. */
   name: string;
   schema: z.ZodType<Input>;
@@ -152,14 +147,6 @@ function clientOf(ctx: CallContext): string {
   return parsed.success ? parsed.data.name : 'unknown';
 }
 
-function callerOf(ctx: CallContext): Caller {
-  const client = clientOf(ctx);
-  return {
-    client,
-    author: ({ agent, model }) => ({ agent, client, ...(model === undefined ? {} : { model }) }),
-  };
-}
-
 /**
  * Toda tool passa por aqui e `execute` nunca lança para o SDK. Ordem: `isLegacy()` antes de qualquer
  * outra coisa (`LEGACY_DATA` com o comando de arquivamento em `details`), recusa a chave `__proto__`
@@ -171,7 +158,7 @@ function callerOf(ctx: CallContext): Caller {
 export async function execute<Input, Output>(
   deps: ToolDeps,
   call: ToolCall<Input>,
-  run: (input: Input, caller: Caller) => Output | Promise<Output>,
+  run: (input: Input, client: string) => Output | Promise<Output>,
 ): Promise<ToolResult<Output>> {
   const start = Date.now();
   const log = (level: 'info' | 'error', code?: string) => {
@@ -196,7 +183,7 @@ export async function execute<Input, Output>(
         issueDetails(parsed.error.issues, ''),
       );
     }
-    const result = await run(parsed.data, callerOf(call.ctx));
+    const result = await run(parsed.data, clientOf(call.ctx));
     log('info');
     return { structuredContent: result, content: [{ type: 'text', text: JSON.stringify(result) }] };
   } catch (e) {
@@ -205,4 +192,28 @@ export async function execute<Input, Output>(
     log('error', error.code);
     return { isError: true, content: [{ type: 'text', text: JSON.stringify(body) }] };
   }
+}
+
+/** O que cada tool declara além de `name` e `schema`: a config do `registerTool`, sem o `inputSchema`. */
+type ToolConfig = {
+  title: string;
+  description: string;
+  outputSchema: StandardSchemaWithJSON;
+  annotations: ToolAnnotations;
+  _meta?: Record<string, unknown>;
+};
+
+/**
+ * Registra uma tool no SDK: anuncia `schema` por `advertise` e roda a chamada por `execute`, de modo
+ * que `name` e `schema` são declarados uma só vez. `run` recebe a entrada validada e o `client` do envelope.
+ */
+export function defineTool<Input, Output>(
+  server: McpServer,
+  deps: ToolDeps,
+  { name, schema, ...config }: ToolConfig & { name: string; schema: z.ZodType<Input> },
+  run: (input: Input, client: string) => Output | Promise<Output>,
+): void {
+  server.registerTool(name, { ...config, inputSchema: advertise(schema) }, (args, ctx) =>
+    execute(deps, { name, schema, args, ctx }, run),
+  );
 }

@@ -3,17 +3,17 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import { compose } from '../../src/compose.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
-import { PAGE_CHARS_CAP } from '../../src/mcp/kernel.ts';
 import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP } from '../../src/mcp/tools/query.ts';
 import type { Defined } from '../../src/commands/definition.ts';
 import type { CreateProcessResult, RegisterResult } from '../../src/commands/process.ts';
 import type { AttachmentPut } from '../../src/ports.ts';
-import type {
-  AttachmentPage,
-  GateEvaluation,
-  ListResult,
-  QueryResult,
-  VerifyChainResult,
+import {
+  PAGE_CHARS_CAP,
+  type AttachmentPage,
+  type GateEvaluation,
+  type ListResult,
+  type QueryResult,
+  type VerifyChainResult,
 } from '../../src/queries/query-service.ts';
 import { at, createTempDir } from '../helpers.ts';
 import { type Environment, createEnvironment, expectError } from './environment.ts';
@@ -277,6 +277,42 @@ describe('um fluxo feliz por tool', () => {
     const [saved] = result.records;
     expect(result).toMatchObject({ replayed: false, records: [{ alias: 'first' }] });
     expect(result.marker).toEqual({ 'run-1': saved?.id });
+  });
+
+  test('register grava o author com o client do envelope e o model só quando informado', async () => {
+    const withEnvelope = await createEnvironment({
+      clientInfo: { name: 'claude-code', version: '2' },
+    });
+    try {
+      await withEnvelope.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE });
+      await withEnvelope.ok('create_process', { project: PROJECT, process: 'run-1' });
+      const note = { type: 'note', target: 'run.step', data: { text: 'olá' } };
+      await withEnvelope.ok('register', {
+        project: PROJECT,
+        process: 'run-1',
+        agent: 'executor',
+        model: 'sonnet',
+        records: [note],
+      });
+      await withEnvelope.ok('register', {
+        project: PROJECT,
+        process: 'run-1',
+        agent: 'executor',
+        records: [note],
+      });
+
+      const page = await withEnvelope.ok<QueryResult>('query', {
+        project: PROJECT,
+        process: 'run-1',
+      });
+
+      expect(page.records.map(({ author }) => author)).toEqual([
+        { agent: 'executor', model: 'sonnet', client: 'claude-code' },
+        { agent: 'executor', client: 'claude-code' },
+      ]);
+    } finally {
+      await withEnvelope.close();
+    }
   });
 
   test('register com a mesma chave e o mesmo lote devolve replayed com os mesmos ids, sem gravar de novo', async () => {

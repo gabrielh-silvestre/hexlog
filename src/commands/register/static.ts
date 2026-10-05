@@ -1,5 +1,6 @@
 import type { RecordType } from '../../domain/definitions.ts';
 import { processOf, type Name } from '../../domain/ids.ts';
+import type { Manifest } from '../../domain/manifest.ts';
 import {
   BATCH_MAX,
   type BatchItem,
@@ -8,7 +9,7 @@ import {
 } from '../../domain/record.ts';
 import { resolveKind, type NamedRelation } from '../../domain/relations.ts';
 import { HexlogError, invalidInput } from '../../errors.ts';
-import type { Manifest, Validator } from '../../ports.ts';
+import type { Validator } from '../../ports.ts';
 import { invalidRecord, ruleRefusal } from './errors.ts';
 
 /** Relação com o `kind` já resolvido; `input` é como o agente a enviou (`to` ainda pode ser `@alias`). */

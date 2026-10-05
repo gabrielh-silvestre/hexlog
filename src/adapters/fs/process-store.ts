@@ -78,22 +78,13 @@ function parseManifest(ref: ProcessRef, text: string): Manifest {
 }
 
 /**
- * D-05: grava até somar o tamanho do buffer (o POSIX permite escrita parcial; o retorno de
- * `writeSync` não pode ser ignorado). Erro no meio deixa o que já entrou: resto que o leitor trata.
- */
-function writeFully(fd: number, buffer: Buffer): void {
-  let offset = 0;
-  while (offset < buffer.length) offset += fs.writeSync(fd, buffer, offset);
-}
-
-/**
  * Anexa `text` (se houver) e dá o único `fsync` do lote. Sem `text` (replay, D-05) só dá `fsync`,
  * porque um lote de cauda válida pode nunca ter passado por um.
  */
 function appendAndSync(file: string, text: string | undefined): void {
   const fd = fs.openSync(file, 'a', 0o600);
   try {
-    if (text !== undefined) writeFully(fd, Buffer.from(text));
+    if (text !== undefined) fs.writeFileSync(fd, Buffer.from(text));
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -168,12 +159,11 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     readManifest: (ref) => mapIo(() => readManifest(ref)),
 
     list: (project) =>
-      mapIo(() =>
-        listDirectories(projectDir(project), (name) =>
-          // Pastas de definição e anexos do projeto não têm manifesto.
-          existsStrict(path.join(projectDir(project), name, MANIFEST_FILE)),
-        ),
-      ),
+      mapIo(() => {
+        const dir = projectDir(project);
+        // Pastas de definição e anexos do projeto não têm manifesto.
+        return listDirectories(dir, (name) => existsStrict(path.join(dir, name, MANIFEST_FILE)));
+      }),
 
     listProjects: () => mapIo(() => listDirectories(root)),
 

@@ -11,10 +11,13 @@ export const BATCH_KEY_MAX = 200;
 /** Um alias por item no máximo, então o teto acompanha `BATCH_MAX`. */
 export const BATCH_ALIASES_MAX = BATCH_MAX;
 
+/** Forma da chave de idempotência; a tool `register` soma a boa formação, que o log gravado não revalida. */
+export const BatchKey = z.string().min(1).max(BATCH_KEY_MAX);
+
 /** D-04: só o 1º elo do lote leva `batch`, dentro do hash. */
 export const Batch = z.strictObject({
   fingerprint: Hash,
-  key: z.string().min(1).max(BATCH_KEY_MAX).optional(),
+  key: BatchKey.optional(),
   aliases: z
     .record(alias, RecordId)
     .refine((aliases) => Object.keys(aliases).length <= BATCH_ALIASES_MAX, {
