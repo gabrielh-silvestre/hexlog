@@ -88,9 +88,10 @@ export type NeedsReview = { staleIn: RecordId[]; staleOut: RecordId[] };
  * o aviso não bloqueia nada. Apoio cujo destino não está em `records` é ignorado: a vigência dele
  * é desconhecida.
  *
- * Acompanhamento: com `scope: "process"` (D-24) `records` são só os do processo, então o alerta que
- * cruza processos não é emitido (a vigência da outra ponta é desconhecida; emitir seria falso
- * alerta, D-09). Revisitar ao implementar `scope: "project"`.
+ * Alcance (D-24): com `scope: "process"`, `records` são só os do processo, então o alerta que cruza
+ * processos não é emitido (a vigência da outra ponta é desconhecida; emitir seria falso alerta,
+ * D-09). Com `scope: "project"`, `records` são os de todos os processos do projeto e o alerta que
+ * cruza processos sai.
  */
 export function needsReview(
   records: readonly Linked[],

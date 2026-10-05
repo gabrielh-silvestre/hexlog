@@ -1,4 +1,4 @@
-// Guard de instalação (§4.14): regras de deny + hook PreToolUse em
+// Guard de instalação: regras de deny + hook PreToolUse em
 // `settings.json`, e verificação de que o guard está de fato ativo e
 // funcionando (I5, I6, I7). Puro e testável; não é importado pelo servidor
 // nem pelo hook — só pelo instalador (`scripts/install.ts`).
@@ -51,7 +51,7 @@ export function skillFileOf(home: string, name: string): string {
   return path.join(home, '.claude', 'skills', name, 'SKILL.md');
 }
 
-/** As 4 regras de deny e os caminhos do hook/servidor instalados para uma versão (§4.14, QN4). */
+/** As 4 regras de deny e os caminhos do hook/servidor instalados para uma versão (QN4). */
 export function expectedRules(
   D: string,
   home: string,

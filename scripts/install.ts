@@ -1,4 +1,4 @@
-// Instalador versionado do hexlog (§4.14). Entrypoint real: liga `build`
+// Instalador versionado do hexlog. Entrypoint real: liga `build`
 // (esbuild), `Client`/`StdioClientTransport` (devDependency) e `claude mcp` às
 // funções puras de `src/installation.ts` e `src/guard.ts`. Os testes
 // (`test/guard.spec.ts`, describes B2/B3) chamam `installArtifact`/

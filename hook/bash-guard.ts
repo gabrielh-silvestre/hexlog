@@ -126,7 +126,7 @@ function decide(
     tokenReachesDirectory(token, cwd, dataDirPath, home),
   );
 
-  // Rede de segurança (§4.14): também decide sozinha quando o
+  // Rede de segurança: também decide sozinha quando o
   // parse lança, e cobre o comando citando D fora de qualquer token isolado.
   const deny = reachedByTokens || command.includes(dataDirPath);
   return deny ? { deny: true, reason: denialMessage(dataDirPath) } : { deny: false };

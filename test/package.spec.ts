@@ -90,7 +90,7 @@ describe('N7', () => {
 });
 
 describe('N11', () => {
-  // Manifesto literal de §2.2 — versões exatas (npm install --save-exact).
+  // Versões exatas (npm install --save-exact).
   const EXPECTED_DEPENDENCIES = {
     '@modelcontextprotocol/server': '2.0.0',
     zod: '4.6.5',
@@ -101,8 +101,7 @@ describe('N11', () => {
     'jsonc-parser': '3.3.1',
     'es-toolkit': '1.52.0',
     minisearch: '7.2.0',
-    // Não consta no manifesto original de §2.2: entrou pela decisão N1 (ReDoS em `pattern`,
-    // `Validator.checkSchema`); o plano deve ser emendado na F8.
+    // Entrou pela decisão N1 (ReDoS em `pattern`, `Validator.checkSchema`; ADR 0009, item 20).
     'safe-regex2': '5.1.1',
   };
   const EXPECTED_DEV_DEPENDENCIES = {
@@ -115,7 +114,7 @@ describe('N11', () => {
     '@types/shell-quote': '1.7.5',
     'fast-check': '4.10.1',
     esbuild: '0.28.2',
-    // Deps de lint/format do plano de quality-tooling (fora do manifesto de §2.2).
+    // Deps de lint/format do plano de quality-tooling (fora do conjunto inicial de dependências).
     eslint: '10.10.0',
     '@eslint/js': '10.0.1',
     'typescript-eslint': '8.70.0',
@@ -128,11 +127,11 @@ describe('N11', () => {
     tar: '7.5.22',
   };
 
-  test('dependencies bate exatamente com o manifesto de §2.2 (sem ^/~/faixas)', () => {
+  test('dependencies bate exatamente com o manifesto de package.json (sem ^/~/faixas)', () => {
     expect(pkg.dependencies).toEqual(EXPECTED_DEPENDENCIES);
   });
 
-  test('devDependencies bate exatamente com o manifesto de §2.2 (sem ^/~/faixas)', () => {
+  test('devDependencies bate exatamente com o manifesto de package.json (sem ^/~/faixas)', () => {
     expect(pkg.devDependencies).toEqual(EXPECTED_DEV_DEPENDENCIES);
   });
 
@@ -156,7 +155,7 @@ describe('M5', () => {
   });
 
   test('nenhum arquivo em src/ importa módulo de servidor de rede nem chama .listen(', () => {
-    // §M5: hexlog é stdio-only — proíbe http/https/http2/net e `.listen(`.
+    // M5: hexlog é stdio-only — proíbe http/https/http2/net e `.listen(`.
     const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
       usesNetworkServerModule(fs.readFileSync(file, 'utf8')),
     );

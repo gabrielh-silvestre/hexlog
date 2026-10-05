@@ -66,13 +66,13 @@ C4Component
 
 Toda camada importa `errors.ts`; as arestas ficam fora do desenho para não
 estourar o limite de PNG. `domain/` não importa camada nenhuma acima, só
-`errors.ts` (`domain/definitions.ts` usa `HexlogError`), e `errors.ts` importa de
-volta só o tipo `RecordId`, sem ciclo em runtime.
+`errors.ts` (`domain/definitions.ts` e `domain/chain.ts` usam `HexlogError`), e
+`errors.ts` importa de volta só os tipos `Name` e `RecordId`, sem ciclo em runtime.
 
 | Componente | O que faz |
 |---|---|
 | `server.ts` | Entry point: `compose`, log `start` (`dataDir` e `version`), `createServer` e `serveStdio` |
-| `compose.ts` | `compose`: a raiz de composição; único módulo, fora de `adapters/`, que conhece os adaptadores de disco; liga validador, stores e `createSearchIndex` aos quatro serviços |
+| `compose.ts` | `compose`: a raiz de composição; único módulo do servidor em runtime, fora de `adapters/`, que conhece os adaptadores de disco; liga validador, stores e `createSearchIndex` aos quatro serviços |
 | `mcp/kernel.ts`, `mcp/server.ts` | `execute()` (envelope de erro e log de toda tool) e `createServer` (`McpServer` com as 11 tools) |
 | `mcp/tools/` | `process.ts`, `definition.ts`, `attachment.ts` e `query.ts`: uma `register*Tools` por família |
 | `commands/` | `createProcessService` (`createProcess`, `register`), `createDefinitionService` (`defineType`, `defineRelation`, `defineGate`) e `createAttachmentService` (`attach`); as etapas do `register` ficam em `commands/register/` |
@@ -96,7 +96,9 @@ processo MCP em runtime; entram no C2 (containers) do projeto, não neste C3:
 
 - **`guard.ts`, `installation.ts` e `archive.ts`** (em `src/`): usados só por
   `scripts/install.ts`. Não são importados por `server.ts` nem pelo hook.
-  `archive.ts` (`inspectLegacy`, `archiveLegacy`) arquiva o dado 0.x.
+  `archive.ts` (`inspectLegacy`, `archiveLegacy`) arquiva o dado 0.x. `installation.ts`,
+  `archive.ts` e `scripts/install.ts` também importam `adapters/fs/`, o que não fere a
+  regra de `compose.ts`: nenhum deles roda dentro do servidor.
 - **`hook/bash-guard.ts`**: processo `PreToolUse` separado, registrado no
   `settings.json` do Claude Code; consome só `directory.ts` do servidor.
 

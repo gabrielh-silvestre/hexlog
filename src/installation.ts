@@ -1,4 +1,4 @@
-// Instalação versionada do artefato (§4.14): copia os bundles para
+// Instalação versionada do artefato: copia os bundles para
 // `~/.local/lib/hexlog/<versão>/`, registra o guard em `settings.json` e decide
 // se o MCP precisa ser (re)registrado. Puro e testável: toda execução externa
 // (hook, servidor, relógio) é injetada — nada aqui chama `claude` nem builda.
@@ -45,7 +45,7 @@ function hasDynamicRequire(bytes: Uint8Array): boolean {
   return Buffer.from(bytes).includes('Dynamic require of');
 }
 
-// As 11 tools registradas em src/mcp/tools/ (§4.12).
+// As 11 tools registradas em src/mcp/tools/.
 export const TOOLS_COUNT = 11;
 
 export function versionDirOf(home: string, version: string): string {
@@ -86,7 +86,7 @@ function isDirectoryBusyError(error: unknown): boolean {
   return code === 'ENOTEMPTY' || code === 'EEXIST' || code === 'ENOENT';
 }
 
-/** Verifica o artefato preparado em `tmp` antes de trocar (§4.14): qualquer falha aborta sem tocar em nada. */
+/** Verifica o artefato preparado em `tmp` antes de trocar: qualquer falha aborta sem tocar em nada. */
 async function verifyPreparedArtifact(args: {
   tmp: string;
   bundles: Bundles;
@@ -162,7 +162,7 @@ function swapDirectory(tmp: string, dst: string, old: string): void {
   }
 }
 
-/** Troca atômica de `tmp` para `versionDir` (§4.14), cobrindo instalação nova, reinstalação e concorrência. */
+/** Troca atômica de `tmp` para `versionDir`, cobrindo instalação nova, reinstalação e concorrência. */
 function swapArtifact(args: {
   versionDir: string;
   tmp: string;
@@ -196,7 +196,7 @@ function swapArtifact(args: {
   };
 }
 
-/** Instala os bundles preparados como a versão ativa, idempotente pelos bytes instalados (§4.14). */
+/** Instala os bundles preparados como a versão ativa, idempotente pelos bytes instalados. */
 export async function installArtifact(args: {
   home: string;
   version: string;
@@ -337,7 +337,7 @@ function registeredHookVersion(settingsData: unknown, home: string): string | un
   return isNil(found) ? undefined : path.basename(path.dirname(found.file));
 }
 
-/** `install.ts --check` (§4.14, §10; QN4): mesmo `verifyGuard` de I5-I7, mais o aviso de artefato desatualizado. */
+/** `install.ts --check` (QN4): mesmo `verifyGuard` de I5-I7, mais o aviso de artefato desatualizado. */
 export function verifyInstallation(args: {
   home: string;
   version: string;

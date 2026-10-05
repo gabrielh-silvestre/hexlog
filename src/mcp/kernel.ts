@@ -73,8 +73,9 @@ type ToolCall<Input> = {
 
 /**
  * Corpo de sucesso ou erro que uma tool devolve ao SDK: nunca uma exceção. O erro leva o JSON
- * `{code, message, details}` só em `content[0].text`: o SDK 1.x valida `structuredContent` contra o
- * `outputSchema` de sucesso mesmo com `isError` e lançaria `-32602` no cliente. "Nunca uma exceção" vale
+ * `{code, message, details}` só em `content[0].text`, sem `structuredContent`, porque o `outputSchema`
+ * descreve só o sucesso: o `validateToolOutput` do SDK 2.0 já retorna cedo com `isError`, e a
+ * invariante fica travada em `test/mcp/environment.ts#errorBodyOf`. "Nunca uma exceção" vale
  * para o handler: o SDK valida o `outputSchema` depois dele, e saída fora do schema volta como `isError`
  * com o texto livre `Output validation error: ...`, sem `code` (risco aceito, ADR 0009).
  */
