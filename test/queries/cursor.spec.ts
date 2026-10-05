@@ -101,6 +101,14 @@ describe('cursor: adulteração', () => {
     ]);
   });
 
+  test('toda mensagem de INVALID_CURSOR manda reexecutar a consulta sem cursor', () => {
+    const malformed = invalidCursorOf(() => decodeCursor('x.y'));
+    const badField = invalidCursorOf(() => decodeCursor(forge({ ...payload, scope: 'global' })));
+
+    expect(malformed.details[0]?.message).toContain('rerun the query without cursor');
+    expect(badField.details[0]?.message).toContain('rerun the query without cursor');
+  });
+
   test.each([
     ['scope', { scope: 'global' }],
     ['project', { project: 'Not A Name' }],

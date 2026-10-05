@@ -293,10 +293,7 @@ function assertSameQuery(
     { differs: cursor.filtersHash !== hash, code: 'filters-mismatch' },
   ].find(({ differs }) => differs);
   if (mismatch !== undefined) {
-    throw invalidCursor(
-      mismatch.code,
-      'Cursor was issued for a different query; rerun the query without cursor',
-    );
+    throw invalidCursor(mismatch.code, 'Cursor was issued for a different query');
   }
 }
 
@@ -313,7 +310,7 @@ function assertSameContent(cursor: CursorPayload, reading: Reading): void {
     if (seen !== read) {
       throw invalidCursor(
         'marker-hash-mismatch',
-        `Cursor marker does not match the log of process '${name}'; rerun the query without cursor`,
+        `Cursor marker does not match the log of process '${name}'`,
       );
     }
   }
@@ -322,10 +319,7 @@ function assertSameContent(cursor: CursorPayload, reading: Reading): void {
 function startAfter(selected: readonly Link[], lastId: RecordId): number {
   const at = selected.findIndex((link) => link.id === lastId);
   if (at === -1) {
-    throw invalidCursor(
-      'last-id-not-found',
-      'Cursor record is not in the result; rerun the query without cursor',
-    );
+    throw invalidCursor('last-id-not-found', 'Cursor record is not in the result');
   }
   return at + 1;
 }

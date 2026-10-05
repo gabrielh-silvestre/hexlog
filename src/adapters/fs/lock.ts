@@ -221,7 +221,7 @@ export function createLockManager({
       if (current.kind === 'unreadable') {
         throw lockTimeout(
           'holder-unreadable',
-          'lock holder file is unreadable; ask the user to remove the lock (see README, manual unlock)',
+          'lock holder file is unreadable; ask the user to remove the lock (see README, holder-unreadable)',
         );
       }
       if (current.kind === 'missing') {

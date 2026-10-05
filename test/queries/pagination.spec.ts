@@ -207,6 +207,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
 
     expect(error.code).toBe('INVALID_CURSOR');
     expect(at(error.details, 0).code).toBe('project-mismatch');
+    expect(at(error.details, 0).message).toContain('rerun the query without cursor');
   });
 
   test('cursor mexido, de outro filtro, alcance ou processo dá INVALID_CURSOR', async () => {

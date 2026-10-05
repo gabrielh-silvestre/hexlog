@@ -116,6 +116,7 @@ describe('queryRecords: filtros e dados embutidos', () => {
 
       expect(error.code).toBe('INVALID_FILTER');
       expect(at(error.details, 0)).toMatchObject({ path: '/text', code: 'no-terms' });
+      expect(at(error.details, 0).message).toContain('spaces and punctuation are not terms');
     },
   );
 
