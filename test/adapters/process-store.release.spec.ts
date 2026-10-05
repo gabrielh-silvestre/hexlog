@@ -5,7 +5,7 @@ import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { ProcessRef } from '../../src/ports.ts';
 import { emptyManifest } from '../fixtures/chain-line.ts';
-import { captureLog, createTempDir, expectNoLeak } from '../helpers.ts';
+import { captureLog, createTempDir, errno, expectNoLeak } from '../helpers.ts';
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -21,9 +21,6 @@ function setup() {
   const { dir, log: logFile } = processPaths(dataDir, ref);
   return { store, records, dir, logFile };
 }
-
-const errno = (code: string): Error =>
-  Object.assign(new Error(`${code}: /abs/secret/path`), { code });
 
 const realRename = fs.renameSync;
 

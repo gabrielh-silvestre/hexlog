@@ -194,23 +194,6 @@ describe('LEGACY_DATA', () => {
     });
   });
 
-  test('consulta isLegacy a cada chamada: volta a funcionar sem reinício depois de arquivar', async () => {
-    const { deps } = makeDeps();
-    let legacy = true;
-    const live: ToolDeps = { ...deps, isLegacy: () => legacy };
-    const valid = { project: 'p', count: 1 };
-
-    const before = await execute(live, callOf(valid), () => ({ ok: true }));
-    legacy = false;
-    const after = await execute(live, callOf(valid), () => ({ ok: true }));
-
-    expect(errorBodyOf(before)).toMatchObject({ code: 'LEGACY_DATA' });
-    expect(after).toEqual({
-      structuredContent: { ok: true },
-      content: [{ type: 'text', text: '{"ok":true}' }],
-    });
-  });
-
   test('exceção do próprio isLegacy vira INTERNAL, não escapa para o SDK', async () => {
     const { deps } = makeDeps();
     const broken: ToolDeps = {

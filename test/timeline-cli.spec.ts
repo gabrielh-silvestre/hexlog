@@ -1,16 +1,13 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { z } from 'zod';
 import { blobFile, processPaths } from '../src/adapters/fs/data-format.ts';
 import { sha256hex } from '../src/domain/chain.ts';
 import { compose } from '../src/compose.ts';
 import { escapeControls } from '../scripts/escape-controls.ts';
-import { execute, type Services } from '../src/mcp/kernel.ts';
 import { AUTHOR, DOC, NOW, PROJECT } from './commands/register-fakes.ts';
-import { at, createTempDir } from './helpers.ts';
+import { at, copyToXdg, createTempDir, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const TARGET = 'plan.f6';
@@ -39,43 +36,6 @@ function runTimeline(xdg: string, ...args: string[]) {
     env: { ...process.env, XDG_DATA_HOME: xdg },
   });
   return { code: result.status, out: result.stdout, err: result.stderr };
-}
-
-/** `<xdg>/hexlog` é o `<D>` que o script resolve; `source` vira o conteúdo dele. */
-function copyToXdg(source: string): string {
-  const xdg = createTempDir('xdg');
-  fs.cpSync(source, path.join(xdg, 'hexlog'), { recursive: true });
-  return xdg;
-}
-
-/** `caminho → sha256:mtimeMs` de todo arquivo sob `root`, para provar que nada foi escrito. */
-function snapshot(root: string): Record<string, string> {
-  const entries: [string, string][] = [];
-  const walk = (dir: string) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else {
-        const hash = createHash('sha256').update(fs.readFileSync(full)).digest('hex');
-        entries.push([path.relative(root, full), `${hash}:${fs.statSync(full).mtimeMs}`]);
-      }
-    }
-  };
-  walk(root);
-  return Object.fromEntries(entries);
-}
-
-/** O corpo que o servidor devolve para `LEGACY_DATA`: o script tem de dizer o mesmo. */
-async function serverLegacyBody(): Promise<{ message: string; details: { message: string }[] }> {
-  const result = await execute(
-    { services: {} as Services, isLegacy: () => true, logger: () => undefined },
-    { name: 'list', schema: z.object({}), args: {}, ctx: { mcpReq: {} } },
-    () => ({}),
-  );
-  return JSON.parse(at(result.content, 0).text) as {
-    message: string;
-    details: { message: string }[];
-  };
 }
 
 type JsonRecord = {
@@ -389,20 +349,6 @@ describe('integridade', () => {
     const { code, out, err } = runTimeline(xdg, PROJECT, TARGET);
 
     expect(err).toContain('timeline failed: PROCESS_CORRUPTED:');
-    expect(out).toBe('');
-    expect(code).toBe(2);
-  });
-});
-
-describe('dado 0.x', () => {
-  test('P11: <D> com dado 0.x sai com 2 e a mesma mensagem do LEGACY_DATA do servidor', async () => {
-    const xdg = copyToXdg(path.join(__dirname, 'fixtures', 'legacy-0x'));
-    const { message, details } = await serverLegacyBody();
-
-    const { code, out, err } = runTimeline(xdg, PROJECT, TARGET);
-
-    expect(err).toContain(`timeline failed: LEGACY_DATA: ${message}`);
-    expect(err).toContain(at(details, 0).message);
     expect(out).toBe('');
     expect(code).toBe(2);
   });

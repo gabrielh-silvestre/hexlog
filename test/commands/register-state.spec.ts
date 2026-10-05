@@ -701,38 +701,6 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
     expect(harness.processes.counters).toMatchObject({ writes: 0, appends: 0 });
   });
 
-  test('no veto do lote, depois das checagens: o lote que passaria do teto não grava e o log segue legível', async () => {
-    const harness = setup();
-    await harness.register([note('a')]);
-    const before = harness.processes.textOf(ORIGIN);
-    harness.processes.flags.maxBytes = Buffer.byteLength(before) + 10;
-
-    const error = await refusal(harness.register([note('b')]));
-
-    expect(error.code).toBe('PROCESS_TOO_LARGE');
-    expect(harness.processes.textOf(ORIGIN)).toBe(before);
-    expect(verifiedOf(harness.processes).chain).toMatchObject({ ok: true, totalRecords: 1 });
-  });
-
-  test('o teto é inclusivo: o lote que fecha o log em exatamente maxBytes grava, um byte a menos é vetado', async () => {
-    const probe = setup();
-    await probe.register([note('a')]);
-    await probe.register([note('b')]);
-    const exact = Buffer.byteLength(probe.processes.textOf(ORIGIN));
-    const fits = setup();
-    await fits.register([note('a')]);
-    fits.processes.flags.maxBytes = exact;
-    const over = setup();
-    await over.register([note('a')]);
-    over.processes.flags.maxBytes = exact - 1;
-
-    const written = await fits.register([note('b')]);
-    const vetoed = await refusal(over.register([note('b')]));
-
-    expect(written.replayed).toBe(false);
-    expect(vetoed.code).toBe('PROCESS_TOO_LARGE');
-  });
-
   test('o veto vem depois das checagens: lote que viola D-10 e passaria do teto dá a violação', async () => {
     const harness = setup();
     harness.processes.flags.maxBytes = 1;

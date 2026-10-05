@@ -65,9 +65,6 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 
 ### Testing Requirements
 - `npm test` (jest) roda tudo, incluindo:
-  - `test/toolchain.spec.ts`: builda os probes com o `esbuild` real
-    e confere que nenhum bundle contém o shim `Dynamic require of`, e que o
-    hook empacotado (`hook-probe.mjs`) sai com o código esperado.
   - `test/package.spec.ts` (N11): `dependencies`/`devDependencies` do
     `package.json` batem exatamente com o manifesto do projeto (sem
     `^`/`~`/faixas), `engines.node` é `>=24.18.1`.
@@ -78,16 +75,16 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `filtro
     posicional`, `sinais da chave (SE8)`, `cadeia adulterada (SL1)` (inclui o
     `process.json` truncado e o caso misto de exit 1 e 2), `uso incorreto`, `dado
-    0.x (P11)` e a trava de que nada foi escrito no diretório de dados.
+    0.x (P11, só aqui)` e a trava de que nada foi escrito no diretório de dados.
   - `test/export.spec.ts`: roda `scripts/export.ts` como processo real
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `sem
     --fields`, `--fields`, `uso incorreto e processo inexistente`,
-    `integridade` (SL1), `dado 0.x` (P11) e `read-only`.
+    `integridade` (SL1) e `read-only`.
   - `test/timeline-cli.spec.ts`: roda `scripts/timeline.ts` como processo real
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `--full`
     (com `--raw`, texto ≥ 200 KB idêntico entre os delimitadores), `escape de
     terminal` (sem `--raw`, com `--raw` e com `--json`), `texto legível`,
-    `--json`, `read-only`, `integridade` (exit 2), `dado 0.x` (P11) e
+    `--json`, `read-only`, `integridade` (exit 2) e
     `uso incorreto e erros`.
   - `test/escape-controls.spec.ts`: `escapeControls` sobre cada classe de
     controle (C0, DEL, C1, bidi), o que passa intacto (LF, TAB, acento, emoji,

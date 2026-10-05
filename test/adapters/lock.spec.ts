@@ -10,7 +10,7 @@ import { createLockManager, isPidAlive, moveAside } from '../../src/adapters/fs/
 import { verifyProcess } from '../../src/shared/loader.ts';
 import type { LogRecord } from '../../src/shared/logger.ts';
 import { chainLine } from '../fixtures/chain-line.ts';
-import { captureLog, createTempDir, rejectionOf } from '../helpers.ts';
+import { captureLog, createTempDir, errno, rejectionOf } from '../helpers.ts';
 import {
   createProcess,
   killChildren,
@@ -46,10 +46,6 @@ function plantLock(lockDir: string, holder: string | object): void {
     typeof holder === 'string' ? holder : JSON.stringify(holder),
   );
 }
-
-/** Erro cru do fs, como o `fs` o lança (`code` em maiúsculas, caminho absoluto na mensagem). */
-const errno = (code: string): Error =>
-  Object.assign(new Error(`${code}: /abs/secret/path`), { code });
 
 /**
  * Filho que já morreu e que o pai ainda não colheu (zumbi): o `sh` solta um `sleep` curto e vira

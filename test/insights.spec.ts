@@ -1,6 +1,4 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
-import { keyBy, mapValues } from 'es-toolkit';
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -8,7 +6,7 @@ import { blobFile, processPaths } from '../src/adapters/fs/data-format.ts';
 import { compose } from '../src/compose.ts';
 import { AUTHOR, DOC, NOTE, note } from './commands/register-fakes.ts';
 import { writeRecordsCorpus } from './fixtures/records-corpus.ts';
-import { createTempDir } from './helpers.ts';
+import { createTempDir, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const legacyFixture = path.join(__dirname, 'fixtures', 'legacy-0x');
@@ -24,18 +22,6 @@ function runInsights(xdg: string, ...args: string[]) {
     env: { ...process.env, HOME: xdg, XDG_DATA_HOME: xdg },
   });
   return { code: result.status, out: result.stdout, err: result.stderr };
-}
-
-function snapshot(dir: string): Record<string, string> {
-  const entries = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
-  const files = keyBy(
-    entries.filter((entry) => entry.isFile()),
-    (entry) => path.join(entry.parentPath, entry.name),
-  );
-  return mapValues(files, (_entry, file) => {
-    const hash = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-    return `${hash}:${fs.statSync(file).mtimeMs}`;
-  });
 }
 
 /** Cria o `<D>` de um `XDG_DATA_HOME` temporário; devolve os dois. */
@@ -367,12 +353,5 @@ describe('dado 0.x (P11)', () => {
     expect(err).toContain('LEGACY_DATA');
     expect(err).toContain('legacy 0.x data found; archive it first');
     expect(err).toContain('node scripts/install.ts --archive-0x (from the hexlog repository)');
-  });
-
-  test('a recusa de dado 0.x vale também com filtro de processo', () => {
-    const xdg = createTempDir('xdg');
-    fs.cpSync(legacyFixture, path.join(xdg, 'hexlog'), { recursive: true });
-
-    expect(runInsights(xdg, 'alpha/run-1').code).toBe(2);
   });
 });

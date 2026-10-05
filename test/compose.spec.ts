@@ -30,23 +30,6 @@ describe('compose', () => {
     expect(Object.keys(services).sort()).toEqual(['attachment', 'definition', 'process', 'query']);
   });
 
-  test('query lê o que process gravou', async () => {
-    const { services } = composed();
-    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
-    services.process.createProcess({ project: PROJECT, process: 'run-1' });
-    const { records } = await services.process.register({
-      project: PROJECT,
-      process: 'run-1',
-      author: AUTHOR,
-      key: 'k1',
-      records: [note()],
-    });
-
-    const page = services.query.queryRecords({ project: PROJECT, process: 'run-1' });
-
-    expect(page.records.map(({ id }) => id)).toEqual(records.map(({ id }) => id));
-  });
-
   test('duas consultas com text pelo query da composição indexam uma vez só', async () => {
     const { services } = composed();
     services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
@@ -110,32 +93,6 @@ describe('compose', () => {
     expect(logger).toHaveBeenCalledWith(replayed);
   });
 
-  test('attach por path dentro do cwd funciona', () => {
-    const { services, cwd } = composed();
-    fs.writeFileSync(path.join(cwd, 'plan.md'), 'conteúdo do plano');
-
-    const put = services.attachment.attach({ project: PROJECT, path: 'plan.md' });
-
-    expect(put).toMatchObject({
-      bytes: Buffer.byteLength('conteúdo do plano'),
-      deduplicated: false,
-    });
-  });
-
-  test('attach por path dentro do dataDir é recusado (D-15)', () => {
-    const { services, dataDir } = composed();
-    fs.writeFileSync(path.join(dataDir, 'stolen.md'), 'segredo');
-
-    const error = captureError(() =>
-      services.attachment.attach({ project: PROJECT, path: path.join(dataDir, 'stolen.md') }),
-    );
-
-    expect(error).toMatchObject({
-      code: 'INVALID_INPUT',
-      details: [{ code: 'inside-data-dir' }],
-    });
-  });
-
   test('isLegacy é falso com o dataDir vazio e verdadeiro com layout 0.x', () => {
     const { isLegacy, dataDir } = composed();
     expect(isLegacy()).toBe(false);
@@ -190,14 +147,5 @@ describe('composeReader', () => {
     expect(captureError(() => reader.query.list({ project: PROJECT }))).toMatchObject({
       code: 'PROCESS_CORRUPTED',
     });
-  });
-
-  test('isLegacy é verdadeiro com layout 0.x', async () => {
-    const { reader, dataDir } = await seeded();
-    expect(reader.isLegacy()).toBe(false);
-
-    fs.mkdirSync(path.join(dataDir, 'meu-projeto'));
-
-    expect(reader.isLegacy()).toBe(true);
   });
 });

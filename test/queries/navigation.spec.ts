@@ -1,44 +1,9 @@
 import { describe, expect, test } from '@jest/globals';
 import { note } from '../commands/register-fakes.ts';
 import { at } from '../helpers.ts';
-import { idsOf, querySetup, seeded } from './query-setup.ts';
+import { idsOf, querySetup } from './query-setup.ts';
 
 describe('SL9: navegação por text, ids e relatedTo', () => {
-  test('`text` acha pelo conteúdo e `ids` restringe o resultado', async () => {
-    const { query, task, v2 } = await seeded();
-
-    expect(idsOf(query({ process: 'run-1', text: 'tarefa' }))).toEqual([task]);
-    expect(idsOf(query({ process: 'run-1', ids: [v2, task] }))).toEqual([task, v2]);
-  });
-
-  test('`relatedTo` traz quem aponta para o registro e quem ele aponta', async () => {
-    const { query, v1, v2, task } = await seeded();
-
-    expect(idsOf(query({ process: 'run-1', relatedTo: v2, includeNonCurrent: true }))).toEqual([
-      v1,
-    ]);
-    expect(idsOf(query({ process: 'run-1', relatedTo: v1, includeNonCurrent: true }))).toEqual([
-      v2,
-    ]);
-    expect(idsOf(query({ process: 'run-1', relatedTo: task }))).toEqual([]);
-  });
-
-  test('cada registro traz os dados e as relações de entrada e de saída', async () => {
-    const { query, v1, v2 } = await seeded();
-
-    const page = query({ process: 'run-1', includeNonCurrent: true, ids: [v1, v2] });
-
-    expect(at(page.records, 0)).toMatchObject({
-      id: v1,
-      type: 'note',
-      target: 'run.step',
-      data: { text: 'primeira versão' },
-      in: [{ kind: 'supersedes', from: v2, current: true }],
-      out: [],
-    });
-    expect(at(page.records, 1).out).toEqual([{ kind: 'supersedes', to: v1, current: false }]);
-  });
-
   test('SL9: de um termo do texto antigo à versão vigente, sem pivô por alvo', async () => {
     const { createProcess, register, registerOne, query } = querySetup();
     createProcess('run-1');

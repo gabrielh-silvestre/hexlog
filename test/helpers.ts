@@ -1,4 +1,5 @@
 // Import padrão: o spy de `writeSync` só intercepta o que `adapters/fs/process-store.ts` usa assim.
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -96,4 +97,32 @@ export function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: str
     const length = buffer.length - offset;
     return real(fd, buffer, offset, step < 0 ? length + step : Math.min(step, length));
   });
+}
+
+/** Erro cru do fs, como o `fs` o lança (`code` em maiúsculas, caminho absoluto na mensagem). */
+export const errno = (code: string): Error =>
+  Object.assign(new Error(`${code}: /abs/secret/path`), { code });
+
+/** `<xdg>/hexlog` é o `<D>` que o script resolve; `source` vira o conteúdo dele. */
+export function copyToXdg(source: string): string {
+  const xdg = createTempDir('xdg');
+  fs.cpSync(source, path.join(xdg, 'hexlog'), { recursive: true });
+  return xdg;
+}
+
+/** `caminho → sha256:mtimeMs` de todo arquivo sob `root`, para provar que nada foi escrito. */
+export function snapshot(root: string): Record<string, string> {
+  const entries: [string, string][] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else {
+        const hash = createHash('sha256').update(fs.readFileSync(full)).digest('hex');
+        entries.push([path.relative(root, full), `${hash}:${fs.statSync(full).mtimeMs}`]);
+      }
+    }
+  };
+  walk(root);
+  return Object.fromEntries(entries);
 }

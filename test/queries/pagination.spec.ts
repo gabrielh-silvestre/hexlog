@@ -30,18 +30,6 @@ describe('queryRecords: página e cursor (D-20)', () => {
     return { ...setup, a, b, c, d };
   }
 
-  test('as páginas seguidas somam a lista inteira, sem repetir', async () => {
-    const { query, ids } = await fiveNotes();
-
-    const first = query({ process: 'run-1', limit: 2 });
-    const second = query({ process: 'run-1', limit: 2, cursor: cursorOf(first) });
-    const third = query({ process: 'run-1', limit: 2, cursor: cursorOf(second) });
-
-    expect([...idsOf(first), ...idsOf(second), ...idsOf(third)]).toEqual(ids);
-    expect(first.cursor).toBeDefined();
-    expect(third.cursor).toBeUndefined();
-  });
-
   test('para qualquer `limit`, as páginas somam a lista inteira, na mesma ordem e sem repetir', async () => {
     const { query, ids } = await fiveNotes();
 

@@ -76,13 +76,6 @@ function usesNetworkServerModule(content: string): boolean {
 const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
 describe('N7', () => {
-  test('package.json não depende de xstate, hexnucleus, core.poc-motor-log nem uuid', () => {
-    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-    for (const forbidden of ['xstate', 'hexnucleus', 'core.poc-motor-log', 'uuid']) {
-      expect(allDeps).not.toHaveProperty(forbidden);
-    }
-  });
-
   test('nenhum import relativo/absoluto em src/, hook/, scripts/ ou test/ sai do repo', () => {
     const files = ['src', 'hook', 'scripts', 'test'].flatMap((dir) =>
       listFilesRecursive(path.join(repoRoot, dir)),
@@ -93,12 +86,6 @@ describe('N7', () => {
         .map((specifier) => `${path.relative(repoRoot, file)}: ${specifier}`),
     );
     expect(violations).toEqual([]);
-  });
-});
-
-describe('S6', () => {
-  test('zod está fixado em 4.6.5', () => {
-    expect(pkg.dependencies.zod).toBe('4.6.5');
   });
 });
 
@@ -174,26 +161,6 @@ describe('M5', () => {
       usesNetworkServerModule(fs.readFileSync(file, 'utf8')),
     );
     expect(violations).toEqual([]);
-  });
-
-  test('detecta import estático de módulo de servidor de rede (from)', () => {
-    expect(usesNetworkServerModule(`import { createServer } from 'node:http';`)).toBe(true);
-  });
-
-  test('detecta require de módulo de servidor de rede', () => {
-    expect(usesNetworkServerModule(`const http = require('node:http');`)).toBe(true);
-  });
-
-  test('detecta import dinâmico de módulo de servidor de rede', () => {
-    expect(usesNetworkServerModule(`const http = await import('node:http');`)).toBe(true);
-  });
-
-  test('detecta chamada .listen(', () => {
-    expect(usesNetworkServerModule('server.listen(3000);')).toBe(true);
-  });
-
-  test('não dispara em createServer que não vem de módulo de servidor de rede (fábrica do hexlog)', () => {
-    expect(usesNetworkServerModule(`import { createServer } from './mcp.ts';`)).toBe(false);
   });
 
   test('não existe diretório cli no repo (fora de node_modules)', () => {

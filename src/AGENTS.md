@@ -78,7 +78,7 @@ npm run typecheck # tsc --noEmit
 npm run build     # esbuild -> bundles .mjs (mesmo passo 1 do instalador)
 ```
 - `npm ci` precisa ser completo (sem `--omit=dev`): `esbuild` e `@modelcontextprotocol/client` são dependências de desenvolvimento usadas pelo instalador/testes.
-- Specs em `test/` espelham os módulos: `test/domain/`, `test/adapters/`, `test/commands/`, `test/queries/`, `test/mcp/` e `test/shared/` cobrem a árvore de `src/`; na raiz de `test/` ficam `directory.spec.ts`, `compose.spec.ts`, `guard.spec.ts` (cobre também `installation.ts`), `bash-guard.spec.ts`, `archive.spec.ts`, `stdio.e2e.spec.ts` (bundle real de `server.ts`), os specs dos scripts, `package.spec.ts` e `toolchain.spec.ts`.
+- Specs em `test/` espelham os módulos: `test/domain/`, `test/adapters/`, `test/commands/`, `test/queries/`, `test/mcp/` e `test/shared/` cobrem a árvore de `src/`; na raiz de `test/` ficam `directory.spec.ts`, `compose.spec.ts`, `guard.spec.ts` (cobre também `installation.ts`), `bash-guard.spec.ts`, `archive.spec.ts`, `stdio.e2e.spec.ts` (bundle real de `server.ts`), os specs dos scripts e `package.spec.ts`.
 - `stdio.e2e.spec.ts` sobe o servidor a partir do bundle `.mjs` já construído — é o único jeito de testar o artefato que as sessões de fato executam. Rode `npm run build` antes se o teste e2e depender de um bundle atualizado.
 
 ### Common Patterns

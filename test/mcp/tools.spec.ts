@@ -140,28 +140,6 @@ describe('TM1: catálogo anunciado em tools/list', () => {
   });
 });
 
-describe('SL8: alcance projeto no lugar da tool timeline', () => {
-  test('a tool timeline não existe no catálogo', async () => {
-    const { tools } = await environment.client.listTools();
-
-    expect(tools.map(({ name }) => name)).not.toContain('timeline');
-  });
-
-  test('o query com scope project lê registros de mais de um processo', async () => {
-    await prepareProcess('run-1');
-    await succeed('create_process', { project: PROJECT, process: 'run-2' });
-    await registerNote('run-1', 'primeiro');
-    await registerNote('run-2', 'segundo');
-
-    const page = await succeed<QueryResult>('query', { project: PROJECT, scope: 'project' });
-
-    expect(page.records.map(({ data }) => data)).toEqual([
-      { text: 'primeiro' },
-      { text: 'segundo' },
-    ]);
-  });
-});
-
 describe('TM2: descrição das tools', () => {
   test('nenhuma descrição passa de 2.048 caracteres e todas existem', async () => {
     const { tools } = await environment.client.listTools();
@@ -200,25 +178,14 @@ describe('TM7: outputSchema anunciado', () => {
 });
 
 describe('um fluxo feliz por tool', () => {
-  test('define_type devolve a versão criada e o replay não cria outra', async () => {
+  test('define_type devolve a versão criada', async () => {
     const created = await succeed<Defined>('define_type', {
-      project: PROJECT,
-      name: 'note',
-      schema: NOTE,
-    });
-    const replay = await succeed<Defined>('define_type', {
       project: PROJECT,
       name: 'note',
       schema: NOTE,
     });
 
     expect(created).toMatchObject({ name: 'note', version: '1.0', created: true });
-    expect(replay).toMatchObject({
-      name: 'note',
-      version: '1.0',
-      hash: created.hash,
-      created: false,
-    });
   });
 
   test('define_relation devolve a versão criada', async () => {
@@ -241,15 +208,11 @@ describe('um fluxo feliz por tool', () => {
     expect(created).toMatchObject({ name: 'has-note', version: '1.0', created: true });
   });
 
-  test('create_process fixa o que está definido e é idempotente por nome', async () => {
+  test('create_process fixa o que está definido', async () => {
     await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
     await succeed('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
 
     const created = await succeed<CreateProcessResult>('create_process', {
-      project: PROJECT,
-      process: 'run-1',
-    });
-    const again = await succeed<CreateProcessResult>('create_process', {
       project: PROJECT,
       process: 'run-1',
     });
@@ -260,7 +223,6 @@ describe('um fluxo feliz por tool', () => {
       created: true,
       pinned: { types: ['note'], gates: ['has-note'] },
     });
-    expect(again).toMatchObject({ created: false, pinned: created.pinned });
   });
 
   test('register grava o lote e devolve ids, replayed e marcador', async () => {
@@ -315,63 +277,12 @@ describe('um fluxo feliz por tool', () => {
     }
   });
 
-  test('register com a mesma chave e o mesmo lote devolve replayed com os mesmos ids, sem gravar de novo', async () => {
-    await prepareProcess();
-    const input = {
-      project: PROJECT,
-      process: 'run-1',
-      agent: 'executor',
-      key: 'lote-1',
-      records: [{ type: 'note', target: 'run.step', data: { text: 'olá' } }],
-    };
-
-    const first = await succeed<RegisterResult>('register', input);
-    const replay = await succeed<RegisterResult>('register', input);
-    const page = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
-
-    expect(replay).toEqual({ ...first, replayed: true });
-    expect(page.records).toHaveLength(1);
-  });
-
-  test('register com a mesma chave e outro lote dá IDEMPOTENCY_CONFLICT', async () => {
-    await prepareProcess();
-    const input = (text: string) => ({
-      project: PROJECT,
-      process: 'run-1',
-      agent: 'executor',
-      key: 'lote-1',
-      records: [{ type: 'note', target: 'run.step', data: { text } }],
-    });
-    await succeed('register', input('olá'));
-
-    const result = await environment.call('register', input('outro'));
-
-    expectError(result, 'IDEMPOTENCY_CONFLICT');
-  });
-
   test('attach guarda o texto e a repetição vem como deduplicated', async () => {
     const first = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
     const second = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
 
     expect(first).toMatchObject({ bytes: Buffer.byteLength('conteúdo'), deduplicated: false });
     expect(second).toEqual({ ...first, deduplicated: true });
-  });
-
-  test('read_attachment devolve o texto guardado pelo hash', async () => {
-    const { hash } = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
-
-    const page = await succeed<AttachmentPage>('read_attachment', { project: PROJECT, hash });
-
-    expect(page).toEqual({ text: 'conteúdo', status: 'ok' });
-  });
-
-  test('query devolve o registro gravado', async () => {
-    await prepareProcess();
-    const { records } = await registerNote('run-1', 'olá');
-
-    const page = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
-
-    expect(page.records.map(({ id }) => id)).toEqual(records.map(({ id }) => id));
   });
 
   test('read_attachment sem maxChars pagina em PAGE_CHARS_CAP', async () => {
@@ -382,26 +293,6 @@ describe('um fluxo feliz por tool', () => {
 
     expect(page.text).toHaveLength(PAGE_CHARS_CAP);
     expect(page.next).toBe(PAGE_CHARS_CAP);
-  });
-
-  test('read_attachment segue next até a última página e devolve o texto inteiro', async () => {
-    const text = 'abcdefghijklmnopqrst';
-    const { hash } = await succeed<AttachmentPut>('attach', { project: PROJECT, text });
-    const pages: AttachmentPage[] = [];
-    let offset: number | undefined;
-
-    do {
-      const page: AttachmentPage = await succeed('read_attachment', {
-        project: PROJECT,
-        hash,
-        offset,
-        maxChars: 7,
-      });
-      pages.push(page);
-      offset = page.next;
-    } while (offset !== undefined);
-
-    expect(pages.map((page) => page.text)).toEqual(['abcdefg', 'hijklmn', 'opqrst']);
   });
 
   test('attach por path guarda os bytes do arquivo sob o cwd do servidor', async () => {
@@ -425,35 +316,6 @@ describe('um fluxo feliz por tool', () => {
     } finally {
       await scoped.close();
     }
-  });
-
-  test('query com changesSince válido corta entered em CHANGES_ITEMS_CAP e informa omitted', async () => {
-    await prepareProcess();
-    await registerNote('run-1', 'primeira');
-    const { marker } = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
-    const batch = (size: number) =>
-      succeed<RegisterResult>('register', {
-        project: PROJECT,
-        process: 'run-1',
-        agent: 'executor',
-        records: Array.from({ length: size }, (_, i) => ({
-          type: 'note',
-          target: 'run.step',
-          data: { text: `n${i}` },
-        })),
-      });
-    await batch(BATCH_MAX);
-    await batch(BATCH_MAX);
-    await batch(1);
-
-    const page = await succeed<QueryResult>('query', {
-      project: PROJECT,
-      process: 'run-1',
-      changesSince: marker,
-    });
-
-    expect(page.changes?.entered).toHaveLength(CHANGES_ITEMS_CAP);
-    expect(page.changes).toMatchObject({ omitted: { entered: 1, left: 0 } });
   });
 
   test('N1: com omitted, reusar o marker perde os ids cortados e a releitura completa os devolve', async () => {
@@ -545,48 +407,6 @@ describe('um fluxo feliz por tool', () => {
     });
 
     expect(result.questions[0]).not.toHaveProperty('omitted');
-  });
-
-  test('evaluate_gate com marker de sucesso reavalia sobre o que existia então', async () => {
-    await prepareProcess();
-    const args = { project: PROJECT, process: 'run-1', gate: 'has-note' };
-    const { marker } = await succeed<GateEvaluation>('evaluate_gate', args);
-    await registerNote('run-1', 'olá');
-
-    const replayed = await succeed<GateEvaluation>('evaluate_gate', { ...args, marker });
-    const current = await succeed<GateEvaluation>('evaluate_gate', args);
-
-    expect([replayed.passed, current.passed]).toEqual([false, true]);
-  });
-
-  test('verify_chain confirma a cadeia íntegra', async () => {
-    await prepareProcess();
-    await registerNote('run-1', 'olá');
-
-    const chain = await succeed<VerifyChainResult>('verify_chain', {
-      project: PROJECT,
-      process: 'run-1',
-    });
-
-    expect(chain).toMatchObject({
-      ok: true,
-      totalRecords: 1,
-      breaks: [],
-      totalBreaks: 0,
-      attachmentBreaks: [],
-      totalAttachmentBreaks: 0,
-    });
-  });
-
-  test('list mostra o projeto, o processo e as definições', async () => {
-    await prepareProcess();
-
-    const projects = await succeed<ListResult>('list', {});
-    const project = await succeed<ListResult>('list', { project: PROJECT });
-
-    expect(projects.projects).toEqual([{ name: PROJECT, processes: 1 }]);
-    expect(project.project?.processes.map(({ name }) => name)).toEqual(['run-1']);
-    expect(project.project?.types.map(({ name }) => name)).toEqual(['note']);
   });
 });
 

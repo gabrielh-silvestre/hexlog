@@ -22,6 +22,7 @@ import {
   captureError,
   captureLog,
   createTempDir,
+  errno,
   expectNoLeak,
   rejectionOf,
   scriptWrites,
@@ -37,10 +38,6 @@ afterEach(() => {
   jest.restoreAllMocks();
   killChildren();
 });
-
-/** Erro cru do fs, como o `fs` o lança (`code` em maiúsculas, caminho absoluto na mensagem). */
-const errno = (code: string): Error =>
-  Object.assign(new Error(`${code}: /abs/secret/path`), { code });
 
 /** Processo vazio como o `create` o deixa: ponto de partida para montar linhas sem ler o disco. */
 const emptyRaw = (manifest: Manifest): RawProcess => ({

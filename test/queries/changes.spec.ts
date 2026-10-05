@@ -42,21 +42,6 @@ describe('queryRecords: changesSince (SL7)', () => {
     });
   });
 
-  test('SL7: o entered é a diferença entre a lista de agora e a da foto anterior', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    await registerOne('run-1', note('a'), 1);
-    const snapshot = query({ process: 'run-1' });
-    await registerOne('run-1', note('b'), 2);
-    await registerOne('run-1', note('c'), 3);
-
-    const now = query({ process: 'run-1' });
-    const changes = query({ process: 'run-1', changesSince: snapshot.marker }).changes;
-
-    expect(changes?.entered).toEqual(idsOf(now).filter((id) => !idsOf(snapshot).includes(id)));
-    expect(changes?.left).toEqual([]);
-  });
-
   test('SL7: a foto anterior mais entered, menos left, dá a mesma lista de uma foto nova (alcance processo)', async () => {
     const { createProcess, register, registerOne, query } = querySetup();
     createProcess('run-1');

@@ -9,9 +9,6 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 ## Key Files
 | File | Description |
 |---|---|
-| `child-probe.ts` | Probe de import real sob Node ESM (type stripping), fora do transform do jest: importa todas as deps de runtime do manifesto e imprime só JSON no stdout (qualquer warning apareceria no stderr). Rodado via `spawnSync` direto do `.ts`, sem build. Usado por `toolchain.spec.ts`. |
-| `server-probe.ts` | Entrypoint de probe para o bundle esbuild do servidor: um `McpServer` stdio mínimo com 1 tool (`echo`) que importa as mesmas deps de runtime do servidor real (`ajv`, `ajv-formats`, `canonicalize`, `es-toolkit`, `minisearch`, `shell-quote`, `randomUUIDv7`) pra provar que o bundle não tem `Dynamic require of`. `jsonc-parser` fica de fora de propósito — é dependência só do instalador. Construído via `build-entry.ts`. |
-| `hook-probe.ts` | Entrypoint de probe para o bundle esbuild do hook: importa `shell-quote`, `es-toolkit` e `src/directory.ts` (`dataDir`), sai com código diferente conforme reconhece (ou não) o comando recebido em `argv[2]`. Construído via `build-entry.ts`. |
 | `build-entry.ts` | Roda como processo Node real (`spawn`, nunca importado pelo jest): chama `build()` de `scripts/build.ts` com os `entryPoints` passados como pares `nome=arquivo` em argv. Necessário porque `scripts/build.ts` usa `import.meta.dirname`/`import.meta.main`, incompatíveis com o transform CJS do ts-jest. Usado por `toolchain.spec.ts` (os probes) e `bash-guard.spec.ts`/`guard.spec.ts` (`bash-guard`). |
 | `concurrent-install.ts` | Processo filho para o teste de concorrência de `installArtifact` (`guard.spec.ts`): hook e servidor são buffers sintéticos e as duas checagens são stubs — só a troca atômica de `installArtifact` importa aqui. Usa `spinBarrier` (barreira em arquivo: `mkdir` + busy-wait síncrono, com timeout de 5 s) em dois pontos: `.barrier` antes de `installArtifact`, para os processos irmãos largarem juntos, e `.barrier2` dentro do stub `verifyServer`, depois de `installArtifact` ler `existedBefore` e antes da troca atômica (`swapArtifact`), para que nenhum termine a troca antes de todos terem lido o estado. Com o 6º argumento opcional `interleave`, congela `Date.now` e intercala os dois `renameSync` do backup (o processo 2 tenta depois de o 1 mover `versionDir` e termina antes de o 1 seguir), para o teste (h3) provar que o nome do backup não depende do relógio. |
 | `boundaries/` | Árvore `src/**` de fixtures lintada por `boundaries.spec.ts` (nunca importada nem spawnada): uma violação por regra de `eslint.boundaries.js`, arquivos limpos e arquivos-âncora que o `tsc` tipa. Fora do `eslint .` do repo (`eslint.config.js` a ignora). |
@@ -29,11 +26,9 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 ### Working In This Directory
 - Todo arquivo aqui, exceto `records-corpus.ts`, `chain-line.ts`, `fixture-args.ts`, `boundaries/`, `domains/` e `legacy-0x/`, é pensado para rodar como **processo filho** (`spawn`/`spawnSync`), nunca `import`ado pelo jest — várias APIs usadas (`import.meta.dirname`/`main`) não sobrevivem ao transform CJS do ts-jest.
 - `argv`/`env` de cada probe são o contrato com quem o spawna (nos filhos de lock e de kill -9, um único argumento JSON tipado em `fixture-args.ts`): mudar a assinatura de um fixture exige atualizar a chamada correspondente em `test/*.spec.ts` no mesmo commit.
-- `server-probe.ts` e `child-probe.ts` existem para provar que o **manifesto de deps de runtime** (§2.2) sobrevive ao bundle/ao ESM real; ao adicionar uma dependência de runtime ao servidor, replique-a aqui.
 
 ### Testing Requirements
 - Estes arquivos não têm spec própria — são exercitados pelas specs de `test/` (ver `../AGENTS.md`).
-- Para rodar um probe isolado fora do jest: `node test/fixtures/<arquivo>.ts <args>` (Node ≥ 24 faz type-stripping nativo do `.ts`, sem build). Exemplo verificado: `node test/fixtures/hook-probe.ts "echo hi"` → `{"tokens":["echo","hi"],"data":"..."}`, exit 0.
 - `build-entry.ts` espera um `outdir` em `argv[2]` e ao menos um par `nome=arquivo` depois: `node test/fixtures/build-entry.ts /tmp/saida bash-guard=hook/bash-guard.ts`.
 - `concurrent-install.ts` espera 5 argumentos posicionais (`home version variant processId totalProcesses`, mais `interleave` opcional) e só termina quando `totalProcesses` processos irmãos passarem pelas duas barreiras (`.barrier` e `.barrier2`) — não rode um só isoladamente sem simular os demais.
 
@@ -45,11 +40,6 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 ### Internal
 - `scripts/build.ts#build()` — chamado por `build-entry.ts`.
 - `src/installation.ts#installArtifact` — exercitado por `concurrent-install.ts`.
-- `src/directory.ts#dataDir` — exercitado por `hook-probe.ts`.
 - `hook/bash-guard.ts` — bundle gerado por `build-entry.ts`.
-
-### External
-- `@modelcontextprotocol/server` (`McpServer`, `serveStdio` em `server-probe.ts`; `McpServer`, `StdioServerTransport` em `child-probe.ts`) — usado por ambos os probes.
-- `ajv`, `ajv-formats`, `canonicalize`, `es-toolkit`, `minisearch`, `shell-quote`, `zod`, `jsonc-parser` (só em `child-probe.ts`) — deps de runtime replicadas nos probes para provar que sobrevivem ao bundle.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

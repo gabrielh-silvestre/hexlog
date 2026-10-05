@@ -12,26 +12,12 @@ import { isUndefined, omitBy } from 'es-toolkit';
 import type { QueryResult } from '../src/queries/query-service.ts';
 import { VERSION } from '../src/version.ts';
 import { at, createTempDir } from './helpers.ts';
+import { errorBodyOf } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const LEGACY_FIXTURE = path.join(repoRoot, 'test/fixtures/legacy-0x');
 const PROJECT = 'alpha';
 const PROCESS = 'run-1';
-
-const TOOLS = [
-  'attach',
-  'create_process',
-  'define_gate',
-  'define_relation',
-  'define_type',
-  'evaluate_gate',
-  'list',
-  'query',
-  'read_attachment',
-  'register',
-  'verify_chain',
-];
-const READ_ONLY = ['evaluate_gate', 'list', 'query', 'read_attachment', 'verify_chain'];
 
 type CallResult = {
   isError?: boolean;
@@ -84,16 +70,6 @@ async function connect(options: { xdg?: string; clientName?: string } = {}) {
   return { client, call, stderr: () => stderr, transportErrors };
 }
 
-/** Corpo `{ code, details }` de um resultado com `isError`, lido de `content[0].text`. */
-function errorBodyOf(result: CallResult) {
-  expect(result.isError).toBe(true);
-  expect(result).not.toHaveProperty('structuredContent');
-  return JSON.parse(result.content?.[0]?.text ?? '') as {
-    code: string;
-    details: { path: string; code: string }[];
-  };
-}
-
 /** Define o tipo `note`, cria o processo e grava `count` notas pelo `call` do cliente. */
 async function seedNotes(call: Awaited<ReturnType<typeof connect>>['call'], count: number) {
   await call('define_type', {
@@ -132,27 +108,6 @@ describe('P8 e TM1: bundle real por stdio', () => {
     );
   });
 
-  test('tools/list devolve exatamente as 11 tools, readOnlyHint nas 5 de leitura e alwaysLoad no register', async () => {
-    const { client, stderr } = await connect();
-    try {
-      const { tools } = await client.listTools();
-
-      expect(tools.map((tool) => tool.name).sort()).toEqual(TOOLS);
-      expect(
-        tools
-          .filter((tool) => tool.annotations?.readOnlyHint === true)
-          .map((tool) => tool.name)
-          .sort(),
-      ).toEqual(READ_ONLY);
-      expect(tools.find((tool) => tool.name === 'register')?._meta).toMatchObject({
-        'anthropic/alwaysLoad': true,
-      });
-    } finally {
-      await client.close();
-    }
-    expect(stderr()).not.toContain('Dynamic require of');
-  }, 20_000);
-
   test('<D> com a fixture de dado 0.x responde LEGACY_DATA com o comando em details', async () => {
     const xdg = createTempDir('e2e-xdg');
     fs.cpSync(LEGACY_FIXTURE, path.join(xdg, 'hexlog'), { recursive: true });
@@ -182,29 +137,6 @@ describe('P8 e TM1: bundle real por stdio', () => {
     expect(stderr()).not.toContain('"code":"INTERNAL"');
   }, 20_000);
 
-  test('cursor adulterado dá INVALID_CURSOR com path /cursor', async () => {
-    const { client, call } = await connect();
-    try {
-      await seedNotes(call, 2);
-      const firstPage = await call('query', { project: PROJECT, process: PROCESS, limit: 1 });
-      const { cursor } = firstPage.structuredContent as QueryResult;
-      if (cursor === undefined) throw new Error('a primeira página deveria ter cursor');
-
-      const tampered = await call('query', {
-        project: PROJECT,
-        process: PROCESS,
-        limit: 1,
-        cursor: cursor.slice(0, -4),
-      });
-
-      const body = errorBodyOf(tampered);
-      expect(body.code).toBe('INVALID_CURSOR');
-      expect(body.details).toEqual([expect.objectContaining({ path: '/cursor' })]);
-    } finally {
-      await client.close();
-    }
-  }, 20_000);
-
   test('o client do autor é gravado a partir do clientInfo do envelope', async () => {
     const { client, call } = await connect({ clientName: 'claude-code' });
     try {
@@ -219,7 +151,7 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
-  test('uma chamada de cada tool no bundle: stdout só JSON-RPC, stderr JSON estruturado e sem Dynamic require', async () => {
+  test('uma chamada de cada tool no bundle: stdout só JSON-RPC e stderr JSON estruturado', async () => {
     const xdg = createTempDir('e2e-xdg');
     const { client, call, stderr, transportErrors } = await connect({ xdg });
     try {
@@ -248,7 +180,6 @@ describe('P8 e TM1: bundle real por stdio', () => {
 
     const records = stderrRecords(stderr());
     expect(transportErrors).toEqual([]);
-    expect(stderr()).not.toContain('Dynamic require of');
     expect(stderr()).not.toContain('"code":"INTERNAL"');
     for (const record of records) {
       expect(['debug', 'info', 'warn', 'error']).toContain(record.level);

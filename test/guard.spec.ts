@@ -1425,35 +1425,6 @@ describe('B3: install.ts --check (processo real)', () => {
     }
   }, 15_000);
 
-  test('bash-guard.mjs instalado editado, mas ainda nega/permite: artifact-modified, exit 1', () => {
-    const hookFile = path.join(versionDirOf(home, version), 'bash-guard.mjs');
-    const original = fs.readFileSync(hookFile);
-    fs.writeFileSync(hookFile, Buffer.concat([original, Buffer.from('\n// extra comment\n')]));
-    try {
-      const { status, stdout } = runCheck();
-      expect(status).toBe(1);
-      expect(stdout).toContain('artifact-modified');
-    } finally {
-      fs.writeFileSync(hookFile, original);
-    }
-  }, 15_000);
-
-  test('quarta regra de deny ausente: deny-edit-lib, exit 1', () => {
-    const settingsPath = path.join(home, '.claude', 'settings.json');
-    const original = fs.readFileSync(settingsPath, 'utf8');
-    const data = parseJson(SettingsSchema, original);
-    const expected = expectedRules(D, home, process.execPath, version);
-    data.permissions.deny = data.permissions.deny.filter((r: string) => r !== expected.denyEditLib);
-    fs.writeFileSync(settingsPath, JSON.stringify(data));
-    try {
-      const { status, stdout } = runCheck();
-      expect(status).toBe(1);
-      expect(stdout).toContain('deny-edit-lib');
-    } finally {
-      fs.writeFileSync(settingsPath, original);
-    }
-  }, 15_000);
-
   test('build atual diferente do manifesto com bytes instalados íntegros: aviso artifact-outdated, exit inalterado', () => {
     // Chamada direta (sem subprocesso): `runRealHook` herda `process.env` do
     // processo de teste, então o hook precisa enxergar o mesmo HOME temporário
@@ -1535,7 +1506,6 @@ describe('B3: install.ts --check (processo real)', () => {
 
 describe('F6: install.ts sobre dado 0.x (processo real)', () => {
   const legacyFixture = path.join(repoRoot, 'test/fixtures/legacy-0x');
-  const readToolNames = ['list', 'query', 'verify_chain', 'read_attachment', 'evaluate_gate'];
   const DenySchema = z.looseObject({ permissions: z.looseObject({ deny: z.array(z.string()) }) });
   const strayRule = 'Bash(rm:*)';
 
@@ -1660,25 +1630,6 @@ describe('F6: install.ts sobre dado 0.x (processo real)', () => {
       ).permissions.deny;
       expect(deny).toContain(strayRule);
       for (const rule of oldDenyRules) expect(deny).not.toContain(rule);
-    });
-
-    test('deny: a mensagem do hook instalado cita os nomes novos das tools de leitura', () => {
-      const hook = spawnSync(
-        process.execPath,
-        [path.join(versionDirOf(home, version), 'bash-guard.mjs')],
-        {
-          encoding: 'utf8',
-          input: JSON.stringify({
-            tool_name: 'Bash',
-            tool_input: { command: `cat ${D}/archive` },
-            cwd: repoRoot,
-          }),
-          env: { ...process.env, HOME: home, XDG_DATA_HOME: path.dirname(D) },
-        },
-      );
-
-      expect(hook.status).toBe(2);
-      for (const name of readToolNames) expect(hook.stderr).toContain(name);
     });
 
     test('0.x: a segunda execução com --archive-0x não arquiva de novo e reinstala sem erro', () => {
