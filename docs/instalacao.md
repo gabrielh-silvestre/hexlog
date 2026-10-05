@@ -6,7 +6,8 @@ Requisitos, instalação, verificação e como reverter. O resumo está no [READ
 
 - Linux. O lock por pid, a gravação atômica e o arquivador dependem de `/proc`, de hard link e de
   `fsync` de diretório (`src/adapters/fs/atomic.ts#writeFileAtomic`): macOS não foi testado, e
-  Windows, FAT, exFAT e drvfs (`/mnt/c` no WSL) ficam fora.
+  Windows, FAT, exFAT e drvfs (`/mnt/c` no WSL) ficam fora. O diretório de dados `<D>` precisa de
+  hard link e de `rename`/`link` atômicos: ver [Layout de dados](dados.md#layout-de-dados).
 - Node `>= 24.18.1`.
 - Claude Code, com `~/.claude/settings.json` já existente (o instalador grava
   nele; harness não instalado = instalação falha com uma mensagem explícita).

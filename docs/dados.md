@@ -4,6 +4,11 @@ Layout em disco, erros e avisos, tetos do lock, recuperação e lacunas de isola
 
 ## Layout de dados
 
+Os dados ficam em `<D>`, que é `$XDG_DATA_HOME/hexlog/`. Se `XDG_DATA_HOME` estiver ausente,
+vazia ou não for um caminho absoluto, `<D>` cai em `~/.local/share/hexlog`
+(`src/directory.ts#dataDir`). `<D>` precisa de um sistema de arquivos com hard link e semântica
+POSIX (`rename` e `link` atômicos).
+
 ```
 <D>/                                   # 0700; $XDG_DATA_HOME/hexlog ou ~/.local/share/hexlog
   .v1/                                 # raiz do dado 1.0; o 0.x nunca grava aqui
@@ -194,3 +199,13 @@ que o shell não expande mas o hook trata como caminho; e um `**` ou uma chave
 como `ls ~/**/*.md` ou `ls ~/{docs/a,b}`. Um `**` dentro de outros
 repositórios (por exemplo `/caminho/do/repo/**/*.ts`) não é afetado, porque
 o prefixo não é ancestral do diretório de dados.
+
+**`<D>` é confiável.** Só o servidor escreve em `<D>/.v1/`, e o hook de Bash bloqueia o agente;
+por isso os stores não se endurecem contra objeto plantado ali. O servidor segue symlink, e um
+FIFO no lugar de um arquivo trava o servidor, que tem uma thread só, sem erro nem timeout. Quem
+planta link ou FIFO em `<D>` é o mesmo usuário, que já pode reescrever o `records.jsonl`,
+porque a cadeia sha256 não tem chave.
+
+**Restauro de `<D>`:** por cópia, sem link (`cp -a`, `rsync -a`). Hard link (`cp -al`,
+`--link-dest`) não é coberto nem por `O_NOFOLLOW`. A decisão está no item 9 do
+[ADR 0009](adr-0009-ferramental.md).
