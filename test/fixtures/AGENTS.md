@@ -41,5 +41,6 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 - `scripts/build.ts#build()` — chamado por `build-entry.ts`.
 - `src/installation.ts#installArtifact` — exercitado por `concurrent-install.ts`.
 - `hook/bash-guard.ts` — bundle gerado por `build-entry.ts`.
+- `src/server.ts` — bundle gerado por `build-entry.ts` para o `stdio.e2e.spec.ts`.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

@@ -81,14 +81,14 @@ npm run build     # esbuild -> bundles .mjs (mesmo passo 1 do instalador)
 ```
 - `npm ci` precisa ser completo (sem `--omit=dev`): `esbuild` e `@modelcontextprotocol/client` são dependências de desenvolvimento usadas pelo instalador/testes.
 - Specs em `test/` espelham os módulos: `test/domain/`, `test/adapters/`, `test/commands/`, `test/queries/`, `test/mcp/` e `test/shared/` cobrem a árvore de `src/`; na raiz de `test/` ficam `directory.spec.ts`, `compose.spec.ts`, `guard.spec.ts` (cobre também `installation.ts`), `bash-guard.spec.ts`, `archive.spec.ts`, `stdio.e2e.spec.ts` (bundle real de `server.ts`), os specs dos scripts e `package.spec.ts`.
-- `stdio.e2e.spec.ts` sobe o servidor a partir do bundle `.mjs` já construído — é o único jeito de testar o artefato que as sessões de fato executam. Rode `npm run build` antes se o teste e2e depender de um bundle atualizado.
+- `stdio.e2e.spec.ts` sobe o servidor a partir do bundle `.mjs` — é o único jeito de testar o artefato que as sessões de fato executam. O próprio spec constrói o bundle num processo filho (`test/fixtures/build-entry.ts`) no `beforeAll`, então não precisa de `npm run build` antes.
 
 ### Common Patterns
 - Toda escrita de `process.json` e de definição usa `adapters/fs/atomic.ts#writeFileAtomic` (arquivo temporário no mesmo diretório, `fsync`, depois `rename` ou `link` exclusivo) — nunca escrita direta no arquivo final. A escrita de uma versão de definição é sempre por `link` exclusivo: `rename` sobrescreveria em silêncio sob corrida entre dois `define_*` concorrentes no mesmo alvo, e em `EEXIST` o retry refaz a decisão inteira (vigente, `unchanged`, quebra, bump).
 - Hash de conteúdo sempre por `sha256hex(canonicalize(valor) ?? '')` (JCS): mesmo padrão em `domain/chain.ts` e na impressão do lote (`fingerprint`) que decide o replay de `register`. **Exceção:** o hash de um anexo é o `sha256hex` dos **bytes** UTF-8 do texto, não do JCS — o blob é texto opaco, não um objeto JSON.
 - Toda função pura que decide algo (`evaluateGate`, `checkRelation`, `select`, `verifyProcess`) recebe dados já carregados e devolve um valor — nenhuma delas faz I/O; o I/O fica nas bordas (`adapters/`).
 - Toda lista de saída tem teto e diz o que cortou (ex.: `breaks` e `attachmentBreaks` em 100 por `verify_chain`, com o total ao lado; `repairedLines` em 100 sem total; `changes` e `evidence` em 100, com `omitted`; `query` e `read_attachment` por página de até `PAGE_CHARS_CAP` = 24.000 caracteres, contados no JSON da página na `query` e nos caracteres do `text` no `read_attachment`).
-- `isNil`/`isNotNil`/`isEmpty` (es-toolkit) em vez de checagem manual de `undefined`/`null`/comprimento, em todo o código.
+- `isNil` (es-toolkit) em vez de checagem manual de `undefined`/`null` quando os dois valem; comparação direta (`=== undefined`) quando só um deles é possível.
 - Módulo de `adapters/fs/` que um spec espiona com `jest.spyOn(fs, ...)` usa `import fs from 'node:fs'` (import padrão), nunca `import * as fs`: sob `esModuleInterop` o namespace copia o módulo com getters não configuráveis, e o spy (P9, M25 da issue #63) só intercepta o objeto padrão.
 
 ## Dependencies
