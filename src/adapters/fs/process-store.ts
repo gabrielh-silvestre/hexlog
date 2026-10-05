@@ -1,6 +1,7 @@
 // Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
 import * as path from 'node:path';
+import { isUndefined } from 'es-toolkit';
 import { isReservedProcessName, type Name } from '../../domain/ids.ts';
 import { Manifest } from '../../domain/manifest.ts';
 import { HexlogError, reservedName } from '../../errors.ts';
@@ -86,7 +87,7 @@ function parseManifest(ref: ProcessRef, text: string): Manifest {
 function appendAndSync(file: string, text: string | undefined): void {
   const fd = fs.openSync(file, 'a', 0o600);
   try {
-    if (text !== undefined) fs.writeFileSync(fd, Buffer.from(text));
+    if (!isUndefined(text)) fs.writeFileSync(fd, Buffer.from(text));
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -107,7 +108,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
 
   function readManifest(ref: ProcessRef): Manifest {
     const manifestText = readIfPresent(pathsOf(ref).manifest);
-    if (manifestText === undefined) throw notFound(ref);
+    if (isUndefined(manifestText)) throw notFound(ref);
     return parseManifest(ref, manifestText);
   }
 
@@ -128,11 +129,10 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     try {
       const raw = readProcess(ref, true);
       const decision = decide(raw);
-      const text =
-        decision.line === undefined
-          ? undefined
-          : `${raw.endsWithNewline ? '' : '\n'}${decision.line}`;
-      if (text !== undefined) {
+      const text = isUndefined(decision.line)
+        ? undefined
+        : `${raw.endsWithNewline ? '' : '\n'}${decision.line}`;
+      if (!isUndefined(text)) {
         if (logSize(paths.log) + Buffer.byteLength(text) > MAX_LOG_BYTES) throw tooLarge(ref, true);
         await locks.confirm(lock);
       }

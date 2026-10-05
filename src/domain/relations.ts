@@ -1,3 +1,4 @@
+import { isUndefined } from 'es-toolkit';
 import type { RelationName } from './definitions.ts';
 import { processOf } from './ids.ts';
 import type { Name, RecordId } from './ids.ts';
@@ -41,7 +42,7 @@ export function buildVigency(records: readonly Linked[]): Vigency {
   const currentOf = (start: RecordId): RecordId | null => {
     const pending = [start];
     const seen = new Set<RecordId>();
-    for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+    for (let id = pending.pop(); !isUndefined(id); id = pending.pop()) {
       if (seen.has(id) || revoked.has(id)) continue;
       seen.add(id);
       const next = successors.get(id);
@@ -68,7 +69,7 @@ export function hasCycle(records: readonly Linked[]): boolean {
   }
   const ready = [...waiting].filter(([, count]) => count === 0).map(([id]) => id);
   let removed = 0;
-  for (let id = ready.pop(); id !== undefined; id = ready.pop()) {
+  for (let id = ready.pop(); !isUndefined(id); id = ready.pop()) {
     removed += 1;
     for (const dependent of dependents.get(id) ?? []) {
       const count = waiting.get(dependent)! - 1;
@@ -187,7 +188,7 @@ export function resolveKind(input: KindOrAs, names: RuleContext['names']): Relat
   if (input.as === undefined) return { kind: input.kind };
   const named = names.get(input.as);
   if (!named) return { violation: { code: 'unknown-relation-name' } };
-  if (input.kind !== undefined && input.kind !== named.kind) {
+  if (!isUndefined(input.kind) && input.kind !== named.kind) {
     return { violation: { code: 'kind-mismatch' } };
   }
   return { kind: named.kind };
@@ -204,7 +205,7 @@ function checkEndpointTypes(
   as: Name | undefined,
   { from, to, names }: RuleContext,
 ): Violation | undefined {
-  const named = as === undefined ? undefined : names.get(as);
+  const named = isUndefined(as) ? undefined : names.get(as);
   if (named?.from && !named.from.includes(from.type)) return { code: 'endpoint-type' };
   if (named?.to && !named.to.includes(to.type)) return { code: 'endpoint-type' };
   return undefined;

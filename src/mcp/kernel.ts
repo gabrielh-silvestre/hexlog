@@ -4,6 +4,7 @@ import type {
   StandardSchemaWithJSON,
   ToolAnnotations,
 } from '@modelcontextprotocol/server';
+import { isUndefined } from 'es-toolkit';
 import { z } from 'zod';
 import type { AttachmentService } from '../commands/attachment.ts';
 import type { DefinitionService } from '../commands/definition.ts';
@@ -122,7 +123,7 @@ export function toHexlogError(e: unknown, logger: Logger): HexlogError {
 function reservedKeyDetails(args: unknown): Detail[] {
   const found: Detail[] = [];
   const pending: { value: unknown; path: string }[] = [{ value: args, path: '' }];
-  for (let item = pending.pop(); item !== undefined; item = pending.pop()) {
+  for (let item = pending.pop(); !isUndefined(item); item = pending.pop()) {
     const { value, path } = item;
     if (typeof value !== 'object' || value === null) continue;
     for (const [key, child] of Object.entries(value)) {
@@ -168,7 +169,7 @@ export async function execute<Input, Output>(
       event: 'tool',
       name: call.name,
       ms: Date.now() - start,
-      ...(code === undefined ? {} : { code }),
+      ...(isUndefined(code) ? {} : { code }),
     });
   };
 

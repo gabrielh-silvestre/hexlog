@@ -1,3 +1,4 @@
+import { isNotNil, isUndefined } from 'es-toolkit';
 import type { Hash, Marker, Name, RecordId } from '../domain/ids.ts';
 import { brokenChain, HexlogError } from '../errors.ts';
 import type { ProcessReader, ProcessRef } from '../ports.ts';
@@ -41,12 +42,12 @@ function markerProcessNotFound(
  */
 function namesOf(store: ProcessReader, target: ReadTarget, marker?: Marker): Name[] {
   if (target.scope === 'process') {
-    if (marker === undefined) return [target.process];
+    if (isUndefined(marker)) return [target.process];
     if (!Object.hasOwn(marker, target.process)) {
       throw markerProcessNotFound(target.process, 'marker has no entry for the read process');
     }
     const extra = Object.keys(marker).find((name) => name !== target.process);
-    if (extra !== undefined) {
+    if (!isUndefined(extra)) {
       throw markerProcessNotFound(extra, 'marker names a process that was not read');
     }
     return [target.process];
@@ -54,7 +55,7 @@ function namesOf(store: ProcessReader, target: ReadTarget, marker?: Marker): Nam
   if (!store.listProjects().includes(target.project)) throw projectNotFound();
   const names = store.list(target.project);
   const missing = Object.keys(marker ?? {}).find((name) => !names.includes(name));
-  if (missing !== undefined) throw markerProcessNotFound(missing);
+  if (!isUndefined(missing)) throw markerProcessNotFound(missing);
   return names;
 }
 
@@ -73,7 +74,7 @@ function loadCut(
     return loadVerified(store, ref, cutAt);
   } catch (error) {
     const lostMarker = error instanceof HexlogError && error.code === 'MARKER_NOT_FOUND';
-    if (lostMarker && cutAt != null && !loadVerified(store, ref).chain.ok) {
+    if (lostMarker && isNotNil(cutAt) && !loadVerified(store, ref).chain.ok) {
       throw brokenChain(ref.process);
     }
     if (lostMarker) {
@@ -112,8 +113,11 @@ export function readScope(
 
 function readCut(store: ProcessReader, target: ReadTarget, marker?: Marker): Reading {
   const processes = namesOf(store, target, marker).map((name): LoadedProcess => {
-    const cutAt =
-      marker === undefined ? undefined : Object.hasOwn(marker, name) ? marker[name] : null;
+    const cutAt = isUndefined(marker)
+      ? undefined
+      : Object.hasOwn(marker, name)
+        ? marker[name]
+        : null;
     const verified = loadCut(store, { project: target.project, process: name }, cutAt);
     if (!verified.chain.ok) throw brokenChain(name);
     return { name, verified };

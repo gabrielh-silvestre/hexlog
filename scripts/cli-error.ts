@@ -1,4 +1,5 @@
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util';
+import { isUndefined } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { composeReader } from '../src/compose.ts';
 import { dataDir } from '../src/directory.ts';
@@ -13,8 +14,8 @@ export function formatCliError(prefix: string, error: unknown): { text: string; 
     error instanceof HexlogError ? error : new HexlogError('INTERNAL', String(error));
   const detail = details
     // detalhe sem processo que só repete a mensagem (`project not found`) não acrescenta nada
-    .filter((item) => item.process !== undefined || item.message !== message)
-    .map((item) => (item.process === undefined ? item.message : `${item.process}: ${item.message}`))
+    .filter((item) => !isUndefined(item.process) || item.message !== message)
+    .map((item) => (isUndefined(item.process) ? item.message : `${item.process}: ${item.message}`))
     .join('; ');
   return {
     text: `${prefix} failed: ${code}: ${message}${isEmpty(detail) ? '' : ` (${detail})`}`,

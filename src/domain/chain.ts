@@ -1,6 +1,6 @@
 import { hash } from 'node:crypto';
 import canonicalize from 'canonicalize';
-import { omit } from 'es-toolkit';
+import { isUndefined, omit } from 'es-toolkit';
 import { z } from 'zod';
 import { HexlogError } from '../errors.ts';
 import { alias, Hash, RecordId } from './ids.ts';
@@ -43,7 +43,7 @@ export type Expected = { seq: number; prevHash: Hash };
 // diferentes, então vira INTERNAL: só chega aqui valor que os schemas não validaram.
 function jcs(value: unknown): string {
   const text = canonicalize(value);
-  if (text === undefined) throw new HexlogError('INTERNAL', 'value is not canonicalizable');
+  if (isUndefined(text)) throw new HexlogError('INTERNAL', 'value is not canonicalizable');
   return text;
 }
 
@@ -96,7 +96,7 @@ function parseLink(value: unknown): Link | undefined {
  */
 export function isValidLink(value: unknown, expected: Expected): LinkCheck {
   const link = parseLink(value);
-  if (link === undefined) return { reasons: ['invalid-line'] };
+  if (isUndefined(link)) return { reasons: ['invalid-line'] };
   const reasons: LinkRejection[] = [];
   if (link.seq !== expected.seq) reasons.push('diverging-seq');
   if (link.prevHash !== expected.prevHash) reasons.push('hash-mismatch');

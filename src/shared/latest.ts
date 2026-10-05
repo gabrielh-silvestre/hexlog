@@ -1,3 +1,4 @@
+import { isUndefined } from 'es-toolkit';
 import type { Name } from '../domain/ids.ts';
 import type { DefinitionKind, DefinitionReader } from '../ports.ts';
 
@@ -13,6 +14,6 @@ export function latestVersions(
   return definitions.names(project, kind).flatMap((name) => {
     const versions = definitions.versions(project, kind, name);
     const version = versions.at(-1);
-    return version === undefined ? [] : [{ name, version, versions }];
+    return isUndefined(version) ? [] : [{ name, version, versions }];
   });
 }

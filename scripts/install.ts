@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { isUndefined } from 'es-toolkit';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { build, repoRoot } from './build.ts';
@@ -199,7 +200,7 @@ function archiveAndReport(D: string): void {
   const result = archiveLegacy(D, { libDir: libDirOf(os.homedir()), now: () => new Date() });
   if (!result.archived) return;
   console.log(
-    result.tarPath === undefined
+    isUndefined(result.tarPath)
       ? `removed ${result.dirs} empty 0.x directories`
       : `archived ${result.files} file(s) of 0.x data into ${result.tarPath}`,
   );
@@ -209,7 +210,7 @@ async function main(): Promise<void> {
   try {
     const args = process.argv.slice(2);
     const unknown = args.find((arg) => !KNOWN_FLAGS.has(arg));
-    if (unknown !== undefined) {
+    if (!isUndefined(unknown)) {
       throw new Error(`unknown argument: ${unknown} (accepted: --check, --archive-0x)`);
     }
     const D = dataDir(process.env);

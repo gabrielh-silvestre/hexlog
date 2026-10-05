@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { isUndefined } from 'es-toolkit';
 import { z } from 'zod';
 import { HexlogError, type Detail } from '../../errors.ts';
 import type { Logger } from '../../shared/logger.ts';
@@ -122,7 +123,7 @@ function lockTimeout(
   message: string,
   pid?: number,
 ): HexlogError {
-  const detail: Detail = { path: '/process', code, message, ...(pid === undefined ? {} : { pid }) };
+  const detail: Detail = { path: '/process', code, message, ...(isUndefined(pid) ? {} : { pid }) };
   return new HexlogError('LOCK_TIMEOUT', message, [detail]);
 }
 
@@ -203,10 +204,10 @@ export function createLockManager({
   budgetMs = LOCK_BUDGET_MS,
   bootId: injected,
 }: LockOptions) {
-  const bootId = injected === undefined ? readBootId() : injected;
+  const bootId = isUndefined(injected) ? readBootId() : injected;
 
   function timedOut(pid?: number): HexlogError {
-    log({ level: 'warn', event: 'lock-timeout', ...(pid === undefined ? {} : { pid }) });
+    log({ level: 'warn', event: 'lock-timeout', ...(isUndefined(pid) ? {} : { pid }) });
     return lockTimeout('lock-busy', 'timed out waiting for the process lock', pid);
   }
 

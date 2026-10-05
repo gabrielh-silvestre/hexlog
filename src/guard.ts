@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parse, modify, applyEdits, type ModificationOptions } from 'jsonc-parser';
 import { parse as shellQuoteParse, quote as shellQuoteQuote } from 'shell-quote';
-import { isNil, isString } from 'es-toolkit';
+import { isEqual, isNil, isString, isSubset } from 'es-toolkit';
 
 export type ExpectedRules = {
   dataDir: string;
@@ -128,7 +128,7 @@ export function staleDenyRules(
     const oldD = rule.slice('Read(/'.length, -')'.length);
     if (path.basename(oldD) !== 'hexlog' || oldD === expected.dataDir || exists(oldD)) continue;
     const rules = Object.values(denyTrio(oldD));
-    if (rules.every((r) => currentDeny.includes(r))) rules.forEach((r) => stale.add(r));
+    if (isSubset(currentDeny, rules)) rules.forEach((r) => stale.add(r));
   }
   return stale;
 }
@@ -238,12 +238,7 @@ export function mcpRegistered(claudeJsonText: string | null, expected: ExpectedR
   const data = parse(claudeJsonText) as ClaudeJsonData | undefined;
   const server = data?.mcpServers?.hexlog;
   if (isNil(server)) return false;
-  return (
-    server.command === expected.execPath &&
-    Array.isArray(server.args) &&
-    server.args.length === 1 &&
-    server.args[0] === expected.serverFile
-  );
+  return server.command === expected.execPath && isEqual(server.args, [expected.serverFile]);
 }
 
 /** As duas entradas de sonda que provam o hook vivo: nega o diretório de dados `D`, permite o resto. */

@@ -1,4 +1,4 @@
-import { isEqual, mapValues, union } from 'es-toolkit';
+import { isEqual, isUndefined, mapValues, omitBy, union } from 'es-toolkit';
 import { fingerprint, hashOfJcs } from '../domain/chain.ts';
 import { isReservedProcessName, type Name } from '../domain/ids.ts';
 import type { Manifest } from '../domain/manifest.ts';
@@ -203,7 +203,7 @@ export function createProcessService(deps: {
           event: 'batch-replayed',
           project,
           process,
-          ...(key !== undefined && { key }),
+          ...omitBy({ key }, isUndefined),
         });
       }
       return result;

@@ -1,4 +1,4 @@
-import { isEqual, isPlainObject } from 'es-toolkit';
+import { isEqual, isPlainObject, isSubset, isSubsetWith, isUndefined } from 'es-toolkit';
 import { z } from 'zod';
 import { HexlogError } from '../errors.ts';
 import { GateQuestion } from './gate.ts';
@@ -124,7 +124,7 @@ function onlyAdds(
     );
   }
   if (additive && keyword === 'enum' && Array.isArray(previous) && Array.isArray(next)) {
-    return previous.every((value) => next.some((candidate) => isEqual(candidate, value)));
+    return isSubsetWith(next, previous, isEqual);
   }
   return isEqual(previous, next);
 }
@@ -140,9 +140,9 @@ export function classifyTypeChange(previous: RecordType, next: RecordType): Chan
 
 /** Ponta ausente aceita qualquer tipo: `next` alarga `previous` quando aceita tudo que ele aceitava. */
 function widens(previous: string[] | undefined, next: string[] | undefined): boolean {
-  if (next === undefined) return true;
-  if (previous === undefined) return false;
-  return previous.every((typeName) => next.includes(typeName));
+  if (isUndefined(next)) return true;
+  if (isUndefined(previous)) return false;
+  return isSubset(next, previous);
 }
 
 /** D-11: alargar `from`/`to` é compatível; trocar `kind` ou estreitar qualquer lista é quebra. */

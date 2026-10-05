@@ -1,5 +1,6 @@
 // Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
 import fs from 'node:fs';
+import { isUndefined } from 'es-toolkit';
 import { Name } from '../../domain/ids.ts';
 import { HexlogError, invalidInput } from '../../errors.ts';
 import { errnoCode } from './atomic.ts';
@@ -7,7 +8,7 @@ import { errnoCode } from './atomic.ts';
 /** D-26: `IO_ERROR` traz só o errno; o `message` do fs carrega o caminho absoluto. */
 export function toHexlogError(error: unknown): unknown {
   const code = errnoCode(error);
-  if (error instanceof HexlogError || code === undefined || !/^E[A-Z0-9]+$/.test(code)) {
+  if (error instanceof HexlogError || isUndefined(code) || !/^E[A-Z0-9]+$/.test(code)) {
     return error;
   }
   return new HexlogError('IO_ERROR', 'I/O failure', [
@@ -51,7 +52,7 @@ export function readIfPresent(file: string): string | undefined {
 
 /** `fs.existsSync` que só trata `ENOENT` como ausente: `EACCES`, `EIO` e afins saem crus em vez de virar `false`. */
 export function existsStrict(file: string): boolean {
-  return fs.statSync(file, { throwIfNoEntry: false }) !== undefined;
+  return !isUndefined(fs.statSync(file, { throwIfNoEntry: false }));
 }
 
 /** Diretórios de `dir` com nome válido que passam em `keep`, em ordem alfabética; `dir` inexistente não tem nenhum. */

@@ -1,4 +1,4 @@
-import { isPlainObject, orderBy, sumBy } from 'es-toolkit';
+import { isPlainObject, isUndefined, orderBy, sumBy, uniq } from 'es-toolkit';
 import MiniSearch from 'minisearch';
 import { sha256hex } from '../domain/chain.ts';
 import type { Hash } from '../domain/ids.ts';
@@ -31,7 +31,7 @@ function indexableText(record: HexRecord): string {
  */
 function queryTerms(text: string): string[] {
   const tokenize = MiniSearch.getDefault('tokenize') as (input: string) => string[];
-  return [...new Set(tokenize(text).map(stripDiacritics).filter(Boolean))];
+  return uniq(tokenize(text).map(stripDiacritics).filter(Boolean));
 }
 
 type Engine = MiniSearch<{ id: number; text: string }>;
@@ -160,10 +160,9 @@ export function createSearchIndex(budget = SEARCH_INDEX_BUDGET_CHARS): SearchInd
       const engine =
         process.process === PROJECT_INDEX ? buildFrom(records).engine : engineFor(key, records);
 
-      const filter =
-        allowed === undefined
-          ? undefined
-          : (hit: { id: unknown }) => allowed.has(records[hit.id as number]!.id);
+      const filter = isUndefined(allowed)
+        ? undefined
+        : (hit: { id: unknown }) => allowed.has(records[hit.id as number]!.id);
       const terms = queryTerms(text);
       const query = terms.join(' ');
       let hits = engine.search(query, { filter });

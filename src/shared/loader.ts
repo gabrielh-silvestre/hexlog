@@ -1,3 +1,4 @@
+import { isUndefined } from 'es-toolkit';
 import { z } from 'zod';
 import {
   anchor,
@@ -171,7 +172,7 @@ function cutAtMarker(parsed: ParsedLog, marker: RecordId | null, start: Expected
       lines,
       partial,
       limit: line.index + 1,
-      end: last === undefined ? start : after(last),
+      end: isUndefined(last) ? start : after(last),
     };
   }
   const message = 'marker record not found in process';
@@ -185,7 +186,7 @@ function indexBatches(lines: readonly ParsedLine[]): Map<string, BatchEntry> {
   for (const { links } of lines) {
     const [first] = links;
     const batch = first?.batch;
-    if (batch?.key === undefined || batches.has(batch.key)) continue;
+    if (isUndefined(batch?.key) || batches.has(batch.key)) continue;
     batches.set(batch.key, { fingerprint: batch.fingerprint, links });
   }
   return batches;
@@ -199,10 +200,9 @@ function indexBatches(lines: readonly ParsedLine[]): Map<string, BatchEntry> {
 export function verifyProcess(raw: RawProcess, marker?: RecordId | null): VerifiedProcess {
   const start: Expected = { seq: 0, prevHash: anchor(raw.manifest) };
   const parsed = parseLog(raw.text, start.prevHash);
-  const view: View =
-    marker === undefined
-      ? { lines: parsed.lines, partial: [], limit: Infinity, end: parsed.end }
-      : cutAtMarker(parsed, marker, start);
+  const view: View = isUndefined(marker)
+    ? { lines: parsed.lines, partial: [], limit: Infinity, end: parsed.end }
+    : cutAtMarker(parsed, marker, start);
 
   const records = view.lines.flatMap((line) => line.links).concat(view.partial);
   const breaks = parsed.breaks.filter(({ index }) => index < view.limit);
