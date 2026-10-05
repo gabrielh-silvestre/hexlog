@@ -227,7 +227,7 @@ describe('createProcess: recusas', () => {
 
     expect(error).toMatchObject({
       code: 'TYPE_NOT_FOUND',
-      message: expect.stringContaining('run the setup'),
+      message: expect.stringContaining('call define_type first'),
       details: [{ path: '/project', code: 'unknown-name' }],
     });
     expect(processes.creates).toEqual([]);

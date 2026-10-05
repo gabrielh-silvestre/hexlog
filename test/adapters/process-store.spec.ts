@@ -302,8 +302,11 @@ describe('create, read e list', () => {
 
       expect(error).toMatchObject({
         code: 'PROCESS_TOO_LARGE',
-        details: [{ path: '/process', code: 'too-large', message: expect.any(String) }],
+        details: [
+          { path: '/process', code: 'too-large', message: expect.any(String), process: 'proc-1' },
+        ],
       });
+      expect(error.message).toBe("process 'proc-1' log exceeds 64 MiB");
       expectNoLeak(error, dataDir);
       expect(readFile).not.toHaveBeenCalledWith(logFile, expect.anything());
     });
@@ -315,7 +318,11 @@ describe('create, read e list', () => {
 
       const error = await rejectionOf(store.write(ref, decide), dataDir);
 
-      expect(error.code).toBe('PROCESS_TOO_LARGE');
+      expect(error).toMatchObject({
+        code: 'PROCESS_TOO_LARGE',
+        details: [{ code: 'too-large', process: 'proc-1' }],
+      });
+      expect(error.message).toContain('create a new process');
       expect(decide).not.toHaveBeenCalled();
       expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES + 1);
       expect(locksIn(dir)).toEqual([]);
@@ -370,6 +377,7 @@ describe('create, read e list', () => {
               path: '/process',
               code: 'too-large',
               message: expect.stringContaining('new process'),
+              process: 'proc-1',
             },
           ],
         });

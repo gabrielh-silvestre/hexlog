@@ -49,7 +49,8 @@ export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void
         'immutable version. The same schema again is a replay (`created: false`). Adding an optional ' +
         'property or an enum value is a minor version; any other change needs `breaking: true`, ' +
         'otherwise it is refused with BREAKING_CHANGE. The schema is checked by a strict ajv; every ' +
-        '`pattern` needs `maxLength` of at most 256 in the same subschema; a property with `format: ' +
+        '`pattern` needs `maxLength` of at most 256 in the same subschema, and `patternProperties` needs ' +
+        '`propertyNames.maxLength` of at most 256; a property with `format: ' +
         '"attachment"` holds the hash of an attachment, and the format is accepted only on a top-level ' +
         'property or on the items of a top-level array; at most 16000 canonical characters.',
       outputSchema: Defined,

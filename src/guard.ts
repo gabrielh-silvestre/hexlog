@@ -261,7 +261,7 @@ type VerifyGuardArgs = {
   exists: (path: string) => boolean;
   runHook: (exec: string, file: string, stdin: string) => { status: number | null };
   /** Bytes instalados divergem do manifesto (arquivo ausente não conta: sai como `hook-file`). */
-  artifactModified?: boolean;
+  artifactModified: boolean;
 };
 
 /** Único mecanismo de detecção de guard ausente, alterado ou quebrado (R-1); usado por `install.ts --check`. */
@@ -269,14 +269,7 @@ export function verifyGuard(args: VerifyGuardArgs): {
   ok: boolean;
   missing: MissingItem[];
 } {
-  const {
-    settingsText,
-    claudeJsonText,
-    expected,
-    exists,
-    runHook,
-    artifactModified = false,
-  } = args;
+  const { settingsText, claudeJsonText, expected, exists, runHook, artifactModified } = args;
   const settingsData: unknown = parse(settingsText);
   const missing = verifyDeny(denyOf(settingsData), expected);
 

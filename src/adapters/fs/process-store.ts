@@ -43,10 +43,12 @@ function unreadableManifest(ref: ProcessRef): HexlogError {
  */
 export const MAX_LOG_BYTES = 64 * 1024 * 1024;
 
-function tooLarge(): HexlogError {
-  const message = 'process log exceeds the size limit; create a new process to keep recording';
+/** A recomendação de criar outro processo só vale para quem grava: leitura e destino de relação ficam neutros. */
+function tooLarge(ref: ProcessRef, advice = false): HexlogError {
+  const base = `process '${ref.process}' log exceeds ${MAX_LOG_BYTES / 2 ** 20} MiB`;
+  const message = advice ? `${base}; create a new process to keep recording` : base;
   return new HexlogError('PROCESS_TOO_LARGE', message, [
-    { path: '/process', code: 'too-large', message },
+    { path: '/process', code: 'too-large', message, process: ref.process },
   ]);
 }
 
@@ -60,8 +62,8 @@ function logSize(file: string): number {
  * de ler, então um log acima de `MAX_LOG_BYTES` nunca vira string. Como `write` lê pelo mesmo
  * `createProcessStore#readProcess`, escrever sobre processo acima do teto recusa sem gravar.
  */
-function readLogText(file: string): string {
-  if (logSize(file) > MAX_LOG_BYTES) throw tooLarge();
+function readLogText(file: string, ref: ProcessRef, advice: boolean): string {
+  if (logSize(file) > MAX_LOG_BYTES) throw tooLarge(ref, advice);
   return readIfPresent(file) ?? '';
 }
 
@@ -109,9 +111,9 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     return parseManifest(ref, manifestText);
   }
 
-  function readProcess(ref: ProcessRef): RawProcess {
+  function readProcess(ref: ProcessRef, advice = false): RawProcess {
     const manifest = readManifest(ref);
-    const text = readLogText(pathsOf(ref).log);
+    const text = readLogText(pathsOf(ref).log, ref, advice);
     return { manifest, text, endsWithNewline: text === '' || text.endsWith('\n') };
   }
 
@@ -124,14 +126,14 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     const lock = await locks.acquire(paths.lock);
     let result: T;
     try {
-      const raw = readProcess(ref);
+      const raw = readProcess(ref, true);
       const decision = decide(raw);
       const text =
         decision.line === undefined
           ? undefined
           : `${raw.endsWithNewline ? '' : '\n'}${decision.line}`;
       if (text !== undefined) {
-        if (logSize(paths.log) + Buffer.byteLength(text) > MAX_LOG_BYTES) throw tooLarge();
+        if (logSize(paths.log) + Buffer.byteLength(text) > MAX_LOG_BYTES) throw tooLarge(ref, true);
         await locks.confirm(lock);
       }
       appendAndSync(paths.log, text);

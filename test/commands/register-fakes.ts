@@ -96,10 +96,11 @@ function notFound(process: Name): HexlogError {
   ]);
 }
 
-function tooLarge(): HexlogError {
-  const message = 'process log exceeds the size limit; create a new process to keep recording';
+function tooLarge(process: Name, advice = false): HexlogError {
+  const base = `process '${process}' log exceeds 64 MiB`;
+  const message = advice ? `${base}; create a new process to keep recording` : base;
   return new HexlogError('PROCESS_TOO_LARGE', message, [
-    { path: '/process', code: 'too-large', message },
+    { path: '/process', code: 'too-large', message, process },
   ]);
 }
 
@@ -138,7 +139,7 @@ export function fakeProcessStore() {
   const rawOf = (process: Name): RawProcess => {
     counters.reads.push(process);
     const { manifest, text } = manifestEntryOf(process);
-    if (flags.tooLarge.has(process)) throw tooLarge();
+    if (flags.tooLarge.has(process)) throw tooLarge(process);
     return {
       manifest: structuredClone(manifest),
       text,
@@ -170,7 +171,7 @@ export function fakeProcessStore() {
     const entry = entries.get(ref.process)!;
     const text = `${raw.endsWithNewline ? '' : '\n'}${decision.line}`;
     if (Buffer.byteLength(entry.text) + Buffer.byteLength(text) > flags.maxBytes) {
-      throw tooLarge();
+      throw tooLarge(ref.process, true);
     }
     entry.text += text;
     counters.appends += 1;

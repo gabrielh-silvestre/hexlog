@@ -135,7 +135,9 @@ async function install(D: string): Promise<void> {
     registerMcp(process.execPath, expected.serverFile);
   }
 
-  console.log(`hexlog ${version}: ${result.action}`);
+  const summary =
+    result.action === 'none' ? 'already installed and intact; nothing to do' : result.action;
+  console.log(`hexlog ${version}: ${summary}`);
   console.log(`  server sha256: ${result.manifest.sha256.server}`);
   console.log(`  hook sha256: ${result.manifest.sha256.hook}`);
   console.log(`  settings.json: ${changed ? 'updated' : 'already correct'}`);

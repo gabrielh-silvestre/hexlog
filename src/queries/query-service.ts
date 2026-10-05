@@ -252,7 +252,7 @@ function assertValid({ limit, text }: QueryInput, search: SearchIndex): void {
     throw invalidFilter(
       '/text',
       'no-terms',
-      'text must have at least one searchable term; spaces and punctuation alone match nothing',
+      'text has no searchable terms (spaces and punctuation are not terms)',
     );
   }
 }
@@ -293,7 +293,10 @@ function assertSameQuery(
     { differs: cursor.filtersHash !== hash, code: 'filters-mismatch' },
   ].find(({ differs }) => differs);
   if (mismatch !== undefined) {
-    throw invalidCursor(mismatch.code, 'Cursor was issued for a different query');
+    throw invalidCursor(
+      mismatch.code,
+      'Cursor was issued for a different query; rerun the query without cursor',
+    );
   }
 }
 
@@ -308,14 +311,22 @@ function assertSameContent(cursor: CursorPayload, reading: Reading): void {
     const seen = Object.hasOwn(cursor.markerHashes, name) ? cursor.markerHashes[name] : null;
     const read = Object.hasOwn(reading.markerHashes, name) ? reading.markerHashes[name] : null;
     if (seen !== read) {
-      throw invalidCursor('marker-hash-mismatch', 'Cursor marker does not match the process log');
+      throw invalidCursor(
+        'marker-hash-mismatch',
+        `Cursor marker does not match the log of process '${name}'; rerun the query without cursor`,
+      );
     }
   }
 }
 
 function startAfter(selected: readonly Link[], lastId: RecordId): number {
   const at = selected.findIndex((link) => link.id === lastId);
-  if (at === -1) throw invalidCursor('last-id-not-found', 'Cursor record is not in the result');
+  if (at === -1) {
+    throw invalidCursor(
+      'last-id-not-found',
+      'Cursor record is not in the result; rerun the query without cursor',
+    );
+  }
   return at + 1;
 }
 

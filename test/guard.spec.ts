@@ -172,6 +172,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
       expected,
       exists: alwaysExists,
       runHook: simulatedRunHook,
+      artifactModified: false,
     });
     expect(verification).toEqual({ ok: true, missing: [] });
   });
@@ -241,6 +242,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
         expected,
         exists: alwaysExists,
         runHook: simulatedRunHook,
+        artifactModified: false,
       });
       expect(verification.missing).toContain(item);
     }
@@ -261,6 +263,7 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
       expected,
       exists: alwaysExists,
       runHook: simulatedRunHook,
+      artifactModified: false,
     });
     expect(verification.missing).toContain('hook');
   });
@@ -304,6 +307,7 @@ describe('I6: as 4 regras de deny exatas (QN4)', () => {
       expected,
       exists: alwaysExists,
       runHook: simulatedRunHook,
+      artifactModified: false,
     });
     expect(verification.missing).toEqual(['deny-edit-lib']);
   });
@@ -562,6 +566,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expected,
       exists: fs.existsSync,
       runHook: runRealHook,
+      artifactModified: false,
     });
     expect(verification).toEqual({ ok: true, missing: [] });
   });
@@ -589,6 +594,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
         expected,
         exists: fs.existsSync,
         runHook: runRealHook,
+        artifactModified: false,
       });
       expect(verification.missing).toContain(scenario.item);
     });
@@ -608,6 +614,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expected: notInstalledExpected,
       exists: fs.existsSync,
       runHook: runRealHook,
+      artifactModified: false,
     });
     expect(verification.missing).toContain('hook-file');
   });
@@ -622,6 +629,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
       expected,
       exists: fs.existsSync,
       runHook: runRealHook,
+      artifactModified: false,
     });
     expect(verification.missing).toContain('node');
   });
@@ -635,6 +643,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
         expected,
         exists: fs.existsSync,
         runHook: runRealHook,
+        artifactModified: false,
       });
       expect(verification.missing).toContain('hook');
     }
@@ -667,6 +676,7 @@ describe('I7: verificação com execução real do hook instalado', () => {
         expected,
         exists: fs.existsSync,
         runHook: runRealHook,
+        artifactModified: false,
       });
       expect(verification.missing).toContain('mcp');
     }

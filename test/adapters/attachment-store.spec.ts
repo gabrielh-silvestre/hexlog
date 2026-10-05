@@ -267,11 +267,17 @@ describe('status e read', () => {
 
     expect(store.status(PROJECT, hash)).toBe('ok');
     expect(store.status(PROJECT, absent)).toBe('missing');
-    expect(captureError(() => store.read(PROJECT, absent)).code).toBe('ATTACHMENT_NOT_FOUND');
+    expect(captureError(() => store.read(PROJECT, absent))).toMatchObject({
+      code: 'ATTACHMENT_NOT_FOUND',
+      details: [{ path: '/hash', code: 'not-found', message: expect.any(String) }],
+    });
 
     fs.writeFileSync(blobPath(hash), 'conteúdA');
     expect(store.status(PROJECT, hash)).toBe('corrupted');
-    expect(captureError(() => store.read(PROJECT, hash)).code).toBe('ATTACHMENT_CORRUPTED');
+    expect(captureError(() => store.read(PROJECT, hash))).toMatchObject({
+      code: 'ATTACHMENT_CORRUPTED',
+      details: [{ path: '/hash', code: 'corrupted', message: expect.any(String) }],
+    });
   });
 
   test('bytes íntegros que não são UTF-8 → read dá ATTACHMENT_CORRUPTED', () => {
@@ -593,9 +599,10 @@ describe('put por path (P16, D-15)', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61));
     understateSize(10);
 
-    expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
-      invalid('/path', 'too-big'),
-    );
+    const error = captureError(() => store.putPath(PROJECT, PLAN));
+
+    expect(error).toMatchObject(invalid('/path', 'too-big'));
+    expect(error.message).toBe('file changed while being read');
   });
 
   test('arquivo vazio → bad-args; bytes que não são UTF-8 → invalid-utf8', () => {

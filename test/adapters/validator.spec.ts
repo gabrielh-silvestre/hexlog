@@ -268,7 +268,11 @@ describe('checkSchema', () => {
       ['properties', (c) => ({ type: 'object', properties: { a: c } }), '/properties/a'],
       [
         'patternProperties',
-        (c) => ({ type: 'object', patternProperties: { '^a': c } }),
+        (c) => ({
+          type: 'object',
+          propertyNames: { maxLength: PATTERN_MAX_LENGTH },
+          patternProperties: { '^a': c },
+        }),
         '/patternProperties/^a',
       ],
       ['$defs', (c) => ({ $defs: { a: c } }), '/$defs/a'],
@@ -367,16 +371,35 @@ describe('checkSchema', () => {
       ]);
     });
 
-    test('recusa chave perigosa de patternProperties, sem exigir maxLength', () => {
+    test('recusa chave perigosa de patternProperties, sem exigir maxLength no valor', () => {
       expect(
         validator.checkSchema({
           type: 'object',
+          propertyNames: { maxLength: 64 },
           patternProperties: { [unsafe]: { type: 'string' } },
         }),
       ).toEqual(invalidSchema(`/patternProperties/${unsafe.replace(/\//g, '~1')}`));
       expect(
-        validator.checkSchema({ type: 'object', patternProperties: { '^x-': { type: 'string' } } }),
+        validator.checkSchema({
+          type: 'object',
+          propertyNames: { maxLength: 64 },
+          patternProperties: { '^x-': { type: 'string' } },
+        }),
       ).toEqual([]);
+    });
+
+    test('patternProperties aceita com propertyNames.maxLength no teto, recusa sem ele ou acima', () => {
+      const withNames = (propertyNames?: RecordType): RecordType => ({
+        type: 'object',
+        ...(propertyNames && { propertyNames }),
+        patternProperties: { '^x-': { type: 'string' } },
+      });
+
+      expect(validator.checkSchema(withNames({ maxLength: PATTERN_MAX_LENGTH }))).toEqual([]);
+      expect(validator.checkSchema(withNames())).toEqual(invalidSchema('/patternProperties'));
+      expect(validator.checkSchema(withNames({ maxLength: PATTERN_MAX_LENGTH + 1 }))).toEqual(
+        invalidSchema('/patternProperties'),
+      );
     });
 
     test('não trata dado (const, enum, default) como subschema', () => {
@@ -428,6 +451,7 @@ describe('checkSchema', () => {
       });
       const [fromKey] = validator.checkSchema({
         type: 'object',
+        propertyNames: { maxLength: 64 },
         patternProperties: { [unsafeKey]: { type: 'string' } },
       });
 

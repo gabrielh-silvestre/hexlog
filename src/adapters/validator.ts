@@ -74,10 +74,14 @@ const MISPLACED_ATTACHMENT_MESSAGE =
   '(/properties/<field>) or on the items of a top-level list (/properties/<field>/items); ' +
   'for an optional attachment use type: ["string","null"], or a list whose items carry the mark';
 
+const lacksBoundedMaxLength = (schema: Record<string, unknown>): boolean =>
+  typeof schema.maxLength !== 'number' || schema.maxLength > PATTERN_MAX_LENGTH;
+
 /**
  * Percorre só as palavras-chave que carregam subschemas (nunca `const`/`enum`/`default`, que são
  * dado) e aponta cada `pattern` e cada chave de `patternProperties` que a `safe-regex2` recusa, cada
- * `pattern` cujo subschema não tem `maxLength` inteiro até `PATTERN_MAX_LENGTH` e cada
+ * `pattern` cujo subschema não tem `maxLength` inteiro até `PATTERN_MAX_LENGTH`, cada
+ * `patternProperties` cujo subschema não tem `propertyNames.maxLength` nesse teto e cada
  * `format: "attachment"` fora das posições que `attachmentFields` reconhece.
  */
 function patternDetails(root: unknown): Detail[] {
@@ -94,13 +98,18 @@ function patternDetails(root: unknown): Detail[] {
     if (typeof node.pattern === 'string') {
       const path = `${pointer}/pattern`;
       if (!safeRegex(node.pattern)) reject(path, UNSAFE_REGEX_MESSAGE);
-      if (typeof node.maxLength !== 'number' || node.maxLength > PATTERN_MAX_LENGTH)
+      if (lacksBoundedMaxLength(node))
         reject(
           path,
           `pattern requires a maxLength of at most ${PATTERN_MAX_LENGTH} in the same subschema`,
         );
     }
     if (isPlainObject(node.patternProperties)) {
+      if (!isPlainObject(node.propertyNames) || lacksBoundedMaxLength(node.propertyNames))
+        reject(
+          `${pointer}/patternProperties`,
+          `patternProperties requires propertyNames.maxLength of at most ${PATTERN_MAX_LENGTH} in the same subschema`,
+        );
       for (const key of Object.keys(node.patternProperties)) {
         if (!safeRegex(key))
           reject(`${pointer}/patternProperties${jsonPointer([key])}`, UNSAFE_REGEX_MESSAGE);
@@ -175,7 +184,8 @@ function messageOf(error: unknown): string {
  *
  * Além do metaschema e da compilação, `checkSchema` recusa regex que pode explodir em tempo (ReDoS):
  * todo `pattern` e toda chave de `patternProperties` passam pela `safe-regex2`, e todo `pattern`
- * exige `maxLength` inteiro de até `PATTERN_MAX_LENGTH` no mesmo subschema. Esses erros saem com o
+ * exige `maxLength` inteiro de até `PATTERN_MAX_LENGTH` no mesmo subschema, e todo `patternProperties`
+ * exige `propertyNames.maxLength` no mesmo teto. Esses erros saem com o
  * `path` do campo (`.../pattern`, relativo ao schema) e `code` `invalid-schema`.
  *
  * A marca `format: "attachment"` só vale em `/properties/<campo>` e `/properties/<campo>/items`,

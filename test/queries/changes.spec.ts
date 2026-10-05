@@ -209,6 +209,26 @@ describe('queryRecords: changesSince (SL7)', () => {
     expect(error.details).toEqual([expect.objectContaining({ path: '/changesSince' })]);
   });
 
+  test('alcance projeto: o MARKER_NOT_FOUND nomeia o processo cujo id marcado não existe', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    createProcess('run-2');
+    const first = await registerOne('run-1', note('a'), 1);
+    await registerOne('run-2', note('b'), 2);
+
+    const error = captureError(() =>
+      query({
+        scope: 'project',
+        changesSince: { 'run-1': first, 'run-2': ghostId('run-2') },
+      }),
+    );
+
+    expect(error.code).toBe('MARKER_NOT_FOUND');
+    expect(error.details).toEqual([
+      expect.objectContaining({ path: '/changesSince', process: 'run-2' }),
+    ]);
+  });
+
   test('processo chamado `constructor` nascido depois do marcador conta como vazio', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');

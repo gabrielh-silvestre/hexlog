@@ -61,7 +61,8 @@ function namesOf(store: ProcessReader, target: ReadTarget, marker?: Marker): Nam
 /**
  * `loadVerified` cortado em `cutAt`. O elo marcado que a adulteração fez o carregador rejeitar não
  * está em nenhuma linha aceita e sairia como `MARKER_NOT_FOUND`: relê o processo inteiro (só neste
- * caminho de erro) e, se a cadeia dele não está íntegra, o erro certo é a quebra.
+ * caminho de erro) e, se a cadeia dele não está íntegra, o erro certo é a quebra. O
+ * `MARKER_NOT_FOUND` que sobra nomeia o processo cujo marcador não existe.
  */
 function loadCut(
   store: ProcessReader,
@@ -74,6 +75,10 @@ function loadCut(
     const lostMarker = error instanceof HexlogError && error.code === 'MARKER_NOT_FOUND';
     if (lostMarker && cutAt != null && !loadVerified(store, ref).chain.ok) {
       throw brokenChain(ref.process);
+    }
+    if (lostMarker) {
+      const details = error.details.map((detail) => ({ ...detail, process: ref.process }));
+      throw new HexlogError(error.code, error.message, details);
     }
     throw error;
   }

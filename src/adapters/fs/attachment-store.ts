@@ -26,11 +26,17 @@ export type AttachmentStoreOptions = {
 type BlobRead = { status: 'ok'; bytes: Buffer } | { status: 'missing' } | { status: 'corrupted' };
 
 function attachmentNotFound(hash: string): HexlogError {
-  return new HexlogError('ATTACHMENT_NOT_FOUND', `attachment '${hash}' not found`);
+  const message = `attachment '${hash}' not found`;
+  return new HexlogError('ATTACHMENT_NOT_FOUND', message, [
+    { path: '/hash', code: 'not-found', message },
+  ]);
 }
 
 function attachmentCorrupted(hash: string): HexlogError {
-  return new HexlogError('ATTACHMENT_CORRUPTED', `attachment '${hash}' does not match its hash`);
+  const message = `attachment '${hash}' does not match its hash`;
+  return new HexlogError('ATTACHMENT_CORRUPTED', message, [
+    { path: '/hash', code: 'corrupted', message },
+  ]);
 }
 
 /** Abre sem seguir symlink no componente final (`ELOOP`) e sem travar num FIFO com esse nome. */
@@ -89,8 +95,12 @@ function outsideAllowedRoot(): HexlogError {
   return invalidInput('/path', 'outside-allowed-root', 'path is outside the allowed root');
 }
 
-function tooBigFile(): HexlogError {
-  return invalidInput('/path', 'too-big', `file exceeds ${ATTACHMENT_MAX_BYTES} bytes`);
+/** `grewWhileReading`: o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
+function tooBigFile(grewWhileReading = false): HexlogError {
+  const message = grewWhileReading
+    ? 'file changed while being read'
+    : `file exceeds ${ATTACHMENT_MAX_BYTES} bytes`;
+  return invalidInput('/path', 'too-big', message);
 }
 
 /** `realpath` de `target`, ou `undefined` se falhar (ENOENT, ENOTDIR, permissão...). */
@@ -181,7 +191,7 @@ function readFileWithin(options: AttachmentStoreOptions, candidate: string): Buf
     if (stat.size > ATTACHMENT_MAX_BYTES) throw tooBigFile();
 
     const bytes = readBounded(fd, stat.size);
-    if (bytes.length > stat.size) throw tooBigFile();
+    if (bytes.length > stat.size) throw tooBigFile(true);
     return bytes;
   } finally {
     fs.closeSync(fd);

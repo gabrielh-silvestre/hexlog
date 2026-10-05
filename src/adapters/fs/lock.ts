@@ -219,7 +219,10 @@ export function createLockManager({
       if (tryCreate(dir, holder)) return { dir, token: holder.token };
       const current = readHolder(dir);
       if (current.kind === 'unreadable') {
-        throw lockTimeout('holder-unreadable', 'lock holder is unreadable; manual unlock required');
+        throw lockTimeout(
+          'holder-unreadable',
+          'lock holder file is unreadable; ask the user to remove the lock (see README, manual unlock)',
+        );
       }
       if (current.kind === 'missing') {
         if (performance.now() >= deadline) throw timedOut();

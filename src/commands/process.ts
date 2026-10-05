@@ -124,9 +124,9 @@ function assertNotReserved(processName: Name): void {
 }
 
 /** Manifesto vazio é imutável e todo `register` daria `TYPE_NOT_PINNED`: melhor recusar a criar o processo. */
-function assertSomethingRegistered(fixed: Manifest['fixed']): void {
+function assertSomethingRegistered(project: Name, fixed: Manifest['fixed']): void {
   if (KINDS.some((kind) => Object.keys(fixed[kind]).length > 0)) return;
-  const message = 'no definition registered in the project; run the setup to register them';
+  const message = `project '${project}' has no definitions; call define_type first`;
   throw new HexlogError('TYPE_NOT_FOUND', message, [
     { path: '/project', code: 'unknown-name', message },
   ]);
@@ -148,7 +148,7 @@ export function createProcessService(deps: {
     createProcess({ project, process }) {
       assertNotReserved(process);
       const snapshot = takeSnapshot(definitions, project);
-      assertSomethingRegistered(snapshot.fixed);
+      assertSomethingRegistered(project, snapshot.fixed);
       const manifest: Manifest = {
         project,
         process,
