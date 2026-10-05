@@ -4,7 +4,7 @@
 
 **Data:** 2026-10-03
 
-**Deciders:** execução autônoma da F6 (itens 1 a 6 e o texto original do 7) e da F8 (itens 8 a 20 e a reescrita do item 7), decisões do orquestrador; itens 5 e 6 emendados depois pelas decisões do usuário e do júri de MINIMAL (issues #71, #75 e #77); aceito pelo dono, Gabriel Baldino, em 2026-10-04, depois da amostragem dos vereditos
+**Deciders:** execução autônoma da F6 (itens 1 a 6 e o texto original do 7) e da F8 (itens 8 a 20 e a reescrita do item 7), decisões do orquestrador; itens emendados e item 21 acrescentado depois pelas decisões do usuário e do júri da rodada MINIMAL (issues #61 a #77); aceito pelo dono, Gabriel Baldino, em 2026-10-04, depois da amostragem dos vereditos
 
 ---
 
