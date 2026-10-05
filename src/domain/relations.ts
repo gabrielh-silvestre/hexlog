@@ -54,29 +54,6 @@ export function buildVigency(records: readonly Linked[]): Vigency {
   return { isCurrent, currentOf };
 }
 
-/** D-08: linhagens, isto é, os conjuntos de registros ligados por `supersedes`. */
-export function lineages(records: readonly Linked[]): RecordId[][] {
-  const parent = new Map<RecordId, RecordId>(records.map(({ id }) => [id, id]));
-  const rootOf = (id: RecordId): RecordId => {
-    let root = id;
-    while (parent.get(root) !== root) root = parent.get(root)!;
-    for (let node = id; node !== root;) {
-      const next = parent.get(node)!;
-      parent.set(node, root);
-      node = next;
-    }
-    return root;
-  };
-  for (const { id, relations } of records) {
-    for (const { kind, to } of relations) {
-      if (kind === 'supersedes' && parent.has(to)) parent.set(rootOf(id), rootOf(to));
-    }
-  }
-  const groups = new Map<RecordId, RecordId[]>();
-  for (const { id } of records) pushTo(groups, rootOf(id), id);
-  return [...groups.values()];
-}
-
 /** Guarda contra ciclo de substituição (Kahn sobre as arestas `supersedes` entre registros lidos). */
 export function hasCycle(records: readonly Linked[]): boolean {
   const known = new Set(records.map(({ id }) => id));
@@ -115,8 +92,10 @@ export type NeedsReview = { staleIn: RecordId[]; staleOut: RecordId[] };
  * cruza processos não é emitido (a vigência da outra ponta é desconhecida; emitir seria falso
  * alerta, D-09). Revisitar ao implementar `scope: "project"`.
  */
-export function needsReview(records: readonly Linked[]): Map<RecordId, NeedsReview> {
-  const vigency = buildVigency(records);
+export function needsReview(
+  records: readonly Linked[],
+  vigency: Vigency = buildVigency(records),
+): Map<RecordId, NeedsReview> {
   const supported = new Map<RecordId, Set<RecordId>>();
   for (const { id, relations } of records) {
     supported.set(
@@ -174,7 +153,7 @@ export type RuleCode =
 /** `current` só sai em `not-current` e `stale-destination`: versão atual da linhagem ou `null`. */
 export type Violation = { code: RuleCode; current?: RecordId | null };
 
-export type RelationCheck = { kind: RelationKind } | { violation: Violation };
+type RelationCheck = { kind: RelationKind } | { violation: Violation };
 
 /** Nome de relação fixado no processo; `from`/`to` são listas de tipos, quando declaradas. */
 export type NamedRelation = Pick<RelationName, 'kind' | 'from' | 'to'>;

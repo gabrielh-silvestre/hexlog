@@ -1,5 +1,5 @@
-import { isUndefined, omitBy, pick } from 'es-toolkit';
-import type { Link } from '../domain/chain.ts';
+import { isUndefined, mapValues, omitBy, pick } from 'es-toolkit';
+import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
 import { evaluateGate, type GateResult } from '../domain/gate.ts';
 import {
@@ -21,19 +21,13 @@ import type {
   ProcessReader,
   SearchIndex,
 } from '../ports.ts';
+import { latestVersions } from '../shared/latest.ts';
 import { loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
 import { sliceChars } from '../shared/pages.ts';
-import {
-  decodeCursor,
-  encodeCursor,
-  filtersHash,
-  invalidCursor,
-  type CursorPayload,
-} from './cursor.ts';
+import { decodeCursor, encodeCursor, invalidCursor, type CursorPayload } from './cursor.ts';
 import { projectNotFound, readScope, type Reading, type ReadTarget } from './read.ts';
 import {
   buildView,
-  indexRef,
   inOutputOrder,
   leftReason,
   relationsOf,
@@ -117,7 +111,7 @@ export type GateEvaluation = GateResult & { marker: Marker };
 export type VerifyChainInput = { project: Name; process: Name };
 
 /** D-16: anexo citado por um registro que não está inteiro no projeto. */
-export type AttachmentBreak = {
+type AttachmentBreak = {
   id: RecordId;
   hash: Hash;
   reason: 'attachment-missing' | 'attachment-corrupted';
@@ -135,7 +129,7 @@ export type VerifyChainResult = Chain & {
 export type ListInput = { project?: Name; process?: Name };
 
 /** Definição do projeto: `version` é a mais nova, `versions` todas em ordem crescente. */
-export type DefinitionSummary = { name: Name; version: string; versions: string[] };
+type DefinitionSummary = { name: Name; version: string; versions: string[] };
 
 export type ListResult = {
   /** Sem `project`: um item por projeto. */
@@ -154,7 +148,7 @@ export type ListResult = {
   };
 };
 
-export type ReadAttachmentInput = {
+type ReadAttachmentInput = {
   project: Name;
   hash: Hash;
   /** Posição em caracteres; o `next` da página anterior. */
@@ -275,7 +269,7 @@ const FILTER_KEYS = [
  * chave `undefined`, então filtro ou `changesSince` ausente não entra no hash.
  */
 function hashOf(filters: Filters, changesSince: Marker | undefined): Hash {
-  return filtersHash({
+  return hashOfJcs({
     ...filters,
     includeNonCurrent: filters.includeNonCurrent ?? false,
     changesSince,
@@ -331,11 +325,7 @@ export function createQueryService(deps: {
   const { store, definitions, attachments, search } = deps;
 
   const summariesOf = (project: Name, kind: DefinitionKind): DefinitionSummary[] =>
-    definitions.names(project, kind).flatMap((name) => {
-      const versions = definitions.versions(project, kind, name);
-      const version = versions.at(-1);
-      return version === undefined ? [] : [{ name, version, versions }];
-    });
+    latestVersions(definitions, project, kind);
 
   /** D-16: estado dos anexos que `link` cita nos campos marcados do tipo fixado no processo dele. */
   function attachmentStatusOf(
@@ -363,7 +353,7 @@ export function createQueryService(deps: {
       readScope(store, target, input.changesSince, '/changesSince'),
       target.scope,
     );
-    const before = select(past, filters, search, indexRef(target));
+    const before = select(past, filters, search, target);
     const beforeIds = new Set(before.map(({ id }) => id));
     const nowIds = new Set(now.selected.map(({ id }) => id));
     return {
@@ -387,9 +377,9 @@ export function createQueryService(deps: {
       const reading = readScope(store, target, cursor?.marker, '/cursor');
       if (cursor !== undefined) assertSameContent(cursor, reading);
       const view = buildView(reading, target.scope);
-      const selected = select(view, filters, search, indexRef(target));
+      const selected = select(view, filters, search, target);
 
-      const reviews = needsReview(view.records);
+      const reviews = needsReview(view.records, view.vigency);
       const manifests = new Map(
         reading.processes.map(({ name, verified }) => [name, verified.manifest]),
       );
@@ -494,11 +484,7 @@ export function createQueryService(deps: {
           process: {
             name: process,
             createdAt,
-            pinned: {
-              types: Object.keys(fixed.types),
-              relations: Object.keys(fixed.relations),
-              gates: Object.keys(fixed.gates),
-            },
+            pinned: mapValues(fixed, (byName) => Object.keys(byName)),
             hashes,
           },
         };

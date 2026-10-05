@@ -38,7 +38,7 @@ export type Expected = { seq: number; prevHash: Hash };
 // canonicalize devolve undefined para valor sem forma JSON (undefined, função, símbolo) e lança para
 // NaN, BigInt e surrogate solitário. Devolver '' para o primeiro caso daria o mesmo hash a entradas
 // diferentes, então vira INTERNAL: só chega aqui valor que os schemas não validaram.
-export function jcs(value: unknown): string {
+function jcs(value: unknown): string {
   const text = canonicalize(value);
   if (text === undefined) throw new HexlogError('INTERNAL', 'value is not canonicalizable');
   return text;
@@ -71,7 +71,7 @@ export function anchor(manifest: unknown): Hash {
 /** Por que o valor não ocupa a posição esperada: forma inválida, `seq` ou `prevHash` divergentes. */
 export type LinkRejection = 'invalid-line' | 'diverging-seq' | 'hash-mismatch';
 
-export type LinkCheck = { link: Link } | { reasons: LinkRejection[] };
+type LinkCheck = { link: Link } | { reasons: LinkRejection[] };
 
 // O parse lança para aninhamento profundo (pilha do zod) e surrogate solitário; ambos são linha inválida.
 function parseLink(value: unknown): Link | undefined {

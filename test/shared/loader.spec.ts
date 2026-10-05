@@ -3,7 +3,7 @@ import { anchor, hashLink, sha256hex, type Expected, type Link } from '../../src
 import type { RecordId } from '../../src/domain/ids.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
-import type { ProcessRef, RawProcess } from '../../src/ports.ts';
+import type { ProcessReader, ProcessRef, RawProcess } from '../../src/ports.ts';
 import {
   formatLine,
   isValidLine,
@@ -445,12 +445,12 @@ describe('loadVerified', () => {
   test('lê o processo cru da porta uma vez e verifica o que veio', () => {
     const ref: ProcessRef = { project: 'demo', process: 'proc-1' };
     const raw = rawOf(lineOf(A, B));
-    const store = { read: jest.fn<(ref: ProcessRef) => RawProcess>().mockReturnValue(raw) };
+    const read = jest.fn<(ref: ProcessRef) => RawProcess>().mockReturnValue(raw);
 
-    const verified = loadVerified(store, ref, A.id);
+    const verified = loadVerified({ read } as unknown as ProcessReader, ref, A.id);
 
-    expect(store.read).toHaveBeenCalledTimes(1);
-    expect(store.read).toHaveBeenCalledWith(ref);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(ref);
     expect(verified).toEqual(verifyProcess(raw, A.id));
   });
 });

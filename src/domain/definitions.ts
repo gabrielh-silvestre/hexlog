@@ -50,7 +50,7 @@ export const Gate = withCanonicalLimit(
 export type Gate = z.infer<typeof Gate>;
 
 /** Um número de versão `major.minor` (ex.: `1.9`). */
-export type Version = { major: number; minor: number };
+type Version = { major: number; minor: number };
 
 /**
  * Gramática canônica de versão, única para o domínio e para o nome de arquivo no store: sem zero à
@@ -68,11 +68,6 @@ export function parseVersion(v: string): Version {
   return { major: Number(match[1]), minor: Number(match[2]) };
 }
 
-/** Converte `{ major: 1, minor: 9 }` em `"1.9"`. */
-export function formatVersion(v: Version): string {
-  return `${v.major}.${v.minor}`;
-}
-
 /** Compara duas versões numericamente por `(major, minor)`, nunca por string (`1.10` > `1.9`). */
 export function compareVersions(a: string, b: string): number {
   const va = parseVersion(a);
@@ -80,10 +75,10 @@ export function compareVersions(a: string, b: string): number {
   return va.major - vb.major || va.minor - vb.minor;
 }
 
-/** Próxima versão a partir de `current`: `minor` soma ao minor, `major` soma ao major e zera o minor. */
-export function bumpVersion(current: string, kind: 'major' | 'minor'): Version {
+/** Próxima versão (`"major.minor"`) a partir de `current`: `minor` soma ao minor, `major` soma ao major e zera o minor. */
+export function bumpVersion(current: string, kind: 'major' | 'minor'): string {
   const { major, minor } = parseVersion(current);
-  return kind === 'major' ? { major: major + 1, minor: 0 } : { major, minor: minor + 1 };
+  return kind === 'major' ? `${major + 1}.0` : `${major}.${minor + 1}`;
 }
 
 /** D-11: `unchanged` não grava versão, `compatible` sobe o minor, `breaking` exige `breaking: true`. */

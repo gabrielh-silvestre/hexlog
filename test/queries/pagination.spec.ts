@@ -232,9 +232,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
       return at(error.details, 0).code;
     };
 
-    expect(codeOf({ process: 'run-1', cursor: `${cursor.slice(0, -1)}0` })).toBe(
-      'checksum-mismatch',
-    );
+    expect(codeOf({ process: 'run-1', cursor: cursor.slice(0, -8) })).toBe('malformed');
     expect(codeOf({ process: 'run-1', cursor: 'nao-e-cursor' })).toBe('malformed');
     expect(codeOf({ process: 'run-1', cursor, type: 'doc' })).toBe('filters-mismatch');
     expect(codeOf({ process: 'run-1', cursor, text: 'a' })).toBe('filters-mismatch');

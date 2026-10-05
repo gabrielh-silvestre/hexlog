@@ -5,7 +5,6 @@ import {
   classifyRelationChange,
   classifyTypeChange,
   compareVersions,
-  formatVersion,
   Gate,
   RecordType,
   RelationName,
@@ -17,7 +16,7 @@ import type { DefinitionKind, DefinitionOf, DefinitionStore, Validator } from '.
 
 type Breaking = { breaking?: boolean };
 
-export type DefineTypeInput = { project: Name; name: Name; schema: RecordType } & Breaking;
+type DefineTypeInput = { project: Name; name: Name; schema: RecordType } & Breaking;
 export type DefineRelationInput = { project: Name } & RelationName & Breaking;
 export type DefineGateInput = { project: Name } & Gate & Breaking;
 
@@ -141,7 +140,7 @@ function targetVersion<K extends DefinitionKind>(
       { path: rule.breakingPath, code: 'breaking-change', message },
     ]);
   }
-  return formatVersion(bumpVersion(previous.version, broken || breaking ? 'major' : 'minor'));
+  return bumpVersion(previous.version, broken || breaking ? 'major' : 'minor');
 }
 
 /**

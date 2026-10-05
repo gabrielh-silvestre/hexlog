@@ -116,10 +116,10 @@ function checkCurrencyScope(prepared: readonly PreparedItem[], origin: Name): vo
  */
 export function prepareBatch(
   manifest: Manifest,
+  names: ReadonlyMap<Name, NamedRelation>,
   records: readonly BatchItem[],
   validator: Validator,
 ): PreparedItem[] {
-  const names = relationNames(manifest);
   const valid = records.map((item, index) => {
     const schema = pinnedSchema(manifest, item, index);
     checkData(validator, schema, item, index);

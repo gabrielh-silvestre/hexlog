@@ -65,13 +65,12 @@ describe('TM5: cursor inválido dá INVALID_CURSOR', () => {
   });
 
   test.each([
-    ['truncado no checksum', (cursor: string) => cursor.slice(0, -4)],
+    ['truncado no fim', (cursor: string) => cursor.slice(0, -4)],
     ['truncado na metade', (cursor: string) => cursor.slice(0, cursor.length / 2)],
     [
       'editado no corpo',
       (cursor: string) => `${cursor.startsWith('e') ? 'f' : 'e'}${cursor.slice(1)}`,
     ],
-    ['sem checksum', (cursor: string) => cursor.split('.')[0] ?? ''],
   ])('cursor %s', async (_title, mangle) => {
     const result = await queryRun1({ limit: 1, cursor: mangle(await firstCursor()) });
 

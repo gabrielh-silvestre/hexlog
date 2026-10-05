@@ -40,7 +40,12 @@ type Versions = Record<string, Record<string, unknown>>;
 
 /** `DefinitionStore` em memória: só leitura, e `add` planta uma versão (a ordem de inserção é a numérica). */
 function fakeDefinitions() {
-  const data: Record<DefinitionKind, Versions> = { types: {}, relations: {}, gates: {} };
+  // Sem protótipo: um nome como `constructor` não pode ler `Object.prototype`.
+  const data: Record<DefinitionKind, Versions> = {
+    types: Object.create(null) as Versions,
+    relations: Object.create(null) as Versions,
+    gates: Object.create(null) as Versions,
+  };
   const reads: string[] = [];
   const store: DefinitionStore = {
     names: (_project, kind) => Object.keys(data[kind]),
@@ -336,6 +341,15 @@ describe('createProcess: processo já existente', () => {
     definitions.add('types', 'task', '1.1', NOTE_1_1);
 
     expect(create(service).stale).toEqual([{ kind: 'types', name: 'task', current: '1.1' }]);
+  });
+
+  test('nome `constructor` criado depois da fixação é stale, sem ler o protótipo', () => {
+    const { service, definitions } = setup();
+    definitions.add('types', 'note', '1.0', NOTE_1_0);
+    create(service);
+    definitions.add('types', 'constructor', '1.0', NOTE_1_0);
+
+    expect(create(service).stale).toEqual([{ kind: 'types', name: 'constructor', current: '1.0' }]);
   });
 
   test('nome fixado que não tem mais versão no projeto é stale com current null', () => {

@@ -210,7 +210,7 @@ export const PROJECT_INDEX = '*';
  * Índice de texto sobre os registros já carregados; devolve ids por relevância. O `process` é a
  * chave do cache. `records` pode ser o log inteiro do processo, o prefixo cortado pelo marcador
  * (cursor e `changesSince`) ou a lista mesclada do projeto sob um `ProcessRef` com
- * `process: PROJECT_INDEX` (`queries/select.ts#indexRef`). `allowed`, quando passado, restringe o
+ * `process: PROJECT_INDEX` (`queries/select.ts#select`). `allowed`, quando passado, restringe o
  * resultado a esses ids e também decide o fallback `OR`: o conjunto devolvido é o dos registros
  * permitidos que casam (`adapters/search.ts#createSearchIndex`).
  *

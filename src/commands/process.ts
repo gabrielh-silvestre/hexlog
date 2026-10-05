@@ -1,7 +1,7 @@
 import { isEqual, mapValues, union } from 'es-toolkit';
 import { fingerprint, hashOfJcs } from '../domain/chain.ts';
 import { isReservedProcessName, type Name } from '../domain/ids.ts';
-import { HexlogError } from '../errors.ts';
+import { HexlogError, reservedName } from '../errors.ts';
 import type {
   AttachmentStore,
   DefinitionKind,
@@ -11,12 +11,12 @@ import type {
   ProcessStore,
   Validator,
 } from '../ports.ts';
+import { latestVersions } from '../shared/latest.ts';
 import type { Logger } from '../shared/logger.ts';
-import { createDecide } from './register/state.ts';
+import { createDecide, type RegisterInput, type RegisterResult } from './register/state.ts';
 import { checkBatchShape, prepareBatch, relationNames } from './register/static.ts';
-import type { RegisterInput, RegisterResult } from './register/types.ts';
 
-export type { RegisteredRecord, RegisterInput, RegisterResult } from './register/types.ts';
+export type { RegisterInput, RegisterResult } from './register/state.ts';
 
 export type CreateProcessInput = { project: Name; process: Name };
 
@@ -77,21 +77,17 @@ type Snapshot = {
   versions: Record<DefinitionKind, Map<Name, string>>;
 };
 
-/** Pasta de nome sem nenhuma versão (falha no meio de `DefinitionStore.write`) não tem vigente: fica de fora. */
 function latestOf<K extends DefinitionKind>(
   definitions: DefinitionStore,
   project: Name,
   kind: K,
 ): { byName: Record<Name, DefinitionOf[K]>; versions: Map<Name, string> } {
-  const latest = new Map<Name, { version: string; definition: DefinitionOf[K] }>();
-  for (const name of definitions.names(project, kind)) {
-    const version = definitions.versions(project, kind, name).at(-1);
-    if (version === undefined) continue;
-    latest.set(name, { version, definition: definitions.read(project, kind, name, version) });
-  }
+  const latest = latestVersions(definitions, project, kind);
   return {
-    byName: Object.fromEntries([...latest].map(([name, { definition }]) => [name, definition])),
-    versions: new Map([...latest].map(([name, { version }]) => [name, version])),
+    byName: Object.fromEntries(
+      latest.map(({ name, version }) => [name, definitions.read(project, kind, name, version)]),
+    ),
+    versions: new Map(latest.map(({ name, version }) => [name, version])),
   };
 }
 
@@ -114,20 +110,17 @@ const namesOf = (fixed: Manifest['fixed']): Record<DefinitionKind, Name[]> =>
 /** Nome presente só de um lado, ou com conteúdo diferente, conta como mudado. */
 function staleOf(pinned: Manifest['fixed'], snapshot: Snapshot): StaleDefinition[] {
   return KINDS.flatMap((kind) => {
-    const before: Record<string, unknown> = pinned[kind];
-    const now: Record<string, unknown> = snapshot.fixed[kind];
-    return union(Object.keys(before), Object.keys(now))
-      .filter((name) => !isEqual(before[name], now[name]))
+    // Map, não objeto: um nome como `constructor` leria o protótipo.
+    const before = new Map(Object.entries(pinned[kind]));
+    const now = new Map(Object.entries(snapshot.fixed[kind]));
+    return union([...before.keys()], [...now.keys()])
+      .filter((name) => !isEqual(before.get(name), now.get(name)))
       .map((name) => ({ kind, name, current: snapshot.versions[kind].get(name) ?? null }));
   });
 }
 
 function assertNotReserved(processName: Name): void {
-  if (!isReservedProcessName(processName)) return;
-  const message = 'reserved process name';
-  throw new HexlogError('RESERVED_NAME', message, [
-    { path: '/process', code: 'reserved-name', message },
-  ]);
+  if (isReservedProcessName(processName)) throw reservedName();
 }
 
 /** Manifesto vazio é imutável e todo `register` daria `TYPE_NOT_PINNED`: melhor recusar a criar o processo. */
@@ -188,7 +181,8 @@ export function createProcessService(deps: {
       checkBatchShape(records);
       const origin = { project, process };
       const manifest = store.readManifest(origin);
-      const items = prepareBatch(manifest, records, validator);
+      const names = relationNames(manifest);
+      const items = prepareBatch(manifest, names, records, validator);
       const decide = createDecide(
         { store, attachments, clock, newUuid },
         {
@@ -198,7 +192,7 @@ export function createProcessService(deps: {
           key,
           fingerprint: fingerprint(records),
           items,
-          names: relationNames(manifest),
+          names,
         },
       );
       const result = await store.write(origin, decide);

@@ -92,9 +92,6 @@ export type QuestionResult = { index: number; passed: boolean } & (
   | { kind: 'no_open_contradiction'; evidence: { conflicting: RecordId[] } }
 );
 
-/** Ids que sustentam o veredito de cada pergunta; o formato de cada variante está em `QuestionResult`. */
-export type Evidence = QuestionResult['evidence'];
-
 export type GateResult = { passed: boolean; questions: QuestionResult[] };
 
 export type GateInput = {

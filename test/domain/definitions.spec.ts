@@ -12,7 +12,6 @@ import {
   classifyRelationChange,
   classifyTypeChange,
   compareVersions,
-  formatVersion,
   parseVersion,
 } from '../../src/domain/definitions.ts';
 import * as omc from '../fixtures/domains/omc.ts';
@@ -36,10 +35,6 @@ describe('semver major.minor', () => {
     expect(parseVersion(value)).toEqual(expected);
   });
 
-  test('formatVersion é o inverso de parseVersion', () => {
-    expect(formatVersion(parseVersion('3.7'))).toBe('3.7');
-  });
-
   test('compareVersions compara por número e não por string', () => {
     expect(compareVersions('1.10', '1.9')).toBeGreaterThan(0);
     expect(compareVersions('1.9', '2.0')).toBeLessThan(0);
@@ -47,11 +42,15 @@ describe('semver major.minor', () => {
   });
 
   test('bumpVersion minor soma ao minor', () => {
-    expect(bumpVersion('1.9', 'minor')).toEqual({ major: 1, minor: 10 });
+    expect(bumpVersion('1.9', 'minor')).toBe('1.10');
+  });
+
+  test('bumpVersion devolve a versão pronta, com major de dois dígitos', () => {
+    expect(bumpVersion('9.9', 'major')).toBe('10.0');
   });
 
   test('bumpVersion major soma ao major e zera o minor', () => {
-    expect(bumpVersion('1.9', 'major')).toEqual({ major: 2, minor: 0 });
+    expect(bumpVersion('1.9', 'major')).toBe('2.0');
   });
 });
 

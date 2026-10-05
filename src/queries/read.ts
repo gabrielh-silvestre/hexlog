@@ -8,7 +8,7 @@ export type ReadTarget =
   { project: Name; scope: 'process'; process: Name } | { project: Name; scope: 'project' };
 
 /** Processo lido e verificado, cortado no marcador quando houve um. */
-export type LoadedProcess = { name: Name; verified: VerifiedProcess };
+type LoadedProcess = { name: Name; verified: VerifiedProcess };
 
 export type Reading = {
   processes: LoadedProcess[];

@@ -1,20 +1,14 @@
 import { z } from 'zod';
-import { jcs, sha256hex } from '../domain/chain.ts';
 import { Hash, Name, RecordId } from '../domain/ids.ts';
 import { HexlogError, issueDetails } from '../errors.ts';
 
 /**
- * Teto do texto do cursor, conferido antes do `split` e do sha256. **Palpite**: um cursor real tem
+ * Teto do texto do cursor, conferido antes de decodificar. **Palpite**: um cursor real tem
  * ~2.200 caracteres, e o pior caso (o nome de cada processo no marcador e no hash de cabeça, sem
  * teto de processos por projeto) passa de 400 caracteres por processo; 65.536 cobre ~160 processos
  * de nome máximo. Ver `docs/tetos-dominio-v1.md`.
  */
 export const CURSOR_MAX_CHARS = 65_536;
-
-/** Hex do checksum: 8 bytes do sha256 do trecho base64url. */
-const CHECKSUM_HEX_LENGTH = 16;
-/** `<base64url>.<checksum hex>`: o ponto não existe no alfabeto base64url, então separa sem ambiguidade. */
-const CURSOR_SHAPE = new RegExp(`^([A-Za-z0-9_-]+)\\.([0-9a-f]{${CHECKSUM_HEX_LENGTH}})$`);
 
 /**
  * D-20: o que o cursor fixa para a página seguinte recomeçar igual. `marker` e `markerHashes`
@@ -32,18 +26,12 @@ export const CursorPayload = z.strictObject({
 export type CursorPayload = z.infer<typeof CursorPayload>;
 
 /**
- * Pega cursor truncado ou editado sem recalcular o checksum, mas não autentica: o sha256 truncado
- * não tem chave, então quem recalcula o checksum forja um cursor. A barreira contra forja é a
- * releitura do serviço (`query-service.ts#assertSameQuery`, `assertSameContent`).
+ * D-20: `base64url(JSON(payload))`. Sem checksum nem autenticação: cursor truncado ou editado cai em
+ * `malformed` ou no schema, e a barreira contra forja é a releitura do serviço
+ * (`query-service.ts#assertSameQuery`, `assertSameContent`).
  */
-function checksumOf(body: string): string {
-  return sha256hex(body).slice(0, CHECKSUM_HEX_LENGTH);
-}
-
-/** D-20: `base64url(JCS(payload)).checksum`. */
 export function encodeCursor(payload: CursorPayload): string {
-  const body = Buffer.from(jcs(payload), 'utf8').toString('base64url');
-  return `${body}.${checksumOf(body)}`;
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
 
 /** `INVALID_CURSOR` com um único `Detail` em `/cursor`. */
@@ -51,32 +39,20 @@ export function invalidCursor(code: string, message: string): HexlogError {
   return new HexlogError('INVALID_CURSOR', 'Invalid cursor', [{ path: '/cursor', code, message }]);
 }
 
-/** Separa corpo e checksum e confere o checksum, sem tocar no conteúdo do corpo. */
-function verifiedBody(text: string): string {
-  const [, body, checksum] = CURSOR_SHAPE.exec(text) ?? [];
-  if (body === undefined || checksum === undefined) {
-    throw invalidCursor('malformed', 'Cursor must be <payload>.<checksum>');
-  }
-  if (checksumOf(body) !== checksum) {
-    throw invalidCursor('checksum-mismatch', 'Cursor checksum does not match its payload');
-  }
-  return body;
-}
-
-function parseJson(body: string): unknown {
+function parseJson(text: string): unknown {
   try {
-    return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    return JSON.parse(Buffer.from(text, 'base64url').toString('utf8'));
   } catch {
     throw invalidCursor('malformed', 'Cursor payload is not valid JSON');
   }
 }
 
-/** D-20: checksum, JSON ou campo inválido dão `INVALID_CURSOR`; alcance, filtros e marcador são do serviço. */
+/** D-20: JSON ou campo inválido dão `INVALID_CURSOR`; alcance, filtros e marcador são do serviço. */
 export function decodeCursor(text: string): CursorPayload {
   if (text.length > CURSOR_MAX_CHARS) {
     throw invalidCursor('too-long', `Cursor must have at most ${CURSOR_MAX_CHARS} characters`);
   }
-  const result = CursorPayload.safeParse(parseJson(verifiedBody(text)));
+  const result = CursorPayload.safeParse(parseJson(text));
   if (!result.success) {
     throw new HexlogError(
       'INVALID_CURSOR',
@@ -85,9 +61,4 @@ export function decodeCursor(text: string): CursorPayload {
     );
   }
   return result.data;
-}
-
-/** D-20: hash dos filtros da consulta; a ordem das chaves não importa (JCS). */
-export function filtersHash(filters: Record<string, unknown>): Hash {
-  return sha256hex(jcs(filters));
 }

@@ -10,7 +10,7 @@ import {
 import type { Hash, RecordId } from '../domain/ids.ts';
 import { BATCH_MAX } from '../domain/record.ts';
 import { HexlogError } from '../errors.ts';
-import type { Manifest, ProcessRef, ProcessStore, RawProcess } from '../ports.ts';
+import type { Manifest, ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
 
 // Tetos de saída da verificação de cadeia, como no 0.x.
 export const MAX_BREAKS = 100;
@@ -224,7 +224,7 @@ export function verifyProcess(raw: RawProcess, marker?: RecordId | null): Verifi
 
 /** `verifyProcess` sobre a leitura crua de `store`: o único carregador de processo da árvore nova. */
 export function loadVerified(
-  store: Pick<ProcessStore, 'read'>,
+  store: ProcessReader,
   ref: ProcessRef,
   marker?: RecordId | null,
 ): VerifiedProcess {

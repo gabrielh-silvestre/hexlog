@@ -1,7 +1,7 @@
-import { memoize, once } from 'es-toolkit';
+import { invert, memoize, once } from 'es-toolkit';
 import { hashLink, type Batch, type Link } from '../../domain/chain.ts';
-import { processOf, type Hash, type Name, type RecordId } from '../../domain/ids.ts';
-import type { BatchItem, Relation, RelationInput } from '../../domain/record.ts';
+import { processOf, type Hash, type Marker, type Name, type RecordId } from '../../domain/ids.ts';
+import type { Author, BatchItem, Relation, RelationInput } from '../../domain/record.ts';
 import {
   buildVigency,
   checkRelation,
@@ -16,8 +16,8 @@ import { brokenChain, HexlogError } from '../../errors.ts';
 import type {
   AttachmentStore,
   Decision,
+  ProcessReader,
   ProcessRef,
-  ProcessStore,
   RawProcess,
 } from '../../ports.ts';
 import {
@@ -31,10 +31,34 @@ import {
 import { checkAttachments } from './attachments.ts';
 import { relationNotFound, ruleRefusal, withPath } from './errors.ts';
 import { isAliasRef, type PreparedItem } from './static.ts';
-import type { RegisteredRecord, RegisterInput, RegisterResult } from './types.ts';
+
+/**
+ * A entrada chega validada pelos schemas de `domain/record.ts` (`BatchItem`, `Author`, `key`): o
+ * serviço não revalida. Fora do formato, a última barreira (`isValidLine`) devolve `INTERNAL` sem
+ * `details`.
+ */
+export type RegisterInput = {
+  project: Name;
+  /** Processo de origem: o único que a gravação trava (D-12). */
+  process: Name;
+  /** D-21: `author.client` chega do adaptador, o serviço nunca o descobre sozinho. */
+  author: Author;
+  /** Idempotência (D-06): mesma `key` com a mesma impressão devolve o lote já gravado. */
+  key?: string;
+  records: readonly BatchItem[];
+};
+
+type RegisteredRecord = { alias?: Name; id: RecordId };
+
+export type RegisterResult = {
+  records: RegisteredRecord[];
+  replayed: boolean;
+  /** Cabeça da origem lida em `decide`: o último id gravado (ou, no replay, o da cabeça atual). */
+  marker: Marker;
+};
 
 type DecideDeps = {
-  store: Pick<ProcessStore, 'read'>;
+  store: ProcessReader;
   attachments: AttachmentStore;
   clock: () => Date;
   newUuid: () => string;
@@ -72,9 +96,9 @@ function assertSameBatch(prior: BatchEntry, fingerprint: Hash): void {
 
 function registeredOf(links: readonly Link[]): RegisteredRecord[] {
   const aliases = links[0]?.batch?.aliases ?? {};
-  const aliasOf = new Map(Object.entries(aliases).map(([alias, id]) => [id, alias]));
+  const aliasOf = invert(aliases);
   return links.map(({ id }) => {
-    const alias = aliasOf.get(id);
+    const alias = aliasOf[id];
     return alias === undefined ? { id } : { alias, id };
   });
 }
@@ -154,11 +178,7 @@ function createEnforcer(
 type Enforcer = ReturnType<typeof createEnforcer>;
 
 /** Leitura verificada do processo-destino; ausente, ilegível ou com quebra é `RELATION_NOT_FOUND`. */
-function loadDestination(
-  store: Pick<ProcessStore, 'read'>,
-  ref: ProcessRef,
-  path: string,
-): Destination {
+function loadDestination(store: ProcessReader, ref: ProcessRef, path: string): Destination {
   let verified: VerifiedProcess;
   try {
     verified = loadVerified(store, ref);

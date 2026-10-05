@@ -79,6 +79,14 @@ export function brokenChain(process: Name): HexlogError {
   ]);
 }
 
+/** `RESERVED_NAME` de nome de processo reservado (`domain/ids.ts#isReservedProcessName`): a mesma para o serviço e o adaptador. */
+export function reservedName(): HexlogError {
+  const message = 'reserved process name';
+  return new HexlogError('RESERVED_NAME', message, [
+    { path: '/process', code: 'reserved-name', message },
+  ]);
+}
+
 /** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */
 const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
 

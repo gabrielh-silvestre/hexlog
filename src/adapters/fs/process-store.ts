@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import * as path from 'node:path';
 import { isReservedProcessName, type Name } from '../../domain/ids.ts';
 import { Manifest } from '../../domain/manifest.ts';
-import { HexlogError } from '../../errors.ts';
+import { HexlogError, reservedName } from '../../errors.ts';
 import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { dataRoot, MANIFEST_FILE, processPaths } from './data-format.ts';
@@ -180,12 +180,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     create: (ref, manifest) =>
       mapIo(() => {
         const paths = pathsOf(ref);
-        if (isReservedProcessName(ref.process)) {
-          const message = 'reserved process name';
-          throw new HexlogError('RESERVED_NAME', message, [
-            { path: '/process', code: 'reserved-name', message },
-          ]);
-        }
+        if (isReservedProcessName(ref.process)) throw reservedName();
         if (manifest.project !== ref.project || manifest.process !== ref.process) {
           throw new HexlogError('INTERNAL', 'manifest does not match ref');
         }
