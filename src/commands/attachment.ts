@@ -1,0 +1,69 @@
+import { isUndefined, trimEnd } from 'es-toolkit';
+import type { Name } from '../domain/ids.ts';
+import { invalidInput } from '../errors.ts';
+import type { AttachmentPut, AttachmentStore } from '../ports.ts';
+
+export type AttachInput = { project: Name; text?: string; path?: string };
+
+export type AttachmentService = {
+  /**
+   * D-15: exatamente um de `text`/`path`. Toda recusa deste serviço é regra pura sobre a entrada e
+   * sai antes de a porta ser chamada; a ordem é fixa e só a primeira recusa sai: `bad-args` (nenhum
+   * ou os dois), depois, no `path`, NUL e segmento acima de 255 bytes (`bad-args`), depois
+   * `bad-extension`; no `text`, vazio e surrogate solto.
+   */
+  attach(input: AttachInput): AttachmentPut;
+};
+
+const ALLOWED_EXTENSIONS = ['.md', '.txt'];
+
+// NAME_MAX do Linux, em bytes UTF-8: acima disso o `open` falha com ENAMETOOLONG, que viraria IO_ERROR.
+const NAME_MAX_BYTES = 255;
+
+const utf8 = new TextEncoder();
+
+/**
+ * Mesma regra de `path.extname` sobre o último componente (barras finais não contam): `.md` puro
+ * não tem extensão, `x.MD` não casa. Não usa `node:path` porque `commands/` não importa builtin.
+ */
+function hasAllowedExtension(candidate: string): boolean {
+  const name = trimEnd(candidate, '/').split('/').pop() ?? '';
+  return ALLOWED_EXTENSIONS.some(
+    (extension) => name.length > extension.length && name.endsWith(extension),
+  );
+}
+
+function checkedText(text: string): void {
+  if (text.length === 0) throw invalidInput('/text', 'bad-args', 'text must not be empty');
+  if (!text.isWellFormed()) {
+    throw invalidInput('/text', 'lone-surrogate', 'text contains a lone surrogate');
+  }
+}
+
+function checkedPath(candidate: string): void {
+  if (candidate.includes('\0')) throw invalidInput('/path', 'bad-args', 'path contains NUL');
+  if (candidate.split('/').some((segment) => utf8.encode(segment).length > NAME_MAX_BYTES)) {
+    throw invalidInput('/path', 'bad-args', `path segment exceeds ${NAME_MAX_BYTES} bytes`);
+  }
+  if (!hasAllowedExtension(candidate)) {
+    throw invalidInput('/path', 'bad-extension', 'path must end in .md or .txt');
+  }
+}
+
+export function createAttachmentService(deps: { store: AttachmentStore }): AttachmentService {
+  const { store } = deps;
+
+  return {
+    attach({ project, text, path }) {
+      if (!isUndefined(path) && isUndefined(text)) {
+        checkedPath(path);
+        return store.putPath(project, path);
+      }
+      if (!isUndefined(text) && isUndefined(path)) {
+        checkedText(text);
+        return store.putText(project, text);
+      }
+      throw invalidInput('', 'bad-args', 'exactly one of text or path is required');
+    },
+  };
+}

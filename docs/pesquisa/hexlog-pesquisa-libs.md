@@ -75,7 +75,7 @@
 3. **Hook falha aberto:** exit code diferente de 0/2 é erro não-bloqueante. Negar com exit 0 + JSON `permissionDecision: "deny"` (ou exit 2 + motivo); erro inesperado do hook deixa passar.
 4. **Plugin não carrega permissions:** `settings.json` de plugin só aceita `agent` e `subagentStatusLine`. Managed settings (`/etc/claude-code/managed-settings.d/`) sobreviveriam ao harness, mas exigem sudo — descartado pelo usuário.
 5. **Schema registrado precisa gate Ajv:** sem ele, `register_type` aceita schema com keyword digitada errada que não valida nada.
-6. **`outputSchema` × erro:** o SDK pula a validação de `outputSchema` quando `isError: true` → `{code, message, details[]}` em `structuredContent` é seguro.
+6. **`outputSchema` × erro:** o SDK 2.0.0 pula a validação de `outputSchema` quando `isError: true`, mas o SDK 1.x valida e lança `-32602` no cliente → `{code, message, details[]}` vai só em `content[0].text`, nunca em `structuredContent`.
 7. **stdout do servidor:** o transporte stdio v2 ignora silenciosamente linhas não-JSON → log só em stderr, com teste.
 8. **Limite de saída do Claude Code:** `MAX_MCP_OUTPUT_TOKENS` default 25000 → `events` precisa paginação.
 9. **Datas:** `z.iso.datetime()` padrão aceita só `Z`; `format: date-time` via `fromJSONSchema` aceita offset. Normalizar timestamps gravados para UTC `Z` para manter a comparação lexicográfica de prazos.

@@ -1,606 +1,197 @@
-// e2e do passo 8: fala stdio contra o bundle real (`server.mjs`), nunca contra `src/*.ts`
-// (§9.3, U-7). O `.ts` já é coberto em processo por `InMemoryTransport` nos passos 7a/7b/7c;
-// aqui o alvo é o caminho de produção — o que as sessões realmente executam.
+// e2e por stdio contra o bundle real (`server.mjs`, entry `src/server.ts`), construído pelo mesmo
+// `scripts/build.ts#build` dos bundles de produção (P8): é o caminho que as sessões executam, e o
+// `.ts` já é coberto em processo por `test/mcp/`.
 import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import * as assert from 'node:assert';
-import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { isUndefined, omitBy, range } from 'es-toolkit';
-import { isEmpty } from 'es-toolkit/compat';
-import { dataDir } from '../src/directory.ts';
-import type { LogRecord } from '../src/log.ts';
-import { at } from './helpers.ts';
+import { isUndefined, omitBy } from 'es-toolkit';
+import type { QueryResult } from '../src/queries/query-service.ts';
+import { VERSION } from '../src/version.ts';
+import { at, createTempDir } from './helpers.ts';
+import { errorBodyOf } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
-const buildPath = path.join(repoRoot, 'scripts/build.ts');
+const LEGACY_FIXTURE = path.join(repoRoot, 'test/fixtures/legacy-0x');
+const PROJECT = 'alpha';
+const PROCESS = 'run-1';
 
-// ---- infra compartilhada ----
+type CallResult = {
+  isError?: boolean;
+  structuredContent?: unknown;
+  content?: { type: string; text?: string }[];
+};
 
-const temporaryDirs: string[] = [];
-
-function mkdtempOutside(prefix: string): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  temporaryDirs.push(dir);
-  return dir;
-}
-
-/** `env` de um processo filho isolado: HOME e XDG_DATA_HOME temporários (§9.3); o real nunca é tocado. */
-function temporaryEnv(): Record<string, string> {
-  const base = omitBy(process.env, isUndefined) as Record<string, string>;
-  return {
-    ...base,
-    HOME: mkdtempOutside('hexlog-e2e-home-'),
-    XDG_DATA_HOME: mkdtempOutside('hexlog-e2e-xdg-'),
-  };
-}
-
-function buildBundle(outdir: string, cwd: string): void {
-  const result = spawnSync(process.execPath, [buildPath, '--outdir', outdir], {
-    cwd,
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) {
-    throw new Error(`e2e build failed (cwd=${cwd}): ${result.stderr}`);
-  }
-}
-
-function sha256OfFile(file: string): string {
-  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-}
-
-/** Acumula os `data` de um stream (stdout/stderr de processo filho ou de `StdioClientTransport`) em texto. */
-function lineCollector(source: NodeJS.EventEmitter | null) {
-  const state = { text: '' };
-  source?.on('data', (chunk: Buffer) => {
-    state.text += chunk.toString();
-  });
-  return {
-    lines: () => state.text.split('\n').filter((line) => !isEmpty(line)),
-    text: () => state.text,
-  };
-}
-
-/** Parseia cada linha do stderr estruturado (§4.15) como um `LogRecord`. */
-function stderrRecords(text: string): LogRecord[] {
-  return text
-    .split('\n')
-    .filter((line) => !isEmpty(line))
-    .map((line) => JSON.parse(line) as LogRecord);
-}
-
-function waitFor(condition: () => boolean, intervalMs = 20): Promise<void> {
-  return new Promise((resolve) => {
-    const check = () => (condition() ? resolve() : setTimeout(check, intervalMs));
-    check();
-  });
-}
-
-async function createClient(serverMjs: string, env: Record<string, string>, cwd: string) {
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [serverMjs],
-    env,
-    cwd,
-    stderr: 'pipe',
-  });
-  const stderr = lineCollector(transport.stderr);
-  const client = new Client({ name: 'hexlog-e2e', version: '0.0.0' });
-  await client.connect(transport);
-  return { client, stderr };
-}
-
-// ---- diretório de dados real: nunca tocado por estes e2e ----
-
-let realDirBefore: { exists: boolean; mtimeMs?: number };
+let bundleDir: string;
 
 beforeAll(() => {
-  const realDir = dataDir(process.env);
-  realDirBefore = fs.existsSync(realDir)
-    ? { exists: true, mtimeMs: fs.statSync(realDir).mtimeMs }
-    : { exists: false };
-});
-
-afterAll(() => {
-  const realDir = dataDir(process.env);
-  // expect() padrão do jest não é aceito em afterAll (regra jest/no-standalone-expect);
-  // assert preserva a mesma verificação de invariante pós-suite.
-  assert.strictEqual(fs.existsSync(realDir), realDirBefore.exists);
-  if (realDirBefore.exists) {
-    assert.strictEqual(fs.statSync(realDir).mtimeMs, realDirBefore.mtimeMs);
-  }
-  for (const dir of temporaryDirs) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// ---- bundle principal: compartilhado por M6, B1(a), B1(c) e C1 ----
-
-let mainBundle: string;
-
-beforeAll(() => {
-  mainBundle = mkdtempOutside('hexlog-e2e-bundle-');
-  buildBundle(mainBundle, repoRoot);
+  bundleDir = createTempDir('e2e-bundle');
+  const result = spawnSync(
+    process.execPath,
+    [path.join(repoRoot, 'test/fixtures/build-entry.ts'), bundleDir, 'server=src/server.ts'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  if (result.status !== 0) throw new Error(`e2e build failed: ${result.stderr}`);
 }, 30_000);
 
-describe('M6', () => {
-  test('bundle fala só JSON-RPC 2.0 no stdout e JSON estruturado (evento) no stderr', async () => {
-    const child = spawn(process.execPath, [path.join(mainBundle, 'server.mjs')], {
-      cwd: mainBundle,
-      env: temporaryEnv(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    const stdout = lineCollector(child.stdout);
-    const stderr = lineCollector(child.stderr);
-    const send = (message: unknown) => child.stdin.write(`${JSON.stringify(message)}\n`);
-
-    send({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-06-18',
-        capabilities: {},
-        clientInfo: { name: 'hexlog-e2e', version: '0.0.0' },
-      },
-    });
-    await waitFor(() => stdout.lines().length >= 1);
-
-    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
-    send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-    await waitFor(() => stdout.lines().length >= 2);
-
-    send({
-      jsonrpc: '2.0',
-      id: 3,
-      method: 'tools/call',
-      params: { name: 'list', arguments: {} },
-    });
-    await waitFor(() => stdout.lines().length >= 3);
-
-    // Erro de domínio: continua uma resposta JSON-RPC normal, com `result.isError`.
-    send({
-      jsonrpc: '2.0',
-      id: 4,
-      method: 'tools/call',
-      params: { name: 'chain', arguments: { project: 'ghost', process: 'ghost' } },
-    });
-    await waitFor(() => stdout.lines().length >= 4);
-
-    const lines = stdout.lines();
-    expect(lines).toHaveLength(4);
-    for (const line of lines) {
-      const message = JSON.parse(line) as { jsonrpc: string; id?: unknown; method?: unknown };
-      expect(message.jsonrpc).toBe('2.0');
-      expect(message.id !== undefined || message.method !== undefined).toBe(true);
-    }
-    expect((JSON.parse(at(lines, 3)) as { result: { isError?: boolean } }).result.isError).toBe(
-      true,
-    );
-
-    for (const record of stderrRecords(stderr.text())) {
-      expect(record.event).toBeDefined();
-    }
-
-    child.kill();
-  }, 15_000);
+afterAll(() => {
+  fs.rmSync(bundleDir, { recursive: true, force: true });
 });
 
-describe('B1', () => {
-  describe('(a)', () => {
-    test('uma chamada de cada uma das 12 tools contra o bundle, sem erro, sem INTERNO, sem Dynamic require', async () => {
-      const projectName = 'e2e-proj';
-      const processName = 'e2e-proc';
-      const { client, stderr } = await createClient(
-        path.join(mainBundle, 'server.mjs'),
-        temporaryEnv(),
-        mainBundle,
-      );
-
-      try {
-        const call = async (name: string, args: Record<string, unknown> = {}) => {
-          const result = (await client.callTool({ name, arguments: args })) as {
-            isError?: boolean;
-          };
-          expect(result.isError).not.toBe(true);
-          return result;
-        };
-
-        await call('register_vocabulary', {
-          project: projectName,
-          owner: 'core',
-          milestoneType: ['approved'],
-          result: ['ok'],
-          action: ['follow'],
-        });
-        await call('register_type', {
-          project: projectName,
-          name: 'note-e2e',
-          schema: {
-            type: 'object',
-            properties: { when: { type: 'string', format: 'date-time' } },
-            required: ['when'],
-            additionalProperties: false,
-          },
-        });
-        await call('register_gate', {
-          project: projectName,
-          name: 'gate-e2e',
-          criteria: 'any e2e criteria',
-        });
-        await call('create_process', { project: projectName, process: processName });
-        await call('register', {
-          project: projectName,
-          process: processName,
-          id: `${projectName}:${processName}:milestone`,
-          agent: 'e2e-agent',
-          data: { milestoneType: 'approved', target: 'hex:target:e2e1' },
-        });
-        await call('register', {
-          project: projectName,
-          process: processName,
-          id: `${projectName}:${processName}:verdict`,
-          agent: 'e2e-agent',
-          data: {
-            claim: 'a',
-            source: 'f',
-            result: 'ok',
-            evidence: 'p',
-            target: 'hex:target:e2e1',
-            origin: 'o',
-            trace: 'r',
-          },
-        });
-        await call('register', {
-          project: projectName,
-          process: processName,
-          id: `${projectName}:${processName}:note-e2e`,
-          agent: 'e2e-agent',
-          data: { when: new Date().toISOString() },
-        });
-        await call('evaluate_gate', {
-          project: projectName,
-          process: processName,
-          gates: [{ name: 'no-conflicts', target: 'hex:target:e2e1' }],
-          agent: 'e2e-agent',
-        });
-        await call('state', { project: projectName, process: processName });
-        await call('events', { project: projectName, process: processName });
-        await call('events', { project: projectName, process: processName, search: 'approved' });
-        await call('chain', { project: projectName, process: processName });
-        await call('list', {});
-        const put = (await call('attachment', { project: projectName, text: 'anexo e2e' })) as {
-          structuredContent: { hash: string };
-        };
-        await call('attachment', { project: projectName, hash: put.structuredContent.hash });
-        await call('timeline', { project: projectName, targets: ['hex:target:e2e1'] });
-        expect((await client.listTools()).tools).toHaveLength(12);
-      } finally {
-        await client.close();
-      }
-
-      const stderrText = stderr.text();
-      expect(stderrText).not.toContain('"code":"INTERNAL"');
-      expect(stderrText).not.toContain('Dynamic require');
-    }, 20_000);
+/** Cliente stdio sobre o bundle; `HOME` e `XDG_DATA_HOME` temporários, o `<D>` real nunca é tocado. */
+async function connect(options: { xdg?: string; clientName?: string } = {}) {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(bundleDir, 'server.mjs')],
+    env: {
+      ...(omitBy(process.env, isUndefined) as Record<string, string>),
+      HOME: createTempDir('e2e-home'),
+      XDG_DATA_HOME: options.xdg ?? createTempDir('e2e-xdg'),
+    },
+    cwd: bundleDir,
+    stderr: 'pipe',
   });
-
-  test('(c) server.mjs e bash-guard.mjs não contêm o shim "Dynamic require of"', () => {
-    for (const file of ['server.mjs', 'bash-guard.mjs']) {
-      const content = fs.readFileSync(path.join(mainBundle, file), 'utf8');
-      expect(content.includes('Dynamic require of')).toBe(false);
-    }
+  let stderr = '';
+  transport.stderr?.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString();
   });
+  const clientName = options.clientName ?? 'hexlog-e2e';
+  const client = new Client({ name: clientName, version: '0.0.0' });
+  const transportErrors: Error[] = [];
+  client.onerror = (error) => transportErrors.push(error);
+  await client.connect(transport);
+  // O envelope vai por `_meta` em cada chamada: é de onde o servidor lê o `client` do autor (D-21).
+  const _meta = { [CLIENT_INFO_META_KEY]: { name: clientName, version: '0.0.0' } };
+  const call = async (name: string, args: Record<string, unknown> = {}) =>
+    (await client.callTool({ name, arguments: args, _meta })) as CallResult;
+  return { client, call, stderr: () => stderr, transportErrors };
+}
 
-  describe('(d)', () => {
-    let rootBundle: string;
-    let tmpBundle: string;
-
-    beforeAll(() => {
-      rootBundle = mkdtempOutside('hexlog-e2e-b1d-root-');
-      tmpBundle = mkdtempOutside('hexlog-e2e-b1d-tmp-');
-      buildBundle(rootBundle, repoRoot);
-      buildBundle(tmpBundle, os.tmpdir());
-    }, 30_000);
-
-    test('build com cwd na raiz e com cwd em os.tmpdir() geram sha256 idênticos', () => {
-      for (const file of ['server.mjs', 'bash-guard.mjs']) {
-        expect(sha256OfFile(path.join(rootBundle, file))).toBe(
-          sha256OfFile(path.join(tmpBundle, file)),
-        );
-      }
-    });
+/** Define o tipo `note`, cria o processo e grava `count` notas pelo `call` do cliente. */
+async function seedNotes(call: Awaited<ReturnType<typeof connect>>['call'], count: number) {
+  await call('define_type', {
+    project: PROJECT,
+    name: 'note',
+    schema: { type: 'object', additionalProperties: true },
   });
-});
+  await call('create_process', { project: PROJECT, process: PROCESS });
+  const registered = await call('register', {
+    project: PROJECT,
+    process: PROCESS,
+    agent: 'e2e-agent',
+    records: Array.from({ length: count }, (_, n) => ({
+      type: 'note',
+      target: 'run.step',
+      data: { text: `nota ${n}` },
+    })),
+  });
+  expect(registered.isError).not.toBe(true);
+}
 
-describe('Q1', () => {
-  const PROJECT = 'q1-proj';
-  const TARGET = 'hex:target:q1';
-  // ≥ 200 KB, com acentos, emoji, CRLF, BOM e NUL: tem que atravessar o stdio byte-idêntico
-  const BIG_TEXT = `\uFEFF${'Decisão — ação 😀\r\nlinha com NUL \u0000 no meio\n'.repeat(5_000)}`;
+/** Cada linha do stderr tem de ser um registro JSON do logger; só vale depois do `client.close()`. */
+function stderrRecords(
+  stderr: string,
+): { level: string; event: string; [field: string]: unknown }[] {
+  return stderr
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line) as { level: string; event: string });
+}
 
-  function runTimelineCli(env: Record<string, string>, ...args: string[]) {
-    const result = spawnSync(process.execPath, ['scripts/timeline.ts', ...args], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      env,
-    });
-    return { code: result.status, out: result.stdout };
-  }
-
-  test('put ≥ 200 KB por text e por path, get paginado, timeline e CLI --full idênticos; adulteração vista sem full', async () => {
-    const env = temporaryEnv();
-    const serverCwd = mkdtempOutside('hexlog-e2e-q1-cwd-');
-    fs.mkdirSync(path.join(serverCwd, '.omc', 'plans'), { recursive: true });
-    fs.writeFileSync(path.join(serverCwd, '.omc', 'plans', 'grande.md'), BIG_TEXT);
-    const { client, stderr } = await createClient(
-      path.join(mainBundle, 'server.mjs'),
-      env,
-      serverCwd,
+describe('P8 e TM1: bundle real por stdio', () => {
+  test('o bundle não contém o shim "Dynamic require of"', () => {
+    expect(fs.readFileSync(path.join(bundleDir, 'server.mjs'), 'utf8')).not.toContain(
+      'Dynamic require of',
     );
+  });
 
+  test('<D> com a fixture de dado 0.x responde LEGACY_DATA com o comando em details', async () => {
+    const xdg = createTempDir('e2e-xdg');
+    fs.cpSync(LEGACY_FIXTURE, path.join(xdg, 'hexlog'), { recursive: true });
+    const { client, call } = await connect({ xdg });
     try {
-      const call = async <T>(name: string, args: Record<string, unknown>): Promise<T> => {
-        const result = (await client.callTool({ name, arguments: args })) as {
-          isError?: boolean;
-          structuredContent: T;
-        };
-        expect(result.isError).not.toBe(true);
-        return result.structuredContent;
-      };
+      const body = errorBodyOf(await call('list'));
 
-      await call('register_vocabulary', {
-        project: PROJECT,
-        owner: 'core',
-        milestoneType: ['approved'],
-        result: ['ok'],
-        action: ['follow'],
-      });
-      await call('register_type', {
-        project: PROJECT,
-        name: 'report',
-        schema: {
-          type: 'object',
-          properties: {
-            target: { type: 'string', pattern: '^hex:target:[^\\s:]+$' },
-            attachment: { type: 'string', pattern: '^[0-9a-f]{64}$' },
-          },
-          required: ['target', 'attachment'],
-          additionalProperties: false,
-        },
-      });
-      await call('create_process', { project: PROJECT, process: 'run' });
+      expect(body.code).toBe('LEGACY_DATA');
+      expect(body.details).toEqual([expect.objectContaining({ code: 'run' })]);
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
 
-      const byText = await call<{ hash: string; bytes: number; deduplicated: boolean }>(
-        'attachment',
-        { project: PROJECT, text: BIG_TEXT },
+  test('entrada fora do schema dá INVALID_INPUT estruturado, sem INTERNAL no stderr', async () => {
+    const { client, call, stderr } = await connect();
+    try {
+      const body = errorBodyOf(
+        await call('query', { project: PROJECT, process: PROCESS, limit: 0 }),
       );
-      const byPath = await call<{ hash: string; deduplicated: boolean }>('attachment', {
+
+      expect(body.code).toBe('INVALID_INPUT');
+      expect(body.details).toEqual([expect.objectContaining({ path: '/limit' })]);
+    } finally {
+      await client.close();
+    }
+    expect(stderr()).not.toContain('"code":"INTERNAL"');
+  }, 20_000);
+
+  test('o client do autor é gravado a partir do clientInfo do envelope', async () => {
+    const { client, call } = await connect({ clientName: 'claude-code' });
+    try {
+      await seedNotes(call, 1);
+
+      const page = (await call('query', { project: PROJECT, process: PROCESS }))
+        .structuredContent as QueryResult;
+
+      expect(at(page.records, 0).author).toEqual({ agent: 'e2e-agent', client: 'claude-code' });
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+
+  test('uma chamada de cada tool no bundle: stdout só JSON-RPC e stderr JSON estruturado', async () => {
+    const xdg = createTempDir('e2e-xdg');
+    const { client, call, stderr, transportErrors } = await connect({ xdg });
+    try {
+      // `create_process` fixa os gates do projeto: o gate vem antes dele
+      const gate = await call('define_gate', {
         project: PROJECT,
-        path: '.omc/plans/grande.md',
+        name: 'has-note',
+        questions: [{ kind: 'occurred', select: { type: 'note' } }],
       });
-      expect(byText.bytes).toBeGreaterThan(200_000);
-      expect(byText.hash).toBe(createHash('sha256').update(BIG_TEXT).digest('hex'));
-      expect(byPath).toEqual({ ...byText, deduplicated: true });
+      await seedNotes(call, 1);
+      const attached = await call('attach', { project: PROJECT, text: 'relatório do e2e' });
+      const { hash } = attached.structuredContent as { hash: string };
+      const results = [
+        gate,
+        attached,
+        await call('read_attachment', { project: PROJECT, hash }),
+        await call('define_relation', { project: PROJECT, name: 'rel', kind: 'supports' }),
+        await call('evaluate_gate', { project: PROJECT, process: PROCESS, gate: 'has-note' }),
+        await call('verify_chain', { project: PROJECT, process: PROCESS }),
+      ];
 
-      let joined = '';
-      for (let offset: number | null = 0; offset !== null;) {
-        const page: { text: string; nextOffset: number | null } = await call('attachment', {
-          project: PROJECT,
-          hash: byText.hash,
-          offset,
-          limit: 24_000,
-        });
-        joined += page.text;
-        offset = page.nextOffset;
-      }
-      expect(joined).toBe(BIG_TEXT);
-
-      await call('register', {
-        project: PROJECT,
-        process: 'run',
-        type: 'report',
-        agent: 'e2e-agent',
-        data: { target: TARGET, attachment: byText.hash },
-      });
-
-      type Timeline = {
-        entries: { attachment: { status: string; text?: string; truncated?: boolean } }[];
-        processes: { chain: { ok: boolean } }[];
-      };
-      const viaTool = await call<Timeline>('timeline', {
-        project: PROJECT,
-        targets: [TARGET],
-        full: true,
-      });
-      expect(at(viaTool.entries, 0).attachment).toMatchObject({ status: 'ok', truncated: true });
-
-      const cli = runTimelineCli(env, PROJECT, TARGET, '--full');
-      const header = `----- attachment ${byText.hash} (${byText.bytes} bytes) -----\n`;
-      const start = cli.out.indexOf(header) + header.length;
-      expect(cli.out.slice(start, cli.out.indexOf('\n----- end -----', start))).toBe(BIG_TEXT);
-      expect(cli.code).toBe(0);
-
-      // blob adulterado: visto pela tool e pelo CLI, sem full
-      const blob = path.join(
-        env.XDG_DATA_HOME ?? '',
-        'hexlog',
-        PROJECT,
-        'attachments',
-        byText.hash,
-      );
-      fs.writeFileSync(blob, 'adulterado');
-      const tampered = await call<Timeline>('timeline', { project: PROJECT, targets: [TARGET] });
-      expect(at(tampered.entries, 0).attachment.status).toBe('corrupted');
-      expect(at(tampered.processes, 0).chain.ok).toBe(false);
-      expect(runTimelineCli(env, PROJECT, TARGET).code).toBe(2);
+      expect(results.filter((result) => result.isError === true)).toEqual([]);
     } finally {
       await client.close();
     }
 
-    expect(stderr.text()).not.toContain('"code":"INTERNAL"');
-  }, 60_000);
-});
-
-describe('C1', () => {
-  type SeedEvent = { id: string; agent: string; data: Record<string, unknown> };
-  type RegisterResponse = {
-    isError?: boolean;
-    structuredContent?: { deduplicated: boolean; event: { seq: number; id: string } };
-  };
-
-  /** 20 `register` com prefixo + 5 retentativas por id completo de elos semeados, todos em paralelo. */
-  function fireRound(
-    client: Client,
-    projectName: string,
-    processName: string,
-    serverIndex: number,
-    seeds: SeedEvent[],
-  ) {
-    const writes = Array.from({ length: 20 }, (_, index) =>
-      client.callTool({
-        name: 'register',
-        arguments: {
-          project: projectName,
-          process: processName,
-          id: `${projectName}:${processName}:milestone`,
-          agent: `server${serverIndex}`,
-          data: { milestoneType: 'approved', target: `hex:target:s${serverIndex}-${index}` },
-        },
-      }),
-    );
-    const retries = seeds.slice(0, 5).map((seed) =>
-      client.callTool({
-        name: 'register',
-        arguments: {
-          project: projectName,
-          process: processName,
-          id: seed.id,
-          agent: seed.agent,
-          data: seed.data,
-        },
-      }),
-    );
-    return Promise.all([...writes, ...retries]) as Promise<RegisterResponse[]>;
-  }
-
-  test('4 servidores concorrentes, barreira por lock artificial: 100 linhas, seq 0..99, cadeia íntegra, 20 deduplicados, zero timeouts', async () => {
-    const projectName = 'c1-proj';
-    const processName = 'c1-proc';
-    const env = temporaryEnv();
-    const serverMjs = path.join(mainBundle, 'server.mjs');
-
-    // 1) semeadura: um servidor à parte, fechado antes da concorrência começar.
-    const seedClient = await createClient(serverMjs, env, mainBundle);
-    await seedClient.client.callTool({
-      name: 'register_vocabulary',
-      arguments: {
-        project: projectName,
-        owner: 'core',
-        milestoneType: ['approved'],
-        result: [],
-        action: [],
-      },
-    });
-    await seedClient.client.callTool({
-      name: 'create_process',
-      arguments: { project: projectName, process: processName },
-    });
-
-    const seeds: SeedEvent[] = [];
-    for (let index = 0; index < 20; index++) {
-      const agent = 'seed';
-      const data = { milestoneType: 'approved', target: `hex:target:seed${index}` };
-      const result = await seedClient.client.callTool({
-        name: 'register',
-        arguments: {
-          project: projectName,
-          process: processName,
-          id: `${projectName}:${processName}:milestone`,
-          agent,
-          data,
-        },
-      });
-      const body = result.structuredContent as { id: string };
-      seeds.push({ id: body.id, agent, data });
+    const records = stderrRecords(stderr());
+    expect(transportErrors).toEqual([]);
+    expect(stderr()).not.toContain('"code":"INTERNAL"');
+    for (const record of records) {
+      expect(['debug', 'info', 'warn', 'error']).toContain(record.level);
+      expect(typeof record.event).toBe('string');
     }
-    await seedClient.client.close();
-
-    // 2) lock artificial: qualquer `append` real colide já na primeira tentativa.
-    const eventsFile = path.join(dataDir(env), projectName, processName, 'events.jsonl');
-    const lockDir = `${eventsFile}.lock`;
-    fs.mkdirSync(lockDir);
-    fs.writeFileSync(path.join(lockDir, 'holder'), 'foreign-token');
-
-    // 3) 4 servidores concorrentes, mesmo `env`.
-    const clients = await Promise.all(
-      Array.from({ length: 4 }, () => createClient(serverMjs, env, mainBundle)),
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        event: 'start',
+        dataDir: path.join(xdg, 'hexlog'),
+        version: VERSION,
+      }),
     );
-    const countLockWaits = () =>
-      clients
-        .flatMap((c) => stderrRecords(c.stderr.text()))
-        .filter((record) => record.event === 'lock-wait').length;
-
-    const barrierStart = Date.now();
-    const rounds = clients.map((client, index) =>
-      fireRound(client.client, projectName, processName, index, seeds),
-    );
-
-    // A espera pela aquisição do lock em `acquireLock` (src/log.ts) é assíncrona: o handler de
-    // uma tool devolve o controle ao laço de mensagens do SDK entre uma tentativa e outra, então
-    // as 20 chamadas de `register` com prefixo de cada um dos 4 servidores despacham e colidem
-    // com o lock artificial, gerando os 80 `lock-wait` que o AC C1 exige antes da soltura.
-    await waitFor(() => countLockWaits() >= 80, 5);
-    const barrierMs = Date.now() - barrierStart;
-    fs.rmSync(lockDir, { recursive: true, force: true });
-
-    const responses = (await Promise.all(rounds)).flat();
-    const chainResult = (
-      await at(clients, 0).client.callTool({
-        name: 'chain',
-        arguments: { project: projectName, process: processName },
-      })
-    ).structuredContent as {
-      ok: boolean;
-    };
-
-    await Promise.all(clients.map((c) => c.client.close()));
-
-    // ---- verificações ----
-    expect(barrierMs).toBeLessThan(3_000);
-    expect(responses.every((response) => response.isError !== true)).toBe(true);
-
-    const fileLines = fs
-      .readFileSync(eventsFile, 'utf8')
-      .split('\n')
-      .filter((line) => !isEmpty(line));
-    expect(fileLines).toHaveLength(100);
-    const links = fileLines.map((line) => JSON.parse(line) as { seq: number; id: string });
-    expect(links.map((link) => link.seq).sort((a, b) => a - b)).toEqual(range(100));
-    expect(new Set(links.map((link) => link.id)).size).toBe(100);
-    expect(chainResult.ok).toBe(true);
-
-    const totalDeduplicated = responses.filter(
-      (response) => response.structuredContent?.deduplicated === true,
-    ).length;
-    expect(totalDeduplicated).toBe(20);
-
-    const allRecords = clients.flatMap((c) => stderrRecords(c.stderr.text()));
-    expect(allRecords.some((record) => record.event === 'lock-orphan-removed')).toBe(false);
-    expect(allRecords.some((record) => record.code === 'LOCK_TIMEOUT')).toBe(false);
-    expect(allRecords.some((record) => record.code === 'LOCK_LOST')).toBe(false);
-
-    const registerMs = allRecords
-      .filter((record) => record.event === 'tool' && record.name === 'register')
-      .map((record) => record.ms as number);
-    const totalLockWaits = allRecords.filter((record) => record.event === 'lock-wait').length;
-    process.stdout.write(
-      `C1: barrier=${barrierMs}ms maxRegisterMs=${Math.max(...registerMs)}ms totalLockWaits=${totalLockWaits} (guaranteed min 80)\n`,
-    );
-  }, 60_000);
+    expect(records.filter(({ event }) => event === 'tool').length).toBeGreaterThanOrEqual(9);
+  }, 20_000);
 });

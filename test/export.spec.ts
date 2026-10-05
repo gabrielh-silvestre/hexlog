@@ -1,16 +1,19 @@
-import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
-import { createHash } from 'node:crypto';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
+import { beforeAll, describe, expect, test } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
-import { at, createEnvironment, registerCore } from './helpers.ts';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { processPaths } from '../src/adapters/fs/data-format.ts';
+import { compose } from '../src/compose.ts';
+import { AUTHOR, NOTE, NOW, PROJECT, note } from './commands/register-fakes.ts';
+import { writeRecordsCorpus } from './fixtures/records-corpus.ts';
+import { at, copyToXdg, createTempDir, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
-const AGENT = 'agent-test';
+const PROCESS = 'run-1';
+const REF = { project: PROJECT, process: PROCESS };
 
 let xdgHome: string;
-const extraDirs: string[] = [];
+let ids: string[];
 
 function runExport(xdg: string, ...args: string[]) {
   const result = spawnSync(process.execPath, ['scripts/export.ts', ...args], {
@@ -21,97 +24,131 @@ function runExport(xdg: string, ...args: string[]) {
   return { code: result.status, out: result.stdout, err: result.stderr };
 }
 
-function copyToXdg(source: string): string {
-  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-xdg-'));
-  fs.cpSync(source, path.join(xdg, 'hexlog'), { recursive: true });
-  extraDirs.push(xdg);
-  return xdg;
-}
-
-function eventsFilePath(xdg: string): string {
-  return path.join(xdg, 'hexlog', 'alpha', 'run-1', 'events.jsonl');
-}
-
-// alpha/run-1: 2 marcos.
+// alpha/run-1: três registros; o terceiro supersede o primeiro.
 beforeAll(async () => {
-  const environment = await createEnvironment();
-  await registerCore(environment, 'alpha');
-  await environment.call('create_process', { project: 'alpha', process: 'run-1' });
-  for (const target of ['hex:target:u1', 'hex:target:u2']) {
-    await environment.call('register', {
-      project: 'alpha',
-      process: 'run-1',
-      id: 'alpha:run-1:milestone',
-      agent: AGENT,
-      data: { milestoneType: 'approved', target },
+  const xdg = createTempDir('xdg');
+  const dataDir = path.join(xdg, 'hexlog');
+  fs.mkdirSync(dataDir);
+  const { services } = compose({ dataDir, cwd: xdg, clock: () => NOW, logger: () => undefined });
+  services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+  services.process.createProcess(REF);
+  const register = async (key: string, item: ReturnType<typeof note>) => {
+    const { records } = await services.process.register({
+      ...REF,
+      author: AUTHOR,
+      key,
+      records: [item],
     });
-  }
-  xdgHome = copyToXdg(environment.dir);
-  await environment.close();
-});
-
-afterAll(() => {
-  for (const dir of [xdgHome, ...extraDirs]) fs.rmSync(dir, { recursive: true, force: true });
+    return at(records, 0).id;
+  };
+  const first = await register('k1', note('um'));
+  const second = await register('k2', note('dois'));
+  const third = await register(
+    'k3',
+    note('três', { relations: [{ to: first, kind: 'supersedes' }] }),
+  );
+  ids = [first, second, third];
+  xdgHome = xdg;
 });
 
 describe('sem --fields', () => {
-  test('a saída é idêntica às linhas do arquivo, na ordem física', () => {
-    const fileLines = fs.readFileSync(eventsFilePath(xdgHome), 'utf8').split('\n').slice(0, -1);
-    const { code, out } = runExport(xdgHome, 'alpha/run-1');
-    expect(out.trim().split('\n')).toEqual(fileLines);
+  test('uma linha JSON por registro, na ordem do log, incluindo o não vigente', () => {
+    const { code, out } = runExport(xdgHome, `${PROJECT}/${PROCESS}`);
+    const lines = out
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { id: string; in: { kind: string; from: string }[] });
+
+    expect(lines.map(({ id }) => id)).toEqual(ids);
+    expect(at(lines, 0).in).toEqual([
+      expect.objectContaining({ kind: 'supersedes', from: at(ids, 2) }),
+    ]);
+    expect(code).toBe(0);
+  });
+
+  test('processo com mais registros que uma página sai inteiro, em uma chamada só', () => {
+    const xdg = createTempDir('xdg');
+    const corpus = writeRecordsCorpus(path.join(xdg, 'hexlog'), { recordsPerProcess: 120 });
+    const { project, process: processName } = at(corpus.refs, 0);
+
+    const { code, out } = runExport(xdg, `${project}/${processName}`);
+
+    const exported = out
+      .trim()
+      .split('\n')
+      .map((line) => (JSON.parse(line) as { id: string }).id);
+    expect(exported).toEqual(corpus.records.map(({ id }) => id));
     expect(code).toBe(0);
   });
 });
 
 describe('--fields', () => {
   test('projeta só as chaves pedidas, em cada linha', () => {
-    const { code, out } = runExport(xdgHome, 'alpha/run-1', '--fields', 'id,type');
-    const lines: Record<string, unknown>[] = out
+    const { code, out } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields', 'id,type');
+    const lines = out
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(lines).toHaveLength(2);
+
+    expect(lines).toHaveLength(3);
     for (const line of lines) expect(Object.keys(line).sort()).toEqual(['id', 'type']);
     expect(code).toBe(0);
   });
 
   test('campo desconhecido falha com mensagem clara e código diferente de zero', () => {
-    const { code, err } = runExport(xdgHome, 'alpha/run-1', '--fields', 'id,bogus');
+    const { code, err } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields', 'id,bogus');
     expect(err).toContain('invalid field(s): bogus');
-    expect(code).not.toBe(0);
+    expect(code).toBe(1);
+  });
+
+  test('--fields sem valor falha com o uso em vez de exportar tudo', () => {
+    const { code, out, err } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields');
+
+    expect(err).toContain('export failed: usage:');
+    expect(out).toBe('');
+    expect(code).toBe(1);
   });
 });
 
-describe('processo inexistente', () => {
-  test('falha com mensagem clara no stderr e código diferente de zero', () => {
-    const { code, err } = runExport(xdgHome, 'alpha/ghost');
-    expect(err).toContain('export failed:');
-    expect(code).not.toBe(0);
+describe('uso incorreto e processo inexistente', () => {
+  test.each([
+    ['sem argumentos', []],
+    ['sem barra', [PROJECT]],
+    ['nome inválido', ['A/b']],
+    ['três partes', ['a/b/c']],
+    ['flag desconhecida', [`${PROJECT}/${PROCESS}`, '--bogus']],
+    ['argumento a mais', [`${PROJECT}/${PROCESS}`, 'extra']],
+  ])('%s → exit 1 com o uso no stderr', (_name, args) => {
+    const { code, err } = runExport(xdgHome, ...args);
+    expect(err).toContain('export failed: usage:');
+    expect(code).toBe(1);
+  });
+
+  test('processo inexistente falha com PROCESS_NOT_FOUND e exit 1', () => {
+    const { code, err } = runExport(xdgHome, `${PROJECT}/ghost`);
+    expect(err).toContain('export failed: PROCESS_NOT_FOUND:');
+    expect(code).toBe(1);
   });
 });
 
-describe('linha inválida', () => {
-  test('é omitida sem quebrar o comando', () => {
+describe('integridade', () => {
+  test('SL1: cadeia adulterada é detectada pelo script e sai com 2 sem exportar nada', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
-    const eventsFile = eventsFilePath(xdg);
-    const lines = fs.readFileSync(eventsFile, 'utf8').split('\n').slice(0, -1);
-    lines[0] = at(lines, 0).slice(0, -1); // remove o '}' final, quebra o parse JSON
-    fs.writeFileSync(eventsFile, `${lines.join('\n')}\n`);
+    const { log } = processPaths(path.join(xdg, 'hexlog'), REF);
+    fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"um"', '"trocado"'));
 
-    const { code, out } = runExport(xdg, 'alpha/run-1');
+    const { code, out, err } = runExport(xdg, `${PROJECT}/${PROCESS}`);
 
-    expect(out.trim().split('\n')).toHaveLength(1);
-    expect(code).toBe(0);
+    expect(err).toContain(`export failed: PROCESS_CORRUPTED: process chain is broken (${PROCESS}:`);
+    expect(out).toBe('');
+    expect(code).toBe(2);
   });
 });
 
 describe('read-only', () => {
-  test('hash e mtime do arquivo de eventos ficam iguais depois da execução', () => {
-    const eventsFile = eventsFilePath(xdgHome);
-    const snapshot = () =>
-      `${createHash('sha256').update(fs.readFileSync(eventsFile)).digest('hex')}:${fs.statSync(eventsFile).mtimeMs}`;
-    const before = snapshot();
-    runExport(xdgHome, 'alpha/run-1');
-    expect(snapshot()).toEqual(before);
+  test('hash e mtime de tudo sob <D> ficam iguais depois da execução', () => {
+    const before = snapshot(path.join(xdgHome, 'hexlog'));
+    runExport(xdgHome, `${PROJECT}/${PROCESS}`);
+    expect(snapshot(path.join(xdgHome, 'hexlog'))).toEqual(before);
   });
 });

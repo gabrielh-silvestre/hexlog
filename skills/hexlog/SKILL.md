@@ -1,160 +1,175 @@
 ---
 name: hexlog
-description: "Use when the agent needs to bootstrap a new project in hexlog (register vocabulary/types/gates, create a process, register events, evaluate gates) or diagnose whether an already-installed hexlog server is healthy. Examples: \"configura o hexlog nesse projeto\", \"o hexlog está funcionando?\", \"registra esse marco no hexlog\", \"avalia esse gate\""
+description: "Use when the agent needs to bootstrap a new project in hexlog (define types, relation names and gates, create a process, register records, evaluate gates) or diagnose whether an already-installed hexlog server is healthy. Examples: \"configura o hexlog nesse projeto\", \"o hexlog está funcionando?\", \"registra esse marco no hexlog\", \"avalia esse gate\""
 ---
 
 # hexlog
 
-Servidor MCP para agentes registrarem seu próprio histórico de trabalho: marcos,
-veredictos e gates, com log append-only. Esta skill cobre bootstrap de projeto e
-diagnóstico de saúde — não a instalação; isso é do `README.md` do repo hexlog.
+Servidor MCP para agentes registrarem o próprio histórico de trabalho: registros
+ligados por relações, num log append-only com cadeia de hash, e gates que
+respondem perguntas sobre esses registros. Esta skill cobre o modelo, o
+bootstrap de um projeto e o diagnóstico de saúde — não a instalação; isso é do
+`README.md` do repositório hexlog. O uso do dia a dia (registrar, buscar,
+avaliar) é da skill hexlog-flow.
+
+## O modelo em uma tela
+
+- **Nada vem pronto.** Não há vocabulário, tipo ou gate embutido: o projeto
+  define os tipos dos seus registros, os nomes das suas relações e os seus gates.
+- **Registro** = `type` + `target` + `data` (validado pelo schema do tipo) +
+  `relations`. O servidor atribui o `id` (`<process>:<uuid v7>`); o agente nunca
+  o escolhe. O `target` é um rótulo `a.b.c` (ver
+  [`../hexlog-flow/references/target-format.md`](../hexlog-flow/references/target-format.md)).
+- **Vigente**: um registro deixa de ser vigente quando outro o `supersedes` ou o
+  `revokes`. Tudo que o hexlog responde (gates, `query`) olha só o vigente, salvo
+  `includeNonCurrent`.
+- **Processo** = um log com a cadeia de hash. Ao ser criado, fixa a versão
+  vigente de cada tipo, nome de relação e gate do projeto; o que for definido
+  depois não vale para ele.
+- **Anexo** = texto imutável endereçado pelo sha256. O registro o cita pelo hash
+  num campo cujo schema tem `format: "attachment"`.
+
+As 11 tools:
+
+| Família | Tools |
+|---|---|
+| Definir (versões imutáveis do projeto) | `define_type`, `define_relation`, `define_gate` |
+| Escrever | `create_process`, `register`, `attach` |
+| Ler (`readOnlyHint`) | `list`, `query`, `evaluate_gate`, `verify_chain`, `read_attachment` |
 
 ## Ordem obrigatória de bootstrap
 
 | # | Tool | Motivo |
 |---|---|---|
-| 1 | `register_vocabulary` | Cria o diretório do projeto. Sem nenhuma chamada, `create_process` lança `VOCABULARY_MISSING` (`definitions.ts#buildSnapshot`, único lançador em todo o `src/`) |
-| 2 | `register_type` / `register_gate` | Opcionais — mas, se usados, precisam vir **antes** do passo 3 |
-| 3 | `create_process` | Congela um snapshot de types/vocabulary/gates lidos naquele instante, mais a versão vigente de cada um em `versions` (`definitions.ts#createProcess`). Nada registrado depois vale para esse processo — não existe "atualizar". **Idempotente**: chamar de novo com o mesmo `process` devolve o processo existente com `existed: true` em vez de erro — hashes iguais ao fixado, sem aviso; hashes diferentes (algo foi registrado no projeto depois da fixação), aviso `STALE_DEFINITIONS` com o que mudou |
-| 4 | `register` / `evaluate_gate` | Dependem de `loadProcess`, que só existe a partir do passo 3 |
+| 1 | `define_type`, `define_relation`, `define_gate` | Ao menos uma definição no projeto, e **todas** antes do passo 2. Projeto sem nenhuma definição faz `create_process` recusar com `TYPE_NOT_FOUND` (`commands/process.ts#assertSomethingRegistered`) |
+| 2 | `create_process` | Fixa as versões vigentes naquele instante e devolve os nomes em `pinned`. **Idempotente por nome**: chamar de novo devolve o processo existente com `created: false`, e `stale` lista o que mudou no projeto depois da fixação — não refixa. Para valer uma definição nova, crie um processo novo |
+| 3 | `attach`, se o registro cita texto | O `register` exige o anexo já guardado |
+| 4 | `register`, `evaluate_gate`, `query` | Dependem do processo do passo 2 |
 
-Chame `register_vocabulary` pelo menos uma vez, com qualquer `owner` — o que
-destrava o passo 3 é existir um arquivo em `vocabulary/`, não o conteúdo dele.
+Nomes de projeto, processo, tipo, relação e gate seguem `domain/ids.ts#Name`:
+minúsculo, `[a-z0-9-]`, começa com alfanumérico, até 63 caracteres.
 
-**Nomeie `process` de release por escopo, não por versão.** `create_process`
-(passo 3) é imutável — para um fluxo de release cuja versão só se decide na
-entrega, nomear o `process` pela versão ainda não fechada (ex.: "release
-0.0.2") deixa um processo órfão assim que a versão real diverge; prefira
-nomear pelo escopo/feature (ex.: "release hextelemetry").
+**Nomeie `process` de release por escopo, não por versão.** O processo é
+imutável: nomear pela versão ainda não fechada (ex.: "release 0.0.2") deixa um
+processo órfão assim que a versão real diverge; prefira o escopo (ex.:
+"release hextelemetry").
 
 **hexlog + ralplan.** Ao configurar hexlog num projeto que já roda ralplan,
 escreva no `CLAUDE.md` desse projeto a regra "cada iteração do ralplan entra
 no hexlog assim que acontece" — antes de disparar as iterações, não depois
 que o usuário notar a lacuna.
 
+## Versão de definição e `breaking`
+
+Cada `define_*` grava uma versão `major.minor` imutável. A mesma definição de
+novo é replay (`created: false`). O servidor decide a quebra de tipo e de
+relação; a de gate é do agente:
+
+| Definição | Compatível (minor) | Exige `breaking: true` |
+|---|---|---|
+| `define_type` | Acrescentar propriedade opcional ou valor de `enum` | Qualquer outra diferença: `required` novo, propriedade ou valor removido, `type` trocado, ou outra palavra-chave, inclusive `format`. Sem a flag: `BREAKING_CHANGE` (`commands/definition.ts#targetVersion`) |
+| `define_relation` | Alargar `from` ou `to` | Trocar `kind` ou estreitar as listas |
+| `define_gate` | Toda mudança é minor: o servidor não detecta quebra | **Você julga**: mande `breaking: true` quando a mudança aperta o gate, como pergunta nova ou seletor mais estreito em `approved` ou `occurred` |
+
+`breaking: true` sempre sobe o major, mesmo que a mudança fosse compatível, exceto
+com definição idêntica à vigente (replay, `created: false`).
+
+**Anexo e `breaking`.** Acrescentar `format: "attachment"` a um campo que já
+existia é quebra de tipo: a versão marcada se define com `breaking: true`. Por
+isso marque o campo na primeira versão do tipo; a skill hexlog-flow explica o que
+fazer quando um processo já ficou preso a um tipo sem a marca.
+
 ## Armadilhas
 
 | Situação | Resultado | Onde |
 |---|---|---|
-| `create_process` com `process` em `RESERVED_PROCESS_NAMES` (`schemas`, `vocabulary`, `gates`) | `RESERVED_NAME` | `definitions.ts#RESERVED_PROCESS_NAMES` |
-| `register_type` com `name` em `RESERVED_TYPE_NAMES` (`milestone`, `verdict`) | `RESERVED_NAME` | `definitions.ts#RESERVED_TYPE_NAMES` |
-| `register_gate` com `name` em um dos 5 `BUILTIN_GATE_NAMES` (`no-orphans`, `no-conflicts`, `chain-intact`, `no-invalid-references`, `no-forks`) | `RESERVED_NAME` | `definitions.ts#BUILTIN_GATE_NAMES` |
-| `register_type`/`register_vocabulary`/`register_gate` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `definitions.ts` (`decideVersion`) |
-| Tipo custom usado em `register` fora do snapshot fixado do processo | `TYPE_NOT_PINNED` — não `TYPE_NOT_FIXED`, esse código não existe | `event-tools.ts#registerEvent` |
-| `milestoneType` ou `decisions[].action` fora do vocabulário fixado (campos fechados) | `VOCABULARY_VIOLATED`, com `owners`/`allowed` em `details[0]` (donos fixados e termos aceitos do campo) | `event-tools.ts#ensureVocabulary` |
-| `result` de um Veredito fora do vocabulário fixado (campo aberto) | aviso `UNKNOWN_VOCABULARY`, não bloqueia — evento é gravado normalmente | `event-tools.ts#unknownResultWarning` |
-| `milestoneType: "gate"` ou chave `gate` num `register` fora de `evaluate_gate` | `RESERVED_FIELD` | `event-tools.ts#registerEvent` |
-| `evaluate_gate` com o mesmo `{name, target}` repetido no lote | `INVALID_INPUT` | `event-tools.ts#evaluateGate` |
-| `evaluate_gate` cujos Milestones somados passam de 24000 caracteres canônicos | `INVALID_INPUT` — dividir em chamadas menores | `event-tools.ts#evaluateGate` |
-| `targetPrefix` terminado em `.` | rejeitado pela validação do schema de entrada, sem código de domínio | `events.ts#TargetPrefix` |
-| `list` com `type: "milestone"` ou `"verdict"` (reservados) | mensagem própria apontando o vocabulário fixo e os campos de Verdict/Milestone, não o erro genérico de tipo | `definition-tools.ts#reservedTypeMessage` |
+| `create_process` com nome em `RESERVED_PROCESS_NAMES` (`types`, `relations`, `gates`, `attachments`, `archive`) | `RESERVED_NAME` | `domain/ids.ts#RESERVED_PROCESS_NAMES` |
+| Qualquer tool com nome fora da regex `Name`, campo desconhecido, ou relação sem `kind` nem `as` | `INVALID_INPUT`: corrija o campo de `details[].path` e reenvie | a validação de entrada de cada tool |
+| `define_type` com schema que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` sem `maxLength` de até 256; `patternProperties` sem `propertyNames.maxLength` de até 256; regex que a `safe-regex2` recusa (inclusive `^[a-z]+(?:-[a-z]+)*$`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
+| `define_*` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `commands/definition.ts#targetVersion` |
+| `register` com `type` fora do que o processo fixou (definido depois, ou nunca) | `TYPE_NOT_PINNED` | `commands/register/static.ts#pinnedSchema` |
+| `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` de cada violação em `details` | `commands/register/static.ts#checkData` |
+| `evaluate_gate` com gate que o processo não fixou | `GATE_NOT_FOUND` | `queries/query-service.ts#gateNotFound` |
+| Qualquer tool com dado 0.x ainda em `$XDG_DATA_HOME/hexlog` | `LEGACY_DATA` | só um humano resolve (ver abaixo) |
 
-Notas adicionais:
+Notas:
 
-- Vocabulário de owners diferentes **coexiste** — cada owner grava sua própria
-  linha de versões em `vocabulary/<owner>/`. Reregistrar o mesmo owner cria uma
-  versão nova (`major.minor`), nunca sobrescreve a anterior nem afeta o
-  arquivo de outro owner.
-- `register_type`/`register_vocabulary`/`register_gate` versionam, não
-  substituem: conteúdo igual ao vigente é no-op (`unchanged: true`); mudança
-  que quebra (ver README, tabela de quebra por definição) exige
-  `breaking: true` no input, senão lança `BREAKING_CHANGE`.
-- Os 5 gates embutidos passam trivialmente (`passed: true`) num processo com
-  zero eventos — ausência de contra-evidência, não prova de saúde do processo.
-  `no-forks` reprova quando um Verdict superado tem 2+ sucessores vivos
-  (2+ Verdicts que o citam em `supersedes` e não estão eles mesmos superados)
-  — um fan-out legítimo de um Verdict ainda vigente não conta.
-  Para resolver um fork, registre um Verdict que supere ramos em `supersedes`
-  até restar 1 sucessor vivo (superar só um dos dois ramos já basta).
-- Se `VOCABULARY_VIOLATED` (ou qualquer dúvida sobre o que o processo
-  congelou) surpreender, chame `list({project, process})`: devolve o
-  vocabulário e os gates fixados por inteiro, não só o hash.
-- `state` aceita `withData: true` para trazer o `data` do Verdict vigente
-  junto de cada item de `active`, e devolve `targets` (todo target de
-  Verdict já usado, mesmo os totalmente superados) salvo quando `sections` o
-  exclui — sem precisar de um `events` à parte para achar o vigente de um
-  target. `targetPrefix` restringe `active`/`conflicts`/`targets` a uma
-  subárvore de endereço (fronteira em `.`), em `state` e em `events`.
-- `warnings` de `state` é cumulativo e `since` não o filtra: a resposta cheia traz
-  todos os avisos do log. Os avisos novos se reconhecem comparando o `event` com
-  os já vistos.
-- Esta skill não repete o contrato completo de `state` e `events` (filtros,
-  projeção de campos, atalho de log inalterado, sinais de truncamento): a
-  fonte é a descrição de cada tool e o README do repositório do hexlog.
-- Milestone aceita `trace` (opcional) como os demais eventos, mas ele é
-  ignorado na comparação de retentativa idempotente: reenviar o mesmo id
-  completo com `trace` diferente ainda deduplica.
+- Para saber o que um processo congelou, chame `list` com `project` e
+  `process`: devolve os nomes fixados (`pinned`) e os hashes. Com só `project`,
+  devolve as definições vigentes e todas as suas versões.
+- O contrato completo de `query`, `evaluate_gate` e `register` (filtros,
+  paginação, marcador, tetos) está na descrição de cada tool; esta skill não o
+  repete.
+- Os registros e as definições vivem em `<D>/.v1/`, com `<D>` =
+  `$XDG_DATA_HOME/hexlog`. O hook de isolamento nega Bash que alcance `<D>`:
+  leia só pelas tools.
 
 ## Exemplo mínimo: do zero a um `register` e um `evaluate_gate` verdes
 
 ```
-1. register_vocabulary({
-     project: "myproj", owner: "core",
-     milestoneType: ["setup"], result: ["ok"], action: ["approve"]
+1. define_type({
+     project: "myproj", name: "note",
+     schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] }
    })
-   → { project: "myproj", owner: "core", hash: "<sha256>", version: "1.0",
-       previousVersion: null, unchanged: false, warnings: [] }
+   → { name: "note", version: "1.0", hash: "<sha256>", created: true }
 
-2. create_process({ project: "myproj", process: "onboarding" })
-   → { project: "myproj", process: "onboarding", createdAt: "<iso>",
-       hashes: {...}, types: [], owners: [], gates: [],
-       versions: { types: {}, vocabulary: { core: "1.0" }, gates: {} },
-       existed: false, warnings: [] }
-
-3. register({
-     project: "myproj", process: "onboarding",
-     type: "milestone",
-     agent: "setup-agent",
-     data: {
-       milestoneType: "setup", target: "hex:target:onboarding-1",
-       count: { field: "steps", value: 1 }
-     }
+2. define_gate({
+     project: "myproj", name: "has-note",
+     questions: [{ kind: "occurred", select: { type: "note" } }]
    })
-   → { seq: 0, id: "myproj:onboarding:milestone:<uuid v7>", prevHash: "<sha256>",
-       deduplicated: false, warnings: [] }
+   → { name: "has-note", version: "1.0", hash: "<sha256>", created: true }
 
-4. evaluate_gate({
-     project: "myproj", process: "onboarding",
-     gates: [{ name: "no-orphans", target: "hex:target:onboarding-1" }],
-     agent: "setup-agent"
+3. create_process({ project: "myproj", process: "onboarding" })
+   → { project: "myproj", process: "onboarding", created: true,
+       pinned: { types: ["note"], relations: [], gates: ["has-note"] } }
+
+4. register({
+     project: "myproj", process: "onboarding", agent: "setup-agent",
+     key: "onboarding-first-note",
+     records: [{ type: "note", target: "onboarding.step-1", data: { text: "done" } }]
    })
-   → { results: [{ seq: 1, id: "myproj:onboarding:milestone:<uuid v7>",
-       prevHash: "<sha256>", passed: true, evidence: [], totalEvidenceItems: 0 }] }
+   → { records: [{ id: "onboarding:<uuid v7>" }], replayed: false,
+       marker: { onboarding: "onboarding:<uuid v7>" } }
+
+5. evaluate_gate({
+     project: "myproj", process: "onboarding", gate: "has-note", target: "onboarding"
+   })
+   → { passed: true,
+       questions: [{ index: 0, kind: "occurred", passed: true,
+                     evidence: { found: ["onboarding:<uuid v7>"] } }],
+       marker: { onboarding: "onboarding:<uuid v7>" } }
 ```
 
-O `type` isolado do passo 3 é a forma preferida para abrir um evento novo: o
-servidor monta o prefixo `{project}:{process}:{type}`, gera o uuid v7 e
-devolve o id completo no evento. `id` continua aceitando esse mesmo prefixo
-manual, ou o id completo devolvido acima para retentativa idempotente —
-reenviar esse id completo com o mesmo `type`/`agent`/`data` normalizados
-devolve a linha existente (`deduplicated: true`); conteúdo diferente é
-`CONFLICTING_ID`. `id` e `type` juntos, ou nenhum dos dois, é `INVALID_INPUT`.
-
-`no-orphans` no passo 4 é embutido e por isso não aceita `result` — o servidor
-calcula a partir do Estado do processo. Só um gate **custom** (registrado via
-`register_gate`) exige `result: {passed, evidence}` do agente.
+O gate responde sozinho a partir dos registros vigentes: o agente não informa
+`result`. Com `target` omitido, os seletores leem todos os alvos; com `target`,
+os seletores sem `targetPrefix` herdam esse alvo (a fronteira é o `.`).
 
 ## Diagnóstico de saúde
 
+**Plataforma: só Linux.** O lock por pid, a gravação atômica e o arquivador dependem de /proc, de
+hard link e de fsync de diretório. macOS não foi testado; Windows e FAT, exFAT e drvfs (/mnt/c no
+WSL) ficam fora.
+
 **A prova real de que o servidor está vivo é chamar `list` sem parâmetros.**
-Ele responde os 5 gates embutidos (`builtinGates`) sem precisar de nenhum
-projeto existente.
+Ele responde os projetos e a contagem de processos de cada um, sem precisar de
+nenhum projeto existente.
 
 **`--check` não prova o servidor.** `node scripts/install.ts --check` valida
 o hook por execução real e compara o sha256 do manifest — mas nunca conecta
 ao MCP nem reconfere a contagem de tools. Essa garantia é herdada de
-`verifyPreparedArtifact` (`installation.ts#verifyPreparedArtifact`), chamada dentro de `install()`
-no momento da instalação (`installation.ts#installArtifact`), e não é reverificada depois.
-Confundir os dois é o erro mais fácil de cometer: um `--check` verde não diz
-nada sobre o servidor MCP responder.
+`verifyPreparedArtifact` (`installation.ts#verifyPreparedArtifact`), chamada
+dentro de `installArtifact` (`installation.ts#installArtifact`) no momento da
+instalação, e não é reverificada depois. Confundir os dois é o erro mais fácil
+de cometer: um `--check` verde não diz nada sobre o servidor MCP responder.
 
 ### O que exige a mão do humano
 
 | Ação | Motivo técnico |
 |---|---|
-| Descartar `~/.local/share/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
+| Arquivar o dado 0.x (`node scripts/install.ts --archive-0x`, a partir do repositório hexlog) | Enquanto houver dado 0.x em `<D>`, toda tool responde `LEGACY_DATA`, com `details[0].code` `run` e o comando na mensagem. O agente não roda `node scripts/install.ts` sem pedido explícito: escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
+| Destravar um processo com `LOCK_TIMEOUT` `holder-unreadable` | O dono do lock não pode ser lido, e repetir nunca resolve. O diretório do lock (`<D>/.v1/<project>/<process>/records.jsonl.lock`) mora em `<D>`, fora do alcance do Bash do agente; o destravamento manual está em `docs/dados.md` do repositório hexlog |
+| Descartar `$XDG_DATA_HOME/hexlog` | O hook PreToolUse nega qualquer Bash que alcance o diretório de dados — isolamento por desenho, não um obstáculo a contornar |
 | Reiniciar a sessão do Claude Code | Cache de `tools/list` do protocolo MCP — fora do alcance de qualquer agente |
-| Rodar `node scripts/install.ts` sem `--check` | Proibido por `AGENTS.md` (regra sobre `node scripts/install.ts` em Working In This Directory) sem pedido explícito — escreve em `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/` |
 
 Reinstalar a mesma versão com conteúdo diferente **não bloqueia** — só avisa
 "consider bumping the version".

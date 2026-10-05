@@ -1,7 +1,6 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { isNil } from 'es-toolkit';
-import { isEmpty } from 'es-toolkit/compat';
+import { isUndefined } from 'es-toolkit';
 
 /**
  * Diretório de dados do hexlog: `$XDG_DATA_HOME/hexlog` quando a variável
@@ -10,7 +9,7 @@ import { isEmpty } from 'es-toolkit/compat';
  */
 export function dataDir(env: NodeJS.ProcessEnv): string {
   const xdgDataHome = env.XDG_DATA_HOME;
-  if (!isNil(xdgDataHome) && !isEmpty(xdgDataHome) && path.isAbsolute(xdgDataHome)) {
+  if (!isUndefined(xdgDataHome) && path.isAbsolute(xdgDataHome)) {
     return path.join(xdgDataHome, 'hexlog');
   }
   return path.join(os.homedir(), '.local', 'share', 'hexlog');

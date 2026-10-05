@@ -1,59 +1,79 @@
-// Exportação read-only de eventos em JSONL.
+// Exportação read-only dos registros de um processo em JSONL, lidos pelo `composeReader` (a cadeia é
+// verificada na leitura; adulterada, o script sai com 2). Inclui os registros não vigentes.
 // Uso: node scripts/export.ts <project>/<process> [--fields a,b,c]
-import { isNil, isNotNil } from 'es-toolkit';
+import { difference, isNil, pick } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
-import { isValidLink } from '../src/chain.ts';
-import { loadProcess } from '../src/definitions.ts';
-import { dataDir } from '../src/directory.ts';
-import type { HexlogError } from '../src/errors.ts';
-import { EventLineField, projectFields } from '../src/events.ts';
-import { readText } from '../src/log.ts';
+import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
+import { Name } from '../src/domain/ids.ts';
+import type { QueryRecord } from '../src/queries/query-service.ts';
 
 const USAGE = 'usage: node scripts/export.ts <project>/<process> [--fields a,b,c]';
+const FIELDS = [
+  'id',
+  'type',
+  'at',
+  'target',
+  'author',
+  'data',
+  'in',
+  'out',
+  'needsReview',
+  'attachmentStatus',
+] as const satisfies readonly (keyof QueryRecord)[];
+type Field = (typeof FIELDS)[number];
 
-function parseFields(raw: string | undefined): EventLineField[] | null {
-  if (isNil(raw)) return null;
+/** `fields` só vale se `invalid` vier vazio. */
+function parseFields(raw: string | undefined): { fields: Field[] | null; invalid: string[] } {
+  if (isNil(raw)) return { fields: null, invalid: [] };
   const fields = raw.split(',').map((field) => field.trim());
-  const invalid = fields.filter((field) => !EventLineField.safeParse(field).success);
-  if (!isEmpty(invalid)) {
-    throw new Error(
-      `invalid field(s): ${invalid.join(', ')} (allowed: ${EventLineField.options.join(', ')})`,
-    );
-  }
-  return fields as EventLineField[];
+  const invalid = difference(fields, FIELDS);
+  return { fields: fields as Field[], invalid };
 }
 
-function main(target: string | undefined, fieldsArg: string | undefined): number {
-  const [project, processName] = target?.split('/') ?? [];
-  if (isNil(project) || isNil(processName)) {
+function main(argv: string[]): number {
+  const args = parseCliArgs(argv, { fields: { type: 'string' } });
+  const [target, ...extra] = args?.positionals ?? [];
+  const [projectArg, processArg, ...rest] = target?.split('/') ?? [];
+  const project = Name.safeParse(projectArg);
+  const processName = Name.safeParse(processArg);
+  if (
+    isNil(args) ||
+    extra.length > 0 ||
+    !project.success ||
+    !processName.success ||
+    rest.length > 0
+  ) {
     console.error(`export failed: ${USAGE}`);
     return 1;
   }
 
-  let fields: EventLineField[] | null;
-  try {
-    fields = parseFields(fieldsArg);
-  } catch (error) {
-    console.error(`export failed: ${(error as Error).message}`);
+  const { fields, invalid } = parseFields(args.values.fields);
+  if (!isEmpty(invalid)) {
+    console.error(
+      `export failed: invalid field(s): ${invalid.join(', ')} (allowed: ${FIELDS.join(', ')})`,
+    );
     return 1;
   }
 
   try {
-    const loaded = loadProcess(dataDir(process.env), project, processName);
-    const text = readText(loaded.eventsFile);
-    const events = text.split('\n').slice(0, -1).map(isValidLink).filter(isNotNil);
-    const lines = isNil(fields) ? events : events.map((event) => projectFields(event, fields));
-    for (const line of lines) console.log(JSON.stringify(line));
+    const { query } = openReadOnly();
+    // chamada única: cada página refaria a leitura e a verificação do log inteiro (custo quadrático);
+    // o teto de 64 MiB por processo limita a memória
+    const { records } = query.queryRecords({
+      project: project.data,
+      process: processName.data,
+      includeNonCurrent: true,
+      limit: Number.MAX_SAFE_INTEGER,
+    });
+    for (const record of records) {
+      console.log(JSON.stringify(isNil(fields) ? record : pick(record, fields)));
+    }
     return 0;
   } catch (error) {
-    const { code, message } = error as HexlogError;
-    console.error(`export failed: ${code ?? 'ERROR'}: ${message}`);
-    return 1;
+    const { text, exitCode } = formatCliError('export', error);
+    console.error(text);
+    return exitCode;
   }
 }
 
-const args = process.argv.slice(2);
-const fieldsFlagIndex = args.indexOf('--fields');
-const fieldsArg = fieldsFlagIndex === -1 ? undefined : args[fieldsFlagIndex + 1];
-
-process.exitCode = main(args[0], fieldsArg);
+process.exitCode = main(process.argv.slice(2));

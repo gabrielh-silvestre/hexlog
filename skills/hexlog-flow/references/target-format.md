@@ -1,26 +1,38 @@
 # Formato do target
 
-`target` é o endereço de um item de trabalho: `hex:target:<id>`, validado pelo
-schema `Target` (`events.ts#Target`) contra `/^hex:target:[^\s:]+$/` — o
-prefixo `hex:target:` é fixo, só o `<id>` varia.
+`target` é o endereço de um item de trabalho: um rótulo `a.b.c`, validado pelo
+schema `Target` (`domain/ids.ts#Target`). Cada segmento casa
+`[a-z0-9][a-z0-9-]{0,62}` — minúsculo, dígito e hífen, começando por letra ou
+dígito, até 63 caracteres —, os segmentos se separam por `.`, o rótulo inteiro tem
+até 200 caracteres e não termina em `.`. Maiúscula, `_`, `:` e espaço são recusados
+com `INVALID_INPUT`. O prefixo `hex:target:` do 0.x não existe mais: escreva
+`v1-f6.revisao`, não `hex:target:v1-f6`.
 
-O `<id>` é sem espaço e sem `:`, usa `.` como separador de subárvore
-(`hex:target:a.b.c`) e o endereço inteiro (prefixo incluso) tem até 200 caracteres.
+## Subárvore e `targetPrefix`
 
-## `<id>` customizado por projeto
+O `.` é o separador de subárvore (`plano.iteracao-2`), e o filtro `targetPrefix` da
+`query` e dos seletores de gate respeita essa fronteira
+(`domain/gate.ts#matchesTargetPrefix`): `a.b` casa `a.b` e `a.b.c`, e **não** casa
+`a.bc`. Por isso a raiz do target costuma ser o slug do item de trabalho (do plano,
+da spec, do team), e as partes dele ficam abaixo (`<slug>.revisao`). Assim uma
+consulta por `targetPrefix` = o slug traz o item inteiro, e o `target` do
+`evaluate_gate` é herdado pelos seletores que não trazem `targetPrefix`.
 
-O `.hexlog/flow.md` pode restringir o formato do `<id>` via `targetIdPattern`
-no frontmatter (ver `skills/hexlog-setup/references/flow-map-schema.md`) — por exemplo, um projeto que numera
-tarefas como `PROJ-123` declara `targetIdPattern: 'PROJ-\d+'`. Quando o campo
-está ausente, o default é o mesmo regex embutido em `Target`
-(`[^\s:]+` — qualquer coisa sem espaço nem `:`).
+## `targetIdPattern` customizado por projeto
 
-Antes de montar um `target` novo (ao registrar o primeiro marco sobre um item de
-trabalho), confira o `targetIdPattern` do flow map — um `<id>` fora do padrão
-declarado não é validado pelo servidor (o servidor só valida contra o regex fixo
-de `Target`), mas quebra a convenção que o projeto combinou, e passa a não bater
-com o que outras fases esperam encontrar ao consultar esse mesmo `target`.
+O `.hexlog/flow.md` pode restringir o formato do target via `targetIdPattern` no
+frontmatter (ver [`../../hexlog-setup/references/flow-map-schema.md`](../../hexlog-setup/references/flow-map-schema.md)): uma regex
+sobre o **rótulo inteiro**, mais estreita que a sintaxe acima — por exemplo, um
+projeto que numera tarefas como `proj-123` e as divide em partes declara
+`targetIdPattern: 'proj-[0-9]+(\.[a-z0-9-]+)*'`. Quando o campo está ausente, vale só a
+sintaxe do `Target`.
 
-Ao reusar um `target` já existente (para registrar um segundo marco sobre o mesmo
-item, ou pra consultar via `events`/`chain`/`state`), copie o id exatamente como
-foi usado da primeira vez — não regenere a partir do `<id>` original.
+Antes de montar um `target` novo (ao registrar o primeiro registro sobre um item de
+trabalho), confira o `targetIdPattern` do flow map. O servidor só valida a sintaxe
+do `Target`: um rótulo fora do padrão do projeto é aceito, mas quebra a convenção
+combinada e deixa de bater com o que outras fases esperam achar ao consultar esse
+mesmo alvo.
+
+Ao reusar um `target` já existente (para registrar um segundo registro sobre o mesmo
+item, ou para consultar), copie o rótulo exatamente como foi usado da primeira vez
+— não o regenere a partir do slug original.

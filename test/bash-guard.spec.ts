@@ -1,33 +1,40 @@
-import { describe, test, expect, afterAll } from '@jest/globals';
+import { describe, test, expect, beforeAll } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { createTempDir } from './helpers.ts';
+import { createEnvironment } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const hookPath = path.join(repoRoot, 'hook/bash-guard.ts');
 
 // `HOME` temporário: D = <tmpHome>/.local/share/hexlog. Sem `XDG_DATA_HOME`
 // no ambiente base, para os casos com `~` e `**` valerem contra esse D.
-const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-bash-guard-'));
-const dataDir = path.join(tmpHome, '.local', 'share', 'hexlog');
-const cwdParentOfData = path.dirname(dataDir);
-fs.mkdirSync(path.join(dataDir, 'p', 'r'), { recursive: true });
-fs.writeFileSync(path.join(dataDir, 'p', 'r', 'events.jsonl'), '');
-
-const envBase: NodeJS.ProcessEnv = { ...process.env, HOME: tmpHome };
-delete envBase.XDG_DATA_HOME;
+// Criados no `beforeAll`, não na coleta: a coleta roda até com `-t` e vazaria o diretório (#58).
+let tmpHome: string;
+let dataDir: string;
+let cwdParentOfData: string;
+let envBase: NodeJS.ProcessEnv;
 
 // Bloco separado para o caso `${XDG_DATA_HOME}`: aqui D = <xdgTmp>/hexlog.
-const xdgTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-bash-guard-xdg-'));
-const dataDirXdg = path.join(xdgTmp, 'hexlog');
-fs.mkdirSync(path.join(dataDirXdg, 'p', 'r'), { recursive: true });
-fs.writeFileSync(path.join(dataDirXdg, 'p', 'r', 'events.jsonl'), '');
-const envXdg: NodeJS.ProcessEnv = { ...process.env, HOME: tmpHome, XDG_DATA_HOME: xdgTmp };
+let dataDirXdg: string;
+let envXdg: NodeJS.ProcessEnv;
 
-afterAll(() => {
-  fs.rmSync(tmpHome, { recursive: true, force: true });
-  fs.rmSync(xdgTmp, { recursive: true, force: true });
+beforeAll(() => {
+  tmpHome = createTempDir('bash-guard');
+  dataDir = path.join(tmpHome, '.local', 'share', 'hexlog');
+  cwdParentOfData = path.dirname(dataDir);
+  fs.mkdirSync(path.join(dataDir, 'p', 'r'), { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'p', 'r', 'events.jsonl'), '');
+
+  envBase = { ...process.env, HOME: tmpHome };
+  delete envBase.XDG_DATA_HOME;
+
+  const xdgTmp = createTempDir('bash-guard-xdg');
+  dataDirXdg = path.join(xdgTmp, 'hexlog');
+  fs.mkdirSync(path.join(dataDirXdg, 'p', 'r'), { recursive: true });
+  fs.writeFileSync(path.join(dataDirXdg, 'p', 'r', 'events.jsonl'), '');
+  envXdg = { ...process.env, HOME: tmpHome, XDG_DATA_HOME: xdgTmp };
 });
 
 type HookInput = {
@@ -57,7 +64,12 @@ type I4Case = {
 };
 
 const denyCases: I4Case[] = [
-  { name: 'absolute path to D', command: `cat ${dataDir}/x` },
+  {
+    name: 'absolute path to D',
+    get command() {
+      return `cat ${dataDir}/x`;
+    },
+  },
   { name: '~ expanded to D', command: 'cat ~/.local/share/hexlog/p/r/events.jsonl' },
   { name: '$HOME expanded by shell-quote', command: 'cat $HOME/.local/share/hexlog/x' },
   {
@@ -68,13 +80,25 @@ const denyCases: I4Case[] = [
     name: 'command substitution: $(echo ~/...)',
     command: 'cat $(echo ~/.local/share/hexlog/x)',
   },
-  { name: '/./ in the middle of the absolute path', command: `cat /./${dataDir.slice(1)}/x` },
+  {
+    name: '/./ in the middle of the absolute path',
+    get command() {
+      return `cat /./${dataDir.slice(1)}/x`;
+    },
+  },
   {
     name: 'relative to D with cwd in D parent dir',
     command: 'cat hexlog/p/r/events.jsonl',
-    cwd: cwdParentOfData,
+    get cwd() {
+      return cwdParentOfData;
+    },
   },
-  { name: '--opt=<D>/x', command: `--opt=${dataDir}/x` },
+  {
+    name: '--opt=<D>/x',
+    get command() {
+      return `--opt=${dataDir}/x`;
+    },
+  },
   { name: 'glob hex*', command: 'cat ~/.local/share/hex*/p/r/events.jsonl' },
   { name: 'glob hexl?g', command: 'cat ~/.local/share/hexl?g' },
   { name: 'brace {hexlog,x}', command: 'cat ~/.local/share/{hexlog,x}' },
@@ -82,7 +106,9 @@ const denyCases: I4Case[] = [
   {
     name: 'glob * with cwd in D parent dir',
     command: 'cat */p/r/events.jsonl',
-    cwd: cwdParentOfData,
+    get cwd() {
+      return cwdParentOfData;
+    },
   },
   {
     name: 'glob in the middle of the path (~/.local/*/hexlog/x)',
@@ -106,7 +132,9 @@ const denyCases: I4Case[] = [
 const xdgCase: I4Case = {
   name: '${XDG_DATA_HOME} expanded by shell-quote',
   command: 'cat ${XDG_DATA_HOME}/hexlog/x',
-  env: envXdg,
+  get env() {
+    return envXdg;
+  },
 };
 
 const allowCases: I4Case[] = [
@@ -136,7 +164,9 @@ const allowCases: I4Case[] = [
   },
   {
     name: "gap: ANSI-C quoting ($'...\\x6c...')",
-    command: `cat $'${tmpHome}/.local/share/hex\\x6cog/x'`,
+    get command() {
+      return `cat $'${tmpHome}/.local/share/hex\\x6cog/x'`;
+    },
     class: 'gap',
   },
   {
@@ -161,12 +191,29 @@ describe('bash-guard (I4): nega o acesso a D por Bash', () => {
     expect(result.stderr).toContain(dataDirXdg);
   });
 
-  test('mensagem de negação completa cita os nomes novos das tools de leitura', () => {
+  test('mensagem de deny completa cita os nomes novos das tools de leitura', () => {
     const result = runHook({ command: `cat ${dataDir}/x` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toBe(
-      `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, state, events, chain, timeline, attachment).`,
+      `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, query, verify_chain, read_attachment, evaluate_gate).`,
     );
+  });
+
+  test('as tools citadas na mensagem são exatamente as que o servidor anuncia com readOnlyHint', async () => {
+    const environment = await createEnvironment();
+    try {
+      const { tools } = await environment.client.listTools();
+      const readOnly = tools
+        .filter(({ annotations }) => annotations?.readOnlyHint === true)
+        .map(({ name }) => name);
+
+      const { stderr } = runHook({ command: `cat ${dataDir}/x` }, envBase);
+
+      const cited = /\(([^()]*)\)\.$/.exec(stderr)?.[1]?.split(', ');
+      expect(cited?.sort()).toEqual(readOnly.sort());
+    } finally {
+      await environment.close();
+    }
   });
 });
 
@@ -236,24 +283,24 @@ describe('bash-guard (I7): entrada inválida ou exceção interna falha aberto',
 });
 
 describe('B1(b): hook empacotado pelo esbuild', () => {
-  const outdirBundle = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-bash-guard-bundle-'));
-  const bundle = path.join(outdirBundle, 'bash-guard.mjs');
+  let bundle: string;
 
-  const build = spawnSync(
-    process.execPath,
-    [
-      path.join(repoRoot, 'test/fixtures/build-entry.ts'),
-      outdirBundle,
-      'bash-guard=hook/bash-guard.ts',
-    ],
-    { encoding: 'utf8', cwd: repoRoot },
-  );
-  if (build.status !== 0) {
-    throw new Error(`hook build failed: ${build.stderr}`);
-  }
+  beforeAll(() => {
+    const outdirBundle = createTempDir('bash-guard-bundle');
+    bundle = path.join(outdirBundle, 'bash-guard.mjs');
 
-  afterAll(() => {
-    fs.rmSync(outdirBundle, { recursive: true, force: true });
+    const build = spawnSync(
+      process.execPath,
+      [
+        path.join(repoRoot, 'test/fixtures/build-entry.ts'),
+        outdirBundle,
+        'bash-guard=hook/bash-guard.ts',
+      ],
+      { encoding: 'utf8', cwd: repoRoot },
+    );
+    if (build.status !== 0) {
+      throw new Error(`hook build failed: ${build.stderr}`);
+    }
   });
 
   test('nega cat <D>/x (exit 2) e permite true (exit 0)', () => {

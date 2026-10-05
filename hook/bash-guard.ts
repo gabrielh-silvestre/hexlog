@@ -4,10 +4,9 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { matchesGlob } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as shellQuoteParse, type ParseEntry } from 'shell-quote';
-import { isNil, isString } from 'es-toolkit';
+import { isNil, isString, take, takeWhile } from 'es-toolkit';
 import { dataDir } from '../src/directory.ts';
 
 // Segmento com `**` ou uma chave `{a/b,c}` com barra dentro: o `path.matchesGlob`
@@ -19,7 +18,7 @@ const GLOB_CHARS_REGEX = /[*?[{]/;
 const TILDE_REGEX = /(^|=)~(?=\/|$)/g;
 
 const denialMessage = (d: string): string =>
-  `hexlog: ${d} is only accessible through the hexlog MCP tools (list, state, events, chain, timeline, attachment).`;
+  `hexlog: ${d} is only accessible through the hexlog MCP tools (list, query, verify_chain, read_attachment, evaluate_gate).`;
 
 type RawInput = {
   tool_name?: unknown;
@@ -45,11 +44,6 @@ function extractCwd(input: unknown): string | undefined {
 
 function expandTilde(token: string, home: string): string {
   return token.replace(TILDE_REGEX, `$1${home}`);
-}
-
-/** Índice do primeiro segmento com caractere de glob, ou -1 se nenhum. */
-function firstGlobIndex(segments: string[]): number {
-  return segments.findIndex((segment) => GLOB_CHARS_REGEX.test(segment));
 }
 
 /** Só os tokens texto e os padrões `{op: 'glob', pattern}` interessam à checagem. */
@@ -93,9 +87,11 @@ function tokenReachesDirectory(
 
   const hasSlashKey = SLASH_KEY_REGEX.test(token);
   if (token.includes('**') || hasSlashKey) {
-    const segments = resolvedPath.split(sep);
-    const globIndex = firstGlobIndex(segments);
-    const prefix = globIndex === -1 ? resolvedPath : segments.slice(0, globIndex).join(sep);
+    // prefixo literal: os segmentos até o primeiro com caractere de glob (todos, se nenhum)
+    const prefix = takeWhile(
+      resolvedPath.split(sep),
+      (segment) => !GLOB_CHARS_REGEX.test(segment),
+    ).join(sep);
     return (
       prefix === dataDir || dataDir.startsWith(prefix + sep) || prefix.startsWith(dataDir + sep)
     );
@@ -103,8 +99,8 @@ function tokenReachesDirectory(
 
   if (GLOB_CHARS_REGEX.test(token)) {
     const dirDepth = dataDir.split(sep).length;
-    const truncated = resolvedPath.split(sep).slice(0, dirDepth).join(sep);
-    return matchesGlob(dataDir, truncated);
+    const truncated = take(resolvedPath.split(sep), dirDepth).join(sep);
+    return path.matchesGlob(dataDir, truncated);
   }
 
   return false;
@@ -115,7 +111,7 @@ function decide(
   input: unknown,
   env: NodeJS.ProcessEnv,
   defaultCwd: string,
-): { deny: boolean; reason?: string } {
+): { deny: false } | { deny: true; reason: string } {
   const command = extractCommand(input);
   if (isNil(command)) return { deny: false };
 
@@ -123,12 +119,11 @@ function decide(
   const home = os.homedir();
   const cwd = extractCwd(input) ?? defaultCwd;
 
-  const tokens = tryTokenize(command, home, env);
-  const reachedByTokens = isNil(tokens)
-    ? false
-    : tokensAsStrings(tokens).some((token) => tokenReachesDirectory(token, cwd, dataDirPath, home));
+  const reachedByTokens = tokensAsStrings(tryTokenize(command, home, env) ?? []).some((token) =>
+    tokenReachesDirectory(token, cwd, dataDirPath, home),
+  );
 
-  // Rede de segurança (§4.14): também decide sozinha quando o
+  // Rede de segurança: também decide sozinha quando o
   // parse lança, e cobre o comando citando D fora de qualquer token isolado.
   const deny = reachedByTokens || command.includes(dataDirPath);
   return deny ? { deny: true, reason: denialMessage(dataDirPath) } : { deny: false };
@@ -146,9 +141,9 @@ function isExecutedDirectly(): boolean {
 function run(): void {
   const stdinInput = fs.readFileSync(0, 'utf8');
   const input: unknown = JSON.parse(stdinInput);
-  const { deny, reason } = decide(input, process.env, process.cwd());
-  if (deny) {
-    process.stderr.write(reason ?? '');
+  const decision = decide(input, process.env, process.cwd());
+  if (decision.deny) {
+    process.stderr.write(decision.reason);
     process.exitCode = 2;
   }
 }
@@ -159,6 +154,5 @@ if (isExecutedDirectly()) {
   } catch {
     // R-1: falha aberto — Node ausente, JSON inválido ou qualquer erro
     // interno nunca deve bloquear o Bash tool.
-    process.exitCode = 0;
   }
 }

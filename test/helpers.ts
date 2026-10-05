@@ -1,101 +1,23 @@
-import * as fs from 'node:fs';
+// Import padrão: o spy de `writeSync` só intercepta o que `adapters/fs/process-store.ts` usa assim.
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { expect } from '@jest/globals';
-import { Client } from '@modelcontextprotocol/client';
-import { InMemoryTransport } from '@modelcontextprotocol/server';
+import { expect, jest } from '@jest/globals';
 import { parse as parseRawJson } from 'jsonc-parser';
 import { z } from 'zod';
 import { HexlogError } from '../src/errors.ts';
-import type { ErrorCode, Detail } from '../src/errors.ts';
-import type { Logger, LogRecord } from '../src/log.ts';
-import { createServer } from '../src/mcp.ts';
-
-/** Environment de teste: servidor `hexlog` real ligado a um `Client` MCP via transporte em memória. */
-export type Environment = {
-  dir: string;
-  client: Client;
-  records: LogRecord[];
-  call: (name: string, args?: Record<string, unknown>) => Promise<CallResult>;
-  tree: (root?: string) => string[];
-  setClock: (date: Date) => void;
-  close: () => Promise<void>;
-};
-
-type CallResult = {
-  isError?: boolean;
-  structuredContent?: unknown;
-  content?: { type: string; text?: string }[];
-};
-
-/** Lista recursivamente os caminhos relativos a `root`, em ordem estável, para comparar árvores de diretório (M2). */
-function tree(root: string): string[] {
-  if (!fs.existsSync(root)) return [];
-  return fs
-    .readdirSync(root, { withFileTypes: true })
-    .flatMap((entry) => {
-      const entryPath = path.join(root, entry.name);
-      const relativePath = path.relative(root, entryPath);
-      return entry.isDirectory()
-        ? [relativePath, ...tree(entryPath).map((f) => path.join(relativePath, f))]
-        : [relativePath];
-    })
-    .sort();
-}
+import type { Logger, LogRecord } from '../src/shared/logger.ts';
+import { registerTempDir } from './cleanup.ts';
 
 /**
- * Cria um `dir` de dados temporário, um servidor `hexlog` real e um `Client` MCP conectados em memória.
- * `cwd` é o `cwd` do servidor (âncora de `attachment({path})`); sem ele vale o do processo de teste.
+ * Cria `hexlog-<prefix>-XXXXXX` sob `os.tmpdir()` e registra para `test/cleanup.ts` apagar no `afterAll`.
+ * Só chame dentro de hook ou teste, nunca na coleta do `describe`: a criação na coleta roda até com `-t` e vaza o diretório.
  */
-export async function createEnvironment(options: { cwd?: string } = {}): Promise<Environment> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-'));
-  const records: LogRecord[] = [];
-  const log: Logger = (record) => {
-    records.push(record);
-  };
-  let now = new Date('2026-01-01T00:00:00.000Z');
-
-  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
-  const server = createServer({ dataDir: dir, clock: () => now, log, cwd: options.cwd });
-  const client = new Client({ name: 'hexlog-test', version: '0.0.0' });
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-
-  async function call(name: string, args: Record<string, unknown> = {}): Promise<CallResult> {
-    const result = (await client.callTool({ name, arguments: args })) as CallResult;
-    // M7: nenhuma chamada, em toda a suíte, pode devolver um erro de forma de saída — só bug no handler produziria isso.
-    for (const item of result.content ?? []) {
-      if (item.type === 'text' && item.text !== undefined) {
-        expect(item.text.startsWith('Output validation error')).toBe(false);
-      }
-    }
-    return result;
-  }
-
-  return {
-    dir,
-    client,
-    records,
-    call,
-    tree: (root = dir) => tree(root),
-    setClock: (date: Date) => {
-      now = date;
-    },
-    close: async () => {
-      await client.close();
-      fs.rmSync(dir, { recursive: true, force: true });
-    },
-  };
-}
-
-/** Vocabulário núcleo mínimo (`approved`/`ok`/`follow`), base de quase todo processo de teste. */
-export async function registerCore(environment: Environment, project: string): Promise<void> {
-  await environment.call('register_vocabulary', {
-    project,
-    owner: 'core',
-    milestoneType: ['approved'],
-    result: ['ok'],
-    action: ['follow'],
-  });
+export function createTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `hexlog-${prefix}-`));
+  registerTempDir(dir);
+  return dir;
 }
 
 /** Parseia `text` (JSON ou JSONC) e valida o formato com `schema`, lançando erro claro se não bater. */
@@ -127,17 +49,80 @@ export function captureError(fn: () => unknown): HexlogError {
   throw new Error('expected the function to throw HexlogError');
 }
 
-/** Afirma que `result` é um erro de domínio (§4.13) com o `code` esperado, e devolve o corpo estruturado. */
-export function expectError(
-  result: CallResult,
-  code: ErrorCode,
-): { code: ErrorCode; message: string; details: Detail[] } {
-  expect(result.isError).toBe(true);
-  const body = result.structuredContent as {
-    code: ErrorCode;
-    message: string;
-    details: Detail[];
+/** Confere que nem `message` nem `details` do erro trazem `secret` (D-26); `JSON.stringify(error)` não vê o `message`. */
+export function expectNoLeak(error: HexlogError, secret: string): void {
+  expect(error.message + JSON.stringify(error.details)).not.toContain(secret);
+}
+
+/** Espera a rejeição com `HexlogError`, aplica `expectNoLeak` com `secret` (D-26) e a devolve. */
+export async function rejectionOf(promise: Promise<unknown>, secret: string): Promise<HexlogError> {
+  const error = await promise.then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBeInstanceOf(HexlogError);
+  expectNoLeak(error as HexlogError, secret);
+  return error as HexlogError;
+}
+
+/** Logger de teste que junta os registros em `records`, na ordem em que chegam. */
+export function captureLog(): { records: LogRecord[]; log: Logger } {
+  const records: LogRecord[] = [];
+  return { records, log: (record) => void records.push(record) };
+}
+
+/** `fs.writeSync` tem sobrecargas e o mock herdaria só a última; o store usa `(fd, buffer, offset)`, e o espião tipa essa. */
+export function spyOnWriteSync(
+  implementation: (fd: number, buffer: Buffer, offset: number) => number,
+): void {
+  jest.spyOn(fs, 'writeSync').mockImplementation(implementation as typeof fs.writeSync);
+}
+
+/**
+ * P9, exceção declarada ao princípio 3: roteiro de `fs.writeSync` do log. Cada chamada consome um
+ * passo: `n >= 0` grava só `n` bytes (de verdade) e devolve `n`; `n < 0` grava `tamanho + n`;
+ * `'enospc'` lança `ENOSPC` com o caminho na mensagem, como o fs real. Sem passos, grava tudo.
+ */
+export function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: string): void {
+  const real = fs.writeSync;
+  let call = 0;
+  spyOnWriteSync((fd, buffer, offset) => {
+    const step = steps[call++];
+    if (step === undefined) return real(fd, buffer, offset);
+    if (step === 'enospc') {
+      throw Object.assign(new Error(`ENOSPC: no space left on device, write '${dataDir}'`), {
+        code: 'ENOSPC',
+      });
+    }
+    const length = buffer.length - offset;
+    return real(fd, buffer, offset, step < 0 ? length + step : Math.min(step, length));
+  });
+}
+
+/** Erro cru do fs, como o `fs` o lança (`code` em maiúsculas, caminho absoluto na mensagem). */
+export const errno = (code: string): Error =>
+  Object.assign(new Error(`${code}: /abs/secret/path`), { code });
+
+/** `<xdg>/hexlog` é o `<D>` que o script resolve; `source` vira o conteúdo dele. */
+export function copyToXdg(source: string): string {
+  const xdg = createTempDir('xdg');
+  fs.cpSync(source, path.join(xdg, 'hexlog'), { recursive: true });
+  return xdg;
+}
+
+/** `caminho → sha256:mtimeMs` de todo arquivo sob `root`, para provar que nada foi escrito. */
+export function snapshot(root: string): Record<string, string> {
+  const entries: [string, string][] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else {
+        const hash = createHash('sha256').update(fs.readFileSync(full)).digest('hex');
+        entries.push([path.relative(root, full), `${hash}:${fs.statSync(full).mtimeMs}`]);
+      }
+    }
   };
-  expect(body.code).toBe(code);
-  return body;
+  walk(root);
+  return Object.fromEntries(entries);
 }

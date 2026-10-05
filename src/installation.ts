@@ -1,28 +1,32 @@
-// Instalação versionada do artefato (§4.14): copia os bundles para
+// Instalação versionada do artefato: copia os bundles para
 // `~/.local/lib/hexlog/<versão>/`, registra o guard em `settings.json` e decide
 // se o MCP precisa ser (re)registrado. Puro e testável: toda execução externa
-// (hook, servidor, relógio, log) é injetada — nada aqui chama `claude` nem builda.
+// (hook, servidor, relógio) é injetada — nada aqui chama `claude` nem builda.
 // Não é importado pelo servidor nem pelo hook, só por `scripts/install.ts`.
+import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 // import default (não `* as fs`): sob esModuleInterop, `* as` copia o módulo com getters
 // não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
-// a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/log.ts).
+// a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/adapters/fs/process-store.ts).
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { parse as parseJsonc } from 'jsonc-parser';
-import { isNil, zip } from 'es-toolkit';
+import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
+import { isError, isNil } from 'es-toolkit';
 import {
   expectedRules,
+  libDirOf,
   applyGuard,
   verifyGuard,
   findHookEntry,
-  mcpRegistered,
-  sha256,
+  skillFileOf,
   hookProbes,
   type ExpectedRules,
   type MissingItem,
 } from './guard.ts';
+import { sha256hex } from './domain/chain.ts';
 import { HexlogError } from './errors.ts';
 import { dataDir } from './directory.ts';
+import { errnoCode, writeFileAtomic } from './adapters/fs/atomic.ts';
+import { orIfMissing, readIfPresent } from './adapters/fs/io.ts';
 
 export type Bundles = { server: Buffer; hook: Buffer };
 /** sha256 dos 2 artefatos (server/hook) de um build ou de uma instalação. */
@@ -35,25 +39,23 @@ export type InstallManifest = {
   dirty: boolean;
 };
 
-// Duplicado de `scripts/build.ts` (não deste arquivo, que é `import`-ado direto
-// pelos testes): aquele módulo usa `import.meta.dirname`/`import.meta.main`,
-// incompatíveis com o transform CJS do ts-jest.
+// Vive aqui e não em `scripts/build.ts`: aquele módulo usa `import.meta.dirname`/`import.meta.main`,
+// incompatíveis com o transform CJS do ts-jest, e este arquivo é `import`-ado direto pelos testes.
 function hasDynamicRequire(bytes: Uint8Array): boolean {
   return Buffer.from(bytes).includes('Dynamic require of');
 }
 
-// 5 tools em definition-tools.ts + 5 em event-tools.ts (§4.12/§4.16) + 2 em timeline-tools.ts (ADR 0006).
-const TOOLS_COUNT = 12;
+// As 11 tools registradas em src/mcp/tools/.
+export const TOOLS_COUNT = 11;
 
 export function versionDirOf(home: string, version: string): string {
-  return path.join(home, '.local', 'lib', 'hexlog', version);
+  return path.join(libDirOf(home), version);
 }
 
 export function readManifest(versionDir: string): InstallManifest | null {
-  const file = path.join(versionDir, 'manifest.json');
-  if (!existsSync(file)) return null;
   try {
-    return JSON.parse(readFileSync(file, 'utf8')) as InstallManifest;
+    const text = readIfPresent(path.join(versionDir, 'manifest.json'));
+    return isNil(text) ? null : (JSON.parse(text) as InstallManifest);
   } catch {
     return null;
   }
@@ -64,7 +66,7 @@ type Shas = { server: string | null; hook: string | null };
 function installedShas(versionDir: string): Shas {
   const shaOfFile = (name: string): string | null => {
     const file = path.join(versionDir, name);
-    return existsSync(file) ? sha256(readFileSync(file)) : null;
+    return orIfMissing(() => sha256hex(readFileSync(file)), null);
   };
   return {
     server: shaOfFile('server.mjs'),
@@ -80,12 +82,11 @@ function shasEqual(a: Shas, b: Shas): boolean {
 /** `ENOENT` cobre a reinstalação: o primeiro `renameSync(versionDir, old)` acha `versionDir` já
  * movido por outro instalador que chegou primeiro — mesma resolução de `ENOTEMPTY`/`EEXIST`. */
 function isDirectoryBusyError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const code = (error as NodeJS.ErrnoException).code;
+  const code = errnoCode(error);
   return code === 'ENOTEMPTY' || code === 'EEXIST' || code === 'ENOENT';
 }
 
-/** Verifica o artefato preparado em `tmp` antes de trocar (§4.14): qualquer falha aborta sem tocar em nada. */
+/** Verifica o artefato preparado em `tmp` antes de trocar: qualquer falha aborta sem tocar em nada. */
 async function verifyPreparedArtifact(args: {
   tmp: string;
   bundles: Bundles;
@@ -112,7 +113,7 @@ async function verifyPreparedArtifact(args: {
   try {
     toolsCount = await verifyServer(path.join(tmp, 'server.mjs'));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = isError(error) ? error.message : String(error);
     throw new HexlogError('INTERNAL', `prepared server failed to start: ${message}`);
   }
   if (toolsCount !== TOOLS_COUNT) {
@@ -161,7 +162,7 @@ function swapDirectory(tmp: string, dst: string, old: string): void {
   }
 }
 
-/** Troca atômica de `tmp` para `versionDir` (§4.14), cobrindo instalação nova, reinstalação e concorrência. */
+/** Troca atômica de `tmp` para `versionDir`, cobrindo instalação nova, reinstalação e concorrência. */
 function swapArtifact(args: {
   versionDir: string;
   tmp: string;
@@ -181,7 +182,8 @@ function swapArtifact(args: {
     }
   }
 
-  const old = path.join(path.dirname(versionDir), `.${version}.old-${Date.now()}`);
+  // UUID, não relógio: dois instaladores no mesmo ms dividiriam o backup e um desfaria a troca do outro.
+  const old = path.join(path.dirname(versionDir), `.${version}.old-${randomUUID()}`);
   try {
     swapDirectory(tmp, versionDir, old);
   } catch (error) {
@@ -194,7 +196,7 @@ function swapArtifact(args: {
   };
 }
 
-/** Instala os bundles preparados como a versão ativa, idempotente pelos bytes instalados (§4.14). */
+/** Instala os bundles preparados como a versão ativa, idempotente pelos bytes instalados. */
 export async function installArtifact(args: {
   home: string;
   version: string;
@@ -204,25 +206,23 @@ export async function installArtifact(args: {
   clock: () => Date;
   runHook: (hookFile: string, stdin: string) => { status: number | null };
   verifyServer: (serverFile: string) => Promise<number>;
-  log: (message: string) => void;
 }): Promise<{
   action: 'none' | 'installed' | 'reinstalled' | 'repaired';
   versionDir: string;
   manifest: InstallManifest;
   warnings: string[];
 }> {
-  const { home, version, bundles, commit, dirty, clock, runHook, verifyServer, log } = args;
+  const { home, version, bundles, commit, dirty, clock, runHook, verifyServer } = args;
   const versionDir = versionDirOf(home, version);
   const shaBuild = {
-    server: sha256(bundles.server),
-    hook: sha256(bundles.hook),
+    server: sha256hex(bundles.server),
+    hook: sha256hex(bundles.hook),
   };
   const previousManifest = readManifest(versionDir);
   const installed = installedShas(versionDir);
   const existedBefore = existsSync(versionDir);
 
   if (shasEqual(installed, shaBuild)) {
-    log(`version ${version} already installed and intact; nothing to do`);
     return {
       action: 'none',
       versionDir,
@@ -244,7 +244,6 @@ export async function installArtifact(args: {
   const warnings: string[] = [];
   if (modificationDetected) {
     warnings.push('installed artifact modified; repairing');
-    log('installed artifact modified; repairing');
   }
 
   const manifest: InstallManifest = {
@@ -280,27 +279,33 @@ export async function installArtifact(args: {
   if (!isNil(extraWarning)) warnings.push(extraWarning);
 
   const finalManifest = action === 'none' ? (readManifest(versionDir) ?? manifest) : manifest;
-  log(`version ${version}: ${action}`);
   return { action, versionDir, manifest: finalManifest, warnings };
 }
 
-/** Aplica o guard em `settings.json` (backup + troca atômica), só se algo mudou. */
+/**
+ * Aplica o guard em `settings.json` (backup + troca atômica), só se algo mudou. `removed` lista as
+ * regras de deny de um `<D>` antigo que o guard tirou, para o instalador não removê-las em silêncio.
+ */
 export function registerGuard(args: { settingsPath: string; expected: ExpectedRules }): {
   changed: boolean;
+  removed: string[];
 } {
   const { settingsPath, expected } = args;
   if (!existsSync(settingsPath)) {
     throw new HexlogError('INTERNAL', 'install the harness before installing hexlog');
   }
   const oldText = readFileSync(settingsPath, 'utf8');
-  const newText = applyGuard(oldText, expected);
-  if (newText === oldText) return { changed: false };
+  const { text: newText, removed } = applyGuard(oldText, expected, existsSync);
+  if (newText === oldText) return { changed: false, removed };
+  const parseErrors: ParseError[] = [];
+  parseJsonc(newText, parseErrors);
+  if (parseErrors.length > 0) {
+    throw new HexlogError('INTERNAL', 'refusing to write invalid settings.json');
+  }
 
-  writeFileSync(`${settingsPath}.bak-hexlog`, oldText);
-  const tmp = `${settingsPath}.tmp-${process.pid}`;
-  writeFileSync(tmp, newText);
-  fs.renameSync(tmp, settingsPath);
-  return { changed: true };
+  writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText);
+  writeFileAtomic(settingsPath, newText);
+  return { changed: true, removed };
 }
 
 /** `name` vira um segmento de path (`<home>/.claude/skills/<name>/`): rejeita o que escaparia dele. */
@@ -326,24 +331,13 @@ export function writeSkillFolder(home: string, name: string, srcDir: string): vo
   swapDirectory(tmp, dstDir, old);
 }
 
-/** `~/.claude.json` ainda não aponta `mcpServers.hexlog` para o servidor esperado. */
-export function needsMcpRegistration(
-  claudeJsonText: string | null,
-  expected: ExpectedRules,
-): boolean {
-  return !mcpRegistered(claudeJsonText, expected);
-}
-
 /** Versão instalada segundo o `command` do hook já registrado em `settings.json`, se houver. */
 function registeredHookVersion(settingsData: unknown, home: string): string | undefined {
-  // `findHookEntry` só usa `dirname(versionDir)` (o diretório `.local/lib/hexlog`) para
-  // reconhecer o hook do hexlog em qualquer versão — o segmento de versão em si é irrelevante aqui.
-  const anyVersionDir = path.join(home, '.local', 'lib', 'hexlog', '_');
-  const found = findHookEntry(settingsData, anyVersionDir);
+  const found = findHookEntry(settingsData, libDirOf(home));
   return isNil(found) ? undefined : path.basename(path.dirname(found.file));
 }
 
-/** `install.ts --check` (§4.14, §10; QN4): mesmo `verifyGuard` de I5-I7, mais o aviso de artefato desatualizado. */
+/** `install.ts --check` (QN4): mesmo `verifyGuard` de I5-I7, mais o aviso de artefato desatualizado. */
 export function verifyInstallation(args: {
   home: string;
   version: string;
@@ -371,16 +365,20 @@ export function verifyInstallation(args: {
   // Sem settings, tudo dá "faltando" pelas checagens normais de `verifyGuard` — não precisa de um caso especial.
   const textToVerify = settingsText ?? '{}';
   const installedVersion = registeredHookVersion(parseJsonc(textToVerify), home) ?? version;
-  const expected = expectedRules(D, home, execPath, installedVersion, skillNames);
+  const expected = expectedRules(D, home, execPath, installedVersion);
 
   const manifest = readManifest(expected.versionDir);
-  const installedBytes = isNil(manifest)
-    ? undefined
-    : {
-        server: existsSync(expected.serverFile) ? readFileSync(expected.serverFile) : null,
-        hook: existsSync(expected.hookFile) ? readFileSync(expected.hookFile) : null,
-        manifest,
-      };
+  const installed = installedShas(expected.versionDir);
+  // Arquivo ausente não conta como modificado: já sai como `hook-file` em `verifyGuard`.
+  const artifactModified =
+    !isNil(manifest) &&
+    !shasEqual(
+      {
+        server: installed.server ?? manifest.sha256.server,
+        hook: installed.hook ?? manifest.sha256.hook,
+      },
+      manifest.sha256,
+    );
 
   const result = verifyGuard({
     settingsText: textToVerify,
@@ -388,18 +386,17 @@ export function verifyInstallation(args: {
     expected,
     exists: existsSync,
     runHook,
-    installedBytes,
+    artifactModified,
   });
-  // expected.skillFiles é skillNames.map(...) em guard.ts: mesmo tamanho e ordem por construção.
-  zip(skillNames, expected.skillFiles).forEach(([name, file]) => {
-    if (!existsSync(file)) result.missing.push(`skill-file:${name}`);
-  });
+  for (const name of skillNames) {
+    if (!existsSync(skillFileOf(home, name))) result.missing.push(`skill-file:${name}`);
+  }
 
   const warnings: string[] = [];
   if (!isNil(manifest) && !isNil(currentBundles) && !result.missing.includes('artifact-modified')) {
     const shaBuild = {
-      server: sha256(currentBundles.server),
-      hook: sha256(currentBundles.hook),
+      server: sha256hex(currentBundles.server),
+      hook: sha256hex(currentBundles.hook),
     };
     if (!shasEqual(shaBuild, manifest.sha256)) {
       const dirtyText = manifest.dirty ? ' (dirty)' : '';
