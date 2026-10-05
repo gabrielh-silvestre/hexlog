@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-10-03 -->
+<!-- Generated: 2026-09-17 | Updated: 2026-10-05 -->
 
 # docs
 
@@ -16,7 +16,7 @@ Registro das decisões do hexlog (ADRs 0007 a 0009, da 1.0) e a pesquisa de libs
 | `friction-mining.md` | Como a skill `friction-mining` minera transcripts do Claude Code atrás de atrito no uso de uma tool MCP, e como portá-la a outro projeto. |
 | `piloto-omc-fork.md` | Piloto do `oh-my-claudecode@omc-hexlog` (fork com hexlog) ligado só neste repositório, no lugar do upstream. |
 | `qualidade-ci.md` | Estudo (nada instalado) de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17. |
-| `qualidade-codigo.md` | Estudo (nada instalado) de qualidade de código e teste — TypeScript, ESLint, jest, property-based testing, mutação — consultado em 2026-09-17. |
+| `qualidade-codigo.md` | Estudo de qualidade de código e teste — TypeScript, ESLint, jest, property-based testing, mutação — consultado em 2026-09-17; o tier "Agora" já está instalado, o resto é estudo. |
 | `ferramentas-similares.md` | Estudo (nada adotado) de decisionlog.ai, mcp-server-decisions e ConPort comparados ao hexlog, com fontes primárias consultadas em 2026-09-17 e 5 ideias ranqueadas. |
 | `diagrama-c3-componentes.md` | Diagrama C4 (nível C3, componentes) do servidor MCP em `src/`, gerado a partir do grafo de dependências internas descrito em `src/AGENTS.md`. |
 
@@ -33,7 +33,7 @@ Registro das decisões do hexlog (ADRs 0007 a 0009, da 1.0) e a pesquisa de libs
 ### Common Patterns
 - IDs de decisão remetem a decisões do usuário ou de execução tomadas durante o planejamento/Ralph e vêm em duas famílias, nenhuma delas definida nos ADRs 0007 a 0009:
   - 0.x (`Q#`, `QN#`, `R-#`, `U-#`, `DE-##`, `M#`, `N#`, `S#`, `B#`, `I#`, `C#`): definidos só no ADR 0001, removido na F8; leia no commit `87237c3` (ancestral da `main`, estável): `git show 87237c3:docs/` lista os ADRs da época.
-  - 1.0 (`D-##`, `E#`, `G#`, `L#`, `f#`, `Constraint N`, `P#`, `TM#`, `TB#`, `TF#`, `SL#`, `SE#`): vivem nas specs e no plano em `.omc/` do checkout principal (não nas worktrees), ignorado pelo git; só `D-##` tem sentido inline, nos ADRs 0008 e 0009 e em `docs/tetos-dominio-v1.md`. Os demais ficam como rótulo sem destino versionado: o dono decidiu não versionar as specs nem o plano da 1.0. Os ponteiros `§N.N` que restam em comentários e testes são dos planos 0.x, também em `.omc/` e fora do git. Não crie rótulo novo dessas famílias: decisão nova vira item numerado de ADR, por emenda.
+  - 1.0 (`D-##`, `E#`, `G#`, `L#`, `f#`, `Constraint N`, `P#`, `TM#`, `TB#`, `TF#`, `SL#`, `SE#`): vivem nas specs e no plano em `.omc/` do checkout principal (não nas worktrees), ignorado pelo git; só `D-##` tem sentido inline, nos ADRs 0008 e 0009 e em `docs/tetos-dominio-v1.md`. Os demais ficam como rótulo sem destino versionado: o dono decidiu não versionar as specs nem o plano da 1.0. Código, comentários e testes não citam mais ponteiro `§N.N`; os que restam em `pesquisa/` (congelada) são de seção de RFC ou dos planos 0.x, também em `.omc/` e fora do git. Não crie rótulo novo dessas famílias: decisão nova vira item numerado de ADR, por emenda.
 
 ## Dependencies
 ### Internal

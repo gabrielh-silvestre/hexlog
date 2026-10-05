@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-10-04 -->
+<!-- Generated: 2026-09-17 | Updated: 2026-10-05 -->
 
 # fixtures
 
@@ -9,7 +9,7 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 ## Key Files
 | File | Description |
 |---|---|
-| `build-entry.ts` | Roda como processo Node real (`spawn`, nunca importado pelo jest): chama `build()` de `scripts/build.ts` com os `entryPoints` passados como pares `nome=arquivo` em argv. Necessário porque `scripts/build.ts` usa `import.meta.dirname`/`import.meta.main`, incompatíveis com o transform CJS do ts-jest. Usado por `toolchain.spec.ts` (os probes) e `bash-guard.spec.ts`/`guard.spec.ts` (`bash-guard`). |
+| `build-entry.ts` | Roda como processo Node real (`spawn`, nunca importado pelo jest): chama `build()` de `scripts/build.ts` com os `entryPoints` passados como pares `nome=arquivo` em argv. Necessário porque `scripts/build.ts` usa `import.meta.dirname`/`import.meta.main`, incompatíveis com o transform CJS do ts-jest. Usado por `bash-guard.spec.ts` e `guard.spec.ts` (`bash-guard`) e por `stdio.e2e.spec.ts` (`server`). |
 | `concurrent-install.ts` | Processo filho para o teste de concorrência de `installArtifact` (`guard.spec.ts`): hook e servidor são buffers sintéticos e as duas checagens são stubs — só a troca atômica de `installArtifact` importa aqui. Usa `spinBarrier` (barreira em arquivo: `mkdir` + busy-wait síncrono, com timeout de 5 s) em dois pontos: `.barrier` antes de `installArtifact`, para os processos irmãos largarem juntos, e `.barrier2` dentro do stub `verifyServer`, depois de `installArtifact` ler `existedBefore` e antes da troca atômica (`swapArtifact`), para que nenhum termine a troca antes de todos terem lido o estado. Com o 6º argumento opcional `interleave`, congela `Date.now` e intercala os dois `renameSync` do backup (o processo 2 tenta depois de o 1 mover `versionDir` e termina antes de o 1 seguir), para o teste (h3) provar que o nome do backup não depende do relógio. |
 | `boundaries/` | Árvore `src/**` de fixtures lintada por `boundaries.spec.ts` (nunca importada nem spawnada): uma violação por regra de `eslint.boundaries.js`, arquivos limpos e arquivos-âncora que o `tsc` tipa. Fora do `eslint .` do repo (`eslint.config.js` a ignora). |
 | `legacy-0x/` | Árvore de dado 0.x (projeto `alpha`: `main/process.json` + `events.jsonl`, `schemas/note/1.0.json` e o `schemas/note.json` legado, `vocabulary/core/1.0.json`, `gates/custom-gate/1.0.json`, `attachments/<sha256>`) gerada pelas tools 0.x reais (D-14); `detectLegacy` a reconhece. Nunca importada nem spawnada: `archive.spec.ts` a copia para um diretório temporário. Fora do `prettier` (`.prettierignore`); locks e diretório vazio são plantados em tempo de teste. Origem em `../AGENTS.md`. |
@@ -33,7 +33,7 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 - `concurrent-install.ts` espera 5 argumentos posicionais (`home version variant processId totalProcesses`, mais `interleave` opcional) e só termina quando `totalProcesses` processos irmãos passarem pelas duas barreiras (`.barrier` e `.barrier2`) — não rode um só isoladamente sem simular os demais.
 
 ### Common Patterns
-- Nome do arquivo indica o papel: `*-probe.ts` roda como processo filho pra inspecionar um artefato; `build-entry.ts` só invoca `scripts/build.ts#build()` fora do jest; `fake-mcp-install.ts`/`concurrent-install.ts` são stand-ins/cenários pro instalador real testado em `guard.spec.ts`.
+- Nome do arquivo indica o papel: `attachment-probe.ts` roda como processo filho pra inspecionar o `AttachmentStore`; `build-entry.ts` só invoca `scripts/build.ts#build()` fora do jest; `fake-mcp-install.ts`/`concurrent-install.ts` são stand-ins/cenários pro instalador real testado em `guard.spec.ts`.
 - `records-corpus.ts` é a única fonte de dados de volume: specs que precisam de muitos registros (`adapters/load.budget.spec.ts`, `adapters/search.spec.ts`, `queries/query.budget.spec.ts`, `queries/project.budget.spec.ts`, `insights.spec.ts`, `export.spec.ts`) chamam `writeRecordsCorpus()` em vez de montar registros um a um.
 
 ## Dependencies

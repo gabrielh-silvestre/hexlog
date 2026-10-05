@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-17 | Updated: 2026-10-04 -->
+<!-- Generated: 2026-09-17 | Updated: 2026-10-05 -->
 
 # hexlog
 
@@ -8,8 +8,13 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Key Files
 | File | Description |
 |------|-------------|
-| `package.json` | Dependências fixadas, scripts `test`/`typecheck`/`build` e config do jest (ts-jest em CJS) |
+| `package.json` | Dependências fixadas, scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
 | `tsconfig.json` | Configuração do TypeScript |
+| `eslint.config.js` | Config do ESLint (typescript-eslint com `stylisticTypeChecked`, `eslint-plugin-jest`, `eslint-plugin-n`); importa `boundaryBlocks` de `eslint.boundaries.js` |
+| `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
+| `.prettierrc`, `.prettierignore`, `.editorconfig` | Formatação (aspas simples, vírgula final, 100 colunas); `*.md` e `package-lock.json` ficam fora do Prettier |
+| `.husky/pre-commit` | Roda `lint-staged` (`eslint --fix` e `prettier --write` nos `*.ts` do commit) |
+| `.github/workflows/ci.yml` | CI: `typecheck`, `lint`, `format:check`, `test` e `test:budget` (Node 24.18.1) |
 | `README.md` | Documentação de uso, instalação, tools e formato dos dados |
 | `.gitignore` | Arquivos ignorados |
 | `.hexlog/` | Mapa do fluxo do OMC (`flow.md`) e os schemas dos cinco tipos custom de auditoria (`types/*.json`): fonte versionada dos tipos e do cálculo offline de `hashes.schemas`; o mapa e os schemas ainda descrevem o 0.x (`register_type`) e a F9 (passo 8) os regenera para `define_type` |
@@ -42,7 +47,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ### Testing Requirements
 - `npm test` roda tudo, exceto os specs de orçamento (`*.budget.spec.ts`). `npx jest test/<arquivo>.spec.ts` roda um spec.
 - `npm run test:budget` roda os specs de orçamento em série (`--runInBand`): `test/adapters/load.budget.spec.ts`, `test/queries/query.budget.spec.ts` e `test/queries/project.budget.spec.ts` (mais `test/adapters/search.budget.spec.ts` e `test/adapters/lock.budget.spec.ts`). O CI roda esse script depois de `npm test`.
-- `npm run typecheck` antes de concluir.
+- `npm run typecheck`, `npm run lint` e `npm run format:check` antes de concluir (o CI roda os três, mais `npm test` e `npm run test:budget`).
 - Não precisa de `npm run build` prévio: os specs que dependem de bundle constroem o artefato num processo filho.
 - Os testes lentos do `npm test` são TF1 (kill -9 no meio do lote), TF4 (dono do lock vivo pausado), P1 e o estresse 8x25 do lock; `npm test` termina em até 300 s (P5). Os specs de orçamento medem tempo e podem falhar em máquina lenta; por isso só rodam em `npm run test:budget`.
 
@@ -63,10 +68,15 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `es-toolkit`: helpers usados em todo o `src/` e nos scripts
 - `jsonc-parser`: edição preservando formatação de `~/.claude/settings.json` (instalação e guard)
 - `minisearch`: busca textual no filtro `text` de `query`
-- `safe-regex2`: detecção de regex catastrófico (ReDoS) em `pattern` de schema de tipo, usada no `checkSchema` (o bundle do servidor a embute; o hook não)
+- `safe-regex2`: detecção de regex catastrófico (ReDoS) em `pattern` e nas chaves de `patternProperties` de schema de tipo, usada no `checkSchema` (o bundle do servidor a embute; o hook não)
 - `shell-quote`: tokenização de comandos no hook
-- `tar`: geração do `.tar` do arquivamento do dado 0.x (`src/archive.ts`, só pelo instalador)
-- `esbuild`, `jest` + `ts-jest`, `fast-check`: build e testes
+
+### Dev (`devDependencies`)
+- `esbuild`: build dos dois bundles
+- `tar`: geração do `.tar` do arquivamento do dado 0.x (`src/archive.ts`, só pelo instalador, que roda do repositório)
+- `jest` + `ts-jest`, `fast-check`, `@modelcontextprotocol/client` (cliente dos specs MCP e e2e): testes
+- `typescript`, `eslint` (+ `typescript-eslint`, `eslint-plugin-jest`, `eslint-plugin-n`, `eslint-config-prettier`), `prettier`: tipos, lint e formatação
+- `husky` + `lint-staged`: hook de pré-commit
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
 
@@ -75,8 +85,8 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na base; `ports.ts` declara as portas; `commands/` (escrita) e `queries/` (leitura) são serviços sobre as portas; `adapters/` implementa as portas (disco, validador, busca); `mcp/` expõe os serviços como tools; `compose.ts` é a única raiz de composição. Ficam fora do mapa os arquivos de raiz: `errors.ts` (importado por todas as camadas), `directory.ts`, `version.ts`, `server.ts` e `installation.ts`, `archive.ts` e `guard.ts`, que só o instalador usa. O porquê das decisões da frente de serviços está em `docs/adr-0008-servicos.md`.
 
 Direção permitida de dependência:
-- `domain/` não importa `shared/`, `commands/`, `queries/`, `mcp/` nem `adapters/`, nem builtin do Node (salvo `crypto`) nem lib de infraestrutura. Exceção: importa `src/errors.ts` (`HexlogError` em `domain/definitions.ts` e `domain/chain.ts`), e `errors.ts` importa de volta só o tipo `RecordId` (ciclo só de tipo). `eslint.boundaries.js` não proíbe `errors.ts` nem `ports.ts` dentro de `domain/`, então essa parte é convenção.
-- `adapters/`, `compose.ts` e `server.ts` também importam `shared/` (hoje só `shared/logger.ts` e `shared/loader.ts`); `mcp/` importa `shared/logger.ts`.
+- `domain/` não importa `shared/`, `commands/`, `queries/`, `mcp/` nem `adapters/`, nem builtin do Node (salvo `crypto`) nem lib de infraestrutura. Exceção: importa `src/errors.ts` (`HexlogError` em `domain/definitions.ts` e `domain/chain.ts`), e `errors.ts` importa de volta só os tipos `Name` e `RecordId` (ciclo só de tipo). `eslint.boundaries.js` não proíbe `errors.ts` nem `ports.ts` dentro de `domain/`, então essa parte é convenção.
+- Quem importa `shared/`: `commands/` e `queries/` (`latest.ts`, `loader.ts`, `pages.ts`, `logger.ts`), `compose.ts` (`loader.ts`, `logger.ts`) e `server.ts` (`logger.ts`); `mcp/` e `adapters/` só importam `shared/logger.ts`.
 - `shared/`, `commands/` e `queries/` dependem de `domain/` e das portas, nunca de `adapters/`; `commands/` e `queries/` não se importam.
 - `adapters/` só implementa portas: não importa `commands/`, `queries/` nem `mcp/` (`eslint.boundaries.js#adaptersBlock`); builtins do Node e libs de infraestrutura são o que ele existe para usar.
 - `mcp/` chama só serviços: não importa `adapters/`, builtin do Node nem `compose.ts`; `mcp/kernel.ts` também não importa `mcp/tools/`.

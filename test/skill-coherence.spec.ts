@@ -295,6 +295,16 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'isRevision',
   'decidedBy',
   'editedSkills',
+  'pattern',
+  'patternProperties',
+  'maxLength',
+  'safe-regex2',
+  'lone-surrogate',
+  'omitted',
+  'select',
+  'file',
+  'plan-legacy',
+  'evidence-file',
 ]);
 
 /**

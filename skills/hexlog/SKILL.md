@@ -19,7 +19,7 @@ avaliar) é da skill hexlog-flow.
 - **Registro** = `type` + `target` + `data` (validado pelo schema do tipo) +
   `relations`. O servidor atribui o `id` (`<process>:<uuid v7>`); o agente nunca
   o escolhe. O `target` é um rótulo `a.b.c` (ver
-  `skills/hexlog-flow/references/target-format.md`).
+  [`../hexlog-flow/references/target-format.md`](../hexlog-flow/references/target-format.md)).
 - **Vigente**: um registro deixa de ser vigente quando outro o `supersedes` ou o
   `revokes`. Tudo que o hexlog responde (gates, `query`) olha só o vigente, salvo
   `includeNonCurrent`.
@@ -84,7 +84,8 @@ fazer quando um processo já ficou preso a um tipo sem a marca.
 | Situação | Resultado | Onde |
 |---|---|---|
 | `create_process` com nome em `RESERVED_PROCESS_NAMES` (`types`, `relations`, `gates`, `attachments`, `archive`) | `RESERVED_NAME` | `domain/ids.ts#RESERVED_PROCESS_NAMES` |
-| `define_type` com schema que não é JSON Schema válido, ou cuja raiz não é `"type": "object"` | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
+| Qualquer tool com nome fora da regex `Name`, campo desconhecido, ou relação sem `kind` nem `as` | `INVALID_INPUT`: corrija o campo de `details[].path` e reenvie | a validação de entrada de cada tool |
+| `define_type` com schema que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` sem `maxLength` de até 256; `patternProperties` sem `propertyNames.maxLength` de até 256; regex que a `safe-regex2` recusa (inclusive `^[a-z]+(?:-[a-z]+)*$`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
 | `define_*` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `commands/definition.ts#targetVersion` |
 | `register` com `type` fora do que o processo fixou (definido depois, ou nunca) | `TYPE_NOT_PINNED` | `commands/register/static.ts#pinnedSchema` |
 | `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` de cada violação em `details` | `commands/register/static.ts#checkData` |

@@ -132,8 +132,8 @@ novo não substitui nem revoga nada do antigo; ele o cita por `derivesFrom` ou
 `query` e as perguntas de gate leem **um processo** por padrão (`scope:
 "process"`). Nesse alcance:
 
-- `in`, `needsReview` e as perguntas `approved` e `no_open_contradiction` só veem
-  relações com as duas pontas no processo; relação vinda de outro processo não
+- `in`, `needsReview` e as perguntas `approved`, `no_pending` e
+  `no_open_contradiction` só veem relações com as duas pontas no processo; relação vinda de outro processo não
   aparece, e **a resposta não avisa**;
 - `out` de um destino em outro processo sai sem `current`.
 
@@ -162,7 +162,9 @@ primeira página; nas seguintes, reenvie o mesmo `changesSince` junto do `cursor
 `INVALID_CURSOR`. Se a resposta traz `changes.omitted`, as listas são parciais e
 esse marcador não deve ser reusado: releia tudo (`cursor`, e `includeNonCurrent`
 para o que saiu). Cursor, marcador ou `changesSince` que não casam com o dado
-dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`.
+dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`. O marcador só vale para o alcance que o
+emitiu: o de um projeto que nomeia outros processos, num gate só de processo, dá `MARKER_NOT_FOUND`, e o de um
+processo num gate com pergunta de projeto lê os demais processos como vazios.
 
 ## Erros incertos e reenvio
 
@@ -170,10 +172,12 @@ dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`.
 |---|---|
 | `IO_ERROR` no `register` (`details[0].code` = o errno em minúsculas, como no ENOSPC) | **Resultado incerto**: o lote pode ter ficado inteiro no disco. Reenvie com a **mesma** `key`: devolve `replayed: true` ou grava. Sem `key`, o reenvio pode duplicar. Um `replayed` depois de um fsync que falhou não garante o lote no disco; a 1.0 não corrige esse caso |
 | `LOCK_TIMEOUT` com `lock-busy` ou `lock-lost` (`adapters/fs/lock.ts#lockTimeout`) | Retentável com a mesma `key`. `lock-busy`: um dono vivo segurou o processo além da espera (15 s). `lock-lost`: nada foi gravado |
-| `LOCK_TIMEOUT` com `holder-unreadable` | **Não se resolve repetindo.** O dono do lock não pode ser lido: pare e peça ao usuário o destravamento manual |
+| `LOCK_TIMEOUT` com `holder-unreadable` | **Não se resolve repetindo.** O dono do lock não pode ser lido: pare e peça ao usuário que remova o lock |
+| `INTERNAL` no `register` | Resultado incerto: reenvie com a **mesma** `key` |
 | Cancelamento ou tempo estourado no `register`, e o reenvio com `key` dá `ATTACHMENT_NOT_FOUND` | **Não prova que o lote ficou fora.** A chamada original pode ainda esperar o lock e grava se o anexo for guardado antes de ela pegá-lo. Guarde o anexo (`attach`, idempotente) e reenvie com a mesma `key`: devolve `replayed: true` (a original gravou) ou grava |
-| `PROCESS_CORRUPTED` (`broken-chain` ou `unreadable-manifest`) | Não grave nem tente reparar. Avise o usuário; `verify_chain` mostra onde |
-| `PROCESS_TOO_LARGE` | O log do processo passou do teto. Abra um processo novo para seguir registrando (a linhagem não atravessa; ver acima) |
+| `PROCESS_CORRUPTED` com `broken-chain` | Não grave nem tente reparar. Avise o usuário; `verify_chain` mostra onde a cadeia quebrou |
+| `PROCESS_CORRUPTED` com `unreadable-manifest` | Não grave nem tente reparar. Avise o usuário: `verify_chain` falha do mesmo jeito |
+| `PROCESS_TOO_LARGE` | O log de um processo passou do teto; `details[0].process` diz qual, e pode ser o de um destino de relação, não o seu. Pare e peça ao usuário um processo novo e a atualização do flow map: esta skill não cria processo (a linhagem não atravessa; ver acima) |
 
 ## Anexos
 
@@ -183,12 +187,15 @@ dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`.
   trabalho do servidor (ou absoluto), fica dentro dele e fora de `<D>`, termina
   em `.md` ou `.txt` (minúsculo) e é arquivo regular, sem symlink, de até 1 MiB
   e UTF-8 válido. Recusa: `INVALID_INPUT` com `details[0].code`
-  `outside-allowed-root`, `inside-data-dir`, `bad-extension`, `not-regular`,
-  `not-found`, `too-big`, `invalid-utf8` ou `bad-args`. Com `outside-allowed-root`, copie o arquivo com cp (não o
-  reescreva) para dentro do diretório do servidor e anexe a cópia.
+  `outside-allowed-root` (também quando o diretório do `path` não resolve),
+  `inside-data-dir`, `bad-extension`, `not-regular` (symlink ou hardlink),
+  `not-found`, `too-big`, `invalid-utf8` ou `bad-args` (inclui arquivo vazio). Com
+  `outside-allowed-root`, copie o arquivo com cp (não o reescreva) para dentro do
+  diretório do servidor e anexe a cópia.
 - **Texto que não existe em arquivo** (relatório que um agente devolveu) se anexa
   por `text`, colado sem resumir, cortar nem reformatar. `text` ou `path`, nunca
-  os dois.
+  os dois. O `text` é recusado em `/text` quando vazio (`bad-args`), com
+  surrogate solto (`lone-surrogate`) ou acima de 1 MiB em bytes UTF-8 (`too-big`).
 - `attach` é idempotente: o mesmo conteúdo dá o mesmo `hash` (`deduplicated:
   true`). O hash é o sha256 dos bytes: qualquer reformatação muda o hash.
 - O registro cita o anexo no campo cujo schema tem `format: "attachment"`. O
@@ -217,13 +224,15 @@ nunca mais grava esse hash nesse campo. Duas saídas, nesta ordem de preferênci
    **opcional** na versão fixada do tipo: o sucessor (mesmo tipo) **omite o
    campo**, e um registro do tipo marcado guarda o hash. O sucessor se liga a
    esse registro por `derivesFrom` ou `complements`, com o registro do tipo
-   marcado antes dele no mesmo lote (`@alias`):
+   marcado antes dele no mesmo lote (`@alias`). Os tipos do exemplo são
+   hipotéticos: `plan-legacy` (fixado com o campo `file` sem marca, opcional) e
+   `evidence-file` (marcado, com o campo `file`):
 
    ```
    records: [
      { alias: "file", type: "evidence-file", target: "x.y", data: { file: "<hash>" } },
-     { type: "plan", target: "x.y", data: { isRevision: true, diff: "…" },
-       relations: [ { to: "<id do plan vigente>", kind: "supersedes" },
+     { type: "plan-legacy", target: "x.y", data: { isRevision: true, diff: "…" },
+       relations: [ { to: "<id do plan-legacy vigente>", kind: "supersedes" },
                     { to: "@file", kind: "derivesFrom" } ] }
    ]
    ```
@@ -246,12 +255,13 @@ depois dele; o processo que já existe segue com o gate fixado.
 
 | Situação | Resultado |
 |---|---|
-| `type` fora do que o processo fixou | `TYPE_NOT_PINNED` |
+| `type` fora do que o processo fixou, inclusive um definido depois do `create_process` | `TYPE_NOT_PINNED`: o processo existente não recebe definição nova. Pare e avise o usuário; não repita `define_type` em loop |
 | `data` fora do schema fixado | `INVALID_RECORD` com o `path` de cada violação |
-| Gate pedido que o processo não fixou | `GATE_NOT_FOUND` |
+| Gate pedido que o processo não fixou, inclusive um definido depois do `create_process` | `GATE_NOT_FOUND`: pare e avise o usuário |
 | Reenviar uma `key` com lote diferente do guardado | `IDEMPOTENCY_CONFLICT` |
 | Dado 0.x em `<D>` | `LEGACY_DATA`: só um humano resolve (ver a skill hexlog) |
-| Filtro inválido na `query` | `INVALID_FILTER` |
+| Filtro inválido na `query` | `INVALID_FILTER` (`process` ausente, `text` sem termo) ou `INVALID_INPUT` (`text` ou `limit` acima do teto) |
+| `PROCESS_NOT_FOUND` ou `PROJECT_NOT_FOUND` | O flow map está desatualizado: pare e avise o usuário |
 | `read_attachment` ou `register` com hash sem blob | `ATTACHMENT_NOT_FOUND` |
 
 ## Referências

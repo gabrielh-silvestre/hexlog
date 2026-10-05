@@ -197,8 +197,9 @@ function messageOf(error: unknown): string {
  * exponencial que a `safe-regex2` deixa passar: ela é heurística (altura de estrela e número de
  * repetições), então alternância sobreposta como `(a|aa)+` ou `([a-z]|[a-z0-9])+` passa, e com
  * 27 caracteres, bem abaixo do teto de `PATTERN_MAX_LENGTH`, a medição deu cerca de 8 s. Risco
- * aceito pelo usuário em 2026-10-02: a ferramenta é de uso exclusivo de agentes. O teto também não
- * vale para a chave de `patternProperties`, que casa com nomes de propriedade sem limite.
+ * aceito pelo usuário em 2026-10-02: a ferramenta é de uso exclusivo de agentes. A chave de
+ * `patternProperties` fica sob o mesmo teto pelo `propertyNames.maxLength` exigido no subschema, que
+ * limita o tamanho do nome de propriedade que ela casa; o limite é de tamanho, não de custo.
  *
  * A `safe-regex2` também tem falso positivo: recusa regex linear com repetição dentro de grupo
  * repetido (`^[a-z]+(?:-[a-z]+)*$`) e sintaxe que não parseia (lookbehind). Passam classe única

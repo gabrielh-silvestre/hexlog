@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-10-04 -->
+<!-- Generated: 2026-09-17 | Updated: 2026-10-05 -->
 
 # scripts
 
@@ -18,7 +18,7 @@ dado 0.x com exit 2.
 | File | Description |
 |---|---|
 | `build.ts` | Builda com `esbuild` os dois entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `repoRoot` |
-| `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 11 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. `node scripts/install.ts --check` só verifica, sem tocar em nada: ignora `--archive-0x` e nem chama `detectLegacy`, então um `<D>` ilegível (`EACCES`, `ENOTDIR`) não o derruba. Regra de `permissions.deny` de um `<D>` antigo que o guard tira é impressa (`removed deny rule: <regra>`), nunca em silêncio. Com dado 0.x em `<D>` (`adapters/fs/data-format.ts#detectLegacy`), sem flag lista o que `src/archive.ts#inspectLegacy` arquivaria e sai 2 sem alterar `<D>` nem a instalação; `--archive-0x` roda `archiveLegacy` e segue para a instalação (imprime arquivos e caminho do `.tar`, ou `removed N empty 0.x directories` quando só havia diretórios vazios; `ArchiveError`: stderr, exit 1, sem instalar). A listagem cita `<D>/archive/` porque o nome do `.tar` só existe depois de `archiveLegacy`. Argumento desconhecido é recusado com exit 1 antes de qualquer escrita (decisão da issue #71, fora do plano; coberta em `test/guard.spec.ts`, describe B3) |
+| `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 11 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e o servidor MCP via `claude mcp add`/`remove`. A saída é só o resumo `hexlog <versão>: installed|reinstalled|repaired` (ou `already installed and intact; nothing to do`), os dois sha256, `settings.json: updated|already correct` e as linhas `warning: ...`. `node scripts/install.ts --check` só verifica, sem tocar em nada: ignora `--archive-0x` e nem chama `detectLegacy`, então um `<D>` ilegível (`EACCES`, `ENOTDIR`) não o derruba. Regra de `permissions.deny` de um `<D>` antigo que o guard tira é impressa (`removed deny rule: <regra>`), nunca em silêncio. Com dado 0.x em `<D>` (`adapters/fs/data-format.ts#detectLegacy`), sem flag lista o que `src/archive.ts#inspectLegacy` arquivaria e sai 2 sem alterar `<D>` nem a instalação; `--archive-0x` roda `archiveLegacy` e segue para a instalação (imprime arquivos e caminho do `.tar`, ou `removed N empty 0.x directories` quando só havia diretórios vazios; `ArchiveError`: stderr, exit 1, sem instalar). A listagem cita `<D>/archive/` porque o nome do `.tar` só existe depois de `archiveLegacy`. Argumento desconhecido é recusado com exit 1 antes de qualquer escrita (decisão da issue #71, fora do plano; coberta em `test/guard.spec.ts`, describe B3) |
 | `cli-error.ts` | `formatCliError(prefix, error)`: a linha `<prefix> failed: CODE: message (detalhes)` e o exit code (2 para `LEGACY_DATA` e `PROCESS_CORRUPTED`, 1 para o resto) dos três scripts de leitura; a recusa de dado 0.x vem de `src/errors.ts#legacyDataError`, a mesma do kernel MCP (P11). Omite o detalhe que só repete a mensagem (`project not found (project not found)`) e mantém o `processo:` do `PROCESS_CORRUPTED`. `openReadOnly()` abre o `composeReader` sobre o `<D>` de `XDG_DATA_HOME` e lança `LEGACY_DATA` com dado 0.x (o preâmbulo único dos três scripts). `parseCliArgs(argv, options)` é o `node:util#parseArgs` estrito: opção desconhecida ou sem valor devolve `undefined`, e o script imprime o uso com exit 1 |
 | `escape-controls.ts` | `escapeControls(text)`: troca C0 (menos LF e TAB), DEL, C1 e os controles bidi por `\uXXXX` visível (minúsculo, como o `JSON.stringify`). Mora em módulo próprio porque importar `timeline.ts` executaria o `main`; só o `timeline.ts` o usa |
 | `insights.ts` | Relatório markdown read-only (integridade da cadeia, linha do tempo e sinais da `key`, SE8: possível duplicata sem chave, chave em excesso (G4: lote de 1 registro com `key` cuja impressão nenhum outro lote repete) e percentual de lotes com chave por tipo) sobre os registros do hexlog, lidos por `composeReader` (`loadProcess` para os elos crus; `list` e `listProjects` do `ProcessReader` para enumerar sem ler o manifesto, então um `process.json` ilegível vira só a linha do processo e o relatório dos demais sai inteiro). Cadeia quebrada imprime `N valid records` e, sem nenhum elo válido, `timeline: unavailable (chain broken)`. A chave em excesso é um proxy: o reenvio com a mesma `key` devolve `replayed` sem gravar, então o log não registra "nunca teve reenvio"; as seções de gates e forks do 0.x saíram porque `evaluate_gate` não grava mais. Uso: `node scripts/insights.ts [projeto[/processo]]`; lê o diretório de dados via `dataDir`/`XDG_DATA_HOME`. Exit pela regra única dos três scripts (tabela abaixo); `main` devolve o maior código dos processos. Argumento desconhecido ou a mais sai com o uso e exit 1. Sem script `npm` dedicado; nunca escreve no diretório de dados |
@@ -40,7 +40,7 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
   (`expectedRules`, `applyGuard`, `verifyGuard`, `hookProbes`,
   `mcpRegistered`) e `src/installation.ts` (`installArtifact`, `registerGuard`,
   `verifyInstallation`) — esses módulos são puros e
-  testáveis, sem chamar `esbuild`/`claude` de verdade (`src/installation.ts`
+  testáveis (exceto `runRealHook`, de `src/guard.ts`, o único `spawn`), sem chamar `esbuild`/`claude` de verdade (`src/installation.ts`
   já chama `fs` real: é quem grava os arquivos instalados). `install.ts` é só
   a fiação: injeta `runRealHook`, `countTools` (sobe o servidor num
   `HOME` descartável e conta `tools.length`) e `registerMcp` (`claude mcp
@@ -72,10 +72,11 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
     direto; `B3` roda `scripts/install.ts --check` como processo real
     (`spawnSync`), sempre com `HOME` temporário — nunca o `HOME` real.
   - `test/insights.spec.ts`: roda `scripts/insights.ts` como processo real
-    (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `filtro
-    posicional`, `sinais da chave (SE8)`, `cadeia adulterada (SL1)` (inclui o
-    `process.json` truncado e o caso misto de exit 1 e 2), `uso incorreto`, `dado
-    0.x (P11, só aqui)` e a trava de que nada foi escrito no diretório de dados.
+    (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `relatório de
+    integridade e linha do tempo` (inclui o filtro projeto/processo e a trava de que
+    nada foi escrito no diretório de dados), `linha do tempo`, `sinais da chave
+    (SE8)`, `cadeia adulterada (SL1)` (inclui o `process.json` truncado e o caso
+    misto de exit 1 e 2), `uso incorreto` e `dado 0.x (P11)`.
   - `test/export.spec.ts`: roda `scripts/export.ts` como processo real
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `sem
     --fields`, `--fields`, `uso incorreto e processo inexistente`,
@@ -84,14 +85,14 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `--full`
     (com `--raw`, texto ≥ 200 KB idêntico entre os delimitadores), `escape de
     terminal` (sem `--raw`, com `--raw` e com `--json`), `texto legível`,
-    `--json`, `read-only`, `integridade` (exit 2) e
-    `uso incorreto e erros`.
+    `agent hostil`, `muitos registros`, `--json`, `read-only`, `integridade`
+    (exit 2) e `uso incorreto e erros`.
   - `test/escape-controls.spec.ts`: `escapeControls` sobre cada classe de
     controle (C0, DEL, C1, bidi), o que passa intacto (LF, TAB, acento, emoji,
     BOM) e a idempotência.
-- `npm run typecheck` (`tsc --noEmit`) e `npm run build` (`node
-  scripts/build.ts`, equivalente ao passo 1 do instalador) também cabem
-  aqui antes de qualquer PR que toque nestes dois arquivos.
+- `npm run typecheck` (`tsc --noEmit`), `npm run lint`, `npm run format:check` e
+  `npm run build` (`node scripts/build.ts`, equivalente ao passo 1 do instalador)
+  também cabem aqui antes de qualquer PR que toque nestes dois arquivos.
 
 ### Common Patterns
 - `import.meta.main`/`import.meta.dirname` são usados nos dois scripts para
@@ -106,7 +107,7 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 ## Dependencies
 ### Internal
 - `build.ts`: nenhuma (só resolve caminhos da raiz do repo)
-- `install.ts`: `./build.ts`, `../src/directory.ts`, `../src/guard.ts`, `../src/installation.ts`
+- `install.ts`: `./build.ts` (`build`, `repoRoot`), `../src/adapters/fs/data-format.ts` (`detectLegacy`), `../src/adapters/fs/io.ts`, `../src/archive.ts`, `../src/directory.ts`, `../src/guard.ts`, `../src/installation.ts`
 - `cli-error.ts`: `../src/compose.ts` (`composeReader`), `../src/directory.ts`, `../src/errors.ts` (`HexlogError`, `legacyDataError`)
 - `escape-controls.ts`: nenhuma
 - `insights.ts`: `./cli-error.ts`, `../src/directory.ts` (`dataDir`, só para a mensagem de "No processes found"), `../src/domain/chain.ts` (tipo `Link`)
