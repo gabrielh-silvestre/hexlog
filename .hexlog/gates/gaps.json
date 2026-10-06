@@ -1,0 +1,10 @@
+{
+  "questions": [
+    {
+      "kind": "no_pending",
+      "pending": { "type": "gap" },
+      "resolvedBy": { "kind": "answers", "from": ["directive"] },
+      "scope": "project"
+    }
+  ]
+}

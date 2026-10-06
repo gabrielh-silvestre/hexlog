@@ -18,7 +18,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `README.md` | Porta de entrada enxuta: o que é, instalação, exemplo mínimo, como funciona e índice de `docs/` (a referência de tools, dados, migração e instalação avançada mora em `docs/`) |
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
-| `.hexlog/` | Schemas dos cinco tipos custom de auditoria (`types/*.json`): fonte versionada dos tipos e do cálculo offline de `hashes.schemas`; os schemas ainda descrevem o 0.x (`register_type`) e a F9 (passo 8) os regenera para `define_type` |
+| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 7 tipos (`types/*.json`, JSON Schema cru), 4 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. O fluxo novo substitui o setup da F9 (passo 8): não há `.hexlog/flow.md`, o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
 
 ## Subdirectories
 | Directory | Purpose |
