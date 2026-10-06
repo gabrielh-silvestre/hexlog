@@ -15,10 +15,8 @@ tokeniza o comando recebido; nunca executa nada.
 | `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal fora de qualquer token isolado (rede de segurança). Falha aberto: qualquer exceção interna, Node ausente ou stdin inválido cai em exit 0 (R-1). A mensagem de negação é o literal de `denialMessage` e lista as tools de leitura (5 das 11) |
 
 ## Navigation Notes
-- A lógica de decisão é pura (`decide`, sem I/O) e separada da execução real
-  (`run`, que lê stdin e seta `process.exitCode`), mas `decide` não é
-  exportada: os testes sempre sobem um processo real (`spawnSync`) contra o
-  `.ts` ou o `.mjs` empacotado, nunca chamam `decide` direto.
+- A lógica de decisão é pura (`decide`, sem I/O, não exportada) e separada da
+  execução real (`run`, que lê stdin e seta `process.exitCode`).
 - `import.meta.main` não sobrevive ao bundle do esbuild; a checagem
   `isExecutedDirectly()` compara `process.argv[1]` com `fileURLToPath(import.meta.url)`.
 - `test/bash-guard.spec.ts`: casos de negação e permissão contra o hook
@@ -26,8 +24,7 @@ tokeniza o comando recebido; nunca executa nada.
   describe `B1(b)` que builda o `.ts` de verdade com esbuild e roda o `.mjs`
   resultante (nega `cat <D>/x` com exit 2, permite `true` com exit 0, e
   confere que o bundle não contém o shim `Dynamic require of`).
-- Rodar com `npm test` (jest); o spec sempre sobe um processo real de Node
-  contra o `.ts`/`.mjs` (`spawnSync`), fora do transform `ts-jest`.
+- Rodar com `npm test` (jest); o spec do hook roda fora do transform `ts-jest`.
 - Prefixo literal decide antes de expandir glob: um segmento com `**` ou uma
   chave `{a/b,c}` com barra é truncado no prefixo, porque `path.matchesGlob`
   não expande `**` até a profundidade de `D`.
