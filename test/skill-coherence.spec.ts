@@ -509,11 +509,13 @@ function agentsFilesUnder(dir: string): string[] {
 }
 
 describe('documentação não cita número de linha', () => {
-  test('nenhum .md de skills/, docs/, friction-mining, README.md ou AGENTS.md casa arquivo:N nem "linha N"', () => {
+  test('nenhum .md de skills/, docs/, skills locais, README.md ou AGENTS.md casa arquivo:N nem "linha N"', () => {
     const files = [
       ...markdownFilesUnder(path.join(repoRoot, 'skills')),
       ...markdownFilesUnder(path.join(repoRoot, 'docs')),
-      ...markdownFilesUnder(path.join(repoRoot, '.claude/skills/friction-mining')),
+      ...['friction-mining', 'flow-run', 'flow-gaps', 'flow-audit'].flatMap((name) =>
+        markdownFilesUnder(path.join(repoRoot, '.claude/skills', name)),
+      ),
       path.join(repoRoot, 'README.md'),
       ...agentsFilesUnder(repoRoot),
     ];

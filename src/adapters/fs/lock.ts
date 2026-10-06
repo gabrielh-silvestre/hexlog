@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
+// Import padrão, não `import * as fs`: ver `docs/directives/convencoes.md`, seção "Import padrão de fs".
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';

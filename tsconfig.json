@@ -14,5 +14,6 @@
     "noImplicitOverride": true,
     "skipLibCheck": true,
     "types": ["node"]
-  }
+  },
+  "include": ["**/*", ".claude/hooks/**/*.ts"]
 }

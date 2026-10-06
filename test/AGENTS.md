@@ -11,7 +11,7 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 |---|---|
 | `helpers.ts` | Não é spec. `createTempDir(prefix)`: cria `hexlog-<prefix>-XXXXXX` sob `os.tmpdir()` e registra em `cleanup.ts` (caminho padrão para diretório temporário de teste); `parseJson(schema, text)`, `at(items, index)` e `captureError(fn)` (o `HexlogError` lançado por uma função síncrona); `expectNoLeak(error, secret)`: confere que nem `message` nem `details` do `HexlogError` trazem `secret` (D-26); `rejectionOf(promise, secret)`: espera a rejeição com `HexlogError`, aplica `expectNoLeak` e a devolve; `captureLog()`: logger que junta os `LogRecord` em `records`; `errno(code)` (erro cru do fs com caminho absoluto na mensagem), `copyToXdg(source)` (copia para `<xdg>/hexlog`, o `<D>` que os scripts resolvem) e `snapshot(root)` (`caminho → sha256:mtimeMs` para provar que um script não escreveu); `scriptWrites(steps, dataDir)` e `spyOnWriteSync` (roteiro de `fs.writeSync` para escrita curta e `ENOSPC`, P9; o helper usa `import fs from 'node:fs'` porque o spy só intercepta o objeto padrão). O erro de domínio estruturado da 1.0 vai em `content[0].text` e é afirmado por `mcp/environment.ts#expectError`. A trava de lint só barra `mkdtempSync`: `mkdtemp` assíncrono, alias e `import()`/`require` passam. Base da maioria das specs. |
 | `cleanup.ts` | Não é spec. `setupFilesAfterEnv` do jest: guarda o registro de `registerTempDir` (consumido por `helpers.ts#createTempDir`) e apaga tudo no `afterAll`, inclusive com teste vermelho. Só importa `node:fs` e `@jest/globals`: puxar `src/` aqui carrega o módulo antes do `jest.mock` de um spec. |
-| `global-setup.ts` | Não é spec. `globalSetup` do jest: cria `hexlog-suite-*` com `mkdtempSync` sob o `TMPDIR` recebido e exporta `process.env.TMPDIR` para ele, herdado pelos workers. É, com `helpers.ts`, o único lugar de `test/` que pode chamar `mkdtempSync`. Um `kill -9` no jest pula o `globalTeardown` e deixa o `hexlog-suite-*` para trás (limpeza manual em Common Patterns). |
+| `global-setup.ts` | Não é spec. `globalSetup` do jest: cria `hexlog-suite-*` com `mkdtempSync` sob o `TMPDIR` recebido e exporta `process.env.TMPDIR` para ele, herdado pelos workers. É, com `helpers.ts`, o único lugar de `test/` que pode chamar `mkdtempSync`. Um `kill -9` no jest pula o `globalTeardown` e deixa o `hexlog-suite-*` para trás (limpeza manual em `docs/directives/qualidade-e-testes.md`). |
 | `global-teardown.ts` | Não é spec. `globalTeardown` do jest: se `hexlog-suite-*` não estiver vazio, falha a execução listando o que sobrou, depois apaga o diretório (só age em basename `hexlog-suite-`, nunca num `TMPDIR` real). Vale com e sem `-t`. |
 | `boundaries.spec.ts` | Travas de fronteira de `eslint.boundaries.js` (`boundaryBlocks`) pela API `ESLint` sobre `fixtures/boundaries/`: imports proibidos em `domain`/`shared`/`commands`/`queries` (builtins exceto `node:crypto`, `ajv`/`ajv-formats`/`minisearch`/`safe-regex2` e subcaminhos, SDK do MCP, `adapters`, `compose.ts`), sondas aninhadas por camada, direção (`domain` sem `commands`/`queries`/`mcp`/`shared`; `src/mcp/**` sem builtins, `adapters` nem `compose.ts`, que só `server.ts`, scripts e testes importam; `src/adapters/**` sem `commands`, `queries` nem `mcp`; `scripts/**` sem `adapters` nem `mcp`, exceto `install.ts` e `build.ts`), `commands` ↔ `queries`, `max-lines` 800 só em `commands`/`queries`, `src/ports.ts` (raiz de `src/`, sem builtins, infra, `adapters` nem `compose.ts`) e `src/mcp/kernel.ts` sem importar `./tools/**`. Só conta mensagem com severidade 2. |
 | `config-wiring.spec.ts` | Prova que `eslint.config.js` liga as travas: `calculateConfigForFile` num processo filho ESM (o jest em CJS não carrega a config) e severidade 2 de `no-restricted-imports`/`max-lines` em `src/commands`, `no-restricted-imports` em `src/mcp/kernel.ts` e `no-restricted-syntax` em `test/**`. |
@@ -92,29 +92,8 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 |---|---|
 | `fixtures/` | Corpus determinístico, scripts de build sob demanda e probes executados como processo filho (see `fixtures/AGENTS.md`) |
 
-## For AI Agents
-### Working In This Directory
-- Specs que chamam tools passam por `mcp/environment.ts#createEnvironment()` (servidor real sobre `compose` + `InMemoryTransport`), nunca mockam o servidor MCP.
-- Specs que precisam do artefato empacotado (`bash-guard`, `stdio.e2e`, `guard`) constroem o bundle sozinhas dentro do teste/`beforeAll` — não pressuponha que `npm run build` já rodou.
-- Ao adicionar um teste que aceita `code`/`agent`/`data` de uma tool, cheque `expectError()` em `mcp/environment.ts` antes de reimplementar a asserção de erro estruturado.
-- `helpers.ts#createTempDir` só dentro de hook ou teste, nunca na coleta do `describe`: a coleta roda até com `-t`, e o `afterAll` de `cleanup.ts` não roda num arquivo sem teste selecionado, então o diretório vazaria.
+## Navigation Notes
 - `fixtures/legacy-0x/` é dado real do 0.x, gerado na F7 pelas tools 0.x (o `createServer` do 0.x com `Client` MCP e `InMemoryTransport`, `HOME` e `XDG_DATA_HOME` temporários, relógio fixo em `2026-01-01T00:00:00.000Z`, só nos eventos de `events.jsonl`) a partir do commit `40be7aede28b3d0014bdb2a0462e24f97de1af1d`; o gerador era descartável e não é versionado. Sequência no projeto `alpha`, processo `main`: `register_vocabulary` (owner `core`, `milestoneType: [approved]`), `register_type` (`note`, com `attachment`), `register_gate` (`custom-gate`), `attachment` (`text: relatorio integral`), `create_process`, `register` de um marco `approved` (target `hex:target:fixture`) e `register` de um `note` citando o anexo. `alpha/schemas/note.json` (formato legado plano, que o 0.x atual não grava) é cópia byte a byte de `alpha/schemas/note/1.0.json`. Os `registeredAt` de `schemas/`, `gates/` e `vocabulary/` são do relógio real (`2026-10-03T09:21:15`), não do relógio fixo. Os ids dos eventos têm UUIDv7 do run: os specs hasheiam o que leem. O gerador não é versionado e o `src/` da 1.0 não o contém.
-
-### Testing Requirements
-- Qualidade antes de concluir: `npm run typecheck`, `npm run lint` e `npm run format:check` (o CI roda os três).
-- Tudo: `npm test` (roda `jest` sobre a suíte, sem os specs `*.budget.spec.ts`; leva menos de 300 s, P5).
-- Orçamentos de tempo: `npm run test:budget` (`jest --runInBand` sobre `adapters/search.budget.spec.ts`, `adapters/load.budget.spec.ts`, `adapters/lock.budget.spec.ts`, `queries/query.budget.spec.ts` e `queries/project.budget.spec.ts`); o CI o roda depois de `npm test`.
-- Um arquivo: `npx jest test/<arquivo>.spec.ts` (ou `npm test -- test/<arquivo>.spec.ts`).
-- Node `>= 24.18.1` (mesmo requisito do projeto, `package.json#engines`).
-- Timeout: o padrão do jest é 5000 ms por teste, e não há `testTimeout` global em `package.json#jest`. Os specs que constroem bundle, sobem processos filhos ou rodam carga (`guard`, `stdio.e2e`, `adapters/lock`, `adapters/process-store`, `*.budget`) passam o timeout como último argumento do `it`, de 15_000 a 240_000 ms conforme o teste. Teste novo desse tipo declara o próprio timeout em vez de depender do padrão.
-- Os specs de orçamento são sensíveis à máquina e por isso ficam fora do `npm test`, rodando em série no `npm run test:budget`. `adapters/load.budget.spec.ts` compara o mínimo das medições, não a mediana.
-- Nenhum requer `npm run build` prévio; os que precisam de bundle o geram por conta própria via processo filho (ver Common Patterns).
-
-### Common Patterns
-- IDs nos títulos/`describe` (`M#`, `N#`, `S#`, `B#`, `I#`, `C1`, `Q10`, `R-3`, `U-7`) remetem a critérios de aceite das duas famílias de IDs (0.x e 1.0) descritas em `docs/AGENTS.md#Common Patterns`, não aos ADRs 0007 a 0009.
-- Property-based tests (`fast-check`, `fc.assert`/`fc.property`) cobrem invariantes de hash e de vigência: `domain/chain.spec.ts`, `domain/vigency.property.spec.ts`.
-- Sobra de execução interrompida (`kill -9`, que pula o `globalTeardown`): `find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'hexlog-suite-*' -exec rm -rf {} +`.
-- Specs de artefato (`bash-guard`, `stdio.e2e`) nunca importam `scripts/build.ts` direto no jest: `import.meta.dirname`/`import.meta.main` não existem sob o transform CJS do ts-jest, por isso o build roda via `spawnSync`/`spawn` de um fixture `.ts` em processo Node real.
 
 ## Dependencies
 ### Internal
@@ -130,3 +109,8 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 - `@modelcontextprotocol/client` (`Client`, `StdioClientTransport`) e `@modelcontextprotocol/server` (`InMemoryTransport`) — cliente/transporte MCP de teste.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+## Diretrizes
+
+- [qualidade-e-testes.md](../docs/directives/qualidade-e-testes.md): comandos antes de concluir, orçamentos, convenções dos specs, bundle e fixtures
+- [documentacao.md](../docs/directives/documentacao.md): famílias de ID dos títulos de teste

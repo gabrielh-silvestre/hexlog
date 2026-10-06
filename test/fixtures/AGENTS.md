@@ -22,19 +22,11 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 | `lock-holder.ts` | Processo filho do lock por pid (P2, TF2, TF4) e do `register` concorrente (SE5) em cinco modos, cada um com um argumento JSON (`LockHolderArgs`): `rounds`, `hold`, `write`, `write-gated` e `register` (sobre o `compose` real). Usado por `adapters/lock.spec.ts` e `commands/register.concurrency.spec.ts`. |
 | `records-corpus.ts` | `writeRecordsCorpus`: corpus 1.0 determinístico gravado direto em `<dataDir>/.v1/` (cadeia por `hashLink`, linhas por `formatLine`), sem passar pelo `ProcessStore`; a opção `gates` fixa gates no manifesto de cada processo (o hash dos gates acompanha). Importado direto pelo jest (`adapters/load.budget.spec.ts`, `adapters/search.spec.ts`, `adapters/search.budget.spec.ts`, `queries/query.budget.spec.ts` e `queries/project.budget.spec.ts`), não spawnado. |
 
-## For AI Agents
-### Working In This Directory
-- Todo arquivo aqui, exceto `records-corpus.ts`, `chain-line.ts`, `fixture-args.ts`, `boundaries/`, `domains/` e `legacy-0x/`, é pensado para rodar como **processo filho** (`spawn`/`spawnSync`), nunca `import`ado pelo jest — várias APIs usadas (`import.meta.dirname`/`main`) não sobrevivem ao transform CJS do ts-jest.
-- `argv`/`env` de cada probe são o contrato com quem o spawna (nos filhos de lock e de kill -9, um único argumento JSON tipado em `fixture-args.ts`): mudar a assinatura de um fixture exige atualizar a chamada correspondente em `test/*.spec.ts` no mesmo commit.
-
-### Testing Requirements
+## Navigation Notes
 - Estes arquivos não têm spec própria — são exercitados pelas specs de `test/` (ver `../AGENTS.md`).
 - `build-entry.ts` espera um `outdir` em `argv[2]` e ao menos um par `nome=arquivo` depois: `node test/fixtures/build-entry.ts /tmp/saida bash-guard=hook/bash-guard.ts`.
 - `concurrent-install.ts` espera 5 argumentos posicionais (`home version variant processId totalProcesses`, mais `interleave` opcional) e só termina quando `totalProcesses` processos irmãos passarem pelas duas barreiras (`.barrier` e `.barrier2`) — não rode um só isoladamente sem simular os demais.
-
-### Common Patterns
 - Nome do arquivo indica o papel: `attachment-probe.ts` roda como processo filho pra inspecionar o `AttachmentStore`; `build-entry.ts` só invoca `scripts/build.ts#build()` fora do jest; `fake-mcp-install.ts`/`concurrent-install.ts` são stand-ins/cenários pro instalador real testado em `guard.spec.ts`.
-- `records-corpus.ts` é a única fonte de dados de volume: specs que precisam de muitos registros (`adapters/load.budget.spec.ts`, `adapters/search.spec.ts`, `queries/query.budget.spec.ts`, `queries/project.budget.spec.ts`, `insights.spec.ts`, `export.spec.ts`) chamam `writeRecordsCorpus()` em vez de montar registros um a um.
 
 ## Dependencies
 ### Internal
@@ -44,3 +36,7 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 - `src/server.ts` — bundle gerado por `build-entry.ts` para o `stdio.e2e.spec.ts`.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+## Diretrizes
+
+- [qualidade-e-testes.md](../../docs/directives/qualidade-e-testes.md): processo filho, contrato de `argv`/`env` e `records-corpus.ts`

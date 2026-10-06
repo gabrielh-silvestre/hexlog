@@ -10,6 +10,36 @@
             "command": "c=$(jq -r '.tool_input.command // \"\"'); if printf '%s' \"$c\" | grep -qE 'gitnexus(@[^ ]+)?[[:space:]]+analyze' && ! printf '%s' \"$c\" | grep -qE -- '--(skip-agents-md|index-only)'; then echo 'hexlog: run `gitnexus analyze --skip-agents-md`. Without the flag it injects a gitnexus block into AGENTS.md and CLAUDE.md.' >&2; exit 2; fi"
           }
         ]
+      },
+      {
+        "matcher": "^mcp__github-official__(create|update)_pull_request$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-hooks.ts\" pre-pr || exit 2"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(*gh*)",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-hooks.ts\" pre-pr"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-hooks.ts\" subagent-start"
+          }
+        ]
       }
     ]
   },
@@ -24,6 +54,11 @@
     "gitnexus-refactoring": "name-only"
   },
   "permissions": {
+    "allow": [
+      "Bash(node .claude/hooks/flow-hooks.ts slug *)",
+      "Bash(node .claude/hooks/flow-hooks.ts mark *)",
+      "Bash(node .claude/hooks/flow-hooks.ts sync-plan *)"
+    ],
     "ask": [
       "Bash(node scripts/install.ts)"
     ]

@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "severity": { "type": "string", "enum": ["URGENT", "NORMAL", "MINIMAL"] },
+    "origin": { "type": "string", "enum": ["review", "audit"] },
+    "description": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "location": { "type": "string", "minLength": 1, "maxLength": 200 }
+  },
+  "required": ["severity", "origin", "description"],
+  "additionalProperties": false
+}

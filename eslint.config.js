@@ -30,7 +30,15 @@ export default defineConfig(
       ...jest.configs['flat/recommended'].rules,
       'jest/expect-expect': [
         'error',
-        { assertFunctionNames: ['expect', 'expectError', 'expectDeduplicated'] },
+        {
+          assertFunctionNames: [
+            'expect',
+            'expectError',
+            'expectDeduplicated',
+            'expectDenied',
+            'expectAllowed',
+          ],
+        },
       ],
     },
   },

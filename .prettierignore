@@ -6,5 +6,6 @@ graphify-out/
 node_modules/
 package-lock.json
 *.md
-.claude/
+.claude/*
+!.claude/hooks/
 test/fixtures/legacy-0x/
