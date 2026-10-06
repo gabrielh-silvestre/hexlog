@@ -22,6 +22,11 @@ import type {
 } from '../ports.ts';
 import { loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
 import { decodeCursor, encodeCursor, invalidCursor, type CursorPayload } from './cursor.ts';
+import {
+  createDescribeType,
+  type DescribeTypeInput,
+  type DescribeTypeResult,
+} from './describe-type.ts';
 import { createList, type ListInput, type ListResult } from './list.ts';
 import {
   createReadAttachment,
@@ -43,7 +48,7 @@ import {
 } from './select.ts';
 
 export { PAGE_CHARS_CAP } from './read-attachment.ts';
-export type { AttachmentPage, ListInput, ListResult };
+export type { AttachmentPage, DescribeTypeInput, DescribeTypeResult, ListInput, ListResult };
 
 const DEFAULT_LIMIT = 50;
 /**
@@ -176,6 +181,16 @@ export type QueryService = {
    * `IO_ERROR`.
    */
   readAttachment(input: ReadAttachmentInput): AttachmentPage;
+  /**
+   * Schema de um tipo, sem gravar. Com `process`, o tipo fixado no manifesto (`{name, schema}`, sem
+   * `version`: o manifesto não a guarda), mesmo que o projeto já tenha uma versão mais nova; sem
+   * `process`, a vigente do projeto ou a `version` pedida (`{name, version, schema}`).
+   * `INVALID_INPUT` (`process-with-version` em `/version`: `process` e `version` juntos, ou
+   * `invalid-version`), `PROCESS_NOT_FOUND`, `TYPE_NOT_PINNED` (`not-pinned` em `/type`: tipo fora do
+   * manifesto), `TYPE_NOT_FOUND` (`unknown-name` em `/type`, `unknown-version` em `/version`),
+   * `PROCESS_CORRUPTED` (`unreadable-manifest`), `INTERNAL` (`unreadable-definition`) e `IO_ERROR`.
+   */
+  describeType(input: DescribeTypeInput): DescribeTypeResult;
 };
 
 function invalidFilter(path: string, code: string, message: string): HexlogError {
@@ -435,5 +450,6 @@ export function createQueryService(deps: {
     list: createList({ store, definitions }),
 
     readAttachment: createReadAttachment({ attachments }),
+    describeType: createDescribeType({ store, definitions }),
   };
 }
