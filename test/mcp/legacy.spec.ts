@@ -37,6 +37,7 @@ const CALLS: [tool: string, args: Record<string, unknown>][] = [
   ['verify_chain', { project: PROJECT, process: 'run-1' }],
   ['read_attachment', { project: PROJECT, hash: HASH }],
   ['list', {}],
+  ['describe_type', { project: PROJECT, type: 'note' }],
 ];
 
 let environment: Environment;
@@ -50,7 +51,7 @@ afterEach(async () => {
 });
 
 describe('D9 e TI4: servidor 1.0 diante de dado 0.x em <D>', () => {
-  test('o conjunto de chamadas cobre as 11 tools do catálogo', async () => {
+  test('o conjunto de chamadas cobre as 12 tools do catálogo', async () => {
     const { tools } = await environment.client.listTools();
 
     expect(CALLS.map(([tool]) => tool).sort()).toEqual(tools.map(({ name }) => name).sort());

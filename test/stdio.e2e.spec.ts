@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { QueryResult } from '../src/queries/query-service.ts';
+import { TOOLS_COUNT } from '../src/installation.ts';
 import { VERSION } from '../src/version.ts';
 import { at, createTempDir } from './helpers.ts';
 import { errorBodyOf } from './mcp/environment.ts';
@@ -107,6 +108,18 @@ describe('P8 e TM1: bundle real por stdio', () => {
       'Dynamic require of',
     );
   });
+
+  test('o bundle anuncia TOOLS_COUNT tools, describe_type entre elas', async () => {
+    const { client } = await connect();
+    try {
+      const { tools } = await client.listTools();
+
+      expect(tools).toHaveLength(TOOLS_COUNT);
+      expect(tools.map(({ name }) => name)).toContain('describe_type');
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
 
   test('<D> com a fixture de dado 0.x responde LEGACY_DATA com o comando em details', async () => {
     const xdg = createTempDir('e2e-xdg');
@@ -206,6 +219,7 @@ describe('P8 e TM1: bundle real por stdio', () => {
         await call('define_relation', { project: PROJECT, name: 'rel', kind: 'supports' }),
         await call('evaluate_gate', { project: PROJECT, process: PROCESS, gate: 'has-note' }),
         await call('verify_chain', { project: PROJECT, process: PROCESS }),
+        await call('describe_type', { project: PROJECT, type: 'note', process: PROCESS }),
       ];
 
       expect(results.filter((result) => result.isError === true)).toEqual([]);

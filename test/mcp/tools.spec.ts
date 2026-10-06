@@ -10,6 +10,7 @@ import type { AttachmentPut } from '../../src/ports.ts';
 import {
   PAGE_CHARS_CAP,
   type AttachmentPage,
+  type DescribeTypeResult,
   type GateEvaluation,
   type ListResult,
   type QueryResult,
@@ -39,8 +40,16 @@ const ALL_TOOLS = [
   'verify_chain',
   'read_attachment',
   'list',
+  'describe_type',
 ];
-const READ_ONLY_TOOLS = ['query', 'evaluate_gate', 'verify_chain', 'read_attachment', 'list'];
+const READ_ONLY_TOOLS = [
+  'query',
+  'evaluate_gate',
+  'verify_chain',
+  'read_attachment',
+  'list',
+  'describe_type',
+];
 
 // Restrições do Claude Code ao `inputSchema` (TM1): nome de propriedade de topo, draft e raiz sem combinadores.
 const PROPERTY_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -89,13 +98,13 @@ const registerNote = (process: string, text: string, target = 'run.step') =>
   });
 
 describe('TM1: catálogo anunciado em tools/list', () => {
-  test('devolve exatamente os 11 nomes', async () => {
+  test('devolve exatamente os 12 nomes', async () => {
     const { tools } = await environment.client.listTools();
 
     expect(tools.map(({ name }) => name).sort()).toEqual([...ALL_TOOLS].sort());
   });
 
-  test('marca readOnlyHint nas 5 tools de leitura e em nenhuma outra', async () => {
+  test('marca readOnlyHint nas 6 tools de leitura e em nenhuma outra', async () => {
     const { tools } = await environment.client.listTools();
 
     const readOnly = tools.filter(({ annotations }) => annotations?.readOnlyHint === true);
@@ -165,7 +174,7 @@ describe('TM2: descrição das tools', () => {
 });
 
 describe('TM7: outputSchema anunciado', () => {
-  test('a soma do outputSchema das 11 tools fica abaixo de 24.280 caracteres', async () => {
+  test('a soma do outputSchema das 12 tools fica abaixo de 24.280 caracteres', async () => {
     const { tools } = await environment.client.listTools();
 
     const sizes = tools.map(({ outputSchema }) => JSON.stringify(outputSchema ?? null).length);
@@ -410,6 +419,83 @@ describe('um fluxo feliz por tool', () => {
   });
 });
 
+describe('describe_type', () => {
+  const NOTE_V2 = { ...NOTE, properties: { ...NOTE.properties, tag: { type: 'string' } } };
+
+  /** Fixa `note` 1.0 no processo `run-1` e depois define `note` 1.1 e `other` no projeto. */
+  async function pinNoteThenEvolve(): Promise<void> {
+    await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
+    await succeed('create_process', { project: PROJECT, process: 'run-1' });
+    await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE_V2 });
+    await succeed('define_type', { project: PROJECT, name: 'other', schema: NOTE });
+  }
+
+  test('com process devolve o schema fixado, sem version, mesmo com versão nova no projeto', async () => {
+    await pinNoteThenEvolve();
+
+    const result = await succeed<DescribeTypeResult>('describe_type', {
+      project: PROJECT,
+      type: 'note',
+      process: 'run-1',
+    });
+
+    expect(result).toEqual({ name: 'note', schema: NOTE });
+  });
+
+  test('sem process devolve a versão vigente e, com version, a pedida', async () => {
+    await pinNoteThenEvolve();
+
+    const current = await succeed<DescribeTypeResult>('describe_type', {
+      project: PROJECT,
+      type: 'note',
+    });
+    const asked = await succeed<DescribeTypeResult>('describe_type', {
+      project: PROJECT,
+      type: 'note',
+      version: '1.0',
+    });
+
+    expect(current).toEqual({ name: 'note', version: '1.1', schema: NOTE_V2 });
+    expect(asked).toEqual({ name: 'note', version: '1.0', schema: NOTE });
+  });
+
+  test('process e version juntos dão INVALID_INPUT em /version', async () => {
+    await pinNoteThenEvolve();
+
+    const body = expectError(
+      await environment.call('describe_type', {
+        project: PROJECT,
+        type: 'note',
+        process: 'run-1',
+        version: '1.0',
+      }),
+      'INVALID_INPUT',
+    );
+
+    expect(body.details).toEqual([expect.objectContaining({ path: '/version' })]);
+  });
+
+  test('tipo não fixado no processo dá TYPE_NOT_PINNED e, sem process, tipo ausente dá TYPE_NOT_FOUND', async () => {
+    await pinNoteThenEvolve();
+
+    const notPinned = expectError(
+      await environment.call('describe_type', {
+        project: PROJECT,
+        type: 'other',
+        process: 'run-1',
+      }),
+      'TYPE_NOT_PINNED',
+    );
+    const notFound = expectError(
+      await environment.call('describe_type', { project: PROJECT, type: 'ghost' }),
+      'TYPE_NOT_FOUND',
+    );
+
+    expect(notPinned.details).toEqual([expect.objectContaining({ path: '/type' })]);
+    expect(notFound.details).toEqual([expect.objectContaining({ path: '/type' })]);
+  });
+});
+
 describe('SE7: as tools devolvem o que o serviço devolve', () => {
   async function seed() {
     await prepareProcess();
@@ -466,6 +552,15 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
     const viaTool = await succeed<ListResult>('list', input);
 
     expect(viaTool).toEqual(JSON.parse(JSON.stringify(servicesOverServerData().query.list(input))));
+  });
+
+  test('describe_type', async () => {
+    await seed();
+    const input = { project: PROJECT, type: 'note' };
+
+    const viaTool = await succeed<DescribeTypeResult>('describe_type', input);
+
+    expect(viaTool).toEqual(servicesOverServerData().query.describeType(input));
   });
 
   test('a recusa do serviço sai como o erro dele, sem regra própria da tool', async () => {

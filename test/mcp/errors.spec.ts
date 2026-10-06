@@ -25,6 +25,7 @@ const TOOLS = [
   'verify_chain',
   'read_attachment',
   'list',
+  'describe_type',
 ];
 
 const item = (extra: Record<string, unknown> = {}) => ({
@@ -59,6 +60,7 @@ const VALID_INPUT: Record<string, Record<string, unknown>> = {
   verify_chain: { project: PROJECT, process: PROCESS },
   read_attachment: { project: PROJECT, hash: 'a'.repeat(64) },
   list: {},
+  describe_type: { project: PROJECT, type: 'note' },
 };
 
 let environment: Environment;

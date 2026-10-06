@@ -81,6 +81,14 @@ const VerifyChainInput = z.strictObject({ project: Name, process: Name });
 
 const ListInput = z.strictObject({ project: Name.optional(), process: Name.optional() });
 
+// `process` e `version` juntos são recusados pelo serviço, com o path do campo.
+const DescribeTypeInput = z.strictObject({
+  project: Name,
+  type: Name,
+  process: Name.optional(),
+  version: z.string().optional(),
+});
+
 // Saídas enxutas (TM7): só a forma que o cliente precisa checar; o miolo variável fica solto.
 const QueryOutput = z.object({
   records: z.array(
@@ -130,6 +138,12 @@ const ListOutput = z.object({
   process: z.looseObject({ name: z.string() }).optional(),
 });
 
+const DescribeTypeOutput = z.object({
+  name: z.string(),
+  version: z.string().optional(),
+  schema: z.record(z.string(), z.unknown()),
+});
+
 const QUERY_DESCRIPTION =
   'Read the current records of a process (scope "process", the default, needs process) or of the ' +
   'whole project (scope "project"). Filters: type, targetPrefix, where (equality on top-level data ' +
@@ -171,6 +185,14 @@ const LIST_DESCRIPTION =
   'Discover what exists. Without project: the projects and their process counts. With project: its ' +
   'processes and the current types, relation names and gates, each with its versions. With project ' +
   'and process: what the process pinned and the definition hashes.';
+
+const DESCRIBE_TYPE_DESCRIPTION =
+  'Read the JSON Schema of a record type, without writing anything. With process: the type pinned ' +
+  'in that process, returned as name and schema without version, because the process pins the ' +
+  'schema and not its version (TYPE_NOT_PINNED when the process did not pin the type). Without ' +
+  'process: the current version of the type in the project, or the one asked by version, returned ' +
+  'as name, version and schema (TYPE_NOT_FOUND when the project has no such type or version). ' +
+  'process and version together are refused with INVALID_INPUT.';
 
 type PagedChanges = Changes & { omitted?: { entered: number; left: number } };
 
@@ -236,7 +258,7 @@ export function gatePage(
   return { ...evaluation, questions: evaluation.questions.map(capEvidence) };
 }
 
-/** Registra as quatro tools de leitura (`readOnlyHint`); cada uma só repassa a entrada ao serviço. */
+/** Registra as cinco tools de leitura (`readOnlyHint`); cada uma só repassa a entrada ao serviço. */
 export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
   defineTool(
     server,
@@ -292,5 +314,19 @@ export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
       annotations: READ_ANNOTATIONS,
     },
     (input) => deps.services.query.list(input),
+  );
+
+  defineTool(
+    server,
+    deps,
+    {
+      name: 'describe_type',
+      schema: DescribeTypeInput,
+      title: 'Describe type',
+      description: DESCRIBE_TYPE_DESCRIPTION,
+      outputSchema: DescribeTypeOutput,
+      annotations: READ_ANNOTATIONS,
+    },
+    (input) => deps.services.query.describeType(input),
   );
 }
