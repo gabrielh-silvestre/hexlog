@@ -42,3 +42,9 @@ O que a pesquisa estabeleceu sobre os canais disponíveis:
 - O gate em si não consegue exigir que toda `decisão` aponte para uma diretriz, porque as perguntas de gate só leem relações de entrada. O schema da `decisão` exige justificativa e fundamento. A pergunta de gate que exigiria a relação de saída está na issue #86.
 - Tudo fica local ao repositório: o doc de regras, as skills e os dois hooks em `.claude/settings.json`. Nada edita o OMC. Atualizar o OMC não quebra a camada, salvo se ele passar a usar `omitClaudeMd` nos agentes, caso em que o item 3 continua alcançando os subagentes.
 - Portar o fluxo para outro repositório pede as mesmas quatro peças: a skill de entrada, o doc importado no `CLAUDE.md` e os dois hooks.
+
+## Emendas datadas
+
+Um ADR aceito não é refeito: cada entrada abaixo diz o que mudou, por quê e quem decidiu.
+
+- **2026-10-06: o item 4 passa a cobrir também `gh pr ready` com a checagem do marcador e `update_pull_request` com `draft: false`, sempre negado (decisão do dono, Gabriel Baldino).** O bloqueio da abertura de PR deixa de parar na criação: sem isso, um PR aberto em rascunho com lacuna aberta sairia do rascunho sem passar pelo pré-PR. `gh pr ready` passa com o marcador do pré-PR, regravado pela skill de resolução de lacunas quando o gate das lacunas passa; `update_pull_request` com `draft: false` nunca passa, porque o GitHub MCP não traz a branch e o hook não tem como conferir o marcador, e a mensagem manda usar `gh pr ready`. Limite conhecido: `gh pr ready` com número ou URL é negado, e `gh api` e push que cria PR seguem fora do alcance.

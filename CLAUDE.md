@@ -1,6 +1,7 @@
 # hexlog
 
 @AGENTS.md
+@docs/directives/fluxo-hexlog.md
 @docs/directives/convencoes.md
 @docs/directives/fronteiras.md
 @docs/directives/invariantes.md

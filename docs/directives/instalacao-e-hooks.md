@@ -18,11 +18,13 @@
 
 ## Hooks do projeto para o fluxo
 
-Definidos no [ADR 0010](adr-0010-camada-sobre-omc.md), itens 3 a 5, em `.claude/settings.json` do projeto (não nos bundles do produto).
+Definidos no [ADR 0010](adr-0010-camada-sobre-omc.md), itens 3 a 5 e a emenda de 2026-10-06, em `.claude/settings.json` do projeto (não nos bundles do produto). O código é `.claude/hooks/flow-hooks.ts` (modos `subagent-start`, `pre-pr`, `slug`, `mark` e `sync-plan`), `flow-command.ts` e `flow-sync.ts`: TypeScript executado pelo Node, sem dependência e fora do bundle do produto. Só valem em sessão nova.
 
-- O marcador do pré-PR é verificação de processo, não barreira de segurança: um agente com `Write` ou `Bash` o forja. O freio pega o descuido, não a burla.
-- O hook de PR só decide sobre o que casa. Entrada que não consegue ler, exceção ou marcador ausente em abertura de PR bloqueiam (exit 2); comando de Bash sem relação com PR passa.
-- Sem `node` o hook de Bash falha aberto, para não travar toda chamada de Bash; o limite conhecido é que `gh pr create` passa nesse caso.
+- O marcador do pré-PR é verificação de processo, não barreira de segurança: um agente com `Write` ou `Bash` o forja. O freio pega o descuido, não a burla. Só o modo `mark` o grava (`<git-common-dir absoluto>/hexlog-flow/<slug>.ok`: a branch e o sha da ponta), e o hook o compara com o sha atual da branch e o de `origin/<branch>`.
+- `SubagentStart` (matcher vazio): injeta um ponteiro de três linhas para [fluxo-hexlog.md](fluxo-hexlog.md), sem copiar as regras. Não garante que o subagente registre a decisão.
+- `PreToolUse` de PR: `create_pull_request` e `update_pull_request` (GitHub MCP) e, no Bash, `gh pr create` e `gh pr ready`. Cobre `create_pull_request` e `gh pr create` sem marcador (passam com `draft: true` ou `--draft`), `gh pr ready` sem marcador na branch atual ou na branch dada como argumento, e `update_pull_request` com `draft: false`, sempre negado. `gh pr ready` com número ou URL, `-R` e `head` com `owner:` são negados, e `gh pr ready --undo` passa.
+- O hook de PR só decide sobre o que casa. Entrada que não consegue ler, exceção, `git` falhando ou marcador ausente em abertura de PR bloqueiam (exit 2); comando de Bash sem relação com PR passa. O Bash é decidido pelo tokenizador de `flow-command.ts`: só vale `gh` em posição de comando, e a frase entre aspas ou em heredoc não casa.
+- O matcher de PR do MCP termina em `|| exit 2`, então sem `node` o PR também é negado. O matcher de Bash não, para não travar toda chamada de Bash: sem `node`, `gh pr create` e `gh pr ready` passam.
 - Não cobre `gh api` nem push que cria PR.
 - O hook não lê o log do hexlog, para não se acoplar ao formato em disco.
 - Nenhum hook do hexlog usa `updatedInput` no tool `Agent`: o context-mode e o OMC já reescrevem esse input, e um terceiro hook pode apagar o que os outros puseram sem erro visível.

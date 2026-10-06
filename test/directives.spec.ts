@@ -197,7 +197,7 @@ describe('docs vivos de docs/directives', () => {
     expect(livingDocs).toEqual(expect.arrayContaining(['convencoes.md', 'fronteiras.md']));
   });
 
-  test('cada doc vivo é importado pelo CLAUDE.md, e convencoes.md vem primeiro', () => {
+  test('cada doc vivo é importado pelo CLAUDE.md, com fluxo-hexlog.md primeiro e convencoes.md em seguida', () => {
     const imports = atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
     const importedLivingDocs = imports.filter((target) =>
       livingDocs.includes(path.basename(target)),
@@ -205,7 +205,10 @@ describe('docs vivos de docs/directives', () => {
     expect(importedLivingDocs).toEqual(
       expect.arrayContaining(livingDocs.map((name) => `docs/directives/${name}`)),
     );
-    expect(imports[1]).toBe('docs/directives/convencoes.md');
+    expect(importedLivingDocs.slice(0, 2)).toEqual([
+      'docs/directives/fluxo-hexlog.md',
+      'docs/directives/convencoes.md',
+    ]);
   });
 
   test('cada doc vivo cabe em 150 linhas e o que o CLAUDE.md importa em 1000 no total', () => {
@@ -253,5 +256,89 @@ describe('AGENTS.md depois da extração das regras', () => {
           .map(({ target }) => `${path.relative(repoRoot, file)} → ${target}`);
       });
     expect(misplaced).toEqual([]);
+  });
+});
+
+// ---- fluxo do hexlog: o que o agente lê não ensina a se esquivar da checagem ----
+
+// A regra de seleção da checagem mora só na skill dela; o que o CLAUDE.md importa não a cita.
+const SELECTION_TERMS =
+  /amostr|estrato|sorteio|sprt|semente|\bsampling\b|\bstrat(um|a)\b|\bseed\b/i;
+const AUDIT_TERMS = /auditor|auditoria|\baudit/i;
+const FLOW_DOC = 'docs/directives/fluxo-hexlog.md';
+const FLOW_SKILLS = ['flow-run', 'flow-gaps', 'flow-audit'];
+const DIRECTIVES_DOC_CITATION = /docs\/directives\/[\w.-]+\.md/g;
+
+const skillPath = (name: string): string => path.join(repoRoot, '.claude/skills', name, 'SKILL.md');
+
+/** Nome declarado no frontmatter de um `SKILL.md`, ou `undefined` sem `name:`. */
+function skillNameFrom(content: string): string | undefined {
+  return /^name:\s*(\S+)$/m.exec(content)?.[1];
+}
+
+/** Último bloco do texto: o que vem depois da última linha em branco. */
+function lastBlockOf(content: string): string {
+  return (
+    content
+      .trim()
+      .split(/\n\s*\n/)
+      .at(-1) ?? ''
+  );
+}
+
+describe('termos de seleção da checagem fora do que o agente lê', () => {
+  test('a regex de termos casa em português e em inglês e ignora prosa comum (unitário)', () => {
+    for (const text of [
+      'amostragem',
+      'Estrato alto',
+      'sorteio',
+      'SPRT',
+      'semente',
+      'seed',
+      'strata',
+    ]) {
+      expect(SELECTION_TERMS.test(text)).toBe(true);
+    }
+    for (const text of ['estratégia', 'demonstrar', 'needs']) {
+      expect(SELECTION_TERMS.test(text)).toBe(false);
+    }
+  });
+
+  test('nenhum doc importado no CLAUDE.md casa os termos de seleção', () => {
+    const imported = atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
+    expect(imported).toContain(FLOW_DOC);
+    const hits = imported.filter((target) =>
+      SELECTION_TERMS.test(fs.readFileSync(path.join(repoRoot, target), 'utf8')),
+    );
+    expect(hits).toEqual([]);
+  });
+
+  test('fluxo-hexlog.md também não menciona a checagem por auditoria', () => {
+    expect(AUDIT_TERMS.test(fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8'))).toBe(false);
+  });
+});
+
+describe('skills locais do fluxo', () => {
+  test('cada skill tem `name` igual à pasta', () => {
+    const wrong = FLOW_SKILLS.filter(
+      (name) => skillNameFrom(fs.readFileSync(skillPath(name), 'utf8')) !== name,
+    );
+    expect(wrong).toEqual([]);
+  });
+
+  test('citam só caminhos de docs/directives/ que existem, e fluxo-hexlog.md entre eles', () => {
+    const cited = FLOW_SKILLS.flatMap((name) => {
+      const content = fs.readFileSync(skillPath(name), 'utf8');
+      return [...content.matchAll(DIRECTIVES_DOC_CITATION)].map(([citation]) => citation);
+    });
+    expect(cited).toContain(FLOW_DOC);
+    expect(cited.filter((citation) => !fs.existsSync(path.join(repoRoot, citation)))).toEqual([]);
+  });
+});
+
+describe('ADR 0010 depois da emenda do fluxo', () => {
+  test('o último bloco do arquivo é a emenda de 2026-10-06', () => {
+    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0010-camada-sobre-omc.md'), 'utf8');
+    expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-06/);
   });
 });
