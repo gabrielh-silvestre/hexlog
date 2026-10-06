@@ -18,7 +18,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `README.md` | Porta de entrada enxuta: o que é, instalação, exemplo mínimo, como funciona e índice de `docs/` (a referência de tools, dados, migração e instalação avançada mora em `docs/`) |
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
-| `.hexlog/` | Mapa do fluxo do OMC (`flow.md`) e os schemas dos cinco tipos custom de auditoria (`types/*.json`): fonte versionada dos tipos e do cálculo offline de `hashes.schemas`; o mapa e os schemas ainda descrevem o 0.x (`register_type`) e a F9 (passo 8) os regenera para `define_type` |
+| `.hexlog/` | Schemas dos cinco tipos custom de auditoria (`types/*.json`): fonte versionada dos tipos e do cálculo offline de `hashes.schemas`; os schemas ainda descrevem o 0.x (`register_type`) e a F9 (passo 8) os regenera para `define_type` |
 
 ## Subdirectories
 | Directory | Purpose |
@@ -106,8 +106,3 @@ Checklist de review:
 - `timeline` somando o projeto contra o teto de 64 MiB por processo (`MAX_LOG_BYTES`): o script lê numa chamada só e o teto vale por processo, não pelo projeto.
 
 Toda violação é achado URGENT.
-
-## Fluxo hexlog
-
-O fluxo do OMC deste repositório (fases, processos, gates) está em
-`.hexlog/flow.md`. Para registrar marcos e vereditos, use a skill `hexlog-flow`.

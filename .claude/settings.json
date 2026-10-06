@@ -14,18 +14,7 @@
     ]
   },
   "enabledPlugins": {
-    "es-toolkit@es-toolkit-plugin": true,
-    "oh-my-claudecode@omc": false,
-    "oh-my-claudecode@omc-hexlog": true
-  },
-  "extraKnownMarketplaces": {
-    "omc-hexlog": {
-      "source": {
-        "source": "github",
-        "repo": "gabrielh-silvestre/oh-my-claudecode",
-        "ref": "hexlog"
-      }
-    }
+    "es-toolkit@es-toolkit-plugin": true
   },
   "skillOverrides": {
     "gitnexus-guide": "user-invocable-only",
