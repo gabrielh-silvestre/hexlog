@@ -57,39 +57,8 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 11 to
 | `node-types.d.ts` | Augmentation de `node:crypto` com `randomUUIDv7` (ainda não coberto por `@types/node` 24.8.1) |
 | `version.ts` | `export const VERSION = '1.0.0'` |
 
-## For AI Agents
-### Working In This Directory
-- **Cadeia de hash (D-05):** `hashLink` (`domain/chain.ts`) liga cada elo ao anterior sobre o JCS do elo sem `prevHash`; `anchor(manifest) = sha256hex(JCS(manifest))` é a raiz. `isValidLine` (`shared/loader.ts`) é o único predicado usado tanto para escrever (`adapters/fs/process-store.ts`) quanto para verificar (`loadVerified`) — não duplique essa lógica. Ele devolve `LineCheck`: `valid` (elos e próximo `Expected`), `torn` (linha que nem é JSON) ou `rejected` com `reasons` (`invalid-line`, `diverging-seq`, `hash-mismatch`), conferidas elo a elo por `isValidLink` (`domain/chain.ts`), que devolve `{ link }` ou `{ reasons }`. A cauda do arquivo sem `\n` final entra se `isValidLine` a aceita (o lote ficou inteiro e só faltou o `\n`); só o resto rasgado é ignorado, sem consumir `seq` (`docs/directives/adr-0009-ferramental.md`, item 10).
-- **Append-only, sem tool de edição/remoção:** `adapters/fs/process-store.ts` só abre o `records.jsonl` em modo `'a'` (append) e faz `fsync` antes de fechar, com teto `MAX_LOG_BYTES`. Não existe tool nem função que reescreva ou remova uma linha; qualquer alteração externa é detectada pela tool `verify_chain`.
-- **Lock por processo (`adapters/fs/lock.ts`, D-12):** `createLockManager` cria `<processo>/records.jsonl.lock/` publicado por `rename` (o dono é gravado com `fsync` num diretório temporário e movido para o lugar; quem perde recebe `ENOTEMPTY` ou `EEXIST`), com dono identificado por pid, `bootId` e token; órfão é roubado, dono vivo nunca, e dono ilegível vira `LOCK_TIMEOUT` `holder-unreadable`, cuja mensagem manda pedir ao usuário que remova o lock. A espera é assíncrona; a seção crítica (decidir + escrever o lote) é síncrona, sem `await`.
-- **Exatamente 11 tools**, fixado e exportado por `installation.ts` (`TOOLS_COUNT = 11`, lido pelos testes de contagem) e verificado pelo instalador antes de trocar o artefato: `create_process` e `register` (`mcp/tools/process.ts`), `define_type`, `define_relation` e `define_gate` (`mcp/tools/definition.ts`), `attach` e `read_attachment` (`mcp/tools/attachment.ts`), `query`, `evaluate_gate`, `verify_chain` e `list` (`mcp/tools/query.ts`).
-- **Anexos (`adapters/fs/attachment-store.ts`, D-15):** o blob é imutável e nunca sobrescrito (escrita por `link` exclusivo; `EEXIST` relê e compara o hash), com teto `ATTACHMENT_MAX_BYTES`. `putPath` só lê `.md` ou `.txt` dentro do `cwd` injetado e fora do `dataDir`. `verify_chain` e `read_attachment` re-hasheiam o blob sempre; `shared/loader.ts#loadVerified` não faz I/O de anexo.
-- **Versionamento de definições (`commands/definition.ts`, D-11, D-17):** `define_type`, `define_relation` e `define_gate` gravam `<nome>/<major>.<minor>.json` sobre um só motor de versão imutável, sem arquivo legado; `adapters/fs/definition-store.ts` escreve cada versão por `link` exclusivo, nunca por `rename`. Mudança que quebra exige `breaking: true` (`BREAKING_CHANGE`); o processo fixa as versões vigentes na criação (`create_process`).
-- **Tamanho de `queries/query-service.ts`:** um só `QueryService` de cinco operações, sem dividir agora (custo de fiação e falta de urgência). O ponto de corte provável é `list` + `readAttachment` em módulos irmãos, com `createQueryService` único; gatilho: ~650 linhas ou uma sexta operação de consulta.
-- **Registro de tool:** toda chamada passa por `execute()` (`mcp/kernel.ts#execute`), que nunca deixa uma exceção chegar ao SDK — `HexlogError` vira `{code, message, details}`, qualquer outra exceção vira `INTERNAL` (stack só no log `internal-error`, nunca na resposta). `execute` também emite sempre um log `tool` com `name`/`ms`/`code?`, nunca o conteúdo da entrada (sem `project`/`process`: ninguém consome e o teste de privacidade o proíbe).
-- **Convenção de erro (`errors.ts`):** todo erro de domínio é uma instância de `HexlogError` com um dos códigos de `ErrorCode` (ex.: `INVALID_INPUT`, `IDEMPOTENCY_CONFLICT`, `FORK_REJECTED`, `LOCK_TIMEOUT`). Erros de validação Zod viram `details[]` via `issueDetails`, com `path` em formato JSON Pointer (RFC 6901).
-- **Nomes reservados:** `attachments` e os demais nomes de `RESERVED_PROCESS_NAMES` (`domain/ids.ts`) não valem como nome de processo; `create_process` os recusa com `RESERVED_NAME`.
-- **Módulos de instalação são puros e isolados:** `guard.ts` e `installation.ts` não são importados por `server.ts` nem pelo hook; só por `scripts/install.ts` (fora de `src/`). Toda execução externa (spawn do hook, subida do servidor, relógio) entra por parâmetro injetado — nunca chamada direta a `child_process`/`Date.now` dentro da lógica testável.
-
-### Testing Requirements
-```sh
-npm test          # jest: testa o .ts fonte diretamente
-npm run typecheck # tsc --noEmit
-npm run lint      # eslint .
-npm run format:check # prettier --check .
-npm run build     # esbuild -> bundles .mjs (mesmo passo 1 do instalador)
-```
-- `npm ci` precisa ser completo (sem `--omit=dev`): `esbuild` e `@modelcontextprotocol/client` são dependências de desenvolvimento usadas pelo instalador/testes.
+## Navigation Notes
 - Specs em `test/` espelham os módulos: `test/domain/`, `test/adapters/`, `test/commands/`, `test/queries/`, `test/mcp/` e `test/shared/` cobrem a árvore de `src/`; na raiz de `test/` ficam `directory.spec.ts`, `compose.spec.ts`, `guard.spec.ts` (cobre também `installation.ts`), `bash-guard.spec.ts`, `archive.spec.ts`, `stdio.e2e.spec.ts` (bundle real de `server.ts`), os specs dos scripts e `package.spec.ts`.
-- `stdio.e2e.spec.ts` sobe o servidor a partir do bundle `.mjs` — é o único jeito de testar o artefato que as sessões de fato executam. O próprio spec constrói o bundle num processo filho (`test/fixtures/build-entry.ts`) no `beforeAll`, então não precisa de `npm run build` antes.
-
-### Common Patterns
-- Toda escrita de `process.json` e de definição usa `adapters/fs/atomic.ts#writeFileAtomic` (arquivo temporário no mesmo diretório, `fsync`, depois `rename` ou `link` exclusivo) — nunca escrita direta no arquivo final. A escrita de uma versão de definição é sempre por `link` exclusivo: `rename` sobrescreveria em silêncio sob corrida entre dois `define_*` concorrentes no mesmo alvo, e em `EEXIST` o retry refaz a decisão inteira (vigente, `unchanged`, quebra, bump).
-- Hash de conteúdo sempre por `sha256hex(canonicalize(valor) ?? '')` (JCS): mesmo padrão em `domain/chain.ts` e na impressão do lote (`fingerprint`) que decide o replay de `register`. **Exceção:** o hash de um anexo é o `sha256hex` dos **bytes** UTF-8 do texto, não do JCS — o blob é texto opaco, não um objeto JSON.
-- Toda função pura que decide algo (`evaluateGate`, `checkRelation`, `select`, `verifyProcess`) recebe dados já carregados e devolve um valor — nenhuma delas faz I/O; o I/O fica nas bordas (`adapters/`).
-- Toda lista de saída tem teto e diz o que cortou (ex.: `breaks` e `attachmentBreaks` em 100 por `verify_chain`, com o total ao lado; `repairedLines` em 100 sem total; `changes` e `evidence` em 100, com `omitted`; `query` e `read_attachment` por página de até `PAGE_CHARS_CAP` = 24.000 caracteres, contados no JSON da página na `query` e nos caracteres do `text` no `read_attachment`).
-- Checagem de ausência pelos predicados da es-toolkit, conforme o tipo: `isUndefined` quando só `undefined` é possível, `isNil`/`isNotNil` quando `undefined` e `null` valem. `null` legítimo, sem `undefined` no tipo, segue com `=== null`. Vazio de array ou string fica em `.length`: `isEmpty` só existe em `es-toolkit/compat`, que `src/` não importa.
-- Módulo de `adapters/fs/` que um spec espiona com `jest.spyOn(fs, ...)` usa `import fs from 'node:fs'` (import padrão), nunca `import * as fs`: sob `esModuleInterop` o namespace copia o módulo com getters não configuráveis, e o spy (P9, M25 da issue #63) só intercepta o objeto padrão.
 
 ## Dependencies
 ### Internal
@@ -115,3 +84,10 @@ Ponto de entrada: `server.ts` → `directory.ts` (resolve dir de dados) + `compo
 | `shell-quote` | Parse/quote do `command` do hook PreToolUse (`guard.ts`) |
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+## Diretrizes
+
+- [fronteiras.md](../docs/directives/fronteiras.md): camadas, direção de dependência e checklist de review
+- [invariantes.md](../docs/directives/invariantes.md): log, cadeia, lock, tools, anexos, definições e erros
+- [convencoes.md](../docs/directives/convencoes.md): idioma, hash, tetos de lista, escrita atômica e import padrão de `fs`
+- [qualidade-e-testes.md](../docs/directives/qualidade-e-testes.md): comandos antes de concluir e convenções dos specs

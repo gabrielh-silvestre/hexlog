@@ -5,6 +5,19 @@ import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const pesquisaDir = path.join(repoRoot, 'docs/pesquisa');
+const directivesDir = path.join(repoRoot, 'docs/directives');
+
+// Tetos de contexto: o que o `CLAUDE.md` importa chega a toda sessão e a todo subagente.
+const LIVING_DOC_MAX_LINES = 150;
+const IMPORTED_MAX_LINES = 1000;
+
+// Títulos que a extração tirou dos `AGENTS.md`: a regra mora nos docs vivos de `docs/directives/`.
+const EXTRACTED_HEADINGS = [
+  'Fronteiras',
+  'Working In This Directory',
+  'Testing Requirements',
+  'Common Patterns',
+];
 
 // Pastas de ponto (`.git`, `.omc`, `.ignore`, `.gitnexus`...) também ficam de fora.
 const IGNORED_DIR_NAMES = new Set(['node_modules', 'graphify-out']);
@@ -70,7 +83,29 @@ function headingTitlesFrom(content: string): string[] {
   return [...stripFencedCodeBlocks(content).matchAll(/^#{1,6}\s+(.+?)\s*$/gm)].map((m) => at(m, 1));
 }
 
+/** Alvo (sem âncora) e posição de cada `[texto](alvo)` em `content`, já sem blocos cercados. */
+function linksWithOffsetFrom(content: string): { target: string; index: number }[] {
+  return [...stripFencedCodeBlocks(content).matchAll(/\]\(([^)\s]+)\)/g)].map((m) => ({
+    target: at(m, 1).split('#')[0] ?? '',
+    index: m.index,
+  }));
+}
+
+/** Posição do marcador `<!-- MANUAL` em `content` sem blocos cercados, ou -1 sem marcador. */
+function manualMarkerOffsetFrom(content: string): number {
+  return stripFencedCodeBlocks(content).indexOf('<!-- MANUAL');
+}
+
 describe('extração de links e citações (unitário, sobre string literal)', () => {
+  test('linksWithOffsetFrom e manualMarkerOffsetFrom medem a posição no mesmo texto', () => {
+    const content = '[a](x.md)\n<!-- MANUAL -->\n[b](y.md#s)';
+    const marker = manualMarkerOffsetFrom(content);
+    expect(linksWithOffsetFrom(content).map((link) => [link.target, link.index > marker])).toEqual([
+      ['x.md', false],
+      ['y.md', true],
+    ]);
+  });
+
   test('relativeLinkTargetsFrom ignora URL, âncora pura e bloco cercado, e tira a âncora do alvo', () => {
     const content = [
       '[a](docs/a.md#secao) [b](https://x.dev/b.md) [c](#topo) [d](../d.md)',
@@ -141,5 +176,82 @@ describe('documentos do repositório', () => {
       }),
     );
     expect(broken).toEqual([]);
+  });
+});
+
+// ---- docs vivos e extração das regras dos AGENTS.md ----
+
+const claudeMdPath = path.join(repoRoot, 'CLAUDE.md');
+
+/** Docs vivos: o que sobra em `docs/directives/` sem o `AGENTS.md` (só navegação) e sem os ADRs. */
+const livingDocs = fs
+  .readdirSync(directivesDir)
+  .filter((name) => name.endsWith('.md') && name !== 'AGENTS.md' && !name.startsWith('adr-'));
+
+function lineCount(file: string): number {
+  return fs.readFileSync(file, 'utf8').split('\n').length - 1;
+}
+
+describe('docs vivos de docs/directives', () => {
+  test('a coleta não está vazia (sanity: a trava não passa por não achar doc)', () => {
+    expect(livingDocs).toEqual(expect.arrayContaining(['convencoes.md', 'fronteiras.md']));
+  });
+
+  test('cada doc vivo é importado pelo CLAUDE.md, e convencoes.md vem primeiro', () => {
+    const imports = atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
+    const importedLivingDocs = imports.filter((target) =>
+      livingDocs.includes(path.basename(target)),
+    );
+    expect(importedLivingDocs).toEqual(
+      expect.arrayContaining(livingDocs.map((name) => `docs/directives/${name}`)),
+    );
+    expect(imports[1]).toBe('docs/directives/convencoes.md');
+  });
+
+  test('cada doc vivo cabe em 150 linhas e o que o CLAUDE.md importa em 1000 no total', () => {
+    const tooLong = livingDocs.filter(
+      (name) => lineCount(path.join(directivesDir, name)) > LIVING_DOC_MAX_LINES,
+    );
+    expect(tooLong).toEqual([]);
+
+    const imported = atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
+    const total = imported.reduce((sum, target) => sum + lineCount(path.join(repoRoot, target)), 0);
+    expect(total).toBeLessThanOrEqual(IMPORTED_MAX_LINES);
+  });
+});
+
+describe('AGENTS.md depois da extração das regras', () => {
+  const agentsFiles = documents.filter((file) => path.basename(file) === 'AGENTS.md');
+
+  test('a coleta inclui o AGENTS.md de test/fixtures (sanity)', () => {
+    const relative = agentsFiles.map((file) => path.relative(repoRoot, file));
+    expect(relative).toEqual(
+      expect.arrayContaining(['AGENTS.md', 'src/AGENTS.md', 'test/fixtures/AGENTS.md']),
+    );
+  });
+
+  test('nenhum AGENTS.md tem os títulos que a extração removeu', () => {
+    const found = agentsFiles.flatMap((file) =>
+      headingTitlesFrom(fs.readFileSync(file, 'utf8'))
+        .filter((title) => EXTRACTED_HEADINGS.includes(title))
+        .map((title) => `${path.relative(repoRoot, file)} → ${title}`),
+    );
+    expect(found).toEqual([]);
+  });
+
+  test('o link para docs/directives/ fica depois do marcador MANUAL', () => {
+    const misplaced = agentsFiles
+      .filter((file) => path.dirname(file) !== directivesDir)
+      .flatMap((file) => {
+        const content = fs.readFileSync(file, 'utf8');
+        const marker = manualMarkerOffsetFrom(content);
+        return linksWithOffsetFrom(content)
+          .filter(({ target }) =>
+            path.resolve(path.dirname(file), target).startsWith(`${directivesDir}${path.sep}`),
+          )
+          .filter(({ index }) => marker === -1 || index < marker)
+          .map(({ target }) => `${path.relative(repoRoot, file)} → ${target}`);
+      });
+    expect(misplaced).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-// Import padrão, não `import * as fs`: ver "Common Patterns" em `src/AGENTS.md`.
+// Import padrão, não `import * as fs`: ver `docs/directives/convencoes.md`, seção "Import padrão de fs".
 import { isUtf8 } from 'node:buffer';
 import fs from 'node:fs';
 import * as path from 'node:path';

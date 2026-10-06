@@ -34,8 +34,7 @@ dado 0.x com exit 2.
 
 Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no comando), 1 é o resto e 0 é íntegro. O `insights` agrega: `processReport` devolve o `exitCode` de cada processo (`formatCliError` na falha de leitura; 2 para cadeia ou anexo quebrado) e `main` devolve o maior, então um processo ilegível por `IO_ERROR` (1) junto com uma cadeia quebrada (2) sai 2. A falha de leitura imprime `formatCliError` (código e detalhes) sob o título do processo e não derruba os demais. Um `process.json` ilegível entra na enumeração (`ProcessReader#list` só confere que o manifesto existe) e sai como linha `PROCESS_CORRUPTED` do processo, não como erro da listagem (issue #75, N3).
 
-## For AI Agents
-### Working In This Directory
+## Navigation Notes
 - A lógica de negócio dos dois scripts vive em `src/guard.ts`
   (`expectedRules`, `applyGuard`, `verifyGuard`, `hookProbes`,
   `mcpRegistered`) e `src/installation.ts` (`installArtifact`, `registerGuard`,
@@ -45,25 +44,10 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
   a fiação: injeta `runRealHook`, `countTools` (sobe o servidor num
   `HOME` descartável e conta `tools.length`) e `registerMcp` (`claude mcp
   remove`+`add`, substituível por `HEXLOG_REGISTER_MCP=<script>` nos testes).
-- Mudar `hook/bash-guard.ts` ou `src/server.ts` na working tree não afeta
-  nenhuma sessão em andamento nem nova até rodar `node scripts/install.ts`
-  de novo: sessões sempre executam a cópia versionada em
-  `~/.local/lib/hexlog/<versão>/`.
 - Instalação é idempotente pelos bytes instalados (compara sha256 do build
   atual contra o instalado) e trata concorrência entre dois instaladores
   rodando ao mesmo tempo via troca atômica (`renameSync`) com fallback em
   `ENOTEMPTY`/`EEXIST`/`ENOENT`.
-- Os 2 bundles (`server`, `bash-guard`) são um conjunto fixo e nomeado (tipo
-  `Bundles` em `src/installation.ts`): um terceiro entrypoint exige tocar
-  `build.ts`, `Bundles`, `installArtifact` e
-  `verifyInstallation`. Já as skills são dinâmicas: `skillNames()` lê as
-  pastas de `skills/` e `writeSkillFolder` copia cada uma para um diretório
-  temporário e troca para `~/.claude/skills/<nome>/` via `swapDirectory`
-  (mesmo mecanismo de `swapArtifact`, com rollback se a troca falhar no
-  meio: o destino nunca fica ausente ou parcial). Sobrescreve sem backup.
-  Skill nova não toca `install.ts`.
-
-### Testing Requirements
 - `npm test` (jest) roda tudo, incluindo:
   - `test/package.spec.ts` (N11): `dependencies`/`devDependencies` do
     `package.json` batem exatamente com o manifesto do projeto (sem
@@ -90,19 +74,10 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
   - `test/escape-controls.spec.ts`: `escapeControls` sobre cada classe de
     controle (C0, DEL, C1, bidi), o que passa intacto (LF, TAB, acento, emoji,
     BOM) e a idempotência.
-- `npm run typecheck` (`tsc --noEmit`), `npm run lint`, `npm run format:check` e
-  `npm run build` (`node scripts/build.ts`, equivalente ao passo 1 do instalador)
-  também cabem aqui antes de qualquer PR que toque nestes dois arquivos.
-
-### Common Patterns
 - `import.meta.main`/`import.meta.dirname` são usados nos dois scripts para
   o modo executável direto — incompatíveis com o transform CJS do ts-jest,
   por isso `src/installation.ts` tem a sua `hasDynamicRequire` em vez de
   importar de `build.ts`.
-- Toda execução externa (`runHook`, `verifyServer`, `clock`)
-  é passada por parâmetro para as funções de `src/`, nunca chamada direto —
-  é isso que torna `installArtifact`/`verifyInstallation` testáveis sem
-  processo real.
 
 ## Dependencies
 ### Internal
@@ -114,8 +89,6 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 - `export.ts`: `./cli-error.ts`, `../src/domain/ids.ts`, `../src/queries/query-service.ts` (tipo `QueryRecord`)
 - `timeline.ts`: `./cli-error.ts`, `./escape-controls.ts`, `../src/domain/ids.ts`, `../src/queries/query-service.ts`
 
-Os três scripts de leitura nunca importam `src/adapters/**` nem `src/mcp/**`: `eslint.boundaries.js` (`scriptsBlock`) barra os dois, com exceção para `install.ts` e `build.ts`, e `test/boundaries.spec.ts` trava.
-
 ### External
 - `esbuild`
 - `@modelcontextprotocol/client` (`Client`, `StdioClientTransport`; devDependency)
@@ -123,3 +96,9 @@ Os três scripts de leitura nunca importam `src/adapters/**` nem `src/mcp/**`: `
 - `node:fs`, `node:os`, `node:path`, `node:child_process`, `node:util` (`parseArgs`, em `cli-error.ts`)
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+## Diretrizes
+
+- [fronteiras.md](../docs/directives/fronteiras.md): scripts de leitura só por `composeReader`, execução externa injetada
+- [instalacao-e-hooks.md](../docs/directives/instalacao-e-hooks.md): instalador, bundles fixos, skills dinâmicas e o efeito de mudar o hook ou o servidor
+- [qualidade-e-testes.md](../docs/directives/qualidade-e-testes.md): comandos antes de concluir
