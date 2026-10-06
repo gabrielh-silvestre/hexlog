@@ -208,4 +208,4 @@ porque a cadeia sha256 não tem chave.
 
 **Restauro de `<D>`:** por cópia, sem link (`cp -a`, `rsync -a`). Hard link (`cp -al`,
 `--link-dest`) não é coberto nem por `O_NOFOLLOW`. A decisão está no item 9 do
-[ADR 0009](adr-0009-ferramental.md).
+[ADR 0009](directives/adr-0009-ferramental.md).

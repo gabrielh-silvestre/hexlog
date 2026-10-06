@@ -57,7 +57,7 @@ Os dados ficam em `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog`), com um 
 - [docs/migracao.md](docs/migracao.md): arquivamento do dado 0.x e migração para a 1.0;
 - [docs/dados.md](docs/dados.md): layout em disco, erros, lock e lacunas de isolamento;
 - [docs/desenvolvimento.md](docs/desenvolvimento.md): scripts de leitura e testes;
-- ADRs: [0007 domínio](docs/adr-0007-dominio.md), [0008 serviços](docs/adr-0008-servicos.md) e [0009 ferramental](docs/adr-0009-ferramental.md).
+- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md) e [0009 ferramental](docs/directives/adr-0009-ferramental.md).
 
 ## Desenvolvimento
 

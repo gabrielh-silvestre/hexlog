@@ -4,14 +4,11 @@
 # docs
 
 ## Purpose
-Registro das decisões do hexlog (ADRs 0007 a 0009, da 1.0) e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
+Documentação do hexlog: as decisões em `directives/` (ADRs 0007 a 0010, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
 
 ## Key Files
 | File | Description |
 |---|---|
-| `adr-0007-dominio.md` | ADR 0007, status Aceito: domínio da 1.0 — catálogo de entidades, regra "`supersedes`/`revokes` só no processo", vigência e conferência do destino de `supports`, `revokes` sobre não vigente recusado com `FORK_REJECTED`, anexo por palavra-chave de schema e guarda `unmarked-attachment`, versionamento (gate sem detecção de quebra, processo novo depois de `breaking: true`) e as quatro perguntas de gate (21 decisões numeradas). |
-| `adr-0008-servicos.md` | ADR 0008, status Aceito: serviços da 1.0 — emendas às specs (vigência só no processo, lock só da origem, E5 e `CYCLE_REJECTED`, cursor, teto de `text` e a reversão do "sem cache"), reavaliação do lock, precedência dos erros do `register` em seis níveis (D-06), regra de leitura D-24, ordem de saída da `query`, cegueira do alcance processo e reprodução do gate só pelo marcador (D-19) e limites aceitos da busca (7). |
-| `adr-0009-ferramental.md` | ADR 0009, status Aceito: ferramental da 1.0 (tools expostas, lock, scripts de leitura, catálogo de erros, ponto de retorno e arquivamento do 0.x, limites aceitos do validador e do anexo), em itens numerados; a numeração só cresce, e os ADRs e esta pasta citam item por número. |
 | `tetos-dominio-v1.md` | Decisão N8 do PR #60: tetos de `relations`, `Batch.key`, `RecordType`, `Gate.questions` e `aliases` no domínio da v1, com o dado medido no 0.x (2026-09-30), quais números são precedente e quais são palpite, e como refazer a medição. |
 | `uso.md` | Caminho de um projeto novo em 5 passos, exemplo completo das chamadas e tabela das 11 tools, com as convenções de nomes e `target`. |
 | `tools.md` | Referência de entrada, saída e erros de cada uma das 11 tools; o mapa geral está em `uso.md`. |
@@ -28,6 +25,7 @@ Registro das decisões do hexlog (ADRs 0007 a 0009, da 1.0) e a pesquisa de libs
 ## Subdirectories
 | Directory | Description |
 |---|---|
+| `directives/` | ADRs 0007 a 0010 (domínio, serviços, ferramental e camada sobre o OMC) (see `directives/AGENTS.md`) |
 | `pesquisa/` | Pesquisa de libs e padrões (17 frentes) que embasou as decisões do 0.x (see `pesquisa/AGENTS.md`) |
 
 ## For AI Agents

@@ -188,9 +188,9 @@ sem isso.
 > tabela abaixo mantêm a redação de 2026-09-17, e a coluna "Toca" cita tools
 > do 0.x (`state`, `register_type`, `register_vocabulary`, `register_gate`), que
 > a 1.0 trocou por `query` e `define_type`, `define_relation` e `define_gate`. O ponto de partida para reavaliar uma ideia são os ADRs
-> da 1.0: [0007](adr-0007-dominio.md) (domínio),
-> [0008](adr-0008-servicos.md) (serviços) e
-> [0009](adr-0009-ferramental.md) (ferramental). Uma ideia que acrescente tool
+> da 1.0: [0007](directives/adr-0007-dominio.md) (domínio),
+> [0008](directives/adr-0008-servicos.md) (serviços) e
+> [0009](directives/adr-0009-ferramental.md) (ferramental). Uma ideia que acrescente tool
 > hoje pede um ADR novo, sobre as 11 tools.
 
 | # | Ideia | Origem | Toca | Esforço |
