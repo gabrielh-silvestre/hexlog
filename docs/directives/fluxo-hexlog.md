@@ -33,7 +33,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - Lacuna é a escolha que nenhuma diretriz cobre. Registre o `gap` (`question`, `context`, `provisionalChoice`) e a `decision` com `grounds: gap` ligada a ele.
 - Modo autônomo (padrão): decide, registra e segue. Modo `--ask`, dado no pedido: para e pergunta antes de seguir.
 - **Só uma `directive` fecha uma lacuna**, pela relação `closes-gap`. Uma decisão refeita, mesmo ancorada, não fecha. O servidor recusa `closes-gap` partindo de `decision`.
-- Fechar exige regra escrita em `docs/directives/`: o rastro é o diff do doc no PR. A skill `flow-gaps` conduz o fechamento.
+- Fechar exige regra escrita em `docs/directives/`: o rastro é a relação `closes-gap` no log e, quando a regra nasce ou muda, o diff do doc no PR. Uma regra já escrita, sem mudança no doc, também fecha. A skill `flow-gaps` conduz o fechamento.
 
 ## Verificação e achados
 
