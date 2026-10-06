@@ -676,6 +676,24 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
+  test('closes: doc em dia (mesmo texto) ainda grava o closes-gap, sem doc novo', async () => {
+    await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
+    const gapId = await registerGap();
+    const before = await currentDirective('r1');
+
+    const plan = await runSync(DIRECTIVES, 'convencoes', 'v1', closingRules(rulesOf(1), gapId));
+
+    expect(plan.upToDate).toBe(false);
+    expect(at(plan.batches, 0).records.map(({ target }) => target)).toEqual([
+      'directives.convencoes.r1',
+    ]);
+    expect(at(plan.batches, 0).records[0]?.relations).toEqual([
+      { kind: 'supersedes', to: before.id },
+      { to: gapId, as: 'closes-gap' },
+    ]);
+    expect(await passed('gaps')).toBe(true);
+  });
+
   test('closes: regra que já fecha a lacuna não gera registro novo, e o edge copiado não duplica', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     const [firstGap, secondGap] = [await registerGap('a'), await registerGap('b')];

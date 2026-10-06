@@ -25,7 +25,7 @@ O planejador é `.claude/hooks/flow-sync.ts#planSync`, executado pelo modo `sync
 
 1. `attach` do arquivo por `path` (devolve o hash sha256 dos bytes; o `source` dos registros exige o anexo).
 2. `query` (sempre com `process` igual ao vigente em `fluxo-hexlog.md`): o `doc` vigente em `directives.<doc>` e as `directive` com prefixo `directives.<doc>.`, com as relações de saída.
-3. Hash igual ao `source` do `doc` vigente: documento em dia, nada a fazer. Senão extraia as regras do texto (slug, `rule`, `section`), mantendo slug e texto das regras vigentes que não mudaram (`interpreted` marca regra de redação própria). `closes` só entra para lacuna que a regra fecha (ver `flow-gaps`).
+3. Hash igual ao `source` do `doc` vigente: documento em dia, nada a fazer, salvo regra com `closes` pendente (`flow-gaps`), que passa pelo `sync-plan` mesmo assim. Senão extraia as regras do texto (slug, `rule`, `section`), mantendo slug e texto das regras vigentes que não mudaram (`interpreted` marca regra de redação própria). `closes` só entra para lacuna que a regra fecha (ver `flow-gaps`).
 4. Monte o `SyncInput` (`ExtractedRule` e `VigentRule` de `.claude/hooks/flow-sync.ts`) grave-o em `.ignore/flow/<slug>/sync.json` e rode `node .claude/hooks/flow-hooks.ts sync-plan < .ignore/flow/<slug>/sync.json`.
 5. Grave os `batches` em ordem, cada um com a `key` que o plano devolveu (o `doc` entra no último lote). Depois de `IO_ERROR`, reenvie o **mesmo** lote com a mesma `key`; `FORK_REJECTED` relê e refaz o plano.
 6. `warnings` com `reopens-gap`: liste ao dono as lacunas que voltaram a abertas. `error: too-many-relations`: pare e pergunte.

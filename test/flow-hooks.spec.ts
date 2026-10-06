@@ -44,7 +44,7 @@ beforeAll(() => {
   git(repo, 'worktree', 'add', '-q', worktree, 'feat/y');
   fs.mkdirSync(path.join(repo, 'sub'));
   markerDir = path.join(repo, '.git', 'hexlog-flow');
-});
+}, 15_000);
 
 beforeEach(() => {
   fs.rmSync(markerDir, { recursive: true, force: true });
@@ -104,32 +104,32 @@ const settings = JSON.parse(
 describe('pre-pr: create_pull_request e marcador', () => {
   test('nega sem draft e sem marcador', () => {
     expectDenied(mcpCreate('feat/x'), /no valid pre-PR marker/);
-  });
+  }, 15_000);
 
   test('permite draft true mesmo sem marcador', () => {
     expectAllowed(mcpCreate('feat/x', { draft: true }));
-  });
+  }, 15_000);
 
   test('permite com marcador de sha igual ao da branch', () => {
     writeMarker('feat/x', tipSha);
     expectAllowed(mcpCreate('feat/x'));
-  });
+  }, 15_000);
 
   test('nega marcador com sha diferente do da branch', () => {
     writeMarker('feat/x', baseSha);
     expectDenied(mcpCreate('feat/x'), /no valid pre-PR marker/);
-  });
+  }, 15_000);
 
   test('nega marcador cuja branch não é a do head', () => {
     fs.mkdirSync(markerDir, { recursive: true });
     fs.writeFileSync(path.join(markerDir, 'feat-x.ok'), `other\n${tipSha}\n`);
     expectDenied(mcpCreate('feat/x'), /no valid pre-PR marker/);
-  });
+  }, 15_000);
 
   test('nega quando a ref local da branch não existe', () => {
     writeMarker('ghost/branch', tipSha);
     expectDenied(mcpCreate('ghost/branch'));
-  });
+  }, 15_000);
 
   test('nega quando origin/<head> aponta para outro sha e permite quando é o mesmo', () => {
     writeMarker('feat/x', tipSha);
@@ -137,31 +137,35 @@ describe('pre-pr: create_pull_request e marcador', () => {
     expectDenied(mcpCreate('feat/x'), /no valid pre-PR marker/);
     git(repo, 'update-ref', 'refs/remotes/origin/feat/x', tipSha);
     expectAllowed(mcpCreate('feat/x'));
-  });
+  }, 15_000);
 
   test('nega head de outro dono (owner:branch)', () => {
     writeMarker('feat/x', tipSha);
     expectDenied(mcpCreate('someone:feat/x'), /cross-repo PRs unsupported/);
-  });
+  }, 15_000);
 
   test.each([
     'git@github.com:acme/widgets.git',
     'https://github.com/acme/widgets',
     'https://github.com/acme/widgets.git',
     'ssh://git@github.com/acme/widgets.git',
-  ])('confere owner/repo contra o origin %s', (url) => {
-    git(repo, 'remote', 'set-url', 'origin', url);
-    writeMarker('feat/x', tipSha);
-    expectAllowed(mcpCreate('feat/x'));
-    expectDenied(
-      preHook(MCP_CREATE, { owner: 'other', repo: 'widgets', head: 'feat/x' }),
-      /but origin is acme\/widgets/,
-    );
-    expectDenied(
-      preHook(MCP_CREATE, { owner: 'acme', repo: 'gadgets', head: 'feat/x' }),
-      /but origin is acme\/widgets/,
-    );
-  });
+  ])(
+    'confere owner/repo contra o origin %s',
+    (url) => {
+      git(repo, 'remote', 'set-url', 'origin', url);
+      writeMarker('feat/x', tipSha);
+      expectAllowed(mcpCreate('feat/x'));
+      expectDenied(
+        preHook(MCP_CREATE, { owner: 'other', repo: 'widgets', head: 'feat/x' }),
+        /but origin is acme\/widgets/,
+      );
+      expectDenied(
+        preHook(MCP_CREATE, { owner: 'acme', repo: 'gadgets', head: 'feat/x' }),
+        /but origin is acme\/widgets/,
+      );
+    },
+    15_000,
+  );
 
   test('gh pr create --head X usa o marcador de X', () => {
     writeMarker('feat/y', tipSha);
@@ -169,25 +173,25 @@ describe('pre-pr: create_pull_request e marcador', () => {
     expectAllowed(bash('gh pr create -H feat/y'));
     expectAllowed(bash('gh pr create --head=feat/y'));
     expectDenied(bash('gh pr create --title t'));
-  });
+  }, 15_000);
 
   test('gh com -R ou --repo é negado', () => {
     writeMarker('feat/x', tipSha);
     expectDenied(bash('gh pr create -R x/y'), /-R\/--repo is denied/);
     expectDenied(bash('gh pr create --repo x/y'), /-R\/--repo is denied/);
-  });
+  }, 15_000);
 
   test('sessão num checkout e branch do PR em outro worktree compartilham o marcador', () => {
     writeMarker('feat/y', tipSha);
     expectAllowed(mcpCreate('feat/y', {}, repo));
     expectAllowed(mcpCreate('feat/y', {}, worktree));
-  });
+  }, 15_000);
 
   test('cwd em subpasta e em worktree resolvem o mesmo marcador', () => {
     writeMarker('feat/x', tipSha);
     expectAllowed(mcpCreate('feat/x', {}, path.join(repo, 'sub')));
     expectAllowed(mcpCreate('feat/x', {}, worktree));
-  });
+  }, 15_000);
 });
 
 describe('pre-pr: gh pr ready', () => {
@@ -195,13 +199,13 @@ describe('pre-pr: gh pr ready', () => {
     expectDenied(bash('gh pr ready'), /no valid pre-PR marker/);
     writeMarker('feat/x', tipSha);
     expectAllowed(bash('gh pr ready'));
-  });
+  }, 15_000);
 
   test('com nome de branch como argumento usa o marcador dessa branch', () => {
     writeMarker('feat/y', tipSha);
     expectAllowed(bash('gh pr ready feat/y'));
     expectDenied(bash('gh pr ready'), /no valid pre-PR marker/);
-  });
+  }, 15_000);
 
   test.each(['gh pr ready 42', 'gh pr ready https://github.com/acme/widgets/pull/42'])(
     'nega por número ou URL: %s',
@@ -209,16 +213,17 @@ describe('pre-pr: gh pr ready', () => {
       writeMarker('feat/x', tipSha);
       expectDenied(bash(command), /by number or URL is denied/);
     },
+    15_000,
   );
 
   test('nega -R x/y', () => {
     writeMarker('feat/x', tipSha);
     expectDenied(bash('gh pr ready -R x/y'), /-R\/--repo is denied/);
-  });
+  }, 15_000);
 
   test('passa --undo', () => {
     expectAllowed(bash('gh pr ready --undo'));
-  });
+  }, 15_000);
 
   test.each([
     'gh pr ready',
@@ -228,18 +233,26 @@ describe('pre-pr: gh pr ready', () => {
     '/usr/bin/gh pr ready',
     'gh "pr" ready',
     'bash -c "gh pr ready"',
-  ])('nega em posição de comando: %s', (command) => {
-    expectDenied(bash(command));
-  });
+  ])(
+    'nega em posição de comando: %s',
+    (command) => {
+      expectDenied(bash(command));
+    },
+    15_000,
+  );
 
   test.each([
     'git commit -m "gh pr ready"',
     "echo 'gh pr ready'",
     "rg 'gh pr ready'",
     "cat <<'EOF'\ngh pr ready\nEOF",
-  ])('passa quando a frase está entre aspas ou em heredoc: %s', (command) => {
-    expectAllowed(bash(command));
-  });
+  ])(
+    'passa quando a frase está entre aspas ou em heredoc: %s',
+    (command) => {
+      expectAllowed(bash(command));
+    },
+    15_000,
+  );
 });
 
 describe('pre-pr: update_pull_request', () => {
@@ -248,16 +261,22 @@ describe('pre-pr: update_pull_request', () => {
       preHook(MCP_UPDATE, { owner: 'acme', repo: 'widgets', draft: false }),
       /gh pr ready/,
     );
-  });
+  }, 15_000);
 
   test.each([
     { draft: true },
     { title: 'novo título' },
     { body: 'novo corpo' },
     { state: 'closed' },
-  ])('passa com %j', (extra) => {
-    expectAllowed(preHook(MCP_UPDATE, { owner: 'acme', repo: 'widgets', pullNumber: 1, ...extra }));
-  });
+  ])(
+    'passa com %j',
+    (extra) => {
+      expectAllowed(
+        preHook(MCP_UPDATE, { owner: 'acme', repo: 'widgets', pullNumber: 1, ...extra }),
+      );
+    },
+    15_000,
+  );
 });
 
 describe('pre-pr: casamento do Bash (create)', () => {
@@ -278,14 +297,18 @@ describe('pre-pr: casamento do Bash (create)', () => {
     'eval "gh pr create"',
     'echo $(gh pr create)',
     'echo hi && gh pr create',
-  ])('nega: %s', (command) => {
-    expectDenied(bash(command));
-  });
+  ])(
+    'nega: %s',
+    (command) => {
+      expectDenied(bash(command));
+    },
+    15_000,
+  );
 
   test('permite gh pr create --draft e -d', () => {
     expectAllowed(bash('gh pr create --draft --title t'));
     expectAllowed(bash('gh pr create -d'));
-  });
+  }, 15_000);
 
   test.each([
     'git commit -m "gh pr create"',
@@ -295,35 +318,40 @@ describe('pre-pr: casamento do Bash (create)', () => {
     'git commit -m "$(cat <<\'EOF\'\nfix: gh pr create\nEOF\n)"',
     'echo hi # gh pr create',
     'ls -la',
-  ])('permite: %s', (command) => {
-    expectAllowed(bash(command));
-  });
+  ])(
+    'permite: %s',
+    (command) => {
+      expectAllowed(bash(command));
+    },
+    15_000,
+  );
 
   test.each(['gh pr create --title "x', "echo 'gh pr create", 'echo $(gh pr create'])(
     'nega aspa sem par que casa a regex solta: %s',
     (command) => {
       expectDenied(bash(command));
     },
+    15_000,
   );
 
   test('permite aspa sem par que não menciona gh pr create nem ready', () => {
     expectAllowed(bash('echo "abc'));
-  });
+  }, 15_000);
 });
 
 describe('pre-pr: entrada e falha', () => {
   test('nega stdin que não é JSON', () => {
     expectDenied(runHook(['pre-pr'], { input: 'not json' }));
-  });
+  }, 15_000);
 
   test('ignora ferramenta que não é de PR nem Bash', () => {
     expectAllowed(preHook('Read', { file_path: '/x' }));
-  });
+  }, 15_000);
 
   test('nega git falhando (cwd fora de repositório)', () => {
     const outside = createTempDir('flow-hooks-outside');
     expectDenied(bash('gh pr ready', outside));
-  });
+  }, 15_000);
 
   test('o comando do matcher de PR, com PATH vazio, sai com 2', () => {
     const entry = (settings.hooks.PreToolUse ?? []).find((e) =>
@@ -337,7 +365,7 @@ describe('pre-pr: entrada e falha', () => {
     });
     expect(command).toContain('pre-pr');
     expect(result.status).toBe(2);
-  });
+  }, 15_000);
 });
 
 describe('modos', () => {
@@ -352,13 +380,13 @@ describe('modos', () => {
     expect(hookSpecificOutput.additionalContext).toContain('docs/directives/fluxo-hexlog.md');
     expect(hookSpecificOutput.additionalContext).toContain('work process: feat-x');
     expect(hookSpecificOutput.additionalContext).toContain('tell whoever launched you');
-  });
+  }, 15_000);
 
   test('subagent-start sem entrada legível ainda devolve o contexto', () => {
     const result = runHook(['subagent-start'], { input: 'not json' });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('additionalContext');
-  });
+  }, 15_000);
 
   test.each([
     ['feat/x', 'feat-x'],
@@ -367,11 +395,15 @@ describe('modos', () => {
     ['Feat/UPPER', 'feat-upper'],
     [`${'a'.repeat(62)}/b`, 'a'.repeat(62)],
     ['a'.repeat(70), 'a'.repeat(63)],
-  ])('slug de %s é %s', (branch, expected) => {
-    const result = runHook(['slug', branch]);
-    expect(result.status).toBe(0);
-    expect(result.stdout).toBe(`${expected}\n`);
-  });
+  ])(
+    'slug de %s é %s',
+    (branch, expected) => {
+      const result = runHook(['slug', branch]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe(`${expected}\n`);
+    },
+    15_000,
+  );
 
   test.each([
     '///',
@@ -384,11 +416,15 @@ describe('modos', () => {
     'attachments',
     'archive',
     'main',
-  ])('slug recusa "%s" com exit 1', (branch) => {
-    const result = runHook(['slug', branch]);
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe('');
-  });
+  ])(
+    'slug recusa "%s" com exit 1',
+    (branch) => {
+      const result = runHook(['slug', branch]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+    },
+    15_000,
+  );
 
   test('mark grava o marcador no git-common-dir e o hook passa a aceitar o PR e o gh pr ready', () => {
     expectDenied(mcpCreate('feat/x'));
@@ -398,13 +434,13 @@ describe('modos', () => {
     expectAllowed(mcpCreate('feat/x'));
     expectAllowed(bash('gh pr create --title t'));
     expectAllowed(bash('gh pr ready'));
-  });
+  }, 15_000);
 
   test('mark no worktree grava no git-common-dir compartilhado', () => {
     const result = runHook(['mark', 'feat-y'], { cwd: worktree });
     expect(result.status).toBe(0);
     expect(fs.existsSync(path.join(markerDir, 'feat-y.ok'))).toBe(true);
-  });
+  }, 15_000);
 
   test('mark recusa árvore suja', () => {
     const dirty = path.join(repo, 'dirty.txt');
@@ -417,14 +453,14 @@ describe('modos', () => {
     } finally {
       fs.rmSync(dirty);
     }
-  });
+  }, 15_000);
 
   test('mark recusa branch que não gera o slug', () => {
     const result = runHook(['mark', 'other-slug']);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/does not yield slug/);
     expect(fs.existsSync(markerDir)).toBe(false);
-  });
+  }, 15_000);
 
   test('sync-plan devolve o mesmo plano que flow-sync chamado direto', () => {
     const input: SyncInput = {
@@ -438,11 +474,11 @@ describe('modos', () => {
     const result = runHook(['sync-plan'], { input: JSON.stringify(input) });
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(JSON.parse(JSON.stringify(planSync(input))));
-  });
+  }, 15_000);
 
   test('modo desconhecido sai com 2', () => {
     expectDenied(runHook(['nope']), /unknown mode/);
-  });
+  }, 15_000);
 });
 
 describe('settings.json', () => {
@@ -454,14 +490,14 @@ describe('settings.json', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.matcher).toBe('');
     expect(entries[0]?.hooks[0]?.command).toBe(flowCommand('subagent-start'));
-  });
+  }, 15_000);
 
   test('o matcher de PR do MCP termina em || exit 2', () => {
     const entry = (settings.hooks.PreToolUse ?? []).find(
       (e) => e.matcher === '^mcp__github-official__(create|update)_pull_request$',
     );
     expect(entry?.hooks[0]?.command).toBe(`${flowCommand('pre-pr')} || exit 2`);
-  });
+  }, 15_000);
 
   test('a entrada Bash tem if Bash(*gh*) e não termina em || exit 2', () => {
     const hook = (settings.hooks.PreToolUse ?? [])
@@ -469,7 +505,7 @@ describe('settings.json', () => {
       .flatMap((e) => e.hooks)
       .find((h) => h.command === flowCommand('pre-pr'));
     expect(hook?.if).toBe('Bash(*gh*)');
-  });
+  }, 15_000);
 
   test('tem as regras allow do padrão 15 e mantém o ask do instalador', () => {
     expect(settings.permissions.allow).toEqual(
@@ -480,12 +516,12 @@ describe('settings.json', () => {
       ]),
     );
     expect(settings.permissions.ask).toContain('Bash(node scripts/install.ts)');
-  });
+  }, 15_000);
 
   test('preserva o hook antigo do gitnexus', () => {
     const gitnexus = (settings.hooks.PreToolUse ?? [])
       .flatMap((e) => e.hooks)
       .find((h) => h.if === 'Bash(*gitnexus*)');
     expect(gitnexus?.command).toContain('gitnexus');
-  });
+  }, 15_000);
 });

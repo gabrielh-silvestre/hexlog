@@ -125,17 +125,32 @@ function chunk<T>(items: T[], size: number): T[][] {
   );
 }
 
+const batchesOf = (docSlug: string, source: string, records: PlannedRecord[]): SyncBatch[] =>
+  chunk(records, BATCH_MAX).map((batch) => ({
+    key: `sync-${docSlug}-${source.slice(0, 12)}-${sha256(JSON.stringify(batch)).slice(0, 12)}`,
+    records: batch,
+  }));
+
 /**
  * Planeja o sync de um documento. A regra de `extracted` sem par em `vigent` vira registro novo; com
  * par e `rule` ou `section` diferentes, registro novo que supera o antigo e copia as relações
  * `closes-gap` dele; com dados iguais, nenhum registro (salvo `closes` com lacuna que a versão
  * vigente ainda não fecha). O `doc` novo supera o vigente, revoga as regras que sumiram e entra por
  * último, para que falha entre lotes deixe o hash desencontrado e a próxima abertura repita o sync.
+ * Com o documento em dia, só a regra com lacuna nova em `closes` ganha registro, sem `doc` novo.
  */
 export function planSync(input: SyncInput): SyncPlan {
-  if (isUpToDate(input)) return { upToDate: true, batches: [], warnings: [] };
-
   const { docSlug, path, hash, current, vigent, extracted } = input;
+  if (isUpToDate(input)) {
+    const closing = (extracted ?? []).filter(({ closes }) => (closes?.length ?? 0) > 0);
+    const records = directiveRecords(input, closing);
+    return {
+      upToDate: records.length === 0,
+      batches: batchesOf(docSlug, hash, records),
+      warnings: [],
+    };
+  }
+
   const kept = new Set((extracted ?? []).map(({ slug }) => slug));
   const revoked = vigent.filter((rule) => !kept.has(slugOf(docSlug, rule)));
   const warnings = revoked.flatMap((rule): SyncWarning[] => {
@@ -158,10 +173,5 @@ export function planSync(input: SyncInput): SyncPlan {
     ],
   };
   const records = [...directiveRecords(input, extracted ?? []), doc];
-
-  const batches = chunk(records, BATCH_MAX).map((batch) => ({
-    key: `sync-${docSlug}-${source.slice(0, 12)}-${sha256(JSON.stringify(batch)).slice(0, 12)}`,
-    records: batch,
-  }));
-  return { upToDate: false, batches, warnings };
+  return { upToDate: false, batches: batchesOf(docSlug, source, records), warnings };
 }
