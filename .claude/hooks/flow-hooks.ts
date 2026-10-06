@@ -29,14 +29,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const asString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
-function parseInput(text: string): HookInput {
-  const input: unknown = JSON.parse(text);
+function readInput(): HookInput {
+  const input: unknown = JSON.parse(fs.readFileSync(0, 'utf8'));
   if (!isRecord(input)) throw new Error('hook input is not a JSON object');
   return input;
-}
-
-function readInput(): HookInput {
-  return parseInput(fs.readFileSync(0, 'utf8'));
 }
 
 /** Slug de uma branch (nome do processo do trabalho); lança se vazio ou reservado. */
@@ -192,7 +188,8 @@ function subagentStart(): void {
   const additionalContext = [
     'Record choices between viable alternatives in hexlog as decision records, following ' +
       'docs/directives/fluxo-hexlog.md; subagents decide and register too.',
-    `Hexlog project: hexlog; work process: ${slug} (slug of the current branch).`,
+    `Hexlog project: hexlog; work process: ${slug} (slug of the current branch); ` +
+      'if that process does not exist yet, tell whoever launched you instead of registering.',
     'Open a PR only through the pre-PR step of flow-run.',
   ].join('\n');
   process.stdout.write(

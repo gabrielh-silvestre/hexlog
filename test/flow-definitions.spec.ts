@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
@@ -14,7 +13,7 @@ import {
 } from '../.claude/hooks/flow-sync.ts';
 import type { Defined } from '../src/commands/definition.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
-import { hashOfJcs } from '../src/domain/chain.ts';
+import { hashOfJcs, sha256hex } from '../src/domain/chain.ts';
 import type {
   GateEvaluation,
   ListResult,
@@ -58,8 +57,6 @@ const fileBody = (kind: Kind, name: string): Record<string, unknown> =>
 /** Corpo que a chamada `define_*` recebe a partir do arquivo: o tipo é o schema; as demais levam o nome. */
 const definitionOf = (kind: Kind, name: string): Record<string, unknown> =>
   kind === 'types' ? fileBody(kind, name) : { name, ...fileBody(kind, name) };
-
-const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 let environment: Environment;
 let defined: Record<string, Defined>;
@@ -115,7 +112,7 @@ const directiveItem = (
 ): Item => ({
   type: 'directive',
   target: `directives.convencoes.${slug}`,
-  data: { rule: `Rule ${slug}`, section: 'Section', source: sha256(text) },
+  data: { rule: `Rule ${slug}`, section: 'Section', source: sha256hex(text) },
   relations,
 });
 
@@ -233,7 +230,7 @@ async function inputFor(
   return {
     docSlug,
     path: docPath(docSlug),
-    hash: text === null ? '' : sha256(text),
+    hash: text === null ? '' : sha256hex(text),
     current: doc ? { id: doc.id, ...DocData.parse(doc.data) } : null,
     vigent,
     extracted,
@@ -265,6 +262,17 @@ const currentDirective = async (slug: string, docSlug = 'convencoes', process = 
       .records,
     0,
   );
+
+/** `convencoes` v1 com `r1`, uma lacuna e a v2 cuja regra `retry1` a fecha; devolve o id da lacuna. */
+async function seedClosedGap(): Promise<string> {
+  await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
+  const gapId = await registerGap();
+  await runSync(DIRECTIVES, 'convencoes', 'v2', [
+    ...rulesOf(1),
+    ...closingRules(rulesOf(1, 'retry'), gapId),
+  ]);
+  return gapId;
+}
 
 /** Sincroniza `convencoes` com uma regra `r1` e devolve o id dela, para ancorar decisões. */
 async function seedDirective(): Promise<string> {
@@ -583,12 +591,7 @@ describe('sync', () => {
   });
 
   test('(iii) regra alterada que fechava lacuna: com a cópia o gate segue passando', async () => {
-    await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
-    const gapId = await registerGap();
-    await runSync(DIRECTIVES, 'convencoes', 'v2', [
-      ...rulesOf(1),
-      ...closingRules(rulesOf(1, 'retry'), gapId),
-    ]);
+    const gapId = await seedClosedGap();
     expect(await passed('gaps')).toBe(true);
 
     const plan = await runSync(DIRECTIVES, 'convencoes', 'v3', [
@@ -603,13 +606,7 @@ describe('sync', () => {
   });
 
   test('(iii) sem copiar closes-gap o gate volta a falhar', async () => {
-    await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
-    const gapId = await registerGap();
-    await runSync(DIRECTIVES, 'convencoes', 'v2', [
-      ...rulesOf(1),
-      ...closingRules(rulesOf(1, 'retry'), gapId),
-    ]);
-
+    await seedClosedGap();
     await runSync(
       DIRECTIVES,
       'convencoes',
@@ -703,12 +700,7 @@ describe('sync', () => {
   });
 
   test('(iv) regra removida que fechava lacuna é revogada, avisa e o gate falha', async () => {
-    await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
-    const gapId = await registerGap();
-    await runSync(DIRECTIVES, 'convencoes', 'v2', [
-      ...rulesOf(1),
-      ...closingRules(rulesOf(1, 'retry'), gapId),
-    ]);
+    const gapId = await seedClosedGap();
 
     const plan = await runSync(DIRECTIVES, 'convencoes', 'v3', rulesOf(1));
 
@@ -873,7 +865,7 @@ describe('sync', () => {
     const refused = planSync({
       docSlug: 'big',
       path: docPath('big'),
-      hash: sha256('v2'),
+      hash: sha256hex('v2'),
       current: null,
       vigent,
       extracted: [],

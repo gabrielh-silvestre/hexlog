@@ -57,14 +57,10 @@ afterEach(() => {
 
 type HookResult = SpawnSyncReturns<string>;
 
-function runHook(
-  args: string[],
-  options: { input?: string; cwd?: string; env?: NodeJS.ProcessEnv } = {},
-): HookResult {
+function runHook(args: string[], options: { input?: string; cwd?: string } = {}): HookResult {
   return spawnSync(process.execPath, [hookPath, ...args], {
     input: options.input ?? '',
     cwd: options.cwd ?? repo,
-    env: options.env ?? process.env,
     encoding: 'utf8',
   });
 }
@@ -95,6 +91,15 @@ function expectAllowed(result: HookResult): void {
   expect(result.status).toBe(0);
   expect(result.stderr).toBe('');
 }
+
+type Hook = { type: string; command: string; if?: string };
+type Entry = { matcher?: string; hooks: Hook[] };
+const settings = JSON.parse(
+  fs.readFileSync(path.join(repoRoot, '.claude/settings.json'), 'utf8'),
+) as {
+  hooks: Record<string, Entry[]>;
+  permissions: { allow: string[]; ask: string[] };
+};
 
 describe('pre-pr: create_pull_request e marcador', () => {
   test('nega sem draft e sem marcador', () => {
@@ -308,8 +313,7 @@ describe('pre-pr: casamento do Bash (create)', () => {
 
 describe('pre-pr: entrada e falha', () => {
   test('nega stdin que não é JSON', () => {
-    const result = runHook(['pre-pr'], { input: 'not json' });
-    expectDenied(result);
+    expectDenied(runHook(['pre-pr'], { input: 'not json' }));
   });
 
   test('ignora ferramenta que não é de PR nem Bash', () => {
@@ -322,11 +326,8 @@ describe('pre-pr: entrada e falha', () => {
   });
 
   test('o comando do matcher de PR, com PATH vazio, sai com 2', () => {
-    const settings = JSON.parse(
-      fs.readFileSync(path.join(repoRoot, '.claude/settings.json'), 'utf8'),
-    ) as { hooks: { PreToolUse: { matcher: string; hooks: { command: string }[] }[] } };
-    const entry = settings.hooks.PreToolUse.find((e) =>
-      e.matcher.includes('(create|update)_pull_request'),
+    const entry = (settings.hooks.PreToolUse ?? []).find((e) =>
+      e.matcher?.includes('(create|update)_pull_request'),
     );
     const command = entry?.hooks[0]?.command ?? '';
     const result = spawnSync('/bin/sh', ['-c', command], {
@@ -350,6 +351,7 @@ describe('modos', () => {
     expect(hookSpecificOutput.additionalContext.split('\n')).toHaveLength(3);
     expect(hookSpecificOutput.additionalContext).toContain('docs/directives/fluxo-hexlog.md');
     expect(hookSpecificOutput.additionalContext).toContain('work process: feat-x');
+    expect(hookSpecificOutput.additionalContext).toContain('tell whoever launched you');
   });
 
   test('subagent-start sem entrada legível ainda devolve o contexto', () => {
@@ -364,7 +366,7 @@ describe('modos', () => {
     ['docs/a.b_c', 'docs-a-b-c'],
     ['Feat/UPPER', 'feat-upper'],
     [`${'a'.repeat(62)}/b`, 'a'.repeat(62)],
-    [`${'a'.repeat(70)}`, 'a'.repeat(63)],
+    ['a'.repeat(70), 'a'.repeat(63)],
   ])('slug de %s é %s', (branch, expected) => {
     const result = runHook(['slug', branch]);
     expect(result.status).toBe(0);
@@ -444,14 +446,6 @@ describe('modos', () => {
 });
 
 describe('settings.json', () => {
-  type Hook = { type: string; command: string; if?: string };
-  type Entry = { matcher?: string; hooks: Hook[] };
-  const settings = JSON.parse(
-    fs.readFileSync(path.join(repoRoot, '.claude/settings.json'), 'utf8'),
-  ) as {
-    hooks: Record<string, Entry[]>;
-    permissions: { allow: string[]; ask: string[] };
-  };
   const flowCommand = (mode: string): string =>
     `node "$CLAUDE_PROJECT_DIR/.claude/hooks/flow-hooks.ts" ${mode}`;
 
@@ -482,7 +476,7 @@ describe('settings.json', () => {
       expect.arrayContaining([
         'Bash(node .claude/hooks/flow-hooks.ts slug *)',
         'Bash(node .claude/hooks/flow-hooks.ts mark *)',
-        'Bash(node .claude/hooks/flow-hooks.ts sync-plan)',
+        'Bash(node .claude/hooks/flow-hooks.ts sync-plan *)',
       ]),
     );
     expect(settings.permissions.ask).toContain('Bash(node scripts/install.ts)');

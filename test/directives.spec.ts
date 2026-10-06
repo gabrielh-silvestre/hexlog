@@ -183,6 +183,8 @@ describe('documentos do repositório', () => {
 
 const claudeMdPath = path.join(repoRoot, 'CLAUDE.md');
 
+const claudeMdImports = (): string[] => atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
+
 /** Docs vivos: o que sobra em `docs/directives/` sem o `AGENTS.md` (só navegação) e sem os ADRs. */
 const livingDocs = fs
   .readdirSync(directivesDir)
@@ -198,8 +200,7 @@ describe('docs vivos de docs/directives', () => {
   });
 
   test('cada doc vivo é importado pelo CLAUDE.md, com fluxo-hexlog.md primeiro e convencoes.md em seguida', () => {
-    const imports = atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
-    const importedLivingDocs = imports.filter((target) =>
+    const importedLivingDocs = claudeMdImports().filter((target) =>
       livingDocs.includes(path.basename(target)),
     );
     expect(importedLivingDocs).toEqual(
@@ -217,8 +218,10 @@ describe('docs vivos de docs/directives', () => {
     );
     expect(tooLong).toEqual([]);
 
-    const imported = atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
-    const total = imported.reduce((sum, target) => sum + lineCount(path.join(repoRoot, target)), 0);
+    const total = claudeMdImports().reduce(
+      (sum, target) => sum + lineCount(path.join(repoRoot, target)),
+      0,
+    );
     expect(total).toBeLessThanOrEqual(IMPORTED_MAX_LINES);
   });
 });
@@ -305,7 +308,7 @@ describe('termos de seleção da checagem fora do que o agente lê', () => {
   });
 
   test('nenhum doc importado no CLAUDE.md casa os termos de seleção', () => {
-    const imported = atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
+    const imported = claudeMdImports();
     expect(imported).toContain(FLOW_DOC);
     const hits = imported.filter((target) =>
       SELECTION_TERMS.test(fs.readFileSync(path.join(repoRoot, target), 'utf8')),

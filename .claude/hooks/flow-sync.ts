@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
-
 // Planejador de sync dos documentos de `docs/directives/` com o processo de diretrizes. Puro: sem
 // I/O e sem dependência, para a skill executar o mesmo código que a spec ensaia. O que grava e o
 // que lê do servidor é da skill; aqui só se decide quais registros entram, em que lotes.
+import { createHash } from 'node:crypto';
 
 const BATCH_MAX = 50;
 // Um registro leva até 100 relações; o `doc` carrega um `supersedes` e um `revokes` por regra sumida.
@@ -81,12 +80,14 @@ const targetPrefix = (docSlug: string): string => `directives.${docSlug}.`;
 const slugOf = (docSlug: string, { target }: VigentRule): string =>
   target.slice(targetPrefix(docSlug).length);
 
-const closedGaps = ({ out }: VigentRule): string[] =>
-  out.filter(({ as }) => as === CLOSES_GAP).map(({ to }) => to);
+const closesGapRelations = ({ out }: VigentRule): OutRelation[] =>
+  out.filter(({ as }) => as === CLOSES_GAP);
+
+const closedGaps = (rule: VigentRule): string[] => closesGapRelations(rule).map(({ to }) => to);
 
 /** `supersedes` do antigo, `closes-gap` copiadas dele e as lacunas novas de `closes` sem repetir as copiadas. */
 function relationsOf(previous: VigentRule | undefined, closes: string[]): PlannedRelation[] {
-  const copied = previous?.out.filter(({ as }) => as === CLOSES_GAP) ?? [];
+  const copied = previous ? closesGapRelations(previous) : [];
   const known = new Set(copied.map(({ to }) => to));
   const added = [...new Set(closes)].filter((gap) => !known.has(gap));
   return [
@@ -102,12 +103,11 @@ function directiveRecords(input: SyncInput, extracted: ExtractedRule[]): Planned
 
   return extracted.flatMap(({ slug, rule, section, closes = [] }): PlannedRecord[] => {
     const previous = bySlug.get(slug);
-    // `closes-gap` só se grava na criação do registro: lacuna nova numa regra igual exige registro novo.
-    const unchanged =
-      previous?.rule === rule &&
-      previous.section === section &&
-      closes.every((gap) => closedGaps(previous).includes(gap));
-    if (unchanged) return [];
+    if (previous?.rule === rule && previous.section === section) {
+      // `closes-gap` só se grava na criação do registro: lacuna nova exige registro novo.
+      const closed = closedGaps(previous);
+      if (closes.every((gap) => closed.includes(gap))) return [];
+    }
     return [
       {
         type: 'directive',
@@ -129,9 +129,8 @@ function chunk<T>(items: T[], size: number): T[][] {
  * Planeja o sync de um documento. A regra de `extracted` sem par em `vigent` vira registro novo; com
  * par e `rule` ou `section` diferentes, registro novo que supera o antigo e copia as relações
  * `closes-gap` dele; com dados iguais, nenhum registro (salvo `closes` com lacuna que a versão
- * vigente ainda não fecha). O `doc` novo supera o vigente, revoga as
- * regras que sumiram e entra por último, para que falha entre lotes deixe o hash desencontrado e a
- * próxima abertura repita o sync.
+ * vigente ainda não fecha). O `doc` novo supera o vigente, revoga as regras que sumiram e entra por
+ * último, para que falha entre lotes deixe o hash desencontrado e a próxima abertura repita o sync.
  */
 export function planSync(input: SyncInput): SyncPlan {
   if (isUpToDate(input)) return { upToDate: true, batches: [], warnings: [] };
