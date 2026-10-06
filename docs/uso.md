@@ -1,6 +1,6 @@
 # Uso
 
-Caminho de um projeto novo e mapa das 11 tools. A referência de cada tool está em [tools.md](tools.md).
+Caminho de um projeto novo e mapa das 12 tools. A referência de cada tool está em [tools.md](tools.md).
 
 ## Uso em 5 passos
 
@@ -12,6 +12,7 @@ Com o hexlog instalado e as sessões reiniciadas, o caminho de um projeto novo �
    `define_gate` (perguntas sobre os registros).
 3. `create_process`: cria o processo e fixa a versão vigente de cada definição.
 4. `register`: grava lotes de registros, com `key` para repetir a chamada com segurança.
+   Num tipo que você não conhece, leia o schema antes com `describe_type`.
 5. `query` para ler os registros vigentes e `evaluate_gate` para checar um gate.
 
 Adotar uma definição nova, ou uma versão nova, exige um processo novo: o manifesto não
@@ -62,11 +63,12 @@ O `register` devolve os ids dos registros (`run-1:<uuid v7>`) e o `marker`, a ca
 { "project": "alpha", "process": "run-1" }
 ```
 
-## As 11 tools
+## As 12 tools
 
 | Tool | O que faz | Escreve |
 |---|---|---|
 | `list` | Descoberta: projetos, ou um projeto com processos e definições, ou o que um processo fixou | nada |
+| `describe_type` | Lê o schema de um tipo: o fixado no processo (com `process`) ou a versão vigente ou pedida do projeto | nada |
 | `define_type` | Define um tipo de registro (JSON Schema) como versão imutável | `<projeto>/types/<nome>/<versão>.json` |
 | `define_relation` | Define um nome de relação (`kind` e tipos permitidos nas pontas) | `<projeto>/relations/<nome>/<versão>.json` |
 | `define_gate` | Define um gate: uma lista de perguntas sobre os registros | `<projeto>/gates/<nome>/<versão>.json` |

@@ -13,12 +13,26 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 
 ## Tools
 
-- São exatamente 11 tools ([ADR 0009](adr-0009-ferramental.md), item 1), fixadas por `installation.ts#TOOLS_COUNT` e conferidas pelo instalador antes de trocar o artefato. Adicionar ou remover uma quebra os testes do instalador e do e2e.
+- São exatamente 12 tools ([ADR 0009](adr-0009-ferramental.md), item 1 e a emenda de 2026-10-06), fixadas por `installation.ts#TOOLS_COUNT` e conferidas pelo instalador antes de trocar o artefato. Adicionar ou remover uma quebra os testes do instalador e do e2e.
 - Toda tool passa por `execute()` em `src/mcp/kernel.ts`, que nunca deixa uma exceção chegar ao SDK: `HexlogError` vira `{code, message, details}` e qualquer outra exceção vira `INTERNAL`, com a stack só no log `internal-error`, nunca na resposta.
 - O log `tool` de `execute` leva `name`, `ms` e `code?`, nunca o conteúdo da entrada nem `project`/`process` (o teste de privacidade o proíbe).
 - Todo erro de domínio é uma `HexlogError` com um código de `ErrorCode` (`src/errors.ts`). `details` é sempre um array de `{ path, code, message }`, com `path` em JSON Pointer (RFC 6901); erro de Zod vira `details[]` por `issueDetails` ([ADR 0009](adr-0009-ferramental.md), itens 7 e 11).
+- Leitura de definição não cabe como parâmetro de uma tool existente: entra como tool própria, com emenda datada ao [ADR 0009](adr-0009-ferramental.md), item 1 (a 12ª tool, `describe_type`, é o precedente).
+- `describe_type` (`src/queries/describe-type.ts#createDescribeType`) lê só tipos: o fixado no processo, com `process`, ou a versão vigente ou pedida do projeto, sem `process`; relações e gates ficam fora.
+- `describe_type` com `process` e `version` juntos é `INVALID_INPUT` (`/version`, `process-with-version`), recusado no serviço antes de qualquer I/O.
+- `describe_type` com `process` e tipo não fixado é `TYPE_NOT_PINNED` (`/type`, `not-pinned`); sem `process`, tipo ou versão ausente do projeto é `TYPE_NOT_FOUND`.
+- `describe_type` com `process` omite `version` da saída, porque o manifesto guarda o schema fixado (`Manifest.fixed.types`), não a versão.
 - `attachments` e os demais nomes de `RESERVED_PROCESS_NAMES` (`src/domain/ids.ts`) não valem como nome de processo; `create_process` os recusa com `RESERVED_NAME`.
 - O código de `domain/`, `commands/`, `queries/` e `mcp/` não contém termo de fluxo nem de framework; `test/no-flow-terms.spec.ts` trava ([ADR 0007](adr-0007-dominio.md), item 3).
+
+## Validação do register
+
+- O `INVALID_RECORD` de dado junta as violações de schema de todos os registros do lote (`src/commands/register/static.ts#prepareBatch`), com `path` `/records/<i>/data/...` e o teto de `capDetails` (50 e `too-many-errors`); continua tudo-ou-nada.
+- O `register` confere o tipo fixado de todos os registros antes de validar dado (`src/commands/register/static.ts#prepareBatch`): `TYPE_NOT_PINNED` vence o `INVALID_RECORD` de dado.
+- O relatório (`Validator.report`, em `src/adapters/validator.ts#createValidator`) só roda depois de o `validate` falhar, sobre o schema intacto, com compilado em cache por identidade do schema; o `validate` nunca usa `allErrors`.
+- O relatório usa o motor `src/adapters/validator.ts#boundedRegExp`, que só roda regex em texto de até `PATTERN_MAX_LENGTH` pontos de código; o `maxLength` não protege o relatório sob `allErrors`, e o risco residual é aceito ([tetos-dominio-v1.md](../tetos-dominio-v1.md), "Limites do relatório").
+- O relatório mantém `format` ativo, fora do motor, e a guarda de tempo de `test/adapters/validator.budget.spec.ts` trava o custo em string de `DATA_MAX_CHARS`.
+- O motor do relatório declara `code = 'boundedRegExp'` (`src/adapters/validator.ts#boundedRegExp`) para que uma geração standalone do ajv falhe alto, em vez de perder o teto de 256 pontos de código sem aviso.
 
 ## Anexos
 

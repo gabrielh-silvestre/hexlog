@@ -73,7 +73,7 @@ estourar o limite de PNG. `domain/` não importa camada nenhuma acima, só
 |---|---|
 | `server.ts` | Entry point: `compose`, log `start` (`dataDir` e `version`), `createServer` e `serveStdio` |
 | `compose.ts` | `compose`: a raiz de composição; único módulo do servidor em runtime, fora de `adapters/`, que conhece os adaptadores de disco; liga validador, stores e `createSearchIndex` aos quatro serviços |
-| `mcp/kernel.ts`, `mcp/server.ts` | `execute()` (envelope de erro e log de toda tool) e `createServer` (`McpServer` com as 11 tools) |
+| `mcp/kernel.ts`, `mcp/server.ts` | `execute()` (envelope de erro e log de toda tool) e `createServer` (`McpServer` com as 12 tools) |
 | `mcp/tools/` | `process.ts`, `definition.ts`, `attachment.ts` e `query.ts`: uma `register*Tools` por família |
 | `commands/` | `createProcessService` (`createProcess`, `register`), `createDefinitionService` (`defineType`, `defineRelation`, `defineGate`) e `createAttachmentService` (`attach`); as etapas do `register` ficam em `commands/register/` |
 | `queries/` | `createQueryService` (`queryRecords`, `evaluateGate`, `verifyChain`, `list`, `readAttachment`), mais `select.ts`, `read.ts` e `cursor.ts#encodeCursor` |

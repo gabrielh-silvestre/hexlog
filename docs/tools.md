@@ -1,6 +1,6 @@
 # Referência das tools
 
-Entrada, saída e erros de cada uma das 11 tools. O mapa geral está em [uso.md](uso.md).
+Entrada, saída e erros de cada uma das 12 tools. O mapa geral está em [uso.md](uso.md).
 
 ## `list`
 
@@ -10,6 +10,26 @@ contagem de processos. Com `project`, traz os processos e as definições vigent
 em ordem crescente). Com `project` e `process`, traz o que o processo **fixou**
 (`pinned`, os nomes de cada tipo de definição) e os hashes das definições. O que
 um processo fixou não muda depois, ao contrário da versão vigente do projeto.
+
+## `describe_type`
+
+Lê o schema de um tipo antes de registrar nele. Entrada: `project`, `type` e, opcionais,
+`process` e `version`. Só lê tipos; relações e gates ficam fora (ver `list` e `evaluate_gate`).
+
+- **Com `process`:** devolve o tipo **fixado** no processo, `{name, schema}`, sem `version`:
+  o manifesto guarda o schema fixado, não a versão, e a `version` não é inventada. O que se
+  lê é o que o `register` valida, mesmo que o projeto já tenha definido uma versão mais nova.
+- **Sem `process`:** devolve `{name, version, schema}` da versão vigente do projeto, ou da
+  `version` pedida (`<major>.<minor>`).
+
+Erros:
+
+- `INVALID_INPUT` em `/version` (`process-with-version`): `process` e `version` juntos.
+- `TYPE_NOT_PINNED` em `/type` (`not-pinned`): com `process`, o tipo existe ou não no projeto,
+  mas o processo não o fixou.
+- `TYPE_NOT_FOUND`: sem `process`, `/type` (`unknown-name`) para um tipo sem nenhuma versão no
+  projeto, ou `/version` (`unknown-version`) para uma versão que o tipo não tem.
+- `PROCESS_NOT_FOUND`: o `process` não existe.
 
 ## `define_type`, `define_relation`, `define_gate`
 
@@ -105,6 +125,26 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   guardado e íntegro (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`); um hash de anexo
   guardado num campo sem a marca é recusado (`unmarked-attachment`).
 
+**`INVALID_RECORD` de dado: todas as violações de schema do lote.** Quando `data` não passa
+no schema, o `register` junta num só `INVALID_RECORD` as violações de schema de **todos** os
+registros do lote, cada uma com `path` `/records/<i>/data/...` (o agente corrige tudo e reenvia
+uma vez). Continua tudo-ou-nada: nada é gravado. Vale para a violação de **schema**; as outras
+recusas (`unmarked-attachment`, as de relação e o resto da lista acima) continuam parando na
+primeira. O que o agente deve saber do relatório:
+
+- O teto é de 50 `details` por resposta, e o registro 0 pode consumi-lo inteiro: os demais
+  só aparecem na contagem omitida do `too-many-errors`.
+- O relatório roda só depois de o `validate` falhar, sobre o schema intacto, e **substitui** os
+  `details` dele. O regex de um `pattern` só roda em texto de até 256 pontos de código; acima
+  disso o `pattern` aparece como violado **sem ter sido avaliado**, junto do `max-length` que
+  `define_type` exige no mesmo subschema, e é o `max-length` que se corrige.
+- Em `anyOf`, `oneOf` e `contains` o relatório emite também os erros internos de cada ramo
+  (por exemplo, `pattern` em `/a/0` junto do `contains` em `/a`).
+- O tipo fixado de **todos** os registros é conferido antes de qualquer dado: um lote com um
+  registro de dado inválido e outro de tipo não fixado recebe `TYPE_NOT_PINNED`, não
+  `INVALID_RECORD` (mudança de comportamento: antes vencia o primeiro registro).
+- Os limites de custo do relatório estão em [`tetos-dominio-v1.md`](tetos-dominio-v1.md).
+
 **`key` e retentativa.** Com `key` (até 200 caracteres), o mesmo lote devolve o
 resultado já gravado com `replayed: true`, sem gravar; a mesma `key` com outro lote é
 `IDEMPOTENCY_CONFLICT`. Depois de `IO_ERROR` o resultado é incerto: reenvie com a
@@ -116,7 +156,7 @@ guarde o anexo e reenvie com a mesma `key` (ADR 0009).
 
 A ordem das recusas é fixa, e responde a primeira que falha: forma do lote
 (`INVALID_INPUT`); processo inexistente ou manifesto ilegível; recusas estáticas
-(tipo fixado, schema, `as`, `cross-process-currency`); cadeia quebrada
+(tipo fixado de todos os registros, schema de todos, `as`, `cross-process-currency`); cadeia quebrada
 (`PROCESS_CORRUPTED`); `key`; checagens de estado e regras de relação (ADR 0008).
 
 ## `query`

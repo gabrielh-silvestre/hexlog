@@ -38,6 +38,7 @@ pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
 | Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência |
 | Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro |
 | Saber o que existe (projetos, processos, o que um processo fixou) | `list` | Sem parâmetros, com `project`, ou com `project` e `process` |
+| Registrar num tipo que você não conhece | `describe_type` com `project`, `type` e `process` | Leia o schema fixado **antes** do `register`; com `process` devolve o tipo que o processo fixou, sem a versão na saída, e `process` junto de uma versão pedida é `INVALID_INPUT` |
 | Guardar o texto de um agente ou de um plano | `attach`, depois `register` com o `hash` devolvido no campo marcado | Duas chamadas, nessa ordem; ver "Anexos" |
 | Ler um anexo | `read_attachment` com `hash` | Em páginas: repita com `offset` = o `next` até não vir `next` |
 | Auditar um alvo ponta a ponta | `query` com `scope: "project"`, `targetPrefix` e `includeNonCurrent: true` | Ordem por instante, processo e sequência; pagine com `cursor`. Depois `verify_chain` por processo |
@@ -256,7 +257,7 @@ depois dele; o processo que já existe segue com o gate fixado.
 | Situação | Resultado |
 |---|---|
 | `type` fora do que o processo fixou, inclusive um definido depois do `create_process` | `TYPE_NOT_PINNED`: o processo existente não recebe definição nova. Pare e avise o usuário; não repita `define_type` em loop |
-| `data` fora do schema fixado | `INVALID_RECORD` com o `path` de cada violação |
+| `data` fora do schema fixado | `INVALID_RECORD` com todas as violações de schema do lote, cada uma com seu `path` (`/records/<i>/data/...`, no máximo 50 `details`; em esquemas com alternativas ou com contains saem também os erros internos de cada ramo); corrija todas e reenvie. Só a violação de schema é agregada: `unmarked-attachment` e as regras de relação continuam parando na primeira |
 | Gate pedido que o processo não fixou, inclusive um definido depois do `create_process` | `GATE_NOT_FOUND`: pare e avise o usuário |
 | Reenviar uma `key` com lote diferente do guardado | `IDEMPOTENCY_CONFLICT` |
 | Dado 0.x em `<D>` | `LEGACY_DATA`: só um humano resolve (ver a skill hexlog) |

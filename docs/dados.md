@@ -163,7 +163,7 @@ O isolamento do hexlog combina 4 regras de deny (`Read`/`Edit` sobre o
 diretório de dados, mais `Edit` sobre o artefato instalado) com um hook
 PreToolUse na tool Bash que tokeniza o comando e nega quem alcançar o
 diretório de dados. A mensagem de negação cita as tools que dão acesso ao dado
-(`list`, `query`, `verify_chain`, `read_attachment`, `evaluate_gate`). Esse hook
+(`list`, `query`, `verify_chain`, `read_attachment`, `evaluate_gate`, `describe_type`). Esse hook
 sempre falha aberto: qualquer exceção interna, Node ausente ou arquivo do hook
 apagado deixa o comando passar sem avisar o agente. Só o `--check` detecta essa
 condição. O servidor MCP não passa pelo deny nem pelo hook: a fronteira dele é o

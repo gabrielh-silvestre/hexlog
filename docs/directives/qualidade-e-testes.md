@@ -11,7 +11,7 @@
 
 ## Orçamentos de tempo
 
-- `npm run test:budget` roda os specs de orçamento em série (`jest --runInBand`): `adapters/load.budget.spec.ts`, `adapters/search.budget.spec.ts`, `adapters/lock.budget.spec.ts`, `queries/query.budget.spec.ts` e `queries/project.budget.spec.ts`. O CI o roda depois de `npm test` ([ADR 0009](adr-0009-ferramental.md), item 4).
+- `npm run test:budget` roda os specs de orçamento em série (`jest --runInBand`): `adapters/load.budget.spec.ts`, `adapters/search.budget.spec.ts`, `adapters/lock.budget.spec.ts`, `adapters/validator.budget.spec.ts`, `queries/query.budget.spec.ts` e `queries/project.budget.spec.ts`. O CI o roda depois de `npm test` ([ADR 0009](adr-0009-ferramental.md), item 4).
 - Eles medem tempo e podem falhar em máquina lenta, por isso só rodam nesse script. `adapters/load.budget.spec.ts` compara o mínimo das medições, não a mediana.
 
 ## Convenções dos specs

@@ -23,7 +23,7 @@ Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na ba
 - Regra de negócio em adaptador: a regra mora em `domain/` ou no serviço.
 - Tipo de domínio com cara de formato em disco: o formato em disco fica em `adapters/fs/data-format.ts`.
 - Caso de uso chamando outro via tool: serviço chama serviço ou função pura, nunca uma tool.
-- Arquivo de serviço perto do `max-lines` (800): divida antes de bater no teto. `queries/query-service.ts` segue num só `QueryService` de cinco operações; o corte provável é `list` + `readAttachment` em módulos irmãos, com `createQueryService` único, no gatilho de ~650 linhas ou de uma sexta operação de consulta.
+- Arquivo de serviço perto do `max-lines` (800): divida antes de bater no teto. `queries/query-service.ts` segue num só `QueryService`, agora de seis operações, com `list`, `readAttachment` e `describeType` em módulos irmãos (`queries/list.ts`, `queries/read-attachment.ts`, `queries/describe-type.ts`) e `createQueryService` único; a divisão volta a ser devida no gatilho de ~650 linhas ou de uma sétima operação de consulta.
 - Serviço de escrita gravando em mais de uma porta: a escrita de um `register` é um lote numa só linha de um só processo.
 - `queries/` chamando gravação de qualquer porta: leitura só usa os `*Reader`.
 - `timeline` somando o projeto contra o teto de 64 MiB por processo (`MAX_LOG_BYTES`): o script lê numa chamada só e o teto vale por processo, não pelo projeto.
