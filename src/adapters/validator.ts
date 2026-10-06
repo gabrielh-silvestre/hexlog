@@ -135,7 +135,9 @@ function patternDetails(root: unknown): Detail[] {
 /**
  * Motor de regex do relatório (`Validator.report`): só roda o regex em texto de até
  * `PATTERN_MAX_LENGTH` pontos de código e devolve `false` acima disso, onde o `maxLength` que o
- * `checkSchema` exige junto do `pattern` já reprova. É subclasse de `RegExp` porque o ajv indexa o
+ * `checkSchema` exige junto do `pattern` já reprova. Efeito colateral: chave de objeto acima do teto,
+ * em tipo com `patternProperties` e `additionalProperties: false`, não casa e o relatório emite
+ * também um `additional-properties` espúrio. É subclasse de `RegExp` porque o ajv indexa o
  * escopo de regex por `toString()` (`vocabularies/code.js#usePattern`): um objeto `{ test }` sem
  * `toString` próprio colapsaria todo `pattern` no primeiro e o relatório validaria com o regex
  * errado, sem erro nenhum. O ajv só passa a flag `u` ou vazio; nunca `g`/`y`, que guardariam

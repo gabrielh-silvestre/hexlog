@@ -25,6 +25,7 @@ Lê o schema de um tipo antes de registrar nele. Entrada: `project`, `type` e, o
 Erros:
 
 - `INVALID_INPUT` em `/version` (`process-with-version`): `process` e `version` juntos.
+- `INVALID_INPUT` em `/version` (`invalid-version`): `version` fora de `<major>.<minor>`, sem `process`.
 - `TYPE_NOT_PINNED` em `/type` (`not-pinned`): com `process`, o tipo existe ou não no projeto,
   mas o processo não o fixou.
 - `TYPE_NOT_FOUND`: sem `process`, `/type` (`unknown-name`) para um tipo sem nenhuma versão no
@@ -137,7 +138,10 @@ primeira. O que o agente deve saber do relatório:
 - O relatório roda só depois de o `validate` falhar, sobre o schema intacto, e **substitui** os
   `details` dele. O regex de um `pattern` só roda em texto de até 256 pontos de código; acima
   disso o `pattern` aparece como violado **sem ter sido avaliado**, junto do `max-length` que
-  `define_type` exige no mesmo subschema, e é o `max-length` que se corrige.
+  `define_type` exige no mesmo subschema, e é o `max-length` que se corrige. Numa chave de objeto
+  acima de 256 pontos de código, em tipo com `patternProperties` e `additionalProperties: false`,
+  o motor também devolve `false`: a chave não casa o padrão e sai um `additional-properties`
+  espúrio, além do `max-length` e do `property-names`; o que se corrige é o tamanho da chave.
 - Em `anyOf`, `oneOf` e `contains` o relatório emite também os erros internos de cada ramo
   (por exemplo, `pattern` em `/a/0` junto do `contains` em `/a`).
 - O tipo fixado de **todos** os registros é conferido antes de qualquer dado: um lote com um

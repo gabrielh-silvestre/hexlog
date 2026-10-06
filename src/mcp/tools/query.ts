@@ -192,7 +192,8 @@ const DESCRIBE_TYPE_DESCRIPTION =
   'schema and not its version (TYPE_NOT_PINNED when the process did not pin the type). Without ' +
   'process: the current version of the type in the project, or the one asked by version, returned ' +
   'as name, version and schema (TYPE_NOT_FOUND when the project has no such type or version). ' +
-  'process and version together are refused with INVALID_INPUT.';
+  'process and version together, or a version that is not <major>.<minor>, are refused with ' +
+  'INVALID_INPUT.';
 
 type PagedChanges = Changes & { omitted?: { entered: number; left: number } };
 

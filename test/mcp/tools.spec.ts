@@ -475,6 +475,19 @@ describe('describe_type', () => {
     expect(body.details).toEqual([expect.objectContaining({ path: '/version' })]);
   });
 
+  test('version fora de <major>.<minor> dá INVALID_INPUT em /version com invalid-version', async () => {
+    await pinNoteThenEvolve();
+
+    const body = expectError(
+      await environment.call('describe_type', { project: PROJECT, type: 'note', version: '1' }),
+      'INVALID_INPUT',
+    );
+
+    expect(body.details).toEqual([
+      expect.objectContaining({ path: '/version', code: 'invalid-version' }),
+    ]);
+  });
+
   test('tipo não fixado no processo dá TYPE_NOT_PINNED e, sem process, tipo ausente dá TYPE_NOT_FOUND', async () => {
     await pinNoteThenEvolve();
 

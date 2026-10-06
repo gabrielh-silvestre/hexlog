@@ -32,5 +32,6 @@ describe('format no relatório', () => {
       process.stdout.write(`format ${format} median: ${median(times).toFixed(2)} ms\n`);
       expect(median(times)).toBeLessThanOrEqual(FORMAT_MEDIAN_CEILING_MS);
     },
+    15_000,
   );
 });

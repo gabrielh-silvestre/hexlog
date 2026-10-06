@@ -184,14 +184,15 @@ Só estudo. Em 2026-09-17, qualquer item que acrescente tool quebrava o
 invariante de "exatamente 10 tools" do 0.x; a coluna "Toca" indica onde caberia
 sem isso.
 
-> **Emenda (2026-10-03):** o 0.x passou por 12 tools e a 1.0 tem 11. O texto e a
+> **Emenda (2026-10-03):** o 0.x passou por 12 tools e a 1.0 tinha 11 (hoje tem 12: a emenda de
+> 2026-10-06 ao [ADR 0009](directives/adr-0009-ferramental.md), item 1, acrescentou `describe_type`). O texto e a
 > tabela abaixo mantêm a redação de 2026-09-17, e a coluna "Toca" cita tools
 > do 0.x (`state`, `register_type`, `register_vocabulary`, `register_gate`), que
 > a 1.0 trocou por `query` e `define_type`, `define_relation` e `define_gate`. O ponto de partida para reavaliar uma ideia são os ADRs
 > da 1.0: [0007](directives/adr-0007-dominio.md) (domínio),
 > [0008](directives/adr-0008-servicos.md) (serviços) e
 > [0009](directives/adr-0009-ferramental.md) (ferramental). Uma ideia que acrescente tool
-> hoje pede um ADR novo, sobre as 11 tools.
+> hoje pede um ADR novo ou uma emenda datada ao ADR 0009, como a do `describe_type`, sobre as 12 tools.
 
 | # | Ideia | Origem | Toca | Esforço |
 |---|---|---|---|---|
