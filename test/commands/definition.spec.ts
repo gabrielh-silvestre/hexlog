@@ -535,7 +535,7 @@ describe('defineType: checkSchema do validador', () => {
     }));
     const service = createDefinitionService({
       store,
-      validator: { checkSchema: () => details, validate: () => [] },
+      validator: { checkSchema: () => details, validate: () => [], report: () => [] },
     });
 
     const error = captureError(() =>

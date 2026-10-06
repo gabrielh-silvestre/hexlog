@@ -200,6 +200,17 @@ export type Validator = {
    * junto de `patternProperties` limita da mesma forma o nome que a chave de regex avalia.
    */
   validate(schema: RecordType, data: HexRecord['data']): Detail[];
+  /**
+   * Relatório completo das violações de schema de `data`: pressupõe um schema que passou em
+   * `checkSchema` e só se chama depois de `validate` falhar. Mesmo schema e mesmo `path`/`code` do
+   * `validate`, mas com `allErrors`, então devolve todas as violações, sem teto (o teto é do
+   * agregador, `errors.ts#capDetails`). O regex só roda em texto de até 256 pontos de código; acima
+   * disso o `pattern` aparece como violado sem ter sido avaliado, junto do `max-length` que o
+   * `checkSchema` exige no mesmo subschema. `format` roda sem teto de tamanho, como no `validate`.
+   * Em `anyOf`, `oneOf` e `contains` saem também os erros internos de cada ramo. O `maxLength` não
+   * protege o regex aqui (`adapters/validator.ts#boundedRegExp`, risco aceito).
+   */
+  report(schema: RecordType, data: HexRecord['data']): Detail[];
 };
 
 /** Chave do índice de busca do alcance projeto; não é um `Name`, então nunca colide com processo. */

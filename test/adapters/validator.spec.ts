@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { createValidator, PATTERN_MAX_LENGTH } from '../../src/adapters/validator.ts';
+import { sortBy } from 'es-toolkit';
+import {
+  boundedRegExp,
+  createValidator,
+  PATTERN_MAX_LENGTH,
+} from '../../src/adapters/validator.ts';
 import { attachmentFields, type RecordType } from '../../src/domain/definitions.ts';
 
 const validator = createValidator();
@@ -643,6 +648,170 @@ describe('validate', () => {
       expect(validator.validate(schema, { files: [HASH, 'nope'] })).toEqual([
         { path: '/files/1', code: 'format', message: expect.any(String) },
       ]);
+    });
+  });
+});
+
+describe('report', () => {
+  // O relatório só roda depois de o `validate` falhar: cada schema falha também em `/b`.
+  // Ordem do ajv não é contrato: ordena por path e code para fixar o conjunto exato.
+  const shapes = (schema: RecordType, data: Record<string, unknown>) =>
+    sortBy(
+      validator.report(schema, data as never).map(({ path, code }) => ({ path, code })),
+      ['path', 'code'],
+    );
+  const typeOfB = { path: '/b', code: 'type' };
+  const withB = (properties: Record<string, unknown>): RecordType => ({
+    type: 'object',
+    properties: { ...properties, b: { type: 'string' } },
+  });
+
+  test('devolve required, enum e campo extra de uma vez', () => {
+    const schema: RecordType = {
+      type: 'object',
+      properties: { name: { type: 'string' }, kind: { enum: ['a', 'b'] } },
+      required: ['name', 'kind'],
+      additionalProperties: false,
+    };
+
+    expect(shapes(schema, { kind: 'z', extra: 1 })).toEqual([
+      { path: '/extra', code: 'additional-properties' },
+      { path: '/kind', code: 'enum' },
+      { path: '/name', code: 'required' },
+    ]);
+  });
+
+  test('não corta a lista: o teto é do agregador', () => {
+    const schema = withB({ items: { type: 'array', items: { type: 'string' } } });
+
+    const found = shapes(schema, { items: Array.from({ length: 60 }, (_, i) => i), b: 1 });
+
+    expect(found).toHaveLength(61);
+    expect(found.some(({ code }) => code === 'too-many-errors')).toBe(false);
+  });
+
+  test('not com pattern e valor válido não gera violação', () => {
+    const schema = withB({ a: { not: { type: 'string', pattern: '^a+$', maxLength: 10 } } });
+
+    expect(shapes(schema, { a: 'bbb', b: 1 })).toEqual([typeOfB]);
+  });
+
+  test.each([
+    ['pattern', 'aaa', { pattern: '^a+$', maxLength: 5 }, { pattern: '^b+$', maxLength: 5 }],
+    ['pattern', 'bbb', { pattern: '^a+$', maxLength: 5 }, { pattern: '^b+$', maxLength: 5 }],
+    ['format', '2020-01-31', { format: 'date' }, { format: 'email' }],
+    ['format', 'a@b.co', { format: 'date' }, { format: 'email' }],
+  ])(
+    'oneOf com dois %s distintos e valor que casa um só não gera violação (%s)',
+    (_keyword, value, first, second) => {
+      const schema = withB({ a: { type: 'string', oneOf: [first, second] } });
+
+      expect(shapes(schema, { a: value, b: 1 })).toEqual([typeOfB]);
+    },
+  );
+
+  test('oneOf com dois pattern distintos reprova valor que não casa nenhum', () => {
+    const schema = withB({
+      a: {
+        type: 'string',
+        oneOf: [
+          { pattern: '^a+$', maxLength: 5 },
+          { pattern: '^b+$', maxLength: 5 },
+        ],
+      },
+    });
+
+    expect(shapes(schema, { a: 'ccc', b: 1 })).toEqual([
+      { path: '/a', code: 'one-of' },
+      { path: '/a', code: 'pattern' },
+      { path: '/a', code: 'pattern' },
+      typeOfB,
+    ]);
+  });
+
+  test('if com pattern escolhe o ramo certo, sem violação do if', () => {
+    const schema: RecordType = {
+      ...withB({ a: { type: 'string' } }),
+      if: { properties: { a: { type: 'string', pattern: '^a+$', maxLength: 5 } }, required: ['a'] },
+      then: { properties: { onThen: { type: 'string' } }, required: ['onThen'] },
+      else: { properties: { onElse: { type: 'string' } }, required: ['onElse'] },
+    };
+
+    expect(shapes(schema, { a: 'aaa', b: 1 })).toEqual([
+      { path: '', code: 'if' },
+      { path: '/b', code: 'type' },
+      { path: '/onThen', code: 'required' },
+    ]);
+    expect(shapes(schema, { a: 'bbb', b: 1 })).toEqual([
+      { path: '', code: 'if' },
+      { path: '/b', code: 'type' },
+      { path: '/onElse', code: 'required' },
+    ]);
+  });
+
+  test('contains com pattern e item válido não gera violação', () => {
+    const schema = withB({
+      a: { type: 'array', contains: { type: 'string', pattern: '^a+$', maxLength: 5 } },
+    });
+
+    expect(shapes(schema, { a: ['bbb', 'aaa'], b: 1 })).toEqual([typeOfB]);
+  });
+
+  test('contains sem item que case traz também o erro interno do ramo', () => {
+    const schema = withB({
+      a: { type: 'array', contains: { type: 'string', pattern: '^a+$', maxLength: 5 } },
+    });
+
+    expect(shapes(schema, { a: ['bbb'], b: 1 })).toEqual([
+      { path: '/a', code: 'contains' },
+      { path: '/a/0', code: 'pattern' },
+      typeOfB,
+    ]);
+  });
+
+  test('patternProperties devolve todas as violações, não só a primeira', () => {
+    const schema: RecordType = {
+      type: 'object',
+      propertyNames: { maxLength: 5 },
+      patternProperties: { '^a': { type: 'string' }, '^b': { type: 'number' } },
+      additionalProperties: false,
+    };
+
+    expect(shapes(schema, { a1: 1, b1: 'x', cc: 1 })).toEqual([
+      { path: '/a1', code: 'type' },
+      { path: '/b1', code: 'type' },
+      { path: '/cc', code: 'additional-properties' },
+    ]);
+  });
+
+  test('conta pontos de código, não unidades UTF-16', () => {
+    // 200 pontos de código = 400 unidades: abaixo do teto de 256 na conta do `maxLength` do ajv.
+    const schema = withB({ a: { type: 'string', maxLength: 256, pattern: '^.+$' } });
+
+    expect(shapes(schema, { a: '😀'.repeat(200), b: 1 })).toEqual([typeOfB]);
+  });
+
+  test('texto acima de 256 com pattern traz max-length e o pattern como violado sem avaliação', () => {
+    const schema = withB({ a: { type: 'string', maxLength: 256, pattern: '^a+$' } });
+
+    expect(shapes(schema, { a: 'a'.repeat(300), b: 1 })).toEqual([
+      { path: '/a', code: 'max-length' },
+      { path: '/a', code: 'pattern' },
+      typeOfB,
+    ]);
+  });
+
+  describe('boundedRegExp', () => {
+    test('não consulta o regex acima do teto e o consulta até ele', () => {
+      const regex = boundedRegExp('^a+$', 'u');
+
+      expect(regex.test('a'.repeat(300))).toBe(false);
+      expect(regex.test('a'.repeat(200))).toBe(true);
+      expect(regex.test('😀'.repeat(300))).toBe(false);
+    });
+
+    test('tem toString único por regex', () => {
+      expect(boundedRegExp('^a+$', 'u').toString()).not.toBe(boundedRegExp('^b+$', 'u').toString());
     });
   });
 });

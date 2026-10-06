@@ -1,4 +1,4 @@
-import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
+import Ajv2020, { type CodeOptions, type ErrorObject } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { isPlainObject, isUndefined, kebabCase, memoize, type MemoizeCache } from 'es-toolkit';
 import safeRegex from 'safe-regex2';
@@ -132,9 +132,42 @@ function patternDetails(root: unknown): Detail[] {
   return capDetails(details);
 }
 
-/** Mesmas opções estritas e mesmos formatos nas duas instâncias; só `allErrors` muda. */
-function createCompiler(allErrors: boolean) {
-  const ajv = new Ajv2020.default({ strict: true, allErrors, logger: false });
+/**
+ * Motor de regex do relatório (`Validator.report`): só roda o regex em texto de até
+ * `PATTERN_MAX_LENGTH` pontos de código e devolve `false` acima disso, onde o `maxLength` que o
+ * `checkSchema` exige junto do `pattern` já reprova. É subclasse de `RegExp` porque o ajv indexa o
+ * escopo de regex por `toString()` (`vocabularies/code.js#usePattern`): um objeto `{ test }` sem
+ * `toString` próprio colapsaria todo `pattern` no primeiro e o relatório validaria com o regex
+ * errado, sem erro nenhum. O ajv só passa a flag `u` ou vazio; nunca `g`/`y`, que guardariam
+ * `lastIndex` entre chamadas de `test`.
+ *
+ * Risco aceito: o limite dá fidelidade (o resultado de cada subschema é o do `validate`), não
+ * segurança. Sob `allErrors` o ajv avalia o `pattern` mesmo com o `maxLength` já reprovado, então um
+ * regex frágil que a `safe-regex2` deixa passar (`^([a-z]|[a-z0-9])+$`) com um valor longo demais
+ * para um `maxLength` apertado trava o servidor por segundos (362 ms em 25 caracteres, ~8 s em 27),
+ * sem precisar de má-fé do agente; no `validate` o mesmo caso custa 1 ms. Caminho de upgrade se o
+ * risco reabrir: teto por `pattern` (o maior `maxLength` do `pattern` no schema), com uma instância
+ * do ajv por tipo. `.code` só vale na geração standalone do ajv, que não se usa.
+ */
+class BoundedRegExp extends RegExp {
+  override test(text: string): boolean {
+    const withinLimit = text.length <= PATTERN_MAX_LENGTH || [...text].length <= PATTERN_MAX_LENGTH;
+    return withinLimit && super.test(text);
+  }
+}
+export const boundedRegExp = Object.assign(
+  (pattern: string, flags: string) => new BoundedRegExp(pattern, flags),
+  { code: 'boundedRegExp' },
+);
+
+/** Mesmas opções estritas e mesmos formatos nas instâncias; mudam `allErrors` e o motor de regex. */
+function createCompiler(allErrors: boolean, regExp?: CodeOptions['regExp']) {
+  const ajv = new Ajv2020.default({
+    strict: true,
+    allErrors,
+    logger: false,
+    ...(isUndefined(regExp) ? {} : { code: { regExp } }),
+  });
   addFormats.default(ajv);
   // Formato `attachment` (D-16): o mesmo `Hash` do domínio (sha256 em hexadecimal minúsculo).
   ajv.addFormat(ATTACHMENT_FORMAT, (value: string) => Hash.safeParse(value).success);
@@ -173,9 +206,10 @@ function messageOf(error: unknown): string {
  * e esquece o `$id`, então duas versões de um tipo com o mesmo `$id` em objetos distintos não
  * colidem.
  *
- * Duas instâncias do ajv, com a mesma compilação: `checkSchema` usa `allErrors: true` e devolve
+ * Três instâncias do ajv, com a mesma compilação: `checkSchema` usa `allErrors: true` e devolve
  * todos os erros do schema; `validate` usa `allErrors: false` e devolve um erro por subschema
- * avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames` saem os dos ramos).
+ * avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames` saem os dos ramos); `report` usa
+ * `allErrors: true` sobre o mesmo schema, com o regex limitado por `boundedRegExp`.
  *
  * O `path` de `checkSchema` é sempre relativo ao documento do schema (raiz = `''`), inclusive nos
  * erros de compilação, que saem com `path` vazio; quem expõe o erro (o serviço de definição)
@@ -213,16 +247,15 @@ function messageOf(error: unknown): string {
  */
 export function createValidator(): Validator {
   const checker = createCompiler(true);
-  const dataValidator = createCompiler(false);
   // Chave por identidade do objeto: o lote de um `register` repete o mesmo schema e recompilar
   // custava 200 a 300 ms por lote de 50. Escopo da instância e coletável: o `WeakMap` não tem
   // `size`, que `MemoizeCache` exige no tipo mas o `memoize` nunca lê, então o cast é necessário.
-  const compiled = memoize((schema: Record<string, unknown>) => dataValidator.compile(schema), {
-    cache: new WeakMap() as unknown as MemoizeCache<
-      object,
-      ReturnType<typeof dataValidator.compile>
-    >,
-  });
+  const compiledBy = (compiler: ReturnType<typeof createCompiler>) =>
+    memoize((schema: Record<string, unknown>) => compiler.compile(schema), {
+      cache: new WeakMap() as unknown as MemoizeCache<object, ReturnType<typeof compiler.compile>>,
+    });
+  const compiled = compiledBy(createCompiler(false));
+  const reported = compiledBy(createCompiler(true, boundedRegExp));
 
   return {
     checkSchema(schema) {
@@ -242,6 +275,10 @@ export function createValidator(): Validator {
     validate(schema, data) {
       const validate = compiled(schema);
       return validate(data) ? [] : toDetails(validate.errors ?? []);
+    },
+    report(schema, data) {
+      const validate = reported(schema);
+      return validate(data) ? [] : (validate.errors ?? []).map(toDetail);
     },
   };
 }
