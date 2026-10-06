@@ -234,26 +234,95 @@ describe('register: recusas estáticas (nível 3)', () => {
     });
   });
 
-  test('details é por registro: só o primeiro item inválido sai, e o lote não os soma', async () => {
-    const { register, validate } = setup();
+  test('details junta as violações de schema de todos os registros do lote', async () => {
+    const { register, processes, validate } = setup();
 
     const error = await refusal(
       register([note('ok'), { ...note(), data: { text: 5 } }, { ...note(), data: { text: 6 } }]),
     );
 
-    expect(error.details.length).toBeGreaterThan(0);
-    expect(error.details.every(({ path }) => path.startsWith('/records/1/data'))).toBe(true);
-    expect(validate).toHaveBeenCalledTimes(2);
+    expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual([
+      { path: '/records/1/data/text', code: 'type' },
+      { path: '/records/2/data/text', code: 'type' },
+    ]);
+    expect(validate).toHaveBeenCalledTimes(3);
+    expect(processes.counters.writes).toBe(0);
   });
 
-  test('pior caso: item com dezenas de erros sai com um só detalhe, o primeiro que o validador achar', async () => {
+  test('um registro com várias violações devolve todas, com o path do registro', async () => {
+    const { register } = setup();
+
+    const error = await refusal(register([{ ...note(), data: { other: 1, extra: 2 } }]));
+
+    expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual(
+      expect.arrayContaining([
+        { path: '/records/0/data/text', code: 'required' },
+        { path: '/records/0/data/other', code: 'additional-properties' },
+        { path: '/records/0/data/extra', code: 'additional-properties' },
+      ]),
+    );
+    expect(error.details).toHaveLength(3);
+  });
+
+  test('o relatório só roda quando o validate falha', async () => {
+    const { register, validator } = setup();
+    const report = jest.spyOn(validator, 'report');
+
+    await register([note('a'), note('b')]);
+
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  test('cai nos details do validate se o relatório vier vazio', async () => {
+    const { register, validator } = setup();
+    jest.spyOn(validator, 'report').mockReturnValue([]);
+
+    const error = await refusal(register([{ ...note(), data: { text: 5 } }]));
+
+    expect(error.details).toEqual([
+      { path: '/records/0/data/text', code: 'type', message: expect.any(String) },
+    ]);
+  });
+
+  test('pior caso: dezenas de violações saem em 50 detalhes e um só too-many-errors', async () => {
     const { register } = setup();
     const extras = Object.fromEntries(Array.from({ length: 80 }, (_, n) => [`extra${n}`, n]));
 
-    const error = await refusal(register([{ ...note(), data: { ...extras } }]));
+    const error = await refusal(
+      register([
+        { ...note(), data: { text: 'ok', ...extras } },
+        { ...note(), data: { text: 5 } },
+      ]),
+    );
 
-    expect(error.details).toHaveLength(1);
-    expect(error.details.every(({ path }) => path.startsWith('/records/0/data'))).toBe(true);
+    expect(error.details).toHaveLength(51);
+    expect(error.details.at(-1)).toEqual({
+      path: '',
+      code: 'too-many-errors',
+      message: '31 more errors omitted',
+    });
+    expect(error.details.filter(({ code }) => code === 'too-many-errors')).toHaveLength(1);
+    // O registro 0 consome o teto: o 1 só entra na contagem do `too-many-errors`.
+    expect(error.details.slice(0, 50).every(({ path }) => path.startsWith('/records/0/data'))).toBe(
+      true,
+    );
+  });
+
+  test('TYPE_NOT_PINNED de um registro vence o INVALID_RECORD de dado de um anterior', async () => {
+    const { register, validate } = setup();
+
+    const error = await refusal(
+      register([
+        { ...note(), data: { text: 5 } },
+        { ...note('b'), type: 'nobody' },
+      ]),
+    );
+
+    expect(error).toMatchObject({
+      code: 'TYPE_NOT_PINNED',
+      details: [{ path: '/records/1/type', code: 'not-pinned' }],
+    });
+    expect(validate).not.toHaveBeenCalled();
   });
 
   test.each([

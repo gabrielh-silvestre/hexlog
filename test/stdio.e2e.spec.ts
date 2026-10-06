@@ -151,6 +151,41 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
+  test('INVALID_RECORD com pattern exponencial e texto de 300 caracteres volta rápido, com max-length', async () => {
+    // Acima de 256 pontos de código o motor do relatório não roda o regex; sem o limite, `(a|aa)+`
+    // sobre 299 `a` e um `b` não terminaria. Processo filho: o timeout do `it` interrompe o travamento.
+    const { client, call } = await connect();
+    try {
+      await call('define_type', {
+        project: PROJECT,
+        name: 'note',
+        schema: {
+          type: 'object',
+          properties: { text: { type: 'string', maxLength: 256, pattern: '^(a|aa)+$' } },
+        },
+      });
+      await call('create_process', { project: PROJECT, process: PROCESS });
+      const start = performance.now();
+
+      const body = errorBodyOf(
+        await call('register', {
+          project: PROJECT,
+          process: PROCESS,
+          agent: 'e2e-agent',
+          records: [{ type: 'note', target: 'run.step', data: { text: `${'a'.repeat(299)}b` } }],
+        }),
+      );
+
+      expect(performance.now() - start).toBeLessThan(1_000);
+      expect(body.code).toBe('INVALID_RECORD');
+      expect(body.details).toContainEqual(
+        expect.objectContaining({ path: '/records/0/data/text', code: 'max-length' }),
+      );
+    } finally {
+      await client.close();
+    }
+  }, 15_000);
+
   test('uma chamada de cada tool no bundle: stdout só JSON-RPC e stderr JSON estruturado', async () => {
     const xdg = createTempDir('e2e-xdg');
     const { client, call, stderr, transportErrors } = await connect({ xdg });

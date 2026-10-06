@@ -58,6 +58,32 @@ describe('register sobre os adaptadores reais', () => {
     ]);
   });
 
+  test('lote com registros inválidos recusa com as violações de todos e não grava nada', async () => {
+    const { services, register, logOf, verified } = realSetup();
+    services.process.createProcess({ project: PROJECT, process: 'run-1' });
+    const sizeBefore = fs.statSync(logOf('run-1')).size;
+
+    const error = await refusal(
+      register('run-1', [
+        note('ok'),
+        { ...note('a'), data: { text: 5 } },
+        { ...note('b'), data: { other: 1 } },
+      ]),
+    );
+
+    expect(error.code).toBe('INVALID_RECORD');
+    expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual(
+      expect.arrayContaining([
+        { path: '/records/1/data/text', code: 'type' },
+        { path: '/records/2/data/text', code: 'required' },
+        { path: '/records/2/data/other', code: 'additional-properties' },
+      ]),
+    );
+    expect(error.details).toHaveLength(3);
+    expect(fs.statSync(logOf('run-1')).size).toBe(sizeBefore);
+    expect(verified('run-1').chain).toMatchObject({ ok: true, totalRecords: 0 });
+  });
+
   test('PROCESS_TOO_LARGE na leitura: log acima do teto recusa o lote', async () => {
     const { services, register, logOf } = realSetup();
     services.process.createProcess({ project: PROJECT, process: 'run-1' });

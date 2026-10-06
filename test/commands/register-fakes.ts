@@ -257,6 +257,7 @@ export function setup() {
     processes,
     attachments,
     validate,
+    validator,
     setNow: (date: Date) => void (now = date),
     register: (records: BatchItem[], extra: Partial<RegisterInput> = {}, process: Name = ORIGIN) =>
       service.register({ project: PROJECT, process, author: AUTHOR, records, ...extra }),

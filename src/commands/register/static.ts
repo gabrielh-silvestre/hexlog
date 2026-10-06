@@ -9,7 +9,7 @@ import {
   type RelationKind,
 } from '../../domain/record.ts';
 import { resolveKind, type NamedRelation } from '../../domain/relations.ts';
-import { HexlogError, invalidInput } from '../../errors.ts';
+import { capDetails, HexlogError, invalidInput, type Detail } from '../../errors.ts';
 import type { Validator } from '../../ports.ts';
 import { invalidRecord, ruleRefusal } from './errors.ts';
 
@@ -70,17 +70,24 @@ function pinnedSchema(manifest: Manifest, item: BatchItem, index: number): Recor
 }
 
 /**
- * `Validator.validate` devolve um erro por subschema avaliado de UM registro (com `path` relativo a
- * `data`; em `anyOf`/`oneOf`/`propertyNames` saem os dos ramos). O lote não os agrega: recusa no
- * primeiro item inválido, então a resposta traz só os detalhes dele, não os de cada item. O agente
- * corrige e reenvia; o `path` sai refeito para `/records/<i>/data/...`.
+ * Violações de schema de UM registro, com o `path` refeito para `/records/<i>/data/...`. O
+ * `validate` para no primeiro erro de cada subschema; só quando falha o `report` junta o resto, e
+ * ele substitui os detalhes do `validate` (que ficam só se o relatório vier vazio, para nunca haver
+ * `INVALID_RECORD` sem detalhe).
  */
-function checkData(validator: Validator, schema: RecordType, item: BatchItem, index: number): void {
-  const details = validator.validate(schema, item.data);
-  if (details.length === 0) return;
-  throw invalidRecord(
-    details.map((detail) => ({ ...detail, path: `/records/${index}/data${detail.path}` })),
-  );
+function checkData(
+  validator: Validator,
+  schema: RecordType,
+  item: BatchItem,
+  index: number,
+): Detail[] {
+  const first = validator.validate(schema, item.data);
+  if (first.length === 0) return [];
+  const report = validator.report(schema, item.data);
+  return (report.length === 0 ? first : report).map((detail) => ({
+    ...detail,
+    path: `/records/${index}/data${detail.path}`,
+  }));
 }
 
 function resolveRelations(
@@ -114,7 +121,13 @@ function checkCurrencyScope(prepared: readonly PreparedItem[], origin: Name): vo
 /**
  * D-06 nível 3: recusas que só dependem da entrada e do manifesto (imutável), então a chamada
  * original e o reenvio de mesma impressão recebem a mesma resposta. Uma passada por regra, na ordem
- * de D-06: tipo fixado e schema, `as`→`kind`, `cross-process-currency`.
+ * de D-06: tipo fixado de todos os registros, schema de todos, `as`→`kind`, `cross-process-currency`.
+ *
+ * Roda antes do lock (`commands/process.ts#register` a chama antes de `store.write`; só o `decide`
+ * roda sob o lock, síncrono), então a compilação do relatório de schema não alonga a seção crítica.
+ * O tipo fixado vem antes do dado: `TYPE_NOT_PINNED` de qualquer registro vence o `INVALID_RECORD`
+ * de dado de um anterior. A agregação cobre só a violação de schema (as de todos os registros, com
+ * o teto de `capDetails`); as demais regras seguem recusando no primeiro erro. Tudo-ou-nada.
  */
 export function prepareBatch(
   manifest: Manifest,
@@ -122,14 +135,14 @@ export function prepareBatch(
   records: readonly BatchItem[],
   validator: Validator,
 ): PreparedItem[] {
-  const valid = records.map((item, index) => {
-    const schema = pinnedSchema(manifest, item, index);
-    checkData(validator, schema, item, index);
-    return { item, schema };
-  });
-  const prepared = valid.map(({ item, schema }, index) => ({
+  const schemas = records.map((item, index) => pinnedSchema(manifest, item, index));
+  const violations = records.flatMap((item, index) =>
+    checkData(validator, schemas[index]!, item, index),
+  );
+  if (violations.length > 0) throw invalidRecord(capDetails(violations));
+  const prepared = records.map((item, index) => ({
     item,
-    schema,
+    schema: schemas[index]!,
     relations: resolveRelations(item, index, names),
   }));
   checkCurrencyScope(prepared, manifest.process);
