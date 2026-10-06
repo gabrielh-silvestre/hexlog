@@ -1,4 +1,4 @@
-import { differenceBy, isUndefined, mapValues, omitBy, pick, uniq, union } from 'es-toolkit';
+import { differenceBy, isUndefined, omitBy, pick, uniq, union } from 'es-toolkit';
 import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
 import { evaluateGate, type GateResult } from '../domain/gate.ts';
@@ -11,21 +11,24 @@ import {
   type Target,
 } from '../domain/ids.ts';
 import { needsReview, type NeedsReview } from '../domain/relations.ts';
-import { HexlogError, invalidInput } from '../errors.ts';
+import { HexlogError } from '../errors.ts';
 import type { Manifest } from '../domain/manifest.ts';
 import type {
   AttachmentReader,
   AttachmentStatus,
-  DefinitionKind,
   DefinitionReader,
   ProcessReader,
   SearchIndex,
 } from '../ports.ts';
-import { latestVersions } from '../shared/latest.ts';
 import { loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
-import { sliceChars } from '../shared/pages.ts';
 import { decodeCursor, encodeCursor, invalidCursor, type CursorPayload } from './cursor.ts';
-import { projectNotFound, readScope, type Reading, type ReadTarget } from './read.ts';
+import { createList, type ListInput, type ListResult } from './list.ts';
+import {
+  createReadAttachment,
+  type AttachmentPage,
+  type ReadAttachmentInput,
+} from './read-attachment.ts';
+import { readScope, type Reading, type ReadTarget } from './read.ts';
 import {
   buildView,
   inOutputOrder,
@@ -39,6 +42,9 @@ import {
   type View,
 } from './select.ts';
 
+export { PAGE_CHARS_CAP } from './read-attachment.ts';
+export type { AttachmentPage, ListInput, ListResult };
+
 const DEFAULT_LIMIT = 50;
 /**
  * Teto de `text` em caracteres: o custo da busca cresce com os termos distintos (AND mais o
@@ -46,12 +52,6 @@ const DEFAULT_LIMIT = 50;
  * (`SEARCH_MAX_CHARS`); a F5 reusa a constante no `.max()` do zod.
  */
 export const QUERY_TEXT_MAX_CHARS = 200;
-/**
- * D-20: teto de uma página. Na `query` conta os caracteres do JSON dos registros (as tools o passam em
- * `maxChars`); no `readAttachment`, os do `text`, e é o padrão sem `maxChars`.
- */
-export const PAGE_CHARS_CAP = 24_000;
-
 export type QueryInput = Filters & {
   project: Name;
   /** Obrigatório no alcance processo (o padrão). */
@@ -127,44 +127,6 @@ type AttachmentBreak = {
 export type VerifyChainResult = Chain & {
   attachmentBreaks: AttachmentBreak[];
   totalAttachmentBreaks: number;
-};
-
-export type ListInput = { project?: Name; process?: Name };
-
-/** Definição do projeto: `version` é a mais nova, `versions` todas em ordem crescente. */
-type DefinitionSummary = { name: Name; version: string; versions: string[] };
-
-export type ListResult = {
-  /** Sem `project`: um item por projeto. */
-  projects?: { name: Name; processes: number }[];
-  /** Só `project`: os processos e as definições vigentes dele. */
-  project?: {
-    name: Name;
-    processes: { name: Name; createdAt: string }[];
-  } & Record<DefinitionKind, DefinitionSummary[]>;
-  /** `project` e `process`: o que o manifesto do processo fixou. */
-  process?: {
-    name: Name;
-    createdAt: string;
-    pinned: Record<DefinitionKind, Name[]>;
-    hashes: Manifest['hashes'];
-  };
-};
-
-type ReadAttachmentInput = {
-  project: Name;
-  hash: Hash;
-  /** Posição em caracteres; o `next` da página anterior. */
-  offset?: number;
-  maxChars?: number;
-};
-
-export type AttachmentPage = {
-  text: string;
-  /** Offset da próxima página; ausente na última. */
-  next?: number;
-  /** Sempre `ok`: anexo ausente ou corrompido não devolve página, lança. */
-  status: 'ok';
 };
 
 export type QueryService = {
@@ -329,9 +291,6 @@ export function createQueryService(deps: {
 }): QueryService {
   const { store, definitions, attachments, search } = deps;
 
-  const summariesOf = (project: Name, kind: DefinitionKind): DefinitionSummary[] =>
-    latestVersions(definitions, project, kind);
-
   /** D-16: estado dos anexos que `link` cita nos campos marcados do tipo fixado no processo dele. */
   function attachmentStatusOf(
     project: Name,
@@ -473,54 +432,8 @@ export function createQueryService(deps: {
       };
     },
 
-    list({ project, process }) {
-      if (isUndefined(project)) {
-        if (!isUndefined(process)) {
-          throw invalidInput('/project', 'required', 'project is required with process');
-        }
-        return {
-          projects: store
-            .listProjects()
-            .map((name) => ({ name, processes: store.list(name).length })),
-        };
-      }
-      if (!store.listProjects().includes(project)) throw projectNotFound();
-      if (!isUndefined(process)) {
-        const { createdAt, fixed, hashes } = store.readManifest({ project, process });
-        return {
-          process: {
-            name: process,
-            createdAt,
-            pinned: mapValues(fixed, (byName) => Object.keys(byName)),
-            hashes,
-          },
-        };
-      }
-      return {
-        project: {
-          name: project,
-          processes: store.list(project).map((name) => ({
-            name,
-            createdAt: store.readManifest({ project, process: name }).createdAt,
-          })),
-          types: summariesOf(project, 'types'),
-          relations: summariesOf(project, 'relations'),
-          gates: summariesOf(project, 'gates'),
-        },
-      };
-    },
+    list: createList({ store, definitions }),
 
-    readAttachment({ project, hash, offset = 0, maxChars = PAGE_CHARS_CAP }) {
-      const text = attachments.read(project, hash);
-      if (offset > text.length) {
-        throw invalidInput('/offset', 'out-of-range', 'offset is past the end of the attachment');
-      }
-      const page = sliceChars(text, offset, maxChars);
-      return {
-        text: page.text,
-        ...(page.nextOffset === null ? {} : { next: page.nextOffset }),
-        status: 'ok',
-      };
-    },
+    readAttachment: createReadAttachment({ attachments }),
   };
 }
