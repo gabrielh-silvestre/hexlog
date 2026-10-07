@@ -164,6 +164,21 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
+  test('query com fields vazio devolve os registros sem data', async () => {
+    const { client, call } = await connect();
+    try {
+      await seedNotes(call, 2);
+
+      const page = (await call('query', { project: PROJECT, process: PROCESS, fields: [] }))
+        .structuredContent as QueryResult;
+
+      expect(page.records).toHaveLength(2);
+      expect(page.records.every((record) => !('data' in record))).toBe(true);
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+
   test('INVALID_RECORD com pattern exponencial e texto de 300 caracteres volta rápido, com max-length', async () => {
     // Acima de 256 pontos de código o motor do relatório não roda o regex; sem o limite, `(a|aa)+`
     // sobre 299 `a` e um `b` não terminaria. Processo filho: o timeout do `it` interrompe o travamento.

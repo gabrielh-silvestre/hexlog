@@ -161,6 +161,8 @@ describe('N11: tetos de read_attachment e de query', () => {
     ],
     ['ids acima de 200', { ids: Array.from({ length: 201 }, () => `${PROCESS}:${UUID}`) }, '/ids'],
     ['where com mais de 50 chaves', { where: manyKeys(51, 'v') }, '/where'],
+    ['fields com 51 nomes', { fields: Array.from({ length: 51 }, (_, i) => `f${i}`) }, '/fields'],
+    ['fields com nome vazio', { fields: [''] }, '/fields/0'],
     ['changesSince com mais de 200 chaves', { changesSince: manyKeys(201, null) }, '/changesSince'],
   ])('query com %s dá INVALID_INPUT com details[].path', async (_title, patch, path) => {
     const result = await environment.call('query', {

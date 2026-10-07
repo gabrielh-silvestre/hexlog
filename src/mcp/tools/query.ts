@@ -27,6 +27,7 @@ export const EVIDENCE_ITEMS_CAP = 100;
 // Tetos de entrada da query (docs/tetos-dominio-v1.md): palpites de CPU e de tamanho de mensagem.
 const IDS_MAX = 200;
 const WHERE_KEYS_MAX = 50;
+const FIELDS_MAX = 50;
 // O marcador tem uma chave por processo lido e é devolvido pelo servidor. Só com nomes de ~42 caracteres
 // ou mais o teto fica acima do que o cursor suporta; com nomes menores o cursor pagina além de 200 e o zod recusa antes.
 const MARKER_KEYS_MAX = 200;
@@ -63,6 +64,7 @@ const QueryInput = z.strictObject({
     .refine((text) => text.isWellFormed(), WELL_FORMED)
     .optional(),
   ids: z.array(RecordId).max(IDS_MAX).optional(),
+  fields: z.array(z.string().min(1)).max(FIELDS_MAX).optional(),
   relatedTo: RecordId.optional(),
   limit: z.number().int().min(1).max(LIMIT_MAX).optional(),
   cursor: z.string().optional(),
@@ -151,7 +153,10 @@ const QUERY_DESCRIPTION =
   'ids, relatedTo (records linked to an id) and includeNonCurrent (also superseded or revoked ones). ' +
   'Each record carries its in and out relations, needsReview when its support is dead and ' +
   'attachmentStatus for the attachments it cites; in process scope only the relations from that ' +
-  'process are seen, so use scope project to see cross-process support. A page holds at most limit records (default 50, ' +
+  'process are seen, so use scope project to see cross-process support. fields (at most ' +
+  `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
+  'annotations stay, filters see the whole data and the size cap counts the projected page. ' +
+  'A page holds at most limit records (default 50, ' +
   'max 200) and also stops at a size cap, always with at least one record; pass the returned cursor ' +
   'to continue. marker is the head of every process read: pass it back as changesSince to get ' +
   'changes (entered, left with reason) since then, on the first page only; resend the same ' +

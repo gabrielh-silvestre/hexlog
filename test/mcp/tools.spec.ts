@@ -160,6 +160,14 @@ describe('TM2: descrição das tools', () => {
     expect(outOfRange).toEqual([]);
   });
 
+  test('query descreve fields e o teto de 50 nomes', async () => {
+    const { tools } = await environment.client.listTools();
+
+    const description = tools.find((tool) => tool.name === 'query')?.description;
+
+    expect(description).toMatch(/fields \(at most 50\).*empty list omits data/s);
+  });
+
   test('query avisa o teto de changes e evaluate_gate o de evidence', async () => {
     const { tools } = await environment.client.listTools();
     const descriptionOf = (name: string) => tools.find((tool) => tool.name === name)?.description;
@@ -373,6 +381,44 @@ describe('um fluxo feliz por tool', () => {
     expect(omittedIds).toHaveLength(registered.length - CHANGES_ITEMS_CAP);
     expect(reused.changes?.entered).toEqual([]);
     expect(reread).toEqual(expect.arrayContaining(omittedIds));
+  });
+
+  test('query com fields recorta o data e mantém o resto do registro', async () => {
+    await prepareProcess();
+    await registerNote('run-1', 'olá');
+
+    const page = await succeed<QueryResult>('query', {
+      project: PROJECT,
+      process: 'run-1',
+      fields: ['text', 'ausente'],
+    });
+
+    expect(page.records).toEqual([
+      expect.objectContaining({ type: 'note', target: 'run.step', data: { text: 'olá' } }),
+    ]);
+  });
+
+  test('#85: 41 registros de ~700 caracteres estouram o teto sem fields e cabem com fields vazio', async () => {
+    await prepareProcess();
+    await succeed<RegisterResult>('register', {
+      project: PROJECT,
+      process: 'run-1',
+      agent: 'executor',
+      records: Array.from({ length: 41 }, () => ({
+        type: 'note',
+        target: 'run.step',
+        data: { text: 'x'.repeat(700) },
+      })),
+    });
+    const input = { project: PROJECT, process: 'run-1', limit: 100 };
+
+    const full = await succeed<QueryResult>('query', input);
+    const light = await succeed<QueryResult>('query', { ...input, fields: [] });
+
+    expect(full.records.length).toBeLessThan(41);
+    expect(full.cursor).toEqual(expect.any(String));
+    expect(light.records).toHaveLength(41);
+    expect(light.cursor).toBeUndefined();
   });
 
   test('evaluate_gate corta cada lista de evidence em EVIDENCE_ITEMS_CAP e informa omitted', async () => {

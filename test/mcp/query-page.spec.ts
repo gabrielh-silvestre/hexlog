@@ -29,6 +29,18 @@ describe('queryPage', () => {
     });
   });
 
+  test('repassa fields ao serviço junto de maxChars', () => {
+    const { query, queryRecords } = queryWith(emptyPage);
+
+    queryPage(query, { project: 'p', fields: ['ref'] });
+
+    expect(queryRecords).toHaveBeenCalledWith({
+      project: 'p',
+      fields: ['ref'],
+      maxChars: PAGE_CHARS_CAP,
+    });
+  });
+
   test('sem changes, a página volta como veio', () => {
     const { query } = queryWith(emptyPage);
 
