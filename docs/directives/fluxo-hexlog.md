@@ -22,6 +22,13 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - Com `grounds: directive`, a decisão se liga à diretriz por `anchored-in` (decisão para `directive`). Com `grounds: gap`, por `about-gap` (decisão para `gap`).
 - Refazer uma decisão grava uma `decision` nova com `supersedes` da vigente.
 
+## Consulta antes de decidir
+
+- Antes de registrar uma `decision`, rode `query` com `type: decision` e o assunto (`targetPrefix` ou `text`) no processo do trabalho; vale para a sessão principal e para todo subagente. A `query` não deixa rastro no log, então só esta regra garante a consulta.
+- Decisão vigente que cobre o caso: siga e cite o id. Decisão que precisa mudar: `decision` nova com `supersedes` e o motivo em `rationale`.
+- Decisão nova que estende ou se apoia em outra vigente grava `derivesFrom` (decisão para decisão) para ela. `supersedes` só quando substitui; estender sem substituir não é `supersedes`.
+- O hexlog guarda o vigente da entrega inteira. Handoff e resumo de sessão anterior são dica e nunca valem contra o registro; texto que só existe no handoff não vira registro sozinho.
+
 ## Confiança
 
 - `gap` sempre `low`.

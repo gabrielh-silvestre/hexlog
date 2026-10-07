@@ -34,7 +34,9 @@ No modo `ask`, mostre o diff de regras antes de gravar.
 
 ## 3. Trabalho
 
-Chame a skill do OMC da rota: `deep-interview`, `plan` e `execute` (`interview-plan-execute`) ou só `execute` (`direct`). Registre cada `decision` conforme `docs/directives/fluxo-hexlog.md`, e instrua todo subagente lançado a fazer o mesmo. Retomar é `query` do processo do trabalho.
+Chame a skill do OMC da rota: `deep-interview`, `plan` e `execute` (`interview-plan-execute`) ou só `execute` (`direct`). **Retomada** (sessão nova com ou sem handoff, compactação de contexto, trabalho pego no meio): antes de perguntar ao dono ou escolher, rode `query` de `type: decision` e de `type: gap` no processo do trabalho e leia o `opening` e a `verification` vigente. O que o hexlog diz vigente vale; handoff e resumo de sessão anterior são dica e só entram na comparação quando existirem. Divergência: o hexlog vence, cite-a ao dono na primeira mensagem (no modo `autonomous`, no resumo final e no corpo do PR) e não grave como registro o que só está no handoff.
+
+Antes de cada `decision`, consulte as vigentes do assunto e registre-a conforme `docs/directives/fluxo-hexlog.md`; instrua todo subagente lançado a consultar antes de escolher e a registrar na hora.
 
 ## 4. Pré-PR
 
