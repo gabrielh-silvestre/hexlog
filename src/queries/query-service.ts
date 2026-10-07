@@ -195,7 +195,8 @@ export type QueryService = {
    * `process`, a vigente do projeto ou a `version` pedida (`{name, version, schema}`).
    * `INVALID_INPUT` (`process-with-version` em `/version`: `process` e `version` juntos, ou
    * `invalid-version`), `PROCESS_NOT_FOUND`, `TYPE_NOT_PINNED` (`not-pinned` em `/type`: tipo fora do
-   * manifesto), `TYPE_NOT_FOUND` (`unknown-name` em `/type`, `unknown-version` em `/version`),
+   * manifesto), `PROJECT_NOT_FOUND` (`unknown-project` em `/project`, sem `process`),
+   * `TYPE_NOT_FOUND` (`unknown-name` em `/type`, `unknown-version` em `/version`),
    * `PROCESS_CORRUPTED` (`unreadable-manifest`), `INTERNAL` (`unreadable-definition`) e `IO_ERROR`.
    */
   describeType(input: DescribeTypeInput): DescribeTypeResult;

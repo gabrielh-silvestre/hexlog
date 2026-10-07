@@ -168,6 +168,15 @@ describe('TM2: descrição das tools', () => {
     expect(description).toMatch(/fields \(at most 50\).*empty list omits data/s);
   });
 
+  test('register manda ler o schema com describe_type e o id vigente com query', async () => {
+    const { tools } = await environment.client.listTools();
+
+    const description = tools.find((tool) => tool.name === 'register')?.description;
+
+    expect(description).toMatch(/schema with describe_type/);
+    expect(description).toMatch(/read the current id with query/);
+  });
+
   test('query avisa o teto de changes e evaluate_gate o de evidence', async () => {
     const { tools } = await environment.client.listTools();
     const descriptionOf = (name: string) => tools.find((tool) => tool.name === name)?.description;

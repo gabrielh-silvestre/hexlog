@@ -1,6 +1,7 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect, beforeAll } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { parsePremises, scanPremises, type ScannedPremise } from '../.claude/hooks/flow-sync.ts';
 import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -321,6 +322,112 @@ describe('termos de seleção da checagem fora do que o agente lê', () => {
   });
 });
 
+// ---- estratégia: premissas atemporais em formato determinístico ----
+
+const STRATEGY_DOC = 'docs/directives/estrategia.md';
+const STRATEGY_THEMES = [
+  'Stack',
+  'Integridade de dados',
+  'Contrato público',
+  'Segurança e riscos aceitos',
+  'Escopo e processo',
+  'Propósito e modos de uso',
+];
+const SENTINEL_THEME = 'Nenhuma premissa se aplica';
+const SENTINEL_SLUG = 'none';
+describe('extração das premissas (unitário, sobre string literal)', () => {
+  test('scanPremises separa slug, statement com `: ` dentro e link Ver, e acusa linha malformada', () => {
+    const content = [
+      '## Tema',
+      '- `a-b`: Regra: com dois pontos. Ver: [x.md](x.md).',
+      '- `none`: Sem premissa.',
+      '- sem crase: linha ruim',
+    ].join('\n');
+    expect(scanPremises(content)).toEqual({
+      premises: [
+        {
+          theme: 'Tema',
+          slug: 'a-b',
+          statement: 'Regra: com dois pontos.',
+          ver: '[x.md](x.md).',
+        },
+        { theme: 'Tema', slug: 'none', statement: 'Sem premissa.', ver: undefined },
+      ],
+      malformed: ['- sem crase: linha ruim'],
+    });
+  });
+});
+
+describe('estrategia.md', () => {
+  const strategyPath = path.join(repoRoot, STRATEGY_DOC);
+
+  test('é importado pelo CLAUDE.md depois de fluxo-hexlog.md e convencoes.md', () => {
+    const imports = claudeMdImports();
+    const position = (target: string): number => imports.indexOf(target);
+    expect(position(STRATEGY_DOC)).toBeGreaterThan(position('docs/directives/convencoes.md'));
+    expect(position('docs/directives/convencoes.md')).toBeGreaterThan(position(FLOW_DOC));
+    expect(position(FLOW_DOC)).toBeGreaterThanOrEqual(0);
+  });
+
+  test('cabe em 150 linhas', () => {
+    expect(lineCount(strategyPath)).toBeLessThanOrEqual(LIVING_DOC_MAX_LINES);
+  });
+});
+
+describe('premissas de estrategia.md', () => {
+  let content: string;
+  let premises: ScannedPremise[];
+  let malformed: string[];
+
+  beforeAll(() => {
+    content = fs.readFileSync(path.join(repoRoot, STRATEGY_DOC), 'utf8');
+    ({ premises } = scanPremises(content));
+    ({ malformed } = parsePremises(content));
+  });
+
+  test('tem as 6 seções temáticas e a da sentinela, nessa ordem', () => {
+    const themes = headingTitlesFrom(content);
+    expect(themes.slice(1)).toEqual([...STRATEGY_THEMES, SENTINEL_THEME]);
+  });
+
+  test('toda linha de premissa casa o formato, com slug único e statement de 1 a 255 code points', () => {
+    expect(malformed).toEqual([]);
+  });
+
+  test('cada tema tem pelo menos uma premissa', () => {
+    const empty = STRATEGY_THEMES.filter(
+      (theme) => !premises.some((premise) => premise.theme === theme),
+    );
+    expect(empty).toEqual([]);
+  });
+
+  test('toda premissa fora a sentinela termina em um link `Ver:` relativo', () => {
+    const withoutLink = premises
+      .filter((premise) => premise.slug !== SENTINEL_SLUG)
+      .filter((premise) => relativeLinkTargetsFrom(premise.ver ?? '').length === 0);
+    expect(withoutLink.map((premise) => premise.slug)).toEqual([]);
+  });
+
+  test('a sentinela `none` existe, sem link `Ver:`', () => {
+    expect(premises.find((premise) => premise.slug === SENTINEL_SLUG)).toMatchObject({
+      theme: SENTINEL_THEME,
+      ver: undefined,
+    });
+  });
+});
+
+describe('fluxo-hexlog.md com a camada estratégica', () => {
+  test.each([
+    'rests-on',
+    'fills-gap',
+    'directives-2',
+    'premise.objective',
+    'directives.estrategia.none',
+  ])('cita `%s`', (token) => {
+    expect(fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8')).toContain(token);
+  });
+});
+
 describe('skills locais do fluxo', () => {
   test('cada skill tem `name` igual à pasta', () => {
     const wrong = FLOW_SKILLS.filter(
@@ -339,9 +446,22 @@ describe('skills locais do fluxo', () => {
   });
 });
 
+describe('skills locais citam a estratégia', () => {
+  test.each(FLOW_SKILLS)('%s cita docs/directives/estrategia.md', (name) => {
+    expect(fs.readFileSync(skillPath(name), 'utf8')).toContain(STRATEGY_DOC);
+  });
+});
+
 describe('ADR 0010 depois da emenda do fluxo', () => {
   test('o último bloco do arquivo é a emenda de 2026-10-06', () => {
     const adr = fs.readFileSync(path.join(directivesDir, 'adr-0010-camada-sobre-omc.md'), 'utf8');
     expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-06/);
+  });
+});
+
+describe('ADR 0011 da camada estratégica', () => {
+  test.each(['Context', 'Decision', 'Consequences'])('tem a seção "%s"', (title) => {
+    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0011-camada-estrategica.md'), 'utf8');
+    expect(headingTitlesFrom(adr)).toContain(title);
   });
 });

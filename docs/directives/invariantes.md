@@ -20,7 +20,7 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 - Leitura de definição não cabe como parâmetro de uma tool existente: entra como tool própria, com emenda datada ao [ADR 0009](adr-0009-ferramental.md), item 1 (a 12ª tool, `describe_type`, é o precedente).
 - `describe_type` (`src/queries/describe-type.ts#createDescribeType`) lê só tipos: o fixado no processo, com `process`, ou a versão vigente ou pedida do projeto, sem `process`; relações e gates ficam fora.
 - `describe_type` com `process` e `version` juntos é `INVALID_INPUT` (`/version`, `process-with-version`), recusado no serviço antes de qualquer I/O.
-- `describe_type` com `process` e tipo não fixado é `TYPE_NOT_PINNED` (`/type`, `not-pinned`); sem `process`, tipo ou versão ausente do projeto é `TYPE_NOT_FOUND`.
+- `describe_type` com `process` e tipo não fixado é `TYPE_NOT_PINNED` (`/type`, `not-pinned`); sem `process`, projeto inexistente é `PROJECT_NOT_FOUND` (`/project`, `unknown-project`) e tipo ou versão ausente de um projeto que existe é `TYPE_NOT_FOUND`.
 - `describe_type` com `process` omite `version` da saída, porque o manifesto guarda o schema fixado (`Manifest.fixed.types`), não a versão.
 - `attachments` e os demais nomes de `RESERVED_PROCESS_NAMES` (`src/domain/ids.ts`) não valem como nome de processo; `create_process` os recusa com `RESERVED_NAME`.
 - O código de `domain/`, `commands/`, `queries/` e `mcp/` não contém termo de fluxo nem de framework; `test/no-flow-terms.spec.ts` trava ([ADR 0007](adr-0007-dominio.md), item 3).
@@ -28,7 +28,7 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 ## Consulta (`query`)
 
 - A `query` projeta `data` por `fields` (até 50 nomes de topo; `fields: []` omite `data`) só na saída (`src/queries/query-service.ts#createQueryService`): os filtros veem o `data` inteiro, o teto de página conta o JSON projetado, `fields` fica fora do hash do cursor, e `in`, `out`, `needsReview` e `attachmentStatus` saem completos.
-- O `register` não confere se o destino de `supersedes`/`revokes` é o registro que o agente queria, só as regras de relação; o id certo vem do `query` por `type` + `targetPrefix` + `fields: []`, e as skills `hexlog` e `hexlog-flow` ensinam essa consulta.
+- O `register` não confere se o destino de `supersedes`/`revokes` é o registro que o agente queria, só as regras de relação; o id certo vem do `query` por `type` + `targetPrefix` + `fields: []`.
 - Com `fields` não vazio, o `data` sempre vem na saída da `query`: `{}` quando nenhum dos campos pedidos existe no registro, e o campo ausente some sem erro (o alcance projeto mistura tipos).
 
 ## Validação do register

@@ -28,8 +28,10 @@ Erros:
 - `INVALID_INPUT` em `/version` (`invalid-version`): `version` fora de `<major>.<minor>`, sem `process`.
 - `TYPE_NOT_PINNED` em `/type` (`not-pinned`): com `process`, o tipo existe ou não no projeto,
   mas o processo não o fixou.
-- `TYPE_NOT_FOUND`: sem `process`, `/type` (`unknown-name`) para um tipo sem nenhuma versão no
-  projeto, ou `/version` (`unknown-version`) para uma versão que o tipo não tem.
+- `PROJECT_NOT_FOUND` em `/project` (`unknown-project`): sem `process`, o `project` não existe.
+  Com `process`, o mesmo caso é `PROCESS_NOT_FOUND`.
+- `TYPE_NOT_FOUND`: sem `process`, num projeto que existe, `/type` (`unknown-name`) para um tipo
+  sem nenhuma versão, ou `/version` (`unknown-version`) para uma versão que o tipo não tem.
 - `PROCESS_NOT_FOUND`: o `process` não existe.
 
 ## `define_type`, `define_relation`, `define_gate`
@@ -102,7 +104,10 @@ autodeclarado), `key` opcional e `records`; o `client` o servidor preenche. Cada
 opcional e `relations` opcionais. Devolve `{records, replayed, marker}`: os ids na
 ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabeça do
 processo, para ler dali em diante. O marcador cobre exatamente os processos que nomeia:
-no alcance projeto, o que ele não nomeia é lido como vazio.
+no alcance projeto, o que ele não nomeia é lido como vazio. A descrição da tool manda ler o
+schema com `describe_type` antes de registrar num tipo que o agente não conhece, e o id
+vigente com `query` antes de `supersedes` ou `revokes`: um id errado, do mesmo tipo e processo,
+que ainda é vigente, é aceito e bifurca a linhagem.
 
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
 mesmo lote, e leva `kind` (`supersedes`, `revokes`, `supports`, `contradicts`,

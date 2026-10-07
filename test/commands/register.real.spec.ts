@@ -3,6 +3,7 @@ import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import { MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
 import { compose, composeReader } from '../../src/compose.ts';
+import type { RecordType } from '../../src/domain/definitions.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { at, createTempDir, rejectionOf, scriptWrites } from '../helpers.ts';
 import { AUTHOR, DOC, NOTE, NOW, PROJECT, note, refusal } from './register-fakes.ts';
@@ -77,6 +78,43 @@ describe('register sobre os adaptadores reais', () => {
     expect(error.details[1]!.path).toMatch(/^\/records\/2\/data/);
     expect(fs.statSync(logOf('run-1')).size).toBe(sizeBefore);
     expect(verified('run-1').chain).toMatchObject({ ok: true, totalRecords: 0 });
+  });
+
+  test('lote com muitos erros corta os details em 50 e avisa o que omitiu, sem gravar nada', async () => {
+    const { services, register, logOf } = realSetup();
+    // `anyOf` de 3 ramos gera 2 details por registro (60 em 30 registros): passa do teto de 50.
+    const branch: RecordType = {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a'],
+    };
+    services.definition.defineType({
+      project: PROJECT,
+      name: 'pick',
+      schema: { type: 'object', anyOf: [branch, branch, branch] },
+    });
+    services.process.createProcess({ project: PROJECT, process: 'run-1' });
+    const sizeBefore = fs.statSync(logOf('run-1')).size;
+
+    const error = await refusal(
+      register(
+        'run-1',
+        Array.from({ length: 30 }, () => ({ type: 'pick', target: 'run.step', data: {} })),
+      ),
+    );
+
+    expect(error.code).toBe('INVALID_RECORD');
+    expect(error.details).toHaveLength(51);
+    expect(error.details.at(-1)).toEqual({
+      path: '',
+      code: 'too-many-errors',
+      message: '10 more errors omitted',
+    });
+    const indexes = error.details
+      .slice(0, 50)
+      .map((detail) => Number(/^\/records\/(\d+)\//.exec(detail.path)?.[1]));
+    expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
+    expect(fs.statSync(logOf('run-1')).size).toBe(sizeBefore);
   });
 
   test('PROCESS_TOO_LARGE na leitura: log acima do teto recusa o lote', async () => {

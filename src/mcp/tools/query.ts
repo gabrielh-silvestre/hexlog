@@ -196,7 +196,8 @@ const DESCRIBE_TYPE_DESCRIPTION =
   'in that process, returned as name and schema without version, because the process pins the ' +
   'schema and not its version (TYPE_NOT_PINNED when the process did not pin the type). Without ' +
   'process: the current version of the type in the project, or the one asked by version, returned ' +
-  'as name, version and schema (TYPE_NOT_FOUND when the project has no such type or version). ' +
+  'as name, version and schema (PROJECT_NOT_FOUND when the project does not exist, TYPE_NOT_FOUND ' +
+  'when it has no such type or version). ' +
   'process and version together, or a version that is not <major>.<minor>, are refused with ' +
   'INVALID_INPUT.';
 

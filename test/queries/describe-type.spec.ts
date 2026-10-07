@@ -58,6 +58,30 @@ describe('describeType', () => {
     }
   });
 
+  test('projeto inexistente é PROJECT_NOT_FOUND em /project, com ou sem version', () => {
+    const { queries } = describeSetup();
+
+    for (const version of [undefined, '1.0']) {
+      const error = captureError(() =>
+        queries.describeType({ project: 'ghost-project', type: 'note', version }),
+      );
+      expect(error.code).toBe('PROJECT_NOT_FOUND');
+      expect(error.details).toEqual([
+        { path: '/project', code: 'unknown-project', message: expect.any(String) },
+      ]);
+    }
+  });
+
+  test('projeto inexistente com process segue PROCESS_NOT_FOUND', () => {
+    const { queries } = describeSetup();
+
+    const error = captureError(() =>
+      queries.describeType({ project: 'ghost-project', type: 'note', process: 'run-1' }),
+    );
+
+    expect(error.code).toBe('PROCESS_NOT_FOUND');
+  });
+
   test('versão ausente é TYPE_NOT_FOUND em /version, com as versões que existem', () => {
     const { describe } = describeSetup();
 
