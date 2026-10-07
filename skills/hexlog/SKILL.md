@@ -23,7 +23,7 @@ avaliar) é da skill hexlog-flow.
 - **Vigente**: um registro deixa de ser vigente quando outro o `supersedes` ou o
   `revokes`. Tudo que o hexlog responde (gates, `query`) olha só o vigente, salvo
   `includeNonCurrent`. Antes de `supersedes`/`revokes`, leia o vigente com a
-  `query` (`fields: []` lista só `id` e `target`) e use o `id` devolvido; o passo
+  `query` (`fields: []` lista sem o `data`) e use o `id` devolvido; o passo
   a passo está na hexlog-flow.
 - **Processo** = um log com a cadeia de hash. Ao ser criado, fixa a versão
   vigente de cada tipo, nome de relação e gate do projeto; o que for definido

@@ -180,7 +180,7 @@ describe('queryRecords: attachmentStatus', () => {
 });
 
 describe('queryRecords: fields', () => {
-  test('sem `fields` a página é a mesma de sempre, byte a byte', async () => {
+  test('sem `fields` a página é a mesma de sempre, com `data` logo após o envelope', async () => {
     const { query } = await seeded();
 
     const page = query({ process: 'run-1' });
@@ -188,7 +188,14 @@ describe('queryRecords: fields', () => {
     expect(JSON.stringify(query({ process: 'run-1', fields: undefined }))).toBe(
       JSON.stringify(page),
     );
-    expect(at(page.records, 0)).toHaveProperty('data');
+    expect(Object.keys(at(page.records, 0)).slice(0, 6)).toEqual([
+      'id',
+      'type',
+      'at',
+      'target',
+      'author',
+      'data',
+    ]);
   });
 
   test('só o `data` é recortado: envelope, relações e `attachmentStatus` saem completos', async () => {

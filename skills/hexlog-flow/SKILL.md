@@ -65,8 +65,8 @@ Registro se acha por busca e se liga por id:
 **Antes de `supersedes` ou `revokes`, leia o vigente.** Consulte com `type` +
 `targetPrefix`, confira o `target` do registro devolvido (e um campo-chave, se o
 tipo tiver um: peça-o em `fields`) e use o `id` dessa resposta, nunca um `id`
-lembrado de antes. O `register` recusa destino de outro processo, de outro tipo
-ou que não é mais vigente, mas não sabe qual dos vigentes você queria: com
+lembrado de antes. O `register` recusa destino de outro processo, de outro tipo (só no
+`supersedes`) ou que não é mais vigente, mas não sabe qual dos vigentes você queria: com
 vários registros no mesmo prefixo, ele aceita o errado em silêncio.
 
 `fields` recorta o `data` só na saída: `fields: []` devolve o registro sem `data`

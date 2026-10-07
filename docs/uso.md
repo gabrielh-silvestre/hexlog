@@ -56,7 +56,7 @@ O `register` devolve os ids dos registros (`run-1:<uuid v7>`) e o `marker`, a ca
 // query: registros vigentes do processo
 { "project": "alpha", "process": "run-1", "type": "note" }
 
-// query com fields: sem data, só o id e o target de cada nota (listagem leve, p.ex. para achar o id vigente)
+// query com fields: cada nota sai sem o `data` (listagem leve, p.ex. para achar o id vigente)
 { "project": "alpha", "process": "run-1", "type": "note", "targetPrefix": "run.step", "fields": [] }
 
 // evaluate_gate: passed: true, com os ids que sustentam a resposta em evidence
