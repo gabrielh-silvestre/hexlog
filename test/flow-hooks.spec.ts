@@ -416,6 +416,7 @@ describe('modos', () => {
     'attachments',
     'archive',
     'main',
+    'develop',
   ])(
     'slug recusa "%s" com exit 1',
     (branch) => {

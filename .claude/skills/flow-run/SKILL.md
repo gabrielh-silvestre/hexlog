@@ -9,8 +9,8 @@ Camada fina sobre o OMC: abre o trabalho, registra no hexlog, chama as skills do
 
 ## 1. Abertura
 
-1. Branch atual: `git branch --show-current`. Em `main`, pare e peça uma branch de trabalho.
-2. Slug: `node .claude/hooks/flow-hooks.ts slug <branch>`. Saída vazia ou código 1 (nome reservado, `main`, `directives`, `audits`), pare e pergunte.
+1. Branch atual: `git branch --show-current`. Em `main` ou `develop`, pare e peça uma branch de trabalho.
+2. Slug: `node .claude/hooks/flow-hooks.ts slug <branch>`. Saída vazia ou código 1 (nome reservado, `main`, `develop`, `directives`, `audits`), pare e pergunte.
 3. Processo existente: `list` no projeto `hexlog`. Se o slug já existe, leia o `opening` por `query`:
    - `opening.branch` igual à branch atual: é retomada, siga para a seção 3 (pule o `create_process` e o `opening`).
    - `opening.branch` diferente (`feat/x` contra `feat-x`, ou truncamento): colisão. Pare e pergunte ao dono, nunca reaproveite.

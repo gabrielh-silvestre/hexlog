@@ -67,7 +67,7 @@ Ordem fixa; cada passo usa o conteúdo do arquivo aprovado, sem reescrever:
 3. Labels `confidence:high|medium|low`: `mcp__github-official__get_label`; se faltar, `gh label create <nome> --color <0e8a16|fbca04|c5def5> -R gabrielh-silvestre/hexlog` (o MCP não cria label).
 4. Cada `issue-H-xx.md`: `mcp__github-official__issue_write` (`method: create`), título e label das duas primeiras linhas, corpo = resto do arquivo. Anote `H-xx → #N`.
 5. Cada `comment-<N>.md`: `mcp__github-official__add_issue_comment` na issue `#N`.
-6. `pr.md`: `mcp__github-official__create_pull_request` com `draft: true`, head `docs/mineracao-<slug>-<to>`, base `main`. Depois `update_pull_request` acrescentando a tabela `H-xx → #N` (exceção declarada no gate 2; nenhuma outra alteração).
+6. `pr.md`: `mcp__github-official__create_pull_request` com `draft: true`, head `docs/mineracao-<slug>-<to>`, base `develop`. Depois `update_pull_request` acrescentando a tabela `H-xx → #N` (exceção declarada no gate 2; nenhuma outra alteração).
 7. Confira com `gh issue list -R gabrielh-silvestre/hexlog --state open --json number,title,labels` que cada issue saiu com a label certa.
 
 Se o hook stop-slop barrar um corpo: reescreva o rascunho seguindo a mensagem do hook e `references/output-format.md`, mostre texto antigo → novo, peça ok para aquele item e só então publique.
