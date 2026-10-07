@@ -1,7 +1,7 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-10-06 | Updated: 2026-10-07 -->
-
 # directives
+
+**Parent context:** `../AGENTS.md`
+**Generated:** 2026-10-06 · **Updated:** 2026-10-07
 
 ## Purpose
 Diretrizes do hexlog: os docs vivos de regras, importados pelo `CLAUDE.md`, e os ADRs da 1.0. As regras de ADR (só emenda, nunca reescrita) e de doc vivo estão em `documentacao.md`.
@@ -25,3 +25,5 @@ Diretrizes do hexlog: os docs vivos de regras, importados pelo `CLAUDE.md`, e os
 
 ## Navigation Notes
 - Os ADRs citam `../tetos-dominio-v1.md` (nos ADRs 0008 e 0009); `test/directives.spec.ts` confere que todo link relativo da pasta resolve.
+
+## Manual Notes

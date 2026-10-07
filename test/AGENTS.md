@@ -1,7 +1,7 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-10-05 -->
-
 # test
+
+**Parent context:** `../AGENTS.md`
+**Generated:** 2026-09-17 · **Updated:** 2026-10-07
 
 ## Purpose
 Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-based e via MCP real em memória) e cobre com e2e real o que as sessões de fato executam (bundle `.mjs`, hook empacotado, instalador, concorrência de processos).
@@ -87,9 +87,12 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 | `export.spec.ts` | CLI somente-leitura `scripts/export.ts` via `spawnSync` sobre `compose`: uma linha JSON por registro na ordem do log (incluindo o não vigente), paginação por cursor, `--fields` sobre as chaves de `QueryRecord` (sem valor, flag desconhecida e argumento a mais saem com o uso), cadeia adulterada sai com 2 sem exportar (SL1) e `<D>` intacto. |
 | `timeline-cli.spec.ts` | CLI somente-leitura `scripts/timeline.ts` via `spawnSync` sobre `compose`: consulta de alcance projeto com não vigentes por prefixo de target, `--full --raw` com texto ≥ 200 KB idêntico entre os delimitadores, escape de terminal sem `--raw` (ESC, OSC, C1, bidi, DEL e CR viram `\uXXXX`; TAB e LF passam), `--raw` com o byte exato e `--json` com o mesmo escape sem perda, `--json` com `attachmentText`, exit 2 com cadeia, `process.json` ou blob quebrado, uso incorreto (exit 1) e árvore do `dataDir` intacta. |
 | `escape-controls.spec.ts` | `scripts/escape-controls.ts`: `escapeControls` troca cada classe de controle (C0, DEL, C1, bidi) por `\uXXXX` visível, deixa passar LF, TAB, acento, emoji e BOM, e é idempotente. |
+| `directives.spec.ts` | Trava dos documentos: todo link `.md` relativo, `@` do `CLAUDE.md` e citação de arquivo com título de seção em crase resolvem; cada doc vivo de `docs/directives/` é importado pelo `CLAUDE.md` e respeita os tetos de linhas; nenhum `AGENTS.md` tem os títulos extraídos (`Fronteiras`, `Working In This Directory`, `Testing Requirements`, `Common Patterns`) e o link para `docs/directives/` só vem depois de `## Manual Notes`; os termos de seleção da checagem não aparecem no que o agente lê; formato das premissas de `estrategia.md` (extração por `scanPremises`/`parsePremises` de `.claude/hooks/flow-sync.ts`); `name` e citações das skills locais do fluxo e as seções dos ADRs 0010 e 0011. Ignora `docs/pesquisa/`. |
+| `flow-definitions.spec.ts` | Ensaia em memória (`mcp/environment.ts#createEnvironment`) as definições de `.hexlog/` (tipos, relações e gates): registro válido de cada tipo, pontas das relações, gates `pre-pr` e `gaps`, `planSync` de `.claude/hooks/flow-sync.ts` aplicado em lotes (carga, edição, `closes`, remoção, lápide, falha parcial, concorrência e teto de relações), as duas gerações do processo de diretrizes, `premise`, `evidence` e `fills-gap`, o sync de `estrategia`, os hashes devolvidos por `define_*` e um trabalho completo da abertura aos dois gates. Roda `flow-hooks.ts sync-plan` como processo real. |
+| `flow-hooks.spec.ts` | Hook `.claude/hooks/flow-hooks.ts` por processo real (`spawnSync`) num repositório git temporário com worktree e `origin/*` criados à mão: `pre-pr` (`create_pull_request`, `gh pr create`, `gh pr ready` e `update_pull_request`, marcador por branch e sha, `-R`, `owner:` e `--undo`, aspas e heredoc), entrada ilegível e `git` falhando negados, e os modos `subagent-start`, `slug`, `mark` (git-common-dir compartilhado, recusa árvore suja) e `sync-plan` (igual a `flow-sync.ts#planSync` chamado direto). Confere também as entradas de `.claude/settings.json`. |
 
 ## Subdirectories
-| Directory | Description |
+| Directory | Purpose |
 |---|---|
 | `fixtures/` | Corpus determinístico, scripts de build sob demanda e probes executados como processo filho (see `fixtures/AGENTS.md`) |
 
@@ -103,13 +106,15 @@ Suíte jest/ts-jest do hexlog: testa o `.ts` fonte diretamente (unit, property-b
 - `scripts/install.ts` — rodado como processo real por `guard.spec.ts` (`install.ts --check`).
 - `scripts/insights.ts`, `scripts/export.ts` e `scripts/timeline.ts` — rodados como processo real por `insights.spec.ts`, `export.spec.ts` e `timeline-cli.spec.ts`, sobre dados gravados por `compose`; `scripts/escape-controls.ts` — importado direto por `escape-controls.spec.ts` e `timeline-cli.spec.ts`.
 - `hook/bash-guard.ts` — testado direto (fonte) e como bundle.
+- `.claude/hooks/flow-hooks.ts` e `.claude/hooks/flow-sync.ts` — rodado como processo real por `flow-hooks.spec.ts` e `flow-definitions.spec.ts` (`flow-sync.ts#planSync` também é importado direto por ambos; `directives.spec.ts` importa `parsePremises` e `scanPremises`).
+- `.hexlog/` — definições (`types/`, `relations/`, `gates/`) ensaiadas por `flow-definitions.spec.ts`.
 
 ### External
 - `jest`, `ts-jest`, `@jest/globals` — runner e transform.
 - `fast-check` — property-based testing.
 - `@modelcontextprotocol/client` (`Client`, `StdioClientTransport`) e `@modelcontextprotocol/server` (`InMemoryTransport`) — cliente/transporte MCP de teste.
 
-<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+## Manual Notes
 
 ## Diretrizes
 

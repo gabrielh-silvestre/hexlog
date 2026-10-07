@@ -1,7 +1,7 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-10-05 -->
-
 # fixtures
+
+**Parent context:** `../AGENTS.md`
+**Generated:** 2026-09-17 · **Updated:** 2026-10-07
 
 ## Purpose
 Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bundles sob demanda (fora do transform do jest) e probes/stand-ins executados como processo filho pelas specs de `test/`.
@@ -35,7 +35,7 @@ Corpus determinístico de volume (`records-corpus.ts`), scripts que constroem bu
 - `hook/bash-guard.ts` — bundle gerado por `build-entry.ts`.
 - `src/server.ts` — bundle gerado por `build-entry.ts` para o `stdio.e2e.spec.ts`.
 
-<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+## Manual Notes
 
 ## Diretrizes
 
