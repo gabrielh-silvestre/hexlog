@@ -119,6 +119,14 @@ const denyCases: I4Case[] = [
     name: 'brace range inside the name (hex{a..z}log)',
     command: 'cat ~/.local/share/hex{a..z}log',
   },
+  {
+    name: 'brace over a hidden segment ({.local,x})',
+    command: 'cat ~/{.local,x}/share/hexlog/.v1/a',
+  },
+  {
+    name: 'brace over a hidden segment that is too big to expand ({.local,x} plus a range)',
+    command: 'cat ~/{.local,x}/share/hexlog{a..c}',
+  },
   { name: 'character class [h]exlog', command: 'cat ~/.local/share/[h]exlog' },
   {
     name: 'glob * with cwd in D parent dir',
@@ -157,6 +165,11 @@ const xdgCase: I4Case = {
 const allowCases: I4Case[] = [
   { name: 'ls in D parent dir', command: 'ls ~/.local/share' },
   { name: 'numeric brace range far from D', command: 'ls {1..10000}' },
+  {
+    name: 'brace in the last component of D parent dir',
+    command: 'mkdir -p ~/.local/share/{foo,bar}',
+  },
+  { name: 'brace in the middle component of a glob', command: 'ls ~/.local/{bin,lib}/*' },
   { name: 'awk program with braces', command: "awk '{print $1}' file.txt" },
   { name: 'plain ls -la', command: 'ls -la' },
   { name: 'ls with shallow glob in D parent dir', command: 'ls ~/.local/*' },
@@ -202,7 +215,7 @@ describe('bash-guard (I4): nega o acesso a D por Bash', () => {
       const result = runHook(testCase, testCase.env ?? envBase);
       expect(result.status).toBe(2);
       expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
-    });
+    }, 15_000);
   }
 
   test(`${xdgCase.name}`, () => {
@@ -243,7 +256,7 @@ describe('bash-guard (I4): permite o que não alcança D', () => {
       const result = runHook(testCase, testCase.env ?? envBase);
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
-    });
+    }, 15_000);
   }
 });
 
@@ -293,7 +306,7 @@ describe('bash-guard (I7): entrada inválida falha aberto', () => {
     const result = runHook({ command: `cat \${} ${dataDir}/x` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
-  });
+  }, 15_000);
 });
 
 describe('bash-guard (U1): hostile tokens are denied, not released', () => {
@@ -344,8 +357,8 @@ describe('bash-guard (U1): hostile tokens are denied, not released', () => {
       stderr: reachesMessage,
     },
     {
-      name: 'denies 100 tokens of {1..30}{1..30} followed by a command reaching D through "~"',
-      command: `ls ${Array(100).fill('{1..30}{1..30}').join(' ')}${homeTail}`,
+      name: 'denies 1000 tokens of {1..30}{1..30} followed by a command reaching D through "~"',
+      command: `ls ${Array(1000).fill('{1..30}{1..30}').join(' ')}${homeTail}`,
       stderr: reachesMessage,
     },
     {
@@ -353,6 +366,11 @@ describe('bash-guard (U1): hostile tokens are denied, not released', () => {
       command: `ls ${Array(500)
         .fill(`{${'/'.repeat(4000)}`)
         .join(' ')}${homeTail}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a command above the length limit even without glob characters',
+      command: `echo ${'a'.repeat(1_048_577)}`,
       stderr: undecidableMessage,
     },
     {
@@ -412,6 +430,13 @@ describe('bash-guard (#45): a mensagem cita o trecho que casou', () => {
     const result = runHook({ command: `true ; cat ${token}` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(/Matched: cat \[+\?\?$/);
+  }, 15_000);
+
+  test('replaces format and line separator characters in the matched segment with "?"', () => {
+    const token = `${'['.repeat(100)}\u202e\u200b\u2028`;
+    const result = runHook({ command: `true ; cat "${token}"` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/Matched: cat \[+\?\?\?$/);
   }, 15_000);
 
   test('truncates the matched segment to 200 characters', () => {

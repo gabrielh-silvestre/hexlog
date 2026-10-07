@@ -12,7 +12,7 @@ tokeniza o comando recebido; nunca executa nada.
 ## Key Files
 | File | Description |
 |---|---|
-| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal, que `decide` confere antes de tokenizar. Nega também o que não consegue decidir: token com glob acima de `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou `MAX_BRACKETS`, comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH`, token cujo casamento lança e comando que o `shell-quote` não parseia (`${}`). Falha aberto só para entrada que não é comando Bash: stdin vazio, JSON inválido, `tool_name` diferente de `Bash` ou Node ausente (R-1). A mensagem de negação é o literal de `denialMessage`, que lista as tools de leitura (6 das 12); a negação por comando indecidível usa `undecidableMessage`, sem citar `D`. Em comando composto (`&&`, `||`, `;`, `|`, `&`, `|&`) ambas acrescentam ` Matched: <segmento>` (até 200 caracteres, controle vira `?`) |
+| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal, que `decide` confere antes de tokenizar. Nega também o que não consegue decidir: token com glob acima de `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou `MAX_BRACKETS`, comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH`, comando acima de `MAX_COMMAND_LENGTH` (1 MiB), token cujo casamento lança e comando que o `shell-quote` não parseia (`${}`). Falha aberto só para entrada que não é comando Bash: stdin vazio, JSON inválido, `tool_name` diferente de `Bash`, Node ausente (R-1) ou hook morto pelo `timeout` de 10 s. A mensagem de negação é o literal de `denialMessage`, que lista as tools de leitura (6 das 12); a negação por comando indecidível usa `undecidableMessage`, sem citar `D`. Em comando composto (`&&`, `||`, `;`, `|`, `&`, `|&`) ambas acrescentam ` Matched: <segmento>` (até 200 caracteres, controle e formatação viram `?`) |
 
 ## Navigation Notes
 - A lógica de decisão é pura (`decide`, sem I/O, não exportada) e separada da
@@ -23,8 +23,11 @@ tokeniza o comando recebido; nunca executa nada.
 - Os tetos de glob (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) valem só
   para token com caractere de glob, e `MAX_GLOB_TOTAL_LENGTH` limita a soma desses tokens no
   comando: sem eles, um `[`×4096 ou centenas de tokens abaixo do teto levam segundos e o hook
-  morre no timeout, liberando o comando. Antes do casamento, cada grupo de chave vira `*`
-  (`collapseBraceGroups`), porque o `path.matchesGlob` expande o produto das chaves e das faixas.
+  morre no timeout, liberando o comando. `MAX_COMMAND_LENGTH` limita o comando
+  inteiro antes de tokenizar. O `path.matchesGlob` expande o produto das chaves e das faixas, então
+  a chave só expande até `MAX_BRACE_EXPANSION` (32) alternativas (`braceAlternatives`); acima disso,
+  ou com faixa `..`, cada grupo vira `*` (`collapseBraceGroups`), e `.*` na abertura de um segmento
+  oculto de `D`, que o `*` não casa.
   Falso positivo aceito: token ou comando legítimo acima do teto é negado.
 - `test/bash-guard.spec.ts`: casos de negação e permissão contra o hook
   `.ts` real (I4), entrada inválida falha aberto (I7), tokens hostis negados

@@ -11,8 +11,10 @@ import { dataDir } from '../src/directory.ts';
 
 const GLOB_CHARS_REGEX = /[*?[{]/;
 // Grupo de chave sem chave aninhada: o `path.matchesGlob` expande o produto das chaves e das
-// faixas (`{1..9999999}`, `{a,b,c,d}`×7 passam de 10 s), então o grupo vira `*` antes do casamento.
+// faixas (`{1..9999999}`, `{a,b,c,d}`×7 passam de 10 s), então acima de MAX_BRACE_EXPANSION
+// alternativas, ou com faixa, o grupo vira `*` antes do casamento. Abaixo, a chave expande de verdade.
 const BRACE_GROUP_REGEX = /\{[^{}]*\}/g;
+const MAX_BRACE_EXPANSION = 32;
 const STAR_RUN_REGEX = /\*{2,}/g;
 // Tetos de um token com caractere de glob, aplicados antes de qualquer varredura do token: sem
 // eles, um `[`×4096 leva segundos e o hook morre no timeout de 10 s, liberando o comando. Texto
@@ -23,9 +25,13 @@ const MAX_BRACKETS = 64;
 // Orçamento por comando: o teto acima vale por token, e centenas de tokens abaixo dele ainda
 // somam o tempo do timeout. A soma dos tamanhos dos tokens com glob também é limitada.
 const MAX_GLOB_TOTAL_LENGTH = 16384;
+// O custo da tokenização é linear no comando: acima do teto ele estoura o timeout do hook, que
+// libera o comando. Falso positivo aceito: um comando legítimo acima do teto também é negado.
+const MAX_COMMAND_LENGTH = 1_048_576;
 const COMPOUND_OPERATORS = new Set(['&&', '||', ';', '|', '&', '|&']);
 const MAX_MATCHED_LENGTH = 200;
-const CONTROL_CHARS_REGEX = /\p{Cc}/gu;
+// Controle e formatação (U+202E, U+200B), separadores de linha e de parágrafo (U+2028, U+2029).
+const CONTROL_CHARS_REGEX = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 // `~` no início do token ou logo após `=` (`--opt=~/x`); shell-quote não expande til.
 const TILDE_REGEX = /(^|=)~(?=\/|$)/g;
 
@@ -41,7 +47,7 @@ const denialMessage = (d: string, matched?: string): string =>
 
 // Negação por comando que o hook não consegue decidir: não cita `D` a quem não o citou.
 const undecidableMessage = (matched?: string): string =>
-  'hexlog: the command was denied because it could not be checked against the hexlog data directory (it does not parse, or its glob tokens exceed the safety limits). Simplify it.' +
+  'hexlog: the command was denied because it could not be checked against the hexlog data directory (it does not parse, it is longer than the safety limit, or its glob tokens exceed the safety limits). Simplify it.' +
   matchedSuffix(matched);
 
 type RawInput = {
@@ -95,6 +101,7 @@ function tryTokenize(
   home: string,
   env: NodeJS.ProcessEnv,
 ): ParseEntry[] | undefined {
+  if (command.length > MAX_COMMAND_LENGTH) return undefined;
   try {
     return shellQuoteParse(command, { HOME: home, XDG_DATA_HOME: env.XDG_DATA_HOME ?? '' });
   } catch {
@@ -137,15 +144,43 @@ function hasSlashInBraces(token: string): boolean {
   return false;
 }
 
-/** Cada grupo de chave vira `*`, um superconjunto das alternativas e das faixas. */
-function collapseBraceGroups(pattern: string): string {
+/** Limite superior das alternativas que o `path.matchesGlob` expandiria; faixa `..` é ilimitada. */
+function braceAlternatives(pattern: string): number {
+  let alternatives = 1;
   let current = pattern;
   let previous: string;
   do {
     previous = current;
-    current = previous.replace(BRACE_GROUP_REGEX, '*');
+    current = previous.replace(BRACE_GROUP_REGEX, (group) => {
+      alternatives *= group.includes('..') ? Infinity : countOf(group, ',') + 1;
+      return 'x';
+    });
   } while (current !== previous);
-  return current.replace(STAR_RUN_REGEX, '*');
+  return alternatives;
+}
+
+/**
+ * Cada grupo de chave vira `*`, um superconjunto das alternativas e das faixas, exceto no nome
+ * oculto: o `*` não casa um segmento que começa com `.`, então o grupo que abre um segmento
+ * cujo nome em `D` começa com `.` vira `.*`. A escolha é por segmento, sem testar variantes.
+ */
+function collapseBraceGroups(pattern: string, dataSegments: string[]): string {
+  return pattern
+    .split(path.sep)
+    .map((segment, index) => {
+      const hidden = dataSegments[index]?.startsWith('.') === true;
+      let current = segment;
+      let previous: string;
+      do {
+        previous = current;
+        current = previous.replace(BRACE_GROUP_REGEX, (_group, offset: number) =>
+          hidden && offset === 0 ? '.*' : '*',
+        );
+      } while (current !== previous);
+      return current;
+    })
+    .join(path.sep)
+    .replace(STAR_RUN_REGEX, '*');
 }
 
 /** Um token já expandido por til alcança `D` (por igualdade, prefixo ou glob compatível)? */
@@ -169,9 +204,14 @@ function tokenReachesDirectory(token: string, cwd: string, dataDir: string): boo
   }
 
   if (GLOB_CHARS_REGEX.test(token)) {
-    const dirDepth = dataDir.split(sep).length;
-    const truncated = take(resolvedPath.split(sep), dirDepth).join(sep);
-    return path.matchesGlob(dataDir, collapseBraceGroups(truncated));
+    const dataSegments = dataDir.split(sep);
+    const truncated = take(resolvedPath.split(sep), dataSegments.length).join(sep);
+    return path.matchesGlob(
+      dataDir,
+      braceAlternatives(truncated) <= MAX_BRACE_EXPANSION
+        ? truncated
+        : collapseBraceGroups(truncated, dataSegments),
+    );
   }
 
   return false;
@@ -244,8 +284,8 @@ function decide(
     );
   }
 
-  // Parse que lança (`${}`): nega em vez de liberar, mesmo que o shell aceite o comando (heredoc
-  // de delimitador citado com `${}` no corpo é falso positivo aceito).
+  // Parse que lança (`${}`) ou comando acima de MAX_COMMAND_LENGTH: nega em vez de liberar, mesmo
+  // que o shell aceite o comando (heredoc de delimitador citado com `${}` no corpo é falso positivo aceito).
   const segments = segmentsOf();
   if (isNil(segments)) return denied(undecidableMessage());
 

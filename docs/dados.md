@@ -166,16 +166,16 @@ diretório de dados. A mensagem de negação cita as tools que dão acesso ao da
 (`list`, `query`, `verify_chain`, `read_attachment`, `evaluate_gate`, `describe_type`). Em comando
 composto, a mensagem acrescenta ` Matched: <segmento>` com o trecho que casou. O que o hook não
 consegue decidir ele nega (`hook/bash-guard.ts#decide`): o token cujo casamento lança, o comando
-que o `shell-quote` não parseia e o token com caractere de glob acima dos tetos
+que o `shell-quote` não parseia, o comando acima de `MAX_COMMAND_LENGTH` (1 MiB) e o token com caractere de glob acima dos tetos
 (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) ou além do orçamento por comando
 (`MAX_GLOB_TOTAL_LENGTH`, a soma dos tamanhos dos tokens com glob). A negação por esses motivos não
-cita `<D>`. Cada grupo de chave vira `*` antes do casamento, então faixas como `{1..9999999}` não se
-expandem. Ele falha aberto só quando o comando
+cita `<D>`. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
+`..`, cada grupo vira `*` antes do casamento (`.*` na abertura de um segmento oculto de `<D>`, que
+o `*` não casa), então faixas como `{1..9999999}` não se expandem. Ele falha aberto só quando o comando
 nem chega à checagem: `node` ausente, arquivo do hook apagado, stdin vazio, JSON inválido e
 `tool_name` diferente de `Bash`, e hook morto pelo `timeout` de 10 s (que não bloqueia, segundo o
 comportamento observado). Os tetos e o orçamento mantêm o hook bem abaixo desse prazo para o token e
-o comando hostis conhecidos, mas não o garantem para qualquer entrada (máquina lenta, comando
-gigante). Nesses casos o comando passa sem avisar o agente, e só o
+o comando hostis conhecidos, mas não o garantem para qualquer entrada (máquina lenta). Nesses casos o comando passa sem avisar o agente, e só o
 `--check` detecta a condição. O servidor MCP não passa pelo deny nem pelo hook: a fronteira dele
 é o `cwd` do `attach` por `path` (ver acima).
 
@@ -215,7 +215,8 @@ como `ls ~/**/*.md` ou `ls ~/{docs/a,b}`. Um `**` dentro de outros
 repositórios (por exemplo `/caminho/do/repo/**/*.ts`) não é afetado, porque
 o prefixo não é ancestral do diretório de dados. Também é negado o token com
 caractere de glob que passa dos tetos `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou
-`MAX_BRACKETS`, ou um comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH`, como
+`MAX_BRACKETS`, um comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH` ou um comando acima de
+`MAX_COMMAND_LENGTH`, como
 `python -c '<script grande com colchetes>'`: tetos e orçamento valem para qualquer token ou
 comando com glob, legítimo ou não. Também é negado o heredoc de delimitador citado com `${}` no
 corpo (`cat <<'EOF'`): o bash o aceita, mas o `shell-quote` não parseia o comando, e o hook nega
