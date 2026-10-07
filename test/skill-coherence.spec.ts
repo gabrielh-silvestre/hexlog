@@ -121,8 +121,8 @@ describe('regex de citação de linha (unitário, sobre string literal)', () => 
 
 // ---- catálogo real, extraído do código (nunca copiado à mão) — global ao projeto, não por skill ----
 
-/** TB5: a 1.0 expõe exatamente 11 tools. */
-const EXPECTED_TOOL_COUNT = 11;
+/** TB5: a 1.0 expõe exatamente 12 tools. */
+const EXPECTED_TOOL_COUNT = 12;
 
 /** TM4: 35 códigos da transição menos os 8 legados e os 2 sem uso (`INVALID_ID`, `UNKNOWN_ID`). */
 const EXPECTED_ERROR_CODE_COUNT = 25;
@@ -192,6 +192,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'key',
   'where',
   'text',
+  'fields',
   'ids',
   'in',
   'out',

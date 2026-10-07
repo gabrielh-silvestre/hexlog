@@ -14,7 +14,7 @@ fonte antes de adotar qualquer item.
 - **Testes de contrato/integração MCP via transporte em memória** — já é a
   base das specs de `test/mcp/`: `test/mcp/environment.ts#createEnvironment`
   liga `compose` e `createServer` a um `Client` MCP por `InMemoryTransport`,
-  nunca mocka o servidor; `test/mcp/tools.spec.ts` testa as 11 tools reais.
+  nunca mocka o servidor; `test/mcp/tools.spec.ts` testa as 12 tools reais.
   `test/stdio.e2e.spec.ts` complementa com e2e real via stdio contra o bundle
   `.mjs`. Não há lacuna aqui.
 - **`npm ci` no CI** (`.github/workflows/ci.yml`) já falha se

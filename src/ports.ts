@@ -79,16 +79,12 @@ export type DefinitionKind = 'types' | 'relations' | 'gates';
 /** Definição guardada por pasta (`types/`, `relations/`, `gates/`). */
 export type DefinitionOf = { types: RecordType; relations: RelationName; gates: Gate };
 
-/** Leitura que a consulta (`queries/`) faz das definições: só as listagens de `list`. */
+/** Leitura que a consulta (`queries/`) faz das definições: as listagens de `list` e o `read` de `describeType`. */
 export type DefinitionReader = {
   /** Lista as pastas de nome, inclusive a que ficou sem nenhuma versão (falha no meio de `write`). */
   names(project: Name, kind: DefinitionKind): Name[];
   /** Em ordem numérica crescente (`domain/definitions.ts#compareVersions`); nome sem pasta devolve `[]`. */
   versions(project: Name, kind: DefinitionKind, name: Name): string[];
-};
-
-/** Versões imutáveis `<major>.<minor>` de tipos, nomes de relação e gates de um projeto. */
-export type DefinitionStore = DefinitionReader & {
   /**
    * `TYPE_NOT_FOUND`, `RELATION_NOT_FOUND` ou `GATE_NOT_FOUND` conforme o `kind`: `unknown-name`
    * (`/name`) se o nome não tem nenhuma versão; `unknown-version` (`/version`, com `versions`, nunca
@@ -102,6 +98,10 @@ export type DefinitionStore = DefinitionReader & {
     name: Name,
     version: string,
   ): DefinitionOf[K];
+};
+
+/** Versões imutáveis `<major>.<minor>` de tipos, nomes de relação e gates de um projeto. */
+export type DefinitionStore = DefinitionReader & {
   /**
    * `false` quando a versão já existe: uma versão gravada nunca é sobrescrita. O `false` não
    * distingue replay (a mesma definição) de conflito (outra): quem chama relê com `versions` e

@@ -27,6 +27,7 @@ export const EVIDENCE_ITEMS_CAP = 100;
 // Tetos de entrada da query (docs/tetos-dominio-v1.md): palpites de CPU e de tamanho de mensagem.
 const IDS_MAX = 200;
 const WHERE_KEYS_MAX = 50;
+const FIELDS_MAX = 50;
 // O marcador tem uma chave por processo lido e é devolvido pelo servidor. Só com nomes de ~42 caracteres
 // ou mais o teto fica acima do que o cursor suporta; com nomes menores o cursor pagina além de 200 e o zod recusa antes.
 const MARKER_KEYS_MAX = 200;
@@ -63,6 +64,7 @@ const QueryInput = z.strictObject({
     .refine((text) => text.isWellFormed(), WELL_FORMED)
     .optional(),
   ids: z.array(RecordId).max(IDS_MAX).optional(),
+  fields: z.array(z.string().min(1)).max(FIELDS_MAX).optional(),
   relatedTo: RecordId.optional(),
   limit: z.number().int().min(1).max(LIMIT_MAX).optional(),
   cursor: z.string().optional(),
@@ -80,6 +82,14 @@ const EvaluateGateInput = z.strictObject({
 const VerifyChainInput = z.strictObject({ project: Name, process: Name });
 
 const ListInput = z.strictObject({ project: Name.optional(), process: Name.optional() });
+
+// `process` e `version` juntos são recusados pelo serviço, com o path do campo.
+const DescribeTypeInput = z.strictObject({
+  project: Name,
+  type: Name,
+  process: Name.optional(),
+  version: z.string().optional(),
+});
 
 // Saídas enxutas (TM7): só a forma que o cliente precisa checar; o miolo variável fica solto.
 const QueryOutput = z.object({
@@ -130,6 +140,12 @@ const ListOutput = z.object({
   process: z.looseObject({ name: z.string() }).optional(),
 });
 
+const DescribeTypeOutput = z.object({
+  name: z.string(),
+  version: z.string().optional(),
+  schema: z.record(z.string(), z.unknown()),
+});
+
 const QUERY_DESCRIPTION =
   'Read the current records of a process (scope "process", the default, needs process) or of the ' +
   'whole project (scope "project"). Filters: type, targetPrefix, where (equality on top-level data ' +
@@ -137,7 +153,10 @@ const QUERY_DESCRIPTION =
   'ids, relatedTo (records linked to an id) and includeNonCurrent (also superseded or revoked ones). ' +
   'Each record carries its in and out relations, needsReview when its support is dead and ' +
   'attachmentStatus for the attachments it cites; in process scope only the relations from that ' +
-  'process are seen, so use scope project to see cross-process support. A page holds at most limit records (default 50, ' +
+  'process are seen, so use scope project to see cross-process support. fields (at most ' +
+  `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
+  'annotations stay, filters see the whole data and the size cap counts the projected page. ' +
+  'A page holds at most limit records (default 50, ' +
   'max 200) and also stops at a size cap, always with at least one record; pass the returned cursor ' +
   'to continue. marker is the head of every process read: pass it back as changesSince to get ' +
   'changes (entered, left with reason) since then, on the first page only; resend the same ' +
@@ -171,6 +190,16 @@ const LIST_DESCRIPTION =
   'Discover what exists. Without project: the projects and their process counts. With project: its ' +
   'processes and the current types, relation names and gates, each with its versions. With project ' +
   'and process: what the process pinned and the definition hashes.';
+
+const DESCRIBE_TYPE_DESCRIPTION =
+  'Read the JSON Schema of a record type, without writing anything. With process: the type pinned ' +
+  'in that process, returned as name and schema without version, because the process pins the ' +
+  'schema and not its version (TYPE_NOT_PINNED when the process did not pin the type). Without ' +
+  'process: the current version of the type in the project, or the one asked by version, returned ' +
+  'as name, version and schema (PROJECT_NOT_FOUND when the project does not exist, TYPE_NOT_FOUND ' +
+  'when it has no such type or version). ' +
+  'process and version together, or a version that is not <major>.<minor>, are refused with ' +
+  'INVALID_INPUT.';
 
 type PagedChanges = Changes & { omitted?: { entered: number; left: number } };
 
@@ -236,7 +265,7 @@ export function gatePage(
   return { ...evaluation, questions: evaluation.questions.map(capEvidence) };
 }
 
-/** Registra as quatro tools de leitura (`readOnlyHint`); cada uma só repassa a entrada ao serviço. */
+/** Registra as cinco tools de leitura (`readOnlyHint`); cada uma só repassa a entrada ao serviço. */
 export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
   defineTool(
     server,
@@ -292,5 +321,19 @@ export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
       annotations: READ_ANNOTATIONS,
     },
     (input) => deps.services.query.list(input),
+  );
+
+  defineTool(
+    server,
+    deps,
+    {
+      name: 'describe_type',
+      schema: DescribeTypeInput,
+      title: 'Describe type',
+      description: DESCRIBE_TYPE_DESCRIPTION,
+      outputSchema: DescribeTypeOutput,
+      annotations: READ_ANNOTATIONS,
+    },
+    (input) => deps.services.query.describeType(input),
   );
 }

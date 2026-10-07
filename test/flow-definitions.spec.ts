@@ -830,7 +830,7 @@ describe('sync', () => {
 
     const redone = await runSync(DIRECTIVES, 'fronteiras', 'v2', rulesOf(1, 'r', 2));
     expect(redone.upToDate).toBe(false);
-    expect((await currentDirective('r1', 'fronteiras')).data.rule).toContain('v2');
+    expect((await currentDirective('r1', 'fronteiras')).data?.rule).toContain('v2');
   });
 
   test('(passo 8) a query de auditoria lista target vigente duplicado e não acusa sync normal', async () => {

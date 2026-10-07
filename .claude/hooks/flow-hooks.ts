@@ -9,7 +9,15 @@ import { findPrCommands, type PrCommand } from './flow-command.ts';
 import { planSync, type SyncInput } from './flow-sync.ts';
 
 const SLUG_MAX = 63;
-const RESERVED_SLUGS = new Set(['types', 'relations', 'gates', 'attachments', 'archive', 'main']);
+const RESERVED_SLUGS = new Set([
+  'types',
+  'relations',
+  'gates',
+  'attachments',
+  'archive',
+  'main',
+  'develop',
+]);
 const LONG_LIVED_SLUG = /^(directives|audits)(-[0-9]+)?$/;
 const MARKER_DIR = 'hexlog-flow';
 const PR_TOOLS = {

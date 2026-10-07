@@ -24,7 +24,7 @@ Obs: _com dado 0.x em `<D>` o instalador só lista o que arquivaria e sai com c�
 
 ## Uso
 
-O agente chama as 11 tools. Num projeto novo, o caminho mínimo é definir um tipo, criar um processo, registrar e consultar:
+O agente chama as 12 tools. Num projeto novo, o caminho mínimo é definir um tipo, criar um processo, registrar e consultar:
 
 ```json
 // define_type

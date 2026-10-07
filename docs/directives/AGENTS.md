@@ -9,9 +9,9 @@ Diretrizes do hexlog: os docs vivos de regras, importados pelo `CLAUDE.md`, e os
 ## Key Files
 | File | Description |
 |---|---|
-| `convencoes.md` | Doc vivo: idioma, núcleo e bordas, dependências, hash JCS e hash de bytes, tetos de lista, escrita atômica, import padrão de `fs` e `import()`. |
+| `convencoes.md` | Doc vivo: idioma, núcleo e bordas, dependências, asserção não nula, hash JCS e hash de bytes, tetos de lista, escrita atômica, import padrão de `fs` e `import()`. |
 | `fronteiras.md` | Doc vivo: mapa de camadas, direção permitida de dependência, travas mecânicas e checklist de review (violação é URGENT). |
-| `invariantes.md` | Doc vivo: log append-only e predicado único, cadeia, lock, 11 tools e `execute()`, erros, anexos e versionamento de definições, com o item de ADR de cada um. |
+| `invariantes.md` | Doc vivo: log append-only e predicado único, cadeia, lock, 12 tools e `execute()`, erros, consulta (`fields` e o id do `supersedes`), anexos, validação do `register` e versionamento de definições, com o item de ADR de cada um. |
 | `qualidade-e-testes.md` | Doc vivo: comandos antes de concluir, orçamentos só no CI, convenções dos specs, bundle por processo filho e fixtures. |
 | `documentacao.md` | Doc vivo: ADR e doc vivo, ADR só por emenda, como citar, `pesquisa/` congelado, famílias de ID e o papel do `AGENTS.md`. |
 | `fluxo-hexlog.md` | Doc vivo, importado em primeiro no `CLAUDE.md`: regras de uso do registro de trabalho — processos e targets, quando uma escolha vira `decision`, confiança, `gap` (só `directive` fecha), `verification`, `finding` e achado URGENT, gates `pre-pr` e `gaps` e PR em rascunho. |

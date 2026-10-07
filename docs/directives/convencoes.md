@@ -18,6 +18,10 @@
 - Checagem de ausência pelos predicados da es-toolkit, conforme o tipo: `isUndefined` quando só `undefined` é possível, `isNil`/`isNotNil` quando `undefined` e `null` valem. `null` legítimo, sem `undefined` no tipo, segue com `=== null`. Vazio de array ou string fica em `.length`: `isEmpty` só existe em `es-toolkit/compat`, que `src/` não importa.
 - Trocar uma lib ou uma decisão exige conferir antes os ADRs de `docs/directives/` e a pesquisa, como descrito em [documentacao.md](documentacao.md).
 
+## Tipos
+
+- Em `src/`, a asserção não nula (`!`) só entra depois de uma checagem que o compilador não estreita sob `noUncheckedIndexedAccess`, como `Object.hasOwn(obj, chave)` antes de `obj[chave]!` ou um índice já limitado pelo tamanho do array; nunca para calar um `undefined` que o tipo admite.
+
 ## Hash e listas
 
 - Hash de conteúdo sempre por `sha256hex(canonicalize(valor) ?? '')` (JCS), o mesmo padrão de `src/domain/chain.ts` e da impressão do lote (`fingerprint`) que decide o replay de `register`. **Exceção:** o hash de um anexo é o `sha256hex` dos **bytes** UTF-8 do texto, não do JCS, porque o blob é texto opaco e não um objeto JSON.

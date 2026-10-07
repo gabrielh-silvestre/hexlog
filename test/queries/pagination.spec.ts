@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import fc from 'fast-check';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { decodeCursor, encodeCursor } from '../../src/queries/cursor.ts';
+import { PAGE_CHARS_CAP } from '../../src/queries/query-service.ts';
 import { ghostId, note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { cursorOf, idsOf, querySetup, walkPages } from './query-setup.ts';
@@ -195,6 +196,50 @@ describe('queryRecords: página e cursor (D-20)', () => {
     const page = query({ process: 'run-1', maxChars: one * 2 + 1 });
 
     expect(idsOf(page)).toEqual(ids.slice(0, 2));
+  });
+
+  test('o teto de caracteres conta a página já recortada por `fields` (cenário da #85)', async () => {
+    const { createProcess, register, query } = querySetup();
+    createProcess('run-1');
+    const ids = await register(
+      'run-1',
+      Array.from({ length: 41 }, () => ({
+        type: 'doc',
+        target: 'run.doc',
+        data: { note: 'x'.repeat(700), notes: ['ref'] },
+      })),
+    );
+    const input = { process: 'run-1', limit: 100, maxChars: PAGE_CHARS_CAP } as const;
+
+    const full = query(input);
+    const empty = query({ ...input, fields: [] });
+    const some = query({ ...input, fields: ['notes'] });
+
+    expect(full.records.length).toBeLessThan(41);
+    expect(full.cursor).toBeDefined();
+    expect(idsOf(empty)).toEqual(ids);
+    expect(empty.cursor).toBeUndefined();
+    expect(idsOf(some)).toEqual(ids);
+    expect(some.cursor).toBeUndefined();
+  });
+
+  test('`fields` fica fora do hash do cursor: a página 2 pode pedir outros, nos dois sentidos', async () => {
+    const { query, ids } = await fiveNotes();
+    const withFields = query({ process: 'run-1', limit: 2, fields: ['text'] });
+    const withoutFields = query({ process: 'run-1', limit: 2 });
+
+    const second = query({ process: 'run-1', limit: 10, fields: [], cursor: cursorOf(withFields) });
+    const other = query({
+      process: 'run-1',
+      limit: 10,
+      fields: ['text'],
+      cursor: cursorOf(withoutFields),
+    });
+
+    expect([...idsOf(withFields), ...idsOf(second)]).toEqual(ids);
+    expect([...idsOf(withoutFields), ...idsOf(other)]).toEqual(ids);
+    expect(at(second.records, 0)).not.toHaveProperty('data');
+    expect(at(other.records, 0).data).toEqual({ text: 'c' });
   });
 
   test('cursor de outro projeto dá INVALID_CURSOR `project-mismatch`', async () => {

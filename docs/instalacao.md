@@ -27,7 +27,7 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 
 1. Constrói o servidor e o hook com `esbuild` e verifica o artefato preparado
    antes de trocar qualquer coisa (o hook precisa negar o diretório de dados e
-   permitir o resto; o servidor precisa subir e anunciar as 11 tools).
+   permitir o resto; o servidor precisa subir e anunciar as 12 tools).
 2. Copia os dois bundles (servidor, `bash-guard`) para `~/.local/lib/hexlog/<versão>/`,
    fora da working tree e fora do diretório de dados. É essa cópia que as sessões
    executam.

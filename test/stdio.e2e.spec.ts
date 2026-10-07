@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { QueryResult } from '../src/queries/query-service.ts';
+import { TOOLS_COUNT } from '../src/installation.ts';
 import { VERSION } from '../src/version.ts';
 import { at, createTempDir } from './helpers.ts';
 import { errorBodyOf } from './mcp/environment.ts';
@@ -108,6 +109,18 @@ describe('P8 e TM1: bundle real por stdio', () => {
     );
   });
 
+  test('o bundle anuncia TOOLS_COUNT tools, describe_type entre elas', async () => {
+    const { client } = await connect();
+    try {
+      const { tools } = await client.listTools();
+
+      expect(tools).toHaveLength(TOOLS_COUNT);
+      expect(tools.map(({ name }) => name)).toContain('describe_type');
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+
   test('<D> com a fixture de dado 0.x responde LEGACY_DATA com o comando em details', async () => {
     const xdg = createTempDir('e2e-xdg');
     fs.cpSync(LEGACY_FIXTURE, path.join(xdg, 'hexlog'), { recursive: true });
@@ -151,6 +164,56 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
+  test('query com fields vazio devolve os registros sem data', async () => {
+    const { client, call } = await connect();
+    try {
+      await seedNotes(call, 2);
+
+      const page = (await call('query', { project: PROJECT, process: PROCESS, fields: [] }))
+        .structuredContent as QueryResult;
+
+      expect(page.records).toHaveLength(2);
+      expect(page.records.every((record) => !('data' in record))).toBe(true);
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+
+  test('INVALID_RECORD com pattern exponencial e texto de 300 caracteres volta rápido, com max-length', async () => {
+    // Acima de 256 pontos de código o motor do relatório não roda o regex; sem o limite, `(a|aa)+`
+    // sobre 299 `a` e um `b` não terminaria. Processo filho: o timeout do `it` interrompe o travamento.
+    const { client, call } = await connect();
+    try {
+      await call('define_type', {
+        project: PROJECT,
+        name: 'note',
+        schema: {
+          type: 'object',
+          properties: { text: { type: 'string', maxLength: 256, pattern: '^(a|aa)+$' } },
+        },
+      });
+      await call('create_process', { project: PROJECT, process: PROCESS });
+      const start = performance.now();
+
+      const body = errorBodyOf(
+        await call('register', {
+          project: PROJECT,
+          process: PROCESS,
+          agent: 'e2e-agent',
+          records: [{ type: 'note', target: 'run.step', data: { text: `${'a'.repeat(299)}b` } }],
+        }),
+      );
+
+      expect(performance.now() - start).toBeLessThan(1_000);
+      expect(body.code).toBe('INVALID_RECORD');
+      expect(body.details).toContainEqual(
+        expect.objectContaining({ path: '/records/0/data/text', code: 'max-length' }),
+      );
+    } finally {
+      await client.close();
+    }
+  }, 15_000);
+
   test('uma chamada de cada tool no bundle: stdout só JSON-RPC e stderr JSON estruturado', async () => {
     const xdg = createTempDir('e2e-xdg');
     const { client, call, stderr, transportErrors } = await connect({ xdg });
@@ -171,6 +234,7 @@ describe('P8 e TM1: bundle real por stdio', () => {
         await call('define_relation', { project: PROJECT, name: 'rel', kind: 'supports' }),
         await call('evaluate_gate', { project: PROJECT, process: PROCESS, gate: 'has-note' }),
         await call('verify_chain', { project: PROJECT, process: PROCESS }),
+        await call('describe_type', { project: PROJECT, type: 'note', process: PROCESS }),
       ];
 
       expect(results.filter((result) => result.isError === true)).toEqual([]);

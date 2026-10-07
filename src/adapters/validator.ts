@@ -132,7 +132,7 @@ function patternDetails(root: unknown): Detail[] {
   return capDetails(details);
 }
 
-/** Mesmas opções estritas e mesmos formatos nas duas instâncias; só `allErrors` muda. */
+/** Mesmas opções estritas e mesmos formatos nas instâncias; muda só o `allErrors`. */
 function createCompiler(allErrors: boolean) {
   const ajv = new Ajv2020.default({ strict: true, allErrors, logger: false });
   addFormats.default(ajv);
@@ -213,16 +213,14 @@ function messageOf(error: unknown): string {
  */
 export function createValidator(): Validator {
   const checker = createCompiler(true);
-  const dataValidator = createCompiler(false);
   // Chave por identidade do objeto: o lote de um `register` repete o mesmo schema e recompilar
   // custava 200 a 300 ms por lote de 50. Escopo da instância e coletável: o `WeakMap` não tem
   // `size`, que `MemoizeCache` exige no tipo mas o `memoize` nunca lê, então o cast é necessário.
-  const compiled = memoize((schema: Record<string, unknown>) => dataValidator.compile(schema), {
-    cache: new WeakMap() as unknown as MemoizeCache<
-      object,
-      ReturnType<typeof dataValidator.compile>
-    >,
-  });
+  const compiledBy = (compiler: ReturnType<typeof createCompiler>) =>
+    memoize((schema: Record<string, unknown>) => compiler.compile(schema), {
+      cache: new WeakMap() as unknown as MemoizeCache<object, ReturnType<typeof compiler.compile>>,
+    });
+  const compiled = compiledBy(createCompiler(false));
 
   return {
     checkSchema(schema) {
