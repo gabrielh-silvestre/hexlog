@@ -171,7 +171,17 @@ processo em `details[0].process`.
   (traz também os superados e revogados). O `targetPrefix` casa na fronteira de `.`. A
   busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
   busca o monta, e o alcance projeto o monta a cada busca.
-- **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data`, as relações
+- **Projeção:** `fields` (até 50 nomes de campos de primeiro nível de `data`) recorta
+  o `data` só na saída. `fields: []` devolve o registro sem `data`. Com ao menos um
+  nome, o `data` sempre vem: o campo que o registro não tem some sem erro, e o `data`
+  é `{}` quando nenhum dos nomes existe (o alcance projeto mistura tipos). Os filtros
+  (`where`, `text` e os demais) veem o `data` inteiro, e o teto de página conta o JSON
+  já recortado, então uma listagem só de ids e `target` (`fields: []`) cabe muito mais
+  registros por página. `in`, `out`, `needsReview` e `attachmentStatus` saem completos.
+  `fields` fica fora do hash do cursor: a página 2 pode pedir outros. Mais de 50 nomes
+  ou nome vazio dá `INVALID_INPUT`, com `/fields` ou `/fields/<i>` em `details[].path`.
+- **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data` (inteiro, ou só
+  os `fields` pedidos), as relações
   de entrada (`in`) e de saída (`out`), `needsReview` (registro vigente cujo apoio
   morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`, `missing` ou
   `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como status, não
@@ -182,8 +192,8 @@ processo em `details[0].process`.
   projeto; com `text`, por relevância, com a ordem do alcance como desempate.
 - **Paginação:** até `limit` registros (padrão 50, máximo 200), e a página também para
   num teto de 24.000 caracteres do JSON dos registros, sempre com ao menos um registro.
-  Passe o `cursor` devolvido para continuar, com a mesma consulta: só o `limit` pode
-  mudar, e com `changesSince` a página 2 reenvia o mesmo `changesSince`, senão
+  Passe o `cursor` devolvido para continuar, com a mesma consulta: só o `limit` e os
+  `fields` podem mudar, e com `changesSince` a página 2 reenvia o mesmo `changesSince`, senão
   `INVALID_CURSOR` (`scope-mismatch`, `project-mismatch`, `process-mismatch` ou
   `filters-mismatch`). O cursor é o JSON do estado em `base64url`, sem assinatura (até
   65.536 caracteres): cursor truncado ou editado cai em `malformed`, no schema do cursor,

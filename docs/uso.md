@@ -56,6 +56,9 @@ O `register` devolve os ids dos registros (`run-1:<uuid v7>`) e o `marker`, a ca
 // query: registros vigentes do processo
 { "project": "alpha", "process": "run-1", "type": "note" }
 
+// query com fields: sem data, só o id e o target de cada nota (listagem leve, p.ex. para achar o id vigente)
+{ "project": "alpha", "process": "run-1", "type": "note", "targetPrefix": "run.step", "fields": [] }
+
 // evaluate_gate: passed: true, com os ids que sustentam a resposta em evidence
 { "project": "alpha", "process": "run-1", "gate": "has-note" }
 
@@ -74,7 +77,7 @@ O `register` devolve os ids dos registros (`run-1:<uuid v7>`) e o `marker`, a ca
 | `define_gate` | Define um gate: uma lista de perguntas sobre os registros | `<projeto>/gates/<nome>/<versão>.json` |
 | `create_process` | Cria um processo, fixando a versão vigente de cada definição | `process.json` |
 | `register` | Grava um lote de registros, atômico, com relações e `key` de idempotência | `records.jsonl` |
-| `query` | Lê registros vigentes de um processo ou do projeto, com filtros, relações e mudanças desde um marcador | nada |
+| `query` | Lê registros vigentes de um processo ou do projeto, com filtros, relações, projeção de `data` por `fields` e mudanças desde um marcador | nada |
 | `evaluate_gate` | Calcula um gate fixado no processo e devolve a evidência | nada |
 | `verify_chain` | Verifica a cadeia de hash do log e os anexos citados | nada |
 | `attach` | Guarda um texto como anexo imutável, por `text` ou `path` | `<projeto>/attachments/<sha256>` |

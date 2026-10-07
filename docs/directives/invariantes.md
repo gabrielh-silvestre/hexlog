@@ -25,6 +25,12 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 - `attachments` e os demais nomes de `RESERVED_PROCESS_NAMES` (`src/domain/ids.ts`) não valem como nome de processo; `create_process` os recusa com `RESERVED_NAME`.
 - O código de `domain/`, `commands/`, `queries/` e `mcp/` não contém termo de fluxo nem de framework; `test/no-flow-terms.spec.ts` trava ([ADR 0007](adr-0007-dominio.md), item 3).
 
+## Consulta (`query`)
+
+- A `query` projeta `data` por `fields` (até 50 nomes de topo; `fields: []` omite `data`) só na saída (`src/queries/query-service.ts#createQueryService`): os filtros veem o `data` inteiro, o teto de página conta o JSON projetado, `fields` fica fora do hash do cursor, e `in`, `out`, `needsReview` e `attachmentStatus` saem completos.
+- O `register` não confere se o destino de `supersedes`/`revokes` é o registro que o agente queria, só as regras de relação; o id certo vem do `query` por `type` + `targetPrefix` + `fields: []`, e as skills `hexlog` e `hexlog-flow` ensinam essa consulta.
+- Com `fields` não vazio, o `data` sempre vem na saída da `query`: `{}` quando nenhum dos campos pedidos existe no registro, e o campo ausente some sem erro (o alcance projeto mistura tipos).
+
 ## Validação do register
 
 - O `INVALID_RECORD` de dado junta a primeira violação de schema de cada registro do lote (`src/commands/register/static.ts#prepareBatch`), com `path` `/records/<i>/data/...` e o teto de `capDetails` (50 e `too-many-errors`); continua tudo-ou-nada.
