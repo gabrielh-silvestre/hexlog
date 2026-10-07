@@ -33,6 +33,7 @@ pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
 |---|---|---|
 | Gravar um ou mais registros (marco, decisão, veredito, desvio, plano) | `register` | Lote de 1 a 50 registros, tudo ou nada. `agent` = nome da skill que disparou (a skill apontada que chamou a hexlog-flow, ou hexlog-flow mesma se disparada direto). Passe `key` onde a duplicata custa caro (seção abaixo) |
 | Achar um registro, ou os de um alvo | `query` | Filtros `type`, `targetPrefix`, `where`, `text`, `ids`; devolve o `id` de cada um |
+| Substituir ou revogar um registro (`supersedes`/`revokes`) | `query` com `type` + `targetPrefix` + `fields: []`, depois `register` com o `id` devolvido | Leia o vigente antes; nunca use um `id` de memória. Ver "Busca, id, relações" |
 | Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
 | Saber o que mudou desde a última leitura | `query` com `changesSince` = o `marker` da leitura anterior | Só na primeira página; ver "Marcador" |
 | Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência |
@@ -60,6 +61,18 @@ Registro se acha por busca e se liga por id:
    `current`: se a origem é vigente); `out` lista as relações gravadas nele
    (`to`, e `current` quando o destino foi lido). `relatedTo` traz os registros
    ligados a um `id`.
+
+**Antes de `supersedes` ou `revokes`, leia o vigente.** Consulte com `type` +
+`targetPrefix`, confira o `target` do registro devolvido (e um campo-chave, se o
+tipo tiver um: peça-o em `fields`) e use o `id` dessa resposta, nunca um `id`
+lembrado de antes. O `register` recusa destino de outro processo, de outro tipo
+ou que não é mais vigente, mas não sabe qual dos vigentes você queria: com
+vários registros no mesmo prefixo, ele aceita o errado em silêncio.
+
+`fields` recorta o `data` só na saída: `fields: []` devolve o registro sem `data`
+(basta para achar o `id`) e `fields` com nomes traz só esses campos. Como o
+registro sai menor, cabem mais por página. Os filtros (`where`, `text`) continuam
+vendo o `data` inteiro.
 
 Por padrão a `query` só devolve registro **vigente**. `includeNonCurrent: true`
 traz também os substituídos e revogados — é o que a auditoria precisa.

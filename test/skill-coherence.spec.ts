@@ -192,6 +192,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'key',
   'where',
   'text',
+  'fields',
   'ids',
   'in',
   'out',
