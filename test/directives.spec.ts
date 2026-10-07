@@ -92,14 +92,14 @@ function linksWithOffsetFrom(content: string): { target: string; index: number }
   }));
 }
 
-/** Posição do marcador `<!-- MANUAL` em `content` sem blocos cercados, ou -1 sem marcador. */
+/** Posição do título `## Manual Notes` em `content` sem blocos cercados, ou -1 sem o título. */
 function manualMarkerOffsetFrom(content: string): number {
-  return stripFencedCodeBlocks(content).indexOf('<!-- MANUAL');
+  return stripFencedCodeBlocks(content).indexOf('## Manual Notes');
 }
 
 describe('extração de links e citações (unitário, sobre string literal)', () => {
   test('linksWithOffsetFrom e manualMarkerOffsetFrom medem a posição no mesmo texto', () => {
-    const content = '[a](x.md)\n<!-- MANUAL -->\n[b](y.md#s)';
+    const content = '[a](x.md)\n## Manual Notes\n[b](y.md#s)';
     const marker = manualMarkerOffsetFrom(content);
     expect(linksWithOffsetFrom(content).map((link) => [link.target, link.index > marker])).toEqual([
       ['x.md', false],
@@ -246,7 +246,7 @@ describe('AGENTS.md depois da extração das regras', () => {
     expect(found).toEqual([]);
   });
 
-  test('o link para docs/directives/ fica depois do marcador MANUAL', () => {
+  test('o link para docs/directives/ fica depois do título Manual Notes', () => {
     const misplaced = agentsFiles
       .filter((file) => path.dirname(file) !== directivesDir)
       .flatMap((file) => {

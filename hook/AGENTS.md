@@ -1,7 +1,7 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-10-04 -->
-
 # hook
+
+**Parent context:** `../AGENTS.md`
+**Generated:** 2026-09-17 · **Updated:** 2026-10-07
 
 ## Purpose
 Um hook do Claude Code. `bash-guard.ts` (`PreToolUse` da tool `Bash`) impede
@@ -29,7 +29,7 @@ tokeniza o comando recebido; nunca executa nada.
   chave `{a/b,c}` com barra é truncado no prefixo, porque `path.matchesGlob`
   não expande `**` até a profundidade de `D`.
 - `~` só é expandido no início do token ou logo após `=` (`--opt=~/x`); o
-  `shell-quote` não expande til por conta própria.
+  `shell-quote` não expande til por conta própria (`TILDE_REGEX`).
 
 ## Dependencies
 ### Internal
@@ -37,10 +37,10 @@ tokeniza o comando recebido; nunca executa nada.
 
 ### External
 - `shell-quote` (parse dos tokens do comando)
-- `es-toolkit` (`isNil`, `isString`)
+- `es-toolkit` (`isNil`, `isString`, `take`, `takeWhile`)
 - `node:fs`, `node:os`, `node:path`, `node:url`
 
-<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+## Manual Notes
 
 ## Diretrizes
 

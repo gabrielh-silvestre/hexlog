@@ -1,7 +1,7 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-10-05 -->
-
 # src
+
+**Parent context:** `../AGENTS.md`
+**Generated:** 2026-09-17 · **Updated:** 2026-10-07
 
 ## Purpose
 Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 12 tools para agentes registrarem seu histórico de trabalho (registros tipados com relações e gates declarativos, anexos) num log JSONL append-only com cadeia de hash por processo, mais o instalador que versiona o artefato e instala o hook de isolamento Bash no Claude Code.
@@ -60,6 +60,19 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 12 to
 | `node-types.d.ts` | Augmentation de `node:crypto` com `randomUUIDv7` (ainda não coberto por `@types/node` 24.8.1) |
 | `version.ts` | `export const VERSION = '1.0.0'` |
 
+## Subdirectories
+| Directory | Purpose |
+|---|---|
+| `domain/` | Domínio puro: ids, registros, manifesto, cadeia de hash, relações, definições e gate (see `domain/AGENTS.md`) |
+| `shared/` | Carregador único do log, logger, versões vigentes de definição e corte de texto (see `shared/AGENTS.md`) |
+| `adapters/` | Implementações das portas de `ports.ts`: validador de schema e índice de busca, mais os stores de disco em `adapters/fs/` (see `adapters/AGENTS.md`) |
+| `adapters/fs/` | Stores em disco de processo, definição e anexo, lock por processo e gravação atômica (see `adapters/fs/AGENTS.md`) |
+| `commands/` | Serviços de escrita: anexo, definições e processo com `register` (see `commands/AGENTS.md`) |
+| `commands/register/` | Etapas do `register`: validação estática, `decide` sob lock, anexos e erros (see `commands/register/AGENTS.md`) |
+| `queries/` | Serviço de leitura: `query`, `evaluate_gate`, `verify_chain`, `list`, `read_attachment` e `describe_type` (see `queries/AGENTS.md`) |
+| `mcp/` | Kernel de execução das tools e criação do servidor MCP (see `mcp/AGENTS.md`) |
+| `mcp/tools/` | As 12 tools, registradas em quatro famílias (see `mcp/tools/AGENTS.md`) |
+
 ## Navigation Notes
 - Specs em `test/` espelham os módulos: `test/domain/`, `test/adapters/`, `test/commands/`, `test/queries/`, `test/mcp/` e `test/shared/` cobrem a árvore de `src/`; na raiz de `test/` ficam `directory.spec.ts`, `compose.spec.ts`, `guard.spec.ts` (cobre também `installation.ts`), `bash-guard.spec.ts`, `archive.spec.ts`, `stdio.e2e.spec.ts` (bundle real de `server.ts`), os specs dos scripts e `package.spec.ts`.
 
@@ -82,11 +95,11 @@ Ponto de entrada: `server.ts` → `directory.ts` (resolve dir de dados) + `compo
 | `minisearch` | Índice de texto do filtro `text` de `query` (`adapters/search.ts`) |
 | `safe-regex2` | Recusa `pattern` e chave de `patternProperties` de schema de tipo com regex catastrófico (ReDoS), em `Validator.checkSchema` (`adapters/validator.ts`) |
 | `tar` | Gera o `.tar` do arquivamento do dado 0.x (`archive.ts`, só pelo instalador; devDependency) |
-| `es-toolkit` (+ `es-toolkit/compat`) | Utilitários (`isNil`, `isEqual`, `isPlainObject`, `isString`, `kebabCase`, `mapValues`, `memoize`, `omit`, `omitBy`, `once`, `orderBy`, `pick`, `sumBy`, `union`, `uniq`, `uniqBy` e outros) usados em quase todo módulo |
+| `es-toolkit` | Utilitários (`isNil`, `isEqual`, `isPlainObject`, `isString`, `kebabCase`, `mapValues`, `memoize`, `omit`, `omitBy`, `once`, `orderBy`, `pick`, `sumBy`, `union`, `uniq`, `uniqBy` e outros) usados em quase todo módulo; `es-toolkit/compat` não é importado em `src/` |
 | `jsonc-parser` | Parse/edição de `settings.json` preservando comentários/formatação (`guard.ts`) |
 | `shell-quote` | Parse/quote do `command` do hook PreToolUse (`guard.ts`) |
 
-<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+## Manual Notes
 
 ## Diretrizes
 
