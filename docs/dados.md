@@ -165,13 +165,14 @@ PreToolUse na tool Bash que tokeniza o comando e nega quem alcançar o
 diretório de dados. A mensagem de negação cita as tools que dão acesso ao dado
 (`list`, `query`, `verify_chain`, `read_attachment`, `evaluate_gate`, `describe_type`). Em comando
 composto, a mensagem acrescenta ` Matched: <segmento>` com o trecho que casou. O que o hook não
-consegue decidir ele nega (`hook/bash-guard.ts#decide`): o token cujo casamento lança, o comando
-que o `shell-quote` não parseia, o comando acima de `MAX_COMMAND_LENGTH` (1 MiB) e o token com caractere de glob acima dos tetos
+consegue decidir por custo ele nega (`hook/bash-guard.ts#decide`): o comando acima de `MAX_COMMAND_LENGTH` (1 MiB) e o token com caractere de glob acima dos tetos
 (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) ou além do orçamento por comando
 (`MAX_GLOB_TOTAL_LENGTH`, a soma dos tamanhos dos tokens com glob). A negação por esses motivos não
 cita `<D>`. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
 `..`, cada grupo vira `*` antes do casamento (`.*` na abertura de um segmento oculto de `<D>`, que
-o `*` não casa), então faixas como `{1..9999999}` não se expandem. Ele falha aberto só quando o comando
+o `*` não casa), então faixas como `{1..9999999}` não se expandem. Ele libera o que não consegue
+decidir por falha da checagem: o comando que o `shell-quote` não parseia (`${}`) e o token cujo
+casamento lança. Falha aberto também quando o comando
 nem chega à checagem: `node` ausente, arquivo do hook apagado, stdin vazio, JSON inválido e
 `tool_name` diferente de `Bash`, e hook morto pelo `timeout` de 10 s (que não bloqueia, segundo o
 comportamento observado). Os tetos e o orçamento mantêm o hook bem abaixo desse prazo para o token e
@@ -218,9 +219,8 @@ caractere de glob que passa dos tetos `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou
 `MAX_BRACKETS`, um comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH` ou um comando acima de
 `MAX_COMMAND_LENGTH`, como
 `python -c '<script grande com colchetes>'`: tetos e orçamento valem para qualquer token ou
-comando com glob, legítimo ou não. Também é negado o heredoc de delimitador citado com `${}` no
-corpo (`cat <<'EOF'`): o bash o aceita, mas o `shell-quote` não parseia o comando, e o hook nega
-em vez de liberar. Em `.claude/settings.json`, o padrão `Bash(node *scripts/install.ts*)` também
+comando com glob, legítimo ou não. O comando que o `shell-quote` não parseia passa, mesmo com
+`cat ~/.local/share/hex""log/x` depois do `${}`: é o preço de liberar na dúvida. Em `.claude/settings.json`, o padrão `Bash(node *scripts/install.ts*)` também
 pergunta no `--check` (só leitura) e não pega `cd scripts && node install.ts`.
 
 **`<D>` é confiável.** Só o servidor escreve em `<D>/.v1/`, e o hook de Bash bloqueia o agente;

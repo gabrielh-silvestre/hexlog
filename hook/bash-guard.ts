@@ -47,7 +47,7 @@ const denialMessage = (d: string, matched?: string): string =>
 
 // Negação por comando que o hook não consegue decidir: não cita `D` a quem não o citou.
 const undecidableMessage = (matched?: string): string =>
-  'hexlog: the command was denied because it could not be checked against the hexlog data directory (it does not parse, it is longer than the safety limit, or its glob tokens exceed the safety limits). Simplify it.' +
+  'hexlog: the command was denied because it could not be checked against the hexlog data directory (it is longer than the safety limit, or its glob tokens exceed the safety limits). Simplify it.' +
   matchedSuffix(matched);
 
 type RawInput = {
@@ -105,7 +105,8 @@ function tryTokenize(
   try {
     return shellQuoteParse(command, { HOME: home, XDG_DATA_HOME: env.XDG_DATA_HOME ?? '' });
   } catch {
-    return undefined;
+    // Parse que lança (`${}`): sem tokens para checar, o hook libera na dúvida (hooks-sao-freios).
+    return [];
   }
 }
 
@@ -219,7 +220,7 @@ function tokenReachesDirectory(token: string, cwd: string, dataDir: string): boo
 
 type TokenClass = 'reaches' | 'undecidable' | 'clear';
 
-/** Token acima dos tetos ou cujo casamento lança é `undecidable` (nega, sem citar `D`). */
+/** Token acima dos tetos é `undecidable` (nega, sem citar `D`); casamento que lança libera o token. */
 function classifyToken(rawToken: string, cwd: string, dataDir: string, home: string): TokenClass {
   try {
     const token = expandTilde(rawToken, home);
@@ -227,7 +228,8 @@ function classifyToken(rawToken: string, cwd: string, dataDir: string, home: str
     if (exceedsGlobLimits(token)) return 'undecidable';
     return tokenReachesDirectory(token, cwd, dataDir) ? 'reaches' : 'clear';
   } catch {
-    return 'undecidable';
+    // hooks-sao-freios: o que o hook não consegue decidir é liberado.
+    return 'clear';
   }
 }
 
@@ -284,8 +286,7 @@ function decide(
     );
   }
 
-  // Parse que lança (`${}`) ou comando acima de MAX_COMMAND_LENGTH: nega em vez de liberar, mesmo
-  // que o shell aceite o comando (heredoc de delimitador citado com `${}` no corpo é falso positivo aceito).
+  // Só o comando acima de MAX_COMMAND_LENGTH chega aqui sem tokens: é custo, não dúvida de parse.
   const segments = segmentsOf();
   if (isNil(segments)) return denied(undecidableMessage());
 
@@ -323,7 +324,7 @@ if (isExecutedDirectly()) {
     run();
   } catch {
     // R-1: falha aberto só para entrada que não é um comando Bash (stdin vazio, JSON
-    // inválido, `tool_name` diferente de `Bash`) ou Node ausente. Comando que a checagem
-    // não consegue decidir é negado em `decide` e nunca chega aqui.
+    // inválido, `tool_name` diferente de `Bash`) ou Node ausente. Os tetos de custo negam em
+    // `decide`; parse ou casamento que lança libera.
   }
 }

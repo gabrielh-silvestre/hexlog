@@ -342,11 +342,6 @@ describe('bash-guard (U1): hostile tokens are denied, not released', () => {
       stderr: undecidableMessage,
     },
     {
-      name: 'denies a command shell-quote cannot parse even without D',
-      command: 'echo ${}; cat ~/.local/share/hex""log/x',
-      stderr: undecidableMessage,
-    },
-    {
       name: 'denies a numeric brace range followed by a command reaching D through "~"',
       command: `cat {1..9999999}${homeTail}`,
       stderr: reachesMessage,
@@ -391,6 +386,12 @@ describe('bash-guard (U1): hostile tokens are denied, not released', () => {
   test('does not mention D when the denial is for an undecidable command', () => {
     const result = runHook({ command: `cat ${'['.repeat(65)}` }, envBase);
     expect(result.stderr).not.toContain(dataDir);
+  }, 15_000);
+
+  test('allows a command shell-quote cannot parse when it does not cite D', () => {
+    const result = runHook({ command: 'echo ${}; cat ~/.local/share/hex""log/x' }, envBase);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
   }, 15_000);
 
   test('allows a 5000-character token without glob characters', () => {
