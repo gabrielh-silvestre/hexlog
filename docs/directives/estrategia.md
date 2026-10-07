@@ -31,7 +31,7 @@ Premissas atemporais do hexlog, em linguagem de produto: o que não pode quebrar
 ## Segurança e riscos aceitos
 
 - `anexo-so-texto-do-projeto`: Só texto .md ou .txt dentro da pasta de trabalho do servidor e fora do diretório de dados pode ser anexado; ampliar esse alcance exige um ADR novo. Ver: [invariantes.md](invariantes.md).
-- `hooks-sao-freios`: Os hooks pegam descuido, não burla: o bloqueio de acesso ao diretório de dados cobre só o Bash e libera na dúvida; o de abertura de PR nega na dúvida; o marcador do pré-PR qualquer agente com escrita forja. Ver: [instalacao-e-hooks.md](instalacao-e-hooks.md).
+- `hooks-sao-freios`: Os hooks pegam descuido, não burla: o bloqueio de acesso ao diretório de dados cobre só o Bash, libera na dúvida e nega só o que passa do limite de custo; o de abertura de PR nega na dúvida; o marcador do pré-PR qualquer agente com escrita forja. Ver: [instalacao-e-hooks.md](instalacao-e-hooks.md).
 - `diretorio-de-dados-confiavel`: O diretório de dados é tratado como confiável: não há defesa contra quem já controla a máquina (links simbólicos e pipes são limite aceito). Ver: [adr-0009-ferramental.md](adr-0009-ferramental.md).
 - `entrada-do-agente-contida`: O que o agente envia não pode travar o servidor nem o terminal: expressões regulares catastróficas, referências externas em esquema e caracteres de controle na saída são tratados. Ver: [adr-0009-ferramental.md](adr-0009-ferramental.md).
 - `riscos-conhecidos-aceitos`: Os limites já documentados (lock por pid, corrida entre processos, busca sem teto agregado de memória, verificação que não confere data) são riscos aceitos; resolver um deles é decisão nova. Ver: [adr-0008-servicos.md](adr-0008-servicos.md).
