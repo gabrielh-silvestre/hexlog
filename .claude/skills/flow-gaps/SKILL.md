@@ -1,6 +1,6 @@
 ---
 name: flow-gaps
-description: 'Resolve com o dono as lacunas que ficaram abertas num PR em rascunho do repositório hexlog por contradição com uma premissa atemporal, uma por turno, fechando cada uma por premissa nova da entrega. Use quando o pedido for "resolve as lacunas do PR #N", "fecha as lacunas", "tem lacuna aberta no PR", "tira o PR do rascunho" ou "resolve o gap". Vale só neste repositório. Não serve para abrir trabalho ou pré-PR (flow-run) nem para a auditoria (flow-audit).'
+description: 'Resolve com o dono as lacunas que ficaram abertas num PR em rascunho do repositório hexlog por contradição com uma premissa atemporal, uma por turno, fechando cada uma por premissa nova da entrega (ou, no caminho residual, por regra técnica nova). Use quando o pedido for "resolve as lacunas do PR #N", "fecha as lacunas", "tem lacuna aberta no PR", "tira o PR do rascunho" ou "resolve o gap". Vale só neste repositório. Não serve para abrir trabalho ou pré-PR (flow-run) nem para a auditoria (flow-audit).'
 ---
 
 # flow-gaps

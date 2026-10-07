@@ -1,12 +1,12 @@
 # Estratégia
 
-Premissas atemporais do hexlog, em linguagem de produto: o que não pode quebrar e por quê. Cada decisão registrada se apoia em pelo menos uma delas. Só mudam com validação do dono; o agente nunca as edita sozinho. O detalhe técnico mora no doc ligado em cada linha.
+Premissas atemporais do hexlog, em linguagem de produto: o que não pode quebrar e por quê. Cada decisão registrada deve se apoiar em pelo menos uma delas, ou declarar que nenhuma se aplica. Só mudam com validação do dono; o agente nunca as edita sozinho. O detalhe técnico mora no doc ligado em cada linha.
 
 ## Stack
 
 - `libs-fixas`: As dependências ficam em versão exata: nenhuma atualização entra sem ser decidida, para o comportamento não mudar por baixo. Ver: [convencoes.md](convencoes.md).
 - `troca-confere-adrs`: Trocar uma biblioteca ou decisão de stack só depois de conferir os ADRs e a pesquisa, onde a maioria das alternativas já foi avaliada e tem motivo registrado. Ver: [documentacao.md](documentacao.md).
-- `node-minimo`: O produto exige Node 24.18.1 ou mais novo; versão menor não é suportada. Ver: [qualidade-e-testes.md](qualidade-e-testes.md).
+- `node-minimo`: O produto exige a versão mínima de Node declarada em `engines`; versão menor não é suportada. Ver: [qualidade-e-testes.md](qualidade-e-testes.md).
 - `validacao-por-esquema`: Entradas e registros são validados por esquema (Zod nas entradas, JSON Schema no conteúdo dos registros), nunca por checagem solta. Ver: [convencoes.md](convencoes.md).
 - `hooks-sem-dependencia`: Os hooks do fluxo são TypeScript sem dependência externa e ficam fora do pacote do produto, para não pesá-lo nem herdar risco de terceiros. Ver: [instalacao-e-hooks.md](instalacao-e-hooks.md).
 
@@ -44,15 +44,15 @@ Premissas atemporais do hexlog, em linguagem de produto: o que não pode quebrar
 - `adr-aceito-so-por-emenda`: ADR aceito não é reescrito, só recebe emenda, e a pesquisa congelada não se edita; mudança de rumo vai num ADR novo. Ver: [documentacao.md](documentacao.md).
 - `camada-fina-sobre-o-omc`: As regras de uso valem por cima do OMC sem alterá-lo: skill de entrada fina, doc importado, ponteiro ao iniciar subagente e bloqueio de PR sem marcador; nada reescreve a entrada do agente. Ver: [adr-0010-camada-sobre-omc.md](adr-0010-camada-sobre-omc.md).
 - `decisao-registrada-por-quem-decide`: Toda escolha entre alternativas viáveis vira registro feito por quem a tomou, inclusive subagente, e nunca delegado a outro. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
-- `lacuna-fecha-por-regra-explicita`: Uma lacuna só se fecha por regra ou premissa escrita, nunca por decisão refeita; PR com lacuna aberta nasce em rascunho e só sai com verificação aprovada e achado urgente resolvido. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
+- `lacuna-fecha-por-regra-explicita`: Uma lacuna só se fecha por regra escrita ou premissa registrada, nunca por decisão refeita; PR com lacuna aberta nasce em rascunho e só sai dele com as lacunas fechadas e a verificação refeita. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 
 ## Propósito e modos de uso
 
-- `audita-decisoes-de-agentes`: O hexlog existe para auditar decisões de agentes de IA: o que foi decidido, por quê e com que evidência. Ver: [README.md](../../README.md).
-- `dois-modos-de-uso`: Há dois modos: acompanhado, em que o humano decide e o agente explora, coleta evidência e pesquisa; e autônomo, em que o agente decide dentro de objetivos, diretrizes e premissas e registra. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
+- `audita-decisoes-de-agentes`: O hexlog existe para auditar decisões de agentes de IA: o que foi decidido, por quê e com que evidência. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
+- `dois-modos-de-uso`: Há dois modos: acompanhado (hoje, o modo `ask`), em que o humano decide e o agente explora, coleta evidência e pesquisa; e autônomo, em que o agente decide dentro de objetivos, diretrizes e premissas e registra. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 - `decisao-registrada-e-reversivel`: Toda decisão fica registrada para auditoria posterior e pode ser revertida; nada decidido some do histórico. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
-- `decisao-refutavel`: Toda decisão pode ser refutada por revisão de pares, com o porquê e as evidências rastreáveis, e o processo se ajusta ao que a refutação revela. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
-- `melhoria-continua`: O registro serve à melhoria contínua: o que a auditoria revela vira regra ou premissa melhor. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
+- `decisao-refutavel`: Toda decisão pode ser refutada por revisão de pares, com o porquê e as evidências rastreáveis, e o processo se ajusta ao que a refutação revela. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
+- `melhoria-continua`: O registro serve à melhoria contínua: o que a auditoria revela vira regra ou premissa melhor. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
 
 ## Nenhuma premissa se aplica
 

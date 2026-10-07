@@ -62,4 +62,4 @@ Regras que valem para o repositório todo, importadas pelo `CLAUDE.md`:
 - [qualidade-e-testes.md](docs/directives/qualidade-e-testes.md): comandos antes de concluir, orçamentos e convenções dos specs
 - [documentacao.md](docs/directives/documentacao.md): ADR e doc vivo, como citar, `pesquisa/` congelado, famílias de ID
 - [instalacao-e-hooks.md](docs/directives/instalacao-e-hooks.md): instalador, hook de isolamento e hooks do fluxo
-- [estrategia.md](docs/directives/estrategia.md): premissas atemporais do produto, validadas pelo dono; cada decisão se apoia em pelo menos uma
+- [estrategia.md](docs/directives/estrategia.md): premissas atemporais do produto, validadas pelo dono; cada decisão deve se apoiar em pelo menos uma, ou declarar que nenhuma se aplica

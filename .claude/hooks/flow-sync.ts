@@ -17,7 +17,10 @@ const BATCH_MAX = 50;
 // Um registro leva até 100 relações; o `doc` carrega um `supersedes` e um `revokes` por regra sumida.
 const REVOKES_MAX = 99;
 const CLOSES_GAP = 'closes-gap';
-const STRATEGY_DOC = 'estrategia';
+export const STRATEGY_DOC = 'estrategia';
+const PREMISE_LINE = /^- `([a-z0-9][a-z0-9-]{0,62})`: (.+)$/;
+const VER_SEPARATOR = ' Ver: ';
+const STATEMENT_MAX_CODE_POINTS = 255;
 
 /** Relação de saída de um registro vigente, como o `query` a devolve. */
 export type OutRelation = { as?: string; kind: string; to: string };
@@ -78,7 +81,73 @@ export type SyncPlan = {
   error?: 'too-many-relations';
 };
 
-const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
+export const sha256 = (data: string | Uint8Array): string =>
+  createHash('sha256').update(data).digest('hex');
+
+/** Premissa lida de uma linha do documento, com o tema `##` em que está e o trecho `Ver:` final. */
+export type ScannedPremise = {
+  theme: string;
+  slug: string;
+  statement: string;
+  ver: string | undefined;
+};
+
+/** Blocos de código cercados (```) trazem exemplos de sintaxe, não premissas. */
+const withoutFencedCodeBlocks = (text: string): string => text.replace(/```[\s\S]*?```/g, '');
+
+/** Cada `##` abre um tema e cada linha `- ` dele é uma premissa ou uma linha malformada. */
+export function scanPremises(text: string): { premises: ScannedPremise[]; malformed: string[] } {
+  const premises: ScannedPremise[] = [];
+  const malformed: string[] = [];
+  let theme = '';
+  for (const line of withoutFencedCodeBlocks(text).split('\n')) {
+    const heading = /^##\s+(.+?)\s*$/.exec(line);
+    if (heading?.[1] !== undefined) {
+      theme = heading[1];
+      continue;
+    }
+    if (!line.startsWith('- ')) continue;
+    const match = PREMISE_LINE.exec(line);
+    if (match?.[1] === undefined || match[2] === undefined) {
+      malformed.push(line);
+      continue;
+    }
+    const rest = match[2];
+    // O statement pode conter `: `; o `Ver:` é sempre o último trecho da linha.
+    const verAt = rest.lastIndexOf(VER_SEPARATOR);
+    premises.push({
+      theme,
+      slug: match[1],
+      statement: verAt === -1 ? rest : rest.slice(0, verAt),
+      ver: verAt === -1 ? undefined : rest.slice(verAt + VER_SEPARATOR.length),
+    });
+  }
+  return { premises, malformed };
+}
+
+/**
+ * Extrai as premissas de `estrategia.md` como regras do `planSync` (`section` sempre vazia). Linha
+ * malformada, slug repetido e statement fora de 1 a 255 code points entram em `malformed` e nunca
+ * em `rules`.
+ */
+export function parsePremises(text: string): { rules: ExtractedRule[]; malformed: string[] } {
+  const scanned = scanPremises(text);
+  const malformed = [...scanned.malformed];
+  const rules: ExtractedRule[] = [];
+  const seen = new Set<string>();
+  for (const { slug, statement } of scanned.premises) {
+    const length = [...statement].length;
+    if (seen.has(slug)) {
+      malformed.push(`duplicate slug "${slug}"`);
+    } else if (length < 1 || length > STATEMENT_MAX_CODE_POINTS) {
+      malformed.push(`statement of "${slug}" has ${length} code points (allowed 1 to 255)`);
+    } else {
+      rules.push({ slug, rule: statement, section: '' });
+    }
+    seen.add(slug);
+  }
+  return { rules, malformed };
+}
 
 function isUpToDate({ current, vigent, extracted, hash }: SyncInput): boolean {
   if (extracted === null) {
@@ -163,12 +232,16 @@ const batchesOf = (docSlug: string, source: string, records: PlannedRecord[]): S
  * `closes-gap` dele; com dados iguais, nenhum registro (salvo `closes` com lacuna que a versão
  * vigente ainda não fecha). O `doc` novo supera o vigente, revoga as regras que sumiram e entra por
  * último, para que falha entre lotes deixe o hash desencontrado e a próxima abertura repita o sync.
- * Com o documento em dia, só a regra com lacuna nova em `closes` ganha registro, sem `doc` novo.
+ * Com o documento em dia, só a regra com lacuna nova em `closes` ganha registro, sem `doc` novo
+ * (em `estrategia`, `closes` é ignorado e o documento em dia nunca gera registro).
  */
 export function planSync(input: SyncInput): SyncPlan {
   const { docSlug, path, hash, current, vigent, extracted } = input;
   if (isUpToDate(input)) {
-    const closing = (extracted ?? []).filter(({ closes }) => (closes?.length ?? 0) > 0);
+    const closing =
+      docSlug === STRATEGY_DOC
+        ? []
+        : (extracted ?? []).filter(({ closes }) => (closes?.length ?? 0) > 0);
     const records = directiveRecords(input, closing);
     return {
       upToDate: records.length === 0,

@@ -22,7 +22,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - A premissa da entrega que desenvolve uma atemporal pode ligar-se a ela por `derivesFrom` cru (sem `as`). É opcional.
 - A premissa da entrega não contradiz premissa atemporal nem diretriz técnica. A diretriz técnica é teto fixo: se a escolha esbarra nela, escolha outro caminho, sem perguntar.
 - Premissa errada não se edita: registre outra, nova, com `revokes` da errada.
-- Evidência é opcional e tardia, em `<slug>.evidence.<short>`, no processo do trabalho que contém a `decision`. Quando o humano pede a justificativa de uma decisão, pesquise, guarde o texto por `attach` e registre `evidence` (`summary`, `source`) com `supports` para a `decision` vigente. Decisão já superada não recebe `supports`: registre a evidência de novo na vigente.
+- Evidência é opcional e tardia, em `<slug>.evidence.<short>`, no processo do trabalho atual, que fixa `evidence`. Quando o humano pede a justificativa de uma decisão, pesquise, guarde o texto por `attach` e registre `evidence` (`summary`, `source`) com `supports` para a `decision` vigente. Se a `decision` é de outro processo (trabalho anterior a `directives-2`, que não fixou `evidence`), a `evidence` fica no trabalho atual e o `supports` aponta para a `decision` vigente do processo antigo. Decisão já superada não recebe `supports`: registre a evidência de novo na vigente.
 
 ## Quando uma escolha vira `decision`
 
@@ -44,10 +44,10 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 - Lacuna é a escolha que nenhuma diretriz cobre. Registre o `gap` (`question`, `context`, `provisionalChoice`) e a `decision` com `grounds: gap` ligada a ele.
 - modo `ask`: a lacuna para e pergunta antes de seguir, a resposta do humano vira o texto da premissa (o agente a grava); modo `autonomous`: o agente decide e grava a premissa; em ambos, lacuna que compromete o trabalho inteiro (a resposta invalida a premissa-objetivo ou nenhum caminho do trabalho sobra) sempre para e pergunta.
-- Uma premissa da entrega fecha a lacuna por `fills-gap` (`premise` para `gap`), desde que não contradiga premissa atemporal nem diretriz técnica. É sempre registro novo, sem `supersedes`, gravado depois da lacuna ou no mesmo lote, depois dela (`@alias`); a `decision` leva `about-gap` e `rests-on` para essa premissa. Premissa gravada antes da lacuna, como a da entrevista de abertura, não a fecha.
+- Uma premissa da entrega fecha a lacuna por `fills-gap` (`premise` para `gap`), desde que não contradiga premissa atemporal nem diretriz técnica. O `rationale` da `decision` cita os ids das premissas atemporais conferidas. É sempre registro novo, sem `supersedes`, gravado depois da lacuna ou no mesmo lote, depois dela (`@alias`); a `decision` leva `about-gap` e `rests-on` para essa premissa. Premissa gravada antes da lacuna, como a da entrevista de abertura, não a fecha.
 - Não registre `fills-gap` para premissa que contradiz premissa atemporal: o trabalho segue, a lacuna fica aberta e o PR sai em rascunho até o dono decidir (mudar o rumo ou emendar a premissa atemporal, com a validação dele). Nesse caso a `decision` provisória liga-se por `rests-on` à premissa-objetivo ou à sentinela `directives.estrategia.none`.
 - Uma `directive` também fecha, pela relação `closes-gap`, quando há regra escrita em `docs/directives/`: o rastro é a relação no log e, quando a regra nasce ou muda, o diff do doc no PR. Uma decisão refeita, mesmo ancorada, não fecha. O servidor recusa `closes-gap` e `fills-gap` partindo de `decision`.
-- A skill `flow-gaps` trata só a lacuna aberta por contradição com premissa atemporal.
+- A skill `flow-gaps` fecha a lacuna que ficou aberta por contradição com premissa atemporal, por premissa nova da entrega; como caminho residual, também fecha a que uma regra técnica nova de `docs/directives/` resolve, pela `directive` com `closes-gap` (linha acima).
 
 ## Verificação e achados
 
@@ -62,6 +62,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - `pre-pr`: há `verification` `passed` e todo `finding` URGENT tem `decision` que o resolve.
 - `gaps`: toda `gap` tem um fechador, `directive` por `closes-gap` ou `premise` por `fills-gap`. Premissa revogada deixa de fechar: a lacuna reabre até outra premissa nova, com `fills-gap`, fechá-la.
 - Os dois verdes: `flow-run` grava o marcador (`node .claude/hooks/flow-hooks.ts mark <slug>`, nunca por Write nem redirecionamento) e abre o PR.
+- Lacuna fechada por premissa (`fills-gap`): o corpo do PR lista cada uma (id da lacuna, `question`, `statement` da premissa e id da `decision`), com os gates verdes e o PR fora de rascunho também. A premissa vive só no log, então o corpo é o único lugar em que o revisor a vê.
 - Lacuna aberta: o PR abre **em rascunho**, com as lacunas citadas no corpo e o detalhe em `.ignore/flow/<slug>/lacunas.md`.
 - O rascunho só sai por `gh pr ready` (sem argumento, na branch do PR), depois de `flow-gaps` fechar as lacunas e regravar o marcador. `update_pull_request` com `draft: false` é sempre negado.
 - O marcador vale para o `HEAD` em que foi gravado: depois de commit novo, rebase ou squash, rode `mark` de novo.

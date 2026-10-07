@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { parsePremises, scanPremises, type ScannedPremise } from '../.claude/hooks/flow-sync.ts';
 import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -334,56 +335,15 @@ const STRATEGY_THEMES = [
 ];
 const SENTINEL_THEME = 'Nenhuma premissa se aplica';
 const SENTINEL_SLUG = 'none';
-const STATEMENT_MAX_CHARS = 255;
-const PREMISE_LINE = /^- `([a-z0-9-]+)`: (.+)$/;
-const VER_SEPARATOR = ' Ver: ';
-
-type Premise = {
-  theme: string;
-  slug: string;
-  statement: string;
-  ver: string | undefined;
-};
-
-/** Premissas por tema: cada `##` abre um tema e cada linha `- ` dele é uma premissa ou uma linha malformada. */
-function premisesFrom(content: string): { premises: Premise[]; malformed: string[] } {
-  const premises: Premise[] = [];
-  const malformed: string[] = [];
-  let theme = '';
-  for (const line of stripFencedCodeBlocks(content).split('\n')) {
-    const heading = /^##\s+(.+?)\s*$/.exec(line);
-    if (heading !== null) {
-      theme = at(heading, 1);
-      continue;
-    }
-    if (!line.startsWith('- ')) continue;
-    const match = PREMISE_LINE.exec(line);
-    if (match === null) {
-      malformed.push(line);
-      continue;
-    }
-    const rest = at(match, 2);
-    // O statement pode conter `: `; o `Ver:` é sempre o último trecho da linha.
-    const verAt = rest.lastIndexOf(VER_SEPARATOR);
-    premises.push({
-      theme,
-      slug: at(match, 1),
-      statement: verAt === -1 ? rest : rest.slice(0, verAt),
-      ver: verAt === -1 ? undefined : rest.slice(verAt + VER_SEPARATOR.length),
-    });
-  }
-  return { premises, malformed };
-}
-
 describe('extração das premissas (unitário, sobre string literal)', () => {
-  test('premisesFrom separa slug, statement com `: ` dentro e link Ver, e acusa linha malformada', () => {
+  test('scanPremises separa slug, statement com `: ` dentro e link Ver, e acusa linha malformada', () => {
     const content = [
       '## Tema',
       '- `a-b`: Regra: com dois pontos. Ver: [x.md](x.md).',
       '- `none`: Sem premissa.',
       '- sem crase: linha ruim',
     ].join('\n');
-    expect(premisesFrom(content)).toEqual({
+    expect(scanPremises(content)).toEqual({
       premises: [
         {
           theme: 'Tema',
@@ -416,12 +376,13 @@ describe('estrategia.md', () => {
 
 describe('premissas de estrategia.md', () => {
   let content: string;
-  let premises: Premise[];
+  let premises: ScannedPremise[];
   let malformed: string[];
 
   beforeAll(() => {
     content = fs.readFileSync(path.join(repoRoot, STRATEGY_DOC), 'utf8');
-    ({ premises, malformed } = premisesFrom(content));
+    ({ premises } = scanPremises(content));
+    ({ malformed } = parsePremises(content));
   });
 
   test('tem as 6 seções temáticas e a da sentinela, nessa ordem', () => {
@@ -429,7 +390,7 @@ describe('premissas de estrategia.md', () => {
     expect(themes.slice(1)).toEqual([...STRATEGY_THEMES, SENTINEL_THEME]);
   });
 
-  test('toda linha de premissa casa o formato `slug`: statement', () => {
+  test('toda linha de premissa casa o formato, com slug único e statement de 1 a 255 code points', () => {
     expect(malformed).toEqual([]);
   });
 
@@ -438,18 +399,6 @@ describe('premissas de estrategia.md', () => {
       (theme) => !premises.some((premise) => premise.theme === theme),
     );
     expect(empty).toEqual([]);
-  });
-
-  test('os slugs são únicos', () => {
-    const slugs = premises.map((premise) => premise.slug);
-    expect(slugs.filter((slug, index) => slugs.indexOf(slug) !== index)).toEqual([]);
-  });
-
-  test('todo statement tem de 1 a 255 caracteres', () => {
-    const outOfRange = premises.filter(
-      ({ statement }) => statement.length < 1 || statement.length > STATEMENT_MAX_CHARS,
-    );
-    expect(outOfRange.map((premise) => premise.slug)).toEqual([]);
   });
 
   test('toda premissa fora a sentinela termina em um link `Ver:` relativo', () => {

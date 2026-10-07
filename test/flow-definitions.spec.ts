@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
@@ -5,6 +6,7 @@ import { omit } from 'es-toolkit';
 import { z } from 'zod';
 import {
   planSync,
+  scanPremises,
   type ExtractedRule,
   type PlannedRecord,
   type SyncInput,
@@ -21,11 +23,12 @@ import type {
   QueryResult,
   VerifyChainResult,
 } from '../src/queries/query-service.ts';
-import { at, parseJson } from './helpers.ts';
+import { at, createTempDir, parseJson } from './helpers.ts';
 import { type Environment, createEnvironment, expectError } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const hexlogDir = path.join(repoRoot, '.hexlog');
+const hookPath = path.join(repoRoot, '.claude/hooks/flow-hooks.ts');
 
 const PROJECT = 'hexlog';
 const DIRECTIVES = 'directives';
@@ -1307,6 +1310,16 @@ describe('sync de estrategia (premissas)', () => {
     expect(withNoise).toEqual(clean);
   });
 
+  test('closes não regrava a premissa com o doc em dia, mesmo com o statement diferente', async () => {
+    await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
+    const gapId = await registerGap();
+    const closing = premisesOf(1, 'p', 2).map((rule) => ({ ...rule, closes: [gapId] }));
+
+    const plan = planSync(await inputFor(DIRECTIVES, STRATEGY, 'v1', closing));
+
+    expect(plan).toEqual({ upToDate: true, batches: [], warnings: [] });
+  });
+
   test('um doc convencoes no mesmo teste segue gerando directive com source e section', async () => {
     const strategy = await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
 
@@ -1336,6 +1349,96 @@ describe('sync de estrategia (premissas)', () => {
       expect.objectContaining({ as: 'rests-on', to: premiseId, current: false }),
     ]);
   });
+
+  /** O mesmo caminho da skill: o hook lê o documento em `input.path`, extrai as premissas e planeja. */
+  const runHook = (input: SyncInput, cwd = repoRoot) =>
+    spawnSync(process.execPath, [hookPath, 'sync-plan'], {
+      cwd,
+      input: JSON.stringify(input),
+      encoding: 'utf8',
+    });
+
+  const hookPlan = (input: SyncInput): SyncPlan => {
+    const result = runHook(input);
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    return JSON.parse(result.stdout) as SyncPlan;
+  };
+
+  const writeStrategy = (lines: string[]): string => {
+    const file = path.join(createTempDir('strategy'), 'estrategia.md');
+    fs.writeFileSync(file, ['## Tema', ...lines].join('\n'));
+    return file;
+  };
+
+  const inputForFile = (file: string): SyncInput => ({
+    docSlug: STRATEGY,
+    path: file,
+    hash: '',
+    current: null,
+    vigent: [],
+    extracted: [],
+  });
+
+  test('o estrategia.md real vira um lote de premise mais o doc e a segunda execução fica em dia', async () => {
+    const text = fs.readFileSync(path.join(repoRoot, 'docs/directives/estrategia.md'), 'utf8');
+    const count = scanPremises(text).premises.length;
+
+    const plan = hookPlan(await inputFor(DIRECTIVES, STRATEGY, text, []));
+
+    expect(plan.batches).toHaveLength(1);
+    const batch = at(plan.batches, 0);
+    expect(batch.records.map(({ type }) => type)).toEqual([
+      ...Array.from({ length: count }, () => 'premise'),
+      'doc',
+    ]);
+    await environment.ok('attach', { project: PROJECT, text });
+    await register(DIRECTIVES, batch.records, batch.key);
+    expect(hookPlan(await inputFor(DIRECTIVES, STRATEGY, text, []))).toEqual({
+      upToDate: true,
+      batches: [],
+      warnings: [],
+    });
+  }, 30_000);
+
+  test('path relativo vale a partir da raiz do repositório, com o cwd em outro diretório', () => {
+    const result = runHook(
+      { ...inputForFile('docs/directives/estrategia.md'), extracted: [] },
+      createTempDir('other-cwd'),
+    );
+
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect((JSON.parse(result.stdout) as SyncPlan).batches).toHaveLength(1);
+  }, 15_000);
+
+  test('statement de 255 code points passa, mesmo com 510 unidades UTF-16', () => {
+    const file = writeStrategy([`- \`a\`: ${'𝒳'.repeat(255)} Ver: [x](x.md)`]);
+
+    const plan = hookPlan(inputForFile(file));
+
+    expect(at(at(plan.batches, 0).records, 0).data).toEqual({ statement: '𝒳'.repeat(255) });
+  }, 15_000);
+
+  test.each([
+    ['linha malformada', ['- sem crase: linha ruim'], /- sem crase: linha ruim/],
+    [
+      'slug repetido',
+      ['- `a`: Um. Ver: [x](x.md)', '- `a`: Dois. Ver: [x](x.md)'],
+      /duplicate slug "a"/,
+    ],
+    ['statement de 256 code points', [`- \`a\`: ${'𝒳'.repeat(256)}`], /"a" has 256 code points/],
+  ])(
+    '%s sai com 2 e o motivo no stderr',
+    (_name, lines, reason) => {
+      const result = runHook(inputForFile(writeStrategy(lines)));
+
+      expect(result.status).toBe(2);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toMatch(reason);
+    },
+    15_000,
+  );
 });
 
 describe('hashes das definições', () => {
