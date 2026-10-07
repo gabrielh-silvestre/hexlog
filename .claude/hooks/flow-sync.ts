@@ -1,12 +1,23 @@
 // Planejador de sync dos documentos de `docs/directives/` com o processo de diretrizes. Puro: sem
 // I/O e sem dependência, para a skill executar o mesmo código que a spec ensaia. O que grava e o
 // que lê do servidor é da skill; aqui só se decide quais registros entram, em que lotes.
+//
+// O documento `estrategia` (`STRATEGY_DOC`) carrega premissas, não regras técnicas: cada regra
+// extraída vira um registro `premise` em vez de `directive`. O mapeamento é este:
+// - `rule` é o `statement` da premissa; `data` é só `{ statement }`, sem `section` nem `source`;
+// - `section` e `closes` são ignorados (o tema `##` não vai ao registro e a premissa nunca grava
+//   `closes-gap`);
+// - a igualdade com a vigente compara só o `statement`, e a relação do registro é só o `supersedes`
+//   da vigente;
+// - o `doc` do documento segue como nos demais, com `source` e `revokes` das premissas sumidas.
+// Quem consulta o vigente de `estrategia` lê `premise` e devolve `data.statement` como `rule`.
 import { createHash } from 'node:crypto';
 
 const BATCH_MAX = 50;
 // Um registro leva até 100 relações; o `doc` carrega um `supersedes` e um `revokes` por regra sumida.
 const REVOKES_MAX = 99;
 const CLOSES_GAP = 'closes-gap';
+const STRATEGY_DOC = 'estrategia';
 
 /** Relação de saída de um registro vigente, como o `query` a devolve. */
 export type OutRelation = { as?: string; kind: string; to: string };
@@ -49,7 +60,7 @@ export type PlannedRelation = { to: string; kind?: string; as?: string };
 
 /** Registro no formato de entrada do `register`. */
 export type PlannedRecord = {
-  type: 'directive' | 'doc';
+  type: 'directive' | 'premise' | 'doc';
   target: string;
   data: Record<string, string | boolean>;
   relations: PlannedRelation[];
@@ -100,6 +111,21 @@ function relationsOf(previous: VigentRule | undefined, closes: string[]): Planne
 function directiveRecords(input: SyncInput, extracted: ExtractedRule[]): PlannedRecord[] {
   const { docSlug, hash, vigent } = input;
   const bySlug = new Map(vigent.map((rule) => [slugOf(docSlug, rule), rule]));
+
+  if (docSlug === STRATEGY_DOC) {
+    return extracted.flatMap(({ slug, rule }): PlannedRecord[] => {
+      const previous = bySlug.get(slug);
+      if (previous?.rule === rule) return [];
+      return [
+        {
+          type: 'premise',
+          target: `${targetPrefix(docSlug)}${slug}`,
+          data: { statement: rule },
+          relations: previous ? [{ kind: 'supersedes', to: previous.id }] : [],
+        },
+      ];
+    });
+  }
 
   return extracted.flatMap(({ slug, rule, section, closes = [] }): PlannedRecord[] => {
     const previous = bySlug.get(slug);

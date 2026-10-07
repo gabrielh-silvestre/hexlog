@@ -18,7 +18,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `README.md` | Porta de entrada enxuta: o que é, instalação, exemplo mínimo, como funciona e índice de `docs/` (a referência de tools, dados, migração e instalação avançada mora em `docs/`) |
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
-| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 7 tipos (`types/*.json`, JSON Schema cru), 4 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. O fluxo novo substitui o setup da F9 (passo 8): não há `.hexlog/flow.md`, o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
+| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 9 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. O fluxo novo substitui o setup da F9 (passo 8): não há `.hexlog/flow.md`, o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
 
 ## Subdirectories
 | Directory | Purpose |
@@ -27,7 +27,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
 | `scripts/` | Build esbuild, instalador e scripts read-only de insights, export e timeline (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio sobre o bundle real e pacote (see `test/AGENTS.md`) |
-| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0010) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
+| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0011) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
 | `skills/` | As skills de `skills/`, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e consulta registros e gates contra esse mapa) |
 
 ## Dependencies
@@ -62,3 +62,4 @@ Regras que valem para o repositório todo, importadas pelo `CLAUDE.md`:
 - [qualidade-e-testes.md](docs/directives/qualidade-e-testes.md): comandos antes de concluir, orçamentos e convenções dos specs
 - [documentacao.md](docs/directives/documentacao.md): ADR e doc vivo, como citar, `pesquisa/` congelado, famílias de ID
 - [instalacao-e-hooks.md](docs/directives/instalacao-e-hooks.md): instalador, hook de isolamento e hooks do fluxo
+- [estrategia.md](docs/directives/estrategia.md): premissas atemporais do produto, validadas pelo dono; cada decisão se apoia em pelo menos uma

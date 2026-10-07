@@ -4,7 +4,7 @@
 # docs
 
 ## Purpose
-Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0010, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
+Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0011, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
 
 ## Key Files
 | File | Description |
@@ -25,12 +25,12 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 ## Subdirectories
 | Directory | Description |
 |---|---|
-| `directives/` | Docs vivos de regras (convenções, fronteiras, invariantes, qualidade e testes, documentação, instalação e hooks) e ADRs 0007 a 0010 (see `directives/AGENTS.md`) |
+| `directives/` | Docs vivos de regras (convenções, fronteiras, invariantes, qualidade e testes, documentação, instalação e hooks, fluxo e estratégia) e ADRs 0007 a 0011 (see `directives/AGENTS.md`) |
 | `pesquisa/` | Pesquisa de libs e padrões (17 frentes) que embasou as decisões do 0.x (see `pesquisa/AGENTS.md`) |
 
 ## Dependencies
 ### Internal
-Os ADRs de `directives/` registram as decisões da arquitetura de `src/` (domínio, serviços, ferramental) e a camada sobre o OMC, e o formato do log. A fonte da verdade do estado atual é o código.
+Os ADRs de `directives/` registram as decisões da arquitetura de `src/` (domínio, serviços, ferramental) a camada sobre o OMC e a camada estratégica de premissas (ADR 0011 e `directives/estrategia.md`), e o formato do log. A fonte da verdade do estado atual é o código.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
 
