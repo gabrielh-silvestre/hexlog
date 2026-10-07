@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parse, modify, applyEdits, type ModificationOptions } from 'jsonc-parser';
 import { parse as shellQuoteParse, quote as shellQuoteQuote } from 'shell-quote';
-import { isEqual, isNil, isString, isSubset, isUndefined } from 'es-toolkit';
+import { isEqual, isNil, isPlainObject, isString, isSubset, isUndefined } from 'es-toolkit';
 import { invalidInput } from './errors.ts';
 
 export type ExpectedRules = {
@@ -108,20 +108,30 @@ export function denyOf(settingsData: unknown): unknown[] {
   return Array.isArray(deny) ? deny : [];
 }
 
-/** Acrescenta `value` ao array em `jsonPath`; recusa (`INVALID_INPUT`) um valor existente que não seja array. */
-function appendToArray(text: string, jsonPath: (string | number)[], value: unknown): string {
-  const current = jsonPath.reduce<unknown>(
-    (node, key) => (node as Record<string | number, unknown> | undefined)?.[key],
-    parse(text),
+/** `INVALID_INPUT` de um valor existente do tipo errado em `jsonPath` (a raiz é o caminho vazio). */
+function wrongType(jsonPath: (string | number)[], code: string, expectedType: string) {
+  // O instalador imprime só `error.message`, então o caminho vai nela.
+  return invalidInput(
+    jsonPath.map((key) => `/${key}`).join(''),
+    code,
+    `settings.json: ${jsonPath.join('.') || '<root>'} is not ${expectedType}`,
   );
-  if (!isUndefined(current) && !Array.isArray(current)) {
-    // O instalador imprime só `error.message`, então o caminho vai nela.
-    throw invalidInput(
-      `/${jsonPath.join('/')}`,
-      'not-array',
-      `settings.json: ${jsonPath.join('.')} is not an array`,
-    );
+}
+
+/**
+ * Acrescenta `value` ao array em `jsonPath`; recusa (`INVALID_INPUT`) um ancestral existente que não
+ * seja objeto ou um destino existente que não seja array, antes de qualquer escrita.
+ */
+function appendToArray(text: string, jsonPath: (string | number)[], value: unknown): string {
+  let node: unknown = parse(text);
+  for (const [depth, key] of jsonPath.entries()) {
+    if (!isUndefined(node) && !isPlainObject(node)) {
+      throw wrongType(jsonPath.slice(0, depth), 'not-object', 'an object');
+    }
+    node = (node as Record<string | number, unknown> | undefined)?.[key];
   }
+  if (!isUndefined(node) && !Array.isArray(node))
+    throw wrongType(jsonPath, 'not-array', 'an array');
   const edits = modify(text, [...jsonPath, -1], value, FORMATTING_OPTIONS);
   return applyEdits(text, edits);
 }
@@ -198,6 +208,8 @@ export type FoundHookEntry = {
   file: string;
   matcher: unknown;
   type: unknown;
+  /** Todos os hooks da entrada, o do hexlog inclusive (em `hookIndex`). */
+  entryHooks: object[];
 };
 
 /** Percorre `hooks.PreToolUse` procurando a entrada do hook do hexlog, em qualquer versão instalada. */
@@ -215,7 +227,8 @@ export function findHookEntry(settingsData: unknown, libDir: string): FoundHookE
       if (isNil(pair)) continue;
       const [exec, file] = pair;
       if (isHexlogHookFile(file, libDir)) {
-        return { entryIndex, hookIndex, exec, file, matcher: entry.matcher, type: hook.type };
+        const { matcher } = entry;
+        return { entryIndex, hookIndex, exec, file, matcher, type: hook.type, entryHooks: hooks };
       }
     }
   }
@@ -224,8 +237,9 @@ export function findHookEntry(settingsData: unknown, libDir: string): FoundHookE
 
 /**
  * Insere ou corrige (sem duplicar) a entrada do hook do hexlog em `hooks.PreToolUse`. Regrava no
- * lugar só o campo errado (`command`, `matcher` ou `type`): a entrada pode dividir `hooks` com hooks
- * alheios, que ficam intactos.
+ * lugar só o campo errado (`command`, `matcher` ou `type`). A exceção é o `matcher` errado numa
+ * entrada que divide `hooks` com hooks alheios: o `matcher` é da entrada inteira, então o hook do
+ * hexlog sai para uma entrada própria `^Bash$` e a original, com os outros hooks, fica como estava.
  */
 function applyHook(settingsText: string, expected: ExpectedRules): string {
   const found = findHookEntry(parse(settingsText), expected.libDir);
@@ -238,6 +252,21 @@ function applyHook(settingsText: string, expected: ExpectedRules): string {
   }
   const entryPath = ['hooks', 'PreToolUse', found.entryIndex];
   const hookPath = [...entryPath, 'hooks', found.hookIndex];
+  if (found.matcher !== HOOK_MATCHER && found.entryHooks.length > 1) {
+    const others = modify(
+      settingsText,
+      [...entryPath, 'hooks'],
+      found.entryHooks.filter((_, index) => index !== found.hookIndex),
+      FORMATTING_OPTIONS,
+    );
+    const ownEntry = {
+      matcher: HOOK_MATCHER,
+      hooks: [
+        { ...found.entryHooks[found.hookIndex], type: HOOK_TYPE, command: expected.hookCommand },
+      ],
+    };
+    return appendToArray(applyEdits(settingsText, others), ['hooks', 'PreToolUse'], ownEntry);
+  }
   const repairs: [(string | number)[], string][] = [];
   if (found.exec !== expected.execPath || found.file !== expected.hookFile) {
     repairs.push([[...hookPath, 'command'], expected.hookCommand]);

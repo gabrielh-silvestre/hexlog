@@ -6,28 +6,43 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as shellQuoteParse, type ParseEntry } from 'shell-quote';
-import { isNil, isString, take, takeWhile } from 'es-toolkit';
+import { isNil, isString, sumBy, take, takeWhile } from 'es-toolkit';
 import { dataDir } from '../src/directory.ts';
 
-// Segmento com `**` ou uma chave `{a/b,c}` com barra dentro: o `path.matchesGlob`
-// não expande `**` até a profundidade de D, e o truncamento por `sep` corta a
-// chave no meio (R-6, Critic iter2-1) — por isso o prefixo literal decide.
-const SLASH_KEY_REGEX = /\{[^}]*\/[^}]*\}/;
 const GLOB_CHARS_REGEX = /[*?[{]/;
-// Tetos de um token com caractere de glob, aplicados antes da `SLASH_KEY_REGEX`: sem eles, um
-// `[`×4096 leva 17 s na regex e o hook morre no timeout de 10 s, liberando o comando. Texto sem
-// glob não é limitado. Falso positivo aceito: um token legítimo acima do teto também é negado.
+// Grupo de chave sem chave aninhada: o `path.matchesGlob` expande o produto das chaves e das
+// faixas (`{1..9999999}`, `{a,b,c,d}`×7 passam de 10 s), então o grupo vira `*` antes do casamento.
+const BRACE_GROUP_REGEX = /\{[^{}]*\}/g;
+const STAR_RUN_REGEX = /\*{2,}/g;
+// Tetos de um token com caractere de glob, aplicados antes de qualquer varredura do token: sem
+// eles, um `[`×4096 leva segundos e o hook morre no timeout de 10 s, liberando o comando. Texto
+// sem glob não é limitado. Falso positivo aceito: um token legítimo acima do teto também é negado.
 const MAX_GLOB_TOKEN_LENGTH = 4096;
 const MAX_BRACES = 8;
 const MAX_BRACKETS = 64;
-const COMPOUND_OPERATORS = new Set(['&&', '||', ';', '|']);
+// Orçamento por comando: o teto acima vale por token, e centenas de tokens abaixo dele ainda
+// somam o tempo do timeout. A soma dos tamanhos dos tokens com glob também é limitada.
+const MAX_GLOB_TOTAL_LENGTH = 16384;
+const COMPOUND_OPERATORS = new Set(['&&', '||', ';', '|', '&', '|&']);
 const MAX_MATCHED_LENGTH = 200;
+const CONTROL_CHARS_REGEX = /\p{Cc}/gu;
 // `~` no início do token ou logo após `=` (`--opt=~/x`); shell-quote não expande til.
 const TILDE_REGEX = /(^|=)~(?=\/|$)/g;
 
+// Caracteres de controle do trecho viram `?` para não chegarem ao terminal pelo stderr.
+const matchedSuffix = (matched?: string): string =>
+  isNil(matched)
+    ? ''
+    : ` Matched: ${matched.replace(CONTROL_CHARS_REGEX, '?').slice(0, MAX_MATCHED_LENGTH)}`;
+
 const denialMessage = (d: string, matched?: string): string =>
   `hexlog: ${d} is only accessible through the hexlog MCP tools (list, query, verify_chain, read_attachment, evaluate_gate, describe_type).` +
-  (isNil(matched) ? '' : ` Matched: ${matched.slice(0, MAX_MATCHED_LENGTH)}`);
+  matchedSuffix(matched);
+
+// Negação por comando que o hook não consegue decidir: não cita `D` a quem não o citou.
+const undecidableMessage = (matched?: string): string =>
+  'hexlog: the command was denied because it could not be checked against the hexlog data directory (it does not parse, or its glob tokens exceed the safety limits). Simplify it.' +
+  matchedSuffix(matched);
 
 type RawInput = {
   tool_name?: unknown;
@@ -101,23 +116,48 @@ function exceedsGlobLimits(token: string): boolean {
   );
 }
 
-/** Um token isolado alcança `D` (por igualdade, prefixo ou glob compatível)? */
-function tokenReachesDirectory(
-  rawToken: string,
-  cwd: string,
-  dataDir: string,
-  home: string,
-): boolean {
-  const token = expandTilde(rawToken, home);
-  if (token.includes(dataDir)) return true;
-  if (exceedsGlobLimits(token)) return true;
+/** Orçamento por comando: a soma dos tokens com glob passou do teto? */
+function exceedsGlobBudget(tokens: string[]): boolean {
+  return (
+    sumBy(
+      tokens.filter((token) => GLOB_CHARS_REGEX.test(token)),
+      (token) => token.length,
+    ) > MAX_GLOB_TOTAL_LENGTH
+  );
+}
 
+/** Chave `{a/b,c}`: há barra entre um `{` e o primeiro `}` seguinte. Varredura linear, sem regex. */
+function hasSlashInBraces(token: string): boolean {
+  for (let open = token.indexOf('{'); open !== -1; open = token.indexOf('{', open + 1)) {
+    const close = token.indexOf('}', open);
+    if (close === -1) return false;
+    const slash = token.indexOf('/', open);
+    if (slash !== -1 && slash < close) return true;
+  }
+  return false;
+}
+
+/** Cada grupo de chave vira `*`, um superconjunto das alternativas e das faixas. */
+function collapseBraceGroups(pattern: string): string {
+  let current = pattern;
+  let previous: string;
+  do {
+    previous = current;
+    current = previous.replace(BRACE_GROUP_REGEX, '*');
+  } while (current !== previous);
+  return current.replace(STAR_RUN_REGEX, '*');
+}
+
+/** Um token já expandido por til alcança `D` (por igualdade, prefixo ou glob compatível)? */
+function tokenReachesDirectory(token: string, cwd: string, dataDir: string): boolean {
   const sep = path.sep;
   const resolvedPath = path.resolve(cwd, token);
   if (resolvedPath === dataDir || resolvedPath.startsWith(dataDir + sep)) return true;
 
-  const hasSlashKey = SLASH_KEY_REGEX.test(token);
-  if (token.includes('**') || hasSlashKey) {
+  // Segmento com `**` ou uma chave `{a/b,c}` com barra dentro: o `path.matchesGlob` não expande
+  // `**` até a profundidade de D, e o truncamento por `sep` corta a chave no meio (R-6,
+  // Critic iter2-1) — por isso o prefixo literal decide.
+  if (token.includes('**') || hasSlashInBraces(token)) {
     // prefixo literal: os segmentos até o primeiro com caractere de glob (todos, se nenhum)
     const prefix = takeWhile(
       resolvedPath.split(sep),
@@ -131,26 +171,39 @@ function tokenReachesDirectory(
   if (GLOB_CHARS_REGEX.test(token)) {
     const dirDepth = dataDir.split(sep).length;
     const truncated = take(resolvedPath.split(sep), dirDepth).join(sep);
-    return path.matchesGlob(dataDir, truncated);
+    return path.matchesGlob(dataDir, collapseBraceGroups(truncated));
   }
 
   return false;
 }
 
-/** O primeiro token que alcança `D`; um token que lança também conta como alcance (nega). */
-function findReachingToken(
+type TokenClass = 'reaches' | 'undecidable' | 'clear';
+
+/** Token acima dos tetos ou cujo casamento lança é `undecidable` (nega, sem citar `D`). */
+function classifyToken(rawToken: string, cwd: string, dataDir: string, home: string): TokenClass {
+  try {
+    const token = expandTilde(rawToken, home);
+    if (token.includes(dataDir)) return 'reaches';
+    if (exceedsGlobLimits(token)) return 'undecidable';
+    return tokenReachesDirectory(token, cwd, dataDir) ? 'reaches' : 'clear';
+  } catch {
+    return 'undecidable';
+  }
+}
+
+/** O primeiro token que bloqueia o comando; `token` falta quando o orçamento do comando estourou. */
+function findBlockingToken(
   tokens: string[],
   cwd: string,
   dataDir: string,
   home: string,
-): string | undefined {
-  return tokens.find((token) => {
-    try {
-      return tokenReachesDirectory(token, cwd, dataDir, home);
-    } catch {
-      return true;
-    }
-  });
+): { token?: string; tokenClass: Exclude<TokenClass, 'clear'> } | undefined {
+  if (exceedsGlobBudget(tokens)) return { tokenClass: 'undecidable' };
+  for (const token of tokens) {
+    const tokenClass = classifyToken(token, cwd, dataDir, home);
+    if (tokenClass !== 'clear') return { token, tokenClass };
+  }
+  return undefined;
 }
 
 /** Em comando composto, o segmento que casou (`cat <D>/x`); comando simples não cita trecho. */
@@ -175,10 +228,7 @@ function decide(
   const home = os.homedir();
   const cwd = extractCwd(input) ?? defaultCwd;
 
-  const denied = (segments: string[][] | undefined, isMatch: (token: string) => boolean) => ({
-    deny: true as const,
-    reason: denialMessage(dataDirPath, matchedSegment(segments, isMatch)),
-  });
+  const denied = (reason: string) => ({ deny: true as const, reason });
   const segmentsOf = (): string[][] | undefined => {
     const tokens = tryTokenize(command, home, env);
     return isNil(tokens) ? undefined : splitSegments(tokens);
@@ -186,15 +236,27 @@ function decide(
 
   // A menção literal decide antes de qualquer tokenização: o resto pode lançar ou demorar.
   if (command.includes(dataDirPath)) {
-    return denied(segmentsOf(), (token) => token.includes(dataDirPath));
+    return denied(
+      denialMessage(
+        dataDirPath,
+        matchedSegment(segmentsOf(), (token) => token.includes(dataDirPath)),
+      ),
+    );
   }
 
-  // Parse que lança (`${}`): o shell também recusa o comando, então nega em vez de liberar.
+  // Parse que lança (`${}`): nega em vez de liberar, mesmo que o shell aceite o comando (heredoc
+  // de delimitador citado com `${}` no corpo é falso positivo aceito).
   const segments = segmentsOf();
-  if (isNil(segments)) return denied(undefined, () => false);
+  if (isNil(segments)) return denied(undecidableMessage());
 
-  const reaching = findReachingToken(segments.flat(), cwd, dataDirPath, home);
-  return isNil(reaching) ? { deny: false } : denied(segments, (token) => token === reaching);
+  const blocking = findBlockingToken(segments.flat(), cwd, dataDirPath, home);
+  if (isNil(blocking)) return { deny: false };
+  const matched = matchedSegment(segments, (token) => token === blocking.token);
+  return denied(
+    blocking.tokenClass === 'reaches'
+      ? denialMessage(dataDirPath, matched)
+      : undecidableMessage(matched),
+  );
 }
 
 /** `import.meta.main` não sobrevive ao bundle do esbuild: compara o caminho do entrypoint. */

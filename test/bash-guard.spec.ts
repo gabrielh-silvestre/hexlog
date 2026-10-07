@@ -115,6 +115,10 @@ const denyCases: I4Case[] = [
   { name: 'glob hex*', command: 'cat ~/.local/share/hex*/p/r/events.jsonl' },
   { name: 'glob hexl?g', command: 'cat ~/.local/share/hexl?g' },
   { name: 'brace {hexlog,x}', command: 'cat ~/.local/share/{hexlog,x}' },
+  {
+    name: 'brace range inside the name (hex{a..z}log)',
+    command: 'cat ~/.local/share/hex{a..z}log',
+  },
   { name: 'character class [h]exlog', command: 'cat ~/.local/share/[h]exlog' },
   {
     name: 'glob * with cwd in D parent dir',
@@ -152,6 +156,9 @@ const xdgCase: I4Case = {
 
 const allowCases: I4Case[] = [
   { name: 'ls in D parent dir', command: 'ls ~/.local/share' },
+  { name: 'numeric brace range far from D', command: 'ls {1..10000}' },
+  { name: 'awk program with braces', command: "awk '{print $1}' file.txt" },
+  { name: 'plain ls -la', command: 'ls -la' },
   { name: 'ls with shallow glob in D parent dir', command: 'ls ~/.local/*' },
   { name: 'find starting from ~ without citing D', command: "find ~ -name '*.jsonl'" },
   { name: 'Read outside D (~/.claude/projects)', command: 'cat ~/.claude/projects/x/y.jsonl' },
@@ -290,26 +297,68 @@ describe('bash-guard (I7): entrada inválida falha aberto', () => {
 });
 
 describe('bash-guard (U1): hostile tokens are denied, not released', () => {
-  const hostileCases: { name: string; command: string }[] = [
+  const reachesMessage = 'is only accessible through the hexlog MCP tools';
+  const undecidableMessage = 'could not be checked against the hexlog data directory';
+  // Trecho final com `~`: o `includes` literal de D não o vê, então só o teto ou o orçamento
+  // sob teste decide antes dele (sem o teto, o hook estoura o timeout e o status não é 2).
+  const homeTail = '; cat ~/.local/share/hexlog/x';
+  const hostileCases: { name: string; command: string; stderr: string }[] = [
     {
-      name: 'denies a 64 KiB token of "?" followed by a command citing D',
-      get command() {
-        return `cat ${'?'.repeat(65536)}; cat ${dataDir}/x`;
-      },
+      name: 'denies a 64 KiB token of "?" followed by a command reaching D through "~"',
+      command: `cat ${'?'.repeat(65536)}${homeTail}`,
+      stderr: undecidableMessage,
     },
     {
       name: 'denies a 64 KiB token of "[" without hitting the hook timeout',
       command: `cat ${'['.repeat(65536)}`,
+      stderr: undecidableMessage,
     },
     {
       name: 'denies a token with 14 brace groups without hitting the hook timeout',
       command: `cat ${'{a,b}'.repeat(14)}`,
+      stderr: undecidableMessage,
     },
-    { name: 'denies a 4097-character glob token', command: `cat ${'?'.repeat(4097)}` },
-    { name: 'denies a token with 65 opening brackets', command: `cat ${'['.repeat(65)}` },
+    {
+      name: 'denies a 4097-character glob token',
+      command: `cat ${'?'.repeat(4097)}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a token with 65 opening brackets',
+      command: `cat ${'['.repeat(65)}`,
+      stderr: undecidableMessage,
+    },
     {
       name: 'denies a command shell-quote cannot parse even without D',
       command: 'echo ${}; cat ~/.local/share/hex""log/x',
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a numeric brace range followed by a command reaching D through "~"',
+      command: `cat {1..9999999}${homeTail}`,
+      stderr: reachesMessage,
+    },
+    {
+      name: 'denies 7 groups of {a,b,c,d} followed by a command reaching D through "~"',
+      command: `ls ${'{a,b,c,d}'.repeat(7)}${homeTail}`,
+      stderr: reachesMessage,
+    },
+    {
+      name: 'denies 100 tokens of {1..30}{1..30} followed by a command reaching D through "~"',
+      command: `ls ${Array(100).fill('{1..30}{1..30}').join(' ')}${homeTail}`,
+      stderr: reachesMessage,
+    },
+    {
+      name: 'denies 500 tokens of "{" plus 4000 "/" (sum of glob tokens above the budget)',
+      command: `ls ${Array(500)
+        .fill(`{${'/'.repeat(4000)}`)
+        .join(' ')}${homeTail}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies 5000 small glob tokens (sum above the budget) even without citing D',
+      command: `ls ${Array(5000).fill('*a*a*a*a*a*b').join(' ')}`,
+      stderr: undecidableMessage,
     },
   ];
 
@@ -317,9 +366,14 @@ describe('bash-guard (U1): hostile tokens are denied, not released', () => {
     test(`${testCase.name}`, () => {
       const result = runHook(testCase, envBase);
       expect(result.status).toBe(2);
-      expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
+      expect(result.stderr).toContain(testCase.stderr);
     }, 15_000);
   }
+
+  test('does not mention D when the denial is for an undecidable command', () => {
+    const result = runHook({ command: `cat ${'['.repeat(65)}` }, envBase);
+    expect(result.stderr).not.toContain(dataDir);
+  }, 15_000);
 
   test('allows a 5000-character token without glob characters', () => {
     const result = runHook({ command: `echo ${'a'.repeat(5000)}` }, envBase);
@@ -333,25 +387,43 @@ describe('bash-guard (#45): a mensagem cita o trecho que casou', () => {
     const result = runHook({ command: `ls /tmp && cat ${dataDir}/x` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(new RegExp(`Matched: cat ${escapeRegExp(dataDir)}/x$`));
-  });
+  }, 15_000);
 
   test('names the rejected token when a token is oversized', () => {
     const token = '['.repeat(100);
     const result = runHook({ command: `true ; cat ${token}` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(new RegExp(`Matched: cat ${escapeRegExp(token)}$`));
-  });
+  }, 15_000);
+
+  test.each(['&', '|&'])(
+    'treats "%s" as a segment separator',
+    (operator) => {
+      const token = '['.repeat(100);
+      const result = runHook({ command: `true ${operator} cat ${token}` }, envBase);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(new RegExp(`Matched: cat ${escapeRegExp(token)}$`));
+    },
+    15_000,
+  );
+
+  test('replaces control characters in the matched segment with "?"', () => {
+    const token = `${'['.repeat(100)}\u0007\u001b`;
+    const result = runHook({ command: `true ; cat ${token}` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/Matched: cat \[+\?\?$/);
+  }, 15_000);
 
   test('truncates the matched segment to 200 characters', () => {
     const result = runHook({ command: `true ; cat ${'['.repeat(300)}` }, envBase);
     expect(result.stderr).toMatch(/Matched: cat \[+$/);
     expect(result.stderr.split('Matched: ')[1]).toHaveLength(200);
-  });
+  }, 15_000);
 
   test('does not add a matched segment to a simple command', () => {
     const result = runHook({ command: `cat ${dataDir}/x` }, envBase);
     expect(result.stderr).not.toContain('Matched:');
-  });
+  }, 15_000);
 });
 
 describe('B1(b): hook empacotado pelo esbuild', () => {

@@ -357,6 +357,78 @@ describe('M19/M1: settings with the wrong shape or a tampered hook entry', () =>
     const first = applyGuard(tampered, expected, noneExist).text;
     expect(applyGuard(first, expected, noneExist).text).toBe(first);
   });
+
+  describe('hexlog hook sharing its entry with foreign hooks', () => {
+    const foreignHook = { type: HOOK_TYPE, command: 'foreign-hook --flag', timeout: 5 };
+    const hexlogHook = { type: HOOK_TYPE, command: expected.hookCommand, timeout: 10 };
+
+    function sharedSettings(entry: object): string {
+      return `{
+  // comment that must survive
+  "permissions": { "deny": ${JSON.stringify([
+    expected.denyReadDir,
+    expected.denyRead,
+    expected.denyEdit,
+    expected.denyEditLib,
+  ])} },
+  "hooks": { "PreToolUse": [${JSON.stringify(entry)}] }
+}`;
+    }
+
+    function preToolUseOf(text: string): unknown {
+      return (parseJsonc(text) as { hooks: { PreToolUse: unknown } }).hooks.PreToolUse;
+    }
+
+    test.each([
+      ['a wider matcher', { matcher: 'Bash|Edit|Write', hooks: [foreignHook, hexlogHook] }],
+      ['no matcher', { hooks: [hexlogHook, foreignHook] }],
+    ])(
+      'moves the hexlog hook to its own ^Bash$ entry and keeps the foreign entry untouched (%s)',
+      (_label, entry) => {
+        const settings = sharedSettings(entry);
+        expect(verify(settings).missing).toEqual(['hook-matcher']);
+
+        const repaired = applyGuard(settings, expected, noneExist).text;
+
+        expect(preToolUseOf(repaired)).toEqual([
+          { ...entry, hooks: [foreignHook] },
+          { matcher: '^Bash$', hooks: [hexlogHook] },
+        ]);
+        expect(repaired).toContain('// comment that must survive');
+        expect(verify(repaired)).toEqual({ ok: true, missing: [] });
+        expect(applyGuard(repaired, expected, noneExist).text).toBe(repaired);
+      },
+    );
+
+    test('leaves a shared entry alone when its matcher is already ^Bash$', () => {
+      const settings = sharedSettings({ matcher: '^Bash$', hooks: [foreignHook, hexlogHook] });
+      expect(applyGuard(settings, expected, noneExist).text).toBe(settings);
+    });
+
+    test('fixes the matcher in place when the hexlog hook is the only one in the entry', () => {
+      const settings = sharedSettings({ matcher: 'Bash|Edit', hooks: [hexlogHook] });
+      const repaired = applyGuard(settings, expected, noneExist).text;
+      expect(preToolUseOf(repaired)).toEqual([{ matcher: '^Bash$', hooks: [hexlogHook] }]);
+    });
+  });
+
+  describe('settings.json whose ancestors are not objects', () => {
+    test.each([
+      ['permissions is a string', '{"permissions":"x"}', '/permissions'],
+      ['permissions is an array', '{"permissions":[]}', '/permissions'],
+      ['permissions is null', '{"permissions":null}', '/permissions'],
+      ['hooks is a string', '{"permissions":{"deny":[]},"hooks":"x"}', '/hooks'],
+      ['the root is an array', '[]', ''],
+      ['the root is null', 'null', ''],
+    ])('applyGuard throws INVALID_INPUT naming the path when %s', (_label, settings, pointer) => {
+      const error = captureError(() => applyGuard(settings, expected, noneExist));
+      expect(error.code).toBe('INVALID_INPUT');
+      expect(error.details).toEqual([
+        { path: pointer, code: 'not-object', message: error.message },
+      ]);
+      expect(error.message).toContain(pointer === '' ? '<root>' : pointer.slice(1));
+    });
+  });
 });
 
 describe('I6: as 4 regras de deny exatas (QN4)', () => {
