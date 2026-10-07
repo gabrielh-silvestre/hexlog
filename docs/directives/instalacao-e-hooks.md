@@ -12,8 +12,10 @@
 ## Hook de isolamento (`hook/bash-guard.ts`)
 
 - É buildado pelo esbuild (entrada `bash-guard`, saída `dist/bash-guard.mjs`); o `.mjs`, não a working tree, é o que o instalador copia e registra em `~/.claude/settings.json` com `matcher: '^Bash$'`.
-- Só tokeniza o comando recebido; nunca executa nada. Nega (exit 2) o que alcança o diretório de dados e **falha aberto** em qualquer exceção, `node` ausente ou entrada inválida.
-- A mensagem de negação é um literal (`hook/bash-guard.ts#denialMessage`) e cita os nomes das tools de leitura; trocar uma tool de nome troca a mensagem junto ([ADR 0009](adr-0009-ferramental.md), item 16).
+- Só tokeniza o comando recebido; nunca executa nada. Nega (exit 2) o que alcança o diretório de dados.
+- Nega também o que não consegue decidir (`hook/bash-guard.ts#decide`): o token cujo casamento lança, o comando que o `shell-quote` não parseia (`${}`) e o token com caractere de glob acima dos tetos `MAX_GLOB_TOKEN_LENGTH` (4096), `MAX_BRACES` (8) e `MAX_BRACKETS` (64). O teto existe porque uma regex sobre token hostil passa do `timeout` do hook e libera o comando.
+- **Falha aberto** só para entrada que não é um comando Bash (stdin vazio, JSON inválido, `tool_name` diferente de `Bash`) e para `node` ausente.
+- A mensagem de negação é um literal (`hook/bash-guard.ts#denialMessage`) e cita os nomes das tools de leitura; trocar uma tool de nome troca a mensagem junto ([ADR 0009](adr-0009-ferramental.md), item 16). Em comando composto (`&&`, `||`, `;`, `|`) ela acrescenta ` Matched: <segmento>` (até 200 caracteres).
 - O hook cobre o acesso a `<D>` por Bash. Não cobre outras ferramentas: o limite de isolamento está em `docs/dados.md`.
 
 ## Hooks do projeto para o fluxo

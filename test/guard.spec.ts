@@ -32,8 +32,9 @@ import {
   verifyInstallation,
   type Bundles,
 } from '../src/installation.ts';
-import { at, createTempDir, parseJson } from './helpers.ts';
+import { at, captureError, createTempDir, parseJson } from './helpers.ts';
 
+const HOOK_TYPE = 'command';
 const repoRoot = path.resolve(__dirname, '..');
 const installScript = path.join(repoRoot, 'scripts/install.ts');
 
@@ -266,6 +267,95 @@ describe('I5: applyGuard idempotente e não intrusivo', () => {
       artifactModified: false,
     });
     expect(verification.missing).toContain('hook');
+  });
+});
+
+describe('M19/M1: settings with the wrong shape or a tampered hook entry', () => {
+  const home = '/home/test-user';
+  const D = path.join(home, '.local', 'share', 'hexlog');
+  const expected = expectedRules(D, home, '/usr/bin/node', '0.1.0');
+  const claudeJson = buildFullClaudeJson(expected);
+
+  function verify(settingsText: string) {
+    return verifyGuard({
+      settingsText,
+      claudeJsonText: claudeJson,
+      expected,
+      exists: alwaysExists,
+      runHook: simulatedRunHook,
+      artifactModified: false,
+    });
+  }
+
+  function tamperedSettings(entry: { matcher: string; type: string }): string {
+    return JSON.stringify({
+      permissions: {
+        allow: [],
+        deny: [expected.denyReadDir, expected.denyRead, expected.denyEdit, expected.denyEditLib],
+      },
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: entry.matcher,
+            hooks: [{ type: entry.type, command: expected.hookCommand, timeout: 10 }],
+          },
+        ],
+      },
+    });
+  }
+
+  test('applyGuard throws HexlogError INVALID_INPUT naming /permissions/deny when deny is an object', () => {
+    const error = captureError(() =>
+      applyGuard('{ "permissions": { "deny": {} } }', expected, noneExist),
+    );
+    expect(error.code).toBe('INVALID_INPUT');
+    expect(error.message).toContain('permissions.deny');
+    expect(error.details).toEqual([
+      { path: '/permissions/deny', code: 'not-array', message: error.message },
+    ]);
+  });
+
+  test('applyGuard throws HexlogError INVALID_INPUT naming /hooks/PreToolUse when PreToolUse is a string', () => {
+    const settings = JSON.stringify({ permissions: { deny: [] }, hooks: { PreToolUse: 'x' } });
+    const error = captureError(() => applyGuard(settings, expected, noneExist));
+    expect(error.code).toBe('INVALID_INPUT');
+    expect(error.message).toContain('hooks.PreToolUse');
+    expect(error.details[0]?.path).toBe('/hooks/PreToolUse');
+  });
+
+  test('verifyGuard reports every deny rule as missing instead of throwing when deny is not an array', () => {
+    const verification = verify(JSON.stringify({ permissions: { deny: 'x' } }));
+    expect(verification.missing).toEqual(
+      expect.arrayContaining(['deny-read-dir', 'deny-read', 'deny-edit', 'deny-edit-lib', 'hook']),
+    );
+  });
+
+  test('verifyGuard reports hook-matcher when the hexlog entry matcher was changed', () => {
+    const verification = verify(tamperedSettings({ matcher: '^Edit$', type: HOOK_TYPE }));
+    expect(verification.missing).toEqual(['hook-matcher']);
+  });
+
+  test('verifyGuard reports hook-matcher when the hook type was changed', () => {
+    const verification = verify(tamperedSettings({ matcher: '^Bash$', type: 'prompt' }));
+    expect(verification.missing).toEqual(['hook-matcher']);
+  });
+
+  test('applyGuard repairs a tampered matcher and type in place without duplicating the entry', () => {
+    const tampered = tamperedSettings({ matcher: '^Edit$', type: 'prompt' });
+    const repaired = applyGuard(tampered, expected, noneExist).text;
+    const data = parseJson(SettingsSchema, repaired);
+    expect(data.hooks.PreToolUse).toHaveLength(1);
+    expect(at(data.hooks.PreToolUse, 0)).toMatchObject({
+      matcher: '^Bash$',
+      hooks: [{ type: HOOK_TYPE, command: expected.hookCommand, timeout: 10 }],
+    });
+    expect(verify(repaired)).toEqual({ ok: true, missing: [] });
+  });
+
+  test('applyGuard is idempotent after repairing the matcher', () => {
+    const tampered = tamperedSettings({ matcher: '^Edit$', type: 'prompt' });
+    const first = applyGuard(tampered, expected, noneExist).text;
+    expect(applyGuard(first, expected, noneExist).text).toBe(first);
   });
 });
 

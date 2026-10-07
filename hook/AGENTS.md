@@ -12,18 +12,24 @@ tokeniza o comando recebido; nunca executa nada.
 ## Key Files
 | File | Description |
 |---|---|
-| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal fora de qualquer token isolado (rede de segurança). Falha aberto: qualquer exceção interna, Node ausente ou stdin inválido cai em exit 0 (R-1). A mensagem de negação é o literal de `denialMessage` e lista as tools de leitura (6 das 12) |
+| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal, que `decide` confere antes de tokenizar. Nega também o que não consegue decidir: token com glob acima de `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou `MAX_BRACKETS`, token cujo casamento lança e comando que o `shell-quote` não parseia (`${}`). Falha aberto só para entrada que não é comando Bash: stdin vazio, JSON inválido, `tool_name` diferente de `Bash` ou Node ausente (R-1). A mensagem de negação é o literal de `denialMessage`, que lista as tools de leitura (6 das 12) e, em comando composto, acrescenta ` Matched: <segmento>` (até 200 caracteres) |
 
 ## Navigation Notes
 - A lógica de decisão é pura (`decide`, sem I/O, não exportada) e separada da
   execução real (`run`, que lê stdin e seta `process.exitCode`).
 - `import.meta.main` não sobrevive ao bundle do esbuild; a checagem
-  `isExecutedDirectly()` compara `process.argv[1]` com `fileURLToPath(import.meta.url)`.
+  `isExecutedDirectly()` compara `fs.realpathSync(process.argv[1])` com
+  `fileURLToPath(import.meta.url)`, para o hook valer também quando chamado por symlink.
+- Os tetos de glob (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) valem só
+  para token com caractere de glob e rodam antes da `SLASH_KEY_REGEX`: sem eles, um
+  `[`×4096 leva 17 s na regex e o hook morre no timeout, liberando o comando.
+  Falso positivo aceito: token legítimo acima do teto é negado.
 - `test/bash-guard.spec.ts`: casos de negação e permissão contra o hook
-  `.ts` real (I4), entrada inválida/exceção interna falha aberto (I7), e um
+  `.ts` real (I4), entrada inválida falha aberto (I7), tokens hostis negados
+  (U1), trecho citado na mensagem (#45), entrypoint por symlink (M2), e um
   describe `B1(b)` que builda o `.ts` de verdade com esbuild e roda o `.mjs`
-  resultante (nega `cat <D>/x` com exit 2, permite `true` com exit 0, e
-  confere que o bundle não contém o shim `Dynamic require of`).
+  resultante (nega `cat <D>/x` com exit 2, permite `true` com exit 0, nega
+  também por symlink e confere que o bundle não contém o shim `Dynamic require of`).
 - Rodar com `npm test` (jest); o spec do hook roda fora do transform `ts-jest`.
 - Prefixo literal decide antes de expandir glob: um segmento com `**` ou uma
   chave `{a/b,c}` com barra é truncado no prefixo, porque `path.matchesGlob`
