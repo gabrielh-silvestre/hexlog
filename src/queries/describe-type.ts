@@ -3,6 +3,7 @@ import type { RecordType } from '../domain/definitions.ts';
 import type { Name } from '../domain/ids.ts';
 import { HexlogError, invalidInput } from '../errors.ts';
 import type { DefinitionReader, ProcessReader } from '../ports.ts';
+import { projectNotFound } from './read.ts';
 
 export type DescribeTypeInput = {
   project: Name;
@@ -50,8 +51,11 @@ export function createDescribeType(deps: {
       return { name: type, schema: types[type]! };
     }
     const latest = definitions.versions(project, 'types', type).at(-1);
-    // `read` aponta `/name` para o nome inexistente; aqui o campo da entrada é `/type`.
-    if (isUndefined(latest)) throw typeNotFound();
+    // `read` aponta `/name` para o nome inexistente; aqui o campo da entrada é `/type`. O
+    // `DefinitionReader` não separa tipo de projeto ausente: a lista de projetos só roda no erro.
+    if (isUndefined(latest)) {
+      throw store.listProjects().includes(project) ? typeNotFound() : projectNotFound();
+    }
     const wanted = version ?? latest;
     return {
       name: type,

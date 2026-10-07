@@ -56,7 +56,10 @@ const REGISTER_DESCRIPTION =
   'fails with IDEMPOTENCY_CONFLICT. After ' +
   'IO_ERROR the outcome is uncertain: resend with the same key. Returns the ids in input order and ' +
   'the marker (head of the process) to read from afterwards. A marker covers exactly the processes ' +
-  'it names; in project scope, any process it does not name is read as empty.';
+  'it names; in project scope, any process it does not name is read as empty. Before registering data ' +
+  'of a type you do not know, read its schema with describe_type; INVALID_RECORD reports the first ' +
+  'schema violation of each record. Before supersedes or revokes, read the current id with query (a ' +
+  'wrong id of the same type and process that is still current is accepted and forks the lineage).';
 
 /** `create_process` e `register`: cada uma só repassa a entrada validada ao serviço de processo. */
 export function registerProcessTools(server: McpServer, deps: ToolDeps): void {
