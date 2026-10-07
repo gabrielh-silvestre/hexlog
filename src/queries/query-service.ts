@@ -75,9 +75,17 @@ export type QueryInput = Filters & {
   changesSince?: Marker;
   /** Teto de caracteres do JSON da página (D-20); o 1º registro sai inteiro mesmo acima dele. */
   maxChars?: number;
+  /**
+   * Nomes de topo de `data` que saem em cada registro; `[]` omite `data`. Recorta só a saída: os
+   * filtros veem o `data` inteiro, o teto de página (`maxChars`) conta o registro já recortado e
+   * `fields` fica fora do hash do cursor, então cada página pode pedir outros.
+   */
+  fields?: readonly string[];
 };
 
-export type QueryRecord = Pick<Link, 'id' | 'type' | 'at' | 'target' | 'author' | 'data'> & {
+export type QueryRecord = Pick<Link, 'id' | 'type' | 'at' | 'target' | 'author'> & {
+  /** Inteiro, ou só os `fields` pedidos; ausente com `fields: []`. */
+  data?: Link['data'];
   in: InRelation[];
   out: OutRelation[];
   /** D-09: só registro vigente com apoio morto. */
@@ -234,6 +242,22 @@ function assertValid({ limit, text }: QueryInput, search: SearchIndex): void {
   }
 }
 
+/**
+ * `Object.hasOwn` e `Object.fromEntries` impedem que `constructor` ou `__proto__` em `fields`
+ * tragam algo do protótipo.
+ */
+function projectData(
+  data: Link['data'],
+  fields: readonly string[] | undefined,
+): Link['data'] | undefined {
+  if (isUndefined(fields)) return data;
+  if (fields.length === 0) return undefined;
+  return Object.fromEntries(
+    fields.filter((field) => Object.hasOwn(data, field)).map((field) => [field, data[field]!]),
+  );
+}
+
+// `fields` não entra aqui de propósito: recorta a saída e não muda o que a consulta seleciona.
 const FILTER_KEYS = [
   'includeNonCurrent',
   'type',
@@ -367,8 +391,10 @@ export function createQueryService(deps: {
       const render = (link: Link): QueryRecord => {
         const review = reviews.get(link.id);
         const status = attachmentStatusOf(target.project, manifests.get(processOf(link.id)), link);
+        const data = projectData(link.data, input.fields);
         return {
-          ...pick(link, ['id', 'type', 'at', 'target', 'author', 'data']),
+          ...pick(link, ['id', 'type', 'at', 'target', 'author']),
+          ...(isUndefined(data) ? {} : { data }),
           ...relationsOf(view, link),
           ...(isUndefined(review) ? {} : { needsReview: review }),
           ...(isUndefined(status) ? {} : { attachmentStatus: status }),

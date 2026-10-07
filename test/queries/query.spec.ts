@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from '@jest/globals';
+import { omit } from 'es-toolkit';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { QUERY_TEXT_MAX_CHARS } from '../../src/queries/query-service.ts';
 import { ghostId, note } from '../commands/register-fakes.ts';
@@ -176,6 +177,101 @@ describe('queryRecords: attachmentStatus', () => {
     });
     expect(at(page.records, 1)).not.toHaveProperty('attachmentStatus');
   });
+});
+
+describe('queryRecords: fields', () => {
+  test('sem `fields` a página é a mesma de sempre, byte a byte', async () => {
+    const { query } = await seeded();
+
+    const page = query({ process: 'run-1' });
+
+    expect(JSON.stringify(query({ process: 'run-1', fields: undefined }))).toBe(
+      JSON.stringify(page),
+    );
+    expect(at(page.records, 0)).toHaveProperty('data');
+  });
+
+  test('só o `data` é recortado: envelope, relações e `attachmentStatus` saem completos', async () => {
+    const { createProcess, registerOne, attachments, query } = querySetup();
+    createProcess('run-1');
+    const kept = attachments.putText(PROJECT, 'guardado').hash;
+    const first = await registerOne('run-1', doc({ body: kept, note: 'anotação' }), 1);
+    await registerOne('run-1', note('apoio', { relations: [{ to: first, kind: 'supports' }] }), 2);
+    const full = query({ process: 'run-1' });
+
+    const page = query({ process: 'run-1', fields: ['note'] });
+
+    expect(at(page.records, 0)).toEqual({
+      ...omit(at(full.records, 0), ['data']),
+      data: { note: 'anotação' },
+    });
+    expect(at(page.records, 0).attachmentStatus).toEqual({ [kept]: 'ok' });
+    expect(at(page.records, 0).in).toHaveLength(1);
+    expect(at(page.records, 1)).toEqual({ ...at(full.records, 1), data: {} });
+  });
+
+  test('o `needsReview` sai completo mesmo com `data` recortado', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    createProcess('run-2');
+    const evidence = await registerOne('run-1', note('evidência'), 1);
+    const verdict = await registerOne(
+      'run-2',
+      note('veredito', { relations: [{ to: evidence, kind: 'supports' }] }),
+      2,
+    );
+    await registerOne(
+      'run-1',
+      note('evidência 2', { relations: [{ to: evidence, kind: 'supersedes' }] }),
+      3,
+    );
+
+    const page = query({ scope: 'project', ids: [verdict], fields: [] });
+
+    expect(at(page.records, 0).needsReview).toEqual({ staleIn: [], staleOut: [evidence] });
+  });
+
+  test('`fields: []` omite a chave `data` e mantém o resto do registro', async () => {
+    const { query, task } = await seeded();
+
+    const page = query({ process: 'run-1', ids: [task], fields: [] });
+
+    expect(at(page.records, 0)).not.toHaveProperty('data');
+    expect(at(page.records, 0)).toMatchObject({ id: task, type: 'note', target: 'run.step.sub' });
+    expect(at(page.records, 0)).toHaveProperty('in');
+    expect(at(page.records, 0)).toHaveProperty('out');
+  });
+
+  test('`where` e `text` filtram pelo `data` inteiro, mesmo com o campo fora de `fields`', async () => {
+    const { query, task } = await seeded();
+
+    const byWhere = query({ process: 'run-1', where: { text: 'tarefa' }, fields: [] });
+    const byText = query({ process: 'run-1', text: 'tarefa', fields: ['inexistente'] });
+
+    expect(idsOf(byWhere)).toEqual([task]);
+    expect(idsOf(byText)).toEqual([task]);
+  });
+
+  test('campo pedido que o registro não tem some: `data` é `{}` quando nenhum existe (alcance projeto)', async () => {
+    const { query, task, other } = await seeded();
+
+    const page = query({ scope: 'project', ids: [task, other], fields: ['text'] });
+
+    expect(at(page.records, 0).data).toEqual({ text: 'tarefa' });
+    expect(at(page.records, 1).data).toEqual({});
+  });
+
+  test.each(['__proto__', 'constructor', 'toString'])(
+    '`fields` com `%s` não traz nada do protótipo',
+    async (name) => {
+      const { query, task } = await seeded();
+
+      const page = query({ process: 'run-1', ids: [task], fields: [name, 'text', 'text'] });
+
+      expect(at(page.records, 0).data).toEqual({ text: 'tarefa' });
+      expect(Object.keys(at(page.records, 0).data ?? {})).toEqual(['text']);
+    },
+  );
 });
 
 describe('queryRecords: needsReview (D-09)', () => {
