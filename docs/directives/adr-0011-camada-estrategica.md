@@ -1,10 +1,10 @@
 # ADR 0011: Camada estratégica no fluxo do hexlog
 
-**Status:** Proposto
+**Status:** Aceito
 
 **Data:** 2026-10-07
 
-**Deciders:** Gabriel Baldino (desenho da camada), com o plano de consenso entre planner, architect e critic; aguarda a aprovação do dono no PR
+**Deciders:** Gabriel Baldino (desenho da camada e aprovação no PR #90), com o plano de consenso entre planner, architect e critic
 
 ---
 
