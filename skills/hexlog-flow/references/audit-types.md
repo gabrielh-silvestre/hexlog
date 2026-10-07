@@ -8,7 +8,7 @@ para o projeto. O `list` com `project` e `process` diz só os nomes fixados no
 processo; o schema de um tipo volta por `describe_type` (com `process`, o fixado), e
 o de relações e gates, por tool nenhuma. Se este arquivo divergir do que o projeto
 definiu, vale o servidor (`describe_type` mostra o schema; `INVALID_RECORD` aponta
-os campos, todos os do lote de uma vez).
+o campo, a primeira violação de cada registro do lote).
 
 O exemplo é ilustrativo: ele é mais rico que o fixture de testes do repositório
 (test/fixtures/domains/omc.ts), que é só a configuração mínima testada e não usa a

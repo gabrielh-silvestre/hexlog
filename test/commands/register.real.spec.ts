@@ -58,7 +58,7 @@ describe('register sobre os adaptadores reais', () => {
     ]);
   });
 
-  test('lote com registros inválidos recusa com as violações de todos e não grava nada', async () => {
+  test('lote com registros inválidos recusa com a primeira violação de cada um e não grava nada', async () => {
     const { services, register, logOf, verified } = realSetup();
     services.process.createProcess({ project: PROJECT, process: 'run-1' });
     const sizeBefore = fs.statSync(logOf('run-1')).size;
@@ -72,14 +72,9 @@ describe('register sobre os adaptadores reais', () => {
     );
 
     expect(error.code).toBe('INVALID_RECORD');
-    expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual(
-      expect.arrayContaining([
-        { path: '/records/1/data/text', code: 'type' },
-        { path: '/records/2/data/text', code: 'required' },
-        { path: '/records/2/data/other', code: 'additional-properties' },
-      ]),
-    );
-    expect(error.details).toHaveLength(3);
+    expect(error.details).toHaveLength(2);
+    expect(error.details[0]).toMatchObject({ path: '/records/1/data/text', code: 'type' });
+    expect(error.details[1]!.path).toMatch(/^\/records\/2\/data/);
     expect(fs.statSync(logOf('run-1')).size).toBe(sizeBefore);
     expect(verified('run-1').chain).toMatchObject({ ok: true, totalRecords: 0 });
   });

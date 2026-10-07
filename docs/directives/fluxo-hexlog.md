@@ -11,6 +11,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - Targets das diretrizes: `directives.<doc>` (registro `doc`, um por documento de `docs/directives/`) e `directives.<doc>.<rule>` (registro `directive`, uma regra atômica; `<doc>` é o nome do arquivo sem `.md` e `<rule>` uma chave curta em inglês).
 - Toda consulta às diretrizes fixa o processo vigente (`process: directives`): `supersedes` e `revokes` não cruzam processos, então o alcance projeto enxergaria duas gerações.
 - Editar um documento de `docs/directives/` dispara o sync na abertura do próximo trabalho (`flow-run`); só a regra que mudou gera registro novo.
+- Issue com problemas independentes vira um trabalho por problema ou grupo coeso, cada um com entrevista própria e PR próprio.
 
 ## Quando uma escolha vira `decision`
 

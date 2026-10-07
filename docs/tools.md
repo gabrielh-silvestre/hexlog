@@ -126,28 +126,18 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   guardado e íntegro (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`); um hash de anexo
   guardado num campo sem a marca é recusado (`unmarked-attachment`).
 
-**`INVALID_RECORD` de dado: todas as violações de schema do lote.** Quando `data` não passa
-no schema, o `register` junta num só `INVALID_RECORD` as violações de schema de **todos** os
-registros do lote, cada uma com `path` `/records/<i>/data/...` (o agente corrige tudo e reenvia
-uma vez). Continua tudo-ou-nada: nada é gravado. Vale para a violação de **schema**; as outras
-recusas (`unmarked-attachment`, as de relação e o resto da lista acima) continuam parando na
-primeira. O que o agente deve saber do relatório:
+**`INVALID_RECORD` de dado: a primeira violação de cada registro.** Quando `data` não passa
+no schema, o `register` junta num só `INVALID_RECORD` a primeira violação de schema de **cada**
+registro inválido do lote, cada uma com `path` `/records/<i>/data/...`. Um registro com várias
+violações mostra só a primeira: o agente corrige, reenvia e vê a próxima. Continua tudo-ou-nada:
+nada é gravado. Vale para a violação de **schema**; as outras recusas (`unmarked-attachment`, as
+de relação e o resto da lista acima) continuam parando na primeira. O que o agente deve saber:
 
-- O teto é de 50 `details` por resposta, e o registro 0 pode consumi-lo inteiro: os demais
-  só aparecem na contagem omitida do `too-many-errors`.
-- O relatório roda só depois de o `validate` falhar, sobre o schema intacto, e **substitui** os
-  `details` dele. O regex de um `pattern` só roda em texto de até 256 pontos de código; acima
-  disso o `pattern` aparece como violado **sem ter sido avaliado**, junto do `max-length` que
-  `define_type` exige no mesmo subschema, e é o `max-length` que se corrige. Numa chave de objeto
-  acima de 256 pontos de código, em tipo com `patternProperties` e `additionalProperties: false`,
-  o motor também devolve `false`: a chave não casa o padrão e sai um `additional-properties`
-  espúrio, além do `max-length` e do `property-names`; o que se corrige é o tamanho da chave.
-- Em `anyOf`, `oneOf` e `contains` o relatório emite também os erros internos de cada ramo
-  (por exemplo, `pattern` em `/a/0` junto do `contains` em `/a`).
+- O teto é de 50 `details` por resposta, com um só `too-many-errors` no fim quando corta.
+- Em `anyOf`, `oneOf` e `propertyNames` saem os erros dos ramos avaliados, não só um por campo.
 - O tipo fixado de **todos** os registros é conferido antes de qualquer dado: um lote com um
   registro de dado inválido e outro de tipo não fixado recebe `TYPE_NOT_PINNED`, não
-  `INVALID_RECORD` (mudança de comportamento: antes vencia o primeiro registro).
-- Os limites de custo do relatório estão em [`tetos-dominio-v1.md`](tetos-dominio-v1.md).
+  `INVALID_RECORD`.
 
 **`key` e retentativa.** Com `key` (até 200 caracteres), o mesmo lote devolve o
 resultado já gravado com `replayed: true`, sem gravar; a mesma `key` com outro lote é

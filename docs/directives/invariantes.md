@@ -27,12 +27,9 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 
 ## Validação do register
 
-- O `INVALID_RECORD` de dado junta as violações de schema de todos os registros do lote (`src/commands/register/static.ts#prepareBatch`), com `path` `/records/<i>/data/...` e o teto de `capDetails` (50 e `too-many-errors`); continua tudo-ou-nada.
+- O `INVALID_RECORD` de dado junta a primeira violação de schema de cada registro do lote (`src/commands/register/static.ts#prepareBatch`), com `path` `/records/<i>/data/...` e o teto de `capDetails` (50 e `too-many-errors`); continua tudo-ou-nada.
 - O `register` confere o tipo fixado de todos os registros antes de validar dado (`src/commands/register/static.ts#prepareBatch`): `TYPE_NOT_PINNED` vence o `INVALID_RECORD` de dado.
-- O relatório (`Validator.report`, em `src/adapters/validator.ts#createValidator`) só roda depois de o `validate` falhar, sobre o schema intacto, com compilado em cache por identidade do schema; o `validate` nunca usa `allErrors`.
-- O relatório usa o motor `src/adapters/validator.ts#boundedRegExp`, que só roda regex em texto de até `PATTERN_MAX_LENGTH` pontos de código; o `maxLength` não protege o relatório sob `allErrors`, e o risco residual é aceito ([tetos-dominio-v1.md](../tetos-dominio-v1.md), "Limites do relatório").
-- O relatório mantém `format` ativo, fora do motor, e a guarda de tempo de `test/adapters/validator.budget.spec.ts` trava o custo em string de `DATA_MAX_CHARS`.
-- O motor do relatório declara `code = 'boundedRegExp'` (`src/adapters/validator.ts#boundedRegExp`) para que uma geração standalone do ajv falhe alto, em vez de perder o teto de 256 pontos de código sem aviso.
+- O `register` valida dado só pelo `validate` (sem `allErrors`), sem segundo passe: nenhum regex de schema roda fora da proteção `maxLength` → `pattern` ([ADR 0009](adr-0009-ferramental.md), item 20 e a emenda de 2026-10-06).
 
 ## Anexos
 

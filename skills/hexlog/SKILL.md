@@ -88,7 +88,7 @@ fazer quando um processo já ficou preso a um tipo sem a marca.
 | `define_type` com schema que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` sem `maxLength` de até 256; `patternProperties` sem `propertyNames.maxLength` de até 256; regex que a `safe-regex2` recusa (inclusive `^[a-z]+(?:-[a-z]+)*$`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
 | `define_*` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `commands/definition.ts#targetVersion` |
 | `register` com `type` fora do que o processo fixou (definido depois, ou nunca) | `TYPE_NOT_PINNED` | `commands/register/static.ts#pinnedSchema` |
-| `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` de cada violação de schema do lote em `details` (`/records/<i>/data/...`; leia o schema antes com `describe_type`) | `commands/register/static.ts#checkData` |
+| `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` da primeira violação de schema de cada registro do lote em `details` (`/records/<i>/data/...`; leia o schema antes com `describe_type`) | `commands/register/static.ts#checkData` |
 | `evaluate_gate` com gate que o processo não fixou | `GATE_NOT_FOUND` | `queries/query-service.ts#gateNotFound` |
 | Qualquer tool com dado 0.x ainda em `$XDG_DATA_HOME/hexlog` | `LEGACY_DATA` | só um humano resolve (ver abaixo) |
 

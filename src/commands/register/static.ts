@@ -71,9 +71,8 @@ function pinnedSchema(manifest: Manifest, item: BatchItem, index: number): Recor
 
 /**
  * Violações de schema de UM registro, com o `path` refeito para `/records/<i>/data/...`. O
- * `validate` para no primeiro erro de cada subschema; só quando falha o `report` junta o resto, e
- * ele substitui os detalhes do `validate` (que ficam só se o relatório vier vazio, para nunca haver
- * `INVALID_RECORD` sem detalhe).
+ * `validate` para no primeiro erro de cada subschema (em `anyOf`/`oneOf`/`propertyNames` saem os dos
+ * ramos), então a resposta traz a primeira violação do registro, não todas.
  */
 function checkData(
   validator: Validator,
@@ -81,13 +80,9 @@ function checkData(
   item: BatchItem,
   index: number,
 ): Detail[] {
-  const first = validator.validate(schema, item.data);
-  if (first.length === 0) return [];
-  const report = validator.report(schema, item.data);
-  return (report.length === 0 ? first : report).map((detail) => ({
-    ...detail,
-    path: `/records/${index}/data${detail.path}`,
-  }));
+  return validator
+    .validate(schema, item.data)
+    .map((detail) => ({ ...detail, path: `/records/${index}/data${detail.path}` }));
 }
 
 function resolveRelations(
@@ -124,10 +119,10 @@ function checkCurrencyScope(prepared: readonly PreparedItem[], origin: Name): vo
  * de D-06: tipo fixado de todos os registros, schema de todos, `as`→`kind`, `cross-process-currency`.
  *
  * Roda antes do lock (`commands/process.ts#register` a chama antes de `store.write`; só o `decide`
- * roda sob o lock, síncrono), então a compilação do relatório de schema não alonga a seção crítica.
- * O tipo fixado vem antes do dado: `TYPE_NOT_PINNED` de qualquer registro vence o `INVALID_RECORD`
- * de dado de um anterior. A agregação cobre só a violação de schema (as de todos os registros, com
- * o teto de `capDetails`); as demais regras seguem recusando no primeiro erro. Tudo-ou-nada.
+ * roda sob o lock, síncrono), então a compilação do schema não alonga a seção crítica. O tipo
+ * fixado vem antes do dado: `TYPE_NOT_PINNED` de qualquer registro vence o `INVALID_RECORD` de dado
+ * de um anterior. A agregação cobre só a violação de schema (a primeira de cada registro do lote,
+ * com o teto de `capDetails`); as demais regras seguem recusando no primeiro erro. Tudo-ou-nada.
  */
 export function prepareBatch(
   manifest: Manifest,

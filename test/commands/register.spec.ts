@@ -249,63 +249,30 @@ describe('register: recusas estáticas (nível 3)', () => {
     expect(processes.counters.writes).toBe(0);
   });
 
-  test('um registro com várias violações devolve todas, com o path do registro', async () => {
+  test('um registro com várias violações devolve só a primeira, com o path do registro', async () => {
     const { register } = setup();
 
     const error = await refusal(register([{ ...note(), data: { other: 1, extra: 2 } }]));
 
-    expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual(
-      expect.arrayContaining([
-        { path: '/records/0/data/text', code: 'required' },
-        { path: '/records/0/data/other', code: 'additional-properties' },
-        { path: '/records/0/data/extra', code: 'additional-properties' },
-      ]),
-    );
-    expect(error.details).toHaveLength(3);
+    expect(error.details).toHaveLength(1);
+    expect(error.details[0]!.path).toMatch(/^\/records\/0\/data/);
   });
 
-  test('o relatório só roda quando o validate falha', async () => {
-    const { register, validator } = setup();
-    const report = jest.spyOn(validator, 'report');
-
-    await register([note('a'), note('b')]);
-
-    expect(report).not.toHaveBeenCalled();
-  });
-
-  test('cai nos details do validate se o relatório vier vazio', async () => {
-    const { register, validator } = setup();
-    jest.spyOn(validator, 'report').mockReturnValue([]);
-
-    const error = await refusal(register([{ ...note(), data: { text: 5 } }]));
-
-    expect(error.details).toEqual([
-      { path: '/records/0/data/text', code: 'type', message: expect.any(String) },
-    ]);
-  });
-
-  test('pior caso: dezenas de violações saem em 50 detalhes e um só too-many-errors', async () => {
-    const { register } = setup();
-    const extras = Object.fromEntries(Array.from({ length: 80 }, (_, n) => [`extra${n}`, n]));
+  test('lote com dois registros inválidos recebe a primeira violação de cada um', async () => {
+    const { register, processes } = setup();
 
     const error = await refusal(
       register([
-        { ...note(), data: { text: 'ok', ...extras } },
-        { ...note(), data: { text: 5 } },
+        { ...note(), data: { other: 1, extra: 2 } },
+        note('ok'),
+        { ...note(), data: { text: 5, other: 1 } },
       ]),
     );
 
-    expect(error.details).toHaveLength(51);
-    expect(error.details.at(-1)).toEqual({
-      path: '',
-      code: 'too-many-errors',
-      message: '31 more errors omitted',
-    });
-    expect(error.details.filter(({ code }) => code === 'too-many-errors')).toHaveLength(1);
-    // O registro 0 consome o teto: o 1 só entra na contagem do `too-many-errors`.
-    expect(error.details.slice(0, 50).every(({ path }) => path.startsWith('/records/0/data'))).toBe(
-      true,
-    );
+    expect(error.details).toHaveLength(2);
+    expect(error.details[0]!.path).toMatch(/^\/records\/0\/data/);
+    expect(error.details[1]!.path).toMatch(/^\/records\/2\/data/);
+    expect(processes.counters.writes).toBe(0);
   });
 
   test('TYPE_NOT_PINNED de um registro vence o INVALID_RECORD de dado de um anterior', async () => {

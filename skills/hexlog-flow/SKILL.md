@@ -257,7 +257,7 @@ depois dele; o processo que já existe segue com o gate fixado.
 | Situação | Resultado |
 |---|---|
 | `type` fora do que o processo fixou, inclusive um definido depois do `create_process` | `TYPE_NOT_PINNED`: o processo existente não recebe definição nova. Pare e avise o usuário; não repita `define_type` em loop |
-| `data` fora do schema fixado | `INVALID_RECORD` com todas as violações de schema do lote, cada uma com seu `path` (`/records/<i>/data/...`, no máximo 50 `details`; em esquemas com alternativas ou com contains saem também os erros internos de cada ramo); corrija todas e reenvie. Só a violação de schema é agregada: `unmarked-attachment` e as regras de relação continuam parando na primeira |
+| `data` fora do schema fixado | `INVALID_RECORD` com a primeira violação de schema de cada registro inválido do lote, cada uma com seu `path` (`/records/<i>/data/...`, no máximo 50 `details`); corrija e reenvie, e a próxima violação aparece. Só a violação de schema é agregada: `unmarked-attachment` e as regras de relação continuam parando na primeira |
 | Gate pedido que o processo não fixou, inclusive um definido depois do `create_process` | `GATE_NOT_FOUND`: pare e avise o usuário |
 | Reenviar uma `key` com lote diferente do guardado | `IDEMPOTENCY_CONFLICT` |
 | Dado 0.x em `<D>` | `LEGACY_DATA`: só um humano resolve (ver a skill hexlog) |
