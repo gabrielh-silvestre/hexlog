@@ -2,6 +2,7 @@ import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { createValidator, PATTERN_MAX_LENGTH } from '../../src/adapters/validator.ts';
 import { attachmentFields, type RecordType } from '../../src/domain/definitions.ts';
+import { withRegExpSpy } from './regexp-spy.ts';
 
 const validator = createValidator();
 
@@ -522,7 +523,7 @@ describe('validate', () => {
     // O allErrors: false do ajv para no primeiro erro de CADA ramo, não no primeiro da chamada.
     const schema: RecordType = {
       anyOf: [
-        { type: 'string', maxLength: 10, pattern: '^(a|aa)+$' },
+        { type: 'string', maxLength: 10 },
         { type: 'string', maxLength: 5 },
       ],
     };
@@ -534,13 +535,13 @@ describe('validate', () => {
     ]);
   });
 
-  test('não roda o pattern sobre string acima do maxLength: devolve só max-length', () => {
-    // Com allErrors o ajv rodaria o regex também sobre o texto longo e este teste nunca terminaria.
+  test('ignora o pattern e mantém o maxLength do mesmo subschema', () => {
     const schema = {
       type: 'object',
       properties: { text: { type: 'string', maxLength: 10, pattern: '^(a|aa)+$' } },
     };
 
+    expect(validator.validate(schema, { text: 'zzz' })).toEqual([]);
     expect(validator.validate(schema, { text: `${'a'.repeat(60)}b` })).toEqual([
       { path: '/text', code: 'max-length', message: expect.any(String) },
     ]);
@@ -665,5 +666,146 @@ describe('validate', () => {
         { path: '/files/1', code: 'format', message: expect.any(String) },
       ]);
     });
+  });
+});
+
+describe('validate ignora pattern e patternProperties', () => {
+  const SENTINEL = 'SENT_free';
+  const unsafe = `^${SENTINEL}$`;
+
+  // O dado é aceito porque a regra de regex é ignorada: o pattern o recusaria.
+  const ignoredCases: [string, RecordType, Parameters<typeof validator.validate>[1]][] = [
+    [
+      'pattern direto',
+      { type: 'object', properties: { a: { type: 'string', pattern: unsafe } } },
+      { a: 'other' },
+    ],
+    [
+      'pattern via $ref para dado',
+      {
+        type: 'object',
+        properties: { a: { $ref: '#/examples/0' } },
+        examples: [{ type: 'string', pattern: unsafe }],
+      },
+      { a: 'other' },
+    ],
+    [
+      'pattern via $ref para $defs',
+      {
+        type: 'object',
+        properties: { a: { $ref: '#/$defs/p' } },
+        $defs: { p: { type: 'string', pattern: unsafe } },
+      },
+      { a: 'other' },
+    ],
+    [
+      'pattern em propertyNames',
+      { type: 'object', propertyNames: { pattern: unsafe } },
+      { other: 1 },
+    ],
+    [
+      'patternProperties com valor de tipo errado',
+      { type: 'object', patternProperties: { [`^${SENTINEL}-`]: { type: 'integer' } } },
+      { [`${SENTINEL}-a`]: 'text' },
+    ],
+  ];
+
+  test.each(ignoredCases)('aceita o dado que o regex recusaria: %s', (_name, schema, data) => {
+    const usage = withRegExpSpy(SENTINEL, () => createValidator().validate(schema, data));
+
+    expect(usage).toEqual({ result: [], constructions: 0, executions: 0 });
+  });
+
+  test.each(ignoredCases)('o ajv plain executa o regex que o validate ignora: %s', (_n, schema) => {
+    // Controle: sem ele a espia que nunca dispara também daria zero.
+    const usage = withRegExpSpy(SENTINEL, () =>
+      new Ajv2020.default({ strict: true, logger: false }).compile(schema),
+    );
+
+    expect(usage.constructions).toBeGreaterThan(0);
+  });
+
+  const invalidRegexCases: [string, RecordType][] = [
+    ['pattern direto', { type: 'object', properties: { a: { type: 'string', pattern: '(' } } }],
+    [
+      'pattern via $ref para dado',
+      {
+        type: 'object',
+        properties: { a: { $ref: '#/examples/0' } },
+        examples: [{ type: 'string', pattern: '(' }],
+      },
+    ],
+    [
+      'chave de patternProperties com properties irmãs',
+      {
+        type: 'object',
+        properties: { k: { type: 'string' } },
+        patternProperties: { '(': { type: 'integer' } },
+      },
+    ],
+    [
+      'chave de patternProperties com additionalProperties false',
+      {
+        type: 'object',
+        properties: { k: { type: 'string' } },
+        patternProperties: { '(': { type: 'integer' } },
+        additionalProperties: false,
+      },
+    ],
+  ];
+
+  test.each(invalidRegexCases)('compila regex inválido sem lançar: %s', (_name, schema) => {
+    expect(() => new Ajv2020.default({ strict: true, logger: false }).compile(schema)).toThrow(
+      /Invalid regular expression/,
+    );
+    expect(() => createValidator().validate(schema, { k: 'a' })).not.toThrow();
+  });
+
+  test.each([
+    ['additionalProperties', 'additional-properties'],
+    ['unevaluatedProperties', 'unevaluated-properties'],
+  ])(
+    'com %s false, patternProperties conta como ausente e a propriedade é recusada',
+    (key, code) => {
+      const schema = {
+        type: 'object',
+        patternProperties: { '^x-': { type: 'string' } },
+        [key]: false,
+      };
+
+      expect(validator.validate(schema, { 'x-a': 's' })).toEqual([
+        { path: '/x-a', code, message: expect.any(String) },
+      ]);
+    },
+  );
+
+  test('termina rápido com patternProperties hostil, onde o regex levaria dezenas de segundos', () => {
+    const schema = {
+      type: 'object',
+      properties: { k: { type: 'string' } },
+      patternProperties: { '^(a|aa)+$': { type: 'integer' } },
+      additionalProperties: false,
+    };
+    const startedAt = Date.now();
+
+    expect(validator.validate(schema, { [`${'a'.repeat(40)}!`]: 1 })).toHaveLength(1);
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+  });
+
+  test('mantém o campo de nome pattern e o format que usa regex próprio', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        pattern: { type: 'string', maxLength: 3 },
+        site: { type: 'string', format: 'uri' },
+      },
+    };
+
+    expect(validator.validate(schema, { pattern: 'long value' })).toEqual([
+      { path: '/pattern', code: 'max-length', message: expect.any(String) },
+    ]);
+    expect(validator.validate(schema, { site: 'not a uri' })).toEqual([
+      { path: '/site', code: 'format', message: expect.any(String) },
+    ]);
   });
 });

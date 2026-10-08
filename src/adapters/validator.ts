@@ -5,7 +5,7 @@ import safeRegex from 'safe-regex2';
 import { ATTACHMENT_FORMAT } from '../domain/definitions.ts';
 import { FORMAT_CATALOG } from '../domain/formats.ts';
 import { Hash } from '../domain/ids.ts';
-import { walkSubschemas } from '../domain/schema-walk.ts';
+import { FREE_PATTERN_KEYWORDS, walkSubschemas } from '../domain/schema-walk.ts';
 import { capDetails, pointer as jsonPointer, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
 
@@ -97,10 +97,31 @@ function patternDetails(root: unknown): Detail[] {
   return capDetails(details);
 }
 
-/** Mesmas opções estritas e mesmos formatos nas instâncias; muda só o `allErrors`. */
-function createCompiler(allErrors: boolean) {
-  const ajv = new Ajv2020.default({ strict: true, allErrors, logger: false });
+const NEVER_MATCHES = { test: (): boolean => false };
+// `code` é obrigatório em `RegExpEngine` (TS2741 sem ele) e não pode ser "new RegExp".
+const INERT_ENGINE = Object.assign(() => NEVER_MATCHES, { code: 'inert-regexp' });
+
+/**
+ * Mesmas opções estritas e mesmos formatos nas instâncias; mudam o `allErrors` e o `neutral`.
+ * `neutral` ignora `pattern` e `patternProperties`: as duas palavras-chave viram no-op e o motor de
+ * regex do ajv nunca casa, então nenhum regex vindo do schema é construído nem executado. Só o
+ * `removeKeyword` não basta, porque `additionalProperties` lê `patternProperties` direto e o executa.
+ * O schema neutro já passou pelo `checkSchema` na definição, por isso o ajv não o revalida.
+ */
+function createCompiler(allErrors: boolean, neutral: boolean) {
+  const ajv = new Ajv2020.default({
+    strict: true,
+    allErrors,
+    logger: false,
+    ...(neutral && { code: { regExp: INERT_ENGINE }, validateSchema: false }),
+  });
   addFormats.default(ajv);
+  if (neutral) {
+    for (const keyword of FREE_PATTERN_KEYWORDS) {
+      ajv.removeKeyword(keyword);
+      ajv.addKeyword(keyword);
+    }
+  }
   // Formato `attachment` (D-16): o mesmo `Hash` do domínio (sha256 em hexadecimal minúsculo).
   ajv.addFormat(ATTACHMENT_FORMAT, (value: string) => Hash.safeParse(value).success);
   for (const [name, test] of Object.entries(FORMAT_CATALOG)) ajv.addFormat(name, test);
@@ -141,7 +162,8 @@ function messageOf(error: unknown): string {
  *
  * Duas instâncias do ajv, com a mesma compilação: `checkSchema` usa `allErrors: true` e devolve
  * todos os erros do schema; `validate` usa `allErrors: false` e devolve um erro por subschema
- * avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames` saem os dos ramos).
+ * avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames` saem os dos ramos). O `validate` é
+ * neutro: ignora `pattern` e `patternProperties` e nunca constrói regex do schema (`createCompiler`).
  *
  * O `path` de `checkSchema` é sempre relativo ao documento do schema (raiz = `''`), inclusive nos
  * erros de compilação, que saem com `path` vazio; quem expõe o erro (o serviço de definição)
@@ -178,7 +200,7 @@ function messageOf(error: unknown): string {
  * `#/$defs/...`, `#/definitions/...`).
  */
 export function createValidator(): Validator {
-  const checker = createCompiler(true);
+  const checker = createCompiler(true, false);
   // Chave por identidade do objeto: o lote de um `register` repete o mesmo schema e recompilar
   // custava 200 a 300 ms por lote de 50. Escopo da instância e coletável: o `WeakMap` não tem
   // `size`, que `MemoizeCache` exige no tipo mas o `memoize` nunca lê, então o cast é necessário.
@@ -186,7 +208,7 @@ export function createValidator(): Validator {
     memoize((schema: Record<string, unknown>) => compiler.compile(schema), {
       cache: new WeakMap() as unknown as MemoizeCache<object, ReturnType<typeof compiler.compile>>,
     });
-  const compiled = compiledBy(createCompiler(false));
+  const compiled = compiledBy(createCompiler(false, true));
 
   return {
     checkSchema(schema) {
