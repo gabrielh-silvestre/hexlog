@@ -15,6 +15,9 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `.prettierrc`, `.prettierignore`, `.editorconfig` | Formatação (aspas simples, vírgula final, 100 colunas); `*.md` e `package-lock.json` ficam fora do Prettier |
 | `.husky/pre-commit` | Roda `lint-staged` (`eslint --fix` e `prettier --write` nos `*.ts` do commit) |
 | `.github/workflows/ci.yml` | CI: `typecheck`, `lint`, `format:check`, `test` e `test:budget` (Node 24.18.1) |
+| `.github/workflows/changelog-draft.yml` | Em PR para `main`, comenta o rascunho do `git-cliff` para o `CHANGELOG.md` |
+| `CHANGELOG.md` | Mudanças visíveis por versão, no Keep a Changelog em pt-BR, desde a 1.0.0; `test/changelog.spec.ts` exige a seção da versão do `package.json` |
+| `cliff.toml` | Config do `git-cliff`: mapeia os Conventional Commits para as seções do changelog e descarta os tipos internos |
 | `README.md` | Porta de entrada enxuta: o que é, instalação, exemplo mínimo, como funciona e índice de `docs/` (a referência de tools, dados, migração e instalação avançada mora em `docs/`) |
 | `CLAUDE.md` | Importa este `AGENTS.md` e as diretrizes de `docs/directives/` para toda sessão e todo subagente |
 | `LICENSE` | Licença MIT |
@@ -50,6 +53,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `jest` + `ts-jest`, `fast-check`, `@modelcontextprotocol/client` (cliente dos specs MCP e e2e): testes
 - `typescript`, `eslint` (+ `typescript-eslint`, `eslint-plugin-jest`, `eslint-plugin-n`, `eslint-config-prettier`), `prettier`: tipos, lint e formatação
 - `husky` + `lint-staged`: hook de pré-commit
+- `git-cliff`: rascunho do `CHANGELOG.md` (`cliff.toml`)
 
 ## Manual Notes
 

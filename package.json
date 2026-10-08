@@ -1,7 +1,7 @@
 {
   "name": "hexlog",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -73,6 +73,7 @@
     "eslint-plugin-jest": "29.16.6",
     "eslint-plugin-n": "18.4.0",
     "fast-check": "4.10.1",
+    "git-cliff": "2.14.2",
     "husky": "9.1.7",
     "jest": "30.5.1",
     "lint-staged": "17.5.1",

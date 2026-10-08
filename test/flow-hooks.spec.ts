@@ -548,12 +548,12 @@ describe('settings.json', () => {
     expect(entry?.hooks[0]?.command).toBe(`${flowCommand('pre-pr')} || exit 2`);
   }, 15_000);
 
-  test('a entrada Bash tem if Bash(*gh*) e não termina em || exit 2', () => {
+  test('a entrada Bash tem if Bash(gh *) e não termina em || exit 2', () => {
     const hook = (settings.hooks.PreToolUse ?? [])
       .filter((e) => e.matcher === 'Bash')
       .flatMap((e) => e.hooks)
       .find((h) => h.command === flowCommand('pre-pr'));
-    expect(hook?.if).toBe('Bash(*gh*)');
+    expect(hook?.if).toBe('Bash(gh *)');
   }, 15_000);
 
   test('tem as regras allow do padrão 15', () => {

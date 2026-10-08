@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(*gh*)",
+            "if": "Bash(gh *)",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-hooks.ts\" pre-pr"
           }
         ]
@@ -47,6 +47,9 @@
     "es-toolkit@es-toolkit-plugin": true
   },
   "skillOverrides": {
+    "deliver-phase": "off",
+    "deliver-v1": "off",
+    "gitnexus-cli": "name-only",
     "gitnexus-guide": "user-invocable-only",
     "gitnexus-exploring": "name-only",
     "gitnexus-debugging": "name-only",
