@@ -42,7 +42,6 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `es-toolkit`: helpers usados em todo o `src/` e nos scripts
 - `jsonc-parser`: edição preservando formatação de `~/.claude/settings.json` (instalação e guard)
 - `minisearch`: busca textual no filtro `text` de `query`
-- `safe-regex2`: detecção de regex catastrófico (ReDoS) em `pattern` e nas chaves de `patternProperties` de schema de tipo, usada no `checkSchema` (o bundle do servidor a embute; o hook não)
 - `shell-quote`: tokenização de comandos no hook
 
 ### Dev (`devDependencies`)

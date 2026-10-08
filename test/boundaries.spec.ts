@@ -55,8 +55,6 @@ const FORBIDDEN_SPECIFIERS = [
   'ajv/dist/2020.js',
   'ajv-formats/dist/x',
   'minisearch/x',
-  'safe-regex2',
-  'safe-regex2/lib/x',
   'node:http',
   'http',
   'node:worker_threads',

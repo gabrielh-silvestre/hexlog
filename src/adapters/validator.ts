@@ -1,11 +1,10 @@
 import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import { isPlainObject, isUndefined, kebabCase, memoize, type MemoizeCache } from 'es-toolkit';
-import safeRegex from 'safe-regex2';
+import { isUndefined, kebabCase, memoize, type MemoizeCache } from 'es-toolkit';
 import { ATTACHMENT_FORMAT } from '../domain/definitions.ts';
-import { FORMAT_CATALOG } from '../domain/formats.ts';
+import { catalogNames, FORMAT_CATALOG } from '../domain/formats.ts';
 import { Hash } from '../domain/ids.ts';
-import { FREE_PATTERN_KEYWORDS, walkSubschemas } from '../domain/schema-walk.ts';
+import { FREE_PATTERN_KEYWORDS, hasKeywordAt, walkSubschemas } from '../domain/schema-walk.ts';
 import { capDetails, pointer as jsonPointer, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
 
@@ -32,19 +31,6 @@ function toDetail(error: ErrorObject): Detail {
 
 const toDetails = (errors: ErrorObject[]): Detail[] => capDetails(errors.map(toDetail));
 
-/** Teto de `maxLength` exigido junto a um `pattern`: limita o texto que a regex pode consumir. */
-export const PATTERN_MAX_LENGTH = 256;
-
-/**
- * A `safe-regex2` devolve só booleano, então a mensagem cobre todas as causas possíveis da recusa;
- * o motivo do falso positivo está em `createValidator`.
- */
-const UNSAFE_REGEX_MESSAGE =
-  'regex rejected by safe-regex2: it may backtrack catastrophically or use syntax it cannot ' +
-  'parse (e.g. lookbehind); a repeated group that contains a repetition, such as (-[a-z]+)*, is ' +
-  'rejected even when linear. Rewrite it with a single character class (^[a-z0-9-]+$) or ' +
-  'without a repeated group';
-
 /** As duas posições em que `attachmentFields` reconhece a marca: o campo e os itens dele. */
 const ATTACHMENT_MARK_POSITION = /^\/properties\/[^/]+(\/items)?$/;
 
@@ -53,44 +39,33 @@ const MISPLACED_ATTACHMENT_MESSAGE =
   '(/properties/<field>) or on the items of a top-level list (/properties/<field>/items); ' +
   'for an optional attachment use type: ["string","null"], or a list whose items carry the mark';
 
-const lacksBoundedMaxLength = (schema: Record<string, unknown>): boolean =>
-  typeof schema.maxLength !== 'number' || schema.maxLength > PATTERN_MAX_LENGTH;
+const freePatternDetail = (path: string, keyword: string): Detail => ({
+  path,
+  code: 'pattern-not-allowed',
+  message:
+    `${keyword} is not allowed in a type schema; use a catalog format ` +
+    `(${catalogNames().join(', ')}) or plain minLength/maxLength`,
+});
 
 /**
  * Percorre só as palavras-chave que carregam subschemas (nunca `const`/`enum`/`default`, que são
- * dado) e aponta cada `pattern` e cada chave de `patternProperties` que a `safe-regex2` recusa, cada
- * `pattern` cujo subschema não tem `maxLength` inteiro até `PATTERN_MAX_LENGTH`, cada
- * `patternProperties` cujo subschema não tem `propertyNames.maxLength` nesse teto e cada
- * `format: "attachment"` fora das posições que `attachmentFields` reconhece.
+ * dado) e aponta cada `pattern` e cada `patternProperties` (`pattern-not-allowed`) e cada
+ * `format: "attachment"` fora das posições que `attachmentFields` reconhece. Puro: não chama o ajv.
  */
-function patternDetails(root: unknown): Detail[] {
+function ruleDetails(root: unknown): Detail[] {
   const details: Detail[] = [];
-  const reject = (path: string, message: string) =>
-    details.push({ path, code: 'invalid-schema', message });
 
   walkSubschemas(root, (node, pointer) => {
     if (node.format === ATTACHMENT_FORMAT && !ATTACHMENT_MARK_POSITION.test(pointer))
-      reject(`${pointer}/format`, MISPLACED_ATTACHMENT_MESSAGE);
+      details.push({
+        path: `${pointer}/format`,
+        code: 'invalid-schema',
+        message: MISPLACED_ATTACHMENT_MESSAGE,
+      });
 
-    if (typeof node.pattern === 'string') {
-      const path = `${pointer}/pattern`;
-      if (!safeRegex(node.pattern)) reject(path, UNSAFE_REGEX_MESSAGE);
-      if (lacksBoundedMaxLength(node))
-        reject(
-          path,
-          `pattern requires a maxLength of at most ${PATTERN_MAX_LENGTH} in the same subschema`,
-        );
-    }
-    if (isPlainObject(node.patternProperties)) {
-      if (!isPlainObject(node.propertyNames) || lacksBoundedMaxLength(node.propertyNames))
-        reject(
-          `${pointer}/patternProperties`,
-          `patternProperties requires propertyNames.maxLength of at most ${PATTERN_MAX_LENGTH} in the same subschema`,
-        );
-      for (const key of Object.keys(node.patternProperties)) {
-        if (!safeRegex(key))
-          reject(`${pointer}/patternProperties${jsonPointer([key])}`, UNSAFE_REGEX_MESSAGE);
-      }
+    for (const keyword of FREE_PATTERN_KEYWORDS) {
+      if (Object.hasOwn(node, keyword))
+        details.push(freePatternDetail(`${pointer}/${keyword}`, keyword));
     }
   });
 
@@ -101,30 +76,41 @@ const NEVER_MATCHES = { test: (): boolean => false };
 // `code` é obrigatório em `RegExpEngine` (TS2741 sem ele) e não pode ser "new RegExp".
 const INERT_ENGINE = Object.assign(() => NEVER_MATCHES, { code: 'inert-regexp' });
 
-/**
- * Mesmas opções estritas e mesmos formatos nas instâncias; mudam o `allErrors` e o `neutral`.
- * `neutral` ignora `pattern` e `patternProperties`: as duas palavras-chave viram no-op e o motor de
- * regex do ajv nunca casa, então nenhum regex vindo do schema é construído nem executado. Só o
- * `removeKeyword` não basta, porque `additionalProperties` lê `patternProperties` direto e o executa.
- * O schema neutro já passou pelo `checkSchema` na definição, por isso o ajv não o revalida.
- */
-function createCompiler(allErrors: boolean, neutral: boolean) {
-  const ajv = new Ajv2020.default({
-    strict: true,
-    allErrors,
-    logger: false,
-    ...(neutral && { code: { regExp: INERT_ENGINE }, validateSchema: false }),
-  });
+/** Recebe a palavra-chave e o lugar (ponteiro RFC 6901) do subschema que a carrega. */
+type FreePatternSink = (keyword: string, location: string) => void;
+
+/** Ajv estrito com os formatos do `ajv-formats`, o `attachment` (D-16) e os de `FORMAT_CATALOG`. */
+function createAjv(options: ConstructorParameters<typeof Ajv2020.default>[0]) {
+  const ajv = new Ajv2020.default({ strict: true, logger: false, ...options });
   addFormats.default(ajv);
-  if (neutral) {
-    for (const keyword of FREE_PATTERN_KEYWORDS) {
-      ajv.removeKeyword(keyword);
-      ajv.addKeyword(keyword);
-    }
-  }
-  // Formato `attachment` (D-16): o mesmo `Hash` do domínio (sha256 em hexadecimal minúsculo).
+  // Formato `attachment`: o mesmo `Hash` do domínio (sha256 em hexadecimal minúsculo).
   ajv.addFormat(ATTACHMENT_FORMAT, (value: string) => Hash.safeParse(value).success);
   for (const [name, test] of Object.entries(FORMAT_CATALOG)) ajv.addFormat(name, test);
+  return ajv;
+}
+
+/**
+ * Compilador neutro: `pattern` e `patternProperties` não são aplicados e o motor de regex do ajv
+ * nunca casa, então nenhum regex vindo do schema é construído nem executado. Só o `removeKeyword`
+ * não basta, porque `additionalProperties` lê `patternProperties` direto e o executa. O ajv não
+ * revalida o schema (`validateSchema: false`): quem o confere é a instância `meta`. Com `sink`, as
+ * duas palavras-chave gravam cada ocorrência no documento compilado, inclusive a que um `$ref`
+ * alcança dentro de dado, sem construir o regex.
+ */
+function createCompiler(allErrors: boolean, sink?: FreePatternSink) {
+  const ajv = createAjv({ allErrors, code: { regExp: INERT_ENGINE }, validateSchema: false });
+  let root: unknown;
+  for (const keyword of FREE_PATTERN_KEYWORDS) {
+    ajv.removeKeyword(keyword);
+    ajv.addKeyword({
+      keyword,
+      code: (cxt) => {
+        // Só o documento do agente conta: o `$ref` para o metaschema compila sem recusa.
+        if (isUndefined(sink) || cxt.it.schemaEnv.root.schema !== root) return;
+        sink(keyword, decodeURIComponent(cxt.it.errSchemaPath.replace(/^#/, '')));
+      },
+    });
+  }
 
   const compile = (schema: Record<string, unknown>) => {
     // O `removeSchema` do `finally` apaga por `$id`: com um `$id` que o ajv já conhece (os
@@ -134,6 +120,7 @@ function createCompiler(allErrors: boolean, neutral: boolean) {
     if (typeof id === 'string' && id !== '' && id !== '#' && ajv.getSchema(id)) {
       throw new Error(`schema with $id "${id}" is already registered`);
     }
+    root = schema;
     try {
       const validate = ajv.compile(schema);
       // `$async` só existe no tipo da função assíncrona; o ajv a devolve com `$async: true`.
@@ -145,7 +132,7 @@ function createCompiler(allErrors: boolean, neutral: boolean) {
     }
   };
 
-  return { ajv, compile };
+  return { compile };
 }
 
 /** O ajv estoura a pilha ao compilar `$ref` cíclico (`a` aponta `b`, `b` aponta `a`): `RangeError` cru não ajuda o agente. */
@@ -155,52 +142,42 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * Validador JSON Schema (2020-12) com ajv estrito e `ajv-formats`, mais o formato `attachment`.
- * O `$id` de um schema não fica registrado no ajv: `validate` compila uma vez por objeto de schema
- * e esquece o `$id`, então duas versões de um tipo com o mesmo `$id` em objetos distintos não
- * colidem.
+ * Validador JSON Schema (2020-12) com ajv estrito e `ajv-formats`, mais o formato `attachment` e os
+ * do `FORMAT_CATALOG`. O `$id` de um schema não fica registrado no ajv: `validate` compila uma vez
+ * por objeto de schema e esquece o `$id`, então duas versões de um tipo com o mesmo `$id` em objetos
+ * distintos não colidem.
  *
- * Duas instâncias do ajv, com a mesma compilação: `checkSchema` usa `allErrors: true` e devolve
- * todos os erros do schema; `validate` usa `allErrors: false` e devolve um erro por subschema
- * avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames` saem os dos ramos). O `validate` é
- * neutro: ignora `pattern` e `patternProperties` e nunca constrói regex do schema (`createCompiler`).
+ * Três instâncias do ajv: `meta` só confere o schema contra o metaschema (`allErrors: true`, erros
+ * estruturados); `checker` compila para `checkSchema` e devolve todos os erros (`allErrors: true`);
+ * `validate` usa `allErrors: false` e devolve um erro por subschema avaliado, não um por campo (em
+ * `anyOf`/`oneOf`/`propertyNames` saem os dos ramos). `checker` e `validate` são neutros: ignoram
+ * `pattern` e `patternProperties` e nunca constroem regex do schema (`createCompiler`). O `meta`
+ * também não constrói: `validateSchema` do ajv não executa o regex do schema.
  *
  * O `path` de `checkSchema` é sempre relativo ao documento do schema (raiz = `''`), inclusive nos
  * erros de compilação, que saem com `path` vazio; quem expõe o erro (o serviço de definição)
  * prefixa `/schema`.
  *
- * Além do metaschema e da compilação, `checkSchema` recusa regex que pode explodir em tempo (ReDoS):
- * todo `pattern` e toda chave de `patternProperties` passam pela `safe-regex2`, e todo `pattern`
- * exige `maxLength` inteiro de até `PATTERN_MAX_LENGTH` no mesmo subschema, e todo `patternProperties`
- * exige `propertyNames.maxLength` no mesmo teto. Esses erros saem com o
- * `path` do campo (`.../pattern`, relativo ao schema) e `code` `invalid-schema`.
+ * `checkSchema` recusa `pattern` e `patternProperties` (`pattern-not-allowed`): o hexlog não aplica
+ * regex livre, o formato de um campo vem do catálogo (`FORMAT_CATALOG`) ou de `minLength`/`maxLength`.
+ * A varredura pura (`ruleDetails`) roda antes de qualquer ajv e aponta cada ocorrência nos
+ * subschemas; o `checker` grava as que só um `$ref` para dado (`#/const`, `#/examples/N`...) alcança,
+ * com o `path` do lugar quando o ponteiro resolve no documento e vazio quando não (`$id` aninhado).
+ * `$ref` para o metaschema do JSON Schema não é recusado.
  *
  * A marca `format: "attachment"` só vale em `/properties/<campo>` e `/properties/<campo>/items`,
  * as duas posições que `attachmentFields` reconhece; em qualquer outra (aninhada, `anyOf`, `$defs`)
  * o `checkSchema` recusa com `.../format`, porque o `register` nunca conferiria o anexo ali.
  *
- * O `maxLength` só impede que o `validate` rode o regex sobre string acima do teto (o ajv o avalia
- * antes do `pattern` e, sem `allErrors`, para no primeiro erro). Ele NÃO limita o dano de um regex
- * exponencial que a `safe-regex2` deixa passar: ela é heurística (altura de estrela e número de
- * repetições), então alternância sobreposta como `(a|aa)+` ou `([a-z]|[a-z0-9])+` passa, e com
- * 27 caracteres, bem abaixo do teto de `PATTERN_MAX_LENGTH`, a medição deu cerca de 8 s. Risco
- * aceito pelo usuário em 2026-10-02: a ferramenta é de uso exclusivo de agentes. A chave de
- * `patternProperties` fica sob o mesmo teto pelo `propertyNames.maxLength` exigido no subschema, que
- * limita o tamanho do nome de propriedade que ela casa; o limite é de tamanho, não de custo.
- *
- * A `safe-regex2` também tem falso positivo: recusa regex linear com repetição dentro de grupo
- * repetido (`^[a-z]+(?:-[a-z]+)*$`) e sintaxe que não parseia (lookbehind). Passam classe única
- * (`^[a-z0-9-]+$`) e sequência sem grupo repetido; a mensagem de recusa já diz isso.
- *
- * Outro limite conhecido, aceito: o percurso do `checkSchema` não segue `$ref`. Um `$ref` com
- * ponteiro para dentro de dado (`#/const`, `#/default`, `#/enum/N`, `#/examples/N`) compila, e o
- * `pattern` que está lá escapa da `safe-regex2` e do teto de `maxLength`. A ferramenta é de uso
- * exclusivo de agentes de IA, e o único cenário é injeção de prompt, cujo efeito é travar o
- * servidor, sem vazar dado. A correção barata, se um dia valer, é uma allowlist de `$ref` (`#`,
- * `#/$defs/...`, `#/definitions/...`).
+ * Resíduo aceito: `format: "regex"` do `ajv-formats` constrói um `RegExp` sobre o dado (nunca sobre
+ * o schema) e não o executa.
  */
 export function createValidator(): Validator {
-  const checker = createCompiler(true, false);
+  const meta = createAjv({ allErrors: true });
+  const freePatterns: { keyword: string; location: string }[] = [];
+  const checker = createCompiler(true, (keyword, location) =>
+    freePatterns.push({ keyword, location }),
+  );
   // Chave por identidade do objeto: o lote de um `register` repete o mesmo schema e recompilar
   // custava 200 a 300 ms por lote de 50. Escopo da instância e coletável: o `WeakMap` não tem
   // `size`, que `MemoizeCache` exige no tipo mas o `memoize` nunca lê, então o cast é necessário.
@@ -208,16 +185,26 @@ export function createValidator(): Validator {
     memoize((schema: Record<string, unknown>) => compiler.compile(schema), {
       cache: new WeakMap() as unknown as MemoizeCache<object, ReturnType<typeof compiler.compile>>,
     });
-  const compiled = compiledBy(createCompiler(false, true));
+  const compiled = compiledBy(createCompiler(false));
 
   return {
     checkSchema(schema) {
       try {
-        // `validateSchema` antes de `compile`: o `compile` também confere o metaschema, mas lança um
-        // texto único (`schema is invalid: ...`); aqui os erros saem estruturados, cada um com o seu path.
-        if (!checker.ajv.validateSchema(schema)) return toDetails(checker.ajv.errors ?? []);
+        const rules = ruleDetails(schema);
+        if (rules.length > 0) return rules;
+        // `validateSchema` antes de `compile`: os erros do metaschema saem estruturados, cada um
+        // com o seu path, e o `compile` neutro não os conferiria.
+        if (!meta.validateSchema(schema)) return toDetails(meta.errors ?? []);
+        freePatterns.length = 0;
         checker.compile(schema);
-        return patternDetails(schema);
+        return capDetails(
+          freePatterns.map(({ keyword, location }) =>
+            freePatternDetail(
+              hasKeywordAt(schema, location, keyword) ? `${location}/${keyword}` : '',
+              keyword,
+            ),
+          ),
+        );
       } catch (error) {
         // Modo estrito (palavra-chave ou formato desconhecido), `$ref` sem destino, `$schema` de
         // outro rascunho, `$id` repetido e `$async` saem como exceção, sem ponto no schema: o erro

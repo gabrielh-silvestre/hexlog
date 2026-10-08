@@ -179,40 +179,80 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
-  test('INVALID_RECORD com pattern exponencial e texto de 300 caracteres volta rápido, com max-length', async () => {
-    // Acima de 256 pontos de código o motor do relatório não roda o regex; sem o limite, `(a|aa)+`
-    // sobre 299 `a` e um `b` não terminaria. Processo filho: o timeout do `it` interrompe o travamento.
+  test('define_type com pattern é recusado com pattern-not-allowed e o catálogo aceita git-sha', async () => {
     const { client, call } = await connect();
     try {
-      await call('define_type', {
-        project: PROJECT,
-        name: 'note',
-        schema: {
-          type: 'object',
-          properties: { text: { type: 'string', maxLength: 256, pattern: '^(a|aa)+$' } },
-        },
-      });
-      await call('create_process', { project: PROJECT, process: PROCESS });
-      const start = performance.now();
-
-      const body = errorBodyOf(
-        await call('register', {
+      const refused = errorBodyOf(
+        await call('define_type', {
           project: PROJECT,
-          process: PROCESS,
-          agent: 'e2e-agent',
-          records: [{ type: 'note', target: 'run.step', data: { text: `${'a'.repeat(299)}b` } }],
+          name: 'note',
+          schema: {
+            type: 'object',
+            properties: { text: { type: 'string', maxLength: 256, pattern: '^(a|aa)+$' } },
+          },
         }),
       );
+      const accepted = await call('define_type', {
+        project: PROJECT,
+        name: 'commit',
+        schema: { type: 'object', properties: { sha: { type: 'string', format: 'git-sha' } } },
+      });
 
-      expect(performance.now() - start).toBeLessThan(1_000);
-      expect(body.code).toBe('INVALID_RECORD');
-      expect(body.details).toContainEqual(
-        expect.objectContaining({ path: '/records/0/data/text', code: 'max-length' }),
+      expect(refused.code).toBe('INVALID_SCHEMA');
+      expect(refused.details).toContainEqual(
+        expect.objectContaining({
+          path: '/schema/properties/text/pattern',
+          code: 'pattern-not-allowed',
+        }),
       );
+      expect(accepted.isError).not.toBe(true);
     } finally {
       await client.close();
     }
   }, 15_000);
+
+  describe('tipo legado com pattern, gravado antes da recusa', () => {
+    const LEGACY_PATTERNS = [
+      // Prova direta de que o pattern não é aplicado, sem depender de tempo.
+      ['^[a-z]+$', '123'],
+      // Exponencial: se o regex rodasse sobre 300 caracteres o register não terminaria.
+      ['^(a|aa)+$', `${'a'.repeat(299)}b`],
+    ];
+
+    test.each(LEGACY_PATTERNS)(
+      'register aceita o valor que o pattern %s recusaria, sem rodar o regex',
+      async (pattern, text) => {
+        const xdg = createTempDir('e2e-xdg');
+        const typeDir = path.join(xdg, 'hexlog', '.v1', PROJECT, 'types', 'note');
+        fs.mkdirSync(typeDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(typeDir, '1.0.json'),
+          JSON.stringify({
+            type: 'object',
+            properties: { text: { type: 'string', pattern } },
+          }),
+        );
+        const { client, call } = await connect({ xdg });
+        try {
+          await call('create_process', { project: PROJECT, process: PROCESS });
+          const start = performance.now();
+
+          const registered = await call('register', {
+            project: PROJECT,
+            process: PROCESS,
+            agent: 'e2e-agent',
+            records: [{ type: 'note', target: 'run.step', data: { text } }],
+          });
+
+          expect(registered.isError).not.toBe(true);
+          expect(performance.now() - start).toBeLessThan(5_000);
+        } finally {
+          await client.close();
+        }
+      },
+      15_000,
+    );
+  });
 
   test('uma chamada de cada tool no bundle: stdout só JSON-RPC e stderr JSON estruturado', async () => {
     const xdg = createTempDir('e2e-xdg');

@@ -64,8 +64,9 @@ que o usuário notar a lacuna.
 ## Versão de definição e `breaking`
 
 Cada `define_*` grava uma versão `major.minor` imutável. A mesma definição de
-novo é replay (`created: false`). O servidor decide a quebra de tipo e de
-relação; a de gate é do agente:
+novo é replay (`created: false`), exceto um tipo que carrega `pattern` ou
+`patternProperties`: esse é recusado (`INVALID_SCHEMA`), mesmo sendo a versão
+vigente. O servidor decide a quebra de tipo e de relação; a de gate é do agente:
 
 | Definição | Compatível (minor) | Exige `breaking: true` |
 |---|---|---|
@@ -87,7 +88,7 @@ fazer quando um processo já ficou preso a um tipo sem a marca.
 |---|---|---|
 | `create_process` com nome em `RESERVED_PROCESS_NAMES` (`types`, `relations`, `gates`, `attachments`, `archive`) | `RESERVED_NAME` | `domain/ids.ts#RESERVED_PROCESS_NAMES` |
 | Qualquer tool com nome fora da regex `Name`, campo desconhecido, ou relação sem `kind` nem `as` | `INVALID_INPUT`: corrija o campo de `details[].path` e reenvie | a validação de entrada de cada tool |
-| `define_type` com schema que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` sem `maxLength` de até 256; `patternProperties` sem `propertyNames.maxLength` de até 256; regex que a `safe-regex2` recusa (inclusive `^[a-z]+(?:-[a-z]+)*$`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
+| `define_type` com schema que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` ou `patternProperties` em qualquer subschema (`pattern-not-allowed`: valide o formato com `format: "git-sha"` ou com `minLength`/`maxLength`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
 | `define_*` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `commands/definition.ts#targetVersion` |
 | `register` com `type` fora do que o processo fixou (definido depois, ou nunca) | `TYPE_NOT_PINNED` | `commands/register/static.ts#pinnedSchema` |
 | `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` da primeira violação de schema de cada registro do lote em `details` (`/records/<i>/data/...`; leia o schema antes com `describe_type`) | `commands/register/static.ts#checkData` |

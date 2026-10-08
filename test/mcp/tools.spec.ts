@@ -177,6 +177,16 @@ describe('TM2: descrição das tools', () => {
     expect(description).toMatch(/read the current id with query/);
   });
 
+  test('define_type avisa que pattern é recusado e aponta o catálogo', async () => {
+    const { tools } = await environment.client.listTools();
+
+    const description = tools.find((tool) => tool.name === 'define_type')?.description;
+
+    expect(description).toMatch(/pattern-not-allowed/);
+    expect(description).toMatch(/git-sha/);
+    expect(description).not.toMatch(/maxLength. of at most 256/);
+  });
+
   test('query avisa o teto de changes e evaluate_gate o de evidence', async () => {
     const { tools } = await environment.client.listTools();
     const descriptionOf = (name: string) => tools.find((tool) => tool.name === name)?.description;
