@@ -383,6 +383,39 @@ describe('bash-guard (U1): hostile tokens are denied, not released', () => {
     }, 15_000);
   }
 
+  // Lado "no teto" de cada constante: um `>` trocado por `>=` no hook derrubaria estes casos.
+  const ceilingCases: { name: string; command: string }[] = [
+    { name: 'a glob token of exactly 4096 characters', command: `cat ${'?'.repeat(4096)}` },
+    { name: 'a token with exactly 64 opening brackets', command: `cat ${'['.repeat(64)}` },
+    { name: 'a token with exactly 8 brace groups', command: `cat ${'{a,b}'.repeat(8)}` },
+    {
+      name: 'glob tokens summing exactly 16384 characters',
+      command: `ls ${Array(4).fill('?'.repeat(4096)).join(' ')}`,
+    },
+    {
+      name: 'a command of exactly 1 MiB',
+      command: `echo ${'a'.repeat(1_048_576 - 'echo '.length)}`,
+    },
+    {
+      name: 'a token under ~/.local/share/ with exactly 32 brace alternatives',
+      command: `ls ~/.local/share/${'{a,b}'.repeat(5)}`,
+    },
+  ];
+
+  for (const testCase of ceilingCases) {
+    test(`allows ${testCase.name}`, () => {
+      const result = runHook(testCase, envBase);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+    }, 15_000);
+  }
+
+  test('denies a token under ~/.local/share/ with 64 brace alternatives (above the 32 limit)', () => {
+    const result = runHook({ command: `ls ~/.local/share/${'{a,b}'.repeat(6)}` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(reachesMessage);
+  }, 15_000);
+
   test('does not mention D when the denial is for an undecidable command', () => {
     const result = runHook({ command: `cat ${'['.repeat(65)}` }, envBase);
     expect(result.stderr).not.toContain(dataDir);

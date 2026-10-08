@@ -13,6 +13,13 @@
 - A troca dos ADRs 0001, 0002, 0005 e 0006 pelos 0007 a 0009 foi a exceção única. O ADR 0001 está só no git (`git show 87237c3:docs/adr-0001-hexlog-mvp.md`).
 - Antes de trocar uma lib ou uma decisão, confira [ADR 0007](adr-0007-dominio.md), [ADR 0008](adr-0008-servicos.md), [ADR 0009](adr-0009-ferramental.md), a frente correspondente em `docs/pesquisa/frentes/` e `docs/pesquisa/hexlog-pesquisa-libs.md`: a maioria das alternativas já foi avaliada e tem motivo registrado.
 
+## Changelog
+
+- `CHANGELOG.md` segue o Keep a Changelog em pt-BR: `[Não lançado]` no topo e, por versão, as seções Adicionado, Alterado, Corrigido e Removido, nessa ordem, mais Migração só quando a versão quebra ou muda comportamento. Uma linha por mudança visível a quem usa o hexlog, com o número do PR; refactor, teste e doc interna ficam fora.
+- A seção da versão nasce no mesmo commit do bump de `package.json#version`; `test/changelog.spec.ts` trava.
+- O rascunho sai de `npx git-cliff --unreleased` (`cliff.toml`), e o workflow `changelog-draft.yml` o comenta no PR para `main`. O rascunho é ponto de partida: reescreva em linguagem de usuário e escreva a Migração à mão.
+- O corpo do GitHub Release traz a seção da versão copiada do `CHANGELOG.md`, entre um parágrafo de abertura e o bloco de instalação.
+
 ## Como citar
 
 - Documentação (`.md`) e comentários citam arquivo e símbolo, nunca número de linha; `test/skill-coherence.spec.ts` trava a regra nos `.md`.
