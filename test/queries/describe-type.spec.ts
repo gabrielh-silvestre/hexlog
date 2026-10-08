@@ -46,6 +46,59 @@ describe('describeType', () => {
     });
   });
 
+  describe('tipo legado com pattern e patternProperties', () => {
+    const LEGACY: RecordType = {
+      type: 'object',
+      properties: {
+        code: { type: 'string', pattern: '^[a-z]+$', maxLength: 10 },
+        pattern: { type: 'string' },
+      },
+      patternProperties: { '^x-': { type: 'string' } },
+    };
+    const SHOWN: RecordType = {
+      type: 'object',
+      properties: { code: { type: 'string', maxLength: 10 }, pattern: { type: 'string' } },
+    };
+
+    function legacySetup() {
+      const setup = describeSetup();
+      setup.definitions.write(PROJECT, 'types', 'legacy', '1.0', LEGACY);
+      setup.createProcess('run-legacy');
+      return setup;
+    }
+
+    test('com process omite as duas palavras-chave e mantém o campo de nome pattern', () => {
+      const { describe } = legacySetup();
+
+      expect(describe({ type: 'legacy', process: 'run-legacy' })).toEqual({
+        name: 'legacy',
+        schema: SHOWN,
+      });
+    });
+
+    test('sem process omite as duas palavras-chave da definição lida do projeto', () => {
+      const { describe, definitions } = legacySetup();
+
+      expect(describe({ type: 'legacy' })).toEqual({
+        name: 'legacy',
+        version: '1.0',
+        schema: SHOWN,
+      });
+      expect(definitions.read(PROJECT, 'types', 'legacy', '1.0')).toEqual(LEGACY);
+    });
+
+    test('a cadeia do processo segue íntegra depois do describe', () => {
+      const { describe, queries } = legacySetup();
+
+      describe({ type: 'legacy', process: 'run-legacy' });
+
+      expect(queries.verifyChain({ project: PROJECT, process: 'run-legacy' })).toMatchObject({
+        ok: true,
+        breaks: [],
+      });
+    });
+  });
+
   test('tipo ausente do projeto é TYPE_NOT_FOUND em /type, com ou sem version', () => {
     const { describe } = describeSetup();
 

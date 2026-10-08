@@ -5,6 +5,7 @@ import safeRegex from 'safe-regex2';
 import { ATTACHMENT_FORMAT } from '../domain/definitions.ts';
 import { FORMAT_CATALOG } from '../domain/formats.ts';
 import { Hash } from '../domain/ids.ts';
+import { walkSubschemas } from '../domain/schema-walk.ts';
 import { capDetails, pointer as jsonPointer, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
 
@@ -33,28 +34,6 @@ const toDetails = (errors: ErrorObject[]): Detail[] => capDetails(errors.map(toD
 
 /** Teto de `maxLength` exigido junto a um `pattern`: limita o texto que a regex pode consumir. */
 export const PATTERN_MAX_LENGTH = 256;
-
-const SUBSCHEMA_KEYWORDS = [
-  'additionalProperties',
-  'items',
-  'contains',
-  'propertyNames',
-  'not',
-  'if',
-  'then',
-  'else',
-  'unevaluatedItems',
-  'unevaluatedProperties',
-];
-const SUBSCHEMA_LIST_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
-const SUBSCHEMA_MAP_KEYWORDS = [
-  'properties',
-  'patternProperties',
-  '$defs',
-  'definitions',
-  'dependentSchemas',
-  'dependencies', // legada, mas o ajv 2020 estrito a aceita e aplica
-];
 
 /**
  * A `safe-regex2` devolve só booleano, então a mensagem cobre todas as causas possíveis da recusa;
@@ -89,9 +68,7 @@ function patternDetails(root: unknown): Detail[] {
   const reject = (path: string, message: string) =>
     details.push({ path, code: 'invalid-schema', message });
 
-  const visit = (node: unknown, pointer: string): void => {
-    if (!isPlainObject(node)) return;
-
+  walkSubschemas(root, (node, pointer) => {
     if (node.format === ATTACHMENT_FORMAT && !ATTACHMENT_MARK_POSITION.test(pointer))
       reject(`${pointer}/format`, MISPLACED_ATTACHMENT_MESSAGE);
 
@@ -115,21 +92,8 @@ function patternDetails(root: unknown): Detail[] {
           reject(`${pointer}/patternProperties${jsonPointer([key])}`, UNSAFE_REGEX_MESSAGE);
       }
     }
+  });
 
-    for (const key of SUBSCHEMA_KEYWORDS) visit(node[key], `${pointer}/${key}`);
-    for (const key of SUBSCHEMA_LIST_KEYWORDS) {
-      const list: unknown = node[key];
-      if (Array.isArray(list)) list.forEach((item, i) => visit(item, `${pointer}/${key}/${i}`));
-    }
-    for (const key of SUBSCHEMA_MAP_KEYWORDS) {
-      const map: unknown = node[key];
-      if (!isPlainObject(map)) continue;
-      for (const [name, child] of Object.entries(map))
-        visit(child, `${pointer}/${key}${jsonPointer([name])}`);
-    }
-  };
-
-  visit(root, '');
   return capDetails(details);
 }
 

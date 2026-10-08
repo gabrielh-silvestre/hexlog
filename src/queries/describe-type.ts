@@ -1,6 +1,7 @@
 import { isUndefined } from 'es-toolkit';
 import type { RecordType } from '../domain/definitions.ts';
 import type { Name } from '../domain/ids.ts';
+import { withoutFreePatterns } from '../domain/schema-walk.ts';
 import { HexlogError, invalidInput } from '../errors.ts';
 import type { DefinitionReader, ProcessReader } from '../ports.ts';
 import { projectNotFound } from './read.ts';
@@ -18,6 +19,7 @@ export type DescribeTypeResult = {
   name: Name;
   /** Ausente com `process`: o manifesto fixa o schema, não a versão. */
   version?: string;
+  /** Sem `pattern` e `patternProperties`: o hexlog não os aplica, então não os mostra. */
   schema: RecordType;
 };
 
@@ -48,7 +50,7 @@ export function createDescribeType(deps: {
     if (!isUndefined(process)) {
       const { types } = store.readManifest({ project, process }).fixed;
       if (!Object.hasOwn(types, type)) throw typeNotPinned(type);
-      return { name: type, schema: types[type]! };
+      return { name: type, schema: withoutFreePatterns(types[type]!) };
     }
     const latest = definitions.versions(project, 'types', type).at(-1);
     // `read` aponta `/name` para o nome inexistente; aqui o campo da entrada é `/type`. O
@@ -60,7 +62,7 @@ export function createDescribeType(deps: {
     return {
       name: type,
       version: wanted,
-      schema: definitions.read(project, 'types', type, wanted),
+      schema: withoutFreePatterns(definitions.read(project, 'types', type, wanted)),
     };
   };
 }
