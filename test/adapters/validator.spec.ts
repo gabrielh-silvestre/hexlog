@@ -458,8 +458,9 @@ describe('checkSchema', () => {
       });
 
       test('$ref para o metaschema do JSON Schema não é recusado', () => {
+        // validador novo: o compartilhado já tem o cache quente e esconderia a guarda do metaschema
         expect(
-          validator.checkSchema({
+          createValidator().checkSchema({
             type: 'object',
             properties: { a: { $ref: 'https://json-schema.org/draft/2020-12/schema' } },
           }),
@@ -467,8 +468,9 @@ describe('checkSchema', () => {
       });
 
       test('$ref para o metaschema junto de $ref para dado recusa só o pattern do dado', () => {
+        // validador novo: o compartilhado já tem o cache quente e esconderia a guarda do metaschema
         expect(
-          validator.checkSchema({
+          createValidator().checkSchema({
             allOf: [
               { $ref: 'https://json-schema.org/draft/2020-12/schema' },
               { $ref: '#/examples/0' },

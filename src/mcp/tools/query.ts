@@ -197,7 +197,9 @@ const DESCRIBE_TYPE_DESCRIPTION =
   'schema and not its version (TYPE_NOT_PINNED when the process did not pin the type). Without ' +
   'process: the current version of the type in the project, or the one asked by version, returned ' +
   'as name, version and schema (PROJECT_NOT_FOUND when the project does not exist, TYPE_NOT_FOUND ' +
-  'when it has no such type or version). ' +
+  'when it has no such type or version). The schema comes back without `pattern` and ' +
+  '`patternProperties`: hexlog ignores them, a legacy type may still store them, and resending ' +
+  'the schema read here needs `breaking: true`. ' +
   'process and version together, or a version that is not <major>.<minor>, are refused with ' +
   'INVALID_INPUT.';
 
