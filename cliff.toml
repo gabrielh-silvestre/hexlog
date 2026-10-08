@@ -1,0 +1,42 @@
+# Rascunho do CHANGELOG.md a partir dos Conventional Commits. O rascunho é ponto de partida:
+# quem fecha o release reescreve em linguagem de usuário, acrescenta o número do PR e escreve a
+# seção Migração à mão antes de gravar no CHANGELOG.md.
+
+[changelog]
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Não lançado]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {{ commit.message | upper_first }}\
+{% endfor %}
+{% endfor %}\
+{% set breaking = commits | filter(attribute="breaking", value=true) %}\
+{% if breaking %}
+### Migração
+{% for commit in breaking %}
+- {{ commit.breaking_description | default(value=commit.message) | upper_first }}\
+{% endfor %}
+{% endif %}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
+# O comentário HTML só ordena os grupos na ordem do Keep a Changelog; `striptags` o remove.
+commit_parsers = [
+  # Fluxo do próprio repositório (hooks e skills em `.claude/`): não chega a quem usa o hexlog.
+  { message = "^[a-z]+!?\\((flow|claude)\\)", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Adicionado" },
+  { message = "^perf", group = "<!-- 1 -->Alterado" },
+  { message = "^fix", group = "<!-- 2 -->Corrigido" },
+  { message = "^revert", group = "<!-- 3 -->Removido" },
+  { message = ".*", skip = true },
+]

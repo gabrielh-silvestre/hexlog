@@ -123,6 +123,8 @@ describe('N11', () => {
     husky: '9.1.7',
     'lint-staged': '17.5.1',
     tar: '7.5.22',
+    // Rascunho do CHANGELOG.md a partir dos Conventional Commits (cliff.toml).
+    'git-cliff': '2.14.2',
   };
 
   test('dependencies bate exatamente com o manifesto de package.json (sem ^/~/faixas)', () => {
