@@ -178,26 +178,19 @@ export type Validator = {
    * Todo `path` é relativo ao documento do schema, e o serviço prefixa `/schema`. Os erros do
    * metaschema saem com o ponto do schema; os de compilação (palavra-chave ou formato desconhecido,
    * `$ref` sem destino, `$schema` de outro rascunho, `$id` de metaschema, `$async: true`) saem como
-   * um só `Detail` com `path` vazio (a raiz) e `code` `invalid-schema`. Também recusa regex que
-   * pode explodir em tempo (ReDoS):
-   * `pattern` ou chave de `patternProperties` reprovados pela `safe-regex2`, `pattern` sem
-   * `maxLength` de até 256 no mesmo subschema e `patternProperties` sem `propertyNames.maxLength`
-   * de até 256 no mesmo subschema; saem com `path` do campo (relativo ao schema) e
-   * `code` `invalid-schema`. Devolve todos os erros do schema. Limite conhecido: a `safe-regex2` é
-   * heurística, e alternância sobreposta como `(a|aa)+` passa (risco aceito em 2026-10-02). A
-   * `safe-regex2` também recusa regex linear com grupo repetido (falso positivo, ex.: kebab-case);
-   * ver `adapters/validator.ts#createValidator`. Outro limite, aceito: o percurso não segue
-   * `$ref`, então `$ref` com ponteiro para `const`/`default`/`enum`/`examples` esconde `pattern` da
-   * `safe-regex2` e do teto de `maxLength` (`adapters/validator.ts#createValidator`).
+   * um só `Detail` com `path` vazio (a raiz) e `code` `invalid-schema`. Recusa todo `pattern` e
+   * todo `patternProperties` (`code` `pattern-not-allowed`, `path` do campo relativo ao schema,
+   * `path` vazio quando só um `$ref` o alcança e o ponteiro não resolve no documento): o formato de
+   * um campo vem do catálogo de formatos ou de `minLength`/`maxLength`. Devolve todos os erros do
+   * schema; ver `adapters/validator.ts#createValidator`.
    */
   checkSchema(schema: RecordType): Detail[];
   /**
    * Pressupõe um schema que já passou em `checkSchema`: com schema que não compila lança `Error` cru
    * (vira `INTERNAL` na borda, `mcp/kernel.ts#execute`). O `path` dos detalhes é relativo a `data`.
    * Devolve um erro por subschema avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames`
-   * saem os dos ramos). O `maxLength` é avaliado antes do `pattern` e o ajv para aí em cada
-   * ramo, então o regex nunca roda sobre string acima do teto; o `propertyNames.maxLength` exigido
-   * junto de `patternProperties` limita da mesma forma o nome que a chave de regex avalia.
+   * saem os dos ramos). `pattern` e `patternProperties` de um tipo fixado antes da recusa não são
+   * aplicados: nenhum regex vindo do schema é construído nem executado.
    */
   validate(schema: RecordType, data: HexRecord['data']): Detail[];
 };

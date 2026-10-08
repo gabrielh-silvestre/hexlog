@@ -6,18 +6,19 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Processos e targets
 
-- Projeto: `hexlog`. Processo de cada trabalho: o slug da branch, calculado só por `node .claude/hooks/flow-hooks.ts slug <branch>` (nunca à mão). Processo das diretrizes vigente: `directives-2`; quando schema, relação ou gate mudar, vira `directives-3` e esta linha troca.
+- Projeto: `hexlog`. Processo de cada trabalho: o slug da branch, calculado só por `node .claude/hooks/flow-hooks.ts slug <branch>` (nunca à mão). Processo das diretrizes vigente: `directives-3`; quando schema, relação ou gate mudar, vira `directives-4` e esta linha troca.
 - Targets de um trabalho: `<slug>.opening`, `<slug>.premise.objective`, `<slug>.premise.<short>`, `<slug>.decision.<short>`, `<slug>.gap.<short>`, `<slug>.evidence.<short>`, `<slug>.verification`, `<slug>.finding.<short>`.
 - Targets das diretrizes: `directives.<doc>` (registro `doc`, um por documento de `docs/directives/`) e `directives.<doc>.<rule>` (registro `directive`, uma regra atômica; `<doc>` é o nome do arquivo sem `.md` e `<rule>` uma chave curta em inglês).
 - Targets das premissas atemporais: `directives.estrategia.<slug>` (registro `premise`, um por bullet de [estrategia.md](estrategia.md)) e `directives.estrategia.none`, a sentinela "nenhuma premissa se aplica".
-- Toda consulta às diretrizes fixa o processo vigente (`process: directives-2`): `supersedes` e `revokes` não cruzam processos, então o alcance projeto enxergaria duas gerações.
+- Toda consulta às diretrizes fixa o processo vigente (`process: directives-3`): `supersedes` e `revokes` não cruzam processos, então o alcance projeto enxergaria duas gerações.
+- Se o processo vigente de diretrizes não existe (`PROCESS_NOT_FOUND` na consulta), pare e avise o dono; nunca `create_process` de `directives-N`: o processo nasce no passo operacional do dono, depois da instalação da versão que fixa as definições novas.
 - Quando as diretrizes viram `directives-N`, regrave as decisões vigentes cuja `anchored-in` aponta para o processo antigo: `supersedes`, dados idênticos e `anchored-in` para a diretriz de mesmo target no processo novo. Se o texto dela mudou ou ela sumiu, a reancoragem vai ao dono, que decide; compare `data` e relações com o original antes de gravar.
 - Editar um documento de `docs/directives/` dispara o sync na abertura do próximo trabalho (`flow-run`); só a regra que mudou gera registro novo. O agente nunca edita `estrategia.md` por conta própria: só o dono muda uma premissa atemporal.
 - Issue com problemas independentes vira um trabalho por problema ou grupo coeso, cada um com entrevista própria e PR próprio.
 
 ## Premissas
 
-- Premissa é o porquê de uma escolha em linguagem de produto: registro `premise`, com `statement` de até 255 caracteres. A atemporal mora em `directives-2` e vem de `estrategia.md`; a da entrega mora no processo do trabalho, em `<slug>.premise.<short>`. O objetivo da entrega é a primeira delas, `<slug>.premise.objective` (resumo do pedido: resuma, não trunque).
+- Premissa é o porquê de uma escolha em linguagem de produto: registro `premise`, com `statement` de até 255 caracteres. A atemporal mora em `directives-3` e vem de `estrategia.md`; a da entrega mora no processo do trabalho, em `<slug>.premise.<short>`. O objetivo da entrega é a primeira delas, `<slug>.premise.objective` (resumo do pedido: resuma, não trunque).
 - Toda `decision` liga a ao menos uma premissa por `rests-on` (decisão para `premise`): a da entrega, a atemporal ou a sentinela `directives.estrategia.none` quando nenhuma se aplica. Citar só o objetivo ou a sentinela por hábito não é citar premissa.
 - Exceção: trabalho aberto antes de `directives-2` (o `list` com `process` não mostra o tipo `premise` nos tipos fixados) não registra premissa nem `rests-on`, porque o servidor recusa a relação desconhecida e o processo mantém as versões fixadas na criação.
 - A premissa da entrega que desenvolve uma atemporal pode ligar-se a ela por `derivesFrom` cru (sem `as`). É opcional.

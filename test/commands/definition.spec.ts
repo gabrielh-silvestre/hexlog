@@ -484,14 +484,19 @@ describe('definição fora do teto ou da forma não chega a gravar', () => {
 describe('defineType: checkSchema do validador', () => {
   test.each([
     [
-      'pattern perigoso',
-      { code: { type: 'string', maxLength: 10, pattern: '(a+)+$' } },
+      'pattern livre',
+      { code: { type: 'string', maxLength: 10, pattern: '^[a-z]+$' } },
       '/schema/properties/code/pattern',
     ],
     [
-      'pattern sem maxLength',
-      { code: { type: 'string', pattern: '^[a-z]+$' } },
+      'pattern livre que não compila como regex',
+      { code: { type: 'string', pattern: '(' } },
       '/schema/properties/code/pattern',
+    ],
+    [
+      'patternProperties',
+      { code: { type: 'object', patternProperties: { '^x-': { type: 'string' } } } },
+      '/schema/properties/code/patternProperties',
     ],
     [
       'valor que viola o metaschema',
@@ -512,6 +517,41 @@ describe('defineType: checkSchema do validador', () => {
       expect(writes).toEqual([]);
     },
   );
+
+  test('pattern livre sai com o código pattern-not-allowed', () => {
+    const { service } = setup();
+    const schema: RecordType = {
+      type: 'object',
+      properties: { code: { type: 'string', pattern: '^[a-z]+$' } },
+    };
+
+    const error = captureError(() => service.defineType({ project: PROJECT, name: NAME, schema }));
+
+    expect(error).toMatchObject({
+      code: 'INVALID_SCHEMA',
+      details: [{ path: '/schema/properties/code/pattern', code: 'pattern-not-allowed' }],
+    });
+  });
+
+  test('reenviar o schema de um tipo legado com pattern é recusado, não é replay', () => {
+    const { service, seed, versions, writes } = setup();
+    const legacy: RecordType = {
+      type: 'object',
+      properties: { code: { type: 'string', maxLength: 10, pattern: '^[a-z]+$' } },
+    };
+    seed('types', NAME, '1.0', legacy);
+
+    const error = captureError(() =>
+      service.defineType({ project: PROJECT, name: NAME, schema: legacy }),
+    );
+
+    expect(error).toMatchObject({
+      code: 'INVALID_SCHEMA',
+      details: [{ path: '/schema/properties/code/pattern', code: 'pattern-not-allowed' }],
+    });
+    expect(versions('types', NAME)).toEqual(['1.0']);
+    expect(writes).toEqual([]);
+  });
 
   test('exceção do ajv aponta exatamente /schema, nunca /schema/schema', () => {
     const { service, writes } = setup();

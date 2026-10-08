@@ -1,7 +1,7 @@
 {
   "type": "object",
   "properties": {
-    "path": { "type": "string", "pattern": "^docs/directives/[a-z0-9-]+\\.md$", "maxLength": 100 },
+    "path": { "type": "string", "minLength": 1, "maxLength": 100 },
     "source": { "type": "string", "format": "attachment" },
     "removed": { "type": "boolean" }
   },

@@ -46,12 +46,13 @@ export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void
       title: 'Define type',
       description:
         'Defines a record type for the project as a JSON Schema (root `type: "object"`), saving a new ' +
-        'immutable version. The same schema again is a replay (`created: false`). Adding an optional ' +
+        'immutable version. The same schema again is a replay (`created: false`) unless it carries a ' +
+        '`pattern` or `patternProperties`, which are refused. Adding an optional ' +
         'property or an enum value is a minor version; any other change needs `breaking: true`, ' +
-        'otherwise it is refused with BREAKING_CHANGE. The schema is checked by a strict ajv; every ' +
-        '`pattern` needs `maxLength` of at most 256 in the same subschema, and `patternProperties` needs ' +
-        '`propertyNames.maxLength` of at most 256; a property with `format: ' +
-        '"attachment"` holds the hash of an attachment, and the format is accepted only on a top-level ' +
+        'otherwise it is refused with BREAKING_CHANGE. The schema is checked by a strict ajv; ' +
+        '`pattern` and `patternProperties` are refused (pattern-not-allowed): validate a format with ' +
+        '`format: "git-sha"` (7 to 40 lowercase hex characters, not SHA-256) or plain ' +
+        '`minLength`/`maxLength`; a property with `format: "attachment"` holds the hash of an attachment, and the format is accepted only on a top-level ' +
         'property or on the items of a top-level array; at most 16000 canonical characters.',
       outputSchema: Defined,
       annotations: WRITE_ANNOTATIONS,

@@ -21,6 +21,10 @@ Lê o schema de um tipo antes de registrar nele. Entrada: `project`, `type` e, o
   lê é o que o `register` valida, mesmo que o projeto já tenha definido uma versão mais nova.
 - **Sem `process`:** devolve `{name, version, schema}` da versão vigente do projeto, ou da
   `version` pedida (`<major>.<minor>`).
+- **Nos dois casos** o schema sai sem `pattern` e sem `patternProperties`, porque o
+  `register` os ignora (ver `define_type`); uma propriedade de nome `pattern` em `properties`
+  continua na saída. Um tipo gravado antes do catálogo de formatos, que tinha `pattern`, sai
+  sem ele, e o `pattern` original só existe no manifesto em disco.
 
 Erros:
 
@@ -55,16 +59,34 @@ minor e mudar `kind` ou estreitar a lista quebra; em `define_gate`, toda mudanç
 minor e `breaking: true` marca o gate que ficou mais estrito.
 
 `define_type` recebe um JSON Schema com raiz `type: "object"`. Uma propriedade com
-`format: "attachment"` guarda o hash de um anexo (ver `attach`). Todo `pattern`
-passa por checagem de regex catastrófico (`safe-regex2`) e exige `maxLength` no
-mesmo subschema, com até 256, e todo `patternProperties` exige `propertyNames` com
-`maxLength` até 256 no mesmo subschema (as chaves dele passam pela `safe-regex2`).
+`format: "attachment"` guarda o hash de um anexo (ver `attach`). `pattern` e
+`patternProperties` não são aceitos em nenhum subschema, inclusive o que um `$ref`
+alcança dentro de dado (`#/examples/0`, `#/const`): a recusa é `INVALID_SCHEMA` com
+`pattern-not-allowed`, o `path` aponta o `pattern` (`/schema/properties/commit/pattern`) e a
+`message` lista os formatos do catálogo. Um campo que se chama `pattern` dentro de
+`properties` não é recusado. O formato de um texto vem de `format`, que aceita os do
+`ajv-formats` e os do catálogo fechado do hexlog:
+
+| `format` | Aceita |
+|---|---|
+| `git-sha` | hexadecimal minúsculo de 7 a 40 caracteres (`HEAD`, maiúsculas, quebra de linha final e SHA-256 de 64 caracteres são recusados); não confere se o commit existe |
+| `attachment` | hash de um anexo (ver `attach`) |
+
+Formato fora do catálogo e do `ajv-formats` é `INVALID_SCHEMA` (`invalid-schema`). Regra de
+texto livre fora do catálogo não tem como ser declarada no tipo e vai para o fluxo de trabalho.
 Também são `INVALID_SCHEMA`: schema que o `ajv` não compila, `$async`, raiz diferente de
 `object` (`/schema/type`, `invalid-type`) e a marca `attachment` fora de uma propriedade
-de primeiro nível ou dos itens de um array de primeiro nível (`.../format`). A
-`safe-regex2` também recusa regex linear com repetição dentro de grupo repetido
-(`^[a-z]+(?:-[a-z]+)*$`; use `^[a-z0-9-]+$`). O limite da checagem está em
-[`tetos-dominio-v1.md`](tetos-dominio-v1.md). Um tipo fica de até 16.000
+de primeiro nível ou dos itens de um array de primeiro nível (`.../format`).
+
+O `register` ignora `pattern` e `patternProperties` de um tipo já fixado: processos
+criados antes do catálogo continuam gravando, e o valor que o pattern recusaria passa a ser
+aceito. Com `patternProperties` e `additionalProperties` (ou `unevaluatedProperties`) no mesmo
+subschema, a propriedade que só o `patternProperties` admitia passa a ser checada por esse
+schema (recusada, se for `false`). Reenviar o schema vigente de um tipo legado que tem `pattern` não é mais replay: é
+`INVALID_SCHEMA` (`pattern-not-allowed`), e o caminho é um `define_type` novo, `breaking:
+true`, sem a palavra-chave. A decisão e o resíduo (`format: "regex"` do `ajv-formats` constrói
+um `RegExp` sobre o dado, sem executá-lo) estão na emenda de 2026-10-07 do
+[ADR 0009](directives/adr-0009-ferramental.md), item 20. Um tipo fica de até 16.000
 caracteres canônicos.
 
 Um gate tem 1 a 50 perguntas de quatro formas, todas com seletor

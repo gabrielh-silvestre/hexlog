@@ -4,7 +4,7 @@ Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na ba
 
 ## Direção permitida de dependência
 
-- `domain/` não importa `shared/`, `commands/`, `queries/`, `mcp/` nem `adapters/`, nem builtin do Node (salvo `crypto`) nem lib de infraestrutura. Exceção: importa `src/errors.ts` (`HexlogError` em `domain/definitions.ts` e `domain/chain.ts`), e `errors.ts` importa de volta só os tipos `Name` e `RecordId` (ciclo só de tipo). `eslint.boundaries.js` não proíbe `errors.ts` nem `ports.ts` dentro de `domain/`, então essa parte é convenção.
+- `domain/` não importa `shared/`, `commands/`, `queries/`, `mcp/` nem `adapters/`, nem builtin do Node (salvo `crypto`) nem lib de infraestrutura. Exceção: importa `src/errors.ts` (`HexlogError` em `domain/definitions.ts` e `domain/chain.ts`, `pointer` em `domain/schema-walk.ts`), e `errors.ts` importa de volta só os tipos `Name` e `RecordId` (ciclo só de tipo). `eslint.boundaries.js` não proíbe `errors.ts` nem `ports.ts` dentro de `domain/`, então essa parte é convenção.
 - Quem importa `shared/`: `commands/` e `queries/` (`latest.ts`, `loader.ts`, `pages.ts`, `logger.ts`), `compose.ts` (`loader.ts`, `logger.ts`) e `server.ts` (`logger.ts`); `mcp/` e `adapters/` só importam `shared/logger.ts`.
 - `shared/`, `commands/` e `queries/` dependem de `domain/` e das portas, nunca de `adapters/`; `commands/` e `queries/` não se importam.
 - `adapters/` só implementa portas: não importa `commands/`, `queries/` nem `mcp/` (`eslint.boundaries.js#adaptersBlock`); builtins do Node e libs de infraestrutura são o que ele existe para usar.

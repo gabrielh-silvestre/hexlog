@@ -18,6 +18,7 @@ const BATCH_MAX = 50;
 const REVOKES_MAX = 99;
 const CLOSES_GAP = 'closes-gap';
 export const STRATEGY_DOC = 'estrategia';
+const DOC_PATH = /^docs\/directives\/[a-z0-9-]+\.md$/;
 const PREMISE_LINE = /^- `([a-z0-9][a-z0-9-]{0,62})`: (.+)$/;
 const VER_SEPARATOR = ' Ver: ';
 const STATEMENT_MAX_CODE_POINTS = 255;
@@ -78,7 +79,7 @@ export type SyncPlan = {
   upToDate: boolean;
   batches: SyncBatch[];
   warnings: SyncWarning[];
-  error?: 'too-many-relations';
+  error?: 'too-many-relations' | 'invalid-path';
 };
 
 export const sha256 = (data: string | Uint8Array): string =>
@@ -148,6 +149,10 @@ export function parsePremises(text: string): { rules: ExtractedRule[]; malformed
   }
   return { rules, malformed };
 }
+
+/** O `path` do `doc` é sempre `docs/directives/<docSlug>.md`: vazio, absoluto e outro destino são inválidos. */
+export const invalidDocPath = ({ docSlug, path }: Pick<SyncInput, 'docSlug' | 'path'>): boolean =>
+  !DOC_PATH.test(path) || path !== `docs/directives/${docSlug}.md`;
 
 function isUpToDate({ current, vigent, extracted, hash }: SyncInput): boolean {
   if (extracted === null) {
@@ -227,7 +232,8 @@ const batchesOf = (docSlug: string, source: string, records: PlannedRecord[]): S
   }));
 
 /**
- * Planeja o sync de um documento. A regra de `extracted` sem par em `vigent` vira registro novo; com
+ * Planeja o sync de um documento. Antes de tudo, `path` fora de `docs/directives/<docSlug>.md`
+ * devolve `error: 'invalid-path'` sem lote. A regra de `extracted` sem par em `vigent` vira registro novo; com
  * par e `rule` ou `section` diferentes, registro novo que supera o antigo e copia as relações
  * `closes-gap` dele; com dados iguais, nenhum registro (salvo `closes` com lacuna que a versão
  * vigente ainda não fecha). O `doc` novo supera o vigente, revoga as regras que sumiram e entra por
@@ -237,6 +243,9 @@ const batchesOf = (docSlug: string, source: string, records: PlannedRecord[]): S
  */
 export function planSync(input: SyncInput): SyncPlan {
   const { docSlug, path, hash, current, vigent, extracted } = input;
+  if (invalidDocPath(input)) {
+    return { upToDate: false, batches: [], warnings: [], error: 'invalid-path' };
+  }
   if (isUpToDate(input)) {
     const closing =
       docSlug === STRATEGY_DOC

@@ -10,7 +10,7 @@ const FORBIDDEN_BUILTINS = [...new Set(builtinModules.map((name) => name.replace
   .filter((name) => name !== 'crypto')
   .flatMap((name) => [name, `node:${name}`]);
 
-const INFRA_PACKAGES = ['ajv', 'ajv-formats', 'minisearch', 'safe-regex2'];
+const INFRA_PACKAGES = ['ajv', 'ajv-formats', 'minisearch'];
 
 const NO_IO_MESSAGE = 'Esta camada não acessa I/O nem libs de infraestrutura.';
 

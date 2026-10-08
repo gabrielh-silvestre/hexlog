@@ -6,7 +6,14 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { findPrCommands, type PrCommand } from './flow-command.ts';
-import { STRATEGY_DOC, parsePremises, planSync, sha256, type SyncInput } from './flow-sync.ts';
+import {
+  STRATEGY_DOC,
+  invalidDocPath,
+  parsePremises,
+  planSync,
+  sha256,
+  type SyncInput,
+} from './flow-sync.ts';
 
 const SLUG_MAX = 63;
 const RESERVED_SLUGS = new Set([
@@ -219,11 +226,14 @@ function mark(slug: string | undefined): void {
 
 /**
  * Para `estrategia`, o hook lê o documento e entrega hash e premissas ao planejador, no lugar do
- * que veio no stdin; premissa inválida lança. O documento apagado (`extracted: null`) passa direto.
+ * que veio no stdin; premissa inválida lança. O documento apagado (`extracted: null`) passa direto,
+ * e o `path` inválido também, sem ler nada: o `planSync` responde `invalid-path`.
  * O `input.path` relativo vale a partir da raiz do repositório, não do cwd de quem roda o hook.
  */
 function withStrategyPremises(input: SyncInput): SyncInput {
-  if (input.docSlug !== STRATEGY_DOC || input.extracted === null) return input;
+  if (input.docSlug !== STRATEGY_DOC || input.extracted === null || invalidDocPath(input)) {
+    return input;
+  }
   const bytes = fs.readFileSync(path.resolve(REPO_ROOT, input.path));
   const { rules, malformed } = parsePremises(bytes.toString('utf8'));
   if (malformed.length > 0) {

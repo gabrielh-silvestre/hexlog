@@ -11,7 +11,7 @@ Implementações das portas declaradas em `src/ports.ts`: disco (`fs/`), valida�
 
 | File | Description |
 |------|-------------|
-| `validator.ts` | `createValidator` (porta `Validator`): ajv estrito 2020-12 com `ajv-formats` e o formato `attachment`; `checkSchema` valida o schema de um tipo (inclui a recusa de regex perigoso pela `safe-regex2` e o teto `PATTERN_MAX_LENGTH`) e `validate` confere o `data` de um registro |
+| `validator.ts` | `createValidator` (porta `Validator`): ajv estrito 2020-12 com `ajv-formats`, o formato `attachment` e os do `FORMAT_CATALOG`; `checkSchema` valida o schema de um tipo (inclui a recusa de `pattern` e `patternProperties` com `pattern-not-allowed`) e `validate` confere o `data` de um registro, ignorando `pattern` e `patternProperties` (ajv neutro, sem construir nem executar regex do schema) |
 | `search.ts` | `createSearchIndex` (porta `SearchIndex`): índice MiniSearch em cache por processo, validado por contagem e impressão do último registro, com orçamento de caracteres indexados; `search` devolve os `RecordId` por relevância e `terms` os termos distintos da consulta |
 
 ## Subdirectories
@@ -30,7 +30,7 @@ Implementações das portas declaradas em `src/ports.ts`: disco (`fs/`), valida�
 
 ### External
 
-- `ajv`, `ajv-formats`, `safe-regex2`: `validator.ts`
+- `ajv`, `ajv-formats`: `validator.ts`
 - `minisearch`: `search.ts`
 - `es-toolkit`: helpers em todos os arquivos
 - `zod`: `fs/definition-store.ts` e `fs/lock.ts`

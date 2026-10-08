@@ -16,6 +16,8 @@ Domínio puro do hexlog: esquemas Zod dos registros, da cadeia de hash, do manif
 | `chain.ts` | Cadeia de hash: `sha256hex`, `hashOfJcs`, `fingerprint` (impressão do lote), `hashLink`, `anchor` (hash do manifesto, raiz da cadeia) e `isValidLink`, que confere um elo contra `Expected` e recusa com `LinkRejection` (`invalid-line`, `diverging-seq` ou `hash-mismatch`). Define `Link`, `Batch`, `BatchKey` e os tetos `BATCH_KEY_MAX` e `BATCH_ALIASES_MAX`. |
 | `manifest.ts` | `Manifest`: schema estrito do `process.json`, com `project`, `process`, `createdAt`, `fixed` (versões de tipos, relações e gates fixadas no processo) e `hashes` de cada grupo. |
 | `definitions.ts` | Schemas `RecordType`, `RelationName` e `Gate` com teto de caracteres canônicos. Semver `major.minor` (`CANONICAL_VERSION`, `parseVersion`, `compareVersions`, `bumpVersion`), `classifyTypeChange` e `classifyRelationChange` (devolvem `Change`), `attachmentFields` e `ATTACHMENT_FORMAT`. Tetos: `RECORD_TYPE_MAX_CHARS`, `RELATION_GATE_MAX_CHARS`, `GATE_QUESTIONS_MAX`. |
+| `formats.ts` | Catálogo fechado de formatos que o validador registra além dos do `ajv-formats`: `FORMAT_CATALOG` (hoje só `git-sha`, `GIT_SHA_FORMAT`), `isGitSha` (hexadecimal minúsculo de 7 a 40 caracteres) e `catalogNames`. |
+| `schema-walk.ts` | Percurso puro dos subschemas de um JSON Schema: `walkSubschemas` (só as palavras-chave que carregam subschema, nunca `const`/`enum`/`default`/`examples`; o `visit` roda antes da descida), `FREE_PATTERN_KEYWORDS` (`pattern` e `patternProperties`), `withoutFreePatterns` (cópia do schema sem essas duas palavras-chave, que o `describe_type` mostra) e `hasKeywordAt` (o ponteiro RFC 6901 resolve num objeto com a palavra-chave). |
 | `gate.ts` | Gate declarativo: `GateQuestion` (`approved`, `occurred`, `no_pending`, `no_open_contradiction`), `Selector`, `Where`, `GateScope`, `matchesSelector`, `matchesTargetPrefix` e `evaluateGate`, que devolve `GateResult` com um `QuestionResult` por pergunta. |
 | `relations.ts` | Vigência (`buildVigency`: `isCurrent` e `currentOf`), `hasCycle` de `supersedes`, `needsReview` (prova vencida por alcance), `checkRelation` e `resolveKind` com as regras de relação (`RuleCode`, `Violation`, `RuleContext`). `pushTo` é o auxiliar de mapa de listas. |
 
@@ -23,7 +25,7 @@ Domínio puro do hexlog: esquemas Zod dos registros, da cadeia de hash, do manif
 
 ### Internal
 
-- `../errors.ts`: `HexlogError`, usado por `chain.ts` e `definitions.ts`.
+- `../errors.ts`: `HexlogError`, usado por `chain.ts` e `definitions.ts`, e `pointer`, usado por `schema-walk.ts`.
 
 ### External
 

@@ -477,6 +477,54 @@ describe('modos', () => {
     expect(JSON.parse(result.stdout)).toEqual(JSON.parse(JSON.stringify(planSync(input))));
   }, 15_000);
 
+  describe('sync-plan com path inválido', () => {
+    const syncPlan = (input: Partial<SyncInput>) => {
+      const result = runHook(['sync-plan'], {
+        input: JSON.stringify({
+          docSlug: 'estrategia',
+          path: 'docs/directives/estrategia.md',
+          hash: '',
+          current: null,
+          vigent: [],
+          extracted: [],
+          ...input,
+        }),
+      });
+      return {
+        status: result.status,
+        stderr: result.stderr,
+        plan: JSON.parse(result.stdout) as unknown,
+      };
+    };
+    const refused = {
+      status: 0,
+      stderr: '',
+      plan: expect.objectContaining({ batches: [], error: 'invalid-path' }),
+    };
+
+    test('path vazio sai com 0 e o erro no JSON', () => {
+      expect(syncPlan({ path: '' })).toEqual(refused);
+    }, 15_000);
+
+    test('path fora de docs/directives sai com 0 e o erro no JSON', () => {
+      expect(syncPlan({ docSlug: 'convencoes', path: 'docs/x.md' })).toEqual(refused);
+    }, 15_000);
+
+    // sem o pré-check o hook leria o arquivo malformado e sairia com 2 e o motivo no stderr
+    test('estrategia com path absoluto de arquivo malformado não é lido', () => {
+      const file = path.join(createTempDir('strategy'), 'estrategia.md');
+      fs.writeFileSync(file, '## Tema\n- sem crase: linha ruim');
+
+      expect(syncPlan({ path: file })).toEqual(refused);
+    }, 15_000);
+
+    test('estrategia com path absoluto de arquivo inexistente não é lido', () => {
+      const file = path.join(createTempDir('strategy'), 'faltando.md');
+
+      expect(syncPlan({ path: file })).toEqual(refused);
+    }, 15_000);
+  });
+
   test('modo desconhecido sai com 2', () => {
     expectDenied(runHook(['nope']), /unknown mode/);
   }, 15_000);
