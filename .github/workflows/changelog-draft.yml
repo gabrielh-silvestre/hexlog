@@ -1,0 +1,36 @@
+name: Changelog draft
+
+# Comenta no PR de release o rascunho do git-cliff para o CHANGELOG.md. O rascunho é ponto de
+# partida: a seção da versão é reescrita em linguagem de usuário antes do merge.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  HUSKY: 0
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.1'
+      - run: npm ci
+      - run: |
+          {
+            echo '**Rascunho do git-cliff** para o `CHANGELOG.md` (commits desde a última tag). Reescreva em linguagem de usuário, com o número do PR, e escreva a seção Migração à mão.'
+            echo
+            npx git-cliff --unreleased
+          } > draft.md
+      - run: gh pr comment "$PR" --edit-last --create-if-none --body-file draft.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
