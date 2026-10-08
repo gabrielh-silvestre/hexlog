@@ -4,6 +4,12 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+## [1.1.1] - 2026-10-08
+
+### Alterado
+
+- Versão de manutenção, sem mudança de comportamento: o servidor passa a reportar 1.1.1 e a instalar em `~/.local/lib/hexlog/1.1.1/` (#104).
+
 ## [1.1.0] - 2026-10-08
 
 ### Adicionado
