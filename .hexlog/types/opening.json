@@ -5,7 +5,7 @@
     "route": { "type": "string", "enum": ["interview-plan-execute", "direct"] },
     "request": { "type": "string", "minLength": 1, "maxLength": 500 },
     "branch": { "type": "string", "minLength": 1, "maxLength": 200 },
-    "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$", "maxLength": 40 },
+    "commit": { "type": "string", "format": "git-sha", "maxLength": 40 },
     "sync": { "type": "string", "enum": ["up-to-date", "reextracted", "initial-load"] }
   },
   "required": ["mode", "route", "request", "branch", "commit", "sync"],

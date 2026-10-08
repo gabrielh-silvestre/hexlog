@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { escapeRegExp } from 'es-toolkit';
 import { createTempDir } from './helpers.ts';
 import { createEnvironment } from './mcp/environment.ts';
 
@@ -52,6 +53,18 @@ function runHook(input: HookInput, env: NodeJS.ProcessEnv) {
     env,
     cwd: repoRoot,
     encoding: 'utf8',
+    timeout: 8000,
+  });
+}
+
+function runThroughSymlink(target: string) {
+  const link = path.join(createTempDir('bash-guard-link'), path.basename(target));
+  fs.symlinkSync(target, link);
+  return spawnSync(process.execPath, [link], {
+    input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: `cat ${dataDir}/x` } }),
+    env: envBase,
+    encoding: 'utf8',
+    timeout: 8000,
   });
 }
 
@@ -102,6 +115,18 @@ const denyCases: I4Case[] = [
   { name: 'glob hex*', command: 'cat ~/.local/share/hex*/p/r/events.jsonl' },
   { name: 'glob hexl?g', command: 'cat ~/.local/share/hexl?g' },
   { name: 'brace {hexlog,x}', command: 'cat ~/.local/share/{hexlog,x}' },
+  {
+    name: 'brace range inside the name (hex{a..z}log)',
+    command: 'cat ~/.local/share/hex{a..z}log',
+  },
+  {
+    name: 'brace over a hidden segment ({.local,x})',
+    command: 'cat ~/{.local,x}/share/hexlog/.v1/a',
+  },
+  {
+    name: 'brace over a hidden segment that is too big to expand ({.local,x} plus a range)',
+    command: 'cat ~/{.local,x}/share/hexlog{a..c}',
+  },
   { name: 'character class [h]exlog', command: 'cat ~/.local/share/[h]exlog' },
   {
     name: 'glob * with cwd in D parent dir',
@@ -139,6 +164,14 @@ const xdgCase: I4Case = {
 
 const allowCases: I4Case[] = [
   { name: 'ls in D parent dir', command: 'ls ~/.local/share' },
+  { name: 'numeric brace range far from D', command: 'ls {1..10000}' },
+  {
+    name: 'brace in the last component of D parent dir',
+    command: 'mkdir -p ~/.local/share/{foo,bar}',
+  },
+  { name: 'brace in the middle component of a glob', command: 'ls ~/.local/{bin,lib}/*' },
+  { name: 'awk program with braces', command: "awk '{print $1}' file.txt" },
+  { name: 'plain ls -la', command: 'ls -la' },
   { name: 'ls with shallow glob in D parent dir', command: 'ls ~/.local/*' },
   { name: 'find starting from ~ without citing D', command: "find ~ -name '*.jsonl'" },
   { name: 'Read outside D (~/.claude/projects)', command: 'cat ~/.claude/projects/x/y.jsonl' },
@@ -182,7 +215,7 @@ describe('bash-guard (I4): nega o acesso a D por Bash', () => {
       const result = runHook(testCase, testCase.env ?? envBase);
       expect(result.status).toBe(2);
       expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
-    });
+    }, 15_000);
   }
 
   test(`${xdgCase.name}`, () => {
@@ -195,7 +228,7 @@ describe('bash-guard (I4): nega o acesso a D por Bash', () => {
     const result = runHook({ command: `cat ${dataDir}/x` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toBe(
-      `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, query, verify_chain, read_attachment, evaluate_gate).`,
+      `hexlog: ${dataDir} is only accessible through the hexlog MCP tools (list, query, verify_chain, read_attachment, evaluate_gate, describe_type).`,
     );
   });
 
@@ -223,11 +256,11 @@ describe('bash-guard (I4): permite o que não alcança D', () => {
       const result = runHook(testCase, testCase.env ?? envBase);
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
-    });
+    }, 15_000);
   }
 });
 
-describe('bash-guard (I7): entrada inválida ou exceção interna falha aberto', () => {
+describe('bash-guard (I7): entrada inválida falha aberto', () => {
   test('stdin vazio → exit 0 sem saída', () => {
     const result = spawnSync(process.execPath, [hookPath], {
       input: '',
@@ -273,13 +306,183 @@ describe('bash-guard (I7): entrada inválida ou exceção interna falha aberto',
     const result = runHook({ command: `cat \${} ${dataDir}/x` }, envBase);
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
-  });
+  }, 15_000);
+});
 
-  test('shell-quote.parse lançando: decide só pela checagem literal (sem D → permite)', () => {
-    const result = runHook({ command: 'cat ${} /tmp/something-unrelated' }, envBase);
+describe('bash-guard (U1): hostile tokens are denied, not released', () => {
+  const reachesMessage = 'is only accessible through the hexlog MCP tools';
+  const undecidableMessage = 'could not be checked against the hexlog data directory';
+  // Trecho final com `~`: o `includes` literal de D não o vê, então só o teto ou o orçamento
+  // sob teste decide antes dele (sem o teto, o hook estoura o timeout e o status não é 2).
+  const homeTail = '; cat ~/.local/share/hexlog/x';
+  const hostileCases: { name: string; command: string; stderr: string }[] = [
+    {
+      name: 'denies a 64 KiB token of "?" followed by a command reaching D through "~"',
+      command: `cat ${'?'.repeat(65536)}${homeTail}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a 64 KiB token of "[" without hitting the hook timeout',
+      command: `cat ${'['.repeat(65536)}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a token with 14 brace groups without hitting the hook timeout',
+      command: `cat ${'{a,b}'.repeat(14)}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a 4097-character glob token',
+      command: `cat ${'?'.repeat(4097)}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a token with 65 opening brackets',
+      command: `cat ${'['.repeat(65)}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a numeric brace range followed by a command reaching D through "~"',
+      command: `cat {1..9999999}${homeTail}`,
+      stderr: reachesMessage,
+    },
+    {
+      name: 'denies 7 groups of {a,b,c,d} followed by a command reaching D through "~"',
+      command: `ls ${'{a,b,c,d}'.repeat(7)}${homeTail}`,
+      stderr: reachesMessage,
+    },
+    {
+      name: 'denies 1000 tokens of {1..30}{1..30} followed by a command reaching D through "~"',
+      command: `ls ${Array(1000).fill('{1..30}{1..30}').join(' ')}${homeTail}`,
+      stderr: reachesMessage,
+    },
+    {
+      name: 'denies 500 tokens of "{" plus 4000 "/" (sum of glob tokens above the budget)',
+      command: `ls ${Array(500)
+        .fill(`{${'/'.repeat(4000)}`)
+        .join(' ')}${homeTail}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies a command above the length limit even without glob characters',
+      command: `echo ${'a'.repeat(1_048_577)}`,
+      stderr: undecidableMessage,
+    },
+    {
+      name: 'denies 5000 small glob tokens (sum above the budget) even without citing D',
+      command: `ls ${Array(5000).fill('*a*a*a*a*a*b').join(' ')}`,
+      stderr: undecidableMessage,
+    },
+  ];
+
+  for (const testCase of hostileCases) {
+    test(`${testCase.name}`, () => {
+      const result = runHook(testCase, envBase);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(testCase.stderr);
+    }, 15_000);
+  }
+
+  // Lado "no teto" de cada constante: um `>` trocado por `>=` no hook derrubaria estes casos.
+  const ceilingCases: { name: string; command: string }[] = [
+    { name: 'a glob token of exactly 4096 characters', command: `cat ${'?'.repeat(4096)}` },
+    { name: 'a token with exactly 64 opening brackets', command: `cat ${'['.repeat(64)}` },
+    { name: 'a token with exactly 8 brace groups', command: `cat ${'{a,b}'.repeat(8)}` },
+    {
+      name: 'glob tokens summing exactly 16384 characters',
+      command: `ls ${Array(4).fill('?'.repeat(4096)).join(' ')}`,
+    },
+    {
+      name: 'a command of exactly 1 MiB',
+      command: `echo ${'a'.repeat(1_048_576 - 'echo '.length)}`,
+    },
+    {
+      name: 'a token under ~/.local/share/ with exactly 32 brace alternatives',
+      command: `ls ~/.local/share/${'{a,b}'.repeat(5)}`,
+    },
+  ];
+
+  for (const testCase of ceilingCases) {
+    test(`allows ${testCase.name}`, () => {
+      const result = runHook(testCase, envBase);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+    }, 15_000);
+  }
+
+  test('denies a token under ~/.local/share/ with 64 brace alternatives (above the 32 limit)', () => {
+    const result = runHook({ command: `ls ~/.local/share/${'{a,b}'.repeat(6)}` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(reachesMessage);
+  }, 15_000);
+
+  test('does not mention D when the denial is for an undecidable command', () => {
+    const result = runHook({ command: `cat ${'['.repeat(65)}` }, envBase);
+    expect(result.stderr).not.toContain(dataDir);
+  }, 15_000);
+
+  test('allows a command shell-quote cannot parse when it does not cite D', () => {
+    const result = runHook({ command: 'echo ${}; cat ~/.local/share/hex""log/x' }, envBase);
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
-  });
+  }, 15_000);
+
+  test('allows a 5000-character token without glob characters', () => {
+    const result = runHook({ command: `echo ${'a'.repeat(5000)}` }, envBase);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+  }, 15_000);
+});
+
+describe('bash-guard (#45): a mensagem cita o trecho que casou', () => {
+  test('names the matched segment when a compound command reaches D', () => {
+    const result = runHook({ command: `ls /tmp && cat ${dataDir}/x` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(new RegExp(`Matched: cat ${escapeRegExp(dataDir)}/x$`));
+  }, 15_000);
+
+  test('names the rejected token when a token is oversized', () => {
+    const token = '['.repeat(100);
+    const result = runHook({ command: `true ; cat ${token}` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(new RegExp(`Matched: cat ${escapeRegExp(token)}$`));
+  }, 15_000);
+
+  test.each(['&', '|&'])(
+    'treats "%s" as a segment separator',
+    (operator) => {
+      const token = '['.repeat(100);
+      const result = runHook({ command: `true ${operator} cat ${token}` }, envBase);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(new RegExp(`Matched: cat ${escapeRegExp(token)}$`));
+    },
+    15_000,
+  );
+
+  test('replaces control characters in the matched segment with "?"', () => {
+    const token = `${'['.repeat(100)}\u0007\u001b`;
+    const result = runHook({ command: `true ; cat ${token}` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/Matched: cat \[+\?\?$/);
+  }, 15_000);
+
+  test('replaces format and line separator characters in the matched segment with "?"', () => {
+    const token = `${'['.repeat(100)}\u202e\u200b\u2028`;
+    const result = runHook({ command: `true ; cat "${token}"` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/Matched: cat \[+\?\?\?$/);
+  }, 15_000);
+
+  test('truncates the matched segment to 200 characters', () => {
+    const result = runHook({ command: `true ; cat ${'['.repeat(300)}` }, envBase);
+    expect(result.stderr).toMatch(/Matched: cat \[+$/);
+    expect(result.stderr.split('Matched: ')[1]).toHaveLength(200);
+  }, 15_000);
+
+  test('does not add a matched segment to a simple command', () => {
+    const result = runHook({ command: `cat ${dataDir}/x` }, envBase);
+    expect(result.stderr).not.toContain('Matched:');
+  }, 15_000);
 });
 
 describe('B1(b): hook empacotado pelo esbuild', () => {
@@ -321,22 +524,22 @@ describe('B1(b): hook empacotado pelo esbuild', () => {
     expect(allowResult.stderr).toBe('');
   });
 
+  test('denies when the bundled hook runs through a symlink', () => {
+    const result = runThroughSymlink(bundle);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
+  }, 15_000);
+
   test('o bundle não contém o shim "Dynamic require of"', () => {
     const bytes = fs.readFileSync(bundle);
     expect(bytes.includes('Dynamic require of')).toBe(false);
   });
 });
 
-describe('latência (informativo, sem asserção rígida)', () => {
-  test('média de 10 execuções do hook .ts', () => {
-    const durations: number[] = [];
-    for (let i = 0; i < 10; i += 1) {
-      const start = performance.now();
-      runHook({ command: 'true' }, envBase);
-      durations.push(performance.now() - start);
-    }
-    const average = durations.reduce((sum, duration) => sum + duration, 0) / durations.length;
-    console.log(`hook/bash-guard.ts: average of 10 runs = ${average.toFixed(1)} ms`);
-    expect(durations).toHaveLength(10);
-  });
+describe('bash-guard (M2): entrypoint resolvido por realpath', () => {
+  test('denies when run through a symlink to the hook', () => {
+    const result = runThroughSymlink(hookPath);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
+  }, 15_000);
 });

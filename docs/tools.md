@@ -1,6 +1,6 @@
 # Referência das tools
 
-Entrada, saída e erros de cada uma das 11 tools. O mapa geral está em [uso.md](uso.md).
+Entrada, saída e erros de cada uma das 12 tools. O mapa geral está em [uso.md](uso.md).
 
 ## `list`
 
@@ -10,6 +10,33 @@ contagem de processos. Com `project`, traz os processos e as definições vigent
 em ordem crescente). Com `project` e `process`, traz o que o processo **fixou**
 (`pinned`, os nomes de cada tipo de definição) e os hashes das definições. O que
 um processo fixou não muda depois, ao contrário da versão vigente do projeto.
+
+## `describe_type`
+
+Lê o schema de um tipo antes de registrar nele. Entrada: `project`, `type` e, opcionais,
+`process` e `version`. Só lê tipos; relações e gates ficam fora (ver `list` e `evaluate_gate`).
+
+- **Com `process`:** devolve o tipo **fixado** no processo, `{name, schema}`, sem `version`:
+  o manifesto guarda o schema fixado, não a versão, e a `version` não é inventada. O que se
+  lê é o que o `register` valida, mesmo que o projeto já tenha definido uma versão mais nova.
+- **Sem `process`:** devolve `{name, version, schema}` da versão vigente do projeto, ou da
+  `version` pedida (`<major>.<minor>`).
+- **Nos dois casos** o schema sai sem `pattern` e sem `patternProperties`, porque o
+  `register` os ignora (ver `define_type`); uma propriedade de nome `pattern` em `properties`
+  continua na saída. Um tipo gravado antes do catálogo de formatos, que tinha `pattern`, sai
+  sem ele, e o `pattern` original só existe no manifesto em disco.
+
+Erros:
+
+- `INVALID_INPUT` em `/version` (`process-with-version`): `process` e `version` juntos.
+- `INVALID_INPUT` em `/version` (`invalid-version`): `version` fora de `<major>.<minor>`, sem `process`.
+- `TYPE_NOT_PINNED` em `/type` (`not-pinned`): com `process`, o tipo existe ou não no projeto,
+  mas o processo não o fixou.
+- `PROJECT_NOT_FOUND` em `/project` (`unknown-project`): sem `process`, o `project` não existe.
+  Com `process`, o mesmo caso é `PROCESS_NOT_FOUND`.
+- `TYPE_NOT_FOUND`: sem `process`, num projeto que existe, `/type` (`unknown-name`) para um tipo
+  sem nenhuma versão, ou `/version` (`unknown-version`) para uma versão que o tipo não tem.
+- `PROCESS_NOT_FOUND`: o `process` não existe.
 
 ## `define_type`, `define_relation`, `define_gate`
 
@@ -32,16 +59,34 @@ minor e mudar `kind` ou estreitar a lista quebra; em `define_gate`, toda mudanç
 minor e `breaking: true` marca o gate que ficou mais estrito.
 
 `define_type` recebe um JSON Schema com raiz `type: "object"`. Uma propriedade com
-`format: "attachment"` guarda o hash de um anexo (ver `attach`). Todo `pattern`
-passa por checagem de regex catastrófico (`safe-regex2`) e exige `maxLength` no
-mesmo subschema, com até 256, e todo `patternProperties` exige `propertyNames` com
-`maxLength` até 256 no mesmo subschema (as chaves dele passam pela `safe-regex2`).
+`format: "attachment"` guarda o hash de um anexo (ver `attach`). `pattern` e
+`patternProperties` não são aceitos em nenhum subschema, inclusive o que um `$ref`
+alcança dentro de dado (`#/examples/0`, `#/const`): a recusa é `INVALID_SCHEMA` com
+`pattern-not-allowed`, o `path` aponta o `pattern` (`/schema/properties/commit/pattern`) e a
+`message` lista os formatos do catálogo. Um campo que se chama `pattern` dentro de
+`properties` não é recusado. O formato de um texto vem de `format`, que aceita os do
+`ajv-formats` e os do catálogo fechado do hexlog:
+
+| `format` | Aceita |
+|---|---|
+| `git-sha` | hexadecimal minúsculo de 7 a 40 caracteres (`HEAD`, maiúsculas, quebra de linha final e SHA-256 de 64 caracteres são recusados); não confere se o commit existe |
+| `attachment` | hash de um anexo (ver `attach`) |
+
+Formato fora do catálogo e do `ajv-formats` é `INVALID_SCHEMA` (`invalid-schema`). Regra de
+texto livre fora do catálogo não tem como ser declarada no tipo e vai para o fluxo de trabalho.
 Também são `INVALID_SCHEMA`: schema que o `ajv` não compila, `$async`, raiz diferente de
 `object` (`/schema/type`, `invalid-type`) e a marca `attachment` fora de uma propriedade
-de primeiro nível ou dos itens de um array de primeiro nível (`.../format`). A
-`safe-regex2` também recusa regex linear com repetição dentro de grupo repetido
-(`^[a-z]+(?:-[a-z]+)*$`; use `^[a-z0-9-]+$`). O limite da checagem está em
-[`tetos-dominio-v1.md`](tetos-dominio-v1.md). Um tipo fica de até 16.000
+de primeiro nível ou dos itens de um array de primeiro nível (`.../format`).
+
+O `register` ignora `pattern` e `patternProperties` de um tipo já fixado: processos
+criados antes do catálogo continuam gravando, e o valor que o pattern recusaria passa a ser
+aceito. Com `patternProperties` e `additionalProperties` (ou `unevaluatedProperties`) no mesmo
+subschema, a propriedade que só o `patternProperties` admitia passa a ser checada por esse
+schema (recusada, se for `false`). Reenviar o schema vigente de um tipo legado que tem `pattern` não é mais replay: é
+`INVALID_SCHEMA` (`pattern-not-allowed`), e o caminho é um `define_type` novo, `breaking:
+true`, sem a palavra-chave. A decisão e o resíduo (`format: "regex"` do `ajv-formats` constrói
+um `RegExp` sobre o dado, sem executá-lo) estão na emenda de 2026-10-07 do
+[ADR 0009](directives/adr-0009-ferramental.md), item 20. Um tipo fica de até 16.000
 caracteres canônicos.
 
 Um gate tem 1 a 50 perguntas de quatro formas, todas com seletor
@@ -81,7 +126,10 @@ autodeclarado), `key` opcional e `records`; o `client` o servidor preenche. Cada
 opcional e `relations` opcionais. Devolve `{records, replayed, marker}`: os ids na
 ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabeça do
 processo, para ler dali em diante. O marcador cobre exatamente os processos que nomeia:
-no alcance projeto, o que ele não nomeia é lido como vazio.
+no alcance projeto, o que ele não nomeia é lido como vazio. A descrição da tool manda ler o
+schema com `describe_type` antes de registrar num tipo que o agente não conhece, e o id
+vigente com `query` antes de `supersedes` ou `revokes`: um id errado, do mesmo tipo e processo,
+que ainda é vigente, é aceito e bifurca a linhagem.
 
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
 mesmo lote, e leva `kind` (`supersedes`, `revokes`, `supports`, `contradicts`,
@@ -105,6 +153,19 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   guardado e íntegro (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`); um hash de anexo
   guardado num campo sem a marca é recusado (`unmarked-attachment`).
 
+**`INVALID_RECORD` de dado: a primeira violação de cada registro.** Quando `data` não passa
+no schema, o `register` junta num só `INVALID_RECORD` a primeira violação de schema de **cada**
+registro inválido do lote, cada uma com `path` `/records/<i>/data/...`. Um registro com várias
+violações mostra só a primeira: o agente corrige, reenvia e vê a próxima. Continua tudo-ou-nada:
+nada é gravado. Vale para a violação de **schema**; as outras recusas (`unmarked-attachment`, as
+de relação e o resto da lista acima) continuam parando na primeira. O que o agente deve saber:
+
+- O teto é de 50 `details` por resposta, com um só `too-many-errors` no fim quando corta.
+- Em `anyOf`, `oneOf` e `propertyNames` saem os erros dos ramos avaliados, não só um por campo.
+- O tipo fixado de **todos** os registros é conferido antes de qualquer dado: um lote com um
+  registro de dado inválido e outro de tipo não fixado recebe `TYPE_NOT_PINNED`, não
+  `INVALID_RECORD`.
+
 **`key` e retentativa.** Com `key` (até 200 caracteres), o mesmo lote devolve o
 resultado já gravado com `replayed: true`, sem gravar; a mesma `key` com outro lote é
 `IDEMPOTENCY_CONFLICT`. Depois de `IO_ERROR` o resultado é incerto: reenvie com a
@@ -116,7 +177,7 @@ guarde o anexo e reenvie com a mesma `key` (ADR 0009).
 
 A ordem das recusas é fixa, e responde a primeira que falha: forma do lote
 (`INVALID_INPUT`); processo inexistente ou manifesto ilegível; recusas estáticas
-(tipo fixado, schema, `as`, `cross-process-currency`); cadeia quebrada
+(tipo fixado de todos os registros, schema de todos, `as`, `cross-process-currency`); cadeia quebrada
 (`PROCESS_CORRUPTED`); `key`; checagens de estado e regras de relação (ADR 0008).
 
 ## `query`
@@ -137,7 +198,17 @@ processo em `details[0].process`.
   (traz também os superados e revogados). O `targetPrefix` casa na fronteira de `.`. A
   busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
   busca o monta, e o alcance projeto o monta a cada busca.
-- **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data`, as relações
+- **Projeção:** `fields` (até 50 nomes de campos de primeiro nível de `data`) recorta
+  o `data` só na saída. `fields: []` devolve o registro sem `data`. Com ao menos um
+  nome, o `data` sempre vem: o campo que o registro não tem some sem erro, e o `data`
+  é `{}` quando nenhum dos nomes existe (o alcance projeto mistura tipos). Os filtros
+  (`where`, `text` e os demais) veem o `data` inteiro, e o teto de página conta o JSON
+  já recortado, então uma listagem só de ids e `target` (`fields: []`) cabe muito mais
+  registros por página. `in`, `out`, `needsReview` e `attachmentStatus` saem completos.
+  `fields` fica fora do hash do cursor: a página 2 pode pedir outros. Mais de 50 nomes
+  ou nome vazio dá `INVALID_INPUT`, com `/fields` ou `/fields/<i>` em `details[].path`.
+- **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data` (inteiro, ou só
+  os `fields` pedidos), as relações
   de entrada (`in`) e de saída (`out`), `needsReview` (registro vigente cujo apoio
   morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`, `missing` ou
   `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como status, não
@@ -148,8 +219,8 @@ processo em `details[0].process`.
   projeto; com `text`, por relevância, com a ordem do alcance como desempate.
 - **Paginação:** até `limit` registros (padrão 50, máximo 200), e a página também para
   num teto de 24.000 caracteres do JSON dos registros, sempre com ao menos um registro.
-  Passe o `cursor` devolvido para continuar, com a mesma consulta: só o `limit` pode
-  mudar, e com `changesSince` a página 2 reenvia o mesmo `changesSince`, senão
+  Passe o `cursor` devolvido para continuar, com a mesma consulta: só o `limit` e os
+  `fields` podem mudar, e com `changesSince` a página 2 reenvia o mesmo `changesSince`, senão
   `INVALID_CURSOR` (`scope-mismatch`, `project-mismatch`, `process-mismatch` ou
   `filters-mismatch`). O cursor é o JSON do estado em `base64url`, sem assinatura (até
   65.536 caracteres): cursor truncado ou editado cai em `malformed`, no schema do cursor,

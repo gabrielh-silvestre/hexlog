@@ -416,6 +416,7 @@ describe('modos', () => {
     'attachments',
     'archive',
     'main',
+    'develop',
   ])(
     'slug recusa "%s" com exit 1',
     (branch) => {
@@ -476,6 +477,54 @@ describe('modos', () => {
     expect(JSON.parse(result.stdout)).toEqual(JSON.parse(JSON.stringify(planSync(input))));
   }, 15_000);
 
+  describe('sync-plan com path inválido', () => {
+    const syncPlan = (input: Partial<SyncInput>) => {
+      const result = runHook(['sync-plan'], {
+        input: JSON.stringify({
+          docSlug: 'estrategia',
+          path: 'docs/directives/estrategia.md',
+          hash: '',
+          current: null,
+          vigent: [],
+          extracted: [],
+          ...input,
+        }),
+      });
+      return {
+        status: result.status,
+        stderr: result.stderr,
+        plan: JSON.parse(result.stdout) as unknown,
+      };
+    };
+    const refused = {
+      status: 0,
+      stderr: '',
+      plan: expect.objectContaining({ batches: [], error: 'invalid-path' }),
+    };
+
+    test('path vazio sai com 0 e o erro no JSON', () => {
+      expect(syncPlan({ path: '' })).toEqual(refused);
+    }, 15_000);
+
+    test('path fora de docs/directives sai com 0 e o erro no JSON', () => {
+      expect(syncPlan({ docSlug: 'convencoes', path: 'docs/x.md' })).toEqual(refused);
+    }, 15_000);
+
+    // sem o pré-check o hook leria o arquivo malformado e sairia com 2 e o motivo no stderr
+    test('estrategia com path absoluto de arquivo malformado não é lido', () => {
+      const file = path.join(createTempDir('strategy'), 'estrategia.md');
+      fs.writeFileSync(file, '## Tema\n- sem crase: linha ruim');
+
+      expect(syncPlan({ path: file })).toEqual(refused);
+    }, 15_000);
+
+    test('estrategia com path absoluto de arquivo inexistente não é lido', () => {
+      const file = path.join(createTempDir('strategy'), 'faltando.md');
+
+      expect(syncPlan({ path: file })).toEqual(refused);
+    }, 15_000);
+  });
+
   test('modo desconhecido sai com 2', () => {
     expectDenied(runHook(['nope']), /unknown mode/);
   }, 15_000);
@@ -507,7 +556,7 @@ describe('settings.json', () => {
     expect(hook?.if).toBe('Bash(*gh*)');
   }, 15_000);
 
-  test('tem as regras allow do padrão 15 e mantém o ask do instalador', () => {
+  test('tem as regras allow do padrão 15', () => {
     expect(settings.permissions.allow).toEqual(
       expect.arrayContaining([
         'Bash(node .claude/hooks/flow-hooks.ts slug *)',
@@ -515,7 +564,18 @@ describe('settings.json', () => {
         'Bash(node .claude/hooks/flow-hooks.ts sync-plan *)',
       ]),
     );
-    expect(settings.permissions.ask).toContain('Bash(node scripts/install.ts)');
+  }, 15_000);
+
+  test('asks before any install.ts invocation, flags included', () => {
+    const pattern = 'Bash(node *scripts/install.ts*)';
+    expect(settings.permissions.ask).toContain(pattern);
+    // o motor de permissões não roda no jest: o curinga vira regex só para provar o alcance
+    const inner = pattern.slice('Bash('.length, -1);
+    const matcher = new RegExp(`^${inner.replaceAll('.', '\\.').replaceAll('*', '.*')}$`);
+    expect(matcher.test('node scripts/install.ts')).toBe(true);
+    expect(matcher.test('node scripts/install.ts --archive-0x')).toBe(true);
+    expect(matcher.test('node ./scripts/install.ts --check')).toBe(true);
+    expect(matcher.test('node scripts/build.ts')).toBe(false);
   }, 15_000);
 
   test('preserva o hook antigo do gitnexus', () => {

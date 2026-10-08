@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { createValidator, PATTERN_MAX_LENGTH } from '../../src/adapters/validator.ts';
+import { createValidator } from '../../src/adapters/validator.ts';
 import { attachmentFields, type RecordType } from '../../src/domain/definitions.ts';
+import { withRegExpSpy } from './regexp-spy.ts';
 
 const validator = createValidator();
 
@@ -218,63 +219,72 @@ describe('checkSchema', () => {
     });
   });
 
-  describe('regex (ReDoS)', () => {
-    const unsafe = '^(\\w+\\s?)*$';
+  describe('pattern livre', () => {
+    const SENTINEL = 'SENT_check';
+    const hostile = `^${SENTINEL}(a|aa)+$`;
     const invalidSchema = (path: string) => [
       { path, code: 'invalid-schema', message: expect.any(String) },
     ];
+    const notAllowed = (path: string) => [
+      { path, code: 'pattern-not-allowed', message: expect.stringContaining('git-sha') },
+    ];
 
-    test('aceita pattern seguro com maxLength até o teto', () => {
+    test('recusa pattern mesmo seguro e com maxLength, com o ponteiro do pattern', () => {
       expect(
-        validator.checkSchema({ type: 'string', pattern: '^[0-9a-f]{64}$', maxLength: 64 }),
-      ).toEqual([]);
-      expect(
-        validator.checkSchema({
-          type: 'string',
-          pattern: '^[0-9a-f]+$',
-          maxLength: PATTERN_MAX_LENGTH,
-        }),
-      ).toEqual([]);
+        validator.checkSchema({ type: 'string', pattern: '^[0-9a-f]+$', maxLength: 64 }),
+      ).toEqual(notAllowed('/pattern'));
     });
 
-    test('recusa pattern perigoso mesmo com maxLength', () => {
-      expect(validator.checkSchema({ type: 'string', pattern: unsafe, maxLength: 64 })).toEqual(
-        invalidSchema('/pattern'),
+    test('recusa pattern que não compila como regex, sem lançar', () => {
+      expect(validator.checkSchema({ type: 'string', pattern: '(' })).toEqual(
+        notAllowed('/pattern'),
       );
     });
 
-    test('recusa pattern sem maxLength', () => {
-      expect(validator.checkSchema({ type: 'string', pattern: '^[a-z]+$' })).toEqual(
-        invalidSchema('/pattern'),
+    test('a mensagem cita o catálogo e o caminho sem pattern', () => {
+      const [detail] = validator.checkSchema({ type: 'string', pattern: '^a$' });
+
+      expect(detail?.message).toBe(
+        'pattern is not allowed in a type schema; use a catalog format (git-sha) or plain minLength/maxLength',
       );
     });
 
-    test('recusa maxLength acima do teto', () => {
+    test('recusa patternProperties, com as propriedades irmãs e o additionalProperties', () => {
       expect(
         validator.checkSchema({
-          type: 'string',
-          pattern: '^[a-z]+$',
-          maxLength: PATTERN_MAX_LENGTH + 1,
+          type: 'object',
+          properties: { k: { type: 'string' } },
+          patternProperties: { '^x-': { type: 'string' } },
+          additionalProperties: false,
         }),
-      ).toEqual(invalidSchema('/pattern'));
+      ).toEqual([
+        {
+          path: '/patternProperties',
+          code: 'pattern-not-allowed',
+          message: expect.stringMatching(/^patternProperties is not allowed/),
+        },
+      ]);
+    });
+
+    test('recusa o pattern dentro do valor de patternProperties, além do próprio patternProperties', () => {
+      const details = validator.checkSchema({
+        type: 'object',
+        patternProperties: { 'a/b': { type: 'string', pattern: '^a$' } },
+      });
+
+      expect(details.map((detail) => detail.path).sort()).toEqual([
+        '/patternProperties',
+        '/patternProperties/a~1b/pattern',
+      ]);
     });
 
     // Um schema mínimo aceito pelo ajv estrito para cada palavra-chave aplicadora do 2020-12 que
     // carrega subschema. O modo estrito pede: `if` junto de `then`/`else`; `minItems` e `maxItems`
     // no `prefixItems`; `type` no pai das que miram objeto ou array. `dependentSchemas` e
     // `dependencies` valem para o próprio objeto, então o `pattern` vai um nível abaixo, em
-    // `properties`.
+    // `properties`. `patternProperties` não entra: ele próprio é recusado.
     const keywordCases: [string, (child: RecordType) => RecordType, string][] = [
       ['properties', (c) => ({ type: 'object', properties: { a: c } }), '/properties/a'],
-      [
-        'patternProperties',
-        (c) => ({
-          type: 'object',
-          propertyNames: { maxLength: PATTERN_MAX_LENGTH },
-          patternProperties: { '^a': c },
-        }),
-        '/patternProperties/^a',
-      ],
       ['$defs', (c) => ({ $defs: { a: c } }), '/$defs/a'],
       ['definitions', (c) => ({ definitions: { a: c } }), '/definitions/a'],
       [
@@ -313,23 +323,22 @@ describe('checkSchema', () => {
         '/unevaluatedProperties',
       ],
       ['propertyNames', (c) => ({ type: 'object', propertyNames: c }), '/propertyNames'],
+      [
+        'contentSchema',
+        (c) => ({ type: 'string', contentMediaType: 'application/json', contentSchema: c }),
+        '/contentSchema',
+      ],
     ];
 
     describe.each(keywordCases)('dentro de %s', (_keyword, wrap, base) => {
-      test('recusa pattern perigoso, com o ponteiro do pattern', () => {
-        const schema = wrap({ type: 'string', pattern: unsafe, maxLength: 64 });
-
-        expect(validator.checkSchema(schema)).toEqual(invalidSchema(`${base}/pattern`));
-      });
-
-      test('recusa pattern seguro sem maxLength', () => {
-        const schema = wrap({ type: 'string', pattern: '^[a-z]+$' });
-
-        expect(validator.checkSchema(schema)).toEqual(invalidSchema(`${base}/pattern`));
-      });
-
-      test('aceita pattern seguro com maxLength 64', () => {
+      test('recusa pattern, com o ponteiro do pattern', () => {
         const schema = wrap({ type: 'string', pattern: '^[a-z]+$', maxLength: 64 });
+
+        expect(validator.checkSchema(schema)).toEqual(notAllowed(`${base}/pattern`));
+      });
+
+      test('aceita o mesmo subschema sem pattern', () => {
+        const schema = wrap({ type: 'string', minLength: 1, maxLength: 64 });
 
         expect(validator.checkSchema(schema)).toEqual([]);
       });
@@ -351,7 +360,7 @@ describe('checkSchema', () => {
     });
 
     test('recusa pattern aninhado, com o ponteiro do campo', () => {
-      const bad = { type: 'string', pattern: unsafe, maxLength: 10 };
+      const bad = { type: 'string', pattern: '^a$', maxLength: 10 };
 
       const details = validator.checkSchema({
         type: 'object',
@@ -371,110 +380,137 @@ describe('checkSchema', () => {
       ]);
     });
 
-    test('recusa chave perigosa de patternProperties, sem exigir maxLength no valor', () => {
-      expect(
-        validator.checkSchema({
-          type: 'object',
-          propertyNames: { maxLength: 64 },
-          patternProperties: { [unsafe]: { type: 'string' } },
-        }),
-      ).toEqual(invalidSchema(`/patternProperties/${unsafe.replace(/\//g, '~1')}`));
-      expect(
-        validator.checkSchema({
-          type: 'object',
-          propertyNames: { maxLength: 64 },
-          patternProperties: { '^x-': { type: 'string' } },
-        }),
-      ).toEqual([]);
-    });
-
-    test('patternProperties aceita com propertyNames.maxLength no teto, recusa sem ele ou acima', () => {
-      const withNames = (propertyNames?: RecordType): RecordType => ({
-        type: 'object',
-        ...(propertyNames && { propertyNames }),
-        patternProperties: { '^x-': { type: 'string' } },
-      });
-
-      expect(validator.checkSchema(withNames({ maxLength: PATTERN_MAX_LENGTH }))).toEqual([]);
-      expect(validator.checkSchema(withNames())).toEqual(invalidSchema('/patternProperties'));
-      expect(validator.checkSchema(withNames({ maxLength: PATTERN_MAX_LENGTH + 1 }))).toEqual(
-        invalidSchema('/patternProperties'),
-      );
-    });
-
-    test('não trata dado (const, enum, default) como subschema', () => {
+    test('não recusa o campo de nome pattern nem trata dado (const, enum, default) como subschema', () => {
       expect(
         validator.checkSchema({
           type: 'object',
           properties: { pattern: { type: 'string', maxLength: 5, default: 'x' } },
-          const: { pattern: unsafe },
+          const: { pattern: '^a$' },
         }),
       ).toEqual([]);
     });
 
-    // Limite conhecido: a safe-regex2 é heurística (altura de
-    // estrela e contagem de repetições), então esta alternância sobreposta, que é exponencial,
-    // passa. O validate não roda o regex acima do maxLength, mas dentro do teto ela segue custosa.
-    // Se uma versão futura da safe-regex2 passar a recusá-la, este teste quebra de propósito: é o
-    // sinal para trocar a expectativa por `invalidSchema('/pattern')` e atualizar o JSDoc do validator.
-    test('limite conhecido: alternância sobreposta (a|aa)+ não é detectada', () => {
-      expect(
-        validator.checkSchema({ type: 'string', pattern: '^(a|aa)+$', maxLength: 64 }),
-      ).toEqual([]);
-    });
-
-    // Limite conhecido (falso positivo): a safe-regex2 recusa regex linear com repetição dentro de
-    // grupo repetido. Se uma versão futura da lib passar a aceitá-la, este teste quebra de propósito:
-    // troque a expectativa por `[]` e revise a mensagem de recusa e o JSDoc do validator.
-    test('limite conhecido: kebab-case com grupo repetido é recusado, mesmo linear', () => {
-      expect(
-        validator.checkSchema({
-          type: 'string',
-          pattern: '^[a-z]+(?:-[a-z]+)*$',
-          maxLength: 64,
-        }),
-      ).toEqual(invalidSchema('/pattern'));
-    });
-
-    test('a saída sugerida na mensagem, classe única, é aceita', () => {
-      expect(
-        validator.checkSchema({ type: 'string', pattern: '^[a-z0-9-]+$', maxLength: 64 }),
-      ).toEqual([]);
-    });
-
-    test('a mesma mensagem vale para pattern e para chave de patternProperties', () => {
-      const unsafeKey = '^[a-z]+(?:-[a-z]+)*$';
-      const [fromPattern] = validator.checkSchema({
-        type: 'string',
-        pattern: unsafeKey,
-        maxLength: 64,
-      });
-      const [fromKey] = validator.checkSchema({
+    test('aceita format do catálogo e do ajv-formats, recusa format fora deles', () => {
+      const withFormat = (format: string) => ({
         type: 'object',
-        propertyNames: { maxLength: 64 },
-        patternProperties: { [unsafeKey]: { type: 'string' } },
+        properties: { a: { type: 'string', format } },
       });
 
-      expect(fromPattern?.message).toMatch(/single character class/);
-      expect(fromKey?.message).toBe(fromPattern?.message);
+      expect(validator.checkSchema(withFormat('git-sha'))).toEqual([]);
+      expect(validator.checkSchema(withFormat('uri'))).toEqual([]);
+      expect(validator.checkSchema(withFormat('not-a-format'))).toEqual(invalidSchema(''));
     });
 
-    // Limite conhecido e aceito: o percurso do checkSchema não segue $ref, então o pattern que está
-    // dentro de dado (const, default, enum, examples) e é alcançado por ponteiro fica sem a
-    // safe-regex2 e sem o teto de maxLength. Este teste registra o comportamento observado hoje, não
-    // uma proteção. Se o limite for fechado (allowlist de $ref), ele quebra de propósito: troque a
-    // expectativa por um erro invalid-schema.
-    describe('limite conhecido: $ref por ponteiro para dentro de dado', () => {
+    // O pattern que um `$ref` alcança dentro de dado não é subschema para a varredura; quem o grava
+    // é o compilador neutro, sem construir o regex.
+    describe('pattern alcançado por $ref para dado', () => {
+      const pattern = { type: 'string', pattern: `^${SENTINEL}$` };
+
       test.each([
-        ['#/const', { const: { type: 'string', pattern: '^b$' } }],
-        ['#/default', { default: { type: 'string', pattern: '^b$' } }],
-        ['#/enum/0', { enum: [{ type: 'string', pattern: '^b$' }] }],
-        ['#/examples/0', { examples: [{ type: 'string', pattern: '^b$' }] }],
-      ])('%s compila e não é recusado', (ref, data) => {
-        expect(validator.checkSchema({ $ref: ref, ...data })).toEqual([]);
+        ['#/examples/0', { examples: [pattern] }, '/examples/0/pattern'],
+        ['#/const', { const: pattern }, '/const/pattern'],
+        ['#/default', { default: pattern }, '/default/pattern'],
+        ['#/enum/0', { enum: [pattern] }, '/enum/0/pattern'],
+        ['#/const/a~1b~0c%25d', { const: { 'a/b~c%d': pattern } }, '/const/a~1b~0c%d/pattern'],
+      ])('%s é recusado com o path do pattern, sem construir o regex', (ref, data, path) => {
+        const usage = withRegExpSpy(SENTINEL, () =>
+          createValidator().checkSchema({ $ref: ref, ...data }),
+        );
+
+        expect(usage).toEqual({ result: notAllowed(path), constructions: 0, executions: 0 });
+      });
+
+      test('patternProperties hostil, direto e via $ref, volta rápido sem tocar no regex', () => {
+        const schema = {
+          type: 'object',
+          properties: { k: { type: 'string' } },
+          patternProperties: { [hostile]: { type: 'integer' } },
+          additionalProperties: false,
+        };
+        const startedAt = Date.now();
+
+        const direct = withRegExpSpy(SENTINEL, () => createValidator().checkSchema(schema));
+        const viaRef = withRegExpSpy(SENTINEL, () =>
+          createValidator().checkSchema({ $ref: '#/examples/0', examples: [schema] }),
+        );
+
+        expect(direct).toEqual({
+          result: notAllowed('/patternProperties'),
+          constructions: 0,
+          executions: 0,
+        });
+        expect(viaRef).toEqual({
+          result: notAllowed('/examples/0/patternProperties'),
+          constructions: 0,
+          executions: 0,
+        });
+        expect(Date.now() - startedAt).toBeLessThan(5_000);
+      });
+
+      test.each([
+        ['pattern', { type: 'string', pattern: '(' }],
+        ['chave de patternProperties', { type: 'object', patternProperties: { '(': {} } }],
+      ])('%s que não compila como regex não lança no $ref', (_name, schema) => {
+        expect(() => new Ajv2020.default({ strict: true, logger: false }).compile(schema)).toThrow(
+          /Invalid regular expression/,
+        );
+        expect(validator.checkSchema({ $ref: '#/examples/0', examples: [schema] })).toHaveLength(1);
+      });
+
+      test('$ref para o metaschema do JSON Schema não é recusado', () => {
+        // validador novo: o compartilhado já tem o cache quente e esconderia a guarda do metaschema
+        expect(
+          createValidator().checkSchema({
+            type: 'object',
+            properties: { a: { $ref: 'https://json-schema.org/draft/2020-12/schema' } },
+          }),
+        ).toEqual([]);
+      });
+
+      test('$ref para o metaschema junto de $ref para dado recusa só o pattern do dado', () => {
+        // validador novo: o compartilhado já tem o cache quente e esconderia a guarda do metaschema
+        expect(
+          createValidator().checkSchema({
+            allOf: [
+              { $ref: 'https://json-schema.org/draft/2020-12/schema' },
+              { $ref: '#/examples/0' },
+            ],
+            examples: [pattern],
+          }),
+        ).toEqual(notAllowed('/examples/0/pattern'));
+      });
+
+      test('$id aninhado: o ponteiro não resolve no documento e o path fica vazio', () => {
+        expect(
+          validator.checkSchema({
+            $ref: 'https://example.com/nested.json#/examples/0',
+            $defs: { nested: { $id: 'https://example.com/nested.json', examples: [pattern] } },
+          }),
+        ).toEqual(notAllowed(''));
       });
     });
   });
+});
+
+describe('format git-sha', () => {
+  const schema = { type: 'object', properties: { commit: { type: 'string', format: 'git-sha' } } };
+
+  test('checkSchema aceita o formato do catálogo', () => {
+    expect(validator.checkSchema(schema)).toEqual([]);
+  });
+
+  test.each(['abcdef1', 'a'.repeat(40)])('validate aceita %s', (commit) => {
+    expect(validator.validate(schema, { commit })).toEqual([]);
+  });
+
+  test.each(['HEAD', 'abcdef', 'a'.repeat(41), 'ABCDEF1', 'abcdef1\n', 'texto livre'])(
+    'validate recusa %j com code format',
+    (commit) => {
+      expect(validator.validate(schema, { commit })).toEqual([
+        { path: '/commit', code: 'format', message: expect.any(String) },
+      ]);
+    },
+  );
 });
 
 describe('validate', () => {
@@ -501,7 +537,7 @@ describe('validate', () => {
     // O allErrors: false do ajv para no primeiro erro de CADA ramo, não no primeiro da chamada.
     const schema: RecordType = {
       anyOf: [
-        { type: 'string', maxLength: 10, pattern: '^(a|aa)+$' },
+        { type: 'string', maxLength: 10 },
         { type: 'string', maxLength: 5 },
       ],
     };
@@ -513,13 +549,13 @@ describe('validate', () => {
     ]);
   });
 
-  test('não roda o pattern sobre string acima do maxLength: devolve só max-length', () => {
-    // Com allErrors o ajv rodaria o regex também sobre o texto longo e este teste nunca terminaria.
+  test('ignora o pattern e mantém o maxLength do mesmo subschema', () => {
     const schema = {
       type: 'object',
       properties: { text: { type: 'string', maxLength: 10, pattern: '^(a|aa)+$' } },
     };
 
+    expect(validator.validate(schema, { text: 'zzz' })).toEqual([]);
     expect(validator.validate(schema, { text: `${'a'.repeat(60)}b` })).toEqual([
       { path: '/text', code: 'max-length', message: expect.any(String) },
     ]);
@@ -644,5 +680,172 @@ describe('validate', () => {
         { path: '/files/1', code: 'format', message: expect.any(String) },
       ]);
     });
+  });
+});
+
+describe('validate ignora pattern e patternProperties', () => {
+  const SENTINEL = 'SENT_free';
+  const unsafe = `^${SENTINEL}$`;
+
+  // O dado é aceito porque a regra de regex é ignorada: o pattern o recusaria.
+  const ignoredCases: [string, RecordType, Parameters<typeof validator.validate>[1]][] = [
+    [
+      'pattern direto',
+      { type: 'object', properties: { a: { type: 'string', pattern: unsafe } } },
+      { a: 'other' },
+    ],
+    [
+      'pattern via $ref para dado',
+      {
+        type: 'object',
+        properties: { a: { $ref: '#/examples/0' } },
+        examples: [{ type: 'string', pattern: unsafe }],
+      },
+      { a: 'other' },
+    ],
+    [
+      'pattern via $ref para $defs',
+      {
+        type: 'object',
+        properties: { a: { $ref: '#/$defs/p' } },
+        $defs: { p: { type: 'string', pattern: unsafe } },
+      },
+      { a: 'other' },
+    ],
+    [
+      'pattern em propertyNames',
+      { type: 'object', propertyNames: { pattern: unsafe } },
+      { other: 1 },
+    ],
+    [
+      'patternProperties com valor de tipo errado',
+      { type: 'object', patternProperties: { [`^${SENTINEL}-`]: { type: 'integer' } } },
+      { [`${SENTINEL}-a`]: 'text' },
+    ],
+  ];
+
+  test.each(ignoredCases)('aceita o dado que o regex recusaria: %s', (_name, schema, data) => {
+    const usage = withRegExpSpy(SENTINEL, () => createValidator().validate(schema, data));
+
+    expect(usage).toEqual({ result: [], constructions: 0, executions: 0 });
+  });
+
+  test.each(ignoredCases)('o ajv plain executa o regex que o validate ignora: %s', (_n, schema) => {
+    // Controle: sem ele a espia que nunca dispara também daria zero.
+    const usage = withRegExpSpy(SENTINEL, () =>
+      new Ajv2020.default({ strict: true, logger: false }).compile(schema),
+    );
+
+    expect(usage.constructions).toBeGreaterThan(0);
+  });
+
+  const invalidRegexCases: [string, RecordType][] = [
+    ['pattern direto', { type: 'object', properties: { a: { type: 'string', pattern: '(' } } }],
+    [
+      'pattern via $ref para dado',
+      {
+        type: 'object',
+        properties: { a: { $ref: '#/examples/0' } },
+        examples: [{ type: 'string', pattern: '(' }],
+      },
+    ],
+    [
+      'chave de patternProperties com properties irmãs',
+      {
+        type: 'object',
+        properties: { k: { type: 'string' } },
+        patternProperties: { '(': { type: 'integer' } },
+      },
+    ],
+    [
+      'chave de patternProperties com additionalProperties false',
+      {
+        type: 'object',
+        properties: { k: { type: 'string' } },
+        patternProperties: { '(': { type: 'integer' } },
+        additionalProperties: false,
+      },
+    ],
+  ];
+
+  test.each(invalidRegexCases)('compila regex inválido sem lançar: %s', (_name, schema) => {
+    expect(() => new Ajv2020.default({ strict: true, logger: false }).compile(schema)).toThrow(
+      /Invalid regular expression/,
+    );
+    expect(() => createValidator().validate(schema, { k: 'a' })).not.toThrow();
+  });
+
+  test.each([
+    ['additionalProperties', 'additional-properties'],
+    ['unevaluatedProperties', 'unevaluated-properties'],
+  ])(
+    'com %s false, patternProperties conta como ausente e a propriedade é recusada',
+    (key, code) => {
+      const schema = {
+        type: 'object',
+        patternProperties: { '^x-': { type: 'string' } },
+        [key]: false,
+      };
+
+      expect(validator.validate(schema, { 'x-a': 's' })).toEqual([
+        { path: '/x-a', code, message: expect.any(String) },
+      ]);
+    },
+  );
+
+  test.each(['additionalProperties', 'unevaluatedProperties'])(
+    'com %s de schema-valor, patternProperties conta como ausente e o valor é checado por ele',
+    (key) => {
+      const schema: RecordType = {
+        type: 'object',
+        patternProperties: { '^x-': { type: 'string' } },
+        [key]: { type: 'integer' },
+      };
+
+      expect(validator.validate(schema, { 'x-a': 's' })).toEqual([
+        { path: '/x-a', code: 'type', message: expect.any(String) },
+      ]);
+    },
+  );
+
+  test('termina rápido com patternProperties hostil, onde o regex levaria dezenas de segundos', () => {
+    const schema = {
+      type: 'object',
+      properties: { k: { type: 'string' } },
+      patternProperties: { '^(a|aa)+$': { type: 'integer' } },
+      additionalProperties: false,
+    };
+    const startedAt = Date.now();
+
+    expect(validator.validate(schema, { [`${'a'.repeat(40)}!`]: 1 })).toHaveLength(1);
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+  });
+
+  test('mantém o campo de nome pattern e o format que usa regex próprio', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        pattern: { type: 'string', maxLength: 3 },
+        site: { type: 'string', format: 'uri' },
+      },
+    };
+
+    expect(validator.validate(schema, { pattern: 'long value' })).toEqual([
+      { path: '/pattern', code: 'max-length', message: expect.any(String) },
+    ]);
+    expect(validator.validate(schema, { site: 'not a uri' })).toEqual([
+      { path: '/site', code: 'format', message: expect.any(String) },
+    ]);
+  });
+
+  // Resíduo aceito: o `format: "regex"` do ajv-formats constrói um RegExp sobre o dado, nunca o executa.
+  test('format regex constrói o regex do dado uma vez e não o executa', () => {
+    const schema = { type: 'object', properties: { r: { type: 'string', format: 'regex' } } };
+
+    const usage = withRegExpSpy(SENTINEL, () =>
+      createValidator().validate(schema, { r: `${SENTINEL}(a+)+$` }),
+    );
+
+    expect(usage).toEqual({ result: [], constructions: 1, executions: 0 });
   });
 });

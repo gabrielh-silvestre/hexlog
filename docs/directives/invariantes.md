@@ -13,12 +13,31 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 
 ## Tools
 
-- São exatamente 11 tools ([ADR 0009](adr-0009-ferramental.md), item 1), fixadas por `installation.ts#TOOLS_COUNT` e conferidas pelo instalador antes de trocar o artefato. Adicionar ou remover uma quebra os testes do instalador e do e2e.
+- São exatamente 12 tools ([ADR 0009](adr-0009-ferramental.md), item 1 e a emenda de 2026-10-06), fixadas por `installation.ts#TOOLS_COUNT` e conferidas pelo instalador antes de trocar o artefato. Adicionar ou remover uma quebra os testes do instalador e do e2e.
 - Toda tool passa por `execute()` em `src/mcp/kernel.ts`, que nunca deixa uma exceção chegar ao SDK: `HexlogError` vira `{code, message, details}` e qualquer outra exceção vira `INTERNAL`, com a stack só no log `internal-error`, nunca na resposta.
 - O log `tool` de `execute` leva `name`, `ms` e `code?`, nunca o conteúdo da entrada nem `project`/`process` (o teste de privacidade o proíbe).
 - Todo erro de domínio é uma `HexlogError` com um código de `ErrorCode` (`src/errors.ts`). `details` é sempre um array de `{ path, code, message }`, com `path` em JSON Pointer (RFC 6901); erro de Zod vira `details[]` por `issueDetails` ([ADR 0009](adr-0009-ferramental.md), itens 7 e 11).
+- Leitura de definição não cabe como parâmetro de uma tool existente: entra como tool própria, com emenda datada ao [ADR 0009](adr-0009-ferramental.md), item 1 (a 12ª tool, `describe_type`, é o precedente).
+- `describe_type` (`src/queries/describe-type.ts#createDescribeType`) lê só tipos: o fixado no processo, com `process`, ou a versão vigente ou pedida do projeto, sem `process`; relações e gates ficam fora.
+- `describe_type` com `process` e `version` juntos é `INVALID_INPUT` (`/version`, `process-with-version`), recusado no serviço antes de qualquer I/O.
+- `describe_type` com `process` e tipo não fixado é `TYPE_NOT_PINNED` (`/type`, `not-pinned`); sem `process`, projeto inexistente é `PROJECT_NOT_FOUND` (`/project`, `unknown-project`) e tipo ou versão ausente de um projeto que existe é `TYPE_NOT_FOUND`.
+- `describe_type` com `process` omite `version` da saída, porque o manifesto guarda o schema fixado (`Manifest.fixed.types`), não a versão.
+- `describe_type`, com e sem `process`, devolve o tipo sem `pattern` e sem `patternProperties` (`src/domain/schema-walk.ts#withoutFreePatterns`, cópia que não muta o manifesto lido). Divergência declarada: a saída não repete os bytes do manifesto nem da definição, e o `pattern` original só sobrevive no manifesto em disco ([ADR 0009](adr-0009-ferramental.md), emenda de 2026-10-07).
 - `attachments` e os demais nomes de `RESERVED_PROCESS_NAMES` (`src/domain/ids.ts`) não valem como nome de processo; `create_process` os recusa com `RESERVED_NAME`.
 - O código de `domain/`, `commands/`, `queries/` e `mcp/` não contém termo de fluxo nem de framework; `test/no-flow-terms.spec.ts` trava ([ADR 0007](adr-0007-dominio.md), item 3).
+
+## Consulta (`query`)
+
+- A `query` projeta `data` por `fields` (até 50 nomes de topo; `fields: []` omite `data`) só na saída (`src/queries/query-service.ts#createQueryService`): os filtros veem o `data` inteiro, o teto de página conta o JSON projetado, `fields` fica fora do hash do cursor, e `in`, `out`, `needsReview` e `attachmentStatus` saem completos.
+- O `register` não confere se o destino de `supersedes`/`revokes` é o registro que o agente queria, só as regras de relação; o id certo vem do `query` por `type` + `targetPrefix` + `fields: []`.
+- Com `fields` não vazio, o `data` sempre vem na saída da `query`: `{}` quando nenhum dos campos pedidos existe no registro, e o campo ausente some sem erro (o alcance projeto mistura tipos).
+
+## Validação do register
+
+- O `INVALID_RECORD` de dado junta a primeira violação de schema de cada registro do lote (`src/commands/register/static.ts#prepareBatch`), com `path` `/records/<i>/data/...` e o teto de `capDetails` (50 e `too-many-errors`); continua tudo-ou-nada.
+- O `register` confere o tipo fixado de todos os registros antes de validar dado (`src/commands/register/static.ts#prepareBatch`): `TYPE_NOT_PINNED` vence o `INVALID_RECORD` de dado.
+- O `register` valida dado só pelo `validate` (sem `allErrors`), sem segundo passe: nenhum regex vindo do schema é construído nem executado, porque o `validate` ignora `pattern` e `patternProperties` e o formato de um dado vem de `format` do catálogo fechado de `src/domain/formats.ts`. Resíduo aceito: `format: "regex"` do `ajv-formats` constrói um `RegExp` sobre o dado, sem executá-lo ([ADR 0009](adr-0009-ferramental.md), item 20 e as emendas de 2026-10-06 e 2026-10-07).
+- O `define_type` recusa `pattern` e `patternProperties` (`INVALID_SCHEMA`, `pattern-not-allowed`) antes de gravar uma versão, inclusive o que um `$ref` alcança dentro de dado; o `register` os ignora num tipo já fixado ([ADR 0009](adr-0009-ferramental.md), emenda de 2026-10-07).
 
 ## Anexos
 
@@ -31,3 +50,4 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 
 - `define_type`, `define_relation` e `define_gate` versionam em semver `major.minor` em `<nome>/<versão>.json`, nunca sobrescrevem e não deixam arquivo legado. `adapters/fs/definition-store.ts` escreve cada versão por `link` exclusivo, nunca por `rename`.
 - Mudança que quebra exige `breaking: true` (`BREAKING_CHANGE`); o processo fixa as versões vigentes na criação (`create_process`) e, depois de uma quebra, o caminho é um processo novo ([ADR 0007](adr-0007-dominio.md), itens 15 a 17).
+- Entrada de `FORMAT_CATALOG` (`src/domain/formats.ts`) é imutável: significado novo é nome novo, nunca mudança do regex de um nome existente, porque o catálogo é código lido a cada `register` e mudá-lo mudaria a validação de todo processo já fixado ([ADR 0009](adr-0009-ferramental.md), item 20 e a emenda de 2026-10-07).

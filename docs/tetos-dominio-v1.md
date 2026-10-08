@@ -23,10 +23,11 @@ Antes desta decisão só `data` (16.000 caracteres) e o lote (`BATCH_MAX`, 50 it
 | Listas de `evidence` de cada pergunta do `evaluate_gate` MCP | 100 ids por lista (`EVIDENCE_ITEMS_CAP` em `src/mcp/tools/query.ts`) | **palpite**, o mesmo valor do corte de `changes`. O corte é visível em `omitted` na pergunta (contagem cortada por lista); `passed` e `marker` não mudam. O gate é sem estado, então o excedente sai com um `select` ou `where` mais estreito. Sem o corte, um gate `occurred` sobre 1.000 registros devolvia 41.152 caracteres só de ids |
 | `ids` da `query` MCP | `.max(200)` | alinhado a `LIMIT_MAX` — **palpite** |
 | `where` da `query` MCP | no máximo 50 chaves | alinhado a `BATCH_MAX` — **palpite**; igualdades escritas pelo agente |
+| `fields` da `query` MCP | `.max(50)` (`FIELDS_MAX` em `src/mcp/tools/query.ts`) | alinhado a `BATCH_MAX` — **palpite**; nomes de topo de `data` escritos pelo agente |
 | `changesSince` da `query` e `marker` do `evaluate_gate` | no máximo 200 chaves | **palpite**: o marcador tem uma chave por processo lido, vazios incluídos, e é devolvido pelo próprio servidor, que não tem teto de processos por projeto. 200 fica acima do ponto em que o cursor (65.536 caracteres) já falharia, então o zod não é o primeiro a quebrar, mas só para nomes de processo de ~42 caracteres ou mais; com nomes menores o cursor pagina além de 200 processos e o zod recusa antes. Projeto com mais de 200 processos é limite conhecido: pendência aberta, sem ADR |
 | `list(project)` (processos de um projeto) | sem teto | **limite conhecido**, sem ADR: cada processo custa ~70 a 115 caracteres no `list`, e nada limita os processos por projeto (medição de 2026-09-30: 21 processos em 8 projetos, no máximo 7 num projeto; 160 processos dariam ~11 a 18 mil caracteres, abaixo dos 25.000 tokens do Claude Code). Gatilho de revisão: projeto acima de ~50 processos ou a primeira recusa `too-long` do cursor de projeto, que leva a um teto de processos por projeto em `create_process`, decidido num ADR (decisão do #71 M6) |
 | `maxChars` de `read_attachment` | `.max(PAGE_CHARS_CAP)` (24.000) | mesmo teto de página da `query` (D-20); sem `maxChars` a tool passa `PAGE_CHARS_CAP` |
-| `details` de erro do serviço (`issueDetails`) | 50 | o mesmo corte do validador (`capDetails` em `src/errors.ts`). Sem ele, 200.000 chaves inválidas no cursor deram um erro de 17,7 MB |
+| `details` de erro do serviço (`issueDetails`) e do `INVALID_RECORD` agregado do `register` | 50 | o mesmo corte do validador (`capDetails` em `src/errors.ts`); no `register` o teto vale para as violações de schema de **todo** o lote, e o registro 0 pode consumi-lo (os demais só entram na contagem do `too-many-errors`). Sem ele, 200.000 chaves inválidas no cursor deram um erro de 17,7 MB |
 
 ## Teto do `records.jsonl`
 
@@ -63,6 +64,8 @@ Folga dos tetos sobre o maior valor observado: `relations` 50 vezes (100 contra 
 
 ## Pattern de schema de tipo (N1: safe-regex2 e maxLength)
 
+> **Superada em 2026-10-07.** O `define_type` recusa `pattern` e `patternProperties`, e o formato de um dado vem de um catálogo fechado de `format` (`src/domain/formats.ts#FORMAT_CATALOG`); `safe-regex2`, `PATTERN_MAX_LENGTH` e as regras de `maxLength` saíram. A emenda de 2026-10-07 do item 20 do [ADR 0009](directives/adr-0009-ferramental.md) traz a decisão. O texto e as medições abaixo ficam como o registro do que valia e do que motivou a troca.
+
 Decisão da entrevista de 2026-10-02 sobre ReDoS em `pattern` de schema de tipo. Não é um teto de tamanho como os acima, mas fecha o mesmo tipo de risco: um dado gravado que trava o servidor e não tem volta.
 
 ### Por que
@@ -75,7 +78,7 @@ Um `pattern` como `^(\w+\s?)*$` trava o servidor, que é de thread única: ~700 
 - **RE2 via `code.regExp` do ajv:** dependência nativa ou WASM.
 - **`validate` num worker com timeout:** reabre a porta síncrona do `Validator` (D-25).
 - **Análise estática:** `recheck` (5,8 MB, roda em worker) ou `safe-regex2`.
-- **Allowlist de formatos nomeados:** migraria os 5 tipos de auditoria do OMC.
+- **Allowlist de formatos nomeados:** migraria os 5 tipos de auditoria do OMC. Adotada em 2026-10-07 como catálogo fechado, no lugar do `pattern` livre (ver a nota no início da seção).
 - **Aceitar e documentar no ADR:** deixa o servidor travável por um tipo gravado.
 
 ### Decisão do usuário
@@ -92,10 +95,10 @@ Motivo: é biblioteca usada em campo e dispensa código próprio de análise de 
 
 - **Alternância sobreposta (risco aceito em 2026-10-02):** `(a|aa)+` e `([a-z]|[a-z0-9])+` passam pela `safe-regex2` (falso negativo). O `maxLength` **não** limita o dano: os dois travam o servidor com poucas dezenas de caracteres, muito abaixo do teto de 256, e o tempo é exponencial e varia por padrão. `([a-z]|[a-z0-9])+` leva ~1,3 s com 26 caracteres e ~5 s com 28 (quadruplica a cada 2; com 40 trava por horas); `(a|aa)+` cresce ~1,6x por caractere (dezenas de ms com 30, centenas com 34, segundos com 40). Aceito porque a ferramenta é de uso exclusivo de agentes e os 3 formatos em uso nos tipos de `.hexlog/types/` são lineares. O fallback linear do V8 não entrou porque só protege regex sem a flag `u` e exigiria reabrir a exclusão de `setFlagsFromString`/`unicodeRegExp`.
 - **Falso positivo da `safe-regex2`:** ela recusa repetição dentro de grupo repetido mesmo quando a regex é linear (kebab-case `^[a-z]+(?:-[a-z]+)*$`, `^\d+(\.\d+)?$`) e sintaxe que o `ret` não parseia (lookbehind). Passam classe de caractere única (`^[a-z0-9-]+$`) e sequência sem grupo repetido. A `message` de `src/adapters/validator.ts#patternDetails` já diz isso ao agente.
-- **Formatos do `ajv-formats`:** `src/adapters/validator.ts#createCompiler` liga todos (`addFormats`), inclusive os que validam com regex (`email`, `uri`, `hostname`, `date-time`). Nenhum passa pela `safe-regex2` nem exige `maxLength`; o único limite sobre o tempo deles é o teto de `data` (16.000 caracteres canônicos). O custo de ReDoS desses formatos não foi medido: vale o que o `ajv-formats` entrega. Aceito pelo mesmo motivo do `$ref` abaixo: a ferramenta é de uso exclusivo de agentes. Se pesar, ligar só os formatos usados (`addFormats(ajv, { formats: [...] })`).
+- **Formatos do `ajv-formats`:** `src/adapters/validator.ts#createCompiler` liga todos (`addFormats`), inclusive os que validam com regex (`email`, `uri`, `hostname`, `date-time`). Nenhum passa pela `safe-regex2` nem exige `maxLength`; o único limite sobre o tempo deles é o teto de `data` (16.000 caracteres canônicos). O custo de ReDoS dos demais formatos não foi medido: vale o que o `ajv-formats` entrega. Aceito pelo mesmo motivo do `$ref` abaixo: a ferramenta é de uso exclusivo de agentes. Se pesar, ligar só os formatos usados (`addFormats(ajv, { formats: [...] })`).
 - **`$ref` com ponteiro JSON para dentro de dado:** `#/const`, `#/default`, `#/enum/0` e `#/examples/0` escondem um `pattern` do percurso, que também passa sem `maxLength` (um `$ref` para `#/examples/0` com `^(a+)+$` entra no tipo). Aceito porque a ferramenta é de uso exclusivo de agentes de IA. A correção barata seria uma allowlist de `$ref`: `#`, `#/$defs/...` e `#/definitions/...`.
 
-O ADR 0009 (item 20) registra esses limites como risco aceito; as medições ficam aqui. Pendência aberta, sem ADR, junto de um follow-up: revisar o processo de definição de tipos e avaliar regex ou formatos nomeados prontos, fornecidos pelo hexlog, que o agente só customiza. A saída pós-1.0 (formatos nomeados, allowlist de `$ref` e timeout de regex) está na issue https://github.com/gabrielh-silvestre/hexlog/issues/79.
+O ADR 0009 (item 20) registra esses limites como risco aceito; as medições ficam aqui. Pendência aberta, sem ADR, junto de um follow-up: revisar o processo de definição de tipos e avaliar regex ou formatos nomeados prontos, fornecidos pelo hexlog, que o agente só customiza. A saída pós-1.0 (formatos nomeados, allowlist de `$ref` e timeout de regex) está na issue https://github.com/gabrielh-silvestre/hexlog/issues/79; o catálogo de formatos a fechou em 2026-10-07.
 
 ### Consequência
 

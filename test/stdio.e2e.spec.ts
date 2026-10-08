@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { QueryResult } from '../src/queries/query-service.ts';
+import { TOOLS_COUNT } from '../src/installation.ts';
 import { VERSION } from '../src/version.ts';
 import { at, createTempDir } from './helpers.ts';
 import { errorBodyOf } from './mcp/environment.ts';
@@ -108,6 +109,18 @@ describe('P8 e TM1: bundle real por stdio', () => {
     );
   });
 
+  test('o bundle anuncia TOOLS_COUNT tools, describe_type entre elas', async () => {
+    const { client } = await connect();
+    try {
+      const { tools } = await client.listTools();
+
+      expect(tools).toHaveLength(TOOLS_COUNT);
+      expect(tools.map(({ name }) => name)).toContain('describe_type');
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+
   test('<D> com a fixture de dado 0.x responde LEGACY_DATA com o comando em details', async () => {
     const xdg = createTempDir('e2e-xdg');
     fs.cpSync(LEGACY_FIXTURE, path.join(xdg, 'hexlog'), { recursive: true });
@@ -151,6 +164,96 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
+  test('query com fields vazio devolve os registros sem data', async () => {
+    const { client, call } = await connect();
+    try {
+      await seedNotes(call, 2);
+
+      const page = (await call('query', { project: PROJECT, process: PROCESS, fields: [] }))
+        .structuredContent as QueryResult;
+
+      expect(page.records).toHaveLength(2);
+      expect(page.records.every((record) => !('data' in record))).toBe(true);
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+
+  test('define_type com pattern é recusado com pattern-not-allowed e o catálogo aceita git-sha', async () => {
+    const { client, call } = await connect();
+    try {
+      const refused = errorBodyOf(
+        await call('define_type', {
+          project: PROJECT,
+          name: 'note',
+          schema: {
+            type: 'object',
+            properties: { text: { type: 'string', maxLength: 256, pattern: '^(a|aa)+$' } },
+          },
+        }),
+      );
+      const accepted = await call('define_type', {
+        project: PROJECT,
+        name: 'commit',
+        schema: { type: 'object', properties: { sha: { type: 'string', format: 'git-sha' } } },
+      });
+
+      expect(refused.code).toBe('INVALID_SCHEMA');
+      expect(refused.details).toContainEqual(
+        expect.objectContaining({
+          path: '/schema/properties/text/pattern',
+          code: 'pattern-not-allowed',
+        }),
+      );
+      expect(accepted.isError).not.toBe(true);
+    } finally {
+      await client.close();
+    }
+  }, 15_000);
+
+  describe('tipo legado com pattern, gravado antes da recusa', () => {
+    const LEGACY_PATTERNS = [
+      // Prova direta de que o pattern não é aplicado, sem depender de tempo.
+      ['^[a-z]+$', '123'],
+      // Exponencial: se o regex rodasse sobre 300 caracteres o register não terminaria.
+      ['^(a|aa)+$', `${'a'.repeat(299)}b`],
+    ];
+
+    test.each(LEGACY_PATTERNS)(
+      'register aceita o valor que o pattern %s recusaria, sem rodar o regex',
+      async (pattern, text) => {
+        const xdg = createTempDir('e2e-xdg');
+        const typeDir = path.join(xdg, 'hexlog', '.v1', PROJECT, 'types', 'note');
+        fs.mkdirSync(typeDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(typeDir, '1.0.json'),
+          JSON.stringify({
+            type: 'object',
+            properties: { text: { type: 'string', pattern } },
+          }),
+        );
+        const { client, call } = await connect({ xdg });
+        try {
+          await call('create_process', { project: PROJECT, process: PROCESS });
+          const start = performance.now();
+
+          const registered = await call('register', {
+            project: PROJECT,
+            process: PROCESS,
+            agent: 'e2e-agent',
+            records: [{ type: 'note', target: 'run.step', data: { text } }],
+          });
+
+          expect(registered.isError).not.toBe(true);
+          expect(performance.now() - start).toBeLessThan(5_000);
+        } finally {
+          await client.close();
+        }
+      },
+      15_000,
+    );
+  });
+
   test('uma chamada de cada tool no bundle: stdout só JSON-RPC e stderr JSON estruturado', async () => {
     const xdg = createTempDir('e2e-xdg');
     const { client, call, stderr, transportErrors } = await connect({ xdg });
@@ -171,6 +274,7 @@ describe('P8 e TM1: bundle real por stdio', () => {
         await call('define_relation', { project: PROJECT, name: 'rel', kind: 'supports' }),
         await call('evaluate_gate', { project: PROJECT, process: PROCESS, gate: 'has-note' }),
         await call('verify_chain', { project: PROJECT, process: PROCESS }),
+        await call('describe_type', { project: PROJECT, type: 'note', process: PROCESS }),
       ];
 
       expect(results.filter((result) => result.isError === true)).toEqual([]);

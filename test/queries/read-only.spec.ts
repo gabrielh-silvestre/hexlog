@@ -14,6 +14,7 @@ describe('queries/ só enxerga o lado de leitura das portas (ISP)', () => {
   test('os Readers de createQueryService não têm write, create nem putText', () => {
     expect(key<Deps['store']>('read')).toBeDefined();
     expect(key<Deps['definitions']>('names')).toBeDefined();
+    expect(key<Deps['definitions']>('read')).toBeDefined();
     expect(key<Deps['attachments']>('status')).toBeDefined();
     // @ts-expect-error o serviço de consulta não grava no log
     expect(key<Deps['store']>('write')).toBeDefined();
@@ -30,7 +31,7 @@ describe('queries/ só enxerga o lado de leitura das portas (ISP)', () => {
   test('createQueryService aceita um fake só de leitura', () => {
     const service = createQueryService({
       store: { read: unused, readManifest: unused, list: () => [], listProjects: () => ['p'] },
-      definitions: { names: () => [], versions: () => [] },
+      definitions: { names: () => [], versions: () => [], read: unused },
       attachments: { status: unused, read: unused },
       search: { search: () => [], terms: () => [] },
     });

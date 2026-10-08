@@ -22,20 +22,22 @@ avaliar) é da skill hexlog-flow.
   [`../hexlog-flow/references/target-format.md`](../hexlog-flow/references/target-format.md)).
 - **Vigente**: um registro deixa de ser vigente quando outro o `supersedes` ou o
   `revokes`. Tudo que o hexlog responde (gates, `query`) olha só o vigente, salvo
-  `includeNonCurrent`.
+  `includeNonCurrent`. Antes de `supersedes`/`revokes`, leia o vigente com a
+  `query` (`fields: []` lista sem o `data`) e use o `id` devolvido; o passo
+  a passo está na hexlog-flow.
 - **Processo** = um log com a cadeia de hash. Ao ser criado, fixa a versão
   vigente de cada tipo, nome de relação e gate do projeto; o que for definido
   depois não vale para ele.
 - **Anexo** = texto imutável endereçado pelo sha256. O registro o cita pelo hash
   num campo cujo schema tem `format: "attachment"`.
 
-As 11 tools:
+As 12 tools:
 
 | Família | Tools |
 |---|---|
 | Definir (versões imutáveis do projeto) | `define_type`, `define_relation`, `define_gate` |
 | Escrever | `create_process`, `register`, `attach` |
-| Ler (`readOnlyHint`) | `list`, `query`, `evaluate_gate`, `verify_chain`, `read_attachment` |
+| Ler (`readOnlyHint`) | `list`, `describe_type`, `query`, `evaluate_gate`, `verify_chain`, `read_attachment` |
 
 ## Ordem obrigatória de bootstrap
 
@@ -62,8 +64,9 @@ que o usuário notar a lacuna.
 ## Versão de definição e `breaking`
 
 Cada `define_*` grava uma versão `major.minor` imutável. A mesma definição de
-novo é replay (`created: false`). O servidor decide a quebra de tipo e de
-relação; a de gate é do agente:
+novo é replay (`created: false`), exceto um tipo que carrega `pattern` ou
+`patternProperties`: esse é recusado (`INVALID_SCHEMA`), mesmo sendo a versão
+vigente. O servidor decide a quebra de tipo e de relação; a de gate é do agente:
 
 | Definição | Compatível (minor) | Exige `breaking: true` |
 |---|---|---|
@@ -85,10 +88,10 @@ fazer quando um processo já ficou preso a um tipo sem a marca.
 |---|---|---|
 | `create_process` com nome em `RESERVED_PROCESS_NAMES` (`types`, `relations`, `gates`, `attachments`, `archive`) | `RESERVED_NAME` | `domain/ids.ts#RESERVED_PROCESS_NAMES` |
 | Qualquer tool com nome fora da regex `Name`, campo desconhecido, ou relação sem `kind` nem `as` | `INVALID_INPUT`: corrija o campo de `details[].path` e reenvie | a validação de entrada de cada tool |
-| `define_type` com schema que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` sem `maxLength` de até 256; `patternProperties` sem `propertyNames.maxLength` de até 256; regex que a `safe-regex2` recusa (inclusive `^[a-z]+(?:-[a-z]+)*$`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
+| `define_type` com schema que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` ou `patternProperties` em qualquer subschema (`pattern-not-allowed`: valide o formato com `format: "git-sha"` ou com `minLength`/`maxLength`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
 | `define_*` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `commands/definition.ts#targetVersion` |
 | `register` com `type` fora do que o processo fixou (definido depois, ou nunca) | `TYPE_NOT_PINNED` | `commands/register/static.ts#pinnedSchema` |
-| `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` de cada violação em `details` | `commands/register/static.ts#checkData` |
+| `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` da primeira violação de schema de cada registro do lote em `details` (`/records/<i>/data/...`; leia o schema antes com `describe_type`) | `commands/register/static.ts#checkData` |
 | `evaluate_gate` com gate que o processo não fixou | `GATE_NOT_FOUND` | `queries/query-service.ts#gateNotFound` |
 | Qualquer tool com dado 0.x ainda em `$XDG_DATA_HOME/hexlog` | `LEGACY_DATA` | só um humano resolve (ver abaixo) |
 
@@ -97,6 +100,9 @@ Notas:
 - Para saber o que um processo congelou, chame `list` com `project` e
   `process`: devolve os nomes fixados (`pinned`) e os hashes. Com só `project`,
   devolve as definições vigentes e todas as suas versões.
+- Para ler o schema de um tipo antes de registrar, chame `describe_type` com `project`,
+  `type` e `process` (o tipo fixado, sem a versão na saída) ou sem `process` (a versão
+  vigente ou uma pedida); `process` junto de uma versão pedida é `INVALID_INPUT`.
 - O contrato completo de `query`, `evaluate_gate` e `register` (filtros,
   paginação, marcador, tetos) está na descrição de cada tool; esta skill não o
   repete.

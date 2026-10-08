@@ -45,8 +45,8 @@ function hasDynamicRequire(bytes: Uint8Array): boolean {
   return Buffer.from(bytes).includes('Dynamic require of');
 }
 
-// As 11 tools registradas em src/mcp/tools/.
-export const TOOLS_COUNT = 11;
+// As 12 tools registradas em src/mcp/tools/.
+export const TOOLS_COUNT = 12;
 
 export function versionDirOf(home: string, version: string): string {
   return path.join(libDirOf(home), version);

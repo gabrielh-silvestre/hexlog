@@ -5,9 +5,10 @@ um conjunto completo para o fluxo de planejamento e execução do OMC — o plan
 suas revisões, as revisões do architect e do Critic, os desvios da execução e o
 gate que diz se o plano está pronto —, com a ordem das chamadas. Use-o como modelo
 para o projeto. O `list` com `project` e `process` diz só os nomes fixados no
-processo, e o conteúdo da definição não volta por tool nenhuma: se este arquivo
-divergir do que o projeto definiu, vale o servidor (`INVALID_RECORD` aponta o
-campo).
+processo; o schema de um tipo volta por `describe_type` (com `process`, o fixado), e
+o de relações e gates, por tool nenhuma. Se este arquivo divergir do que o projeto
+definiu, vale o servidor (`describe_type` mostra o schema; `INVALID_RECORD` aponta
+o campo, a primeira violação de cada registro do lote).
 
 O exemplo é ilustrativo: ele é mais rico que o fixture de testes do repositório
 (test/fixtures/domains/omc.ts), que é só a configuração mínima testada e não usa a

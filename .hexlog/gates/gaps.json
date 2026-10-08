@@ -3,7 +3,7 @@
     {
       "kind": "no_pending",
       "pending": { "type": "gap" },
-      "resolvedBy": { "kind": "answers", "from": ["directive"] },
+      "resolvedBy": { "kind": "answers", "from": ["directive", "premise"] },
       "scope": "project"
     }
   ]

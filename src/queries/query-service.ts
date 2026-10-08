@@ -1,4 +1,4 @@
-import { differenceBy, isUndefined, mapValues, omitBy, pick, uniq, union } from 'es-toolkit';
+import { differenceBy, isUndefined, omitBy, pick, uniq, union } from 'es-toolkit';
 import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
 import { evaluateGate, type GateResult } from '../domain/gate.ts';
@@ -11,21 +11,29 @@ import {
   type Target,
 } from '../domain/ids.ts';
 import { needsReview, type NeedsReview } from '../domain/relations.ts';
-import { HexlogError, invalidInput } from '../errors.ts';
+import { HexlogError } from '../errors.ts';
 import type { Manifest } from '../domain/manifest.ts';
 import type {
   AttachmentReader,
   AttachmentStatus,
-  DefinitionKind,
   DefinitionReader,
   ProcessReader,
   SearchIndex,
 } from '../ports.ts';
-import { latestVersions } from '../shared/latest.ts';
 import { loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
-import { sliceChars } from '../shared/pages.ts';
 import { decodeCursor, encodeCursor, invalidCursor, type CursorPayload } from './cursor.ts';
-import { projectNotFound, readScope, type Reading, type ReadTarget } from './read.ts';
+import {
+  createDescribeType,
+  type DescribeTypeInput,
+  type DescribeTypeResult,
+} from './describe-type.ts';
+import { createList, type ListInput, type ListResult } from './list.ts';
+import {
+  createReadAttachment,
+  type AttachmentPage,
+  type ReadAttachmentInput,
+} from './read-attachment.ts';
+import { readScope, type Reading, type ReadTarget } from './read.ts';
 import {
   buildView,
   inOutputOrder,
@@ -39,6 +47,9 @@ import {
   type View,
 } from './select.ts';
 
+export { PAGE_CHARS_CAP } from './read-attachment.ts';
+export type { AttachmentPage, DescribeTypeInput, DescribeTypeResult, ListInput, ListResult };
+
 const DEFAULT_LIMIT = 50;
 /**
  * Teto de `text` em caracteres: o custo da busca cresce com os termos distintos (AND mais o
@@ -46,12 +57,6 @@ const DEFAULT_LIMIT = 50;
  * (`SEARCH_MAX_CHARS`); a F5 reusa a constante no `.max()` do zod.
  */
 export const QUERY_TEXT_MAX_CHARS = 200;
-/**
- * D-20: teto de uma página. Na `query` conta os caracteres do JSON dos registros (as tools o passam em
- * `maxChars`); no `readAttachment`, os do `text`, e é o padrão sem `maxChars`.
- */
-export const PAGE_CHARS_CAP = 24_000;
-
 export type QueryInput = Filters & {
   project: Name;
   /** Obrigatório no alcance processo (o padrão). */
@@ -70,9 +75,17 @@ export type QueryInput = Filters & {
   changesSince?: Marker;
   /** Teto de caracteres do JSON da página (D-20); o 1º registro sai inteiro mesmo acima dele. */
   maxChars?: number;
+  /**
+   * Nomes de topo de `data` que saem em cada registro; `[]` omite `data`. Recorta só a saída: os
+   * filtros veem o `data` inteiro, o teto de página (`maxChars`) conta o registro já recortado e
+   * `fields` fica fora do hash do cursor, então cada página pode pedir outros.
+   */
+  fields?: readonly string[];
 };
 
-export type QueryRecord = Pick<Link, 'id' | 'type' | 'at' | 'target' | 'author' | 'data'> & {
+export type QueryRecord = Pick<Link, 'id' | 'type' | 'at' | 'target' | 'author'> & {
+  /** Inteiro, ou só os `fields` pedidos; ausente com `fields: []`. */
+  data?: Link['data'];
   in: InRelation[];
   out: OutRelation[];
   /** D-09: só registro vigente com apoio morto. */
@@ -129,44 +142,6 @@ export type VerifyChainResult = Chain & {
   totalAttachmentBreaks: number;
 };
 
-export type ListInput = { project?: Name; process?: Name };
-
-/** Definição do projeto: `version` é a mais nova, `versions` todas em ordem crescente. */
-type DefinitionSummary = { name: Name; version: string; versions: string[] };
-
-export type ListResult = {
-  /** Sem `project`: um item por projeto. */
-  projects?: { name: Name; processes: number }[];
-  /** Só `project`: os processos e as definições vigentes dele. */
-  project?: {
-    name: Name;
-    processes: { name: Name; createdAt: string }[];
-  } & Record<DefinitionKind, DefinitionSummary[]>;
-  /** `project` e `process`: o que o manifesto do processo fixou. */
-  process?: {
-    name: Name;
-    createdAt: string;
-    pinned: Record<DefinitionKind, Name[]>;
-    hashes: Manifest['hashes'];
-  };
-};
-
-type ReadAttachmentInput = {
-  project: Name;
-  hash: Hash;
-  /** Posição em caracteres; o `next` da página anterior. */
-  offset?: number;
-  maxChars?: number;
-};
-
-export type AttachmentPage = {
-  text: string;
-  /** Offset da próxima página; ausente na última. */
-  next?: number;
-  /** Sempre `ok`: anexo ausente ou corrompido não devolve página, lança. */
-  status: 'ok';
-};
-
 export type QueryService = {
   /**
    * D-24: lê o alcance pedido pelo carregador único e devolve os registros vigentes que passam nos
@@ -214,6 +189,17 @@ export type QueryService = {
    * `IO_ERROR`.
    */
   readAttachment(input: ReadAttachmentInput): AttachmentPage;
+  /**
+   * Schema de um tipo, sem gravar. Com `process`, o tipo fixado no manifesto (`{name, schema}`, sem
+   * `version`: o manifesto não a guarda), mesmo que o projeto já tenha uma versão mais nova; sem
+   * `process`, a vigente do projeto ou a `version` pedida (`{name, version, schema}`).
+   * `INVALID_INPUT` (`process-with-version` em `/version`: `process` e `version` juntos, ou
+   * `invalid-version`), `PROCESS_NOT_FOUND`, `TYPE_NOT_PINNED` (`not-pinned` em `/type`: tipo fora do
+   * manifesto), `PROJECT_NOT_FOUND` (`unknown-project` em `/project`, sem `process`),
+   * `TYPE_NOT_FOUND` (`unknown-name` em `/type`, `unknown-version` em `/version`),
+   * `PROCESS_CORRUPTED` (`unreadable-manifest`), `INTERNAL` (`unreadable-definition`) e `IO_ERROR`.
+   */
+  describeType(input: DescribeTypeInput): DescribeTypeResult;
 };
 
 function invalidFilter(path: string, code: string, message: string): HexlogError {
@@ -257,6 +243,22 @@ function assertValid({ limit, text }: QueryInput, search: SearchIndex): void {
   }
 }
 
+/**
+ * `Object.hasOwn` e `Object.fromEntries` impedem que `constructor` ou `__proto__` em `fields`
+ * tragam algo do protótipo.
+ */
+function projectData(
+  data: Link['data'],
+  fields: readonly string[] | undefined,
+): Link['data'] | undefined {
+  if (isUndefined(fields)) return data;
+  if (fields.length === 0) return undefined;
+  return Object.fromEntries(
+    fields.filter((field) => Object.hasOwn(data, field)).map((field) => [field, data[field]!]),
+  );
+}
+
+// `fields` não entra aqui de propósito: recorta a saída e não muda o que a consulta seleciona.
 const FILTER_KEYS = [
   'includeNonCurrent',
   'type',
@@ -329,9 +331,6 @@ export function createQueryService(deps: {
 }): QueryService {
   const { store, definitions, attachments, search } = deps;
 
-  const summariesOf = (project: Name, kind: DefinitionKind): DefinitionSummary[] =>
-    latestVersions(definitions, project, kind);
-
   /** D-16: estado dos anexos que `link` cita nos campos marcados do tipo fixado no processo dele. */
   function attachmentStatusOf(
     project: Name,
@@ -393,8 +392,10 @@ export function createQueryService(deps: {
       const render = (link: Link): QueryRecord => {
         const review = reviews.get(link.id);
         const status = attachmentStatusOf(target.project, manifests.get(processOf(link.id)), link);
+        const data = projectData(link.data, input.fields);
         return {
-          ...pick(link, ['id', 'type', 'at', 'target', 'author', 'data']),
+          ...pick(link, ['id', 'type', 'at', 'target', 'author']),
+          ...(isUndefined(data) ? {} : { data }),
           ...relationsOf(view, link),
           ...(isUndefined(review) ? {} : { needsReview: review }),
           ...(isUndefined(status) ? {} : { attachmentStatus: status }),
@@ -473,54 +474,9 @@ export function createQueryService(deps: {
       };
     },
 
-    list({ project, process }) {
-      if (isUndefined(project)) {
-        if (!isUndefined(process)) {
-          throw invalidInput('/project', 'required', 'project is required with process');
-        }
-        return {
-          projects: store
-            .listProjects()
-            .map((name) => ({ name, processes: store.list(name).length })),
-        };
-      }
-      if (!store.listProjects().includes(project)) throw projectNotFound();
-      if (!isUndefined(process)) {
-        const { createdAt, fixed, hashes } = store.readManifest({ project, process });
-        return {
-          process: {
-            name: process,
-            createdAt,
-            pinned: mapValues(fixed, (byName) => Object.keys(byName)),
-            hashes,
-          },
-        };
-      }
-      return {
-        project: {
-          name: project,
-          processes: store.list(project).map((name) => ({
-            name,
-            createdAt: store.readManifest({ project, process: name }).createdAt,
-          })),
-          types: summariesOf(project, 'types'),
-          relations: summariesOf(project, 'relations'),
-          gates: summariesOf(project, 'gates'),
-        },
-      };
-    },
+    list: createList({ store, definitions }),
 
-    readAttachment({ project, hash, offset = 0, maxChars = PAGE_CHARS_CAP }) {
-      const text = attachments.read(project, hash);
-      if (offset > text.length) {
-        throw invalidInput('/offset', 'out-of-range', 'offset is past the end of the attachment');
-      }
-      const page = sliceChars(text, offset, maxChars);
-      return {
-        text: page.text,
-        ...(page.nextOffset === null ? {} : { next: page.nextOffset }),
-        status: 'ok',
-      };
-    },
+    readAttachment: createReadAttachment({ attachments }),
+    describeType: createDescribeType({ store, definitions }),
   };
 }

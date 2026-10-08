@@ -1,17 +1,17 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-09-17 | Updated: 2026-10-05 -->
-
 # docs
 
+**Parent context:** `../AGENTS.md`
+**Generated:** 2026-09-17 · **Updated:** 2026-10-07
+
 ## Purpose
-Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0010, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
+Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0011, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
 
 ## Key Files
 | File | Description |
 |---|---|
 | `tetos-dominio-v1.md` | Decisão N8 do PR #60: tetos de `relations`, `Batch.key`, `RecordType`, `Gate.questions` e `aliases` no domínio da v1, com o dado medido no 0.x (2026-09-30), quais números são precedente e quais são palpite, e como refazer a medição. |
-| `uso.md` | Caminho de um projeto novo em 5 passos, exemplo completo das chamadas e tabela das 11 tools, com as convenções de nomes e `target`. |
-| `tools.md` | Referência de entrada, saída e erros de cada uma das 11 tools; o mapa geral está em `uso.md`. |
+| `uso.md` | Caminho de um projeto novo em 5 passos, exemplo completo das chamadas e tabela das 12 tools, com as convenções de nomes e `target`. |
+| `tools.md` | Referência de entrada, saída e erros de cada uma das 12 tools; o mapa geral está em `uso.md`. |
 | `instalacao.md` | Requisitos, instalação e atualização, instalação concorrente, versões antigas, verificação (`--check`) e como reverter. |
 | `migracao.md` | Arquivamento do dado 0.x (`--archive-0x`), releitura da trilha arquivada, volta ao 0.x e migração 0.x para 1.0. |
 | `dados.md` | Layout de dados em `<D>`, erros e avisos, tetos do lock, destravamento manual, recuperação de `PROCESS_CORRUPTED` e lacunas de isolamento. |
@@ -23,16 +23,17 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 | `diagrama-c3-componentes.md` | Diagrama C4 (nível C3, componentes) do servidor MCP em `src/`, gerado a partir do grafo de dependências internas descrito em `src/AGENTS.md`. |
 
 ## Subdirectories
-| Directory | Description |
+| Directory | Purpose |
 |---|---|
-| `directives/` | Docs vivos de regras (convenções, fronteiras, invariantes, qualidade e testes, documentação, instalação e hooks) e ADRs 0007 a 0010 (see `directives/AGENTS.md`) |
+| `directives/` | Docs vivos de regras (convenções, fronteiras, invariantes, qualidade e testes, documentação, instalação e hooks, fluxo e estratégia) e ADRs 0007 a 0011 (see `directives/AGENTS.md`) |
 | `pesquisa/` | Pesquisa de libs e padrões (17 frentes) que embasou as decisões do 0.x (see `pesquisa/AGENTS.md`) |
 
 ## Dependencies
-### Internal
-Os ADRs de `directives/` registram as decisões da arquitetura de `src/` (domínio, serviços, ferramental) e a camada sobre o OMC, e o formato do log. A fonte da verdade do estado atual é o código.
 
-<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+### Internal
+Os ADRs de `directives/` registram as decisões da arquitetura de `src/` (domínio, serviços, ferramental), a camada sobre o OMC e a camada estratégica de premissas (ADR 0011 e `directives/estrategia.md`), e o formato do log. A fonte da verdade do estado atual é o código.
+
+## Manual Notes
 
 ## Diretrizes
 

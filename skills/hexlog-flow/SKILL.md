@@ -33,11 +33,13 @@ pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
 |---|---|---|
 | Gravar um ou mais registros (marco, decisão, veredito, desvio, plano) | `register` | Lote de 1 a 50 registros, tudo ou nada. `agent` = nome da skill que disparou (a skill apontada que chamou a hexlog-flow, ou hexlog-flow mesma se disparada direto). Passe `key` onde a duplicata custa caro (seção abaixo) |
 | Achar um registro, ou os de um alvo | `query` | Filtros `type`, `targetPrefix`, `where`, `text`, `ids`; devolve o `id` de cada um |
+| Substituir ou revogar um registro (`supersedes`/`revokes`) | `query` com `type` + `targetPrefix` + `fields: []`, depois `register` com o `id` devolvido | Leia o vigente antes; nunca use um `id` de memória. Ver "Busca, id, relações" |
 | Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
 | Saber o que mudou desde a última leitura | `query` com `changesSince` = o `marker` da leitura anterior | Só na primeira página; ver "Marcador" |
 | Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência |
 | Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro |
 | Saber o que existe (projetos, processos, o que um processo fixou) | `list` | Sem parâmetros, com `project`, ou com `project` e `process` |
+| Registrar num tipo que você não conhece | `describe_type` com `project`, `type` e `process` | Leia o schema fixado **antes** do `register`; com `process` devolve o tipo que o processo fixou, sem a versão na saída, e `process` junto de uma versão pedida é `INVALID_INPUT` |
 | Guardar o texto de um agente ou de um plano | `attach`, depois `register` com o `hash` devolvido no campo marcado | Duas chamadas, nessa ordem; ver "Anexos" |
 | Ler um anexo | `read_attachment` com `hash` | Em páginas: repita com `offset` = o `next` até não vir `next` |
 | Auditar um alvo ponta a ponta | `query` com `scope: "project"`, `targetPrefix` e `includeNonCurrent: true` | Ordem por instante, processo e sequência; pagine com `cursor`. Depois `verify_chain` por processo |
@@ -59,6 +61,18 @@ Registro se acha por busca e se liga por id:
    `current`: se a origem é vigente); `out` lista as relações gravadas nele
    (`to`, e `current` quando o destino foi lido). `relatedTo` traz os registros
    ligados a um `id`.
+
+**Antes de `supersedes` ou `revokes`, leia o vigente.** Consulte com `type` +
+`targetPrefix`, confira o `target` do registro devolvido (e um campo-chave, se o
+tipo tiver um: peça-o em `fields`) e use o `id` dessa resposta, nunca um `id`
+lembrado de antes. O `register` recusa destino de outro processo, de outro tipo (só no
+`supersedes`) ou que não é mais vigente, mas não sabe qual dos vigentes você queria: com
+vários registros no mesmo prefixo, ele aceita o errado em silêncio.
+
+`fields` recorta o `data` só na saída: `fields: []` devolve o registro sem `data`
+(basta para achar o `id`) e `fields` com nomes traz só esses campos. Como o
+registro sai menor, cabem mais por página. Os filtros (`where`, `text`) continuam
+vendo o `data` inteiro.
 
 Por padrão a `query` só devolve registro **vigente**. `includeNonCurrent: true`
 traz também os substituídos e revogados — é o que a auditoria precisa.
@@ -256,7 +270,7 @@ depois dele; o processo que já existe segue com o gate fixado.
 | Situação | Resultado |
 |---|---|
 | `type` fora do que o processo fixou, inclusive um definido depois do `create_process` | `TYPE_NOT_PINNED`: o processo existente não recebe definição nova. Pare e avise o usuário; não repita `define_type` em loop |
-| `data` fora do schema fixado | `INVALID_RECORD` com o `path` de cada violação |
+| `data` fora do schema fixado | `INVALID_RECORD` com a primeira violação de schema de cada registro inválido do lote, cada uma com seu `path` (`/records/<i>/data/...`, no máximo 50 `details`); corrija e reenvie, e a próxima violação aparece. Só a violação de schema é agregada: `unmarked-attachment` e as regras de relação continuam parando na primeira |
 | Gate pedido que o processo não fixou, inclusive um definido depois do `create_process` | `GATE_NOT_FOUND`: pare e avise o usuário |
 | Reenviar uma `key` com lote diferente do guardado | `IDEMPOTENCY_CONFLICT` |
 | Dado 0.x em `<D>` | `LEGACY_DATA`: só um humano resolve (ver a skill hexlog) |

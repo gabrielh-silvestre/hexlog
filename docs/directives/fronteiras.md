@@ -4,7 +4,7 @@ Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na ba
 
 ## Direção permitida de dependência
 
-- `domain/` não importa `shared/`, `commands/`, `queries/`, `mcp/` nem `adapters/`, nem builtin do Node (salvo `crypto`) nem lib de infraestrutura. Exceção: importa `src/errors.ts` (`HexlogError` em `domain/definitions.ts` e `domain/chain.ts`), e `errors.ts` importa de volta só os tipos `Name` e `RecordId` (ciclo só de tipo). `eslint.boundaries.js` não proíbe `errors.ts` nem `ports.ts` dentro de `domain/`, então essa parte é convenção.
+- `domain/` não importa `shared/`, `commands/`, `queries/`, `mcp/` nem `adapters/`, nem builtin do Node (salvo `crypto`) nem lib de infraestrutura. Exceção: importa `src/errors.ts` (`HexlogError` em `domain/definitions.ts` e `domain/chain.ts`, `pointer` em `domain/schema-walk.ts`), e `errors.ts` importa de volta só os tipos `Name` e `RecordId` (ciclo só de tipo). `eslint.boundaries.js` não proíbe `errors.ts` nem `ports.ts` dentro de `domain/`, então essa parte é convenção.
 - Quem importa `shared/`: `commands/` e `queries/` (`latest.ts`, `loader.ts`, `pages.ts`, `logger.ts`), `compose.ts` (`loader.ts`, `logger.ts`) e `server.ts` (`logger.ts`); `mcp/` e `adapters/` só importam `shared/logger.ts`.
 - `shared/`, `commands/` e `queries/` dependem de `domain/` e das portas, nunca de `adapters/`; `commands/` e `queries/` não se importam.
 - `adapters/` só implementa portas: não importa `commands/`, `queries/` nem `mcp/` (`eslint.boundaries.js#adaptersBlock`); builtins do Node e libs de infraestrutura são o que ele existe para usar.
@@ -23,7 +23,7 @@ Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na ba
 - Regra de negócio em adaptador: a regra mora em `domain/` ou no serviço.
 - Tipo de domínio com cara de formato em disco: o formato em disco fica em `adapters/fs/data-format.ts`.
 - Caso de uso chamando outro via tool: serviço chama serviço ou função pura, nunca uma tool.
-- Arquivo de serviço perto do `max-lines` (800): divida antes de bater no teto. `queries/query-service.ts` segue num só `QueryService` de cinco operações; o corte provável é `list` + `readAttachment` em módulos irmãos, com `createQueryService` único, no gatilho de ~650 linhas ou de uma sexta operação de consulta.
+- Arquivo de serviço perto do `max-lines` (800): divida antes de bater no teto. `queries/query-service.ts` segue num só `QueryService`, agora de seis operações, com `list`, `readAttachment` e `describeType` em módulos irmãos (`queries/list.ts`, `queries/read-attachment.ts`, `queries/describe-type.ts`) e `createQueryService` único; a divisão volta a ser devida no gatilho de ~650 linhas ou de uma sétima operação de consulta.
 - Serviço de escrita gravando em mais de uma porta: a escrita de um `register` é um lote numa só linha de um só processo.
 - `queries/` chamando gravação de qualquer porta: leitura só usa os `*Reader`.
 - `timeline` somando o projeto contra o teto de 64 MiB por processo (`MAX_LOG_BYTES`): o script lê numa chamada só e o teto vale por processo, não pelo projeto.

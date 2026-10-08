@@ -234,26 +234,62 @@ describe('register: recusas estáticas (nível 3)', () => {
     });
   });
 
-  test('details é por registro: só o primeiro item inválido sai, e o lote não os soma', async () => {
-    const { register, validate } = setup();
+  test('details junta as violações de schema de todos os registros do lote', async () => {
+    const { register, processes, validate } = setup();
 
     const error = await refusal(
       register([note('ok'), { ...note(), data: { text: 5 } }, { ...note(), data: { text: 6 } }]),
     );
 
-    expect(error.details.length).toBeGreaterThan(0);
-    expect(error.details.every(({ path }) => path.startsWith('/records/1/data'))).toBe(true);
-    expect(validate).toHaveBeenCalledTimes(2);
+    expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual([
+      { path: '/records/1/data/text', code: 'type' },
+      { path: '/records/2/data/text', code: 'type' },
+    ]);
+    expect(validate).toHaveBeenCalledTimes(3);
+    expect(processes.counters.writes).toBe(0);
   });
 
-  test('pior caso: item com dezenas de erros sai com um só detalhe, o primeiro que o validador achar', async () => {
+  test('um registro com várias violações devolve só a primeira, com o path do registro', async () => {
     const { register } = setup();
-    const extras = Object.fromEntries(Array.from({ length: 80 }, (_, n) => [`extra${n}`, n]));
 
-    const error = await refusal(register([{ ...note(), data: { ...extras } }]));
+    const error = await refusal(register([{ ...note(), data: { other: 1, extra: 2 } }]));
 
     expect(error.details).toHaveLength(1);
-    expect(error.details.every(({ path }) => path.startsWith('/records/0/data'))).toBe(true);
+    expect(error.details[0]!.path).toMatch(/^\/records\/0\/data/);
+  });
+
+  test('lote com dois registros inválidos recebe a primeira violação de cada um', async () => {
+    const { register, processes } = setup();
+
+    const error = await refusal(
+      register([
+        { ...note(), data: { other: 1, extra: 2 } },
+        note('ok'),
+        { ...note(), data: { text: 5, other: 1 } },
+      ]),
+    );
+
+    expect(error.details).toHaveLength(2);
+    expect(error.details[0]!.path).toMatch(/^\/records\/0\/data/);
+    expect(error.details[1]!.path).toMatch(/^\/records\/2\/data/);
+    expect(processes.counters.writes).toBe(0);
+  });
+
+  test('TYPE_NOT_PINNED de um registro vence o INVALID_RECORD de dado de um anterior', async () => {
+    const { register, validate } = setup();
+
+    const error = await refusal(
+      register([
+        { ...note(), data: { text: 5 } },
+        { ...note('b'), type: 'nobody' },
+      ]),
+    );
+
+    expect(error).toMatchObject({
+      code: 'TYPE_NOT_PINNED',
+      details: [{ path: '/records/1/type', code: 'not-pinned' }],
+    });
+    expect(validate).not.toHaveBeenCalled();
   });
 
   test.each([

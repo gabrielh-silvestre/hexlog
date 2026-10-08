@@ -2,7 +2,7 @@
   "type": "object",
   "properties": {
     "result": { "type": "string", "enum": ["passed", "failed"] },
-    "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$", "maxLength": 40 },
+    "commit": { "type": "string", "format": "git-sha", "maxLength": 40 },
     "commands": {
       "type": "array",
       "minItems": 1,
