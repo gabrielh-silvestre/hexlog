@@ -29,7 +29,7 @@ O planejador é `.claude/hooks/flow-sync.ts#planSync`, executado pelo modo `sync
    - `docs/directives/estrategia.md` o próprio `sync-plan` extrai: para `estrategia`, o hook lê `path`, calcula o hash e extrai as premissas por `.claude/hooks/flow-sync.ts#parsePremises`, descartando `hash` e `extracted` do stdin. Passe só `docSlug`, `path`, `current` e `vigent`; o `docSlug` sai do nome do arquivo (`estrategia`), nunca digitado. Linha fora do formato, slug repetido ou `statement` fora de 1 a 255 caracteres param o plano (exit 2): corrija o doc com o dono, nunca a extração.
 4. Monte o `SyncInput` (`ExtractedRule` e `VigentRule` de `.claude/hooks/flow-sync.ts`; para `estrategia`, `hash` vai `''` e `extracted` vai `[]`, que o hook recalcula, e o documento apagado vai com `extracted: null`, único caso em que o hook o repassa) grave-o em `.ignore/flow/<slug>/sync.json` e rode `node .claude/hooks/flow-hooks.ts sync-plan < .ignore/flow/<slug>/sync.json`.
 5. Grave os `batches` em ordem, cada um com a `key` que o plano devolveu (o `doc` entra no último lote). Depois de `IO_ERROR`, reenvie o **mesmo** lote com a mesma `key`; `FORK_REJECTED` relê e refaz o plano.
-6. `warnings` com `reopens-gap`: liste ao dono as lacunas que voltaram a abertas. `error: too-many-relations`: pare e pergunte.
+6. `warnings` com `reopens-gap`: liste ao dono as lacunas que voltaram a abertas. `error: too-many-relations` ou `error: invalid-path` (o `path` do `doc` não é `docs/directives/<docSlug>.md`): pare e pergunte.
 
 No modo `ask`, mostre o diff de regras antes de gravar.
 

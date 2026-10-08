@@ -477,6 +477,27 @@ describe('checkSchema', () => {
   });
 });
 
+describe('format git-sha', () => {
+  const schema = { type: 'object', properties: { commit: { type: 'string', format: 'git-sha' } } };
+
+  test('checkSchema aceita o formato do catálogo', () => {
+    expect(validator.checkSchema(schema)).toEqual([]);
+  });
+
+  test.each(['abcdef1', 'a'.repeat(40)])('validate aceita %s', (commit) => {
+    expect(validator.validate(schema, { commit })).toEqual([]);
+  });
+
+  test.each(['HEAD', 'abcdef', 'a'.repeat(41), 'ABCDEF1', 'abcdef1\n', 'texto livre'])(
+    'validate recusa %j com code format',
+    (commit) => {
+      expect(validator.validate(schema, { commit })).toEqual([
+        { path: '/commit', code: 'format', message: expect.any(String) },
+      ]);
+    },
+  );
+});
+
 describe('validate', () => {
   test('devolve lista vazia para dado conforme', () => {
     expect(validator.validate(noteSchema, { text: 'ok', count: 1 })).toEqual([]);

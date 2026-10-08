@@ -3,6 +3,7 @@ import addFormats from 'ajv-formats';
 import { isPlainObject, isUndefined, kebabCase, memoize, type MemoizeCache } from 'es-toolkit';
 import safeRegex from 'safe-regex2';
 import { ATTACHMENT_FORMAT } from '../domain/definitions.ts';
+import { FORMAT_CATALOG } from '../domain/formats.ts';
 import { Hash } from '../domain/ids.ts';
 import { capDetails, pointer as jsonPointer, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
@@ -138,6 +139,7 @@ function createCompiler(allErrors: boolean) {
   addFormats.default(ajv);
   // Formato `attachment` (D-16): o mesmo `Hash` do domínio (sha256 em hexadecimal minúsculo).
   ajv.addFormat(ATTACHMENT_FORMAT, (value: string) => Hash.safeParse(value).success);
+  for (const [name, test] of Object.entries(FORMAT_CATALOG)) ajv.addFormat(name, test);
 
   const compile = (schema: Record<string, unknown>) => {
     // O `removeSchema` do `finally` apaga por `$id`: com um `$id` que o ajv já conhece (os

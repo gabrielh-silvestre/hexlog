@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import { omit } from 'es-toolkit';
 import { z } from 'zod';
 import {
+  parsePremises,
   planSync,
   scanPremises,
   type ExtractedRule,
@@ -363,21 +364,32 @@ describe('schemas e relações', () => {
     expectError(await writeBatch(WORK, [record]), 'INVALID_RECORD');
   });
 
-  test('doc com caminho fora de docs/directives é INVALID_RECORD e o válido passa', async () => {
+  test('commit que não é git-sha recusa com o code format no caminho do campo', async () => {
+    const result = await writeBatch(WORK, [
+      workRecord('verification', 'main', { ...verificationData('passed'), commit: 'HEAD' }),
+    ]);
+
+    expect(expectError(result, 'INVALID_RECORD').details).toEqual([
+      expect.objectContaining({ path: '/records/0/data/commit', code: 'format' }),
+    ]);
+  });
+
+  test('doc com caminho vazio é INVALID_RECORD; a regra do caminho mora na guarda do planSync', async () => {
     const { hash: source } = await environment.ok<{ hash: string }>('attach', {
       project: PROJECT,
       text: 'v1',
     });
 
-    const bad = await writeBatch(DIRECTIVES, [
-      { type: 'doc', target: 'directives.x', data: { path: 'docs/x.md', source } },
+    const empty = await writeBatch(DIRECTIVES, [
+      { type: 'doc', target: 'directives.x', data: { path: '', source } },
     ]);
-    expectError(bad, 'INVALID_RECORD');
+    expectError(empty, 'INVALID_RECORD');
 
     const { records } = await register(DIRECTIVES, [
-      { type: 'doc', target: 'directives.x', data: { path: docPath('x'), source } },
+      { type: 'doc', target: 'directives.x', data: { path: 'docs/x.md', source } },
+      { type: 'doc', target: 'directives.y', data: { path: docPath('y'), source } },
     ]);
-    expect(records).toHaveLength(1);
+    expect(records).toHaveLength(2);
   });
 
   test('hash de anexo que não foi guardado é ATTACHMENT_NOT_FOUND', async () => {
@@ -821,9 +833,7 @@ describe('sync', () => {
     const [first, second] = [at(plan.batches, 0), at(plan.batches, 1)];
     const firstResult = await register(DIRECTIVES, first.records, first.key);
     const refused = second.records.map((record) =>
-      record.type === 'doc'
-        ? { ...record, data: { ...record.data, path: 'docs/oops.md' } }
-        : record,
+      record.type === 'doc' ? { ...record, data: { ...record.data, removed: 'x' } } : record,
     );
     expectError(await writeBatch(DIRECTIVES, refused, second.key), 'INVALID_RECORD');
 
@@ -924,6 +934,47 @@ describe('sync', () => {
       extracted: [],
     });
     expect(refused).toMatchObject({ upToDate: false, batches: [], error: 'too-many-relations' });
+  });
+});
+
+describe('guarda invalid-path do planSync', () => {
+  const inputWith = (docSlug: string, path: string): SyncInput => ({
+    docSlug,
+    path,
+    hash: sha256hex('v1'),
+    current: null,
+    vigent: [],
+    extracted: rulesOf(1),
+  });
+  const refused = { upToDate: false, batches: [], warnings: [], error: 'invalid-path' };
+
+  test.each([
+    ['vazio', 'fronteiras', ''],
+    ['fora de docs/directives', 'fronteiras', 'docs/x.md'],
+    ['absoluto', 'fronteiras', `/tmp/${docPath('fronteiras')}`],
+    ['com ..', 'fronteiras', 'docs/directives/../x.md'],
+    ['de outro documento', 'fronteiras', docPath('convencoes')],
+    ['absoluto em estrategia', STRATEGY, `/tmp/${docPath(STRATEGY)}`],
+    ['fora do padrão em estrategia', STRATEGY, 'docs/estrategia.md'],
+  ])('path %s devolve invalid-path sem lote', (_label, docSlug, path) => {
+    expect(planSync(inputWith(docSlug, path))).toEqual(refused);
+  });
+
+  test('o path certo planeja normalmente', () => {
+    expect(planSync(inputWith('fronteiras', docPath('fronteiras'))).error).toBeUndefined();
+  });
+
+  test('documento em dia com path inválido também devolve invalid-path', () => {
+    const upToDate: SyncInput = {
+      ...inputWith('fronteiras', 'docs/x.md'),
+      current: { id: 'directives:0', source: sha256hex('v1') },
+    };
+
+    expect(planSync(upToDate)).toEqual(refused);
+  });
+
+  test('lápide (extracted null) com path inválido também devolve invalid-path', () => {
+    expect(planSync({ ...inputWith('fronteiras', ''), extracted: null })).toEqual(refused);
   });
 });
 
@@ -1351,8 +1402,8 @@ describe('sync de estrategia (premissas)', () => {
   });
 
   /** O mesmo caminho da skill: o hook lê o documento em `input.path`, extrai as premissas e planeja. */
-  const runHook = (input: SyncInput, cwd = repoRoot) =>
-    spawnSync(process.execPath, [hookPath, 'sync-plan'], {
+  const runHook = (input: SyncInput, cwd = repoRoot, hook = hookPath) =>
+    spawnSync(process.execPath, [hook, 'sync-plan'], {
       cwd,
       input: JSON.stringify(input),
       encoding: 'utf8',
@@ -1365,10 +1416,17 @@ describe('sync de estrategia (premissas)', () => {
     return JSON.parse(result.stdout) as SyncPlan;
   };
 
-  const writeStrategy = (lines: string[]): string => {
-    const file = path.join(createTempDir('strategy'), 'estrategia.md');
-    fs.writeFileSync(file, ['## Tema', ...lines].join('\n'));
-    return file;
+  /** Roda o hook num repositório temporário: o `REPO_ROOT` dele é o temporário e o `path` relativo vale ali. */
+  const runHookWithStrategy = (lines: string[]) => {
+    const root = createTempDir('strategy');
+    const hooks = path.join(root, '.claude/hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    for (const file of fs.readdirSync(path.dirname(hookPath)).filter((f) => f.endsWith('.ts'))) {
+      fs.copyFileSync(path.join(path.dirname(hookPath), file), path.join(hooks, file));
+    }
+    fs.mkdirSync(path.join(root, 'docs/directives'), { recursive: true });
+    fs.writeFileSync(path.join(root, docPath(STRATEGY)), ['## Tema', ...lines].join('\n'));
+    return runHook(inputForFile(docPath(STRATEGY)), root, path.join(hooks, 'flow-hooks.ts'));
   };
 
   const inputForFile = (file: string): SyncInput => ({
@@ -1413,12 +1471,13 @@ describe('sync de estrategia (premissas)', () => {
   }, 15_000);
 
   test('statement de 255 code points passa, mesmo com 510 unidades UTF-16', () => {
-    const file = writeStrategy([`- \`a\`: ${'𝒳'.repeat(255)} Ver: [x](x.md)`]);
+    const text = ['## Tema', `- \`a\`: ${'𝒳'.repeat(255)} Ver: [x](x.md)`].join('\n');
 
-    const plan = hookPlan(inputForFile(file));
-
-    expect(at(at(plan.batches, 0).records, 0).data).toEqual({ statement: '𝒳'.repeat(255) });
-  }, 15_000);
+    expect(parsePremises(text)).toEqual({
+      rules: [{ slug: 'a', rule: '𝒳'.repeat(255), section: '' }],
+      malformed: [],
+    });
+  });
 
   test.each([
     ['linha malformada', ['- sem crase: linha ruim'], /- sem crase: linha ruim/],
@@ -1431,7 +1490,7 @@ describe('sync de estrategia (premissas)', () => {
   ])(
     '%s sai com 2 e o motivo no stderr',
     (_name, lines, reason) => {
-      const result = runHook(inputForFile(writeStrategy(lines)));
+      const result = runHookWithStrategy(lines);
 
       expect(result.status).toBe(2);
       expect(result.stdout).toBe('');
