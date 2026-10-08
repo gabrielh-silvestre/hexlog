@@ -26,7 +26,8 @@ quebrado (dado 0.x em `<D>`, `PROCESS_CORRUPTED` com cadeia adulterada ou `proce
 ilegível, e anexo ausente ou adulterado em `timeline` e `insights`), `1` é o resto
 (uso incorreto, erro, filtro sem resultado) e `0` é íntegro. Argumento desconhecido,
 opção sem valor ou argumento a mais saem com o uso e `1`. O `rdsc-projections` é a
-diferença deliberada: nunca lê anexo, então anexo ausente ou adulterado sai `0`.
+diferença deliberada: não decodifica o anexo (só o re-hash do blob), então anexo ausente ou
+adulterado sai `0`.
 
 **Exceção ao teto de saída.** Os scripts de leitura em `scripts/` (`insights`, `export`,
 `timeline` e `rdsc-projections`) leem listas completas, numa consulta só e sem laço de
@@ -145,11 +146,13 @@ Linhas, nesta ordem, cada uma um JSON por linha:
   (`marker changed on 3 consecutive reads`). Sob rajada de `register` isso é esperado, não
   defeito: rode de novo. O `evaluateGate` recebe o `marker` do `meta`.
 - `attachmentStatus` é o estado do blob na hora da leitura e não acompanha o `marker`. O
-  texto do anexo nunca é lido nem impresso.
+  conteúdo do anexo não é decodificado nem impresso.
 - **Custo.** A leitura carrega o processo inteiro em memória (vale aqui a exceção ao teto de saída
   descrita em "Scripts de leitura": `limit` máximo, sem cursor). Cada `evaluateGate`
   reverifica o log, então N rótulos de `--gate-per-target` custam N verificações do log, mais
-  uma leitura completa do manifesto (`loadProcess`) quando há algum gate.
+  um `loadProcess` (carrega e verifica o log do processo) quando há algum gate. O
+  `attachmentStatus` vem de um re-hash do blob (`adapters/fs/attachment-store.ts#statusOf`),
+  feito nas duas leituras de cada tentativa.
 - A saída é montada inteira em memória e escrita de uma vez, sempre terminando em `end`; em
   qualquer falha o stdout fica vazio e a falha sai em `stderr` como
   `rdsc-projections failed: CODE: msg`. Toda linha passa por `escapeControls`, então

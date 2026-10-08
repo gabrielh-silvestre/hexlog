@@ -2,7 +2,7 @@
 // módulo irmão do entrypoint porque os scripts de leitura terminam com `process.exitCode = main(...)`
 // sem guarda, e importar um deles sob o jest (CJS) executaria o `main`. Este módulo não tem efeito
 // ao ser importado.
-import { isEqual, isNil, isPlainObject, isUndefined } from 'es-toolkit';
+import { isEqual, isPlainObject, isUndefined } from 'es-toolkit';
 import { isEmpty } from 'es-toolkit/compat';
 import { parseCliArgs } from './cli-error.ts';
 import { escapeControls } from './escape-controls.ts';
@@ -101,7 +101,7 @@ function labelOf(target: string): string {
   return dot < 0 ? target : target.slice(0, dot);
 }
 
-/** `task-02` e `task-2` empatam no collator: o desempate por unidade de código mantém a saída estável. */
+/** `item-02` e `item-2` empatam no collator: o desempate por unidade de código mantém a saída estável. */
 function naturalOrder(a: string, b: string): number {
   return labelOrder.compare(a, b) || Number(a > b) - Number(a < b);
 }
@@ -171,7 +171,7 @@ function gateLines(
         process: processName,
         gate,
         marker,
-        ...(isNil(target) ? {} : { target }),
+        ...(target === null ? {} : { target }),
       });
       return {
         kind: 'gate',
