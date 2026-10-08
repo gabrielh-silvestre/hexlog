@@ -69,7 +69,7 @@ alcança dentro de dado (`#/examples/0`, `#/const`): a recusa é `INVALID_SCHEMA
 
 | `format` | Aceita |
 |---|---|
-| `git-sha` | hexadecimal minúsculo de 7 a 40 caracteres (`HEAD`, maiúsculas e quebra de linha final são recusados); não confere se o commit existe |
+| `git-sha` | hexadecimal minúsculo de 7 a 40 caracteres (`HEAD`, maiúsculas, quebra de linha final e SHA-256 de 64 caracteres são recusados); não confere se o commit existe |
 | `attachment` | hash de um anexo (ver `attach`) |
 
 Formato fora do catálogo e do `ajv-formats` é `INVALID_SCHEMA` (`invalid-schema`). Regra de

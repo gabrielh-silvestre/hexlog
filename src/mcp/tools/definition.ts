@@ -51,8 +51,8 @@ export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void
         'property or an enum value is a minor version; any other change needs `breaking: true`, ' +
         'otherwise it is refused with BREAKING_CHANGE. The schema is checked by a strict ajv; ' +
         '`pattern` and `patternProperties` are refused (pattern-not-allowed): validate a format with ' +
-        '`format: "git-sha"` or plain `minLength`/`maxLength`; a property with `format: ' +
-        '"attachment"` holds the hash of an attachment, and the format is accepted only on a top-level ' +
+        '`format: "git-sha"` (7 to 40 lowercase hex characters, not SHA-256) or plain ' +
+        '`minLength`/`maxLength`; a property with `format: "attachment"` holds the hash of an attachment, and the format is accepted only on a top-level ' +
         'property or on the items of a top-level array; at most 16000 canonical characters.',
       outputSchema: Defined,
       annotations: WRITE_ANNOTATIONS,

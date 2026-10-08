@@ -50,3 +50,4 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 
 - `define_type`, `define_relation` e `define_gate` versionam em semver `major.minor` em `<nome>/<versão>.json`, nunca sobrescrevem e não deixam arquivo legado. `adapters/fs/definition-store.ts` escreve cada versão por `link` exclusivo, nunca por `rename`.
 - Mudança que quebra exige `breaking: true` (`BREAKING_CHANGE`); o processo fixa as versões vigentes na criação (`create_process`) e, depois de uma quebra, o caminho é um processo novo ([ADR 0007](adr-0007-dominio.md), itens 15 a 17).
+- Entrada de `FORMAT_CATALOG` (`src/domain/formats.ts`) é imutável: significado novo é nome novo, nunca mudança do regex de um nome existente, porque o catálogo é código lido a cada `register` e mudá-lo mudaria a validação de todo processo já fixado ([ADR 0009](adr-0009-ferramental.md), item 20 e a emenda de 2026-10-07).
