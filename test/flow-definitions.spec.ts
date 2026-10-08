@@ -954,6 +954,7 @@ describe('guarda invalid-path do planSync', () => {
     ['absoluto', 'fronteiras', `/tmp/${docPath('fronteiras')}`],
     ['com ..', 'fronteiras', 'docs/directives/../x.md'],
     ['de outro documento', 'fronteiras', docPath('convencoes')],
+    ['com docSlug fora de [a-z0-9-]', '../x', docPath('../x')],
     ['absoluto em estrategia', STRATEGY, `/tmp/${docPath(STRATEGY)}`],
     ['fora do padrão em estrategia', STRATEGY, 'docs/estrategia.md'],
   ])('path %s devolve invalid-path sem lote', (_label, docSlug, path) => {

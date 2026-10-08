@@ -45,6 +45,12 @@ describe('walkSubschemas', () => {
     ]);
   });
 
+  test('desce no contentSchema', () => {
+    const schema = { type: 'string', contentSchema: { type: 'string', pattern: '^a+$' } };
+
+    expect(pointersOf(schema)).toEqual(['', '/contentSchema']);
+  });
+
   test('ignora o valor em array de dependencies', () => {
     const schema = { dependencies: { a: ['b'], c: { required: ['d'] } } };
 
@@ -102,6 +108,20 @@ describe('withoutFreePatterns', () => {
       allOf: [{ propertyNames: {} }],
       $defs: { z: {} },
       required: ['code'],
+    });
+  });
+
+  test('remove o pattern de um contentSchema', () => {
+    const schema: RecordType = {
+      type: 'string',
+      contentMediaType: 'application/json',
+      contentSchema: { type: 'string', pattern: '^a+$' },
+    };
+
+    expect(withoutFreePatterns(schema)).toEqual({
+      type: 'string',
+      contentMediaType: 'application/json',
+      contentSchema: { type: 'string' },
     });
   });
 

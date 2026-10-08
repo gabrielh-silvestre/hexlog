@@ -80,9 +80,9 @@ de primeiro nível ou dos itens de um array de primeiro nível (`.../format`).
 
 O `register` ignora `pattern` e `patternProperties` de um tipo já fixado: processos
 criados antes do catálogo continuam gravando, e o valor que o pattern recusaria passa a ser
-aceito. Com `patternProperties` e `additionalProperties: false` (ou `unevaluatedProperties:
-false`) no mesmo subschema, a propriedade que só o `patternProperties` admitia passa a ser
-recusada. Reenviar o schema vigente de um tipo legado que tem `pattern` não é mais replay: é
+aceito. Com `patternProperties` e `additionalProperties` (ou `unevaluatedProperties`) no mesmo
+subschema, a propriedade que só o `patternProperties` admitia passa a ser checada por esse
+schema (recusada, se for `false`). Reenviar o schema vigente de um tipo legado que tem `pattern` não é mais replay: é
 `INVALID_SCHEMA` (`pattern-not-allowed`), e o caminho é um `define_type` novo, `breaking:
 true`, sem a palavra-chave. A decisão e o resíduo (`format: "regex"` do `ajv-formats` constrói
 um `RegExp` sobre o dado, sem executá-lo) estão na emenda de 2026-10-07 do

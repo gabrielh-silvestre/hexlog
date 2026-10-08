@@ -16,6 +16,7 @@ const SUBSCHEMA_KEYWORDS = [
   'else',
   'unevaluatedItems',
   'unevaluatedProperties',
+  'contentSchema',
 ];
 const SUBSCHEMA_LIST_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
 const SUBSCHEMA_MAP_KEYWORDS = [

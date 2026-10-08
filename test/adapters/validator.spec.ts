@@ -323,6 +323,11 @@ describe('checkSchema', () => {
         '/unevaluatedProperties',
       ],
       ['propertyNames', (c) => ({ type: 'object', propertyNames: c }), '/propertyNames'],
+      [
+        'contentSchema',
+        (c) => ({ type: 'string', contentMediaType: 'application/json', contentSchema: c }),
+        '/contentSchema',
+      ],
     ];
 
     describe.each(keywordCases)('dentro de %s', (_keyword, wrap, base) => {
@@ -782,6 +787,21 @@ describe('validate ignora pattern e patternProperties', () => {
 
       expect(validator.validate(schema, { 'x-a': 's' })).toEqual([
         { path: '/x-a', code, message: expect.any(String) },
+      ]);
+    },
+  );
+
+  test.each(['additionalProperties', 'unevaluatedProperties'])(
+    'com %s de schema-valor, patternProperties conta como ausente e o valor é checado por ele',
+    (key) => {
+      const schema: RecordType = {
+        type: 'object',
+        patternProperties: { '^x-': { type: 'string' } },
+        [key]: { type: 'integer' },
+      };
+
+      expect(validator.validate(schema, { 'x-a': 's' })).toEqual([
+        { path: '/x-a', code: 'type', message: expect.any(String) },
       ]);
     },
   );

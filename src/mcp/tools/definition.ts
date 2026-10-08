@@ -47,7 +47,7 @@ export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void
       description:
         'Defines a record type for the project as a JSON Schema (root `type: "object"`), saving a new ' +
         'immutable version. The same schema again is a replay (`created: false`) unless it carries a ' +
-        '`pattern`, which is refused. Adding an optional ' +
+        '`pattern` or `patternProperties`, which are refused. Adding an optional ' +
         'property or an enum value is a minor version; any other change needs `breaking: true`, ' +
         'otherwise it is refused with BREAKING_CHANGE. The schema is checked by a strict ajv; ' +
         '`pattern` and `patternProperties` are refused (pattern-not-allowed): validate a format with ' +

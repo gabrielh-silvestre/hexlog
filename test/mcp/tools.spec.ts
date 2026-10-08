@@ -183,6 +183,7 @@ describe('TM2: descrição das tools', () => {
     const description = tools.find((tool) => tool.name === 'define_type')?.description;
 
     expect(description).toMatch(/pattern-not-allowed/);
+    expect(description).toMatch(/unless it carries a `pattern` or `patternProperties`/);
     expect(description).toMatch(/git-sha/);
     expect(description).not.toMatch(/maxLength. of at most 256/);
   });

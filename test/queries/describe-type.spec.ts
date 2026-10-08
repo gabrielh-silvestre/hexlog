@@ -87,6 +87,21 @@ describe('describeType', () => {
       expect(definitions.read(PROJECT, 'types', 'legacy', '1.0')).toEqual(LEGACY);
     });
 
+    test('omite o pattern de um contentSchema', () => {
+      const setup = describeSetup();
+      setup.definitions.write(PROJECT, 'types', 'content', '1.0', {
+        type: 'string',
+        contentMediaType: 'application/json',
+        contentSchema: { type: 'string', pattern: '^a+$' },
+      });
+
+      expect(setup.describe({ type: 'content' }).schema).toEqual({
+        type: 'string',
+        contentMediaType: 'application/json',
+        contentSchema: { type: 'string' },
+      });
+    });
+
     test('a cadeia do processo segue íntegra depois do describe', () => {
       const { describe, queries } = legacySetup();
 
