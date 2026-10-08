@@ -163,11 +163,22 @@ O isolamento do hexlog combina 4 regras de deny (`Read`/`Edit` sobre o
 diretório de dados, mais `Edit` sobre o artefato instalado) com um hook
 PreToolUse na tool Bash que tokeniza o comando e nega quem alcançar o
 diretório de dados. A mensagem de negação cita as tools que dão acesso ao dado
-(`list`, `query`, `verify_chain`, `read_attachment`, `evaluate_gate`, `describe_type`). Esse hook
-sempre falha aberto: qualquer exceção interna, Node ausente ou arquivo do hook
-apagado deixa o comando passar sem avisar o agente. Só o `--check` detecta essa
-condição. O servidor MCP não passa pelo deny nem pelo hook: a fronteira dele é o
-`cwd` do `attach` por `path` (ver acima).
+(`list`, `query`, `verify_chain`, `read_attachment`, `evaluate_gate`, `describe_type`). Em comando
+composto, a mensagem acrescenta ` Matched: <segmento>` com o trecho que casou. O que o hook não
+consegue decidir por custo ele nega (`hook/bash-guard.ts#decide`): o comando acima de `MAX_COMMAND_LENGTH` (1 MiB) e o token com caractere de glob acima dos tetos
+(`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) ou além do orçamento por comando
+(`MAX_GLOB_TOTAL_LENGTH`, a soma dos tamanhos dos tokens com glob). A negação por esses motivos não
+cita `<D>`. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
+`..`, cada grupo vira `*` antes do casamento (`.*` na abertura de um segmento oculto de `<D>`, que
+o `*` não casa), então faixas como `{1..9999999}` não se expandem. Ele libera o que não consegue
+decidir por falha da checagem: o comando que o `shell-quote` não parseia (`${}`) e o token cujo
+casamento lança. Falha aberto também quando o comando
+nem chega à checagem: `node` ausente, arquivo do hook apagado, stdin vazio, JSON inválido e
+`tool_name` diferente de `Bash`, e hook morto pelo `timeout` de 10 s (que não bloqueia, segundo o
+comportamento observado). Os tetos e o orçamento mantêm o hook bem abaixo desse prazo para o token e
+o comando hostis conhecidos, mas não o garantem para qualquer entrada (máquina lenta). Nesses casos o comando passa sem avisar o agente, e só o
+`--check` detecta a condição. O servidor MCP não passa pelo deny nem pelo hook: a fronteira dele
+é o `cwd` do `attach` por `path` (ver acima).
 
 Por desenho, isso deixa lacunas conhecidas, aceitas com a expectativa de que
 o teste automatizado as marque como "passa":
@@ -182,6 +193,11 @@ o teste automatizado as marque como "passa":
 | Variável definida no mesmo comando | `d=~/.local/share; cat $d/hexlog/x` |
 | ANSI-C quoting | `cat $'/home/…/hex\x6cog/x'` |
 | Alternância de zsh | `cat ~/.local/share/(hexlog\|x)/p/r/records.jsonl` |
+| Substituição de comando dentro do nome | `cat ~/.local/share/hex$(true)log/x`: o `shell-quote` não avalia `$(…)`, então o token nunca vira o caminho de `<D>` |
+| Symlink para o pai de `<D>` | `ln -s ~/.local/share /tmp/p; cat /tmp/p/hexlog/x`: o hook compara o texto do caminho e não resolve link |
+| Comando que recebe o pai de `<D>` | `tar -C ~/.local/share -cf - hexlog`, `find ~/.local/share -name x` e `git -C ~/.local/share status`: o token é o pai, que não alcança `<D>`, e o nome do filho vem depois |
+| `PowerShell` | O matcher de `src/guard.ts` é `^Bash$` e o `extractCommand` do hook só lê `tool_name` igual a `Bash`; a tool `PowerShell` fica fora do hook, por decisão de escopo (o produto só suporta Linux) |
+| `Monitor` | Não verificado: pode executar comando sem passar pelo hook. A prova exige sessão real com o hook instalado e um hook de sonda, e fica como acompanhamento do dono |
 | Hook indisponível | Node removido pelo nvm, `~/.local/lib/hexlog/<versão>/` apagado à mão, ou instalação corrompida por fora |
 | Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/1.0.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"`: o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
 | Desligar o guard editando a configuração | Editar `~/.claude/settings.json` à mão para remover deny ou hook |
@@ -198,7 +214,14 @@ que o shell não expande mas o hook trata como caminho; e um `**` ou uma chave
 `{a,b}` com barra cujo prefixo literal é ancestral do diretório de dados,
 como `ls ~/**/*.md` ou `ls ~/{docs/a,b}`. Um `**` dentro de outros
 repositórios (por exemplo `/caminho/do/repo/**/*.ts`) não é afetado, porque
-o prefixo não é ancestral do diretório de dados.
+o prefixo não é ancestral do diretório de dados. Também é negado o token com
+caractere de glob que passa dos tetos `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou
+`MAX_BRACKETS`, um comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH` ou um comando acima de
+`MAX_COMMAND_LENGTH`, como
+`python -c '<script grande com colchetes>'`: tetos e orçamento valem para qualquer token ou
+comando com glob, legítimo ou não. O comando que o `shell-quote` não parseia passa, mesmo com
+`cat ~/.local/share/hex""log/x` depois do `${}`: é o preço de liberar na dúvida. Em `.claude/settings.json`, o padrão `Bash(node *scripts/install.ts*)` também
+pergunta no `--check` (só leitura) e não pega `cd scripts && node install.ts`.
 
 **`<D>` é confiável.** Só o servidor escreve em `<D>/.v1/`, e o hook de Bash bloqueia o agente;
 por isso os stores não se endurecem contra objeto plantado ali. O servidor segue symlink, e um

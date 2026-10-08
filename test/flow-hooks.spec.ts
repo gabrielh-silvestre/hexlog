@@ -508,7 +508,7 @@ describe('settings.json', () => {
     expect(hook?.if).toBe('Bash(*gh*)');
   }, 15_000);
 
-  test('tem as regras allow do padrão 15 e mantém o ask do instalador', () => {
+  test('tem as regras allow do padrão 15', () => {
     expect(settings.permissions.allow).toEqual(
       expect.arrayContaining([
         'Bash(node .claude/hooks/flow-hooks.ts slug *)',
@@ -516,7 +516,18 @@ describe('settings.json', () => {
         'Bash(node .claude/hooks/flow-hooks.ts sync-plan *)',
       ]),
     );
-    expect(settings.permissions.ask).toContain('Bash(node scripts/install.ts)');
+  }, 15_000);
+
+  test('asks before any install.ts invocation, flags included', () => {
+    const pattern = 'Bash(node *scripts/install.ts*)';
+    expect(settings.permissions.ask).toContain(pattern);
+    // o motor de permissões não roda no jest: o curinga vira regex só para provar o alcance
+    const inner = pattern.slice('Bash('.length, -1);
+    const matcher = new RegExp(`^${inner.replaceAll('.', '\\.').replaceAll('*', '.*')}$`);
+    expect(matcher.test('node scripts/install.ts')).toBe(true);
+    expect(matcher.test('node scripts/install.ts --archive-0x')).toBe(true);
+    expect(matcher.test('node ./scripts/install.ts --check')).toBe(true);
+    expect(matcher.test('node scripts/build.ts')).toBe(false);
   }, 15_000);
 
   test('preserva o hook antigo do gitnexus', () => {

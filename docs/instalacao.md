@@ -97,6 +97,7 @@ quebrado. Ele confere, nesta ordem, e cada item pendente aparece como
 | `deny-edit` | falta a regra `Edit(/<dados>/**)` |
 | `deny-edit-lib` | falta a regra `Edit(/<home>/.local/lib/hexlog/**)`, que protege o artefato instalado |
 | `hook` | não há entrada do hook do hexlog em `hooks.PreToolUse` |
+| `hook-matcher` | a entrada do hook existe, mas o `matcher` não é `^Bash$` ou o `type` não é `command`; reinstalar repara os dois no lugar; se a entrada divide `hooks` com hooks alheios, o hook do hexlog sai para uma entrada própria `^Bash$` e a original fica como estava |
 | `node` | o executável do Node referenciado no hook não existe |
 | `hook-file` | o `bash-guard.mjs` referenciado no hook não existe em disco |
 | `hook-not-denying` | o hook instalado não devolveu exit 2 para um comando que deveria negar |

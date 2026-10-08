@@ -60,7 +60,7 @@
       "Bash(node .claude/hooks/flow-hooks.ts sync-plan *)"
     ],
     "ask": [
-      "Bash(node scripts/install.ts)"
+      "Bash(node *scripts/install.ts*)"
     ]
   }
 }
