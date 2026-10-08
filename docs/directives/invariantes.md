@@ -22,6 +22,7 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 - `describe_type` com `process` e `version` juntos é `INVALID_INPUT` (`/version`, `process-with-version`), recusado no serviço antes de qualquer I/O.
 - `describe_type` com `process` e tipo não fixado é `TYPE_NOT_PINNED` (`/type`, `not-pinned`); sem `process`, projeto inexistente é `PROJECT_NOT_FOUND` (`/project`, `unknown-project`) e tipo ou versão ausente de um projeto que existe é `TYPE_NOT_FOUND`.
 - `describe_type` com `process` omite `version` da saída, porque o manifesto guarda o schema fixado (`Manifest.fixed.types`), não a versão.
+- `describe_type`, com e sem `process`, devolve o tipo sem `pattern` e sem `patternProperties` (`src/domain/schema-walk.ts#withoutFreePatterns`, cópia que não muta o manifesto lido). Divergência declarada: a saída não repete os bytes do manifesto nem da definição, e o `pattern` original só sobrevive no manifesto em disco ([ADR 0009](adr-0009-ferramental.md), emenda de 2026-10-07).
 - `attachments` e os demais nomes de `RESERVED_PROCESS_NAMES` (`src/domain/ids.ts`) não valem como nome de processo; `create_process` os recusa com `RESERVED_NAME`.
 - O código de `domain/`, `commands/`, `queries/` e `mcp/` não contém termo de fluxo nem de framework; `test/no-flow-terms.spec.ts` trava ([ADR 0007](adr-0007-dominio.md), item 3).
 
@@ -35,7 +36,8 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 
 - O `INVALID_RECORD` de dado junta a primeira violação de schema de cada registro do lote (`src/commands/register/static.ts#prepareBatch`), com `path` `/records/<i>/data/...` e o teto de `capDetails` (50 e `too-many-errors`); continua tudo-ou-nada.
 - O `register` confere o tipo fixado de todos os registros antes de validar dado (`src/commands/register/static.ts#prepareBatch`): `TYPE_NOT_PINNED` vence o `INVALID_RECORD` de dado.
-- O `register` valida dado só pelo `validate` (sem `allErrors`), sem segundo passe: nenhum regex de schema roda fora da proteção `maxLength` → `pattern` ([ADR 0009](adr-0009-ferramental.md), item 20 e a emenda de 2026-10-06).
+- O `register` valida dado só pelo `validate` (sem `allErrors`), sem segundo passe: nenhum regex vindo do schema é construído nem executado, porque o `validate` ignora `pattern` e `patternProperties` e o formato de um dado vem de `format` do catálogo fechado de `src/domain/formats.ts`. Resíduo aceito: `format: "regex"` do `ajv-formats` constrói um `RegExp` sobre o dado, sem executá-lo ([ADR 0009](adr-0009-ferramental.md), item 20 e as emendas de 2026-10-06 e 2026-10-07).
+- O `define_type` recusa `pattern` e `patternProperties` (`INVALID_SCHEMA`, `pattern-not-allowed`) antes de gravar uma versão, inclusive o que um `$ref` alcança dentro de dado; o `register` os ignora num tipo já fixado ([ADR 0009](adr-0009-ferramental.md), emenda de 2026-10-07).
 
 ## Anexos
 

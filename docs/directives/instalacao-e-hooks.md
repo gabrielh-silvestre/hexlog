@@ -21,7 +21,7 @@
 
 ## Hooks do projeto para o fluxo
 
-Definidos no [ADR 0010](adr-0010-camada-sobre-omc.md), itens 3 a 5 e a emenda de 2026-10-06, em `.claude/settings.json` do projeto (não nos bundles do produto). O código é `.claude/hooks/flow-hooks.ts` (modos `subagent-start`, `pre-pr`, `slug`, `mark` e `sync-plan`, que para `estrategia` lê o documento e extrai as premissas sozinho), `flow-command.ts` e `flow-sync.ts`: TypeScript executado pelo Node, sem dependência e fora do bundle do produto. Só valem em sessão nova.
+Definidos no [ADR 0010](adr-0010-camada-sobre-omc.md), itens 3 a 5 e a emenda de 2026-10-06, em `.claude/settings.json` do projeto (não nos bundles do produto). O código é `.claude/hooks/flow-hooks.ts` (modos `subagent-start`, `pre-pr`, `slug`, `mark` e `sync-plan`, que para `estrategia` lê o documento e extrai as premissas sozinho e que recusa com `error: invalid-path`, no JSON e com exit 0, o `path` do `doc` que não seja `docs/directives/<docSlug>.md`, antes de qualquer leitura), `flow-command.ts` e `flow-sync.ts`: TypeScript executado pelo Node, sem dependência e fora do bundle do produto. Só valem em sessão nova.
 
 - O marcador do pré-PR é verificação de processo, não barreira de segurança: um agente com `Write` ou `Bash` o forja. O freio pega o descuido, não a burla. Só o modo `mark` o grava (`<git-common-dir absoluto>/hexlog-flow/<slug>.ok`: a branch e o sha da ponta), e o hook o compara com o sha atual da branch e o de `origin/<branch>`.
 - `SubagentStart` (matcher vazio): injeta um ponteiro de três linhas para [fluxo-hexlog.md](fluxo-hexlog.md), sem copiar as regras. Não garante que o subagente registre a decisão.

@@ -81,7 +81,7 @@ estourar o limite de PNG. `domain/` não importa camada nenhuma acima, só
 | `ports.ts` | As portas do núcleo: `ProcessStore`, `DefinitionStore`, `AttachmentStore`, `Validator` e `SearchIndex` |
 | `domain/` | Núcleo puro: `ids.ts`, `record.ts`, `chain.ts` (`hashLink`, `anchor`, `isValidLink`), `relations.ts` (`checkRelation`), `definitions.ts`, `gate.ts` (`evaluateGate`) e `manifest.ts` |
 | `adapters/fs/` | Stores de processo, definição e anexo, lock, gravação atômica, formato em disco (`<D>/.v1`) e helpers de I/O; um módulo por linha em [`src/AGENTS.md`](../src/AGENTS.md) |
-| `adapters/validator.ts`, `adapters/search.ts` | `createValidator` (ajv e `safe-regex2`) e `createSearchIndex` (MiniSearch cacheado por processo) |
+| `adapters/validator.ts`, `adapters/search.ts` | `createValidator` (ajv, `ajv-formats` e o catálogo de formatos de `domain/formats.ts`) e `createSearchIndex` (MiniSearch cacheado por processo) |
 | `errors.ts` | `HexlogError`, `ErrorCode`, `issueDetails` |
 | `directory.ts` | `dataDir(env)`: resolve `$XDG_DATA_HOME/hexlog` (fallback `~/.local/share/hexlog`) |
 | `version.ts` | `VERSION`: versão do servidor, reportada no handshake MCP e no log `start` |

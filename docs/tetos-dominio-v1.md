@@ -64,6 +64,8 @@ Folga dos tetos sobre o maior valor observado: `relations` 50 vezes (100 contra 
 
 ## Pattern de schema de tipo (N1: safe-regex2 e maxLength)
 
+> **Superada em 2026-10-07.** O `define_type` recusa `pattern` e `patternProperties`, e o formato de um dado vem de um catálogo fechado de `format` (`src/domain/formats.ts#FORMAT_CATALOG`); `safe-regex2`, `PATTERN_MAX_LENGTH` e as regras de `maxLength` saíram. A emenda de 2026-10-07 do item 20 do [ADR 0009](directives/adr-0009-ferramental.md) traz a decisão. O texto e as medições abaixo ficam como o registro do que valia e do que motivou a troca.
+
 Decisão da entrevista de 2026-10-02 sobre ReDoS em `pattern` de schema de tipo. Não é um teto de tamanho como os acima, mas fecha o mesmo tipo de risco: um dado gravado que trava o servidor e não tem volta.
 
 ### Por que
@@ -76,7 +78,7 @@ Um `pattern` como `^(\w+\s?)*$` trava o servidor, que é de thread única: ~700 
 - **RE2 via `code.regExp` do ajv:** dependência nativa ou WASM.
 - **`validate` num worker com timeout:** reabre a porta síncrona do `Validator` (D-25).
 - **Análise estática:** `recheck` (5,8 MB, roda em worker) ou `safe-regex2`.
-- **Allowlist de formatos nomeados:** migraria os 5 tipos de auditoria do OMC.
+- **Allowlist de formatos nomeados:** migraria os 5 tipos de auditoria do OMC. Adotada em 2026-10-07 como catálogo fechado, no lugar do `pattern` livre (ver a nota no início da seção).
 - **Aceitar e documentar no ADR:** deixa o servidor travável por um tipo gravado.
 
 ### Decisão do usuário
@@ -96,7 +98,7 @@ Motivo: é biblioteca usada em campo e dispensa código próprio de análise de 
 - **Formatos do `ajv-formats`:** `src/adapters/validator.ts#createCompiler` liga todos (`addFormats`), inclusive os que validam com regex (`email`, `uri`, `hostname`, `date-time`). Nenhum passa pela `safe-regex2` nem exige `maxLength`; o único limite sobre o tempo deles é o teto de `data` (16.000 caracteres canônicos). O custo de ReDoS dos demais formatos não foi medido: vale o que o `ajv-formats` entrega. Aceito pelo mesmo motivo do `$ref` abaixo: a ferramenta é de uso exclusivo de agentes. Se pesar, ligar só os formatos usados (`addFormats(ajv, { formats: [...] })`).
 - **`$ref` com ponteiro JSON para dentro de dado:** `#/const`, `#/default`, `#/enum/0` e `#/examples/0` escondem um `pattern` do percurso, que também passa sem `maxLength` (um `$ref` para `#/examples/0` com `^(a+)+$` entra no tipo). Aceito porque a ferramenta é de uso exclusivo de agentes de IA. A correção barata seria uma allowlist de `$ref`: `#`, `#/$defs/...` e `#/definitions/...`.
 
-O ADR 0009 (item 20) registra esses limites como risco aceito; as medições ficam aqui. Pendência aberta, sem ADR, junto de um follow-up: revisar o processo de definição de tipos e avaliar regex ou formatos nomeados prontos, fornecidos pelo hexlog, que o agente só customiza. A saída pós-1.0 (formatos nomeados, allowlist de `$ref` e timeout de regex) está na issue https://github.com/gabrielh-silvestre/hexlog/issues/79.
+O ADR 0009 (item 20) registra esses limites como risco aceito; as medições ficam aqui. Pendência aberta, sem ADR, junto de um follow-up: revisar o processo de definição de tipos e avaliar regex ou formatos nomeados prontos, fornecidos pelo hexlog, que o agente só customiza. A saída pós-1.0 (formatos nomeados, allowlist de `$ref` e timeout de regex) está na issue https://github.com/gabrielh-silvestre/hexlog/issues/79; o catálogo de formatos a fechou em 2026-10-07.
 
 ### Consequência
 
