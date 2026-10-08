@@ -32,7 +32,6 @@ tag_pattern = "v[0-9].*"
 sort_commits = "oldest"
 # O comentário HTML só ordena os grupos na ordem do Keep a Changelog; `striptags` o remove.
 commit_parsers = [
-  { message = "^Merge ", skip = true },
   # Fluxo do próprio repositório (hooks e skills em `.claude/`): não chega a quem usa o hexlog.
   { message = "^[a-z]+!?\\((flow|claude)\\)", skip = true },
   { message = "^feat", group = "<!-- 0 -->Adicionado" },

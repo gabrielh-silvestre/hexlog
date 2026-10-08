@@ -18,7 +18,7 @@
 - `CHANGELOG.md` segue o Keep a Changelog em pt-BR: `[Não lançado]` no topo e, por versão, as seções Adicionado, Alterado, Corrigido e Removido, nessa ordem, mais Migração só quando a versão quebra ou muda comportamento. Uma linha por mudança visível a quem usa o hexlog, com o número do PR; refactor, teste e doc interna ficam fora.
 - A seção da versão nasce no mesmo commit do bump de `package.json#version`; `test/changelog.spec.ts` trava.
 - O rascunho sai de `npx git-cliff --unreleased` (`cliff.toml`), e o workflow `changelog-draft.yml` o comenta no PR para `main`. O rascunho é ponto de partida: reescreva em linguagem de usuário e escreva a Migração à mão.
-- O corpo do GitHub Release é a seção da versão copiada do `CHANGELOG.md`.
+- O corpo do GitHub Release traz a seção da versão copiada do `CHANGELOG.md`, entre um parágrafo de abertura e o bloco de instalação.
 
 ## Como citar
 
