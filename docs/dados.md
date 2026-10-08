@@ -188,7 +188,7 @@ o teste automatizado as marque como "passa":
 | `cd` seguido de caminho relativo | `cd ~/.local/share && cat hexlog/.v1/p/r/records.jsonl` |
 | `grep -r` no diretório pai | `grep -r foo ~/.local/share/` |
 | Subprocessos | `node -e …`, `python -c …` |
-| Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full` e `node scripts/insights.ts`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
+| Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full`, `node scripts/insights.ts` e `node scripts/rdsc-projections.ts p q`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
 | Grep/Glob tool do Claude Code apontando pro pai | `Grep path=~/.local/share` |
 | Variável definida no mesmo comando | `d=~/.local/share; cat $d/hexlog/x` |
 | ANSI-C quoting | `cat $'/home/…/hex\x6cog/x'` |
