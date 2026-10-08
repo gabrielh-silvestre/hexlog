@@ -199,7 +199,7 @@ o teste automatizado as marque como "passa":
 | `PowerShell` | O matcher de `src/guard.ts` é `^Bash$` e o `extractCommand` do hook só lê `tool_name` igual a `Bash`; a tool `PowerShell` fica fora do hook, por decisão de escopo (o produto só suporta Linux) |
 | `Monitor` | Não verificado: pode executar comando sem passar pelo hook. A prova exige sessão real com o hook instalado e um hook de sonda, e fica como acompanhamento do dono |
 | Hook indisponível | Node removido pelo nvm, `~/.local/lib/hexlog/<versão>/` apagado à mão, ou instalação corrompida por fora |
-| Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/1.0.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"`: o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
+| Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/1.1.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"`: o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
 | Desligar o guard editando a configuração | Editar `~/.claude/settings.json` à mão para remover deny ou hook |
 | Reinstalar a partir de código alterado | Editar `hook/bash-guard.ts` na working tree e rodar o instalador |
 

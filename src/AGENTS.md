@@ -59,7 +59,7 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 12 to
 | `installation.ts` | Instalação versionada do artefato em `~/.local/lib/hexlog/<versão>/`: `TOOLS_COUNT`, `versionDirOf`, `readManifest`, `installArtifact`, `writeSkillFolder`, `registerGuard` (grava `settings.json.bak-hexlog` e `settings.json` por `adapters/fs/atomic.ts#writeFileAtomic`, que os deixa em `0600`, não no modo do umask; devolve `{ changed, removed }` com as regras de deny de `<D>` antigo que tirou; recusa gravar um `settings.json` que não faz parse, com `HexlogError` `INTERNAL`), `verifyInstallation`. Puro, só usado por `scripts/install.ts` |
 | `server.ts` | Ponto de entrada: `compose` (`dataDir(process.env)`, `process.cwd()`, relógio e logger de stderr) + log `start` (`dataDir` e `version`) + `createServer` de `mcp/server.ts` + `serveStdio`; o servidor sobe mesmo com dado 0.x: `isLegacy` segue para o `createServer`, e quem devolve `LEGACY_DATA` é `mcp/kernel.ts#execute`, a cada chamada (D-13) |
 | `node-types.d.ts` | Augmentation de `node:crypto` com `randomUUIDv7` (ainda não coberto por `@types/node` 24.8.1) |
-| `version.ts` | `export const VERSION = '1.0.0'` |
+| `version.ts` | `export const VERSION = '1.1.0'` |
 
 ## Subdirectories
 | Directory | Purpose |
