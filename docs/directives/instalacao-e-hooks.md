@@ -7,7 +7,7 @@
 - Só Linux: o arquivador e o lock dependem de `/proc`, hard link e `fsync` de diretório. macOS não foi testado.
 - Mudar `hook/bash-guard.ts` ou `src/server.ts` na working tree não afeta sessão nenhuma, em andamento ou nova, até rodar `node scripts/install.ts` de novo: as sessões executam a cópia versionada em `~/.local/lib/hexlog/<versão>/`.
 - Os 2 bundles (`server`, `bash-guard`) são um conjunto fixo e nomeado (tipo `Bundles` em `src/installation.ts`): um terceiro entrypoint exige tocar `scripts/build.ts`, `Bundles`, `installArtifact` e `verifyInstallation`.
-- As skills são dinâmicas: o instalador copia toda pasta de `skills/` (`skillNames()` lê as pastas, `writeSkillFolder` troca cada uma em `~/.claude/skills/<nome>/` por `swapDirectory`, sem backup, com os temporários ao lado de `skills/`, em `~/.claude/`). Uma skill nova só precisa de `skills/<nome>/SKILL.md` para ser instalada e conferida pelo `--check`; não toca `scripts/install.ts`.
+- As skills são dinâmicas: o instalador copia toda pasta de `skills/` (`skillNames()` lê as pastas, `writeSkillFolder` troca cada uma em `~/.claude/skills/<nome>/` por `swapDirectory`, sem backup, com os temporários ao lado de `skills/`: em `~/.claude/` ou, se `skills/` é um link, no pai do alvo real; o laço de skills roda antes de gravar o `settings.json`). Uma skill nova só precisa de `skills/<nome>/SKILL.md` para ser instalada e conferida pelo `--check`; não toca `scripts/install.ts`.
 
 ## Hook de isolamento (`hook/bash-guard.ts`)
 

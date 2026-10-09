@@ -45,9 +45,11 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 4. Copia cada pasta de `skills/` (hoje `hexlog`, `hexlog-flow` e
    `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
    backup, em toda execução, mesmo sem mudança no artefato. Os temporários da
-   troca ficam em `~/.claude/`, fora de `skills/`: se `~/.claude/skills` é
-   symlink ou mount em outro filesystem, o `rename` falha com `EXDEV`, então
-   mantenha `skills/` no mesmo filesystem de `~/.claude/`. Temporários
+   troca ficam ao lado de `skills/`, fora dela: em `~/.claude/` ou, se
+   `~/.claude/skills` é um link, no pai do alvo real. Se `~/.claude/skills` é
+   ponto de montagem de outro filesystem, o `rename` falha com `EXDEV` e o
+   instalador aborta, mas antes de gravar o `settings.json`; mantenha `skills/`
+   no filesystem de `~/.claude/`. Temporários
    `skills/<nome>.tmp-<pid>` e `.old-<pid>` de versões antigas do instalador são
    removidos nessa cópia.
 

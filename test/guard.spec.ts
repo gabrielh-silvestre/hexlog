@@ -1596,6 +1596,45 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
+  test('skills/ como link para outro filesystem: os temporários ficam ao lado do alvo e o rename não dá EXDEV', () => {
+    const home = createTempDir('skill-link');
+    const elsewhere = createTempDir('skill-link-target');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    const originalRenameSync = fsDefault.renameSync;
+    try {
+      // `skills/` aponta para fora do HOME: simula o outro filesystem (dotfiles, mount).
+      const realSkills = path.join(elsewhere, 'skills');
+      fs.mkdirSync(realSkills);
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.symlinkSync(realSkills, path.join(home, '.claude', 'skills'));
+      const realHome = fs.realpathSync(home);
+      const deviceOf = (target: string): string =>
+        fs.realpathSync(path.dirname(target)).startsWith(realHome) ? 'home' : 'elsewhere';
+      jest.spyOn(fsDefault, 'renameSync').mockImplementation((from, to) => {
+        if (deviceOf(String(from)) !== deviceOf(String(to))) {
+          throw Object.assign(new Error('EXDEV: cross-device link not permitted'), {
+            code: 'EXDEV',
+          });
+        }
+        originalRenameSync(from, to);
+      });
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      expect(fs.readFileSync(path.join(realSkills, 'hexlog', 'SKILL.md'), 'utf8')).toBe(
+        '# hexlog skill\n',
+      );
+      expect(fs.readdirSync(realSkills)).toEqual(['hexlog']);
+      expect(fs.readdirSync(elsewhere)).toEqual(['skills']);
+      expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['skills']);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
   test('nome com "/", "..", "." ou vazio é rejeitado antes de tocar no filesystem', () => {
     const home = createTempDir('skill-f');
     const srcDir = buildSrcDir('# hexlog skill\n');
@@ -1626,6 +1665,28 @@ function runInstaller(home: string, D: string, args: string[], cwd = repoRoot) {
     },
   });
 }
+
+describe('B3a: install.ts com a troca de skills falhando (processo real)', () => {
+  test('falha na skill aborta antes de gravar o settings.json', () => {
+    const home = createTempDir('b3a');
+    const D = path.join(home, '.local', 'share', 'hexlog');
+    const settingsPath = path.join(home, '.claude', 'settings.json');
+    const template = buildSettingsTemplate(home);
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(settingsPath, template);
+    // `skills` como arquivo comum: o mkdir de writeSkillFolder falha com EEXIST.
+    fs.writeFileSync(path.join(home, '.claude', 'skills'), 'not a directory');
+    try {
+      const result = runInstaller(home, D, []);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('EEXIST');
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(template);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
 
 describe('B3: install.ts --check (processo real)', () => {
   let home: string;

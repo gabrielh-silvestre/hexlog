@@ -24,7 +24,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 ### Migração
 
 - `verify_chain` devolve em `head` a âncora do processo, não mais `''`, quando o log não tem elo. Quem comparava `head === ''` para detectar log vazio deve usar `totalRecords === 0`.
-- Se `~/.claude/skills` é link ou mount em outro filesystem, mantenha-o no mesmo filesystem de `~/.claude/`, senão a troca das skills falha com `EXDEV`.
+- Se `~/.claude/skills` é um link para outro filesystem, a troca das skills passa a funcionar (os temporários ficam no pai do alvo real). Se é ponto de montagem direto, a troca falha com `EXDEV`, mas antes de o instalador gravar o `settings.json`; mantenha-o no filesystem de `~/.claude/`.
 - Quem atualiza da 1.1.1 ou anterior tem um `settings.json.bak-hexlog` anterior à última instalação antiga, que a 1.1.2 não renova. Apague `~/.claude/settings.json.bak-hexlog` antes de reinstalar para a 1.1.2 gravar um backup novo.
 - Feche as sessões abertas antes de instalar com `node scripts/install.ts` e reinicie-as depois.
 
