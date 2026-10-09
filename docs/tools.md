@@ -255,7 +255,7 @@ não erro: `ok` só é `true` com `breaks` e `attachmentBreaks` vazios. Devolve
 `invalid-line`, `diverging-seq`, `hash-mismatch` ou `head-not-found`), `attachmentBreaks` e
 `totalAttachmentBreaks` (`attachment-missing` ou `attachment-corrupted`, por registro
 e hash) e `repairedLines`. `breaks[].index` e `repairedLines` são posições de linha do
-arquivo, contadas a partir de 0, e não `seq`. `breaks` e `attachmentBreaks` vão até 100
+arquivo, contadas a partir de 0, e não `seq`, exceto em `head-not-found`, que leva `totalRecords`. `breaks` e `attachmentBreaks` vão até 100
 itens, com o total real ao lado; `repairedLines` também vai até 100, sem total.
 Restos de gravações que falharam não quebram a cadeia: a cauda sem `\n` entra se for um elo
 válido (o lote ficou inteiro e só faltou o `\n`), e linhas rasgadas seguidas de um elo

@@ -4,6 +4,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+### Adicionado
+
+- `verify_chain` aceita `expectedHead`, o `head` de uma verificação anterior, e acusa `head-not-found` em `breaks` quando o log perdeu a cauda ou foi reescrito (#109).
+
 ## [1.1.1] - 2026-10-08
 
 ### Alterado
