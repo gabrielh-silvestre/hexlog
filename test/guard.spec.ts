@@ -1553,13 +1553,14 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     const srcDir = buildSrcDir('# hexlog skill\n');
     try {
       const skillsDir = path.join(home, '.claude', 'skills');
-      for (const leftover of ['hexlog.tmp-123', 'hexlog.old-123', 'other.tmp-123']) {
+      const kept = ['hexlog.old-notes', 'other.tmp-123'];
+      for (const leftover of ['hexlog.tmp-123', 'hexlog.old-123', ...kept]) {
         fs.mkdirSync(path.join(skillsDir, leftover), { recursive: true });
       }
 
       writeSkillFolder(home, 'hexlog', srcDir);
 
-      expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', 'other.tmp-123']);
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', ...kept]);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
       fs.rmSync(srcDir, { recursive: true, force: true });
@@ -1595,7 +1596,7 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
-  test('nome com "/", "..", "." ou vazio é rejeitado antes de tocar no filesystem (M3)', () => {
+  test('nome com "/", "..", "." ou vazio é rejeitado antes de tocar no filesystem', () => {
     const home = createTempDir('skill-f');
     const srcDir = buildSrcDir('# hexlog skill\n');
     try {

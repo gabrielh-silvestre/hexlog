@@ -347,8 +347,10 @@ export function writeSkillFolder(home: string, name: string, srcDir: string): vo
     const skillsDir = path.dirname(dstDir);
     mkdirSync(skillsDir, { recursive: true });
     // Versões antigas deixavam `<name>.tmp-<pid>`/`.old-<pid>` dentro de `skills/`, lidos como skill.
+    // O sufixo é só dígitos: pasta do usuário como `<name>.old-notas` não é temporário nosso.
+    const legacyTemp = new RegExp(`^${name.replaceAll('.', '\\.')}\\.(tmp|old)-\\d+$`);
     for (const entry of fs.readdirSync(skillsDir)) {
-      if (entry.startsWith(`${name}.tmp-`) || entry.startsWith(`${name}.old-`)) {
+      if (legacyTemp.test(entry)) {
         rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
       }
     }
