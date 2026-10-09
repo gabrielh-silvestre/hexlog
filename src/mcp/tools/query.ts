@@ -267,7 +267,7 @@ function capEvidence({
  * corta cada lista. `passed` e `marker` seguem intactos; o gate é sem estado, e o excedente sai com
  * um `select`/`where` mais estreito.
  */
-export function gatePage(
+function gatePage(
   evaluation: GateEvaluation,
 ): Omit<GateEvaluation, 'questions'> & { questions: PagedQuestion[] } {
   return { ...evaluation, questions: evaluation.questions.map(capEvidence) };

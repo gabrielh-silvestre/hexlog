@@ -1,4 +1,4 @@
-export const GIT_SHA_FORMAT = 'git-sha';
+const GIT_SHA_FORMAT = 'git-sha';
 
 /** Hexadecimal minúsculo de 7 a 40 caracteres; sem normalizar e sem conferir se o commit existe. */
 const GIT_SHA = /^[0-9a-f]{7,40}$/;

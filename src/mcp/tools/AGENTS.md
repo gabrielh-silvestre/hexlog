@@ -12,7 +12,7 @@ As 12 tools do servidor, agrupadas em quatro famílias. Cada arquivo exporta `re
 | `process.ts` | `registerProcessTools`: `create_process` e `register` (só o `register` leva `_meta` `anthropic/alwaysLoad`; o `Author` é montado aqui, com o `client` do envelope). Tools de escrita |
 | `definition.ts` | `registerDefinitionTools`: `define_type`, `define_relation` e `define_gate`, uma operação de `DefinitionService` cada. Tools de escrita |
 | `attachment.ts` | `registerAttachmentTools`: `attach` (escrita; `text` ou `path`) e `read_attachment` (leitura; `offset` e `maxChars` limitados por `PAGE_CHARS_CAP`) |
-| `query.ts` | `registerQueryTools`: `query`, `evaluate_gate`, `verify_chain`, `list` e `describe_type`, todas de leitura (`readOnlyHint`). Exporta `queryPage` (única porta de `queryRecords`, que passa `maxChars` e corta `changes`) e `gatePage` (corta `evidence`) |
+| `query.ts` | `registerQueryTools`: `query`, `evaluate_gate`, `verify_chain`, `list` e `describe_type`, todas de leitura (`readOnlyHint`). Exporta `queryPage` (única porta de `queryRecords`, que passa `maxChars` e corta `changes`) ; `gatePage` (corta `evidence`) é interna |
 
 ## Dependencies
 
