@@ -638,6 +638,66 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
+  test('deny: registerGuard não sobrescreve um .bak-hexlog existente (#42)', () => {
+    const tmpHome = createTempDir('deny-bak-preserved');
+    try {
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      fs.writeFileSync(`${settingsPath}.bak-hexlog`, 'backup original');
+      fs.writeFileSync(settingsPath, settingsWithDeny(trioOf(oldD)));
+
+      expect(registerGuard({ settingsPath, expected })).toMatchObject({ changed: true });
+
+      expect(fs.readFileSync(`${settingsPath}.bak-hexlog`, 'utf8')).toBe('backup original');
+      expect(denyOf(fs.readFileSync(settingsPath, 'utf8'))).not.toContain(`Read(/${oldD})`);
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
+  test('deny: registerGuard grava no destino do symlink e mantém o link e o modo (M17)', () => {
+    const tmpHome = createTempDir('deny-symlink');
+    try {
+      const realFile = path.join(tmpHome, 'dotfiles', 'settings.json');
+      fs.mkdirSync(path.dirname(realFile));
+      const before = settingsWithDeny(trioOf(oldD));
+      fs.writeFileSync(realFile, before);
+      fs.chmodSync(realFile, 0o644);
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      fs.symlinkSync(realFile, settingsPath);
+
+      expect(registerGuard({ settingsPath, expected })).toMatchObject({ changed: true });
+
+      expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+      expect(fs.readFileSync(realFile, 'utf8')).toBe(applyGuard(before, expected, noneExist).text);
+      expect(fs.statSync(realFile).mode & 0o777).toBe(0o644);
+      expect(fs.readFileSync(`${settingsPath}.bak-hexlog`, 'utf8')).toBe(before);
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
+  test('deny: registerGuard falha antes do backup quando o destino do symlink não é gravável', () => {
+    const tmpHome = createTempDir('deny-symlink-readonly');
+    const dotfiles = path.join(tmpHome, 'dotfiles');
+    try {
+      const realFile = path.join(dotfiles, 'settings.json');
+      fs.mkdirSync(dotfiles);
+      const before = settingsWithDeny(trioOf(oldD));
+      fs.writeFileSync(realFile, before);
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      fs.symlinkSync(realFile, settingsPath);
+      fs.chmodSync(dotfiles, 0o555);
+
+      expect(() => registerGuard({ settingsPath, expected })).toThrow(/not writable/);
+
+      expect(fs.existsSync(`${settingsPath}.bak-hexlog`)).toBe(false);
+      expect(fs.readFileSync(realFile, 'utf8')).toBe(before);
+    } finally {
+      fs.chmodSync(dotfiles, 0o755);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
   test('deny: registerGuard devolve removed vazio quando não há <D> antigo', () => {
     const tmpHome = createTempDir('deny-removed-empty');
     try {
@@ -1479,6 +1539,30 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
       fs.rmSync(home, { recursive: true, force: true });
       fs.rmSync(srcDirV1, { recursive: true, force: true });
       fs.rmSync(srcDirV2, { recursive: true, force: true });
+    }
+  });
+
+  test('falha no 2º renameSync não deixa temporário em skills/ nem em .claude/ (M4)', () => {
+    const home = createTempDir('skill-h');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    const originalRenameSync = fsDefault.renameSync;
+    try {
+      writeSkillFolder(home, 'hexlog', srcDir);
+      jest
+        .spyOn(fsDefault, 'renameSync')
+        .mockImplementationOnce((...args) => originalRenameSync(...args))
+        .mockImplementationOnce(() => {
+          throw new Error('boom: simulated 2nd renameSync failure');
+        });
+
+      expect(() => writeSkillFolder(home, 'hexlog', srcDir)).toThrow('boom');
+
+      expect(fs.readdirSync(path.join(home, '.claude', 'skills'))).toEqual(['hexlog']);
+      expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['skills']);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
     }
   });
 

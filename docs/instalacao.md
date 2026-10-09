@@ -32,14 +32,20 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    fora da working tree e fora do diretório de dados. É essa cópia que as sessões
    executam.
 3. Registra as 4 regras de deny e o hook PreToolUse em
-   `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog` antes
-   de qualquer troca) e registra o servidor MCP em escopo `user`. A regra de deny
+   `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog`, gravado
+   na primeira troca e nunca sobrescrito; se `settings.json` é um symlink, o
+   instalador grava no destino e mantém o link e o modo; se o diretório do destino
+   não é gravável, como no `/nix/store`, ele falha antes do backup) e registra o
+   servidor MCP em escopo `user`. A regra de deny
    de um `<D>` antigo que o guard remove é impressa (`removed deny rule: <regra>`),
    e só sai se esse diretório sumiu do disco: um `<D>` antigo que ainda existe
    mantém as regras, porque o deny é o isolamento do dado que ele guarda.
 4. Copia cada pasta de `skills/` (hoje `hexlog`, `hexlog-flow` e
    `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
-   backup, em toda execução, mesmo sem mudança no artefato.
+   backup, em toda execução, mesmo sem mudança no artefato. Os temporários da
+   troca ficam em `~/.claude/`, fora de `skills/`: se `~/.claude/skills` é
+   symlink ou mount em outro filesystem, o `rename` falha com `EXDEV`, então
+   mantenha `skills/` no mesmo filesystem de `~/.claude/`.
 
 Com dado 0.x em `<D>`, o comando só lista o que arquivaria (`scripts/install.ts#listLegacy`)
 e sai com 2, sem instalar nada: veja [Dado 0.x](migracao.md#dado-0x-arquivamento---archive-0x).
@@ -123,8 +129,8 @@ lembrete de que existe um build mais novo disponível. Sem item pendente nem avi
 
 ## Como reverter
 
-1. Restaurar `~/.claude/settings.json.bak-hexlog` sobre `~/.claude/settings.json`,
-   ou remover manualmente as 4 regras de deny e a entrada do hook do hexlog
+1. Restaurar `~/.claude/settings.json.bak-hexlog` (o estado de antes da primeira
+   instalação) sobre `~/.claude/settings.json`, ou remover manualmente as 4 regras de deny e a entrada do hook do hexlog
    em `hooks.PreToolUse`.
 2. `claude mcp remove hexlog -s user`.
 3. `rm -rf ~/.local/lib/hexlog`.

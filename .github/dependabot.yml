@@ -1,0 +1,20 @@
+version: 2
+
+# PRs de atualização vão para develop, a base de trabalho (main só recebe hotfix e release).
+# O prefixo mantém o título como Conventional Commit (o cliff.toml descarta os demais).
+# PR de npm exige atualizar EXPECTED_* em test/package.spec.ts junto: o CI falha sem isso.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore(deps)
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore(deps)
