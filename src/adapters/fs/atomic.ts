@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 // Import padrão, não `import * as fs`: ver `docs/directives/convencoes.md`, seção "Import padrão de fs".
 import fs from 'node:fs';
 import * as path from 'node:path';
+import { isUndefined } from 'es-toolkit';
 
 /** O `code` de um erro do fs (`ENOENT`, `EEXIST`...); `undefined` se `error` não traz um. */
 export function errnoCode(error: unknown): string | undefined {
@@ -21,6 +22,8 @@ export type WriteFileAtomicOptions = {
   exclusive?: boolean;
   /** `true`: dá `fsync` no diretório depois de publicar o arquivo, para o nome sobreviver a queda de energia. */
   fsyncDir?: boolean;
+  /** Modo do arquivo publicado, aplicado ao temporário antes de publicar; o padrão é o 0o600 do temporário. */
+  mode?: number;
 };
 
 /**
@@ -37,7 +40,7 @@ export type WriteFileAtomicOptions = {
 export function writeFileAtomic(
   file: string,
   content: string | Uint8Array,
-  { exclusive = false, fsyncDir = false }: WriteFileAtomicOptions = {},
+  { exclusive = false, fsyncDir = false, mode }: WriteFileAtomicOptions = {},
 ): void {
   const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -48,6 +51,8 @@ export function writeFileAtomic(
   );
   try {
     writeSynced(tmp, content);
+    // chmod, não o `mode` do open: a umask alteraria o modo pedido.
+    if (!isUndefined(mode)) fs.chmodSync(tmp, mode);
     if (exclusive) fs.linkSync(tmp, file);
     else fs.renameSync(tmp, file);
     if (fsyncDir) fsyncPath(dir);

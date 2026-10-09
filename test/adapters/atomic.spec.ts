@@ -41,6 +41,20 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual(['f.txt']);
   });
 
+  test('com mode, publica o arquivo já no modo pedido, sem passar pela umask', () => {
+    const dir = createTempDir('atomic');
+    const file = path.join(dir, 'f.txt');
+    const previousUmask = process.umask(0o077);
+
+    try {
+      writeFileAtomic(file, 'v', { mode: 0o664 });
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    expect(fs.statSync(file).mode & 0o7777).toBe(0o664);
+  });
+
   test('com exclusive, grava quando o arquivo não existe', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');

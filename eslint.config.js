@@ -28,6 +28,8 @@ export default defineConfig(
     ...jest.configs['flat/recommended'],
     rules: {
       ...jest.configs['flat/recommended'].rules,
+      // `itNotRoot` (test/guard.spec.ts) é o `test` que pula como root.
+      'jest/no-standalone-expect': ['error', { additionalTestBlockFunctions: ['itNotRoot'] }],
       'jest/expect-expect': [
         'error',
         {

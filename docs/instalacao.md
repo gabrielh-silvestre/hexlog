@@ -7,7 +7,9 @@ Requisitos, instalação, verificação e como reverter. O resumo está no [READ
 - Linux. O lock por pid, a gravação atômica e o arquivador dependem de `/proc`, de hard link e de
   `fsync` de diretório (`src/adapters/fs/atomic.ts#writeFileAtomic`): macOS não foi testado, e
   Windows, FAT, exFAT e drvfs (`/mnt/c` no WSL) ficam fora. O diretório de dados `<D>` precisa de
-  hard link e de `rename`/`link` atômicos: ver [Layout de dados](dados.md#layout-de-dados).
+  hard link e de `rename`/`link` atômicos: ver [Layout de dados](dados.md#layout-de-dados). O
+  backup `settings.json.bak-hexlog` do guard também sai por hard link: em filesystem sem ele, a
+  primeira troca do guard falha em vez de cair para outro método.
 - Node `>= 24.18.1`.
 - Claude Code, com `~/.claude/settings.json` já existente (o instalador grava
   nele; harness não instalado = instalação falha com uma mensagem explícita).
@@ -45,7 +47,9 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    backup, em toda execução, mesmo sem mudança no artefato. Os temporários da
    troca ficam em `~/.claude/`, fora de `skills/`: se `~/.claude/skills` é
    symlink ou mount em outro filesystem, o `rename` falha com `EXDEV`, então
-   mantenha `skills/` no mesmo filesystem de `~/.claude/`.
+   mantenha `skills/` no mesmo filesystem de `~/.claude/`. Temporários
+   `skills/<nome>.tmp-<pid>` e `.old-<pid>` de versões antigas do instalador são
+   removidos nessa cópia.
 
 Com dado 0.x em `<D>`, o comando só lista o que arquivaria (`scripts/install.ts#listLegacy`)
 e sai com 2, sem instalar nada: veja [Dado 0.x](migracao.md#dado-0x-arquivamento---archive-0x).
@@ -130,8 +134,8 @@ lembrete de que existe um build mais novo disponível. Sem item pendente nem avi
 ## Como reverter
 
 1. Restaurar `~/.claude/settings.json.bak-hexlog` (o estado de antes da primeira
-   instalação) sobre `~/.claude/settings.json`, ou remover manualmente as 4 regras de deny e a entrada do hook do hexlog
-   em `hooks.PreToolUse`.
+   instalação) sobre `~/.claude/settings.json`, ou remover manualmente as 4
+   regras de deny e a entrada do hook do hexlog em `hooks.PreToolUse`.
 2. `claude mcp remove hexlog -s user`.
 3. `rm -rf ~/.local/lib/hexlog`.
 4. `rm -rf ~/.claude/skills/hexlog ~/.claude/skills/hexlog-flow ~/.claude/skills/hexlog-setup`.

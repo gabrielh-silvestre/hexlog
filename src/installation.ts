@@ -315,9 +315,8 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   } catch (error) {
     if (errnoCode(error) !== 'EEXIST') throw error;
   }
-  writeFileAtomic(target, newText);
-  // `writeFileAtomic` cria o arquivo em 0600; devolve o modo que o usuário tinha escolhido.
-  fs.chmodSync(target, mode & 0o7777);
+  // O modo vai no temporário, antes do rename: sem janela em 0600 e sem lançar depois de gravar.
+  writeFileAtomic(target, newText, { mode: mode & 0o7777 });
   return { changed: true, removed };
 }
 
@@ -345,7 +344,16 @@ export function writeSkillFolder(home: string, name: string, srcDir: string): vo
   rmSync(tmp, { recursive: true, force: true });
   try {
     cpSync(srcDir, tmp, { recursive: true });
-    mkdirSync(path.dirname(dstDir), { recursive: true });
+    const skillsDir = path.dirname(dstDir);
+    mkdirSync(skillsDir, { recursive: true });
+    // Versões antigas deixavam `<name>.tmp-<pid>`/`.old-<pid>` dentro de `skills/`, lidos como skill.
+    // O sufixo é só dígitos: pasta do usuário como `<name>.old-notas` não é temporário nosso.
+    const legacyTemp = new RegExp(`^${name.replaceAll('.', '\\.')}\\.(tmp|old)-\\d+$`);
+    for (const entry of fs.readdirSync(skillsDir)) {
+      if (legacyTemp.test(entry)) {
+        rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
+      }
+    }
     swapDirectory(tmp, dstDir, old);
   } finally {
     // Sucesso: `tmp` já virou `dstDir`. Falha: não deixa o temporário para trás.
