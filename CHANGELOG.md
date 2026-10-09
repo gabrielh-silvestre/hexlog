@@ -4,6 +4,8 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+## [1.1.2] - 2026-10-09
+
 ### Adicionado
 
 - `verify_chain` aceita `expectedHead`, o `head` de uma verificação anterior, e acusa `head-not-found` em `breaks` quando o log perdeu a cauda ou foi reescrito (#109).
@@ -11,6 +13,13 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 ### Alterado
 
 - `verify_chain` devolve em `head` a âncora do processo (hash de 64 caracteres) quando o log não tem elo, no lugar de `''`; `totalRecords: 0` indica o log vazio (#109).
+- O servidor recusa com `INVALID_INPUT` (`too-deep`) argumentos aninhados além de 64 níveis, em vez de estourar a pilha, e registra o aviso `tool-over-cap` quando uma resposta passa do dobro do teto de página, sem cortá-la (#107).
+- O instalador guarda o primeiro `settings.json.bak-hexlog` e não o sobrescreve mais; quando `settings.json` é um link simbólico, grava no destino e preserva o link e o modo; falha antes do backup se o diretório do destino não é gravável. Os temporários da troca das skills ficam em `~/.claude/`, e os `.tmp-<pid>` e `.old-<pid>` de versões antigas são removidos de `~/.claude/skills`. Se `~/.claude/skills` é link ou mount em outro filesystem, mantenha-o no mesmo filesystem de `~/.claude/`, senão a troca falha com `EXDEV` (#113, #122).
+- A mensagem de `holder-unreadable` traz o comando de destravamento pronto para colar (#110, #123).
+
+### Corrigido
+
+- `read_attachment` recusa com `INVALID_INPUT` (`mid-surrogate-pair`) um `offset` que cai no meio de um par surrogate; use o `next` devolvido pela página anterior (#107).
 
 ## [1.1.1] - 2026-10-08
 
