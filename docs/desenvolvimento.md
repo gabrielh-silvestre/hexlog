@@ -15,17 +15,26 @@ em série em `npm run test:budget`, no CI.
 
 ## Scripts de leitura
 
-`scripts/insights.ts`, `scripts/export.ts` e `scripts/timeline.ts` são CLIs
-read-only, sem tool MCP correspondente: rodam direto com `node`, leem
+`scripts/insights.ts`, `scripts/export.ts`, `scripts/timeline.ts` e
+`scripts/rdsc-projections.ts` são CLIs read-only, sem tool MCP correspondente: rodam direto com `node`, leem
 `XDG_DATA_HOME` como as tools, não recebem o caminho do diretório de dados na
 linha de comando e leem só por `src/compose.ts#composeReader`, o lado de leitura de
 `compose`, que verifica a cadeia na leitura e não tem serviço de escrita. Nunca
 importam `src/adapters/**` nem `src/mcp/**` e nunca escrevem no diretório de dados. A
-tabela de exit codes dos três está em `scripts/AGENTS.md`; a regra é uma só: `2` é dado
+tabela de exit codes dos quatro está em `scripts/AGENTS.md`; a regra é uma só: `2` é dado
 quebrado (dado 0.x em `<D>`, `PROCESS_CORRUPTED` com cadeia adulterada ou `process.json`
 ilegível, e anexo ausente ou adulterado em `timeline` e `insights`), `1` é o resto
 (uso incorreto, erro, filtro sem resultado) e `0` é íntegro. Argumento desconhecido,
-opção sem valor ou argumento a mais saem com o uso e `1`.
+opção sem valor ou argumento a mais saem com o uso e `1`. O `rdsc-projections` é a
+diferença deliberada: não decodifica o anexo (só o re-hash do blob), então anexo ausente ou
+adulterado sai `0`.
+
+**Exceção ao teto de saída.** Os scripts de leitura em `scripts/` (`insights`, `export`,
+`timeline` e `rdsc-projections`) leem listas completas, numa consulta só e sem laço de
+cursor; o teto de 64 MiB por processo limita a memória. É uma exceção ao princípio de
+toda lista devolvida ter teto (`saidas-com-teto`, em
+[estrategia.md](directives/estrategia.md)) e vale só para eles: as tools MCP seguem com
+teto e dizem o que cortaram.
 
 ## `scripts/export.ts`
 
@@ -94,6 +103,73 @@ um processo ou filtro sem resultado; com os dois no mesmo relatório vale o maio
 reenvio com a mesma `key` devolve `replayed` sem gravar, então o log não registra
 "nunca teve reenvio" (ADR 0009).
 
+## `scripts/rdsc-projections.ts`
+
+Snapshot de um processo em JSONL, para quem precisa do estado inteiro de uma vez: os
+registros, o resultado de gates e o que mudou desde um marcador.
+
+```sh
+node scripts/rdsc-projections.ts <project> <process> \
+  [--gate <name>]... [--gate-per-target <gate>:<regex>]... [--since <marker-json>]
+```
+
+Linhas, nesta ordem, cada uma um JSON por linha:
+
+| `kind` | Quando | Chaves |
+|---|---|---|
+| `meta` | sempre, a primeira | `kind`, `project`, `process`, `head` (o id da cabeça do processo, `marker[process]`), `marker`, `version` (`1`) |
+| `record` | um por registro, na ordem do log, vigentes ou não | `kind`, `id`, `type`, `at`, `target`, `author`, `current`, `data`, `in`, `out`, mais `needsReview` e `attachmentStatus` só quando o serviço os devolve |
+| `gate` | cada `--gate` na ordem do argv (`target: null`), depois cada `--gate-per-target` | avaliado: `kind`, `gate`, `target`, `passed`, `questions` (`index`, `kind`, `passed`, `evidence`); erro: `kind`, `gate`, `error` |
+| `changes` | só com `--since` | `kind`, `baseline`, `entered`, `left` |
+| `end` | sempre, a última | `kind`, `records`, `gates` (linhas emitidas; as de erro de gate contam) |
+
+**Comportamento.**
+
+- `--gate-per-target <gate>:<regex>` separa no primeiro `:`. O regex (`new RegExp`, sem flags)
+  vale para o rótulo, o primeiro segmento do `target` antes do primeiro `.`, dos registros
+  vigentes; cada rótulo distinto gera uma avaliação com o rótulo como `target`. A ordem é a
+  natural, `Intl.Collator('en', { numeric: true })` com desempate por unidade de código
+  (`thing-2` antes de `thing-10`). Regex inválido ou `<gate>:<regex>` incompleto sai `1` com o
+  uso. `--gate` repetido gera linhas repetidas, sem dedupe.
+- Gate fora do manifesto do processo vira a linha `{"kind":"gate","gate":"<nome>","error":"GATE_NOT_FOUND"}`;
+  gate com alguma pergunta de escopo `project` vira `PROJECT_SCOPE_UNSUPPORTED`, porque o
+  marcador nomeia só este processo e o resto seria lido como vazio, em silêncio. As duas
+  saem com exit `0` e uma linha só por gate, mesmo com `--gate-per-target`.
+- `--since` aceita só um objeto com exatamente uma chave, o nome do processo, e valor
+  `RecordId` ou `null`, por exemplo `'{"meu-processo":null}'`. JSON inválido, outra chave,
+  chave extra ou valor errado saem `1` com o uso. Id presente no log (ou `null`) gera
+  `baseline: true` com o que entrou e saiu desde ele; id que não existe no log do processo,
+  inclusive de outro processo, gera `baseline: false` com `entered` e `left` vazios, exit `0`.
+- **Consistência por `marker`.** O script lê o processo duas vezes, todos os registros e só os
+  vigentes (`current` vem da segunda), e confere que o `marker` é o mesmo; se um `register`
+  cai entre as duas, repete, até 3 tentativas. Esgotadas, sai `1` com `INTERNAL`
+  (`marker changed on 3 consecutive reads`). Sob rajada de `register` isso é esperado, não
+  defeito: rode de novo. O `evaluateGate` recebe o `marker` do `meta`.
+- `attachmentStatus` é o estado do blob na hora da leitura e não acompanha o `marker`. O
+  conteúdo do anexo não é decodificado nem impresso.
+- **Custo.** A leitura carrega o processo inteiro em memória (vale aqui a exceção ao teto de saída
+  descrita em "Scripts de leitura": `limit` máximo, sem cursor). Cada `evaluateGate`
+  reverifica o log, então N rótulos de `--gate-per-target` custam N verificações do log, mais
+  um `loadProcess` (carrega e verifica o log do processo) quando há algum gate. O
+  `attachmentStatus` vem de um re-hash do blob (`adapters/fs/attachment-store.ts#statusOf`),
+  feito nas duas leituras de cada tentativa.
+- A saída é montada inteira em memória e escrita de uma vez, sempre terminando em `end`; em
+  qualquer falha o stdout fica vazio e a falha sai em `stderr` como
+  `rdsc-projections failed: CODE: msg`. Toda linha passa por `escapeControls`, então
+  controles de terminal no `data` saem como `\uXXXX` e a linha segue JSON válido.
+
+**Exit codes.** `0` íntegro, inclusive anexo ausente ou adulterado (o aviso fica no
+`attachmentStatus`) e linhas de erro de gate; `1` uso incorreto, projeto ou processo
+inexistente (`PROCESS_NOT_FOUND`: o script lê com escopo `process`, então não é
+`PROJECT_NOT_FOUND` como no `timeline`) e `INTERNAL` na exaustão; `2` dado 0.x
+(`LEGACY_DATA`), cadeia adulterada ou `process.json` ilegível (`PROCESS_CORRUPTED`).
+
+**Dois arquivos.** `scripts/rdsc-projections-run.ts` exporta `run` e `parseRdscArgs` e não
+tem efeito ao importar; `scripts/rdsc-projections.ts` só liga o `main`. Os scripts de leitura
+terminam com `process.exitCode = main(...)` sem guarda, e o jest roda em CJS: importar o
+entrypoint executaria o `main`. O módulo irmão deixa o spec chamar `run` com um leitor
+injetado (o mesmo motivo de `scripts/escape-controls.ts` ser separado do `timeline.ts`).
+
 ## Testes
 
 O jest testa o `.ts` fonte; os testes de ponta a ponta sobem o servidor a
@@ -102,4 +178,7 @@ sessões de fato executam. Os testes do instalador substituem as execuções
 externas (hook, servidor, `claude mcp`) por injeção, incluindo
 `HEXLOG_REGISTER_MCP=<script>` para trocar `claude mcp add`/`remove` por um
 script de teste sem depender do binário `claude` nem tocar no
-`~/.claude.json` real.
+`~/.claude.json` real. Os scripts de leitura rodam como processo real (`spawnSync`) contra
+um `XDG_DATA_HOME` temporário; o `rdsc-projections` também importa
+`scripts/rdsc-projections-run.ts` direto para provar a repetição das leituras com um
+leitor roteirizado (`test/rdsc-projections-cli.spec.ts`).
