@@ -79,7 +79,7 @@
     "lint-staged": "17.5.1",
     "prettier": "3.9.7",
     "tar": "7.5.22",
-    "ts-jest": "29.4.12",
+    "ts-jest": "29.4.14",
     "typescript": "5.9.2",
     "typescript-eslint": "8.70.0"
   },
