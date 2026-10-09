@@ -290,6 +290,8 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(await timeoutOf(error, dir)).toEqual(timeout('holder-unreadable'));
       const { message } = (await rejectionOf(error, dir)).details[0] ?? {};
       expect(message).toContain('ask the user to remove the lock');
+      expect(message).toContain('L="${XDG_DATA_HOME:-$HOME/.local/share}/hexlog/.v1/<project>/');
+      expect(message).not.toContain('<D>');
       expect(message).toContain('rmdir');
       expect(message).toContain('never rm -r');
       expect(message).not.toContain('docs/dados.md');
