@@ -41,7 +41,8 @@ instalar e sem apagar nada que não esteja no `.tar` verificado.
 - **Instalação que falha depois do arquivamento:** o dado já está no `.tar`. Se a
   remoção de `<D>` terminou, rode `node scripts/install.ts` de novo, sem a flag, e a
   instalação conclui. Se o arquivamento caiu antes de remover tudo, sem a flag o
-  instalador só lista (exit 2): rode com `--archive-0x`, que reaproveita o `.tar`.
+  instalador só lista (exit 2): rode com `--archive-0x`, que retoma o arquivamento (reaproveita o `.tar`
+  quando sobrou arquivo; se só sobraram diretórios vazios, apenas os remove).
 - **Um ou vários `.tar`:** uma execução com arquivo novo no 0.x gera outro `.tar`
   em vez de reescrever o anterior, então `<D>/archive/` pode ter mais de um. O
   nome tem resolução de segundo: dois arquivamentos no mesmo segundo que precisem

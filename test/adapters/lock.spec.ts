@@ -295,6 +295,8 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(await timeoutOf(error, dir)).toEqual(timeout('holder-unreadable'));
       const { message } = (await rejectionOf(error, dir)).details[0] ?? {};
       expect(message).toContain('ask the user to remove the lock');
+      expect(message).toContain('rmdir');
+      expect(message).toContain('never rm -r');
       expect(message).not.toContain('docs/dados.md');
       expect(fs.readFileSync(holderFile, 'utf8')).toBe(content);
       expect(records).toEqual([]);
