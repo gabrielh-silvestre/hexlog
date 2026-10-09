@@ -63,6 +63,14 @@ describe('cursor: tetos de entrada', () => {
     ]);
   });
 
+  test('texto de exatamente CURSOR_MAX_CHARS passa do teto e cai em malformed', () => {
+    const error = invalidCursorOf(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS)));
+
+    expect(error.details).toEqual([
+      { path: '/cursor', code: 'malformed', message: expect.any(String) },
+    ]);
+  });
+
   test('mil campos inválidos dão no máximo 51 details, o último too-many-errors', () => {
     const marker = Object.fromEntries(Array.from({ length: 1_000 }, (_, n) => [`p${n}`, 'x']));
 

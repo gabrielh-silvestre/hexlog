@@ -20,7 +20,7 @@
 - Ao testar uma tool que recusa entrada, use `expectError()` de `mcp/environment.ts` antes de reimplementar a asserção de erro estruturado.
 - Diretório temporário só por `helpers.ts#createTempDir`, dentro de hook ou teste, nunca na coleta do `describe`: a coleta roda até com `-t`, e o `afterAll` de `cleanup.ts` não roda num arquivo sem teste selecionado, então o diretório vazaria. A trava de lint só barra `mkdtempSync`.
 - Teste que sobe bundle, processo filho ou carga declara o próprio timeout como último argumento do `it` (de 15_000 a 240_000 ms), porque o padrão do jest é 5000 ms e não há `testTimeout` global.
-- Property-based tests (`fast-check`, `fc.assert`/`fc.property`) cobrem as invariantes de hash e de vigência: `domain/chain.spec.ts` e `domain/vigency.property.spec.ts`.
+- Property-based tests (`fast-check`, `fc.assert`/`fc.property`) cobrem as invariantes de vigência (`domain/vigency.property.spec.ts`), do `expectedHead` do `verify_chain` (`shared/loader.property.spec.ts`), da busca (`adapters/search.spec.ts`) e da paginação (`queries/pagination.spec.ts`).
 - Os IDs nos títulos de teste (`M#`, `N#`, `S#`, `B#`, `I#`, `C#`, `Q#`, `R-#`, `U-#`) são rótulos das famílias descritas em [documentacao.md](documentacao.md), não dos ADRs 0007 a 0010.
 
 ## Bundle e processo filho

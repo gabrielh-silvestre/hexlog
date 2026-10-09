@@ -7,10 +7,10 @@ import { isUndefined } from 'es-toolkit';
 import { z } from 'zod';
 import { HexlogError, type Detail } from '../../errors.ts';
 import type { Logger } from '../../shared/logger.ts';
-import { errnoCode, writeSynced } from './atomic.ts';
+import { errnoCode, isDirectoryTaken, writeSynced } from './atomic.ts';
 
 /** D-12: quanto tempo um escritor espera por um dono vivo antes de `LOCK_TIMEOUT` `lock-busy`. */
-export const LOCK_BUDGET_MS = 15_000;
+const LOCK_BUDGET_MS = 15_000;
 
 const POLL_MS = 10;
 const BOOT_ID_FILE = '/proc/sys/kernel/random/boot_id';
@@ -50,12 +50,6 @@ type MoveAsideResult = 'removed' | 'restored' | 'discarded' | 'gone';
 // do `rename` de aquisição e de liberação (sem `await` no meio), então duas chamadas do mesmo
 // servidor nunca veem o conjunto pela metade.
 const heldTokens = new Set<string>();
-
-/** O `rename` de diretório sobre outro que já existe e não está vazio (um lock nunca existe vazio). */
-function isDirectoryTaken(error: unknown): boolean {
-  const code = errnoCode(error);
-  return code === 'ENOTEMPTY' || code === 'EEXIST';
-}
 
 function readBootId(): string | null {
   try {
@@ -222,7 +216,11 @@ export function createLockManager({
       if (current.kind === 'unreadable') {
         throw lockTimeout(
           'holder-unreadable',
-          'lock holder file is unreadable; ask the user to remove the lock (see docs/dados.md, holder-unreadable)',
+          'lock holder file is unreadable; ask the user to remove the lock: close all Claude Code sessions, ' +
+            'then in a terminal outside Claude Code, with ' +
+            'L="${XDG_DATA_HOME:-$HOME/.local/share}/hexlog/.v1/<project>/<process>/records.jsonl.lock" ' +
+            '(replace <project> and <process>), run `ls -d "$L"`, `rm "$L/holder"` and `rmdir "$L"` (rmdir fails if anything else is left; ' +
+            'never rm -r), and confirm that $L is gone',
         );
       }
       if (current.kind === 'missing') {

@@ -88,11 +88,14 @@ export async function createEnvironment(options: EnvironmentOptions = {}): Promi
   const _meta = options.clientInfo && { [CLIENT_INFO_META_KEY]: options.clientInfo };
 
   async function call(name: string, args: Record<string, unknown> = {}): Promise<CallResult> {
+    const logged = logs.length;
     const result = (await client.callTool({ name, arguments: args, _meta })) as CallResult;
     // Erro de forma de saída só nasce de bug no handler; nenhuma chamada da suíte pode devolvê-lo.
     for (const item of result.content ?? []) {
       expect(item.text?.startsWith('Output validation error')).not.toBe(true);
     }
+    // Resposta acima do dobro de `PAGE_CHARS_CAP` é bug de teto na tool; nenhuma chamada da suíte pode causá-la.
+    expect(logs.slice(logged).filter(({ event }) => event === 'tool-over-cap')).toEqual([]);
     return result;
   }
 

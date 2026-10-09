@@ -20,7 +20,7 @@ import type {
   ProcessReader,
   SearchIndex,
 } from '../ports.ts';
-import { loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
+import { checkExpectedHead, loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
 import { decodeCursor, encodeCursor, invalidCursor, type CursorPayload } from './cursor.ts';
 import {
   createDescribeType,
@@ -124,7 +124,7 @@ export type EvaluateGateInput = {
 /** `passed` e a evidência de cada pergunta, mais o marcador dos processos lidos (D-24). */
 export type GateEvaluation = GateResult & { marker: Marker };
 
-export type VerifyChainInput = { project: Name; process: Name };
+export type VerifyChainInput = { project: Name; process: Name; expectedHead?: Hash };
 
 /** D-16: anexo citado por um registro que não está inteiro no projeto. */
 type AttachmentBreak = {
@@ -172,8 +172,10 @@ export type QueryService = {
   /**
    * Diagnóstico sem gravar: a cadeia do processo e os anexos que os registros citam (D-16). Quebra
    * não lança, vira `ok: false` com `breaks` (cadeia); anexo ausente ou corrompido entra em
-   * `attachmentBreaks` como `attachment-missing`/`attachment-corrupted`. `PROCESS_NOT_FOUND` e
-   * `PROCESS_CORRUPTED` (`unreadable-manifest`) vêm da leitura do manifesto; `PROCESS_TOO_LARGE` e
+   * `attachmentBreaks` como `attachment-missing`/`attachment-corrupted`. Com `expectedHead` (o `head` de uma
+   * verificação anterior), um hash que não é de nenhum elo válido nem a âncora do processo entra em
+   * `breaks` como `head-not-found` (cauda apagada ou reescrita); sem ele, apagar a cauda não é detectável.
+   * `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED` (`unreadable-manifest`) vêm da leitura do manifesto; `PROCESS_TOO_LARGE` e
    * `IO_ERROR`, da leitura do log.
    */
   verifyChain(input: VerifyChainInput): VerifyChainResult;
@@ -259,15 +261,17 @@ function projectData(
 }
 
 // `fields` não entra aqui de propósito: recorta a saída e não muda o que a consulta seleciona.
-const FILTER_KEYS = [
-  'includeNonCurrent',
-  'type',
-  'targetPrefix',
-  'where',
-  'text',
-  'ids',
-  'relatedTo',
-] as const;
+// O `satisfies` obriga toda chave nova de `Filters` a entrar neste mapa.
+const FILTER_FLAGS = {
+  includeNonCurrent: 0,
+  type: 0,
+  targetPrefix: 0,
+  where: 0,
+  text: 0,
+  ids: 0,
+  relatedTo: 0,
+} satisfies Record<keyof Filters, 0>;
+const FILTER_KEYS = Object.keys(FILTER_FLAGS) as (keyof Filters)[];
 
 /**
  * D-20: o hash prende os filtros e `changesSince`, não a página (`limit`, `maxChars`). O JCS descarta
@@ -458,8 +462,12 @@ export function createQueryService(deps: {
       return { ...result, marker: reading.marker };
     },
 
-    verifyChain({ project, process }) {
-      const { manifest, records, chain } = loadVerified(store, { project, process });
+    verifyChain({ project, process, expectedHead }) {
+      const verified = loadVerified(store, { project, process });
+      const { manifest, records } = verified;
+      const chain = isUndefined(expectedHead)
+        ? verified.chain
+        : checkExpectedHead(verified, expectedHead);
       const broken = records.flatMap((link): AttachmentBreak[] =>
         Object.entries(attachmentStatusOf(project, manifest, link) ?? {}).flatMap(
           ([hash, status]) =>

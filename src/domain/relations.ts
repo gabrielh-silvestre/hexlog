@@ -13,6 +13,20 @@ export function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   else map.set(key, [value]);
 }
 
+/** Relação de entrada de um registro: quem aponta (`from`), a espécie e o nome opcional. */
+export type Incoming<L extends Linked> = { kind: RelationKind; as?: Name; from: L };
+
+/** Índice das relações de entrada: para cada destino, os registros que apontam para ele. */
+export function incomingOf<L extends Linked>(records: readonly L[]): Map<RecordId, Incoming<L>[]> {
+  const incoming = new Map<RecordId, Incoming<L>[]>();
+  for (const from of records) {
+    for (const { kind, to, as } of from.relations) {
+      pushTo(incoming, to, { kind, as, from });
+    }
+  }
+  return incoming;
+}
+
 /** D-08: vigência e versão atual de cada registro lido. */
 export type Vigency = {
   /** Registro sem relação de entrada `supersedes`/`revokes`; id desconhecido conta como vigente. */

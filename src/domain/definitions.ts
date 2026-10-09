@@ -9,7 +9,7 @@ import { RelationKind, withCanonicalLimit } from './record.ts';
 export const RECORD_TYPE_MAX_CHARS = 16_000;
 
 /** Teto de uma relação (`from`/`to`) e de um gate (`where`) em caracteres canônicos (JCS); docs/tetos-dominio-v1.md. */
-export const RELATION_GATE_MAX_CHARS = 16_000;
+const RELATION_GATE_MAX_CHARS = 16_000;
 
 /** Teto de perguntas por gate; docs/tetos-dominio-v1.md. */
 export const GATE_QUESTIONS_MAX = 50;

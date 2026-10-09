@@ -88,7 +88,7 @@ Um `target` são nomes separados por `.`, com até 200 caracteres
 (`checkout.pagamento.pix`); o prefixo de um `target` casa na fronteira de `.`:
 `a.b` casa `a.b` e `a.b.c`, não `a.bc`. O id de um registro é `<processo>:<uuid v7>`
 e só o servidor o atribui. `author` sai do envelope da chamada: `agent` e `model`
-vêm do agente, `client` vem do cliente MCP (ou `unknown`).
+vêm do agente, `client` vem do cliente MCP (`unknown` quando o cliente não envia o envelope `clientInfo`).
 
 Toda entrada é estrita: chave desconhecida é `INVALID_INPUT` com
 `unrecognized_keys`. Os tetos de tamanho estão em

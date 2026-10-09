@@ -57,6 +57,19 @@ describe('readAttachment', () => {
     expect(error.details[0]).toMatchObject({ path: '/offset', code: 'out-of-range' });
   });
 
+  test('offset no meio de um par surrogate é INVALID_INPUT em /offset', () => {
+    const { stored, read } = attachmentSetup();
+    const hash = stored('a😀b');
+
+    const error = captureError(() => read(hash, { offset: 2 }));
+    expect(error.code).toBe('INVALID_INPUT');
+    expect(error.details[0]).toMatchObject({ path: '/offset', code: 'mid-surrogate-pair' });
+    expect(read(hash, { offset: 1 })).toMatchObject({ text: '😀b' });
+    expect(read(hash, { offset: 3 })).toMatchObject({ text: 'b' });
+    // Texto que termina em par: o offset no fim fica fora do texto e não é recusado.
+    expect(read(stored('a😀'), { offset: 3 })).toMatchObject({ text: '' });
+  });
+
   test('hash que ninguém guardou é ATTACHMENT_NOT_FOUND', () => {
     const { read } = attachmentSetup();
 

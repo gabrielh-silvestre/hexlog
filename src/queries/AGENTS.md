@@ -9,7 +9,7 @@ Serviço de leitura do hexlog: seis operações (`queryRecords`, `evaluateGate`,
 ## Key Files
 | File | Description |
 |------|-------------|
-| `query-service.ts` | `createQueryService` e o tipo `QueryService`: `queryRecords` (filtros, `text`, `fields`, paginação por cursor, `changesSince`), `evaluateGate`, `verifyChain` (com `attachmentBreaks`) e a delegação a `list`, `readAttachment` e `describeType`. Exporta `QUERY_TEXT_MAX_CHARS` e reexporta `PAGE_CHARS_CAP` |
+| `query-service.ts` | `createQueryService` e o tipo `QueryService`: `queryRecords` (filtros, `text`, `fields`, paginação por cursor, `changesSince`), `evaluateGate`, `verifyChain` (com `attachmentBreaks` e o `expectedHead` opcional, conferido por `shared/loader.ts#checkExpectedHead`) e a delegação a `list`, `readAttachment` e `describeType`. Exporta `QUERY_TEXT_MAX_CHARS` e reexporta `PAGE_CHARS_CAP` |
 | `read.ts` | `readScope`: lê e verifica o alcance pedido (`ReadTarget`: processo ou projeto), cortando cada processo no `Marker` quando há um; `PROCESS_CORRUPTED` e `MARKER_NOT_FOUND` saem daqui. Exporta também `projectNotFound` |
 | `select.ts` | Funções puras sobre uma `Reading`: `inOutputOrder` (ordem de saída por alcance), `buildView` (vigência e relações de entrada), `select` (filtros e relevância do `text`), `leftReason` e `relationsOf` (relações de entrada e saída de um registro) |
 | `cursor.ts` | `encodeCursor` e `decodeCursor` (base64url de `CursorPayload`), `invalidCursor` (o `INVALID_CURSOR`) e o teto `CURSOR_MAX_CHARS`; o cursor não autentica, a barreira contra forja é a releitura do serviço |

@@ -638,6 +638,72 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
+  test('deny: registerGuard não sobrescreve um .bak-hexlog existente', () => {
+    const tmpHome = createTempDir('deny-bak-preserved');
+    try {
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      fs.writeFileSync(`${settingsPath}.bak-hexlog`, 'backup original');
+      fs.writeFileSync(settingsPath, settingsWithDeny(trioOf(oldD)));
+
+      expect(registerGuard({ settingsPath, expected })).toMatchObject({ changed: true });
+
+      expect(fs.readFileSync(`${settingsPath}.bak-hexlog`, 'utf8')).toBe('backup original');
+      expect(denyOf(fs.readFileSync(settingsPath, 'utf8'))).not.toContain(`Read(/${oldD})`);
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
+  test('deny: registerGuard grava no destino do symlink e mantém o link e o modo', () => {
+    const tmpHome = createTempDir('deny-symlink');
+    try {
+      const realFile = path.join(tmpHome, 'dotfiles', 'settings.json');
+      fs.mkdirSync(path.dirname(realFile));
+      const before = settingsWithDeny(trioOf(oldD));
+      fs.writeFileSync(realFile, before);
+      fs.chmodSync(realFile, 0o644);
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      fs.symlinkSync(realFile, settingsPath);
+
+      expect(registerGuard({ settingsPath, expected })).toMatchObject({ changed: true });
+
+      expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+      expect(fs.readFileSync(realFile, 'utf8')).toBe(applyGuard(before, expected, noneExist).text);
+      expect(fs.statSync(realFile).mode & 0o777).toBe(0o644);
+      expect(fs.readFileSync(`${settingsPath}.bak-hexlog`, 'utf8')).toBe(before);
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
+  // Como root, `accessSync(W_OK)` passa mesmo com `chmod 0555`, então o teste não tem o que provar.
+  const itNotRoot = process.getuid?.() === 0 ? test.skip : test;
+
+  itNotRoot(
+    'deny: registerGuard falha antes do backup quando o destino do symlink não é gravável',
+    () => {
+      const tmpHome = createTempDir('deny-symlink-readonly');
+      const dotfiles = path.join(tmpHome, 'dotfiles');
+      try {
+        const realFile = path.join(dotfiles, 'settings.json');
+        fs.mkdirSync(dotfiles);
+        const before = settingsWithDeny(trioOf(oldD));
+        fs.writeFileSync(realFile, before);
+        const settingsPath = path.join(tmpHome, 'settings.json');
+        fs.symlinkSync(realFile, settingsPath);
+        fs.chmodSync(dotfiles, 0o555);
+
+        expect(() => registerGuard({ settingsPath, expected })).toThrow(/not writable/);
+
+        expect(fs.existsSync(`${settingsPath}.bak-hexlog`)).toBe(false);
+        expect(fs.readFileSync(realFile, 'utf8')).toBe(before);
+      } finally {
+        fs.chmodSync(dotfiles, 0o755);
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    },
+  );
+
   test('deny: registerGuard devolve removed vazio quando não há <D> antigo', () => {
     const tmpHome = createTempDir('deny-removed-empty');
     try {
@@ -1482,7 +1548,137 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
-  test('nome com "/", "..", "." ou vazio é rejeitado antes de tocar no filesystem (M3)', () => {
+  test('varre os temporários legados skills/<nome>.tmp-<pid> e .old-<pid>, sem tocar em outras pastas', () => {
+    const home = createTempDir('skill-legacy');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    try {
+      const skillsDir = path.join(home, '.claude', 'skills');
+      const kept = ['hexlog.old-notes', 'other.tmp-123'];
+      for (const leftover of ['hexlog.tmp-123', 'hexlog.old-123', ...kept]) {
+        fs.mkdirSync(path.join(skillsDir, leftover), { recursive: true });
+      }
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', ...kept]);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('falha no 2º renameSync não deixa temporário em skills/ nem em .claude/ e preserva a skill anterior', () => {
+    const home = createTempDir('skill-h');
+    const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
+    const srcDirV2 = buildSrcDir('# hexlog skill v2\n');
+    const originalRenameSync = fsDefault.renameSync;
+    try {
+      writeSkillFolder(home, 'hexlog', srcDirV1);
+      jest
+        .spyOn(fsDefault, 'renameSync')
+        .mockImplementationOnce((...args) => originalRenameSync(...args))
+        .mockImplementationOnce(() => {
+          throw new Error('boom: simulated 2nd renameSync failure');
+        });
+
+      expect(() => writeSkillFolder(home, 'hexlog', srcDirV2)).toThrow('boom');
+
+      expect(fs.readdirSync(path.join(home, '.claude', 'skills'))).toEqual(['hexlog']);
+      expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['skills']);
+      expect(
+        fs.readFileSync(path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md'), 'utf8'),
+      ).toBe('# hexlog skill v1\n');
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDirV1, { recursive: true, force: true });
+      fs.rmSync(srcDirV2, { recursive: true, force: true });
+    }
+  });
+
+  test('skills/ como link para outro filesystem: os temporários ficam ao lado do alvo e o rename não dá EXDEV', () => {
+    const home = createTempDir('skill-link');
+    const elsewhere = createTempDir('skill-link-target');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    const originalRenameSync = fsDefault.renameSync;
+    try {
+      // `skills/` aponta para fora do HOME: simula o outro filesystem (dotfiles, mount).
+      const realSkills = path.join(elsewhere, 'skills');
+      fs.mkdirSync(realSkills);
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.symlinkSync(realSkills, path.join(home, '.claude', 'skills'));
+      const realHome = fs.realpathSync(home);
+      const deviceOf = (target: string): string =>
+        fs.realpathSync(path.dirname(target)).startsWith(realHome) ? 'home' : 'elsewhere';
+      jest.spyOn(fsDefault, 'renameSync').mockImplementation((from, to) => {
+        if (deviceOf(String(from)) !== deviceOf(String(to))) {
+          throw Object.assign(new Error('EXDEV: cross-device link not permitted'), {
+            code: 'EXDEV',
+          });
+        }
+        originalRenameSync(from, to);
+      });
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      expect(fs.readFileSync(path.join(realSkills, 'hexlog', 'SKILL.md'), 'utf8')).toBe(
+        '# hexlog skill\n',
+      );
+      expect(fs.readdirSync(realSkills)).toEqual(['hexlog']);
+      expect(fs.readdirSync(elsewhere)).toEqual(['skills']);
+      expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['skills']);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('skills/ como link cujo pai do alvo não é gravável: os temporários caem para <home>/.claude', () => {
+    const home = createTempDir('skill-link-ro');
+    const elsewhere = createTempDir('skill-link-ro-target');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    const originalRenameSync = fsDefault.renameSync;
+    const originalAccessSync = fsDefault.accessSync;
+    try {
+      const realSkills = path.join(elsewhere, 'skills');
+      fs.mkdirSync(realSkills);
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.symlinkSync(realSkills, path.join(home, '.claude', 'skills'));
+      const realElsewhere = fs.realpathSync(elsewhere);
+      // Simula o pai do alvo sem permissão de escrita sem depender de chmod (que root ignora).
+      jest.spyOn(fsDefault, 'accessSync').mockImplementation((target, mode) => {
+        if (String(target) === realElsewhere) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+        originalAccessSync(target, mode);
+      });
+      const tempParents: string[] = [];
+      jest.spyOn(fsDefault, 'renameSync').mockImplementation((from, to) => {
+        if (path.basename(String(from)).startsWith('.hexlog-skill-')) {
+          tempParents.push(path.dirname(String(from)));
+        }
+        originalRenameSync(from, to);
+      });
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      expect(tempParents).toEqual([path.join(fs.realpathSync(home), '.claude')]);
+      expect(fs.readFileSync(path.join(realSkills, 'hexlog', 'SKILL.md'), 'utf8')).toBe(
+        '# hexlog skill\n',
+      );
+      expect(fs.readdirSync(elsewhere)).toEqual(['skills']);
+      expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['skills']);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('nome com "/", "..", "." ou vazio é rejeitado antes de tocar no filesystem', () => {
     const home = createTempDir('skill-f');
     const srcDir = buildSrcDir('# hexlog skill\n');
     try {
@@ -1512,6 +1708,28 @@ function runInstaller(home: string, D: string, args: string[], cwd = repoRoot) {
     },
   });
 }
+
+describe('B3a: install.ts com a troca de skills falhando (processo real)', () => {
+  test('falha na skill aborta antes de gravar o settings.json', () => {
+    const home = createTempDir('b3a');
+    const D = path.join(home, '.local', 'share', 'hexlog');
+    const settingsPath = path.join(home, '.claude', 'settings.json');
+    const template = buildSettingsTemplate(home);
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(settingsPath, template);
+    // `skills` como arquivo comum: o mkdir de writeSkillFolder falha com EEXIST.
+    fs.writeFileSync(path.join(home, '.claude', 'skills'), 'not a directory');
+    try {
+      const result = runInstaller(home, D, []);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('EEXIST');
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(template);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
 
 describe('B3: install.ts --check (processo real)', () => {
   let home: string;

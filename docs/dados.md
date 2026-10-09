@@ -33,7 +33,9 @@ POSIX (`rename` e `link` atômicos).
   elo é `sha256(prevHash + JCS(elo sem prevHash))` (JCS, RFC 8785;
   `src/domain/chain.ts#hashLink`), e o `prevHash` do primeiro elo é a âncora. A linha é
   enquadrada por `src/shared/loader.ts#formatLine`. Não existe tool nem função que
-  reescreva ou remova uma linha. O arquivo tem teto de 64 MiB por processo
+  reescreva ou remova uma linha. Quem apaga por fora as últimas linhas deixa uma cadeia
+  íntegra: o `verify_chain` só detecta com `expectedHead`, o `head` guardado de uma
+  verificação anterior (`head-not-found`). O arquivo tem teto de 64 MiB por processo
   (`PROCESS_TOO_LARGE`).
 - **Versões de definição** são gravadas por `link` exclusivo e nunca sobrescritas. O
   `<nome>.json` legado do 0.x não existe aqui e nunca é lido.
@@ -52,7 +54,7 @@ entrada, vazio quando o erro é da chamada toda). O catálogo completo é
 
 | Código | Quando |
 |---|---|
-| `INVALID_INPUT` | entrada fora do schema, chave desconhecida, `__proto__`, ou `attach` com `path` recusado (o motivo vem em `details[0].code`) |
+| `INVALID_INPUT` | entrada fora do schema, chave desconhecida, `__proto__`, args aninhados além de 64 níveis (`too-deep`, em qualquer tool), `offset` de `read_attachment` no meio de um par surrogate (`mid-surrogate-pair`), ou `attach` com `path` recusado (o motivo vem em `details[0].code`) |
 | `INVALID_FILTER` | filtro da `query` inconsistente: `process` ausente no alcance processo (`required`) ou `text` sem termo pesquisável (`no-terms`: espaço e pontuação não são termos). `text` acima de 200 caracteres e `limit` fora de 1 a 200 saem como `INVALID_INPUT`, porque o zod da tool barra antes; `too-long` e `out-of-range` só saem pelo serviço, nos scripts |
 | `INVALID_CURSOR` / `MARKER_NOT_FOUND` | `cursor`, `changesSince` ou `marker` que não batem com o dado lido. `INVALID_CURSOR`: `malformed`, `too-long`, campo do cursor inválido, `scope-mismatch`, `project-mismatch`, `process-mismatch`, `filters-mismatch`, `marker-hash-mismatch` ou `last-id-not-found`, e a mensagem manda reexecutar a consulta sem `cursor`. `MARKER_NOT_FOUND`: `marker-not-found` (o id não está no log do processo) ou `process-not-found` (o marcador nomeia processo inexistente ou não lido); os dois levam `process`, o processo cujo marcador falhou |
 | `RESERVED_NAME` | nome de processo reservado |

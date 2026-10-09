@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test } from '@jest/globals';
 import { sumBy } from 'es-toolkit';
+import { once } from 'node:events';
+import * as path from 'node:path';
+import { LOCK_DIR } from '../../src/adapters/fs/data-format.ts';
+import { createLockManager } from '../../src/adapters/fs/lock.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
-import { killChildren, runWriteStress } from './lock-helpers.ts';
+import { chainLine } from '../fixtures/chain-line.ts';
+import { createTempDir } from '../helpers.ts';
+import { createProcess, killChildren, runWriteStress, startHolder } from './lock-helpers.ts';
 
 // Medição para o ADR 0009, não contrato: repete o estresse de `lock.spec.ts` (8 filhos x 25
 // gravações, com lock de dono morto pré-plantado) e imprime, por rodada, as taxas de `lock-lost`
@@ -68,4 +74,38 @@ describe('N7', () => {
       ),
     ).toEqual([]);
   }, 900_000);
+});
+
+describe('prazo do roubo de lock órfão', () => {
+  test('dono morto por kill -9 é roubado em menos de 1 s', async () => {
+    const lockDir = path.join(createTempDir('lock'), LOCK_DIR);
+    const { child } = await startHolder(lockDir);
+    child.kill('SIGKILL');
+    await once(child, 'exit');
+    const manager = createLockManager({ log: () => undefined });
+
+    const started = performance.now();
+    const lock = await manager.acquire(lockDir);
+
+    expect(performance.now() - started).toBeLessThan(1000);
+    await manager.release(lock);
+  }, 15_000);
+
+  test('store.write depois do kill -9 do dono entra em menos de 1 s (TF3)', async () => {
+    const { store, ref, lockDir } = createProcess();
+    const { child } = await startHolder(lockDir);
+    child.kill('SIGKILL');
+    await once(child, 'exit');
+
+    const started = performance.now();
+    await store.write(ref, (raw) => ({
+      line: chainLine(ref.process, verifyProcess(raw).end, 1, {
+        agent: 'lock-spec',
+        text: () => 'depois do kill',
+      }),
+      result: undefined,
+    }));
+
+    expect(performance.now() - started).toBeLessThan(1000);
+  }, 15_000);
 });

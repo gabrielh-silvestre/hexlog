@@ -1,8 +1,11 @@
 # Plataformas de qualidade para CI/CD
 
-Estudo para quando o hexlog virar repositório público no GitHub. **Nada daqui
-está instalado.** O CI atual (`.github/workflows/ci.yml`) roda só `typecheck`,
-`lint`, `format:check`, `test` e `test:budget`.
+Estudo para quando o hexlog virar repositório público no GitHub. **Só o
+Dependabot version updates está instalado** (`.github/dependabot.yml`, `npm` e
+`github-actions`, semanal, com PRs para `develop`); o resto não. O CI atual
+(`.github/workflows/ci.yml`) roda só `typecheck`, `lint`, `format:check`, `test`
+e `test:budget`, e toda action dos workflows fica fixada por SHA de commit, com
+a tag ao lado em comentário.
 
 Fontes consultadas em **2026-09-17**. Preço e plano mudam; reconfira a fonte
 antes de adotar qualquer item.
@@ -47,6 +50,6 @@ do Semgrep mudar; rodar os dois é redundante.
 ## Ordem sugerida quando o repo for público
 
 1. Ligar CodeQL default setup e Dependabot alerts/security updates em Settings.
-2. Adicionar `.github/dependabot.yml` para `npm` e `github-actions`.
+2. Adicionar `.github/dependabot.yml` para `npm` e `github-actions` (feito).
 3. Reavaliar a camada **Depois** quando a base crescer a ponto de duplicação e
    cobertura virarem sinal útil.

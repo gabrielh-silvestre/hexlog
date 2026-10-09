@@ -45,6 +45,16 @@ const NO_DYNAMIC_IMPORT = [
   },
 ];
 
+/**
+ * @param {string[]} layers
+ * @param {string} message
+ */
+const forbidLayers = (layers, message) =>
+  layers.map((layer) => ({ group: [`**/${layer}/**`], message }));
+
+const ABOVE_MESSAGE = 'Esta camada fica abaixo dos serviços e da camada MCP.';
+const MCP_ABOVE_MESSAGE = 'Serviços ficam abaixo da camada MCP: nunca a importam.';
+
 const MAX_LINES = { 'max-lines': ['error', { max: 800 }] };
 
 /**
@@ -125,20 +135,30 @@ const scriptsBlock = {
 
 export const boundaryBlocks = [
   restrictImports(['src/domain/**/*.ts'], {
-    extraGroups: ['commands', 'queries', 'mcp', 'shared'].map((layer) => ({
-      group: [`**/${layer}/**`],
-      message: 'domain não importa camadas de fora do núcleo.',
-    })),
+    extraGroups: forbidLayers(
+      ['commands', 'queries', 'mcp', 'shared'],
+      'domain não importa camadas de fora do núcleo.',
+    ),
   }),
-  restrictImports(['src/shared/**/*.ts']),
+  restrictImports(['src/shared/**/*.ts'], {
+    extraGroups: forbidLayers(['commands', 'queries', 'mcp'], ABOVE_MESSAGE),
+  }),
   // `ports.ts` está na raiz de `src/`, fora de qualquer glob de camada: só declara contratos.
-  restrictImports(['src/ports.ts']),
+  restrictImports(['src/ports.ts'], {
+    extraGroups: forbidLayers(['commands', 'queries', 'mcp'], ABOVE_MESSAGE),
+  }),
   restrictImports(['src/commands/**/*.ts'], {
-    extraGroups: [{ group: ['**/queries/**'], message: 'commands não importa queries.' }],
+    extraGroups: [
+      ...forbidLayers(['queries'], 'commands não importa queries.'),
+      ...forbidLayers(['mcp'], MCP_ABOVE_MESSAGE),
+    ],
     extraRules: MAX_LINES,
   }),
   restrictImports(['src/queries/**/*.ts'], {
-    extraGroups: [{ group: ['**/commands/**'], message: 'queries não importa commands.' }],
+    extraGroups: [
+      ...forbidLayers(['commands'], 'queries não importa commands.'),
+      ...forbidLayers(['mcp'], MCP_ABOVE_MESSAGE),
+    ],
     extraRules: MAX_LINES,
   }),
   adaptersBlock,

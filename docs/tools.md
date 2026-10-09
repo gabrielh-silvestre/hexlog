@@ -121,7 +121,8 @@ definição, também recebe `TYPE_NOT_FOUND`.
 Grava um lote de 1 a 50 registros numa **única linha** do log (`{"links":[...]}`, um elo
 por registro), atômico: ou todos entram ou nenhum. A entrada traz `project`, `process`,
 `agent` (1 a 100 caracteres: o agente ou a skill que chama), `model` (opcional,
-autodeclarado), `key` opcional e `records`; o `client` o servidor preenche. Cada item traz `type` (um tipo fixado no processo), `target`,
+autodeclarado), `key` opcional e `records`; o `client` o servidor preenche (`unknown` quando o cliente não envia o envelope
+`clientInfo`). Cada item traz `type` (um tipo fixado no processo), `target`,
 `data` (validado pelo schema do tipo, até 16.000 caracteres canônicos), `alias`
 opcional e `relations` opcionais. Devolve `{records, replayed, marker}`: os ids na
 ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabeça do
@@ -147,8 +148,8 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   são `INVALID_RECORD`; ciclo é `CYCLE_REJECTED`; destino inexistente é
   `RELATION_NOT_FOUND`.
 - Só `supersedes`, `revokes` e `supports` conferem a vigência do destino. `contradicts`
-  só tem a regra de conflito com `supports`; `answers`, `derivesFrom`, `complements` e
-  `reopens` não têm regra própria e só entram em `resolvedBy.kind` e nos filtros.
+  tem a regra de conflito com `supports` e é lido pelos gates; `answers`, `derivesFrom`,
+  `complements` e `reopens` não têm regra própria e só entram em `resolvedBy.kind` e nos filtros.
 - Citar o hash de um anexo num campo com `format: "attachment"` exige o anexo
   guardado e íntegro (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`); um hash de anexo
   guardado num campo sem a marca é recusado (`unmarked-attachment`).
@@ -251,16 +252,29 @@ resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
 Verifica a sequência, o encadeamento de hash a partir da âncora (o hash de
 `process.json`) e os anexos que os registros citam. Cadeia quebrada é **resultado**,
 não erro: `ok` só é `true` com `breaks` e `attachmentBreaks` vazios. Devolve
-`totalRecords`, `head`, `breaks` e `totalBreaks` (da cadeia, com `reason`
-`invalid-line`, `diverging-seq` ou `hash-mismatch`), `attachmentBreaks` e
+`totalRecords`, `head` (o hash do último elo; sem elo, a âncora do processo), `breaks` e
+`totalBreaks` (da cadeia, com `reason`
+`invalid-line`, `diverging-seq`, `hash-mismatch` ou `head-not-found`), `attachmentBreaks` e
 `totalAttachmentBreaks` (`attachment-missing` ou `attachment-corrupted`, por registro
 e hash) e `repairedLines`. `breaks[].index` e `repairedLines` são posições de linha do
-arquivo, contadas a partir de 0, e não `seq`. `breaks` e `attachmentBreaks` vão até 100
+arquivo, contadas a partir de 0, e não `seq`, exceto em `head-not-found`, que leva `totalRecords`. `breaks` e `attachmentBreaks` vão até 100
 itens, com o total real ao lado; `repairedLines` também vai até 100, sem total.
 Restos de gravações que falharam não quebram a cadeia: a cauda sem `\n` entra se for um elo
 válido (o lote ficou inteiro e só faltou o `\n`), e linhas rasgadas seguidas de um elo
-válido aparecem em `repairedLines`; o resto rasgado no fim é ignorado e não consome `seq`. Trocar, remover ou
-alterar uma linha válida segue sendo quebra.
+válido aparecem em `repairedLines`; o resto rasgado no fim é ignorado e não consome `seq`. Trocar ou
+alterar uma linha válida, ou remover uma do meio, é quebra. Remover as últimas linhas não: o log
+que sobra é uma cadeia íntegra, e isso só aparece contra um head guardado antes.
+
+A entrada opcional `expectedHead` (hash sha256 hex, o mesmo valor do campo `head` de uma
+verificação anterior) é essa âncora externa. Se for o hash de algum elo válido do log, o último
+ou um anterior (o log pode ter crescido depois), ou a âncora do processo, nada muda. Se não for
+nenhum desses, `breaks`
+ganha `{ index: totalRecords, reason: "head-not-found" }`, contada em `totalBreaks`, e `ok` fica
+`false`: cauda apagada ou reescrita. A entrada respeita o teto de 100 de `breaks`. Sem
+`expectedHead` o comportamento é o de sempre, e formato que não é hash é `INVALID_INPUT` em
+`/expectedHead`, inclusive a string vazia. Enviar sempre a âncora equivale a omitir
+`expectedHead`, e `totalRecords: 0` indica log vazio. O `register` não muda, e o marcador de `query` e `evaluate_gate` continua sendo
+um id de registro.
 
 ## `attach` e `read_attachment`
 
@@ -296,7 +310,9 @@ com `format: "attachment"`. Informe exatamente um entre:
 (1 a 24.000, padrão 24.000). Devolve `{text, next?, status: "ok"}`, com `next` o
 `offset` da página seguinte e ausente na última; concatenar as páginas dá exatamente
 o texto original, e uma página nunca parte um par surrogate. `offset` além do fim do texto
-é `INVALID_INPUT` em `/offset` com `out-of-range`. Anexo ausente é
+é `INVALID_INPUT` em `/offset` com `out-of-range`, e `offset` entre as duas metades de um
+par surrogate é `INVALID_INPUT` em `/offset` com `mid-surrogate-pair` (use o `next`
+devolvido). Anexo ausente é
 `ATTACHMENT_NOT_FOUND`, adulterado é `ATTACHMENT_CORRUPTED`.
 
 Blobs são imutáveis e nunca apagados; um blob que seja symlink, FIFO, diretório ou

@@ -18,14 +18,18 @@ import type { ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
 export const MAX_BREAKS = 100;
 const MAX_REPAIRED = 100;
 
-/** Elo quebrado: `index` é a posição da linha no arquivo, contada a partir de 0. */
-export type Break = { index: number; reason: LinkRejection };
+/**
+ * Elo quebrado: `index` é a posição da linha no arquivo, contada a partir de 0. `head-not-found`
+ * vem de `checkExpectedHead` e leva `totalRecords` no lugar da posição, porque o elo que falta
+ * não está no arquivo.
+ */
+export type Break = { index: number; reason: LinkRejection | 'head-not-found' };
 
 /** Resultado da verificação da cadeia de um processo (`verify_chain`). */
 export type Chain = {
   ok: boolean;
   totalRecords: number;
-  /** Hash do último elo contado; vazio enquanto nenhum elo entrou. */
+  /** Hash do último elo contado; sem elo contado, a âncora do processo (o hash do manifesto). */
   head: string;
   breaks: Break[];
   totalBreaks: number;
@@ -213,13 +217,44 @@ export function verifyProcess(raw: RawProcess, marker?: RecordId | null): Verifi
     chain: {
       ok: breaks.length === 0,
       totalRecords: records.length,
-      head: view.end.seq === 0 ? '' : view.end.prevHash,
+      head: view.end.prevHash,
       breaks: breaks.slice(0, MAX_BREAKS),
       totalBreaks: breaks.length,
       repairedLines: repairedLines.slice(0, MAX_REPAIRED),
     },
     batches: indexBatches(view.lines),
     end: view.end,
+  };
+}
+
+/**
+ * Head guardado contra truncamento: `expectedHead` (o `head` de uma verificação anterior) tem de
+ * ser o hash de algum elo válido, o último ou um anterior, porque o log pode ter crescido depois,
+ * ou a âncora do processo (hash do manifesto), que precede todo elo e é o `head` de um log vazio.
+ * Fora disso a cadeia ganha a quebra `head-not-found` (cauda apagada ou reescrita). A quebra
+ * respeita o teto `MAX_BREAKS` na lista e conta sempre em `totalBreaks`.
+ */
+export function checkExpectedHead(
+  { chain, records, manifest }: Pick<VerifiedProcess, 'chain' | 'records' | 'manifest'>,
+  expectedHead: Hash,
+): Chain {
+  // O head da própria verificação fecha sem re-hashear o log e vale mesmo com quebra no meio, onde
+  // `chain.head` pode ser de uma linha rejeitada que não está em `records`.
+  // ponytail: o `some` re-hasheia todos os elos quando o head não é o último; o teto de 64 MiB do
+  // log (`MAX_LOG_BYTES`) limita essa segunda passada, e expor os hashes que o `parseLog` já calcula em `isValidLink` a evitaria.
+  if (
+    expectedHead === chain.head ||
+    expectedHead === anchor(manifest) ||
+    records.some((link) => hashLink(link) === expectedHead)
+  ) {
+    return chain;
+  }
+  const missing: Break = { index: chain.totalRecords, reason: 'head-not-found' };
+  return {
+    ...chain,
+    ok: false,
+    breaks: chain.breaks.length < MAX_BREAKS ? [...chain.breaks, missing] : chain.breaks,
+    totalBreaks: chain.totalBreaks + 1,
   };
 }
 

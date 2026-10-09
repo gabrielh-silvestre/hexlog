@@ -4,8 +4,8 @@ import { Name, Target, TypeNames } from './ids.ts';
 import type { RecordId } from './ids.ts';
 import { RelationKind } from './record.ts';
 import type { HexRecord } from './record.ts';
-import { buildVigency, pushTo } from './relations.ts';
-import type { Vigency } from './relations.ts';
+import { buildVigency, incomingOf } from './relations.ts';
+import type { Incoming, Vigency } from './relations.ts';
 
 /** Valor de `where`: só escalar, para que operadores entrem numa minor sem colidir com objeto. */
 const Scalar = z.union([z.string(), z.number(), z.boolean()]);
@@ -101,22 +101,14 @@ export type GateInput = {
   records: (scope: GateScope) => readonly HexRecord[];
 };
 
-type Incoming = { kind: RelationKind; from: HexRecord };
-
 type View = {
   records: readonly HexRecord[];
   vigency: Vigency;
-  incoming: ReadonlyMap<RecordId, Incoming[]>;
+  incoming: ReadonlyMap<RecordId, Incoming<HexRecord>[]>;
 };
 
 function buildView(records: readonly HexRecord[]): View {
-  const incoming = new Map<RecordId, Incoming[]>();
-  for (const from of records) {
-    for (const { kind, to } of from.relations) {
-      pushTo(incoming, to, { kind, from });
-    }
-  }
-  return { records, vigency: buildVigency(records), incoming };
+  return { records, vigency: buildVigency(records), incoming: incomingOf(records) };
 }
 
 type Context = { view: View; target?: Target };

@@ -174,6 +174,34 @@ describe('N11: tetos de read_attachment e de query', () => {
     const body = expectError(result, 'INVALID_INPUT');
     expect(body.details).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
   });
+
+  // Entrada exatamente no teto passa do zod: o erro vem do serviço, não de INVALID_INPUT.
+  test.each([
+    ['limit de 200', { limit: 200 }],
+    ['text de 200 caracteres', { text: 't'.repeat(200) }],
+    ['ids com 200 itens', { ids: Array.from({ length: 200 }, () => `${PROCESS}:${UUID}`) }],
+    ['where com 50 chaves', { where: manyKeys(50, 'v') }],
+    ['fields com 50 nomes', { fields: Array.from({ length: 50 }, (_, i) => `f${i}`) }],
+    ['changesSince com 200 chaves', { changesSince: manyKeys(200, null) }],
+  ])('query com %s chega ao serviço', async (_title, patch) => {
+    const result = await environment.call('query', {
+      project: PROJECT,
+      process: PROCESS,
+      ...patch,
+    });
+
+    expectError(result, 'PROCESS_NOT_FOUND');
+  });
+
+  test('read_attachment com maxChars de 24.000 chega ao serviço', async () => {
+    const result = await environment.call('read_attachment', {
+      project: PROJECT,
+      hash: HASH,
+      maxChars: 24_000,
+    });
+
+    expectError(result, 'ATTACHMENT_NOT_FOUND');
+  });
 });
 
 describe('N5: chave própria __proto__ nos args crus', () => {
@@ -222,6 +250,32 @@ describe('N5: chave própria __proto__ nos args crus', () => {
       process: PROCESS,
     });
     expect(page.records).toEqual([]);
+  });
+});
+
+describe('M7: aninhamento acima de 64 níveis nos args crus', () => {
+  const nest = (levels: number): Record<string, unknown> =>
+    Array.from({ length: levels }).reduce<Record<string, unknown>>((inner) => ({ a: inner }), {});
+
+  test('data de register com 2.000 níveis é INVALID_INPUT too-deep, não INTERNAL', async () => {
+    const result = await environment.call(
+      'register',
+      registerInput({ records: [item({ data: nest(2000) })] }),
+    );
+
+    const body = expectError(result, 'INVALID_INPUT');
+    expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
+  });
+
+  test('schema de define_type com 2.000 níveis é INVALID_INPUT too-deep, não INTERNAL', async () => {
+    const result = await environment.call('define_type', {
+      project: PROJECT,
+      name: 'deep',
+      schema: nest(2000),
+    });
+
+    const body = expectError(result, 'INVALID_INPUT');
+    expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
   });
 });
 

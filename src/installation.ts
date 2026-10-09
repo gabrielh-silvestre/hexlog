@@ -25,7 +25,7 @@ import {
 import { sha256hex } from './domain/chain.ts';
 import { HexlogError } from './errors.ts';
 import { dataDir } from './directory.ts';
-import { errnoCode, writeFileAtomic } from './adapters/fs/atomic.ts';
+import { errnoCode, isDirectoryTaken, writeFileAtomic } from './adapters/fs/atomic.ts';
 import { orIfMissing, readIfPresent } from './adapters/fs/io.ts';
 
 export type Bundles = { server: Buffer; hook: Buffer };
@@ -63,6 +63,10 @@ export function readManifest(versionDir: string): InstallManifest | null {
 
 type Shas = { server: string | null; hook: string | null };
 
+function shasOf(bundles: Bundles): BuildShas {
+  return { server: sha256hex(bundles.server), hook: sha256hex(bundles.hook) };
+}
+
 function installedShas(versionDir: string): Shas {
   const shaOfFile = (name: string): string | null => {
     const file = path.join(versionDir, name);
@@ -82,8 +86,7 @@ function shasEqual(a: Shas, b: Shas): boolean {
 /** `ENOENT` cobre a reinstalação: o primeiro `renameSync(versionDir, old)` acha `versionDir` já
  * movido por outro instalador que chegou primeiro — mesma resolução de `ENOTEMPTY`/`EEXIST`. */
 function isDirectoryBusyError(error: unknown): boolean {
-  const code = errnoCode(error);
-  return code === 'ENOTEMPTY' || code === 'EEXIST' || code === 'ENOENT';
+  return isDirectoryTaken(error) || errnoCode(error) === 'ENOENT';
 }
 
 /** Verifica o artefato preparado em `tmp` antes de trocar: qualquer falha aborta sem tocar em nada. */
@@ -214,9 +217,13 @@ export async function installArtifact(args: {
 }> {
   const { home, version, bundles, commit, dirty, clock, runHook, verifyServer } = args;
   const versionDir = versionDirOf(home, version);
-  const shaBuild = {
-    server: sha256hex(bundles.server),
-    hook: sha256hex(bundles.hook),
+  const shaBuild = shasOf(bundles);
+  const manifest: InstallManifest = {
+    version,
+    sha256: shaBuild,
+    builtAt: clock().toISOString(),
+    commit,
+    dirty,
   };
   const previousManifest = readManifest(versionDir);
   const installed = installedShas(versionDir);
@@ -226,13 +233,7 @@ export async function installArtifact(args: {
     return {
       action: 'none',
       versionDir,
-      manifest: previousManifest ?? {
-        version,
-        sha256: shaBuild,
-        builtAt: clock().toISOString(),
-        commit,
-        dirty,
-      },
+      manifest: previousManifest ?? manifest,
       warnings: [],
     };
   }
@@ -246,13 +247,6 @@ export async function installArtifact(args: {
     warnings.push('installed artifact modified; repairing');
   }
 
-  const manifest: InstallManifest = {
-    version,
-    sha256: shaBuild,
-    builtAt: clock().toISOString(),
-    commit,
-    dirty,
-  };
   const tmp = path.join(path.dirname(versionDir), `.${version}.tmp-${process.pid}`);
   rmSync(tmp, { recursive: true, force: true });
   mkdirSync(tmp, { recursive: true });
@@ -285,6 +279,9 @@ export async function installArtifact(args: {
 /**
  * Aplica o guard em `settings.json` (backup + troca atômica), só se algo mudou. `removed` lista as
  * regras de deny de um `<D>` antigo que o guard tirou, para o instalador não removê-las em silêncio.
+ * O backup guarda o estado de antes da primeira instalação e nunca é sobrescrito (reinstalar sobre
+ * um `settings.json` já alterado não perde o último estado bom); para renová-lo, apague-o. Se
+ * `settingsPath` é um symlink, grava no destino e mantém o link e o modo do arquivo.
  */
 export function registerGuard(args: { settingsPath: string; expected: ExpectedRules }): {
   changed: boolean;
@@ -303,8 +300,23 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
     throw new HexlogError('INTERNAL', 'refusing to write invalid settings.json');
   }
 
-  writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText);
-  writeFileAtomic(settingsPath, newText);
+  // `rename` sobre o próprio symlink o trocaria por arquivo regular; o destino real preserva o link.
+  const target = fs.realpathSync(settingsPath);
+  // A troca atômica cria o temporário ao lado do destino: sem diretório gravável (ex.: `/nix/store`),
+  // falha antes do backup para não deixar um backup órfão.
+  try {
+    fs.accessSync(path.dirname(target), fs.constants.W_OK);
+  } catch {
+    throw new HexlogError('INTERNAL', `settings.json target directory is not writable: ${target}`);
+  }
+  const { mode } = fs.statSync(target);
+  try {
+    writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText, { exclusive: true });
+  } catch (error) {
+    if (errnoCode(error) !== 'EEXIST') throw error;
+  }
+  // O modo vai no temporário, antes do rename: sem janela em 0600 e sem lançar depois de gravar.
+  writeFileAtomic(target, newText, { mode: mode & 0o7777 });
   return { changed: true, removed };
 }
 
@@ -315,20 +327,54 @@ function assertValidSkillName(name: string): void {
   }
 }
 
+/** Pai do alvo real de `skillsDir` (resolve o link) se for gravável; senão `fallback`
+ * (`<home>/.claude`), onde os temporários ficavam antes e o `rename` funcionava. */
+function tempParentOf(skillsDir: string, fallback: string): string {
+  const parent = path.dirname(fs.realpathSync(skillsDir));
+  try {
+    fs.accessSync(parent, fs.constants.W_OK);
+    return parent;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Copia a pasta de uma skill (`SKILL.md` + `references/` etc.) para
  * `<home>/.claude/skills/<name>/`, com troca atômica via `swapDirectory` — mesmo
  * mecanismo de `swapArtifact`, com rollback incluso — pra uma falha no meio da
  * cópia ou da troca nunca deixar o destino ausente ou parcial. Sobrescreve sem
  * backup (decisão do usuário; diferente de `registerGuard`, que preserva
- * `.bak-hexlog`). */
+ * `.bak-hexlog`). Os temporários ficam ao lado de `skills/` (mesmo filesystem, então o
+ * `rename` segue atômico): o Claude Code varre `skills/*`, e um temporário que sobrasse
+ * ali apareceria como skill. Se `skills/` é um link, "ao lado" é o pai do alvo real
+ * (`realpath`), senão o `rename` dá `EXDEV`; sem permissão de escrita ali, volta a
+ * `<home>/.claude`. Mount direto em `skills/` segue sem
+ * cobertura: o `EXDEV` aborta, e o instalador troca as skills antes de gravar o
+ * `settings.json`. */
 export function writeSkillFolder(home: string, name: string, srcDir: string): void {
   assertValidSkillName(name);
   const dstDir = path.join(home, '.claude', 'skills', name);
-  const tmp = `${dstDir}.tmp-${process.pid}`;
+  const skillsDir = path.dirname(dstDir);
+  mkdirSync(skillsDir, { recursive: true });
+  const tempDir = tempParentOf(skillsDir, path.join(home, '.claude'));
+  const tmp = path.join(tempDir, `.hexlog-skill-${name}.tmp-${process.pid}`);
+  const old = path.join(tempDir, `.hexlog-skill-${name}.old-${process.pid}`);
   rmSync(tmp, { recursive: true, force: true });
-  cpSync(srcDir, tmp, { recursive: true });
-  const old = `${dstDir}.old-${process.pid}`;
-  swapDirectory(tmp, dstDir, old);
+  try {
+    cpSync(srcDir, tmp, { recursive: true });
+    // Versões antigas deixavam `<name>.tmp-<pid>`/`.old-<pid>` dentro de `skills/`, lidos como skill.
+    // O sufixo é só dígitos: pasta do usuário como `<name>.old-notas` não é temporário nosso.
+    const legacyTemp = new RegExp(`^${name.replaceAll('.', '\\.')}\\.(tmp|old)-\\d+$`);
+    for (const entry of fs.readdirSync(skillsDir)) {
+      if (legacyTemp.test(entry)) {
+        rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
+      }
+    }
+    swapDirectory(tmp, dstDir, old);
+  } finally {
+    // Sucesso: `tmp` já virou `dstDir`. Falha: não deixa o temporário para trás.
+    rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 /** Versão instalada segundo o `command` do hook já registrado em `settings.json`, se houver. */
@@ -394,11 +440,7 @@ export function verifyInstallation(args: {
 
   const warnings: string[] = [];
   if (!isNil(manifest) && !isNil(currentBundles) && !result.missing.includes('artifact-modified')) {
-    const shaBuild = {
-      server: sha256hex(currentBundles.server),
-      hook: sha256hex(currentBundles.hook),
-    };
-    if (!shasEqual(shaBuild, manifest.sha256)) {
+    if (!shasEqual(shasOf(currentBundles), manifest.sha256)) {
       const dirtyText = manifest.dirty ? ' (dirty)' : '';
       const headText = currentHead ?? 'unknown HEAD';
       warnings.push(

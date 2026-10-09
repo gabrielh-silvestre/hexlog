@@ -9,6 +9,7 @@ import { writeRecordsCorpus } from './fixtures/records-corpus.ts';
 import { at, copyToXdg, createTempDir, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
+const legacyFixture = path.join(__dirname, 'fixtures', 'legacy-0x');
 const PROCESS = 'run-1';
 const REF = { project: PROJECT, process: PROCESS };
 
@@ -140,6 +141,30 @@ describe('integridade', () => {
     const { code, out, err } = runExport(xdg, `${PROJECT}/${PROCESS}`);
 
     expect(err).toContain(`export failed: PROCESS_CORRUPTED: process chain is broken (${PROCESS}:`);
+    expect(out).toBe('');
+    expect(code).toBe(2);
+  });
+
+  test('process.json truncado → exit 2 e PROCESS_CORRUPTED, sem exportar nada', () => {
+    const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
+    const { manifest } = processPaths(path.join(xdg, 'hexlog'), REF);
+    fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').slice(0, 20));
+
+    const { code, out, err } = runExport(xdg, `${PROJECT}/${PROCESS}`);
+
+    expect(err).toContain('export failed: PROCESS_CORRUPTED:');
+    expect(out).toBe('');
+    expect(code).toBe(2);
+  });
+
+  test('sobre <D> com dado 0.x sai com código 2 e a mensagem do LEGACY_DATA', () => {
+    const xdg = createTempDir('xdg');
+    fs.cpSync(legacyFixture, path.join(xdg, 'hexlog'), { recursive: true });
+
+    const { code, out, err } = runExport(xdg, `${PROJECT}/${PROCESS}`);
+
+    expect(err).toContain('export failed: LEGACY_DATA:');
+    expect(err).toContain('legacy 0.x data found; archive it first');
     expect(out).toBe('');
     expect(code).toBe(2);
   });

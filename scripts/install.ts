@@ -125,11 +125,11 @@ async function install(D: string): Promise<void> {
 
   const expected = expectedRules(D, home, process.execPath, version);
   const settingsPath = path.join(home, '.claude', 'settings.json');
-  const { changed, removed } = registerGuard({ settingsPath, expected });
-
+  // As skills vêm antes do guard: se a troca falhar, o `settings.json` não chega a ser gravado.
   for (const name of names) {
     writeSkillFolder(home, name, path.join(repoRoot, 'skills', name));
   }
+  const { changed, removed } = registerGuard({ settingsPath, expected });
 
   const claudeJsonText = readIfPresent(path.join(home, '.claude.json')) ?? null;
   if (!mcpRegistered(claudeJsonText, expected)) {

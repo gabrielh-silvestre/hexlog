@@ -17,7 +17,7 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 | `dados.md` | Layout de dados em `<D>`, erros e avisos, tetos do lock, destravamento manual, recuperação de `PROCESS_CORRUPTED` e lacunas de isolamento. |
 | `desenvolvimento.md` | Comandos de desenvolvimento, scripts de leitura (`insights`, `export`, `timeline`) e como os testes se organizam. |
 | `friction-mining.md` | Como a skill `friction-mining` minera transcripts do Claude Code atrás de atrito no uso de uma tool MCP, e como portá-la a outro projeto. |
-| `qualidade-ci.md` | Estudo (nada instalado) de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17. |
+| `qualidade-ci.md` | Estudo (só o Dependabot version updates instalado) de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17. |
 | `qualidade-codigo.md` | Estudo de qualidade de código e teste — TypeScript, ESLint, jest, property-based testing, mutação — consultado em 2026-09-17; o tier "Agora" já está instalado, o resto é estudo. |
 | `ferramentas-similares.md` | Estudo (nada adotado) de decisionlog.ai, mcp-server-decisions e ConPort comparados ao hexlog, com fontes primárias consultadas em 2026-09-17 e 5 ideias ranqueadas. |
 | `diagrama-c3-componentes.md` | Diagrama C4 (nível C3, componentes) do servidor MCP em `src/`, gerado a partir do grafo de dependências internas descrito em `src/AGENTS.md`. |
