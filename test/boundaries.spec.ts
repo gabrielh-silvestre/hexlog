@@ -162,6 +162,53 @@ describe('ports.ts na raiz de src/ (M6)', () => {
   });
 });
 
+describe('shared e ports.ts abaixo dos serviços e da camada MCP (M12)', () => {
+  test.each([
+    ['src/shared/probe.ts', '../commands/x.ts'],
+    ['src/shared/probe.ts', '../queries/x.ts'],
+    ['src/shared/probe.ts', '../mcp/kernel.ts'],
+    ['src/ports.ts', './commands/x.ts'],
+    ['src/ports.ts', './queries/x.ts'],
+    ['src/ports.ts', './mcp/kernel.ts'],
+  ])('%s não importa %s', async (file, specifier) => {
+    expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
+  });
+
+  test.each([
+    ['src/shared/probe.ts', '../domain/ids.ts'],
+    ['src/shared/probe.ts', '../ports.ts'],
+    ['src/shared/probe.ts', '../errors.ts'],
+    ['src/shared/probe.ts', './logger.ts'],
+  ])('%s pode importar %s', async (file, specifier) => {
+    expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
+  });
+});
+
+describe('commands e queries não importam mcp (M12)', () => {
+  test.each(['commands', 'queries'])('%s não importa mcp', async (layer) => {
+    expect(await ruleIdsOfText(`src/${layer}/probe.ts`, importing('../mcp/kernel.ts'))).toEqual([
+      'no-restricted-imports',
+    ]);
+  });
+
+  test.each(['commands', 'queries'])(
+    '%s pode importar domain, shared, ports e errors',
+    async (layer) => {
+      const code = ['../domain/ids.ts', '../shared/loader.ts', '../ports.ts', '../errors.ts']
+        .map((specifier) => `import '${specifier}';\n`)
+        .join('');
+      expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual([]);
+    },
+  );
+
+  test.each([
+    ['src/mcp/tools/probe.ts', '../../commands/x.ts'],
+    ['src/mcp/tools/probe.ts', '../../queries/x.ts'],
+  ])('%s pode importar %s (mcp chama serviços)', async (file, specifier) => {
+    expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
+  });
+});
+
 describe('adapters sem commands, queries nem mcp (M30)', () => {
   test.each(['commands', 'queries', 'mcp'])('adapters não importa %s', async (layer) => {
     expect(
