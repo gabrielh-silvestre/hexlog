@@ -327,25 +327,41 @@ function assertValidSkillName(name: string): void {
   }
 }
 
+/** Pai do alvo real de `skillsDir` (resolve o link) se for gravável; senão `fallback`
+ * (`<home>/.claude`), onde os temporários ficavam antes e o `rename` funcionava. */
+function tempParentOf(skillsDir: string, fallback: string): string {
+  const parent = path.dirname(fs.realpathSync(skillsDir));
+  try {
+    fs.accessSync(parent, fs.constants.W_OK);
+    return parent;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Copia a pasta de uma skill (`SKILL.md` + `references/` etc.) para
  * `<home>/.claude/skills/<name>/`, com troca atômica via `swapDirectory` — mesmo
  * mecanismo de `swapArtifact`, com rollback incluso — pra uma falha no meio da
  * cópia ou da troca nunca deixar o destino ausente ou parcial. Sobrescreve sem
  * backup (decisão do usuário; diferente de `registerGuard`, que preserva
- * `.bak-hexlog`). Os temporários ficam ao lado de `skills/`, em `<home>/.claude/` (mesmo
- * filesystem, então o `rename` segue atômico): o Claude Code varre `skills/*`, e um
- * temporário que sobrasse ali apareceria como skill. */
+ * `.bak-hexlog`). Os temporários ficam ao lado de `skills/` (mesmo filesystem, então o
+ * `rename` segue atômico): o Claude Code varre `skills/*`, e um temporário que sobrasse
+ * ali apareceria como skill. Se `skills/` é um link, "ao lado" é o pai do alvo real
+ * (`realpath`), senão o `rename` dá `EXDEV`; sem permissão de escrita ali, volta a
+ * `<home>/.claude`. Mount direto em `skills/` segue sem
+ * cobertura: o `EXDEV` aborta, e o instalador troca as skills antes de gravar o
+ * `settings.json`. */
 export function writeSkillFolder(home: string, name: string, srcDir: string): void {
   assertValidSkillName(name);
-  const claudeDir = path.join(home, '.claude');
-  const dstDir = path.join(claudeDir, 'skills', name);
-  const tmp = path.join(claudeDir, `.hexlog-skill-${name}.tmp-${process.pid}`);
-  const old = path.join(claudeDir, `.hexlog-skill-${name}.old-${process.pid}`);
+  const dstDir = path.join(home, '.claude', 'skills', name);
+  const skillsDir = path.dirname(dstDir);
+  mkdirSync(skillsDir, { recursive: true });
+  const tempDir = tempParentOf(skillsDir, path.join(home, '.claude'));
+  const tmp = path.join(tempDir, `.hexlog-skill-${name}.tmp-${process.pid}`);
+  const old = path.join(tempDir, `.hexlog-skill-${name}.old-${process.pid}`);
   rmSync(tmp, { recursive: true, force: true });
   try {
     cpSync(srcDir, tmp, { recursive: true });
-    const skillsDir = path.dirname(dstDir);
-    mkdirSync(skillsDir, { recursive: true });
     // Versões antigas deixavam `<name>.tmp-<pid>`/`.old-<pid>` dentro de `skills/`, lidos como skill.
     // O sufixo é só dígitos: pasta do usuário como `<name>.old-notas` não é temporário nosso.
     const legacyTemp = new RegExp(`^${name.replaceAll('.', '\\.')}\\.(tmp|old)-\\d+$`);

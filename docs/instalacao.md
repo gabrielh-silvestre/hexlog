@@ -35,7 +35,7 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    executam.
 3. Registra as 4 regras de deny e o hook PreToolUse em
    `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog`, gravado
-   na primeira troca e nunca sobrescrito; se `settings.json` é um symlink, o
+   na troca que o cria e nunca mais sobrescrito; se `settings.json` é um symlink, o
    instalador grava no destino e mantém o link e o modo; se o diretório do destino
    não é gravável, como no `/nix/store`, ele falha antes do backup) e registra o
    servidor MCP em escopo `user`. A regra de deny
@@ -45,9 +45,13 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 4. Copia cada pasta de `skills/` (hoje `hexlog`, `hexlog-flow` e
    `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
    backup, em toda execução, mesmo sem mudança no artefato. Os temporários da
-   troca ficam em `~/.claude/`, fora de `skills/`: se `~/.claude/skills` é
-   symlink ou mount em outro filesystem, o `rename` falha com `EXDEV`, então
-   mantenha `skills/` no mesmo filesystem de `~/.claude/`. Temporários
+   troca ficam ao lado de `skills/`, fora dela: em `~/.claude/` ou, se
+   `~/.claude/skills` é um link, no pai do alvo real (se esse pai não for gravável,
+   volta a `~/.claude/`). Se `~/.claude/skills` é
+   ponto de montagem de outro filesystem, o `rename` falha com `EXDEV` e o
+   instalador aborta sem gravar o `settings.json` (a cópia das skills roda antes
+   do passo 3); mantenha `skills/`
+   no filesystem de `~/.claude/`. Temporários
    `skills/<nome>.tmp-<pid>` e `.old-<pid>` de versões antigas do instalador são
    removidos nessa cópia.
 
@@ -133,9 +137,14 @@ lembrete de que existe um build mais novo disponível. Sem item pendente nem avi
 
 ## Como reverter
 
-1. Restaurar `~/.claude/settings.json.bak-hexlog` (o estado de antes da primeira
-   instalação) sobre `~/.claude/settings.json`, ou remover manualmente as 4
-   regras de deny e a entrada do hook do hexlog em `hooks.PreToolUse`.
+1. Restaurar `~/.claude/settings.json.bak-hexlog` (o estado de antes da troca que
+   o criou) sobre `~/.claude/settings.json`, ou remover manualmente as 4
+   regras de deny e a entrada do hook do hexlog em `hooks.PreToolUse`. A
+   restauração desfaz também as edições posteriores do arquivo (permissões,
+   hooks, `env`), e o backup guarda o `env` daquele momento, inclusive segredos
+   já rotacionados. Quem atualizou da 1.1.1 ou anterior tem um backup anterior à
+   última instalação antiga: apague-o antes de reinstalar para a próxima troca
+   gravar um backup novo.
 2. `claude mcp remove hexlog -s user`.
 3. `rm -rf ~/.local/lib/hexlog`.
 4. `rm -rf ~/.claude/skills/hexlog ~/.claude/skills/hexlog-flow ~/.claude/skills/hexlog-setup`.
