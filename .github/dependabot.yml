@@ -1,0 +1,14 @@
+version: 2
+
+# PRs de atualização vão para develop, a base de trabalho (main só recebe hotfix e release).
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
