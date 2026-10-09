@@ -25,7 +25,7 @@ import {
 import { sha256hex } from './domain/chain.ts';
 import { HexlogError } from './errors.ts';
 import { dataDir } from './directory.ts';
-import { errnoCode, writeFileAtomic } from './adapters/fs/atomic.ts';
+import { errnoCode, isDirectoryTaken, writeFileAtomic } from './adapters/fs/atomic.ts';
 import { orIfMissing, readIfPresent } from './adapters/fs/io.ts';
 
 export type Bundles = { server: Buffer; hook: Buffer };
@@ -86,8 +86,7 @@ function shasEqual(a: Shas, b: Shas): boolean {
 /** `ENOENT` cobre a reinstalação: o primeiro `renameSync(versionDir, old)` acha `versionDir` já
  * movido por outro instalador que chegou primeiro — mesma resolução de `ENOTEMPTY`/`EEXIST`. */
 function isDirectoryBusyError(error: unknown): boolean {
-  const code = errnoCode(error);
-  return code === 'ENOTEMPTY' || code === 'EEXIST' || code === 'ENOENT';
+  return isDirectoryTaken(error) || errnoCode(error) === 'ENOENT';
 }
 
 /** Verifica o artefato preparado em `tmp` antes de trocar: qualquer falha aborta sem tocar em nada. */

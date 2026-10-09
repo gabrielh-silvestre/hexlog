@@ -10,6 +10,12 @@ export function errnoCode(error: unknown): string | undefined {
     : undefined;
 }
 
+/** O `rename`/`rmdir` de diretório que achou o destino ocupado e não vazio (`ENOTEMPTY` ou `EEXIST`). */
+export function isDirectoryTaken(error: unknown): boolean {
+  const code = errnoCode(error);
+  return code === 'ENOTEMPTY' || code === 'EEXIST';
+}
+
 export type WriteFileAtomicOptions = {
   /** `true`: não sobrescreve. Se `file` já existe, lança o `EEXIST` do `linkSync`, sem empacotar. */
   exclusive?: boolean;
