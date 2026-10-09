@@ -121,7 +121,8 @@ definição, também recebe `TYPE_NOT_FOUND`.
 Grava um lote de 1 a 50 registros numa **única linha** do log (`{"links":[...]}`, um elo
 por registro), atômico: ou todos entram ou nenhum. A entrada traz `project`, `process`,
 `agent` (1 a 100 caracteres: o agente ou a skill que chama), `model` (opcional,
-autodeclarado), `key` opcional e `records`; o `client` o servidor preenche. Cada item traz `type` (um tipo fixado no processo), `target`,
+autodeclarado), `key` opcional e `records`; o `client` o servidor preenche (`unknown` quando o cliente não envia o envelope
+`clientInfo`). Cada item traz `type` (um tipo fixado no processo), `target`,
 `data` (validado pelo schema do tipo, até 16.000 caracteres canônicos), `alias`
 opcional e `relations` opcionais. Devolve `{records, replayed, marker}`: os ids na
 ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabeça do
@@ -147,8 +148,8 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   são `INVALID_RECORD`; ciclo é `CYCLE_REJECTED`; destino inexistente é
   `RELATION_NOT_FOUND`.
 - Só `supersedes`, `revokes` e `supports` conferem a vigência do destino. `contradicts`
-  só tem a regra de conflito com `supports`; `answers`, `derivesFrom`, `complements` e
-  `reopens` não têm regra própria e só entram em `resolvedBy.kind` e nos filtros.
+  tem a regra de conflito com `supports` e é lido pelos gates; `answers`, `derivesFrom`,
+  `complements` e `reopens` não têm regra própria e só entram em `resolvedBy.kind` e nos filtros.
 - Citar o hash de um anexo num campo com `format: "attachment"` exige o anexo
   guardado e íntegro (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`); um hash de anexo
   guardado num campo sem a marca é recusado (`unmarked-attachment`).

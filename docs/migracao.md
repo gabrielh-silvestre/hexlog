@@ -38,6 +38,10 @@ instalar e sem apagar nada que não esteja no `.tar` verificado.
 - **Retomada:** se a execução cair depois de gerar o `.tar`, rodar de novo reusa o
   `.tar` mais novo que contém todo arquivo restante com o mesmo sha256, em vez de
   gerar outro.
+- **Instalação que falha depois do arquivamento:** o dado já está no `.tar`. Se a
+  remoção de `<D>` terminou, rode `node scripts/install.ts` de novo, sem a flag, e a
+  instalação conclui. Se o arquivamento caiu antes de remover tudo, sem a flag o
+  instalador só lista (exit 2): rode com `--archive-0x`, que reaproveita o `.tar`.
 - **Um ou vários `.tar`:** uma execução com arquivo novo no 0.x gera outro `.tar`
   em vez de reescrever o anterior, então `<D>/archive/` pode ter mais de um. O
   nome tem resolução de segundo: dois arquivamentos no mesmo segundo que precisem

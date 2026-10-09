@@ -43,7 +43,7 @@ afterAll(() => {
 });
 
 /** Cliente stdio sobre o bundle; `HOME` e `XDG_DATA_HOME` temporários, o `<D>` real nunca é tocado. */
-async function connect(options: { xdg?: string; clientName?: string } = {}) {
+async function connect(options: { xdg?: string; clientName?: string; noEnvelope?: boolean } = {}) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [path.join(bundleDir, 'server.mjs')],
@@ -65,7 +65,9 @@ async function connect(options: { xdg?: string; clientName?: string } = {}) {
   client.onerror = (error) => transportErrors.push(error);
   await client.connect(transport);
   // O envelope vai por `_meta` em cada chamada: é de onde o servidor lê o `client` do autor (D-21).
-  const _meta = { [CLIENT_INFO_META_KEY]: { name: clientName, version: '0.0.0' } };
+  const _meta = options.noEnvelope
+    ? undefined
+    : { [CLIENT_INFO_META_KEY]: { name: clientName, version: '0.0.0' } };
   const call = async (name: string, args: Record<string, unknown> = {}) =>
     (await client.callTool({ name, arguments: args, _meta })) as CallResult;
   return { client, call, stderr: () => stderr, transportErrors };
@@ -159,6 +161,20 @@ describe('P8 e TM1: bundle real por stdio', () => {
         .structuredContent as QueryResult;
 
       expect(at(page.records, 0).author).toEqual({ agent: 'e2e-agent', client: 'claude-code' });
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+
+  test('sem o envelope clientInfo o client do autor é gravado como unknown', async () => {
+    const { client, call } = await connect({ noEnvelope: true });
+    try {
+      await seedNotes(call, 1);
+
+      const page = (await call('query', { project: PROJECT, process: PROCESS }))
+        .structuredContent as QueryResult;
+
+      expect(at(page.records, 0).author).toEqual({ agent: 'e2e-agent', client: 'unknown' });
     } finally {
       await client.close();
     }

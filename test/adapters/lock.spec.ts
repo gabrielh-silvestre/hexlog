@@ -293,9 +293,9 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       const error = manager.acquire(lockDir);
 
       expect(await timeoutOf(error, dir)).toEqual(timeout('holder-unreadable'));
-      expect((await rejectionOf(error, dir)).details[0]?.message).toContain(
-        'ask the user to remove the lock',
-      );
+      const { message } = (await rejectionOf(error, dir)).details[0] ?? {};
+      expect(message).toContain('ask the user to remove the lock');
+      expect(message).not.toContain('docs/dados.md');
       expect(fs.readFileSync(holderFile, 'utf8')).toBe(content);
       expect(records).toEqual([]);
     });

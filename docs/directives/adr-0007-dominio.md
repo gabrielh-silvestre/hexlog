@@ -78,3 +78,10 @@ Este ADR registra o catálogo, as regras de relação e vigência, o versionamen
 - Gate sem detecção de quebra depende da skill: o agente que esquece o `breaking: true` aperta o gate numa minor, e o servidor não avisa.
 - A regra `supersedes-and-revokes` (decisão 8) vem da decisão do PR #60 (N1); a lista de códigos de `details` (decisões 7 e 8) bate com `src/domain/relations.ts#RuleCode`, e o catálogo de erros não muda.
 - A partir da 1.0, ADR não é refeito nem apagado, só recebe emenda (esta troca é a exceção única).
+
+## Emendas datadas
+
+Um ADR aceito não é refeito: cada entrada abaixo diz o que mudou, por quê e quem decidiu.
+
+- **2026-10-09, item 1: o `client` do autor vem do envelope, e `unknown` é esperado em cliente antigo (decisão do dono, Gabriel Baldino, na issue #94).** O item diz que o `client` é preenchido "a partir do `clientInfo` da conexão". No código ele vem do envelope `io.modelcontextprotocol/clientInfo` da era MCP 2026-07-28 (`src/mcp/kernel.ts#clientOf`), não da conexão: o Client 2.0.0 negocia 2025-11-25, sem envelope, e o `author` sai com `client: "unknown"`, que entra no hash do elo. `unknown` é o valor esperado nesse cliente, fica no log e não ganha fallback (opção A da issue); o teste e2e `test/stdio.e2e.spec.ts` trava o comportamento sobre o bundle real.
+- **2026-10-09, item 2: só `supports` e `contradicts` têm semântica, e `answers` é rótulo guardado (registro do comportamento implementado; sem decisão nova do dono).** O item lista `answers` entre as relações que o hexlog entende. No código, `answers` não tem regra em `src/domain/relations.ts`: é um rótulo guardado como `derivesFrom`, `complements` e `reopens`, que só aparece em `resolvedBy.kind` do gate `no_pending` (que aceita qualquer relação) e nos filtros. `contradicts` tem regra de escrita (conflito com `supports` do mesmo registro para o mesmo destino, `supports-and-contradicts`) e é lido pelos gates `approved` e `no_open_contradiction` (`src/domain/gate.ts`). O item 9 já diz que só `supports` confere a vigência do destino.
