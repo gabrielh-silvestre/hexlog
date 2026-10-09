@@ -42,7 +42,10 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    mantém as regras, porque o deny é o isolamento do dado que ele guarda.
 4. Copia cada pasta de `skills/` (hoje `hexlog`, `hexlog-flow` e
    `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
-   backup, em toda execução, mesmo sem mudança no artefato.
+   backup, em toda execução, mesmo sem mudança no artefato. Os temporários da
+   troca ficam em `~/.claude/`, fora de `skills/`: se `~/.claude/skills` é
+   symlink ou mount em outro filesystem, o `rename` falha com `EXDEV`, então
+   mantenha `skills/` no mesmo filesystem de `~/.claude/`.
 
 Com dado 0.x em `<D>`, o comando só lista o que arquivaria (`scripts/install.ts#listLegacy`)
 e sai com 2, sem instalar nada: veja [Dado 0.x](migracao.md#dado-0x-arquivamento---archive-0x).
