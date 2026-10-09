@@ -33,7 +33,9 @@ POSIX (`rename` e `link` atômicos).
   elo é `sha256(prevHash + JCS(elo sem prevHash))` (JCS, RFC 8785;
   `src/domain/chain.ts#hashLink`), e o `prevHash` do primeiro elo é a âncora. A linha é
   enquadrada por `src/shared/loader.ts#formatLine`. Não existe tool nem função que
-  reescreva ou remova uma linha. O arquivo tem teto de 64 MiB por processo
+  reescreva ou remova uma linha. Quem apaga por fora as últimas linhas deixa uma cadeia
+  íntegra: o `verify_chain` só detecta com `expectedHead`, o `head` guardado de uma
+  verificação anterior (`head-not-found`). O arquivo tem teto de 64 MiB por processo
   (`PROCESS_TOO_LARGE`).
 - **Versões de definição** são gravadas por `link` exclusivo e nunca sobrescritas. O
   `<nome>.json` legado do 0.x não existe aqui e nunca é lido.
@@ -200,7 +202,6 @@ o teste automatizado as marque como "passa":
 | `Monitor` | Não verificado: pode executar comando sem passar pelo hook. A prova exige sessão real com o hook instalado e um hook de sonda, e fica como acompanhamento do dono |
 | Hook indisponível | Node removido pelo nvm, `~/.local/lib/hexlog/<versão>/` apagado à mão, ou instalação corrompida por fora |
 | Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/1.1.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"`: o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
-| Apagar a cauda de `records.jsonl` | Remover as últimas linhas deixa uma cadeia íntegra: o `verify_chain` só detecta com `expectedHead`, o `head` guardado de uma verificação anterior (`head-not-found`) |
 | Desligar o guard editando a configuração | Editar `~/.claude/settings.json` à mão para remover deny ou hook |
 | Reinstalar a partir de código alterado | Editar `hook/bash-guard.ts` na working tree e rodar o instalador |
 
