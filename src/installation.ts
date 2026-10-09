@@ -301,14 +301,21 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
     throw new HexlogError('INTERNAL', 'refusing to write invalid settings.json');
   }
 
+  // `rename` sobre o próprio symlink o trocaria por arquivo regular; o destino real preserva o link.
+  const target = fs.realpathSync(settingsPath);
+  // A troca atômica cria o temporário ao lado do destino: sem diretório gravável (ex.: `/nix/store`),
+  // falha antes do backup para não deixar um backup órfão.
+  try {
+    fs.accessSync(path.dirname(target), fs.constants.W_OK);
+  } catch {
+    throw new HexlogError('INTERNAL', `settings.json target directory is not writable: ${target}`);
+  }
+  const { mode } = fs.statSync(target);
   try {
     writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText, { exclusive: true });
   } catch (error) {
     if (errnoCode(error) !== 'EEXIST') throw error;
   }
-  // `rename` sobre o próprio symlink o trocaria por arquivo regular; o destino real preserva o link.
-  const target = fs.realpathSync(settingsPath);
-  const { mode } = fs.statSync(target);
   writeFileAtomic(target, newText);
   // `writeFileAtomic` cria o arquivo em 0600; devolve o modo que o usuário tinha escolhido.
   fs.chmodSync(target, mode & 0o7777);

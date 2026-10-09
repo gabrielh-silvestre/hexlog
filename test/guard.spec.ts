@@ -676,6 +676,28 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
+  test('deny: registerGuard falha antes do backup quando o destino do symlink não é gravável', () => {
+    const tmpHome = createTempDir('deny-symlink-readonly');
+    const dotfiles = path.join(tmpHome, 'dotfiles');
+    try {
+      const realFile = path.join(dotfiles, 'settings.json');
+      fs.mkdirSync(dotfiles);
+      const before = settingsWithDeny(trioOf(oldD));
+      fs.writeFileSync(realFile, before);
+      const settingsPath = path.join(tmpHome, 'settings.json');
+      fs.symlinkSync(realFile, settingsPath);
+      fs.chmodSync(dotfiles, 0o555);
+
+      expect(() => registerGuard({ settingsPath, expected })).toThrow(/not writable/);
+
+      expect(fs.existsSync(`${settingsPath}.bak-hexlog`)).toBe(false);
+      expect(fs.readFileSync(realFile, 'utf8')).toBe(before);
+    } finally {
+      fs.chmodSync(dotfiles, 0o755);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
   test('deny: registerGuard devolve removed vazio quando não há <D> antigo', () => {
     const tmpHome = createTempDir('deny-removed-empty');
     try {

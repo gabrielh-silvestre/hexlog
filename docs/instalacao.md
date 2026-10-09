@@ -34,7 +34,9 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
 3. Registra as 4 regras de deny e o hook PreToolUse em
    `~/.claude/settings.json` (com backup em `settings.json.bak-hexlog`, gravado
    na primeira troca e nunca sobrescrito; se `settings.json` é um symlink, o
-   instalador grava no destino e mantém o link e o modo) e registra o servidor MCP em escopo `user`. A regra de deny
+   instalador grava no destino e mantém o link e o modo; se o diretório do destino
+   não é gravável, como no `/nix/store`, ele falha antes do backup) e registra o
+   servidor MCP em escopo `user`. A regra de deny
    de um `<D>` antigo que o guard remove é impressa (`removed deny rule: <regra>`),
    e só sai se esse diretório sumiu do disco: um `<D>` antigo que ainda existe
    mantém as regras, porque o deny é o isolamento do dado que ele guarda.
