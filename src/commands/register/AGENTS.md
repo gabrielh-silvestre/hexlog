@@ -21,7 +21,7 @@ Peças do `register` de `commands/process.ts`, divididas pelo momento da recusa:
 ### Internal
 - `../process.ts`: único chamador (o `register` usa `checkBatchShape`, `prepareBatch`, `relationNames` e `createDecide`)
 - `../../domain/` (`chain.ts`, `ids.ts`, `manifest.ts`, `record.ts`, `relations.ts`, `definitions.ts`): hash de elo, tipos, `resolveKind` e as regras de relação
-- `../../ports.ts`: `AttachmentStore`, `ProcessReader`, `RawProcess` e `Decision`
+- `../../ports.ts`: `AttachmentReader`, `ProcessReader`, `RawProcess` e `Decision`
 - `../../shared/loader.ts`: `verifyProcess`, `loadVerified`, `formatLine` e `isValidLine`
 - `../../errors.ts`: `HexlogError`, `invalidInput`, `brokenChain` e `capDetails`
 

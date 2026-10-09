@@ -3,7 +3,7 @@ import type { Link } from '../domain/chain.ts';
 import { matchesSelector, type Selector } from '../domain/gate.ts';
 import { processOf, type Name, type RecordId } from '../domain/ids.ts';
 import type { RelationKind } from '../domain/record.ts';
-import { buildVigency, pushTo, type Vigency } from '../domain/relations.ts';
+import { buildVigency, incomingOf, type Incoming, type Vigency } from '../domain/relations.ts';
 import { PROJECT_INDEX, type ProcessRef, type SearchIndex } from '../ports.ts';
 import type { Reading, ReadTarget } from './read.ts';
 
@@ -15,15 +15,13 @@ export type Filters = Selector & {
   relatedTo?: RecordId;
 };
 
-type Incoming = { kind: RelationKind; as?: Name; from: RecordId };
-
 /** Tudo que se deriva de uma leitura: registros na ordem de saída, vigência e relações de entrada. */
 export type View = {
   /** D-24: ordem de saída. */
   records: readonly Link[];
   byId: ReadonlyMap<RecordId, Link>;
   vigency: Vigency;
-  incoming: ReadonlyMap<RecordId, Incoming[]>;
+  incoming: ReadonlyMap<RecordId, Incoming<Link>[]>;
 };
 
 /**
@@ -44,23 +42,17 @@ const withAs = (as: Name | undefined) => (isUndefined(as) ? {} : { as });
 
 export function buildView(reading: Reading, scope: ReadTarget['scope']): View {
   const records = inOutputOrder(reading, scope);
-  const incoming = new Map<RecordId, Incoming[]>();
-  for (const { id, relations } of records) {
-    for (const { kind, to, as } of relations) {
-      pushTo(incoming, to, { kind, from: id, ...withAs(as) });
-    }
-  }
   return {
     records,
     byId: new Map(records.map((link) => [link.id, link])),
     vigency: buildVigency(records),
-    incoming,
+    incoming: incomingOf(records),
   };
 }
 
 /** Registros ligados a `id` por uma relação, de entrada ou de saída. */
 function relatedTo(view: View, id: RecordId): Set<RecordId> {
-  const from = view.incoming.get(id)?.map((relation) => relation.from) ?? [];
+  const from = view.incoming.get(id)?.map((relation) => relation.from.id) ?? [];
   const to = view.byId.get(id)?.relations.map((relation) => relation.to) ?? [];
   return new Set([...from, ...to]);
 }
@@ -130,8 +122,8 @@ export function relationsOf(view: View, link: Link): { in: InRelation[]; out: Ou
     in: (view.incoming.get(link.id) ?? []).map(({ kind, as, from }) => ({
       kind,
       ...withAs(as),
-      from,
-      current: view.vigency.isCurrent(from),
+      from: from.id,
+      current: view.vigency.isCurrent(from.id),
     })),
     out: link.relations.map(({ kind, as, to }) => ({
       kind,

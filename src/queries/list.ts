@@ -34,9 +34,6 @@ export function createList(deps: {
 }): (input: ListInput) => ListResult {
   const { store, definitions } = deps;
 
-  const summariesOf = (project: Name, kind: DefinitionKind): DefinitionSummary[] =>
-    latestVersions(definitions, project, kind);
-
   return ({ project, process }) => {
     if (isUndefined(project)) {
       if (!isUndefined(process)) {
@@ -67,9 +64,9 @@ export function createList(deps: {
           name,
           createdAt: store.readManifest({ project, process: name }).createdAt,
         })),
-        types: summariesOf(project, 'types'),
-        relations: summariesOf(project, 'relations'),
-        gates: summariesOf(project, 'gates'),
+        types: latestVersions(definitions, project, 'types'),
+        relations: latestVersions(definitions, project, 'relations'),
+        gates: latestVersions(definitions, project, 'gates'),
       },
     };
   };

@@ -111,13 +111,15 @@ export function readScope(
   }
 }
 
+/** Sem marcador lê tudo (`undefined`); com marcador, o processo ausente dele nasceu depois (`null`). */
+function cutOf(marker: Marker | undefined, name: Name): RecordId | null | undefined {
+  if (isUndefined(marker)) return undefined;
+  return Object.hasOwn(marker, name) ? marker[name] : null;
+}
+
 function readCut(store: ProcessReader, target: ReadTarget, marker?: Marker): Reading {
   const processes = namesOf(store, target, marker).map((name): LoadedProcess => {
-    const cutAt = isUndefined(marker)
-      ? undefined
-      : Object.hasOwn(marker, name)
-        ? marker[name]
-        : null;
+    const cutAt = cutOf(marker, name);
     const verified = loadCut(store, { project: target.project, process: name }, cutAt);
     if (!verified.chain.ok) throw brokenChain(name);
     return { name, verified };

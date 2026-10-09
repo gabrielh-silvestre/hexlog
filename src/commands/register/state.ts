@@ -14,7 +14,7 @@ import {
 } from '../../domain/relations.ts';
 import { brokenChain, HexlogError } from '../../errors.ts';
 import type {
-  AttachmentStore,
+  AttachmentReader,
   Decision,
   ProcessReader,
   ProcessRef,
@@ -59,7 +59,7 @@ export type RegisterResult = {
 
 type DecideDeps = {
   store: ProcessReader;
-  attachments: AttachmentStore;
+  attachments: AttachmentReader;
   clock: () => Date;
   newUuid: () => string;
 };

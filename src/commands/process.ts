@@ -4,10 +4,10 @@ import { isReservedProcessName, type Name } from '../domain/ids.ts';
 import type { Manifest } from '../domain/manifest.ts';
 import { HexlogError, reservedName } from '../errors.ts';
 import type {
-  AttachmentStore,
+  AttachmentReader,
   DefinitionKind,
   DefinitionOf,
-  DefinitionStore,
+  DefinitionReader,
   ProcessStore,
   Validator,
 } from '../ports.ts';
@@ -78,7 +78,7 @@ type Snapshot = {
 };
 
 function latestOf<K extends DefinitionKind>(
-  definitions: DefinitionStore,
+  definitions: DefinitionReader,
   project: Name,
   kind: K,
 ): { byName: Record<Name, DefinitionOf[K]>; versions: Map<Name, string> } {
@@ -91,7 +91,7 @@ function latestOf<K extends DefinitionKind>(
   };
 }
 
-function takeSnapshot(definitions: DefinitionStore, project: Name): Snapshot {
+function takeSnapshot(definitions: DefinitionReader, project: Name): Snapshot {
   const types = latestOf(definitions, project, 'types');
   const relations = latestOf(definitions, project, 'relations');
   const gates = latestOf(definitions, project, 'gates');
@@ -134,8 +134,8 @@ function assertSomethingRegistered(project: Name, fixed: Manifest['fixed']): voi
 
 export function createProcessService(deps: {
   store: ProcessStore;
-  definitions: DefinitionStore;
-  attachments: AttachmentStore;
+  definitions: DefinitionReader;
+  attachments: AttachmentReader;
   validator: Validator;
   clock: () => Date;
   /** Uuid v7 do id do registro (D-01): opaco, nenhuma regra lê o tempo dele. */

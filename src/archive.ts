@@ -4,8 +4,9 @@ import fs from 'node:fs';
 import * as path from 'node:path';
 import { isEqual, isNotNil, isSubset, isUndefined } from 'es-toolkit';
 import * as tar from 'tar';
-import { errnoCode, fsyncPath } from './adapters/fs/atomic.ts';
+import { errnoCode, fsyncPath, isDirectoryTaken } from './adapters/fs/atomic.ts';
 import { ARCHIVE_DIR, detectLegacy } from './adapters/fs/data-format.ts';
+import { orIfMissing, readIfPresent } from './adapters/fs/io.ts';
 import { isPidAlive } from './adapters/fs/lock.ts';
 import { sha256hex } from './domain/chain.ts';
 
@@ -211,14 +212,8 @@ function readCmdline(procDir: string, pid: string): string[] {
 
 /** O holder do 0.x (o `createLock` do log 0.x) é `<pid>-<hex>`; holder ausente ou de 0 byte é lock criado e nunca preenchido. */
 function assertLockHolderDead(holderFile: string): void {
-  let token: string;
-  try {
-    token = fs.readFileSync(holderFile, 'utf8');
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return;
-    throw error;
-  }
-  if (token === '') return;
+  const token = readIfPresent(holderFile);
+  if (isUndefined(token) || token === '') return;
 
   const pid = Number(/^(\d+)-/.exec(token)?.[1]);
   const lockDir = path.dirname(holderFile);
@@ -259,13 +254,8 @@ function readPackage(tarFile: string): string[] {
 
 /** Retomada (D-14 passo 4): o `.tar` mais novo que contém todo arquivo restante com o mesmo sha256. */
 function findReusablePackage(archiveDir: string, files: LegacyFile[]): string | undefined {
-  let names: string[];
-  try {
-    names = fs.readdirSync(archiveDir);
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return undefined;
-    throw error;
-  }
+  const names = orIfMissing(() => fs.readdirSync(archiveDir), undefined);
+  if (isUndefined(names)) return undefined;
   const wanted = signatures(files);
   return names
     .filter((name) => TAR_NAME.test(name))
@@ -317,8 +307,7 @@ function removeListed(dataDir: string, { files, dirs }: LegacyInventory): void {
     try {
       fs.rmdirSync(path.join(dataDir, dir));
     } catch (error) {
-      const code = errnoCode(error);
-      if (code !== 'ENOTEMPTY' && code !== 'EEXIST') throw error;
+      if (!isDirectoryTaken(error)) throw error;
       throw new ArchiveError(`0.x directory did not empty (a new file appeared): ${dir}`);
     }
   }

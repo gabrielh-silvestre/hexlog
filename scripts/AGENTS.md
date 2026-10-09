@@ -92,7 +92,7 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 ### External
 - `esbuild`
 - `@modelcontextprotocol/client` (`Client`, `StdioClientTransport`; devDependency)
-- `es-toolkit` (core e `es-toolkit/compat`)
+- `es-toolkit` (só o core; `es-toolkit/compat` não é importado)
 - `node:fs`, `node:os`, `node:path`, `node:child_process` (`execFileSync`), `node:util` (`parseArgs`, em `cli-error.ts`)
 
 ## Manual Notes

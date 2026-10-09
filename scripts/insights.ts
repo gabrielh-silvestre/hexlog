@@ -13,7 +13,6 @@ import {
   take,
   windowed,
 } from 'es-toolkit';
-import { isEmpty } from 'es-toolkit/compat';
 import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
 import type { Link } from '../src/domain/chain.ts';
 import { dataDir } from '../src/directory.ts';
@@ -89,7 +88,7 @@ function listed(label: string, entries: string[]): string[] {
  * gravar, então "nunca teve reenvio" não é observável no log.
  */
 function keySection(batches: BatchInfo[]): string[] {
-  if (isEmpty(batches)) return ['- key signals: no batches'];
+  if (batches.length === 0) return ['- key signals: no batches'];
   const firstOf = new Map<string, BatchInfo>();
   const duplicates: string[] = [];
   for (const batch of batches) {
@@ -179,7 +178,7 @@ function main(argv: string[]): number {
   try {
     const reader = openReadOnly();
     const targets = listTargets(reader, filter);
-    if (isEmpty(targets)) {
+    if (targets.length === 0) {
       console.log(
         `No processes found in ${dataDir(process.env)}${isNil(filter) ? '' : ` matching '${filter}'`}.`,
       );

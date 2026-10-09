@@ -1,6 +1,5 @@
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util';
 import { isUndefined } from 'es-toolkit';
-import { isEmpty } from 'es-toolkit/compat';
 import { composeReader } from '../src/compose.ts';
 import { dataDir } from '../src/directory.ts';
 import { HexlogError, legacyDataError } from '../src/errors.ts';
@@ -18,7 +17,7 @@ export function formatCliError(prefix: string, error: unknown): { text: string; 
     .map((item) => (isUndefined(item.process) ? item.message : `${item.process}: ${item.message}`))
     .join('; ');
   return {
-    text: `${prefix} failed: ${code}: ${message}${isEmpty(detail) ? '' : ` (${detail})`}`,
+    text: `${prefix} failed: ${code}: ${message}${detail.length === 0 ? '' : ` (${detail})`}`,
     exitCode: DATA_CODES.has(code) ? 2 : 1,
   };
 }

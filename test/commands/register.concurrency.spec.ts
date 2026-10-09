@@ -154,4 +154,45 @@ describe('register concorrente em processos filhos (SE5, SE3c)', () => {
     },
     TIMEOUT_MS,
   );
+
+  test(
+    'register A→B grava sem esperar o lock vivo de B: só o lock da origem é tomado',
+    async () => {
+      const { dataDir, services, verified } = setup();
+      services.process.createProcess({ project: PROJECT, process: 'run-a' });
+      services.process.createProcess({ project: PROJECT, process: 'run-b' });
+      const target = await services.process.register({
+        project: PROJECT,
+        process: 'run-b',
+        author: AUTHOR,
+        records: [note('destino')],
+      });
+      const goFile = path.join(createTempDir('register-go'), 'go');
+      const holder = await startChild('write-gated', {
+        dataDir,
+        project: PROJECT,
+        process: 'run-b',
+        goFile,
+      });
+      const exited = once(holder.child, 'close');
+
+      // Com o dono vivo em B (lock na mão, sem soltar), o `register` em A não pode esperar por ele.
+      const result = await services.process.register({
+        project: PROJECT,
+        process: 'run-a',
+        author: AUTHOR,
+        records: [note('apoio', { relations: [{ to: target.records[0]!.id, kind: 'supports' }] })],
+      });
+      fs.writeFileSync(goFile, '');
+
+      expect(result.replayed).toBe(false);
+      expect(verified('run-a').records.map(({ data }) => data.text)).toEqual(['apoio']);
+      expect(await exited).toEqual([0, null]);
+      expect(verified('run-b').records.map(({ data }) => data.text)).toEqual([
+        'destino',
+        `gated-${holder.pid}`,
+      ]);
+    },
+    TIMEOUT_MS,
+  );
 });

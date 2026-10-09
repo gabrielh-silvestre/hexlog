@@ -2,7 +2,6 @@
 // verificada na leitura; adulterada, o script sai com 2). Inclui os registros não vigentes.
 // Uso: node scripts/export.ts <project>/<process> [--fields a,b,c]
 import { difference, isNil, pick } from 'es-toolkit';
-import { isEmpty } from 'es-toolkit/compat';
 import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
 import { Name } from '../src/domain/ids.ts';
 import type { QueryRecord } from '../src/queries/query-service.ts';
@@ -48,7 +47,7 @@ function main(argv: string[]): number {
   }
 
   const { fields, invalid } = parseFields(args.values.fields);
-  if (!isEmpty(invalid)) {
+  if (invalid.length > 0) {
     console.error(
       `export failed: invalid field(s): ${invalid.join(', ')} (allowed: ${FIELDS.join(', ')})`,
     );
