@@ -5,9 +5,11 @@ import { BATCH_MAX } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { ProcessReader, ProcessRef, RawProcess } from '../../src/ports.ts';
 import {
+  checkExpectedHead,
   formatLine,
   isValidLine,
   loadVerified,
+  MAX_BREAKS,
   parseLog,
   verifyProcess,
   type Break,
@@ -414,6 +416,46 @@ describe('verifyProcess', () => {
         }),
       );
     });
+  });
+});
+
+describe('checkExpectedHead', () => {
+  const verifiedOf = (...links: Link[]) =>
+    verifyProcess(rawOf(links.map((l) => lineOf(l)).join('')));
+
+  test('o hash de qualquer elo válido devolve a cadeia sem mudar', () => {
+    const verified = verifiedOf(A, B, C);
+
+    for (const link of [A, B, C]) {
+      expect(checkExpectedHead(verified, hashLink(link))).toBe(verified.chain);
+    }
+  });
+
+  test('hash de nenhum elo vira head-not-found em totalRecords, conta em totalBreaks e zera ok', () => {
+    const verified = verifiedOf(A, B);
+
+    expect(checkExpectedHead(verified, hashLink(C))).toEqual({
+      ...verified.chain,
+      ok: false,
+      breaks: [{ index: 2, reason: 'head-not-found' }],
+      totalBreaks: 1,
+    });
+  });
+
+  test('a quebra vai depois das da cadeia e, com a lista no teto, só entra no total', () => {
+    const verified = verifyProcess(rawOf(`${lineOf(A)}${'{"foo":1}\n'.repeat(MAX_BREAKS)}`));
+
+    const chain = checkExpectedHead(verified, hashLink(C));
+
+    expect(chain.breaks).toHaveLength(MAX_BREAKS);
+    expect(chain.breaks).toEqual(verified.chain.breaks);
+    expect(chain.totalBreaks).toBe(MAX_BREAKS + 1);
+  });
+
+  test('log vazio não tem elo: qualquer hash é head-not-found no índice 0', () => {
+    expect(checkExpectedHead(verifiedOf(), hashLink(A)).breaks).toEqual([
+      { index: 0, reason: 'head-not-found' },
+    ]);
   });
 });
 

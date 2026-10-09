@@ -18,8 +18,12 @@ import type { ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
 export const MAX_BREAKS = 100;
 const MAX_REPAIRED = 100;
 
-/** Elo quebrado: `index` é a posição da linha no arquivo, contada a partir de 0. */
-export type Break = { index: number; reason: LinkRejection };
+/**
+ * Elo quebrado: `index` é a posição da linha no arquivo, contada a partir de 0. `head-not-found`
+ * vem de `checkExpectedHead` e leva `totalRecords` no lugar da posição, porque o elo que falta
+ * não está no arquivo.
+ */
+export type Break = { index: number; reason: LinkRejection | 'head-not-found' };
 
 /** Resultado da verificação da cadeia de um processo (`verify_chain`). */
 export type Chain = {
@@ -220,6 +224,26 @@ export function verifyProcess(raw: RawProcess, marker?: RecordId | null): Verifi
     },
     batches: indexBatches(view.lines),
     end: view.end,
+  };
+}
+
+/**
+ * Âncora externa contra truncamento: `expectedHead` (o `head` de uma verificação anterior) tem de
+ * ser o hash de algum elo válido, o último ou um anterior, porque o log pode ter crescido depois.
+ * Fora disso a cadeia ganha a quebra `head-not-found` (cauda apagada ou reescrita). A quebra
+ * respeita o teto `MAX_BREAKS` na lista e conta sempre em `totalBreaks`.
+ */
+export function checkExpectedHead(
+  { chain, records }: Pick<VerifiedProcess, 'chain' | 'records'>,
+  expectedHead: Hash,
+): Chain {
+  if (records.some((link) => hashLink(link) === expectedHead)) return chain;
+  const missing: Break = { index: chain.totalRecords, reason: 'head-not-found' };
+  return {
+    ...chain,
+    ok: false,
+    breaks: chain.breaks.length < MAX_BREAKS ? [...chain.breaks, missing] : chain.breaks,
+    totalBreaks: chain.totalBreaks + 1,
   };
 }
 

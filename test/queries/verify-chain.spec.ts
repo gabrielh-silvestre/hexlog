@@ -12,6 +12,8 @@ function verifySetup() {
   const setup = querySetup();
   setup.createProcess('run-1');
   const verify = (process = 'run-1') => setup.queries.verifyChain({ project: PROJECT, process });
+  const verifyAgainst = (expectedHead: Hash) =>
+    setup.queries.verifyChain({ project: PROJECT, process: 'run-1', expectedHead });
   const logFile = () => setup.logPath('run-1');
   const blobOf = (hash: Hash) => blobFile(setup.dataDir, PROJECT, hash);
   const stored = (text: string): Hash => setup.attachments.putText(PROJECT, text).hash;
@@ -20,7 +22,7 @@ function verifySetup() {
     target: 'run.doc',
     data,
   });
-  return { ...setup, verify, logFile, blobOf, stored, doc };
+  return { ...setup, verify, verifyAgainst, logFile, blobOf, stored, doc };
 }
 
 describe('verifyChain: cadeia do processo', () => {
@@ -79,6 +81,70 @@ describe('verifyChain: cadeia do processo', () => {
 
   test('processo inexistente é PROCESS_NOT_FOUND', () => {
     expect(captureError(() => verifySetup().verify('ghost')).code).toBe('PROCESS_NOT_FOUND');
+  });
+});
+
+describe('verifyChain: expectedHead como âncora contra truncamento', () => {
+  /** Reescreve o log sem as últimas `count` linhas, como quem apaga a cauda. */
+  function dropLastLines(file: string, count: number) {
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+    fs.writeFileSync(
+      file,
+      lines
+        .slice(0, -count)
+        .map((line) => `${line}\n`)
+        .join(''),
+    );
+  }
+
+  test('o head do último elo passa, e o de um elo anterior também depois de o log crescer', async () => {
+    const { registerOne, verify, verifyAgainst } = verifySetup();
+    await registerOne('run-1', note('a'));
+    const early = verify().head;
+    await registerOne('run-1', note('b'), 1);
+    const late = verify().head;
+
+    expect(verifyAgainst(late)).toMatchObject({ ok: true, breaks: [], totalBreaks: 0 });
+    expect(verifyAgainst(early)).toMatchObject({ ok: true, breaks: [], totalBreaks: 0 });
+  });
+
+  test('cauda apagada: sem expectedHead segue ok, com o head de antes vira head-not-found', async () => {
+    const { registerOne, verify, verifyAgainst, logFile } = verifySetup();
+    await registerOne('run-1', note('a'));
+    await registerOne('run-1', note('b'), 1);
+    const before = verify().head;
+    dropLastLines(logFile(), 1);
+
+    expect(verify()).toMatchObject({ ok: true, totalRecords: 1 });
+    expect(verifyAgainst(before)).toMatchObject({
+      ok: false,
+      totalRecords: 1,
+      breaks: [{ index: 1, reason: 'head-not-found' }],
+      totalBreaks: 1,
+    });
+  });
+
+  test('hash que não é de nenhum elo vira head-not-found', async () => {
+    const { registerOne, verifyAgainst } = verifySetup();
+    await registerOne('run-1', note('a'));
+
+    expect(verifyAgainst('0'.repeat(64))).toMatchObject({
+      ok: false,
+      breaks: [{ index: 1, reason: 'head-not-found' }],
+    });
+  });
+
+  test('a quebra vem depois das quebras da cadeia e respeita o teto de breaks', async () => {
+    const { registerOne, verifyAgainst, logFile } = verifySetup();
+    await registerOne('run-1', note('a'));
+    fs.appendFileSync(logFile(), '{}\n'.repeat(MAX_BREAKS + 1));
+
+    const result = verifyAgainst('0'.repeat(64));
+
+    expect(result.ok).toBe(false);
+    expect(result.breaks).toHaveLength(MAX_BREAKS);
+    expect(result.breaks.map(({ reason }) => reason)).not.toContain('head-not-found');
+    expect(result.totalBreaks).toBe(MAX_BREAKS + 2);
   });
 });
 
