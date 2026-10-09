@@ -296,7 +296,9 @@ com `format: "attachment"`. Informe exatamente um entre:
 (1 a 24.000, padrão 24.000). Devolve `{text, next?, status: "ok"}`, com `next` o
 `offset` da página seguinte e ausente na última; concatenar as páginas dá exatamente
 o texto original, e uma página nunca parte um par surrogate. `offset` além do fim do texto
-é `INVALID_INPUT` em `/offset` com `out-of-range`. Anexo ausente é
+é `INVALID_INPUT` em `/offset` com `out-of-range`, e `offset` entre as duas metades de um
+par surrogate é `INVALID_INPUT` em `/offset` com `mid-surrogate-pair` (use o `next`
+devolvido). Anexo ausente é
 `ATTACHMENT_NOT_FOUND`, adulterado é `ATTACHMENT_CORRUPTED`.
 
 Blobs são imutáveis e nunca apagados; um blob que seja symlink, FIFO, diretório ou

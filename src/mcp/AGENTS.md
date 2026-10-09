@@ -9,7 +9,7 @@ Camada MCP do hexlog: expõe os serviços de `commands/` e `queries/` como as 12
 ## Key Files
 | File | Description |
 |------|-------------|
-| `kernel.ts` | Folha da camada. `execute` (toda chamada passa por ele e nunca lança ao SDK: `LEGACY_DATA`, chave `__proto__`, validação zod, `HexlogError` e `INTERNAL`), `defineTool` (registra uma tool com `name` e schema declarados uma vez), `advertise` (ponte zod → SDK), `ToolDeps`, `Services`, `READ_ANNOTATIONS`, `WRITE_ANNOTATIONS` e `MarkerRecord` |
+| `kernel.ts` | Folha da camada. `execute` (toda chamada passa por ele e nunca lança ao SDK: `LEGACY_DATA`, chave `__proto__` e aninhamento acima de 64 níveis, validação zod, `HexlogError` e `INTERNAL`; resposta acima do dobro de `PAGE_CHARS_CAP` vira o warn `tool-over-cap`), `defineTool` (registra uma tool com `name` e schema declarados uma vez), `advertise` (ponte zod → SDK), `ToolDeps`, `Services`, `READ_ANNOTATIONS`, `WRITE_ANNOTATIONS` e `MarkerRecord` |
 | `server.ts` | `createServer`: monta o `McpServer` `hexlog` (versão de `version.ts`) e registra as quatro famílias de tools; aqui nada toca disco |
 
 ## Subdirectories

@@ -225,6 +225,32 @@ describe('N5: chave própria __proto__ nos args crus', () => {
   });
 });
 
+describe('M7: aninhamento acima de 64 níveis nos args crus', () => {
+  const nest = (levels: number): Record<string, unknown> =>
+    Array.from({ length: levels }).reduce<Record<string, unknown>>((inner) => ({ a: inner }), {});
+
+  test('data de register com 2.000 níveis é INVALID_INPUT too-deep, não INTERNAL', async () => {
+    const result = await environment.call(
+      'register',
+      registerInput({ records: [item({ data: nest(2000) })] }),
+    );
+
+    const body = expectError(result, 'INVALID_INPUT');
+    expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
+  });
+
+  test('schema de define_type com 2.000 níveis é INVALID_INPUT too-deep, não INTERNAL', async () => {
+    const result = await environment.call('define_type', {
+      project: PROJECT,
+      name: 'deep',
+      schema: nest(2000),
+    });
+
+    const body = expectError(result, 'INVALID_INPUT');
+    expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
+  });
+});
+
 describe('exceção que não é HexlogError', () => {
   afterEach(() => {
     jest.restoreAllMocks();
