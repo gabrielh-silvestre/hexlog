@@ -10,6 +10,7 @@ import { AUTHOR, DOC, NOW, PROJECT } from './commands/register-fakes.ts';
 import { at, copyToXdg, createTempDir, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
+const legacyFixture = path.join(__dirname, 'fixtures', 'legacy-0x');
 const TARGET = 'plan.f6';
 const REVOKE_TARGET = 'revoke.case';
 
@@ -349,6 +350,18 @@ describe('integridade', () => {
     const { code, out, err } = runTimeline(xdg, PROJECT, TARGET);
 
     expect(err).toContain('timeline failed: PROCESS_CORRUPTED:');
+    expect(out).toBe('');
+    expect(code).toBe(2);
+  });
+
+  test('sobre <D> com dado 0.x sai com código 2 e a mensagem do LEGACY_DATA', () => {
+    const xdg = createTempDir('xdg');
+    fs.cpSync(legacyFixture, path.join(xdg, 'hexlog'), { recursive: true });
+
+    const { code, out, err } = runTimeline(xdg, PROJECT, TARGET);
+
+    expect(err).toContain('timeline failed: LEGACY_DATA:');
+    expect(err).toContain('legacy 0.x data found; archive it first');
     expect(out).toBe('');
     expect(code).toBe(2);
   });
