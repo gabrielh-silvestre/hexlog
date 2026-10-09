@@ -1,6 +1,8 @@
 version: 2
 
 # PRs de atualização vão para develop, a base de trabalho (main só recebe hotfix e release).
+# `target-branch` vale só para version updates: as security updates ignoram estas opções e abrem
+# PR na branch padrão (main), então um PR de segurança pode chegar em main fora do fluxo de hotfix.
 # O prefixo mantém o título como Conventional Commit (o cliff.toml descarta os demais).
 # PR de npm exige atualizar EXPECTED_* em test/package.spec.ts junto: o CI falha sem isso.
 updates:
