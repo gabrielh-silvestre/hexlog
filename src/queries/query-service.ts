@@ -261,15 +261,17 @@ function projectData(
 }
 
 // `fields` não entra aqui de propósito: recorta a saída e não muda o que a consulta seleciona.
-const FILTER_KEYS = [
-  'includeNonCurrent',
-  'type',
-  'targetPrefix',
-  'where',
-  'text',
-  'ids',
-  'relatedTo',
-] as const;
+// O `satisfies` obriga toda chave nova de `Filters` a entrar neste mapa.
+const FILTER_FLAGS = {
+  includeNonCurrent: 0,
+  type: 0,
+  targetPrefix: 0,
+  where: 0,
+  text: 0,
+  ids: 0,
+  relatedTo: 0,
+} satisfies Record<keyof Filters, 0>;
+const FILTER_KEYS = Object.keys(FILTER_FLAGS) as (keyof Filters)[];
 
 /**
  * D-20: o hash prende os filtros e `changesSince`, não a página (`limit`, `maxChars`). O JCS descarta

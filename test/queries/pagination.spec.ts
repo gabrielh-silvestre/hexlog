@@ -198,6 +198,38 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(idsOf(page)).toEqual(ids.slice(0, 2));
   });
 
+  test('o teto de caracteres no tamanho exato da página a mantém, e um a menos corta o último', async () => {
+    const { query, ids } = await fiveNotes();
+    const two = query({ process: 'run-1', limit: 2 }).records;
+    const exact = two.reduce((sum, record) => sum + JSON.stringify(record).length, 0);
+
+    const kept = query({ process: 'run-1', maxChars: exact });
+    const cut = query({ process: 'run-1', maxChars: exact - 1 });
+
+    expect(idsOf(kept)).toEqual(ids.slice(0, 2));
+    expect(idsOf(cut)).toEqual(ids.slice(0, 1));
+  });
+
+  test('sem `limit` a página traz 50 registros e o cursor leva ao 51º', async () => {
+    const { createProcess, register, query } = querySetup();
+    createProcess('run-1');
+    const ids = [
+      ...(await register(
+        'run-1',
+        Array.from({ length: 50 }, () => note('x')),
+        1,
+      )),
+      ...(await register('run-1', [note('y')], 2)),
+    ];
+
+    const first = query({ process: 'run-1' });
+    const second = query({ process: 'run-1', cursor: cursorOf(first) });
+
+    expect(idsOf(first)).toEqual(ids.slice(0, 50));
+    expect(idsOf(second)).toEqual(ids.slice(50));
+    expect(second.cursor).toBeUndefined();
+  });
+
   test('o teto de caracteres conta a página já recortada por `fields` (cenário da #85)', async () => {
     const { createProcess, register, query } = querySetup();
     createProcess('run-1');
