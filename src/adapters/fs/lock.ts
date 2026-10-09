@@ -222,7 +222,11 @@ export function createLockManager({
       if (current.kind === 'unreadable') {
         throw lockTimeout(
           'holder-unreadable',
-          'lock holder file is unreadable; ask the user to remove the lock (see docs/dados.md, holder-unreadable)',
+          'lock holder file is unreadable; ask the user to remove the lock: close all Claude Code sessions, ' +
+            'then in a terminal outside Claude Code, with L=<D>/.v1/<project>/<process>/records.jsonl.lock ' +
+            '(<D> is ${XDG_DATA_HOME:-$HOME/.local/share}/hexlog), ' +
+            'run `ls -d "$L"`, `rm "$L/holder"` and `rmdir "$L"` (rmdir fails if anything else is left; ' +
+            'never rm -r), and confirm that $L is gone',
         );
       }
       if (current.kind === 'missing') {

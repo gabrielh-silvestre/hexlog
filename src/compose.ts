@@ -50,7 +50,9 @@ function wire({ dataDir, cwd, logger }: ComposeReaderOptions) {
 }
 
 /**
- * Raiz de composição (D-25): o único lugar, fora de `adapters/`, que conhece os adaptadores de disco.
+ * Raiz de composição (D-25): o único lugar do servidor em runtime que conhece os adaptadores de disco.
+ * O subgrafo de instalação (`archive.ts`, `installation.ts`, `scripts/install.ts`) importa `adapters/fs/`
+ * direto, fora do mapa de camadas e sem trava de lint.
  * Liga os adaptadores reais aos serviços de escrita e de consulta; `server.ts`, os scripts e os
  * testes só recebem o que sai daqui.
  */
