@@ -3,7 +3,7 @@
 // (adulterada, o script sai com 2), e anexo ausente ou corrompido também sai com 2. A saída escapa
 // os controles de terminal (`escapeControls`); `--raw` imprime o byte exato.
 // Uso: node scripts/timeline.ts <project> <target-prefix>... [--full] [--json] [--raw]
-import { isNil } from 'es-toolkit';
+import { isNil, isUndefined } from 'es-toolkit';
 import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
 import { escapeControls } from './escape-controls.ts';
 import { Name, Target, type Hash } from '../src/domain/ids.ts';
@@ -27,16 +27,31 @@ function recordsOf(query: QueryService, project: string, target: string): QueryR
   }).records;
 }
 
-/** Só os anexos `ok` têm texto a ler (inteiro, numa chamada: `maxChars` sem teto); os outros aparecem pelo status. */
-function textsOf(query: QueryService, project: string, record: QueryRecord): Record<Hash, string> {
+/**
+ * Só os anexos `ok` têm texto a ler (inteiro, numa chamada: `maxChars` sem teto); os outros aparecem
+ * pelo status. `cache` guarda o texto por hash: o mesmo anexo citado de novo não é relido.
+ */
+function textsOf(
+  query: QueryService,
+  project: string,
+  record: QueryRecord,
+  cache: Map<Hash, string>,
+): Record<Hash, string> {
   const cited = Object.entries(record.attachmentStatus ?? {});
   return Object.fromEntries(
     cited
       .filter(([, status]) => status === 'ok')
-      .map(([hash]) => [
-        hash,
-        query.readAttachment({ project, hash, maxChars: Number.MAX_SAFE_INTEGER }).text,
-      ]),
+      .map(([hash]) => {
+        const cached = cache.get(hash);
+        if (!isUndefined(cached)) return [hash, cached];
+        const { text } = query.readAttachment({
+          project,
+          hash,
+          maxChars: Number.MAX_SAFE_INTEGER,
+        });
+        cache.set(hash, text);
+        return [hash, text];
+      }),
   );
 }
 
@@ -130,11 +145,12 @@ function main(argv: string[]): number {
 
   try {
     const { query } = openReadOnly();
+    const attachmentTexts = new Map<Hash, string>();
     const sections = targetArgs.map((target): Section => ({
       target,
       entries: recordsOf(query, project.data, target).map((record) => ({
         record,
-        texts: full ? textsOf(query, project.data, record) : {},
+        texts: full ? textsOf(query, project.data, record, attachmentTexts) : {},
       })),
     }));
     const output = json ? renderJson(sections, full) : renderText(sections);
