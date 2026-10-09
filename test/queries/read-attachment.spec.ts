@@ -66,6 +66,8 @@ describe('readAttachment', () => {
     expect(error.details[0]).toMatchObject({ path: '/offset', code: 'mid-surrogate-pair' });
     expect(read(hash, { offset: 1 })).toMatchObject({ text: '😀b' });
     expect(read(hash, { offset: 3 })).toMatchObject({ text: 'b' });
+    // Texto que termina em par: o offset no fim fica fora do texto e não é recusado.
+    expect(read(stored('a😀'), { offset: 3 })).toMatchObject({ text: '' });
   });
 
   test('hash que ninguém guardou é ATTACHMENT_NOT_FOUND', () => {
