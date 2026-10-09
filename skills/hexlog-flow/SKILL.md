@@ -37,7 +37,7 @@ pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
 | Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
 | Saber o que mudou desde a última leitura | `query` com `changesSince` = o `marker` da leitura anterior | Só na primeira página; ver "Marcador" |
 | Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência |
-| Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro |
+| Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro. Para detectar cauda apagada, passe `expectedHead` = o `head` de uma verificação anterior (`head-not-found`) |
 | Saber o que existe (projetos, processos, o que um processo fixou) | `list` | Sem parâmetros, com `project`, ou com `project` e `process` |
 | Registrar num tipo que você não conhece | `describe_type` com `project`, `type` e `process` | Leia o schema fixado **antes** do `register`; com `process` devolve o tipo que o processo fixou, sem a versão na saída, e `process` junto de uma versão pedida é `INVALID_INPUT` |
 | Guardar o texto de um agente ou de um plano | `attach`, depois `register` com o `hash` devolvido no campo marcado | Duas chamadas, nessa ordem; ver "Anexos" |

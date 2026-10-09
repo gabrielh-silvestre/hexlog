@@ -2,7 +2,7 @@
 
 Servidor MCP para agentes registrarem o próprio histórico de trabalho.
 
-É um servidor MCP _(Model Context Protocol)_ stdio que permite ao agente gravar registros tipados, ligar um registro a outro e checar gates declarativos, tudo num log append-only por processo. Cada registro referencia o hash do anterior, dessa forma qualquer linha alterada ou removida quebra a cadeia e a tool `verify_chain` detecta. Não tem CLI nem daemon, apenas o servidor e um hook de isolamento instalados no Claude Code.
+É um servidor MCP _(Model Context Protocol)_ stdio que permite ao agente gravar registros tipados, ligar um registro a outro e checar gates declarativos, tudo num log append-only por processo. Cada registro referencia o hash do anterior, dessa forma qualquer linha alterada ou removida do meio quebra a cadeia e a tool `verify_chain` detecta; apagar a cauda só é detectado contra um head guardado antes (`expectedHead`). Não tem CLI nem daemon, apenas o servidor e um hook de isolamento instalados no Claude Code.
 
 ## Instalação
 
@@ -47,7 +47,7 @@ As skills instaladas guiam o resto: `hexlog` (instalação e diagnóstico), `hex
 
 ## Como funciona
 
-Os dados ficam em `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog`), com um diretório por projeto e um log JSONL por processo. O log é append-only e cada linha carrega o hash da anterior, ou seja, nenhuma alteração passa despercebida pela `verify_chain`. Só o servidor escreve nesse diretório, pois o hook PreToolUse bloqueia o acesso do agente via Bash, e o isolamento tem lacunas conhecidas, descritas em [docs/dados.md](docs/dados.md). As sessões executam sempre a cópia instalada em `~/.local/lib/hexlog/<versão>/`, nunca a working tree, logo mudar o código só tem efeito depois de rodar o instalador de novo.
+Os dados ficam em `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog`), com um diretório por projeto e um log JSONL por processo. O log é append-only e cada linha carrega o hash da anterior, ou seja, nenhuma alteração passa despercebida pela `verify_chain`, exceto apagar as últimas linhas, que só aparece contra um head guardado antes (`expectedHead`). Só o servidor escreve nesse diretório, pois o hook PreToolUse bloqueia o acesso do agente via Bash, e o isolamento tem lacunas conhecidas, descritas em [docs/dados.md](docs/dados.md). As sessões executam sempre a cópia instalada em `~/.local/lib/hexlog/<versão>/`, nunca a working tree, logo mudar o código só tem efeito depois de rodar o instalador de novo.
 
 ## Documentação
 

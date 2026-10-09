@@ -79,7 +79,11 @@ const EvaluateGateInput = z.strictObject({
   marker: MarkerInput.optional(),
 });
 
-const VerifyChainInput = z.strictObject({ project: Name, process: Name });
+const VerifyChainInput = z.strictObject({
+  project: Name,
+  process: Name,
+  expectedHead: Hash.optional(),
+});
 
 const ListInput = z.strictObject({ project: Name.optional(), process: Name.optional() });
 
@@ -182,9 +186,11 @@ const EVALUATE_GATE_DESCRIPTION =
 
 const VERIFY_CHAIN_DESCRIPTION =
   'Check the integrity of a process: the hash chain of its log and the attachments its records cite. ' +
-  'Returns ok (true only when breaks and attachmentBreaks are both empty), totalRecords, head, ' +
-  'breaks and totalBreaks for the chain, attachmentBreaks and totalAttachmentBreaks for missing or ' +
-  'corrupted attachments, and repairedLines. A broken chain is a result, not an error.';
+  'Returns ok (true only when breaks and attachmentBreaks are both empty), totalRecords, head (the ' +
+  'hash of the last link, or the process anchor when the log has no link), breaks and totalBreaks for the chain, attachmentBreaks and totalAttachmentBreaks for missing or ' +
+  'corrupted attachments, and repairedLines. A broken chain is a result, not an error. Pass ' +
+  'expectedHead (a head saved from an earlier check) to detect a deleted or rewritten tail: a hash ' +
+  'that is no link of the log and not the process anchor adds a head-not-found break.';
 
 const LIST_DESCRIPTION =
   'Discover what exists. Without project: the projects and their process counts. With project: its ' +

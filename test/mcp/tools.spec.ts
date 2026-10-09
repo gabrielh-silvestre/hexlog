@@ -615,6 +615,58 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
     );
   });
 
+  test('verify_chain com expectedHead: o head da própria saída passa e um hash desconhecido quebra', async () => {
+    await seed();
+    const input = { project: PROJECT, process: 'run-1' };
+    const { head, totalRecords } = await succeed<VerifyChainResult>('verify_chain', input);
+
+    const known = await succeed<VerifyChainResult>('verify_chain', {
+      ...input,
+      expectedHead: head,
+    });
+    const unknown = await succeed<VerifyChainResult>('verify_chain', {
+      ...input,
+      expectedHead: 'a'.repeat(64),
+    });
+
+    expect(known.ok).toBe(true);
+    expect(unknown).toMatchObject({
+      ok: false,
+      breaks: [{ index: totalRecords, reason: 'head-not-found' }],
+      totalBreaks: 1,
+    });
+  });
+
+  test('verify_chain com expectedHead fora do formato de hash dá INVALID_INPUT em /expectedHead', async () => {
+    await seed();
+
+    const body = expectError(
+      await environment.call('verify_chain', {
+        project: PROJECT,
+        process: 'run-1',
+        expectedHead: 'não-é-hash',
+      }),
+      'INVALID_INPUT',
+    );
+
+    expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
+  });
+
+  test('verify_chain com expectedHead vazio dá INVALID_INPUT em /expectedHead', async () => {
+    await seed();
+
+    const body = expectError(
+      await environment.call('verify_chain', {
+        project: PROJECT,
+        process: 'run-1',
+        expectedHead: '',
+      }),
+      'INVALID_INPUT',
+    );
+
+    expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
+  });
+
   test('read_attachment', async () => {
     const { hash } = await seed();
     const input = { project: PROJECT, hash };
