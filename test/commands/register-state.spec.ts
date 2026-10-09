@@ -727,7 +727,11 @@ describe('register: linha montada inválida', () => {
 
     const error = await refusal(harness.register([note('a')]));
 
-    expect(error).toMatchObject({ code: 'INTERNAL', message: 'built an invalid batch line' });
+    expect(error).toMatchObject({
+      code: 'INTERNAL',
+      message: 'built an invalid batch line',
+      details: [],
+    });
     expect(harness.processes.counters).toMatchObject({ appends: 0, syncsWithoutLine: 0 });
   });
 });
