@@ -431,6 +431,13 @@ describe('checkExpectedHead', () => {
     }
   });
 
+  test('o head de uma verificação com quebra no meio volta sem head-not-found', () => {
+    const verified = verifyProcess(rawOf(`${lineOf(A)}${forgedLine(B)}`));
+
+    expect(verified.chain.breaks).not.toHaveLength(0);
+    expect(checkExpectedHead(verified, verified.chain.head)).toBe(verified.chain);
+  });
+
   test('hash de nenhum elo vira head-not-found em totalRecords, conta em totalBreaks e zera ok', () => {
     const verified = verifiedOf(A, B);
 

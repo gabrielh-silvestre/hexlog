@@ -237,7 +237,11 @@ export function checkExpectedHead(
   { chain, records }: Pick<VerifiedProcess, 'chain' | 'records'>,
   expectedHead: Hash,
 ): Chain {
-  if (records.some((link) => hashLink(link) === expectedHead)) return chain;
+  // O head da própria verificação fecha sem re-hashear o log e vale mesmo com quebra no meio, onde
+  // `chain.head` pode ser de uma linha rejeitada que não está em `records`.
+  if (expectedHead === chain.head || records.some((link) => hashLink(link) === expectedHead)) {
+    return chain;
+  }
   const missing: Break = { index: chain.totalRecords, reason: 'head-not-found' };
   return {
     ...chain,
