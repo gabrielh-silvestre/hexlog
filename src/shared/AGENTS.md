@@ -14,7 +14,7 @@ Código compartilhado entre `commands/` e `queries/`: o carregador que lê e ver
 | `loader.ts` | Leitura e verificação do log: `parseLog`, `isValidLine` (o predicado único de leitura e escrita; devolve `LineCheck` `valid`, `torn` ou `rejected`), `formatLine`, `verifyProcess` (puro, sobre o log cru, com corte opcional em um marcador), `checkExpectedHead` (pura: confere um `expectedHead` contra os elos válidos e acrescenta a quebra `head-not-found`) e `loadVerified` (lê pelo `ProcessReader` e verifica). Devolve `VerifiedProcess` com `chain` (`Chain`, `Break`), `batches` por chave e `end`. Exporta o teto `MAX_BREAKS`. |
 | `logger.ts` | `Logger` e `LogRecord`: o único tipo de logger; quem compõe decide para onde a linha vai. |
 | `latest.ts` | `latestVersions`: nomes de definição do projeto com a versão vigente e todas as versões em ordem crescente, ignorando a pasta de nome sem versão. |
-| `pages.ts` | `sliceChars`: corta texto em `[offset, offset + limit)` sem partir par surrogate. |
+| `pages.ts` | `sliceChars`: corta texto em `[offset, offset + limit)` sem partir par surrogate; `isHighSurrogate` e `isLowSurrogate`: a faixa de cada metade do par, também usada por `queries/read-attachment.ts`. |
 
 ## Dependencies
 

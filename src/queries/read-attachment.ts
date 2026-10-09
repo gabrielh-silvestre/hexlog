@@ -1,7 +1,7 @@
 import type { Hash, Name } from '../domain/ids.ts';
 import { invalidInput } from '../errors.ts';
 import type { AttachmentReader } from '../ports.ts';
-import { sliceChars } from '../shared/pages.ts';
+import { isHighSurrogate, isLowSurrogate, sliceChars } from '../shared/pages.ts';
 
 /**
  * D-20: teto de uma página. Na `query` conta os caracteres do JSON dos registros (as tools o passam em
@@ -39,10 +39,9 @@ export function createReadAttachment(deps: {
     if (offset > text.length) {
       throw invalidInput('/offset', 'out-of-range', 'offset is past the end of the attachment');
     }
-    // Em `charCodeAt`, fora do texto dá NaN e as comparações falham: `offset === text.length` passa.
-    const high = text.charCodeAt(offset - 1);
-    const low = text.charCodeAt(offset);
-    if (offset > 0 && high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff) {
+    // Em `charCodeAt`, fora do texto dá NaN e as comparações falham: `offset === 0` e
+    // `offset === text.length` passam, sem par para partir.
+    if (isHighSurrogate(text.charCodeAt(offset - 1)) && isLowSurrogate(text.charCodeAt(offset))) {
       throw invalidInput('/offset', 'mid-surrogate-pair', 'offset splits a surrogate pair');
     }
     const page = sliceChars(text, offset, maxChars);
