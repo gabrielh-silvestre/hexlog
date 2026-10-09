@@ -2,7 +2,7 @@ import { isString, isUndefined } from 'es-toolkit';
 import { attachmentFields } from '../../domain/definitions.ts';
 import { Hash, type Name } from '../../domain/ids.ts';
 import { HexlogError } from '../../errors.ts';
-import type { AttachmentStatus, AttachmentStore } from '../../ports.ts';
+import type { AttachmentReader, AttachmentStatus } from '../../ports.ts';
 import { invalidRecord, withPath } from './errors.ts';
 import type { PreparedItem } from './static.ts';
 
@@ -35,7 +35,7 @@ function missingOrCorrupted(path: string, hash: Hash, status: AttachmentStatus):
 export function checkAttachments(
   project: Name,
   items: readonly PreparedItem[],
-  attachments: AttachmentStore,
+  attachments: AttachmentReader,
 ): void {
   const statuses = new Map<Hash, AttachmentStatus>();
   const statusOf = (hash: Hash, path: string): AttachmentStatus => {

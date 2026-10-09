@@ -234,7 +234,7 @@ export const UNUSED_REGISTER_PORTS = {
   logger: () => undefined,
 };
 
-export function setup() {
+export function setup(newUuid: () => string = createUuids()) {
   const processes = fakeProcessStore();
   const attachments = fakeAttachments();
   const validator = createValidator();
@@ -247,7 +247,7 @@ export function setup() {
     attachments: attachments.store,
     validator,
     clock: () => now,
-    newUuid: createUuids(),
+    newUuid,
     logger,
   });
   processes.add(ORIGIN);

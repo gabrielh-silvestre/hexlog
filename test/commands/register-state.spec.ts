@@ -720,3 +720,14 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
     expect(again.replayed).toBe(true);
   });
 });
+
+describe('register: linha montada inválida', () => {
+  test('uuid fora do formato v7 dá INTERNAL sem gravar nem vazar o id', async () => {
+    const harness = setup(() => 'not-a-uuid');
+
+    const error = await refusal(harness.register([note('a')]));
+
+    expect(error).toMatchObject({ code: 'INTERNAL', message: 'built an invalid batch line' });
+    expect(harness.processes.counters).toMatchObject({ appends: 0, syncsWithoutLine: 0 });
+  });
+});
