@@ -638,7 +638,7 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
-  test('deny: registerGuard não sobrescreve um .bak-hexlog existente (#42)', () => {
+  test('deny: registerGuard não sobrescreve um .bak-hexlog existente', () => {
     const tmpHome = createTempDir('deny-bak-preserved');
     try {
       const settingsPath = path.join(tmpHome, 'settings.json');
@@ -654,7 +654,7 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
-  test('deny: registerGuard grava no destino do symlink e mantém o link e o modo (M17)', () => {
+  test('deny: registerGuard grava no destino do symlink e mantém o link e o modo', () => {
     const tmpHome = createTempDir('deny-symlink');
     try {
       const realFile = path.join(tmpHome, 'dotfiles', 'settings.json');
@@ -676,27 +676,33 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
-  test('deny: registerGuard falha antes do backup quando o destino do symlink não é gravável', () => {
-    const tmpHome = createTempDir('deny-symlink-readonly');
-    const dotfiles = path.join(tmpHome, 'dotfiles');
-    try {
-      const realFile = path.join(dotfiles, 'settings.json');
-      fs.mkdirSync(dotfiles);
-      const before = settingsWithDeny(trioOf(oldD));
-      fs.writeFileSync(realFile, before);
-      const settingsPath = path.join(tmpHome, 'settings.json');
-      fs.symlinkSync(realFile, settingsPath);
-      fs.chmodSync(dotfiles, 0o555);
+  // Como root, `accessSync(W_OK)` passa mesmo com `chmod 0555`, então o teste não tem o que provar.
+  const itNotRoot = process.getuid?.() === 0 ? test.skip : test;
 
-      expect(() => registerGuard({ settingsPath, expected })).toThrow(/not writable/);
+  itNotRoot(
+    'deny: registerGuard falha antes do backup quando o destino do symlink não é gravável',
+    () => {
+      const tmpHome = createTempDir('deny-symlink-readonly');
+      const dotfiles = path.join(tmpHome, 'dotfiles');
+      try {
+        const realFile = path.join(dotfiles, 'settings.json');
+        fs.mkdirSync(dotfiles);
+        const before = settingsWithDeny(trioOf(oldD));
+        fs.writeFileSync(realFile, before);
+        const settingsPath = path.join(tmpHome, 'settings.json');
+        fs.symlinkSync(realFile, settingsPath);
+        fs.chmodSync(dotfiles, 0o555);
 
-      expect(fs.existsSync(`${settingsPath}.bak-hexlog`)).toBe(false);
-      expect(fs.readFileSync(realFile, 'utf8')).toBe(before);
-    } finally {
-      fs.chmodSync(dotfiles, 0o755);
-      fs.rmSync(tmpHome, { recursive: true, force: true });
-    }
-  });
+        expect(() => registerGuard({ settingsPath, expected })).toThrow(/not writable/);
+
+        expect(fs.existsSync(`${settingsPath}.bak-hexlog`)).toBe(false);
+        expect(fs.readFileSync(realFile, 'utf8')).toBe(before);
+      } finally {
+        fs.chmodSync(dotfiles, 0o755);
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    },
+  );
 
   test('deny: registerGuard devolve removed vazio quando não há <D> antigo', () => {
     const tmpHome = createTempDir('deny-removed-empty');
@@ -1542,12 +1548,31 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
-  test('falha no 2º renameSync não deixa temporário em skills/ nem em .claude/ (M4)', () => {
-    const home = createTempDir('skill-h');
+  test('varre os temporários legados skills/<nome>.tmp-<pid> e .old-<pid>, sem tocar em outras pastas', () => {
+    const home = createTempDir('skill-legacy');
     const srcDir = buildSrcDir('# hexlog skill\n');
+    try {
+      const skillsDir = path.join(home, '.claude', 'skills');
+      for (const leftover of ['hexlog.tmp-123', 'hexlog.old-123', 'other.tmp-123']) {
+        fs.mkdirSync(path.join(skillsDir, leftover), { recursive: true });
+      }
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', 'other.tmp-123']);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('falha no 2º renameSync não deixa temporário em skills/ nem em .claude/ e preserva a skill anterior', () => {
+    const home = createTempDir('skill-h');
+    const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
+    const srcDirV2 = buildSrcDir('# hexlog skill v2\n');
     const originalRenameSync = fsDefault.renameSync;
     try {
-      writeSkillFolder(home, 'hexlog', srcDir);
+      writeSkillFolder(home, 'hexlog', srcDirV1);
       jest
         .spyOn(fsDefault, 'renameSync')
         .mockImplementationOnce((...args) => originalRenameSync(...args))
@@ -1555,14 +1580,18 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
           throw new Error('boom: simulated 2nd renameSync failure');
         });
 
-      expect(() => writeSkillFolder(home, 'hexlog', srcDir)).toThrow('boom');
+      expect(() => writeSkillFolder(home, 'hexlog', srcDirV2)).toThrow('boom');
 
       expect(fs.readdirSync(path.join(home, '.claude', 'skills'))).toEqual(['hexlog']);
       expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['skills']);
+      expect(
+        fs.readFileSync(path.join(home, '.claude', 'skills', 'hexlog', 'SKILL.md'), 'utf8'),
+      ).toBe('# hexlog skill v1\n');
     } finally {
       jest.restoreAllMocks();
       fs.rmSync(home, { recursive: true, force: true });
-      fs.rmSync(srcDir, { recursive: true, force: true });
+      fs.rmSync(srcDirV1, { recursive: true, force: true });
+      fs.rmSync(srcDirV2, { recursive: true, force: true });
     }
   });
 
