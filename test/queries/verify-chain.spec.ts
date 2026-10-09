@@ -41,8 +41,12 @@ describe('verifyChain: cadeia do processo', () => {
     });
   });
 
-  test('processo sem registro dá ok com cabeça vazia', () => {
-    expect(verifySetup().verify()).toMatchObject({ ok: true, totalRecords: 0, head: '' });
+  test('processo sem registro dá ok, totalRecords 0 e a âncora do processo como cabeça', () => {
+    expect(verifySetup().verify()).toMatchObject({
+      ok: true,
+      totalRecords: 0,
+      head: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
   test('diagnostica sem gravar: o log fica byte a byte igual, também com quebra', async () => {
@@ -106,6 +110,28 @@ describe('verifyChain: expectedHead como âncora contra truncamento', () => {
 
     expect(verifyAgainst(late)).toMatchObject({ ok: true, breaks: [], totalBreaks: 0 });
     expect(verifyAgainst(early)).toMatchObject({ ok: true, breaks: [], totalBreaks: 0 });
+  });
+
+  test('o head de um processo vazio segue aceito depois de o log crescer', async () => {
+    const { registerOne, verify, verifyAgainst } = verifySetup();
+    const stored = verify().head;
+    await registerOne('run-1', note('a'));
+    await registerOne('run-1', note('b'), 1);
+
+    expect(verifyAgainst(stored)).toMatchObject({ ok: true, totalRecords: 2, breaks: [] });
+  });
+
+  test('único elo apagado: o head de antes vira head-not-found com totalRecords 0', async () => {
+    const { registerOne, verify, verifyAgainst, logFile } = verifySetup();
+    await registerOne('run-1', note('a'));
+    const before = verify().head;
+    dropLastLines(logFile(), 1);
+
+    expect(verifyAgainst(before)).toMatchObject({
+      ok: false,
+      totalRecords: 0,
+      breaks: [{ index: 0, reason: 'head-not-found' }],
+    });
   });
 
   test('cauda apagada: sem expectedHead segue ok, com o head de antes vira head-not-found', async () => {

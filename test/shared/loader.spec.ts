@@ -318,12 +318,12 @@ describe('verifyProcess', () => {
     expect(verified.end).toEqual({ seq: 3, prevHash: hashLink(third) });
   });
 
-  test('processo vazio: head vazio e posição final na âncora', () => {
+  test('processo vazio: head e posição final na âncora do processo', () => {
     const verified = verifyProcess(rawOf(''));
     expect(verified.chain).toEqual({
       ok: true,
       totalRecords: 0,
-      head: '',
+      head: START.prevHash,
       breaks: [],
       totalBreaks: 0,
       repairedLines: [],
@@ -371,7 +371,7 @@ describe('verifyProcess', () => {
     test('marcador nulo lê o processo como vazio', () => {
       const verified = verifyProcess(rawOf(`${lineOf(A)}${lineOf(B)}`), null);
       expect(verified.records).toEqual([]);
-      expect(verified.chain).toMatchObject({ ok: true, totalRecords: 0, head: '' });
+      expect(verified.chain).toMatchObject({ ok: true, totalRecords: 0, head: START.prevHash });
       expect(verified.end).toEqual(START);
     });
 
@@ -431,6 +431,12 @@ describe('checkExpectedHead', () => {
     }
   });
 
+  test('a âncora do processo é aceita em log vazio e em log com 3 elos, sem mudar a cadeia', () => {
+    for (const verified of [verifiedOf(), verifiedOf(A, B, C)]) {
+      expect(checkExpectedHead(verified, anchor(manifest))).toBe(verified.chain);
+    }
+  });
+
   test('o head de uma verificação com quebra no meio volta sem head-not-found', () => {
     const verified = verifyProcess(rawOf(`${lineOf(A)}${forgedLine(B)}`));
 
@@ -459,7 +465,7 @@ describe('checkExpectedHead', () => {
     expect(chain.totalBreaks).toBe(MAX_BREAKS + 1);
   });
 
-  test('log vazio não tem elo: qualquer hash é head-not-found no índice 0', () => {
+  test('hash de elo inexistente é head-not-found', () => {
     expect(checkExpectedHead(verifiedOf(), hashLink(A)).breaks).toEqual([
       { index: 0, reason: 'head-not-found' },
     ]);

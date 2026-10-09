@@ -35,6 +35,16 @@ const cut = fc
   .chain((total) => fc.tuple(fc.constant(total), fc.integer({ min: 1, max: total })));
 
 describe('checkExpectedHead: propriedades', () => {
+  test('a âncora do processo é sempre aceita, com ou sem elo no log', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 20 }), (total) => {
+        const verified = verifiedOf(chainOf(total));
+
+        expect(checkExpectedHead(verified, anchor(manifest))).toBe(verified.chain);
+      }),
+    );
+  });
+
   test('o head de antes de apagar um sufixo não vazio do log vira head-not-found', () => {
     fc.assert(
       fc.property(cut, ([total, dropped]) => {

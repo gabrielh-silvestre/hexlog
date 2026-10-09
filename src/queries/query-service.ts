@@ -173,8 +173,8 @@ export type QueryService = {
    * Diagnóstico sem gravar: a cadeia do processo e os anexos que os registros citam (D-16). Quebra
    * não lança, vira `ok: false` com `breaks` (cadeia); anexo ausente ou corrompido entra em
    * `attachmentBreaks` como `attachment-missing`/`attachment-corrupted`. Com `expectedHead` (o `head` de uma
-   * verificação anterior), um hash que não é de nenhum elo válido entra em `breaks` como
-   * `head-not-found` (cauda apagada ou reescrita); sem ele, apagar a cauda não é detectável.
+   * verificação anterior), um hash que não é de nenhum elo válido nem a âncora do processo entra em
+   * `breaks` como `head-not-found` (cauda apagada ou reescrita); sem ele, apagar a cauda não é detectável.
    * `PROCESS_NOT_FOUND` e `PROCESS_CORRUPTED` (`unreadable-manifest`) vêm da leitura do manifesto; `PROCESS_TOO_LARGE` e
    * `IO_ERROR`, da leitura do log.
    */
