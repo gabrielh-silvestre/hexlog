@@ -18,7 +18,7 @@ import {
   legacyDataError,
   pointer,
 } from '../errors.ts';
-import type { QueryService } from '../queries/query-service.ts';
+import { PAGE_CHARS_CAP, type QueryService } from '../queries/query-service.ts';
 import type { Logger, LogRecord } from '../shared/logger.ts';
 
 /** Marcador no fio: uma entrada por processo lido, `null` para processo vazio (D-24). */
@@ -116,16 +116,34 @@ export function toHexlogError(e: unknown, logger: Logger): HexlogError {
 }
 
 /**
+ * Teto de aninhamento dos args crus: a raiz dos args é o nível 1, e objeto ou array no nível 65 é
+ * recusado (`too-deep`). Palpite da issue #93: o `z.json()` estoura a pilha perto de 2.000 níveis, e
+ * nenhum dado real do hexlog passa de uma dezena.
+ */
+const MAX_ARGS_DEPTH = 64;
+
+/**
  * O `z.record` do zod 4 descarta em silêncio a chave própria `__proto__` (`register` selaria no log um
  * registro diferente do enviado; `query.where` falharia aberto), e nenhum refine a enxerga depois do
- * parse. Por isso a recusa varre os args crus, em profundidade, antes do `safeParse`.
+ * parse. Por isso a recusa varre os args crus, em profundidade, antes do `safeParse`. A mesma varredura
+ * recusa o aninhamento acima de `MAX_ARGS_DEPTH` sem descer nele, para o zod não estourar a pilha.
  */
 function reservedKeyDetails(args: unknown): Detail[] {
   const found: Detail[] = [];
-  const pending: { value: unknown; path: string }[] = [{ value: args, path: '' }];
+  const pending: { value: unknown; path: string; depth: number }[] = [
+    { value: args, path: '', depth: 1 },
+  ];
   for (let item = pending.pop(); !isUndefined(item); item = pending.pop()) {
-    const { value, path } = item;
+    const { value, path, depth } = item;
     if (typeof value !== 'object' || value === null) continue;
+    if (depth > MAX_ARGS_DEPTH) {
+      found.push({
+        path,
+        code: 'too-deep',
+        message: `nesting deeper than ${MAX_ARGS_DEPTH} levels`,
+      });
+      continue;
+    }
     for (const [key, child] of Object.entries(value)) {
       const childPath = path + pointer([key]);
       if (key === '__proto__') {
@@ -135,11 +153,19 @@ function reservedKeyDetails(args: unknown): Detail[] {
           message: 'must not use the key __proto__',
         });
       }
-      pending.push({ value: child, path: childPath });
+      pending.push({ value: child, path: childPath, depth: depth + 1 });
     }
   }
   return capDetails(found);
 }
+
+/**
+ * Limiar do aviso `tool-over-cap`: o dobro de `PAGE_CHARS_CAP`. O teto de página conta só os registros
+ * da `query` e o `text` do `read_attachment`; o envelope (`marker`, `cursor`, `in`/`out`, escapes do
+ * JSON) soma por cima, então uma página cheia e cortada passa de `PAGE_CHARS_CAP`. O aviso existe para a
+ * tool sem corte nenhum, que foge do teto por ordens de grandeza.
+ */
+const OVER_CAP_CHARS = 2 * PAGE_CHARS_CAP;
 
 const ClientInfo = z.object({ name: Author.shape.client });
 
@@ -152,10 +178,12 @@ function clientOf(ctx: CallContext): string {
 /**
  * Toda tool passa por aqui e `execute` nunca lança para o SDK. Ordem: `isLegacy()` antes de qualquer
  * outra coisa (`LEGACY_DATA` com o comando de arquivamento em `details`), recusa a chave `__proto__`
- * em qualquer nível dos args crus (`INVALID_INPUT`, `reserved-key`), depois valida a entrada crua com
+ * em qualquer nível dos args crus (`INVALID_INPUT`, `reserved-key`) e o aninhamento acima de
+ * `MAX_ARGS_DEPTH` (`INVALID_INPUT`, `too-deep`), depois valida a entrada crua com
  * `schema` (`INVALID_INPUT` com `details[{path,code,message}]`), depois `run`.
  * `HexlogError` vira `{code, message, details}`; qualquer outra exceção vira `INTERNAL`, sem stack.
- * Emite um log `tool` com `name`, `ms` e `code?`, nunca o conteúdo da entrada.
+ * Emite um log `tool` com `name`, `ms` e `code?`, nunca o conteúdo da entrada. Um sucesso cujo texto
+ * passa de `OVER_CAP_CHARS` emite também o log `tool-over-cap` (`name` e `chars`); a resposta não é cortada.
  */
 export async function execute<Input, Output>(
   deps: ToolDeps,
@@ -187,7 +215,16 @@ export async function execute<Input, Output>(
     }
     const result = await run(parsed.data, clientOf(call.ctx));
     log('info');
-    return { structuredContent: result, content: [{ type: 'text', text: JSON.stringify(result) }] };
+    const text = JSON.stringify(result);
+    if (text.length > OVER_CAP_CHARS) {
+      logSafely(deps.logger, {
+        level: 'warn',
+        event: 'tool-over-cap',
+        name: call.name,
+        chars: text.length,
+      });
+    }
+    return { structuredContent: result, content: [{ type: 'text', text }] };
   } catch (e) {
     const error = toHexlogError(e, deps.logger);
     const body = { code: error.code, message: error.message, details: error.details };

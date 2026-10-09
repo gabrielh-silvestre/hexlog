@@ -2,6 +2,7 @@ import { describe, test, expect, jest } from '@jest/globals';
 import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { HexlogError } from '../../src/errors.ts';
+import { PAGE_CHARS_CAP } from '../../src/queries/query-service.ts';
 import {
   advertise,
   type CallContext,
@@ -87,6 +88,93 @@ describe('execute', () => {
     expect(errorBodyOf(result)).toMatchObject({
       code: 'INVALID_INPUT',
       details: [{ path: '/deep/0/a~1b/__proto__', code: 'reserved-key' }],
+    });
+  });
+
+  describe('profundidade dos args crus', () => {
+    const Anything = z.looseObject({});
+    // `nest(n)` tem n objetos aninhados, contando a raiz dos args como o nível 1.
+    const nest = (levels: number): Record<string, unknown> =>
+      Array.from({ length: levels - 1 }).reduce<Record<string, unknown>>(
+        (inner) => ({ a: inner }),
+        {},
+      );
+    const callWith = (args: unknown) => ({ name: 'demo', schema: Anything, args, ctx: ctxOf() });
+
+    test('64 níveis passam e chegam ao run', async () => {
+      const { deps } = makeDeps();
+      const run = jest.fn(() => ({}));
+
+      await execute(deps, callWith(nest(64)), run);
+
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    test('65 níveis viram INVALID_INPUT too-deep no nó do nível 65, sem chamar run', async () => {
+      const { deps } = makeDeps();
+      const run = jest.fn(() => ({}));
+
+      const result = await execute(deps, callWith(nest(65)), run);
+
+      expect(run).not.toHaveBeenCalled();
+      expect(errorBodyOf(result)).toMatchObject({
+        code: 'INVALID_INPUT',
+        details: [{ path: `/${Array(64).fill('a').join('/')}`, code: 'too-deep' }],
+      });
+    });
+
+    test('array também conta como nível', async () => {
+      const { deps } = makeDeps();
+      const args = { a: Array.from({ length: 63 }).reduce<unknown>((inner) => [inner], {}) };
+
+      const result = await execute(deps, callWith(args), () => ({}));
+
+      expect(errorBodyOf(result)).toMatchObject({ details: [{ code: 'too-deep' }] });
+    });
+
+    test('2.000 níveis dão um só detalhe e nunca INTERNAL', async () => {
+      const { deps } = makeDeps();
+
+      const result = await execute(deps, callWith(nest(2000)), () => ({}));
+
+      const body = errorBodyOf(result);
+      expect(body.code).toBe('INVALID_INPUT');
+      expect(body.details).toHaveLength(1);
+    });
+  });
+
+  describe('resposta acima do dobro de PAGE_CHARS_CAP', () => {
+    const OVER_CAP = 2 * PAGE_CHARS_CAP;
+
+    // `{"t":""}` tem 8 caracteres, então `chars - 8` letras dão um texto de `chars`.
+    const resultOf = (chars: number) => ({ t: 'x'.repeat(chars - 8) });
+
+    test('emite o warn tool-over-cap com name e chars, sem a entrada, e não corta a resposta', async () => {
+      const { deps, logger } = makeDeps();
+
+      const full = resultOf(OVER_CAP + 1);
+
+      const result = await execute(deps, callOf({ project: 'segredo', count: 1 }), () => full);
+
+      expect(logger).toHaveBeenCalledWith({
+        level: 'warn',
+        event: 'tool-over-cap',
+        name: 'demo',
+        chars: OVER_CAP + 1,
+      });
+      expect(JSON.stringify(logger.mock.calls)).not.toContain('segredo');
+      expect(result).toEqual({
+        structuredContent: full,
+        content: [{ type: 'text', text: JSON.stringify(full) }],
+      });
+    });
+
+    test('no teto não emite', async () => {
+      const { deps, logger } = makeDeps();
+
+      await execute(deps, callOf({ project: 'p', count: 1 }), () => resultOf(OVER_CAP));
+
+      expect(logger).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'tool-over-cap' }));
     });
   });
 
