@@ -128,7 +128,7 @@ const MAX_ARGS_DEPTH = 64;
  * parse. Por isso a recusa varre os args crus, em profundidade, antes do `safeParse`. A mesma varredura
  * recusa o aninhamento acima de `MAX_ARGS_DEPTH` sem descer nele, para o zod não estourar a pilha.
  */
-function reservedKeyDetails(args: unknown): Detail[] {
+function rawArgsDetails(args: unknown): Detail[] {
   const found: Detail[] = [];
   const pending: { value: unknown; path: string; depth: number }[] = [
     { value: args, path: '', depth: 1 },
@@ -203,8 +203,8 @@ export async function execute<Input, Output>(
 
   try {
     if (deps.isLegacy()) throw legacyDataError();
-    const reserved = reservedKeyDetails(call.args);
-    if (reserved.length > 0) throw new HexlogError('INVALID_INPUT', 'invalid input', reserved);
+    const rawDetails = rawArgsDetails(call.args);
+    if (rawDetails.length > 0) throw new HexlogError('INVALID_INPUT', 'invalid input', rawDetails);
     const parsed = call.schema.safeParse(call.args ?? {});
     if (!parsed.success) {
       throw new HexlogError(
