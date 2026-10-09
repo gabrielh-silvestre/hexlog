@@ -76,7 +76,7 @@
     "git-cliff": "2.14.2",
     "husky": "9.1.7",
     "jest": "30.5.1",
-    "lint-staged": "17.5.1",
+    "lint-staged": "17.6.0",
     "prettier": "3.9.7",
     "tar": "7.5.22",
     "ts-jest": "29.4.12",
