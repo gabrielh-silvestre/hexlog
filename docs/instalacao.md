@@ -46,9 +46,11 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    `hexlog-setup`) para `~/.claude/skills/<nome>/`, com troca atômica e sem
    backup, em toda execução, mesmo sem mudança no artefato. Os temporários da
    troca ficam ao lado de `skills/`, fora dela: em `~/.claude/` ou, se
-   `~/.claude/skills` é um link, no pai do alvo real. Se `~/.claude/skills` é
+   `~/.claude/skills` é um link, no pai do alvo real (se esse pai não for gravável,
+   volta a `~/.claude/`). Se `~/.claude/skills` é
    ponto de montagem de outro filesystem, o `rename` falha com `EXDEV` e o
-   instalador aborta, mas antes de gravar o `settings.json`; mantenha `skills/`
+   instalador aborta sem gravar o `settings.json` (a cópia das skills roda antes
+   do passo 3); mantenha `skills/`
    no filesystem de `~/.claude/`. Temporários
    `skills/<nome>.tmp-<pid>` e `.old-<pid>` de versões antigas do instalador são
    removidos nessa cópia.

@@ -1635,6 +1635,49 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
+  test('skills/ como link cujo pai do alvo não é gravável: os temporários caem para <home>/.claude', () => {
+    const home = createTempDir('skill-link-ro');
+    const elsewhere = createTempDir('skill-link-ro-target');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    const originalRenameSync = fsDefault.renameSync;
+    const originalAccessSync = fsDefault.accessSync;
+    try {
+      const realSkills = path.join(elsewhere, 'skills');
+      fs.mkdirSync(realSkills);
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.symlinkSync(realSkills, path.join(home, '.claude', 'skills'));
+      const realElsewhere = fs.realpathSync(elsewhere);
+      // Simula o pai do alvo sem permissão de escrita sem depender de chmod (que root ignora).
+      jest.spyOn(fsDefault, 'accessSync').mockImplementation((target, mode) => {
+        if (String(target) === realElsewhere) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+        originalAccessSync(target, mode);
+      });
+      const tempParents: string[] = [];
+      jest.spyOn(fsDefault, 'renameSync').mockImplementation((from, to) => {
+        if (path.basename(String(from)).startsWith('.hexlog-skill-')) {
+          tempParents.push(path.dirname(String(from)));
+        }
+        originalRenameSync(from, to);
+      });
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      expect(tempParents).toEqual([path.join(fs.realpathSync(home), '.claude')]);
+      expect(fs.readFileSync(path.join(realSkills, 'hexlog', 'SKILL.md'), 'utf8')).toBe(
+        '# hexlog skill\n',
+      );
+      expect(fs.readdirSync(elsewhere)).toEqual(['skills']);
+      expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['skills']);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
   test('nome com "/", "..", "." ou vazio é rejeitado antes de tocar no filesystem', () => {
     const home = createTempDir('skill-f');
     const srcDir = buildSrcDir('# hexlog skill\n');
