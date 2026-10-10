@@ -3,7 +3,8 @@
 ## Idioma
 
 - Código: arquivos, pastas, identificadores (funções, tipos, variáveis), nomes de tool MCP, campos de entrada e saída, formato em disco e mensagens em runtime (erros, logs, CLI do instalador) — tudo em **inglês**.
-- Comentários de código (incl. JSDoc), títulos de teste e documentação `.md` — **pt-BR**.
+- Títulos de teste (`describe`, `it`, `test`) — **inglês**, como a regra global de idioma. Vale para título novo ou tocado; os títulos pt-BR que já existem são dívida rastreada na issue #132 e se traduzem quando o spec for alterado.
+- Comentários de código (incl. JSDoc) e documentação `.md` — **pt-BR**.
 - Nomes de arquivo de documentação (`AGENTS.md`, `docs/directives/adr-*.md`, `docs/pesquisa/**`) não são traduzidos.
 
 ## Núcleo e bordas
