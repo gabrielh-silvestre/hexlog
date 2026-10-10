@@ -12,7 +12,7 @@ tokeniza o comando recebido; nunca executa nada.
 ## Key Files
 | File | Description |
 |---|---|
-| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal, que `decide` confere antes de tokenizar. Nega também o que não consegue decidir: token com glob acima de `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou `MAX_BRACKETS`, comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH`, comando acima de `MAX_COMMAND_LENGTH` (1 MiB). Libera o comando que o `shell-quote` não parseia (`${}`) e o token cujo casamento lança. Falha aberto também para entrada que não é comando Bash: stdin vazio, JSON inválido, `tool_name` diferente de `Bash`, Node ausente (R-1) ou hook morto pelo `timeout` de 10 s. A mensagem de negação é o literal de `denialMessage`, que lista as tools de leitura (6 das 12); a negação por comando indecidível usa `undecidableMessage`, sem citar `D`. Em comando composto (`&&`, `||`, `;`, `|`, `&`, `|&`) ambas acrescentam ` Matched: <segmento>` (até 200 caracteres, controle e formatação viram `?`) |
+| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal, que `decide` confere antes de tokenizar. Nega também o que não consegue decidir: token com glob acima de `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou `MAX_BRACKETS`, comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH`, comando acima de `MAX_COMMAND_LENGTH` (1 MiB). Libera o comando que o `shell-quote` não parseia (`${}`) e o token cujo casamento lança. Falha aberto também para entrada que não é comando Bash: stdin vazio, JSON inválido, `tool_name` diferente de `Bash`, Node ausente ou hook morto pelo `timeout` de 10 s. A mensagem de negação é o literal de `denialMessage`, que lista as tools de leitura (6 das 12); a negação por comando indecidível usa `undecidableMessage`, sem citar `D`. Em comando composto (`&&`, `||`, `;`, `|`, `&`, `|&`) ambas acrescentam ` Matched: <segmento>` (até 200 caracteres, controle e formatação viram `?`) |
 
 ## Navigation Notes
 - A lógica de decisão é pura (`decide`, sem I/O, não exportada) e separada da
@@ -48,7 +48,7 @@ tokeniza o comando recebido; nunca executa nada.
 
 ### External
 - `shell-quote` (parse dos tokens do comando)
-- `es-toolkit` (`isNil`, `isString`, `take`, `takeWhile`)
+- `es-toolkit` (`isNil`, `isString`, `sumBy`, `take`, `takeWhile`)
 - `node:fs`, `node:os`, `node:path`, `node:url`
 
 ## Manual Notes

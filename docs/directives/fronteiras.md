@@ -11,7 +11,7 @@ Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na ba
 - `adapters/` só implementa portas: não importa `commands/`, `queries/` nem `mcp/` (`eslint.boundaries.js#adaptersBlock`); builtins do Node e libs de infraestrutura são o que ele existe para usar.
 - `mcp/` chama só serviços: não importa `adapters/`, builtin do Node nem `compose.ts`; `mcp/kernel.ts` também não importa `mcp/tools/`.
 - Só `server.ts`, os scripts e os testes importam `compose.ts`. Scripts de leitura passam por `compose.ts#composeReader` (só o lado de leitura, sem serviço de escrita: "script de leitura não grava" é garantia de tipo) e não importam `adapters/` nem `mcp/` (`scripts/install.ts` e `scripts/build.ts` ficam de fora).
-- `guard.ts` e `installation.ts` não são importados por `server.ts` nem pelo hook; só por `scripts/install.ts`. Toda execução externa (spawn do hook, subida do servidor, relógio, `claude mcp`) entra por parâmetro injetado, nunca por chamada direta a `child_process` ou `Date.now` dentro da lógica testável; é isso que torna `installArtifact` e `verifyInstallation` testáveis sem processo real.
+- `guard.ts` e `installation.ts` não são importados por `server.ts` nem pelo hook: `installation.ts` só entra por `scripts/install.ts`, e `guard.ts` só por `installation.ts` e `scripts/install.ts`. Toda execução externa (spawn do hook, subida do servidor, relógio, `claude mcp`) entra por parâmetro injetado, nunca por chamada direta a `child_process` ou `Date.now` dentro da lógica testável; é isso que torna `installArtifact` e `verifyInstallation` testáveis sem processo real.
 
 ## Travas mecânicas
 
@@ -24,7 +24,7 @@ Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na ba
 - Regra de negócio em adaptador: a regra mora em `domain/` ou no serviço.
 - Tipo de domínio com cara de formato em disco: o formato em disco fica em `adapters/fs/data-format.ts`.
 - Caso de uso chamando outro via tool: serviço chama serviço ou função pura, nunca uma tool.
-- Arquivo de serviço perto do `max-lines` (800): divida antes de bater no teto. `queries/query-service.ts` segue num só `QueryService`, agora de seis operações, com `list`, `readAttachment` e `describeType` em módulos irmãos (`queries/list.ts`, `queries/read-attachment.ts`, `queries/describe-type.ts`) e `createQueryService` único; a divisão volta a ser devida no gatilho de ~650 linhas ou de uma sétima operação de consulta.
+- Arquivo de serviço perto do `max-lines` (800): divida antes de bater no teto. `queries/query-service.ts` é um só `QueryService` de seis operações, com `list`, `readAttachment` e `describeType` em módulos irmãos (`queries/list.ts`, `queries/read-attachment.ts`, `queries/describe-type.ts`) e `createQueryService` único; a divisão é devida no gatilho de ~650 linhas ou de uma sétima operação de consulta.
 - Serviço de escrita gravando em mais de uma porta: a escrita de um `register` é um lote numa só linha de um só processo.
 - `queries/` chamando gravação de qualquer porta: leitura só usa os `*Reader`.
 - `timeline` somando o projeto contra o teto de 64 MiB por processo (`MAX_LOG_BYTES`): o script lê numa chamada só e o teto vale por processo, não pelo projeto.

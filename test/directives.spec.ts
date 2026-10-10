@@ -417,8 +417,8 @@ describe('premissas de estrategia.md', () => {
 });
 
 describe('fluxo-hexlog.md com a camada estratégica', () => {
-  // `directives-3` só prova que o token existe: `directives-2` segue citado como geração anterior,
-  // então a prova da troca do processo vigente está em "troca do processo vigente de diretrizes".
+  // `directives-3` só prova que o token existe: `directives-2` segue citado como corte de trabalhos
+  // antigos, então a prova do processo vigente está em "processo vigente de diretrizes escrito num lugar só".
   test.each([
     'rests-on',
     'fills-gap',
@@ -430,13 +430,19 @@ describe('fluxo-hexlog.md com a camada estratégica', () => {
   });
 });
 
-describe('troca do processo vigente de diretrizes para directives-3', () => {
+describe('processo vigente de diretrizes escrito num lugar só', () => {
   const flowDoc = (): string => fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8');
   const skill = (name: string): string => fs.readFileSync(skillPath(name), 'utf8');
+  // Geração vigente ou futura; `directives-2` segue citado como corte de trabalhos antigos.
+  const currentGeneration = /directives-[3-9]/;
 
-  test('a consulta às diretrizes fixa `process: directives-3` e não `process: directives-2`', () => {
-    expect(flowDoc()).toContain('process: directives-3');
-    expect(flowDoc()).not.toContain('process: directives-2');
+  test('só a linha "Processo das diretrizes vigente" de fluxo-hexlog.md cita a geração vigente', () => {
+    const lines = flowDoc()
+      .split('\n')
+      .filter((line) => currentGeneration.test(line));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('Processo das diretrizes vigente:');
+    expect(flowDoc()).not.toMatch(/process: directives-\d/);
   });
 
   test('o processo vigente é `directives-3` e a próxima geração é `directives-4`', () => {
@@ -447,8 +453,8 @@ describe('troca do processo vigente de diretrizes para directives-3', () => {
     expect(line).toContain('vira `directives-4`');
   });
 
-  test('flow-run condiciona o diff de regras a `directives-3` e não aponta o processo sem geração', () => {
-    expect(skill('flow-run')).toContain('o processo vigente de diretrizes for `directives-3`');
+  test('flow-run não fixa a geração vigente nem aponta o processo sem geração', () => {
+    expect(skill('flow-run')).not.toMatch(currentGeneration);
     expect(skill('flow-run')).not.toMatch(/process: directives\b(?!-)/);
   });
 
@@ -459,9 +465,10 @@ describe('troca do processo vigente de diretrizes para directives-3', () => {
     expect(read()).toContain('`create_process` de `directives-N`');
   });
 
-  test('flow-audit cobre as duas gerações: `directives-3` vigente e `directives-2` antiga', () => {
-    expect(skill('flow-audit')).toContain('directives-3');
-    expect(skill('flow-audit')).toContain('directives-2');
+  test('flow-audit cobre a geração vigente e as anteriores sem fixar o número', () => {
+    expect(skill('flow-audit')).toContain('o processo de diretrizes vigente');
+    expect(skill('flow-audit')).toContain('as gerações anteriores');
+    expect(skill('flow-audit')).not.toMatch(/directives-\d/);
   });
 
   test('a premissa atemporal não "mora em `directives-2`"', () => {

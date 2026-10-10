@@ -34,7 +34,7 @@
 
 ## Import padrão de fs
 
-Módulo de `src/adapters/fs/` que um spec espiona com `jest.spyOn(fs, ...)` usa `import fs from 'node:fs'` (import padrão), nunca `import * as fs`. Sob `esModuleInterop` o namespace copia o módulo com getters não configuráveis, e o spy (P9, M25 da issue #63) só intercepta o objeto padrão. Os comentários de `src/adapters/fs/` e de `src/archive.ts` apontam para esta seção.
+Módulo de `src/adapters/fs/` que um spec espiona com `jest.spyOn(fs, ...)` usa `import fs from 'node:fs'` (import padrão), nunca `import * as fs`. Sob `esModuleInterop` o namespace copia o módulo com getters não configuráveis, e o spy só intercepta o objeto padrão. Os comentários de `src/adapters/fs/` e de `src/archive.ts` apontam para esta seção.
 
 ## import()
 
