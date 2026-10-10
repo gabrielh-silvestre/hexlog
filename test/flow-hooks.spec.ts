@@ -831,6 +831,12 @@ describe('flow-report', () => {
     git(gitRepo, 'checkout', '-q', '-b', 'feat/r');
     fs.appendFileSync(path.join(gitRepo, 'docs/directives/convencoes.md'), 'amended\n');
     git(gitRepo, 'commit', '-q', '-am', 'amend convencoes');
+    // a base avança com `fluxo-hexlog.md` depois de `feat/r` sair: só o diff contra o merge-base o ignora
+    git(gitRepo, 'checkout', '-q', 'main');
+    fs.appendFileSync(path.join(gitRepo, 'docs/directives/fluxo-hexlog.md'), 'amended on base\n');
+    git(gitRepo, 'commit', '-q', '-am', 'amend fluxo-hexlog on base');
+    git(gitRepo, 'update-ref', 'refs/remotes/origin/develop', 'HEAD');
+    git(gitRepo, 'checkout', '-q', 'feat/r');
   }, 60_000);
 
   function runReport(
@@ -904,7 +910,7 @@ describe('flow-report', () => {
       ]);
     });
 
-    test('não aponta a decisão ancorada num doc fora do diff', () => {
+    test('não aponta a decisão ancorada num doc alterado só na base depois do merge-base', () => {
       expect(rowFor(result, 'd-far')).toBeUndefined();
     });
 
