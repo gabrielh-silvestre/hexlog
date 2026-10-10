@@ -11,8 +11,8 @@ import argparse, collections, datetime, glob, json, os, re
 
 # Para portar para outra tool MCP, troque estas três constantes (ver docs/friction-mining.md).
 TOOL_PREFIX = 'mcp__hexlog__'
-READS = {'events', 'state', 'list', 'chain'}
-WRITES = {'register', 'evaluate_gate', 'create_process', 'register_gate', 'register_vocabulary', 'register_type'}
+READS = {'query', 'list', 'read_attachment', 'verify_chain', 'describe_type'}
+WRITES = {'register', 'evaluate_gate', 'create_process', 'attach', 'define_type', 'define_relation', 'define_gate'}
 
 SERVER = TOOL_PREFIX.split('__')[1]
 KEYWORD_RE = re.compile(re.escape(SERVER), re.I)
