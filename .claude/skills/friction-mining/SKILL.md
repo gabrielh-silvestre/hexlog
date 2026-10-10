@@ -83,7 +83,7 @@ Se o hook stop-slop barrar um corpo: reescreva o rascunho seguindo a mensagem do
 
 ## Exemplos
 
-**Rodada semanal.** Usuário: "/friction-mining". Gate 1 → `-home-gabriel-work`, `2026-09-28` a `2026-10-02`. Workflow roda 7 lanes, acha 5 achados (2 reforçam #14 e #10). Gate 2 → "publicar tudo". Resultado: relatório em `.ignore/reports/`, 3 issues novas, 2 comentários em #14 e #10.
+**Rodada semanal.** Usuário: "/friction-mining". Gate 1 → `-home-gabriel-work`, `2026-09-28` a `2026-10-02`. Workflow roda as lanes, acha 5 achados (2 reforçam #14 e #10). Gate 2 → "publicar tudo". Resultado: relatório em `.ignore/reports/`, 3 issues novas, 2 comentários em #14 e #10.
 
 **Outro projeto-fonte.** Usuário: "/friction-mining nas sessões do hexlog mesmo, última semana". Gate 1 → `-home-gabriel-personal-hexlog`, slug `personal-hexlog`. `list`, `verify_chain`, `create_process` e os `define_*` sem chamadas: lane `list-misc` pulada; uma tool nova do hexlog com bucket `d_cost_<tool>` vira lane de descoberta.
 

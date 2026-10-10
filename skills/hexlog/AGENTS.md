@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Skill de entrada do hexlog. Dispara quando o agente precisa montar um projeto novo no hexlog (definir tipos, nomes de relação e gates, criar um processo, registrar, avaliar um gate) ou checar se um servidor já instalado está saudável. Exemplos de pedido: "configura o hexlog nesse projeto", "o hexlog está funcionando?", "avalia esse gate". Não cobre o registro do dia a dia contra um fluxo mapeado (`hexlog-flow`) nem o mapeamento inicial de um repositório alvo (`hexlog-setup`).
+Skill de entrada do hexlog. Dispara quando o agente precisa montar um projeto novo no hexlog (definir tipos, nomes de relação e gates, criar um processo, registrar, avaliar um gate) ou checar se um servidor já instalado está saudável. Exemplos de pedido: "configura o hexlog nesse projeto", "o hexlog está funcionando?". Não cobre o registro do dia a dia contra um fluxo mapeado (`hexlog-flow`) nem o mapeamento inicial de um repositório alvo (`hexlog-setup`).
 
 ## Key Files
 

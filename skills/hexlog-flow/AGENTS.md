@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Skill de uso diário, para um repositório que já tem `.hexlog/flow.md`. Dispara quando o pedido é registrar um marco, cruzar um registro com o que já existe, avaliar o gate de uma fase, guardar um texto longo como anexo ou mostrar a trilha de um target ("registra esse marco no hexlog", "avalia o gate dessa fase", "mostra a trilha completa desse target"). Lê a fase atual no flow map e escolhe a tool (`register`, `query`, `evaluate_gate`, `verify_chain`, `attach`, `read_attachment`, `list`). Não configura o hexlog em repositório novo (`hexlog-setup`).
+Skill de uso diário, para um repositório que já tem `.hexlog/flow.md`. Dispara quando o pedido é registrar um marco, cruzar um registro com o que já existe, avaliar o gate de uma fase, guardar um texto longo como anexo ou mostrar a trilha de um target ("registra esse marco no hexlog", "avalia o gate dessa fase", "mostra a trilha completa desse target"). Lê a fase atual no flow map e escolhe a tool (`register`, `query`, `evaluate_gate`, `verify_chain`, `attach`, `read_attachment`, `list`, `describe_type`). Não configura o hexlog em repositório novo (`hexlog-setup`).
 
 ## Key Files
 
