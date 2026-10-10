@@ -60,7 +60,8 @@
     "allow": [
       "Bash(node .claude/hooks/flow-hooks.ts slug *)",
       "Bash(node .claude/hooks/flow-hooks.ts mark *)",
-      "Bash(node .claude/hooks/flow-hooks.ts sync-plan *)"
+      "Bash(node .claude/hooks/flow-hooks.ts sync-plan *)",
+      "Bash(node .claude/hooks/flow-report.ts *)"
     ],
     "ask": [
       "Bash(node *scripts/install.ts*)"

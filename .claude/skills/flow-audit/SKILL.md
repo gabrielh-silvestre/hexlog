@@ -31,7 +31,7 @@ Estratos pela `confidence` da `decision`:
 - `premise` de target `directives.estrategia.*` cujo `statement` não aparece no `docs/directives/estrategia.md` do `doc` vigente: premissa atemporal gravada sem o dono.
 - `decision` vigente de trabalho com `premise` disponível e sem `rests-on`.
 - `rests-on` com `current: false`: a premissa foi superada ou revogada e a decisão ficou "muda", sem aviso do servidor.
-- `rests-on` só para a premissa-objetivo (`<slug>.premise.objective`) ou para a sentinela (`directives.estrategia.none`): citação decorativa.
+- `rests-on` só para a premissa-objetivo (`<slug>.premise.objective`) ou para a sentinela (`directives.estrategia.none`): citação decorativa; as linhas `only-objective` e `only-sentinel` de `node .claude/hooks/flow-report.ts <processo>` já apontam essas.
 - `fills-gap` de premissa fora do processo do trabalho.
 - Crescimento de `docs/directives/` por regra estreita nascida de lacuna.
 
@@ -47,6 +47,10 @@ O resultado vai numa seção "Indicadores" do relatório, com o valor da rodada 
 1. **Contradições de premissa atemporal.** População: toda `premise` vigente de processo de trabalho com `fills-gap`, mais as lacunas abertas com PR em rascunho; sorteio com a semente do relatório quando passa de 30 premissas, população inteira abaixo disso. Fórmula: nº de premissas julgadas contraditórias com qualquer premissa de todo o `docs/directives/estrategia.md` (e, por `derivesFrom` cru, a que ela diz desenvolver) dividido pelo nº de premissas com `fills-gap`, mais a contagem de lacunas deixadas abertas por contradição.
 2. **Lacunas recorrentes entre trabalhos.** População: todo `gap` do projeto. Fórmula: grupos de 2 ou mais lacunas de processos diferentes sobre o mesmo assunto (agrupadas por leitura de `question`, apoiada em `query` com `text`), com tamanho, processos e a premissa que fechou cada uma. Cada grupo vira proposta de regra em `docs/directives/` na entrevista de ajustes.
 3. **Uso da sentinela e citação decorativa.** População: toda `decision` vigente de trabalho com `premise` disponível. Fórmula: (a) parcela cujo único `rests-on` é a sentinela; (b) parcela cujo único `rests-on` é a sentinela ou a premissa-objetivo; (c) lista das sem nenhum `rests-on`; (d) lista das com `rests-on` de `current: false`.
+   - (a) e (b) saem de `node .claude/hooks/flow-report.ts <processo>`, um por processo da população: conte as linhas com `only-sentinel` (a) e com `only-sentinel` ou `only-objective` (b), ignorando as que só têm `doc-amended` (depende do diff do trabalho em curso), e divida pelo nº de `decision` vigentes do processo.
+   - Processo cujo relatório não rodou (stdout vazio, stderr com `flow-report:`) sai do denominador e é listado. Relatório que cortou (`... N more omitted`) ou que saiu com aviso `flow-report:` que não começa por `git:` no stderr e stdout preenchido (sinal pulado) dá à parcela um piso; liste o processo com o aviso. O aviso `flow-report: git:` só pula `doc-amended`, que (a) e (b) já ignoram, e não conta como piso.
+   - (c) e (d) seguem pelo export ou pela `query`.
+   - Ao apresentar o indicador, avise que (a) e (b) mudaram de definição (por target, não por id) e não se comparam diretamente com a rodada anterior. Depois do `flow-run`, as linhas que restam são as que o autor julgou legítimas (passo 5 do `flow-run`): (a) e (b) medem o uso residual mantido pelo mesmo agente, não a citação decorativa; para essa, amostre à mão as linhas `uncited=-`.
 
 ## Evidência tardia
 

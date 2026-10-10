@@ -22,7 +22,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `CLAUDE.md` | Importa este `AGENTS.md` e as diretrizes de `docs/directives/` para toda sessão e todo subagente |
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
-| `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (`flow-hooks.ts`, `flow-command.ts`, `flow-sync.ts`), as skills locais em `skills/` e `workflows/` (`deliver-phase.js`, `friction-mining-run.js`). Fica fora do bundle do produto |
+| `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (`flow-hooks.ts`, `flow-command.ts` e `flow-sync.ts` são hooks; `flow-report.ts` não é hook: é o relatório que `flow-run` e `flow-audit` chamam e precisa de `node_modules`), as skills locais em `skills/` e `workflows/` (`deliver-phase.js`, `friction-mining-run.js`). Fica fora do bundle do produto |
 | `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 9 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. O fluxo novo substitui o setup da F9 (passo 8): não há `.hexlog/flow.md`, o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
 
 ## Subdirectories
