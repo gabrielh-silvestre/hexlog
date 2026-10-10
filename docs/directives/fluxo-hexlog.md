@@ -24,6 +24,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - A premissa da entrega que desenvolve uma atemporal pode ligar-se a ela por `derivesFrom` cru (sem `as`). É opcional.
 - A premissa da entrega não contradiz premissa atemporal nem diretriz técnica. A diretriz técnica é teto fixo: se a escolha esbarra nela, escolha outro caminho, sem perguntar.
 - Premissa errada não se edita: registre outra, nova, com `revokes` da errada.
+- Escolha do dono que chega por issue, review ou conversa e motiva uma `decision` vira premissa da entrega (`<slug>.premise.<short>`) e a decisão a cita por `rests-on`; a escolha não fica só na conversa.
 - Evidência é opcional e tardia, em `<slug>.evidence.<short>`, no processo do trabalho atual, que fixa `evidence`. Quando o humano pede a justificativa de uma decisão, pesquise, guarde o texto por `attach` e registre `evidence` (`summary`, `source`) com `supports` para a `decision` vigente. Se a `decision` é de outro processo (trabalho anterior a `directives-2`, que não fixou `evidence`), a `evidence` fica no trabalho atual e o `supports` aponta para a `decision` vigente do processo antigo. Decisão já superada não recebe `supports`: registre a evidência de novo na vigente.
 
 ## Quando uma escolha vira `decision`
@@ -33,11 +34,13 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - Registre você mesmo, na hora, também quando for subagente: a decisão nasce onde a escolha é feita, e quem a toma não delega o registro.
 - O registro carrega `choice`, `alternatives` (cada uma com `option` e `reason`), `rationale`, `grounds` (`directive` ou `gap`) e `confidence`.
 - Com `grounds: directive`, a decisão se liga à diretriz por `anchored-in` (decisão para `directive`). Com `grounds: gap`, por `about-gap` (decisão para `gap`). Nos dois casos, liga-se também a uma premissa por `rests-on` (salvo a exceção de Premissas).
+- `grounds: directive` só vale quando a diretriz passa em três perguntas: trata do mesmo objeto da escolha; escolhe entre as mesmas alternativas; e a escolha não a contraria. Contraria sem emendar: a diretriz é teto fixo, escolha outro caminho (seção "Premissas"). Falha na 1ª ou na 2ª pergunta, ou emenda da própria regra citada no mesmo trabalho: lacuna (seção "Lacuna": o modo `ask` para e pergunta, o `autonomous` decide); registre o `gap`, a `decision` com `grounds: gap` e `low` e a premissa que fecha a lacuna por `fills-gap`, que diz o porquê da escolha, não a emenda. Se a lacuna não fechar, o PR sai em rascunho e o `flow-gaps` a fecha pelo `closes-gap` da regra nova.
 - Refazer uma decisão grava uma `decision` nova com `supersedes` da vigente. O `supersedes` não herda relações: regrave `anchored-in` ou `about-gap` e `rests-on`.
 
 ## Consulta antes de decidir
 
 - Antes de registrar uma `decision`, rode `query` com `type: decision` e o assunto (`targetPrefix` ou `text`) no processo do trabalho; vale para a sessão principal e para todo subagente. A `query` não deixa rastro no log, então só esta regra garante a consulta.
+- A consulta roda também com `scope: project` e `text` sobre o assunto: decisão vigente de outro trabalho sobre o mesmo item pede `derivesFrom` da decisão nova para ela, ou citação no `rationale`; `supersedes` não cruza processos.
 - Decisão vigente que cobre o caso: siga e cite o id. Decisão que precisa mudar: `decision` nova com `supersedes` e o motivo em `rationale`.
 - Decisão nova que estende ou se apoia em outra vigente grava `derivesFrom` (decisão para decisão) para ela. `supersedes` só quando substitui; estender sem substituir não é `supersedes`.
 - O hexlog guarda o vigente da entrega inteira. Handoff e resumo de sessão anterior são dica e nunca valem contra o registro; texto que só existe no handoff não vira registro sozinho.
@@ -51,7 +54,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Lacuna (`gap`)
 
-- Lacuna é a escolha que nenhuma diretriz cobre. Registre o `gap` (`question`, `context`, `provisionalChoice`) e a `decision` com `grounds: gap` ligada a ele.
+- Lacuna é a escolha que nenhuma diretriz cobre, inclusive a que uma diretriz cobre só em parte (falha na 1ª ou na 2ª pergunta de "Quando uma escolha vira `decision`") ou que o trabalho emenda. Registre o `gap` (`question`, `context`, `provisionalChoice`) e a `decision` com `grounds: gap` ligada a ele.
 - modo `ask`: a lacuna para e pergunta antes de seguir, a resposta do humano vira o texto da premissa (o agente a grava); modo `autonomous`: o agente decide e grava a premissa; em ambos, lacuna que compromete o trabalho inteiro (a resposta invalida a premissa-objetivo ou nenhum caminho do trabalho sobra) sempre para e pergunta.
 - Uma premissa da entrega fecha a lacuna por `fills-gap` (`premise` para `gap`), desde que não contradiga premissa atemporal nem diretriz técnica. O `rationale` da `decision` cita os ids das premissas atemporais conferidas. É sempre registro novo, sem `supersedes`, gravado depois da lacuna ou no mesmo lote, depois dela (`@alias`); a `decision` leva `about-gap` e `rests-on` para essa premissa. Premissa gravada antes da lacuna, como a da entrevista de abertura, não a fecha.
 - Premissa que fecha a lacuna depois da `decision` não se liga sozinha: regrave a `decision` com `supersedes`, os mesmos dados, `about-gap` e `rests-on` para a premissa nova. Sem esse `rests-on`, revogar a premissa não marca a decisão para revisão.
@@ -62,6 +65,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 ## Verificação e achados
 
 - Antes do PR, registre `verification` com `result`, `commit` e `commands` (`typecheck`, `lint`, `format:check`, `test`).
+- Antes da `verification` e de novo depois da review, para as decisões que a review gerou, a `decision` vigente cujo texto diverge do que o diff entrega é regravada com `supersedes`, o texto do entregue e as mesmas relações (`anchored-in` ou `about-gap`, `rests-on`, `resolves-finding`, `derivesFrom`). Esta é a única lista de relações a regravar: a skill só executa.
 - Toda `verification` nova faz `supersedes` da vigente. Deve haver exatamente uma vigente, `passed`, com `commit` igual ao `HEAD`.
 - Registre cada achado da review como `finding` (`severity`, `origin`, `description`, `location`).
 - **Achado URGENT é corrigido.** Aceitar sem corrigir exige justificativa em `rationale`. A `decision` que o resolve usa `resolves-finding`, `grounds: directive`, `confidence: high`, `anchored-in` na regra desta seção e `rests-on` (ou a exceção de Premissas).
