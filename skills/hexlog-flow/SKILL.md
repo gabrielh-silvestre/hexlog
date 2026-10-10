@@ -1,6 +1,6 @@
 ---
 name: hexlog-flow
-description: "Use to register hexlog records and cross-reference them against what is already recorded, for a repository that already has `.hexlog/flow.md` configured — picks the right tool (`register`, `query`, `evaluate_gate`, `verify_chain`, `attach`, `read_attachment`, `list`) based on the current phase read from the flow map. Also stores an agent's full text as a hash-addressed attachment, records planning rationale and execution deviations, and audits a target end to end. Examples: \"registra esse marco no hexlog\", \"avalia o gate dessa fase antes de eu seguir\", \"mostra a trilha completa desse target\". Not for configuring hexlog in a repository for the first time or defining phases/processes — that's hexlog-setup, which runs once."
+description: "Use to register hexlog records and cross-reference them against what is already recorded, for a repository that already has `.hexlog/flow.md` configured — picks the right tool (`register`, `query`, `evaluate_gate`, `verify_chain`, `attach`, `read_attachment`, `list`, `describe_type`) based on the current phase read from the flow map. Also stores an agent's full text as a hash-addressed attachment, records planning rationale and execution deviations, and audits a target end to end. Examples: \"registra esse marco no hexlog\", \"avalia o gate dessa fase antes de eu seguir\", \"mostra a trilha completa desse target\". Not for configuring hexlog in a repository for the first time or defining phases/processes — that's hexlog-setup, which runs once."
 ---
 
 # hexlog-flow
@@ -184,7 +184,7 @@ processo num gate com pergunta de projeto lê os demais processos como vazios.
 
 | Situação | O que fazer |
 |---|---|
-| `IO_ERROR` no `register` (`details[0].code` = o errno em minúsculas, como no ENOSPC) | **Resultado incerto**: o lote pode ter ficado inteiro no disco. Reenvie com a **mesma** `key`: devolve `replayed: true` ou grava. Sem `key`, o reenvio pode duplicar. Um `replayed` depois de um fsync que falhou não garante o lote no disco; a 1.0 não corrige esse caso |
+| `IO_ERROR` no `register` (`details[0].code` = o errno em minúsculas, como no ENOSPC) | **Resultado incerto**: o lote pode ter ficado inteiro no disco. Reenvie com a **mesma** `key`: devolve `replayed: true` ou grava. Sem `key`, o reenvio pode duplicar. Um `replayed` depois de um fsync que falhou não garante o lote no disco; o servidor não corrige esse caso |
 | `LOCK_TIMEOUT` com `lock-busy` ou `lock-lost` (`adapters/fs/lock.ts#lockTimeout`) | Retentável com a mesma `key`. `lock-busy`: um dono vivo segurou o processo além da espera (15 s). `lock-lost`: nada foi gravado |
 | `LOCK_TIMEOUT` com `holder-unreadable` | **Não se resolve repetindo.** O dono do lock não pode ser lido: pare e peça ao usuário que remova o lock |
 | `INTERNAL` no `register` | Resultado incerto: reenvie com a **mesma** `key` |

@@ -1,6 +1,6 @@
 # Regras de cruzamento
 
-Três regras, decididas no grilling do mapa de fluxo. Nenhuma delas precisa de tool
+Três regras de cruzamento. Nenhuma delas precisa de tool
 nova — todas são combinações de `register`, `query`, `evaluate_gate` e
 `verify_chain`, guiadas pela leitura do `.hexlog/flow.md`.
 

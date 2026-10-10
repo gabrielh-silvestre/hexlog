@@ -10,7 +10,7 @@
 
 - A partir da 1.0, ADR não é refeito nem apagado, só recebe emenda: uma seção nova ("Amendment") ou um ADR seguinte (`adr-000N-...md`), sem reescrever Decision nem Consequences já registrados ([ADR 0009](adr-0009-ferramental.md), item 17).
 - Na aprovação só o cabeçalho muda (Status passa a Aceito e Deciders inclui quem aprovou). Depois de Aceito, o corpo só muda por emenda datada.
-- A troca dos ADRs 0001, 0002, 0005 e 0006 pelos 0007 a 0009 foi a exceção única. O ADR 0001 está só no git (`git show 87237c3:docs/adr-0001-hexlog-mvp.md`).
+- O ADR 0001 está só no git (`git show 87237c3:docs/adr-0001-hexlog-mvp.md`).
 - Antes de trocar uma lib ou uma decisão, confira [ADR 0007](adr-0007-dominio.md), [ADR 0008](adr-0008-servicos.md), [ADR 0009](adr-0009-ferramental.md), a frente correspondente em `docs/pesquisa/frentes/` e `docs/pesquisa/hexlog-pesquisa-libs.md`: a maioria das alternativas já foi avaliada e tem motivo registrado.
 
 ## Changelog

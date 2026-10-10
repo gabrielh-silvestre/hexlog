@@ -46,16 +46,6 @@
   "enabledPlugins": {
     "es-toolkit@es-toolkit-plugin": true
   },
-  "skillOverrides": {
-    "deliver-phase": "off",
-    "deliver-v1": "off",
-    "gitnexus-cli": "name-only",
-    "gitnexus-guide": "user-invocable-only",
-    "gitnexus-exploring": "name-only",
-    "gitnexus-debugging": "name-only",
-    "gitnexus-impact-analysis": "name-only",
-    "gitnexus-refactoring": "name-only"
-  },
   "permissions": {
     "allow": [
       "Bash(node .claude/hooks/flow-hooks.ts slug *)",

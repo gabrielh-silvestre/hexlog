@@ -40,7 +40,7 @@ Estratos pela `confidence` da `decision`:
 Os relatórios ficam em `.ignore/flow/audits/`. Valem para a população inteira, salvo o 1, que é amostra acima de 30 premissas. Trabalho sem `premise` nos tipos fixados fica fora das contas. Duas rotas de leitura, à escolha de quem roda:
 
 - `query` com `scope: project`: cara, porque cada página tem teto de 24.000 caracteres e uma `decision` chega a 3 ou 4 mil de `data`. A vigência do destino de `rests-on` vem em `current` na relação de saída; destino de outro processo exige `scope: project`, e com ele o `process` é ignorado (restrinja por `targetPrefix` ou `ids`).
-- `node scripts/export.ts hexlog/<processo> --fields id,type,target,in,out`, contado num `ctx_execute`; o `in` serve para saber quais `decision` estão vigentes. O export é por processo: para a vigência de `rests-on` para as diretrizes, exporte também `directives-3` (vigente) e, para decisões antigas, `directives-2`, com `--fields id,type,target,in,out` e cruze os ids.
+- `node scripts/export.ts hexlog/<processo> --fields id,type,target,in,out`, contado num `ctx_execute`; o `in` serve para saber quais `decision` estão vigentes. O export é por processo: para a vigência de `rests-on` para as diretrizes, exporte também o processo de diretrizes vigente (`docs/directives/fluxo-hexlog.md`) e, para decisões antigas, as gerações anteriores, com `--fields id,type,target,in,out` e cruze os ids.
 
 O resultado vai numa seção "Indicadores" do relatório, com o valor da rodada anterior ao lado para a tendência.
 
@@ -50,7 +50,7 @@ O resultado vai numa seção "Indicadores" do relatório, com o valor da rodada 
    - (a) e (b) saem de `node .claude/hooks/flow-report.ts <processo>`, um por processo da população: conte as linhas com `only-sentinel` (a) e com `only-sentinel` ou `only-objective` (b), ignorando as que só têm `doc-amended` (depende do diff do trabalho em curso), e divida pelo nº de `decision` vigentes do processo.
    - Processo cujo relatório não rodou (stdout vazio, stderr com `flow-report:`) sai do denominador e é listado. Relatório que cortou (`... N more omitted`) ou que saiu com aviso `flow-report:` que não começa por `git:` no stderr e stdout preenchido (sinal pulado) dá à parcela um piso; liste o processo com o aviso. O aviso `flow-report: git:` só pula `doc-amended`, que (a) e (b) já ignoram, e não conta como piso.
    - (c) e (d) seguem pelo export ou pela `query`.
-   - Ao apresentar o indicador, avise que (a) e (b) mudaram de definição (por target, não por id) e não se comparam diretamente com a rodada anterior. Depois do `flow-run`, as linhas que restam são as que o autor julgou legítimas (passo 5 do `flow-run`): (a) e (b) medem o uso residual mantido pelo mesmo agente, não a citação decorativa; para essa, amostre à mão as linhas `uncited=-`.
+   - (a) e (b) contam por target, não por id. Depois do `flow-run`, as linhas que restam são as que o autor julgou legítimas (passo 5 do `flow-run`): (a) e (b) medem o uso residual mantido pelo mesmo agente, não a citação decorativa; para essa, amostre à mão as linhas `uncited=-`.
 
 ## Evidência tardia
 

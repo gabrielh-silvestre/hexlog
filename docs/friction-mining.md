@@ -1,12 +1,12 @@
 # friction-mining: como funciona e como portar
 
-A `friction-mining` minera os transcripts do Claude Code de um projeto-fonte numa janela de datas atrás de atrito no uso real de uma tool MCP (hoje, o hexlog). Ela entrega um relatório ranqueado mais rascunhos de issue e comentário, e só publica depois do ok humano. Nasceu da primeira rodada manual (relatório `docs/pesquisa/2026-09-mineracao-sessoes-work.md` do PR #5, issues #6–#21) e congela as decisões de método daquela rodada.
+A `friction-mining` minera os transcripts do Claude Code de um projeto-fonte numa janela de datas atrás de atrito no uso real de uma tool MCP (hoje, o hexlog). Ela entrega um relatório ranqueado, só local em `.ignore/reports/`, mais rascunhos de issue e comentário, e só publica as issues e os comentários depois do ok humano. Nasceu da primeira rodada manual (relatório `docs/pesquisa/2026-09-mineracao-sessoes-work.md` do PR #5, issues #6–#21) e congela as decisões de método daquela rodada.
 
 ## Peças
 
 | Peça | Caminho | Papel |
 |---|---|---|
-| Skill | `.claude/skills/friction-mining/SKILL.md` | Conduz a rodada: gate 1 (janela e fonte), preparação (branch via `wt`, prior art), dispara o workflow, gate 2 (aprovar publicação), publicação. Só invocação explícita (`disable-model-invocation: true`). |
+| Skill | `.claude/skills/friction-mining/SKILL.md` | Conduz a rodada: gate 1 (janela e fonte), preparação (prior art e caminhos), dispara o workflow, gate 2 (aprovar publicação), publicação. Só invocação explícita (`disable-model-invocation: true`). |
 | Script | `.claude/skills/friction-mining/scripts/mine.py` | Extração determinística: lê os `.jsonl`, deduplica, classifica e separa os sinais em buckets. Sem dependências além da stdlib do Python. |
 | Workflow | `.claude/workflows/friction-mining-run.js` | Fan-out: roda o script por um agente, abre as lanes de análise em paralelo, consolida, calcula confiança, escreve relatório e rascunhos, verifica e corrige (até 2 voltas). |
 | Briefing | `.claude/skills/friction-mining/references/briefing.md` | O que cada lane lê antes de começar: material, sinais, armadilhas, critério de confiança, formato de retorno. |
@@ -54,7 +54,7 @@ O workflow não tem acesso a filesystem nem a Node; tudo que toca disco (rodar o
 2. **Workflow** (`friction-mining-run.js`): reescreva `FIXED` com as lanes da nova tool (uma por grupo de tools, com `tools`, `match` de bucket e `focus`), ajuste `TOOL_ORDER` e, se quiser outro modelo, `MODEL`. As lanes `user` e `harness` são genéricas.
 3. **Briefing**: troque a menção a `mcp__hexlog__*`, o caminho do código do servidor e os exemplos das armadilhas.
 4. **Formato**: troque o título do relatório e o owner/repo dos links.
-5. **Skill**: troque owner/repo das chamadas GitHub, o prefixo da branch e a description.
+5. **Skill**: troque owner/repo das chamadas GitHub e a description.
 6. Rode uma janela já conhecida e compare `stats.json` com números que você sabe de antemão antes de confiar nas lanes.
 
 Fora do Claude Code (sem Workflow), o formato equivalente é: rodar o script, disparar um agente por lane com o briefing, consolidar, e aplicar o mesmo critério de confiança em código.

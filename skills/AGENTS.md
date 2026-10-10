@@ -28,7 +28,7 @@ As três skills do Claude Code que acompanham o hexlog. Cada pasta tem um `SKILL
 ## Dependencies
 
 ### Internal
-- `../scripts/install.ts` e `../src/installation.ts` (`skillNames`, `writeSkillFolder`): instalam e conferem as skills
+- `../scripts/install.ts` (`skillNames`) e `../src/installation.ts` (`writeSkillFolder`): instalam e conferem as skills
 - `../test/skill-coherence.spec.ts`: confere o `.md` das skills contra `src/`
 
 ## Manual Notes

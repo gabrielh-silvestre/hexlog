@@ -49,7 +49,7 @@ Premissas atemporais do hexlog, em linguagem de produto: o que não pode quebrar
 ## Propósito e modos de uso
 
 - `audita-decisoes-de-agentes`: O hexlog existe para auditar decisões de agentes de IA: o que foi decidido, por quê e com que evidência. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
-- `dois-modos-de-uso`: Há dois modos: acompanhado (hoje, o modo `ask`), em que o humano decide e o agente explora, coleta evidência e pesquisa; e autônomo, em que o agente decide dentro de objetivos, diretrizes e premissas e registra. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
+- `dois-modos-de-uso`: Há dois modos: acompanhado (modo `ask`), em que o humano decide e o agente explora, coleta evidência e pesquisa; e autônomo (modo `autonomous`, o padrão), em que o agente decide dentro de objetivos, diretrizes e premissas e registra. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 - `decisao-registrada-e-reversivel`: Toda decisão fica registrada para auditoria posterior e pode ser revertida; nada decidido some do histórico. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 - `decisao-refutavel`: Toda decisão pode ser refutada por revisão de pares, com o porquê e as evidências rastreáveis, e o processo se ajusta ao que a refutação revela. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
 - `melhoria-continua`: O registro serve à melhoria contínua: o que a auditoria revela vira regra ou premissa melhor. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).

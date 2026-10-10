@@ -14,7 +14,7 @@ decisão, propõe um plano de chamadas ao hexlog, espera aprovação, registra e
 
 Antes de qualquer pergunta, procure `.hexlog/flow.md` a partir da raiz do repositório
 alvo. Se existir, pare e diga ao usuário que o repositório já está configurado —
-manutenção/reconfiguração do flow map é v2, fora do escopo desta skill.
+manutenção/reconfiguração do flow map está fora do escopo desta skill.
 
 ## Fluxo (uma decisão por turno)
 

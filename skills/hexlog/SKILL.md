@@ -1,6 +1,6 @@
 ---
 name: hexlog
-description: "Use when the agent needs to bootstrap a new project in hexlog (define types, relation names and gates, create a process, register records, evaluate gates) or diagnose whether an already-installed hexlog server is healthy. Examples: \"configura o hexlog nesse projeto\", \"o hexlog está funcionando?\", \"registra esse marco no hexlog\", \"avalia esse gate\""
+description: "Use when the agent needs to bootstrap a new project in hexlog (define types, relation names and gates, create a process, register records, evaluate gates) or diagnose whether an already-installed hexlog server is healthy. Examples: \"configura o hexlog nesse projeto\", \"o hexlog está funcionando?\". Not for day-to-day registering or gate evaluation in a repository that already has `.hexlog/flow.md` — that's hexlog-flow."
 ---
 
 # hexlog
@@ -55,11 +55,6 @@ minúsculo, `[a-z0-9-]`, começa com alfanumérico, até 63 caracteres.
 imutável: nomear pela versão ainda não fechada (ex.: "release 0.0.2") deixa um
 processo órfão assim que a versão real diverge; prefira o escopo (ex.:
 "release hextelemetry").
-
-**hexlog + ralplan.** Ao configurar hexlog num projeto que já roda ralplan,
-escreva no `CLAUDE.md` desse projeto a regra "cada iteração do ralplan entra
-no hexlog assim que acontece" — antes de disparar as iterações, não depois
-que o usuário notar a lacuna.
 
 ## Versão de definição e `breaking`
 
