@@ -52,7 +52,7 @@ function preamble() {
 Modo autônomo, autorizado pelo usuário na spec: não há humano nesta execução. Nunca pergunte nem espere confirmação; nesta execução, "sempre perguntar" e "entrevista item a item" do CLAUDE.md global cedem ao decisor do script. Dúvida ou decisão aberta vai no campo próprio da sua saída estruturada.
 Regras de todo estágio:
 - Rode comandos de código dentro da worktree da fase (cd ${WT}) e edite arquivos pelo caminho absoluto dela. O repositório principal só recebe artefatos de processo (.omc/, .ignore/).
-- Código, nomes e mensagens de runtime em inglês; comentários, títulos de teste e .md em pt-BR; documentação cita arquivo#símbolo, nunca número de linha.
+- Código, nomes, mensagens de runtime e títulos de teste em inglês; comentários e .md em pt-BR; documentação cita arquivo#símbolo, nunca número de linha.
 - Worktree e branch só por Worktrunk (wt, skill worktrunk), nunca git worktree, git merge ou git branch -d. Branch com "!" (ex.: feat!/v1-cutover) vai sempre entre aspas simples no shell; o zsh expande "!".
 - Proibido: node scripts/install.ts, git tag, merge de PR, wt remove, npm run test:budget (orçamento só no CI), test.skip/.only, apagar a worktree da fase.
 - Commit: Conventional Commits, só subject com até 80 caracteres, sem corpo, mensagem literal na linha do comando (o hook recusa variável), sem citar Claude ou Anthropic.
