@@ -15,7 +15,7 @@
 
 ## Dependências
 
-- Versões de dependências fixadas, sem `^` nem `~`; `test/package.spec.ts` trava.
+- Dependências em faixa `^X.Y.Z`, sem `~`, `*` nem `latest`, e a versão resolvida fixada no `package-lock.json` (`npm ci`); `test/package.spec.ts` trava o conjunto de pacotes e o formato da faixa, não a versão.
 - Checagem de ausência pelos predicados da es-toolkit, conforme o tipo: `isUndefined` quando só `undefined` é possível, `isNil`/`isNotNil` quando `undefined` e `null` valem. `null` legítimo, sem `undefined` no tipo, segue com `=== null`. Vazio de array ou string fica em `.length`: `isEmpty` só existe em `es-toolkit/compat`, que `src/` não importa.
 - Trocar uma lib ou uma decisão exige conferir antes os ADRs de `docs/directives/` e a pesquisa, como descrito em [documentacao.md](documentacao.md).
 
