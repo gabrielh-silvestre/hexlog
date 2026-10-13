@@ -8,7 +8,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Key Files
 | File | Description |
 |------|-------------|
-| `package.json` | Dependências fixadas, scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
+| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
 | `tsconfig.json` | Configuração do TypeScript |
 | `eslint.config.js` | Config do ESLint (typescript-eslint com `stylisticTypeChecked`, `eslint-plugin-jest`, `eslint-plugin-n`); importa `boundaryBlocks` de `eslint.boundaries.js` |
 | `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
@@ -38,7 +38,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Dependencies
 
 ### External
-- `@modelcontextprotocol/server` 2.3.1: servidor MCP stdio
+- `@modelcontextprotocol/server` 2: servidor MCP stdio
 - `zod` 4: validação de eventos e entradas
 - `ajv` + `ajv-formats`: validação de JSON Schema (`define_type`) e do `data` de cada registro
 - `canonicalize`: JCS para o hash da cadeia

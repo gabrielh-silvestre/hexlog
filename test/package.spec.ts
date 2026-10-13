@@ -90,49 +90,57 @@ describe('N7', () => {
 });
 
 describe('N11', () => {
-  // Versões exatas (npm install --save-exact).
-  const EXPECTED_DEPENDENCIES = {
-    '@modelcontextprotocol/server': '2.3.1',
-    zod: '4.6.5',
-    ajv: '8.20.0',
-    'ajv-formats': '3.0.1',
-    canonicalize: '5.0.0',
-    'shell-quote': '1.10.0',
-    'jsonc-parser': '3.3.1',
-    'es-toolkit': '1.52.0',
-    minisearch: '7.2.0',
-  };
-  const EXPECTED_DEV_DEPENDENCIES = {
-    '@modelcontextprotocol/client': '2.0.0',
-    jest: '30.5.1',
-    '@jest/globals': '30.5.1',
-    'ts-jest': '29.4.14',
-    typescript: '5.9.2',
-    '@types/node': '24.8.1',
-    '@types/shell-quote': '1.7.5',
-    'fast-check': '4.10.1',
-    esbuild: '0.28.2',
+  // Nomes esperados: o conjunto de pacotes é travado, a versão não. Cada um fica em `^X.Y.Z` e o lock
+  // fixa a resolvida.
+  const EXPECTED_DEPENDENCIES = [
+    '@modelcontextprotocol/server',
+    'zod',
+    'ajv',
+    'ajv-formats',
+    'canonicalize',
+    'shell-quote',
+    'jsonc-parser',
+    'es-toolkit',
+    'minisearch',
+  ];
+  const EXPECTED_DEV_DEPENDENCIES = [
+    '@modelcontextprotocol/client',
+    'jest',
+    '@jest/globals',
+    'ts-jest',
+    'typescript',
+    '@types/node',
+    '@types/shell-quote',
+    'fast-check',
+    'esbuild',
     // Deps de lint/format do plano de quality-tooling (fora do conjunto inicial de dependências).
-    eslint: '10.12.0',
-    '@eslint/js': '10.0.1',
-    'typescript-eslint': '8.70.0',
-    'eslint-plugin-jest': '29.16.6',
-    'eslint-plugin-n': '18.4.1',
-    prettier: '3.9.7',
-    'eslint-config-prettier': '10.1.8',
-    husky: '9.1.7',
-    'lint-staged': '17.6.0',
-    tar: '7.5.22',
+    'eslint',
+    '@eslint/js',
+    'typescript-eslint',
+    'eslint-plugin-jest',
+    'eslint-plugin-n',
+    'prettier',
+    'eslint-config-prettier',
+    'husky',
+    'lint-staged',
+    'tar',
     // Rascunho do CHANGELOG.md a partir dos Conventional Commits (cliff.toml).
-    'git-cliff': '2.14.2',
-  };
+    'git-cliff',
+  ];
+  const CARET_RANGE = /^\^\d+\.\d+\.\d+$/;
+  const outsideCaret = (deps: Record<string, string>) =>
+    Object.entries(deps)
+      .filter(([, range]) => !CARET_RANGE.test(range))
+      .map(([name, range]) => `${name}@${range}`);
 
-  test('dependencies bate exatamente com o manifesto de package.json (sem ^/~/faixas)', () => {
-    expect(pkg.dependencies).toEqual(EXPECTED_DEPENDENCIES);
+  test('dependencies tem exatamente os pacotes esperados, todos em ^X.Y.Z', () => {
+    expect(Object.keys(pkg.dependencies).sort()).toEqual([...EXPECTED_DEPENDENCIES].sort());
+    expect(outsideCaret(pkg.dependencies)).toEqual([]);
   });
 
-  test('devDependencies bate exatamente com o manifesto de package.json (sem ^/~/faixas)', () => {
-    expect(pkg.devDependencies).toEqual(EXPECTED_DEV_DEPENDENCIES);
+  test('devDependencies tem exatamente os pacotes esperados, todos em ^X.Y.Z', () => {
+    expect(Object.keys(pkg.devDependencies).sort()).toEqual([...EXPECTED_DEV_DEPENDENCIES].sort());
+    expect(outsideCaret(pkg.devDependencies)).toEqual([]);
   });
 
   test('engines.node é >=24.18.1', () => {
