@@ -38,7 +38,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Dependencies
 
 ### External
-- `@modelcontextprotocol/server` 2.0.0: servidor MCP stdio
+- `@modelcontextprotocol/server` 2.3.1: servidor MCP stdio
 - `zod` 4: validação de eventos e entradas
 - `ajv` + `ajv-formats`: validação de JSON Schema (`define_type`) e do `data` de cada registro
 - `canonicalize`: JCS para o hash da cadeia

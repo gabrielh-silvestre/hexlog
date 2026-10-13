@@ -92,7 +92,7 @@ describe('N7', () => {
 describe('N11', () => {
   // Versões exatas (npm install --save-exact).
   const EXPECTED_DEPENDENCIES = {
-    '@modelcontextprotocol/server': '2.0.0',
+    '@modelcontextprotocol/server': '2.3.1',
     zod: '4.6.5',
     ajv: '8.20.0',
     'ajv-formats': '3.0.1',
@@ -106,22 +106,22 @@ describe('N11', () => {
     '@modelcontextprotocol/client': '2.0.0',
     jest: '30.5.1',
     '@jest/globals': '30.5.1',
-    'ts-jest': '29.4.12',
+    'ts-jest': '29.4.14',
     typescript: '5.9.2',
     '@types/node': '24.8.1',
     '@types/shell-quote': '1.7.5',
     'fast-check': '4.10.1',
     esbuild: '0.28.2',
     // Deps de lint/format do plano de quality-tooling (fora do conjunto inicial de dependências).
-    eslint: '10.10.0',
+    eslint: '10.12.0',
     '@eslint/js': '10.0.1',
     'typescript-eslint': '8.70.0',
     'eslint-plugin-jest': '29.16.6',
-    'eslint-plugin-n': '18.4.0',
+    'eslint-plugin-n': '18.4.1',
     prettier: '3.9.7',
     'eslint-config-prettier': '10.1.8',
     husky: '9.1.7',
-    'lint-staged': '17.5.1',
+    'lint-staged': '17.6.0',
     tar: '7.5.22',
     // Rascunho do CHANGELOG.md a partir dos Conventional Commits (cliff.toml).
     'git-cliff': '2.14.2',
