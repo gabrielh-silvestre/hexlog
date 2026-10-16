@@ -17,6 +17,7 @@ import {
 import type { Defined } from '../src/commands/definition.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import { hashOfJcs, sha256hex } from '../src/domain/chain.ts';
+import { classifyTypeChange, type RecordType } from '../src/domain/definitions.ts';
 import type {
   GateEvaluation,
   ListResult,
@@ -1059,6 +1060,44 @@ describe('premise e evidence', () => {
     ['sem statement', {}],
   ])('premise %s é INVALID_RECORD', async (_label, data) => {
     expectError(await writeBatch(WORK, [workRecord('premise', 'bad', data)]), 'INVALID_RECORD');
+  });
+
+  test.each(['human', 'simulated', 'simulated-approved'])(
+    'premise accepts answeredBy %s',
+    async (answeredBy) => {
+      const { records } = await register(WORK, [
+        workRecord('premise', 'a', { statement: 'ok', answeredBy }),
+      ]);
+
+      expect(records).toHaveLength(1);
+    },
+  );
+
+  test('premise rejects answeredBy outside the enum', async () => {
+    const result = await writeBatch(WORK, [
+      workRecord('premise', 'bad', { statement: 'ok', answeredBy: 'robot' }),
+    ]);
+
+    expectError(result, 'INVALID_RECORD');
+  });
+
+  test('premise without answeredBy stays valid', async () => {
+    const { records } = await register(WORK, [premise('a')]);
+
+    expect(records).toHaveLength(1);
+  });
+
+  test('adding the optional answeredBy to premise is a compatible change', () => {
+    const previous: RecordType = {
+      type: 'object',
+      properties: { statement: { type: 'string', minLength: 1, maxLength: 255 } },
+      required: ['statement'],
+      additionalProperties: false,
+    };
+
+    expect(classifyTypeChange(previous, fileBody('types', 'premise') as RecordType)).toBe(
+      'compatible',
+    );
   });
 
   test('evidence aceita summary e source de anexo existente', async () => {

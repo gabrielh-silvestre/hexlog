@@ -1,7 +1,8 @@
 {
   "type": "object",
   "properties": {
-    "statement": { "type": "string", "minLength": 1, "maxLength": 255 }
+    "statement": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "answeredBy": { "type": "string", "enum": ["human", "simulated", "simulated-approved"] }
   },
   "required": ["statement"],
   "additionalProperties": false

@@ -519,8 +519,8 @@ describe('documentação não cita número de linha', () => {
     const files = [
       ...markdownFilesUnder(path.join(repoRoot, 'skills')),
       ...markdownFilesUnder(path.join(repoRoot, 'docs')),
-      ...['friction-mining', 'flow-run', 'flow-gaps', 'flow-audit'].flatMap((name) =>
-        markdownFilesUnder(path.join(repoRoot, '.claude/skills', name)),
+      ...['friction-mining', 'flow-run', 'flow-gaps', 'flow-audit', 'flow-owner-seat'].flatMap(
+        (name) => markdownFilesUnder(path.join(repoRoot, '.claude/skills', name)),
       ),
       path.join(repoRoot, 'README.md'),
       ...agentsFilesUnder(repoRoot),
