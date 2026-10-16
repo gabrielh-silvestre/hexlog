@@ -203,7 +203,10 @@ function subagentStart(): void {
   }
   const additionalContext = [
     'Record choices between viable alternatives in hexlog as decision records, following ' +
-      'docs/directives/fluxo-hexlog.md; subagents decide and register too.',
+      'docs/directives/fluxo-hexlog.md; subagents decide and register too. ' +
+      'Found a NEW gap or critical point nobody handed you? Stop and hand it back to whoever ' +
+      'launched you (docs/directives/cadeira-do-dono.md); the owner-seat critic and its context ' +
+      'actions answer instead of handing back.',
     `Hexlog project: hexlog; work process: ${slug} (slug of the current branch); ` +
       'if that process does not exist yet, tell whoever launched you instead of registering.',
     'Open a PR only through the pre-PR step of flow-run.',
