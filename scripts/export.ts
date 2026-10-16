@@ -62,6 +62,7 @@ function main(argv: string[]): number {
       project: project.data,
       process: processName.data,
       includeNonCurrent: true,
+      relations: 'full',
       limit: Number.MAX_SAFE_INTEGER,
     });
     for (const record of records) {

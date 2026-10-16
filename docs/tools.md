@@ -189,9 +189,9 @@ Lê os registros **vigentes** (não superados nem revogados) de um processo
 quebrada ou manifesto ilegível falha fechado com `PROCESS_CORRUPTED` nomeando o
 processo em `details[0].process`.
 
-- **Alcance processo** lê um processo só: `in` traz só relações vindas do próprio
-  processo, e `out` para um registro de outro processo sai sem `current`. Quem espera
-  evidência de outro processo declara `scope: "project"`.
+- **Alcance processo** lê um processo só: as relações de entrada (`in`, ou `inCounts`)
+  trazem só as vindas do próprio processo, e `out` para um registro de outro processo sai
+  sem `current`. Quem espera evidência de outro processo declara `scope: "project"`.
 - **Filtros:** `type`, `targetPrefix`, `where` (igualdade em campos de primeiro nível
   de `data`, valor escalar, até 50 chaves), `text` (busca textual, até 200
   caracteres, por relevância), `ids` (até 200), `relatedTo` (os vizinhos diretos de um id,
@@ -209,17 +209,27 @@ processo em `details[0].process`.
   é `{}` quando nenhum dos nomes existe (o alcance projeto mistura tipos). Os filtros
   (`where`, `text` e os demais) veem o `data` inteiro, e o teto de página conta o JSON
   já recortado, então uma listagem só de ids e `target` (`fields: []`) cabe muito mais
-  registros por página. `in`, `out`, `needsReview` e `attachmentStatus` saem completos.
-  `fields` fica fora do hash do cursor: a página 2 pode pedir outros. Mais de 50 nomes
-  ou nome vazio dá `INVALID_INPUT`, com `/fields` ou `/fields/<i>` em `details[].path`.
+  registros por página. `needsReview` e `attachmentStatus` saem completos em qualquer
+  `fields`. `fields` fica fora do hash do cursor: a página 2 pode pedir outros. Mais de 50
+  nomes ou nome vazio dá `INVALID_INPUT`, com `/fields` ou `/fields/<i>` em `details[].path`.
+- **Relações:** `relations` escolhe como cada registro traz as arestas. `counts` (o
+  padrão da tool) devolve `inCounts` e `outCounts`, mapas `{<nome>: n}` em que `<nome>` é
+  o `as` da relação, ou o `kind` quando não há `as`: as relações `rests-on`, `anchored-in` e
+  `about-gap` são todas `derivesFrom` e saem separadas pelo nome que o agente gravou. Conta
+  toda aresta, vigente ou não; o nome sem aresta não aparece, e o mapa vazio é omitido
+  (ausência de `inCounts` ou `outCounts` é zero). `full` devolve `in` e `out` por inteiro,
+  como antes de `relations` existir, e `none` não devolve nenhum dos quatro campos. Para
+  seguir uma aresta, peça o registro com `relations: "full"`, ou use `relatedTo` com o id,
+  que independe do modo. `relations` fica fora do hash do cursor, como `fields`: a página 2
+  pode pedir outro modo. Valor fora de `counts`, `full` e `none` dá `INVALID_INPUT`.
 - **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data` (inteiro, ou só
-  os `fields` pedidos), as relações
-  de entrada (`in`) e de saída (`out`), `needsReview` (registro vigente cujo apoio
+  os `fields` pedidos), as relações no formato de `relations` (`inCounts` e `outCounts`,
+  `in` e `out`, ou nenhuma), `needsReview` (registro vigente cujo apoio
   morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`, `missing` ou
   `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como status, não
-  como erro. Cada relação de entrada é `{kind, as?, from, current}` e cada relação de
-  saída é `{kind, as?, to, current?}`: `current` diz se a outra ponta é vigente, e na
-  saída só sai quando o destino foi lido.
+  como erro. Com `relations: "full"`, cada relação de entrada é `{kind, as?, from, current}`
+  e cada relação de saída é `{kind, as?, to, current?}`: `current` diz se a outra ponta é
+  vigente, e na saída só sai quando o destino foi lido.
 - **Ordem:** por `seq` no alcance processo e por (`at`, processo, `seq`) no alcance
   projeto; com `text`, por relevância, com a ordem do alcance como desempate.
 - **Paginação:** até `limit` registros (padrão 50, máximo 200; `0` só com `changesSince` e
@@ -244,14 +254,34 @@ processo em `details[0].process`.
 ## `evaluate_gate`
 
 Calcula um gate fixado no processo, **sem gravar nada**. Devolve `passed`, o
-resultado de cada pergunta (`index`, `kind`, `passed`, `evidence` com os ids que
-sustentam a resposta) e o `marker` do que foi lido. A `evidence` tem listas por `kind`:
-`approved` traz `of`, `supports`, `contradictions` e `unsupported`; `occurred`, `found`;
-`no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. `target` é herdado pelos
-seletores sem `targetPrefix`. Com um `marker` de uma leitura anterior, a avaliação se
-reproduz sobre os registros que existiam então. Cada lista de evidência vai até 100
-ids, com `omitted` contando o resto; um `select` ou `where` mais estreito alcança o
-resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
+resultado de cada pergunta (`index`, `kind`, `passed`, mais as contagens ou os ids da
+`evidence`, conforme o modo) e o `marker` do que foi lido. A `evidence` tem listas por
+`kind`: `approved` traz `of`, `supports`, `contradictions` e `unsupported`; `occurred`,
+`found`; `no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. `target` é
+herdado pelos seletores sem `targetPrefix`. Com um `marker` de uma leitura anterior, a
+avaliação se reproduz sobre os registros que existiam então. Cada lista de evidência vai
+até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estreito alcança
+o resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
+
+- **Detalhe da evidência:** `evidence` escolhe o quanto cada pergunta traz.
+  - `failing` (o padrão da tool) devolve `counts`, o tamanho de cada lista da pergunta
+    (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
+    reprovação e não estão vazias: `unsupported` e `contradictions` em `approved`, `found`
+    em `occurred`, `unresolved` em `no_pending`, `conflicting` em `no_open_contradiction`.
+    Pergunta aprovada, ou reprovada sem lista de diagnóstico (um `approved` sem nenhum
+    registro em `of`), vem só com `counts`, sem a chave `evidence`.
+  - `counts` devolve só `counts`, nunca ids.
+  - `full` devolve `evidence` com todas as listas de ids, sem `counts`, como antes de
+    `evidence` existir.
+- **Lote:** `targets` (de 1 a 50) avalia vários targets numa só leitura. É exclusivo com
+  `target` e não aceita `evidence: "full"`. A resposta troca `questions` por `results`, um
+  `{target, passed, questions}` por entrada, na ordem recebida (duplicata não é removida),
+  com um só `marker` para todos; `passed` só é verdadeiro quando todos passam. Um `marker`
+  de entrada vale para todos os targets. `targets` junto de `target` ou `evidence: "full"`
+  com `targets` dão `INVALID_INPUT` (`/targets` com `with-target`, `/evidence` com
+  `full-with-targets`). Pela tool, lista vazia ou com mais de 50 itens é recusada pelo
+  schema em `/targets`, antes do serviço; `with-target`, `empty` e `full-with-targets` são
+  códigos do serviço, chamado direto.
 
 ## `verify_chain`
 

@@ -132,8 +132,44 @@ export type InRelation = { kind: RelationKind; as?: Name; from: RecordId; curren
  */
 export type OutRelation = { kind: RelationKind; as?: Name; to: RecordId; current?: boolean };
 
-/** D-24: relações de entrada (de quem foi lido) e de saída (as gravadas) de `link`. */
-export function relationsOf(view: View, link: Link): { in: InRelation[]; out: OutRelation[] } {
+/** Como `query` devolve as relações: arestas inteiras, contagem por nome ou nada. */
+export const RELATION_MODES = ['counts', 'full', 'none'] as const;
+export type RelationsMode = (typeof RELATION_MODES)[number];
+
+/** Campos de relação de um registro; o modo decide quais existem (`counts` só inclui o mapa não vazio). */
+export type RelationFields = {
+  in?: InRelation[];
+  out?: OutRelation[];
+  inCounts?: Record<string, number>;
+  outCounts?: Record<string, number>;
+};
+
+/**
+ * Arestas por nome (`as ?? kind`), vigentes ou não; sem aresta devolve `undefined`. O `Map` evita
+ * que um nome como `constructor` herde do protótipo.
+ */
+function countByName(
+  edges: readonly { kind: RelationKind; as?: Name }[],
+): Record<string, number> | undefined {
+  const counts = new Map<string, number>();
+  for (const { kind, as } of edges) {
+    const name = as ?? kind;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts.size === 0 ? undefined : Object.fromEntries(counts);
+}
+
+/** D-24: relações de entrada (de quem foi lido) e de saída (as gravadas) de `link`, no modo pedido. */
+export function relationsOf(view: View, link: Link, mode: RelationsMode): RelationFields {
+  if (mode === 'none') return {};
+  if (mode === 'counts') {
+    const inCounts = countByName(view.incoming.get(link.id) ?? []);
+    const outCounts = countByName(link.relations);
+    return {
+      ...(isUndefined(inCounts) ? {} : { inCounts }),
+      ...(isUndefined(outCounts) ? {} : { outCounts }),
+    };
+  }
   return {
     in: (view.incoming.get(link.id) ?? []).map(({ kind, as, from }) => ({
       kind,

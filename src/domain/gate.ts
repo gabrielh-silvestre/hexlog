@@ -94,6 +94,25 @@ export type QuestionResult = { index: number; passed: boolean } & (
 
 export type GateResult = { passed: boolean; questions: QuestionResult[] };
 
+/** Quanto de `evidence` a resposta traz: só o que reprova, só contagens, ou tudo. */
+export const EvidenceMode = z.enum(['failing', 'counts', 'full']);
+export type EvidenceMode = z.infer<typeof EvidenceMode>;
+
+/**
+ * Pergunta enxuta: `counts` leva o tamanho de cada lista de `evidence`; `evidence` só aparece com
+ * as listas de diagnóstico não vazias de uma pergunta reprovada (modo `failing`).
+ */
+export type CountedQuestion = {
+  index: number;
+  kind: QuestionResult['kind'];
+  passed: boolean;
+  counts: Record<string, number>;
+  evidence?: Record<string, RecordId[]>;
+};
+
+/** `full` devolve o `QuestionResult` como está; os outros modos, o `CountedQuestion`. */
+export type QuestionSummary = QuestionResult | CountedQuestion;
+
 export type GateInput = {
   /** `target` de `evaluate_gate`, herdado pelos seletores sem `targetPrefix`. */
   target?: Target;
@@ -203,6 +222,34 @@ function answer(context: Context, question: GateQuestion, index: number): Questi
     case 'no_open_contradiction':
       return { index, kind: 'no_open_contradiction', ...noOpenContradiction(context, question) };
   }
+}
+
+/** Listas de `evidence` que explicam a reprovação de cada `kind`; as demais só confirmam. */
+const DIAGNOSTIC_LISTS: Record<QuestionResult['kind'], readonly string[]> = {
+  approved: ['unsupported', 'contradictions'],
+  occurred: ['found'],
+  no_pending: ['unresolved'],
+  no_open_contradiction: ['conflicting'],
+};
+
+/** Reduz a `evidence` de uma pergunta ao que o `mode` pede; pura, não muta o resultado. */
+export function summarizeQuestion(result: QuestionResult, mode: EvidenceMode): QuestionSummary {
+  if (mode === 'full') return result;
+  const lists = Object.entries<RecordId[]>(result.evidence);
+  const { index, kind, passed } = result;
+  const counted: CountedQuestion = {
+    index,
+    kind,
+    passed,
+    counts: Object.fromEntries(lists.map(([name, list]) => [name, list.length])),
+  };
+  if (mode === 'counts' || passed) return counted;
+  const diagnostic = lists.filter(
+    ([name, list]) => DIAGNOSTIC_LISTS[kind].includes(name) && list.length > 0,
+  );
+  return diagnostic.length === 0
+    ? counted
+    : { ...counted, evidence: Object.fromEntries(diagnostic) };
 }
 
 /**

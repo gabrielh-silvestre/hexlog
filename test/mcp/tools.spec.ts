@@ -97,14 +97,14 @@ const registerNote = (process: string, text: string, target = 'run.step') =>
     records: [{ type: 'note', target, data: { text } }],
   });
 
-describe('TM1: catálogo anunciado em tools/list', () => {
-  test('devolve exatamente os 12 nomes', async () => {
+describe('TM1: catalog announced in tools/list', () => {
+  test('returns exactly the 12 names', async () => {
     const { tools } = await environment.client.listTools();
 
     expect(tools.map(({ name }) => name).sort()).toEqual([...ALL_TOOLS].sort());
   });
 
-  test('marca readOnlyHint nas 6 tools de leitura e em nenhuma outra', async () => {
+  test('sets readOnlyHint on the 6 read tools and on no other', async () => {
     const { tools } = await environment.client.listTools();
 
     const readOnly = tools.filter(({ annotations }) => annotations?.readOnlyHint === true);
@@ -112,7 +112,7 @@ describe('TM1: catálogo anunciado em tools/list', () => {
     expect(readOnly.map(({ name }) => name).sort()).toEqual([...READ_ONLY_TOOLS].sort());
   });
 
-  test('marca alwaysLoad só no register', async () => {
+  test('sets alwaysLoad only on register', async () => {
     const { tools } = await environment.client.listTools();
 
     const alwaysLoad = tools.filter(({ _meta }) => _meta?.['anthropic/alwaysLoad'] === true);
@@ -120,7 +120,7 @@ describe('TM1: catálogo anunciado em tools/list', () => {
     expect(alwaysLoad.map(({ name }) => name)).toEqual(['register']);
   });
 
-  test.each(ALL_TOOLS)('%s anuncia title e as anotações completas', async (name) => {
+  test.each(ALL_TOOLS)('%s announces title and the full annotations', async (name) => {
     const { tools } = await environment.client.listTools();
     const tool = tools.find((candidate) => candidate.name === name);
     const annotations = READ_ONLY_TOOLS.includes(name)
@@ -137,7 +137,7 @@ describe('TM1: catálogo anunciado em tools/list', () => {
     expect(tool?.annotations).toEqual(annotations);
   });
 
-  test.each(ALL_TOOLS)('inputSchema de %s cumpre as restrições do Claude Code', async (name) => {
+  test.each(ALL_TOOLS)('inputSchema of %s meets the Claude Code restrictions', async (name) => {
     const { tools } = await environment.client.listTools();
     const inputSchema = tools.find((candidate) => candidate.name === name)?.inputSchema;
 
@@ -149,8 +149,8 @@ describe('TM1: catálogo anunciado em tools/list', () => {
   });
 });
 
-describe('TM2: descrição das tools', () => {
-  test('nenhuma descrição passa de 2.048 caracteres e todas existem', async () => {
+describe('TM2: tool descriptions', () => {
+  test('no description exceeds 2,048 characters and all exist', async () => {
     const { tools } = await environment.client.listTools();
 
     const outOfRange = tools
@@ -160,7 +160,7 @@ describe('TM2: descrição das tools', () => {
     expect(outOfRange).toEqual([]);
   });
 
-  test('query descreve fields e o teto de 50 nomes', async () => {
+  test('query describes fields and the 50-name cap', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'query')?.description;
@@ -168,7 +168,7 @@ describe('TM2: descrição das tools', () => {
     expect(description).toMatch(/fields \(at most 50\).*empty list omits data/s);
   });
 
-  test('register manda ler o schema com describe_type e o id vigente com query', async () => {
+  test('register tells to read the schema with describe_type and the current id with query', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'register')?.description;
@@ -177,7 +177,7 @@ describe('TM2: descrição das tools', () => {
     expect(description).toMatch(/read the current id with query/);
   });
 
-  test('define_type avisa que pattern é recusado e aponta o catálogo', async () => {
+  test('define_type warns that pattern is refused and points to the catalog', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'define_type')?.description;
@@ -188,7 +188,7 @@ describe('TM2: descrição das tools', () => {
     expect(description).not.toMatch(/maxLength. of at most 256/);
   });
 
-  test('query avisa o teto de changes e evaluate_gate o de evidence', async () => {
+  test('query warns about the changes cap and evaluate_gate about the evidence cap', async () => {
     const { tools } = await environment.client.listTools();
     const descriptionOf = (name: string) => tools.find((tool) => tool.name === name)?.description;
 
@@ -201,8 +201,8 @@ describe('TM2: descrição das tools', () => {
   });
 });
 
-describe('TM7: outputSchema anunciado', () => {
-  test('a soma do outputSchema das 12 tools fica abaixo de 24.280 caracteres', async () => {
+describe('TM7: announced outputSchema', () => {
+  test('the sum of the 12 tools outputSchema stays below 24,280 characters', async () => {
     const { tools } = await environment.client.listTools();
 
     const sizes = tools.map(({ outputSchema }) => JSON.stringify(outputSchema ?? null).length);
@@ -214,8 +214,8 @@ describe('TM7: outputSchema anunciado', () => {
   });
 });
 
-describe('um fluxo feliz por tool', () => {
-  test('define_type devolve a versão criada', async () => {
+describe('one happy path per tool', () => {
+  test('define_type returns the created version', async () => {
     const created = await succeed<Defined>('define_type', {
       project: PROJECT,
       name: 'note',
@@ -225,7 +225,7 @@ describe('um fluxo feliz por tool', () => {
     expect(created).toMatchObject({ name: 'note', version: '1.0', created: true });
   });
 
-  test('define_relation devolve a versão criada', async () => {
+  test('define_relation returns the created version', async () => {
     const created = await succeed<Defined>('define_relation', {
       project: PROJECT,
       name: 'approves',
@@ -235,7 +235,7 @@ describe('um fluxo feliz por tool', () => {
     expect(created).toMatchObject({ name: 'approves', version: '1.0', created: true });
   });
 
-  test('define_gate devolve a versão criada', async () => {
+  test('define_gate returns the created version', async () => {
     const created = await succeed<Defined>('define_gate', {
       project: PROJECT,
       name: 'has-note',
@@ -245,7 +245,7 @@ describe('um fluxo feliz por tool', () => {
     expect(created).toMatchObject({ name: 'has-note', version: '1.0', created: true });
   });
 
-  test('create_process fixa o que está definido', async () => {
+  test('create_process pins what is defined', async () => {
     await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
     await succeed('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
 
@@ -262,7 +262,7 @@ describe('um fluxo feliz por tool', () => {
     });
   });
 
-  test('register grava o lote e devolve ids, replayed e marcador', async () => {
+  test('register writes the batch and returns ids, replayed and marker', async () => {
     await prepareProcess();
 
     const result = await succeed<RegisterResult>('register', {
@@ -278,7 +278,7 @@ describe('um fluxo feliz por tool', () => {
     expect(result.marker).toEqual({ 'run-1': saved?.id });
   });
 
-  test('register grava o author com o client do envelope e o model só quando informado', async () => {
+  test('register writes the author with the envelope client and the model only when given', async () => {
     const withEnvelope = await createEnvironment({
       clientInfo: { name: 'claude-code', version: '2' },
     });
@@ -314,7 +314,7 @@ describe('um fluxo feliz por tool', () => {
     }
   });
 
-  test('attach guarda o texto e a repetição vem como deduplicated', async () => {
+  test('attach stores the text and a repeat comes back as deduplicated', async () => {
     const first = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
     const second = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
 
@@ -322,7 +322,7 @@ describe('um fluxo feliz por tool', () => {
     expect(second).toEqual({ ...first, deduplicated: true });
   });
 
-  test('read_attachment sem maxChars pagina em PAGE_CHARS_CAP', async () => {
+  test('read_attachment without maxChars pages at PAGE_CHARS_CAP', async () => {
     const text = 'x'.repeat(PAGE_CHARS_CAP + 1);
     const { hash } = await succeed<AttachmentPut>('attach', { project: PROJECT, text });
 
@@ -332,7 +332,7 @@ describe('um fluxo feliz por tool', () => {
     expect(page.next).toBe(PAGE_CHARS_CAP);
   });
 
-  test('attach por path guarda os bytes do arquivo sob o cwd do servidor', async () => {
+  test('attach by path stores the file bytes under the server cwd', async () => {
     const cwd = createTempDir('mcp-cwd');
     const text = 'conteúdo do plano';
     fs.writeFileSync(path.join(cwd, 'plano.md'), text);
@@ -355,7 +355,7 @@ describe('um fluxo feliz por tool', () => {
     }
   });
 
-  test('N1: com omitted, reusar o marker perde os ids cortados e a releitura completa os devolve', async () => {
+  test('N1: with omitted, reusing the marker loses the cut ids and a full reread returns them', async () => {
     await prepareProcess();
     await registerNote('run-1', 'primeira');
     const { marker } = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
@@ -403,7 +403,7 @@ describe('um fluxo feliz por tool', () => {
     expect(reread).toEqual(expect.arrayContaining(omittedIds));
   });
 
-  test('query com fields recorta o data e mantém o resto do registro', async () => {
+  test('query with fields trims data and keeps the rest of the record', async () => {
     await prepareProcess();
     await registerNote('run-1', 'olá');
 
@@ -418,7 +418,7 @@ describe('um fluxo feliz por tool', () => {
     ]);
   });
 
-  test('#85: 41 registros de ~700 caracteres estouram o teto sem fields e cabem com fields vazio', async () => {
+  test('#85: 41 records of ~700 characters exceed the cap without fields and fit with empty fields', async () => {
     await prepareProcess();
     await succeed<RegisterResult>('register', {
       project: PROJECT,
@@ -441,7 +441,7 @@ describe('um fluxo feliz por tool', () => {
     expect(light.cursor).toBeUndefined();
   });
 
-  test('evaluate_gate corta cada lista de evidence em EVIDENCE_ITEMS_CAP e informa omitted', async () => {
+  test('evaluate_gate cuts each evidence list at EVIDENCE_ITEMS_CAP and reports omitted', async () => {
     await prepareProcess();
     for (let batch = 0; batch < 3; batch += 1) {
       await succeed<RegisterResult>('register', {
@@ -458,7 +458,7 @@ describe('um fluxo feliz por tool', () => {
 
     const result = await succeed<GateEvaluation & { questions: { omitted?: unknown }[] }>(
       'evaluate_gate',
-      { project: PROJECT, process: 'run-1', gate: 'has-note' },
+      { project: PROJECT, process: 'run-1', gate: 'has-note', evidence: 'full' },
     );
 
     const [question] = result.questions;
@@ -471,7 +471,7 @@ describe('um fluxo feliz por tool', () => {
     expect(question?.evidence).toHaveProperty('found.length', EVIDENCE_ITEMS_CAP);
   });
 
-  test('evaluate_gate abaixo do teto não leva omitted', async () => {
+  test('evaluate_gate below the cap carries no omitted', async () => {
     await prepareProcess();
     await registerNote('run-1', 'olá');
 
@@ -496,7 +496,7 @@ describe('describe_type', () => {
     await succeed('define_type', { project: PROJECT, name: 'other', schema: NOTE });
   }
 
-  test('com process devolve o schema fixado, sem version, mesmo com versão nova no projeto', async () => {
+  test('with process returns the pinned schema, without version, even with a newer version in the project', async () => {
     await pinNoteThenEvolve();
 
     const result = await succeed<DescribeTypeResult>('describe_type', {
@@ -508,7 +508,7 @@ describe('describe_type', () => {
     expect(result).toEqual({ name: 'note', schema: NOTE });
   });
 
-  test('sem process devolve a versão vigente e, com version, a pedida', async () => {
+  test('without process returns the current version and, with version, the requested one', async () => {
     await pinNoteThenEvolve();
 
     const current = await succeed<DescribeTypeResult>('describe_type', {
@@ -525,7 +525,7 @@ describe('describe_type', () => {
     expect(asked).toEqual({ name: 'note', version: '1.0', schema: NOTE });
   });
 
-  test('process e version juntos dão INVALID_INPUT em /version', async () => {
+  test('process and version together give INVALID_INPUT at /version', async () => {
     await pinNoteThenEvolve();
 
     const body = expectError(
@@ -541,7 +541,7 @@ describe('describe_type', () => {
     expect(body.details).toEqual([expect.objectContaining({ path: '/version' })]);
   });
 
-  test('version fora de <major>.<minor> dá INVALID_INPUT em /version com invalid-version', async () => {
+  test('version outside <major>.<minor> gives INVALID_INPUT at /version with invalid-version', async () => {
     await pinNoteThenEvolve();
 
     const body = expectError(
@@ -554,7 +554,7 @@ describe('describe_type', () => {
     ]);
   });
 
-  test('tipo não fixado no processo dá TYPE_NOT_PINNED e, sem process, tipo ausente dá TYPE_NOT_FOUND', async () => {
+  test('type not pinned in the process gives TYPE_NOT_PINNED and, without process, a missing type gives TYPE_NOT_FOUND', async () => {
     await pinNoteThenEvolve();
 
     const notPinned = expectError(
@@ -575,7 +575,7 @@ describe('describe_type', () => {
   });
 });
 
-describe('SE7: as tools devolvem o que o serviço devolve', () => {
+describe('SE7: the tools return what the service returns', () => {
   async function seed() {
     await prepareProcess();
     await registerNote('run-1', 'olá');
@@ -584,7 +584,7 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
 
   test('query', async () => {
     await seed();
-    const input = { project: PROJECT, process: 'run-1' };
+    const input = { project: PROJECT, process: 'run-1', relations: 'full' as const };
 
     const viaTool = await succeed<QueryResult>('query', input);
 
@@ -595,7 +595,12 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
 
   test('evaluate_gate', async () => {
     await seed();
-    const input = { project: PROJECT, process: 'run-1', gate: 'has-note' };
+    const input = {
+      project: PROJECT,
+      process: 'run-1',
+      gate: 'has-note',
+      evidence: 'full',
+    } as const;
 
     const viaTool = await succeed<GateEvaluation>('evaluate_gate', input);
 
@@ -615,7 +620,7 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
     );
   });
 
-  test('verify_chain com expectedHead: o head da própria saída passa e um hash desconhecido quebra', async () => {
+  test('verify_chain with expectedHead: the head from its own output passes and an unknown hash breaks', async () => {
     await seed();
     const input = { project: PROJECT, process: 'run-1' };
     const { head, totalRecords } = await succeed<VerifyChainResult>('verify_chain', input);
@@ -637,7 +642,7 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
     });
   });
 
-  test('verify_chain com expectedHead fora do formato de hash dá INVALID_INPUT em /expectedHead', async () => {
+  test('verify_chain with expectedHead outside the hash format gives INVALID_INPUT at /expectedHead', async () => {
     await seed();
 
     const body = expectError(
@@ -652,7 +657,7 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
     expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
   });
 
-  test('verify_chain com expectedHead vazio dá INVALID_INPUT em /expectedHead', async () => {
+  test('verify_chain with empty expectedHead gives INVALID_INPUT at /expectedHead', async () => {
     await seed();
 
     const body = expectError(
@@ -694,7 +699,7 @@ describe('SE7: as tools devolvem o que o serviço devolve', () => {
     expect(viaTool).toEqual(servicesOverServerData().query.describeType(input));
   });
 
-  test('a recusa do serviço sai como o erro dele, sem regra própria da tool', async () => {
+  test('the service refusal comes out as its own error, with no rule of the tool', async () => {
     const result = await environment.call('query', { project: PROJECT, process: 'inexistente' });
 
     const body = expectError(result, 'PROCESS_NOT_FOUND');

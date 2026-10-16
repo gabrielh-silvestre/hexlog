@@ -8,12 +8,23 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 - A `query` aceita `limit: 0` com `changesSince` (sem `cursor`) e devolve só as mudanças, com `records` vazio (#159).
 - A `query` devolve `hint` quando um `targetPrefix` não casa nada, mas algum target começa pela string sem a fronteira de `.` (#159).
+- A `query` aceita `relations` (`counts`, `full` ou `none`) para escolher como cada registro traz as relações; `counts` devolve `inCounts` e `outCounts`, o número de arestas por nome de relação (#161).
+- O `evaluate_gate` aceita `evidence` (`failing`, `counts` ou `full`) para escolher quanto da evidência cada pergunta traz (#161).
+- O `evaluate_gate` aceita `targets` (de 1 a 50) para avaliar vários targets numa só chamada e devolve `results`, um por target, com um só `marker` (#161).
 
 ### Alterado
 
 - A descrição da `query` explica que o `targetPrefix` casa por segmento e que o id de qualquer registro do processo vale como `changesSince` (#159).
 - O erro de `since` na `query` cita `changesSince` na mensagem (#159).
 - `limit: 0` sem `changesSince` na `query` passa a devolver `INVALID_FILTER` (`/limit`, `out-of-range`) em vez de `INVALID_INPUT` (#159).
+- A `query` devolve por padrão `inCounts` e `outCounts` no lugar de `in` e `out`, e o `evaluate_gate` devolve por padrão só as contagens da evidência, com os ids apenas da pergunta que reprova (#161).
+
+### Migração
+
+- A `query` não devolve mais `in` e `out` por padrão: cada registro traz `inCounts` e `outCounts`, mapas `{<nome da relação>: n}` em que o nome é o `as` da relação (ou o `kind`, sem `as`); mapa vazio é omitido. Para receber `in` e `out` como antes, passe `relations: "full"`; para nenhum dos dois, `relations: "none"`.
+- O `evaluate_gate` não devolve mais todas as listas de ids em `evidence`: cada pergunta traz `counts` e, só quando reprova, `evidence` com os ids que explicam a reprovação. Para receber todas as listas de ids como antes, passe `evidence: "full"`.
+- Com `targets`, a resposta do `evaluate_gate` troca `questions` por `results` (`{target, passed, questions}` por target); `evidence: "full"` não vale em lote. Com `target`, ou sem nenhum dos dois, o formato segue o mesmo.
+- Sessões abertas só veem o formato novo depois de reinstalar com `node scripts/install.ts` e reiniciá-las.
 
 ## [1.1.2] - 2026-10-09
 

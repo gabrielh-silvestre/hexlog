@@ -1,11 +1,19 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { isString, isUndefined, mapValues, pickBy } from 'es-toolkit';
 import { z } from 'zod';
-import { Selector, Where } from '../../domain/gate.ts';
+import {
+  type CountedQuestion,
+  EvidenceMode,
+  type QuestionResult,
+  type QuestionSummary,
+  Selector,
+  Where,
+} from '../../domain/gate.ts';
 import { Hash, Name, RecordId, Target } from '../../domain/ids.ts';
 import { WELL_FORMED } from '../../domain/record.ts';
 import {
   type Changes,
+  type GateBatchEvaluation,
   type GateEvaluation,
   PAGE_CHARS_CAP,
   QUERY_TEXT_MAX_CHARS,
@@ -13,6 +21,7 @@ import {
   type QueryResult,
   type QueryService,
 } from '../../queries/query-service.ts';
+import { RELATION_MODES } from '../../queries/select.ts';
 import { defineTool, MarkerRecord, READ_ANNOTATIONS, type ToolDeps } from '../kernel.ts';
 
 /**
@@ -31,6 +40,8 @@ export const EVIDENCE_ITEMS_CAP = 100;
 const IDS_MAX = 200;
 const WHERE_KEYS_MAX = 50;
 const FIELDS_MAX = 50;
+// Alinhado a `BATCH_MAX`: o lote de targets do `evaluate_gate` (palpite, docs/tetos-dominio-v1.md).
+const TARGETS_MAX = 50;
 // O marcador tem uma chave por processo lido e é devolvido pelo servidor. Só com nomes de ~42 caracteres
 // ou mais o teto fica acima do que o cursor suporta; com nomes menores o cursor pagina além de 200 e o zod recusa antes.
 const MARKER_KEYS_MAX = 200;
@@ -78,6 +89,7 @@ const QueryInput = z.strictObject(
     ids: z.array(RecordId).max(IDS_MAX).optional(),
     fields: z.array(z.string().min(1)).max(FIELDS_MAX).optional(),
     relatedTo: RecordId.optional(),
+    relations: z.enum(RELATION_MODES).optional(),
     // 0 só com `changesSince` e sem `cursor`: quem confere é o serviço, com o path de `/limit`.
     limit: z.number().int().min(0).max(LIMIT_MAX).optional(),
     cursor: z.string().optional(),
@@ -91,7 +103,10 @@ const EvaluateGateInput = z.strictObject({
   process: Name,
   gate: Name,
   target: Target.optional(),
+  // 1 a 50 targets numa só leitura; exclusivo com `target` e sem `evidence: "full"` (o serviço recusa).
+  targets: z.array(Target).min(1).max(TARGETS_MAX).optional(),
   marker: MarkerInput.optional(),
+  evidence: EvidenceMode.optional(),
 });
 
 const VerifyChainInput = z.strictObject({
@@ -113,7 +128,16 @@ const DescribeTypeInput = z.strictObject({
 // Saídas enxutas (TM7): só a forma que o cliente precisa checar; o miolo variável fica solto.
 const QueryOutput = z.object({
   records: z.array(
-    z.looseObject({ id: z.string(), type: z.string(), at: z.string(), target: z.string() }),
+    z.looseObject({
+      id: z.string(),
+      type: z.string(),
+      at: z.string(),
+      target: z.string(),
+      inCounts: z.record(z.string(), z.number()).optional(),
+      outCounts: z.record(z.string(), z.number()).optional(),
+      in: z.array(z.unknown()).optional(),
+      out: z.array(z.unknown()).optional(),
+    }),
   ),
   cursor: z.string().optional(),
   marker: MarkerRecord,
@@ -128,17 +152,28 @@ const QueryOutput = z.object({
     .optional(),
 });
 
+const GateQuestionOutput = z.looseObject({
+  index: z.number(),
+  kind: z.string(),
+  passed: z.boolean(),
+  counts: z.record(z.string(), z.number()).optional(),
+  evidence: z.unknown().optional(),
+  omitted: z.record(z.string(), z.number()).optional(),
+});
+
+// `questions` sai com `target` ou sem alvo; `results`, com `targets`.
 const EvaluateGateOutput = z.object({
   passed: z.boolean(),
-  questions: z.array(
-    z.looseObject({
-      index: z.number(),
-      kind: z.string(),
-      passed: z.boolean(),
-      evidence: z.unknown(),
-      omitted: z.record(z.string(), z.number()).optional(),
-    }),
-  ),
+  questions: z.array(GateQuestionOutput).optional(),
+  results: z
+    .array(
+      z.looseObject({
+        target: z.string(),
+        passed: z.boolean(),
+        questions: z.array(GateQuestionOutput),
+      }),
+    )
+    .optional(),
   marker: MarkerRecord,
 });
 
@@ -171,35 +206,39 @@ const QUERY_DESCRIPTION =
   'whole project (scope "project"). Filters: type, targetPrefix, where (equality on top-level data ' +
   'fields, scalar values only), text (full-text search, at most 200 characters, ordered by relevance), ' +
   'ids, relatedTo (records linked to an id) and includeNonCurrent (also superseded or revoked ones). ' +
-  'targetPrefix matches whole "."-separated segments: a.b matches a.b and a.b.c, not a.b-2 or a.bc ' +
-  '(unit-1 does not match unit-10); an empty answer where a target starts with the string without ' +
-  'that boundary carries a hint naming it. There is no time filter. ' +
-  'Each record carries its in and out relations, needsReview when its support is dead and ' +
-  'attachmentStatus for the attachments it cites; in process scope only the relations from that ' +
-  'process are seen, so use scope project to see cross-process support. fields (at most ' +
+  'targetPrefix matches whole "."-separated segments: a.b matches a.b and a.b.c (unit-1 does not ' +
+  'match unit-10); an empty answer where a target starts with the string without that boundary ' +
+  'carries a hint naming it. ' +
+  'Each record carries needsReview when its support is dead and attachmentStatus for the attachments ' +
+  'it cites. relations: counts (default) gives inCounts and outCounts ({relation name: n}, empty maps ' +
+  'omitted); full gives in and out; none gives neither. In process scope only that ' +
+  "process's relations are seen, so use scope project for cross-process support. fields (at most " +
   `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
   'annotations stay, filters see the whole data and the size cap counts the projected page. ' +
-  'A page holds at most limit records (default 50, max 200) and also stops at a size cap, always ' +
+  'A page holds at most limit records (default 50, max 200) and stops at a size cap, ' +
   'with at least one record; pass the returned cursor to continue. marker is the head of every ' +
   'process read, and any record id of the process works as its entry: pass it back as changesSince ' +
   'to get changes (entered, left with reason) since then, on the first page only; add limit 0 to ' +
-  'get only the changes. Resend the same changesSince with the cursor on later pages, or ' +
-  `INVALID_CURSOR. changes lists at most ${CHANGES_ITEMS_CAP} ids in entered and left; when ` +
-  'changes.omitted (count cut per list) comes back, lists are partial, omitted ids never ' +
+  'get only the changes. Resend the same changesSince with the cursor on later pages. ' +
+  `changes lists at most ${CHANGES_ITEMS_CAP} ids in entered and left; when ` +
+  'changes.omitted comes back, lists are partial, omitted ids never ' +
   'reappear and that marker must not be reused as changesSince: reread everything (records by ' +
-  'cursor, left with includeNonCurrent). A marker covers exactly the ' +
-  'processes it names; in project scope, any process it does not name is read as empty. Fails with ' +
-  'MARKER_NOT_FOUND or INVALID_CURSOR when changesSince or cursor do not match the data read.';
+  'cursor, left with includeNonCurrent). A marker covers only the processes it names; in project ' +
+  'scope, any other process is read as empty. A changesSince or cursor that does not match the data ' +
+  'read fails with MARKER_NOT_FOUND or INVALID_CURSOR.';
 
 const EVALUATE_GATE_DESCRIPTION =
   'Evaluate a gate pinned in a process (GATE_NOT_FOUND otherwise), without writing anything. Returns ' +
-  'passed and one result per question (index, kind, passed, evidence: the record ids behind the ' +
-  'answer, in lists named by kind: approved has of, supports, contradictions and unsupported; ' +
-  'occurred has found; no_pending has unresolved; no_open_contradiction has conflicting) plus the ' +
-  'marker of what was read. target is inherited by selectors without targetPrefix. Pass a marker ' +
-  'from an earlier read to replay the evaluation over the records that existed then; a marker ' +
-  'covers exactly the processes it names, and in project scope any process it does not name is read ' +
-  'as empty. A gate without project-scope questions reads one process: the marker must name only ' +
+  'passed and one result per question (index, kind, passed) plus the marker of what was read. ' +
+  'evidence sets the detail: failing (default) gives counts (size of each evidence list) and, for a ' +
+  'failed question, the ids that explain it; counts gives only counts; full gives every list of ids ' +
+  '(approved has of, supports, contradictions and unsupported; occurred has found; no_pending has ' +
+  'unresolved; no_open_contradiction has conflicting). target is inherited by selectors without ' +
+  'targetPrefix; targets (1 to 50, not with target or evidence full) evaluates several in one read ' +
+  'and answers results: one {target, passed, questions} per target, in order, with a single marker. ' +
+  'Pass a marker from an earlier read to replay the evaluation over the records that existed then; a ' +
+  'marker covers exactly the processes it names, and in project scope any process it does not name is ' +
+  'read as empty. A gate without project-scope questions reads one process: the marker must name only ' +
   `it (else MARKER_NOT_FOUND). Each evidence list holds at most ${EVIDENCE_ITEMS_CAP} ids and omitted counts the ` +
   'rest per list; a narrower select or where reaches them.';
 
@@ -245,29 +284,29 @@ function capChanges(changes: Changes): PagedChanges {
 
 /**
  * Única porta de `query` para as tools: passa `maxChars` (`PAGE_CHARS_CAP`) em toda chamada, porque o
- * serviço usa `Infinity` sem ele (D-20), e corta `changes` no envelope, que fica fora do teto de página.
+ * serviço usa `Infinity` sem ele (D-20), assume `relations: counts` (o serviço assume `full`) e corta
+ * `changes` no envelope, que fica fora do teto de página.
  */
 export function queryPage(
   query: Pick<QueryService, 'queryRecords'>,
   input: Omit<QueryServiceInput, 'maxChars'>,
 ): Omit<QueryResult, 'changes'> & { changes?: PagedChanges } {
-  const { changes, ...page } = query.queryRecords({ ...input, maxChars: PAGE_CHARS_CAP });
+  const { changes, ...page } = query.queryRecords({
+    ...input,
+    relations: input.relations ?? 'counts',
+    maxChars: PAGE_CHARS_CAP,
+  });
   return isUndefined(changes) ? page : { ...page, changes: capChanges(changes) };
 }
 
-type PagedQuestion = {
-  index: number;
-  kind: string;
-  passed: boolean;
-  evidence: Record<string, string[]>;
+type PagedQuestion = (Omit<QuestionResult, 'evidence'> | Omit<CountedQuestion, 'evidence'>) & {
+  evidence?: Record<string, string[]>;
   omitted?: Record<string, number>;
 };
 
 /** Corta cada lista de `evidence` em `EVIDENCE_ITEMS_CAP` ids; `omitted` conta o que ficou de fora por lista. */
-function capEvidence({
-  evidence,
-  ...question
-}: GateEvaluation['questions'][number]): PagedQuestion {
+function capEvidence({ evidence, ...question }: QuestionSummary): PagedQuestion {
+  if (isUndefined(evidence)) return question;
   const lists: Record<string, string[]> = evidence;
   const omitted = pickBy(
     mapValues(lists, (ids) => ids.length - EVIDENCE_ITEMS_CAP),
@@ -283,12 +322,19 @@ function capEvidence({
 
 /**
  * Única porta de `evaluateGate` para as tools: a evidência não tem teto no domínio, então o envelope
- * corta cada lista. `passed` e `marker` seguem intactos; o gate é sem estado, e o excedente sai com
- * um `select`/`where` mais estreito.
+ * corta cada lista, por pergunta de cada target do lote. `passed` e `marker` seguem intactos; o gate
+ * é sem estado, e o excedente sai com um `select`/`where` mais estreito.
  */
-function gatePage(
-  evaluation: GateEvaluation,
-): Omit<GateEvaluation, 'questions'> & { questions: PagedQuestion[] } {
+function gatePage(evaluation: GateEvaluation<QuestionSummary> | GateBatchEvaluation) {
+  if ('results' in evaluation) {
+    return {
+      ...evaluation,
+      results: evaluation.results.map((result) => ({
+        ...result,
+        questions: result.questions.map(capEvidence),
+      })),
+    };
+  }
   return { ...evaluation, questions: evaluation.questions.map(capEvidence) };
 }
 
@@ -319,7 +365,11 @@ export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
       outputSchema: EvaluateGateOutput,
       annotations: READ_ANNOTATIONS,
     },
-    (input) => gatePage(deps.services.query.evaluateGate(input)),
+    // O serviço assume `evidence: full`; o padrão enxuto é do envelope, como o `maxChars` de `queryPage`.
+    (input) =>
+      gatePage(
+        deps.services.query.evaluateGate({ ...input, evidence: input.evidence ?? 'failing' }),
+      ),
   );
 
   defineTool(

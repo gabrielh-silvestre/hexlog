@@ -3,8 +3,8 @@ import { note } from '../commands/register-fakes.ts';
 import { at } from '../helpers.ts';
 import { idsOf, querySetup } from './query-setup.ts';
 
-describe('SL9: navegação por text, ids e relatedTo', () => {
-  test('SL9: de um termo do texto antigo à versão vigente, sem pivô por alvo', async () => {
+describe('SL9: navigation by text, ids and relatedTo', () => {
+  test('SL9: from a term in the old text to the current version, with no pivot by target', async () => {
     const { createProcess, register, registerOne, query } = querySetup();
     createProcess('run-1');
     const created = await register(
@@ -36,7 +36,7 @@ describe('SL9: navegação por text, ids e relatedTo', () => {
     });
   });
 
-  test('SL9: do termo ao veredito que apoia a evidência, pela relação de entrada', async () => {
+  test('SL9: from the term to the verdict that supports the evidence, via the incoming relation', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const evidence = await registerOne('run-1', note('latência medida em 40ms'), 1);
@@ -55,5 +55,23 @@ describe('SL9: navegação por text, ids e relatedTo', () => {
     expect(at(supporters.records, 0).out).toEqual([
       { kind: 'supports', to: evidence, current: true },
     ]);
+  });
+});
+
+describe('relatedTo with relations counts', () => {
+  test('relatedTo and relations counts work together', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    const evidence = await registerOne('run-1', note('evidence'), 1);
+    const verdict = await registerOne(
+      'run-1',
+      note('verdict', { relations: [{ to: evidence, kind: 'supports' }] }),
+      2,
+    );
+
+    const page = query({ process: 'run-1', relatedTo: evidence, relations: 'counts' });
+
+    expect(idsOf(page)).toEqual([verdict]);
+    expect(at(page.records, 0).outCounts).toEqual({ supports: 1 });
   });
 });
