@@ -88,8 +88,8 @@ function simulate(ops: Op[]): Written[] {
 
 const ops = fc.array(op, { maxLength: 15 });
 
-describe('vigência (P4)', () => {
-  test('toda linhagem tem no máximo um vigente', () => {
+describe('vigency (P4)', () => {
+  test('every lineage has at most one current record', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         const written = simulate(sequence);
@@ -101,7 +101,7 @@ describe('vigência (P4)', () => {
     );
   });
 
-  test('a versão atual é nula exatamente quando a linhagem não tem vigente', () => {
+  test('the current version is null exactly when the lineage has no current record', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         const written = simulate(sequence);
@@ -117,7 +117,7 @@ describe('vigência (P4)', () => {
     );
   });
 
-  test('nenhum registro gravado substitui e revoga o mesmo destino', () => {
+  test('no stored record both supersedes and revokes the same target', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         for (const { relations } of simulate(sequence)) {
@@ -132,7 +132,7 @@ describe('vigência (P4)', () => {
     );
   });
 
-  test('vigência, versão atual e prova vencida independem da ordem de leitura', () => {
+  test('vigency, current version and expired proof do not depend on read order', () => {
     const writtenAndShuffled = ops.chain((sequence) => {
       const written = simulate(sequence);
       return fc.tuple(
@@ -152,7 +152,7 @@ describe('vigência (P4)', () => {
     );
   });
 
-  test('cadeia longa de substituição: só o último é vigente e todos apontam para ele', () => {
+  test('long supersession chain: only the last is current and all point to it', () => {
     const chain: Linked[] = Array.from({ length: 8 }, (_, i) => ({
       id: `p:${i}`,
       relations: i === 0 ? [] : [{ kind: 'supersedes', to: `p:${i - 1}` }],
@@ -164,7 +164,7 @@ describe('vigência (P4)', () => {
   });
 });
 
-describe('ciclo (P4)', () => {
+describe('cycle (P4)', () => {
   type Graph = { n: number; extra: [number, number][]; order: number[] };
 
   const graph = fc.integer({ min: 2, max: 8 }).chain((n) =>
@@ -190,11 +190,26 @@ describe('ciclo (P4)', () => {
     }));
   }
 
-  test('arestas do maior para o menor índice nunca formam ciclo, em qualquer ordem', () => {
+  test('edges from the higher to the lower index never form a cycle, in any order', () => {
     fc.assert(fc.property(graph, (g) => expect(hasCycle(recordsOf(g, false))).toBe(false)));
   });
 
-  test('o anel fechado por todos os registros é ciclo, em qualquer ordem', () => {
+  test('the ring closed by all records is a cycle, in any order', () => {
     fc.assert(fc.property(graph, (g) => expect(hasCycle(recordsOf(g, true))).toBe(true)));
+  });
+});
+
+describe('currentOf memoization (P4)', () => {
+  test('querying again, in any order, returns the same result', () => {
+    fc.assert(
+      fc.property(ops, (sequence) => {
+        const written = simulate(sequence);
+        const vigency = buildVigency(written);
+        const first = written.map(({ id }) => vigency.currentOf(id));
+        const reversed = [...written].reverse().map(({ id }) => vigency.currentOf(id));
+        expect(reversed.reverse()).toEqual(first);
+        expect(written.map(({ id }) => vigency.currentOf(id))).toEqual(first);
+      }),
+    );
   });
 });

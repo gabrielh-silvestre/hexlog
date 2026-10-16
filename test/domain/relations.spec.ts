@@ -1,4 +1,5 @@
 import { describe, test, expect, jest } from '@jest/globals';
+import { buildInheritance, NO_INHERITANCE } from '../../src/domain/inheritance.ts';
 import { buildVigency, checkRelation, hasCycle, needsReview } from '../../src/domain/relations.ts';
 import type { Linked, NamedRelation, RuleContext, Vigency } from '../../src/domain/relations.ts';
 import type { RelationInput, RelationKind as Kind } from '../../src/domain/record.ts';
@@ -572,5 +573,69 @@ describe('proof expired by the lineage (D-09)', () => {
       rec(verdict, ['supports', evidence]),
     ]);
     expect(marks.get(verdict)).toEqual({ staleIn: [], staleOut: [evidence] });
+  });
+});
+
+describe('needsReview with inheritance (ADR 0007, item 10)', () => {
+  const [evidence, unit, unit2, review, review2] = [
+    id('p', 1),
+    id('p', 2),
+    id('p', 3),
+    id('p', 4),
+    id('p', 5),
+  ];
+
+  function marksOf(records: Linked[]) {
+    const vigency = buildVigency(records);
+    return needsReview(
+      records,
+      vigency,
+      buildInheritance(records, vigency, () => true),
+    );
+  }
+
+  const superseded = [
+    rec(unit),
+    rec(evidence, ['supports', unit]),
+    rec(unit2, ['supersedes', unit]),
+  ];
+
+  test('an inherited support counts as alive: the superseded unit leaves no mark', () => {
+    expect(needsReview(superseded).get(evidence)).toEqual({ staleIn: [], staleOut: [unit] });
+    expect(marksOf(superseded).size).toBe(0);
+  });
+
+  test('a contradicts between the lineages cuts the inheritance and the mark returns', () => {
+    const marks = marksOf([
+      rec(unit),
+      rec(evidence, ['supports', unit]),
+      rec(unit2, ['supersedes', unit], ['contradicts', evidence]),
+    ]);
+    expect(marks.get(evidence)).toEqual({ staleIn: [], staleOut: [unit] });
+  });
+
+  test('a direct support stays alive even when a contradicts cuts the lineage pair', () => {
+    const records = [
+      rec(unit),
+      rec(evidence, ['supports', unit], ['supports', unit2]),
+      rec(unit2, ['supersedes', unit], ['contradicts', evidence]),
+    ];
+    expect(marksOf(records).size).toBe(0);
+  });
+
+  test('a support from a superseded review still marks the plan', () => {
+    const records = [
+      rec(unit),
+      rec(review, ['supports', unit]),
+      rec(review2, ['supersedes', review]),
+    ];
+    expect(marksOf(records).get(unit)).toEqual({ staleIn: [review], staleOut: [] });
+  });
+
+  test('without an inheritance argument the behavior is the one without inheritance', () => {
+    const records = [...superseded];
+    expect(needsReview(records, buildVigency(records), NO_INHERITANCE)).toEqual(
+      needsReview(records),
+    );
   });
 });

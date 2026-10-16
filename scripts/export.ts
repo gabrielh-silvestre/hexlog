@@ -16,6 +16,8 @@ const FIELDS = [
   'data',
   'in',
   'out',
+  'inheritedIn',
+  'inheritedOut',
   'needsReview',
   'attachmentStatus',
 ] as const satisfies readonly (keyof QueryRecord)[];

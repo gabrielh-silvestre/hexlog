@@ -473,6 +473,150 @@ describe('domain fixtures', () => {
   });
 });
 
+describe('inherit option', () => {
+  const approvedQ = question({ kind: 'approved', of: { type: 'plan' }, by: { type: 'review' } });
+  const approvedInherit = question({ ...approvedQ, inherit: true });
+  const pendingQ = question({
+    kind: 'no_pending',
+    pending: { type: 'deviation' },
+    resolvedBy: { kind: 'answers', from: ['plan'] },
+  });
+  const pendingInherit = question({ ...pendingQ, inherit: true });
+
+  /** Leitura com a herança ligada em todos os processos. */
+  const active = (records: HexRecord[], target?: string): SpiedInput => ({
+    ...reading(records, target),
+    isInheritanceActive: () => true,
+  });
+
+  // p2 apoia a versão 1 do plano; p3 a supera sem relações.
+  const supersededPlan = [
+    rec(p1, 'plan'),
+    rec(p2, 'review', [['supports', p1]]),
+    rec(p3, 'plan', [['supersedes', p1]]),
+  ];
+  // p2 resolve o desvio p1, mas foi superado por p3 (a resolução subiu para p3).
+  const supersededResolver = [
+    rec(p1, 'deviation'),
+    rec(p2, 'plan', [['answers', p1]]),
+    rec(p3, 'plan', [['supersedes', p2]]),
+  ];
+
+  test('the schema accepts inherit true on approved and no_pending only', () => {
+    expect(GateQuestion.safeParse(approvedInherit).success).toBe(true);
+    expect(GateQuestion.safeParse(pendingInherit).success).toBe(true);
+    const invalid = [
+      { kind: 'approved', of: {}, inherit: false },
+      { kind: 'occurred', select: {}, inherit: true },
+      { kind: 'no_open_contradiction', inherit: true },
+    ];
+    expect(invalid.map((raw) => GateQuestion.safeParse(raw).success)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  test('approved without inherit fails while the support is stuck on the superseded version', () => {
+    const result = evaluateGate([approvedQ], active(supersededPlan)).questions[0];
+    expect(result?.passed).toBe(false);
+    expect(result?.evidence).toEqual({
+      of: [p3],
+      supports: [],
+      contradictions: [],
+      unsupported: [p3],
+    });
+  });
+
+  test('approved with inherit passes and lists the supporter that counts only by inheritance', () => {
+    expect(evaluateGate([approvedInherit], active(supersededPlan)).questions[0]).toEqual({
+      index: 0,
+      kind: 'approved',
+      passed: true,
+      evidence: { of: [p3], supports: [p2], contradictions: [], unsupported: [], inherited: [p2] },
+    });
+  });
+
+  test('a direct supporter is not listed as inherited', () => {
+    const records = [...supersededPlan, rec(p4, 'review', [['supports', p3]])];
+    const result = evaluateGate([approvedInherit], active(records)).questions[0];
+    expect(result?.passed).toBe(true);
+    expect(result?.evidence).toMatchObject({ supports: [p4, p2], inherited: [p2] });
+  });
+
+  test('by still filters the inherited supporter', () => {
+    const records = [
+      rec(p1, 'plan'),
+      rec(p2, 'deviation', [['supports', p1]]),
+      rec(p3, 'plan', [['supersedes', p1]]),
+    ];
+    const result = evaluateGate([approvedInherit], active(records)).questions[0];
+    expect(result?.passed).toBe(false);
+    expect(result?.evidence).toMatchObject({ unsupported: [p3], inherited: [] });
+  });
+
+  test('a current contradiction still fails, because contradicts never inherits', () => {
+    const records = [...supersededPlan, rec(p4, 'review', [['contradicts', p3]])];
+    const result = evaluateGate([approvedInherit], active(records)).questions[0];
+    expect(result?.passed).toBe(false);
+    expect(result?.evidence).toMatchObject({ contradictions: [p4] });
+  });
+
+  test('no_pending without inherit fails, with inherit the resolution of the superseded origin counts', () => {
+    expect(evaluateGate([pendingQ], active(supersededResolver)).questions[0]).toMatchObject({
+      passed: false,
+      evidence: { unresolved: [p1] },
+    });
+    expect(evaluateGate([pendingInherit], active(supersededResolver)).questions[0]).toEqual({
+      index: 0,
+      kind: 'no_pending',
+      passed: true,
+      evidence: { unresolved: [], inherited: [p3] },
+    });
+  });
+
+  test('resolvedBy.from still filters the inherited resolver', () => {
+    const fromReview = question({
+      kind: 'no_pending',
+      pending: { type: 'deviation' },
+      resolvedBy: { kind: 'answers', from: ['review'] },
+      inherit: true,
+    });
+    expect(evaluateGate([fromReview], active(supersededResolver)).passed).toBe(false);
+  });
+
+  test('a process without active inheritance ignores the option', () => {
+    const inactive = { ...reading(supersededPlan), isInheritanceActive: () => false };
+    const result = evaluateGate([approvedInherit], inactive).questions[0];
+    expect(result?.passed).toBe(false);
+    expect(result?.evidence).toMatchObject({ unsupported: [p3], inherited: [] });
+    expect(evaluateGate([approvedInherit], reading(supersededPlan)).passed).toBe(false);
+  });
+
+  test('without the option the evidence keeps today shape even when inheritance is active', () => {
+    const records = [rec(p1, 'plan'), rec(p2, 'review', [['supports', p1]])];
+    const result = evaluateGate([approvedQ, pendingQ], active(records));
+    expect(result.questions.map(({ evidence }) => Object.keys(evidence))).toEqual([
+      ['of', 'supports', 'contradictions', 'unsupported'],
+      ['unresolved'],
+    ]);
+  });
+
+  test('counts carries the size of the inherited list', () => {
+    const [result] = evaluateGate([approvedInherit], active(supersededPlan)).questions;
+    expect(result && summarizeQuestion(result, 'counts')).toMatchObject({
+      counts: { inherited: 1 },
+    });
+  });
+
+  test('inheritance is built only for a scope that asks for it', () => {
+    const projectInherit = question({ ...approvedInherit, scope: 'project' });
+    const input = active(supersededPlan);
+    const results = evaluateGate([approvedQ, projectInherit], input);
+    expect(results.questions.map(({ passed }) => passed)).toEqual([false, true]);
+  });
+});
+
 describe('summarizeQuestion', () => {
   const approvedFailing: QuestionResult = {
     index: 0,

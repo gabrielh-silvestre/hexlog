@@ -83,7 +83,30 @@ apoia (`supports`) um registro que já foi substituído ou revogado sem que ele
 repetisse o apoio; `staleIn` é quando quem o apoiava foi substituído por algo que
 não apoia mais. É só aviso: não bloqueia gravação nem entra em gate. Para limpar
 um `staleOut`, grave V' com `supersedes` → V e `supports` → a versão atual do que
-V apoiava.
+V apoiava. (Em processo com herança, abaixo, o `supports` herdado não marca.)
+
+### Herança de relações pela linhagem
+
+Processo **criado depois** da herança nasce com ela (`create_process` devolve
+`lineageInheritance: true`); o anterior não tem e segue com a cascata manual acima.
+Em processo com herança, superar uma unidade **não exige regravar** as relações só para
+carregá-las: a leitura as estende à versão atual, sem gravar nada.
+
+- `supports` recebido pela versão antiga vale para a atual (o destino sobe). O apoio de
+  uma revisão **superada** não herda: ele morre com ela.
+- `answers`, `derivesFrom`, `complements` e `reopens` gravados na versão antiga valem
+  para a atual (a origem sobe); o destino fica como foi gravado.
+- `contradicts`, `supersedes` e `revokes` nunca herdam.
+- Leia com `relations: "full"`: `inheritedIn` e `inheritedOut` (em `counts`, os mapas
+  `inheritedInCounts` e `inheritedOutCounts`) trazem cada relação herdada com `origin`
+  (`from`, `to`), a aresta gravada de onde ela vem. O `in`/`out` direto não as mistura, e
+  `needsReview` não marca o `supports` herdado.
+- **Cortar:** grave um `contradicts` entre a linhagem de uma ponta e a da outra (qualquer
+  direção). Ele tira a herança desse par, volta o `needsReview` e conta como contradição de
+  verdade para `approved` e `no_open_contradiction`. Só o `contradicts` vigente corta:
+  superar ou revogar o registro que o grava religa a herança.
+- No gate, a pergunta `approved` ou `no_pending` só conta o herdado com `inherit: true`;
+  o que conta só por herança vem em `evidence.inherited`. Gate sem a opção avalia como antes.
 
 ## `key`: onde a duplicata custa caro
 

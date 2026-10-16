@@ -11,6 +11,9 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - A `query` aceita `relations` (`counts`, `full` ou `none`) para escolher como cada registro traz as relações; `counts` devolve `inCounts` e `outCounts`, o número de arestas por nome de relação (#161).
 - O `evaluate_gate` aceita `evidence` (`failing`, `counts` ou `full`) para escolher quanto da evidência cada pergunta traz (#161).
 - O `evaluate_gate` aceita `targets` (de 1 a 50) para avaliar vários targets numa só chamada e devolve `results`, um por target, com um só `marker` (#161).
+- Em processo criado depois desta versão, as relações gravadas para a versão antiga de uma unidade passam a valer para a versão atual, só na leitura: a `query` devolve `inheritedIn` e `inheritedOut` (com `origin`) e, em `counts`, `inheritedInCounts` e `inheritedOutCounts` (#166).
+- O `evaluate_gate` aceita `inherit: true` nas perguntas `approved` e `no_pending` para contar o que vale só por herança, e traz `evidence.inherited` (#166).
+- O `create_process` e o `list` expõem `lineageInheritance`, que só aparece em processo criado com a herança (#166).
 
 ### Alterado
 
@@ -19,6 +22,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - `limit: 0` sem `changesSince` na `query` passa a devolver `INVALID_FILTER` (`/limit`, `out-of-range`) em vez de `INVALID_INPUT` (#159).
 - A `query` devolve por padrão `inCounts` e `outCounts` no lugar de `in` e `out`, e o `evaluate_gate` devolve por padrão só as contagens da evidência, com os ids apenas da pergunta que reprova (#161).
 - O `register` passa a recusar `supersedes` cujo destino tem outro target (`INVALID_RECORD`, `target-mismatch`); `revokes` entre targets segue permitido (#164).
+- Em processo com herança, o `needsReview` deixa de marcar o `supports` que o registro atual só tem por herança (#166).
 
 ### Migração
 
@@ -27,6 +31,9 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - Com `targets`, a resposta do `evaluate_gate` troca `questions` por `results` (`{target, passed, questions}` por target); `evidence: "full"` não vale em lote. Com `target`, ou sem nenhum dos dois, o formato segue o mesmo.
 - Quem trocava o target de um fato com `supersedes` agora recebe `INVALID_RECORD` com `target-mismatch`: grave `revokes` no registro antigo e um registro novo no target certo, com `derivesFrom` para o antigo. Registros já gravados não mudam.
 - Sessões abertas só veem o formato novo depois de reinstalar com `node scripts/install.ts` e reiniciá-las.
+- Processos existentes não mudam: a herança só nasce com o processo e não há como ligá-la depois; eles seguem com a cascata manual de regravar a relação na versão nova.
+- Para cortar uma herança, grave um `contradicts` entre as duas linhagens. Só o `contradicts` vigente corta: superar ou revogar o registro que o grava religa a herança. Ele também conta como contradição para `approved` e `no_open_contradiction` sobre o registro que aponta.
+- Servidor ou sessão antiga não lê o `process.json` com `lineageInheritance` (`PROCESS_CORRUPTED`, `unreadable-manifest`): reinstale com `node scripts/install.ts` e reinicie todas as sessões antes de criar processo novo.
 
 ## [1.1.2] - 2026-10-09
 
