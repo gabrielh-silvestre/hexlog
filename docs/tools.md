@@ -196,7 +196,11 @@ processo em `details[0].process`.
   de `data`, valor escalar, até 50 chaves), `text` (busca textual, até 200
   caracteres, por relevância), `ids` (até 200), `relatedTo` (os vizinhos diretos de um id,
   por qualquer relação, de entrada ou de saída, sem o próprio id) e `includeNonCurrent`
-  (traz também os superados e revogados). O `targetPrefix` casa na fronteira de `.`. A
+  (traz também os superados e revogados). O `targetPrefix` casa por segmento, na fronteira de
+  `.`: `a.b` casa `a.b` e `a.b.c`, não `a.b-2` nem `a.bc` (`unit-1` não casa `unit-10`). A
+  resposta vazia em que nenhum target lido casa, mas algum começa pela string sem a fronteira,
+  traz `hint` com esse target; o casamento não muda. Não há filtro por tempo (`since` dá
+  `INVALID_INPUT`, e a mensagem aponta `changesSince`). A
   busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
   busca o monta, e o alcance projeto o monta a cada busca.
 - **Projeção:** `fields` (até 50 nomes de campos de primeiro nível de `data`) recorta
@@ -218,7 +222,8 @@ processo em `details[0].process`.
   saída só sai quando o destino foi lido.
 - **Ordem:** por `seq` no alcance processo e por (`at`, processo, `seq`) no alcance
   projeto; com `text`, por relevância, com a ordem do alcance como desempate.
-- **Paginação:** até `limit` registros (padrão 50, máximo 200), e a página também para
+- **Paginação:** até `limit` registros (padrão 50, máximo 200; `0` só com `changesSince` e
+  sem `cursor`, em que `records` vem vazio e só `changes` importa), e a página também para
   num teto de 24.000 caracteres do JSON dos registros, sempre com ao menos um registro.
   Passe o `cursor` devolvido para continuar, com a mesma consulta: só o `limit` e os
   `fields` podem mudar, e com `changesSince` a página 2 reenvia o mesmo `changesSince`, senão
@@ -228,7 +233,8 @@ processo em `details[0].process`.
   em `marker-hash-mismatch` ou em `last-id-not-found`, sempre `INVALID_CURSOR`, e a
   barreira é a releitura do serviço, que prende a consulta e o marcador da primeira
   página. `INVALID_CURSOR` ou `MARKER_NOT_FOUND` indicam que a consulta ou o dado mudou.
-- **Mudanças:** `marker` é a cabeça de cada processo lido. Devolvido como
+- **Mudanças:** `marker` é a cabeça de cada processo lido, e o id de qualquer registro do
+  processo serve de entrada de um marcador (`{"<processo>": "<id>"}`). Devolvido como
   `changesSince` numa consulta nova (a página 2 reenvia o mesmo `changesSince` com o
   `cursor`), a primeira página traz `changes` (`entered` e
   `left` com o motivo: `superseded`, `revoked` ou `no-longer-matches`). Cada lista vai

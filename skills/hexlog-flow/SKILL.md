@@ -172,8 +172,8 @@ registros daquele instante. O marcador cobre exatamente os processos que nomeia:
 no alcance projeto, o que ele não nomeia é lido como vazio. O `marker` do
 `register` nomeia só o processo gravado, então use-o como `changesSince` ou como
 `marker` de gate apenas no alcance processo. A lista de novidades vem só na
-primeira página; nas seguintes, reenvie o mesmo `changesSince` junto do `cursor`, senão
-`INVALID_CURSOR`. Se a resposta traz `changes.omitted`, as listas são parciais e
+primeira página (`limit: 0` devolve só ela, sem registros); nas seguintes,
+reenvie o mesmo `changesSince` junto do `cursor`, senão `INVALID_CURSOR`. Se a resposta traz `changes.omitted`, as listas são parciais e
 esse marcador não deve ser reusado: releia tudo (`cursor`, e `includeNonCurrent`
 para o que saiu). Cursor, marcador ou `changesSince` que não casam com o dado
 dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`. O marcador só vale para o alcance que o
@@ -274,7 +274,7 @@ depois dele; o processo que já existe segue com o gate fixado.
 | Gate pedido que o processo não fixou, inclusive um definido depois do `create_process` | `GATE_NOT_FOUND`: pare e avise o usuário |
 | Reenviar uma `key` com lote diferente do guardado | `IDEMPOTENCY_CONFLICT` |
 | Dado 0.x em `<D>` | `LEGACY_DATA`: só um humano resolve (ver a skill hexlog) |
-| Filtro inválido na `query` | `INVALID_FILTER` (`process` ausente, `text` sem termo) ou `INVALID_INPUT` (`text` ou `limit` acima do teto) |
+| Filtro inválido na `query` | `INVALID_FILTER` (`process` ausente, `text` sem termo, `limit: 0` fora do `changesSince`) ou `INVALID_INPUT` (`text` ou `limit` acima do teto) |
 | `PROCESS_NOT_FOUND` ou `PROJECT_NOT_FOUND` | O flow map está desatualizado: pare e avise o usuário |
 | `read_attachment` ou `register` com hash sem blob | `ATTACHMENT_NOT_FOUND` |
 

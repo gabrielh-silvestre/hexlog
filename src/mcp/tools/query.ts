@@ -15,7 +15,10 @@ import {
 } from '../../queries/query-service.ts';
 import { defineTool, MarkerRecord, READ_ANNOTATIONS, type ToolDeps } from '../kernel.ts';
 
-/** Teto de `limit` no zod da tool; o serviço só exige inteiro >= 1. */
+/**
+ * Teto de `limit` no zod da tool; o serviço exige inteiro >= 1 (ou 0 com `changesSince`, sem
+ * `cursor`).
+ */
 const LIMIT_MAX = 200;
 
 /** Itens de `changes.entered` e de `changes.left` que cabem no envelope da tool (M4 da herança do PR-5). */
@@ -51,25 +54,37 @@ const MarkerInput = boundedWellFormed(MarkerRecord, MARKER_KEYS_MAX);
 
 const WhereInput = boundedWellFormed(Where, WHERE_KEYS_MAX);
 
-const QueryInput = z.strictObject({
-  project: Name,
-  process: Name.optional(),
-  scope: z.enum(['process', 'project']).optional(),
-  includeNonCurrent: z.boolean().optional(),
-  ...Selector.shape,
-  where: WhereInput.optional(),
-  text: z
-    .string()
-    .max(QUERY_TEXT_MAX_CHARS)
-    .refine((text) => text.isWellFormed(), WELL_FORMED)
-    .optional(),
-  ids: z.array(RecordId).max(IDS_MAX).optional(),
-  fields: z.array(z.string().min(1)).max(FIELDS_MAX).optional(),
-  relatedTo: RecordId.optional(),
-  limit: z.number().int().min(1).max(LIMIT_MAX).optional(),
-  cursor: z.string().optional(),
-  changesSince: MarkerInput.optional(),
-});
+// `since` é o palpite comum para "o que mudou": a mensagem aponta `changesSince`, que aceita um
+// marcador (qualquer id de registro do processo), não um instante.
+const unrecognizedKeysMessage: z.core.$ZodErrorMap = (issue) => {
+  if (issue.code !== 'unrecognized_keys' || !issue.keys.includes('since')) return undefined;
+  const keys = issue.keys.map((key) => JSON.stringify(key)).join(', ');
+  return `Unrecognized keys: ${keys}; there is no time filter, use changesSince (a marker from an earlier query) to read what changed`;
+};
+
+const QueryInput = z.strictObject(
+  {
+    project: Name,
+    process: Name.optional(),
+    scope: z.enum(['process', 'project']).optional(),
+    includeNonCurrent: z.boolean().optional(),
+    ...Selector.shape,
+    where: WhereInput.optional(),
+    text: z
+      .string()
+      .max(QUERY_TEXT_MAX_CHARS)
+      .refine((text) => text.isWellFormed(), WELL_FORMED)
+      .optional(),
+    ids: z.array(RecordId).max(IDS_MAX).optional(),
+    fields: z.array(z.string().min(1)).max(FIELDS_MAX).optional(),
+    relatedTo: RecordId.optional(),
+    // 0 só com `changesSince` e sem `cursor`: quem confere é o serviço, com o path de `/limit`.
+    limit: z.number().int().min(0).max(LIMIT_MAX).optional(),
+    cursor: z.string().optional(),
+    changesSince: MarkerInput.optional(),
+  },
+  { error: unrecognizedKeysMessage },
+);
 
 const EvaluateGateInput = z.strictObject({
   project: Name,
@@ -102,6 +117,7 @@ const QueryOutput = z.object({
   ),
   cursor: z.string().optional(),
   marker: MarkerRecord,
+  hint: z.string().optional(),
   changes: z
     .looseObject({
       entered: z.array(z.string()),
@@ -155,22 +171,25 @@ const QUERY_DESCRIPTION =
   'whole project (scope "project"). Filters: type, targetPrefix, where (equality on top-level data ' +
   'fields, scalar values only), text (full-text search, at most 200 characters, ordered by relevance), ' +
   'ids, relatedTo (records linked to an id) and includeNonCurrent (also superseded or revoked ones). ' +
+  'targetPrefix matches whole "."-separated segments: a.b matches a.b and a.b.c, not a.b-2 or a.bc ' +
+  '(unit-1 does not match unit-10); an empty answer where a target starts with the string without ' +
+  'that boundary carries a hint naming it. There is no time filter. ' +
   'Each record carries its in and out relations, needsReview when its support is dead and ' +
   'attachmentStatus for the attachments it cites; in process scope only the relations from that ' +
   'process are seen, so use scope project to see cross-process support. fields (at most ' +
   `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
   'annotations stay, filters see the whole data and the size cap counts the projected page. ' +
-  'A page holds at most limit records (default 50, ' +
-  'max 200) and also stops at a size cap, always with at least one record; pass the returned cursor ' +
-  'to continue. marker is the head of every process read: pass it back as changesSince to get ' +
-  'changes (entered, left with reason) since then, on the first page only; resend the same ' +
-  `changesSince with the cursor on later pages, or INVALID_CURSOR. changes lists at most ${CHANGES_ITEMS_CAP} ` +
-  'ids in entered and in left; when omitted (the count left out per list) comes back, the lists are ' +
-  'partial and that marker must not be reused as changesSince, because the omitted ids never show ' +
-  'again: reread everything instead (records by cursor, left with includeNonCurrent). A marker ' +
-  'covers exactly the processes it names; in project scope, any process it does not name is read ' +
-  'as empty. Fails with MARKER_NOT_FOUND or INVALID_CURSOR when changesSince or cursor do not match ' +
-  'the data read.';
+  'A page holds at most limit records (default 50, max 200) and also stops at a size cap, always ' +
+  'with at least one record; pass the returned cursor to continue. marker is the head of every ' +
+  'process read, and any record id of the process works as its entry: pass it back as changesSince ' +
+  'to get changes (entered, left with reason) since then, on the first page only; add limit 0 to ' +
+  'get only the changes. Resend the same changesSince with the cursor on later pages, or ' +
+  `INVALID_CURSOR. changes lists at most ${CHANGES_ITEMS_CAP} ids in entered and left; when ` +
+  'changes.omitted (count cut per list) comes back, lists are partial, omitted ids never ' +
+  'reappear and that marker must not be reused as changesSince: reread everything (records by ' +
+  'cursor, left with includeNonCurrent). A marker covers exactly the ' +
+  'processes it names; in project scope, any process it does not name is read as empty. Fails with ' +
+  'MARKER_NOT_FOUND or INVALID_CURSOR when changesSince or cursor do not match the data read.';
 
 const EVALUATE_GATE_DESCRIPTION =
   'Evaluate a gate pinned in a process (GATE_NOT_FOUND otherwise), without writing anything. Returns ' +

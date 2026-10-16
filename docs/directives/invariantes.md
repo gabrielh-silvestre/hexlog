@@ -30,6 +30,8 @@ O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a reg
 
 - A `query` projeta `data` por `fields` (até 50 nomes de topo; `fields: []` omite `data`) só na saída (`src/queries/query-service.ts#createQueryService`): os filtros veem o `data` inteiro, o teto de página conta o JSON projetado, `fields` fica fora do hash do cursor, e `in`, `out`, `needsReview` e `attachmentStatus` saem completos.
 - O `register` não confere se o destino de `supersedes`/`revokes` é o registro que o agente queria, só as regras de relação; o id certo vem do `query` por `type` + `targetPrefix` + `fields: []`.
+- A `query` aceita `limit: 0` só com `changesSince` e sem `cursor` (`records: []` e `changes`, sem cursor); fora disso é `INVALID_FILTER` (`/limit`, `out-of-range`), conferido em `src/queries/query-service.ts#createQueryService`.
+- `targetPrefix` casa por segmento (`src/domain/gate.ts#matchesTargetPrefix`) e esse casamento não muda. A `query` com `targetPrefix` que devolve seleção vazia, sem nenhum target lido que o case, traz `hint` na 1ª página (`src/queries/select.ts#boundaryHint`) quando algum target começa pela string sem a fronteira de `.`.
 - Com `fields` não vazio, o `data` sempre vem na saída da `query`: `{}` quando nenhum dos campos pedidos existe no registro, e o campo ausente some sem erro (o alcance projeto mistura tipos).
 
 ## Validação do register
