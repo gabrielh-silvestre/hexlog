@@ -1,6 +1,6 @@
 # ADR 0012: Cadeira do dono no fluxo do hexlog
 
-**Status:** Proposto
+**Status:** Aceito
 
 **Data:** 2026-10-16
 
