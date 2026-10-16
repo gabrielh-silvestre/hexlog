@@ -270,7 +270,9 @@ const SELECTION_TERMS =
   /amostr|estrato|sorteio|sprt|semente|\bsampling\b|\bstrat(um|a)\b|\bseed\b/i;
 const AUDIT_TERMS = /auditor|auditoria|\baudit/i;
 const FLOW_DOC = 'docs/directives/fluxo-hexlog.md';
-const FLOW_SKILLS = ['flow-run', 'flow-gaps', 'flow-audit'];
+const FLOW_SKILLS = ['flow-run', 'flow-gaps', 'flow-audit', 'flow-owner-seat'];
+// A cadeira do dono não conhece quem a ocupa nem o que ele registra.
+const OWNER_SEAT_FORBIDDEN_TERMS = /\b(ask|autonomous|critic|answeredBy|simulated|SendMessage)\b/;
 const DIRECTIVES_DOC_CITATION = /docs\/directives\/[\w.-]+\.md/g;
 
 const skillPath = (name: string): string => path.join(repoRoot, '.claude/skills', name, 'SKILL.md');
@@ -491,6 +493,12 @@ describe('local flow skills', () => {
     });
     expect(cited).toContain(FLOW_DOC);
     expect(cited.filter((citation) => !fs.existsSync(path.join(repoRoot, citation)))).toEqual([]);
+  });
+
+  test('the owner-seat skill does not know who occupies the seat', () => {
+    expect(fs.readFileSync(skillPath('flow-owner-seat'), 'utf8')).not.toMatch(
+      OWNER_SEAT_FORBIDDEN_TERMS,
+    );
   });
 });
 
