@@ -12,7 +12,7 @@ A lacuna fecha por uma `premise` **nova** da entrega com `fills-gap` para ela. A
 ## Passos
 
 1. Ache o processo pela branch do PR: `node .claude/hooks/flow-hooks.ts slug <branch>`. Sem processo, pare e pergunte.
-2. `evaluate_gate` de `gaps` (`target` igual ao slug). A `evidence.unresolved` lista as lacunas abertas; leia cada uma por `query`.
+2. `evaluate_gate` de `gaps` (`target` igual ao slug). Com o gate reprovado, a `evidence.unresolved` da pergunta reprovada lista as lacunas abertas (aprovado, só vem `counts`); leia cada uma por `query`.
 3. **Uma lacuna por turno.** Apresente a pergunta, o contexto, a escolha provisória, a decisão registrada e a premissa atemporal contradita (leia `docs/directives/estrategia.md`). O dono escolhe, direto ou depois de pedir pesquisa, e a resposta vem antes da próxima lacuna:
    - **Mudar de rumo**: o trabalho passa a respeitar a premissa atemporal; ajuste o código.
    - **Emendar a premissa atemporal**: edite `docs/directives/estrategia.md` com a validação do dono e sincronize o doc, como na seção 2 de `flow-run`. O planejador (`.claude/hooks/flow-sync.ts#planSync`) ignora `closes` nesse doc, então a emenda sozinha não fecha a lacuna.

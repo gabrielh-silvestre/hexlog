@@ -4,9 +4,40 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+### Adicionado
+
+- A `query` aceita `limit: 0` com `changesSince` (sem `cursor`) e devolve só as mudanças, com `records` vazio (#159).
+- A `query` devolve `hint` quando um `targetPrefix` não casa nada, mas algum target começa pela string sem a fronteira de `.` (#159).
+- A `query` aceita `relations` (`counts`, `full` ou `none`) para escolher como cada registro traz as relações; `counts` devolve `inCounts` e `outCounts`, o número de arestas por nome de relação (#161).
+- O `evaluate_gate` aceita `evidence` (`failing`, `counts` ou `full`) para escolher quanto da evidência cada pergunta traz (#161).
+- O `evaluate_gate` aceita `targets` (de 1 a 50) para avaliar vários targets numa só chamada e devolve `results`, um por target, com um só `marker` (#161).
+- Em processo criado depois desta versão, as relações gravadas para a versão antiga de uma unidade passam a valer para a versão atual, só na leitura: a `query` devolve `inheritedIn` e `inheritedOut` (com `origin`) e, em `counts`, `inheritedInCounts` e `inheritedOutCounts` (#166).
+- O `evaluate_gate` aceita `inherit: true` nas perguntas `approved` e `no_pending` para contar o que vale só por herança, e traz `evidence.inherited` (#166).
+- O `create_process` e o `list` expõem `lineageInheritance`, que só aparece em processo criado com a herança (#166).
+
+### Alterado
+
+- A descrição da `query` explica que o `targetPrefix` casa por segmento e que o id de qualquer registro do processo vale como `changesSince` (#159).
+- O erro de `since` na `query` cita `changesSince` na mensagem (#159).
+- `limit: 0` sem `changesSince` na `query` passa a devolver `INVALID_FILTER` (`/limit`, `out-of-range`) em vez de `INVALID_INPUT` (#159).
+- A `query` devolve por padrão `inCounts` e `outCounts` no lugar de `in` e `out`, e o `evaluate_gate` devolve por padrão só as contagens da evidência, com os ids apenas da pergunta que reprova (#161).
+- O `register` passa a recusar `supersedes` cujo destino tem outro target (`INVALID_RECORD`, `target-mismatch`); `revokes` entre targets segue permitido (#164).
+- Em processo com herança, o `needsReview` deixa de marcar o `supports` que o registro atual só tem por herança (#166).
+
 ### Corrigido
 
 - O hook de isolamento aplica os tetos por token (chaves, colchetes e comprimento) só aos tokens que o shell expande: `node -e '...'` e `python -c "..."` legítimos, com muitas chaves ou colchetes entre aspas, deixam de ser negados por custo; o orçamento total de glob ainda soma os tokens entre aspas que passam pela checagem de caminho, e a negação por custo agora diz que o comando não cita o diretório de dados literalmente (#169).
+
+### Migração
+
+- A `query` não devolve mais `in` e `out` por padrão: cada registro traz `inCounts` e `outCounts`, mapas `{<nome da relação>: n}` em que o nome é o `as` da relação (ou o `kind`, sem `as`); mapa vazio é omitido. Para receber `in` e `out` como antes, passe `relations: "full"`; para nenhum dos dois, `relations: "none"`.
+- O `evaluate_gate` não devolve mais todas as listas de ids em `evidence`: cada pergunta traz `counts` e, só quando reprova, `evidence` com os ids que explicam a reprovação. Para receber todas as listas de ids como antes, passe `evidence: "full"`.
+- Com `targets`, a resposta do `evaluate_gate` troca `questions` por `results` (`{target, passed, questions}` por target); `evidence: "full"` não vale em lote. Com `target`, ou sem nenhum dos dois, o formato segue o mesmo.
+- Quem trocava o target de um fato com `supersedes` agora recebe `INVALID_RECORD` com `target-mismatch`: grave `revokes` no registro antigo e um registro novo no target certo, com `derivesFrom` para o antigo. Registros já gravados não mudam.
+- Sessões abertas só veem o formato novo depois de reinstalar com `node scripts/install.ts` e reiniciá-las.
+- Processos existentes não mudam: a herança só nasce com o processo e não há como ligá-la depois; eles seguem com a cascata manual de regravar a relação na versão nova.
+- Para cortar uma herança, grave um `contradicts` entre as duas linhagens. Só o `contradicts` vigente corta: superar ou revogar o registro que o grava religa a herança. Ele também conta como contradição para `approved` e `no_open_contradiction` sobre o registro que aponta.
+- Servidor ou sessão antiga não lê o `process.json` com `lineageInheritance` (`PROCESS_CORRUPTED`, `unreadable-manifest`): reinstale com `node scripts/install.ts` e reinicie todas as sessões antes de criar processo novo.
 
 ## [1.1.2] - 2026-10-09
 

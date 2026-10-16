@@ -1,4 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
+import { note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
 
@@ -52,5 +53,27 @@ describe('queries: nomes hostis', () => {
       const error = captureError(() => queries.queryRecords({ project: PROJECT, process }));
       expect(error.code).toBe('PROCESS_NOT_FOUND');
     }
+  });
+});
+
+describe('queries: relation names that clash with Object.prototype', () => {
+  test('relations counts handles a relation named constructor', async () => {
+    const { definitions, createProcess, registerOne, query } = querySetup();
+    definitions.write(PROJECT, 'relations', 'constructor', '1.0', {
+      name: 'constructor',
+      kind: 'supports',
+    });
+    createProcess('run-1');
+    const evidence = await registerOne('run-1', note('evidence'), 1);
+    await registerOne(
+      'run-1',
+      note('support', { relations: [{ to: evidence, as: 'constructor' }] }),
+      2,
+    );
+
+    const page = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
+
+    expect(at(page.records, 0).inCounts).toEqual({ constructor: 1 });
+    expect(Object.hasOwn(at(page.records, 0).inCounts ?? {}, 'constructor')).toBe(true);
   });
 });

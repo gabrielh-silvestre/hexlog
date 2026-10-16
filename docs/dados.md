@@ -26,7 +26,9 @@ POSIX (`rename` e `link` atômicos).
 
 - **`process.json`** guarda `project`, `process`, `createdAt`, as definições fixadas
   (`fixed.types`, `fixed.relations`, `fixed.gates`, com o conteúdo completo) e os
-  hashes de cada grupo. O sha256 do JCS dele é a âncora da cadeia.
+  hashes de cada grupo, e `lineageInheritance: true` só nos processos criados com a herança de
+  relações (opcional, ausente nos anteriores; ver `create_process` em [tools.md](tools.md)).
+  O sha256 do JCS dele, com o campo quando existe, é a âncora da cadeia.
 - **`records.jsonl`** é append-only. Cada linha é um lote `{"links":[...]}` de 1 a 50 elos,
   um por registro; cada elo é o registro mais `seq` (contíguo, por processo) e `prevHash`, e só
   o primeiro elo do lote carrega `batch` (impressão do lote, `key` e apelidos). O hash de um
@@ -55,7 +57,7 @@ entrada, vazio quando o erro é da chamada toda). O catálogo completo é
 | Código | Quando |
 |---|---|
 | `INVALID_INPUT` | entrada fora do schema, chave desconhecida, `__proto__`, args aninhados além de 64 níveis (`too-deep`, em qualquer tool), `offset` de `read_attachment` no meio de um par surrogate (`mid-surrogate-pair`), ou `attach` com `path` recusado (o motivo vem em `details[0].code`) |
-| `INVALID_FILTER` | filtro da `query` inconsistente: `process` ausente no alcance processo (`required`) ou `text` sem termo pesquisável (`no-terms`: espaço e pontuação não são termos). `text` acima de 200 caracteres e `limit` fora de 1 a 200 saem como `INVALID_INPUT`, porque o zod da tool barra antes; `too-long` e `out-of-range` só saem pelo serviço, nos scripts |
+| `INVALID_FILTER` | filtro da `query` inconsistente: `process` ausente no alcance processo (`required`) ou `text` sem termo pesquisável (`no-terms`: espaço e pontuação não são termos). `limit` igual a 0 sem `changesSince`, ou com `cursor`, é `out-of-range` em `/limit`. `text` acima de 200 caracteres e `limit` acima de 200, negativo ou fracionário saem como `INVALID_INPUT`, porque o zod da tool barra antes; `too-long` só sai pelo serviço, nos scripts |
 | `INVALID_CURSOR` / `MARKER_NOT_FOUND` | `cursor`, `changesSince` ou `marker` que não batem com o dado lido. `INVALID_CURSOR`: `malformed`, `too-long`, campo do cursor inválido, `scope-mismatch`, `project-mismatch`, `process-mismatch`, `filters-mismatch`, `marker-hash-mismatch` ou `last-id-not-found`, e a mensagem manda reexecutar a consulta sem `cursor`. `MARKER_NOT_FOUND`: `marker-not-found` (o id não está no log do processo) ou `process-not-found` (o marcador nomeia processo inexistente ou não lido); os dois levam `process`, o processo cujo marcador falhou |
 | `RESERVED_NAME` | nome de processo reservado |
 | `INVALID_SCHEMA` | schema de tipo que o `ajv` recusa, `$async`, raiz diferente de `object`, `pattern` ou `patternProperties` em qualquer subschema (`pattern-not-allowed`, `path` no ponteiro do `pattern`), `format` fora do catálogo e do `ajv-formats` ou marca `attachment` fora do primeiro nível (`path` `.../format`) |
