@@ -105,8 +105,8 @@ gate) ou `project` (enxerga relações entre processos).
 `approved` e `no_pending` aceitam também `inherit: true` (só `true`; as outras duas
 perguntas recusam o campo). Em processo com herança de relações (ver `create_process`), a
 pergunta passa a contar o apoio (`approved`) ou a resolução (`no_pending`) que uma versão
-superada carregava, e a `evidence` ganha a lista `inherited` com o que conta só por
-herança. Sem a opção, o resultado é o de sempre; em processo sem herança, a opção não
+superada carregava, e a `evidence` ganha a lista `inherited` (com `evidence: "full"`; nos
+outros modos, `counts.inherited`) com o que conta só por herança. Sem a opção, o resultado é o de sempre; em processo sem herança, a opção não
 acrescenta nada: `evidence.inherited` sai como lista vazia (`counts.inherited: 0`). A contradição nunca herda: uma contradição vigente continua reprovando. O gate
 antigo continua válido, porque o campo é opcional e `define_gate` não detecta quebra.
 
@@ -301,8 +301,8 @@ resultado de cada pergunta (`index`, `kind`, `passed`, mais as contagens ou os i
 `evidence`, conforme o modo) e o `marker` do que foi lido. A `evidence` tem listas por
 `kind`: `approved` traz `of`, `supports`, `contradictions` e `unsupported`; `occurred`,
 `found`; `no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. Uma pergunta
-`approved` ou `no_pending` com `inherit: true` traz também `inherited`, os ids que contam só
-por herança (ver `define_gate` e "Relações herdadas" em `query`). `target` é
+`approved` ou `no_pending` com `inherit: true` traz também `inherited` (com `evidence: "full"`; nos outros modos, `counts.inherited`), os
+ids que contam só por herança (ver `define_gate` e "Relações herdadas" em `query`). `target` é
 herdado pelos seletores sem `targetPrefix`. Com um `marker` de uma leitura anterior, a
 avaliação se reproduz sobre os registros que existiam então. Cada lista de evidência vai
 até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estreito alcança

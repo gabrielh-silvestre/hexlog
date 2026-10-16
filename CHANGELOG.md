@@ -6,6 +6,8 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [1.2.0] - 2026-10-16
 
+Esta versão quebra o contrato em três pontos e sai como minor: o formato padrão da `query` e do `evaluate_gate` mudou (`relations: "full"` e `evidence: "full"` trazem o antigo de volta), `limit: 0` sem `changesSince` troca de código de erro, e o `register` recusa `supersedes` entre targets. A Migração abaixo diz o que fazer em cada caso.
+
 ### Adicionado
 
 - A `query` aceita `limit: 0` com `changesSince` (sem `cursor`) e devolve só as mudanças, com `records` vazio (#159).
@@ -13,9 +15,9 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - A `query` aceita `relations` (`counts`, `full` ou `none`) para escolher como cada registro traz as relações; `counts` devolve `inCounts` e `outCounts`, o número de arestas por nome de relação (#161).
 - O `evaluate_gate` aceita `evidence` (`failing`, `counts` ou `full`) para escolher quanto da evidência cada pergunta traz (#161).
 - O `evaluate_gate` aceita `targets` (de 1 a 50) para avaliar vários targets numa só chamada e devolve `results`, um por target, com um só `marker` (#161).
-- Em processo criado depois desta versão, as relações gravadas para a versão antiga de uma unidade passam a valer para a versão atual, só na leitura: a `query` devolve `inheritedIn` e `inheritedOut` (com `origin`) e, em `counts`, `inheritedInCounts` e `inheritedOutCounts` (#166).
-- O `evaluate_gate` aceita `inherit: true` nas perguntas `approved` e `no_pending` para contar o que vale só por herança, e traz `evidence.inherited` (#166).
-- O `create_process` e o `list` expõem `lineageInheritance`, que só aparece em processo criado com a herança (#166).
+- Em processo criado depois desta versão, as relações gravadas para a versão antiga de uma unidade passam a valer para a versão atual, só na leitura: o `supports` recebido pela versão antiga sobe para a atual (se quem apoia é vigente) e as citações enviadas pela antiga (`answers`, `derivesFrom`, `complements`, `reopens`) passam a sair da atual, com o mesmo destino; a `query` devolve `inheritedIn` e `inheritedOut` (com `origin`) e, em `counts`, `inheritedInCounts` e `inheritedOutCounts` (#166).
+- O `evaluate_gate` aceita `inherit: true` nas perguntas `approved` e `no_pending` para contar o que vale só por herança, e traz `evidence.inherited` (com `evidence: "full"`; nos outros modos, `counts.inherited`) (#166).
+- O `create_process` e o `list` com `process` expõem `lineageInheritance`, que só aparece em processo criado com a herança (#166).
 
 ### Alterado
 
@@ -28,6 +30,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ### Corrigido
 
+- O hook de isolamento passa a negar o caminho de `<D>` escrito com escape ANSI-C (`cat $'…/hex\x6cog/x'`), que passava como lacuna aceita: o `shell-quote` 1.12.0 decodifica o escape, e a atualização também zera o aviso crítico do `npm audit` na 1.10.0 (#173).
 - O hook de isolamento aplica os tetos por token (chaves, colchetes e comprimento) só aos tokens que o shell expande: `node -e '...'` e `python -c "..."` legítimos, com muitas chaves ou colchetes entre aspas, deixam de ser negados por custo; o orçamento total de glob ainda soma os tokens entre aspas que passam pela checagem de caminho, e a negação por custo agora diz que o comando não cita o diretório de dados literalmente (#169).
 
 ### Migração
@@ -39,7 +42,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - Sessões abertas só veem o formato novo depois de reinstalar com `node scripts/install.ts` e reiniciá-las.
 - Processos existentes não mudam: a herança só nasce com o processo e não há como ligá-la depois; eles seguem com a cascata manual de regravar a relação na versão nova.
 - Para cortar uma herança, grave um `contradicts` entre as duas linhagens. Só o `contradicts` vigente corta: superar ou revogar o registro que o grava religa a herança. Ele também conta como contradição para `approved` e `no_open_contradiction` sobre o registro que aponta.
-- Servidor ou sessão antiga não lê o `process.json` com `lineageInheritance` (`PROCESS_CORRUPTED`, `unreadable-manifest`): reinstale com `node scripts/install.ts` e reinicie todas as sessões antes de criar processo novo.
+- Servidor ou sessão antiga não lê o `process.json` com `lineageInheritance` (`PROCESS_CORRUPTED`, `unreadable-manifest`): reinstale com `node scripts/install.ts` e reinicie todas as sessões antes de criar processo novo. Um gate com `inherit: true` faz o `create_process` da 1.1.x dar `INTERNAL` (`unreadable-definition`). O sintoma não é corrupção: não aplique a quarentena de `docs/dados.md`, reinstale a 1.2.0 e reinicie as sessões. Não há rollback para a 1.1.x depois de criar processo ou gate com `inherit` na 1.2.0.
+- `inCounts` e `outCounts` contam toda aresta, vigente ou não; para saber se a origem é vigente, use `relations: "full"` (campo `current`) ou o gate.
+- Em processo com herança, continuam manuais o `supports` que a versão superada emitia (regrave na versão nova com a revisão), o `derivesFrom` e o `answers` que ela recebia, e `contradicts`, `supersedes` e `revokes`, que nunca herdam.
+- `limit: 0` sem `changesSince` na `query` agora devolve `INVALID_FILTER` (`/limit`, `out-of-range`) em vez de `INVALID_INPUT`; quem ramifica pelo código deve tratar os dois.
 
 ## [1.1.2] - 2026-10-09
 
@@ -105,6 +111,9 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - Tools, erros e formato em disco mudam, e não há migração do dado: o instalador arquiva o dado 0.x num `.tar` verificado (`node scripts/install.ts --archive-0x`). Até lá, as tools respondem `LEGACY_DATA`.
 - Feche todas as sessões do Claude Code antes de instalar e reinicie depois.
 
-[Não lançado]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.0...HEAD
+[Não lançado]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.2...v1.2.0
+[1.1.2]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/gabrielh-silvestre/hexlog/releases/tag/v1.0.0
