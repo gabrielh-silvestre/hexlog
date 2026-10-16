@@ -4,6 +4,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+### Corrigido
+
+- O hook de isolamento aplica os tetos por token (chaves, colchetes e comprimento) só aos tokens que o shell expande: `node -e '...'` e `python -c "..."` legítimos, com muitas chaves ou colchetes entre aspas, deixam de ser negados por custo; o orçamento total de glob ainda soma os tokens entre aspas que passam pela checagem de caminho, e a negação por custo agora diz que o comando não cita o diretório de dados literalmente (#168).
+
 ## [1.1.2] - 2026-10-09
 
 ### Adicionado

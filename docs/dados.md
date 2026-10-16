@@ -167,10 +167,16 @@ PreToolUse na tool Bash que tokeniza o comando e nega quem alcançar o
 diretório de dados. A mensagem de negação cita as tools que dão acesso ao dado
 (`list`, `query`, `verify_chain`, `read_attachment`, `evaluate_gate`, `describe_type`). Em comando
 composto, a mensagem acrescenta ` Matched: <segmento>` com o trecho que casou. O que o hook não
-consegue decidir por custo ele nega (`hook/bash-guard.ts#decide`): o comando acima de `MAX_COMMAND_LENGTH` (1 MiB) e o token com caractere de glob acima dos tetos
+consegue decidir por custo ele nega (`hook/bash-guard.ts#decide`): o comando acima de `MAX_COMMAND_LENGTH` (1 MiB) e o token com caractere de glob que o shell expande (sem aspas e sem `\`) acima dos tetos
 (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) ou além do orçamento por comando
-(`MAX_GLOB_TOTAL_LENGTH`, a soma dos tamanhos dos tokens com glob). A negação por esses motivos não
-cita `<D>`. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
+(`MAX_GLOB_TOTAL_LENGTH`, a soma dos tamanhos dos tokens com glob, inclusive os entre aspas que passam
+pela checagem de caminho). Os tetos por token valem só para o que o shell expande: o texto só entre
+aspas ou escapado acima deles não é casado como glob, só conferido como caminho literal, e o
+orçamento total não o soma. Diante de crase, `$(` ou `${` fora de aspas simples, ou de `$'`, `$"`, `#`
+ou `<<` fora de qualquer aspa (o rastreador de aspas do hook não os modela como o bash), todo token vale
+como expansível. A negação
+por esses motivos não cita `<D>` literalmente: a mensagem diz que o comando não o cita e foi negado
+só por um teto de segurança. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
 `..`, cada grupo vira `*` antes do casamento (`.*` na abertura de um segmento oculto de `<D>`, que
 o `*` não casa), então faixas como `{1..9999999}` não se expandem. Ele libera o que não consegue
 decidir por falha da checagem: o comando que o `shell-quote` não parseia (`${}`) e o token cujo
@@ -190,6 +196,7 @@ o teste automatizado as marque como "passa":
 | `cd` seguido de caminho relativo | `cd ~/.local/share && cat hexlog/.v1/p/r/records.jsonl` |
 | `grep -r` no diretório pai | `grep -r foo ~/.local/share/` |
 | Subprocessos | `node -e …`, `python -c …` |
+| Glob só entre aspas acima dos tetos, expandido por um re-parseador | `bash -c 'cat $0' '<glob grande>'`, `eval '…'`: o hook não casa como glob o token só entre aspas acima dos tetos, só o confere como caminho literal. É a mesma lacuna de `bash -c 'cat /home/g*/…/*'`, que já passa sem enchimento |
 | Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full` e `node scripts/insights.ts`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
 | Grep/Glob tool do Claude Code apontando pro pai | `Grep path=~/.local/share` |
 | Variável definida no mesmo comando | `d=~/.local/share; cat $d/hexlog/x` |
@@ -217,11 +224,14 @@ que o shell não expande mas o hook trata como caminho; e um `**` ou uma chave
 como `ls ~/**/*.md` ou `ls ~/{docs/a,b}`. Um `**` dentro de outros
 repositórios (por exemplo `/caminho/do/repo/**/*.ts`) não é afetado, porque
 o prefixo não é ancestral do diretório de dados. Também é negado o token com
-caractere de glob que passa dos tetos `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou
+caractere de glob sem aspas que passa dos tetos `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou
 `MAX_BRACKETS`, um comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH` ou um comando acima de
-`MAX_COMMAND_LENGTH`, como
-`python -c '<script grande com colchetes>'`: tetos e orçamento valem para qualquer token ou
-comando com glob, legítimo ou não. O comando que o `shell-quote` não parseia passa, mesmo com
+`MAX_COMMAND_LENGTH`, como `cat [[[...` com mais de 64 colchetes: os tetos por token valem para
+qualquer token que o shell expande, legítimo ou não, e o orçamento total ainda soma os tokens entre
+aspas que passam pela checagem de caminho. O texto entre aspas ou escapado, como o script de
+`python -c '<script grande com colchetes>'`, fica fora dos tetos por token. Falsos positivos que sobram: o
+corpo de um heredoc com muitos colchetes ou chaves, e o comando com uma dessas construções, que o hook
+trata como palavras expansíveis. O comando que o `shell-quote` não parseia passa, mesmo com
 `cat ~/.local/share/hex""log/x` depois do `${}`: é o preço de liberar na dúvida. Em `.claude/settings.json`, o padrão `Bash(node *scripts/install.ts*)` também
 pergunta no `--check` (só leitura) e não pega `cd scripts && node install.ts`.
 
