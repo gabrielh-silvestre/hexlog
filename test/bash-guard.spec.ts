@@ -440,6 +440,8 @@ describe('bash-guard (#158): ceilings apply only to tokens the shell expands', (
   const script = `${'{'.repeat(20)}${'['.repeat(100)}`;
   // Glob que casa D (glob no último segmento do HOME) e passa do teto de comprimento: sem a
   // checagem de custo, um `cat` dele leria D.
+  // Prefixo de `find -path` sem citar D literalmente: o glob começa no último segmento do HOME.
+  const findPrefix = () => `${tmpHome.slice(0, -1)}*/.local/share/hex*`;
   const bigGlob = () => `${tmpHome.slice(0, -1)}*/.local/share/hexlog${'/'.repeat(5000)}p/*`;
 
   const allowedCases: { name: string; command: string }[] = [
@@ -491,6 +493,27 @@ describe('bash-guard (#158): ceilings apply only to tokens the shell expands', (
       name: 'a quoted relative token above the ceilings that resolves inside D',
       command: `cat "hexlog/${'['.repeat(100)}"`,
       cwd: 'PARENT_OF_D',
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted find -path pattern padded with 5000 "*" whose literal prefix is an ancestor of D',
+      get command() {
+        return `find / -path '${findPrefix()}/.v1/${'*'.repeat(5000)}records.jsonl' -exec cat {} +`;
+      },
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted find -path pattern with 9 brace groups whose literal prefix is an ancestor of D',
+      get command() {
+        return `find / -path '${findPrefix()}/${'{a,b}'.repeat(9)}'`;
+      },
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted find -path pattern with 65 bracket classes whose literal prefix is an ancestor of D',
+      get command() {
+        return `find / -path '${findPrefix()}/${'[a]'.repeat(65)}'`;
+      },
       stderr: reachesMessage,
     },
     {

@@ -21,23 +21,20 @@ tokeniza o comando recebido; nunca executa nada.
   `isExecutedDirectly()` compara `fs.realpathSync(process.argv[1])` com
   `fileURLToPath(import.meta.url)`, para o hook valer também quando chamado por symlink.
 - Os tetos de glob (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) valem só
-  para token com caractere de glob que o shell expande: `maskQuoted` troca o texto entre aspas e
-  escapado por `x` num segundo parse (`maskedTokensOf`, que só roda se algum token passa dos tetos), e
-  `toCandidates` marca como `expandable` o token que ainda tem glob (o misto `'a['*` tem; se o parse
-  mascarado não alinha com o original, todos têm). `maskQuoted` devolve `undefined`, e todo token fica
-  expansível, diante de crase, `$(` ou `${` fora de aspas simples, ou de `$'`, `$"`, `#` ou `<<` fora de
-  qualquer aspa, que o rastreador de aspas não modela como o bash. O token só entre aspas acima dos tetos
-  não é casado (`skipsGlobMatch`): só o caminho literal, e não entra no orçamento. O shell-quote só
-  devolve `{op: 'glob'}` para `*` e `?`; `{` e `[` voltam como string, sem marca de aspas, por isso o
-  segundo parse. Heredoc segue expansível. Além disso, `MAX_GLOB_TOTAL_LENGTH` limita a soma dos tokens
-  com glob que o hook casa (os entre aspas abaixo dos tetos entram) no
-  comando: sem ele, um `[`×4096 ou centenas de tokens abaixo do teto levam segundos e o hook
-  morre no timeout, liberando o comando. `MAX_COMMAND_LENGTH` limita o comando
-  inteiro antes de tokenizar. O `path.matchesGlob` expande o produto das chaves e das faixas, então
-  a chave só expande até `MAX_BRACE_EXPANSION` (32) alternativas (`braceAlternatives`); acima disso,
-  ou com faixa `..`, cada grupo vira `*` (`collapseBraceGroups`), e `.*` na abertura de um segmento
-  oculto de `D`, que o `*` não casa.
-  Falso positivo aceito: token com glob sem aspas ou comando legítimo acima do teto é negado.
+  para o token que o shell expande: `maskQuoted` troca o texto entre aspas e escapado por `x` num
+  segundo parse (`maskedTokensOf`, só quando algum token passa dos tetos), `toCandidates` marca o
+  `expandable` e `skipsGlobMatch` pula o casamento do token só entre aspas acima dos tetos, que `literalPrefixReaches` confere pelo prefixo literal. As regras
+  (o que faz o `maskQuoted` desistir, o orçamento total, o limite aceito) estão em
+  `docs/directives/instalacao-e-hooks.md` (ver `## Diretrizes` abaixo).
+- O `shell-quote` só devolve `{op: 'glob'}` para `*` e `?`; `{` e `[` voltam como string, sem marca
+  de aspas, por isso o segundo parse.
+- `MAX_GLOB_TOTAL_LENGTH` e `MAX_COMMAND_LENGTH` existem para o hook não morrer no timeout, que libera
+  o comando: sem eles, um `[`×4096 ou centenas de tokens abaixo do teto levam segundos.
+- O `path.matchesGlob` expande o produto das chaves e das faixas, então a chave só expande até
+  `MAX_BRACE_EXPANSION` (32) alternativas (`braceAlternatives`); acima disso, ou com faixa `..`, cada
+  grupo vira `*` (`collapseBraceGroups`), e `.*` na abertura de um segmento oculto de `D`, que o `*`
+  não casa.
+- Falso positivo aceito: token com glob sem aspas ou comando legítimo acima do teto é negado.
 - `test/bash-guard.spec.ts`: casos de negação e permissão contra o hook
   `.ts` real (I4), entrada inválida falha aberto (I7), tokens hostis negados
   (U1; o comando que o `shell-quote` não parseia passa), trecho citado na mensagem (#45), entrypoint por symlink (M2), e um

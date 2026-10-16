@@ -171,7 +171,8 @@ consegue decidir por custo ele nega (`hook/bash-guard.ts#decide`): o comando aci
 (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) ou além do orçamento por comando
 (`MAX_GLOB_TOTAL_LENGTH`, a soma dos tamanhos dos tokens com glob, inclusive os entre aspas que passam
 pela checagem de caminho). Os tetos por token valem só para o que o shell expande: o texto só entre
-aspas ou escapado acima deles não é casado como glob, só conferido como caminho literal, e o
+aspas ou escapado acima deles não é casado como glob, só conferido como caminho literal e pelo prefixo
+literal (os segmentos até o primeiro com glob não podem ser `<D>`, ancestral nem descendente dela), e o
 orçamento total não o soma. Diante de crase, `$(` ou `${` fora de aspas simples, ou de `$'`, `$"`, `#`
 ou `<<` fora de qualquer aspa (o rastreador de aspas do hook não os modela como o bash), todo token vale
 como expansível. A negação
@@ -196,7 +197,7 @@ o teste automatizado as marque como "passa":
 | `cd` seguido de caminho relativo | `cd ~/.local/share && cat hexlog/.v1/p/r/records.jsonl` |
 | `grep -r` no diretório pai | `grep -r foo ~/.local/share/` |
 | Subprocessos | `node -e …`, `python -c …` |
-| Glob só entre aspas acima dos tetos, expandido por um re-parseador | `bash -c 'cat $0' '<glob grande>'`, `eval '…'`: o hook não casa como glob o token só entre aspas acima dos tetos, só o confere como caminho literal. É a mesma lacuna de `bash -c 'cat /home/g*/…/*'`, que já passa sem enchimento |
+| Glob só entre aspas acima dos tetos, expandido por um re-parseador | `bash -c 'cat $0' '<glob grande>'`, `eval '…'`: o hook não casa como glob o token só entre aspas acima dos tetos, só o confere como caminho literal e pelo prefixo literal; um glob relativo cujo prefixo não alcança `<D>` passa. É a mesma lacuna de `bash -c 'cat /home/g*/…/*'`, que já passa sem enchimento |
 | Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full` e `node scripts/insights.ts`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
 | Grep/Glob tool do Claude Code apontando pro pai | `Grep path=~/.local/share` |
 | Variável definida no mesmo comando | `d=~/.local/share; cat $d/hexlog/x` |

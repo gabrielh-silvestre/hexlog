@@ -196,7 +196,7 @@ function exceedsGlobLimits(token: string): boolean {
   );
 }
 
-/** O token só entre aspas acima dos tetos não é casado como glob: só o caminho literal conta. */
+/** O token só entre aspas acima dos tetos não é casado como glob: só o caminho e o prefixo literais contam. */
 function skipsGlobMatch({ token, expandable }: Candidate): boolean {
   return !expandable && exceedsGlobLimits(token);
 }
@@ -304,9 +304,23 @@ function tokenReachesDirectory(token: string, cwd: string, dataDir: string): boo
 
 type TokenClass = 'reaches' | 'undecidable' | 'clear';
 
+/** O prefixo literal (segmentos até o primeiro com glob) é `D`, ancestral ou descendente dela? Linear, sem regex. */
+function literalPrefixReaches(resolvedPath: string, dataDir: string): boolean {
+  const prefix = takeWhile(
+    resolvedPath.split(path.sep),
+    (segment) => !GLOB_CHARS_REGEX.test(segment),
+  ).join(path.sep);
+  return (
+    prefix === dataDir ||
+    dataDir.startsWith(prefix + path.sep) ||
+    prefix.startsWith(dataDir + path.sep)
+  );
+}
+
 /**
  * Token que o shell expande acima dos tetos é `undecidable` (nega, sem citar `D`); o só entre aspas
- * acima dos tetos é conferido só como caminho literal. Casamento que lança libera o token.
+ * acima dos tetos é conferido como caminho literal e pelo prefixo literal, que pega o glob que o
+ * próprio programa expande (`find -path`). Casamento que lança libera o token.
  */
 function classifyToken(
   candidate: Candidate,
@@ -318,7 +332,10 @@ function classifyToken(
     const token = expandTilde(candidate.token, home);
     if (token.includes(dataDir)) return 'reaches';
     if (skipsGlobMatch(candidate)) {
-      return isInsideDirectory(path.resolve(cwd, token), dataDir) ? 'reaches' : 'clear';
+      const resolved = path.resolve(cwd, token);
+      return isInsideDirectory(resolved, dataDir) || literalPrefixReaches(resolved, dataDir)
+        ? 'reaches'
+        : 'clear';
     }
     if (exceedsGlobLimits(token)) return 'undecidable';
     return tokenReachesDirectory(token, cwd, dataDir) ? 'reaches' : 'clear';
