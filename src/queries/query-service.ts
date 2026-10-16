@@ -35,6 +35,7 @@ import {
 } from './read-attachment.ts';
 import { readScope, type Reading, type ReadTarget } from './read.ts';
 import {
+  boundaryHint,
   buildView,
   inOutputOrder,
   leftReason,
@@ -62,7 +63,10 @@ export type QueryInput = Filters & {
   /** Obrigatório no alcance processo (o padrão). */
   process?: Name;
   scope?: 'process' | 'project';
-  /** Registros por página (padrão 50); `maxChars` pode encurtar a página. */
+  /**
+   * Registros por página (padrão 50); `maxChars` pode encurtar a página. `0` só vale com
+   * `changesSince` e sem `cursor`: devolve `records: []` e as `changes`, sem cursor.
+   */
   limit?: number;
   cursor?: string;
   /**
@@ -108,6 +112,11 @@ export type QueryResult = {
   marker: Marker;
   /** Só na 1ª página e só com `changesSince`. */
   changes?: Changes;
+  /**
+   * Só na 1ª página, com `targetPrefix` e seleção vazia em que nenhum target lido o casa, mas algum
+   * começa pela string sem a fronteira de `.`. O casamento do `targetPrefix` não muda (D-07).
+   */
+  hint?: string;
 };
 
 export type EvaluateGateInput = {
@@ -149,8 +158,8 @@ export type QueryService = {
    * `attachmentStatus`. Ordem de saída: alcance processo por `seq`, alcance projeto por (`at`,
    * processo, `seq`), com `text` por relevância e o mesmo desempate. Página com resultado leva ao
    * menos um registro (o 1º sai inteiro mesmo acima de `maxChars`); consulta sem resultado devolve
-   * `records: []`. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de
-   * `lastId` sobre a leitura da página 1.
+   * `records: []`, com `hint` quando o `targetPrefix` quase casou. O cursor (D-20) fixa o marcador:
+   * as páginas seguintes recomeçam depois de `lastId` sobre a leitura da página 1.
    *
    * `INVALID_FILTER` (`/process`, `/limit`, `/text`: acima de `QUERY_TEXT_MAX_CHARS` ou sem termo
    * pesquisável, `no-terms`, como `''`, `'  '` e `'!!!'`),
@@ -224,9 +233,14 @@ function targetOf({ project, scope = 'process', process }: QueryInput): ReadTarg
 }
 
 /** `no-terms` vem depois de `too-long` para nunca tokenizar um texto acima do teto. */
-function assertValid({ limit, text }: QueryInput, search: SearchIndex): void {
-  if (!isUndefined(limit) && !(Number.isInteger(limit) && limit >= 1)) {
-    throw invalidFilter('/limit', 'out-of-range', 'limit must be a positive integer');
+function assertValid({ limit, text, changesSince, cursor }: QueryInput, search: SearchIndex): void {
+  const min = !isUndefined(changesSince) && isUndefined(cursor) ? 0 : 1;
+  if (!isUndefined(limit) && !(Number.isInteger(limit) && limit >= min)) {
+    throw invalidFilter(
+      '/limit',
+      'out-of-range',
+      'limit must be a positive integer, or 0 with changesSince and no cursor',
+    );
   }
   if (isUndefined(text)) return;
   if (text.length > QUERY_TEXT_MAX_CHARS) {
@@ -434,11 +448,16 @@ export function createQueryService(deps: {
         isUndefined(cursor) && !isUndefined(input.changesSince)
           ? changesOf(input, target, filters, { view, selected, marker: reading.marker })
           : undefined;
+      const hint =
+        isUndefined(cursor) && selected.length === 0 && !isUndefined(input.targetPrefix)
+          ? boundaryHint(view, input.targetPrefix)
+          : undefined;
       return {
         records,
         ...(isUndefined(next) ? {} : { cursor: encodeCursor(next) }),
         marker: reading.marker,
         ...(isUndefined(changes) ? {} : { changes }),
+        ...(isUndefined(hint) ? {} : { hint }),
       };
     },
 

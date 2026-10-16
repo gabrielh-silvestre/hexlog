@@ -4,6 +4,16 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+### Adicionado
+
+- A `query` aceita `limit: 0` com `changesSince` (sem `cursor`) e devolve só as mudanças, com `records` vazio (#159).
+- A `query` devolve `hint` quando um `targetPrefix` não casa nada, mas algum target começa pela string sem a fronteira de `.` (#159).
+
+### Alterado
+
+- A descrição da `query` explica que o `targetPrefix` casa por segmento e que o id de qualquer registro do processo vale como `changesSince` (#159).
+- O erro de `since` na `query` cita `changesSince` na mensagem (#159).
+
 ## [1.1.2] - 2026-10-09
 
 ### Adicionado
