@@ -137,12 +137,14 @@ Notas:
    })
    → { passed: true,
        questions: [{ index: 0, kind: "occurred", passed: true,
-                     evidence: { found: ["onboarding:<uuid v7>"] } }],
+                     counts: { found: 1 } }],
        marker: { onboarding: "onboarding:<uuid v7>" } }
 ```
 
 O gate responde sozinho a partir dos registros vigentes: o agente não informa
-`result`. Com `target` omitido, os seletores leem todos os alvos; com `target`,
+`result`. Por padrão a resposta traz só o tamanho de cada lista de evidência
+(`counts: {...}`) e, na pergunta reprovada, os ids que explicam a reprovação; `evidence:
+"full"` devolve todas as listas de ids, e `targets: [...]` avalia vários alvos numa chamada. Com `target` omitido, os seletores leem todos os alvos; com `target`,
 os seletores sem `targetPrefix` herdam esse alvo (a fronteira é o `.`).
 
 ## Diagnóstico de saúde

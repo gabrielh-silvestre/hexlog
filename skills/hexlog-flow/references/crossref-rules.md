@@ -19,8 +19,8 @@ versão atual da linhagem (ou nulo, se foi revogada). Não existe gate de
 "bifurcação" nem como "cancelar" um registro já gravado: o log é append-only, e
 anular é um `revokes`. Para seguir a linhagem, `query` com `includeNonCurrent:
 true` e `relatedTo` = o `id`. O `relatedTo` devolve só os vizinhos diretos, por
-qualquer relação, de entrada ou de saída, sem o próprio `id`; cada registro traz `in`
-e `out`, e a cadeia se percorre por eles, um salto por vez.
+qualquer relação, de entrada ou de saída, sem o próprio `id`; com `relations: "full"`, cada registro
+traz `in` e `out`, e a cadeia se percorre por eles, um salto por vez.
 
 Substituir e revogar só valem **dentro do processo** (`cross-process-currency`).
 
@@ -32,7 +32,7 @@ que enxerga mais de um processo.
 - Para ler **uma** fase, `query` com o `process` dela (o flow map traduz "fase X"
   para o nome do processo) — nunca o `process` da fase corrente por padrão.
 - Para ler **várias** de uma vez, `query` com `scope: "project"`: lê e verifica todos
-  os processos do projeto, e `in`, `out.current` e `needsReview` passam a ver as
+  os processos do projeto, e `in` (ou `inCounts: {...}`), `out.current` e `needsReview` passam a ver as
   relações entre processos. O alcance padrão (`process`) não vê relação vinda de
   outro processo e **não avisa**.
 - Para **ligar** um registro a outro de outra fase, use qualquer relação menos
@@ -66,7 +66,9 @@ Um seletor é `{ type?, targetPrefix?, where? }`, com `where` = igualdade em cam
 de primeiro nível de `data`, só valor escalar. Uma comparação ("revisão ≥ 2") se
 modela com um campo booleano do tipo (`where: { isRevision: true }`), nunca com
 operador. Recusado e pendente se distinguem pela evidência: há `contradictions`
-versus apoio ausente (`unsupported`).
+versus apoio ausente (`unsupported`). Com o padrão `evidence: "failing"`, a
+resposta da pergunta reprovada traz esses ids; a aprovada traz só `counts: {...}`, e
+`evidence: "full"` devolve todas as listas.
 
 Sem gate declarado para a fase, não invente um cruzamento — a lacuna fica sem
 prova formal, e isso é uma decisão aceita, não um bug.

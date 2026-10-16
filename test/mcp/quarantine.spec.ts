@@ -54,8 +54,8 @@ function quarantine(process: string): string {
   return target;
 }
 
-describe('M21: runbook de quarentena de processo corrompido (docs/dados.md)', () => {
-  test('mover o processo adulterado destrava o alcance projeto, libera o nome e descarta o índice velho', async () => {
+describe('M21: runbook for quarantining a corrupted process (docs/dados.md)', () => {
+  test('moving the tampered process unlocks project scope, frees the name and discards the stale index', async () => {
     await registerNote('run-1', 'primeira');
     await registerNote('run-1', 'segunda');
     await registerNote('run-2', 'de outro processo');
@@ -98,14 +98,14 @@ describe('M21: runbook de quarentena de processo corrompido (docs/dados.md)', ()
     expect(fs.existsSync(path.join(quarantined, 'records.jsonl'))).toBe(true);
   }, 30_000);
 
-  test('relação gravada que apontava para o processo sai sem `current` e relação nova para ele dá RELATION_NOT_FOUND', async () => {
+  test('a stored relation that pointed to the process comes out without `current` and a new relation to it gives RELATION_NOT_FOUND', async () => {
     const { records } = await registerNote('run-1', 'alvo');
     const target = at(records, 0).id;
     await registerNote('run-2', 'aprova', [{ to: target, kind: 'supports', as: 'approves' }]);
 
     quarantine('run-1');
 
-    const [approver] = (await query({ process: 'run-2' })).records;
+    const [approver] = (await query({ process: 'run-2', relations: 'full' })).records;
     expect(approver?.out).toEqual([{ kind: 'supports', as: 'approves', to: target }]);
 
     const error = expectError(

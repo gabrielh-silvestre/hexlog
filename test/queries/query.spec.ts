@@ -381,3 +381,130 @@ describe('queryRecords: limit 0 with changesSince', () => {
     expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
   });
 });
+
+describe('queryRecords: relations mode', () => {
+  /** `evidence` com duas relações `approves`, uma `supports` sem nome e uma `supersedes` que a substitui. */
+  async function wired() {
+    const setup = querySetup();
+    setup.createProcess('run-1');
+    const { registerOne } = setup;
+    const evidence = await registerOne('run-1', note('evidence'), 1);
+    const approve = (text: string) => note(text, { relations: [{ to: evidence, as: 'approves' }] });
+    await registerOne('run-1', approve('a'), 2);
+    await registerOne('run-1', approve('b'), 3);
+    await registerOne('run-1', note('c', { relations: [{ to: evidence, kind: 'supports' }] }), 4);
+    const newer = await registerOne(
+      'run-1',
+      note('evidence 2', { relations: [{ to: evidence, kind: 'supersedes' }] }),
+      5,
+    );
+    return { ...setup, evidence, newer };
+  }
+
+  test('counts replaces in and out with inCounts and outCounts keyed by relation name', async () => {
+    const { query, evidence, newer } = await wired();
+
+    const page = query({
+      process: 'run-1',
+      ids: [evidence, newer],
+      includeNonCurrent: true,
+      relations: 'counts',
+    });
+
+    expect(at(page.records, 0)).not.toHaveProperty('in');
+    expect(at(page.records, 0)).not.toHaveProperty('out');
+    expect(at(page.records, 0).inCounts).toEqual({ approves: 2, supports: 1, supersedes: 1 });
+    expect(at(page.records, 1).outCounts).toEqual({ supersedes: 1 });
+  });
+
+  test('counts omits empty maps and zero kinds', async () => {
+    const { query, evidence, newer } = await wired();
+
+    const page = query({
+      process: 'run-1',
+      ids: [evidence, newer],
+      includeNonCurrent: true,
+      relations: 'counts',
+    });
+
+    expect(at(page.records, 0)).not.toHaveProperty('outCounts');
+    expect(at(page.records, 1)).not.toHaveProperty('inCounts');
+    expect(Object.keys(at(page.records, 0).inCounts ?? {})).toEqual([
+      'approves',
+      'supports',
+      'supersedes',
+    ]);
+  });
+
+  test('none omits in, out and both count maps', async () => {
+    const { query, evidence } = await wired();
+
+    const page = query({
+      process: 'run-1',
+      ids: [evidence],
+      includeNonCurrent: true,
+      relations: 'none',
+    });
+
+    for (const key of ['in', 'out', 'inCounts', 'outCounts']) {
+      expect(at(page.records, 0)).not.toHaveProperty(key);
+    }
+  });
+
+  test('full matches the default', async () => {
+    const { query } = await wired();
+
+    const withFull = query({ process: 'run-1', includeNonCurrent: true, relations: 'full' });
+    const byDefault = query({ process: 'run-1', includeNonCurrent: true });
+
+    expect(JSON.stringify(withFull)).toBe(JSON.stringify(byDefault));
+    expect(at(byDefault.records, 0).in).toHaveLength(4);
+  });
+
+  test.each(['counts', 'none', 'full'] as const)(
+    'keeps needsReview and attachmentStatus in %s mode',
+    async (relations) => {
+      const { createProcess, registerOne, attachments, query } = querySetup();
+      createProcess('run-1');
+      const kept = attachments.putText(PROJECT, 'guardado').hash;
+      const evidence = await registerOne('run-1', note('evidência'), 1);
+      const verdict = await registerOne(
+        'run-1',
+        doc({ body: kept }, { relations: [{ to: evidence, kind: 'supports' }] }),
+        2,
+      );
+      await registerOne(
+        'run-1',
+        note('evidência 2', { relations: [{ to: evidence, kind: 'supersedes' }] }),
+        3,
+      );
+
+      const page = query({ process: 'run-1', ids: [verdict], relations });
+
+      expect(at(page.records, 0).needsReview).toEqual({ staleIn: [], staleOut: [evidence] });
+      expect(at(page.records, 0).attachmentStatus).toEqual({ [kept]: 'ok' });
+    },
+  );
+
+  test('counts counts non-current edges too', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    const evidence = await registerOne('run-1', note('evidence'), 1);
+    const support = await registerOne(
+      'run-1',
+      note('support', { relations: [{ to: evidence, kind: 'supports' }] }),
+      2,
+    );
+    await registerOne(
+      'run-1',
+      note('support 2', { relations: [{ to: support, kind: 'supersedes' }] }),
+      3,
+    );
+
+    const full = query({ process: 'run-1', ids: [evidence], relations: 'full' });
+    const counts = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
+
+    expect(at(full.records, 0).in).toEqual([{ kind: 'supports', from: support, current: false }]);
+    expect(at(counts.records, 0).inCounts).toEqual({ supports: 1 });
+  });
+});

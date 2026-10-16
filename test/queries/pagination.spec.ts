@@ -7,7 +7,7 @@ import { ghostId, note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { cursorOf, idsOf, querySetup, walkPages } from './query-setup.ts';
 
-describe('queryRecords: página e cursor (D-20)', () => {
+describe('queryRecords: page and cursor (D-20)', () => {
   async function fiveNotes() {
     const setup = querySetup();
     setup.createProcess('run-1');
@@ -31,7 +31,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     return { ...setup, a, b, c, d };
   }
 
-  test('para qualquer `limit`, as páginas somam a lista inteira, na mesma ordem e sem repetir', async () => {
+  test('for any `limit`, the pages add up to the whole list, in the same order and without repeats', async () => {
     const { query, ids } = await fiveNotes();
 
     fc.assert(
@@ -44,7 +44,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     );
   });
 
-  test('`limit` igual ao que resta fecha a lista sem cursor, e um a menos deixa o cursor', async () => {
+  test('a `limit` equal to what remains closes the list without a cursor, and one less leaves the cursor', async () => {
     const { query, ids } = await fiveNotes();
 
     const exact = query({ process: 'run-1', limit: 5 });
@@ -56,7 +56,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(short.cursor).toBeDefined();
   });
 
-  test('o teto de caracteres na última página devolve o registro que resta e nenhum cursor', async () => {
+  test('the character cap on the last page returns the remaining record and no cursor', async () => {
     const { query, ids } = await fiveNotes();
     const first = query({ process: 'run-1', limit: 4 });
 
@@ -66,7 +66,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(last.cursor).toBeUndefined();
   });
 
-  test('consulta sem resultado devolve `records` vazio, sem cursor e com o marcador do que leu', async () => {
+  test('a query with no result returns empty `records`, no cursor and the marker of what it read', async () => {
     const { query } = await fiveNotes();
 
     const page = query({ process: 'run-1', type: 'doc' });
@@ -76,7 +76,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(Object.keys(page.marker)).toEqual(['run-1']);
   });
 
-  test('as páginas do alcance projeto também somam a lista inteira, sem repetir', async () => {
+  test('the project scope pages also add up to the whole list, without repeats', async () => {
     const { query, a, b, c, d } = await twoProcesses();
 
     const first = query({ scope: 'project', limit: 3 });
@@ -86,7 +86,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(second.cursor).toBeUndefined();
   });
 
-  test('SL6: uma substituição gravada entre as páginas não muda a lista da página 1 (alcance processo)', async () => {
+  test('SL6: a supersede written between pages does not change the page 1 list (process scope)', async () => {
     const { query, registerOne, ids } = await fiveNotes();
     const first = query({ process: 'run-1', limit: 2 });
     await registerOne(
@@ -101,7 +101,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(second.marker).toEqual(first.marker);
   });
 
-  test('SL6: uma substituição gravada entre as páginas não muda a lista da página 1 (alcance projeto)', async () => {
+  test('SL6: a supersede written between pages does not change the page 1 list (project scope)', async () => {
     const { query, registerOne, a, b, c, d } = await twoProcesses();
     const first = query({ scope: 'project', limit: 2 });
     await registerOne('run-1', note('c2', { relations: [{ to: c, kind: 'supersedes' }] }), 5);
@@ -114,7 +114,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(second.marker).toEqual(first.marker);
   });
 
-  test('SL6: um processo que nasce depois da página 1 não entra nas páginas seguintes', async () => {
+  test('SL6: a process born after page 1 does not enter the following pages', async () => {
     const { createProcess, registerOne, query, a, b, c, d } = await twoProcesses();
     const first = query({ scope: 'project', limit: 2 });
     createProcess('run-3');
@@ -126,7 +126,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(idsOf(second)).toEqual([c, d]);
   });
 
-  test('SL6: processo chamado `constructor` nascido entre as páginas não derruba o cursor do projeto', async () => {
+  test('SL6: a process named `constructor` born between pages does not break the project cursor', async () => {
     const { createProcess, registerOne, query, a, b, c, d } = await twoProcesses();
     const first = query({ scope: 'project', limit: 2 });
     createProcess('constructor');
@@ -138,7 +138,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(idsOf(second)).toEqual([c, d]);
   });
 
-  test('cursor com `text` de 2+ termos e `type`: mesma ordem e `lastId` presente com append entre páginas', async () => {
+  test('cursor with `text` of 2+ terms and `type`: same order and `lastId` present with an append between pages', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     await registerOne('run-1', { type: 'doc', target: 'run.doc', data: { note: 'banana uva' } }, 1);
@@ -157,7 +157,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(second.cursor).toBeUndefined();
   });
 
-  test('o cursor do alcance projeto cobre todos os processos lidos', async () => {
+  test('the project scope cursor covers every process read', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     createProcess('run-2');
@@ -171,7 +171,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(Object.keys(first.marker)).toEqual(['run-1', 'run-2']);
   });
 
-  test('registro maior que o teto sai sozinho e o cursor avança', async () => {
+  test('a record larger than the cap comes out alone and the cursor advances', async () => {
     const { query, ids } = await fiveNotes();
 
     const first = query({ process: 'run-1', maxChars: 1 });
@@ -181,7 +181,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(idsOf(second)).toEqual([at(ids, 1)]);
   });
 
-  test('registro maior que o teto sai sozinho e o cursor avança até a última página (alcance projeto)', async () => {
+  test('a record larger than the cap comes out alone and the cursor advances to the last page (project scope)', async () => {
     const { query, a, b, c, d } = await twoProcesses();
 
     const pages = walkPages(query, { scope: 'project', maxChars: 1 });
@@ -189,7 +189,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(pages.map(idsOf)).toEqual([[a], [b], [c], [d]]);
   });
 
-  test('o teto de caracteres corta a página antes do limite', async () => {
+  test('the character cap cuts the page before the limit', async () => {
     const { query, ids } = await fiveNotes();
     const one = JSON.stringify(at(query({ process: 'run-1', limit: 1 }).records, 0)).length;
 
@@ -198,7 +198,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(idsOf(page)).toEqual(ids.slice(0, 2));
   });
 
-  test('o teto de caracteres no tamanho exato da página a mantém, e um a menos corta o último', async () => {
+  test('a character cap at the exact page size keeps it, and one less cuts the last record', async () => {
     const { query, ids } = await fiveNotes();
     const two = query({ process: 'run-1', limit: 2 }).records;
     const exact = two.reduce((sum, record) => sum + JSON.stringify(record).length, 0);
@@ -210,7 +210,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(idsOf(cut)).toEqual(ids.slice(0, 1));
   });
 
-  test('sem `limit` a página traz 50 registros e o cursor leva ao 51º', async () => {
+  test('without `limit` the page brings 50 records and the cursor leads to the 51st', async () => {
     const { createProcess, register, query } = querySetup();
     createProcess('run-1');
     const ids = [
@@ -230,7 +230,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(second.cursor).toBeUndefined();
   });
 
-  test('o teto de caracteres conta a página já recortada por `fields` (cenário da #85)', async () => {
+  test('the character cap counts the page already trimmed by `fields` (scenario from #85)', async () => {
     const { createProcess, register, query } = querySetup();
     createProcess('run-1');
     const ids = await register(
@@ -255,7 +255,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(some.cursor).toBeUndefined();
   });
 
-  test('`fields` fica fora do hash do cursor: a página 2 pode pedir outros, nos dois sentidos', async () => {
+  test('`fields` stays out of the cursor hash: page 2 may ask for others, both ways', async () => {
     const { query, ids } = await fiveNotes();
     const withFields = query({ process: 'run-1', limit: 2, fields: ['text'] });
     const withoutFields = query({ process: 'run-1', limit: 2 });
@@ -274,7 +274,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(at(other.records, 0).data).toEqual({ text: 'c' });
   });
 
-  test('cursor de outro projeto dá INVALID_CURSOR `project-mismatch`', async () => {
+  test('a cursor from another project gives INVALID_CURSOR `project-mismatch`', async () => {
     const { query, queries } = await fiveNotes();
     const cursor = cursorOf(query({ process: 'run-1', limit: 2 }));
 
@@ -287,7 +287,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(at(error.details, 0).message).toContain('rerun the query without cursor');
   });
 
-  test('cursor mexido, de outro filtro, alcance ou processo dá INVALID_CURSOR', async () => {
+  test('a tampered cursor, or one from another filter, scope or process, gives INVALID_CURSOR', async () => {
     const { query, createProcess } = await fiveNotes();
     createProcess('run-2');
     const cursor = cursorOf(query({ process: 'run-1', limit: 2 }));
@@ -308,7 +308,7 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(codeOf({ process: 'run-2', cursor })).toBe('process-mismatch');
   });
 
-  test('cursor com marcador de outro log, id marcado inexistente ou lastId fora do resultado é recusado', async () => {
+  test('a cursor with a marker from another log, a nonexistent marked id or a lastId outside the result is refused', async () => {
     const { query } = await fiveNotes();
     const issued = decodeCursor(cursorOf(query({ process: 'run-1', limit: 2 })));
     const forged = (patch: Partial<typeof issued>) =>
@@ -327,5 +327,24 @@ describe('queryRecords: página e cursor (D-20)', () => {
     expect(at(marker.details, 0).path).toBe('/cursor');
     expect(last.code).toBe('INVALID_CURSOR');
     expect(at(last.details, 0).code).toBe('last-id-not-found');
+  });
+});
+
+describe('queryRecords: relations mode and the cursor', () => {
+  test('cursor accepts a different relations mode on the next page', async () => {
+    const { createProcess, register, query } = querySetup();
+    createProcess('run-1');
+    await register('run-1', [note('a'), note('b')], 1);
+    const first = query({ process: 'run-1', limit: 1, relations: 'counts' });
+
+    const second = query({
+      process: 'run-1',
+      limit: 1,
+      relations: 'none',
+      cursor: cursorOf(first),
+    });
+
+    expect(second.records).toHaveLength(1);
+    expect(at(second.records, 0)).not.toHaveProperty('inCounts');
   });
 });

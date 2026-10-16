@@ -145,8 +145,8 @@ Numa iteração de planejamento:
 4. **Fim do loop de plan ou ralplan, antes de executar.** `attach` com o `path` do
    plano final (depois de aplicadas as melhorias, se houve); `evaluate_gate` com
    `gate: "plan-ready"` e `target` = o alvo do plano. `passed: false` barra a
-   execução: a `evidence` de cada pergunta diz o que falta (`unsupported`,
-   `contradictions`, `unresolved`). Se vier `omitted`, a lista é parcial: um
+   execução: a `evidence` de cada pergunta reprovada diz o que falta (`unsupported`,
+   `contradictions`, `unresolved`); a aprovada traz só `counts: {...}`. Se vier `omitted`, a lista é parcial: um
    `select` ou `where` mais estreito alcança o resto. Audite o alvo (abaixo) e registre agora a
    lacuna que achar, dizendo no `summary` que o registro foi tardio.
 

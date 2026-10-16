@@ -34,9 +34,9 @@ pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
 | Gravar um ou mais registros (marco, decisão, veredito, desvio, plano) | `register` | Lote de 1 a 50 registros, tudo ou nada. `agent` = nome da skill que disparou (a skill apontada que chamou a hexlog-flow, ou hexlog-flow mesma se disparada direto). Passe `key` onde a duplicata custa caro (seção abaixo) |
 | Achar um registro, ou os de um alvo | `query` | Filtros `type`, `targetPrefix`, `where`, `text`, `ids`; devolve o `id` de cada um |
 | Substituir ou revogar um registro (`supersedes`/`revokes`) | `query` com `type` + `targetPrefix` + `fields: []`, depois `register` com o `id` devolvido | Leia o vigente antes; nunca use um `id` de memória. Ver "Busca, id, relações" |
-| Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
+| Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou `relations: "full"` e ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
 | Saber o que mudou desde a última leitura | `query` com `changesSince` = o `marker` da leitura anterior | Só na primeira página; ver "Marcador" |
-| Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência |
+| Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência. Por padrão (`evidence: "failing"`) a resposta traz só `counts: {...}` e os ids do que reprova; `targets: [...]` avalia vários alvos numa chamada |
 | Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro. Para detectar cauda apagada, passe `expectedHead` = o `head` de uma verificação anterior (`head-not-found`) |
 | Saber o que existe (projetos, processos, o que um processo fixou) | `list` | Sem parâmetros, com `project`, ou com `project` e `process` |
 | Registrar num tipo que você não conhece | `describe_type` com `project`, `type` e `process` | Leia o schema fixado **antes** do `register`; com `process` devolve o tipo que o processo fixou, sem a versão na saída, e `process` junto de uma versão pedida é `INVALID_INPUT` |
@@ -51,16 +51,17 @@ Registro se acha por busca e se liga por id:
 1. **Busque.** `query` com `type`, `targetPrefix`, `where` (igualdade em campo de
    primeiro nível de `data`, valor escalar) ou `text` (busca textual, até 200
    caracteres, por relevância). Cada registro volta com `id`, `type`, `target`,
-   `author`, `data`, `in`, `out`, e `needsReview` e `attachmentStatus` quando se
-   aplicam.
+   `author`, `data`, `inCounts: {...}` e `outCounts: {...}` (arestas por nome de relação; sem
+   aresta, o mapa não vem), e `needsReview` e `attachmentStatus` quando se aplicam.
+   Para as arestas inteiras, passe `relations: "full"` (`in` e `out`).
 2. **Pegue o `id`.** Ele é do servidor (`<processo>:<uuid v7>`): nunca monte um à
    mão. Dentro de um mesmo `register`, um item se refere a outro anterior por
    `@<alias>` (o `alias` do item anterior); alias adiante, repetido ou inexistente
    é `INVALID_INPUT`.
-3. **Navegue.** `in` lista quem aponta para o registro (`kind`, `as`, `from`,
-   `current`: se a origem é vigente); `out` lista as relações gravadas nele
-   (`to`, e `current` quando o destino foi lido). `relatedTo` traz os registros
-   ligados a um `id`.
+3. **Navegue.** `relatedTo` traz os registros ligados a um `id`. Com `relations:
+   "full"`, `in` lista quem aponta para o registro (`kind`, `as`, `from`, `current`:
+   se a origem é vigente) e `out` lista as relações gravadas nele (`to`, e `current`
+   quando o destino foi lido).
 
 **Antes de `supersedes` ou `revokes`, leia o vigente.** Consulte com `type` +
 `targetPrefix`, confira o `target` do registro devolvido (e um campo-chave, se o
@@ -146,10 +147,10 @@ novo não substitui nem revoga nada do antigo; ele o cita por `derivesFrom` ou
 `query` e as perguntas de gate leem **um processo** por padrão (`scope:
 "process"`). Nesse alcance:
 
-- `in`, `needsReview` e as perguntas `approved`, `no_pending` e
+- `in` (ou `inCounts: {...}`), `needsReview` e as perguntas `approved`, `no_pending` e
   `no_open_contradiction` só veem relações com as duas pontas no processo; relação vinda de outro processo não
   aparece, e **a resposta não avisa**;
-- `out` de um destino em outro processo sai sem `current`.
+- com `relations: "full"`, `out` de um destino em outro processo sai sem `current`.
 
 Quando a evidência pode vir de outro processo (revisão feita noutra fase, apoio
 de outro processo), declare `scope: "project"`:
