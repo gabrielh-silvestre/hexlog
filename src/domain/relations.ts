@@ -1,6 +1,8 @@
 import { isUndefined } from 'es-toolkit';
 import type { RelationName } from './definitions.ts';
 import { processOf } from './ids.ts';
+import { NO_INHERITANCE } from './inheritance.ts';
+import type { Inheritance } from './inheritance.ts';
 import type { Name, RecordId, Target } from './ids.ts';
 import type { HexRecord, KindOrAs, Relation, RelationKind } from './record.ts';
 
@@ -52,8 +54,10 @@ export function buildVigency(records: readonly Linked[]): Vigency {
 
   const isCurrent = (id: RecordId) => !revoked.has(id) && !successors.has(id);
 
-  // ponytail: busca por registro, O(n) na linhagem; memoizar por linhagem se a leitura pesar.
-  const currentOf = (start: RecordId): RecordId | null => {
+  // ponytail: memoizado por registro, e cada primeira busca é O(n) na linhagem; memoizar também os
+  // registros visitados se linhagens longas pesarem. A herança chama `currentOf` por aresta.
+  const memo = new Map<RecordId, RecordId | null>();
+  const search = (start: RecordId): RecordId | null => {
     const pending = [start];
     const seen = new Set<RecordId>();
     for (let id = pending.pop(); !isUndefined(id); id = pending.pop()) {
@@ -64,6 +68,10 @@ export function buildVigency(records: readonly Linked[]): Vigency {
       pending.push(...[...next].reverse());
     }
     return null;
+  };
+  const currentOf = (start: RecordId): RecordId | null => {
+    if (!memo.has(start)) memo.set(start, search(start));
+    return memo.get(start) ?? null;
   };
 
   return { isCurrent, currentOf };
@@ -107,10 +115,14 @@ export type NeedsReview = { staleIn: RecordId[]; staleOut: RecordId[] };
  * processos não é emitido (a vigência da outra ponta é desconhecida; emitir seria falso alerta,
  * D-09). Com `scope: "project"`, `records` são os de todos os processos do projeto e o alerta que
  * cruza processos sai.
+ *
+ * Com herança, o `supports` herdado conta como vivo (ADR 0007, item 10): o apoio que a versão
+ * anterior do destino recebia vale para a atual, a menos que um `contradicts` o tenha cortado.
  */
 export function needsReview(
   records: readonly Linked[],
   vigency: Vigency = buildVigency(records),
+  inheritance: Inheritance = NO_INHERITANCE,
 ): Map<RecordId, NeedsReview> {
   const supported = new Map<RecordId, Set<RecordId>>();
   for (const { id, relations } of records) {
@@ -124,7 +136,10 @@ export function needsReview(
     const currentFrom = vigency.currentOf(from);
     const currentTo = vigency.currentOf(to);
     if (currentFrom === null || currentTo === null) return false;
-    return supported.get(currentFrom)?.has(currentTo) ?? false;
+    return (
+      (supported.get(currentFrom)?.has(currentTo) ?? false) ||
+      inheritance.has('supports', currentFrom, currentTo)
+    );
   };
 
   const marks = new Map<RecordId, { staleIn: Set<RecordId>; staleOut: Set<RecordId> }>();

@@ -168,6 +168,15 @@ describe('TM2: tool descriptions', () => {
     expect(description).toMatch(/fields \(at most 50\).*empty list omits data/s);
   });
 
+  test('define_gate announces inherit for approved and no_pending only', async () => {
+    const { tools } = await environment.client.listTools();
+    const description = tools.find((tool) => tool.name === 'define_gate')?.description;
+
+    expect(description).toMatch(
+      /`approved` and `no_pending` accept `inherit: true`.*`occurred` and `no_open_contradiction` do not/s,
+    );
+  });
+
   test('register tells to read the schema with describe_type and the current id with query', async () => {
     const { tools } = await environment.client.listTools();
 
@@ -258,6 +267,7 @@ describe('one happy path per tool', () => {
       project: PROJECT,
       process: 'run-1',
       created: true,
+      lineageInheritance: true,
       pinned: { types: ['note'], gates: ['has-note'] },
     });
   });

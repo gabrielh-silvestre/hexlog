@@ -87,6 +87,14 @@ function renderEntry({ record, texts }: Entry): string {
     `  data: ${JSON.stringify(record.data)}`,
     ...(record.in ?? []).map(({ kind, from }) => `  in: ${kind} <- ${from}`),
     ...(record.out ?? []).map(({ kind, to }) => `  out: ${kind} -> ${to}`),
+    ...(record.inheritedIn ?? []).map(
+      ({ kind, from, origin }) =>
+        `  inherited in: ${kind} <- ${from} (origin ${origin.from} -> ${origin.to})`,
+    ),
+    ...(record.inheritedOut ?? []).map(
+      ({ kind, to, origin }) =>
+        `  inherited out: ${kind} -> ${to} (origin ${origin.from} -> ${origin.to})`,
+    ),
   ];
   if (!isNil(record.needsReview))
     lines.push(`  needsReview: ${JSON.stringify(record.needsReview)}`);

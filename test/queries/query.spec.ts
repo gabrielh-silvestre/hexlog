@@ -218,9 +218,9 @@ describe('queryRecords: fields', () => {
   });
 
   test('`needsReview` comes out whole even with trimmed `data`', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    createProcess('run-2');
+    const { createLegacyProcess, registerOne, query } = querySetup();
+    createLegacyProcess('run-1');
+    createLegacyProcess('run-2');
     const evidence = await registerOne('run-1', note('evidência'), 1);
     const verdict = await registerOne(
       'run-2',
@@ -286,9 +286,9 @@ describe('queryRecords: needsReview (D-09)', () => {
   const supersedes = (to: string) => ({ to, kind: 'supersedes' as const });
 
   test('dead support: process scope does not see support from another process and project scope does', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    createProcess('run-2');
+    const { createLegacyProcess, registerOne, query } = querySetup();
+    createLegacyProcess('run-1');
+    createLegacyProcess('run-2');
     const evidence = await registerOne('run-1', note('evidência'), 1);
     const verdict = await registerOne(
       'run-2',
@@ -464,8 +464,8 @@ describe('queryRecords: relations mode', () => {
   test.each(['counts', 'none', 'full'] as const)(
     'keeps needsReview and attachmentStatus in %s mode',
     async (relations) => {
-      const { createProcess, registerOne, attachments, query } = querySetup();
-      createProcess('run-1');
+      const { createLegacyProcess, registerOne, attachments, query } = querySetup();
+      createLegacyProcess('run-1');
       const kept = attachments.putText(PROJECT, 'guardado').hash;
       const evidence = await registerOne('run-1', note('evidência'), 1);
       const verdict = await registerOne(

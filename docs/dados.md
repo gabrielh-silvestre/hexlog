@@ -26,7 +26,9 @@ POSIX (`rename` e `link` atômicos).
 
 - **`process.json`** guarda `project`, `process`, `createdAt`, as definições fixadas
   (`fixed.types`, `fixed.relations`, `fixed.gates`, com o conteúdo completo) e os
-  hashes de cada grupo. O sha256 do JCS dele é a âncora da cadeia.
+  hashes de cada grupo, e `lineageInheritance: true` só nos processos criados com a herança de
+  relações (opcional, ausente nos anteriores; ver `create_process` em [tools.md](tools.md)).
+  O sha256 do JCS dele, com o campo quando existe, é a âncora da cadeia.
 - **`records.jsonl`** é append-only. Cada linha é um lote `{"links":[...]}` de 1 a 50 elos,
   um por registro; cada elo é o registro mais `seq` (contíguo, por processo) e `prevHash`, e só
   o primeiro elo do lote carrega `batch` (impressão do lote, `key` e apelidos). O hash de um

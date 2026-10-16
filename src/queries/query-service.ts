@@ -44,6 +44,7 @@ import { readScope, type Reading, type ReadTarget } from './read.ts';
 import {
   boundaryHint,
   buildView,
+  inheritanceActivation,
   inOutputOrder,
   leftReason,
   relationsOf,
@@ -466,7 +467,11 @@ export function createQueryService(deps: {
             .filter(({ name: read }) => read === process)
             .flatMap(({ verified }) => verified.records);
     const evaluate = (forTarget: Target | undefined) => {
-      const result = runGate(gate.questions, { target: forTarget, records });
+      const result = runGate(gate.questions, {
+        target: forTarget,
+        records,
+        isInheritanceActive: inheritanceActivation(reading),
+      });
       return {
         passed: result.passed,
         questions: result.questions.map((question) => summarizeQuestion(question, evidence)),
@@ -492,7 +497,7 @@ export function createQueryService(deps: {
       const view = buildView(reading, target.scope);
       const selected = select(view, filters, search, target);
 
-      const reviews = needsReview(view.records, view.vigency);
+      const reviews = needsReview(view.records, view.vigency, view.inheritance);
       const manifests = new Map(
         reading.processes.map(({ name, verified }) => [name, verified.manifest]),
       );

@@ -102,6 +102,14 @@ Um gate tem 1 a 50 perguntas de quatro formas, todas com seletor
 O `scope` de uma pergunta é `process` (o padrão: só enxerga relações vindas do processo do
 gate) ou `project` (enxerga relações entre processos).
 
+`approved` e `no_pending` aceitam também `inherit: true` (só `true`; as outras duas
+perguntas recusam o campo). Em processo com herança de relações (ver `create_process`), a
+pergunta passa a contar o apoio (`approved`) ou a resolução (`no_pending`) que uma versão
+superada carregava, e a `evidence` ganha a lista `inherited` com o que conta só por
+herança. Sem a opção, o resultado é o de sempre; em processo sem herança, a opção não
+acrescenta nada: `evidence.inherited` sai como lista vazia (`counts.inherited: 0`). A contradição nunca herda: uma contradição vigente continua reprovando. O gate
+antigo continua válido, porque o campo é opcional e `define_gate` não detecta quebra.
+
 ## `create_process`
 
 Cria um processo e fixa para sempre a versão vigente de cada tipo, relação e gate do
@@ -115,6 +123,14 @@ sem versão no projeto. Projeto sem nenhuma definição é
 recusas é: nome reservado, depois projeto sem definição e só então a criação ou o
 `created: false`; por isso um processo que já existe, num projeto que ficou sem
 definição, também recebe `TYPE_NOT_FOUND`.
+
+**Herança de relações.** O processo criado agora nasce com `lineageInheritance: true` no
+`process.json` (entra na âncora da cadeia), e a saída traz o campo. O processo criado antes
+não tem o campo, não o ganha depois (o manifesto é imutável e não há tool de ativação) e
+segue com a cascata manual de regravar a relação na versão nova; o `created: false` de um
+processo antigo vem sem o campo. O `list` com `process` mostra `lineageInheritance` quando
+existe. Com a herança, a leitura trata a relação gravada para uma versão superada como se
+valesse também para a atual, sem regravar nada; a tabela por espécie está em `query`.
 
 ## `register`
 
@@ -224,6 +240,31 @@ processo em `details[0].process`.
   seguir uma aresta, peça o registro com `relations: "full"`, ou use `relatedTo` com o id,
   que independe do modo. `relations` fica fora do hash do cursor, como `fields`: a página 2
   pode pedir outro modo. Valor fora de `counts`, `full` e `none` dá `INVALID_INPUT`.
+- **Relações herdadas:** num registro cuja linhagem de `supersedes` está num processo com
+  `lineageInheritance` (ver `create_process`), a leitura soma às arestas gravadas as que ele
+  herda das versões superadas, sem regravar nada. Os campos são irmãos dos de `relations`:
+  `inheritedIn` e `inheritedOut` em `full`, `inheritedInCounts` e `inheritedOutCounts` em
+  `counts` (mesmo critério do `as` ou `kind`). Cada item é `{kind, as?, from | to, origin}`,
+  em que `origin` (`{from, to}`) é a aresta gravada de onde a herdada vem. Quando não há
+  herança o campo some (o mapa ou a lista vazia é omitido), `none` não traz nenhum, e um
+  processo sem herança responde como antes. Eles seguem `fields: []`, o cursor e
+  `changesSince` como `in` e `out`, e `relatedTo` não os considera. O que sobe, por espécie:
+  - `supports`: o **destino** sobe para a versão atual; o apoio que a unidade antiga
+    recebia passa a valer para a atual. A origem tem de ser vigente: o apoio de uma revisão
+    superada continua morrendo com ela.
+  - `answers`, `derivesFrom`, `complements`, `reopens`: a **origem** sobe para a versão
+    atual; o destino fica como foi gravado, então a citação histórica segue histórica.
+  - `contradicts`, `supersedes`, `revokes` nunca herdam. Uma aresta gravada igual à
+    herdada (mesmos `kind`, `as`, origem e destino) vence a herdada.
+  - **Corte:** um `contradicts` vigente (o registro que o grava não foi superado nem
+    revogado) entre a linhagem de uma ponta e a da outra, em qualquer direção, corta a
+    herança desse par; as arestas gravadas ficam. Superar ou revogar o registro que o grava
+    religa a herança. O `contradicts` é também uma contradição de verdade para `approved` e
+    `no_open_contradiction` sobre o registro que aponta.
+  - **Alcance:** vale o do `in`: o alcance processo não vê o que vem de outro processo, e o
+    projeto vê. Quem ativa é o `process.json` do processo da linhagem que sobe.
+  - **`needsReview`:** o `supports` herdado conta como apoio vivo, então some o `staleOut`;
+    cortado, volta a marcar.
 - **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data` (inteiro, ou só
   os `fields` pedidos), as relações no formato de `relations` (`inCounts` e `outCounts`,
   `in` e `out`, ou nenhuma), `needsReview` (registro vigente cujo apoio
@@ -259,7 +300,9 @@ Calcula um gate fixado no processo, **sem gravar nada**. Devolve `passed`, o
 resultado de cada pergunta (`index`, `kind`, `passed`, mais as contagens ou os ids da
 `evidence`, conforme o modo) e o `marker` do que foi lido. A `evidence` tem listas por
 `kind`: `approved` traz `of`, `supports`, `contradictions` e `unsupported`; `occurred`,
-`found`; `no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. `target` é
+`found`; `no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. Uma pergunta
+`approved` ou `no_pending` com `inherit: true` traz também `inherited`, os ids que contam só
+por herança (ver `define_gate` e "Relações herdadas" em `query`). `target` é
 herdado pelos seletores sem `targetPrefix`. Com um `marker` de uma leitura anterior, a
 avaliação se reproduz sobre os registros que existiam então. Cada lista de evidência vai
 até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estreito alcança

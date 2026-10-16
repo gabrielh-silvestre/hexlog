@@ -203,29 +203,30 @@ const DescribeTypeOutput = z.object({
 
 const QUERY_DESCRIPTION =
   'Read the current records of a process (scope "process", the default, needs process) or of the ' +
-  'whole project (scope "project"). Filters: type, targetPrefix, where (equality on top-level data ' +
-  'fields, scalar values only), text (full-text search, at most 200 characters, ordered by relevance), ' +
-  'ids, relatedTo (records linked to an id) and includeNonCurrent (also superseded or revoked ones). ' +
-  'targetPrefix matches whole "."-separated segments: a.b matches a.b and a.b.c (unit-1 does not ' +
-  'match unit-10); an empty answer where a target starts with the string without that boundary ' +
-  'carries a hint naming it. ' +
-  'Each record carries needsReview when its support is dead and attachmentStatus for the attachments ' +
-  'it cites. relations: counts (default) gives inCounts and outCounts ({relation name: n}, empty maps ' +
-  'omitted); full gives in and out; none gives neither. In process scope only that ' +
-  "process's relations are seen, so use scope project for cross-process support. fields (at most " +
+  'project (scope "project"). Filters: type, targetPrefix, where (equality on top-level scalar ' +
+  'data fields), text (full-text, at most 200 characters, by relevance), ids, relatedTo ' +
+  '(records linked to an id) and includeNonCurrent (also superseded or revoked). ' +
+  'targetPrefix matches whole "."-separated segments (unit-1 does not match unit-10); a near miss ' +
+  'in an empty answer carries a hint. ' +
+  'Records carry needsReview (dead support) and attachmentStatus (cited attachments). ' +
+  'relations: counts (default) gives inCounts and outCounts ({name: n}, empty maps ' +
+  'omitted); full gives in and out; none gives neither. With lineage inheritance, relations to or ' +
+  'from a superseded version also hold for the current one: inheritedIn and inheritedOut (full), ' +
+  'inheritedInCounts and inheritedOutCounts (counts); origin {from, to} is the stored edge; a ' +
+  'contradicts between the lineages cuts it. Process scope sees only its own relations; use ' +
+  'project for cross-process ones. fields (at most ' +
   `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
   'annotations stay, filters see the whole data and the size cap counts the projected page. ' +
   'A page holds at most limit records (default 50, max 200) and stops at a size cap, ' +
-  'with at least one record; pass the returned cursor to continue. marker is the head of every ' +
+  'keeping at least one record; the returned cursor continues. marker is the head of every ' +
   'process read, and any record id of the process works as its entry: pass it back as changesSince ' +
   'to get changes (entered, left with reason) since then, on the first page only; add limit 0 to ' +
-  'get only the changes. Resend the same changesSince with the cursor on later pages. ' +
-  `changes lists at most ${CHANGES_ITEMS_CAP} ids in entered and left; when ` +
-  'changes.omitted comes back, lists are partial, omitted ids never ' +
-  'reappear and that marker must not be reused as changesSince: reread everything (records by ' +
-  'cursor, left with includeNonCurrent). A marker covers only the processes it names; in project ' +
-  'scope, any other process is read as empty. A changesSince or cursor that does not match the data ' +
-  'read fails with MARKER_NOT_FOUND or INVALID_CURSOR.';
+  'get only the changes. Resend it with the cursor. ' +
+  `changes lists at most ${CHANGES_ITEMS_CAP} ids in entered and left; changes.omitted means they ` +
+  'are partial, omitted ids never reappear and that marker must not be reused as changesSince: ' +
+  'reread everything (cursor; left with includeNonCurrent). A marker covers only the ' +
+  'processes it names; in project scope others are read as empty. A mismatched ' +
+  'changesSince or cursor fails with MARKER_NOT_FOUND or INVALID_CURSOR.';
 
 const EVALUATE_GATE_DESCRIPTION =
   'Evaluate a gate pinned in a process (GATE_NOT_FOUND otherwise), without writing anything. Returns ' +
@@ -233,7 +234,10 @@ const EVALUATE_GATE_DESCRIPTION =
   'evidence sets the detail: failing (default) gives counts (size of each evidence list) and, for a ' +
   'failed question, the ids that explain it; counts gives only counts; full gives every list of ids ' +
   '(approved has of, supports, contradictions and unsupported; occurred has found; no_pending has ' +
-  'unresolved; no_open_contradiction has conflicting). target is inherited by selectors without ' +
+  'unresolved; no_open_contradiction has conflicting). A question of approved or no_pending with ' +
+  'inherit: true also counts support or resolution that a superseded version carried, in a process ' +
+  'with lineage inheritance, and adds the list inherited with those that count only that way. ' +
+  'target is inherited by selectors without ' +
   'targetPrefix; targets (1 to 50, not with target or evidence full) evaluates several in one read ' +
   'and answers results: one {target, passed, questions} per target, in order, with a single marker. ' +
   'Pass a marker from an earlier read to replay the evaluation over the records that existed then; a ' +

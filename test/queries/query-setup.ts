@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { omit } from 'es-toolkit';
 import { createAttachmentStore } from '../../src/adapters/fs/attachment-store.ts';
 import { createDefinitionStore } from '../../src/adapters/fs/definition-store.ts';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
@@ -12,7 +13,7 @@ import type { Name, RecordId } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { createQueryService } from '../../src/queries/query-service.ts';
 import type { QueryInput, QueryResult } from '../../src/queries/query-service.ts';
-import type { DefinitionStore } from '../../src/ports.ts';
+import type { DefinitionStore, ProcessStore } from '../../src/ports.ts';
 import { AUTHOR, DOC, NOTE, PROJECT, createUuids, note } from '../commands/register-fakes.ts';
 import { at, createTempDir } from '../helpers.ts';
 
@@ -43,12 +44,20 @@ export function querySetup({ defaults = true } = {}) {
   const stores = diskStores(dataDir);
   const { definitions, attachments } = stores;
   let now = instant(0);
-  const writer = createProcessService({
-    ...stores,
-    validator: createValidator(),
-    clock: () => now,
-    newUuid: createUuids(),
-    logger: () => undefined,
+  const writerOver = (store: ProcessStore) =>
+    createProcessService({
+      ...stores,
+      store,
+      validator: createValidator(),
+      clock: () => now,
+      newUuid: createUuids(),
+      logger: () => undefined,
+    });
+  const writer = writerOver(stores.store);
+  // Processo de antes da herança: o manifesto nasce sem `lineageInheritance`, com a âncora coerente.
+  const legacyWriter = writerOver({
+    ...stores.store,
+    create: (ref, manifest) => stores.store.create(ref, omit(manifest, ['lineageInheritance'])),
   });
   const queries = createQueryService({ ...stores, search: createSearchIndex() });
   if (defaults) {
@@ -61,6 +70,8 @@ export function querySetup({ defaults = true } = {}) {
   }
 
   const createProcess = (process: string) => writer.createProcess({ project: PROJECT, process });
+  const createLegacyProcess = (process: string) =>
+    legacyWriter.createProcess({ project: PROJECT, process });
   const logPath = (process: string) => processPaths(dataDir, { project: PROJECT, process }).log;
 
   /** Grava `records` em `process` no instante `minutes` e devolve os ids, na ordem do lote. */
@@ -79,6 +90,7 @@ export function querySetup({ defaults = true } = {}) {
     definitions,
     queries,
     createProcess,
+    createLegacyProcess,
     register,
     registerOne,
     /** Arquivo do log de `process`. */

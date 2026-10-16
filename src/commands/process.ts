@@ -31,6 +31,8 @@ export type CreateProcessResult = {
   project: Name;
   process: Name;
   created: boolean;
+  /** Herança de relações pela linhagem ligada no manifesto; ausente em processo criado sem ela. */
+  lineageInheritance?: true;
   /** Nomes fixados no manifesto do processo (o recém-criado ou o que já existia). */
   pinned: Record<DefinitionKind, Name[]>;
   /** Só quando o processo já existia e alguma definição vigente diverge da fixada. */
@@ -153,16 +155,29 @@ export function createProcessService(deps: {
         project,
         process,
         createdAt: clock().toISOString(),
+        lineageInheritance: true,
         fixed: snapshot.fixed,
         hashes: hashesOf(snapshot.fixed),
       };
       const ref = { project, process };
 
       if (store.create(ref, manifest)) {
-        return { project, process, created: true, pinned: namesOf(manifest.fixed) };
+        return {
+          project,
+          process,
+          created: true,
+          lineageInheritance: true,
+          pinned: namesOf(manifest.fixed),
+        };
       }
       const existing = store.readManifest(ref);
-      const result = { project, process, created: false, pinned: namesOf(existing.fixed) };
+      const result: CreateProcessResult = {
+        project,
+        process,
+        created: false,
+        ...(existing.lineageInheritance === true && { lineageInheritance: true }),
+        pinned: namesOf(existing.fixed),
+      };
       const stale = staleOf(existing.fixed, snapshot);
       return stale.length === 0 ? result : { ...result, stale };
     },

@@ -2,6 +2,8 @@ import { isUndefined, memoize, uniq } from 'es-toolkit';
 import { z } from 'zod';
 import { Name, Target, TypeNames } from './ids.ts';
 import type { RecordId } from './ids.ts';
+import { buildInheritance, NO_INHERITANCE } from './inheritance.ts';
+import type { Inheritance } from './inheritance.ts';
 import { RelationKind } from './record.ts';
 import type { HexRecord } from './record.ts';
 import { buildVigency, incomingOf } from './relations.ts';
@@ -28,8 +30,17 @@ export type GateScope = z.infer<typeof GateScope>;
 
 const scope = GateScope.optional();
 
+/** Herança pela linhagem de `supersedes` (ADR 0007, item 10); só vale em processo com ela ligada. */
+const inherit = z.literal(true).optional();
+
 export const GateQuestion = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('approved'), of: Selector, by: Selector.optional(), scope }),
+  z.strictObject({
+    kind: z.literal('approved'),
+    of: Selector,
+    by: Selector.optional(),
+    scope,
+    inherit,
+  }),
   z.strictObject({
     kind: z.literal('occurred'),
     select: Selector,
@@ -41,6 +52,7 @@ export const GateQuestion = z.discriminatedUnion('kind', [
     pending: Selector,
     resolvedBy: z.strictObject({ kind: RelationKind, from: TypeNames.optional() }),
     scope,
+    inherit,
   }),
   z.strictObject({ kind: z.literal('no_open_contradiction'), of: Selector.optional(), scope }),
 ]);
@@ -73,8 +85,10 @@ export function matchesSelector(
  *   vigentes de apoio (que casam `by`) e de contradição; `unsupported`, os de `of` sem nenhum apoio.
  *   `unsupported` separa os dois motivos de reprovar: recusado (`contradictions` não vazio) e
  *   pendente (`of` vazio ou `unsupported` não vazio, isto é, falta apoio).
+ *   `inherited` (só com `inherit: true`) lista os apoiadores que contam apenas por herança.
  * - `occurred`: `found` são os registros vigentes que casam o seletor.
- * - `no_pending`: `unresolved` são os pendentes vigentes sem resolução vigente.
+ * - `no_pending`: `unresolved` são os pendentes vigentes sem resolução vigente; `inherited` (só com
+ *   `inherit: true`), os resolvedores que contam apenas por herança.
  * - `no_open_contradiction`: `conflicting` são os vigentes com contradição vigente.
  */
 export type QuestionResult = { index: number; passed: boolean } & (
@@ -85,10 +99,11 @@ export type QuestionResult = { index: number; passed: boolean } & (
         supports: RecordId[];
         contradictions: RecordId[];
         unsupported: RecordId[];
+        inherited?: RecordId[];
       };
     }
   | { kind: 'occurred'; evidence: { found: RecordId[] } }
-  | { kind: 'no_pending'; evidence: { unresolved: RecordId[] } }
+  | { kind: 'no_pending'; evidence: { unresolved: RecordId[]; inherited?: RecordId[] } }
   | { kind: 'no_open_contradiction'; evidence: { conflicting: RecordId[] } }
 );
 
@@ -118,16 +133,30 @@ export type GateInput = {
   target?: Target;
   /** Registros lidos no alcance pedido; `project` só é chamado se uma pergunta o declara. */
   records: (scope: GateScope) => readonly HexRecord[];
+  /** O processo tem a herança ligada no manifesto; ausente = nenhum processo herda. */
+  isInheritanceActive?: (process: Name) => boolean;
 };
 
 type View = {
   records: readonly HexRecord[];
   vigency: Vigency;
   incoming: ReadonlyMap<RecordId, Incoming<HexRecord>[]>;
+  inheritance: Inheritance;
+  byId: ReadonlyMap<RecordId, HexRecord>;
 };
 
-function buildView(records: readonly HexRecord[]): View {
-  return { records, vigency: buildVigency(records), incoming: incomingOf(records) };
+/** `isActive` só vem quando alguma pergunta do alcance pede `inherit`: sem pedido, nada é construído. */
+function buildView(records: readonly HexRecord[], isActive?: (process: Name) => boolean): View {
+  const vigency = buildVigency(records);
+  return {
+    records,
+    vigency,
+    incoming: incomingOf(records),
+    inheritance: isUndefined(isActive)
+      ? NO_INHERITANCE
+      : buildInheritance(records, vigency, isActive),
+    byId: new Map(isUndefined(isActive) ? [] : records.map((record) => [record.id, record])),
+  };
 }
 
 type Context = { view: View; target?: Target };
@@ -143,6 +172,14 @@ function currentSources({ view }: Context, id: RecordId, kind: RelationKind): He
   return (view.incoming.get(id) ?? [])
     .filter((edge) => edge.kind === kind && view.vigency.isCurrent(edge.from.id))
     .map((edge) => edge.from);
+}
+
+/** Origens vigentes das relações herdadas de `kind` que chegam a `id`. */
+function inheritedSources({ view }: Context, id: RecordId, kind: RelationKind): HexRecord[] {
+  return view.inheritance
+    .into(id)
+    .filter((edge) => edge.kind === kind)
+    .flatMap((edge) => view.byId.get(edge.from) ?? []);
 }
 
 const ids = (records: readonly HexRecord[]): RecordId[] => records.map((record) => record.id);
@@ -161,10 +198,19 @@ function approved(
   const supports: RecordId[] = [];
   const contradictions: RecordId[] = [];
   const unsupported: RecordId[] = [];
+  const inherited: RecordId[] = [];
+  const accepted = (source: HexRecord) =>
+    isUndefined(approvers) || matchesSelector(source, approvers, context.target);
   for (const { id } of subjects) {
-    const supporters = currentSources(context, id, 'supports').filter(
-      (source) => isUndefined(approvers) || matchesSelector(source, approvers, context.target),
-    );
+    const direct = currentSources(context, id, 'supports').filter(accepted);
+    const directIds = new Set(ids(direct));
+    const viaLineage = question.inherit
+      ? inheritedSources(context, id, 'supports').filter(
+          (source) => accepted(source) && !directIds.has(source.id),
+        )
+      : [];
+    const supporters = [...direct, ...viaLineage];
+    inherited.push(...ids(viaLineage));
     supports.push(...ids(supporters));
     contradictions.push(...ids(currentSources(context, id, 'contradicts')));
     if (supporters.length === 0) unsupported.push(id);
@@ -176,6 +222,7 @@ function approved(
       supports: uniq(supports),
       contradictions: uniq(contradictions),
       unsupported,
+      ...(question.inherit ? { inherited: uniq(inherited) } : {}),
     },
   };
 }
@@ -190,15 +237,27 @@ function occurred(
 
 function noPending(
   context: Context,
-  { pending, resolvedBy }: Extract<GateQuestion, { kind: 'no_pending' }>,
+  { pending, resolvedBy, inherit }: Extract<GateQuestion, { kind: 'no_pending' }>,
 ): Outcome<'no_pending'> {
-  const unresolved = currentMatching(context, pending).filter(
-    ({ id }) =>
-      !currentSources(context, id, resolvedBy.kind).some(
-        (source) => isUndefined(resolvedBy.from) || resolvedBy.from.includes(source.type),
-      ),
-  );
-  return { passed: unresolved.length === 0, evidence: { unresolved: ids(unresolved) } };
+  const accepted = (source: HexRecord) =>
+    isUndefined(resolvedBy.from) || resolvedBy.from.includes(source.type);
+  const unresolved: HexRecord[] = [];
+  const inherited: RecordId[] = [];
+  for (const record of currentMatching(context, pending)) {
+    const direct = currentSources(context, record.id, resolvedBy.kind).filter(accepted);
+    const directIds = new Set(ids(direct));
+    const viaLineage = inherit
+      ? inheritedSources(context, record.id, resolvedBy.kind).filter(
+          (source) => accepted(source) && !directIds.has(source.id),
+        )
+      : [];
+    inherited.push(...ids(viaLineage));
+    if (direct.length === 0 && viaLineage.length === 0) unresolved.push(record);
+  }
+  return {
+    passed: unresolved.length === 0,
+    evidence: { unresolved: ids(unresolved), ...(inherit ? { inherited: uniq(inherited) } : {}) },
+  };
 }
 
 function noOpenContradiction(
@@ -257,8 +316,18 @@ export function summarizeQuestion(result: QuestionResult, mode: EvidenceMode): Q
  * Só registro vigente conta, inclusive como origem de apoio, contradição ou resolução.
  */
 export function evaluateGate(questions: readonly GateQuestion[], input: GateInput): GateResult {
+  const asksInherit = (questionScope: GateScope) =>
+    questions.some(
+      (question) =>
+        (question.scope ?? 'process') === questionScope &&
+        (question.kind === 'approved' || question.kind === 'no_pending') &&
+        question.inherit === true,
+    );
   const viewOf = memoize((questionScope: GateScope): View =>
-    buildView(input.records(questionScope)),
+    buildView(
+      input.records(questionScope),
+      asksInherit(questionScope) ? (input.isInheritanceActive ?? (() => false)) : undefined,
+    ),
   );
 
   const results = questions.map((question, index) =>
