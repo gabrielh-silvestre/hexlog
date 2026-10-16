@@ -509,15 +509,27 @@ describe('local skills cite the strategy', () => {
 });
 
 describe('ADR 0010 after the flow amendment', () => {
-  test('the last block of the file is the 2026-10-06 amendment', () => {
+  test('the last block of the file is the 2026-10-16 amendment', () => {
     const adr = fs.readFileSync(path.join(directivesDir, 'adr-0010-camada-sobre-omc.md'), 'utf8');
-    expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-06/);
+    expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-16/);
   });
 });
 
 describe('ADR 0011 of the strategic layer', () => {
   test.each(['Context', 'Decision', 'Consequences'])('has the "%s" section', (title) => {
     const adr = fs.readFileSync(path.join(directivesDir, 'adr-0011-camada-estrategica.md'), 'utf8');
+    expect(headingTitlesFrom(adr)).toContain(title);
+  });
+
+  test('the last block of the file is the 2026-10-16 amendment', () => {
+    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0011-camada-estrategica.md'), 'utf8');
+    expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-16/);
+  });
+});
+
+describe('ADR 0012 of the owner seat', () => {
+  test.each(['Context', 'Decision', 'Consequences'])('has the "%s" section', (title) => {
+    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0012-cadeira-do-dono.md'), 'utf8');
     expect(headingTitlesFrom(adr)).toContain(title);
   });
 });
