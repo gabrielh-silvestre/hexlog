@@ -11,9 +11,9 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - A `query` aceita `relations` (`counts`, `full` ou `none`) para escolher como cada registro traz as relações; `counts` devolve `inCounts` e `outCounts`, o número de arestas por nome de relação (#161).
 - O `evaluate_gate` aceita `evidence` (`failing`, `counts` ou `full`) para escolher quanto da evidência cada pergunta traz (#161).
 - O `evaluate_gate` aceita `targets` (de 1 a 50) para avaliar vários targets numa só chamada e devolve `results`, um por target, com um só `marker` (#161).
-- Em processo criado depois desta versão, as relações gravadas para a versão antiga de uma unidade passam a valer para a versão atual, só na leitura: a `query` devolve `inheritedIn` e `inheritedOut` (com `origin`) e, em `counts`, `inheritedInCounts` e `inheritedOutCounts` (#165).
-- O `evaluate_gate` aceita `inherit: true` nas perguntas `approved` e `no_pending` para contar o que vale só por herança, e traz `evidence.inherited` (#165).
-- O `create_process` e o `list` expõem `lineageInheritance`, que só aparece em processo criado com a herança (#165).
+- Em processo criado depois desta versão, as relações gravadas para a versão antiga de uma unidade passam a valer para a versão atual, só na leitura: a `query` devolve `inheritedIn` e `inheritedOut` (com `origin`) e, em `counts`, `inheritedInCounts` e `inheritedOutCounts` (#166).
+- O `evaluate_gate` aceita `inherit: true` nas perguntas `approved` e `no_pending` para contar o que vale só por herança, e traz `evidence.inherited` (#166).
+- O `create_process` e o `list` expõem `lineageInheritance`, que só aparece em processo criado com a herança (#166).
 
 ### Alterado
 
@@ -22,7 +22,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - `limit: 0` sem `changesSince` na `query` passa a devolver `INVALID_FILTER` (`/limit`, `out-of-range`) em vez de `INVALID_INPUT` (#159).
 - A `query` devolve por padrão `inCounts` e `outCounts` no lugar de `in` e `out`, e o `evaluate_gate` devolve por padrão só as contagens da evidência, com os ids apenas da pergunta que reprova (#161).
 - O `register` passa a recusar `supersedes` cujo destino tem outro target (`INVALID_RECORD`, `target-mismatch`); `revokes` entre targets segue permitido (#164).
-- Em processo com herança, o `needsReview` deixa de marcar o `supports` que o registro atual só tem por herança (#165).
+- Em processo com herança, o `needsReview` deixa de marcar o `supports` que o registro atual só tem por herança (#166).
 
 ### Migração
 
