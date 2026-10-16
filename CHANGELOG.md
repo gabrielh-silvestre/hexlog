@@ -18,7 +18,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - O erro de `since` na `query` cita `changesSince` na mensagem (#159).
 - `limit: 0` sem `changesSince` na `query` passa a devolver `INVALID_FILTER` (`/limit`, `out-of-range`) em vez de `INVALID_INPUT` (#159).
 - A `query` devolve por padrão `inCounts` e `outCounts` no lugar de `in` e `out`, e o `evaluate_gate` devolve por padrão só as contagens da evidência, com os ids apenas da pergunta que reprova (#161).
-- O `register` passa a recusar `supersedes` cujo destino tem outro target (`INVALID_RECORD`, `target-mismatch`); `revokes` entre targets segue permitido (#163).
+- O `register` passa a recusar `supersedes` cujo destino tem outro target (`INVALID_RECORD`, `target-mismatch`); `revokes` entre targets segue permitido (#164).
 
 ### Migração
 
