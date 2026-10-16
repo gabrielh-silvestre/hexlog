@@ -24,11 +24,13 @@ let baseSha: string;
 let tipSha: string;
 let markerDir: string;
 
-function git(cwd: string, ...args: string[]): string {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+function gitWithEnv(cwd: string, env: NodeJS.ProcessEnv, ...args: string[]): string {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
   if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
   return result.stdout.trim();
 }
+
+const git = (cwd: string, ...args: string[]): string => gitWithEnv(cwd, {}, ...args);
 
 beforeAll(() => {
   const root = createTempDir('flow-hooks');
@@ -386,6 +388,27 @@ describe('modos', () => {
     expect(hookSpecificOutput.additionalContext).toContain('tell whoever launched you');
   }, 15_000);
 
+  test.each(['oh-my-claudecode:critic', 'oh-my-claudecode:executor'])(
+    'subagent-start puts the hand-back rule with the owner-seat carve-out on line 1 for %s',
+    (agentType) => {
+      const result = runHook(['subagent-start'], {
+        input: JSON.stringify({ cwd: repo, agent_type: agentType }),
+      });
+      expect(result.status).toBe(0);
+      const { hookSpecificOutput } = JSON.parse(result.stdout) as {
+        hookSpecificOutput: { additionalContext: string };
+      };
+      const lines = hookSpecificOutput.additionalContext.split('\n');
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toContain(
+        'Found a NEW gap or critical point nobody handed you? Stop and hand it back to whoever ' +
+          'launched you (docs/directives/cadeira-do-dono.md); the owner-seat critic and its ' +
+          'context actions answer instead of handing back.',
+      );
+    },
+    15_000,
+  );
+
   test('subagent-start sem entrada legível ainda devolve o contexto', () => {
     const result = runHook(['subagent-start'], { input: 'not json' });
     expect(result.status).toBe(0);
@@ -616,11 +639,27 @@ describe('flow-report', () => {
   const rests = (to: string) => ({ kind: 'derivesFrom', as: 'rests-on', to });
   const anchoredIn = (to: string) => ({ kind: 'derivesFrom', as: 'anchored-in', to });
 
-  const premise = (proc: string, short: string): Item => ({
+  const premise = (
+    proc: string,
+    short: string,
+    extra: { answeredBy?: string; relations?: Record<string, unknown>[] } = {},
+  ): Item => ({
     type: 'premise',
     target: `${proc}.premise.${short}`,
-    data: { statement: `Premise ${short}` },
+    data: {
+      statement: `Premise ${short}`,
+      ...(extra.answeredBy === undefined ? {} : { answeredBy: extra.answeredBy }),
+    },
+    ...(extra.relations === undefined ? {} : { relations: extra.relations }),
   });
+
+  const criticalGap = (proc: string, short: string, rule: string): Item => ({
+    type: 'gap',
+    target: `${proc}.gap.${short}`,
+    data: { question: `Question ${short}`, context: `Class: critical; rule: ${rule}` },
+  });
+
+  const fillsGap = (to: string) => ({ kind: 'answers', as: 'fills-gap', to });
 
   const decision = (proc: string, short: string, relations: Record<string, unknown>[]): Item => ({
     type: 'decision',
@@ -710,7 +749,14 @@ describe('flow-report', () => {
   beforeAll(async () => {
     const environment = await createEnvironment();
     await defineFlow(environment);
-    for (const proc of ['directives-9', 'feat-r', 'feat-clean', 'feat-many', 'feat-wide']) {
+    for (const proc of [
+      'directives-9',
+      'feat-r',
+      'feat-clean',
+      'feat-many',
+      'feat-wide',
+      'feat-c',
+    ]) {
       await environment.ok('create_process', { project: PROJECT, process: proc });
     }
     const { hash: source } = await environment.ok<{ hash: string }>('attach', {
@@ -764,6 +810,48 @@ describe('flow-report', () => {
         ],
       },
     });
+
+    // lacunas críticas: a chave do fixture é o alias do lote
+    Object.assign(
+      ids,
+      await registerNamed(environment, 'feat-c', {
+        objective: premise('feat-c', 'objective'),
+        'g-open': criticalGap('feat-c', 'open', 'directives.fronteiras.r1'),
+        'p-open-sim': premise('feat-c', 'open-sim', { answeredBy: 'simulated' }),
+        'g-sim': criticalGap('feat-c', 'sim', 'directives.convencoes.r1'),
+        'p-sim': premise('feat-c', 'sim', {
+          answeredBy: 'simulated',
+          relations: [fillsGap('@g-sim')],
+        }),
+        'g-ok': criticalGap('feat-c', 'ok', 'directives.convencoes.r1'),
+        'p-ok-sim': premise('feat-c', 'ok-sim', { answeredBy: 'simulated' }),
+        'p-ok': premise('feat-c', 'ok', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-ok'), { kind: 'derivesFrom', to: '@p-ok-sim' }],
+        }),
+        'g-noamend': criticalGap('feat-c', 'noamend', 'directives.fronteiras.r1'),
+        'p-noamend': premise('feat-c', 'noamend', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-noamend')],
+        }),
+        'g-dir': criticalGap('feat-c', 'dir', 'directives.convencoes.r1'),
+        'dir-closer': {
+          type: 'directive',
+          target: 'directives.convencoes.r9',
+          data: { rule: 'Rule nine', section: 'Section', source },
+          relations: [{ kind: 'answers', as: 'closes-gap', to: '@g-dir' }],
+        },
+        'g-none': criticalGap('feat-c', 'none', 'directives.convencoes.r1'),
+        'p-none': premise('feat-c', 'none', { relations: [fillsGap('@g-none')] }),
+        'g-late': criticalGap('feat-c', 'late', 'directives.invariantes.r2'),
+        'p-late': premise('feat-c', 'late', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-late')],
+        }),
+        'd-rests-sim': decision('feat-c', 'rests-sim', [rests('@p-open-sim')]),
+        'd-rests-approved': decision('feat-c', 'rests-approved', [rests('@p-ok-sim')]),
+      }),
+    );
 
     const clean = await registerNamed(environment, 'feat-clean', {
       objective: premise('feat-clean', 'objective'),
@@ -822,7 +910,7 @@ describe('flow-report', () => {
     git(gitRepo, 'config', 'user.email', 'test@example.com');
     git(gitRepo, 'config', 'user.name', 'Test');
     fs.mkdirSync(path.join(gitRepo, 'docs/directives'), { recursive: true });
-    for (const doc of ['convencoes', 'fluxo-hexlog']) {
+    for (const doc of ['convencoes', 'fluxo-hexlog', 'invariantes']) {
       fs.writeFileSync(path.join(gitRepo, `docs/directives/${doc}.md`), `# ${doc}\n`);
     }
     git(gitRepo, 'add', '.');
@@ -830,7 +918,25 @@ describe('flow-report', () => {
     git(gitRepo, 'update-ref', 'refs/remotes/origin/develop', 'HEAD');
     git(gitRepo, 'checkout', '-q', '-b', 'feat/r');
     fs.appendFileSync(path.join(gitRepo, 'docs/directives/convencoes.md'), 'amended\n');
-    git(gitRepo, 'commit', '-q', '-am', 'amend convencoes');
+    // datas fixas separam "antes" e "depois" dos registros, que nascem segundos antes do repositório
+    const committedOn = (date: string) => ({ GIT_COMMITTER_DATE: date });
+    gitWithEnv(
+      gitRepo,
+      committedOn('2099-01-01T00:00:00Z'),
+      'commit',
+      '-q',
+      '-am',
+      'amend convencoes',
+    );
+    fs.appendFileSync(path.join(gitRepo, 'docs/directives/invariantes.md'), 'amended\n');
+    gitWithEnv(
+      gitRepo,
+      committedOn('2000-01-01T00:00:00Z'),
+      'commit',
+      '-q',
+      '-am',
+      'amend invariantes',
+    );
     // a base avança com `fluxo-hexlog.md` depois de `feat/r` sair: só o diff contra o merge-base o ignora
     git(gitRepo, 'checkout', '-q', 'main');
     fs.appendFileSync(path.join(gitRepo, 'docs/directives/fluxo-hexlog.md'), 'amended on base\n');
@@ -939,6 +1045,82 @@ describe('flow-report', () => {
     test('nenhum id impresso consta dos não vigentes da query', () => {
       expect(nonCurrentIds.size).toBeGreaterThan(0);
       for (const id of printedIds(result)) expect(nonCurrentIds).not.toContain(id);
+    });
+  });
+
+  describe('feat-c: critical gaps and simulated premises', () => {
+    let result: SpawnSyncReturns<string>;
+
+    beforeAll(() => {
+      result = runReport(['feat-c']);
+    }, 30_000);
+
+    test('flags an open critical gap as pending approval', () => {
+      expect(rowFor(result, 'g-open')).toEqual([
+        idOf('g-open'),
+        'feat-c.gap.open',
+        'critical-gap: open, approval pending',
+      ]);
+    });
+
+    test('flags a critical gap closed by a simulated premise', () => {
+      expect(rowFor(result, 'g-sim')).toEqual([
+        idOf('g-sim'),
+        'feat-c.gap.sim',
+        'critical-gap: closed by feat-c.premise.sim (answeredBy=simulated)',
+      ]);
+    });
+
+    test('keeps a gap closed by simulated-approved with the doc in the diff clean', () => {
+      expect(rowFor(result, 'g-ok')).toBeUndefined();
+    });
+
+    test('maps the convencoes target to convencoes.md in the diff', () => {
+      expect(result.stdout).not.toContain('docs/directives/convencoes.md not in the diff');
+    });
+
+    test('flags a gap closed without the amendment of its critical doc in the diff', () => {
+      expect(rowFor(result, 'g-noamend')).toEqual([
+        idOf('g-noamend'),
+        'feat-c.gap.noamend',
+        'critical-gap: docs/directives/fronteiras.md not in the diff',
+      ]);
+    });
+
+    test('lists a gap closed by a directive as answeredBy=none', () => {
+      expect(rowFor(result, 'g-dir')).toEqual([
+        idOf('g-dir'),
+        'feat-c.gap.dir',
+        'critical-gap: closed by directives.convencoes.r9 (answeredBy=none, a review confere)',
+      ]);
+    });
+
+    test('lists a gap closed by a premise without answeredBy', () => {
+      expect(rowFor(result, 'g-none')).toEqual([
+        idOf('g-none'),
+        'feat-c.gap.none',
+        'critical-gap: closed by feat-c.premise.none (answeredBy=none, a review confere)',
+      ]);
+    });
+
+    test('lists a simulated-approved recorded after the commit that amended the doc', () => {
+      expect(rowFor(result, 'g-late')).toEqual([
+        idOf('g-late'),
+        'feat-c.gap.late',
+        'critical-gap: approved after the amendment of docs/directives/invariantes.md, a review confere',
+      ]);
+    });
+
+    test('flags a decision resting on a simulated premise without simulated-approved', () => {
+      expect(rowFor(result, 'd-rests-sim')).toEqual([
+        idOf('d-rests-sim'),
+        'feat-c.decision.rests-sim',
+        'rests-on-simulated: feat-c.premise.open-sim has no simulated-approved',
+      ]);
+    });
+
+    test('keeps a decision resting on a simulated premise with simulated-approved clean', () => {
+      expect(rowFor(result, 'd-rests-approved')).toBeUndefined();
     });
   });
 
