@@ -15,11 +15,11 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 
 ## Ocupante
 
-- No `ask` o ocupante é o humano: o principal grava a `premise` com `answeredBy: human`, com `fills-gap` salvo contradição com atemporal. Texto livre pedindo contexto dispara a ação de contexto e repete a pergunta, sem gravar premissa.
+- No `ask` o ocupante é o humano: o principal grava a `premise` com `answeredBy: human` quando o `premise` fixado tem o campo (senão grava sem ele), com `fills-gap` salvo contradição com atemporal. Texto livre pedindo contexto dispara a ação de contexto e repete a pergunta, sem gravar premissa.
 - No `autonomous` o ocupante é o `critic` durável, só com `answeredBy` fixado no `premise` do processo (`describe_type` com `process`; `TYPE_NOT_PINNED` conta como sem o campo) e com Herdr (`HERDR_ENV=1`).
 - Sem `answeredBy` fixado o ocupante simulado não senta; também não senta sem Herdr, sem a exceção de Opus na sessão ou com critic que nunca subiu. Então a classe comum decide como antes (`grounds: gap`, premissa da entrega com `fills-gap`, sem o campo) e a crítica volta ao teto fixo antigo. O `autonomous` não vira `ask`.
 - Headless e sem `AskUserQuestion` não tiram o ocupante: o critic responde e o aval fica pendente no pré-PR.
-- Origem: `human` é gravada pelo principal quando o humano responde, `simulated` pelo critic e `simulated-approved` pelo principal no aval. O campo é autodeclarado: rastro, não prova.
+- Origem, quando o `premise` fixado tem o campo (senão grava sem ele): `human` é gravada pelo principal quando o humano responde, `simulated` pelo critic e `simulated-approved` pelo principal no aval. O campo é autodeclarado: rastro, não prova.
 
 ## Classe da pergunta
 
