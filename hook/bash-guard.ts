@@ -6,7 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as shellQuoteParse, type ParseEntry } from 'shell-quote';
-import { isNil, isString, sumBy, take, takeWhile } from 'es-toolkit';
+import { isNil, isString, isUndefined, sumBy, take, takeWhile } from 'es-toolkit';
 import { dataDir } from '../src/directory.ts';
 
 const GLOB_CHARS_REGEX = /[*?[{]/;
@@ -18,12 +18,14 @@ const MAX_BRACE_EXPANSION = 32;
 const STAR_RUN_REGEX = /\*{2,}/g;
 // Tetos de um token com caractere de glob, aplicados antes de qualquer varredura do token: sem
 // eles, um `[`×4096 leva segundos e o hook morre no timeout de 10 s, liberando o comando. Texto
-// sem glob não é limitado. Falso positivo aceito: um token legítimo acima do teto também é negado.
+// sem glob não é limitado, e o token só entre aspas ou escapado (que o shell não expande) acima do
+// teto não é casado como glob. Falso positivo aceito: um token com glob sem aspas acima do teto é negado.
 const MAX_GLOB_TOKEN_LENGTH = 4096;
 const MAX_BRACES = 8;
 const MAX_BRACKETS = 64;
 // Orçamento por comando: o teto acima vale por token, e centenas de tokens abaixo dele ainda
-// somam o tempo do timeout. A soma dos tamanhos dos tokens com glob também é limitada.
+// somam o tempo do timeout. A soma dos tamanhos dos tokens com glob que o hook casa também é limitada,
+// o que inclui os entre aspas abaixo dos tetos (casam como caminho); só o entre aspas acima deles sai.
 const MAX_GLOB_TOTAL_LENGTH = 16384;
 // O custo da tokenização é linear no comando: acima do teto ele estoura o timeout do hook, que
 // libera o comando. Falso positivo aceito: um comando legítimo acima do teto também é negado.
@@ -45,9 +47,9 @@ const denialMessage = (d: string, matched?: string): string =>
   `hexlog: ${d} is only accessible through the hexlog MCP tools (list, query, verify_chain, read_attachment, evaluate_gate, describe_type).` +
   matchedSuffix(matched);
 
-// Negação por comando que o hook não consegue decidir: não cita `D` a quem não o citou.
+// Negação por custo: o comando não cita `D`, só estourou um teto de segurança.
 const undecidableMessage = (matched?: string): string =>
-  'hexlog: the command was denied because it could not be checked against the hexlog data directory (it is longer than the safety limit, or its glob tokens exceed the safety limits). Simplify it.' +
+  'hexlog: the command does not cite the hexlog data directory literally; it was denied only because it exceeds a safety limit (it is longer than the limit, or its glob tokens exceed the limits). Simplify the command.' +
   matchedSuffix(matched);
 
 type RawInput = {
@@ -96,6 +98,76 @@ function splitSegments(tokens: ParseEntry[]): string[][] {
   return segments;
 }
 
+type Candidate = { token: string; expandable: boolean };
+
+/**
+ * Troca por `x` o texto entre aspas e o escapado por `\`, que o shell nunca expande. As aspas ficam,
+ * então o `shell-quote` devolve a mesma sequência de tokens, sem caractere de glob nos trechos
+ * protegidos; um token misto (`'a['*`) mantém o glob da parte sem aspas. Devolve `undefined` diante
+ * do que este rastreador de aspas não modela como o bash (crase, `$(`, `${`, `$'`, `$"`, `#` e `<<`):
+ * qualquer um desalinharia as aspas do resto do comando e esconderia glob real.
+ */
+function maskQuoted(command: string): string | undefined {
+  let masked = '';
+  let quote: string | undefined;
+  for (let index = 0; index < command.length; index++) {
+    const char = command.charAt(index);
+    const next = command.charAt(index + 1);
+    if (quote !== "'" && (char === '`' || (char === '$' && (next === '(' || next === '{')))) {
+      return undefined;
+    }
+    if (isUndefined(quote)) {
+      if (char === '#' || (char === '<' && next === '<')) return undefined;
+      if (char === '$' && (next === "'" || next === '"')) return undefined;
+      if (char === '\\') {
+        masked += 'xx';
+        index++;
+      } else {
+        masked += char;
+        if (char === "'" || char === '"') quote = char;
+      }
+    } else if (char === quote) {
+      masked += char;
+      quote = undefined;
+    } else if (char === '\\' && quote === '"') {
+      masked += 'xx';
+      index++;
+    } else {
+      masked += 'x';
+    }
+  }
+  return masked;
+}
+
+/**
+ * Marca cada token pelo que o shell expande: só o que tem caractere de glob fora de aspas e de `\`.
+ * Se o `shell-quote` não devolve a mesma quantidade de tokens para o comando mascarado, todos valem
+ * como expansíveis (o caminho conservador).
+ */
+function toCandidates(tokens: string[], maskedTokens: string[]): Candidate[] {
+  const aligned = tokens.length === maskedTokens.length;
+  return tokens.map((token, index) => ({
+    token,
+    expandable: !aligned || GLOB_CHARS_REGEX.test(maskedTokens[index] ?? ''),
+  }));
+}
+
+/**
+ * Os tokens do comando mascarado, para `toCandidates`. Só um token acima dos tetos depende de ser
+ * expansível, então o segundo parse (custo extra no comando patológico) só roda se algum passa deles;
+ * lista vazia, ou o `undefined` do `maskQuoted`, deixa todos expansíveis.
+ */
+function maskedTokensOf(
+  command: string,
+  tokens: string[],
+  home: string,
+  env: NodeJS.ProcessEnv,
+): string[] {
+  if (!tokens.some((token) => exceedsGlobLimits(expandTilde(token, home)))) return [];
+  const masked = maskQuoted(command);
+  return isUndefined(masked) ? [] : splitSegments(tryTokenize(masked, home, env) ?? []).flat();
+}
+
 function tryTokenize(
   command: string,
   home: string,
@@ -124,12 +196,19 @@ function exceedsGlobLimits(token: string): boolean {
   );
 }
 
-/** Orçamento por comando: a soma dos tokens com glob passou do teto? */
-function exceedsGlobBudget(tokens: string[]): boolean {
+/** O token só entre aspas acima dos tetos não é casado como glob: só o caminho e o prefixo literais contam. */
+function skipsGlobMatch({ token, expandable }: Candidate): boolean {
+  return !expandable && exceedsGlobLimits(token);
+}
+
+/** Orçamento por comando: a soma dos tokens com glob, entre aspas ou não, que o hook casa passou do teto? */
+function exceedsGlobBudget(candidates: Candidate[]): boolean {
   return (
     sumBy(
-      tokens.filter((token) => GLOB_CHARS_REGEX.test(token)),
-      (token) => token.length,
+      candidates.filter(
+        (candidate) => GLOB_CHARS_REGEX.test(candidate.token) && !skipsGlobMatch(candidate),
+      ),
+      ({ token }) => token.length,
     ) > MAX_GLOB_TOTAL_LENGTH
   );
 }
@@ -184,11 +263,16 @@ function collapseBraceGroups(pattern: string, dataSegments: string[]): string {
     .replace(STAR_RUN_REGEX, '*');
 }
 
+/** O caminho já resolvido, sem expandir glob, é `D` ou algo dentro dele? */
+function isInsideDirectory(resolvedPath: string, dataDir: string): boolean {
+  return resolvedPath === dataDir || resolvedPath.startsWith(dataDir + path.sep);
+}
+
 /** Um token já expandido por til alcança `D` (por igualdade, prefixo ou glob compatível)? */
 function tokenReachesDirectory(token: string, cwd: string, dataDir: string): boolean {
   const sep = path.sep;
   const resolvedPath = path.resolve(cwd, token);
-  if (resolvedPath === dataDir || resolvedPath.startsWith(dataDir + sep)) return true;
+  if (isInsideDirectory(resolvedPath, dataDir)) return true;
 
   // Segmento com `**` ou uma chave `{a/b,c}` com barra dentro: o `path.matchesGlob` não expande
   // `**` até a profundidade de D, e o truncamento por `sep` corta a chave no meio (R-6,
@@ -220,11 +304,39 @@ function tokenReachesDirectory(token: string, cwd: string, dataDir: string): boo
 
 type TokenClass = 'reaches' | 'undecidable' | 'clear';
 
-/** Token acima dos tetos é `undecidable` (nega, sem citar `D`); casamento que lança libera o token. */
-function classifyToken(rawToken: string, cwd: string, dataDir: string, home: string): TokenClass {
+/** O prefixo literal (segmentos até o primeiro com glob) é `D`, ancestral ou descendente dela? Linear, sem regex. */
+function literalPrefixReaches(resolvedPath: string, dataDir: string): boolean {
+  const prefix = takeWhile(
+    resolvedPath.split(path.sep),
+    (segment) => !GLOB_CHARS_REGEX.test(segment),
+  ).join(path.sep);
+  return (
+    prefix === dataDir ||
+    dataDir.startsWith(prefix + path.sep) ||
+    prefix.startsWith(dataDir + path.sep)
+  );
+}
+
+/**
+ * Token que o shell expande acima dos tetos é `undecidable` (nega, sem citar `D`); o só entre aspas
+ * acima dos tetos é conferido como caminho literal e pelo prefixo literal, que pega o glob que o
+ * próprio programa expande (`find -path`). Casamento que lança libera o token.
+ */
+function classifyToken(
+  candidate: Candidate,
+  cwd: string,
+  dataDir: string,
+  home: string,
+): TokenClass {
   try {
-    const token = expandTilde(rawToken, home);
+    const token = expandTilde(candidate.token, home);
     if (token.includes(dataDir)) return 'reaches';
+    if (skipsGlobMatch(candidate)) {
+      const resolved = path.resolve(cwd, token);
+      return isInsideDirectory(resolved, dataDir) || literalPrefixReaches(resolved, dataDir)
+        ? 'reaches'
+        : 'clear';
+    }
     if (exceedsGlobLimits(token)) return 'undecidable';
     return tokenReachesDirectory(token, cwd, dataDir) ? 'reaches' : 'clear';
   } catch {
@@ -235,15 +347,15 @@ function classifyToken(rawToken: string, cwd: string, dataDir: string, home: str
 
 /** O primeiro token que bloqueia o comando; `token` falta quando o orçamento do comando estourou. */
 function findBlockingToken(
-  tokens: string[],
+  candidates: Candidate[],
   cwd: string,
   dataDir: string,
   home: string,
 ): { token?: string; tokenClass: Exclude<TokenClass, 'clear'> } | undefined {
-  if (exceedsGlobBudget(tokens)) return { tokenClass: 'undecidable' };
-  for (const token of tokens) {
-    const tokenClass = classifyToken(token, cwd, dataDir, home);
-    if (tokenClass !== 'clear') return { token, tokenClass };
+  if (exceedsGlobBudget(candidates)) return { tokenClass: 'undecidable' };
+  for (const candidate of candidates) {
+    const tokenClass = classifyToken(candidate, cwd, dataDir, home);
+    if (tokenClass !== 'clear') return { token: candidate.token, tokenClass };
   }
   return undefined;
 }
@@ -290,7 +402,13 @@ function decide(
   const segments = segmentsOf();
   if (isNil(segments)) return denied(undecidableMessage());
 
-  const blocking = findBlockingToken(segments.flat(), cwd, dataDirPath, home);
+  const tokens = segments.flat();
+  const blocking = findBlockingToken(
+    toCandidates(tokens, maskedTokensOf(command, tokens, home, env)),
+    cwd,
+    dataDirPath,
+    home,
+  );
   if (isNil(blocking)) return { deny: false };
   const matched = matchedSegment(segments, (token) => token === blocking.token);
   return denied(

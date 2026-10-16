@@ -24,6 +24,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - O `register` passa a recusar `supersedes` cujo destino tem outro target (`INVALID_RECORD`, `target-mismatch`); `revokes` entre targets segue permitido (#164).
 - Em processo com herança, o `needsReview` deixa de marcar o `supports` que o registro atual só tem por herança (#166).
 
+### Corrigido
+
+- O hook de isolamento aplica os tetos por token (chaves, colchetes e comprimento) só aos tokens que o shell expande: `node -e '...'` e `python -c "..."` legítimos, com muitas chaves ou colchetes entre aspas, deixam de ser negados por custo; o orçamento total de glob ainda soma os tokens entre aspas que passam pela checagem de caminho, e a negação por custo agora diz que o comando não cita o diretório de dados literalmente (#169).
+
 ### Migração
 
 - A `query` não devolve mais `in` e `out` por padrão: cada registro traz `inCounts` e `outCounts`, mapas `{<nome da relação>: n}` em que o nome é o `as` da relação (ou o `kind`, sem `as`); mapa vazio é omitido. Para receber `in` e `out` como antes, passe `relations: "full"`; para nenhum dos dois, `relations: "none"`.
