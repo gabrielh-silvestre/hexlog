@@ -69,3 +69,4 @@ Regras que valem para o repositório todo, importadas pelo `CLAUDE.md`:
 - [documentacao.md](docs/directives/documentacao.md): ADR e doc vivo, como citar, `pesquisa/` congelado, famílias de ID
 - [instalacao-e-hooks.md](docs/directives/instalacao-e-hooks.md): instalador, hook de isolamento e hooks do fluxo
 - [estrategia.md](docs/directives/estrategia.md): premissas atemporais do produto, validadas pelo dono; cada decisão deve se apoiar em pelo menos uma, ou declarar que nenhuma se aplica
+- [cadeira-do-dono.md](docs/directives/cadeira-do-dono.md): quem responde a lacuna no lugar do humano, com que modelo e como registra
