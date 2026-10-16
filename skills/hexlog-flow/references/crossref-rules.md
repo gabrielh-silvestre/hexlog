@@ -23,6 +23,9 @@ qualquer relação, de entrada ou de saída, sem o próprio `id`; com `relations
 traz `in` e `out`, e a cadeia se percorre por eles, um salto por vez.
 
 Substituir e revogar só valem **dentro do processo** (`cross-process-currency`).
+O `supersedes` exige também o **mesmo target** (`target-mismatch`): para mudar um fato
+de target, faça `revokes` no registro antigo e grave o novo no target certo com
+`derivesFrom` para ele.
 
 ## 2. Entre fases — leitura com o alcance certo
 

@@ -119,6 +119,7 @@ Cada violação é `INVALID_RECORD` com `details[].code` = a regra e `details[].
 |---|---|
 | Registro não se relaciona consigo mesmo | `self-relation` |
 | `supersedes` só entre registros do **mesmo tipo** | `type-mismatch` |
+| `supersedes` só entre registros do **mesmo target** | `target-mismatch` |
 | `supersedes` e `revokes` só valem para registro do **próprio processo** | `cross-process-currency` |
 | O mesmo registro não faz `supports` e `contradicts` ao mesmo destino, nem `supersedes` e `revokes` | `supports-and-contradicts`, `supersedes-and-revokes` |
 | `as` precisa ser um nome de relação fixado no processo; com `kind` junto, os dois precisam bater | `unknown-relation-name`, `kind-mismatch` |

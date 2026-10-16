@@ -212,6 +212,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'code',
   'self-relation',
   'type-mismatch',
+  'target-mismatch',
   'cross-process-currency',
   'contradicts',
   'supports-and-contradicts',

@@ -1,7 +1,7 @@
 import { isUndefined } from 'es-toolkit';
 import type { RelationName } from './definitions.ts';
 import { processOf } from './ids.ts';
-import type { Name, RecordId } from './ids.ts';
+import type { Name, RecordId, Target } from './ids.ts';
 import type { HexRecord, KindOrAs, Relation, RelationKind } from './record.ts';
 
 /** O que a vigência e a prova vencida leem de um registro: o id e as relações gravadas. */
@@ -160,6 +160,7 @@ export type RuleCode =
   | 'kind-mismatch'
   | 'cross-process-currency'
   | 'type-mismatch'
+  | 'target-mismatch'
   | 'endpoint-type'
   | 'supports-and-contradicts'
   | 'supersedes-and-revokes'
@@ -174,7 +175,7 @@ type RelationCheck = { kind: RelationKind } | { violation: Violation };
 /** Nome de relação fixado no processo; `from`/`to` são listas de tipos, quando declaradas. */
 export type NamedRelation = Pick<RelationName, 'kind' | 'from' | 'to'>;
 
-export type RelationEnd = { id: RecordId; type: Name };
+export type RelationEnd = { id: RecordId; type: Name; target: Target };
 
 export type RuleContext = {
   /** Registro que grava a relação. */
@@ -212,6 +213,7 @@ function checkSuccession(kind: RelationKind, { from, to }: RuleContext): Violati
   if (kind !== 'supersedes' && kind !== 'revokes') return undefined;
   if (processOf(from.id) !== processOf(to.id)) return { code: 'cross-process-currency' };
   if (kind === 'supersedes' && from.type !== to.type) return { code: 'type-mismatch' };
+  if (kind === 'supersedes' && from.target !== to.target) return { code: 'target-mismatch' };
   return undefined;
 }
 

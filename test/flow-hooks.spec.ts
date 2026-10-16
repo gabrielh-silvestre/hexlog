@@ -749,10 +749,17 @@ describe('flow-report', () => {
       'd-both': decision('feat-r', 'd-both', [anchoredIn(directive('r1')), rests('@objective')]),
       'd-no-rest': decision('feat-r', 'd-no-rest', []),
       'd-old': decision('feat-r', 'd-old', [rests('@objective')]),
-      'd-new': decision('feat-r', 'd-new', [{ kind: 'supersedes', to: '@d-old' }, rests('@alpha')]),
+      // `supersedes` exige o mesmo target do antecessor
+      'd-new': {
+        ...decision('feat-r', 'd-new', [{ kind: 'supersedes', to: '@d-old' }, rests('@alpha')]),
+        target: 'feat-r.decision.d-old',
+      },
       'd-rev': decision('feat-r', 'd-rev', [rests('@objective')]),
       'd-a': decision('feat-r', 'd-a', [rests('@objective')]),
-      'd-b': decision('feat-r', 'd-b', [{ kind: 'supersedes', to: '@d-a' }, rests('@alpha')]),
+      'd-b': {
+        ...decision('feat-r', 'd-b', [{ kind: 'supersedes', to: '@d-a' }, rests('@alpha')]),
+        target: 'feat-r.decision.d-a',
+      },
       // revoga `d-rev` e o superseder `d-b`: nem `d-a` nem `d-b` voltam a valer
       revoker: {
         type: 'gap',

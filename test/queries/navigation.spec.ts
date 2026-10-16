@@ -16,7 +16,7 @@ describe('SL9: navigation by text, ids and relatedTo', () => {
     const current = await registerOne(
       'run-1',
       note('webhook com jitter', {
-        target: 'run.outro',
+        target: 'run.webhook',
         relations: [{ to: old, kind: 'supersedes' }],
       }),
       2,

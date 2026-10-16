@@ -18,12 +18,14 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - O erro de `since` na `query` cita `changesSince` na mensagem (#159).
 - `limit: 0` sem `changesSince` na `query` passa a devolver `INVALID_FILTER` (`/limit`, `out-of-range`) em vez de `INVALID_INPUT` (#159).
 - A `query` devolve por padrão `inCounts` e `outCounts` no lugar de `in` e `out`, e o `evaluate_gate` devolve por padrão só as contagens da evidência, com os ids apenas da pergunta que reprova (#161).
+- O `register` passa a recusar `supersedes` cujo destino tem outro target (`INVALID_RECORD`, `target-mismatch`); `revokes` entre targets segue permitido (#164).
 
 ### Migração
 
 - A `query` não devolve mais `in` e `out` por padrão: cada registro traz `inCounts` e `outCounts`, mapas `{<nome da relação>: n}` em que o nome é o `as` da relação (ou o `kind`, sem `as`); mapa vazio é omitido. Para receber `in` e `out` como antes, passe `relations: "full"`; para nenhum dos dois, `relations: "none"`.
 - O `evaluate_gate` não devolve mais todas as listas de ids em `evidence`: cada pergunta traz `counts` e, só quando reprova, `evidence` com os ids que explicam a reprovação. Para receber todas as listas de ids como antes, passe `evidence: "full"`.
 - Com `targets`, a resposta do `evaluate_gate` troca `questions` por `results` (`{target, passed, questions}` por target); `evidence: "full"` não vale em lote. Com `target`, ou sem nenhum dos dois, o formato segue o mesmo.
+- Quem trocava o target de um fato com `supersedes` agora recebe `INVALID_RECORD` com `target-mismatch`: grave `revokes` no registro antigo e um registro novo no target certo, com `derivesFrom` para o antigo. Registros já gravados não mudam.
 - Sessões abertas só veem o formato novo depois de reinstalar com `node scripts/install.ts` e reiniciá-las.
 
 ## [1.1.2] - 2026-10-09

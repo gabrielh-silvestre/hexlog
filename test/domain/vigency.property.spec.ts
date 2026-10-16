@@ -68,8 +68,8 @@ function simulate(ops: Op[]): Written[] {
       const check = checkRelation(
         { kind },
         {
-          from: { id: self, type },
-          to: { id: to, type: toType },
+          from: { id: self, type, target: 'p.step' },
+          to: { id: to, type: toType, target: 'p.step' },
           siblings,
           names: new Map(),
           vigencyFor: (relationKind) => (relationKind === 'supports' ? whole : before),

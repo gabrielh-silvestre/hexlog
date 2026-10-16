@@ -129,7 +129,7 @@ ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabe�
 processo, para ler dali em diante. O marcador cobre exatamente os processos que nomeia:
 no alcance projeto, o que ele não nomeia é lido como vazio. A descrição da tool manda ler o
 schema com `describe_type` antes de registrar num tipo que o agente não conhece, e o id
-vigente com `query` antes de `supersedes` ou `revokes`: um id errado, do mesmo tipo e processo,
+vigente com `query` antes de `supersedes` ou `revokes`: um id errado, do mesmo tipo, target e processo,
 que ainda é vigente, é aceito e bifurca a linhagem.
 
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
@@ -140,7 +140,9 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
 - `supersedes` e `revokes` só alcançam registros **do mesmo processo**
   (`cross-process-currency`), e só o vigente: sobre um destino que já foi superado ou
   revogado, é `FORK_REJECTED`, com `current` apontando a versão atual da linhagem.
-- `supersedes` exige o mesmo tipo (`type-mismatch`).
+- `supersedes` exige o mesmo tipo (`type-mismatch`) e o mesmo target (`target-mismatch`).
+  Para mudar um fato de target, faça `revokes` no registro antigo e grave um registro novo
+  no target certo com `derivesFrom` para ele; `revokes` entre targets é aceito.
 - `supports` só aceita destino vigente (`stale-destination`); pode cruzar processos.
 - Um registro não pode apoiar e contradizer, nem superar e revogar, o mesmo destino.
 - Relação para si mesmo, `as` que não existe fixado no processo, `kind` que não bate com
