@@ -653,11 +653,20 @@ describe('flow-report', () => {
     ...(extra.relations === undefined ? {} : { relations: extra.relations }),
   });
 
-  const criticalGap = (proc: string, short: string, rule: string): Item => ({
+  const gapOf = (
+    proc: string,
+    short: string,
+    context: string,
+    relations: Record<string, unknown>[] = [],
+  ): Item => ({
     type: 'gap',
     target: `${proc}.gap.${short}`,
-    data: { question: `Question ${short}`, context: `Class: critical; rule: ${rule}` },
+    data: { question: `Question ${short}`, context },
+    relations,
   });
+
+  const criticalGap = (proc: string, short: string, rule: string): Item =>
+    gapOf(proc, short, `Class: critical; rule: ${rule}`);
 
   const fillsGap = (to: string) => ({ kind: 'answers', as: 'fills-gap', to });
 
@@ -823,7 +832,7 @@ describe('flow-report', () => {
           answeredBy: 'simulated',
           relations: [fillsGap('@g-sim')],
         }),
-        'g-ok': criticalGap('feat-c', 'ok', 'directives.convencoes.r1'),
+        'g-ok': criticalGap('feat-c', 'ok', 'directives.invariantes.r2'),
         'p-ok-sim': premise('feat-c', 'ok-sim', { answeredBy: 'simulated' }),
         'p-ok': premise('feat-c', 'ok', {
           answeredBy: 'simulated-approved',
@@ -843,13 +852,46 @@ describe('flow-report', () => {
         },
         'g-none': criticalGap('feat-c', 'none', 'directives.convencoes.r1'),
         'p-none': premise('feat-c', 'none', { relations: [fillsGap('@g-none')] }),
-        'g-late': criticalGap('feat-c', 'late', 'directives.invariantes.r2'),
-        'p-late': premise('feat-c', 'late', {
+        'g-amended': criticalGap('feat-c', 'amended', 'directives.convencoes.r1'),
+        'p-amended': premise('feat-c', 'amended', {
           answeredBy: 'simulated-approved',
-          relations: [fillsGap('@g-late')],
+          relations: [fillsGap('@g-amended')],
         }),
+        'g-human': criticalGap('feat-c', 'human', 'directives.invariantes.r2'),
+        'p-human': premise('feat-c', 'human', {
+          answeredBy: 'human',
+          relations: [fillsGap('@g-human')],
+        }),
+        'g-norule': gapOf('feat-c', 'norule', 'Class: critical'),
+        'p-norule': premise('feat-c', 'norule', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-norule')],
+        }),
+        'g-common': gapOf('feat-c', 'common', 'Class: common'),
+        'g-common-closed': gapOf('feat-c', 'common-closed', 'Class: common'),
+        'p-common': premise('feat-c', 'common', {
+          answeredBy: 'simulated',
+          relations: [fillsGap('@g-common-closed')],
+        }),
+        'g-old': criticalGap('feat-c', 'old', 'directives.fronteiras.r1'),
+        'g-new': gapOf('feat-c', 'new', 'Class: critical; rule: directives.invariantes.r2', [
+          { kind: 'supersedes', to: '@g-old' },
+        ]),
+        'p-new': premise('feat-c', 'new', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-new')],
+        }),
+        'g-revoked': criticalGap('feat-c', 'revoked', 'directives.invariantes.r2'),
+        'p-revoked': premise('feat-c', 'revoked', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-revoked')],
+        }),
+        'revoke-closer': gapOf('feat-c', 'revoke-closer', 'Fixture', [
+          { kind: 'revokes', to: '@p-revoked' },
+        ]),
         'd-rests-sim': decision('feat-c', 'rests-sim', [rests('@p-open-sim')]),
         'd-rests-approved': decision('feat-c', 'rests-approved', [rests('@p-ok-sim')]),
+        'd-rests-common': decision('feat-c', 'rests-common', [rests('@p-common')]),
       }),
     );
 
@@ -1094,7 +1136,7 @@ describe('flow-report', () => {
       expect(rowFor(result, 'g-dir')).toEqual([
         idOf('g-dir'),
         'feat-c.gap.dir',
-        'critical-gap: closed by directives.convencoes.r9 (answeredBy=none, a review confere)',
+        'critical-gap-review: closed by directives.convencoes.r9 (answeredBy=none)',
       ]);
     });
 
@@ -1102,15 +1144,44 @@ describe('flow-report', () => {
       expect(rowFor(result, 'g-none')).toEqual([
         idOf('g-none'),
         'feat-c.gap.none',
-        'critical-gap: closed by feat-c.premise.none (answeredBy=none, a review confere)',
+        'critical-gap-review: closed by feat-c.premise.none (answeredBy=none)',
       ]);
     });
 
-    test('lists a simulated-approved recorded after the commit that amended the doc', () => {
-      expect(rowFor(result, 'g-late')).toEqual([
-        idOf('g-late'),
-        'feat-c.gap.late',
-        'critical-gap: approved after the amendment of docs/directives/invariantes.md, a review confere',
+    test('flags a simulated-approved recorded before the commit that amended the doc', () => {
+      expect(rowFor(result, 'g-amended')).toEqual([
+        idOf('g-amended'),
+        'feat-c.gap.amended',
+        'critical-gap: doc amended after the approval (docs/directives/convencoes.md)',
+      ]);
+    });
+
+    test('keeps a human closer clean when the doc was amended before the approval', () => {
+      expect(rowFor(result, 'g-human')).toBeUndefined();
+    });
+
+    test('flags a critical gap without a rule target as an unknown rule doc', () => {
+      expect(rowFor(result, 'g-norule')).toEqual([
+        idOf('g-norule'),
+        'feat-c.gap.norule',
+        'critical-gap: rule doc unknown',
+      ]);
+    });
+
+    test('does not flag a common-class gap', () => {
+      expect(rowFor(result, 'g-common')).toBeUndefined();
+    });
+
+    test('does not flag a superseded critical gap nor the one that replaced it', () => {
+      expect(rowFor(result, 'g-old')).toBeUndefined();
+      expect(rowFor(result, 'g-new')).toBeUndefined();
+    });
+
+    test('treats a gap whose closer was revoked as open', () => {
+      expect(rowFor(result, 'g-revoked')).toEqual([
+        idOf('g-revoked'),
+        'feat-c.gap.revoked',
+        'critical-gap: open, approval pending',
       ]);
     });
 
@@ -1125,7 +1196,21 @@ describe('flow-report', () => {
     test('keeps a decision resting on a simulated premise with simulated-approved clean', () => {
       expect(rowFor(result, 'd-rests-approved')).toBeUndefined();
     });
+
+    test('keeps a decision resting on a simulated premise that filled a common gap clean', () => {
+      expect(rowFor(result, 'd-rests-common')).toBeUndefined();
+    });
   });
+
+  test('skips the doc checks of a closed critical gap when git cannot resolve the base', () => {
+    const result = runReport(['feat-c', 'no-such-base']);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain('doc-amended skipped');
+    expect(rowFor(result, 'g-amended')).toBeUndefined();
+    expect(rowFor(result, 'g-noamend')).toBeUndefined();
+    expect(rowFor(result, 'g-norule')?.[2]).toBe('critical-gap: rule doc unknown');
+    expect(rowFor(result, 'g-open')?.[2]).toBe('critical-gap: open, approval pending');
+  }, 30_000);
 
   test('with the base switched to feat/r the diff is empty and doc-amended disappears', () => {
     const result = runReport(['feat-r', 'feat/r']);

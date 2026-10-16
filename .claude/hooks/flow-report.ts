@@ -1,6 +1,7 @@
 // Relatório das decisões de um trabalho cuja base merece revisão: `node .claude/hooks/flow-report.ts
 // <slug> [<base>]`. Motivos: `only-objective`, `only-sentinel`, `doc-amended`, `critical-gap` (freio
-// do aval da cadeira do dono) e `rests-on-simulated`. Só aponta, imprime e sai sempre 0; quem
+// do aval da cadeira do dono, segura o `mark`), `critical-gap-review` (só pede o julgamento da
+// review, não segura o `mark`) e `rests-on-simulated`. Só aponta, imprime e sai sempre 0; quem
 // corrige é a skill `flow-run`. Só builtins do Node, sem import fora de `.claude/hooks/`. Lê o log apenas pela exportação oficial
 // (`scripts/export.ts` em processo filho), nunca o diretório de dados; por isso precisa de
 // `node_modules`, ao contrário do `flow-hooks.ts`.
@@ -182,9 +183,7 @@ function criticalGapReasons(
   const reasons = closers.flatMap(({ from = '' }) => {
     const answeredBy = answeredByOf(byId.get(from));
     const by = `closed by ${targetOf(from) ?? from}`;
-    if (answeredBy === undefined) {
-      return [`critical-gap: ${by} (answeredBy=none, a review confere)`];
-    }
+    if (answeredBy === undefined) return [`critical-gap-review: ${by} (answeredBy=none)`];
     return APPROVED_ORIGINS.has(answeredBy)
       ? []
       : [`critical-gap: ${by} (answeredBy=${answeredBy})`];
@@ -193,32 +192,33 @@ function criticalGapReasons(
   const rule = CRITICAL_RULE.exec(context)?.[1];
   const file = rule === undefined ? undefined : docOf(rule);
   if (file === undefined) {
-    reasons.push('critical-gap: rule doc unknown, a review confere');
+    reasons.push('critical-gap: rule doc unknown');
   } else if (amended !== undefined && !amended.docs.has(file)) {
     reasons.push(`critical-gap: ${file} not in the diff`);
   } else if (amended !== undefined) {
-    // Aval gravado depois do commit que emenda o doc: lista sem acusar, a review confere o texto.
+    // Emenda posterior ao aval: o texto avalizado pode não ser mais o do doc.
     const committedAt = amended.committedAt(file);
-    const lateApproval = closers.some(({ from = '' }) => {
+    const amendedAfterApproval = closers.some(({ from = '' }) => {
       const closer = byId.get(from);
       return (
         committedAt !== undefined &&
-        answeredByOf(closer) === 'simulated-approved' &&
-        Date.parse(closer?.at ?? '') > committedAt
+        APPROVED_ORIGINS.has(answeredByOf(closer) ?? '') &&
+        Date.parse(closer?.at ?? '') < committedAt
       );
     });
-    if (lateApproval) {
-      reasons.push(`critical-gap: approved after the amendment of ${file}, a review confere`);
+    if (amendedAfterApproval) {
+      reasons.push(`critical-gap: doc amended after the approval (${file})`);
     }
   }
   return reasons;
 }
 
-/** `decision` apoiada em premissa `simulated` que nenhuma `simulated-approved` vigente deriva. */
+/** `decision` apoiada em premissa `simulated` que nenhuma `simulated-approved` vigente deriva; a de classe comum (com `fills-gap`) já fechou a lacuna e fica de fora. */
 function simulatedReasons(row: Row, byId: Map<string, Row>): string[] {
   return relationsOf(row, 'rests-on').flatMap(({ to = '' }) => {
     const premise = byId.get(to);
     if (premise === undefined || answeredByOf(premise) !== 'simulated') return [];
+    if (relationsOf(premise, 'fills-gap').length > 0) return [];
     const approved = premise.in.some(
       (relation) =>
         relation.kind === 'derivesFrom' &&
