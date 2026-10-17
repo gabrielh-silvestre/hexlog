@@ -204,7 +204,7 @@ const DenySchema = z.object({ permissions: z.object({ deny: z.array(z.string()) 
 const denyOf = (text: string) => parseJson(DenySchema, text).permissions.deny;
 
 describe('applyGuard', () => {
-  it('should produce the same text when applied twice (I5)', () => {
+  it('should produce the same text when applied twice', () => {
     const first = applyGuard(buildSettingsTemplate(fakeHome), fakeExpected, noneExist).text;
 
     const second = applyGuard(first, fakeExpected, noneExist).text;
@@ -212,7 +212,7 @@ describe('applyGuard', () => {
     expect(second).toBe(first);
   });
 
-  it('should preserve the foreign rtk hook and the existing allow and deny rules (I5)', () => {
+  it('should preserve the foreign rtk hook and the existing allow and deny rules', () => {
     const settings = buildSettingsWithRtk(fakeHome);
 
     const result = applyGuard(settings, fakeExpected, noneExist).text;
@@ -234,7 +234,7 @@ describe('applyGuard', () => {
     expect(commands).toContain(`${fakeHome}/.claude/bin/harness hook commit-message-guard`);
   });
 
-  it('should replace the hook entry of an older version without duplicating it (I5)', () => {
+  it('should replace the hook entry of an older version without duplicating it', () => {
     const oldExpected = expectedRules(fakeDataDir, fakeHome, '/usr/bin/node', '0.0.9');
     const withOldVersion = applyGuard(buildSettingsTemplate(fakeHome), oldExpected, noneExist).text;
 
@@ -251,7 +251,7 @@ describe('applyGuard', () => {
     expect(at(at(hexlogEntries, 0).hooks, 0).command).toBe(fakeExpected.hookCommand);
   });
 
-  it('should keep the result valid JSON and preserve the existing comments (I5)', () => {
+  it('should keep the result valid JSON and preserve the existing comments', () => {
     const settings = buildSettingsWithRtk(fakeHome);
 
     const result = applyGuard(settings, fakeExpected, noneExist).text;
@@ -263,7 +263,7 @@ describe('applyGuard', () => {
     expect(result).toContain('// example comment');
   });
 
-  it('should keep settings without comments parseable by JSON.parse (I5)', () => {
+  it('should keep settings without comments parseable by JSON.parse', () => {
     const settings = buildSettingsTemplate(fakeHome);
 
     const result = applyGuard(settings, fakeExpected, noneExist).text;
@@ -273,7 +273,7 @@ describe('applyGuard', () => {
     }).not.toThrow();
   });
 
-  it('should throw INVALID_INPUT naming /permissions/deny when deny is an object (M19, M1)', () => {
+  it('should throw INVALID_INPUT naming /permissions/deny when deny is an object', () => {
     const settings = '{ "permissions": { "deny": {} } }';
 
     const error = captureError(() => applyGuard(settings, fakeExpected, noneExist));
@@ -285,7 +285,7 @@ describe('applyGuard', () => {
     ]);
   });
 
-  it('should throw INVALID_INPUT naming /hooks/PreToolUse when PreToolUse is a string (M19, M1)', () => {
+  it('should throw INVALID_INPUT naming /hooks/PreToolUse when PreToolUse is a string', () => {
     const settings = JSON.stringify({ permissions: { deny: [] }, hooks: { PreToolUse: 'x' } });
 
     const error = captureError(() => applyGuard(settings, fakeExpected, noneExist));
@@ -295,7 +295,7 @@ describe('applyGuard', () => {
     expect(error.details[0]?.path).toBe('/hooks/PreToolUse');
   });
 
-  it('should repair a tampered matcher and type in place without duplicating the entry (M19, M1)', () => {
+  it('should repair a tampered matcher and type in place without duplicating the entry', () => {
     const tampered = tamperedSettings({ matcher: '^Edit$', type: 'prompt' });
 
     const repaired = applyGuard(tampered, fakeExpected, noneExist).text;
@@ -310,7 +310,7 @@ describe('applyGuard', () => {
     expect(verifyFake(repaired)).toEqual({ ok: true, missing: [] });
   });
 
-  it('should be idempotent after repairing the matcher (M19, M1)', () => {
+  it('should be idempotent after repairing the matcher', () => {
     const tampered = tamperedSettings({ matcher: '^Edit$', type: 'prompt' });
     const first = applyGuard(tampered, fakeExpected, noneExist).text;
 
@@ -347,7 +347,7 @@ describe('applyGuard', () => {
     ];
 
     it.each(misplacedEntries)(
-      'should move the hexlog hook to its own ^Bash$ entry and keep the foreign entry untouched with $name (M19, M1)',
+      'should move the hexlog hook to its own ^Bash$ entry and keep the foreign entry untouched with $name',
       ({ entry }) => {
         const settings = sharedSettings(entry);
 
@@ -365,7 +365,7 @@ describe('applyGuard', () => {
     );
 
     it.each(misplacedEntries)(
-      'should leave the settings alone when the guard runs again after moving the hexlog hook with $name (M19, M1)',
+      'should leave the settings alone when the guard runs again after moving the hexlog hook with $name',
       ({ entry }) => {
         const repaired = applyGuard(sharedSettings(entry), fakeExpected, noneExist).text;
 
@@ -373,13 +373,13 @@ describe('applyGuard', () => {
       },
     );
 
-    it('should leave a shared entry alone when its matcher is already ^Bash$ (M19, M1)', () => {
+    it('should leave a shared entry alone when its matcher is already ^Bash$', () => {
       const settings = sharedSettings({ matcher: '^Bash$', hooks: [foreignHook, hexlogHook] });
 
       expect(applyGuard(settings, fakeExpected, noneExist).text).toBe(settings);
     });
 
-    it('should fix the matcher in place when the hexlog hook is the only one in the entry (M19, M1)', () => {
+    it('should fix the matcher in place when the hexlog hook is the only one in the entry', () => {
       const settings = sharedSettings({ matcher: 'Bash|Edit', hooks: [hexlogHook] });
 
       const repaired = applyGuard(settings, fakeExpected, noneExist).text;
@@ -399,7 +399,7 @@ describe('applyGuard', () => {
     },
     { name: 'the root is an array', settings: '[]', pointer: '' },
     { name: 'the root is null', settings: 'null', pointer: '' },
-  ])('should throw INVALID_INPUT naming the path when $name (M19, M1)', ({ settings, pointer }) => {
+  ])('should throw INVALID_INPUT naming the path when $name', ({ settings, pointer }) => {
     const error = captureError(() => applyGuard(settings, fakeExpected, noneExist));
 
     expect(error.code).toBe('INVALID_INPUT');
@@ -407,7 +407,7 @@ describe('applyGuard', () => {
     expect(error.message).toContain(pointer === '' ? '<root>' : pointer.slice(1));
   });
 
-  it('should remove the three deny rules of an old <D> whose basename is hexlog (TI6)', () => {
+  it('should remove the three deny rules of an old <D> whose basename is hexlog', () => {
     const settings = settingsWithDeny(oldTrio);
 
     const result = applyGuard(settings, fakeExpected, noneExist).text;
@@ -420,7 +420,7 @@ describe('applyGuard', () => {
     ]);
   });
 
-  it('should keep the rules of the current <D> when an old <D> sits next to it (TI6)', () => {
+  it('should keep the rules of the current <D> when an old <D> sits next to it', () => {
     const current = trioOf(fakeDataDir);
     const settings = settingsWithDeny([...oldTrio, ...current]);
 
@@ -429,7 +429,7 @@ describe('applyGuard', () => {
     expect(denyOf(result)).toEqual([...current, fakeExpected.denyEditLib]);
   });
 
-  it('should keep a stray user rule even when it resembles the rules of the old <D> (TI6)', () => {
+  it('should keep a stray user rule even when it resembles the rules of the old <D>', () => {
     const stray = ['Read(//mnt/old/data/hexlog/secret)', 'Bash(rm:*)', 'Edit(//mnt/old/**)'];
     const settings = settingsWithDeny([...stray, ...oldTrio]);
 
@@ -439,7 +439,7 @@ describe('applyGuard', () => {
     expect(denyOf(result)).not.toContain(`Read(/${oldDataDir})`);
   });
 
-  it('should not remove an old <D> whose basename is not hexlog (TI6)', () => {
+  it('should not remove an old <D> whose basename is not hexlog', () => {
     const foreign = trioOf('/mnt/old/data/other');
 
     const result = applyGuard(settingsWithDeny(foreign), fakeExpected, noneExist).text;
@@ -450,7 +450,7 @@ describe('applyGuard', () => {
   it.each([
     { name: 'one rule', partial: oldTrio.slice(0, 1) },
     { name: 'two rules', partial: oldTrio.slice(0, 2) },
-  ])('should not remove an incomplete trio of $name (TI6)', ({ partial }) => {
+  ])('should not remove an incomplete trio of $name', ({ partial }) => {
     const settings = settingsWithDeny(partial);
 
     const result = applyGuard(settings, fakeExpected, noneExist).text;
@@ -468,7 +468,7 @@ describe('applyGuard', () => {
     ];
     const inline = (deny: string[]) => `{"permissions":{"deny":${JSON.stringify(deny)}}}`;
 
-    it('should remove the old trio at the end of the array (TI6)', () => {
+    it('should remove the old trio at the end of the array', () => {
       const settings = inline(['Bash(rm:*)', ...oldTrio]);
 
       const result = applyGuard(settings, fakeExpected, noneExist).text;
@@ -476,7 +476,7 @@ describe('applyGuard', () => {
       expect(denyOf(result)).toEqual(['Bash(rm:*)', ...currentRules]);
     });
 
-    it('should remove the old trio when it is the only content of the array (TI6)', () => {
+    it('should remove the old trio when it is the only content of the array', () => {
       const settings = inline(oldTrio);
 
       const result = applyGuard(settings, fakeExpected, noneExist).text;
@@ -484,7 +484,7 @@ describe('applyGuard', () => {
       expect(denyOf(result)).toEqual(currentRules);
     });
 
-    it('should remove the old trio spread among stray rules (TI6)', () => {
+    it('should remove the old trio spread among stray rules', () => {
       const [readDir, read, edit] = oldTrio;
       const settings = inline([readDir!, 'Bash(rm:*)', read!, 'Bash(ls:*)', edit!]);
 
@@ -494,7 +494,7 @@ describe('applyGuard', () => {
     });
   });
 
-  it('should keep the trio of an old <D> that still exists on disk (TI6)', () => {
+  it('should keep the trio of an old <D> that still exists on disk', () => {
     const settings = settingsWithDeny(oldTrio);
 
     const kept = applyGuard(settings, fakeExpected, (candidate) => candidate === oldDataDir).text;
@@ -502,7 +502,7 @@ describe('applyGuard', () => {
     expect(denyOf(kept)).toEqual(expect.arrayContaining(oldTrio));
   });
 
-  it('should remove the trio of an old <D> that is absent from disk (TI6)', () => {
+  it('should remove the trio of an old <D> that is absent from disk', () => {
     const settings = settingsWithDeny(oldTrio);
 
     const removed = applyGuard(settings, fakeExpected, noneExist).text;
@@ -510,7 +510,7 @@ describe('applyGuard', () => {
     expect(denyOf(removed)).not.toContain(`Read(/${oldDataDir})`);
   });
 
-  it('should produce the same text when applied twice over an old <D> trio (I5, TI6)', () => {
+  it('should produce the same text when applied twice over an old <D> trio', () => {
     const first = applyGuard(settingsWithDeny(oldTrio), fakeExpected, noneExist).text;
 
     expect(applyGuard(first, fakeExpected, noneExist).text).toBe(first);
@@ -518,7 +518,7 @@ describe('applyGuard', () => {
 });
 
 describe('verifyGuard', () => {
-  it('should report nothing missing on the settings regenerated from the template (I5)', () => {
+  it('should report nothing missing on the settings regenerated from the template', () => {
     const regenerated = applyGuard(buildSettingsTemplate(fakeHome), fakeExpected, noneExist).text;
 
     const verification = verifyFake(regenerated);
@@ -532,7 +532,7 @@ describe('verifyGuard', () => {
     { item: 'deny-edit', rule: fakeExpected.denyEdit },
     { item: 'deny-edit-lib', rule: fakeExpected.denyEditLib },
   ] satisfies { item: MissingItem; rule: string }[])(
-    'should list $item when its deny rule is removed (I5)',
+    'should list $item when its deny rule is removed',
     ({ item, rule }) => {
       const full = applyGuard(buildSettingsTemplate(fakeHome), fakeExpected, noneExist).text;
       const data = parseJson(SettingsSchema, full);
@@ -544,7 +544,7 @@ describe('verifyGuard', () => {
     },
   );
 
-  it('should report hook when the hook entry is removed (I5)', () => {
+  it('should report hook when the hook entry is removed', () => {
     const full = applyGuard(buildSettingsTemplate(fakeHome), fakeExpected, noneExist).text;
     const data = parseJson(SettingsSchema, full);
     data.hooks.PreToolUse = data.hooks.PreToolUse.filter(
@@ -559,7 +559,7 @@ describe('verifyGuard', () => {
     expect(verification.missing).toContain('hook');
   });
 
-  it('should report every deny rule as missing instead of throwing when deny is not an array (M19, M1)', () => {
+  it('should report every deny rule as missing instead of throwing when deny is not an array', () => {
     const settings = JSON.stringify({ permissions: { deny: 'x' } });
 
     const verification = verifyFake(settings);
@@ -572,7 +572,7 @@ describe('verifyGuard', () => {
   it.each([
     { change: 'the matcher of the hexlog entry was changed', matcher: '^Edit$', type: HOOK_TYPE },
     { change: 'the hook type was changed', matcher: '^Bash$', type: 'prompt' },
-  ])('should report hook-matcher when $change (M19, M1)', ({ matcher, type }) => {
+  ])('should report hook-matcher when $change', ({ matcher, type }) => {
     const settings = tamperedSettings({ matcher, type });
 
     const verification = verifyFake(settings);
@@ -580,7 +580,7 @@ describe('verifyGuard', () => {
     expect(verification.missing).toEqual(['hook-matcher']);
   });
 
-  it('should report only deny-edit-lib when the fourth rule is missing (I6, QN4)', () => {
+  it('should report only deny-edit-lib when the fourth rule is missing', () => {
     const full = applyGuard(buildSettingsTemplate(fakeHome), fakeExpected, noneExist).text;
     const data = parseJson(SettingsSchema, full);
     data.permissions.deny = data.permissions.deny.filter(
@@ -661,7 +661,7 @@ describe('verifyGuard', () => {
       }
     });
 
-    it('should report nothing missing when settings and claude.json are complete (I7)', () => {
+    it('should report nothing missing when settings and claude.json are complete', () => {
       const settings = buildFullSettings(expected, expected.hookCommand);
 
       const verification = verifyGuard({
@@ -691,7 +691,7 @@ describe('verifyGuard', () => {
     ];
 
     it.each(functionalCases)(
-      'should report $item for a $name in the real functional check (I7)',
+      'should report $item for a $name in the real functional check',
       ({ variantVersion, item }) => {
         const variantExpected = expectedVariants.get(variantVersion)!;
         const settings = buildFullSettings(expected, variantExpected.hookCommand);
@@ -709,7 +709,7 @@ describe('verifyGuard', () => {
       },
     );
 
-    it('should report hook-file when the registered file does not exist (I7)', () => {
+    it('should report hook-file when the registered file does not exist', () => {
       const notInstalledExpected = expectedRules(
         D,
         homeWithSpace,
@@ -730,7 +730,7 @@ describe('verifyGuard', () => {
       expect(verification.missing).toContain('hook-file');
     });
 
-    it('should report node when the registered executable does not exist (I7)', () => {
+    it('should report node when the registered executable does not exist', () => {
       const missingExec = path.join(homeWithSpace, 'bin-that-does-not-exist', 'node');
       const commandWithFakeExec = shellQuoteQuote([missingExec, expected.hookFile]);
       const settings = buildFullSettings(expected, commandWithFakeExec);
@@ -754,7 +754,7 @@ describe('verifyGuard', () => {
         command: `${process.execPath} /tmp/unrelated.mjs`,
       },
     ])(
-      'should report hook when the command does not resolve to exactly [exec, file] under .local/lib/hexlog, as in $name (I7)',
+      'should report hook when the command does not resolve to exactly [exec, file] under .local/lib/hexlog, as in $name',
       ({ command }) => {
         const settings = buildFullSettings(expected, command);
 
@@ -771,7 +771,7 @@ describe('verifyGuard', () => {
       },
     );
 
-    it('should report artifact-modified when the installed bytes diverge from the manifest (I7)', () => {
+    it('should report artifact-modified when the installed bytes diverge from the manifest', () => {
       const settings = buildFullSettings(expected, expected.hookCommand);
 
       const verification = verifyGuard({
@@ -796,7 +796,7 @@ describe('verifyGuard', () => {
           },
         }),
       },
-    ])('should report mcp when claude.json is $name (I7)', ({ claudeJsonText }) => {
+    ])('should report mcp when claude.json is $name', ({ claudeJsonText }) => {
       const settings = buildFullSettings(expected, expected.hookCommand);
 
       const verification = verifyGuard({
@@ -814,7 +814,7 @@ describe('verifyGuard', () => {
 });
 
 describe('expectedRules', () => {
-  it('should build the 4 deny rules with the exact expected text (I6, QN4)', () => {
+  it('should build the 4 deny rules with the exact expected text', () => {
     const expected = expectedRules(fakeDataDir, fakeHome, '/usr/bin/node', '0.1.0');
 
     expect(expected.denyReadDir).toBe(`Read(/${fakeDataDir})`);
@@ -823,7 +823,7 @@ describe('expectedRules', () => {
     expect(expected.denyEditLib).toBe(`Edit(/${fakeHome}/.local/lib/hexlog/**)`);
   });
 
-  it('should prefix every rule with a double slash, never a single one (I6, QN4)', () => {
+  it('should prefix every rule with a double slash, never a single one', () => {
     const expected = expectedRules(fakeDataDir, fakeHome, '/usr/bin/node', '0.1.0');
 
     for (const rule of [
@@ -836,7 +836,7 @@ describe('expectedRules', () => {
     }
   });
 
-  it('should keep the Read rules off .local/lib/hexlog so the installed artifact stays readable (I6, QN4)', () => {
+  it('should keep the Read rules off .local/lib/hexlog so the installed artifact stays readable', () => {
     const expected = expectedRules(fakeDataDir, fakeHome, '/usr/bin/node', '0.1.0');
 
     expect(expected.denyReadDir).not.toContain('.local/lib/hexlog');
@@ -845,7 +845,7 @@ describe('expectedRules', () => {
 });
 
 describe('registerGuard', () => {
-  it('should keep the trio of an old <D> that exists on disk (TI6)', () => {
+  it('should keep the trio of an old <D> that exists on disk', () => {
     const tmpHome = createTempDir('deny-old-exists');
     try {
       const existingOldD = path.join(tmpHome, 'hexlog');
@@ -864,7 +864,7 @@ describe('registerGuard', () => {
     }
   });
 
-  it('should refuse to write an invalid settings.json and leave the original untouched (TI6)', () => {
+  it('should refuse to write an invalid settings.json and leave the original untouched', () => {
     const tmpHome = createTempDir('deny-invalid');
     try {
       const settingsPath = path.join(tmpHome, 'settings.json');
@@ -881,7 +881,7 @@ describe('registerGuard', () => {
     }
   });
 
-  it('should write .bak-hexlog and settings.json through writeFileAtomic (TI6)', () => {
+  it('should write .bak-hexlog and settings.json through writeFileAtomic', () => {
     const tmpHome = createTempDir('deny-atomic');
     const fsyncSpy = jest.spyOn(fsDefault, 'fsyncSync');
     try {
@@ -909,7 +909,7 @@ describe('registerGuard', () => {
     }
   });
 
-  it('should not overwrite an existing .bak-hexlog (TI6)', () => {
+  it('should not overwrite an existing .bak-hexlog', () => {
     const tmpHome = createTempDir('deny-bak-preserved');
     try {
       const settingsPath = path.join(tmpHome, 'settings.json');
@@ -954,7 +954,7 @@ describe('registerGuard', () => {
     },
   );
 
-  it('should write to the symlink target and keep the link and the mode (TI6)', () => {
+  it('should write to the symlink target and keep the link and the mode', () => {
     const tmpHome = createTempDir('deny-symlink');
     try {
       const realFile = path.join(tmpHome, 'dotfiles', 'settings.json');
@@ -982,7 +982,7 @@ describe('registerGuard', () => {
   // Como root, `accessSync(W_OK)` passa mesmo com `chmod 0555`, então o teste não tem o que provar.
   const itNotRoot = process.getuid?.() === 0 ? it.skip : it;
 
-  itNotRoot('should fail before the backup when the symlink target is not writable (TI6)', () => {
+  itNotRoot('should fail before the backup when the symlink target is not writable', () => {
     const tmpHome = createTempDir('deny-symlink-readonly');
     const dotfiles = path.join(tmpHome, 'dotfiles');
     try {
@@ -1003,7 +1003,7 @@ describe('registerGuard', () => {
     }
   });
 
-  it('should return an empty removed when there is no old <D> (TI6)', () => {
+  it('should return an empty removed when there is no old <D>', () => {
     const tmpHome = createTempDir('deny-removed-empty');
     try {
       const settingsPath = path.join(tmpHome, 'settings.json');
@@ -1017,7 +1017,7 @@ describe('registerGuard', () => {
     }
   });
 
-  it('should apply the 4 deny rules and the hook pointing to the installed versionDir (B2(b))', () => {
+  it('should apply the 4 deny rules and the hook pointing to the installed versionDir', () => {
     const home = createTempDir('install-b');
     try {
       const D = path.join(home, '.local', 'share', 'hexlog');
@@ -1048,7 +1048,7 @@ describe('registerGuard', () => {
     }
   });
 
-  it('should replace the hook entry of the previous version without duplicating it (B2(d))', () => {
+  it('should replace the hook entry of the previous version without duplicating it', () => {
     const home = createTempDir('install-d');
     try {
       const D = path.join(home, '.local', 'share', 'hexlog');
@@ -1098,7 +1098,7 @@ describe('installArtifact', () => {
       },
     );
     if (build.status !== 0) {
-      throw new Error(`build for B2/B3 failed: ${build.stderr}`);
+      throw new Error(`build failed: ${build.stderr}`);
     }
     realBundles = {
       server: fs.readFileSync(path.join(realBundlesOutdir, 'server.mjs')),
@@ -1114,7 +1114,7 @@ describe('installArtifact', () => {
   const runRealHookForInstall = (hookFile: string, stdin: string): { status: number | null } =>
     runRealHook(process.execPath, hookFile, stdin);
 
-  /** Sobe o servidor preparado num HOME/XDG_DATA_HOME descartáveis e conta as tools anunciadas (uso real, B2(a)). */
+  /** Sobe o servidor preparado num HOME/XDG_DATA_HOME descartáveis e conta as tools anunciadas (uso real). */
   async function countRealTools(serverFile: string): Promise<number> {
     const disposableHome = createTempDir('verify');
     try {
@@ -1166,7 +1166,7 @@ describe('installArtifact', () => {
     });
   }
 
-  it('should install under <HOME>/.local/lib/hexlog/<version>/ with the 2 bundles and manifest.json using a real Client (B2(a))', async () => {
+  it('should install under <HOME>/.local/lib/hexlog/<version>/ with the 2 bundles and manifest.json using a real Client', async () => {
     const home = createTempDir('install-a');
     try {
       const result = await installArtifact({
@@ -1201,7 +1201,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should decide by the installed bytes on a second run without changes, leaving settings and mtime untouched (B2(c))', async () => {
+  it('should decide by the installed bytes on a second run without changes, leaving settings and mtime untouched', async () => {
     const home = createTempDir('install-c');
     try {
       const args = {
@@ -1239,7 +1239,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should create a new version directory and keep the old one when the version changes (B2(d))', async () => {
+  it('should create a new version directory and keep the old one when the version changes', async () => {
     const home = createTempDir('install-d');
     try {
       const argsFor = (version: string) => ({
@@ -1264,7 +1264,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should swap atomically and warn when the same version is reinstalled with different bundles (B2(e))', async () => {
+  it('should swap atomically and warn when the same version is reinstalled with different bundles', async () => {
     const home = createTempDir('install-e');
     try {
       const argsFor = (bundles: Bundles) => ({
@@ -1302,7 +1302,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should abort without leaving the version directory when the prepared hook does not deny (B2(f))', async () => {
+  it('should abort without leaving the version directory when the prepared hook does not deny', async () => {
     const home = createTempDir('install-f');
     try {
       const baseArgs = {
@@ -1328,7 +1328,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should abort without leaving the version directory when the server bundle has a dynamic require (B2(f))', async () => {
+  it('should abort without leaving the version directory when the server bundle has a dynamic require', async () => {
     const home = createTempDir('install-f');
     try {
       const baseArgs = {
@@ -1357,7 +1357,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should abort without leaving the version directory when the prepared server does not list every tool (B2(f))', async () => {
+  it('should abort without leaving the version directory when the prepared server does not list every tool', async () => {
     const home = createTempDir('install-f');
     try {
       const baseArgs = {
@@ -1382,7 +1382,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should leave the installed version untouched when a later install fails the verification (B2(f))', async () => {
+  it('should leave the installed version untouched when a later install fails the verification', async () => {
     const home = createTempDir('install-f');
     try {
       const baseArgs = {
@@ -1420,7 +1420,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should repair an installed artifact changed from outside on the next run (B2(g))', async () => {
+  it('should repair an installed artifact changed from outside on the next run', async () => {
     const home = createTempDir('install-g');
     try {
       const args = {
@@ -1452,7 +1452,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should converge when concurrent installers run the same build (B2(h))', async () => {
+  it('should converge when concurrent installers run the same build', async () => {
     const sameHome = createTempDir('concurrency-same');
     try {
       const [r1, r2] = await Promise.all([
@@ -1474,7 +1474,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should let only one win when concurrent installers run different builds (B2(h))', async () => {
+  it('should let only one win when concurrent installers run different builds', async () => {
     const differentHome = createTempDir('concurrency-different');
     try {
       const [r1, r2] = await Promise.all([
@@ -1505,7 +1505,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should treat ENOENT on the first renameSync as concurrency, leaving no mixed directory on a concurrent reinstall (B2(h2))', async () => {
+  it('should treat ENOENT on the first renameSync as concurrency, leaving no mixed directory on a concurrent reinstall', async () => {
     const home = createTempDir('concurrency-reinstall');
     try {
       // versão já instalada antes da corrida: o primeiro renameSync de cada
@@ -1544,7 +1544,7 @@ describe('installArtifact', () => {
     }
   }, 20_000);
 
-  it('should not share the backup directory when concurrent reinstalls run in the same millisecond (B2(h3))', async () => {
+  it('should not share the backup directory when concurrent reinstalls run in the same millisecond', async () => {
     const home = createTempDir('concurrency-same-ms');
     try {
       await installArtifact({
@@ -1596,7 +1596,7 @@ describe('writeSkillFolder', () => {
     return srcDir;
   }
 
-  it('should copy SKILL.md and references/ to <home>/.claude/skills/<name>/ (B2b)', () => {
+  it('should copy SKILL.md and references/ to <home>/.claude/skills/<name>/', () => {
     const home = createTempDir('skill-a');
     const srcDir = buildSrcDir('# hexlog skill\n', {
       path: 'references/guide.md',
@@ -1617,7 +1617,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should leave the file identical when installed twice in a row (B2b)', () => {
+  it('should leave the file identical when installed twice in a row', () => {
     const home = createTempDir('skill-b');
     const srcDir = buildSrcDir('# hexlog skill\n');
     try {
@@ -1633,7 +1633,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should overwrite a hand-edited file with the canonical one without creating a .bak (B2b)', () => {
+  it('should overwrite a hand-edited file with the canonical one without creating a .bak', () => {
     const home = createTempDir('skill-c');
     const srcDir = buildSrcDir('# hexlog skill\n');
     try {
@@ -1653,7 +1653,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should remove an orphaned references/ file when reinstalling from a srcDir without it (U1, B2b)', () => {
+  it('should remove an orphaned references/ file when reinstalling from a srcDir without it', () => {
     const home = createTempDir('skill-d');
     const srcDirV1 = buildSrcDir('# hexlog skill v1\n', {
       path: 'references/old-guide.md',
@@ -1683,7 +1683,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should keep the previous dstDir content intact when srcDir does not exist and cpSync fails (N2, B2b)', () => {
+  it('should keep the previous dstDir content intact when srcDir does not exist and cpSync fails', () => {
     const home = createTempDir('skill-e');
     const srcDir = buildSrcDir('# hexlog skill\n');
     const missingSrcDir = path.join(os.tmpdir(), 'hexlog-skill-src-does-not-exist');
@@ -1700,7 +1700,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should keep the previous dstDir content when the 2nd renameSync fails mid-swap (N1, B2b)', () => {
+  it('should keep the previous dstDir content when the 2nd renameSync fails mid-swap', () => {
     const home = createTempDir('skill-g');
     const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
     const srcDirV2 = buildSrcDir('# hexlog skill v2\n');
@@ -1727,7 +1727,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should sweep the legacy skills/<name>.tmp-<pid> and .old-<pid> leftovers without touching other folders (B2b)', () => {
+  it('should sweep the legacy skills/<name>.tmp-<pid> and .old-<pid> leftovers without touching other folders', () => {
     const home = createTempDir('skill-legacy');
     const srcDir = buildSrcDir('# hexlog skill\n');
     try {
@@ -1882,7 +1882,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should leave no temporary in skills/ or .claude/ and keep the previous skill when the 2nd renameSync fails (B2b)', () => {
+  it('should leave no temporary in skills/ or .claude/ and keep the previous skill when the 2nd renameSync fails', () => {
     const home = createTempDir('skill-h');
     const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
     const srcDirV2 = buildSrcDir('# hexlog skill v2\n');
@@ -1911,7 +1911,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should keep the temporaries beside the target and avoid EXDEV when skills/ is a link to another filesystem (B2b)', () => {
+  it('should keep the temporaries beside the target and avoid EXDEV when skills/ is a link to another filesystem', () => {
     const home = createTempDir('skill-link');
     const elsewhere = createTempDir('skill-link-target');
     const srcDir = buildSrcDir('# hexlog skill\n');
@@ -1950,7 +1950,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should fall back to <home>/.claude for the temporaries when the parent of the link target is not writable (B2b)', () => {
+  it('should fall back to <home>/.claude for the temporaries when the parent of the link target is not writable', () => {
     const home = createTempDir('skill-link-ro');
     const elsewhere = createTempDir('skill-link-ro-target');
     const srcDir = buildSrcDir('# hexlog skill\n');
@@ -1993,7 +1993,7 @@ describe('writeSkillFolder', () => {
     }
   });
 
-  it('should reject a name with "/", "..", "." or empty before touching the filesystem (B2b)', () => {
+  it('should reject a name with "/", "..", "." or empty before touching the filesystem', () => {
     const home = createTempDir('skill-f');
     const srcDir = buildSrcDir('# hexlog skill\n');
     try {
@@ -2040,7 +2040,7 @@ function installBaseline(): { home: string; D: string; version: string } {
   const installation = runInstaller(home, D, []);
   if (installation.status !== 0) {
     throw new Error(
-      `real baseline installation (B3) failed: ${installation.stderr}\n${installation.stdout}`,
+      `real baseline installation failed: ${installation.stderr}\n${installation.stdout}`,
     );
   }
   return { home, D, version };
@@ -2059,7 +2059,7 @@ describe('verifyInstallation', () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it('should warn artifact-outdated and keep the exit when the current build differs from the manifest and the installed bytes are intact (B3)', () => {
+  it('should warn artifact-outdated and keep the exit when the current build differs from the manifest and the installed bytes are intact', () => {
     // Chamada direta (sem subprocesso): `runRealHook` herda `process.env` do
     // processo de teste, então o hook precisa enxergar o mesmo HOME temporário
     // usado pra montar `expected` — mesmo motivo do describe de `verifyGuard`
@@ -2136,7 +2136,7 @@ describe('scripts/install.ts', () => {
 
   const packagesOf = (D: string): string[] => fs.readdirSync(path.join(D, 'archive')).sort();
 
-  it('should abort before writing settings.json when the skill swap fails (B3a)', () => {
+  it('should abort before writing settings.json when the skill swap fails', () => {
     const home = createTempDir('b3a');
     const D = path.join(home, '.local', 'share', 'hexlog');
     const settingsPath = path.join(home, '.claude', 'settings.json');
@@ -2156,7 +2156,7 @@ describe('scripts/install.ts', () => {
     }
   }, 60_000);
 
-  it('should exit 1 with the message on stderr and write nothing for an unknown argument (B3)', () => {
+  it('should exit 1 with the message on stderr and write nothing for an unknown argument', () => {
     const disposableHome = createTempDir('b3-unknown-arg');
     try {
       const result = runInstaller(disposableHome, path.join(disposableHome, 'data', 'hexlog'), [
@@ -2189,7 +2189,7 @@ describe('scripts/install.ts', () => {
       return { status, stdout };
     }
 
-    it('should exit 0 without artifact-modified or artifact-outdated on a complete installation (B3)', () => {
+    it('should exit 0 without artifact-modified or artifact-outdated on a complete installation', () => {
       const { status, stdout } = runCheck();
 
       expect(status).toBe(0);
@@ -2197,7 +2197,7 @@ describe('scripts/install.ts', () => {
       expect(stdout).not.toContain('artifact-outdated');
     }, 15_000);
 
-    it('should report hook-file and exit 1 when the version directory is removed (B3)', () => {
+    it('should report hook-file and exit 1 when the version directory is removed', () => {
       const versionDir = versionDirOf(home, version);
       const backup = `${versionDir}.backup-test`;
       fs.renameSync(versionDir, backup);
@@ -2211,7 +2211,7 @@ describe('scripts/install.ts', () => {
       }
     }, 15_000);
 
-    it('should report skill-file:<name> and exit 1 when a skill directory is removed (B3)', () => {
+    it('should report skill-file:<name> and exit 1 when a skill directory is removed', () => {
       const name = at(
         fs
           .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
@@ -2232,7 +2232,7 @@ describe('scripts/install.ts', () => {
       }
     }, 15_000);
 
-    it('should give the same result when run from another cwd (B3)', () => {
+    it('should give the same result when run from another cwd', () => {
       const fromRepo = runCheck();
 
       const fromOtherCwd = runCheck({ cwd: os.tmpdir() });
@@ -2241,7 +2241,7 @@ describe('scripts/install.ts', () => {
       expect(fromOtherCwd.stdout).toBe(fromRepo.stdout);
     }, 15_000);
 
-    it('should still verify without aborting raw when <D> is unreadable with ENOTDIR (B3)', () => {
+    it('should still verify without aborting raw when <D> is unreadable with ENOTDIR', () => {
       const blocker = path.join(home, 'not-a-dir');
       fs.writeFileSync(blocker, '');
 
@@ -2253,7 +2253,7 @@ describe('scripts/install.ts', () => {
   });
 
   describe('with 0.x data', () => {
-    it('should exit 2, list what it would archive and leave <D> intact without a flag (F6)', () => {
+    it('should exit 2, list what it would archive and leave <D> intact without a flag', () => {
       const { home, D } = createInstallHome('f6-lista');
       fs.cpSync(legacyFixture, D, { recursive: true });
       const before = snapshotTree(D);
@@ -2268,7 +2268,7 @@ describe('scripts/install.ts', () => {
       expect(fs.readdirSync(home)).toEqual(['.local']);
     }, 30_000);
 
-    it('should exit 1 without installing or deleting when a 0.x lock is held by a live process with --archive-0x (F6)', () => {
+    it('should exit 1 without installing or deleting when a 0.x lock is held by a live process with --archive-0x', () => {
       const { home, D } = createInstallHome('f6-archive-lock');
       fs.cpSync(legacyFixture, D, { recursive: true });
       const lockDir = path.join(D, 'alpha', 'main', 'events.jsonl.lock');
@@ -2285,7 +2285,7 @@ describe('scripts/install.ts', () => {
       expect(fs.readdirSync(home)).toEqual(['.local']);
     }, 30_000);
 
-    it('should only verify and write nothing with --check --archive-0x (D7, F6)', () => {
+    it('should only verify and write nothing with --check --archive-0x', () => {
       const { home, D } = createInstallHome('f6-archive-check');
       fs.cpSync(legacyFixture, D, { recursive: true });
       const before = snapshotTree(home);
@@ -2330,7 +2330,7 @@ describe('scripts/install.ts', () => {
       first = runInstaller(home, D, ['--archive-0x']);
     }, 60_000);
 
-    it('should archive the 0.x data into <D>/archive and then install 1.0 (F6)', () => {
+    it('should archive the 0.x data into <D>/archive and then install 1.0', () => {
       expect(first.status).toBe(0);
       expect(first.stdout).toMatch(/archived \d+ file\(s\) of 0\.x data into .*hexlog-0x-.*\.tar/);
       expect(first.stdout).toContain(`hexlog ${version}: `);
@@ -2339,7 +2339,7 @@ describe('scripts/install.ts', () => {
       expect(fs.existsSync(path.join(versionDirOf(home, version), 'server.mjs'))).toBe(true);
     });
 
-    it('should print one removed deny rule line per rule of the old <D> and keep the stray one (F6)', () => {
+    it('should print one removed deny rule line per rule of the old <D> and keep the stray one', () => {
       const printed = first.stdout
         .split('\n')
         .filter((line) => line.includes('removed deny rule:'));
@@ -2351,7 +2351,7 @@ describe('scripts/install.ts', () => {
       for (const rule of oldDenyRules) expect(deny).not.toContain(rule);
     });
 
-    it('should not archive again and should reinstall without error on a second run with --archive-0x (F6)', () => {
+    it('should not archive again and should reinstall without error on a second run with --archive-0x', () => {
       const packagesBefore = packagesOf(D);
 
       const second = runInstaller(home, D, ['--archive-0x']);

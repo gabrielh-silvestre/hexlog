@@ -113,7 +113,7 @@ const create = (service: ReturnType<typeof setup>['service'], process = 'run-1')
 
 describe('createProcess', () => {
   describe('when the process is new', () => {
-    it('should pin the current version of each type, relation and gate, with the JCS hashes of each block (D-18)', () => {
+    it('should pin the current version of each type, relation and gate, with the JCS hashes of each block', () => {
       const { service, definitions, processes } = setup();
       definitions.add('types', 'note', '1.0', NOTE_1_0);
       definitions.add('types', 'note', '1.1', NOTE_1_1);
@@ -149,7 +149,7 @@ describe('createProcess', () => {
       });
     });
 
-    it('should read only the current version of each name, not the earlier ones (D-18)', () => {
+    it('should read only the current version of each name, not the earlier ones', () => {
       const { service, definitions } = setup();
       definitions.add('types', 'note', '1.0', NOTE_1_0);
       definitions.add('types', 'note', '1.1', NOTE_1_1);
@@ -164,7 +164,7 @@ describe('createProcess', () => {
       ['relations', 'based-on', SUPPORTS],
       ['gates', 'ready', GATE],
     ])(
-      'should create the process in a project with only %s registered (D-18)',
+      'should create the process in a project with only %s registered',
       (kind, name, definition) => {
         const { service, definitions } = setup();
         definitions.add(kind, name, '1.0', definition);
@@ -173,7 +173,7 @@ describe('createProcess', () => {
       },
     );
 
-    it('should keep out of the manifest a name with no version, a folder left over from a failure (D-18)', () => {
+    it('should keep out of the manifest a name with no version, a folder left over from a failure', () => {
       const { service, definitions, processes } = setup();
       definitions.add('types', 'note', '1.0', NOTE_1_0);
       definitions.addEmptyName('types', 'orphan');

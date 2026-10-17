@@ -164,7 +164,7 @@ describe('fingerprint', () => {
     expect(fingerprint(items)).toBe(sha256hex(canonicalize(items) ?? ''));
   });
 
-  it('should match the fixed vector with the whole item, including alias and relations (D-06)', () => {
+  it('should match the fixed vector with the whole item, including alias and relations', () => {
     const full = [
       {
         type: 'note',
@@ -303,13 +303,13 @@ describe('isValidLink', () => {
     });
   });
 
-  it('should accept relations at the ceiling (N8)', () => {
+  it('should accept relations at the ceiling', () => {
     expect(isValidLink(link({ relations: relations(RELATIONS_MAX) }), expected)).toHaveProperty(
       'link',
     );
   });
 
-  it('should reject one relation over the ceiling (N8)', () => {
+  it('should reject one relation over the ceiling', () => {
     expect(isValidLink(link({ relations: relations(RELATIONS_MAX + 1) }), expected)).toEqual({
       reasons: ['invalid-line'],
     });
@@ -321,7 +321,7 @@ describe('Batch', () => {
   const aliases = (count: number) =>
     Object.fromEntries(Array.from({ length: count }, (_, i) => [`a${i}`, FIRST_ID]));
 
-  it('should accept a key at the ceiling (N8)', () => {
+  it('should accept a key at the ceiling', () => {
     expect(BATCH_KEY_MAX).toBe(200);
 
     expect(Batch.safeParse({ ...fingerprintOnly, key: 'k'.repeat(BATCH_KEY_MAX) }).success).toBe(
@@ -329,13 +329,13 @@ describe('Batch', () => {
     );
   });
 
-  it('should reject a key one character over the ceiling (N8)', () => {
+  it('should reject a key one character over the ceiling', () => {
     expect(
       Batch.safeParse({ ...fingerprintOnly, key: 'k'.repeat(BATCH_KEY_MAX + 1) }).success,
     ).toBe(false);
   });
 
-  it('should accept aliases at the ceiling (N8)', () => {
+  it('should accept aliases at the ceiling', () => {
     expect(BATCH_ALIASES_MAX).toBe(50);
 
     expect(
@@ -343,7 +343,7 @@ describe('Batch', () => {
     ).toBe(true);
   });
 
-  it('should reject one alias entry over the ceiling (N8)', () => {
+  it('should reject one alias entry over the ceiling', () => {
     expect(
       Batch.safeParse({ ...fingerprintOnly, aliases: aliases(BATCH_ALIASES_MAX + 1) }).success,
     ).toBe(false);

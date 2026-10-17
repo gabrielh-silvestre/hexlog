@@ -334,7 +334,7 @@ describe('execute', () => {
         client,
       }));
 
-    it('should take the client from clientInfo.name of the envelope (D-21)', async () => {
+    it('should take the client from clientInfo.name of the envelope', async () => {
       const ctx = envelopeOf({ name: 'claude-code', version: '2' });
 
       const result = await clientOf(ctx);

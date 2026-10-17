@@ -320,7 +320,7 @@ describe('QueryService.queryRecords', () => {
     },
   );
 
-  it('should not see the dead support from another process in process scope (D-09)', async () => {
+  it('should not see the dead support from another process in process scope', async () => {
     const { createLegacyProcess, registerOne, query } = querySetup();
     createLegacyProcess('run-1');
     createLegacyProcess('run-2');
@@ -333,7 +333,7 @@ describe('QueryService.queryRecords', () => {
     expect(at(own.records, 0)).not.toHaveProperty('needsReview');
   });
 
-  it('should see the dead support from another process in project scope (D-09)', async () => {
+  it('should see the dead support from another process in project scope', async () => {
     const { createLegacyProcess, registerOne, query } = querySetup();
     createLegacyProcess('run-1');
     createLegacyProcess('run-2');

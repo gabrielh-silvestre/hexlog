@@ -36,7 +36,7 @@ async function scenario() {
 
 describe('QueryService.queryRecords', () => {
   describe('with the project scope', () => {
-    it('should order by instant, process name and seq, with the superseded ones where they were written (SL8)', async () => {
+    it('should order by instant, process name and seq, with the superseded ones where they were written', async () => {
       const { query, b1, a1, a2, b2, sub, p, q } = await scenario();
 
       const page = query({ scope: 'project', targetPrefix: 'run.step', includeNonCurrent: true });
@@ -44,7 +44,7 @@ describe('QueryService.queryRecords', () => {
       expect(idsOf(page)).toEqual([b1, a1, a2, b2, sub, p, q]);
     });
 
-    it('should return only the records that 0.x does not mark with supersededBy without includeNonCurrent (SL8)', async () => {
+    it('should return only the records that 0.x does not mark with supersededBy without includeNonCurrent', async () => {
       const { query, a2, b2, sub, p, q } = await scenario();
 
       const page = query({ scope: 'project', targetPrefix: 'run.step' });
@@ -52,7 +52,7 @@ describe('QueryService.queryRecords', () => {
       expect(idsOf(page)).toEqual([a2, b2, sub, p, q]);
     });
 
-    it('should reproduce supersedes and supersededBy of 0.x as relations, across different processes (SL8)', async () => {
+    it('should reproduce supersedes and supersededBy of 0.x as relations, across different processes', async () => {
       const { query, b1, a1, a2, b2 } = await scenario();
 
       const page = query({

@@ -128,7 +128,7 @@ describe('scripts/insights.ts', () => {
       expect(result.code).toBe(0);
     });
 
-    it('should show no key signals for a process without batches (SE8)', () => {
+    it('should show no key signals for a process without batches', () => {
       expect(result.out).toContain('- key signals: no batches');
     });
   });
@@ -199,30 +199,30 @@ describe('scripts/insights.ts', () => {
       result = runInsights(xdgHome, 'alpha/run-1');
     }, 15_000);
 
-    it('should point at a possible duplicate without a key, with the original record (SE8)', () => {
+    it('should point at a possible duplicate without a key, with the original record', () => {
       expect(result.out).toContain('  - possible duplicates without key: 1');
       expect(result.out).toContain('    - seq 2 repeats seq 1 (note)');
     });
 
-    it('should point only at a key in excess whose fingerprint nobody repeats (SE8)', () => {
+    it('should point only at a key in excess whose fingerprint nobody repeats', () => {
       expect(result.out).toContain('  - keys in excess (proxy): 1');
       expect(result.out).toContain('    - seq 3 (task)');
       expect(result.out).not.toContain('seq 0 (note)');
     });
 
-    it('should show the percentage of batches with a key per type (SE8)', () => {
+    it('should show the percentage of batches with a key per type', () => {
       expect(result.out).toContain('    - note: 2/4 batches with key (50.0%)');
       expect(result.out).toContain('    - task: 1/1 batches with key (100.0%)');
     });
   });
 
-  it('should not count a batch of 2 records with a key and a unique fingerprint as a key in excess (G4, SE8)', () => {
+  it('should not count a batch of 2 records with a key and a unique fingerprint as a key in excess', () => {
     const { out } = runInsights(xdgHome, 'alpha/run-3');
 
     expect(out).toContain('  - keys in excess (proxy): 0');
   });
 
-  it('should read the corpus written straight to disk and count the batches with a key per type (SE8)', () => {
+  it('should read the corpus written straight to disk and count the batches with a key per type', () => {
     const { xdg, dataDir } = newDataHome();
     writeRecordsCorpus(dataDir, { project: PROJECT, processes: ['proc1'], recordsPerProcess: 6 });
 
@@ -234,7 +234,7 @@ describe('scripts/insights.ts', () => {
     expect(out).toContain('    - decision: 1/1 batches with key (100.0%)');
   });
 
-  it('should detect tampered log content, reporting BROKEN and exiting 2 (SL1)', () => {
+  it('should detect tampered log content, reporting BROKEN and exiting 2', () => {
     const xdg = copyOf(xdgHome);
     const log = processPaths(path.join(xdg, 'hexlog'), { project: PROJECT, process: 'run-1' }).log;
     fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"text":"dup"', '"text":"dux"'));
@@ -245,7 +245,7 @@ describe('scripts/insights.ts', () => {
     expect(code).toBe(2);
   });
 
-  it('should report no valid records and an unavailable timeline, not an empty one, when the first link is broken (SL1)', async () => {
+  it('should report no valid records and an unavailable timeline, not an empty one, when the first link is broken', async () => {
     const { xdg, dataDir } = newDataHome();
     const { services } = compose({
       dataDir,
@@ -272,7 +272,7 @@ describe('scripts/insights.ts', () => {
     expect(code).toBe(2);
   });
 
-  it('should report attachments BROKEN and exit 2 for a tampered attachment blob (SL1)', () => {
+  it('should report attachments BROKEN and exit 2 for a tampered attachment blob', () => {
     const xdg = copyOf(xdgHome);
     fs.writeFileSync(blobFile(path.join(xdg, 'hexlog'), PROJECT, attachmentHash), 'adulterado');
 
@@ -282,7 +282,7 @@ describe('scripts/insights.ts', () => {
     expect(code).toBe(2);
   });
 
-  it('should print a line with the code and exit 1 when the log of a process cannot be read, without dropping the others (SL1)', () => {
+  it('should print a line with the code and exit 1 when the log of a process cannot be read, without dropping the others', () => {
     const xdg = copyOf(xdgHome);
     const { log } = processPaths(path.join(xdg, 'hexlog'), { project: PROJECT, process: 'run-3' });
     fs.rmSync(log);
@@ -295,7 +295,7 @@ describe('scripts/insights.ts', () => {
     expect(code).toBe(1);
   });
 
-  it('should exit with the larger code when a read failure (1) is mixed with a broken chain (2) (SL1)', () => {
+  it('should exit with the larger code when a read failure (1) is mixed with a broken chain (2)', () => {
     const xdg = copyOf(xdgHome);
     const dir = path.join(xdg, 'hexlog');
     const unreadable = processPaths(dir, { project: PROJECT, process: 'run-3' }).log;
@@ -314,7 +314,7 @@ describe('scripts/insights.ts', () => {
     expect(code).toBe(2);
   });
 
-  it('should print the full report with the process marked PROCESS_CORRUPTED and exit 2 for a truncated process.json (SL1)', () => {
+  it('should print the full report with the process marked PROCESS_CORRUPTED and exit 2 for a truncated process.json', () => {
     const xdg = copyOf(xdgHome);
     const { manifest } = processPaths(path.join(xdg, 'hexlog'), {
       project: PROJECT,
@@ -342,7 +342,7 @@ describe('scripts/insights.ts', () => {
     expect(code).toBe(1);
   });
 
-  it('should exit 2 with the LEGACY_DATA message over a <D> with 0.x data (P11)', () => {
+  it('should exit 2 with the LEGACY_DATA message over a <D> with 0.x data', () => {
     const xdg = createTempDir('xdg');
     fs.cpSync(legacyFixture, path.join(xdg, 'hexlog'), { recursive: true });
 

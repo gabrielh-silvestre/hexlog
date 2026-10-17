@@ -271,7 +271,7 @@ describe('createSearchIndex', () => {
         return typeof text === 'string' && new RegExp(`\\b${word}\\b`).test(text);
       });
 
-    it('should find every record of "authentication" with one typo, a recall of 1.0 (N9)', () => {
+    it('should find every record of "authentication" with one typo, a recall of 1.0', () => {
       const expected = idsOf(withWord('authentication'));
 
       const found = search(corpus, 'authentcation');
@@ -280,7 +280,7 @@ describe('createSearchIndex', () => {
       expect(found).toEqual(expect.arrayContaining(expected));
     });
 
-    it('should return only the records that have "authentication", a precision of 1.0 (N9)', () => {
+    it('should return only the records that have "authentication", a precision of 1.0', () => {
       const expected = idsOf(withWord('authentication'));
 
       const found = search(corpus, 'authentication');
@@ -288,7 +288,7 @@ describe('createSearchIndex', () => {
       expect([...found].sort()).toEqual([...expected].sort());
     });
 
-    it('should return only the records with both words for "webhook retry" in the AND, a precision of 1.0 (N9)', () => {
+    it('should return only the records with both words for "webhook retry" in the AND, a precision of 1.0', () => {
       const retry = new Set(idsOf(withWord('retry')));
       const expected = idsOf(withWord('webhook')).filter((id) => retry.has(id));
 
@@ -298,11 +298,11 @@ describe('createSearchIndex', () => {
       expect([...found].sort()).toEqual([...expected].sort());
     });
 
-    it('should find nothing for a term that is not in the corpus (N9)', () => {
+    it('should find nothing for a term that is not in the corpus', () => {
       expect(search(corpus, 'zzqxwv')).toEqual([]);
     });
 
-    it('should return the same result from the cold index, the cached one and a fresh one (N9)', () => {
+    it('should return the same result from the cold index, the cached one and a fresh one', () => {
       const index = createSearchIndex();
 
       const calls = [

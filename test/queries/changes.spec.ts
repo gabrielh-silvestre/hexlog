@@ -19,7 +19,7 @@ describe('QueryService.queryRecords', () => {
   });
 
   describe('with changesSince', () => {
-    it('should describe the difference from the previous snapshot with entered and left, with the reason (SL7)', async () => {
+    it('should describe the difference from the previous snapshot with entered and left, with the reason', async () => {
       const { createProcess, register, registerOne, query } = querySetup();
       createProcess('run-1');
       const initial = await register('run-1', [note('a'), note('b'), note('c')], 1);
@@ -51,7 +51,7 @@ describe('QueryService.queryRecords', () => {
       });
     });
 
-    it('should give the same list as a fresh snapshot from the previous snapshot plus entered minus left, in the process scope (SL7)', async () => {
+    it('should give the same list as a fresh snapshot from the previous snapshot plus entered minus left, in the process scope', async () => {
       const { createProcess, register, registerOne, query } = querySetup();
       createProcess('run-1');
       const initial = await register('run-1', [note('a'), note('b'), note('c')], 1);
@@ -72,7 +72,7 @@ describe('QueryService.queryRecords', () => {
       expect(changes?.marker).toEqual(fresh.marker);
     });
 
-    it('should give the same list as a fresh snapshot from the previous snapshot plus entered minus left, in the project scope (SL7)', async () => {
+    it('should give the same list as a fresh snapshot from the previous snapshot plus entered minus left, in the project scope', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       createProcess('run-2');
@@ -99,7 +99,7 @@ describe('QueryService.queryRecords', () => {
       ]);
     });
 
-    it('should leave left empty with includeNonCurrent because nothing leaves the result (SL7)', async () => {
+    it('should leave left empty with includeNonCurrent because nothing leaves the result', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       const old = await registerOne('run-1', note('a'), 1);
@@ -115,7 +115,7 @@ describe('QueryService.queryRecords', () => {
       expect(page.changes).toMatchObject({ entered: [next], left: [] });
     });
 
-    it('should drop a record that matched only by the OR fallback with no-longer-matches when another starts matching on AND (SL7)', async () => {
+    it('should drop a record that matched only by the OR fallback with no-longer-matches when another starts matching on AND', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       const fallback = await registerOne('run-1', note('banana laranja'), 1);
@@ -131,7 +131,7 @@ describe('QueryService.queryRecords', () => {
       });
     });
 
-    it('should return the changes only on the first page (SL7)', async () => {
+    it('should return the changes only on the first page', async () => {
       const { createProcess, register, query } = querySetup();
       createProcess('run-1');
       const snapshot = query({ process: 'run-1' });
@@ -149,7 +149,7 @@ describe('QueryService.queryRecords', () => {
       expect(second.changes).toBeUndefined();
     });
 
-    it('should lock the changesSince of the query into the cursor (SL7)', async () => {
+    it('should lock the changesSince of the query into the cursor', async () => {
       const { createProcess, register, query } = querySetup();
       createProcess('run-1');
       const snapshot = query({ process: 'run-1' });
@@ -177,9 +177,9 @@ describe('QueryService.queryRecords', () => {
       return { read, counted, input };
     }
 
-    // Exceção estreita à SL2 (ADR 0008, decisão 3): o log é lido duas vezes só na 1ª página com
+    // Exceção estreita à regra de leitura única (ADR 0008, decisão 3): o log é lido duas vezes só na 1ª página com
     // `changesSince`, uma para o estado de agora e outra para o do marcador.
-    it('should read the log twice on the first page (SL7)', async () => {
+    it('should read the log twice on the first page', async () => {
       const { read, counted, input } = await countingService();
 
       counted.queryRecords(input);
@@ -187,7 +187,7 @@ describe('QueryService.queryRecords', () => {
       expect(read).toHaveBeenCalledTimes(2);
     });
 
-    it('should read the log once on the pages after the first (SL7)', async () => {
+    it('should read the log once on the pages after the first', async () => {
       const { read, counted, input } = await countingService();
       const first = counted.queryRecords(input);
       read.mockClear();
@@ -197,7 +197,7 @@ describe('QueryService.queryRecords', () => {
       expect(read).toHaveBeenCalledTimes(1);
     });
 
-    it('should refuse a marker without the entry of the read process with MARKER_NOT_FOUND at /changesSince in the process scope (SL7)', async () => {
+    it('should refuse a marker without the entry of the read process with MARKER_NOT_FOUND at /changesSince in the process scope', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       const head = await registerOne('run-1', note('a'), 1);
@@ -213,7 +213,7 @@ describe('QueryService.queryRecords', () => {
       }
     });
 
-    it('should refuse a marked id that does not exist with MARKER_NOT_FOUND at /changesSince in the project scope (SL7)', async () => {
+    it('should refuse a marked id that does not exist with MARKER_NOT_FOUND at /changesSince in the project scope', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       await registerOne('run-1', note('a'), 1);
@@ -226,7 +226,7 @@ describe('QueryService.queryRecords', () => {
       expect(error.details).toEqual([expect.objectContaining({ path: '/changesSince' })]);
     });
 
-    it('should name the process whose marked id does not exist in MARKER_NOT_FOUND in the project scope (SL7)', async () => {
+    it('should name the process whose marked id does not exist in MARKER_NOT_FOUND in the project scope', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       createProcess('run-2');
@@ -246,7 +246,7 @@ describe('QueryService.queryRecords', () => {
       ]);
     });
 
-    it('should count a process named constructor born after the marker as empty (SL7)', async () => {
+    it('should count a process named constructor born after the marker as empty', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       await registerOne('run-1', note('a'), 1);
@@ -259,7 +259,7 @@ describe('QueryService.queryRecords', () => {
       expect(page.changes?.entered).toEqual([born]);
     });
 
-    it('should count a process missing from the marker as empty in the project scope (SL7)', async () => {
+    it('should count a process missing from the marker as empty in the project scope', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       await registerOne('run-1', note('a'), 1);
@@ -272,7 +272,7 @@ describe('QueryService.queryRecords', () => {
       expect(page.changes?.entered).toEqual([born]);
     });
 
-    it('should refuse a marker for a process that does not exist with MARKER_NOT_FOUND in the project scope (SL7)', async () => {
+    it('should refuse a marker for a process that does not exist with MARKER_NOT_FOUND in the project scope', async () => {
       const { createProcess, registerOne, query } = querySetup();
       createProcess('run-1');
       const first = await registerOne('run-1', note('a'), 1);

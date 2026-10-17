@@ -85,31 +85,31 @@ describe('attach', () => {
   });
 
   describe('when more than one refusal applies', () => {
-    it('should let neither or both of text and path win over the path extension (D-15)', () => {
+    it('should let neither or both of text and path win over the path extension', () => {
       const { error } = refusalOf({ text: 'x', path: '.env' });
 
       expect(error.details).toMatchObject([{ path: '', code: 'bad-args' }]);
     });
 
-    it('should let a NUL in the path win over the extension (D-15)', () => {
+    it('should let a NUL in the path win over the extension', () => {
       const { error } = refusalOf({ path: 'a\0.json' });
 
       expect(error.details).toMatchObject([{ path: '/path', code: 'bad-args' }]);
     });
 
-    it('should let a segment that is too long win over the extension (D-15)', () => {
+    it('should let a segment that is too long win over the extension', () => {
       const { error } = refusalOf({ path: `${'a'.repeat(300)}.json` });
 
       expect(error.details).toMatchObject([{ path: '/path', code: 'bad-args' }]);
     });
 
-    it('should check the NUL before the long segment, with the same code and the NUL message (D-15)', () => {
+    it('should check the NUL before the long segment, with the same code and the NUL message', () => {
       const { error } = refusalOf({ path: `${'a'.repeat(300)}\0.md` });
 
       expect(error.message).toBe('path contains NUL');
     });
 
-    it('should report only the first refusal: a wrong extension on a path outside the cwd is bad-extension (D-15)', () => {
+    it('should report only the first refusal: a wrong extension on a path outside the cwd is bad-extension', () => {
       const { error } = refusalOf({ path: '../../etc/passwd' });
 
       expect(error.details).toMatchObject([{ path: '/path', code: 'bad-extension' }]);

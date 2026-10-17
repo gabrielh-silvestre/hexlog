@@ -19,7 +19,7 @@ function flowSetup(domain: Domain, { legacy = false } = {}) {
 }
 
 describe('test/fixtures/domains/*.ts', () => {
-  it('should export only data: types, relations and gates for each flow (D2)', () => {
+  it('should export only data: types, relations and gates for each flow', () => {
     expect(Object.keys(omc).sort()).toEqual(['gates', 'relations', 'types']);
     expect(Object.keys(rdsc).sort()).toEqual(['gates', 'relations', 'types']);
   });
@@ -58,19 +58,19 @@ async function planWithPendingDeviation() {
 }
 
 describe('QueryService.evaluateGate', () => {
-  it('should fail the OMC plan-ready gate for a plan with no approval (D2)', async () => {
+  it('should fail the OMC plan-ready gate for a plan with no approval', async () => {
     const { gate } = await registeredPlan();
 
     expect(gate('plan-ready').passed).toBe(false);
   });
 
-  it('should fail the OMC plan-ready gate for an approved plan with a pending deviation (D2)', async () => {
+  it('should fail the OMC plan-ready gate for an approved plan with a pending deviation', async () => {
     const { gate } = await planWithPendingDeviation();
 
     expect(gate('plan-ready').questions.map(({ passed }) => passed)).toEqual([true, false]);
   });
 
-  it('should pass the OMC plan-ready gate with a current approval and no pending deviation (D2)', async () => {
+  it('should pass the OMC plan-ready gate with a current approval and no pending deviation', async () => {
     const { registerOne, gate, query, plan, review, deviation } = await planWithPendingDeviation();
     await registerOne(
       'run-1',
@@ -112,7 +112,7 @@ async function verdictOnEvidence() {
 }
 
 describe('QueryService.queryRecords', () => {
-  it('should flag a verdict that cites superseded evidence as needing review, in the rdsc flow with a legacy process (D2)', async () => {
+  it('should flag a verdict that cites superseded evidence as needing review, in the rdsc flow with a legacy process', async () => {
     const { registerOne, query, old, verdict } = await verdictOnEvidence();
     await registerOne(
       'run-1',
@@ -131,7 +131,7 @@ describe('QueryService.queryRecords', () => {
     });
   });
 
-  it('should stop flagging a verdict once the new version cites the current evidence, in the rdsc flow with a legacy process (D2)', async () => {
+  it('should stop flagging a verdict once the new version cites the current evidence, in the rdsc flow with a legacy process', async () => {
     const { registerOne, gate, query, old, verdict } = await verdictOnEvidence();
 
     expect(gate('settled').passed).toBe(true);
@@ -168,7 +168,7 @@ describe('QueryService.queryRecords', () => {
 });
 
 describe('ProcessService.register', () => {
-  it('should refuse with TYPE_NOT_PINNED a type the flow did not define (D2)', async () => {
+  it('should refuse with TYPE_NOT_PINNED a type the flow did not define', async () => {
     const { registerOne } = flowSetup(rdsc);
 
     await expect(registerOne('run-1', note('x'))).rejects.toMatchObject({

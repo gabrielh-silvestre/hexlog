@@ -68,11 +68,11 @@ describe('classifyTypeChange', () => {
     required: ['title'],
   };
 
-  it('should classify an identical schema as unchanged (D-11)', () => {
+  it('should classify an identical schema as unchanged', () => {
     expect(classifyTypeChange(base, structuredClone(base))).toBe('unchanged');
   });
 
-  it('should classify a new optional property as compatible (D-11)', () => {
+  it('should classify a new optional property as compatible', () => {
     const next = {
       ...base,
       properties: { ...(base.properties as object), note: { type: 'string' } },
@@ -81,7 +81,7 @@ describe('classifyTypeChange', () => {
     expect(classifyTypeChange(base, next)).toBe('compatible');
   });
 
-  it('should classify a new enum value as compatible (D-11)', () => {
+  it('should classify a new enum value as compatible', () => {
     const next = {
       ...base,
       properties: {
@@ -93,7 +93,7 @@ describe('classifyTypeChange', () => {
     expect(classifyTypeChange(base, next)).toBe('compatible');
   });
 
-  it('should classify a new property that enters required as breaking (D-11)', () => {
+  it('should classify a new property that enters required as breaking', () => {
     const next = {
       ...base,
       properties: { ...(base.properties as object), note: { type: 'string' } },
@@ -103,17 +103,17 @@ describe('classifyTypeChange', () => {
     expect(classifyTypeChange(base, next)).toBe('breaking');
   });
 
-  it('should classify a removed required as breaking (D-11)', () => {
+  it('should classify a removed required as breaking', () => {
     expect(classifyTypeChange(base, { ...base, required: [] })).toBe('breaking');
   });
 
-  it('should classify a removed property as breaking (D-11)', () => {
+  it('should classify a removed property as breaking', () => {
     const next = { ...base, properties: { title: { type: 'string' } } };
 
     expect(classifyTypeChange(base, next)).toBe('breaking');
   });
 
-  it('should classify a removed enum value as breaking (D-11)', () => {
+  it('should classify a removed enum value as breaking', () => {
     const next = {
       ...base,
       properties: { title: { type: 'string' }, level: { type: 'string', enum: ['low'] } },
@@ -122,7 +122,7 @@ describe('classifyTypeChange', () => {
     expect(classifyTypeChange(base, next)).toBe('breaking');
   });
 
-  it('should classify a changed type as breaking (D-11)', () => {
+  it('should classify a changed type as breaking', () => {
     const next = {
       ...base,
       properties: { title: { type: 'number' }, level: { type: 'string', enum: ['low', 'high'] } },
@@ -131,7 +131,7 @@ describe('classifyTypeChange', () => {
     expect(classifyTypeChange(base, next)).toBe('breaking');
   });
 
-  it('should classify an added format as breaking (D-11)', () => {
+  it('should classify an added format as breaking', () => {
     const next = {
       ...base,
       properties: {
@@ -155,11 +155,11 @@ describe('classifyTypeChange', () => {
         },
       },
     ],
-  ])('should classify a new keyword %s as breaking (D-11)', (_where, next) => {
+  ])('should classify a new keyword %s as breaking', (_where, next) => {
     expect(classifyTypeChange(base, next)).toBe('breaking');
   });
 
-  it('should not let a property named properties or enum open a keyword exception (D-11)', () => {
+  it('should not let a property named properties or enum open a keyword exception', () => {
     const before: RecordType = { properties: { properties: { type: 'string' } } };
     const after = { properties: { properties: { type: 'string', minLength: 1 } } };
 
@@ -168,13 +168,13 @@ describe('classifyTypeChange', () => {
 
   // Em `not` e `if` o sentido se inverte: mudança que alarga ali estreita o schema como um todo.
   describe('with positions that narrow the schema', () => {
-    it('should classify a widened enum inside not as breaking (D-11, N2)', () => {
+    it('should classify a widened enum inside not as breaking', () => {
       const before: RecordType = { not: { enum: [1] } };
 
       expect(classifyTypeChange(before, { not: { enum: [1, 2] } })).toBe('breaking');
     });
 
-    it('should classify a new property in if.properties, with else, as breaking (D-11, N2)', () => {
+    it('should classify a new property in if.properties, with else, as breaking', () => {
       const before: RecordType = {
         if: { properties: { a: { const: 1 } } },
         then: { required: ['t'] },
@@ -185,7 +185,7 @@ describe('classifyTypeChange', () => {
       expect(classifyTypeChange(before, after)).toBe('breaking');
     });
 
-    it('should classify a widened enum inside if as breaking (D-11, N2)', () => {
+    it('should classify a widened enum inside if as breaking', () => {
       const before: RecordType = {
         if: { properties: { a: { enum: [1] } } },
         then: { required: ['t'] },
@@ -196,7 +196,7 @@ describe('classifyTypeChange', () => {
     });
 
     it.each(['anyOf', 'allOf', 'oneOf'])(
-      'should classify a widened enum inside %s as breaking (D-11, N2)',
+      'should classify a widened enum inside %s as breaking',
       (keyword) => {
         const before: RecordType = { [keyword]: [{ enum: [1] }] };
 
@@ -211,7 +211,7 @@ describe('classifyTypeChange', () => {
     };
 
     // Provado com ajv: nova propriedade em then ou em else recusa o mesmo dado novo que a raiz
-    // recusaria, e a D-11 já aceita a raiz. Por isso o flag `additive` só cai em if, not e nos arrays.
+    // recusaria, e a raiz já é aceita. Por isso o flag `additive` só cai em if, not e nos arrays.
     it.each([
       [
         'then',
@@ -221,14 +221,11 @@ describe('classifyTypeChange', () => {
         'else',
         { ...conditional, else: { properties: { e: { type: 'string' }, n: { type: 'string' } } } },
       ],
-    ])(
-      'should classify a new property in %s as compatible, as at the root (D-11, N2)',
-      (_branch, after) => {
-        expect(classifyTypeChange(conditional, after)).toBe('compatible');
-      },
-    );
+    ])('should classify a new property in %s as compatible, as at the root', (_branch, after) => {
+      expect(classifyTypeChange(conditional, after)).toBe('compatible');
+    });
 
-    it('should classify a widened enum in properties inside then as compatible (D-11, N2)', () => {
+    it('should classify a widened enum in properties inside then as compatible', () => {
       const before: RecordType = {
         if: { required: ['a'] },
         then: { properties: { l: { enum: ['x'] } } },
@@ -238,7 +235,7 @@ describe('classifyTypeChange', () => {
       expect(classifyTypeChange(before, after)).toBe('compatible');
     });
 
-    it('should classify the omc fixture plan with a new property in then as compatible (D-11, N2)', () => {
+    it('should classify the omc fixture plan with a new property in then as compatible', () => {
       const plan: RecordType = omc.types.plan;
       const next = {
         ...plan,
@@ -256,39 +253,39 @@ describe('classifyTypeChange', () => {
 describe('classifyRelationChange', () => {
   const base: RelationName = { name: 'approves', kind: 'supports', from: ['review'], to: ['doc'] };
 
-  it('should classify an identical definition as unchanged (D-11)', () => {
+  it('should classify an identical definition as unchanged', () => {
     expect(classifyRelationChange(base, { ...base })).toBe('unchanged');
   });
 
-  it('should classify widening from or to as compatible (D-11)', () => {
+  it('should classify widening from or to as compatible', () => {
     expect(classifyRelationChange(base, { ...base, from: ['review', 'audit'] })).toBe('compatible');
     expect(classifyRelationChange(base, { ...base, to: ['doc', 'spec'] })).toBe('compatible');
   });
 
-  it('should classify removing the list (any type) as widening and compatible (D-11)', () => {
+  it('should classify removing the list (any type) as widening and compatible', () => {
     expect(classifyRelationChange(base, { name: 'approves', kind: 'supports', to: ['doc'] })).toBe(
       'compatible',
     );
   });
 
-  it('should classify a changed kind as breaking (D-11)', () => {
+  it('should classify a changed kind as breaking', () => {
     expect(classifyRelationChange(base, { ...base, kind: 'answers' })).toBe('breaking');
   });
 
-  it('should classify narrowing from or to as breaking (D-11)', () => {
+  it('should classify narrowing from or to as breaking', () => {
     const wide: RelationName = { ...base, from: ['review', 'audit'], to: ['doc', 'spec'] };
 
     expect(classifyRelationChange(wide, { ...wide, from: ['review'] })).toBe('breaking');
     expect(classifyRelationChange(wide, { ...wide, to: ['doc'] })).toBe('breaking');
   });
 
-  it('should classify going from no list to a list as breaking (D-11)', () => {
+  it('should classify going from no list to a list as breaking', () => {
     const open: RelationName = { name: 'approves', kind: 'supports' };
 
     expect(classifyRelationChange(open, base)).toBe('breaking');
   });
 
-  it('should classify widening one end and narrowing the other as breaking (D-11)', () => {
+  it('should classify widening one end and narrowing the other as breaking', () => {
     const next: RelationName = { ...base, from: ['review', 'audit'], to: ['spec'] };
 
     expect(classifyRelationChange(base, next)).toBe('breaking');
@@ -296,7 +293,7 @@ describe('classifyRelationChange', () => {
 });
 
 describe('attachmentFields', () => {
-  it('should find a string field and a list of strings marked with format attachment (D-16)', () => {
+  it('should find a string field and a list of strings marked with format attachment', () => {
     const schema: RecordType = {
       type: 'object',
       properties: {
@@ -310,7 +307,7 @@ describe('attachmentFields', () => {
     expect(attachmentFields(schema)).toEqual(['body', 'extras']);
   });
 
-  it('should ignore a list whose items lack the mark (D-16)', () => {
+  it('should ignore a list whose items lack the mark', () => {
     const schema: RecordType = {
       properties: { tags: { type: 'array', items: { type: 'string' } } },
     };
@@ -318,12 +315,12 @@ describe('attachmentFields', () => {
     expect(attachmentFields(schema)).toEqual([]);
   });
 
-  it('should find no attachment field in a schema without properties (D-16)', () => {
+  it('should find no attachment field in a schema without properties', () => {
     expect(attachmentFields({ type: 'object' })).toEqual([]);
     expect(attachmentFields({ properties: 'x' })).toEqual([]);
   });
 
-  it('should look only at the first level of properties (D-16)', () => {
+  it('should look only at the first level of properties', () => {
     const schema: RecordType = {
       properties: {
         nested: { type: 'object', properties: { body: { type: 'string', format: 'attachment' } } },
@@ -346,7 +343,7 @@ describe('RecordType', () => {
     expect(RecordType.safeParse('x').success).toBe(false);
   });
 
-  it('should accept a type only up to the canonical cap (N8)', () => {
+  it('should accept a type only up to the canonical cap', () => {
     const atCap = withCanonicalLength(RECORD_TYPE_MAX_CHARS);
 
     expect(RECORD_TYPE_MAX_CHARS).toBe(16_000);
@@ -373,7 +370,7 @@ describe('RelationName', () => {
     expect(RelationName.safeParse({ name: 'a', kind: 'supports', extra: 1 }).success).toBe(false);
   });
 
-  // Omitida a ponta aceita qualquer tipo; lista vazia nunca quer dizer "nenhum tipo" (N6).
+  // Omitida a ponta aceita qualquer tipo; lista vazia nunca quer dizer "nenhum tipo".
   it.each([
     ['an empty from', { from: [] }],
     ['an empty to', { to: [] }],
@@ -392,7 +389,7 @@ describe('RelationName', () => {
     expect(RelationName.safeParse({ name: 'a', kind: 'supports', to: ['x'] }).success).toBe(true);
   });
 
-  // Definição é imutável: sem teto, `from`/`to`/`where` gigantes incham o process.json de todo processo novo (N10).
+  // Definição é imutável: sem teto, `from`/`to`/`where` gigantes incham o process.json de todo processo novo.
   it('should refuse 100,000 names in from', () => {
     const from = Array.from({ length: 100_000 }, (_, i) => `t${i}`);
 
@@ -439,12 +436,12 @@ describe('Gate', () => {
     expect(Gate.safeParse({ name: 'ready' }).success).toBe(false);
   });
 
-  // Gate vazio nunca barra, e D-11 faz toda mudança de gate ser minor: a definição não o admite.
-  it('should refuse empty questions (N5)', () => {
+  // Gate vazio nunca barra, e toda mudança de gate é minor: a definição não o admite.
+  it('should refuse empty questions', () => {
     expect(Gate.safeParse({ name: 'ready', questions: [] }).success).toBe(false);
   });
 
-  it('should accept questions only up to the cap (N8)', () => {
+  it('should accept questions only up to the cap', () => {
     const questions = (count: number) => Array.from({ length: count }, () => question);
 
     expect(GATE_QUESTIONS_MAX).toBe(50);

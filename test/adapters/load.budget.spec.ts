@@ -9,7 +9,7 @@ const RUNS = 5;
 const BUDGET_MS = 500;
 
 describe('loadVerified', () => {
-  it('should load and verify 5,000 records within 500 ms (minimum of 5, after 1 warm-up) (TF6)', () => {
+  it('should load and verify 5,000 records within 500 ms (minimum of 5, after 1 warm-up)', () => {
     const dataDir = createTempDir('load-budget');
     const {
       refs: [ref],
@@ -31,7 +31,7 @@ describe('loadVerified', () => {
     });
 
     const loadMin = Math.min(...times);
-    process.stdout.write(`TF6 min load+verify (${SIZE} records): ${loadMin.toFixed(2)} ms\n`);
+    process.stdout.write(`min load+verify (${SIZE} records): ${loadMin.toFixed(2)} ms\n`);
 
     expect(loadMin).toBeLessThanOrEqual(BUDGET_MS);
   }, 60_000);

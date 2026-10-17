@@ -136,7 +136,7 @@ describe('scripts/export.ts', () => {
     expect(code).toBe(1);
   });
 
-  it('should detect a tampered chain and exit 2 without exporting anything (SL1)', () => {
+  it('should detect a tampered chain and exit 2 without exporting anything', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
     const { log } = processPaths(path.join(xdg, 'hexlog'), REF);
     fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"um"', '"trocado"'));

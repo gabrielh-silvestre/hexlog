@@ -10,7 +10,7 @@ const SIZE = 10_000;
 const ROUNDS = 5;
 // O teto é do corpus de ~1,2 KB por registro e vocabulário aberto, que custa ~0,2 ms de índice por
 // registro (medido em 2026-10-03: ~1,85 s para 10.000); o teto de 500 ms herdado do 0.x media
-// frases curtas. O SL4 da F4 (`queries/query.budget.spec.ts`: 750 ms com o índice em cache e 3.000 ms
+// frases curtas. O orçamento de `queries/query.budget.spec.ts` (750 ms com o índice em cache e 3.000 ms
 // frio, 5.000 registros) mede o caminho completo, não este.
 const MEDIAN_CEILING_MS = 4_000;
 const MAX_CEILING_MS = 7_000;
@@ -40,22 +40,22 @@ describe('createSearchIndex', () => {
     return elapsed;
   }
 
-  it(`should build the index and search within ${MEDIAN_CEILING_MS} ms without cache (median of ${ROUNDS}, ${SIZE} records in memory) (M13)`, () => {
+  it(`should build the index and search within ${MEDIAN_CEILING_MS} ms without cache (median of ${ROUNDS}, ${SIZE} records in memory)`, () => {
     const times = Array.from({ length: ROUNDS }, () => timeSearch(createSearchIndex()));
 
-    process.stdout.write(`M13 median index (build+query): ${median(times).toFixed(2)} ms\n`);
+    process.stdout.write(`median index (build+query): ${median(times).toFixed(2)} ms\n`);
 
     expect(median(times)).toBeLessThanOrEqual(MEDIAN_CEILING_MS);
     expect(Math.max(...times)).toBeLessThanOrEqual(MAX_CEILING_MS);
   }, 60_000);
 
-  it(`should repeat the search within ${WARM_MEDIAN_CEILING_MS} ms with the index cached (median of ${ROUNDS}, ${SIZE} records in memory) (M13)`, () => {
+  it(`should repeat the search within ${WARM_MEDIAN_CEILING_MS} ms with the index cached (median of ${ROUNDS}, ${SIZE} records in memory)`, () => {
     const index = createSearchIndex();
     timeSearch(index);
 
     const times = Array.from({ length: ROUNDS }, () => timeSearch(index));
 
-    process.stdout.write(`M13 median cached query: ${median(times).toFixed(2)} ms\n`);
+    process.stdout.write(`median cached query: ${median(times).toFixed(2)} ms\n`);
 
     expect(median(times)).toBeLessThanOrEqual(WARM_MEDIAN_CEILING_MS);
     expect(Math.max(...times)).toBeLessThanOrEqual(WARM_MAX_CEILING_MS);

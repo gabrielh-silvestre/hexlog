@@ -1,5 +1,5 @@
 // e2e por stdio contra o bundle real (`server.mjs`, entry `src/server.ts`), construído pelo mesmo
-// `scripts/build.ts#build` dos bundles de produção (P8): é o caminho que as sessões executam, e o
+// `scripts/build.ts#build` dos bundles de produção: é o caminho que as sessões executam, e o
 // `.ts` já é coberto em processo por `test/mcp/`.
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
@@ -50,7 +50,7 @@ async function connect(options: { xdg?: string; clientName?: string; noEnvelope?
   const transportErrors: Error[] = [];
   client.onerror = (error) => transportErrors.push(error);
   await client.connect(transport);
-  // O envelope vai por `_meta` em cada chamada: é de onde o servidor lê o `client` do autor (D-21).
+  // O envelope vai por `_meta` em cada chamada: é de onde o servidor lê o `client` do autor.
   const _meta = options.noEnvelope
     ? undefined
     : { [CLIENT_INFO_META_KEY]: { name: clientName, version: '0.0.0' } };
@@ -106,13 +106,13 @@ describe('dist/server.mjs over stdio', () => {
     fs.rmSync(bundleDir, { recursive: true, force: true });
   });
 
-  it('should not contain the "Dynamic require of" shim in the bundle (P8, TM1)', () => {
+  it('should not contain the "Dynamic require of" shim in the bundle', () => {
     expect(fs.readFileSync(path.join(bundleDir, 'server.mjs'), 'utf8')).not.toContain(
       'Dynamic require of',
     );
   });
 
-  it('should advertise TOOLS_COUNT tools with describe_type among them (P8, TM1)', async () => {
+  it('should advertise TOOLS_COUNT tools with describe_type among them', async () => {
     const { client } = await connect();
 
     try {
@@ -125,7 +125,7 @@ describe('dist/server.mjs over stdio', () => {
     }
   }, 20_000);
 
-  it('should answer LEGACY_DATA with the command in details when <D> holds the 0.x fixture data (P8, TM1)', async () => {
+  it('should answer LEGACY_DATA with the command in details when <D> holds the 0.x fixture data', async () => {
     const xdg = createTempDir('e2e-xdg');
     fs.cpSync(LEGACY_FIXTURE, path.join(xdg, 'hexlog'), { recursive: true });
     const { client, call } = await connect({ xdg });
@@ -140,7 +140,7 @@ describe('dist/server.mjs over stdio', () => {
     }
   }, 20_000);
 
-  it('should answer a structured INVALID_INPUT without INTERNAL on stderr for input outside the schema (P8, TM1)', async () => {
+  it('should answer a structured INVALID_INPUT without INTERNAL on stderr for input outside the schema', async () => {
     const { client, call, stderr } = await connect();
 
     try {
@@ -157,7 +157,7 @@ describe('dist/server.mjs over stdio', () => {
     expect(stderr()).not.toContain('"code":"INTERNAL"');
   }, 20_000);
 
-  it('should record the author client from the clientInfo of the envelope (P8, TM1)', async () => {
+  it('should record the author client from the clientInfo of the envelope', async () => {
     const { client, call } = await connect({ clientName: 'claude-code' });
 
     try {
@@ -172,7 +172,7 @@ describe('dist/server.mjs over stdio', () => {
     }
   }, 20_000);
 
-  it('should record the author client as unknown without the clientInfo envelope (P8, TM1)', async () => {
+  it('should record the author client as unknown without the clientInfo envelope', async () => {
     const { client, call } = await connect({ noEnvelope: true });
 
     try {
@@ -187,7 +187,7 @@ describe('dist/server.mjs over stdio', () => {
     }
   }, 20_000);
 
-  it('should return the records without data for a query with empty fields (P8, TM1)', async () => {
+  it('should return the records without data for a query with empty fields', async () => {
     const { client, call } = await connect();
 
     try {
@@ -203,7 +203,7 @@ describe('dist/server.mjs over stdio', () => {
     }
   }, 20_000);
 
-  it('should refuse define_type with a pattern, with pattern-not-allowed (P8, TM1)', async () => {
+  it('should refuse define_type with a pattern, with pattern-not-allowed', async () => {
     const { client, call } = await connect();
 
     try {
@@ -230,7 +230,7 @@ describe('dist/server.mjs over stdio', () => {
     }
   }, 15_000);
 
-  it('should accept define_type with the git-sha format of the catalog (P8, TM1)', async () => {
+  it('should accept define_type with the git-sha format of the catalog', async () => {
     const { client, call } = await connect();
 
     try {
@@ -255,7 +255,7 @@ describe('dist/server.mjs over stdio', () => {
     ];
 
     it.each(LEGACY_PATTERNS)(
-      'should accept in register the value that the pattern %s would refuse, without running the regex (P8, TM1)',
+      'should accept in register the value that the pattern %s would refuse, without running the regex',
       async (pattern, text) => {
         const xdg = createTempDir('e2e-xdg');
         const typeDir = path.join(xdg, 'hexlog', '.v1', PROJECT, 'types', 'note');
@@ -290,7 +290,7 @@ describe('dist/server.mjs over stdio', () => {
     );
   });
 
-  it('should keep stdout as JSON-RPC only and stderr as structured JSON after one call of each tool in the bundle (P8, TM1)', async () => {
+  it('should keep stdout as JSON-RPC only and stderr as structured JSON after one call of each tool in the bundle', async () => {
     const xdg = createTempDir('e2e-xdg');
     const { client, call, stderr, transportErrors } = await connect({ xdg });
 

@@ -37,7 +37,7 @@ const EXPECTED_RECORDS = 200;
 describe('createProcessStore', () => {
   afterEach(killChildren);
 
-  it(`should print lock-lost and lock-busy over ${ROUNDS} rounds of the 8 children x 25 writes stress (N7)`, async () => {
+  it(`should print lock-lost and lock-busy over ${ROUNDS} rounds of the 8 children x 25 writes stress`, async () => {
     const samples: {
       round: number;
       lockLost: number;
@@ -57,14 +57,14 @@ describe('createProcessStore', () => {
       const { ok: chainOk, totalRecords: records } = verifyProcess(store.read(ref)).chain;
       samples.push({ round, lockLost, failedChildren, chainOk, records });
       process.stdout.write(
-        `N7 round=${round} lock-lost=${lockLost} lock-busy=${failedChildren} chain-ok=${chainOk} records=${records}\n`,
+        `round=${round} lock-lost=${lockLost} lock-busy=${failedChildren} chain-ok=${chainOk} records=${records}\n`,
       );
     }
 
     const lockLostRounds = samples.filter(({ lockLost }) => lockLost > 0).length;
     const failedRounds = samples.filter(({ failedChildren }) => failedChildren > 0).length;
     process.stdout.write(
-      `N7 summary rounds=${ROUNDS} rounds-with-lock-lost=${lockLostRounds} rounds-with-child-failure=${failedRounds}\n`,
+      `summary rounds=${ROUNDS} rounds-with-lock-lost=${lockLostRounds} rounds-with-child-failure=${failedRounds}\n`,
     );
 
     expect(samples.filter(({ chainOk }) => !chainOk)).toEqual([]);
@@ -75,7 +75,7 @@ describe('createProcessStore', () => {
     ).toEqual([]);
   }, 900_000);
 
-  it('should enter store.write in under 1 s after the owner is killed with kill -9 (TF3)', async () => {
+  it('should enter store.write in under 1 s after the owner is killed with kill -9', async () => {
     const { store, ref, lockDir } = createProcess();
     const { child } = await startHolder(lockDir);
     child.kill('SIGKILL');

@@ -137,7 +137,7 @@ describe('checkSchema', () => {
       { path, code: 'invalid-schema', message: expect.stringContaining('["string","null"]') },
     ];
 
-    it('should accept the mark in a first-level field and in the items of a list (D-16)', () => {
+    it('should accept the mark in a first-level field and in the items of a list', () => {
       expect(
         validator.checkSchema({
           type: 'object',
@@ -146,7 +146,7 @@ describe('checkSchema', () => {
       ).toEqual([]);
     });
 
-    it('should accept the mark in an optional field written as type ["string","null"] (D-16)', () => {
+    it('should accept the mark in an optional field written as type ["string","null"]', () => {
       expect(
         validator.checkSchema({
           type: 'object',
@@ -155,7 +155,7 @@ describe('checkSchema', () => {
       ).toEqual([]);
     });
 
-    it('should refuse the mark in a nested object, with the path of the field and the way out in the message (D-16)', () => {
+    it('should refuse the mark in a nested object, with the path of the field and the way out in the message', () => {
       const schema = {
         type: 'object',
         properties: { outer: { type: 'object', properties: { file: mark } } },
@@ -166,7 +166,7 @@ describe('checkSchema', () => {
       );
     });
 
-    it('should refuse the mark in an anyOf inside a first-level field (D-16)', () => {
+    it('should refuse the mark in an anyOf inside a first-level field', () => {
       const schema = {
         type: 'object',
         properties: { file: { anyOf: [mark, { type: 'null' }] } },
@@ -204,7 +204,7 @@ describe('checkSchema', () => {
       ],
       ['additionalProperties', { type: 'object', additionalProperties: mark }, false],
     ])(
-      'should accept a mark in %s only when attachmentFields recognizes it (D-16)',
+      'should accept a mark in %s only when attachmentFields recognizes it',
       (_position, schema, accepted) => {
         const recognized = attachmentFields(schema);
 

@@ -193,7 +193,7 @@ describe('scripts/timeline.ts', () => {
       expect(code).toBe(0);
     });
 
-    it('should escape the C1 and bidi characters that JSON.stringify leaves raw with --json, and JSON.parse should return the original', () => {
+    it('should escape the 0x80-0x9f control and bidi characters that JSON.stringify leaves raw with --json, and JSON.parse should return the original', () => {
       const { code, out } = runTimeline(xdg, PROJECT, TARGET, '--full', '--json');
 
       expect(escapeControls(out)).toBe(out);

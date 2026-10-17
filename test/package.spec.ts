@@ -76,7 +76,7 @@ function usesNetworkServerModule(content: string): boolean {
 const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
 describe('{src,hook,scripts,test}/**/*.ts', () => {
-  it('should not let any relative or absolute import leave the repo (N7)', () => {
+  it('should not let any relative or absolute import leave the repo', () => {
     const files = ['src', 'hook', 'scripts', 'test'].flatMap((dir) =>
       listFilesRecursive(path.join(repoRoot, dir)),
     );
@@ -152,34 +152,31 @@ describe('package.json', () => {
       .map(([name, range]) => `${name}@${range}`);
 
   it.each(MANIFESTS)(
-    'should declare exactly the expected packages in $name (N11)',
+    'should declare exactly the expected packages in $name',
     ({ declared, expected }) => {
       expect(Object.keys(declared).sort()).toEqual([...expected].sort());
     },
   );
 
-  it.each(MANIFESTS)(
-    'should declare every package in $name in a ^X.Y.Z range (N11)',
-    ({ declared }) => {
-      expect(outsideCaret(declared)).toEqual([]);
-    },
-  );
+  it.each(MANIFESTS)('should declare every package in $name in a ^X.Y.Z range', ({ declared }) => {
+    expect(outsideCaret(declared)).toEqual([]);
+  });
 
-  it('should require node >=24.18.1 in engines (N11)', () => {
+  it('should require node >=24.18.1 in engines', () => {
     expect(pkg.engines).toEqual({ node: '>=24.18.1' });
   });
 
-  it('should declare the same version as VERSION in src/version.ts (N11)', () => {
+  it('should declare the same version as VERSION in src/version.ts', () => {
     expect(VERSION).toBe(pkg.version);
   });
 
-  it('should not declare bin (M5)', () => {
+  it('should not declare bin', () => {
     expect(pkg.bin).toBeUndefined();
   });
 });
 
 describe('.gitignore', () => {
-  it('should contain the dist/ line (N11)', () => {
+  it('should contain the dist/ line', () => {
     const gitignore = fs.readFileSync(path.join(repoRoot, '.gitignore'), 'utf8');
 
     expect(gitignore.split('\n')).toContain('dist/');
@@ -187,7 +184,7 @@ describe('.gitignore', () => {
 });
 
 describe('src/**/*.ts', () => {
-  it('should not import a network server module nor call .listen( (M5)', () => {
+  it('should not import a network server module nor call .listen(', () => {
     // hexlog é stdio-only: proíbe http/https/http2/net e `.listen(`.
     const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
       usesNetworkServerModule(fs.readFileSync(file, 'utf8')),
@@ -196,7 +193,7 @@ describe('src/**/*.ts', () => {
     expect(violations).toEqual([]);
   });
 
-  it('should not use debug console or process.stdout.write in the static check (M6)', () => {
+  it('should not use debug console or process.stdout.write in the static check', () => {
     const FORBIDDEN_OUTPUT_REGEX =
       /console\.(log|info|debug|dir|table|trace)|process\.stdout\.write/;
 
@@ -209,7 +206,7 @@ describe('src/**/*.ts', () => {
 });
 
 describe('**/cli', () => {
-  it('should not exist as a directory in the repo, outside node_modules (M5)', () => {
+  it('should not exist as a directory in the repo, outside node_modules', () => {
     const hasCliDir = listDirectories(repoRoot).some((dir) => path.basename(dir) === 'cli');
 
     expect(hasCliDir).toBe(false);
@@ -217,7 +214,7 @@ describe('**/cli', () => {
 });
 
 describe('src/directory.ts', () => {
-  it('should import only node:* and es-toolkit, never zod, canonicalize or minisearch, in the partial check (I1)', () => {
+  it('should import only node:* and es-toolkit, never zod, canonicalize or minisearch, in the partial check', () => {
     const content = fs.readFileSync(path.join(repoRoot, 'src/directory.ts'), 'utf8');
 
     const violations = extractSpecifiers(content).filter(

@@ -66,7 +66,7 @@ describe('register', () => {
 
   describe('with concurrent child processes', () => {
     it(
-      'should accept one of two supersedes to the same destination and refuse the other with FORK_REJECTED, never both (SE5, SE3c)',
+      'should accept one of two supersedes to the same destination and refuse the other with FORK_REJECTED, never both',
       async () => {
         const { services, registerTwice, verified } = setup();
 
@@ -102,7 +102,7 @@ describe('register', () => {
     );
 
     it(
-      'should write one of two writes with the same key and return replayed for the other (D-05, SE5, SE3c)',
+      'should write one of two writes with the same key and return replayed for the other',
       async () => {
         const { services, registerTwice, verified } = setup();
 
@@ -126,7 +126,7 @@ describe('register', () => {
     );
 
     it(
-      'should make a register wait for the lock of a live owner and write only after it releases (SE5, SE3c)',
+      'should make a register wait for the lock of a live owner and write only after it releases',
       async () => {
         const { dataDir, services, verified } = setup();
         services.process.createProcess({ project: PROJECT, process: 'run-1' });
@@ -162,7 +162,7 @@ describe('register', () => {
     );
 
     it(
-      'should write a register from process A to process B without waiting for the live lock of B, taking only the origin lock (SE5, SE3c)',
+      'should write a register from process A to process B without waiting for the live lock of B, taking only the origin lock',
       async () => {
         const { dataDir, services, verified } = setup();
         services.process.createProcess({ project: PROJECT, process: 'run-a' });

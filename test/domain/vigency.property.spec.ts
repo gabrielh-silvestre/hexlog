@@ -96,7 +96,7 @@ const writtenAndShuffled = ops.chain((sequence) => {
 });
 
 describe('buildVigency', () => {
-  it('should leave at most one current record in every lineage (P4)', () => {
+  it('should leave at most one current record in every lineage', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         const written = simulate(sequence);
@@ -109,7 +109,7 @@ describe('buildVigency', () => {
     );
   });
 
-  it('should give a null current version exactly when the lineage has no current record (P4)', () => {
+  it('should give a null current version exactly when the lineage has no current record', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         const written = simulate(sequence);
@@ -127,7 +127,7 @@ describe('buildVigency', () => {
     );
   });
 
-  it('should not depend on read order for the vigency and the current version (P4)', () => {
+  it('should not depend on read order for the vigency and the current version', () => {
     fc.assert(
       fc.property(writtenAndShuffled, ([written, shuffled]) => {
         const [first, second] = [buildVigency(written), buildVigency(shuffled)];
@@ -140,7 +140,7 @@ describe('buildVigency', () => {
     );
   });
 
-  it('should make only the last version of a long supersession chain current, with all pointing to it (P4)', () => {
+  it('should make only the last version of a long supersession chain current, with all pointing to it', () => {
     const chain: Linked[] = Array.from({ length: 8 }, (_, i) => ({
       id: `p:${i}`,
       relations: i === 0 ? [] : [{ kind: 'supersedes', to: `p:${i - 1}` }],
@@ -153,7 +153,7 @@ describe('buildVigency', () => {
     expect(lineages(chain)).toHaveLength(1);
   });
 
-  it('should return the same current version when queried again, in any order (P4)', () => {
+  it('should return the same current version when queried again, in any order', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         const written = simulate(sequence);
@@ -170,7 +170,7 @@ describe('buildVigency', () => {
 });
 
 describe('checkRelation', () => {
-  it('should leave no stored record that both supersedes and revokes the same target (P4)', () => {
+  it('should leave no stored record that both supersedes and revokes the same target', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         for (const { relations } of simulate(sequence)) {
@@ -188,7 +188,7 @@ describe('checkRelation', () => {
 });
 
 describe('needsReview', () => {
-  it('should not depend on read order for the expired proof (P4)', () => {
+  it('should not depend on read order for the expired proof', () => {
     fc.assert(
       fc.property(writtenAndShuffled, ([written, shuffled]) => {
         expect(needsReview(shuffled)).toEqual(needsReview(written));
@@ -223,11 +223,11 @@ describe('hasCycle', () => {
     }));
   }
 
-  it('should find no cycle in edges from the higher to the lower index, in any order (P4)', () => {
+  it('should find no cycle in edges from the higher to the lower index, in any order', () => {
     fc.assert(fc.property(graph, (g) => expect(hasCycle(recordsOf(g, false))).toBe(false)));
   });
 
-  it('should find a cycle in the ring closed by all records, in any order (P4)', () => {
+  it('should find a cycle in the ring closed by all records, in any order', () => {
     fc.assert(fc.property(graph, (g) => expect(hasCycle(recordsOf(g, true))).toBe(true)));
   });
 });

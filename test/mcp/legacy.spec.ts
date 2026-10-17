@@ -55,7 +55,7 @@ describe('tools/list', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should have one call for each of the 12 tools of the catalog (D9, TI4)', async () => {
+  it('should have one call for each of the 12 tools of the catalog', async () => {
     const { tools } = await environment.client.listTools();
 
     expect(CALLS.map(([tool]) => tool).sort()).toEqual(tools.map(({ name }) => name).sort());
@@ -67,7 +67,7 @@ describe('tools/call', () => {
   afterEach(closeEnvironment);
 
   it.each(CALLS)(
-    'should answer %s with LEGACY_DATA and the command in details when 0.x data is seeded (D9, TI4)',
+    'should answer %s with LEGACY_DATA and the command in details when 0.x data is seeded',
     async (tool, args) => {
       environment.seedLegacy();
 
@@ -89,7 +89,7 @@ describe('list', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should keep the absolute path of <D> out of the response (D9, TI4)', async () => {
+  it('should keep the absolute path of <D> out of the response', async () => {
     environment.seedLegacy();
 
     const body = await environment.fail('list');
@@ -97,14 +97,14 @@ describe('list', () => {
     expect(JSON.stringify(body)).not.toContain(environment.dataDir);
   });
 
-  it('should catch 0.x data that appears while the server is up on the next call (D9, TI4)', async () => {
+  it('should catch 0.x data that appears while the server is up on the next call', async () => {
     await environment.ok('list');
     environment.seedLegacy();
 
     expect(at((await environment.fail('list')).details, 0).code).toBe('run');
   });
 
-  it('should not count the 1.0 data in <D>/.v1 and the archive folder as 0.x data (D9, TI4)', async () => {
+  it('should not count the 1.0 data in <D>/.v1 and the archive folder as 0.x data', async () => {
     fs.mkdirSync(path.join(environment.dataDir, '.v1'));
     fs.mkdirSync(path.join(environment.dataDir, 'archive'));
 
@@ -116,7 +116,7 @@ describe('create_process', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should serve the same instance again without a restart after the 0.x data is removed (D9, TI4)', async () => {
+  it('should serve the same instance again without a restart after the 0.x data is removed', async () => {
     await environment.ok('define_type', { project: PROJECT, name: 'note', schema: SCHEMA });
     environment.seedLegacy('old-project');
     const refused = await environment.fail('list');

@@ -51,12 +51,12 @@ const READ_ONLY_TOOLS = [
   'describe_type',
 ];
 
-// Restrições do Claude Code ao `inputSchema` (TM1): nome de propriedade de topo, draft e raiz sem combinadores.
+// Restrições do Claude Code ao `inputSchema`: nome de propriedade de topo, draft e raiz sem combinadores.
 const PROPERTY_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
 const JSON_SCHEMA_DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 const ROOT_COMBINATORS = ['anyOf', 'oneOf', 'allOf'];
 
-// Limites do plano (TM2, TM7): descrição por tool e soma dos `outputSchema` anunciados.
+// Limites do plano: descrição por tool e soma dos `outputSchema` anunciados.
 const DESCRIPTION_MAX_CHARS = 2_048;
 const OUTPUT_SCHEMA_TOTAL_MAX_CHARS = 24_280;
 
@@ -74,7 +74,7 @@ const closeEnvironment = async () => {
 const succeed = <T>(tool: string, args: Record<string, unknown>): Promise<T> =>
   environment.ok<T>(tool, args);
 
-/** Serviços reais sobre o mesmo `<D>` do servidor sob teste: a referência do SE7. */
+/** Serviços reais sobre o mesmo `<D>` do servidor sob teste: a referência do teste. */
 const servicesOverServerData = () =>
   compose({
     dataDir: environment.dataDir,
@@ -98,7 +98,7 @@ const registerNote = (process: string, text: string, target = 'run.step') =>
     records: [{ type: 'note', target, data: { text } }],
   });
 
-/** Prepara o processo `run-1` com uma nota e devolve o anexo gravado: o estado que o SE7 lê. */
+/** Prepara o processo `run-1` com uma nota e devolve o anexo gravado: o estado que o teste lê. */
 async function seed() {
   await prepareProcess();
   await registerNote('run-1', 'olá');
@@ -109,13 +109,13 @@ describe('tools/list', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should announce exactly the 12 tool names (TM1)', async () => {
+  it('should announce exactly the 12 tool names', async () => {
     const { tools } = await environment.client.listTools();
 
     expect(tools.map(({ name }) => name).sort()).toEqual([...ALL_TOOLS].sort());
   });
 
-  it('should set readOnlyHint on the 6 read tools and on no other (TM1)', async () => {
+  it('should set readOnlyHint on the 6 read tools and on no other', async () => {
     const { tools } = await environment.client.listTools();
 
     const readOnly = tools.filter(({ annotations }) => annotations?.readOnlyHint === true);
@@ -123,7 +123,7 @@ describe('tools/list', () => {
     expect(readOnly.map(({ name }) => name).sort()).toEqual([...READ_ONLY_TOOLS].sort());
   });
 
-  it('should set alwaysLoad only on register (TM1)', async () => {
+  it('should set alwaysLoad only on register', async () => {
     const { tools } = await environment.client.listTools();
 
     const alwaysLoad = tools.filter(({ _meta }) => _meta?.['anthropic/alwaysLoad'] === true);
@@ -131,7 +131,7 @@ describe('tools/list', () => {
     expect(alwaysLoad.map(({ name }) => name)).toEqual(['register']);
   });
 
-  it.each(ALL_TOOLS)('should announce title and the full annotations of %s (TM1)', async (name) => {
+  it.each(ALL_TOOLS)('should announce title and the full annotations of %s', async (name) => {
     const annotations = READ_ONLY_TOOLS.includes(name)
       ? { readOnlyHint: true, openWorldHint: false }
       : {
@@ -151,7 +151,7 @@ describe('tools/list', () => {
   });
 
   it.each(ALL_TOOLS)(
-    'should keep the inputSchema of %s within the Claude Code restrictions (TM1)',
+    'should keep the inputSchema of %s within the Claude Code restrictions',
     async (name) => {
       const { tools } = await environment.client.listTools();
 
@@ -165,7 +165,7 @@ describe('tools/list', () => {
     },
   );
 
-  it('should keep every description present and within 2,048 characters (TM2)', async () => {
+  it('should keep every description present and within 2,048 characters', async () => {
     const { tools } = await environment.client.listTools();
 
     const outOfRange = tools
@@ -175,7 +175,7 @@ describe('tools/list', () => {
     expect(outOfRange).toEqual([]);
   });
 
-  it('should describe fields and the 50-name cap in the query description (TM2)', async () => {
+  it('should describe fields and the 50-name cap in the query description', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'query')?.description;
@@ -183,7 +183,7 @@ describe('tools/list', () => {
     expect(description).toMatch(/fields \(at most 50\).*empty list omits data/s);
   });
 
-  it('should announce inherit for approved and no_pending only in the define_gate description (TM2)', async () => {
+  it('should announce inherit for approved and no_pending only in the define_gate description', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'define_gate')?.description;
@@ -193,7 +193,7 @@ describe('tools/list', () => {
     );
   });
 
-  it('should tell register to read the schema with describe_type and the current id with query (TM2)', async () => {
+  it('should tell register to read the schema with describe_type and the current id with query', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'register')?.description;
@@ -202,7 +202,7 @@ describe('tools/list', () => {
     expect(description).toMatch(/read the current id with query/);
   });
 
-  it('should warn in the define_type description that pattern is refused and point to the catalog (TM2)', async () => {
+  it('should warn in the define_type description that pattern is refused and point to the catalog', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'define_type')?.description;
@@ -213,7 +213,7 @@ describe('tools/list', () => {
     expect(description).not.toMatch(/maxLength. of at most 256/);
   });
 
-  it('should warn about the changes cap in the query description (TM2)', async () => {
+  it('should warn about the changes cap in the query description', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'query')?.description;
@@ -223,7 +223,7 @@ describe('tools/list', () => {
     );
   });
 
-  it('should warn about the evidence cap in the evaluate_gate description (TM2)', async () => {
+  it('should warn about the evidence cap in the evaluate_gate description', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'evaluate_gate')?.description;
@@ -231,7 +231,7 @@ describe('tools/list', () => {
     expect(description).toMatch(new RegExp(`at most ${EVIDENCE_ITEMS_CAP} ids.*omitted`, 's'));
   });
 
-  it('should keep the sum of the 12 tools outputSchema below 24,280 characters (TM7)', async () => {
+  it('should keep the sum of the 12 tools outputSchema below 24,280 characters', async () => {
     const { tools } = await environment.client.listTools();
 
     const sizes = tools.map(({ outputSchema }) => JSON.stringify(outputSchema ?? null).length);
@@ -419,7 +419,7 @@ describe('query', () => {
 
   /**
    * Registra 3 lotes de `BATCH_MAX` notas depois de um marcador: o `changesSince` da primeira
-   * página sai cortado em `CHANGES_ITEMS_CAP`. Confere a pré-condição do N1: há ids omitidos.
+   * página sai cortado em `CHANGES_ITEMS_CAP`. Confere a pré-condição: há ids omitidos.
    */
   async function registerCutChanges() {
     await prepareProcess();
@@ -467,7 +467,7 @@ describe('query', () => {
     });
   }
 
-  it('should lose the cut ids when the marker of a cut changes is reused (N1)', async () => {
+  it('should lose the cut ids when the marker of a cut changes is reused', async () => {
     const { first } = await registerCutChanges();
 
     const reused = await succeed<QueryResult>('query', {
@@ -479,7 +479,7 @@ describe('query', () => {
     expect(reused.changes?.entered).toEqual([]);
   });
 
-  it('should return the cut ids on a full reread (N1)', async () => {
+  it('should return the cut ids on a full reread', async () => {
     const { omittedIds } = await registerCutChanges();
 
     const reread: string[] = [];
@@ -532,7 +532,7 @@ describe('query', () => {
     expect(light.cursor).toBeUndefined();
   });
 
-  it('should return what the service returns (SE7)', async () => {
+  it('should return what the service returns', async () => {
     await seed();
     const input = { project: PROJECT, process: 'run-1', relations: 'full' as const };
 
@@ -543,7 +543,7 @@ describe('query', () => {
     );
   });
 
-  it('should surface the service refusal as its own error, with no rule of the tool (SE7)', async () => {
+  it('should surface the service refusal as its own error, with no rule of the tool', async () => {
     const result = await environment.call('query', { project: PROJECT, process: 'inexistente' });
 
     const body = expectError(result, 'PROCESS_NOT_FOUND');
@@ -600,7 +600,7 @@ describe('evaluate_gate', () => {
     expect(result.questions[0]).not.toHaveProperty('omitted');
   });
 
-  it('should return what the service returns (SE7)', async () => {
+  it('should return what the service returns', async () => {
     await seed();
     const input = {
       project: PROJECT,
@@ -621,7 +621,7 @@ describe('verify_chain', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should return what the service returns (SE7)', async () => {
+  it('should return what the service returns', async () => {
     await seed();
     const input = { project: PROJECT, process: 'run-1' };
 
@@ -632,7 +632,7 @@ describe('verify_chain', () => {
     );
   });
 
-  it('should pass with an expectedHead equal to the head from its own output (SE7)', async () => {
+  it('should pass with an expectedHead equal to the head from its own output', async () => {
     await seed();
     const input = { project: PROJECT, process: 'run-1' };
     const { head } = await succeed<VerifyChainResult>('verify_chain', input);
@@ -645,7 +645,7 @@ describe('verify_chain', () => {
     expect(known.ok).toBe(true);
   });
 
-  it('should break with head-not-found for an unknown expectedHead hash (SE7)', async () => {
+  it('should break with head-not-found for an unknown expectedHead hash', async () => {
     await seed();
     const input = { project: PROJECT, process: 'run-1' };
     const { totalRecords } = await succeed<VerifyChainResult>('verify_chain', input);
@@ -662,7 +662,7 @@ describe('verify_chain', () => {
     });
   });
 
-  it('should refuse an expectedHead outside the hash format with INVALID_INPUT at /expectedHead (SE7)', async () => {
+  it('should refuse an expectedHead outside the hash format with INVALID_INPUT at /expectedHead', async () => {
     await seed();
 
     const body = expectError(
@@ -677,7 +677,7 @@ describe('verify_chain', () => {
     expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
   });
 
-  it('should refuse an empty expectedHead with INVALID_INPUT at /expectedHead (SE7)', async () => {
+  it('should refuse an empty expectedHead with INVALID_INPUT at /expectedHead', async () => {
     await seed();
 
     const body = expectError(
@@ -707,7 +707,7 @@ describe('read_attachment', () => {
     expect(page.next).toBe(PAGE_CHARS_CAP);
   });
 
-  it('should return what the service returns (SE7)', async () => {
+  it('should return what the service returns', async () => {
     const { hash } = await seed();
     const input = { project: PROJECT, hash };
 
@@ -721,7 +721,7 @@ describe('list', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should return what the service returns (SE7)', async () => {
+  it('should return what the service returns', async () => {
     await seed();
     const input = { project: PROJECT };
 
@@ -835,7 +835,7 @@ describe('describe_type', () => {
     expect(notFound.details).toEqual([expect.objectContaining({ path: '/type' })]);
   });
 
-  it('should return what the service returns (SE7)', async () => {
+  it('should return what the service returns', async () => {
     await seed();
     const input = { project: PROJECT, type: 'note' };
 

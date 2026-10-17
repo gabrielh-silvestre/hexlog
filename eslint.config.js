@@ -9,7 +9,7 @@ import { boundaryBlocks } from './eslint.boundaries.js';
 // Padrão de escrita dos specs (docs/directives/convencoes.md, "Escrita dos testes").
 const ACCENT = '[À-ÖØ-öø-ÿ]';
 const ID_LABEL =
-  '\\b(?:M|N|S|B|I|C|Q|QN|P|TF|TM|TB|SL|SE|E|G|L|f)\\d+\\b|\\b(?:R|U)-\\d+\\b|\\bD-\\d{2}\\b|\\bDE-\\d{2}\\b';
+  '\\b(?:M|N|S|B|I|C|Q|QN|P|TF|TM|TB|TI|SL|SE|SF|SG|E|F|G|L|f)\\d+\\b|\\b(?:R|U)-\\d+\\b|\\bD-\\d{2}\\b|\\bDE-\\d{2}\\b';
 
 export default defineConfig(
   {
@@ -66,7 +66,7 @@ export default defineConfig(
               `${ID_LABEL}|${ACCENT}`,
               'describe titles carry no ID label and no accented letter',
             ],
-            it: [ACCENT, 'titles are in English'],
+            it: [`${ID_LABEL}|${ACCENT}`, 'it titles carry no ID label and are in English'],
           },
         },
       ],

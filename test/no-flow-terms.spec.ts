@@ -84,13 +84,13 @@ function findFlowTerms(fileName: string, code: string): string[] {
 }
 
 describe('{src,hook,scripts}/**/*.ts', () => {
-  it('should find the files of src/, hook/ and scripts/ in the scan (D1)', () => {
+  it('should find the files of src/, hook/ and scripts/ in the scan', () => {
     const scanned = listScannedFiles().map((file) => path.relative(repoRoot, file));
 
     expect(scanned).toEqual(expect.arrayContaining(KNOWN_FILES));
   });
 
-  it('should use no flow term in any identifier or literal of src/, hook/ or scripts/ (D1)', () => {
+  it('should use no flow term in any identifier or literal of src/, hook/ or scripts/', () => {
     const violations = listScannedFiles().flatMap((file) =>
       findFlowTerms(file, fs.readFileSync(file, 'utf8')).map(
         (hit) => `${path.relative(repoRoot, file)}: ${hit}`,
