@@ -105,8 +105,8 @@ gate) ou `project` (enxerga relações entre processos).
 `approved` e `no_pending` aceitam também `inherit: true` (só `true`; as outras duas
 perguntas recusam o campo). Em processo com herança de relações (ver `create_process`), a
 pergunta passa a contar o apoio (`approved`) ou a resolução (`no_pending`) que uma versão
-superada carregava, e a `evidence` ganha a lista `inherited` com o que conta só por
-herança. Sem a opção, o resultado é o de sempre; em processo sem herança, a opção não
+superada carregava, e a `evidence` ganha a lista `inherited` (com `evidence: "full"`; nos
+outros modos, `counts.inherited`) com o que conta só por herança. Sem a opção, o resultado é o de sempre; em processo sem herança, a opção não
 acrescenta nada: `evidence.inherited` sai como lista vazia (`counts.inherited: 0`). A contradição nunca herda: uma contradição vigente continua reprovando. O gate
 antigo continua válido, porque o campo é opcional e `define_gate` não detecta quebra.
 
@@ -301,29 +301,32 @@ resultado de cada pergunta (`index`, `kind`, `passed`, mais as contagens ou os i
 `evidence`, conforme o modo) e o `marker` do que foi lido. A `evidence` tem listas por
 `kind`: `approved` traz `of`, `supports`, `contradictions` e `unsupported`; `occurred`,
 `found`; `no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. Uma pergunta
-`approved` ou `no_pending` com `inherit: true` traz também `inherited`, os ids que contam só
-por herança (ver `define_gate` e "Relações herdadas" em `query`). `target` é
+`approved` ou `no_pending` com `inherit: true` traz também `inherited` (com `evidence: "full"`; nos outros modos, `counts.inherited`), os
+ids que contam só por herança (ver `define_gate` e "Relações herdadas" em `query`). `target` é
 herdado pelos seletores sem `targetPrefix`. Com um `marker` de uma leitura anterior, a
 avaliação se reproduz sobre os registros que existiam então. Cada lista de evidência vai
 até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estreito alcança
 o resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
 
 - **Detalhe da evidência:** `evidence` escolhe o quanto cada pergunta traz.
-  - `failing` (o padrão da tool) devolve `counts`, o tamanho de cada lista da pergunta
+  - `failing` (o padrão da tool com `target`) devolve `counts`, o tamanho de cada lista da pergunta
     (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
     reprovação e não estão vazias: `unsupported` e `contradictions` em `approved`, `found`
     em `occurred`, `unresolved` em `no_pending`, `conflicting` em `no_open_contradiction`.
     Pergunta aprovada, ou reprovada sem lista de diagnóstico (um `approved` sem nenhum
     registro em `of`), vem só com `counts`, sem a chave `evidence`.
-  - `counts` devolve só `counts`, nunca ids.
+  - `counts` (o padrão da tool com `targets`) devolve só `counts`, nunca ids.
   - `full` devolve `evidence` com todas as listas de ids, sem `counts`, como antes de
     `evidence` existir.
 - **Lote:** `targets` (de 1 a 50) avalia vários targets numa só leitura. É exclusivo com
   `target` e não aceita `evidence: "full"`. A resposta troca `questions` por `results`, um
   `{target, passed, questions}` por entrada, na ordem recebida (duplicata não é removida),
-  com um só `marker` para todos; `passed` só é verdadeiro quando todos passam. Um `marker`
-  de entrada vale para todos os targets. `targets` junto de `target` ou `evidence: "full"`
-  com `targets` dão `INVALID_INPUT` (`/targets` com `with-target`, `/evidence` com
+  com um só `marker` para todos; `passed` só é verdadeiro quando todos passam. O padrão do
+  lote é `counts`: para ver os ids de um target reprovado, avalie só esse target com o
+  `marker` do lote (a reavaliação lê os mesmos registros). `evidence: "failing"` pedido no
+  lote vale, mas a resposta soma as listas de todos os targets reprovados e pode passar do
+  teto de página. Um `marker` de entrada vale para todos os targets. `targets` junto de
+  `target` ou `evidence: "full"` com `targets` dão `INVALID_INPUT` (`/targets` com `with-target`, `/evidence` com
   `full-with-targets`). Pela tool, lista vazia ou com mais de 50 itens é recusada pelo
   schema em `/targets`, antes do serviço; `with-target`, `empty` e `full-with-targets` são
   códigos do serviço, chamado direto.

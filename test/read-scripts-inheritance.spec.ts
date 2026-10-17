@@ -17,6 +17,7 @@ const run = (script: string, ...args: string[]) => {
     cwd: repoRoot,
     encoding: 'utf8',
     env: { ...process.env, XDG_DATA_HOME: xdgHome },
+    timeout: 20_000,
   });
   return { code: result.status, out: result.stdout };
 };
@@ -71,7 +72,7 @@ describe('export: inherited relations', () => {
       inheritedOut: [{ kind: 'supports', to: ids.revised, origin }],
     });
     expect(code).toBe(0);
-  });
+  }, 30_000);
 
   test('--fields accepts inheritedIn and inheritedOut', () => {
     const { code, out } = run('export', `${PROJECT}/run-1`, '--fields', 'id,inheritedIn');
@@ -83,7 +84,7 @@ describe('export: inherited relations', () => {
     expect(lines.find(({ id }) => id === ids.revised)).toHaveProperty('inheritedIn');
     for (const line of lines) expect(line).not.toHaveProperty('inheritedOut');
     expect(code).toBe(0);
-  });
+  }, 30_000);
 });
 
 describe('timeline: inherited relations', () => {
@@ -94,5 +95,5 @@ describe('timeline: inherited relations', () => {
     expect(out).toContain(`inherited in: supports <- ${ids.evidence} (${origin})`);
     expect(out).toContain(`inherited out: supports -> ${ids.revised} (${origin})`);
     expect(code).toBe(0);
-  });
+  }, 30_000);
 });

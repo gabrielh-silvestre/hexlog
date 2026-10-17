@@ -203,9 +203,9 @@ o teste automatizado as marque como "passa":
 | Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full` e `node scripts/insights.ts`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
 | Grep/Glob tool do Claude Code apontando pro pai | `Grep path=~/.local/share` |
 | Variável definida no mesmo comando | `d=~/.local/share; cat $d/hexlog/x` |
-| ANSI-C quoting | `cat $'/home/…/hex\x6cog/x'` |
 | Alternância de zsh | `cat ~/.local/share/(hexlog\|x)/p/r/records.jsonl` |
 | Substituição de comando dentro do nome | `cat ~/.local/share/hex$(true)log/x`: o `shell-quote` não avalia `$(…)`, então o token nunca vira o caminho de `<D>` |
+| Aspas de locale dentro do nome | `cat ~/.local/share/he$"x"log/x`: o `shell-quote` deixa o `$` no token e o `bash` o descarta, então o token nunca vira o caminho de `<D>` (o ANSI-C `$'…'` é negado) |
 | Symlink para o pai de `<D>` | `ln -s ~/.local/share /tmp/p; cat /tmp/p/hexlog/x`: o hook compara o texto do caminho e não resolve link |
 | Comando que recebe o pai de `<D>` | `tar -C ~/.local/share -cf - hexlog`, `find ~/.local/share -name x` e `git -C ~/.local/share status`: o token é o pai, que não alcança `<D>`, e o nome do filho vem depois |
 | `PowerShell` | O matcher de `src/guard.ts` é `^Bash$` e o `extractCommand` do hook só lê `tool_name` igual a `Bash`; a tool `PowerShell` fica fora do hook, por decisão de escopo (o produto só suporta Linux) |

@@ -1,0 +1,50 @@
+import { describe, expect, test } from '@jest/globals';
+import { median } from 'es-toolkit';
+import { buildInheritance } from '../../src/domain/inheritance.ts';
+import { buildVigency } from '../../src/domain/relations.ts';
+import type { Linked } from '../../src/domain/relations.ts';
+
+const VERSIONS = 8000;
+const ROUNDS = 3;
+// Sem memoizar o caminho todo em `currentOf`, 8.000 versões levavam ~8 s (O(L²)); com ele, dezenas
+// de ms. O teto deixa folga de máquina lenta e ainda reprova a volta do custo quadrático.
+const CEILING_MS = 1000;
+
+const id = (n: number) => `p:${String(n).padStart(8, '0')}`;
+
+// Cadeia de `supersedes` com um `supports` herdável para cada versão (evidência -> versão).
+function longLineage(): Linked[] {
+  const versions = Array.from({ length: VERSIONS }, (_, index) => ({
+    id: id(index + 1),
+    relations: index === 0 ? [] : [{ kind: 'supersedes' as const, to: id(index) }],
+  }));
+  const support = versions.map(({ id: version }, index) => ({
+    id: id(VERSIONS + index + 1),
+    relations: [{ kind: 'supports' as const, to: version }],
+  }));
+  return [...versions, ...support];
+}
+
+function timeInheritance(records: Linked[]) {
+  const start = performance.now();
+  const inheritance = buildInheritance(records, buildVigency(records), () => true);
+  return { ms: performance.now() - start, inheritance };
+}
+
+describe('lineage inheritance cost', () => {
+  test.each([
+    ['ascending', (records: Linked[]) => records],
+    ['descending', (records: Linked[]) => [...records].reverse()],
+  ])(
+    'stays linear on a %s lineage of 8000 versions',
+    (_label, order) => {
+      const records = order(longLineage());
+      const runs = Array.from({ length: ROUNDS }, () => timeInheritance(records));
+
+      expect(median(runs.map(({ ms }) => ms))).toBeLessThanOrEqual(CEILING_MS);
+      // A versão atual herda o apoio de todas as outras; o da própria versão atual é direto.
+      expect(runs[0]!.inheritance.into(id(VERSIONS))).toHaveLength(VERSIONS - 1);
+    },
+    60_000,
+  );
+});

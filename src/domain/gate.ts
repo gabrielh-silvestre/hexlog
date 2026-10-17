@@ -316,6 +316,17 @@ export function summarizeQuestion(result: QuestionResult, mode: EvidenceMode): Q
  * Só registro vigente conta, inclusive como origem de apoio, contradição ou resolução.
  */
 export function evaluateGate(questions: readonly GateQuestion[], input: GateInput): GateResult {
+  return prepareGate(questions, input)(input.target);
+}
+
+/**
+ * Lê e monta a `View` de cada alcance uma só vez e devolve a avaliação por `target`: o lote de
+ * `targets` reaproveita a mesma leitura em vez de refazer a vigência a cada alvo.
+ */
+export function prepareGate(
+  questions: readonly GateQuestion[],
+  input: Omit<GateInput, 'target'>,
+): (target?: Target) => GateResult {
   const asksInherit = (questionScope: GateScope) =>
     questions.some(
       (question) =>
@@ -330,8 +341,10 @@ export function evaluateGate(questions: readonly GateQuestion[], input: GateInpu
     ),
   );
 
-  const results = questions.map((question, index) =>
-    answer({ view: viewOf(question.scope ?? 'process'), target: input.target }, question, index),
-  );
-  return { passed: results.every(({ passed }) => passed), questions: results };
+  return (target) => {
+    const results = questions.map((question, index) =>
+      answer({ view: viewOf(question.scope ?? 'process'), target }, question, index),
+    );
+    return { passed: results.every(({ passed }) => passed), questions: results };
+  };
 }
