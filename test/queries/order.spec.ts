@@ -1,9 +1,9 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { note } from '../commands/register-fakes.ts';
 import { idsOf, querySetup, walkPages } from './query-setup.ts';
 
-describe('P15: ordem de saída da consulta (D-24)', () => {
-  test('o alcance processo sai por seq, mesmo com o relógio andando para trás', async () => {
+describe('QueryService.queryRecords', () => {
+  it('should order the process scope by seq, even with the clock going backwards (P15, D-24)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const first = await registerOne('run-1', note('primeiro'), 30);
@@ -20,7 +20,7 @@ describe('P15: ordem de saída da consulta (D-24)', () => {
     ]);
   });
 
-  test('o alcance projeto sai por (at, processo, seq), com o empate de instante desfeito pelo nome', async () => {
+  it('should order the project scope by (at, process, seq), breaking an instant tie by the name (P15, D-24)', async () => {
     const { createProcess, register, registerOne, query } = querySetup();
     createProcess('run-a');
     createProcess('run-b');
@@ -35,7 +35,7 @@ describe('P15: ordem de saída da consulta (D-24)', () => {
     expect(idsOf(page)).toEqual([a2, a3, b1, ...batch, a1]);
   });
 
-  test('com `text` a relevância manda e o empate segue a chave do alcance', async () => {
+  it('should rank by relevance with text, breaking ties by the key of the scope (P15, D-24)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-a');
     createProcess('run-b');
@@ -51,7 +51,7 @@ describe('P15: ordem de saída da consulta (D-24)', () => {
     expect(idsOf(process)).toEqual([tieLate, tieEarly]);
   });
 
-  test('a página 2 recomeça depois do lastId na mesma ordem, com e sem `text`', async () => {
+  it('should restart page 2 after the lastId in the same order, with or without text (P15, D-24)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-a');
     createProcess('run-b');
@@ -69,7 +69,7 @@ describe('P15: ordem de saída da consulta (D-24)', () => {
     }
   });
 
-  test('`changes.entered` e `changes.left` saem na mesma ordem do resultado', async () => {
+  it('should output changes.entered and changes.left in the same order as the result (P15, D-24)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-a');
     createProcess('run-b');

@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { Marker, RecordId } from '../../src/domain/ids.ts';
 import { createQueryService } from '../../src/queries/query-service.ts';
@@ -9,238 +9,262 @@ import { cursorOf, diskStores, idsOf, PROJECT, querySetup } from './query-setup.
 const supersedes = (to: RecordId) => ({ to, kind: 'supersedes' as const });
 const revokes = (to: RecordId) => ({ to, kind: 'revokes' as const });
 
-describe('queryRecords: changesSince (SL7)', () => {
-  test('entered e left descrevem a diferença para a foto anterior, com o motivo', async () => {
-    const { createProcess, register, registerOne, query } = querySetup();
-    createProcess('run-1');
-    const initial = await register('run-1', [note('a'), note('b'), note('c')], 1);
-    const [kept, replaced, revoked] = [at(initial, 0), at(initial, 1), at(initial, 2)];
-    const before = query({ process: 'run-1', changesSince: { 'run-1': null } });
-    const snapshot = query({ process: 'run-1' });
-    const added = await registerOne('run-1', note('d'), 2);
-    const successor = await registerOne(
-      'run-1',
-      note('b2', { relations: [supersedes(replaced)] }),
-      3,
-    );
-    const revoker = await registerOne(
-      'run-1',
-      note('revoga', { relations: [revokes(revoked)] }),
-      4,
-    );
+describe('QueryService.queryRecords', () => {
+  describe('with changesSince', () => {
+    it('should describe the difference from the previous snapshot with entered and left, with the reason (SL7)', async () => {
+      const { createProcess, register, registerOne, query } = querySetup();
+      createProcess('run-1');
+      const initial = await register('run-1', [note('a'), note('b'), note('c')], 1);
+      const [kept, replaced, revoked] = [at(initial, 0), at(initial, 1), at(initial, 2)];
+      const before = query({ process: 'run-1', changesSince: { 'run-1': null } });
+      const snapshot = query({ process: 'run-1' });
+      const added = await registerOne('run-1', note('d'), 2);
+      const successor = await registerOne(
+        'run-1',
+        note('b2', { relations: [supersedes(replaced)] }),
+        3,
+      );
+      const revoker = await registerOne(
+        'run-1',
+        note('revoga', { relations: [revokes(revoked)] }),
+        4,
+      );
 
-    const page = query({ process: 'run-1', changesSince: snapshot.marker });
+      const page = query({ process: 'run-1', changesSince: snapshot.marker });
 
-    expect(before.changes?.entered).toEqual([kept, replaced, revoked]);
-    expect(page.changes).toEqual({
-      entered: [added, successor, revoker],
-      left: [
-        { id: replaced, reason: 'superseded' },
-        { id: revoked, reason: 'revoked' },
-      ],
-      marker: page.marker,
-    });
-  });
-
-  test('SL7: a foto anterior mais entered, menos left, dá a mesma lista de uma foto nova (alcance processo)', async () => {
-    const { createProcess, register, registerOne, query } = querySetup();
-    createProcess('run-1');
-    const initial = await register('run-1', [note('a'), note('b'), note('c')], 1);
-    const snapshot = query({ process: 'run-1' });
-    await registerOne('run-1', note('d'), 2);
-    await registerOne('run-1', note('b2', { relations: [supersedes(at(initial, 1))] }), 3);
-    await registerOne('run-1', note('revoga', { relations: [revokes(at(initial, 2))] }), 4);
-
-    const fresh = query({ process: 'run-1' });
-    const changes = query({ process: 'run-1', changesSince: snapshot.marker }).changes;
-    const left = changes?.left.map(({ id }) => id) ?? [];
-    const rebuilt = [
-      ...idsOf(snapshot).filter((id) => !left.includes(id)),
-      ...(changes?.entered ?? []),
-    ];
-
-    expect([...rebuilt].sort()).toEqual([...idsOf(fresh)].sort());
-    expect(changes?.marker).toEqual(fresh.marker);
-  });
-
-  test('SL7: a foto anterior mais entered, menos left, dá a mesma lista de uma foto nova (alcance projeto)', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    createProcess('run-2');
-    const a = await registerOne('run-1', note('a'), 1);
-    const b = await registerOne('run-2', note('b'), 2);
-    const snapshot = query({ scope: 'project' });
-    createProcess('run-3');
-    await registerOne('run-3', note('c'), 3);
-    await registerOne('run-2', note('b2', { relations: [supersedes(b)] }), 4);
-    await registerOne('run-1', note('revoga a', { relations: [revokes(a)] }), 5);
-
-    const fresh = query({ scope: 'project' });
-    const changes = query({ scope: 'project', changesSince: snapshot.marker }).changes;
-    const left = changes?.left.map(({ id }) => id) ?? [];
-    const rebuilt = [
-      ...idsOf(snapshot).filter((id) => !left.includes(id)),
-      ...(changes?.entered ?? []),
-    ];
-
-    expect([...rebuilt].sort()).toEqual([...idsOf(fresh)].sort());
-    expect(changes?.left).toEqual([
-      { id: a, reason: 'revoked' },
-      { id: b, reason: 'superseded' },
-    ]);
-  });
-
-  test('com `includeNonCurrent` nada sai do resultado, então `left` vem vazio', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    const old = await registerOne('run-1', note('a'), 1);
-    const snapshot = query({ process: 'run-1', includeNonCurrent: true });
-    const next = await registerOne('run-1', note('a2', { relations: [supersedes(old)] }), 2);
-
-    const page = query({
-      process: 'run-1',
-      includeNonCurrent: true,
-      changesSince: snapshot.marker,
+      expect(before.changes?.entered).toEqual([kept, replaced, revoked]);
+      expect(page.changes).toEqual({
+        entered: [added, successor, revoker],
+        left: [
+          { id: replaced, reason: 'superseded' },
+          { id: revoked, reason: 'revoked' },
+        ],
+        marker: page.marker,
+      });
     });
 
-    expect(page.changes).toMatchObject({ entered: [next], left: [] });
-  });
+    it('should give the same list as a fresh snapshot from the previous snapshot plus entered minus left, in the process scope (SL7)', async () => {
+      const { createProcess, register, registerOne, query } = querySetup();
+      createProcess('run-1');
+      const initial = await register('run-1', [note('a'), note('b'), note('c')], 1);
+      const snapshot = query({ process: 'run-1' });
+      await registerOne('run-1', note('d'), 2);
+      await registerOne('run-1', note('b2', { relations: [supersedes(at(initial, 1))] }), 3);
+      await registerOne('run-1', note('revoga', { relations: [revokes(at(initial, 2))] }), 4);
+      const fresh = query({ process: 'run-1' });
 
-  test('o registro que só casava pelo fallback OR sai com `no-longer-matches` quando outro passa a casar no AND', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    const fallback = await registerOne('run-1', note('banana laranja'), 1);
-    const snapshot = query({ process: 'run-1', text: 'banana uva' });
-    expect(idsOf(snapshot)).toEqual([fallback]);
-    const exact = await registerOne('run-1', note('banana uva'), 2);
+      const changes = query({ process: 'run-1', changesSince: snapshot.marker }).changes;
+      const left = changes?.left.map(({ id }) => id) ?? [];
+      const rebuilt = [
+        ...idsOf(snapshot).filter((id) => !left.includes(id)),
+        ...(changes?.entered ?? []),
+      ];
 
-    const page = query({ process: 'run-1', text: 'banana uva', changesSince: snapshot.marker });
-
-    expect(idsOf(page)).toEqual([exact]);
-    expect(page.changes).toMatchObject({
-      entered: [exact],
-      left: [{ id: fallback, reason: 'no-longer-matches' }],
+      expect([...rebuilt].sort()).toEqual([...idsOf(fresh)].sort());
+      expect(changes?.marker).toEqual(fresh.marker);
     });
-  });
 
-  test('as mudanças vêm só na página 1 e o cursor trava o `changesSince` da consulta', async () => {
-    const { createProcess, register, query } = querySetup();
-    createProcess('run-1');
-    const snapshot = query({ process: 'run-1' });
-    await register('run-1', [note('a'), note('b'), note('c')], 1);
+    it('should give the same list as a fresh snapshot from the previous snapshot plus entered minus left, in the project scope (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      createProcess('run-2');
+      const a = await registerOne('run-1', note('a'), 1);
+      const b = await registerOne('run-2', note('b'), 2);
+      const snapshot = query({ scope: 'project' });
+      createProcess('run-3');
+      await registerOne('run-3', note('c'), 3);
+      await registerOne('run-2', note('b2', { relations: [supersedes(b)] }), 4);
+      await registerOne('run-1', note('revoga a', { relations: [revokes(a)] }), 5);
+      const fresh = query({ scope: 'project' });
 
-    const first = query({ process: 'run-1', limit: 2, changesSince: snapshot.marker });
-    const second = query({
-      process: 'run-1',
-      limit: 2,
-      changesSince: snapshot.marker,
-      cursor: cursorOf(first),
+      const changes = query({ scope: 'project', changesSince: snapshot.marker }).changes;
+      const left = changes?.left.map(({ id }) => id) ?? [];
+      const rebuilt = [
+        ...idsOf(snapshot).filter((id) => !left.includes(id)),
+        ...(changes?.entered ?? []),
+      ];
+
+      expect([...rebuilt].sort()).toEqual([...idsOf(fresh)].sort());
+      expect(changes?.left).toEqual([
+        { id: a, reason: 'revoked' },
+        { id: b, reason: 'superseded' },
+      ]);
     });
-    const other = captureError(() =>
-      query({ process: 'run-1', limit: 2, cursor: cursorOf(first) }),
-    );
 
-    expect(first.changes?.entered).toHaveLength(3);
-    expect(second.changes).toBeUndefined();
-    expect(other.code).toBe('INVALID_CURSOR');
-    expect(at(other.details, 0).code).toBe('filters-mismatch');
-  });
+    it('should leave left empty with includeNonCurrent because nothing leaves the result (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      const old = await registerOne('run-1', note('a'), 1);
+      const snapshot = query({ process: 'run-1', includeNonCurrent: true });
+      const next = await registerOne('run-1', note('a2', { relations: [supersedes(old)] }), 2);
 
-  // Exceção estreita à SL2 (ADR 0008, decisão 3): o log é lido duas vezes só na 1ª página com
-  // `changesSince`, uma para o estado de agora e outra para o do marcador.
-  test('a 1ª página com `changesSince` lê o log duas vezes e as demais, uma', async () => {
-    const { dataDir, createProcess, register, query } = querySetup();
-    createProcess('run-1');
-    const snapshot = query({ process: 'run-1' });
-    await register('run-1', [note('a'), note('b'), note('c')], 1);
-    const stores = diskStores(dataDir);
-    const read = jest.spyOn(stores.store, 'read');
-    const counted = createQueryService({ ...stores, search: createSearchIndex() });
-    const input = { project: PROJECT, process: 'run-1', limit: 2, changesSince: snapshot.marker };
+      const page = query({
+        process: 'run-1',
+        includeNonCurrent: true,
+        changesSince: snapshot.marker,
+      });
 
-    const first = counted.queryRecords(input);
-    expect(read).toHaveBeenCalledTimes(2);
-    read.mockClear();
-    counted.queryRecords({ ...input, cursor: cursorOf(first) });
+      expect(page.changes).toMatchObject({ entered: [next], left: [] });
+    });
 
-    expect(read).toHaveBeenCalledTimes(1);
-  });
+    it('should drop a record that matched only by the OR fallback with no-longer-matches when another starts matching on AND (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      const fallback = await registerOne('run-1', note('banana laranja'), 1);
+      const snapshot = query({ process: 'run-1', text: 'banana uva' });
 
-  test('alcance processo: marcador sem a entrada do processo lido é MARKER_NOT_FOUND em /changesSince', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    const head = await registerOne('run-1', note('a'), 1);
+      expect(idsOf(snapshot)).toEqual([fallback]);
 
-    const malformed: Marker[] = [{}, { 'run-9': head }, { 'run-1': head, 'run-9': head }];
-    for (const changesSince of malformed) {
-      const error = captureError(() => query({ process: 'run-1', changesSince }));
+      const exact = await registerOne('run-1', note('banana uva'), 2);
+
+      const page = query({ process: 'run-1', text: 'banana uva', changesSince: snapshot.marker });
+
+      expect(idsOf(page)).toEqual([exact]);
+      expect(page.changes).toMatchObject({
+        entered: [exact],
+        left: [{ id: fallback, reason: 'no-longer-matches' }],
+      });
+    });
+
+    it('should return the changes only on the first page (SL7)', async () => {
+      const { createProcess, register, query } = querySetup();
+      createProcess('run-1');
+      const snapshot = query({ process: 'run-1' });
+      await register('run-1', [note('a'), note('b'), note('c')], 1);
+      const first = query({ process: 'run-1', limit: 2, changesSince: snapshot.marker });
+
+      const second = query({
+        process: 'run-1',
+        limit: 2,
+        changesSince: snapshot.marker,
+        cursor: cursorOf(first),
+      });
+
+      expect(first.changes?.entered).toHaveLength(3);
+      expect(second.changes).toBeUndefined();
+    });
+
+    it('should lock the changesSince of the query into the cursor (SL7)', async () => {
+      const { createProcess, register, query } = querySetup();
+      createProcess('run-1');
+      const snapshot = query({ process: 'run-1' });
+      await register('run-1', [note('a'), note('b'), note('c')], 1);
+      const first = query({ process: 'run-1', limit: 2, changesSince: snapshot.marker });
+
+      const other = captureError(() =>
+        query({ process: 'run-1', limit: 2, cursor: cursorOf(first) }),
+      );
+
+      expect(other.code).toBe('INVALID_CURSOR');
+      expect(at(other.details, 0).code).toBe('filters-mismatch');
+    });
+
+    // Exceção estreita à SL2 (ADR 0008, decisão 3): o log é lido duas vezes só na 1ª página com
+    // `changesSince`, uma para o estado de agora e outra para o do marcador.
+    it('should read the log twice only on the first page, once on the others (SL7)', async () => {
+      const { dataDir, createProcess, register, query } = querySetup();
+      createProcess('run-1');
+      const snapshot = query({ process: 'run-1' });
+      await register('run-1', [note('a'), note('b'), note('c')], 1);
+      const stores = diskStores(dataDir);
+      const read = jest.spyOn(stores.store, 'read');
+      const counted = createQueryService({ ...stores, search: createSearchIndex() });
+      const input = { project: PROJECT, process: 'run-1', limit: 2, changesSince: snapshot.marker };
+      const first = counted.queryRecords(input);
+
+      expect(read).toHaveBeenCalledTimes(2);
+
+      read.mockClear();
+      counted.queryRecords({ ...input, cursor: cursorOf(first) });
+
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    it('should refuse a marker without the entry of the read process with MARKER_NOT_FOUND at /changesSince in the process scope (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      const head = await registerOne('run-1', note('a'), 1);
+      const malformed: Marker[] = [{}, { 'run-9': head }, { 'run-1': head, 'run-9': head }];
+
+      for (const changesSince of malformed) {
+        const error = captureError(() => query({ process: 'run-1', changesSince }));
+
+        expect(error.code).toBe('MARKER_NOT_FOUND');
+        expect(error.details).toEqual([
+          expect.objectContaining({ path: '/changesSince', code: 'process-not-found' }),
+        ]);
+      }
+    });
+
+    it('should refuse a marked id that does not exist with MARKER_NOT_FOUND at /changesSince in the project scope (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      await registerOne('run-1', note('a'), 1);
+
+      const error = captureError(() =>
+        query({ scope: 'project', changesSince: { 'run-1': ghostId('run-1') } }),
+      );
+
+      expect(error.code).toBe('MARKER_NOT_FOUND');
+      expect(error.details).toEqual([expect.objectContaining({ path: '/changesSince' })]);
+    });
+
+    it('should name the process whose marked id does not exist in MARKER_NOT_FOUND in the project scope (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      createProcess('run-2');
+      const first = await registerOne('run-1', note('a'), 1);
+      await registerOne('run-2', note('b'), 2);
+
+      const error = captureError(() =>
+        query({
+          scope: 'project',
+          changesSince: { 'run-1': first, 'run-2': ghostId('run-2') },
+        }),
+      );
+
       expect(error.code).toBe('MARKER_NOT_FOUND');
       expect(error.details).toEqual([
-        expect.objectContaining({ path: '/changesSince', code: 'process-not-found' }),
+        expect.objectContaining({ path: '/changesSince', process: 'run-2' }),
       ]);
-    }
-  });
+    });
 
-  test('alcance projeto: id marcado inexistente é MARKER_NOT_FOUND em /changesSince', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    await registerOne('run-1', note('a'), 1);
+    it('should count a process named constructor born after the marker as empty (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      await registerOne('run-1', note('a'), 1);
+      const snapshot = query({ scope: 'project' });
+      createProcess('constructor');
+      const born = await registerOne('constructor', note('nasceu depois'), 2);
 
-    const error = captureError(() =>
-      query({ scope: 'project', changesSince: { 'run-1': ghostId('run-1') } }),
-    );
+      const page = query({ scope: 'project', changesSince: snapshot.marker });
 
-    expect(error.code).toBe('MARKER_NOT_FOUND');
-    expect(error.details).toEqual([expect.objectContaining({ path: '/changesSince' })]);
-  });
+      expect(page.changes?.entered).toEqual([born]);
+    });
 
-  test('alcance projeto: o MARKER_NOT_FOUND nomeia o processo cujo id marcado não existe', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    createProcess('run-2');
-    const first = await registerOne('run-1', note('a'), 1);
-    await registerOne('run-2', note('b'), 2);
+    it('should count a process missing from the marker as empty in the project scope (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      await registerOne('run-1', note('a'), 1);
+      const snapshot = query({ scope: 'project' });
+      createProcess('run-2');
+      const born = await registerOne('run-2', note('nasceu depois'), 2);
 
-    const error = captureError(() =>
-      query({
-        scope: 'project',
-        changesSince: { 'run-1': first, 'run-2': ghostId('run-2') },
-      }),
-    );
+      const page = query({ scope: 'project', changesSince: snapshot.marker });
 
-    expect(error.code).toBe('MARKER_NOT_FOUND');
-    expect(error.details).toEqual([
-      expect.objectContaining({ path: '/changesSince', process: 'run-2' }),
-    ]);
-  });
+      expect(page.changes?.entered).toEqual([born]);
+    });
 
-  test('processo chamado `constructor` nascido depois do marcador conta como vazio', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    await registerOne('run-1', note('a'), 1);
-    const snapshot = query({ scope: 'project' });
-    createProcess('constructor');
-    const born = await registerOne('constructor', note('nasceu depois'), 2);
+    it('should refuse a marker for a process that does not exist with MARKER_NOT_FOUND in the project scope (SL7)', async () => {
+      const { createProcess, registerOne, query } = querySetup();
+      createProcess('run-1');
+      const first = await registerOne('run-1', note('a'), 1);
 
-    const page = query({ scope: 'project', changesSince: snapshot.marker });
+      const unknown = captureError(() =>
+        query({ scope: 'project', changesSince: { fantasma: first } }),
+      );
 
-    expect(page.changes?.entered).toEqual([born]);
-  });
-
-  test('no alcance projeto, processo ausente do marcador conta como vazio e marcador de processo inexistente é recusado', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    const first = await registerOne('run-1', note('a'), 1);
-    const snapshot = query({ scope: 'project' });
-    createProcess('run-2');
-    const born = await registerOne('run-2', note('nasceu depois'), 2);
-
-    const page = query({ scope: 'project', changesSince: snapshot.marker });
-    const unknown = captureError(() =>
-      query({ scope: 'project', changesSince: { fantasma: first } }),
-    );
-
-    expect(page.changes?.entered).toEqual([born]);
-    expect(unknown.code).toBe('MARKER_NOT_FOUND');
+      expect(unknown.code).toBe('MARKER_NOT_FOUND');
+    });
   });
 });
