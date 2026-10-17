@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { median } from 'es-toolkit';
 import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { ProcessRef, SearchIndex } from '../../src/ports.ts';
@@ -18,7 +18,7 @@ const WARM_MEDIAN_CEILING_MS = 250;
 const WARM_MAX_CEILING_MS = 500;
 const PROCESS: ProcessRef = { project: 'proj', process: 'proc' };
 
-describe('M13', () => {
+describe('createSearchIndex', () => {
   // `writeRecordsCorpus` grava no disco para os outros specs; aqui só `records` importa e a
   // medição não lê nada de volta.
   const { records } = writeRecordsCorpus(createTempDir('search-budget'), {
@@ -29,25 +29,29 @@ describe('M13', () => {
     const start = performance.now();
     const ids = index.search(PROCESS, records, 'webhook');
     const elapsed = performance.now() - start;
+
     expect(ids.length).toBeGreaterThan(0);
+
     return elapsed;
   }
 
-  test(`orçamento sem cache: índice + busca ≤ ${MEDIAN_CEILING_MS} ms (mediana de ${ROUNDS}, ${SIZE} registros em memória)`, () => {
+  it(`should build the index and search within ${MEDIAN_CEILING_MS} ms without cache (median of ${ROUNDS}, ${SIZE} records in memory) (M13)`, () => {
     const times = Array.from({ length: ROUNDS }, () => timeSearch(createSearchIndex()));
 
     process.stdout.write(`M13 median index (build+query): ${median(times).toFixed(2)} ms\n`);
+
     expect(median(times)).toBeLessThanOrEqual(MEDIAN_CEILING_MS);
     expect(Math.max(...times)).toBeLessThanOrEqual(MAX_CEILING_MS);
   }, 60_000);
 
-  test(`orçamento com cache: busca repetida ≤ ${WARM_MEDIAN_CEILING_MS} ms (mediana de ${ROUNDS}, ${SIZE} registros em memória)`, () => {
+  it(`should repeat the search within ${WARM_MEDIAN_CEILING_MS} ms with the index cached (median of ${ROUNDS}, ${SIZE} records in memory) (M13)`, () => {
     const index = createSearchIndex();
     timeSearch(index);
 
     const times = Array.from({ length: ROUNDS }, () => timeSearch(index));
 
     process.stdout.write(`M13 median cached query: ${median(times).toFixed(2)} ms\n`);
+
     expect(median(times)).toBeLessThanOrEqual(WARM_MEDIAN_CEILING_MS);
     expect(Math.max(...times)).toBeLessThanOrEqual(WARM_MAX_CEILING_MS);
   }, 60_000);
