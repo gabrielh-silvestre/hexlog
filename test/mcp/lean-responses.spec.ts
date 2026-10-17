@@ -133,6 +133,42 @@ describe('evaluate_gate: lean responses', () => {
     expect(result).not.toHaveProperty('questions');
   });
 
+  test('evaluate_gate targets defaults to counts, and the batch marker replays one target with ids', async () => {
+    const { records } = await registerNotes(['proposta'], 'a.step');
+    const batch = await evaluate<GateBatchEvaluation>({
+      gate: 'proposed-approved',
+      targets: ['a'],
+    });
+    await registerNotes(['proposta'], 'a.step');
+
+    expect(batch.results[0]?.questions).toEqual([
+      {
+        index: 0,
+        kind: 'approved',
+        passed: false,
+        counts: { of: 1, supports: 0, contradictions: 0, unsupported: 1 },
+      },
+    ]);
+    const explicit = await evaluate<GateBatchEvaluation>({
+      gate: 'proposed-approved',
+      targets: ['a'],
+      evidence: 'failing',
+    });
+    const replay = await evaluate({
+      gate: 'proposed-approved',
+      target: 'a',
+      marker: batch.marker,
+    });
+
+    const proposed = records.map(({ id }) => id);
+    expect(explicit.results[0]?.questions[0]).toMatchObject({
+      evidence: { unsupported: expect.any(Array) },
+    });
+    expect(replay.questions).toEqual([
+      expect.objectContaining({ evidence: { unsupported: proposed } }),
+    ]);
+  });
+
   test('evaluate_gate target keeps the single-target shape', async () => {
     await registerNotes(['olá'], 'a.step');
 

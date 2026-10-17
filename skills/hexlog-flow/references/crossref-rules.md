@@ -76,7 +76,7 @@ modela com um campo booleano do tipo (`where: { isRevision: true }`), nunca com
 operador. Recusado e pendente se distinguem pela evidência: há `contradictions`
 versus apoio ausente (`unsupported`). Com o padrão `evidence: "failing"`, a
 resposta da pergunta reprovada traz esses ids; a aprovada traz só `counts: {...}`, e
-`evidence: "full"` devolve todas as listas.
+`evidence: "full"` devolve todas as listas. Em lote (`targets`) o padrão é `counts`, sem ids.
 
 `approved` e `no_pending` aceitam `inherit: true` para contar também o apoio ou a
 resolução herdados da versão superada (processo com herança); a lista `inherited` da

@@ -41,7 +41,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - A escolha que contraria a diretriz citada em `grounds: directive`, sem emendá-la: a diretriz é teto fixo, escolha outro caminho (seção "Premissas"), salvo a classe crítica de [cadeira-do-dono.md](cadeira-do-dono.md), com ocupante.
 - A diretriz que falha na 1ª ou na 2ª das três perguntas de `grounds: directive`, ou a emenda da própria regra citada no mesmo trabalho, vira lacuna (seção "Lacuna": o modo `ask` para e pergunta, o `autonomous` decide); registre o `gap`, a `decision` com `grounds: gap` e `low` e a premissa que fecha a lacuna por `fills-gap`, que diz o porquê da escolha, não a emenda.
 - A emenda da regra citada fecha como qualquer lacuna; o PR só sai em rascunho na contradição com premissa atemporal ou na lacuna crítica sem aval (seção "Lacuna").
-- Refazer uma decisão grava uma `decision` nova com `supersedes` da vigente, no mesmo target (`<slug>.decision.<short>`): `supersedes` entre targets diferentes é `INVALID_RECORD` (`target-mismatch`). O `supersedes` não herda relações: regrave as relações listadas em "Verificação e achados".
+- Refazer uma decisão grava uma `decision` nova com `supersedes` da vigente, no mesmo target (`<slug>.decision.<short>`): `supersedes` entre targets diferentes é `INVALID_RECORD` (`target-mismatch`). O `supersedes` não grava relações na versão nova (a `query` mostra as herdadas em processo da 1.2.0, mas gates e `flow-report` leem o gravado): regrave as relações listadas em "Verificação e achados".
 
 ## Consulta antes de decidir
 

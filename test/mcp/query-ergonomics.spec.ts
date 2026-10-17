@@ -44,6 +44,7 @@ describe('query: description', () => {
     expect(description).toContain('unit-1 does not match unit-10');
     expect(description).toContain('any record id of the process works as its entry');
     expect(description).toContain('add limit 0');
+    expect(description).toContain('current or not');
   });
 });
 
