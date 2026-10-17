@@ -17,7 +17,7 @@
 
 ## Convenções dos specs
 
-- Spec que chama tools passa por `mcp/environment.ts#createEnvironment()` (servidor real sobre `compose` e `InMemoryTransport`) e nunca mocka o servidor MCP.
+- Spec que chama tools passa por `mcp/environment.ts#createEnvironment()` (servidor real sobre `compose` e `InMemoryTransport`) e nunca mocka o servidor MCP. Exceção: o spec unitário do `mutate` de `stryker.config.json` pode registrar uma tool num servidor falso que só captura a config de `registerTool` (esquemas, descrição, handler) e chamar o handler real por `mcp/kernel.ts#execute` sobre um serviço falso, sem `compose` nem transporte; ele não substitui o caso de integração da mesma tool, que segue por `createEnvironment()`.
 - Ao testar uma tool que recusa entrada, use `expectError()` de `mcp/environment.ts` antes de reimplementar a asserção de erro estruturado.
 - Diretório temporário só por `helpers.ts#createTempDir`, dentro de hook ou teste, nunca na coleta do `describe`: a coleta roda até com `-t`, e o `afterAll` de `cleanup.ts` não roda num arquivo sem teste selecionado, então o diretório vazaria. A trava de lint só barra `mkdtempSync`.
 - Teste que sobe bundle, processo filho ou carga declara o próprio timeout como último argumento do `it` (de 15_000 a 240_000 ms), porque o padrão do jest é 5000 ms e não há `testTimeout` global.
