@@ -1,7 +1,9 @@
 import { describe, it, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import canonicalize from 'canonicalize';
+import { z } from 'zod';
 import {
+  AliasRef,
   Author,
   BATCH_MAX,
   BatchItem,
@@ -11,6 +13,7 @@ import {
   Relation,
   RelationInput,
   RelationKind,
+  withCanonicalLimit,
 } from '../../src/domain/record.ts';
 
 const id = () => `proc-1:${randomUUIDv7()}`;
@@ -37,6 +40,26 @@ describe('BATCH_MAX', () => {
 describe('RELATIONS_MAX', () => {
   it('should be 100', () => {
     expect(RELATIONS_MAX).toBe(100);
+  });
+});
+
+describe('withCanonicalLimit', () => {
+  it('should accept a value that has no canonical form, such as undefined', () => {
+    const schema = withCanonicalLimit(z.unknown(), 1, 'value');
+
+    expect(schema.safeParse(undefined).success).toBe(true);
+  });
+
+  it('should name what was limited and the ceiling when the value exceeds it', () => {
+    const schema = withCanonicalLimit(z.string(), 3, 'name');
+
+    const result = schema.safeParse('abcd');
+
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        message: 'name exceeds 3 canonical characters or is not canonicalizable',
+      }),
+    ]);
   });
 });
 
@@ -71,6 +94,17 @@ describe('Author', () => {
   it.each(['agent', 'model', 'client'])('should reject a lone surrogate in %s', (field) => {
     expect(Author.safeParse({ ...author, [field]: 'x\ud800' }).success).toBe(false);
   });
+
+  it('should say the field must not contain a lone surrogate', () => {
+    const result = Author.safeParse({ ...author, agent: 'x\ud800' });
+
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['agent'],
+        message: 'must not contain a lone surrogate',
+      }),
+    ]);
+  });
 });
 
 describe('Relation', () => {
@@ -92,6 +126,16 @@ describe('Relation', () => {
 
   it('should reject an alias in the stored to', () => {
     expect(Relation.safeParse({ kind: 'supports', to: '@a' }).success).toBe(false);
+  });
+});
+
+describe('AliasRef', () => {
+  it.each(['@a', '@plan-1', `@${'x'.repeat(63)}`])('should accept %s', (value) => {
+    expect(AliasRef.safeParse(value).success).toBe(true);
+  });
+
+  it.each(['plan-1', '', '@', '@A', '@-a', `@${'x'.repeat(64)}`])('should reject %s', (value) => {
+    expect(AliasRef.safeParse(value).success).toBe(false);
   });
 });
 
@@ -147,6 +191,20 @@ describe('BatchItem', () => {
     { ...item, alias: '@first' },
   ])('should reject %j', (value) => {
     expect(BatchItem.safeParse(value).success).toBe(false);
+  });
+
+  it('should name data and the ceiling when data exceeds the canonical ceiling', () => {
+    const result = BatchItem.safeParse({
+      ...item,
+      data: dataWithCanonicalLength(DATA_MAX_CHARS + 1),
+    });
+
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['data'],
+        message: 'data exceeds 16000 canonical characters or is not canonicalizable',
+      }),
+    ]);
   });
 
   it('should accept data at the canonical ceiling', () => {
