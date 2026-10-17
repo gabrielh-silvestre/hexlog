@@ -24,7 +24,9 @@
         "<rootDir>/test/queries/read-only.spec.ts",
         "<rootDir>/test/shared/loader.property.spec.ts",
         "<rootDir>/test/shared/loader.spec.ts",
-        "<rootDir>/test/shared/pages.spec.ts"
+        "<rootDir>/test/shared/pages.spec.ts",
+        "<rootDir>/test/errors.spec.ts",
+        "<rootDir>/test/queries/query-service.spec.ts"
       ],
       "globalSetup": null,
       "globalTeardown": null

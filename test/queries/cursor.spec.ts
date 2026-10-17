@@ -67,7 +67,23 @@ describe('decodeCursor', () => {
     });
   });
 
+  it.each([
+    ['too long', 'a'.repeat(CURSOR_MAX_CHARS + 1)],
+    ['not valid JSON', 'x.y'],
+    ['invalid in a field', forge({ ...payload, scope: 'global' })],
+  ])('should name the cursor in the error message when the cursor is %s', (_label, text) => {
+    const error = invalidCursorOf(() => decodeCursor(text));
+
+    expect(error.message).toMatch(/cursor/i);
+  });
+
   describe('with input ceilings', () => {
+    it('should state the ceiling in the detail of a too-long cursor', () => {
+      const error = invalidCursorOf(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS + 1)));
+
+      expect(error.details[0]?.message).toContain(String(CURSOR_MAX_CHARS));
+    });
+
     it('should refuse text above CURSOR_MAX_CHARS as too-long before decoding', () => {
       const error = invalidCursorOf(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS + 1)));
 
@@ -114,6 +130,12 @@ describe('decodeCursor', () => {
         expect(decodeCursor(forge(changed))).toEqual(changed);
       },
     );
+
+    it('should say that the payload is not valid JSON in the detail of a malformed cursor', () => {
+      const error = invalidCursorOf(() => decodeCursor('x.y'));
+
+      expect(error.details[0]?.message).toContain('not valid JSON');
+    });
 
     it('should give malformed for a truncated cursor', () => {
       const truncated = encodeCursor(payload).slice(0, -8);
