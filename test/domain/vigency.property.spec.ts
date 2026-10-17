@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import fc from 'fast-check';
 import {
   buildVigency,
@@ -87,13 +87,21 @@ function simulate(ops: Op[]): Written[] {
 }
 
 const ops = fc.array(op, { maxLength: 15 });
+const writtenAndShuffled = ops.chain((sequence) => {
+  const written = simulate(sequence);
+  return fc.tuple(
+    fc.constant(written),
+    fc.shuffledSubarray(written, { minLength: written.length }),
+  );
+});
 
-describe('vigency (P4)', () => {
-  test('every lineage has at most one current record', () => {
+describe('buildVigency', () => {
+  it('should leave at most one current record in every lineage (P4)', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         const written = simulate(sequence);
         const vigency = buildVigency(written);
+
         for (const group of lineages(written)) {
           expect(group.filter((id) => vigency.isCurrent(id)).length).toBeLessThanOrEqual(1);
         }
@@ -101,15 +109,17 @@ describe('vigency (P4)', () => {
     );
   });
 
-  test('the current version is null exactly when the lineage has no current record', () => {
+  it('should give a null current version exactly when the lineage has no current record (P4)', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         const written = simulate(sequence);
         const vigency = buildVigency(written);
         const groups = lineages(written);
+
         for (const { id } of written) {
           const group = groups.find((members) => members.includes(id)) ?? [];
           const current = vigency.currentOf(id);
+
           expect(current === null).toBe(!group.some((member) => vigency.isCurrent(member)));
           expect(current === null || vigency.isCurrent(current)).toBe(true);
         }
@@ -117,13 +127,57 @@ describe('vigency (P4)', () => {
     );
   });
 
-  test('no stored record both supersedes and revokes the same target', () => {
+  it('should not depend on read order for the vigency and the current version (P4)', () => {
+    fc.assert(
+      fc.property(writtenAndShuffled, ([written, shuffled]) => {
+        const [first, second] = [buildVigency(written), buildVigency(shuffled)];
+
+        for (const { id } of written) {
+          expect(second.isCurrent(id)).toBe(first.isCurrent(id));
+          expect(second.currentOf(id)).toBe(first.currentOf(id));
+        }
+      }),
+    );
+  });
+
+  it('should make only the last version of a long supersession chain current, with all pointing to it (P4)', () => {
+    const chain: Linked[] = Array.from({ length: 8 }, (_, i) => ({
+      id: `p:${i}`,
+      relations: i === 0 ? [] : [{ kind: 'supersedes', to: `p:${i - 1}` }],
+    }));
+
+    const vigency = buildVigency(chain);
+
+    expect(chain.filter(({ id }) => vigency.isCurrent(id)).map(({ id }) => id)).toEqual(['p:7']);
+    expect(chain.map(({ id }) => vigency.currentOf(id))).toEqual(chain.map(() => 'p:7'));
+    expect(lineages(chain)).toHaveLength(1);
+  });
+
+  it('should return the same current version when queried again, in any order (P4)', () => {
+    fc.assert(
+      fc.property(ops, (sequence) => {
+        const written = simulate(sequence);
+        const vigency = buildVigency(written);
+
+        const first = written.map(({ id }) => vigency.currentOf(id));
+        const reversed = [...written].reverse().map(({ id }) => vigency.currentOf(id));
+
+        expect(reversed.reverse()).toEqual(first);
+        expect(written.map(({ id }) => vigency.currentOf(id))).toEqual(first);
+      }),
+    );
+  });
+});
+
+describe('checkRelation', () => {
+  it('should leave no stored record that both supersedes and revokes the same target (P4)', () => {
     fc.assert(
       fc.property(ops, (sequence) => {
         for (const { relations } of simulate(sequence)) {
           const superseded = new Set(
             relations.filter(({ kind }) => kind === 'supersedes').map(({ to }) => to),
           );
+
           expect(relations.some(({ kind, to }) => kind === 'revokes' && superseded.has(to))).toBe(
             false,
           );
@@ -131,40 +185,19 @@ describe('vigency (P4)', () => {
       }),
     );
   });
+});
 
-  test('vigency, current version and expired proof do not depend on read order', () => {
-    const writtenAndShuffled = ops.chain((sequence) => {
-      const written = simulate(sequence);
-      return fc.tuple(
-        fc.constant(written),
-        fc.shuffledSubarray(written, { minLength: written.length }),
-      );
-    });
+describe('needsReview', () => {
+  it('should not depend on read order for the expired proof (P4)', () => {
     fc.assert(
       fc.property(writtenAndShuffled, ([written, shuffled]) => {
-        const [first, second] = [buildVigency(written), buildVigency(shuffled)];
-        for (const { id } of written) {
-          expect(second.isCurrent(id)).toBe(first.isCurrent(id));
-          expect(second.currentOf(id)).toBe(first.currentOf(id));
-        }
         expect(needsReview(shuffled)).toEqual(needsReview(written));
       }),
     );
   });
-
-  test('long supersession chain: only the last is current and all point to it', () => {
-    const chain: Linked[] = Array.from({ length: 8 }, (_, i) => ({
-      id: `p:${i}`,
-      relations: i === 0 ? [] : [{ kind: 'supersedes', to: `p:${i - 1}` }],
-    }));
-    const vigency = buildVigency(chain);
-    expect(chain.filter(({ id }) => vigency.isCurrent(id)).map(({ id }) => id)).toEqual(['p:7']);
-    expect(chain.map(({ id }) => vigency.currentOf(id))).toEqual(chain.map(() => 'p:7'));
-    expect(lineages(chain)).toHaveLength(1);
-  });
 });
 
-describe('cycle (P4)', () => {
+describe('hasCycle', () => {
   type Graph = { n: number; extra: [number, number][]; order: number[] };
 
   const graph = fc.integer({ min: 2, max: 8 }).chain((n) =>
@@ -190,26 +223,11 @@ describe('cycle (P4)', () => {
     }));
   }
 
-  test('edges from the higher to the lower index never form a cycle, in any order', () => {
+  it('should find no cycle in edges from the higher to the lower index, in any order (P4)', () => {
     fc.assert(fc.property(graph, (g) => expect(hasCycle(recordsOf(g, false))).toBe(false)));
   });
 
-  test('the ring closed by all records is a cycle, in any order', () => {
+  it('should find a cycle in the ring closed by all records, in any order (P4)', () => {
     fc.assert(fc.property(graph, (g) => expect(hasCycle(recordsOf(g, true))).toBe(true)));
-  });
-});
-
-describe('currentOf memoization (P4)', () => {
-  test('querying again, in any order, returns the same result', () => {
-    fc.assert(
-      fc.property(ops, (sequence) => {
-        const written = simulate(sequence);
-        const vigency = buildVigency(written);
-        const first = written.map(({ id }) => vigency.currentOf(id));
-        const reversed = [...written].reverse().map(({ id }) => vigency.currentOf(id));
-        expect(reversed.reverse()).toEqual(first);
-        expect(written.map(({ id }) => vigency.currentOf(id))).toEqual(first);
-      }),
-    );
   });
 });

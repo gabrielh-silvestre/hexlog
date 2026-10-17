@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import canonicalize from 'canonicalize';
 import { omit } from 'es-toolkit';
 import {
@@ -44,91 +44,104 @@ function nested(depth: number): Link['data'] {
 }
 
 describe('sha256hex', () => {
-  test('dá o sha256 conhecido de "abc"', () => {
+  it('should return the known sha256 of "abc"', () => {
     expect(sha256hex('abc')).toBe(
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     );
   });
 
-  test('bytes e string equivalentes dão o mesmo hash', () => {
+  it('should return the same hash for equivalent bytes and string', () => {
     expect(sha256hex(new TextEncoder().encode('abc'))).toBe(sha256hex('abc'));
   });
 });
 
 describe('anchor', () => {
-  test('é o sha256 do JCS do manifesto', () => {
+  it('should be the sha256 of the JCS of the manifest', () => {
     expect(anchor(manifest)).toBe(sha256hex(canonicalize(manifest) ?? ''));
   });
 
-  test('vetor fixo do formato em disco (JCS conferido com implementação independente)', () => {
+  it('should match the fixed vector of the on-disk format (JCS checked against an independent implementation)', () => {
     expect(anchor(manifest)).toBe(
       'd12892a7e456a2217df197429f4a28ed5ffe8ba1f712a735db0b01a4df2e9ab4',
     );
   });
 
-  test('independe da ordem das chaves do manifesto', () => {
+  it('should not depend on the key order of the manifest', () => {
     const reordered = { createdAt: manifest.createdAt, process: manifest.process, project: 'demo' };
+
     expect(anchor(reordered)).toBe(anchor(manifest));
   });
 
-  test.each([
-    ['undefined', undefined],
-    ['função', () => 1],
-  ])('valor sem forma JSON (%s) lança INTERNAL em vez de dar o hash de ""', (_label, value) => {
-    expect(() => anchor(value)).toThrow(HexlogError);
-    expect(() => anchor(value)).toThrow(expect.objectContaining({ code: 'INTERNAL' }));
+  it('should be the same hash as the hashOfJcs of the manifest', () => {
+    expect(anchor(manifest)).toBe(hashOfJcs(manifest));
   });
+
+  it.each([
+    ['undefined', undefined],
+    ['function', () => 1],
+  ])(
+    'should throw INTERNAL instead of the hash of "" for a value without JSON form: %s',
+    (_label, value) => {
+      expect(() => anchor(value)).toThrow(HexlogError);
+      expect(() => anchor(value)).toThrow(expect.objectContaining({ code: 'INTERNAL' }));
+    },
+  );
 });
 
 describe('hashOfJcs', () => {
-  test('é o sha256 do JCS do valor, e a âncora é o mesmo hash do manifesto', () => {
+  it('should be the sha256 of the JCS of the value', () => {
     const definition = { type: 'object', properties: { b: {}, a: {} } };
 
     expect(hashOfJcs(definition)).toBe(sha256hex(canonicalize(definition) ?? ''));
-    expect(anchor(manifest)).toBe(hashOfJcs(manifest));
   });
 });
 
 describe('hashLink', () => {
-  test('é sha256(prevHash + JCS do elo sem prevHash)', () => {
+  const golden = link({
+    id: 'p:0198f4a0-0000-7000-8000-000000000001',
+    prevHash: '0'.repeat(64),
+  });
+
+  it('should be sha256(prevHash + JCS of the link without prevHash)', () => {
     const l = link();
     const { prevHash, ...rest } = l;
+
     expect(hashLink(l)).toBe(sha256hex(prevHash + (canonicalize(rest) ?? '')));
   });
 
-  test('vetores fixos do formato em disco, sem e com batch', () => {
-    const golden = link({
-      id: 'p:0198f4a0-0000-7000-8000-000000000001',
-      prevHash: '0'.repeat(64),
-    });
-    expect(hashLink(golden)).toBe(
-      '530b7254fabda81a351210e74c3a0b1746bf042b33c484e732f5272607064961',
-    );
-    const batched = {
-      ...golden,
-      batch: { fingerprint: 'a'.repeat(64), key: 'k', aliases: { first: golden.id } },
-    };
-    expect(hashLink(batched)).toBe(
+  it.each<[string, Link, string]>([
+    ['without batch', golden, '530b7254fabda81a351210e74c3a0b1746bf042b33c484e732f5272607064961'],
+    [
+      'with batch',
+      {
+        ...golden,
+        batch: { fingerprint: 'a'.repeat(64), key: 'k', aliases: { first: golden.id } },
+      },
       'c8ca92b3af8381e861678807d165b1a45e05cad906a226e6ae921107753d4b03',
-    );
+    ],
+  ])('should match the fixed vector of the on-disk format %s', (_label, value, hash) => {
+    expect(hashLink(value)).toBe(hash);
   });
 
-  test('dois elos com as mesmas chaves em ordem diferente dão o mesmo hash', () => {
+  it('should give the same hash to two links with the same keys in a different order', () => {
     const a = link({ id: 'proc-1:0198f4a0-0000-7000-8000-000000000001', data: { a: 1, b: 2 } });
     const b = Object.fromEntries(Object.entries(a).reverse()) as Link;
     b.data = { b: 2, a: 1 };
+
     expect(hashLink(b)).toBe(hashLink(a));
   });
 
-  test('mudar o conteúdo ou o prevHash muda o hash', () => {
+  it('should change the hash when the content or the prevHash changes', () => {
     const base = link();
+
     expect(hashLink({ ...base, data: { text: 'outro' } })).not.toBe(hashLink(base));
     expect(hashLink({ ...base, prevHash: sha256hex('x') })).not.toBe(hashLink(base));
   });
 
-  test('o batch entra no hash', () => {
+  it('should include the batch in the hash', () => {
     const base = link();
     const batched = { ...base, batch: { fingerprint: sha256hex('x') } };
+
     expect(hashLink(batched)).not.toBe(hashLink(base));
   });
 });
@@ -137,20 +150,21 @@ describe('fingerprint', () => {
   const item = { type: 'note', target: 'repo.feature', data: { a: 1, b: 2 } };
   const items = [item];
 
-  test('dois lotes iguais com chaves em ordem diferente dão a mesma impressão', () => {
+  it('should give the same fingerprint to two equal batches with keys in a different order', () => {
     const reordered = [{ data: { b: 2, a: 1 }, target: 'repo.feature', type: 'note' }];
+
     expect(fingerprint(reordered)).toBe(fingerprint(items));
   });
 
-  test('conteúdo diferente dá impressão diferente', () => {
+  it('should give a different fingerprint to different content', () => {
     expect(fingerprint([{ ...item, data: { a: 1 } }])).not.toBe(fingerprint(items));
   });
 
-  test('é o sha256 do JCS dos itens', () => {
+  it('should be the sha256 of the JCS of the items', () => {
     expect(fingerprint(items)).toBe(sha256hex(canonicalize(items) ?? ''));
   });
 
-  test('vetor fixo: o item inteiro entra, com alias e relations (D-06)', () => {
+  it('should match the fixed vector with the whole item, including alias and relations (D-06)', () => {
     const full = [
       {
         type: 'note',
@@ -160,6 +174,7 @@ describe('fingerprint', () => {
         relations: [{ to: '@x', kind: 'supports' as const }],
       },
     ];
+
     expect(fingerprint(full)).toBe(
       '914b338a713495d5df281d4e98f1bda7d75e291f488c31ba58e306881bc33eff',
     );
@@ -168,13 +183,16 @@ describe('fingerprint', () => {
 
 describe('isValidLink', () => {
   const expected = { seq: 0, prevHash: anchor(manifest) };
+  const relations = (count: number) =>
+    Array.from({ length: count }, () => ({ kind: 'supports' as const, to: FIRST_ID }));
 
-  test('aceita o elo na posição esperada', () => {
+  it('should accept the link at the expected position', () => {
     const l = link();
+
     expect(isValidLink(l, expected)).toEqual({ link: l });
   });
 
-  test('aceita o primeiro elo do lote com batch', () => {
+  it('should accept the first link of the batch with batch', () => {
     const l = link({
       batch: {
         fingerprint: sha256hex('x'),
@@ -182,129 +200,150 @@ describe('isValidLink', () => {
         aliases: { first: 'proc-1:0198f4a0-0000-7000-8000-000000000001' },
       },
     });
+
     expect(isValidLink(l, expected)).toEqual({ link: l });
   });
 
-  test('ancora o primeiro elo no hash do manifesto', () => {
+  it('should anchor the first link on the manifest hash', () => {
     expect(isValidLink(link({ prevHash: sha256hex('outro') }), expected)).toEqual({
       reasons: ['hash-mismatch'],
     });
   });
 
-  test('recusa seq fora da posição esperada', () => {
+  it('should reject a seq out of the expected position', () => {
     expect(isValidLink(link({ seq: 1 }), expected)).toEqual({ reasons: ['diverging-seq'] });
   });
 
-  test('seq e prevHash divergentes juntos devolvem as duas razões de posição', () => {
+  it('should return both position reasons for a diverging seq and prevHash together', () => {
     const both = link({ seq: 1, prevHash: sha256hex('outro') });
+
     expect(isValidLink(both, expected)).toEqual({ reasons: ['diverging-seq', 'hash-mismatch'] });
   });
 
-  test('o elo seguinte encadeia no hash do anterior', () => {
+  it('should chain the next link on the hash of the previous one', () => {
     const first = link();
     const second = link({ seq: 1, prevHash: hashLink(first) });
+
     expect(isValidLink(second, { seq: 1, prevHash: hashLink(first) })).toEqual({ link: second });
     expect(isValidLink(second, { seq: 1, prevHash: hashLink(link({ seq: 9 })) })).toEqual({
       reasons: ['hash-mismatch'],
     });
   });
 
-  test('adulterar o conteúdo do elo anterior quebra o encadeamento', () => {
+  it('should break the chaining when the content of the previous link is tampered with', () => {
     const first = link();
     const second = link({ seq: 1, prevHash: hashLink(first) });
     const tamperedFirst = { ...first, data: { text: 'adulterado' } };
+
     expect(isValidLink(second, { seq: 1, prevHash: hashLink(tamperedFirst) })).toEqual({
       reasons: ['hash-mismatch'],
     });
   });
 
-  test('recusa campo desconhecido, campo ausente e valor que não é objeto', () => {
+  it('should reject a malformed line as invalid-line', () => {
     const invalidLine = { reasons: ['invalid-line'] };
+
     expect(isValidLink({ ...link(), extra: 1 }, expected)).toEqual(invalidLine);
     expect(isValidLink(omit(link(), ['author']), expected)).toEqual(invalidLine);
     expect(isValidLink('texto', expected)).toEqual(invalidLine);
     expect(isValidLink(null, expected)).toEqual(invalidLine);
   });
 
-  test('forma inválida é só invalid-line, mesmo com a posição também errada', () => {
+  it('should return only invalid-line for an invalid shape, even with the position also wrong', () => {
     const wrongShapeAndPosition = { ...link({ seq: 7 }), extra: 1 };
+
     expect(isValidLink(wrongShapeAndPosition, expected)).toEqual({ reasons: ['invalid-line'] });
   });
 
   // `expected` acompanha o `seq` do elo quando é ele o inválido, para o schema ser o único a recusar.
-  test.each<[string, object, Partial<Expected>]>([
-    ['seq negativo', { seq: -1 }, { seq: -1 }],
-    ['seq fracionário', { seq: 1.5 }, { seq: 1.5 }],
-    ['seq string', { seq: '1' }, {}],
-    ['batch.key vazia', { batch: { fingerprint: sha256hex('x'), key: '' } }, {}],
+  it.each<[string, object, Partial<Expected>]>([
+    ['negative seq', { seq: -1 }, { seq: -1 }],
+    ['fractional seq', { seq: 1.5 }, { seq: 1.5 }],
+    ['string seq', { seq: '1' }, {}],
+    ['empty batch.key', { batch: { fingerprint: sha256hex('x'), key: '' } }, {}],
     [
-      'alias com @ na chave',
+      'alias with @ in the key',
       { batch: { fingerprint: sha256hex('x'), aliases: { '@x': FIRST_ID } } },
       {},
     ],
     [
-      'alias com valor que não é id',
+      'alias with a value that is not an id',
       { batch: { fingerprint: sha256hex('x'), aliases: { x: 'nope' } } },
       {},
     ],
-    ['batch com chave extra', { batch: { fingerprint: sha256hex('x'), extra: 1 } }, {}],
-    ['relação com chave extra', { relations: [{ kind: 'supports', to: FIRST_ID, extra: 1 }] }, {}],
-  ])('recusa %s com a posição certa', (_label, overrides, position) => {
+    ['batch with an extra key', { batch: { fingerprint: sha256hex('x'), extra: 1 } }, {}],
+    [
+      'relation with an extra key',
+      { relations: [{ kind: 'supports', to: FIRST_ID, extra: 1 }] },
+      {},
+    ],
+  ])('should reject %s with the right position', (_label, overrides, position) => {
     const value = { ...link(), ...overrides };
+
     expect(isValidLink(value, { ...expected, ...position })).toEqual({
       reasons: ['invalid-line'],
     });
   });
 
-  test('recusa batch com fingerprint que não é hash', () => {
+  it('should reject a batch with a fingerprint that is not a hash', () => {
     const l = { ...link(), batch: { fingerprint: 'curto' } };
+
     expect(isValidLink(l, expected)).toEqual({ reasons: ['invalid-line'] });
   });
 
-  test('data que o canonicalize recusa (surrogate solitário) é invalid-line, não exceção', () => {
+  it('should return invalid-line, not throw, for data that canonicalize refuses (lone surrogate)', () => {
     expect(isValidLink(link({ data: { text: '\ud800' } }), expected)).toEqual({
       reasons: ['invalid-line'],
     });
   });
 
-  test('aninhamento além da pilha do parse é invalid-line, sem teto de profundidade', () => {
+  it('should return invalid-line for nesting beyond the parse stack, with no depth ceiling', () => {
     expect(isValidLink(link({ data: nested(2000) }), expected)).toEqual({
       reasons: ['invalid-line'],
     });
   });
 
-  test('relações no teto passam e uma a mais cai (tetos do N8)', () => {
-    const relations = (count: number) =>
-      Array.from({ length: count }, () => ({ kind: 'supports' as const, to: FIRST_ID }));
+  it('should accept relations at the ceiling (N8)', () => {
     expect(isValidLink(link({ relations: relations(RELATIONS_MAX) }), expected)).toHaveProperty(
       'link',
     );
+  });
+
+  it('should reject one relation over the ceiling (N8)', () => {
     expect(isValidLink(link({ relations: relations(RELATIONS_MAX + 1) }), expected)).toEqual({
       reasons: ['invalid-line'],
     });
   });
 });
 
-describe('Batch (tetos do N8)', () => {
+describe('Batch', () => {
   const fingerprintOnly = { fingerprint: sha256hex('x') };
+  const aliases = (count: number) =>
+    Object.fromEntries(Array.from({ length: count }, (_, i) => [`a${i}`, FIRST_ID]));
 
-  test('key no teto passa e um caractere a mais cai', () => {
+  it('should accept a key at the ceiling (N8)', () => {
     expect(BATCH_KEY_MAX).toBe(200);
+
     expect(Batch.safeParse({ ...fingerprintOnly, key: 'k'.repeat(BATCH_KEY_MAX) }).success).toBe(
       true,
     );
+  });
+
+  it('should reject a key one character over the ceiling (N8)', () => {
     expect(
       Batch.safeParse({ ...fingerprintOnly, key: 'k'.repeat(BATCH_KEY_MAX + 1) }).success,
     ).toBe(false);
   });
 
-  test('aliases no teto passam e uma entrada a mais cai', () => {
-    const aliases = (count: number) =>
-      Object.fromEntries(Array.from({ length: count }, (_, i) => [`a${i}`, FIRST_ID]));
+  it('should accept aliases at the ceiling (N8)', () => {
     expect(BATCH_ALIASES_MAX).toBe(50);
+
     expect(
       Batch.safeParse({ ...fingerprintOnly, aliases: aliases(BATCH_ALIASES_MAX) }).success,
     ).toBe(true);
+  });
+
+  it('should reject one alias entry over the ceiling (N8)', () => {
     expect(
       Batch.safeParse({ ...fingerprintOnly, aliases: aliases(BATCH_ALIASES_MAX + 1) }).success,
     ).toBe(false);
