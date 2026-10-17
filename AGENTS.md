@@ -8,8 +8,9 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Key Files
 | File | Description |
 |------|-------------|
-| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
+| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `test:mutation`, `typecheck`, `lint`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
 | `tsconfig.json` | Configuração do TypeScript |
+| `stryker.config.json` | Config do Stryker (`npm run test:mutation`): roda só os specs unitários de `jest.config.testMatch` contra os arquivos de `mutate`, fora do CI e do husky; relatórios em `reports/mutation/` (ignorado pelo git) |
 | `eslint.config.js` | Config do ESLint (typescript-eslint com `stylisticTypeChecked`, `eslint-plugin-jest`, `eslint-plugin-n`); importa `boundaryBlocks` de `eslint.boundaries.js` |
 | `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
 | `.prettierrc`, `.prettierignore`, `.editorconfig` | Formatação (aspas simples, vírgula final, 100 colunas); `*.md` e `package-lock.json` ficam fora do Prettier |
@@ -51,6 +52,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `esbuild`: build dos dois bundles
 - `tar`: geração do `.tar` do arquivamento do dado 0.x (`src/archive.ts`, só pelo instalador, que roda do repositório)
 - `jest` + `ts-jest`, `fast-check`, `@modelcontextprotocol/client` (cliente dos specs MCP e e2e): testes
+- `@stryker-mutator/core` + `@stryker-mutator/jest-runner` + `@stryker-mutator/typescript-checker`: teste de mutação dos unitários (`stryker.config.json`)
 - `typescript`, `eslint` (+ `typescript-eslint`, `eslint-plugin-jest`, `eslint-plugin-n`, `eslint-config-prettier`), `prettier`: tipos, lint e formatação
 - `husky` + `lint-staged`: hook de pré-commit
 - `git-cliff`: rascunho do `CHANGELOG.md` (`cliff.toml`)

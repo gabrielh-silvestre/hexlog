@@ -126,6 +126,10 @@ describe('N11', () => {
     'tar',
     // Rascunho do CHANGELOG.md a partir dos Conventional Commits (cliff.toml).
     'git-cliff',
+    // Teste de mutação dos unitários (stryker.config.json).
+    '@stryker-mutator/core',
+    '@stryker-mutator/jest-runner',
+    '@stryker-mutator/typescript-checker',
   ];
   const CARET_RANGE = /^\^\d+\.\d+\.\d+$/;
   const outsideCaret = (deps: Record<string, string>) =>
