@@ -12,8 +12,8 @@
 - `npm ci` precisa ser completo (sem `--omit=dev`): `esbuild` e `@modelcontextprotocol/client` são devDependencies usadas pelo instalador e pelos testes. Node `>= 24.18.1` (`package.json#engines`).
 - Não precisa de `npm run build` prévio: os specs que dependem de bundle constroem o artefato num processo filho. `npm run build` só cabe antes de PR que toque `scripts/build.ts` ou `scripts/install.ts`.
 - Os testes lentos do `npm test` são TF1 (kill -9 no meio do lote), o dono do lock vivo pausado (`adapters/lock.spec.ts`, `SIGSTOP`), P1 e o estresse 8x25 do lock.
-- `npm run test:mutation` roda o Stryker só nos unitários listados em `stryker.config.json` (`jest.config.testMatch`), à mão, fora do CI e do husky; os relatórios saem em `reports/mutation/` (ignorado pelo git).
-- Sobra de execução interrompida (`kill -9` pula o `globalTeardown`): `find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'hexlog-suite-*' -exec rm -rf {} +`.
+- `npm run test:mutation` roda o Stryker só nos unitários listados em `stryker.config.json` (`jest.config.testMatch`), à mão, fora do CI e do husky; os relatórios saem em `reports/mutation/` (ignorado pelo git). O `globalSetup` fica desligado no Stryker, então a rodada usa o `TMPDIR` real: rode com `TMPDIR=$(mktemp -d) npm run test:mutation`.
+- Sobra de execução interrompida (`kill -9` pula o `globalTeardown`; um worker de mutação morto deixa os `hexlog-<prefixo>-*` de `helpers.ts#createTempDir`): com nenhum jest nem Stryker rodando, `find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'hexlog-*' -exec rm -rf {} +` apaga os dois (`hexlog-suite-*` é um `hexlog-*`).
 
 ## Hooks locais
 
@@ -39,7 +39,7 @@
 - Ao testar uma tool que recusa entrada, use `expectError()` de `mcp/environment.ts` antes de reimplementar a asserção de erro estruturado.
 - Diretório temporário só por `helpers.ts#createTempDir`, dentro de hook ou teste, nunca na coleta do `describe`: a coleta roda até com `-t`, e o `afterAll` de `cleanup.ts` não roda num arquivo sem teste selecionado, então o diretório vazaria. A trava de lint só barra `mkdtempSync`.
 - O `globalSetup` (`test/global-setup.ts`) apaga as variáveis locais do Git (`GIT_DIR`, `GIT_INDEX_FILE` etc.), que um hook disparado de worktree vinculada exporta: nenhum spec depende de `GIT_*` herdado, e todo `git` de spec roda com `cwd` num repositório temporário.
-- Teste que sobe bundle, processo filho ou carga declara o próprio timeout como último argumento do `it` (de 15_000 a 240_000 ms), porque o padrão do jest é 5000 ms e não há `testTimeout` global.
+- Teste que sobe bundle, processo filho ou carga declara o próprio timeout como último argumento do `it` (de 15_000 a 240_000 ms), porque o padrão do jest é 5000 ms e não há `testTimeout` global; quando o Act compartilhado roda no `beforeAll` ([convencoes.md](convencoes.md), seção "Escrita dos testes"), o timeout vai como último argumento do `beforeAll`.
 - Property-based tests (`fast-check`, `fc.assert`/`fc.property`) cobrem as invariantes de vigência (`domain/vigency.property.spec.ts`), do `expectedHead` do `verify_chain` (`shared/loader.property.spec.ts`), da busca (`adapters/search.spec.ts`) e da paginação (`queries/pagination.spec.ts`).
 - Os IDs nos títulos de teste (`M#`, `N#`, `S#`, `B#`, `I#`, `C#`, `Q#`, `R-#`, `U-#`, `D-##`, `P#`, `TF#`, `SL#` e os demais de [documentacao.md](documentacao.md)) ficam só no fim do título do `it`, entre parênteses e separados por vírgula (`it('should … (TF3, D-10)')`), nunca no `describe`; são rótulos das famílias de documentacao.md, não dos ADRs 0007 a 0010.
 
