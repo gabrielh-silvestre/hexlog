@@ -14,7 +14,12 @@ Os specs de orçamento de tempo (`*.budget.spec.ts`) ficam fora do `npm test` e 
 em série em `npm run test:budget`, no CI.
 
 `npm run test:mutation` roda o Stryker só nos specs unitários de `stryker.config.json`,
-à mão, fora do CI e do husky; os relatórios saem em `reports/mutation/`.
+à mão, fora do CI e do husky; os relatórios saem em `reports/mutation/`. O `globalSetup`
+fica desligado no Stryker, então a rodada usa o `TMPDIR` real: rode com
+`TMPDIR=$(mktemp -d) npm run test:mutation`. Um worker de mutação morto deixa
+`hexlog-*` nesse diretório: apague-o, ou, sem `TMPDIR` próprio, rode
+`find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'hexlog-*' -exec rm -rf {} +` com nenhum
+jest nem Stryker rodando.
 
 ## Scripts de leitura
 

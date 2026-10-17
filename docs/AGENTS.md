@@ -1,7 +1,7 @@
 # docs
 
 **Parent context:** `../AGENTS.md`
-**Generated:** 2026-09-17 · **Updated:** 2026-10-07
+**Generated:** 2026-09-17 · **Updated:** 2026-10-17
 
 ## Purpose
 Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0012, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
