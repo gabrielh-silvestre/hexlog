@@ -35,7 +35,7 @@
 
 ## Convenções dos specs
 
-- Spec que chama tools passa por `mcp/environment.ts#createEnvironment()` (servidor real sobre `compose` e `InMemoryTransport`) e nunca mocka o servidor MCP.
+- Spec que chama tools passa por `mcp/environment.ts#createEnvironment()` (servidor real sobre `compose` e `InMemoryTransport`) e nunca mocka o servidor MCP. Exceção: o spec unitário do `mutate` de `stryker.config.json` pode registrar uma tool num servidor falso que só captura a config de `registerTool` (esquemas, descrição, handler) e chamar o handler real por `mcp/kernel.ts#execute` sobre um serviço falso, sem `compose` nem transporte; ele não substitui o caso de integração da mesma tool, que segue por `createEnvironment()`.
 - Ao testar uma tool que recusa entrada, use `expectError()` de `mcp/environment.ts` antes de reimplementar a asserção de erro estruturado.
 - Diretório temporário só por `helpers.ts#createTempDir`, dentro de hook ou teste, nunca na coleta do `describe`: a coleta roda até com `-t`, e o `afterAll` de `cleanup.ts` não roda num arquivo sem teste selecionado, então o diretório vazaria. A trava de lint só barra `mkdtempSync`.
 - O `globalSetup` (`test/global-setup.ts`) apaga as variáveis locais do Git (`GIT_DIR`, `GIT_INDEX_FILE` etc.), que um hook disparado de worktree vinculada exporta: nenhum spec depende de `GIT_*` herdado, e todo `git` de spec roda com `cwd` num repositório temporário.
