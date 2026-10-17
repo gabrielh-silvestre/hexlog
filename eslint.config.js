@@ -11,6 +11,8 @@ export default defineConfig(
     ignores: [
       'dist/**',
       'coverage/**',
+      'reports/**',
+      '.stryker-tmp/**',
       'graphify-out/**',
       '.gitnexus/**',
       '.omc/**',

@@ -2,7 +2,7 @@
 
 Estudo do que dá para melhorar em qualidade/confiabilidade do hexlog no nível
 de código e teste — TypeScript, ESLint, jest, property-based testing,
-mutação. **O tier "Agora" já está instalado; o resto é estudo, nada instalado.** Para plataformas de CI/CD (CodeQL,
+mutação. **O tier "Agora" e o Stryker (só nos unitários) já estão instalados; o resto é estudo, nada instalado.** Para plataformas de CI/CD (CodeQL,
 Dependabot, npm audit, SonarQube Cloud, Codecov, knip, dependency-cruiser,
 Semgrep), ver [`qualidade-ci.md`](./qualidade-ci.md) — não repetido aqui.
 
@@ -125,6 +125,18 @@ O `ci.yml` rodava `npm test` sem `--ci`, porque o repo não tem snapshots; hoje 
 `eslint.config.js` (`ignores`) já ignora `coverage/**`, a pasta de saída do
 `test:coverage`.
 
+## Mutação (Stryker)
+
+> **Instalado em 2026-10-17** (branch `chore/test-suite-refactor`), só nos
+> specs unitários: `@stryker-mutator/core`, `jest-runner` e `typescript-checker`
+> em `^10.0.0`.
+
+A rodada é manual, por `npm run test:mutation`, fora do CI e do husky. Os specs
+e os arquivos de `src/` do escopo ficam em `stryker.config.json`
+(`jest.config.testMatch` e `mutate`), e o relatório sai em `reports/mutation/`,
+ignorado pelo git. O Stryker roda o jest sem `globalSetup`, sem `globalTeardown`
+e sem `--findRelatedTests`.
+
 ## Depois
 
 Valor real, mas custo maior (triagem de regras, calibração, ou infra nova).
@@ -134,13 +146,12 @@ Um item por PR, quando a base crescer ou o tempo sobrar.
 |---|---|---|---|---|
 | `tseslint.configs.strictTypeChecked` | ~60–90 min | Pega promise não tratada, condição sempre verdadeira, `any` implícito residual | Gera muitos avisos na 1ª rodada; foi Non-Goal explícito da tarefa de CI mais recente (`git log`: `2a7d97e ci: add github actions quality workflow`) — reavaliar depois do `stylisticTypeChecked` assentar | [typescript-eslint shared configs](https://typescript-eslint.io/users/configs/) |
 | `eslint-plugin-unicorn` (`unicorn/recommended`) | ~45–90 min | 300+ regras, cobre filename-case (já bate com o padrão kebab-case do repo), array/string idioms | Muito opinativo, precisa triagem de exceções; exige ESLint ≥10.4 (ok, tem 10.10.0) e flat config + ESM (ok) | [eslint-plugin-unicorn README](https://github.com/sindresorhus/eslint-plugin-unicorn) |
-| StrykerJS + `@stryker-mutator/jest-runner`, escopado a `src/domain/chain.ts` e `src/domain/relations.ts`, modo incremental | ~45–60 min setup | Mede se os testes da cadeia de hash e das regras de relação e vigência (núcleo do domínio) realmente matam mutantes, não só cobrem linha | Rodada de mutação é lenta; `incremental: true` amortiza rodadas seguintes | [Stryker intro](https://stryker-mutator.io/docs/stryker-js/introduction/), [jest runner](https://stryker-mutator.io/docs/stryker-js/jest-runner/), [incremental](https://stryker-mutator.io/docs/stryker-js/configuration/#incremental-boolean) |
 | Expandir fast-check para `src/domain/gate.ts` (`evaluateGate`) | ~30–45 min | Vigência, busca e paginação já têm property test (`test/domain/vigency.property.spec.ts`, `test/adapters/search.spec.ts`, `test/queries/pagination.spec.ts`); gates só têm exemplo fixo (`test/domain/gate.spec.ts`) | fast-check é agnóstico de test runner, plugável direto no jest já usado | [fast-check getting started](https://fast-check.dev/docs/introduction/getting-started/) |
 | commitlint + hook `commit-msg` no husky já instalado | ~15–20 min | Passa a verificar automaticamente o padrão Conventional Commits que os commits recentes já seguem (`5121859 chore:`, `fdbf24f fix:`, `2a7d97e ci:`) | Mais um gate no fluxo de commit; hoje o padrão é só convenção (skill `commit-message`) | [commitlint local setup](https://commitlint.js.org/#/guides-local-setup) |
 
 ## Nunca
 
-Linhas `Depois` (Stryker) e `Nunca` revalidadas em 2026-10-03 contra a árvore 1.0: os arquivos citados existem, `exactOptionalPropertyTypes` foi remedido em 2026-10-04 (abaixo) e `publint`/`arethetypeswrong` seguem irrelevantes porque o pacote é `private`, instalado como bundle, e os ADRs 0007 a 0009 não preveem publicação em registry.
+Linhas `Nunca` revalidadas em 2026-10-03 contra a árvore 1.0: os arquivos citados existem, `exactOptionalPropertyTypes` foi remedido em 2026-10-04 (abaixo) e `publint`/`arethetypeswrong` seguem irrelevantes porque o pacote é `private`, instalado como bundle, e os ADRs 0007 a 0009 não preveem publicação em registry.
 
 | Item | Motivo | Fonte |
 |---|---|---|
@@ -155,4 +166,5 @@ Linhas `Depois` (Stryker) e `Nunca` revalidadas em 2026-10-03 contra a árvore 1
 1. Instalado: `noUncheckedIndexedAccess` + `noImplicitOverride` no `tsconfig.json`.
 2. Instalado: `stylisticTypeChecked` + `eslint-plugin-n` + `eslint-plugin-jest`.
 3. Instalado, sem `--ci`: jest hardening (`test:coverage` com piso de 90 no CI, `--errorOnDeprecated`).
-4. Reavaliar `strictTypeChecked`, `eslint-plugin-unicorn`, Stryker e o resto da camada **Depois** quando a base de código crescer.
+4. Instalado: Stryker só nos unitários (`npm run test:mutation`, rodada manual).
+5. Reavaliar `strictTypeChecked`, `eslint-plugin-unicorn` e o resto da camada **Depois** quando a base de código crescer.

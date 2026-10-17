@@ -134,6 +134,10 @@ describe('N11', () => {
     'markdownlint-cli2',
     'cspell',
     '@cspell/dict-pt-br',
+    // Teste de mutação dos unitários (stryker.config.json).
+    '@stryker-mutator/core',
+    '@stryker-mutator/jest-runner',
+    '@stryker-mutator/typescript-checker',
   ];
   const CARET_RANGE = /^\^\d+\.\d+\.\d+$/;
   const outsideCaret = (deps: Record<string, string>) =>

@@ -12,6 +12,7 @@
 - `npm ci` precisa ser completo (sem `--omit=dev`): `esbuild` e `@modelcontextprotocol/client` são devDependencies usadas pelo instalador e pelos testes. Node `>= 24.18.1` (`package.json#engines`).
 - Não precisa de `npm run build` prévio: os specs que dependem de bundle constroem o artefato num processo filho. `npm run build` só cabe antes de PR que toque `scripts/build.ts` ou `scripts/install.ts`.
 - Os testes lentos do `npm test` são TF1 (kill -9 no meio do lote), o dono do lock vivo pausado (`adapters/lock.spec.ts`, `SIGSTOP`), P1 e o estresse 8x25 do lock.
+- `npm run test:mutation` roda o Stryker só nos unitários listados em `stryker.config.json` (`jest.config.testMatch`), à mão, fora do CI e do husky; os relatórios saem em `reports/mutation/` (ignorado pelo git).
 - Sobra de execução interrompida (`kill -9` pula o `globalTeardown`): `find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'hexlog-suite-*' -exec rm -rf {} +`.
 
 ## Hooks locais
