@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { VERSION } from '../src/version.ts';
@@ -18,12 +18,12 @@ function sections(text: string): Map<string, string> {
 describe('CHANGELOG.md', () => {
   const bySection = sections(changelog);
 
-  test('tem a seção [Não lançado] para as mudanças ainda sem versão', () => {
+  it('should have an unreleased section for changes that have no version yet', () => {
     expect(bySection.has('Não lançado')).toBe(true);
   });
 
   // A seção da versão nasce no mesmo commit do bump de package.json#version.
-  test('a versão do package.json tem seção datada com ao menos uma entrada', () => {
+  it('should have a dated section with at least one entry for the package.json version', () => {
     expect(changelog).toMatch(
       new RegExp(`^## \\[${VERSION.replaceAll('.', '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm'),
     );

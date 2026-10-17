@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -38,67 +38,71 @@ function copyOf(xdg: string): string {
   return copy;
 }
 
-let xdgHome: string;
-let dataHome: string;
-let attachmentHash: string;
-
 const ATTACHMENT_TEXT = 'relatório de anexo';
 
-// alpha/run-1: 5 lotes de 1 registro (seq 0 a 4), 1 minuto de intervalo; alpha/run-2: vazio.
-//   seq 0 note com chave `k-a` e seq 4 note com outra chave e o mesmo conteúdo (nenhum é chave em excesso);
-//   seq 1 note sem chave e seq 2 note sem chave com o mesmo conteúdo (possível duplicata);
-//   seq 3 task com chave e conteúdo único (chave em excesso).
-// alpha/run-3: um lote de 2 registros com chave e conteúdo único (G4: não é chave em excesso) e um
-//   registro `doc` que cita um anexo.
-beforeAll(async () => {
-  ({ xdg: xdgHome, dataDir: dataHome } = newDataHome());
-  let now = START;
-  const { services } = compose({
-    dataDir: dataHome,
-    cwd: xdgHome,
-    clock: () => new Date(now),
-    logger: () => undefined,
-  });
-  services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
-  services.definition.defineType({ project: PROJECT, name: 'task', schema: NOTE });
-  services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
-  for (const process of ['run-1', 'run-2', 'run-3']) {
-    services.process.createProcess({ project: PROJECT, process });
-  }
-  const batches = [
-    { key: 'k-a', records: [note('a')] },
-    { records: [note('dup')] },
-    { records: [note('dup')] },
-    { key: 'k-t', records: [note('t', { type: 'task' })] },
-    { key: 'k-a2', records: [note('a')] },
-  ];
-  for (const batch of batches) {
+// intervalos de 10 min, 1 h, 2 h e 5 min, atravessando a meia-noite: dois dias e 4 intervalos
+// distintos, para a ordem e o corte do top 3 serem observáveis
+const OFFSETS = [0, 10 * MINUTE, 70 * MINUTE, 190 * MINUTE, 195 * MINUTE];
+
+describe('scripts/insights.ts', () => {
+  let xdgHome: string;
+  let dataHome: string;
+  let attachmentHash: string;
+
+  // alpha/run-1: 5 lotes de 1 registro (seq 0 a 4), 1 minuto de intervalo; alpha/run-2: vazio.
+  //   seq 0 note com chave `k-a` e seq 4 note com outra chave e o mesmo conteúdo (nenhum é chave em excesso);
+  //   seq 1 note sem chave e seq 2 note sem chave com o mesmo conteúdo (possível duplicata);
+  //   seq 3 task com chave e conteúdo único (chave em excesso).
+  // alpha/run-3: um lote de 2 registros com chave e conteúdo único (G4: não é chave em excesso) e um
+  //   registro `doc` que cita um anexo.
+  beforeAll(async () => {
+    ({ xdg: xdgHome, dataDir: dataHome } = newDataHome());
+    let now = START;
+    const { services } = compose({
+      dataDir: dataHome,
+      cwd: xdgHome,
+      clock: () => new Date(now),
+      logger: () => undefined,
+    });
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.definition.defineType({ project: PROJECT, name: 'task', schema: NOTE });
+    services.definition.defineType({ project: PROJECT, name: 'doc', schema: DOC });
+    for (const process of ['run-1', 'run-2', 'run-3']) {
+      services.process.createProcess({ project: PROJECT, process });
+    }
+    const batches = [
+      { key: 'k-a', records: [note('a')] },
+      { records: [note('dup')] },
+      { records: [note('dup')] },
+      { key: 'k-t', records: [note('t', { type: 'task' })] },
+      { key: 'k-a2', records: [note('a')] },
+    ];
+    for (const batch of batches) {
+      await services.process.register({
+        project: PROJECT,
+        process: 'run-1',
+        author: AUTHOR,
+        ...batch,
+      });
+      now += MINUTE;
+    }
+    attachmentHash = services.attachment.attach({ project: PROJECT, text: ATTACHMENT_TEXT }).hash;
     await services.process.register({
       project: PROJECT,
-      process: 'run-1',
+      process: 'run-3',
       author: AUTHOR,
-      ...batch,
+      key: 'k-m',
+      records: [note('m1'), note('m2')],
     });
-    now += MINUTE;
-  }
-  attachmentHash = services.attachment.attach({ project: PROJECT, text: ATTACHMENT_TEXT }).hash;
-  await services.process.register({
-    project: PROJECT,
-    process: 'run-3',
-    author: AUTHOR,
-    key: 'k-m',
-    records: [note('m1'), note('m2')],
+    await services.process.register({
+      project: PROJECT,
+      process: 'run-3',
+      author: AUTHOR,
+      records: [note('d', { type: 'doc', data: { body: attachmentHash } })],
+    });
   });
-  await services.process.register({
-    project: PROJECT,
-    process: 'run-3',
-    author: AUTHOR,
-    records: [note('d', { type: 'doc', data: { body: attachmentHash } })],
-  });
-});
 
-describe('relatório de integridade e linha do tempo', () => {
-  test('processo íntegro sai com 0, cadeia ok e processo vazio sem registros', () => {
+  it('should exit 0 with an ok chain for an intact process and no records for an empty one', () => {
     const { code, out } = runInsights(xdgHome);
 
     expect(code).toBe(0);
@@ -112,18 +116,32 @@ describe('relatório de integridade e linha do tempo', () => {
     expect(out).toContain('- timeline: no records');
   });
 
-  test('o filtro projeto/processo limita o relatório e filtro sem alvo sai com 1', () => {
-    const only = runInsights(xdgHome, 'alpha/run-2');
-    const none = runInsights(xdgHome, 'alpha/ghost');
+  describe('with the alpha/run-2 filter', () => {
+    let result: ReturnType<typeof runInsights>;
 
-    expect(only.out).not.toContain('## alpha/run-1');
-    expect(only.code).toBe(0);
-    expect(none.out).toContain('No processes found in');
-    expect(none.out).toContain("matching 'alpha/ghost'");
-    expect(none.code).toBe(1);
+    beforeAll(() => {
+      result = runInsights(xdgHome, 'alpha/run-2');
+    }, 15_000);
+
+    it('should limit the report to the project/process filter', () => {
+      expect(result.out).not.toContain('## alpha/run-1');
+      expect(result.code).toBe(0);
+    });
+
+    it('should show no key signals for a process without batches (SE8)', () => {
+      expect(result.out).toContain('- key signals: no batches');
+    });
   });
 
-  test('sem nenhum processo, sai com 0', () => {
+  it('should exit 1 when the filter matches no process', () => {
+    const { code, out } = runInsights(xdgHome, 'alpha/ghost');
+
+    expect(out).toContain('No processes found in');
+    expect(out).toContain("matching 'alpha/ghost'");
+    expect(code).toBe(1);
+  });
+
+  it('should exit 0 with no processes found when there are none', () => {
     const { xdg } = newDataHome();
 
     const { code, out } = runInsights(xdg);
@@ -132,21 +150,15 @@ describe('relatório de integridade e linha do tempo', () => {
     expect(out).toContain('No processes found');
   });
 
-  test('não altera nenhum arquivo do diretório de dados', () => {
+  it('should leave every file of the data directory unchanged', () => {
     const before = snapshot(dataHome);
 
     runInsights(xdgHome);
 
     expect(snapshot(dataHome)).toEqual(before);
   });
-});
 
-describe('linha do tempo', () => {
-  // intervalos de 10 min, 1 h, 2 h e 5 min, atravessando a meia-noite: dois dias e 4 intervalos
-  // distintos, para a ordem e o corte do top 3 serem observáveis
-  const OFFSETS = [0, 10 * MINUTE, 70 * MINUTE, 190 * MINUTE, 195 * MINUTE];
-
-  test('primeiro e último registro, registros por dia e os maiores intervalos em ordem, cortados no top 3', async () => {
+  it('should report the first and last record, records per day and the largest gaps in order, cut at the top 3', async () => {
     const { xdg, dataDir } = newDataHome();
     const first = Date.parse('2026-01-01T22:00:00.000Z');
     let now = first;
@@ -179,44 +191,38 @@ describe('linha do tempo', () => {
     expect(out).not.toContain('between seq 3 and 4');
     expect(code).toBe(0);
   });
-});
 
-describe('sinais da chave (SE8)', () => {
-  test('aponta a possível duplicata sem chave com o registro original', () => {
-    const { out } = runInsights(xdgHome, 'alpha/run-1');
+  describe('with the alpha/run-1 filter', () => {
+    let result: ReturnType<typeof runInsights>;
 
-    expect(out).toContain('  - possible duplicates without key: 1');
-    expect(out).toContain('    - seq 2 repeats seq 1 (note)');
+    beforeAll(() => {
+      result = runInsights(xdgHome, 'alpha/run-1');
+    }, 15_000);
+
+    it('should point at a possible duplicate without a key, with the original record (SE8)', () => {
+      expect(result.out).toContain('  - possible duplicates without key: 1');
+      expect(result.out).toContain('    - seq 2 repeats seq 1 (note)');
+    });
+
+    it('should point only at a key in excess whose fingerprint nobody repeats (SE8)', () => {
+      expect(result.out).toContain('  - keys in excess (proxy): 1');
+      expect(result.out).toContain('    - seq 3 (task)');
+      expect(result.out).not.toContain('seq 0 (note)');
+    });
+
+    it('should show the percentage of batches with a key per type (SE8)', () => {
+      expect(result.out).toContain('    - note: 2/4 batches with key (50.0%)');
+      expect(result.out).toContain('    - task: 1/1 batches with key (100.0%)');
+    });
   });
 
-  test('aponta só a chave em excesso cuja impressão ninguém repete', () => {
-    const { out } = runInsights(xdgHome, 'alpha/run-1');
-
-    expect(out).toContain('  - keys in excess (proxy): 1');
-    expect(out).toContain('    - seq 3 (task)');
-    expect(out).not.toContain('seq 0 (note)');
-  });
-
-  test('lote de 2 registros com chave e impressão única não é chave em excesso (G4)', () => {
+  it('should not count a batch of 2 records with a key and a unique fingerprint as a key in excess (G4, SE8)', () => {
     const { out } = runInsights(xdgHome, 'alpha/run-3');
 
     expect(out).toContain('  - keys in excess (proxy): 0');
   });
 
-  test('mostra o percentual de lotes com chave por tipo', () => {
-    const { out } = runInsights(xdgHome, 'alpha/run-1');
-
-    expect(out).toContain('    - note: 2/4 batches with key (50.0%)');
-    expect(out).toContain('    - task: 1/1 batches with key (100.0%)');
-  });
-
-  test('processo sem lotes não tem sinais de chave', () => {
-    const { out } = runInsights(xdgHome, 'alpha/run-2');
-
-    expect(out).toContain('- key signals: no batches');
-  });
-
-  test('lê o corpus gravado direto no disco e conta os lotes com chave por tipo', () => {
+  it('should read the corpus written straight to disk and count the batches with a key per type (SE8)', () => {
     const { xdg, dataDir } = newDataHome();
     writeRecordsCorpus(dataDir, { project: PROJECT, processes: ['proc1'], recordsPerProcess: 6 });
 
@@ -227,10 +233,8 @@ describe('sinais da chave (SE8)', () => {
     expect(out).toContain('    - milestone: 1/1 batches with key (100.0%)');
     expect(out).toContain('    - decision: 1/1 batches with key (100.0%)');
   });
-});
 
-describe('cadeia adulterada (SL1)', () => {
-  test('conteúdo adulterado no log é detectado: BROKEN e saída 2', () => {
+  it('should detect tampered log content, reporting BROKEN and exiting 2 (SL1)', () => {
     const xdg = copyOf(xdgHome);
     const log = processPaths(path.join(xdg, 'hexlog'), { project: PROJECT, process: 'run-1' }).log;
     fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"text":"dup"', '"text":"dux"'));
@@ -241,7 +245,7 @@ describe('cadeia adulterada (SL1)', () => {
     expect(code).toBe(2);
   });
 
-  test('primeiro elo quebrado: nenhum registro válido e linha do tempo indisponível, não vazia', async () => {
+  it('should report no valid records and an unavailable timeline, not an empty one, when the first link is broken (SL1)', async () => {
     const { xdg, dataDir } = newDataHome();
     const { services } = compose({
       dataDir,
@@ -268,7 +272,7 @@ describe('cadeia adulterada (SL1)', () => {
     expect(code).toBe(2);
   });
 
-  test('blob de anexo adulterado: attachments BROKEN e saída 2', () => {
+  it('should report attachments BROKEN and exit 2 for a tampered attachment blob (SL1)', () => {
     const xdg = copyOf(xdgHome);
     fs.writeFileSync(blobFile(path.join(xdg, 'hexlog'), PROJECT, attachmentHash), 'adulterado');
 
@@ -278,7 +282,7 @@ describe('cadeia adulterada (SL1)', () => {
     expect(code).toBe(2);
   });
 
-  test('falha ao ler o log de um processo: linha com o código e saída 1, sem derrubar os outros', () => {
+  it('should print a line with the code and exit 1 when the log of a process cannot be read, without dropping the others (SL1)', () => {
     const xdg = copyOf(xdgHome);
     const { log } = processPaths(path.join(xdg, 'hexlog'), { project: PROJECT, process: 'run-3' });
     fs.rmSync(log);
@@ -291,7 +295,7 @@ describe('cadeia adulterada (SL1)', () => {
     expect(code).toBe(1);
   });
 
-  test('falha de leitura (1) misturada com cadeia quebrada (2): o maior código vence', () => {
+  it('should exit with the larger code when a read failure (1) is mixed with a broken chain (2) (SL1)', () => {
     const xdg = copyOf(xdgHome);
     const dir = path.join(xdg, 'hexlog');
     const unreadable = processPaths(dir, { project: PROJECT, process: 'run-3' }).log;
@@ -310,7 +314,7 @@ describe('cadeia adulterada (SL1)', () => {
     expect(code).toBe(2);
   });
 
-  test('process.json truncado: relatório completo com o processo marcado PROCESS_CORRUPTED e saída 2', () => {
+  it('should print the full report with the process marked PROCESS_CORRUPTED and exit 2 for a truncated process.json (SL1)', () => {
     const xdg = copyOf(xdgHome);
     const { manifest } = processPaths(path.join(xdg, 'hexlog'), {
       project: PROJECT,
@@ -326,23 +330,19 @@ describe('cadeia adulterada (SL1)', () => {
     expect(err).toBe('');
     expect(code).toBe(2);
   });
-});
 
-describe('uso incorreto', () => {
-  test.each([
-    ['flag desconhecida', ['--bogus']],
-    ['mais de um filtro', ['alpha/run-1', 'alpha/run-2']],
-  ])('%s → exit 1 com o uso no stderr e nada no stdout', (_name, args) => {
+  it.each([
+    { name: 'an unknown flag', args: ['--bogus'] },
+    { name: 'more than one filter', args: ['alpha/run-1', 'alpha/run-2'] },
+  ])('should exit 1 with the usage on stderr and nothing on stdout for $name', ({ args }) => {
     const { code, out, err } = runInsights(xdgHome, ...args);
 
     expect(err).toContain('insights failed: usage:');
     expect(out).toBe('');
     expect(code).toBe(1);
   });
-});
 
-describe('dado 0.x (P11)', () => {
-  test('sobre <D> com dado 0.x sai com código 2 e a mensagem do LEGACY_DATA', () => {
+  it('should exit 2 with the LEGACY_DATA message over a <D> with 0.x data (P11)', () => {
     const xdg = createTempDir('xdg');
     fs.cpSync(legacyFixture, path.join(xdg, 'hexlog'), { recursive: true });
 

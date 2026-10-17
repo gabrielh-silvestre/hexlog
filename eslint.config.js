@@ -55,7 +55,6 @@ export default defineConfig(
   {
     // Só specs: test/cleanup.ts tem afterAll no topo.
     files: ['test/**/*.spec.ts'],
-    ignores: ['test/*.spec.ts'],
     rules: {
       'jest/consistent-test-it': ['error', { fn: 'it', withinDescribe: 'it' }],
       'jest/valid-title': [
@@ -107,6 +106,11 @@ export default defineConfig(
           message:
             'Use createTempDir from test/helpers.ts: it registers the directory for cleanup.',
         })),
+        {
+          selector:
+            "CallExpression[callee.name='describe'] CallExpression[callee.name='describe'][arguments.0.type='Literal'][arguments.0.value!=/^(when|with) /]",
+          message: 'Nested describe titles start with "when " or "with ".',
+        },
       ],
     },
   },
