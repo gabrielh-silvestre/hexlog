@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { omit } from 'es-toolkit';
 import { createDefinitionStore } from '../../src/adapters/fs/definition-store.ts';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
@@ -111,99 +111,315 @@ function setup() {
 const create = (service: ReturnType<typeof setup>['service'], process = 'run-1') =>
   service.createProcess({ project: PROJECT, process });
 
-describe('createProcess: creation (D-18)', () => {
-  test('pins the current version of each type, relation and gate, with the JCS hashes of each block', () => {
-    const { service, definitions, processes } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    definitions.add('types', 'note', '1.1', NOTE_1_1);
-    definitions.add('relations', 'based-on', '1.0', SUPPORTS);
-    definitions.add('gates', 'ready', '1.0', GATE);
-
-    const result = create(service);
-
-    expect(result).toEqual({
-      project: PROJECT,
-      process: 'run-1',
-      created: true,
-      lineageInheritance: true,
-      pinned: { types: ['note'], relations: ['based-on'], gates: ['ready'] },
-    });
-    expect(processes.manifests.get('run-1')).toEqual({
-      project: PROJECT,
-      process: 'run-1',
-      createdAt: NOW.toISOString(),
-      lineageInheritance: true,
-      fixed: {
-        types: { note: NOTE_1_1 },
-        relations: { 'based-on': SUPPORTS },
-        gates: { ready: GATE },
-      },
-      hashes: {
-        types: sha256hex('{"note":{"properties":{"text":{"type":"string"}},"type":"object"}}'),
-        relations: sha256hex('{"based-on":{"kind":"supports","name":"based-on"}}'),
-        gates: sha256hex(
-          '{"ready":{"name":"ready","questions":[{"kind":"occurred","select":{"type":"note"}}]}}',
-        ),
-      },
-    });
-  });
-
-  test('reads only the current version of each name, not the earlier ones', () => {
-    const { service, definitions } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    definitions.add('types', 'note', '1.1', NOTE_1_1);
-
-    create(service);
-
-    expect(definitions.reads).toEqual(['types/note@1.1']);
-  });
-
-  test.each<[DefinitionKind, Name, DefinitionOf[DefinitionKind]]>([
-    ['types', 'note', NOTE_1_0],
-    ['relations', 'based-on', SUPPORTS],
-    ['gates', 'ready', GATE],
-  ])('project with only %s registered already creates the process', (kind, name, definition) => {
-    const { service, definitions } = setup();
-    definitions.add(kind, name, '1.0', definition);
-
-    expect(create(service)).toMatchObject({ created: true, pinned: { [kind]: [name] } });
-  });
-
-  test('name with no version (folder left over from a failure) stays out of the manifest', () => {
-    const { service, definitions, processes } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    definitions.addEmptyName('types', 'orphan');
-
-    create(service);
-
-    expect(Object.keys(processes.manifests.get('run-1')?.fixed.types ?? {})).toEqual(['note']);
-  });
-});
-
-describe('createProcess: refusals', () => {
-  test.each(RESERVED_PROCESS_NAMES)(
-    'reserved name %s, before reading a definition or creating',
-    (name) => {
+describe('createProcess', () => {
+  describe('when the process is new', () => {
+    it('should pin the current version of each type, relation and gate, with the JCS hashes of each block (D-18)', () => {
       const { service, definitions, processes } = setup();
       definitions.add('types', 'note', '1.0', NOTE_1_0);
+      definitions.add('types', 'note', '1.1', NOTE_1_1);
+      definitions.add('relations', 'based-on', '1.0', SUPPORTS);
+      definitions.add('gates', 'ready', '1.0', GATE);
 
-      const error = captureError(() => create(service, name));
+      const result = create(service);
+
+      expect(result).toEqual({
+        project: PROJECT,
+        process: 'run-1',
+        created: true,
+        lineageInheritance: true,
+        pinned: { types: ['note'], relations: ['based-on'], gates: ['ready'] },
+      });
+      expect(processes.manifests.get('run-1')).toEqual({
+        project: PROJECT,
+        process: 'run-1',
+        createdAt: NOW.toISOString(),
+        lineageInheritance: true,
+        fixed: {
+          types: { note: NOTE_1_1 },
+          relations: { 'based-on': SUPPORTS },
+          gates: { ready: GATE },
+        },
+        hashes: {
+          types: sha256hex('{"note":{"properties":{"text":{"type":"string"}},"type":"object"}}'),
+          relations: sha256hex('{"based-on":{"kind":"supports","name":"based-on"}}'),
+          gates: sha256hex(
+            '{"ready":{"name":"ready","questions":[{"kind":"occurred","select":{"type":"note"}}]}}',
+          ),
+        },
+      });
+    });
+
+    it('should read only the current version of each name, not the earlier ones (D-18)', () => {
+      const { service, definitions } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      definitions.add('types', 'note', '1.1', NOTE_1_1);
+
+      create(service);
+
+      expect(definitions.reads).toEqual(['types/note@1.1']);
+    });
+
+    it.each<[DefinitionKind, Name, DefinitionOf[DefinitionKind]]>([
+      ['types', 'note', NOTE_1_0],
+      ['relations', 'based-on', SUPPORTS],
+      ['gates', 'ready', GATE],
+    ])(
+      'should create the process in a project with only %s registered (D-18)',
+      (kind, name, definition) => {
+        const { service, definitions } = setup();
+        definitions.add(kind, name, '1.0', definition);
+
+        expect(create(service)).toMatchObject({ created: true, pinned: { [kind]: [name] } });
+      },
+    );
+
+    it('should keep out of the manifest a name with no version, a folder left over from a failure (D-18)', () => {
+      const { service, definitions, processes } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      definitions.addEmptyName('types', 'orphan');
+
+      create(service);
+
+      expect(Object.keys(processes.manifests.get('run-1')?.fixed.types ?? {})).toEqual(['note']);
+    });
+  });
+
+  describe('when a refusal applies', () => {
+    it.each(RESERVED_PROCESS_NAMES)(
+      'should refuse the reserved name %s, before reading a definition or creating',
+      (name) => {
+        const { service, definitions, processes } = setup();
+        definitions.add('types', 'note', '1.0', NOTE_1_0);
+
+        const error = captureError(() => create(service, name));
+
+        expect(error).toMatchObject({
+          code: 'RESERVED_NAME',
+          details: [{ path: '/process', code: 'reserved-name' }],
+        });
+        expect(definitions.reads).toEqual([]);
+        expect(processes.creates).toEqual([]);
+      },
+    );
+
+    it.each([
+      ['project', { project: 'Not Valid', process: 'run-1' }, '/project'],
+      ['process', { project: PROJECT, process: 'Not_Valid' }, '/process'],
+    ])(
+      'should refuse an invalid %s name with INVALID_INPUT invalid-name coming out of the ports',
+      (_field, input, path) => {
+        const dataDir = createTempDir('create-process');
+        const definitions = createDefinitionStore({ dataDir });
+        definitions.write(PROJECT, 'types', 'note', '1.0', NOTE_1_0);
+        const service = createProcessService({
+          store: createProcessStore({ dataDir, log: () => undefined }),
+          definitions,
+          ...UNUSED_REGISTER_PORTS,
+          clock: () => NOW,
+        });
+
+        const error = captureError(() => service.createProcess(input));
+
+        expect(error).toMatchObject({
+          code: 'INVALID_INPUT',
+          details: [{ path, code: 'invalid-name' }],
+        });
+      },
+    );
+
+    it('should refuse a project with no definitions with TYPE_NOT_FOUND, creating nothing', () => {
+      const { service, processes } = setup();
+
+      const error = captureError(() => create(service));
 
       expect(error).toMatchObject({
-        code: 'RESERVED_NAME',
-        details: [{ path: '/process', code: 'reserved-name' }],
+        code: 'TYPE_NOT_FOUND',
+        message: expect.stringContaining('call define_type first'),
+        details: [{ path: '/project', code: 'unknown-name' }],
       });
-      expect(definitions.reads).toEqual([]);
       expect(processes.creates).toEqual([]);
-    },
-  );
+    });
 
-  test.each([
-    ['project', { project: 'Not Valid', process: 'run-1' }, '/project'],
-    ['process', { project: PROJECT, process: 'Not_Valid' }, '/process'],
-  ])(
-    'invalid %s name comes out of the ports as INVALID_INPUT invalid-name',
-    (_field, input, path) => {
+    it('should refuse a project left without definitions with TYPE_NOT_FOUND even with the process already created, instead of created: false', () => {
+      const { service, definitions, processes } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      create(service);
+      definitions.store.names = () => [];
+
+      const error = captureError(() => create(service));
+
+      expect(error).toMatchObject({
+        code: 'TYPE_NOT_FOUND',
+        details: [{ path: '/project', code: 'unknown-name' }],
+      });
+      expect(processes.creates).toHaveLength(1);
+    });
+
+    it('should not count a name folder without a version as a registered definition', () => {
+      const { service, definitions, processes } = setup();
+      definitions.addEmptyName('types', 'orphan');
+
+      const error = captureError(() => create(service));
+
+      expect(error).toMatchObject({ code: 'TYPE_NOT_FOUND' });
+      expect(processes.creates).toEqual([]);
+    });
+
+    it.each<[ErrorCode, string, Detail]>([
+      [
+        'TYPE_NOT_FOUND',
+        'unknown-name',
+        { path: '/name', code: 'unknown-name', message: 'unknown type' },
+      ],
+      [
+        'GATE_NOT_FOUND',
+        'unknown-version',
+        {
+          path: '/version',
+          code: 'unknown-version',
+          message: 'unknown version',
+          versions: ['1.0'],
+        },
+      ],
+    ])(
+      'should let a definition that vanishes between listing and reading (%s, %s) come out intact, creating nothing',
+      (code, _subcode, detail) => {
+        const { service, definitions, processes } = setup();
+        definitions.add('types', 'note', '1.0', NOTE_1_0);
+        const failing = new HexlogError(code, detail.message, [detail]);
+        definitions.store.read = () => {
+          throw failing;
+        };
+
+        const error = captureError(() => create(service));
+
+        expect(error).toBe(failing);
+        expect(processes.creates).toEqual([]);
+      },
+    );
+  });
+
+  describe('when the process already exists', () => {
+    it('should return no lineageInheritance for a legacy manifest that lacks it, and not rewrite the manifest', () => {
+      const { service, definitions, processes } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      create(service);
+      const legacy = omit(processes.store.readManifest({ project: PROJECT, process: 'run-1' }), [
+        'lineageInheritance',
+      ]);
+      processes.manifests.set('run-1', legacy);
+
+      const result = create(service);
+
+      expect(result).toEqual({
+        project: PROJECT,
+        process: 'run-1',
+        created: false,
+        pinned: { types: ['note'], relations: [], gates: [] },
+      });
+      expect(result).not.toHaveProperty('lineageInheritance');
+      expect(processes.manifests.get('run-1')).toBe(legacy);
+    });
+
+    it('should return created false, no stale and the manifest untouched when the definitions are the same', () => {
+      const { service, definitions, processes } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      create(service);
+      const first = processes.manifests.get('run-1');
+
+      const result = create(service);
+
+      expect(result).toEqual({
+        project: PROJECT,
+        process: 'run-1',
+        created: false,
+        lineageInheritance: true,
+        pinned: { types: ['note'], relations: [], gates: [] },
+      });
+      expect(processes.manifests.get('run-1')).toBe(first);
+    });
+
+    it('should return created false and stale with the current version of each when a type, relation and gate have a new version', () => {
+      const { service, definitions } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      definitions.add('relations', 'based-on', '1.0', SUPPORTS);
+      definitions.add('gates', 'ready', '1.0', GATE);
+      create(service);
+      definitions.add('types', 'note', '1.1', NOTE_1_1);
+      definitions.add('relations', 'based-on', '1.1', SUPPORTS_WIDER);
+      definitions.add('gates', 'ready', '1.1', GATE_2);
+
+      const result = create(service);
+
+      expect(result).toMatchObject({ created: false, pinned: { types: ['note'] } });
+      expect(result.stale).toEqual([
+        { kind: 'types', name: 'note', current: '1.1' },
+        { kind: 'relations', name: 'based-on', current: '1.1' },
+        { kind: 'gates', name: 'ready', current: '1.1' },
+      ]);
+    });
+
+    it('should mark as stale and keep out of pinned a definition created after the pinning', () => {
+      const { service, definitions } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      create(service);
+      definitions.add('types', 'task', '1.0', NOTE_1_0);
+
+      const result = create(service);
+
+      expect(result.pinned.types).toEqual(['note']);
+      expect(result.stale).toEqual([{ kind: 'types', name: 'task', current: '1.0' }]);
+    });
+
+    it('should list in stale only what changed', () => {
+      const { service, definitions } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      definitions.add('types', 'task', '1.0', NOTE_1_0);
+      create(service);
+      definitions.add('types', 'task', '1.1', NOTE_1_1);
+
+      expect(create(service).stale).toEqual([{ kind: 'types', name: 'task', current: '1.1' }]);
+    });
+
+    it('should mark as stale a name `constructor` created after the pinning, without reading the prototype', () => {
+      const { service, definitions } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      create(service);
+      definitions.add('types', 'constructor', '1.0', NOTE_1_0);
+
+      expect(create(service).stale).toEqual([
+        { kind: 'types', name: 'constructor', current: '1.0' },
+      ]);
+    });
+
+    it('should mark as stale with current null a pinned name that no longer has a version in the project', () => {
+      const { service, definitions } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      definitions.add('types', 'task', '1.0', NOTE_1_0);
+      create(service);
+      const versionsOf = definitions.store.versions.bind(definitions.store);
+      definitions.store.versions = (project, kind, name) =>
+        name === 'note' ? [] : versionsOf(project, kind, name);
+
+      expect(create(service).stale).toEqual([{ kind: 'types', name: 'note', current: null }]);
+    });
+
+    it('should let a PROCESS_CORRUPTED unreadable-manifest bubble up intact, not become created false', () => {
+      const { service, definitions, processes } = setup();
+      definitions.add('types', 'note', '1.0', NOTE_1_0);
+      create(service);
+      const message = 'process manifest is unreadable';
+      const corrupted = new HexlogError('PROCESS_CORRUPTED', message, [
+        { path: '/process', code: 'unreadable-manifest', message, process: 'run-1' },
+      ]);
+      processes.store.readManifest = () => {
+        throw corrupted;
+      };
+
+      expect(captureError(() => create(service))).toBe(corrupted);
+    });
+
+    it('should return created false with the log above the cap, reading only the manifest', () => {
       const dataDir = createTempDir('create-process');
       const definitions = createDefinitionStore({ dataDir });
       definitions.write(PROJECT, 'types', 'note', '1.0', NOTE_1_0);
@@ -213,213 +429,13 @@ describe('createProcess: refusals', () => {
         ...UNUSED_REGISTER_PORTS,
         clock: () => NOW,
       });
+      create(service);
+      fs.truncateSync(
+        processPaths(dataDir, { project: PROJECT, process: 'run-1' }).log,
+        MAX_LOG_BYTES + 1,
+      );
 
-      const error = captureError(() => service.createProcess(input));
-
-      expect(error).toMatchObject({
-        code: 'INVALID_INPUT',
-        details: [{ path, code: 'invalid-name' }],
-      });
-    },
-  );
-
-  test('project with no definitions refuses with TYPE_NOT_FOUND, creating nothing', () => {
-    const { service, processes } = setup();
-
-    const error = captureError(() => create(service));
-
-    expect(error).toMatchObject({
-      code: 'TYPE_NOT_FOUND',
-      message: expect.stringContaining('call define_type first'),
-      details: [{ path: '/project', code: 'unknown-name' }],
+      expect(create(service)).toMatchObject({ created: false, pinned: { types: ['note'] } });
     });
-    expect(processes.creates).toEqual([]);
-  });
-
-  test('project left without definitions refuses with TYPE_NOT_FOUND even with the process already created, instead of created: false', () => {
-    const { service, definitions, processes } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    create(service);
-    definitions.store.names = () => [];
-
-    const error = captureError(() => create(service));
-
-    expect(error).toMatchObject({
-      code: 'TYPE_NOT_FOUND',
-      details: [{ path: '/project', code: 'unknown-name' }],
-    });
-    expect(processes.creates).toHaveLength(1);
-  });
-
-  test('name folder without a version does not count as a registered definition', () => {
-    const { service, definitions, processes } = setup();
-    definitions.addEmptyName('types', 'orphan');
-
-    expect(captureError(() => create(service))).toMatchObject({ code: 'TYPE_NOT_FOUND' });
-    expect(processes.creates).toEqual([]);
-  });
-
-  test.each<[ErrorCode, string, Detail]>([
-    [
-      'TYPE_NOT_FOUND',
-      'unknown-name',
-      { path: '/name', code: 'unknown-name', message: 'unknown type' },
-    ],
-    [
-      'GATE_NOT_FOUND',
-      'unknown-version',
-      { path: '/version', code: 'unknown-version', message: 'unknown version', versions: ['1.0'] },
-    ],
-  ])(
-    'definition that vanishes between listing and reading (%s, %s) comes out intact, creating nothing',
-    (code, _subcode, detail) => {
-      const { service, definitions, processes } = setup();
-      definitions.add('types', 'note', '1.0', NOTE_1_0);
-      const failing = new HexlogError(code, detail.message, [detail]);
-      definitions.store.read = () => {
-        throw failing;
-      };
-
-      expect(captureError(() => create(service))).toBe(failing);
-      expect(processes.creates).toEqual([]);
-    },
-  );
-});
-
-describe('createProcess: existing process', () => {
-  test('legacy manifest without lineageInheritance comes back without it and is not rewritten', () => {
-    const { service, definitions, processes } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    create(service);
-    const legacy = omit(processes.store.readManifest({ project: PROJECT, process: 'run-1' }), [
-      'lineageInheritance',
-    ]);
-    processes.manifests.set('run-1', legacy);
-
-    const result = create(service);
-
-    expect(result).toEqual({
-      project: PROJECT,
-      process: 'run-1',
-      created: false,
-      pinned: { types: ['note'], relations: [], gates: [] },
-    });
-    expect(result).not.toHaveProperty('lineageInheritance');
-    expect(processes.manifests.get('run-1')).toBe(legacy);
-  });
-
-  test('same definitions: created false, no stale, manifest untouched', () => {
-    const { service, definitions, processes } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    create(service);
-    const first = processes.manifests.get('run-1');
-
-    const result = create(service);
-
-    expect(result).toEqual({
-      project: PROJECT,
-      process: 'run-1',
-      created: false,
-      lineageInheritance: true,
-      pinned: { types: ['note'], relations: [], gates: [] },
-    });
-    expect(processes.manifests.get('run-1')).toBe(first);
-  });
-
-  test('new version of type, relation and gate: created false and stale with the current one of each', () => {
-    const { service, definitions } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    definitions.add('relations', 'based-on', '1.0', SUPPORTS);
-    definitions.add('gates', 'ready', '1.0', GATE);
-    create(service);
-    definitions.add('types', 'note', '1.1', NOTE_1_1);
-    definitions.add('relations', 'based-on', '1.1', SUPPORTS_WIDER);
-    definitions.add('gates', 'ready', '1.1', GATE_2);
-
-    const result = create(service);
-
-    expect(result).toMatchObject({ created: false, pinned: { types: ['note'] } });
-    expect(result.stale).toEqual([
-      { kind: 'types', name: 'note', current: '1.1' },
-      { kind: 'relations', name: 'based-on', current: '1.1' },
-      { kind: 'gates', name: 'ready', current: '1.1' },
-    ]);
-  });
-
-  test('definition created after pinning is stale and does not enter pinned', () => {
-    const { service, definitions } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    create(service);
-    definitions.add('types', 'task', '1.0', NOTE_1_0);
-
-    const result = create(service);
-
-    expect(result.pinned.types).toEqual(['note']);
-    expect(result.stale).toEqual([{ kind: 'types', name: 'task', current: '1.0' }]);
-  });
-
-  test('only what changed shows up in stale', () => {
-    const { service, definitions } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    definitions.add('types', 'task', '1.0', NOTE_1_0);
-    create(service);
-    definitions.add('types', 'task', '1.1', NOTE_1_1);
-
-    expect(create(service).stale).toEqual([{ kind: 'types', name: 'task', current: '1.1' }]);
-  });
-
-  test('name `constructor` created after pinning is stale, without reading the prototype', () => {
-    const { service, definitions } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    create(service);
-    definitions.add('types', 'constructor', '1.0', NOTE_1_0);
-
-    expect(create(service).stale).toEqual([{ kind: 'types', name: 'constructor', current: '1.0' }]);
-  });
-
-  test('pinned name that no longer has a version in the project is stale with current null', () => {
-    const { service, definitions } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    definitions.add('types', 'task', '1.0', NOTE_1_0);
-    create(service);
-    const versionsOf = definitions.store.versions.bind(definitions.store);
-    definitions.store.versions = (project, kind, name) =>
-      name === 'note' ? [] : versionsOf(project, kind, name);
-
-    expect(create(service).stale).toEqual([{ kind: 'types', name: 'note', current: null }]);
-  });
-
-  test('PROCESS_CORRUPTED unreadable-manifest bubbles up intact, does not become created false', () => {
-    const { service, definitions, processes } = setup();
-    definitions.add('types', 'note', '1.0', NOTE_1_0);
-    create(service);
-    const message = 'process manifest is unreadable';
-    const corrupted = new HexlogError('PROCESS_CORRUPTED', message, [
-      { path: '/process', code: 'unreadable-manifest', message, process: 'run-1' },
-    ]);
-    processes.store.readManifest = () => {
-      throw corrupted;
-    };
-
-    expect(captureError(() => create(service))).toBe(corrupted);
-  });
-
-  test('with the log above the cap returns created false: only the manifest is read', () => {
-    const dataDir = createTempDir('create-process');
-    const definitions = createDefinitionStore({ dataDir });
-    definitions.write(PROJECT, 'types', 'note', '1.0', NOTE_1_0);
-    const service = createProcessService({
-      store: createProcessStore({ dataDir, log: () => undefined }),
-      definitions,
-      ...UNUSED_REGISTER_PORTS,
-      clock: () => NOW,
-    });
-    create(service);
-    fs.truncateSync(
-      processPaths(dataDir, { project: PROJECT, process: 'run-1' }).log,
-      MAX_LOG_BYTES + 1,
-    );
-
-    expect(create(service)).toMatchObject({ created: false, pinned: { types: ['note'] } });
   });
 });
