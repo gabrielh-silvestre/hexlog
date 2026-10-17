@@ -15,31 +15,31 @@ function describeSetup() {
   const setup = querySetup();
   setup.createProcess('run-1');
   setup.definitions.write(PROJECT, 'types', 'note', '1.1', NOTE_V2);
-  const describe = (input: { type: string; process?: string; version?: string }) =>
+  const readType = (input: { type: string; process?: string; version?: string }) =>
     setup.queries.describeType({ project: PROJECT, ...input });
-  return { ...setup, describe };
+  return { ...setup, readType };
 }
 
 describe('QueryService.describeType', () => {
   it('should return the pinned type with process, without version, even after the project defines a new version', () => {
-    const { describe } = describeSetup();
+    const { readType } = describeSetup();
 
-    const result = describe({ type: 'note', process: 'run-1' });
+    const result = readType({ type: 'note', process: 'run-1' });
 
     expect(result).toEqual({ name: 'note', schema: NOTE });
     expect(result).not.toHaveProperty('version');
   });
 
   it('should return the current version of the project, with version, without process', () => {
-    const { describe } = describeSetup();
+    const { readType } = describeSetup();
 
-    expect(describe({ type: 'note' })).toEqual({ name: 'note', version: '1.1', schema: NOTE_V2 });
+    expect(readType({ type: 'note' })).toEqual({ name: 'note', version: '1.1', schema: NOTE_V2 });
   });
 
   it('should return the requested version with version', () => {
-    const { describe } = describeSetup();
+    const { readType } = describeSetup();
 
-    expect(describe({ type: 'note', version: '1.0' })).toEqual({
+    expect(readType({ type: 'note', version: '1.0' })).toEqual({
       name: 'note',
       version: '1.0',
       schema: NOTE,
@@ -68,18 +68,18 @@ describe('QueryService.describeType', () => {
     }
 
     it('should omit both keywords and keep the field named pattern, with process', () => {
-      const { describe } = legacySetup();
+      const { readType } = legacySetup();
 
-      expect(describe({ type: 'legacy', process: 'run-legacy' })).toEqual({
+      expect(readType({ type: 'legacy', process: 'run-legacy' })).toEqual({
         name: 'legacy',
         schema: SHOWN,
       });
     });
 
     it('should omit both keywords of the definition read from the project, without process', () => {
-      const { describe, definitions } = legacySetup();
+      const { readType, definitions } = legacySetup();
 
-      expect(describe({ type: 'legacy' })).toEqual({
+      expect(readType({ type: 'legacy' })).toEqual({
         name: 'legacy',
         version: '1.0',
         schema: SHOWN,
@@ -95,7 +95,7 @@ describe('QueryService.describeType', () => {
         contentSchema: { type: 'string', pattern: '^a+$' },
       });
 
-      expect(setup.describe({ type: 'content' }).schema).toEqual({
+      expect(setup.readType({ type: 'content' }).schema).toEqual({
         type: 'string',
         contentMediaType: 'application/json',
         contentSchema: { type: 'string' },
@@ -103,9 +103,9 @@ describe('QueryService.describeType', () => {
     });
 
     it('should keep the chain of the process intact after the describe', () => {
-      const { describe, queries } = legacySetup();
+      const { readType, queries } = legacySetup();
 
-      describe({ type: 'legacy', process: 'run-legacy' });
+      readType({ type: 'legacy', process: 'run-legacy' });
 
       expect(queries.verifyChain({ project: PROJECT, process: 'run-legacy' })).toMatchObject({
         ok: true,
@@ -115,10 +115,10 @@ describe('QueryService.describeType', () => {
   });
 
   it('should refuse a type missing from the project with TYPE_NOT_FOUND at /type, with or without version', () => {
-    const { describe } = describeSetup();
+    const { readType } = describeSetup();
 
     for (const version of [undefined, '1.0']) {
-      const error = captureError(() => describe({ type: 'ghost', version }));
+      const error = captureError(() => readType({ type: 'ghost', version }));
 
       expect(error.code).toBe('TYPE_NOT_FOUND');
       expect(error.details).toEqual([
@@ -153,9 +153,9 @@ describe('QueryService.describeType', () => {
   });
 
   it('should refuse a missing version with TYPE_NOT_FOUND at /version, listing the versions that exist', () => {
-    const { describe } = describeSetup();
+    const { readType } = describeSetup();
 
-    const error = captureError(() => describe({ type: 'note', version: '9.0' }));
+    const error = captureError(() => readType({ type: 'note', version: '9.0' }));
 
     expect(error.code).toBe('TYPE_NOT_FOUND');
     expect(error.details).toEqual([
@@ -169,10 +169,10 @@ describe('QueryService.describeType', () => {
   });
 
   it('should refuse a project type that the process did not pin with TYPE_NOT_PINNED at /type', () => {
-    const { definitions, describe } = describeSetup();
+    const { definitions, readType } = describeSetup();
     definitions.write(PROJECT, 'types', 'later', '1.0', NOTE);
 
-    const error = captureError(() => describe({ type: 'later', process: 'run-1' }));
+    const error = captureError(() => readType({ type: 'later', process: 'run-1' }));
 
     expect(error.code).toBe('TYPE_NOT_PINNED');
     expect(error.details).toEqual([
@@ -181,17 +181,17 @@ describe('QueryService.describeType', () => {
   });
 
   it('should refuse an unknown process with PROCESS_NOT_FOUND', () => {
-    const { describe } = describeSetup();
+    const { readType } = describeSetup();
 
-    expect(captureError(() => describe({ type: 'note', process: 'ghost' })).code).toBe(
+    expect(captureError(() => readType({ type: 'note', process: 'ghost' })).code).toBe(
       'PROCESS_NOT_FOUND',
     );
   });
 
   it('should refuse process and version together with INVALID_INPUT at /version, before any read', () => {
-    const { describe } = describeSetup();
+    const { readType } = describeSetup();
 
-    const error = captureError(() => describe({ type: 'ghost', process: 'ghost', version: '1.0' }));
+    const error = captureError(() => readType({ type: 'ghost', process: 'ghost', version: '1.0' }));
 
     expect(error.code).toBe('INVALID_INPUT');
     expect(error.details).toEqual([

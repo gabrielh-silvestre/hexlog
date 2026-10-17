@@ -25,35 +25,53 @@ describe('test/fixtures/domains/*.ts', () => {
   });
 });
 
-describe('QueryService.evaluateGate', () => {
-  it('should pass the OMC plan-ready gate only with a current approval and no pending deviation (D2)', async () => {
-    const { registerOne, gate, query } = flowSetup(omc);
-    const plan = await registerOne('run-1', {
-      type: 'plan',
+/** Fluxo OMC com o plano `plan` registrado no processo `run-1`. */
+async function registeredPlan() {
+  const setup = flowSetup(omc);
+  const plan = await setup.registerOne('run-1', {
+    type: 'plan',
+    target: 'run.plan',
+    data: { isRevision: false },
+  });
+  return { ...setup, plan };
+}
+
+/** O plano aprovado por `review`, com o desvio `deviation` ainda pendente. */
+async function planWithPendingDeviation() {
+  const setup = await registeredPlan();
+  const review = await setup.registerOne(
+    'run-1',
+    {
+      type: 'review',
       target: 'run.plan',
-      data: { isRevision: false },
-    });
+      data: { summary: 'ok' },
+      relations: [{ to: setup.plan, as: 'approves' }],
+    },
+    1,
+  );
+  const deviation = await setup.registerOne(
+    'run-1',
+    { type: 'deviation', target: 'run.plan', data: { description: 'fora do plano' } },
+    2,
+  );
+  return { ...setup, review, deviation };
+}
+
+describe('QueryService.evaluateGate', () => {
+  it('should fail the OMC plan-ready gate for a plan with no approval (D2)', async () => {
+    const { gate } = await registeredPlan();
 
     expect(gate('plan-ready').passed).toBe(false);
+  });
 
-    const review = await registerOne(
-      'run-1',
-      {
-        type: 'review',
-        target: 'run.plan',
-        data: { summary: 'ok' },
-        relations: [{ to: plan, as: 'approves' }],
-      },
-      1,
-    );
-    const deviation = await registerOne(
-      'run-1',
-      { type: 'deviation', target: 'run.plan', data: { description: 'fora do plano' } },
-      2,
-    );
+  it('should fail the OMC plan-ready gate for an approved plan with a pending deviation (D2)', async () => {
+    const { gate } = await planWithPendingDeviation();
 
     expect(gate('plan-ready').questions.map(({ passed }) => passed)).toEqual([true, false]);
+  });
 
+  it('should pass the OMC plan-ready gate with a current approval and no pending deviation (D2)', async () => {
+    const { registerOne, gate, query, plan, review, deviation } = await planWithPendingDeviation();
     await registerOne(
       'run-1',
       {
@@ -72,28 +90,31 @@ describe('QueryService.evaluateGate', () => {
   });
 });
 
-describe('QueryService.queryRecords', () => {
-  it('should flag a verdict that cites superseded evidence as needing review until the new version cites the current one, in the rdsc flow with a legacy process (D2)', async () => {
-    const { registerOne, gate, query } = flowSetup(rdsc, { legacy: true });
-    const old = await registerOne('run-1', {
-      type: 'evidence',
+/** Fluxo rdsc com processo legado: o veredito `verdict` cita a evidência `old`. */
+async function verdictOnEvidence() {
+  const setup = flowSetup(rdsc, { legacy: true });
+  const old = await setup.registerOne('run-1', {
+    type: 'evidence',
+    target: 'run.rdsc',
+    data: { source: 'a' },
+  });
+  const verdict = await setup.registerOne(
+    'run-1',
+    {
+      type: 'verdict',
       target: 'run.rdsc',
-      data: { source: 'a' },
-    });
-    const verdict = await registerOne(
-      'run-1',
-      {
-        type: 'verdict',
-        target: 'run.rdsc',
-        data: { conclusion: 'procede' },
-        relations: [{ to: old, as: 'based-on' }],
-      },
-      1,
-    );
+      data: { conclusion: 'procede' },
+      relations: [{ to: old, as: 'based-on' }],
+    },
+    1,
+  );
+  return { ...setup, old, verdict };
+}
 
-    expect(gate('settled').passed).toBe(true);
-
-    const fresh = await registerOne(
+describe('QueryService.queryRecords', () => {
+  it('should flag a verdict that cites superseded evidence as needing review, in the rdsc flow with a legacy process (D2)', async () => {
+    const { registerOne, query, old, verdict } = await verdictOnEvidence();
+    await registerOne(
       'run-1',
       {
         type: 'evidence',
@@ -108,7 +129,23 @@ describe('QueryService.queryRecords', () => {
       staleIn: [],
       staleOut: [old],
     });
+  });
 
+  it('should stop flagging a verdict once the new version cites the current evidence, in the rdsc flow with a legacy process (D2)', async () => {
+    const { registerOne, gate, query, old, verdict } = await verdictOnEvidence();
+
+    expect(gate('settled').passed).toBe(true);
+
+    const fresh = await registerOne(
+      'run-1',
+      {
+        type: 'evidence',
+        target: 'run.rdsc',
+        data: { source: 'b' },
+        relations: [{ to: old, as: 'replaces' }],
+      },
+      2,
+    );
     const renewed = await registerOne(
       'run-1',
       {

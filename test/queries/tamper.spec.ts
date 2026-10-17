@@ -19,12 +19,28 @@ async function untouched() {
 }
 
 describe('QueryService.queryRecords', () => {
+  it('should return the records of a process with no tampering (SL5, D-24)', async () => {
+    const { query } = await untouched();
+
+    expect(query({ process: 'run-1' }).records).toHaveLength(3);
+  });
+
+  it('should find a record by text in a process with no tampering (SL5, D-24)', async () => {
+    const { query } = await untouched();
+
+    expect(idsOf(query({ process: 'run-1', text: 'segunda' }))).toHaveLength(1);
+  });
+
+  it('should return the records of every process at the project scope with no tampering (SL5, D-24)', async () => {
+    const { query } = await untouched();
+
+    expect(query({ scope: 'project' }).records).toHaveLength(4);
+  });
+
   describe('with a tampered old line', () => {
     it('should detect the tampered line on the next call, without restarting the service (SL5, D-24)', async () => {
       const { query, tamper } = await untouched();
-
-      expect(query({ process: 'run-1' }).records).toHaveLength(3);
-
+      query({ process: 'run-1' });
       tamper('run-1');
 
       const error = captureError(() => query({ process: 'run-1' }));
@@ -35,9 +51,7 @@ describe('QueryService.queryRecords', () => {
 
     it('should not serve the index from before the tampering on a text search (SL5, D-24)', async () => {
       const { query, tamper } = await untouched();
-
-      expect(idsOf(query({ process: 'run-1', text: 'segunda' }))).toHaveLength(1);
-
+      query({ process: 'run-1', text: 'segunda' });
       tamper('run-1');
 
       const error = captureError(() => query({ process: 'run-1', text: 'segunda' }));
@@ -47,9 +61,7 @@ describe('QueryService.queryRecords', () => {
 
     it('should name the tampered process in the project scope, leaving the other one readable alone (SL5, D-24)', async () => {
       const { query, tamper } = await untouched();
-
-      expect(query({ scope: 'project' }).records).toHaveLength(4);
-
+      query({ scope: 'project' });
       tamper('run-1');
 
       const project = captureError(() => query({ scope: 'project' }));

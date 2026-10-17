@@ -89,10 +89,15 @@ describe('checkSchema', () => {
     ]);
   });
 
-  it('should accept a repeated $id after a compilation that threw', () => {
-    const $id = 'https://example.com/dangling';
+  it('should refuse a schema with an $id and an unresolvable $ref with a single detail', () => {
+    const $id = 'https://example.com/unresolvable';
 
     expect(validator.checkSchema({ $id, $ref: 'https://nowhere/x' })).toHaveLength(1);
+  });
+
+  it('should accept a repeated $id after a compilation that threw', () => {
+    const $id = 'https://example.com/dangling';
+    validator.checkSchema({ $id, $ref: 'https://nowhere/x' });
 
     expect(validator.checkSchema({ $id, type: 'object' })).toEqual([]);
   });
@@ -596,6 +601,16 @@ describe('validate', () => {
 
       expect(first).toEqual([]);
       expect(second).toEqual(expected);
+    });
+
+    it('should accept valid data again after rejecting invalid data on an already compiled schema', () => {
+      const schema = { type: 'object', properties: { text: {} }, required: ['text'] };
+      validator.validate(schema, { text: 'ok' });
+      validator.validate(schema, {});
+
+      const result = validator.validate(schema, { text: 'ok' });
+
+      expect(result).toEqual([]);
     });
 
     it('should keep apart two schemas with the same $id in distinct objects', () => {

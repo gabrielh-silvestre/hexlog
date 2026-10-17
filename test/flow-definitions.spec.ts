@@ -903,11 +903,14 @@ describe('evaluate_gate', () => {
       expect(await passed('gaps')).toBe(false);
     });
 
-    it('should keep failing for a premise recorded before the gap with no relation to it', async () => {
+    it('should pass for a premise recorded with no gap', async () => {
       await register(WORK, [premise('early')]);
 
       expect(await passed('gaps')).toBe(true);
+    });
 
+    it('should keep failing for a premise recorded before the gap with no relation to it', async () => {
+      await register(WORK, [premise('early')]);
       await registerGap();
 
       expect(await passed('gaps')).toBe(false);
@@ -924,12 +927,18 @@ describe('evaluate_gate', () => {
 
     it('should pass when a premise recorded after the gap fills it by id', async () => {
       const gapId = await registerGap();
-
-      expect(await passed('gaps')).toBe(false);
-
       await register(WORK, [withRelations(premise('fill'), fillsGap(gapId))]);
 
       expect(await passed('gaps')).toBe(true);
+    });
+
+    it('should fail while a directive closes one gap and the other is still open', async () => {
+      await attachText('v1');
+      const byDirective = await registerGap('a');
+      await registerGap('b');
+      await closeWithDirective(byDirective);
+
+      expect(await passed('gaps')).toBe(false);
     });
 
     it('should pass when a directive closes one gap and a premise fills another', async () => {
@@ -938,9 +947,6 @@ describe('evaluate_gate', () => {
       await register(DIRECTIVES, [
         directiveItem('retries', 'v1', [{ to: byDirective, as: 'closes-gap' }]),
       ]);
-
-      expect(await passed('gaps')).toBe(false);
-
       await register(WORK, [withRelations(premise('fill'), fillsGap(byPremise))]);
 
       expect(await passed('gaps')).toBe(true);
@@ -949,9 +955,6 @@ describe('evaluate_gate', () => {
     it('should reopen the gap when the premise that filled it is revoked', async () => {
       const gapId = await registerGap();
       const firstId = await registerOne(WORK, withRelations(premise('first'), fillsGap(gapId)));
-
-      expect(await passed('gaps')).toBe(true);
-
       await register(WORK, [withRelations(premise('other'), [{ kind: 'revokes', to: firstId }])]);
 
       expect(await passed('gaps')).toBe(false);
@@ -982,7 +985,8 @@ describe('evaluate_gate', () => {
     });
   });
 
-  it('should resolve a pending decision only by an incoming derivesFrom from a premise, not by its own rests-on', async () => {
+  /** Gate `decision-anchored` sobre um processo com uma decisão que só se apoia numa premissa por rests-on. */
+  async function decisionRestingOnPremise() {
     await environment.ok('define_gate', {
       project: PROJECT,
       name: 'decision-anchored',
@@ -1012,9 +1016,17 @@ describe('evaluate_gate', () => {
           target: process,
         })
       ).passed;
+    return { process, decisionId, anchored };
+  }
+
+  it('should keep a decision pending when it only rests on a premise', async () => {
+    const { anchored } = await decisionRestingOnPremise();
 
     expect(await anchored()).toBe(false);
+  });
 
+  it('should resolve a pending decision by an incoming derivesFrom from a premise', async () => {
+    const { process, decisionId, anchored } = await decisionRestingOnPremise();
     await register(process, [
       withRelations({ type: 'premise', target: `${process}.premise.a`, data: { statement: 'p' } }, [
         { kind: 'derivesFrom', to: decisionId },
@@ -1512,9 +1524,7 @@ describe('planSync', () => {
   });
 
   it('should still generate a directive with source and section after a strategy doc is synced', async () => {
-    const strategy = await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
-
-    expect(premiseTypes(strategy)).toContain('premise');
+    await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
 
     const convencoes = await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
 
@@ -1569,6 +1579,12 @@ describe('planSync', () => {
   });
 
   describe('with the estrategia document', () => {
+    it('should generate a premise for the single rule of the doc', async () => {
+      const strategy = await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
+
+      expect(premiseTypes(strategy)).toContain('premise');
+    });
+
     it('should generate a premise whose data is only the statement', async () => {
       const plan = await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(2));
 

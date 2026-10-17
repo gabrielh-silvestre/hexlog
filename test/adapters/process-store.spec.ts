@@ -465,17 +465,22 @@ describe('createProcessStore', () => {
     expect(store.list('ausente')).toEqual([]);
   });
 
-  it('should sort list and listProjects and skip folders without a manifest', () => {
+  it('should sort the processes from list and skip folders without a manifest', () => {
     const { dataDir, store, ref, manifest } = setup();
     store.create({ project: 'demo', process: 'alpha' }, { ...manifest, process: 'alpha' });
-    store.create(
-      { project: 'abc', process: 'zeta' },
-      { ...manifest, project: 'abc', process: 'zeta' },
-    );
     fs.mkdirSync(path.join(dataRoot(dataDir), 'demo', 'types'));
     fs.mkdirSync(path.join(dataRoot(dataDir), 'demo', ATTACHMENTS_DIR));
 
     expect(store.list('demo')).toEqual(['alpha', ref.process]);
+  });
+
+  it('should sort the projects from listProjects', () => {
+    const { store, manifest } = setup();
+    store.create(
+      { project: 'abc', process: 'zeta' },
+      { ...manifest, project: 'abc', process: 'zeta' },
+    );
+
     expect(store.listProjects()).toEqual(['abc', 'demo']);
   });
 
@@ -538,17 +543,24 @@ describe('createProcessStore', () => {
     });
   });
 
-  it('should not return folders created by hand with an invalid name from list and listProjects', () => {
+  it('should not return folders created by hand with an invalid name from list', () => {
     const { dataDir, store, ref, manifest } = setup();
     for (const name of ['.tmp', 'a.b', 'Bad Name']) {
       // com manifesto dentro, só o filtro de nome as tira de `list`
       const stray = path.join(dataRoot(dataDir), ref.project, name);
       fs.mkdirSync(stray);
       fs.writeFileSync(path.join(stray, MANIFEST_FILE), JSON.stringify(manifest));
-      fs.mkdirSync(path.join(dataRoot(dataDir), name));
     }
 
     expect(store.list(ref.project)).toEqual([ref.process]);
+  });
+
+  it('should not return folders created by hand with an invalid name from listProjects', () => {
+    const { dataDir, store, ref } = setup();
+    for (const name of ['.tmp', 'a.b', 'Bad Name']) {
+      fs.mkdirSync(path.join(dataRoot(dataDir), name));
+    }
+
     expect(store.listProjects()).toEqual([ref.project]);
   });
 
@@ -569,24 +581,51 @@ describe('createProcessStore', () => {
   });
 
   describe('with an invalid name or a manifest that differs from the ref', () => {
-    it.each([
+    const invalidRefs: [string, ProcessRef][] = [
       ['a process with ../', { project: 'demo', process: '../../escaped' }],
       ['the project ..', { project: '..', process: 'proc-1' }],
       ['a process with a space and a capital letter', { project: 'demo', process: 'Bad Name' }],
       ['a project with a space and a capital letter', { project: 'Bad Name', process: 'proc-1' }],
-    ])(
-      'should throw INVALID_INPUT from create, read and write for %s and create nothing outside .v1 (N1, N3)',
-      async (_name, bad) => {
+    ];
+    const invalid = expect.objectContaining({ code: 'INVALID_INPUT' });
+
+    /** Só o processo do `setup` existe: a recusa não criou nada fora de `.v1` nem dentro dele. */
+    const expectNothingCreated = (dataDir: string, ref: ProcessRef) => {
+      expect(fs.readdirSync(dataDir)).toEqual([path.basename(dataRoot(dataDir))]);
+      expect(fs.readdirSync(dataRoot(dataDir))).toEqual([ref.project]);
+      expect(fs.readdirSync(path.join(dataRoot(dataDir), ref.project))).toEqual([ref.process]);
+    };
+
+    it.each(invalidRefs)(
+      'should throw INVALID_INPUT from create for %s and create nothing outside .v1 (N1, N3)',
+      (_name, bad) => {
         const { dataDir, store, ref } = setup();
-        const invalid = expect.objectContaining({ code: 'INVALID_INPUT' });
 
         expect(() => store.create(bad, emptyManifest(bad))).toThrow(invalid);
+
+        expectNothingCreated(dataDir, ref);
+      },
+    );
+
+    it.each(invalidRefs)(
+      'should throw INVALID_INPUT from read for %s and create nothing outside .v1 (N1, N3)',
+      (_name, bad) => {
+        const { dataDir, store, ref } = setup();
+
         expect(() => store.read(bad)).toThrow(invalid);
+
+        expectNothingCreated(dataDir, ref);
+      },
+    );
+
+    it.each(invalidRefs)(
+      'should throw INVALID_INPUT from write for %s and create nothing outside .v1 (N1, N3)',
+      async (_name, bad) => {
+        const { dataDir, store, ref } = setup();
+
         await expect(append(store, bad, 1)).rejects.toEqual(invalid);
 
-        expect(fs.readdirSync(dataDir)).toEqual([path.basename(dataRoot(dataDir))]);
-        expect(fs.readdirSync(dataRoot(dataDir))).toEqual([ref.project]);
-        expect(fs.readdirSync(path.join(dataRoot(dataDir), ref.project))).toEqual([ref.process]);
+        expectNothingCreated(dataDir, ref);
       },
     );
 
@@ -928,11 +967,10 @@ describe('createProcessStore', () => {
     it('should show a 3-record batch cut at each byte only when just the newline is missing and keep the chain going (P1)', async () => {
       const { store, ref, manifest, logFile } = setup();
       const bytes = Buffer.from(batchLine(emptyRaw(manifest), 3, 'lote'));
+      const problems: string[] = [];
 
       expect(bytes.length).toBeGreaterThan(1300);
       expect(bytes.length).toBeLessThan(2000);
-
-      const problems: string[] = [];
 
       for (let cut = 0; cut < bytes.length; cut += 1) {
         const visible = cut === bytes.length - 1;
@@ -1009,17 +1047,28 @@ describe('createProcessStore', () => {
 
     const torn = (line: string): string => line.slice(0, 40);
 
-    it.each([
-      ['a tear plus a tear', (a: string) => `${torn(a)}\n${torn(a)}`, [0, 1], 0],
-      ['a tear plus only a newline', (a: string) => `${torn(a)}\n`, [0], 0],
-      ['a tear plus a valid tail', (a: string) => `${torn(a)}\n${a.slice(0, -1)}`, [0], 3],
-    ])(
-      'should accept the next write and close the chain after %s (P1)',
-      async (_name, rest, repaired, visible) => {
+    const tornTails: [string, (line: string) => string, number, number[]][] = [
+      ['a tear plus a tear', (a) => `${torn(a)}\n${torn(a)}`, 0, [0, 1]],
+      ['a tear plus only a newline', (a) => `${torn(a)}\n`, 0, [0]],
+      ['a tear plus a valid tail', (a) => `${torn(a)}\n${a.slice(0, -1)}`, 3, [0]],
+    ];
+
+    it.each(tornTails)(
+      'should count the records still visible in a log with %s (P1)',
+      (_name, rest, visible) => {
         const { store, ref, manifest, logFile } = setup();
         fs.writeFileSync(logFile, rest(batchLine(emptyRaw(manifest), 3, 'lote')));
 
         expect(verifyProcess(store.read(ref)).chain.totalRecords).toBe(visible);
+      },
+    );
+
+    it.each(tornTails)(
+      'should accept the next write and close the chain after %s (P1)',
+      async (_name, rest, visible, repaired) => {
+        const { store, ref, manifest, logFile } = setup();
+        fs.writeFileSync(logFile, rest(batchLine(emptyRaw(manifest), 3, 'lote')));
+        verifyProcess(store.read(ref));
 
         await append(store, ref, 1);
 

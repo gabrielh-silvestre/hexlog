@@ -75,15 +75,30 @@ describe('createDefinitionStore', () => {
     jest.restoreAllMocks();
   });
 
-  it('should write each kind of definition and read it back in the on-disk layout (D-02)', () => {
-    const { dataDir, store } = setup();
+  it('should return true when writing the first version of each kind of definition (D-02)', () => {
+    const { store } = setup();
 
     expect(store.write(PROJECT, 'types', 'plan', '1.0', plan)).toBe(true);
     expect(store.write(PROJECT, 'relations', 'approves', '1.0', relation)).toBe(true);
     expect(store.write(PROJECT, 'gates', 'plan-ready', '1.0', gate)).toBe(true);
+  });
+
+  it('should read back each kind of definition as it was written (D-02)', () => {
+    const { store } = setup();
+    store.write(PROJECT, 'types', 'plan', '1.0', plan);
+    store.write(PROJECT, 'relations', 'approves', '1.0', relation);
+    store.write(PROJECT, 'gates', 'plan-ready', '1.0', gate);
+
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
     expect(store.read(PROJECT, 'relations', 'approves', '1.0')).toEqual(relation);
     expect(store.read(PROJECT, 'gates', 'plan-ready', '1.0')).toEqual(gate);
+  });
+
+  it('should write the first version of a type at its file in the on-disk layout (D-02)', () => {
+    const { dataDir, store } = setup();
+
+    store.write(PROJECT, 'types', 'plan', '1.0', plan);
+
     expect(fs.existsSync(definitionFile(dataDir, PROJECT, 'types', 'plan', '1.0'))).toBe(true);
   });
 
