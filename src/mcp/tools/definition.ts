@@ -93,8 +93,10 @@ export function registerDefinitionTools(server: McpServer, deps: ToolDeps): void
         'at least `min` (default 1) current records match `select`; `no_pending`, every current record ' +
         'matching `pending` has a current source linked by the `resolvedBy` relation (of a `from` type, ' +
         'if given); `no_open_contradiction`, no current record matching `of` (default: all) has a ' +
-        'current `contradicts` source. Every change is a minor version; send `breaking: true` when ' +
-        'the change tightens the gate. The same gate again is a replay (`created: false`).',
+        'current `contradicts` source. `approved` and `no_pending` accept `inherit: true` (supports or ' +
+        'resolutions carried by a superseded version also count, in a process with lineage inheritance); ' +
+        '`occurred` and `no_open_contradiction` do not. Every change is a minor version; send ' +
+        '`breaking: true` when the change tightens the gate. The same gate again is a replay (`created: false`).',
       outputSchema: Defined,
       annotations: WRITE_ANNOTATIONS,
     },

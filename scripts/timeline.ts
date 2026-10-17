@@ -23,6 +23,7 @@ function recordsOf(query: QueryService, project: string, target: string): QueryR
     scope: 'project',
     targetPrefix: target,
     includeNonCurrent: true,
+    relations: 'full',
     limit: Number.MAX_SAFE_INTEGER,
   }).records;
 }
@@ -68,7 +69,7 @@ function brokenAttachments(sections: Section[]): string[] {
   );
 }
 
-function markOf({ in: incoming }: QueryRecord): string {
+function markOf({ in: incoming = [] }: QueryRecord): string {
   const by = (kind: string) =>
     incoming.filter((relation) => relation.kind === kind).map((r) => r.from);
   const superseded = by('supersedes');
@@ -84,8 +85,16 @@ function renderEntry({ record, texts }: Entry): string {
     `${[record.at, record.id, record.type, JSON.stringify(record.author.agent)].join('  ')}${markOf(record)}`,
     `  target: ${record.target}`,
     `  data: ${JSON.stringify(record.data)}`,
-    ...record.in.map(({ kind, from }) => `  in: ${kind} <- ${from}`),
-    ...record.out.map(({ kind, to }) => `  out: ${kind} -> ${to}`),
+    ...(record.in ?? []).map(({ kind, from }) => `  in: ${kind} <- ${from}`),
+    ...(record.out ?? []).map(({ kind, to }) => `  out: ${kind} -> ${to}`),
+    ...(record.inheritedIn ?? []).map(
+      ({ kind, from, origin }) =>
+        `  inherited in: ${kind} <- ${from} (origin ${origin.from} -> ${origin.to})`,
+    ),
+    ...(record.inheritedOut ?? []).map(
+      ({ kind, to, origin }) =>
+        `  inherited out: ${kind} -> ${to} (origin ${origin.from} -> ${origin.to})`,
+    ),
   ];
   if (!isNil(record.needsReview))
     lines.push(`  needsReview: ${JSON.stringify(record.needsReview)}`);

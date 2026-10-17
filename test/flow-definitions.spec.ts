@@ -136,7 +136,12 @@ async function queryAll(
   let cursor: string | undefined;
   let pages = 0;
   do {
-    const page = await environment.ok<QueryResult>('query', { project: PROJECT, ...args, cursor });
+    const page = await environment.ok<QueryResult>('query', {
+      project: PROJECT,
+      relations: 'full',
+      ...args,
+      cursor,
+    });
     records.push(...page.records);
     cursor = page.cursor;
     pages += 1;
@@ -249,7 +254,7 @@ async function inputFor(
     id,
     target,
     ...(strategy ? PremiseData : RuleData).parse(data),
-    out: out.map(({ as, kind, to }) => ({ ...(as && { as }), kind, to })),
+    out: (out ?? []).map(({ as, kind, to }) => ({ ...(as && { as }), kind, to })),
   }));
   return {
     docSlug,
@@ -1144,7 +1149,7 @@ describe('premise and evidence', () => {
       );
 
       const [stored] = (await queryAll({ scope: 'project', ids: [decisionId] })).records;
-      expect(stored?.out.map(({ as }) => as)).toEqual(['rests-on']);
+      expect(stored?.out?.map(({ as }) => as)).toEqual(['rests-on']);
     });
 
     test.each([

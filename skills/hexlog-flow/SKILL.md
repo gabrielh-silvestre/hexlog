@@ -34,9 +34,9 @@ pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
 | Gravar um ou mais registros (marco, decisão, veredito, desvio, plano) | `register` | Lote de 1 a 50 registros, tudo ou nada. `agent` = nome da skill que disparou (a skill apontada que chamou a hexlog-flow, ou hexlog-flow mesma se disparada direto). Passe `key` onde a duplicata custa caro (seção abaixo) |
 | Achar um registro, ou os de um alvo | `query` | Filtros `type`, `targetPrefix`, `where`, `text`, `ids`; devolve o `id` de cada um |
 | Substituir ou revogar um registro (`supersedes`/`revokes`) | `query` com `type` + `targetPrefix` + `fields: []`, depois `register` com o `id` devolvido | Leia o vigente antes; nunca use um `id` de memória. Ver "Busca, id, relações" |
-| Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
+| Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou `relations: "full"` e ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
 | Saber o que mudou desde a última leitura | `query` com `changesSince` = o `marker` da leitura anterior | Só na primeira página; ver "Marcador" |
-| Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência |
+| Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência. Por padrão (`evidence: "failing"`) a resposta traz só `counts: {...}` e os ids do que reprova; `targets: [...]` avalia vários alvos numa chamada |
 | Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro. Para detectar cauda apagada, passe `expectedHead` = o `head` de uma verificação anterior (`head-not-found`) |
 | Saber o que existe (projetos, processos, o que um processo fixou) | `list` | Sem parâmetros, com `project`, ou com `project` e `process` |
 | Registrar num tipo que você não conhece | `describe_type` com `project`, `type` e `process` | Leia o schema fixado **antes** do `register`; com `process` devolve o tipo que o processo fixou, sem a versão na saída, e `process` junto de uma versão pedida é `INVALID_INPUT` |
@@ -51,16 +51,17 @@ Registro se acha por busca e se liga por id:
 1. **Busque.** `query` com `type`, `targetPrefix`, `where` (igualdade em campo de
    primeiro nível de `data`, valor escalar) ou `text` (busca textual, até 200
    caracteres, por relevância). Cada registro volta com `id`, `type`, `target`,
-   `author`, `data`, `in`, `out`, e `needsReview` e `attachmentStatus` quando se
-   aplicam.
+   `author`, `data`, `inCounts: {...}` e `outCounts: {...}` (arestas por nome de relação; sem
+   aresta, o mapa não vem), e `needsReview` e `attachmentStatus` quando se aplicam.
+   Para as arestas inteiras, passe `relations: "full"` (`in` e `out`).
 2. **Pegue o `id`.** Ele é do servidor (`<processo>:<uuid v7>`): nunca monte um à
    mão. Dentro de um mesmo `register`, um item se refere a outro anterior por
    `@<alias>` (o `alias` do item anterior); alias adiante, repetido ou inexistente
    é `INVALID_INPUT`.
-3. **Navegue.** `in` lista quem aponta para o registro (`kind`, `as`, `from`,
-   `current`: se a origem é vigente); `out` lista as relações gravadas nele
-   (`to`, e `current` quando o destino foi lido). `relatedTo` traz os registros
-   ligados a um `id`.
+3. **Navegue.** `relatedTo` traz os registros ligados a um `id`. Com `relations:
+   "full"`, `in` lista quem aponta para o registro (`kind`, `as`, `from`, `current`:
+   se a origem é vigente) e `out` lista as relações gravadas nele (`to`, e `current`
+   quando o destino foi lido).
 
 **Antes de `supersedes` ou `revokes`, leia o vigente.** Consulte com `type` +
 `targetPrefix`, confira o `target` do registro devolvido (e um campo-chave, se o
@@ -82,7 +83,30 @@ apoia (`supports`) um registro que já foi substituído ou revogado sem que ele
 repetisse o apoio; `staleIn` é quando quem o apoiava foi substituído por algo que
 não apoia mais. É só aviso: não bloqueia gravação nem entra em gate. Para limpar
 um `staleOut`, grave V' com `supersedes` → V e `supports` → a versão atual do que
-V apoiava.
+V apoiava. (Em processo com herança, abaixo, o `supports` herdado não marca.)
+
+### Herança de relações pela linhagem
+
+Processo **criado depois** da herança nasce com ela (`create_process` devolve
+`lineageInheritance: true`); o anterior não tem e segue com a cascata manual acima.
+Em processo com herança, superar uma unidade **não exige regravar** as relações só para
+carregá-las: a leitura as estende à versão atual, sem gravar nada.
+
+- `supports` recebido pela versão antiga vale para a atual (o destino sobe). O apoio de
+  uma revisão **superada** não herda: ele morre com ela.
+- `answers`, `derivesFrom`, `complements` e `reopens` gravados na versão antiga valem
+  para a atual (a origem sobe); o destino fica como foi gravado.
+- `contradicts`, `supersedes` e `revokes` nunca herdam.
+- Leia com `relations: "full"`: `inheritedIn` e `inheritedOut` (em `counts`, os mapas
+  `inheritedInCounts` e `inheritedOutCounts`) trazem cada relação herdada com `origin`
+  (`from`, `to`), a aresta gravada de onde ela vem. O `in`/`out` direto não as mistura, e
+  `needsReview` não marca o `supports` herdado.
+- **Cortar:** grave um `contradicts` entre a linhagem de uma ponta e a da outra (qualquer
+  direção). Ele tira a herança desse par, volta o `needsReview` e conta como contradição de
+  verdade para `approved` e `no_open_contradiction`. Só o `contradicts` vigente corta:
+  superar ou revogar o registro que o grava religa a herança.
+- No gate, a pergunta `approved` ou `no_pending` só conta o herdado com `inherit: true`;
+  o que conta só por herança vem em `evidence.inherited`. Gate sem a opção avalia como antes.
 
 ## `key`: onde a duplicata custa caro
 
@@ -118,6 +142,7 @@ Cada violação é `INVALID_RECORD` com `details[].code` = a regra e `details[].
 |---|---|
 | Registro não se relaciona consigo mesmo | `self-relation` |
 | `supersedes` só entre registros do **mesmo tipo** | `type-mismatch` |
+| `supersedes` só entre registros do **mesmo target** | `target-mismatch` |
 | `supersedes` e `revokes` só valem para registro do **próprio processo** | `cross-process-currency` |
 | O mesmo registro não faz `supports` e `contradicts` ao mesmo destino, nem `supersedes` e `revokes` | `supports-and-contradicts`, `supersedes-and-revokes` |
 | `as` precisa ser um nome de relação fixado no processo; com `kind` junto, os dois precisam bater | `unknown-relation-name`, `kind-mismatch` |
@@ -146,10 +171,10 @@ novo não substitui nem revoga nada do antigo; ele o cita por `derivesFrom` ou
 `query` e as perguntas de gate leem **um processo** por padrão (`scope:
 "process"`). Nesse alcance:
 
-- `in`, `needsReview` e as perguntas `approved`, `no_pending` e
+- `in` (ou `inCounts: {...}`), `needsReview` e as perguntas `approved`, `no_pending` e
   `no_open_contradiction` só veem relações com as duas pontas no processo; relação vinda de outro processo não
   aparece, e **a resposta não avisa**;
-- `out` de um destino em outro processo sai sem `current`.
+- com `relations: "full"`, `out` de um destino em outro processo sai sem `current`.
 
 Quando a evidência pode vir de outro processo (revisão feita noutra fase, apoio
 de outro processo), declare `scope: "project"`:
@@ -172,8 +197,8 @@ registros daquele instante. O marcador cobre exatamente os processos que nomeia:
 no alcance projeto, o que ele não nomeia é lido como vazio. O `marker` do
 `register` nomeia só o processo gravado, então use-o como `changesSince` ou como
 `marker` de gate apenas no alcance processo. A lista de novidades vem só na
-primeira página; nas seguintes, reenvie o mesmo `changesSince` junto do `cursor`, senão
-`INVALID_CURSOR`. Se a resposta traz `changes.omitted`, as listas são parciais e
+primeira página (`limit: 0` devolve só ela, sem registros); nas seguintes,
+reenvie o mesmo `changesSince` junto do `cursor`, senão `INVALID_CURSOR`. Se a resposta traz `changes.omitted`, as listas são parciais e
 esse marcador não deve ser reusado: releia tudo (`cursor`, e `includeNonCurrent`
 para o que saiu). Cursor, marcador ou `changesSince` que não casam com o dado
 dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`. O marcador só vale para o alcance que o
@@ -274,7 +299,7 @@ depois dele; o processo que já existe segue com o gate fixado.
 | Gate pedido que o processo não fixou, inclusive um definido depois do `create_process` | `GATE_NOT_FOUND`: pare e avise o usuário |
 | Reenviar uma `key` com lote diferente do guardado | `IDEMPOTENCY_CONFLICT` |
 | Dado 0.x em `<D>` | `LEGACY_DATA`: só um humano resolve (ver a skill hexlog) |
-| Filtro inválido na `query` | `INVALID_FILTER` (`process` ausente, `text` sem termo) ou `INVALID_INPUT` (`text` ou `limit` acima do teto) |
+| Filtro inválido na `query` | `INVALID_FILTER` (`process` ausente, `text` sem termo, `limit: 0` fora do `changesSince`) ou `INVALID_INPUT` (`text` ou `limit` acima do teto) |
 | `PROCESS_NOT_FOUND` ou `PROJECT_NOT_FOUND` | O flow map está desatualizado: pare e avise o usuário |
 | `read_attachment` ou `register` com hash sem blob | `ATTACHMENT_NOT_FOUND` |
 

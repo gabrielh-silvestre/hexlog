@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
+import { omit } from 'es-toolkit';
 import { createDefinitionStore } from '../../src/adapters/fs/definition-store.ts';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
@@ -110,8 +111,8 @@ function setup() {
 const create = (service: ReturnType<typeof setup>['service'], process = 'run-1') =>
   service.createProcess({ project: PROJECT, process });
 
-describe('createProcess: criação (D-18)', () => {
-  test('fixa a versão vigente de cada tipo, relação e gate, com os hashes do JCS de cada bloco', () => {
+describe('createProcess: creation (D-18)', () => {
+  test('pins the current version of each type, relation and gate, with the JCS hashes of each block', () => {
     const { service, definitions, processes } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     definitions.add('types', 'note', '1.1', NOTE_1_1);
@@ -124,12 +125,14 @@ describe('createProcess: criação (D-18)', () => {
       project: PROJECT,
       process: 'run-1',
       created: true,
+      lineageInheritance: true,
       pinned: { types: ['note'], relations: ['based-on'], gates: ['ready'] },
     });
     expect(processes.manifests.get('run-1')).toEqual({
       project: PROJECT,
       process: 'run-1',
       createdAt: NOW.toISOString(),
+      lineageInheritance: true,
       fixed: {
         types: { note: NOTE_1_1 },
         relations: { 'based-on': SUPPORTS },
@@ -145,7 +148,7 @@ describe('createProcess: criação (D-18)', () => {
     });
   });
 
-  test('só lê a versão vigente de cada nome, não as anteriores', () => {
+  test('reads only the current version of each name, not the earlier ones', () => {
     const { service, definitions } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     definitions.add('types', 'note', '1.1', NOTE_1_1);
@@ -159,14 +162,14 @@ describe('createProcess: criação (D-18)', () => {
     ['types', 'note', NOTE_1_0],
     ['relations', 'based-on', SUPPORTS],
     ['gates', 'ready', GATE],
-  ])('projeto com só %s registrado já cria o processo', (kind, name, definition) => {
+  ])('project with only %s registered already creates the process', (kind, name, definition) => {
     const { service, definitions } = setup();
     definitions.add(kind, name, '1.0', definition);
 
     expect(create(service)).toMatchObject({ created: true, pinned: { [kind]: [name] } });
   });
 
-  test('nome sem nenhuma versão (pasta que sobrou de uma falha) fica fora do manifesto', () => {
+  test('name with no version (folder left over from a failure) stays out of the manifest', () => {
     const { service, definitions, processes } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     definitions.addEmptyName('types', 'orphan');
@@ -177,9 +180,9 @@ describe('createProcess: criação (D-18)', () => {
   });
 });
 
-describe('createProcess: recusas', () => {
+describe('createProcess: refusals', () => {
   test.each(RESERVED_PROCESS_NAMES)(
-    'nome reservado %s, antes de ler definição ou criar',
+    'reserved name %s, before reading a definition or creating',
     (name) => {
       const { service, definitions, processes } = setup();
       definitions.add('types', 'note', '1.0', NOTE_1_0);
@@ -196,10 +199,10 @@ describe('createProcess: recusas', () => {
   );
 
   test.each([
-    ['projeto', { project: 'Not Valid', process: 'run-1' }, '/project'],
-    ['processo', { project: PROJECT, process: 'Not_Valid' }, '/process'],
+    ['project', { project: 'Not Valid', process: 'run-1' }, '/project'],
+    ['process', { project: PROJECT, process: 'Not_Valid' }, '/process'],
   ])(
-    'nome de %s inválido sai das portas como INVALID_INPUT invalid-name',
+    'invalid %s name comes out of the ports as INVALID_INPUT invalid-name',
     (_field, input, path) => {
       const dataDir = createTempDir('create-process');
       const definitions = createDefinitionStore({ dataDir });
@@ -220,7 +223,7 @@ describe('createProcess: recusas', () => {
     },
   );
 
-  test('projeto sem nenhuma definição recusa com TYPE_NOT_FOUND, sem criar nada', () => {
+  test('project with no definitions refuses with TYPE_NOT_FOUND, creating nothing', () => {
     const { service, processes } = setup();
 
     const error = captureError(() => create(service));
@@ -233,7 +236,7 @@ describe('createProcess: recusas', () => {
     expect(processes.creates).toEqual([]);
   });
 
-  test('projeto que ficou sem definição recusa com TYPE_NOT_FOUND mesmo com o processo já criado, em vez de created: false', () => {
+  test('project left without definitions refuses with TYPE_NOT_FOUND even with the process already created, instead of created: false', () => {
     const { service, definitions, processes } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     create(service);
@@ -248,7 +251,7 @@ describe('createProcess: recusas', () => {
     expect(processes.creates).toHaveLength(1);
   });
 
-  test('pasta de nome sem versão não conta como definição registrada', () => {
+  test('name folder without a version does not count as a registered definition', () => {
     const { service, definitions, processes } = setup();
     definitions.addEmptyName('types', 'orphan');
 
@@ -268,7 +271,7 @@ describe('createProcess: recusas', () => {
       { path: '/version', code: 'unknown-version', message: 'unknown version', versions: ['1.0'] },
     ],
   ])(
-    'definição que some entre a listagem e a leitura (%s, %s) sai intacta, sem criar nada',
+    'definition that vanishes between listing and reading (%s, %s) comes out intact, creating nothing',
     (code, _subcode, detail) => {
       const { service, definitions, processes } = setup();
       definitions.add('types', 'note', '1.0', NOTE_1_0);
@@ -283,8 +286,29 @@ describe('createProcess: recusas', () => {
   );
 });
 
-describe('createProcess: processo já existente', () => {
-  test('mesmas definições: created false, sem stale, manifesto intocado', () => {
+describe('createProcess: existing process', () => {
+  test('legacy manifest without lineageInheritance comes back without it and is not rewritten', () => {
+    const { service, definitions, processes } = setup();
+    definitions.add('types', 'note', '1.0', NOTE_1_0);
+    create(service);
+    const legacy = omit(processes.store.readManifest({ project: PROJECT, process: 'run-1' }), [
+      'lineageInheritance',
+    ]);
+    processes.manifests.set('run-1', legacy);
+
+    const result = create(service);
+
+    expect(result).toEqual({
+      project: PROJECT,
+      process: 'run-1',
+      created: false,
+      pinned: { types: ['note'], relations: [], gates: [] },
+    });
+    expect(result).not.toHaveProperty('lineageInheritance');
+    expect(processes.manifests.get('run-1')).toBe(legacy);
+  });
+
+  test('same definitions: created false, no stale, manifest untouched', () => {
     const { service, definitions, processes } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     create(service);
@@ -296,12 +320,13 @@ describe('createProcess: processo já existente', () => {
       project: PROJECT,
       process: 'run-1',
       created: false,
+      lineageInheritance: true,
       pinned: { types: ['note'], relations: [], gates: [] },
     });
     expect(processes.manifests.get('run-1')).toBe(first);
   });
 
-  test('versão nova de tipo, relação e gate: created false e stale com a vigente de cada um', () => {
+  test('new version of type, relation and gate: created false and stale with the current one of each', () => {
     const { service, definitions } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     definitions.add('relations', 'based-on', '1.0', SUPPORTS);
@@ -321,7 +346,7 @@ describe('createProcess: processo já existente', () => {
     ]);
   });
 
-  test('definição criada depois da fixação é stale e não entra em pinned', () => {
+  test('definition created after pinning is stale and does not enter pinned', () => {
     const { service, definitions } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     create(service);
@@ -333,7 +358,7 @@ describe('createProcess: processo já existente', () => {
     expect(result.stale).toEqual([{ kind: 'types', name: 'task', current: '1.0' }]);
   });
 
-  test('só o que mudou aparece em stale', () => {
+  test('only what changed shows up in stale', () => {
     const { service, definitions } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     definitions.add('types', 'task', '1.0', NOTE_1_0);
@@ -343,7 +368,7 @@ describe('createProcess: processo já existente', () => {
     expect(create(service).stale).toEqual([{ kind: 'types', name: 'task', current: '1.1' }]);
   });
 
-  test('nome `constructor` criado depois da fixação é stale, sem ler o protótipo', () => {
+  test('name `constructor` created after pinning is stale, without reading the prototype', () => {
     const { service, definitions } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     create(service);
@@ -352,7 +377,7 @@ describe('createProcess: processo já existente', () => {
     expect(create(service).stale).toEqual([{ kind: 'types', name: 'constructor', current: '1.0' }]);
   });
 
-  test('nome fixado que não tem mais versão no projeto é stale com current null', () => {
+  test('pinned name that no longer has a version in the project is stale with current null', () => {
     const { service, definitions } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     definitions.add('types', 'task', '1.0', NOTE_1_0);
@@ -364,7 +389,7 @@ describe('createProcess: processo já existente', () => {
     expect(create(service).stale).toEqual([{ kind: 'types', name: 'note', current: null }]);
   });
 
-  test('PROCESS_CORRUPTED unreadable-manifest sobe intacto, não vira created false', () => {
+  test('PROCESS_CORRUPTED unreadable-manifest bubbles up intact, does not become created false', () => {
     const { service, definitions, processes } = setup();
     definitions.add('types', 'note', '1.0', NOTE_1_0);
     create(service);
@@ -379,7 +404,7 @@ describe('createProcess: processo já existente', () => {
     expect(captureError(() => create(service))).toBe(corrupted);
   });
 
-  test('com o log acima do teto devolve created false: só o manifesto é lido', () => {
+  test('with the log above the cap returns created false: only the manifest is read', () => {
     const dataDir = createTempDir('create-process');
     const definitions = createDefinitionStore({ dataDir });
     definitions.write(PROJECT, 'types', 'note', '1.0', NOTE_1_0);

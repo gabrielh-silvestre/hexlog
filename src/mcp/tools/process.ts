@@ -23,6 +23,7 @@ const CreateProcessOutput = z.object({
   project: z.string(),
   process: z.string(),
   created: z.boolean(),
+  lineageInheritance: z.literal(true).optional(),
   pinned: z.record(z.string(), z.array(z.string())),
   stale: z
     .array(z.object({ kind: z.string(), name: z.string(), current: z.string().nullable() }))
@@ -37,9 +38,10 @@ const RegisterOutput = z.object({
 
 const CREATE_PROCESS_DESCRIPTION =
   'Create a process in a project. It pins the current version of every type, relation name and gate ' +
-  'of the project; later registers in the process validate against that pin. Idempotent by name: an ' +
-  'existing process comes back untouched (created=false), with stale listing the definitions that ' +
-  'changed since the pin. Refuses a project with nothing defined (TYPE_NOT_FOUND) and reserved names.';
+  'of the project; later registers in the process validate against that pin. A new process also ' +
+  'turns on lineage inheritance (lineageInheritance=true); one created before it has no such field. ' +
+  'Idempotent by name: an existing process comes back untouched (created=false), with stale ' +
+  'listing the definitions that changed since the pin. Refuses a project with nothing defined (TYPE_NOT_FOUND) and reserved names.';
 
 const REGISTER_DESCRIPTION =
   'Append a batch of 1 to 50 records to a process, atomically: all are written or none. agent is the ' +
@@ -50,7 +52,8 @@ const REGISTER_DESCRIPTION =
   'item in the same batch, and carries kind (supersedes, revokes, supports, contradicts, answers, ' +
   'derivesFrom, complements, reopens), as (a relation name pinned in the process) or both. supersedes and revokes only reach records of ' +
   'the same process and need a current target (else FORK_REJECTED); supersedes also needs the same ' +
-  'type; supports needs a current target. An attachment hash is accepted only in a field declared ' +
+  'type and target (to move a fact to another target, revoke the old record and register a new one ' +
+  'there with derivesFrom to it; else INVALID_RECORD, target-mismatch); supports needs a current target. An attachment hash is accepted only in a field declared ' +
   'format "attachment". Pass key to make a retry safe: the same key with the same batch returns the ' +
   'records as stored with replayed=true and the current head as marker; with a different batch it ' +
   'fails with IDEMPOTENCY_CONFLICT. After ' +
@@ -59,7 +62,7 @@ const REGISTER_DESCRIPTION =
   'it names; in project scope, any process it does not name is read as empty. Before registering data ' +
   'of a type you do not know, read its schema with describe_type; INVALID_RECORD reports the first ' +
   'schema violation of each record. Before supersedes or revokes, read the current id with query (a ' +
-  'wrong id of the same type and process that is still current is accepted and forks the lineage).';
+  'wrong id of the same type, target and process that is still current is accepted and forks the lineage).';
 
 /** `create_process` e `register`: cada uma só repassa a entrada validada ao serviço de processo. */
 export function registerProcessTools(server: McpServer, deps: ToolDeps): void {

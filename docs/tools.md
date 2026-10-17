@@ -102,6 +102,14 @@ Um gate tem 1 a 50 perguntas de quatro formas, todas com seletor
 O `scope` de uma pergunta é `process` (o padrão: só enxerga relações vindas do processo do
 gate) ou `project` (enxerga relações entre processos).
 
+`approved` e `no_pending` aceitam também `inherit: true` (só `true`; as outras duas
+perguntas recusam o campo). Em processo com herança de relações (ver `create_process`), a
+pergunta passa a contar o apoio (`approved`) ou a resolução (`no_pending`) que uma versão
+superada carregava, e a `evidence` ganha a lista `inherited` com o que conta só por
+herança. Sem a opção, o resultado é o de sempre; em processo sem herança, a opção não
+acrescenta nada: `evidence.inherited` sai como lista vazia (`counts.inherited: 0`). A contradição nunca herda: uma contradição vigente continua reprovando. O gate
+antigo continua válido, porque o campo é opcional e `define_gate` não detecta quebra.
+
 ## `create_process`
 
 Cria um processo e fixa para sempre a versão vigente de cada tipo, relação e gate do
@@ -116,6 +124,14 @@ recusas é: nome reservado, depois projeto sem definição e só então a criaç
 `created: false`; por isso um processo que já existe, num projeto que ficou sem
 definição, também recebe `TYPE_NOT_FOUND`.
 
+**Herança de relações.** O processo criado agora nasce com `lineageInheritance: true` no
+`process.json` (entra na âncora da cadeia), e a saída traz o campo. O processo criado antes
+não tem o campo, não o ganha depois (o manifesto é imutável e não há tool de ativação) e
+segue com a cascata manual de regravar a relação na versão nova; o `created: false` de um
+processo antigo vem sem o campo. O `list` com `process` mostra `lineageInheritance` quando
+existe. Com a herança, a leitura trata a relação gravada para uma versão superada como se
+valesse também para a atual, sem regravar nada; a tabela por espécie está em `query`.
+
 ## `register`
 
 Grava um lote de 1 a 50 registros numa **única linha** do log (`{"links":[...]}`, um elo
@@ -129,7 +145,7 @@ ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabe�
 processo, para ler dali em diante. O marcador cobre exatamente os processos que nomeia:
 no alcance projeto, o que ele não nomeia é lido como vazio. A descrição da tool manda ler o
 schema com `describe_type` antes de registrar num tipo que o agente não conhece, e o id
-vigente com `query` antes de `supersedes` ou `revokes`: um id errado, do mesmo tipo e processo,
+vigente com `query` antes de `supersedes` ou `revokes`: um id errado, do mesmo tipo, target e processo,
 que ainda é vigente, é aceito e bifurca a linhagem.
 
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
@@ -140,7 +156,9 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
 - `supersedes` e `revokes` só alcançam registros **do mesmo processo**
   (`cross-process-currency`), e só o vigente: sobre um destino que já foi superado ou
   revogado, é `FORK_REJECTED`, com `current` apontando a versão atual da linhagem.
-- `supersedes` exige o mesmo tipo (`type-mismatch`).
+- `supersedes` exige o mesmo tipo (`type-mismatch`) e o mesmo target (`target-mismatch`).
+  Para mudar um fato de target, faça `revokes` no registro antigo e grave um registro novo
+  no target certo com `derivesFrom` para ele; `revokes` entre targets é aceito.
 - `supports` só aceita destino vigente (`stale-destination`); pode cruzar processos.
 - Um registro não pode apoiar e contradizer, nem superar e revogar, o mesmo destino.
 - Relação para si mesmo, `as` que não existe fixado no processo, `kind` que não bate com
@@ -189,14 +207,18 @@ Lê os registros **vigentes** (não superados nem revogados) de um processo
 quebrada ou manifesto ilegível falha fechado com `PROCESS_CORRUPTED` nomeando o
 processo em `details[0].process`.
 
-- **Alcance processo** lê um processo só: `in` traz só relações vindas do próprio
-  processo, e `out` para um registro de outro processo sai sem `current`. Quem espera
-  evidência de outro processo declara `scope: "project"`.
+- **Alcance processo** lê um processo só: as relações de entrada (`in`, ou `inCounts`)
+  trazem só as vindas do próprio processo, e `out` para um registro de outro processo sai
+  sem `current`. Quem espera evidência de outro processo declara `scope: "project"`.
 - **Filtros:** `type`, `targetPrefix`, `where` (igualdade em campos de primeiro nível
   de `data`, valor escalar, até 50 chaves), `text` (busca textual, até 200
   caracteres, por relevância), `ids` (até 200), `relatedTo` (os vizinhos diretos de um id,
   por qualquer relação, de entrada ou de saída, sem o próprio id) e `includeNonCurrent`
-  (traz também os superados e revogados). O `targetPrefix` casa na fronteira de `.`. A
+  (traz também os superados e revogados). O `targetPrefix` casa por segmento, na fronteira de
+  `.`: `a.b` casa `a.b` e `a.b.c`, não `a.b-2` nem `a.bc` (`unit-1` não casa `unit-10`). A
+  resposta vazia em que nenhum target lido casa, mas algum começa pela string sem a fronteira,
+  traz `hint` com esse target; o casamento não muda. Não há filtro por tempo (`since` dá
+  `INVALID_INPUT`, e a mensagem aponta `changesSince`). A
   busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
   busca o monta, e o alcance projeto o monta a cada busca.
 - **Projeção:** `fields` (até 50 nomes de campos de primeiro nível de `data`) recorta
@@ -205,20 +227,56 @@ processo em `details[0].process`.
   é `{}` quando nenhum dos nomes existe (o alcance projeto mistura tipos). Os filtros
   (`where`, `text` e os demais) veem o `data` inteiro, e o teto de página conta o JSON
   já recortado, então uma listagem só de ids e `target` (`fields: []`) cabe muito mais
-  registros por página. `in`, `out`, `needsReview` e `attachmentStatus` saem completos.
-  `fields` fica fora do hash do cursor: a página 2 pode pedir outros. Mais de 50 nomes
-  ou nome vazio dá `INVALID_INPUT`, com `/fields` ou `/fields/<i>` em `details[].path`.
+  registros por página. `needsReview` e `attachmentStatus` saem completos em qualquer
+  `fields`. `fields` fica fora do hash do cursor: a página 2 pode pedir outros. Mais de 50
+  nomes ou nome vazio dá `INVALID_INPUT`, com `/fields` ou `/fields/<i>` em `details[].path`.
+- **Relações:** `relations` escolhe como cada registro traz as arestas. `counts` (o
+  padrão da tool) devolve `inCounts` e `outCounts`, mapas `{<nome>: n}` em que `<nome>` é
+  o `as` da relação, ou o `kind` quando não há `as`: as relações `rests-on`, `anchored-in` e
+  `about-gap` são todas `derivesFrom` e saem separadas pelo nome que o agente gravou. Conta
+  toda aresta, vigente ou não; o nome sem aresta não aparece, e o mapa vazio é omitido
+  (ausência de `inCounts` ou `outCounts` é zero). `full` devolve `in` e `out` por inteiro,
+  como antes de `relations` existir, e `none` não devolve nenhum dos quatro campos. Para
+  seguir uma aresta, peça o registro com `relations: "full"`, ou use `relatedTo` com o id,
+  que independe do modo. `relations` fica fora do hash do cursor, como `fields`: a página 2
+  pode pedir outro modo. Valor fora de `counts`, `full` e `none` dá `INVALID_INPUT`.
+- **Relações herdadas:** num registro cuja linhagem de `supersedes` está num processo com
+  `lineageInheritance` (ver `create_process`), a leitura soma às arestas gravadas as que ele
+  herda das versões superadas, sem regravar nada. Os campos são irmãos dos de `relations`:
+  `inheritedIn` e `inheritedOut` em `full`, `inheritedInCounts` e `inheritedOutCounts` em
+  `counts` (mesmo critério do `as` ou `kind`). Cada item é `{kind, as?, from | to, origin}`,
+  em que `origin` (`{from, to}`) é a aresta gravada de onde a herdada vem. Quando não há
+  herança o campo some (o mapa ou a lista vazia é omitido), `none` não traz nenhum, e um
+  processo sem herança responde como antes. Eles seguem `fields: []`, o cursor e
+  `changesSince` como `in` e `out`, e `relatedTo` não os considera. O que sobe, por espécie:
+  - `supports`: o **destino** sobe para a versão atual; o apoio que a unidade antiga
+    recebia passa a valer para a atual. A origem tem de ser vigente: o apoio de uma revisão
+    superada continua morrendo com ela.
+  - `answers`, `derivesFrom`, `complements`, `reopens`: a **origem** sobe para a versão
+    atual; o destino fica como foi gravado, então a citação histórica segue histórica.
+  - `contradicts`, `supersedes`, `revokes` nunca herdam. Uma aresta gravada igual à
+    herdada (mesmos `kind`, `as`, origem e destino) vence a herdada.
+  - **Corte:** um `contradicts` vigente (o registro que o grava não foi superado nem
+    revogado) entre a linhagem de uma ponta e a da outra, em qualquer direção, corta a
+    herança desse par; as arestas gravadas ficam. Superar ou revogar o registro que o grava
+    religa a herança. O `contradicts` é também uma contradição de verdade para `approved` e
+    `no_open_contradiction` sobre o registro que aponta.
+  - **Alcance:** vale o do `in`: o alcance processo não vê o que vem de outro processo, e o
+    projeto vê. Quem ativa é o `process.json` do processo da linhagem que sobe.
+  - **`needsReview`:** o `supports` herdado conta como apoio vivo, então some o `staleOut`;
+    cortado, volta a marcar.
 - **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data` (inteiro, ou só
-  os `fields` pedidos), as relações
-  de entrada (`in`) e de saída (`out`), `needsReview` (registro vigente cujo apoio
+  os `fields` pedidos), as relações no formato de `relations` (`inCounts` e `outCounts`,
+  `in` e `out`, ou nenhuma), `needsReview` (registro vigente cujo apoio
   morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`, `missing` ou
   `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como status, não
-  como erro. Cada relação de entrada é `{kind, as?, from, current}` e cada relação de
-  saída é `{kind, as?, to, current?}`: `current` diz se a outra ponta é vigente, e na
-  saída só sai quando o destino foi lido.
+  como erro. Com `relations: "full"`, cada relação de entrada é `{kind, as?, from, current}`
+  e cada relação de saída é `{kind, as?, to, current?}`: `current` diz se a outra ponta é
+  vigente, e na saída só sai quando o destino foi lido.
 - **Ordem:** por `seq` no alcance processo e por (`at`, processo, `seq`) no alcance
   projeto; com `text`, por relevância, com a ordem do alcance como desempate.
-- **Paginação:** até `limit` registros (padrão 50, máximo 200), e a página também para
+- **Paginação:** até `limit` registros (padrão 50, máximo 200; `0` só com `changesSince` e
+  sem `cursor`, em que `records` vem vazio e só `changes` importa), e a página também para
   num teto de 24.000 caracteres do JSON dos registros, sempre com ao menos um registro.
   Passe o `cursor` devolvido para continuar, com a mesma consulta: só o `limit` e os
   `fields` podem mudar, e com `changesSince` a página 2 reenvia o mesmo `changesSince`, senão
@@ -228,7 +286,8 @@ processo em `details[0].process`.
   em `marker-hash-mismatch` ou em `last-id-not-found`, sempre `INVALID_CURSOR`, e a
   barreira é a releitura do serviço, que prende a consulta e o marcador da primeira
   página. `INVALID_CURSOR` ou `MARKER_NOT_FOUND` indicam que a consulta ou o dado mudou.
-- **Mudanças:** `marker` é a cabeça de cada processo lido. Devolvido como
+- **Mudanças:** `marker` é a cabeça de cada processo lido, e o id de qualquer registro do
+  processo serve de entrada de um marcador (`{"<processo>": "<id>"}`). Devolvido como
   `changesSince` numa consulta nova (a página 2 reenvia o mesmo `changesSince` com o
   `cursor`), a primeira página traz `changes` (`entered` e
   `left` com o motivo: `superseded`, `revoked` ou `no-longer-matches`). Cada lista vai
@@ -238,14 +297,36 @@ processo em `details[0].process`.
 ## `evaluate_gate`
 
 Calcula um gate fixado no processo, **sem gravar nada**. Devolve `passed`, o
-resultado de cada pergunta (`index`, `kind`, `passed`, `evidence` com os ids que
-sustentam a resposta) e o `marker` do que foi lido. A `evidence` tem listas por `kind`:
-`approved` traz `of`, `supports`, `contradictions` e `unsupported`; `occurred`, `found`;
-`no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. `target` é herdado pelos
-seletores sem `targetPrefix`. Com um `marker` de uma leitura anterior, a avaliação se
-reproduz sobre os registros que existiam então. Cada lista de evidência vai até 100
-ids, com `omitted` contando o resto; um `select` ou `where` mais estreito alcança o
-resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
+resultado de cada pergunta (`index`, `kind`, `passed`, mais as contagens ou os ids da
+`evidence`, conforme o modo) e o `marker` do que foi lido. A `evidence` tem listas por
+`kind`: `approved` traz `of`, `supports`, `contradictions` e `unsupported`; `occurred`,
+`found`; `no_pending`, `unresolved`; `no_open_contradiction`, `conflicting`. Uma pergunta
+`approved` ou `no_pending` com `inherit: true` traz também `inherited`, os ids que contam só
+por herança (ver `define_gate` e "Relações herdadas" em `query`). `target` é
+herdado pelos seletores sem `targetPrefix`. Com um `marker` de uma leitura anterior, a
+avaliação se reproduz sobre os registros que existiam então. Cada lista de evidência vai
+até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estreito alcança
+o resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
+
+- **Detalhe da evidência:** `evidence` escolhe o quanto cada pergunta traz.
+  - `failing` (o padrão da tool) devolve `counts`, o tamanho de cada lista da pergunta
+    (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
+    reprovação e não estão vazias: `unsupported` e `contradictions` em `approved`, `found`
+    em `occurred`, `unresolved` em `no_pending`, `conflicting` em `no_open_contradiction`.
+    Pergunta aprovada, ou reprovada sem lista de diagnóstico (um `approved` sem nenhum
+    registro em `of`), vem só com `counts`, sem a chave `evidence`.
+  - `counts` devolve só `counts`, nunca ids.
+  - `full` devolve `evidence` com todas as listas de ids, sem `counts`, como antes de
+    `evidence` existir.
+- **Lote:** `targets` (de 1 a 50) avalia vários targets numa só leitura. É exclusivo com
+  `target` e não aceita `evidence: "full"`. A resposta troca `questions` por `results`, um
+  `{target, passed, questions}` por entrada, na ordem recebida (duplicata não é removida),
+  com um só `marker` para todos; `passed` só é verdadeiro quando todos passam. Um `marker`
+  de entrada vale para todos os targets. `targets` junto de `target` ou `evidence: "full"`
+  com `targets` dão `INVALID_INPUT` (`/targets` com `with-target`, `/evidence` com
+  `full-with-targets`). Pela tool, lista vazia ou com mais de 50 itens é recusada pelo
+  schema em `/targets`, antes do serviço; `with-target`, `empty` e `full-with-targets` são
+  códigos do serviço, chamado direto.
 
 ## `verify_chain`
 
