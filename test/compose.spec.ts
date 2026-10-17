@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import MiniSearch from 'minisearch';
 import { compose, composeReader } from '../src/compose.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
@@ -19,18 +19,18 @@ function composed(logger: Logger = () => undefined) {
 // Cada `addAll` é uma montagem do índice de busca: o sensor de que a composição reaproveita o cache.
 const addAll = jest.spyOn(MiniSearch.prototype, 'addAll');
 
-afterEach(() => {
-  addAll.mockClear();
-});
-
 describe('compose', () => {
-  test('monta os serviços de escrita e de consulta sobre os adaptadores reais', () => {
+  afterEach(() => {
+    addAll.mockClear();
+  });
+
+  it('should wire the write and query services over the real adapters', () => {
     const { services } = composed();
 
     expect(Object.keys(services).sort()).toEqual(['attachment', 'definition', 'process', 'query']);
   });
 
-  test('duas consultas com text pelo query da composição indexam uma vez só', async () => {
+  it('should build the search index once for two text queries through the composed query service', async () => {
     const { services } = composed();
     services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
     services.process.createProcess({ project: PROJECT, process: 'run-1' });
@@ -49,7 +49,7 @@ describe('compose', () => {
     expect(addAll).toHaveBeenCalledTimes(1);
   });
 
-  test('createProcess e register gravam uma linha e a mesma key devolve replayed', async () => {
+  it('should write a single log line for createProcess followed by register', async () => {
     const { services, dataDir } = composed();
     services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
     services.process.createProcess({ project: PROJECT, process: 'run-1' });
@@ -63,16 +63,35 @@ describe('compose', () => {
     const logFile = processPaths(dataDir, { project: PROJECT, process: 'run-1' }).log;
 
     const first = await services.process.register(input);
+
     const lines = fs.readFileSync(logFile, 'utf8').trimEnd().split('\n');
-    const again = await services.process.register(input);
 
     expect(first.replayed).toBe(false);
     expect(lines).toHaveLength(1);
+  });
+
+  it('should return replayed and leave the log unchanged when register repeats the same key', async () => {
+    const { services, dataDir } = composed();
+    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+    services.process.createProcess({ project: PROJECT, process: 'run-1' });
+    const input = {
+      project: PROJECT,
+      process: 'run-1',
+      author: AUTHOR,
+      key: 'k1',
+      records: [note()],
+    };
+    const logFile = processPaths(dataDir, { project: PROJECT, process: 'run-1' }).log;
+    const first = await services.process.register(input);
+    const lines = fs.readFileSync(logFile, 'utf8').trimEnd().split('\n');
+
+    const again = await services.process.register(input);
+
     expect(again).toMatchObject({ replayed: true, records: first.records });
     expect(fs.readFileSync(logFile, 'utf8').trimEnd().split('\n')).toEqual(lines);
   });
 
-  test('o segundo register com a mesma key emite batch-replayed pelo logger da composição', async () => {
+  it('should emit batch-replayed through the composed logger on the second register with the same key', async () => {
     const logger = jest.fn<Logger>();
     const { services } = composed(logger);
     services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
@@ -85,18 +104,23 @@ describe('compose', () => {
       records: [note()],
     };
     const replayed = expect.objectContaining({ event: 'batch-replayed', key: 'k1' });
-
     await services.process.register(input);
+
     expect(logger).not.toHaveBeenCalledWith(replayed);
+
     await services.process.register(input);
 
     expect(logger).toHaveBeenCalledWith(replayed);
   });
 
-  test('isLegacy é falso com o dataDir vazio e verdadeiro com layout 0.x', () => {
-    const { isLegacy, dataDir } = composed();
-    expect(isLegacy()).toBe(false);
+  it('should report no legacy data when the dataDir is empty', () => {
+    const { isLegacy } = composed();
 
+    expect(isLegacy()).toBe(false);
+  });
+
+  it('should report legacy data when the dataDir has a 0.x layout', () => {
+    const { isLegacy, dataDir } = composed();
     fs.mkdirSync(path.join(dataDir, 'meu-projeto'));
 
     expect(isLegacy()).toBe(true);
@@ -119,8 +143,8 @@ describe('composeReader', () => {
     return { reader: composeReader({ cwd, dataDir, logger: () => undefined }), dataDir, records };
   }
 
-  test('só expõe o lado de leitura, sobre o que compose gravou', async () => {
-    const { reader, records } = await seeded();
+  it('should expose only the read side', async () => {
+    const { reader } = await seeded();
 
     expect(Object.keys(reader).sort()).toEqual([
       'isLegacy',
@@ -129,6 +153,11 @@ describe('composeReader', () => {
       'loadProcess',
       'query',
     ]);
+  });
+
+  it('should read through each reader method what compose wrote', async () => {
+    const { reader, records } = await seeded();
+
     expect(reader.listProjects()).toEqual([PROJECT]);
     expect(reader.list(PROJECT)).toEqual(['run-1']);
     expect(reader.loadProcess(REF).records.map(({ id }) => id)).toEqual(
@@ -139,7 +168,7 @@ describe('composeReader', () => {
     );
   });
 
-  test('list enumera o processo com process.json ilegível, que o list da consulta recusa', async () => {
+  it('should list a process with an unreadable process.json that the query list refuses', async () => {
     const { reader, dataDir } = await seeded();
     fs.writeFileSync(processPaths(dataDir, REF).manifest, '{');
 
