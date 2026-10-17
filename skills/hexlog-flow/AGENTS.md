@@ -11,7 +11,7 @@ Skill de uso diário, para um repositório que já tem `.hexlog/flow.md`. Dispar
 
 | File | Description |
 |------|-------------|
-| `SKILL.md` | Leitura do flow map, árvore de decisão de tool, busca e id, `key` contra duplicata, regras de relação que o servidor impõe, herança de relações pela linhagem (processo novo; corte por `contradicts`; `inherit` no gate), alcance de leitura (`scope`), marcador e cursor, reenvio após erro incerto, anexos (inclusive `unmarked-attachment`) e mudança de gate |
+| `SKILL.md` | Leitura do flow map, árvore de decisão de tool, busca e id, leitura enxuta (`fields`, `relations`, `changesSince` com `limit: 0`, gate em lote), `key` contra duplicata, regras de relação que o servidor impõe, herança de relações pela linhagem (processo novo; corte por `contradicts`; `inherit` no gate), alcance de leitura (`scope`), marcador e cursor, reenvio após erro incerto, anexos (inclusive `unmarked-attachment`) e mudança de gate |
 
 ## Subdirectories
 

@@ -30,7 +30,7 @@ Quem aciona o júri confere o veredito antes de usá-lo e pode reprová-lo e ref
 
 Consulte nesta ordem:
 
-1. `query` do hexlog, no processo do trabalho e no processo vigente das diretrizes, relida a cada pergunta: id do hexlog só se cita depois dessa releitura, nunca de memória.
+1. `query` do hexlog, no processo do trabalho e no processo vigente das diretrizes, relida a cada pergunta: id do hexlog só se cita depois dessa releitura, nunca de memória. A primeira leitura projeta com `fields` (`statement` na `premise`, `choice` na `decision`) e `relations: "none"`; a releitura passa o `marker` anterior em `changesSince` com `limit: 0` e abre por `ids` só o que entrou.
 2. Wiki OMC.
 3. Memória nativa do projeto.
 4. `docs/directives/`, os ADRs e os `AGENTS.md`.
