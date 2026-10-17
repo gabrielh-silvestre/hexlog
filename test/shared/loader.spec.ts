@@ -1,4 +1,4 @@
-import { describe, test, expect, jest, afterEach } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { anchor, hashLink, sha256hex, type Expected, type Link } from '../../src/domain/chain.ts';
 import type { RecordId } from '../../src/domain/ids.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
@@ -57,11 +57,19 @@ const rawOf = (text: string): RawProcess => ({
 
 const TORN = '{"links":[{"seq":1,"id"';
 
-describe('formatLine e isValidLine', () => {
-  test('formatLine enquadra { links } terminado em \\n e isValidLine o aceita de volta', () => {
-    const text = lineOf(A, B);
+describe('formatLine', () => {
+  it('should frame { links } ended by \\n', () => {
+    const text = formatLine([A, B]);
+
     expect(text.endsWith('\n')).toBe(true);
     expect(JSON.parse(text)).toEqual({ links: [A, B] });
+  });
+});
+
+describe('isValidLine', () => {
+  it('should accept back a line framed by formatLine', () => {
+    const text = lineOf(A, B);
+
     expect(isValidLine(text.slice(0, -1), START)).toEqual({
       status: 'valid',
       links: [A, B],
@@ -69,13 +77,15 @@ describe('formatLine e isValidLine', () => {
     });
   });
 
-  test('segmento que não parseia como JSON (inclusive vazio) é rasgado', () => {
-    expect(isValidLine(TORN, START)).toEqual({ status: 'torn' });
-    expect(isValidLine('', START)).toEqual({ status: 'torn' });
+  it.each([
+    { name: 'a segment that does not parse as JSON', segment: TORN },
+    { name: 'an empty segment', segment: '' },
+  ])('should classify $name as torn', ({ segment }) => {
+    expect(isValidLine(segment, START)).toEqual({ status: 'torn' });
   });
 
-  test.each(['null', '42', '{"foo":1}', '{"links":[]}', '{"links":[1]}'])(
-    'JSON %s que não tem a forma de uma linha é rejeitado como invalid-line, sem avançar',
+  it.each(['null', '42', '{"foo":1}', '{"links":[]}', '{"links":[1]}'])(
+    'should reject the JSON %s, which is not shaped like a line, as invalid-line without advancing',
     (segment) => {
       expect(isValidLine(segment, START)).toEqual({
         status: 'rejected',
@@ -84,26 +94,32 @@ describe('formatLine e isValidLine', () => {
     },
   );
 
-  test('chave além de links é rejeitada como invalid-line (a linha é estrita)', () => {
+  it('should reject a key besides links as invalid-line (the line is strict)', () => {
     expect(isValidLine(JSON.stringify({ links: [A], extra: 1 }), START)).toEqual({
       status: 'rejected',
       reasons: ['invalid-line'],
     });
   });
 
-  test('uma linha leva no máximo BATCH_MAX elos: o último que cabe passa, o seguinte é invalid-line', () => {
+  it('should accept a line with BATCH_MAX links, the last that fits', () => {
+    const full = chainOf(BATCH_MAX);
+
+    expect(isValidLine(JSON.stringify({ links: full }), START)).toMatchObject({ status: 'valid' });
+  });
+
+  it('should reject a line with one link over BATCH_MAX as invalid-line', () => {
     const full = chainOf(BATCH_MAX);
     const [extra] = chainOf(BATCH_MAX + 1).slice(-1);
 
-    expect(isValidLine(JSON.stringify({ links: full }), START)).toMatchObject({ status: 'valid' });
     expect(isValidLine(JSON.stringify({ links: [...full, extra] }), START)).toEqual({
       status: 'rejected',
       reasons: ['invalid-line'],
     });
   });
 
-  test('elo que não ocupa a posição é rejeitado com as razões, e a cadeia segue dele', () => {
+  it('should reject a link that does not take the position with the reasons, and continue the chain from it', () => {
     const forged = { ...B, prevHash: sha256hex('forjado') };
+
     expect(isValidLine(JSON.stringify({ links: [forged] }), START)).toEqual({
       status: 'rejected',
       reasons: ['diverging-seq', 'hash-mismatch'],
@@ -111,7 +127,7 @@ describe('formatLine e isValidLine', () => {
     });
   });
 
-  test('continuidade interna: o segundo elo precisa continuar o hash e o seq do primeiro', () => {
+  it('should require the second link to continue the hash and the seq of the first', () => {
     expect(isValidLine(JSON.stringify({ links: [A, C] }), START)).toEqual({
       status: 'rejected',
       reasons: ['diverging-seq', 'hash-mismatch'],
@@ -119,7 +135,7 @@ describe('formatLine e isValidLine', () => {
     });
   });
 
-  test('elo de forma inválida no meio da linha rejeita a linha inteira, sem avançar', () => {
+  it('should reject the whole line for an invalid-shaped link in the middle of it, without advancing', () => {
     expect(isValidLine(JSON.stringify({ links: [A, { seq: 1 }] }), START)).toEqual({
       status: 'rejected',
       reasons: ['invalid-line'],
@@ -127,7 +143,7 @@ describe('formatLine e isValidLine', () => {
   });
 });
 
-describe('parseLog: as regras (1)-(5) de D-05', () => {
+describe('parseLog', () => {
   type Case = {
     name: string;
     text: string;
@@ -137,45 +153,45 @@ describe('parseLog: as regras (1)-(5) de D-05', () => {
   };
 
   const cases: Case[] = [
-    { name: 'arquivo vazio', text: '', seqs: [], breaks: [], repaired: [] },
-    { name: 'linha válida', text: lineOf(A), seqs: [0], breaks: [], repaired: [] },
+    { name: 'an empty file', text: '', seqs: [], breaks: [], repaired: [] },
+    { name: 'a valid line', text: lineOf(A), seqs: [0], breaks: [], repaired: [] },
     {
-      name: 'resto rasgado único, reparado pela linha seguinte',
+      name: 'a single torn remainder, repaired by the next line',
       text: `${lineOf(A)}${TORN}\n${lineOf(B)}`,
       seqs: [0, 1],
       breaks: [],
       repaired: [1],
     },
     {
-      name: 'rasgo + rasgo',
+      name: 'torn + torn',
       text: `${lineOf(A)}${TORN}\n${TORN}\n${lineOf(B)}`,
       seqs: [0, 1],
       breaks: [],
       repaired: [1, 2],
     },
     {
-      name: 'rasgo + só \\n',
+      name: 'torn + a lone \\n',
       text: `${lineOf(A)}${TORN}\n\n${lineOf(B)}`,
       seqs: [0, 1],
       breaks: [],
       repaired: [1, 2],
     },
     {
-      name: 'rasgo + escrita curta',
+      name: 'torn + a short write',
       text: `${lineOf(A)}${TORN}\n{"links":\n${lineOf(B)}`,
       seqs: [0, 1],
       breaks: [],
       repaired: [1, 2],
     },
     {
-      name: 'rasgo + cauda válida (sem \\n)',
+      name: 'torn + a valid tail (no \\n)',
       text: `${lineOf(A)}${TORN}\n${lineOf(B).slice(0, -1)}`,
       seqs: [0, 1],
       breaks: [],
       repaired: [1],
     },
     {
-      name: 'rasgo + linha que parseia e não casa',
+      name: 'torn + a line that parses and does not match',
       text: `${lineOf(A)}${TORN}\n${forgedLine(B)}`,
       seqs: [0],
       breaks: [
@@ -185,7 +201,7 @@ describe('parseLog: as regras (1)-(5) de D-05', () => {
       repaired: [],
     },
     {
-      name: 'rasgo + linha invalid-line sem next: a pendente vira quebra e a posição não anda',
+      name: 'torn + an invalid-line without next: the pending one becomes a break and the position does not move',
       text: `${lineOf(A)}${TORN}\n{"foo":1}\n${lineOf(B)}`,
       seqs: [0, 1],
       breaks: [
@@ -195,49 +211,49 @@ describe('parseLog: as regras (1)-(5) de D-05', () => {
       repaired: [],
     },
     {
-      name: 'terminadores \\r\\n: o \\r que sobra no segmento é espaço para o JSON',
+      name: 'terminators \\r\\n: the \\r left in the segment is whitespace for JSON',
       text: `${lineOf(A).replace(/\n$/, '\r\n')}${lineOf(B).replace(/\n$/, '\r\n')}`,
       seqs: [0, 1],
       breaks: [],
       repaired: [],
     },
     {
-      name: 'linha inválida que parseia',
+      name: 'an invalid line that parses',
       text: `${lineOf(A)}{"foo":1}\n${lineOf(B)}`,
       seqs: [0, 1],
       breaks: [{ index: 1, reason: 'invalid-line' }],
       repaired: [],
     },
     {
-      name: 'cauda válida',
+      name: 'a valid tail',
       text: `${lineOf(A)}${lineOf(B).slice(0, -1)}`,
       seqs: [0, 1],
       breaks: [],
       repaired: [],
     },
     {
-      name: 'cauda rasgada, ignorada',
+      name: 'a torn tail, ignored',
       text: `${lineOf(A)}${TORN}`,
       seqs: [0],
       breaks: [],
       repaired: [],
     },
     {
-      name: 'cauda JSON que não casa',
+      name: 'a JSON tail that does not match',
       text: `${lineOf(A)}${forgedLine(B).slice(0, -1)}`,
       seqs: [0],
       breaks: [{ index: 1, reason: 'hash-mismatch' }],
       repaired: [],
     },
     {
-      name: 'lixo inserido entre linhas válidas, reparado',
+      name: 'garbage inserted between valid lines, repaired',
       text: `${lineOf(A)}lixo\n${lineOf(B)}`,
       seqs: [0, 1],
       breaks: [],
       repaired: [1],
     },
     {
-      name: 'linha válida trocada por lixo, quebra na linha válida seguinte',
+      name: 'a valid line replaced by garbage, breaking at the next valid line',
       text: `${lineOf(A)}lixo\n${lineOf(C)}`,
       seqs: [0],
       breaks: [
@@ -249,12 +265,16 @@ describe('parseLog: as regras (1)-(5) de D-05', () => {
     },
   ];
 
-  test.each(cases)('$name', ({ text, seqs, breaks, repaired }) => {
-    const parsed = parseLog(text, START.prevHash);
-    expect(parsed.lines.flatMap((line) => line.links.map((link) => link.seq))).toEqual(seqs);
-    expect(parsed.breaks).toEqual(breaks);
-    expect(parsed.repairedLines).toEqual(repaired);
-  });
+  it.each(cases)(
+    'should give the seqs, breaks and repaired lines for $name (D-05)',
+    ({ text, seqs, breaks, repaired }) => {
+      const parsed = parseLog(text, START.prevHash);
+
+      expect(parsed.lines.flatMap((line) => line.links.map((link) => link.seq))).toEqual(seqs);
+      expect(parsed.breaks).toEqual(breaks);
+      expect(parsed.repairedLines).toEqual(repaired);
+    },
+  );
 
   /** A gravação seguinte do `process-store`: um elo em `end`, com o `\n` de prefixo se o log não termina nele. */
   const appendNext = (text: string, end: Expected): string => {
@@ -265,7 +285,7 @@ describe('parseLog: as regras (1)-(5) de D-05', () => {
     return `${text}${text === '' || text.endsWith('\n') ? '' : '\n'}${lineOf(link)}`;
   };
 
-  test.each(cases)('a gravação seguinte entra depois de: $name', ({ text }) => {
+  it.each(cases)('should append the next write after $name (D-05)', ({ text }) => {
     const before = parseLog(text, START.prevHash);
 
     const after = parseLog(appendNext(text, before.end), START.prevHash);
@@ -275,24 +295,31 @@ describe('parseLog: as regras (1)-(5) de D-05', () => {
     expect(after.end.seq).toBe(before.end.seq + 1);
   });
 
-  test('rasgo no fim do arquivo não consome seq: a posição final é a do último elo válido', () => {
+  it('should not consume a seq for a torn remainder at the end of the file, ending at the last valid link (D-05)', () => {
     const parsed = parseLog(`${lineOf(A)}${TORN}\n\n`, START.prevHash);
+
     expect(parsed.end).toEqual({ seq: 1, prevHash: hashLink(A) });
     expect(parsed.breaks).toEqual([]);
     expect(parsed.repairedLines).toEqual([]);
   });
 
-  test('linha rejeitada avança a cadeia: as linhas seguintes consistentes não quebram de novo', () => {
+  it('should advance the chain over a rejected line so the following consistent lines do not break again (D-05)', () => {
     const forged = { ...B, prevHash: sha256hex('forjado') };
     const next = { ...C, prevHash: hashLink(forged) };
+
     const parsed = parseLog(`${lineOf(A)}${lineOf(forged)}${lineOf(next)}`, START.prevHash);
+
     expect(parsed.breaks).toEqual([{ index: 1, reason: 'hash-mismatch' }]);
     expect(parsed.lines.map((line) => line.index)).toEqual([0, 2]);
   });
 });
 
 describe('verifyProcess', () => {
-  test('devolve registros, cadeia, manifesto, lotes por key e a posição final', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('should return the records, the chain, the manifest, the batches by key and the end position', () => {
     const [first, second, third] = chainOf(3, (seq) =>
       seq === 0
         ? { fingerprint: sha256hex('lote-a'), key: 'lote-a' }
@@ -300,6 +327,7 @@ describe('verifyProcess', () => {
           ? { fingerprint: sha256hex('lote-b') }
           : undefined,
     ) as [Link, Link, Link];
+
     const verified = verifyProcess(rawOf(`${lineOf(first, second)}${lineOf(third)}`));
 
     expect(verified.manifest).toBe(manifest);
@@ -318,8 +346,9 @@ describe('verifyProcess', () => {
     expect(verified.end).toEqual({ seq: 3, prevHash: hashLink(third) });
   });
 
-  test('processo vazio: head e posição final na âncora do processo', () => {
+  it('should put the head and the end position of an empty process at its anchor', () => {
     const verified = verifyProcess(rawOf(''));
+
     expect(verified.chain).toEqual({
       ok: true,
       totalRecords: 0,
@@ -331,19 +360,22 @@ describe('verifyProcess', () => {
     expect(verified.end).toEqual(START);
   });
 
-  test('a primeira ocorrência de uma key vale', () => {
+  it('should keep the first occurrence of a key', () => {
     const [first, second] = chainOf(2, (seq) => ({
       fingerprint: sha256hex(`impressao-${seq}`),
       key: 'mesma',
     })) as [Link, Link];
+
     const { batches } = verifyProcess(rawOf(`${lineOf(first)}${lineOf(second)}`));
+
     expect(batches).toEqual(
       new Map([['mesma', { fingerprint: sha256hex('impressao-0'), links: [first] }]]),
     );
   });
 
-  test('cadeia quebrada: ok falso, com as quebras e a contagem', () => {
+  it('should report a broken chain as ok false, with the breaks and the count', () => {
     const { chain } = verifyProcess(rawOf(`${lineOf(A)}${forgedLine(B)}`));
+
     expect(chain).toMatchObject({
       ok: false,
       totalRecords: 1,
@@ -352,62 +384,95 @@ describe('verifyProcess', () => {
     });
   });
 
-  test('tetos: só 100 quebras saem, e a contagem total é exata', () => {
+  it('should output only 100 breaks while the total count stays exact', () => {
     const garbage = '{"foo":1}\n'.repeat(150);
+
     const { chain } = verifyProcess(rawOf(`${lineOf(A)}${garbage}`));
+
     expect(chain.breaks).toHaveLength(100);
     expect(chain.totalBreaks).toBe(150);
   });
 
-  test('tetos: só 100 linhas reparadas saem', () => {
+  it('should output only 100 repaired lines', () => {
     const [first, ...rest] = chainOf(151) as [Link, ...Link[]];
     const text = `${lineOf(first)}${rest.map((link) => `${TORN}\n${lineOf(link)}`).join('')}`;
+
     const { chain } = verifyProcess(rawOf(text));
+
     expect(chain.ok).toBe(true);
     expect(chain.repairedLines).toHaveLength(100);
   });
 
-  describe('corte no marcador', () => {
-    test('marcador nulo lê o processo como vazio', () => {
+  it('should call JSON.parse once per segment of records.jsonl, in order (SL2)', () => {
+    const segments = [
+      lineOf(A).slice(0, -1),
+      TORN,
+      lineOf(B).slice(0, -1),
+      '',
+      lineOf(C).slice(0, -1),
+    ];
+    const spy = jest.spyOn(JSON, 'parse');
+
+    verifyProcess(rawOf(segments.join('\n')), C.id);
+
+    expect(spy).toHaveBeenCalledTimes(segments.length);
+
+    segments.forEach((segment, index) => {
+      expect(spy).toHaveBeenNthCalledWith(index + 1, segment);
+    });
+  });
+
+  describe('with a marker', () => {
+    it('should read the process as empty for a null marker', () => {
       const verified = verifyProcess(rawOf(`${lineOf(A)}${lineOf(B)}`), null);
+
       expect(verified.records).toEqual([]);
       expect(verified.chain).toMatchObject({ ok: true, totalRecords: 0, head: START.prevHash });
       expect(verified.end).toEqual(START);
     });
 
-    test('corta depois do registro marcado e a posição final acompanha o corte', () => {
+    it('should cut after the marked record, the end position following the cut', () => {
       const verified = verifyProcess(rawOf(`${lineOf(A)}${lineOf(B)}${lineOf(C)}`), B.id);
+
       expect(verified.records).toEqual([A, B]);
       expect(verified.chain).toMatchObject({ totalRecords: 2, head: hashLink(B) });
       expect(verified.end).toEqual({ seq: 2, prevHash: hashLink(B) });
     });
 
-    test('marcador no meio de um lote corta o lote e o tira do mapa de lotes', () => {
+    it('should cut a batch at a marker in the middle of it and drop it from the batches map', () => {
       const [first, second] = chainOf(2, (seq) =>
         seq === 0 ? { fingerprint: sha256hex('lote'), key: 'lote' } : undefined,
       ) as [Link, Link];
+
       const verified = verifyProcess(rawOf(lineOf(first, second)), first.id);
+
       expect(verified.records).toEqual([first]);
       expect(verified.batches.size).toBe(0);
       expect(verified.end).toEqual({ seq: 1, prevHash: hashLink(first) });
     });
 
-    test('quebra depois do marcador não conta; antes do marcador, conta', () => {
+    it('should not count a break after the marker', () => {
       const text = `${lineOf(A)}{"foo":1}\n${lineOf(B)}`;
+
       expect(verifyProcess(rawOf(text), A.id).chain.ok).toBe(true);
+    });
+
+    it('should count a break before the marker', () => {
+      const text = `${lineOf(A)}{"foo":1}\n${lineOf(B)}`;
+
       expect(verifyProcess(rawOf(text), B.id).chain).toMatchObject({
         ok: false,
         breaks: [{ index: 1, reason: 'invalid-line' }],
       });
     });
 
-    test('marcador numa linha rejeitada dá MARKER_NOT_FOUND: só linha aceita pode ser marcada', () => {
+    it('should throw MARKER_NOT_FOUND for a marker on a rejected line: only an accepted line can be marked', () => {
       expect(() => verifyProcess(rawOf(`${lineOf(A)}${forgedLine(B)}`), B.id)).toThrow(
         expect.objectContaining({ code: 'MARKER_NOT_FOUND' }),
       );
     });
 
-    test('marcador que não está no log dá MARKER_NOT_FOUND', () => {
+    it('should throw MARKER_NOT_FOUND for a marker that is not in the log', () => {
       expect(() => verifyProcess(rawOf(lineOf(A)), B.id)).toThrow(
         expect.objectContaining({
           constructor: HexlogError,
@@ -423,14 +488,16 @@ describe('checkExpectedHead', () => {
   const verifiedOf = (...links: Link[]) =>
     verifyProcess(rawOf(links.map((l) => lineOf(l)).join('')));
 
-  test('o head de uma verificação com quebra no meio volta sem head-not-found', () => {
+  it('should return the head of a verification with a break in the middle without head-not-found', () => {
     const verified = verifyProcess(rawOf(`${lineOf(A)}${forgedLine(B)}`));
 
+    const chain = checkExpectedHead(verified, verified.chain.head);
+
     expect(verified.chain.breaks).not.toHaveLength(0);
-    expect(checkExpectedHead(verified, verified.chain.head)).toBe(verified.chain);
+    expect(chain).toBe(verified.chain);
   });
 
-  test('hash de nenhum elo vira head-not-found em totalRecords, conta em totalBreaks e zera ok', () => {
+  it('should turn the hash of no link into head-not-found at totalRecords, count it in totalBreaks and zero ok', () => {
     const verified = verifiedOf(A, B);
 
     expect(checkExpectedHead(verified, hashLink(C))).toEqual({
@@ -441,7 +508,7 @@ describe('checkExpectedHead', () => {
     });
   });
 
-  test('a quebra vai depois das da cadeia e, com a lista no teto, só entra no total', () => {
+  it('should put the break after the chain breaks and, with the list at the ceiling, only add it to the total', () => {
     const verified = verifyProcess(rawOf(`${lineOf(A)}${'{"foo":1}\n'.repeat(MAX_BREAKS)}`));
 
     const chain = checkExpectedHead(verified, hashLink(C));
@@ -452,32 +519,8 @@ describe('checkExpectedHead', () => {
   });
 });
 
-describe('SL2: cada linha é parseada uma vez por chamada', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  test('verifyProcess chama JSON.parse uma vez por segmento do records.jsonl, na ordem', () => {
-    const segments = [
-      lineOf(A).slice(0, -1),
-      TORN,
-      lineOf(B).slice(0, -1),
-      '',
-      lineOf(C).slice(0, -1),
-    ];
-    const spy = jest.spyOn(JSON, 'parse');
-
-    verifyProcess(rawOf(segments.join('\n')), C.id);
-
-    expect(spy).toHaveBeenCalledTimes(segments.length);
-    segments.forEach((segment, index) => {
-      expect(spy).toHaveBeenNthCalledWith(index + 1, segment);
-    });
-  });
-});
-
 describe('loadVerified', () => {
-  test('lê o processo cru da porta uma vez e verifica o que veio', () => {
+  it('should read the raw process from the port once and verify what came back', () => {
     const ref: ProcessRef = { project: 'demo', process: 'proc-1' };
     const raw = rawOf(lineOf(A, B));
     const read = jest.fn<(ref: ProcessRef) => RawProcess>().mockReturnValue(raw);
