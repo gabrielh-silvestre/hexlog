@@ -4,6 +4,7 @@ import {
   GateQuestion,
   matchesSelector,
   matchesTargetPrefix,
+  prepareGate,
   Selector,
   summarizeQuestion,
 } from '../../src/domain/gate.ts';
@@ -387,6 +388,25 @@ describe('result', () => {
     const input = reading([]);
     expect(evaluateGate([], input)).toEqual({ passed: true, questions: [] });
     expect(input.records).not.toHaveBeenCalled();
+  });
+});
+
+describe('prepareGate', () => {
+  const records = [
+    rec(p1, 'review', [], { target: 'a.b' }),
+    rec(p2, 'review', [], { target: 'c' }),
+    rec(p3, 'plan', [], { target: 'a.b' }),
+  ];
+  const q = question({ kind: 'occurred', select: { type: 'review' } });
+
+  test('answers each target as evaluateGate does, reading the records once for the batch', () => {
+    const input = reading(records);
+    const run = prepareGate([q], input);
+
+    for (const target of ['a', 'c', 'd', undefined]) {
+      expect(run(target)).toEqual(evaluateGate([q], reading(records, target)));
+    }
+    expect(input.records).toHaveBeenCalledTimes(1);
   });
 });
 

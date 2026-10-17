@@ -2,7 +2,7 @@ import { differenceBy, isUndefined, omitBy, pick, uniq, union } from 'es-toolkit
 import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
 import {
-  evaluateGate as runGate,
+  prepareGate,
   summarizeQuestion,
   type EvidenceMode,
   type GateScope,
@@ -466,19 +466,18 @@ export function createQueryService(deps: {
         : reading.processes
             .filter(({ name: read }) => read === process)
             .flatMap(({ verified }) => verified.records);
+    const run = prepareGate(gate.questions, {
+      records,
+      isInheritanceActive: inheritanceActivation(reading),
+    });
     const evaluate = (forTarget: Target | undefined) => {
-      const result = runGate(gate.questions, {
-        target: forTarget,
-        records,
-        isInheritanceActive: inheritanceActivation(reading),
-      });
+      const result = run(forTarget);
       return {
         passed: result.passed,
         questions: result.questions.map((question) => summarizeQuestion(question, evidence)),
       };
     };
     if (isUndefined(targets)) return { ...evaluate(target), marker: reading.marker };
-    // ponytail: a View é refeita por target (até 50 construções sobre o mesmo log); memoizar entre targets se medir custo.
     const results = targets.map((each) => ({ target: each, ...evaluate(each) }));
     return { passed: results.every(({ passed }) => passed), results, marker: reading.marker };
   }
