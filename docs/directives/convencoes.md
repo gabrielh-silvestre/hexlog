@@ -10,7 +10,7 @@
 ## Escrita dos testes
 
 - Todo caso é `it('should …')`: `should` seguido do comportamento observável, no presente. `test(` e `test.each` não são usados (`it.each`).
-- O corpo segue Arrange, Act e Assert, nessa ordem, em blocos separados por uma linha em branco e sem comentário de rótulo. Act é a chamada sob teste, uma por caso; chamada anterior que só prepara estado é Arrange. Arrange vazio some, e o caso de uma linha (`expect(f(x)).toBe(y)`) junta Act e Assert. Em `it.each` a tabela é o Arrange; em property test os arbitrários são o Arrange e o `fc.assert` é o Act e o Assert.
+- O corpo segue Arrange, Act e Assert, nessa ordem, em blocos separados por uma linha em branco e sem comentário de rótulo. Act é a chamada sob teste; chamada anterior que só prepara estado é Arrange. Arrange vazio some, e o caso de uma linha (`expect(f(x)).toBe(y)`) junta Act e Assert. Um caso prova um comportamento, o do título: chamadas de uma linha que o provam com o mesmo Arrange ficam juntas, como um grupo de `expect`; a variação que pede Arrange próprio vira linha de `it.each`; comportamento distinto vira outro caso. Em `it.each` a tabela é o Arrange; em property test os arbitrários são o Arrange e o `fc.assert` é o Act e o Assert.
 - O `describe` de topo nomeia o que o caso chama: o símbolo exportado no unitário e no budget; a tool, o método do serviço ou o símbolo do adaptador na integração; o arquivo ou glob verificado no spec de doc e coerência; o artefato executado no e2e. Um arquivo tem um `describe` de topo por alvo.
 - Dentro dele cabe no máximo um nível de `describe`, que nomeia a condição comum aos casos (`when …` ou `with …`).
 
