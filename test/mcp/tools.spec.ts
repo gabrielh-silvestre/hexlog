@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { compose } from '../../src/compose.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP } from '../../src/mcp/tools/query.ts';
@@ -62,13 +62,14 @@ const OUTPUT_SCHEMA_TOTAL_MAX_CHARS = 24_280;
 
 let environment: Environment;
 
-beforeEach(async () => {
+// Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
+const openEnvironment = async () => {
   environment = await createEnvironment();
-});
+};
 
-afterEach(async () => {
+const closeEnvironment = async () => {
   await environment.close();
-});
+};
 
 const succeed = <T>(tool: string, args: Record<string, unknown>): Promise<T> =>
   environment.ok<T>(tool, args);
@@ -97,14 +98,24 @@ const registerNote = (process: string, text: string, target = 'run.step') =>
     records: [{ type: 'note', target, data: { text } }],
   });
 
-describe('TM1: catalog announced in tools/list', () => {
-  test('returns exactly the 12 names', async () => {
+/** Prepara o processo `run-1` com uma nota e devolve o anexo gravado: o estado que o SE7 lê. */
+async function seed() {
+  await prepareProcess();
+  await registerNote('run-1', 'olá');
+  return succeed<AttachmentPut>('attach', { project: PROJECT, text: 'anexo' });
+}
+
+describe('tools/list', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should announce exactly the 12 tool names (TM1)', async () => {
     const { tools } = await environment.client.listTools();
 
     expect(tools.map(({ name }) => name).sort()).toEqual([...ALL_TOOLS].sort());
   });
 
-  test('sets readOnlyHint on the 6 read tools and on no other', async () => {
+  it('should set readOnlyHint on the 6 read tools and on no other (TM1)', async () => {
     const { tools } = await environment.client.listTools();
 
     const readOnly = tools.filter(({ annotations }) => annotations?.readOnlyHint === true);
@@ -112,7 +123,7 @@ describe('TM1: catalog announced in tools/list', () => {
     expect(readOnly.map(({ name }) => name).sort()).toEqual([...READ_ONLY_TOOLS].sort());
   });
 
-  test('sets alwaysLoad only on register', async () => {
+  it('should set alwaysLoad only on register (TM1)', async () => {
     const { tools } = await environment.client.listTools();
 
     const alwaysLoad = tools.filter(({ _meta }) => _meta?.['anthropic/alwaysLoad'] === true);
@@ -120,9 +131,7 @@ describe('TM1: catalog announced in tools/list', () => {
     expect(alwaysLoad.map(({ name }) => name)).toEqual(['register']);
   });
 
-  test.each(ALL_TOOLS)('%s announces title and the full annotations', async (name) => {
-    const { tools } = await environment.client.listTools();
-    const tool = tools.find((candidate) => candidate.name === name);
+  it.each(ALL_TOOLS)('should announce title and the full annotations of %s (TM1)', async (name) => {
     const annotations = READ_ONLY_TOOLS.includes(name)
       ? { readOnlyHint: true, openWorldHint: false }
       : {
@@ -133,24 +142,30 @@ describe('TM1: catalog announced in tools/list', () => {
           openWorldHint: false,
         };
 
+    const { tools } = await environment.client.listTools();
+
+    const tool = tools.find((candidate) => candidate.name === name);
+
     expect(tool?.title).toMatch(/\S/);
     expect(tool?.annotations).toEqual(annotations);
   });
 
-  test.each(ALL_TOOLS)('inputSchema of %s meets the Claude Code restrictions', async (name) => {
-    const { tools } = await environment.client.listTools();
-    const inputSchema = tools.find((candidate) => candidate.name === name)?.inputSchema;
+  it.each(ALL_TOOLS)(
+    'should keep the inputSchema of %s within the Claude Code restrictions (TM1)',
+    async (name) => {
+      const { tools } = await environment.client.listTools();
 
-    expect(inputSchema).toMatchObject({ $schema: JSON_SCHEMA_DRAFT, type: 'object' });
-    expect(
-      Object.keys(inputSchema?.properties ?? {}).filter((key) => !PROPERTY_NAME.test(key)),
-    ).toEqual([]);
-    expect(ROOT_COMBINATORS.filter((keyword) => keyword in (inputSchema ?? {}))).toEqual([]);
-  });
-});
+      const inputSchema = tools.find((candidate) => candidate.name === name)?.inputSchema;
 
-describe('TM2: tool descriptions', () => {
-  test('no description exceeds 2,048 characters and all exist', async () => {
+      expect(inputSchema).toMatchObject({ $schema: JSON_SCHEMA_DRAFT, type: 'object' });
+      expect(
+        Object.keys(inputSchema?.properties ?? {}).filter((key) => !PROPERTY_NAME.test(key)),
+      ).toEqual([]);
+      expect(ROOT_COMBINATORS.filter((keyword) => keyword in (inputSchema ?? {}))).toEqual([]);
+    },
+  );
+
+  it('should keep every description present and within 2,048 characters (TM2)', async () => {
     const { tools } = await environment.client.listTools();
 
     const outOfRange = tools
@@ -160,7 +175,7 @@ describe('TM2: tool descriptions', () => {
     expect(outOfRange).toEqual([]);
   });
 
-  test('query describes fields and the 50-name cap', async () => {
+  it('should describe fields and the 50-name cap in the query description (TM2)', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'query')?.description;
@@ -168,8 +183,9 @@ describe('TM2: tool descriptions', () => {
     expect(description).toMatch(/fields \(at most 50\).*empty list omits data/s);
   });
 
-  test('define_gate announces inherit for approved and no_pending only', async () => {
+  it('should announce inherit for approved and no_pending only in the define_gate description (TM2)', async () => {
     const { tools } = await environment.client.listTools();
+
     const description = tools.find((tool) => tool.name === 'define_gate')?.description;
 
     expect(description).toMatch(
@@ -177,7 +193,7 @@ describe('TM2: tool descriptions', () => {
     );
   });
 
-  test('register tells to read the schema with describe_type and the current id with query', async () => {
+  it('should tell register to read the schema with describe_type and the current id with query (TM2)', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'register')?.description;
@@ -186,7 +202,7 @@ describe('TM2: tool descriptions', () => {
     expect(description).toMatch(/read the current id with query/);
   });
 
-  test('define_type warns that pattern is refused and points to the catalog', async () => {
+  it('should warn in the define_type description that pattern is refused and point to the catalog (TM2)', async () => {
     const { tools } = await environment.client.listTools();
 
     const description = tools.find((tool) => tool.name === 'define_type')?.description;
@@ -197,21 +213,25 @@ describe('TM2: tool descriptions', () => {
     expect(description).not.toMatch(/maxLength. of at most 256/);
   });
 
-  test('query warns about the changes cap and evaluate_gate about the evidence cap', async () => {
+  it('should warn about the changes cap in the query description (TM2)', async () => {
     const { tools } = await environment.client.listTools();
-    const descriptionOf = (name: string) => tools.find((tool) => tool.name === name)?.description;
 
-    expect(descriptionOf('query')).toMatch(
+    const description = tools.find((tool) => tool.name === 'query')?.description;
+
+    expect(description).toMatch(
       new RegExp(`at most ${CHANGES_ITEMS_CAP} ids.*omitted.*must not be reused`, 's'),
     );
-    expect(descriptionOf('evaluate_gate')).toMatch(
-      new RegExp(`at most ${EVIDENCE_ITEMS_CAP} ids.*omitted`, 's'),
-    );
   });
-});
 
-describe('TM7: announced outputSchema', () => {
-  test('the sum of the 12 tools outputSchema stays below 24,280 characters', async () => {
+  it('should warn about the evidence cap in the evaluate_gate description (TM2)', async () => {
+    const { tools } = await environment.client.listTools();
+
+    const description = tools.find((tool) => tool.name === 'evaluate_gate')?.description;
+
+    expect(description).toMatch(new RegExp(`at most ${EVIDENCE_ITEMS_CAP} ids.*omitted`, 's'));
+  });
+
+  it('should keep the sum of the 12 tools outputSchema below 24,280 characters (TM7)', async () => {
     const { tools } = await environment.client.listTools();
 
     const sizes = tools.map(({ outputSchema }) => JSON.stringify(outputSchema ?? null).length);
@@ -223,38 +243,11 @@ describe('TM7: announced outputSchema', () => {
   });
 });
 
-describe('one happy path per tool', () => {
-  test('define_type returns the created version', async () => {
-    const created = await succeed<Defined>('define_type', {
-      project: PROJECT,
-      name: 'note',
-      schema: NOTE,
-    });
+describe('create_process', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
 
-    expect(created).toMatchObject({ name: 'note', version: '1.0', created: true });
-  });
-
-  test('define_relation returns the created version', async () => {
-    const created = await succeed<Defined>('define_relation', {
-      project: PROJECT,
-      name: 'approves',
-      kind: 'supports',
-    });
-
-    expect(created).toMatchObject({ name: 'approves', version: '1.0', created: true });
-  });
-
-  test('define_gate returns the created version', async () => {
-    const created = await succeed<Defined>('define_gate', {
-      project: PROJECT,
-      name: 'has-note',
-      questions: NOTE_GATE,
-    });
-
-    expect(created).toMatchObject({ name: 'has-note', version: '1.0', created: true });
-  });
-
-  test('create_process pins what is defined', async () => {
+  it('should pin what is defined', async () => {
     await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
     await succeed('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
 
@@ -271,8 +264,13 @@ describe('one happy path per tool', () => {
       pinned: { types: ['note'], gates: ['has-note'] },
     });
   });
+});
 
-  test('register writes the batch and returns ids, replayed and marker', async () => {
+describe('register', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should write the batch and return ids, replayed and marker', async () => {
     await prepareProcess();
 
     const result = await succeed<RegisterResult>('register', {
@@ -284,11 +282,12 @@ describe('one happy path per tool', () => {
     });
 
     const [saved] = result.records;
+
     expect(result).toMatchObject({ replayed: false, records: [{ alias: 'first' }] });
     expect(result.marker).toEqual({ 'run-1': saved?.id });
   });
 
-  test('register writes the author with the envelope client and the model only when given', async () => {
+  it('should write the author with the envelope client and the model only when given', async () => {
     const withEnvelope = await createEnvironment({
       clientInfo: { name: 'claude-code', version: '2' },
     });
@@ -303,6 +302,7 @@ describe('one happy path per tool', () => {
         model: 'sonnet',
         records: [note],
       });
+
       await withEnvelope.ok('register', {
         project: PROJECT,
         process: 'run-1',
@@ -323,26 +323,27 @@ describe('one happy path per tool', () => {
       await withEnvelope.close();
     }
   });
+});
 
-  test('attach stores the text and a repeat comes back as deduplicated', async () => {
+describe('attach', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should store the text and return its byte count', async () => {
+    const stored = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
+
+    expect(stored).toMatchObject({ bytes: Buffer.byteLength('conteúdo'), deduplicated: false });
+  });
+
+  it('should return a repeated text as deduplicated', async () => {
     const first = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
+
     const second = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
 
-    expect(first).toMatchObject({ bytes: Buffer.byteLength('conteúdo'), deduplicated: false });
     expect(second).toEqual({ ...first, deduplicated: true });
   });
 
-  test('read_attachment without maxChars pages at PAGE_CHARS_CAP', async () => {
-    const text = 'x'.repeat(PAGE_CHARS_CAP + 1);
-    const { hash } = await succeed<AttachmentPut>('attach', { project: PROJECT, text });
-
-    const page = await succeed<AttachmentPage>('read_attachment', { project: PROJECT, hash });
-
-    expect(page.text).toHaveLength(PAGE_CHARS_CAP);
-    expect(page.next).toBe(PAGE_CHARS_CAP);
-  });
-
-  test('attach by path stores the file bytes under the server cwd', async () => {
+  it('should store the file bytes under the server cwd when given a path', async () => {
     const cwd = createTempDir('mcp-cwd');
     const text = 'conteúdo do plano';
     fs.writeFileSync(path.join(cwd, 'plano.md'), text);
@@ -353,6 +354,7 @@ describe('one happy path per tool', () => {
         project: PROJECT,
         path: path.join(cwd, 'plano.md'),
       });
+
       const page = await scoped.ok<AttachmentPage>('read_attachment', {
         project: PROJECT,
         hash: put.hash,
@@ -364,8 +366,62 @@ describe('one happy path per tool', () => {
       await scoped.close();
     }
   });
+});
 
-  test('N1: with omitted, reusing the marker loses the cut ids and a full reread returns them', async () => {
+describe('define_type', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should return the created version', async () => {
+    const created = await succeed<Defined>('define_type', {
+      project: PROJECT,
+      name: 'note',
+      schema: NOTE,
+    });
+
+    expect(created).toMatchObject({ name: 'note', version: '1.0', created: true });
+  });
+});
+
+describe('define_relation', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should return the created version', async () => {
+    const created = await succeed<Defined>('define_relation', {
+      project: PROJECT,
+      name: 'approves',
+      kind: 'supports',
+    });
+
+    expect(created).toMatchObject({ name: 'approves', version: '1.0', created: true });
+  });
+});
+
+describe('define_gate', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should return the created version', async () => {
+    const created = await succeed<Defined>('define_gate', {
+      project: PROJECT,
+      name: 'has-note',
+      questions: NOTE_GATE,
+    });
+
+    expect(created).toMatchObject({ name: 'has-note', version: '1.0', created: true });
+  });
+});
+
+describe('query', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  /**
+   * Registra 3 lotes de `BATCH_MAX` notas depois de um marcador: o `changesSince` da primeira
+   * página sai cortado em `CHANGES_ITEMS_CAP`. Confere a pré-condição do N1: há ids omitidos.
+   */
+  async function registerCutChanges() {
     await prepareProcess();
     await registerNote('run-1', 'primeira');
     const { marker } = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
@@ -383,17 +439,49 @@ describe('one happy path per tool', () => {
       });
       registered.push(...records.map(({ id }) => id));
     }
-
     const first = await succeed<QueryResult>('query', {
       project: PROJECT,
       process: 'run-1',
       changesSince: marker,
     });
+    const omittedIds = registered.filter((id) => !first.changes?.entered.includes(id));
+
+    expect(first.changes).toMatchObject({ omitted: { entered: omittedIds.length, left: 0 } });
+    expect(omittedIds).toHaveLength(registered.length - CHANGES_ITEMS_CAP);
+
+    return { first, omittedIds };
+  }
+
+  /** Registra 41 notas de ~700 caracteres: a página cheia estoura o teto, a de `fields: []` cabe. */
+  async function registerLongNotes() {
+    await prepareProcess();
+    await succeed<RegisterResult>('register', {
+      project: PROJECT,
+      process: 'run-1',
+      agent: 'executor',
+      records: Array.from({ length: 41 }, () => ({
+        type: 'note',
+        target: 'run.step',
+        data: { text: 'x'.repeat(700) },
+      })),
+    });
+  }
+
+  it('should lose the cut ids when the marker of a cut changes is reused (N1)', async () => {
+    const { first } = await registerCutChanges();
+
     const reused = await succeed<QueryResult>('query', {
       project: PROJECT,
       process: 'run-1',
       changesSince: first.marker,
     });
+
+    expect(reused.changes?.entered).toEqual([]);
+  });
+
+  it('should return the cut ids on a full reread (N1)', async () => {
+    const { omittedIds } = await registerCutChanges();
+
     const reread: string[] = [];
     let cursor: string | undefined;
     do {
@@ -406,14 +494,10 @@ describe('one happy path per tool', () => {
       cursor = page.cursor;
     } while (cursor !== undefined);
 
-    const omittedIds = registered.filter((id) => !first.changes?.entered.includes(id));
-    expect(first.changes).toMatchObject({ omitted: { entered: omittedIds.length, left: 0 } });
-    expect(omittedIds).toHaveLength(registered.length - CHANGES_ITEMS_CAP);
-    expect(reused.changes?.entered).toEqual([]);
     expect(reread).toEqual(expect.arrayContaining(omittedIds));
   });
 
-  test('query with fields trims data and keeps the rest of the record', async () => {
+  it('should trim data to the requested fields and keep the rest of the record', async () => {
     await prepareProcess();
     await registerNote('run-1', 'olá');
 
@@ -428,30 +512,51 @@ describe('one happy path per tool', () => {
     ]);
   });
 
-  test('#85: 41 records of ~700 characters exceed the cap without fields and fit with empty fields', async () => {
-    await prepareProcess();
-    await succeed<RegisterResult>('register', {
-      project: PROJECT,
-      process: 'run-1',
-      agent: 'executor',
-      records: Array.from({ length: 41 }, () => ({
-        type: 'note',
-        target: 'run.step',
-        data: { text: 'x'.repeat(700) },
-      })),
-    });
+  it('should exceed the cap and return a cursor without fields (#85)', async () => {
+    await registerLongNotes();
     const input = { project: PROJECT, process: 'run-1', limit: 100 };
 
     const full = await succeed<QueryResult>('query', input);
-    const light = await succeed<QueryResult>('query', { ...input, fields: [] });
 
     expect(full.records.length).toBeLessThan(41);
     expect(full.cursor).toEqual(expect.any(String));
+  });
+
+  it('should fit in one page with empty fields (#85)', async () => {
+    await registerLongNotes();
+    const input = { project: PROJECT, process: 'run-1', limit: 100, fields: [] };
+
+    const light = await succeed<QueryResult>('query', input);
+
     expect(light.records).toHaveLength(41);
     expect(light.cursor).toBeUndefined();
   });
 
-  test('evaluate_gate cuts each evidence list at EVIDENCE_ITEMS_CAP and reports omitted', async () => {
+  it('should return what the service returns (SE7)', async () => {
+    await seed();
+    const input = { project: PROJECT, process: 'run-1', relations: 'full' as const };
+
+    const viaTool = await succeed<QueryResult>('query', input);
+
+    expect(viaTool).toEqual(
+      JSON.parse(JSON.stringify(servicesOverServerData().query.queryRecords(input))),
+    );
+  });
+
+  it('should surface the service refusal as its own error, with no rule of the tool (SE7)', async () => {
+    const result = await environment.call('query', { project: PROJECT, process: 'inexistente' });
+
+    const body = expectError(result, 'PROCESS_NOT_FOUND');
+
+    expect(at(body.details, 0).path).toBe('/process');
+  });
+});
+
+describe('evaluate_gate', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should cut each evidence list at EVIDENCE_ITEMS_CAP and report omitted', async () => {
     await prepareProcess();
     for (let batch = 0; batch < 3; batch += 1) {
       await succeed<RegisterResult>('register', {
@@ -472,6 +577,7 @@ describe('one happy path per tool', () => {
     );
 
     const [question] = result.questions;
+
     expect(result.passed).toBe(true);
     expect(question).toMatchObject({
       passed: true,
@@ -481,7 +587,7 @@ describe('one happy path per tool', () => {
     expect(question?.evidence).toHaveProperty('found.length', EVIDENCE_ITEMS_CAP);
   });
 
-  test('evaluate_gate below the cap carries no omitted', async () => {
+  it('should carry no omitted below the cap', async () => {
     await prepareProcess();
     await registerNote('run-1', 'olá');
 
@@ -493,9 +599,142 @@ describe('one happy path per tool', () => {
 
     expect(result.questions[0]).not.toHaveProperty('omitted');
   });
+
+  it('should return what the service returns (SE7)', async () => {
+    await seed();
+    const input = {
+      project: PROJECT,
+      process: 'run-1',
+      gate: 'has-note',
+      evidence: 'full',
+    } as const;
+
+    const viaTool = await succeed<GateEvaluation>('evaluate_gate', input);
+
+    expect(viaTool).toEqual(
+      JSON.parse(JSON.stringify(servicesOverServerData().query.evaluateGate(input))),
+    );
+  });
+});
+
+describe('verify_chain', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should return what the service returns (SE7)', async () => {
+    await seed();
+    const input = { project: PROJECT, process: 'run-1' };
+
+    const viaTool = await succeed<VerifyChainResult>('verify_chain', input);
+
+    expect(viaTool).toEqual(
+      JSON.parse(JSON.stringify(servicesOverServerData().query.verifyChain(input))),
+    );
+  });
+
+  it('should pass with an expectedHead equal to the head from its own output (SE7)', async () => {
+    await seed();
+    const input = { project: PROJECT, process: 'run-1' };
+    const { head } = await succeed<VerifyChainResult>('verify_chain', input);
+
+    const known = await succeed<VerifyChainResult>('verify_chain', {
+      ...input,
+      expectedHead: head,
+    });
+
+    expect(known.ok).toBe(true);
+  });
+
+  it('should break with head-not-found for an unknown expectedHead hash (SE7)', async () => {
+    await seed();
+    const input = { project: PROJECT, process: 'run-1' };
+    const { totalRecords } = await succeed<VerifyChainResult>('verify_chain', input);
+
+    const unknown = await succeed<VerifyChainResult>('verify_chain', {
+      ...input,
+      expectedHead: 'a'.repeat(64),
+    });
+
+    expect(unknown).toMatchObject({
+      ok: false,
+      breaks: [{ index: totalRecords, reason: 'head-not-found' }],
+      totalBreaks: 1,
+    });
+  });
+
+  it('should refuse an expectedHead outside the hash format with INVALID_INPUT at /expectedHead (SE7)', async () => {
+    await seed();
+
+    const body = expectError(
+      await environment.call('verify_chain', {
+        project: PROJECT,
+        process: 'run-1',
+        expectedHead: 'não-é-hash',
+      }),
+      'INVALID_INPUT',
+    );
+
+    expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
+  });
+
+  it('should refuse an empty expectedHead with INVALID_INPUT at /expectedHead (SE7)', async () => {
+    await seed();
+
+    const body = expectError(
+      await environment.call('verify_chain', {
+        project: PROJECT,
+        process: 'run-1',
+        expectedHead: '',
+      }),
+      'INVALID_INPUT',
+    );
+
+    expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
+  });
+});
+
+describe('read_attachment', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should page at PAGE_CHARS_CAP without maxChars', async () => {
+    const text = 'x'.repeat(PAGE_CHARS_CAP + 1);
+    const { hash } = await succeed<AttachmentPut>('attach', { project: PROJECT, text });
+
+    const page = await succeed<AttachmentPage>('read_attachment', { project: PROJECT, hash });
+
+    expect(page.text).toHaveLength(PAGE_CHARS_CAP);
+    expect(page.next).toBe(PAGE_CHARS_CAP);
+  });
+
+  it('should return what the service returns (SE7)', async () => {
+    const { hash } = await seed();
+    const input = { project: PROJECT, hash };
+
+    const viaTool = await succeed<AttachmentPage>('read_attachment', input);
+
+    expect(viaTool).toEqual(servicesOverServerData().query.readAttachment(input));
+  });
+});
+
+describe('list', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should return what the service returns (SE7)', async () => {
+    await seed();
+    const input = { project: PROJECT };
+
+    const viaTool = await succeed<ListResult>('list', input);
+
+    expect(viaTool).toEqual(JSON.parse(JSON.stringify(servicesOverServerData().query.list(input))));
+  });
 });
 
 describe('describe_type', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
   const NOTE_V2 = { ...NOTE, properties: { ...NOTE.properties, tag: { type: 'string' } } };
 
   /** Fixa `note` 1.0 no processo `run-1` e depois define `note` 1.1 e `other` no projeto. */
@@ -506,7 +745,7 @@ describe('describe_type', () => {
     await succeed('define_type', { project: PROJECT, name: 'other', schema: NOTE });
   }
 
-  test('with process returns the pinned schema, without version, even with a newer version in the project', async () => {
+  it('should return the pinned schema without version with process, even with a newer version in the project', async () => {
     await pinNoteThenEvolve();
 
     const result = await succeed<DescribeTypeResult>('describe_type', {
@@ -518,24 +757,30 @@ describe('describe_type', () => {
     expect(result).toEqual({ name: 'note', schema: NOTE });
   });
 
-  test('without process returns the current version and, with version, the requested one', async () => {
+  it('should return the current version without process', async () => {
     await pinNoteThenEvolve();
 
     const current = await succeed<DescribeTypeResult>('describe_type', {
       project: PROJECT,
       type: 'note',
     });
+
+    expect(current).toEqual({ name: 'note', version: '1.1', schema: NOTE_V2 });
+  });
+
+  it('should return the requested version with version', async () => {
+    await pinNoteThenEvolve();
+
     const asked = await succeed<DescribeTypeResult>('describe_type', {
       project: PROJECT,
       type: 'note',
       version: '1.0',
     });
 
-    expect(current).toEqual({ name: 'note', version: '1.1', schema: NOTE_V2 });
     expect(asked).toEqual({ name: 'note', version: '1.0', schema: NOTE });
   });
 
-  test('process and version together give INVALID_INPUT at /version', async () => {
+  it('should refuse process and version together with INVALID_INPUT at /version', async () => {
     await pinNoteThenEvolve();
 
     const body = expectError(
@@ -551,7 +796,7 @@ describe('describe_type', () => {
     expect(body.details).toEqual([expect.objectContaining({ path: '/version' })]);
   });
 
-  test('version outside <major>.<minor> gives INVALID_INPUT at /version with invalid-version', async () => {
+  it('should refuse a version outside <major>.<minor> with INVALID_INPUT at /version, code invalid-version', async () => {
     await pinNoteThenEvolve();
 
     const body = expectError(
@@ -564,7 +809,7 @@ describe('describe_type', () => {
     ]);
   });
 
-  test('type not pinned in the process gives TYPE_NOT_PINNED and, without process, a missing type gives TYPE_NOT_FOUND', async () => {
+  it('should refuse a type not pinned in the process with TYPE_NOT_PINNED at /type', async () => {
     await pinNoteThenEvolve();
 
     const notPinned = expectError(
@@ -575,144 +820,27 @@ describe('describe_type', () => {
       }),
       'TYPE_NOT_PINNED',
     );
+
+    expect(notPinned.details).toEqual([expect.objectContaining({ path: '/type' })]);
+  });
+
+  it('should refuse a missing type without process with TYPE_NOT_FOUND at /type', async () => {
+    await pinNoteThenEvolve();
+
     const notFound = expectError(
       await environment.call('describe_type', { project: PROJECT, type: 'ghost' }),
       'TYPE_NOT_FOUND',
     );
 
-    expect(notPinned.details).toEqual([expect.objectContaining({ path: '/type' })]);
     expect(notFound.details).toEqual([expect.objectContaining({ path: '/type' })]);
   });
-});
 
-describe('SE7: the tools return what the service returns', () => {
-  async function seed() {
-    await prepareProcess();
-    await registerNote('run-1', 'olá');
-    return succeed<AttachmentPut>('attach', { project: PROJECT, text: 'anexo' });
-  }
-
-  test('query', async () => {
-    await seed();
-    const input = { project: PROJECT, process: 'run-1', relations: 'full' as const };
-
-    const viaTool = await succeed<QueryResult>('query', input);
-
-    expect(viaTool).toEqual(
-      JSON.parse(JSON.stringify(servicesOverServerData().query.queryRecords(input))),
-    );
-  });
-
-  test('evaluate_gate', async () => {
-    await seed();
-    const input = {
-      project: PROJECT,
-      process: 'run-1',
-      gate: 'has-note',
-      evidence: 'full',
-    } as const;
-
-    const viaTool = await succeed<GateEvaluation>('evaluate_gate', input);
-
-    expect(viaTool).toEqual(
-      JSON.parse(JSON.stringify(servicesOverServerData().query.evaluateGate(input))),
-    );
-  });
-
-  test('verify_chain', async () => {
-    await seed();
-    const input = { project: PROJECT, process: 'run-1' };
-
-    const viaTool = await succeed<VerifyChainResult>('verify_chain', input);
-
-    expect(viaTool).toEqual(
-      JSON.parse(JSON.stringify(servicesOverServerData().query.verifyChain(input))),
-    );
-  });
-
-  test('verify_chain with expectedHead: the head from its own output passes and an unknown hash breaks', async () => {
-    await seed();
-    const input = { project: PROJECT, process: 'run-1' };
-    const { head, totalRecords } = await succeed<VerifyChainResult>('verify_chain', input);
-
-    const known = await succeed<VerifyChainResult>('verify_chain', {
-      ...input,
-      expectedHead: head,
-    });
-    const unknown = await succeed<VerifyChainResult>('verify_chain', {
-      ...input,
-      expectedHead: 'a'.repeat(64),
-    });
-
-    expect(known.ok).toBe(true);
-    expect(unknown).toMatchObject({
-      ok: false,
-      breaks: [{ index: totalRecords, reason: 'head-not-found' }],
-      totalBreaks: 1,
-    });
-  });
-
-  test('verify_chain with expectedHead outside the hash format gives INVALID_INPUT at /expectedHead', async () => {
-    await seed();
-
-    const body = expectError(
-      await environment.call('verify_chain', {
-        project: PROJECT,
-        process: 'run-1',
-        expectedHead: 'não-é-hash',
-      }),
-      'INVALID_INPUT',
-    );
-
-    expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
-  });
-
-  test('verify_chain with empty expectedHead gives INVALID_INPUT at /expectedHead', async () => {
-    await seed();
-
-    const body = expectError(
-      await environment.call('verify_chain', {
-        project: PROJECT,
-        process: 'run-1',
-        expectedHead: '',
-      }),
-      'INVALID_INPUT',
-    );
-
-    expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
-  });
-
-  test('read_attachment', async () => {
-    const { hash } = await seed();
-    const input = { project: PROJECT, hash };
-
-    const viaTool = await succeed<AttachmentPage>('read_attachment', input);
-
-    expect(viaTool).toEqual(servicesOverServerData().query.readAttachment(input));
-  });
-
-  test('list', async () => {
-    await seed();
-    const input = { project: PROJECT };
-
-    const viaTool = await succeed<ListResult>('list', input);
-
-    expect(viaTool).toEqual(JSON.parse(JSON.stringify(servicesOverServerData().query.list(input))));
-  });
-
-  test('describe_type', async () => {
+  it('should return what the service returns (SE7)', async () => {
     await seed();
     const input = { project: PROJECT, type: 'note' };
 
     const viaTool = await succeed<DescribeTypeResult>('describe_type', input);
 
     expect(viaTool).toEqual(servicesOverServerData().query.describeType(input));
-  });
-
-  test('the service refusal comes out as its own error, with no rule of the tool', async () => {
-    const result = await environment.call('query', { project: PROJECT, process: 'inexistente' });
-
-    const body = expectError(result, 'PROCESS_NOT_FOUND');
-    expect(at(body.details, 0).path).toBe('/process');
   });
 });

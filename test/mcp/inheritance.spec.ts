@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import type { RegisterResult } from '../../src/commands/process.ts';
 import type { GateEvaluation, QueryResult } from '../../src/queries/query-service.ts';
 import { at } from '../helpers.ts';
@@ -39,7 +39,8 @@ const register = async (target: string, relations: object[] = []) => {
 };
 
 // run-1: a evidência apoia a unidade, que é superada por uma versão sem relações.
-beforeEach(async () => {
+// Cada describe de topo liga esta função aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
+const openEnvironment = async () => {
   environment = await createEnvironment();
   await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE });
   await environment.ok('define_gate', { project: PROJECT, ...GATE });
@@ -47,11 +48,11 @@ beforeEach(async () => {
   unit = await register('run.unit');
   evidence = await register('run.ev', [{ to: unit, kind: 'supports' }]);
   revised = await register('run.unit', [{ to: unit, kind: 'supersedes' }]);
-});
+};
 
-afterEach(async () => {
+const closeEnvironment = async () => {
   await environment.close();
-});
+};
 
 const query = (args: Record<string, unknown>) =>
   environment.ok<QueryResult>('query', {
@@ -61,40 +62,54 @@ const query = (args: Record<string, unknown>) =>
     ...args,
   });
 
-describe('query tool: inherited relations', () => {
-  test('the default mode counts the inherited edges', async () => {
+describe('query', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should count the inherited edges in the default mode', async () => {
     const page = await query({});
 
     expect(at(page.records, 0)).toMatchObject({ inheritedInCounts: { supports: 1 } });
     expect(at(page.records, 0)).not.toHaveProperty('inheritedIn');
   });
 
-  test('full lists them with the stored edge as origin and none brings nothing', async () => {
+  it('should list the inherited edges with the stored edge as origin in full mode', async () => {
     const full = await query({ relations: 'full' });
-    const none = await query({ relations: 'none' });
 
     expect(at(full.records, 0)).toMatchObject({
       inheritedIn: [{ kind: 'supports', from: evidence, origin: { from: evidence, to: unit } }],
     });
+  });
+
+  it('should bring no inherited fields in none mode', async () => {
+    const none = await query({ relations: 'none' });
+
     expect(Object.keys(at(none.records, 0)).filter((key) => key.startsWith('inherited'))).toEqual(
       [],
     );
   });
 });
 
-describe('evaluate_gate tool: inherit', () => {
-  test('counts the inherited supporter in counts mode and lists it in full mode', async () => {
+describe('evaluate_gate', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should count the inherited supporter with evidence counts', async () => {
     const counts = await environment.ok<GateEvaluation<{ counts?: Record<string, number> }>>(
       'evaluate_gate',
       { project: PROJECT, process: 'run-1', gate: GATE.name, evidence: 'counts' },
     );
+
+    expect(counts.passed).toBe(true);
+    expect(at(counts.questions, 0).counts).toMatchObject({ inherited: 1 });
+  });
+
+  it('should list the inherited supporter with evidence full', async () => {
     const full = await environment.ok<{ questions: { evidence?: { inherited?: string[] } }[] }>(
       'evaluate_gate',
       { project: PROJECT, process: 'run-1', gate: GATE.name, evidence: 'full' },
     );
 
-    expect(counts.passed).toBe(true);
-    expect(at(counts.questions, 0).counts).toMatchObject({ inherited: 1 });
     expect(at(full.questions, 0).evidence?.inherited).toEqual([evidence]);
   });
 });
