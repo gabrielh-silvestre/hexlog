@@ -46,7 +46,7 @@ const lineOptions = {
   text: (item: number) => `item ${item} ${'x'.repeat(130)}`,
 };
 
-/** Lote de `count` elos depois do fim do log lido em `raw`; com `key`, o primeiro leva `batch.key` (D-06). */
+/** Lote de `count` elos depois do fim do log lido em `raw`; com `key`, o primeiro leva `batch.key`. */
 const batchLine = (raw: RawProcess, count: number, key?: string): string =>
   chainLine(raw.manifest.process, verifyProcess(raw).end, count, { ...lineOptions, key });
 
@@ -54,7 +54,7 @@ const batchLine = (raw: RawProcess, count: number, key?: string): string =>
 const append = (store: ProcessStore, ref: ProcessRef, count: number, key?: string) =>
   store.write(ref, (raw) => ({ line: batchLine(raw, count, key), result: undefined }));
 
-/** Reenvio por `key` (D-06): `replayed` se o lote já está visível, senão grava o lote inteiro. */
+/** Reenvio por `key`: `replayed` se o lote já está visível, senão grava o lote inteiro. */
 const resend = (store: ProcessStore, ref: ProcessRef, count: number, key: string) =>
   store.write(ref, (raw) => {
     const { batches, end } = verifyProcess(raw);
@@ -141,7 +141,7 @@ describe('createProcessStore', () => {
     expect(fs.readdirSync(dir).sort()).toEqual([MANIFEST_FILE, LOG_FILE]);
   });
 
-  it('should open the log before the manifest and fsync the directory once on create (D-25)', () => {
+  it('should open the log before the manifest and fsync the directory once on create', () => {
     const { store } = setup();
     const other: ProcessRef = { project: 'demo', process: 'proc-2' };
     const realOpen = fs.openSync;
@@ -304,7 +304,7 @@ describe('createProcessStore', () => {
     /** Ler 64 MiB como string leva centenas de ms; sob carga o limite padrão de 5 s não basta. */
     const LARGE_LOG_TIMEOUT_MS = 30_000;
 
-    it('should return the manifest from readManifest without reading records.jsonl when the log is above the cap (N8)', () => {
+    it('should return the manifest from readManifest without reading records.jsonl when the log is above the cap', () => {
       const { store, ref, manifest, logFile } = setup();
       sparseLog(logFile, MAX_LOG_BYTES + 1);
       const readFile = jest.spyOn(fs, 'readFileSync');
@@ -316,7 +316,7 @@ describe('createProcessStore', () => {
     });
 
     it(
-      'should still read a log of exactly 64 MiB (N8)',
+      'should still read a log of exactly 64 MiB',
       () => {
         const { store, ref, logFile } = setup();
         sparseLog(logFile, MAX_LOG_BYTES);
@@ -327,7 +327,7 @@ describe('createProcessStore', () => {
       LARGE_LOG_TIMEOUT_MS,
     );
 
-    it('should throw PROCESS_TOO_LARGE without a path and without reading the content when read finds a log 1 byte above the cap (N8)', () => {
+    it('should throw PROCESS_TOO_LARGE without a path and without reading the content when read finds a log 1 byte above the cap', () => {
       const { dataDir, store, ref, logFile } = setup();
       sparseLog(logFile, MAX_LOG_BYTES + 1);
       const readFile = jest.spyOn(fs, 'readFileSync');
@@ -347,7 +347,7 @@ describe('createProcessStore', () => {
       expect(readFile).not.toHaveBeenCalledWith(logFile, expect.anything());
     });
 
-    it('should refuse a write over a log above the cap without writing and release the lock (N8)', async () => {
+    it('should refuse a write over a log above the cap without writing and release the lock', async () => {
       const { dataDir, store, ref, logFile, dir } = setup();
       sparseLog(logFile, MAX_LOG_BYTES + 1);
       const decide = jest.fn(() => ({ result: undefined }));
@@ -368,7 +368,7 @@ describe('createProcessStore', () => {
     const LINE = 'x'.repeat(100);
 
     it(
-      'should write a batch that closes the log at exactly 64 MiB and keep the process readable (N8)',
+      'should write a batch that closes the log at exactly 64 MiB and keep the process readable',
       async () => {
         const { store, ref, logFile } = setup();
         sparseLog(logFile, MAX_LOG_BYTES - LINE.length - 1);
@@ -382,7 +382,7 @@ describe('createProcessStore', () => {
     );
 
     it(
-      'should return the result of a write without a line (replay) over a log of exactly 64 MiB without writing (N8)',
+      'should return the result of a write without a line (replay) over a log of exactly 64 MiB without writing',
       async () => {
         const { store, ref, logFile, dir } = setup();
         sparseLog(logFile, MAX_LOG_BYTES);
@@ -397,7 +397,7 @@ describe('createProcessStore', () => {
     );
 
     it(
-      'should refuse a batch that would pass the cap by 1 byte, keep the file size, release the lock and keep read working (N8)',
+      'should refuse a batch that would pass the cap by 1 byte, keep the file size, release the lock and keep read working',
       async () => {
         const { dataDir, store, ref, logFile, dir } = setup();
         sparseLog(logFile, MAX_LOG_BYTES - LINE.length);
@@ -428,7 +428,7 @@ describe('createProcessStore', () => {
     /** 50 caracteres e 100 bytes (`ç` e `ã` ocupam 2 bytes cada); com o `\n` de prefixo o lote tem 101 bytes. */
     const MULTIBYTE = 'çã'.repeat(25);
 
-    it('should count the cap in bytes, not characters, and refuse a multibyte batch that only fits in characters (N8)', async () => {
+    it('should count the cap in bytes, not characters, and refuse a multibyte batch that only fits in characters', async () => {
       const { dataDir, store, ref, logFile } = setup();
       // sobram 60 bytes: o lote caberia em caracteres (51), mas não em bytes (101)
       sparseLog(logFile, MAX_LOG_BYTES - 60);
@@ -442,7 +442,7 @@ describe('createProcessStore', () => {
       expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - 60);
     });
 
-    it('should write a multibyte batch that closes the log at exactly 64 MiB counted in bytes (N8)', async () => {
+    it('should write a multibyte batch that closes the log at exactly 64 MiB counted in bytes', async () => {
       const { store, ref, logFile } = setup();
       sparseLog(logFile, MAX_LOG_BYTES - 101);
 
@@ -516,7 +516,7 @@ describe('createProcessStore', () => {
       });
     }
 
-    it('should throw IO_ERROR from list instead of silently omitting the process (M11)', () => {
+    it('should throw IO_ERROR from list instead of silently omitting the process', () => {
       const { store, ref } = setup();
       denyManifestStat();
 
@@ -528,7 +528,7 @@ describe('createProcessStore', () => {
       );
     });
 
-    it('should throw IO_ERROR, not PROCESS_NOT_FOUND, from write and not call decide (M11)', async () => {
+    it('should throw IO_ERROR, not PROCESS_NOT_FOUND, from write and not call decide', async () => {
       const { dataDir, store, ref } = setup();
       denyManifestStat();
       const decide = jest.fn(() => ({ result: undefined }));
@@ -567,7 +567,7 @@ describe('createProcessStore', () => {
   // Fixa o comportamento atual, não uma proteção: `<D>` é confiável (ADR 0009, item 9) e o store não
   // recusa symlink. Se o endurecimento de `io.ts#readIfPresent` entrar, este teste vira recusa.
   // Decisão do #63.
-  it('should read and write through the target of a records.jsonl that is a symlink (M12)', async () => {
+  it('should read and write through the target of a records.jsonl that is a symlink', async () => {
     const { store, ref, logFile } = setup();
     const target = path.join(createTempDir('process-store-target'), 'real.jsonl');
     fs.renameSync(logFile, target);
@@ -597,7 +597,7 @@ describe('createProcessStore', () => {
     };
 
     it.each(invalidRefs)(
-      'should throw INVALID_INPUT from create for %s and create nothing outside .v1 (N1, N3)',
+      'should throw INVALID_INPUT from create for %s and create nothing outside .v1',
       (_name, bad) => {
         const { dataDir, store, ref } = setup();
 
@@ -608,7 +608,7 @@ describe('createProcessStore', () => {
     );
 
     it.each(invalidRefs)(
-      'should throw INVALID_INPUT from read for %s and create nothing outside .v1 (N1, N3)',
+      'should throw INVALID_INPUT from read for %s and create nothing outside .v1',
       (_name, bad) => {
         const { dataDir, store, ref } = setup();
 
@@ -619,7 +619,7 @@ describe('createProcessStore', () => {
     );
 
     it.each(invalidRefs)(
-      'should throw INVALID_INPUT from write for %s and create nothing outside .v1 (N1, N3)',
+      'should throw INVALID_INPUT from write for %s and create nothing outside .v1',
       async (_name, bad) => {
         const { dataDir, store, ref } = setup();
 
@@ -633,7 +633,7 @@ describe('createProcessStore', () => {
       ['the project ..', '..'],
       ['a project with a space and a capital letter', 'Bad Name'],
     ])(
-      'should throw INVALID_INPUT from list for %s without listing outside .v1 (N1, N3)',
+      'should throw INVALID_INPUT from list for %s without listing outside .v1',
       (_name, project) => {
         const { store } = setup();
 
@@ -643,7 +643,7 @@ describe('createProcessStore', () => {
       },
     );
 
-    it('should throw RESERVED_NAME from create for a reserved process name and not create the folder (N1, N3)', () => {
+    it('should throw RESERVED_NAME from create for a reserved process name and not create the folder', () => {
       const { dataDir, store } = setup();
       const reserved: ProcessRef = { project: 'demo', process: ATTACHMENTS_DIR };
 
@@ -657,7 +657,7 @@ describe('createProcessStore', () => {
       ['process', { process: 'outro' }],
       ['project', { project: 'outro' }],
     ])(
-      'should throw from create when manifest.%s differs from the ref and not create a directory (N1, N3)',
+      'should throw from create when manifest.%s differs from the ref and not create a directory',
       (_field, override) => {
         const { dataDir, store, ref } = setup();
         const other: ProcessRef = { project: ref.project, process: 'proc-2' };
@@ -726,7 +726,7 @@ describe('createProcessStore', () => {
   }, 30_000);
 
   describe('when no line is written', () => {
-    it('should leave a rule error from decide unchanged, with no line and the lock released (SE3c)', async () => {
+    it('should leave a rule error from decide unchanged, with no line and the lock released', async () => {
       const { store, ref, logFile, dir } = setup();
       const broken = new HexlogError('INVALID_RECORD', 'rule broken');
 
@@ -755,7 +755,7 @@ describe('createProcessStore', () => {
         return { line, result: undefined };
       });
 
-    it('should throw lock-lost with no line when the token is lost before the write (SE3c)', async () => {
+    it('should throw lock-lost with no line when the token is lost before the write', async () => {
       const { dataDir, store, ref, logFile, lockDir } = setup();
       const line = batchLine(emptyRaw(emptyManifest(ref)), 1);
 
@@ -768,7 +768,7 @@ describe('createProcessStore', () => {
       expect(fs.readFileSync(logFile, 'utf8')).toBe('');
     });
 
-    it('should take the orphan lock left by its own process on the next write after a lost token (SE3c)', async () => {
+    it('should take the orphan lock left by its own process on the next write after a lost token', async () => {
       const { dataDir, store, ref, lockDir } = setup();
       const line = batchLine(emptyRaw(emptyManifest(ref)), 1);
       await rejectionOf(writeLosingToken(store, ref, lockDir, line), dataDir);
@@ -778,7 +778,7 @@ describe('createProcessStore', () => {
       expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 1 });
     });
 
-    it('should not call decide and leave no line when a live owner holds the lock (SE3c)', async () => {
+    it('should not call decide and leave no line when a live owner holds the lock', async () => {
       const { dataDir, ref, logFile, lockDir } = setup();
       const store = createProcessStore({
         dataDir,
@@ -806,7 +806,7 @@ describe('createProcessStore', () => {
   });
 
   describe('with one fsync per batch', () => {
-    it('should fsync the log once for a batch of 50 (TF5, D-05)', async () => {
+    it('should fsync the log once for a batch of 50', async () => {
       const { store, ref, logFile } = setup();
       const fsyncs = countLogFsyncs(logFile);
 
@@ -816,7 +816,7 @@ describe('createProcessStore', () => {
       expect(verifyProcess(store.read(ref)).chain.totalRecords).toBe(50);
     });
 
-    it('should fsync the log once for a replay without a line (TF5, D-05)', async () => {
+    it('should fsync the log once for a replay without a line', async () => {
       const { store, ref, logFile } = setup();
       const fsyncs = countLogFsyncs(logFile);
       await append(store, ref, 50, 'k50');
@@ -827,7 +827,7 @@ describe('createProcessStore', () => {
       expect(fsyncs()).toBe(2);
     });
 
-    it('should fsync the log after writing it (TF5, D-05)', async () => {
+    it('should fsync the log after writing it', async () => {
       const { store, ref, logFile } = setup();
       const calls = recordLogCalls(logFile);
 
@@ -836,7 +836,7 @@ describe('createProcessStore', () => {
       expect(calls).toEqual(['write', 'fsync']);
     });
 
-    it('should only fsync on a replay without a line (TF5, D-05)', async () => {
+    it('should only fsync on a replay without a line', async () => {
       const { store, ref, logFile } = setup();
       const calls = recordLogCalls(logFile);
       await append(store, ref, 3, 'lote');
@@ -914,7 +914,7 @@ describe('createProcessStore', () => {
       });
     }
 
-    it('should accept a new write over a log that 200 SIGKILL runs left with no half batch visible and every resent key once (TF1, SE3b)', async () => {
+    it('should accept a new write over a log that 200 SIGKILL runs left with no half batch visible and every resent key once', async () => {
       const { store, ref, dataDir, dir, records } = setup();
       const resent: string[] = [];
       const ahead: ChildProcess[] = [];
@@ -964,7 +964,7 @@ describe('createProcessStore', () => {
   });
 
   describe('with a log torn at every byte offset', () => {
-    it('should show a 3-record batch cut at each byte only when just the newline is missing and keep the chain going (P1)', async () => {
+    it('should show a 3-record batch cut at each byte only when just the newline is missing and keep the chain going', async () => {
       const { store, ref, manifest, logFile } = setup();
       const bytes = Buffer.from(batchLine(emptyRaw(manifest), 3, 'lote'));
       const problems: string[] = [];
@@ -1014,7 +1014,7 @@ describe('createProcessStore', () => {
         }),
       );
 
-    it('should show a multibyte batch cut at each byte, even mid-character, only when just the newline is missing (P1)', () => {
+    it('should show a multibyte batch cut at each byte, even mid-character, only when just the newline is missing', () => {
       const { store, ref, manifest, logFile } = setup();
       const bytes = multibyteBatch(ref, manifest);
       const problems: string[] = [];
@@ -1031,7 +1031,7 @@ describe('createProcessStore', () => {
       expect(problems).toEqual([]);
     });
 
-    it('should accept the next write after a cut past the first byte of a multibyte character and close the chain (P1)', async () => {
+    it('should accept the next write after a cut past the first byte of a multibyte character and close the chain', async () => {
       const { store, ref, manifest, logFile } = setup();
       const bytes = multibyteBatch(ref, manifest);
       fs.writeFileSync(logFile, bytes.subarray(0, bytes.indexOf(0xc3) + 1));
@@ -1054,7 +1054,7 @@ describe('createProcessStore', () => {
     ];
 
     it.each(tornTails)(
-      'should count the records still visible in a log with %s (P1)',
+      'should count the records still visible in a log with %s',
       (_name, rest, visible) => {
         const { store, ref, manifest, logFile } = setup();
         fs.writeFileSync(logFile, rest(batchLine(emptyRaw(manifest), 3, 'lote')));
@@ -1064,7 +1064,7 @@ describe('createProcessStore', () => {
     );
 
     it.each(tornTails)(
-      'should accept the next write and close the chain after %s (P1)',
+      'should accept the next write and close the chain after %s',
       async (_name, rest, visible, repaired) => {
         const { store, ref, manifest, logFile } = setup();
         fs.writeFileSync(logFile, rest(batchLine(emptyRaw(manifest), 3, 'lote')));
@@ -1084,7 +1084,7 @@ describe('createProcessStore', () => {
   });
 
   describe('with short writes and ENOSPC', () => {
-    it('should write on the third attempt with an intact chain after two short writes that end in ENOSPC (P9)', async () => {
+    it('should write on the third attempt with an intact chain after two short writes that end in ENOSPC', async () => {
       const { dataDir, store, ref, logFile } = setup();
       const line = batchLine(emptyRaw(emptyManifest(ref)), 3, 'lote');
       scriptWrites([100, 'enospc', 100, 'enospc'], dataDir);
@@ -1114,7 +1114,7 @@ describe('createProcessStore', () => {
       });
     });
 
-    it('should write exactly the line from the right offset after a short write that continues successfully (P9)', async () => {
+    it('should write exactly the line from the right offset after a short write that continues successfully', async () => {
       const { dataDir, store, ref, manifest, logFile } = setup();
       const line = batchLine(emptyRaw(manifest), 3, 'lote');
       scriptWrites([100], dataDir);
@@ -1125,7 +1125,7 @@ describe('createProcessStore', () => {
       expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 3 });
     });
 
-    it('should close the chain on the next write after a short write over a torn tail (P9)', async () => {
+    it('should close the chain on the next write after a short write over a torn tail', async () => {
       const { dataDir, store, ref, manifest, logFile } = setup();
       fs.writeFileSync(logFile, batchLine(emptyRaw(manifest), 3, 'lote').slice(0, 60));
       scriptWrites([50, 'enospc'], dataDir);
@@ -1140,7 +1140,7 @@ describe('createProcessStore', () => {
       });
     });
 
-    it('should return replayed with an fsync when a batch is resent after ENOSPC hit everything but the newline (P9)', async () => {
+    it('should return replayed with an fsync when a batch is resent after ENOSPC hit everything but the newline', async () => {
       const { dataDir, store, ref, logFile } = setup();
       scriptWrites([-1, 'enospc'], dataDir);
       const error = await rejectionOf(append(store, ref, 3, 'lote'), dataDir);
@@ -1156,7 +1156,7 @@ describe('createProcessStore', () => {
       expect(fsyncs()).toBe(1);
     });
 
-    it('should accept a new write after the replay of a batch that was already visible (P9)', async () => {
+    it('should accept a new write after the replay of a batch that was already visible', async () => {
       const { dataDir, store, ref } = setup();
       scriptWrites([-1, 'enospc'], dataDir);
       await rejectionOf(append(store, ref, 3, 'lote'), dataDir);

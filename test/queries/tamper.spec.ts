@@ -19,26 +19,26 @@ async function untouched() {
 }
 
 describe('QueryService.queryRecords', () => {
-  it('should return the records of a process with no tampering (SL5, D-24)', async () => {
+  it('should return the records of a process with no tampering', async () => {
     const { query } = await untouched();
 
     expect(query({ process: 'run-1' }).records).toHaveLength(3);
   });
 
-  it('should find a record by text in a process with no tampering (SL5, D-24)', async () => {
+  it('should find a record by text in a process with no tampering', async () => {
     const { query } = await untouched();
 
     expect(idsOf(query({ process: 'run-1', text: 'segunda' }))).toHaveLength(1);
   });
 
-  it('should return the records of every process at the project scope with no tampering (SL5, D-24)', async () => {
+  it('should return the records of every process at the project scope with no tampering', async () => {
     const { query } = await untouched();
 
     expect(query({ scope: 'project' }).records).toHaveLength(4);
   });
 
   describe('with a tampered old line', () => {
-    it('should detect the tampered line on the next call, without restarting the service (SL5, D-24)', async () => {
+    it('should detect the tampered line on the next call, without restarting the service', async () => {
       const { query, tamper } = await untouched();
       query({ process: 'run-1' });
       tamper('run-1');
@@ -49,7 +49,7 @@ describe('QueryService.queryRecords', () => {
       expect(at(error.details, 0)).toMatchObject({ code: 'broken-chain', process: 'run-1' });
     });
 
-    it('should not serve the index from before the tampering on a text search (SL5, D-24)', async () => {
+    it('should not serve the index from before the tampering on a text search', async () => {
       const { query, tamper } = await untouched();
       query({ process: 'run-1', text: 'segunda' });
       tamper('run-1');
@@ -59,7 +59,7 @@ describe('QueryService.queryRecords', () => {
       expect(error.code).toBe('PROCESS_CORRUPTED');
     });
 
-    it('should name the tampered process in the project scope, leaving the other one readable alone (SL5, D-24)', async () => {
+    it('should name the tampered process in the project scope, leaving the other one readable alone', async () => {
       const { query, tamper } = await untouched();
       query({ scope: 'project' });
       tamper('run-1');
@@ -71,7 +71,7 @@ describe('QueryService.queryRecords', () => {
       expect(query({ process: 'run-2' }).records).toHaveLength(1);
     });
 
-    it('should fail the next page of a query in progress after the tampering (SL5, D-24)', async () => {
+    it('should fail the next page of a query in progress after the tampering', async () => {
       const { query, tamper } = await untouched();
       const first = query({ process: 'run-1', limit: 2 });
       tamper('run-1');
@@ -83,7 +83,7 @@ describe('QueryService.queryRecords', () => {
       expect(error.code).toBe('PROCESS_CORRUPTED');
     });
 
-    it('should give PROCESS_CORRUPTED, not MARKER_NOT_FOUND, for a cursor whose marker is the line rejected by the tampering of the previous one (SL5, D-24)', async () => {
+    it('should give PROCESS_CORRUPTED, not MARKER_NOT_FOUND, for a cursor whose marker is the line rejected by the tampering of the previous one', async () => {
       const { query, tamperLine } = await untouched();
       const first = query({ process: 'run-1', limit: 2 });
       tamperLine('run-1', 1);
@@ -96,7 +96,7 @@ describe('QueryService.queryRecords', () => {
       expect(at(error.details, 0)).toMatchObject({ code: 'broken-chain', process: 'run-1' });
     });
 
-    it('should fail changesSince on a tampered process too, without returning a partial difference (SL5, D-24)', async () => {
+    it('should fail changesSince on a tampered process too, without returning a partial difference', async () => {
       const { query, tamper } = await untouched();
       const snapshot = query({ process: 'run-1' });
       tamper('run-1');
@@ -110,7 +110,7 @@ describe('QueryService.queryRecords', () => {
 
 describe('QueryService.evaluateGate', () => {
   describe('with a tampered old line', () => {
-    it('should give PROCESS_CORRUPTED for a marker on the line rejected by the tampering of the previous one (SL5, D-24)', async () => {
+    it('should give PROCESS_CORRUPTED for a marker on the line rejected by the tampering of the previous one', async () => {
       const { queries, query, tamperLine } = await untouched();
       const { marker } = query({ process: 'run-1' });
       tamperLine('run-1', 1);

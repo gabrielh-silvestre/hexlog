@@ -49,7 +49,7 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
   rodando ao mesmo tempo via troca atômica (`renameSync`) com fallback em
   `ENOTEMPTY`/`EEXIST`/`ENOENT`.
 - `npm test` (jest) roda tudo, incluindo:
-  - `test/package.spec.ts` (N11): `dependencies`/`devDependencies` do
+  - `test/package.spec.ts`: `dependencies`/`devDependencies` do
     `package.json` batem exatamente com o manifesto do projeto (sem
     `^`/`~`/faixas), `engines.node` é `>=24.18.1`.
   - `test/guard.spec.ts`: `B2` chama `installArtifact`/`registerGuard`
@@ -59,12 +59,12 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `relatório de
     integridade e linha do tempo` (inclui o filtro projeto/processo e a trava de que
     nada foi escrito no diretório de dados), `linha do tempo`, `sinais da chave
-    (SE8)`, `cadeia adulterada (SL1)` (inclui o `process.json` truncado e o caso
-    misto de exit 1 e 2), `uso incorreto` e `dado 0.x (P11)`.
+   `, `cadeia adulterada` (inclui o `process.json` truncado e o caso
+    misto de exit 1 e 2), `uso incorreto` e `dado 0.x`.
   - `test/export.spec.ts`: roda `scripts/export.ts` como processo real
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `sem
     --fields`, `--fields`, `uso incorreto e processo inexistente`,
-    `integridade` (SL1) e `read-only`.
+    `integridade` e `read-only`.
   - `test/timeline-cli.spec.ts`: roda `scripts/timeline.ts` como processo real
     (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `--full`
     (com `--raw`, texto ≥ 200 KB idêntico entre os delimitadores), `escape de

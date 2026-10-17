@@ -87,7 +87,7 @@ describe('tools/call', () => {
   afterEach(closeEnvironment);
 
   it.each(TOOLS.map((name) => ({ name })))(
-    'should refuse a project of the wrong type for $name with INVALID_INPUT and details[].path (TM3)',
+    'should refuse a project of the wrong type for $name with INVALID_INPUT and details[].path',
     async ({ name }) => {
       const result = await environment.call(name, { project: 42 });
 
@@ -103,7 +103,7 @@ describe('tools/call', () => {
   );
 
   it.each(Object.entries(VALID_INPUT).map(([name, input]) => ({ name, input })))(
-    'should refuse an unknown field for $name with unrecognized_keys (TM3)',
+    'should refuse an unknown field for $name with unrecognized_keys',
     async ({ name, input }) => {
       const result = await environment.call(name, { ...input, ghost: true });
 
@@ -134,7 +134,7 @@ describe('register', () => {
       path: '/records',
     },
   ])(
-    'should refuse $scenario with INVALID_INPUT and details[].path, never INTERNAL (P3, TM3)',
+    'should refuse $scenario with INVALID_INPUT and details[].path, never INTERNAL',
     async ({ patch, path }) => {
       const result = await environment.call('register', registerInput(patch));
 
@@ -145,7 +145,7 @@ describe('register', () => {
     },
   );
 
-  it('should refuse an own __proto__ key in the record data with INVALID_INPUT and reserved-key (N5)', async () => {
+  it('should refuse an own __proto__ key in the record data with INVALID_INPUT and reserved-key', async () => {
     const args = registerInput({
       records: [item({ data: hostile('{"__proto__":{"a":1},"text":"x"}') })],
     });
@@ -159,7 +159,7 @@ describe('register', () => {
     ]);
   });
 
-  it('should write nothing when register is refused for an own __proto__ key (N5)', async () => {
+  it('should write nothing when register is refused for an own __proto__ key', async () => {
     await environment.call('define_type', { project: PROJECT, name: 'note', schema: NOTE });
     await environment.call('create_process', { project: PROJECT, process: PROCESS });
     const args = registerInput({
@@ -176,7 +176,7 @@ describe('register', () => {
     expect(page.records).toEqual([]);
   });
 
-  it('should refuse 2,000 levels in the record data with INVALID_INPUT too-deep, not INTERNAL (M7)', async () => {
+  it('should refuse 2,000 levels in the record data with INVALID_INPUT too-deep, not INTERNAL', async () => {
     const result = await environment.call(
       'register',
       registerInput({ records: [item({ data: nest(2000) })] }),
@@ -192,7 +192,7 @@ describe('define_type', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should refuse 2,000 levels in the schema with INVALID_INPUT too-deep, not INTERNAL (M7)', async () => {
+  it('should refuse 2,000 levels in the schema with INVALID_INPUT too-deep, not INTERNAL', async () => {
     const result = await environment.call('define_type', {
       project: PROJECT,
       name: 'deep',
@@ -209,7 +209,7 @@ describe('define_gate', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should refuse an own __proto__ key in the select where with INVALID_INPUT and reserved-key (N5)', async () => {
+  it('should refuse an own __proto__ key in the select where with INVALID_INPUT and reserved-key', async () => {
     const result = await environment.call('define_gate', {
       project: PROJECT,
       name: 'gate',
@@ -275,20 +275,17 @@ describe('query', () => {
       patch: { changesSince: manyKeys(201, null) },
       path: '/changesSince',
     },
-  ])(
-    'should refuse $scenario with INVALID_INPUT and details[].path (N11)',
-    async ({ patch, path }) => {
-      const result = await environment.call('query', {
-        project: PROJECT,
-        process: PROCESS,
-        ...patch,
-      });
+  ])('should refuse $scenario with INVALID_INPUT and details[].path', async ({ patch, path }) => {
+    const result = await environment.call('query', {
+      project: PROJECT,
+      process: PROCESS,
+      ...patch,
+    });
 
-      const body = expectError(result, 'INVALID_INPUT');
+    const body = expectError(result, 'INVALID_INPUT');
 
-      expect(body.details).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
-    },
-  );
+    expect(body.details).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
+  });
 
   // Entrada exatamente no teto passa do zod: o erro vem do serviço, não de INVALID_INPUT.
   it.each([
@@ -304,7 +301,7 @@ describe('query', () => {
       patch: { fields: Array.from({ length: 50 }, (_, i) => `f${i}`) },
     },
     { scenario: 'a changesSince with 200 keys', patch: { changesSince: manyKeys(200, null) } },
-  ])('should let $scenario through to the service (N11)', async ({ patch }) => {
+  ])('should let $scenario through to the service', async ({ patch }) => {
     const result = await environment.call('query', {
       project: PROJECT,
       process: PROCESS,
@@ -314,7 +311,7 @@ describe('query', () => {
     expectError(result, 'PROCESS_NOT_FOUND');
   });
 
-  it('should refuse an own __proto__ key in where with INVALID_INPUT and reserved-key (N5)', async () => {
+  it('should refuse an own __proto__ key in where with INVALID_INPUT and reserved-key', async () => {
     const result = await environment.call('query', {
       project: PROJECT,
       process: PROCESS,
@@ -370,22 +367,19 @@ describe('read_attachment', () => {
     { scenario: 'a negative maxChars', patch: { maxChars: -5 }, path: '/maxChars' },
     { scenario: 'a non-integer maxChars', patch: { maxChars: 2.5 }, path: '/maxChars' },
     { scenario: 'a maxChars above 24,000', patch: { maxChars: 24_001 }, path: '/maxChars' },
-  ])(
-    'should refuse $scenario with INVALID_INPUT and details[].path (N11)',
-    async ({ patch, path }) => {
-      const result = await environment.call('read_attachment', {
-        project: PROJECT,
-        hash: HASH,
-        ...patch,
-      });
+  ])('should refuse $scenario with INVALID_INPUT and details[].path', async ({ patch, path }) => {
+    const result = await environment.call('read_attachment', {
+      project: PROJECT,
+      hash: HASH,
+      ...patch,
+    });
 
-      const body = expectError(result, 'INVALID_INPUT');
+    const body = expectError(result, 'INVALID_INPUT');
 
-      expect(body.details).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
-    },
-  );
+    expect(body.details).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
+  });
 
-  it('should let a maxChars of 24,000 through to the service (N11)', async () => {
+  it('should let a maxChars of 24,000 through to the service', async () => {
     const result = await environment.call('read_attachment', {
       project: PROJECT,
       hash: HASH,

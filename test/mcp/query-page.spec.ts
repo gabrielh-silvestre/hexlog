@@ -169,7 +169,7 @@ const listOutput = {
 const describeTypeOutput = { name: 'note', version: '1.0', schema: { type: 'object' } };
 
 describe('queryPage', () => {
-  it('should pass PAGE_CHARS_CAP as maxChars and forward the rest of the input (M4)', () => {
+  it('should pass PAGE_CHARS_CAP as maxChars and forward the rest of the input', () => {
     const { query, queryRecords } = queryWith(emptyPage);
 
     queryPage(query, { project: 'p', process: 'run-1', limit: 10 });
@@ -219,7 +219,7 @@ describe('queryPage', () => {
     ['both above the cap', CHANGES_ITEMS_CAP + 2, CHANGES_ITEMS_CAP + 5, { entered: 2, left: 5 }],
     ['exactly at the cap', CHANGES_ITEMS_CAP, CHANGES_ITEMS_CAP, undefined],
   ])(
-    'should cap each changes list and report omitted when %s (M4)',
+    'should cap each changes list and report omitted when %s',
     (_title, enteredCount, leftCount, omitted) => {
       const entered = Array.from({ length: enteredCount }, (_, i) => idOf(i));
       const left = Array.from({ length: leftCount }, (_, i) => ({

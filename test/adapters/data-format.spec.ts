@@ -25,14 +25,14 @@ function dataDirWith(entries: string[]): string {
 
 describe('LEGACY_NAME', () => {
   it.each(['a', '0a', 'rdsc', 'meu-projeto', 'archive', 'x'.repeat(63)])(
-    'should match %s (D-13)',
+    'should match %s',
     (name) => {
       expect(LEGACY_NAME.test(name)).toBe(true);
     },
   );
 
   it.each(['', '.v1', '.omc', '-a', 'A', 'a_b', 'a.b', 'x'.repeat(64)])(
-    'should not match %s (D-13)',
+    'should not match %s',
     (name) => {
       expect(LEGACY_NAME.test(name)).toBe(false);
     },
@@ -57,56 +57,56 @@ describe('RESERVED_PROCESS_NAMES', () => {
 });
 
 describe('detectLegacy', () => {
-  it('should return every lowercase-named entry in alphabetical order (TI5)', () => {
+  it('should return every lowercase-named entry in alphabetical order', () => {
     const dir = dataDirWith(['zeta/', 'alfa/', 'notas']);
 
     expect(detectLegacy(dir)).toEqual(['alfa', 'notas', 'zeta']);
   });
 
-  it('should not count the archive folder of the packages as 0.x, since archive is a reserved name (TI5)', () => {
+  it('should not count the archive folder of the packages as 0.x, since archive is a reserved name', () => {
     const dir = dataDirWith(['archive/', 'projeto/']);
 
     expect(detectLegacy(dir)).toEqual(['projeto']);
   });
 
-  it('should never match .v1, .omc or any dot entry (TI5)', () => {
+  it('should never match .v1, .omc or any dot entry', () => {
     const dir = dataDirWith(['.v1/', '.omc/', '.oculto']);
 
     expect(detectLegacy(dir)).toEqual([]);
   });
 
-  it('should not treat the 1.0 data alone as 0.x (TI5)', () => {
+  it('should not treat the 1.0 data alone as 0.x', () => {
     const dir = dataDirWith(['.v1/', 'archive/']);
 
     expect(detectLegacy(dir)).toEqual([]);
   });
 
-  it('should not let the 1.0 data hide the 0.x when they are mixed (TI5)', () => {
+  it('should not let the 1.0 data hide the 0.x when they are mixed', () => {
     const dir = dataDirWith(['.v1/', 'archive/']);
     fs.mkdirSync(path.join(dir, 'projeto'));
 
     expect(detectLegacy(dir)).toEqual(['projeto']);
   });
 
-  it('should ignore a name outside the 0.x pattern (uppercase, underscore, 64 characters) (TI5)', () => {
+  it('should ignore a name outside the 0.x pattern (uppercase, underscore, 64 characters)', () => {
     const dir = dataDirWith(['Projeto/', 'a_b/', `${'x'.repeat(64)}/`, `${'y'.repeat(63)}/`]);
 
     expect(detectLegacy(dir)).toEqual(['y'.repeat(63)]);
   });
 
-  it('should find no 0.x data in an empty <D> (TI5)', () => {
+  it('should find no 0.x data in an empty <D>', () => {
     const dir = dataDirWith([]);
 
     expect(detectLegacy(dir)).toEqual([]);
   });
 
-  it('should find no 0.x data in a missing <D> (TI5)', () => {
+  it('should find no 0.x data in a missing <D>', () => {
     const dir = dataDirWith([]);
 
     expect(detectLegacy(path.join(dir, 'ausente'))).toEqual([]);
   });
 
-  it('should throw a read error other than ENOENT raw (TI5)', () => {
+  it('should throw a read error other than ENOENT raw', () => {
     const dir = dataDirWith(['arquivo']);
 
     expect(() => detectLegacy(path.join(dir, 'arquivo'))).toThrow(

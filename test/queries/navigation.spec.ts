@@ -4,7 +4,7 @@ import { at } from '../helpers.ts';
 import { idsOf, querySetup } from './query-setup.ts';
 
 describe('QueryService.queryRecords', () => {
-  it('should navigate from a term in the old text to the current version, with no pivot by target (SL9)', async () => {
+  it('should navigate from a term in the old text to the current version, with no pivot by target', async () => {
     const { createProcess, register, registerOne, query } = querySetup();
     createProcess('run-1');
     const created = await register(
@@ -36,7 +36,7 @@ describe('QueryService.queryRecords', () => {
     });
   });
 
-  it('should navigate from the term to the verdict that supports the evidence, via the incoming relation (SL9)', async () => {
+  it('should navigate from the term to the verdict that supports the evidence, via the incoming relation', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const evidence = await registerOne('run-1', note('latência medida em 40ms'), 1);

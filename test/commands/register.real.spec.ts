@@ -195,7 +195,7 @@ describe('register', () => {
       });
     });
 
-    it('should fail with IO_ERROR without the path on a short write and ENOSPC (P9)', async () => {
+    it('should fail with IO_ERROR without the path on a short write and ENOSPC', async () => {
       const { dataDir, services, register } = realSetup();
       services.process.createProcess({ project: PROJECT, process: 'run-1' });
       const batch = [note('a'), note('b'), note('c')];
@@ -209,7 +209,7 @@ describe('register', () => {
       });
     });
 
-    it('should write the resend with the same key after a short write and ENOSPC, closing the chain (P9)', async () => {
+    it('should write the resend with the same key after a short write and ENOSPC, closing the chain', async () => {
       const { dataDir, services, register, verified } = realSetup();
       services.process.createProcess({ project: PROJECT, process: 'run-1' });
       const batch = [note('a'), note('b'), note('c')];
@@ -222,7 +222,7 @@ describe('register', () => {
       expect(verified('run-1').chain).toMatchObject({ ok: true, totalRecords: 3 });
     });
 
-    it('should fail with IO_ERROR in the uncertain case where everything but the newline was written, leaving the batch already visible (P9)', async () => {
+    it('should fail with IO_ERROR in the uncertain case where everything but the newline was written, leaving the batch already visible', async () => {
       const { dataDir, services, register, verified } = realSetup();
       services.process.createProcess({ project: PROJECT, process: 'run-1' });
       const batch = [note('a'), note('b'), note('c')];
@@ -235,7 +235,7 @@ describe('register', () => {
       expect(visible.chain).toMatchObject({ ok: true, totalRecords: 3 });
     });
 
-    it('should return replayed with the same ids on the resend in the uncertain case, since the batch is already visible (P9)', async () => {
+    it('should return replayed with the same ids on the resend in the uncertain case, since the batch is already visible', async () => {
       const { dataDir, services, register, verified } = realSetup();
       services.process.createProcess({ project: PROJECT, process: 'run-1' });
       const batch = [note('a'), note('b'), note('c')];

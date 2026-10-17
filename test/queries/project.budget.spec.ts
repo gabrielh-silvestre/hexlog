@@ -8,7 +8,7 @@ import { diskQueryService } from './query-setup.ts';
 const PROCESSES = 10;
 const PER_PROCESS = 500;
 const ROUNDS = 5;
-// P7: projeto de 10 processos somando 5.000 registros de ~1,2 KB, tempo da chamada inteira
+// Projeto de 10 processos somando 5.000 registros de ~1,2 KB, tempo da chamada inteira
 // (leitura e verificação dos 10 processos, vigência e a primeira página ou a avaliação do gate).
 const CEILING_MS = 500;
 const MAX_FACTOR = 2;
@@ -56,7 +56,7 @@ function time(call: (queries: ReturnType<typeof service>) => void): number {
 }
 
 function expectWithinCeiling(label: string, times: number[]): void {
-  process.stdout.write(`P7 ${label} median: ${median(times).toFixed(2)} ms\n`);
+  process.stdout.write(`${label} median: ${median(times).toFixed(2)} ms\n`);
 
   expect(median(times)).toBeLessThanOrEqual(CEILING_MS);
   expect(Math.max(...times)).toBeLessThanOrEqual(CEILING_MS * MAX_FACTOR);
@@ -65,7 +65,7 @@ function expectWithinCeiling(label: string, times: number[]): void {
 describe('QueryService.queryRecords', () => {
   beforeAll(writeCorpus);
 
-  it(`should query the project scope without text within ${CEILING_MS} ms (median of ${ROUNDS}, ${PROCESSES} processes, ${PROCESSES * PER_PROCESS} records) (P7)`, () => {
+  it(`should query the project scope without text within ${CEILING_MS} ms (median of ${ROUNDS}, ${PROCESSES} processes, ${PROCESSES * PER_PROCESS} records)`, () => {
     const times = Array.from({ length: ROUNDS }, () =>
       time((queries) => {
         const page = queries.queryRecords({ project, scope: 'project' });
@@ -82,7 +82,7 @@ describe('QueryService.queryRecords', () => {
 describe('QueryService.evaluateGate', () => {
   beforeAll(writeCorpus);
 
-  it(`should evaluate a gate with a project-scope question within ${CEILING_MS} ms (median of ${ROUNDS}) (P7)`, () => {
+  it(`should evaluate a gate with a project-scope question within ${CEILING_MS} ms (median of ${ROUNDS})`, () => {
     const times = Array.from({ length: ROUNDS }, () =>
       time((queries) => {
         const result = queries.evaluateGate({ project, process: first, gate: WIDE_GATE.name });

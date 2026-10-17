@@ -21,17 +21,17 @@ describe('Name', () => {
     expect(Name.safeParse(value).success).toBe(false);
   });
 
-  it.each(RESERVED_PROCESS_NAMES)('should accept the reserved process name %s (TI5)', (value) => {
+  it.each(RESERVED_PROCESS_NAMES)('should accept the reserved process name %s', (value) => {
     expect(Name.safeParse(value).success).toBe(true);
   });
 });
 
 describe('alias', () => {
-  it.each(['a', 'plan-1', 'x'.repeat(63)])('should accept %s (D-01)', (value) => {
+  it.each(['a', 'plan-1', 'x'.repeat(63)])('should accept %s', (value) => {
     expect(alias.safeParse(value).success).toBe(true);
   });
 
-  it.each(['@a', '', 'A', '-a', 'x'.repeat(64)])('should reject %s (D-01)', (value) => {
+  it.each(['@a', '', 'A', '-a', 'x'.repeat(64)])('should reject %s', (value) => {
     expect(alias.safeParse(value).success).toBe(false);
   });
 });
@@ -74,32 +74,32 @@ describe('Target', () => {
   const at200 = [...Array<string>(3).fill('x'.repeat(63)), 'y'.repeat(8)].join('.');
 
   it.each(['a', 'a.b.c', 'rdsc.card-1', `${'x'.repeat(63)}.${'y'.repeat(63)}`])(
-    'should accept %s (D-07)',
+    'should accept %s',
     (value) => {
       expect(Target.safeParse(value).success).toBe(true);
     },
   );
 
   it.each(['', 'a.', '.a', 'a..b', 'A.b', 'a b', 'a:b', 'hex:target:x'])(
-    'should reject %s (D-07)',
+    'should reject %s',
     (value) => {
       expect(Target.safeParse(value).success).toBe(false);
     },
   );
 
-  it('should accept a target of exactly 200 characters (D-07)', () => {
+  it('should accept a target of exactly 200 characters', () => {
     expect(at200).toHaveLength(200);
 
     expect(Target.safeParse(at200).success).toBe(true);
   });
 
-  it('should reject a target of 201 characters (D-07)', () => {
+  it('should reject a target of 201 characters', () => {
     expect(Target.safeParse(`${at200}y`).success).toBe(false);
   });
 });
 
 describe('RecordId', () => {
-  it('should accept <process>:<uuidv7> (D-01)', () => {
+  it('should accept <process>:<uuidv7>', () => {
     const id = `proc-1:${randomUUIDv7()}`;
 
     expect(RecordId.safeParse(id).success).toBe(true);
@@ -113,7 +113,7 @@ describe('RecordId', () => {
     'proc-1:0198F4A0-0000-7000-8000-000000000001',
     `a:b:${randomUUIDv7()}`,
     `Proc:${randomUUIDv7()}`,
-  ])('should reject %s (D-01)', (value) => {
+  ])('should reject %s', (value) => {
     expect(RecordId.safeParse(value).success).toBe(false);
   });
 });
@@ -136,7 +136,7 @@ describe('processOf', () => {
 });
 
 describe('RESERVED_PROCESS_NAMES', () => {
-  it('should list exactly the five reserved names (TI5)', () => {
+  it('should list exactly the five reserved names', () => {
     expect([...RESERVED_PROCESS_NAMES]).toEqual([
       'types',
       'relations',

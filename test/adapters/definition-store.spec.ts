@@ -33,7 +33,7 @@ function setup() {
   return { dataDir, store: createDefinitionStore({ dataDir }) };
 }
 
-/** Pasta de versões de um nome, como o layout de D-02 a define. */
+/** Pasta de versões de um nome, como o layout do armazenamento de definições a define. */
 const versionsDir = (dataDir: string, kind: DefinitionKind, name: string) =>
   definitionDir(dataDir, PROJECT, kind, name);
 
@@ -75,7 +75,7 @@ describe('createDefinitionStore', () => {
     jest.restoreAllMocks();
   });
 
-  it('should return true when writing the first version of each kind of definition (D-02)', () => {
+  it('should return true when writing the first version of each kind of definition', () => {
     const { store } = setup();
 
     expect(store.write(PROJECT, 'types', 'plan', '1.0', plan)).toBe(true);
@@ -83,7 +83,7 @@ describe('createDefinitionStore', () => {
     expect(store.write(PROJECT, 'gates', 'plan-ready', '1.0', gate)).toBe(true);
   });
 
-  it('should read back each kind of definition as it was written (D-02)', () => {
+  it('should read back each kind of definition as it was written', () => {
     const { store } = setup();
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
     store.write(PROJECT, 'relations', 'approves', '1.0', relation);
@@ -94,7 +94,7 @@ describe('createDefinitionStore', () => {
     expect(store.read(PROJECT, 'gates', 'plan-ready', '1.0')).toEqual(gate);
   });
 
-  it('should write the first version of a type at its file in the on-disk layout (D-02)', () => {
+  it('should write the first version of a type at its file in the on-disk layout', () => {
     const { dataDir, store } = setup();
 
     store.write(PROJECT, 'types', 'plan', '1.0', plan);

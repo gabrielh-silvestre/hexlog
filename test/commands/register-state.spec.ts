@@ -37,7 +37,7 @@ async function seed(harness: Harness, process: string, text = 'destino'): Promis
 
 describe('register', () => {
   describe('when the destination is in another process', () => {
-    it('should write a supports to a current record of another process, reading each destination once and without locking it (D-10)', async () => {
+    it('should write a supports to a current record of another process, reading each destination once and without locking it', async () => {
       const harness = setup();
       const target = await seed(harness, OTHER);
       const { counters } = harness.processes;
@@ -57,7 +57,7 @@ describe('register', () => {
       ]);
     });
 
-    it('should read each of two distinct destinations once, even with several relations to it (D-10)', async () => {
+    it('should read each of two distinct destinations once, even with several relations to it', async () => {
       const harness = setup();
       const first = await seed(harness, OTHER, 'a');
       const second = await seed(harness, THIRD, 'b');
@@ -77,7 +77,7 @@ describe('register', () => {
       expect(readsOf(THIRD)).toBe(before[THIRD] + 1);
     });
 
-    it('should refuse a second relation to the same destination that violates a rule, without reading the destination again (D-10)', async () => {
+    it('should refuse a second relation to the same destination that violates a rule, without reading the destination again', async () => {
       const harness = setup();
       const target = await seed(harness, OTHER);
       const readsBefore = harness.processes.counters.reads.filter((read) => read === OTHER).length;
@@ -98,7 +98,7 @@ describe('register', () => {
       );
     });
 
-    it('should refuse a nonexistent destination process with RELATION_NOT_FOUND missing, at the relation path (D-10)', async () => {
+    it('should refuse a nonexistent destination process with RELATION_NOT_FOUND missing, at the relation path', async () => {
       const harness = setup();
       await harness.register([note()]);
 
@@ -113,7 +113,7 @@ describe('register', () => {
       expect(harness.processes.counters.appends).toBe(1);
     });
 
-    it('should refuse a nonexistent record in an existing process with RELATION_NOT_FOUND missing (D-10)', async () => {
+    it('should refuse a nonexistent record in an existing process with RELATION_NOT_FOUND missing', async () => {
       const harness = setup();
       await seed(harness, OTHER);
 
@@ -126,7 +126,7 @@ describe('register', () => {
       ['a broken chain', (h: Harness) => h.processes.setText(OTHER, '{"links":[1]}\n')],
       ['an unreadable manifest', (h: Harness) => h.processes.flags.unreadable.add(OTHER)],
     ])(
-      'should refuse a destination with %s with RELATION_NOT_FOUND destination-corrupted, naming the process (D-10)',
+      'should refuse a destination with %s with RELATION_NOT_FOUND destination-corrupted, naming the process',
       async (_case, corrupt) => {
         const harness = setup();
         const target = await seed(harness, OTHER);
@@ -144,7 +144,7 @@ describe('register', () => {
       },
     );
 
-    it('should refuse a supports to a superseded destination as stale-destination with the current version (D-10)', async () => {
+    it('should refuse a supports to a superseded destination as stale-destination with the current version', async () => {
       const harness = setup();
       const target = await seed(harness, OTHER);
       const successor = await harness.register([relating(target, 'supersedes', 'v2')], {}, OTHER);
@@ -164,7 +164,7 @@ describe('register', () => {
     });
 
     it.each(['contradicts', 'answers', 'derivesFrom', 'complements', 'reopens'] as const)(
-      'should accept a %s to a superseded destination, since only supports checks vigency (D-10)',
+      'should accept a %s to a superseded destination, since only supports checks vigency',
       async (kind) => {
         const harness = setup();
         const target = await seed(harness, OTHER);
@@ -176,7 +176,7 @@ describe('register', () => {
       },
     );
 
-    it('should refuse a type outside from as endpoint-type when `as` restricts the endpoints by type (D-10)', async () => {
+    it('should refuse a type outside from as endpoint-type when `as` restricts the endpoints by type', async () => {
       const harness = setup();
       const target = await seed(harness, OTHER);
 
@@ -190,7 +190,7 @@ describe('register', () => {
       });
     });
 
-    it('should point PROCESS_TOO_LARGE at the relation `to` and name the destination when reading it (D-10)', async () => {
+    it('should point PROCESS_TOO_LARGE at the relation `to` and name the destination when reading it', async () => {
       const harness = setup();
       const target = await seed(harness, OTHER);
       harness.processes.flags.tooLarge.add(OTHER);
@@ -203,7 +203,7 @@ describe('register', () => {
       });
     });
 
-    it('should point IO_ERROR at the relation `to` and name the destination when reading it (D-10)', async () => {
+    it('should point IO_ERROR at the relation `to` and name the destination when reading it', async () => {
       const harness = setup();
       const target = await seed(harness, OTHER);
       const { store } = harness.processes;
@@ -225,7 +225,7 @@ describe('register', () => {
   });
 
   describe('when the destination is in the own process', () => {
-    it('should refuse a supersedes of an already superseded record with FORK_REJECTED and the current version (D-10)', async () => {
+    it('should refuse a supersedes of an already superseded record with FORK_REJECTED and the current version', async () => {
       const harness = setup();
       const first = await seed(harness, ORIGIN, 'v1');
       const second = await harness.register([relating(first, 'supersedes', 'v2')]);
@@ -245,7 +245,7 @@ describe('register', () => {
       expect(harness.processes.counters.appends).toBe(2);
     });
 
-    it('should refuse a revokes of an already superseded record with FORK_REJECTED and the current version (D-10)', async () => {
+    it('should refuse a revokes of an already superseded record with FORK_REJECTED and the current version', async () => {
       const harness = setup();
       const first = await seed(harness, ORIGIN, 'v1');
       const second = await harness.register([relating(first, 'supersedes', 'v2')]);
@@ -266,7 +266,7 @@ describe('register', () => {
     });
 
     it.each(['revokes', 'supersedes'] as const)(
-      'should refuse a %s of a revoked lineage with FORK_REJECTED and a null current (D-10)',
+      'should refuse a %s of a revoked lineage with FORK_REJECTED and a null current',
       async (kind) => {
         const harness = setup();
         const first = await seed(harness, ORIGIN, 'v1');
@@ -278,7 +278,7 @@ describe('register', () => {
       },
     );
 
-    it('should refuse the second of two supersedes of the same target in the batch with FORK_REJECTED, pointing at the item (D-10)', async () => {
+    it('should refuse the second of two supersedes of the same target in the batch with FORK_REJECTED, pointing at the item', async () => {
       const harness = setup();
       const first = await seed(harness, ORIGIN, 'v1');
 
@@ -299,7 +299,7 @@ describe('register', () => {
       ['supersedes before supports', ['supersedes', 'supports'], 1],
       ['supports before supersedes', ['supports', 'supersedes'], 0],
     ] as const)(
-      'should refuse a supports as stale-destination when checking the vigency of the whole batch: %s (D-10)',
+      'should refuse a supports as stale-destination when checking the vigency of the whole batch: %s',
       async (_case, kinds, supportsAt) => {
         const harness = setup();
         const target = await seed(harness, ORIGIN, 'e');
@@ -317,7 +317,7 @@ describe('register', () => {
       },
     );
 
-    it('should refuse a supports from a later batch item to the record an earlier item superseded as stale-destination (D-10)', async () => {
+    it('should refuse a supports from a later batch item to the record an earlier item superseded as stale-destination', async () => {
       const harness = setup();
       const target = await seed(harness, ORIGIN, 'e');
 
@@ -331,7 +331,7 @@ describe('register', () => {
       });
     });
 
-    it('should refuse a supersedes between different types as type-mismatch (D-10)', async () => {
+    it('should refuse a supersedes between different types as type-mismatch', async () => {
       const harness = setup();
       const target = await seed(harness, ORIGIN, 'e');
 
@@ -349,7 +349,7 @@ describe('register', () => {
       expect(error).toMatchObject({ details: [{ code: 'type-mismatch' }] });
     });
 
-    it('should refuse a supersedes to a record of another target as target-mismatch and write nothing (D-10)', async () => {
+    it('should refuse a supersedes to a record of another target as target-mismatch and write nothing', async () => {
       const harness = setup();
       const previous = await seed(harness, ORIGIN, 'e');
       const logBefore = harness.processes.textOf(ORIGIN);
@@ -373,7 +373,7 @@ describe('register', () => {
       expect(harness.processes.textOf(ORIGIN)).toBe(logBefore);
     });
 
-    it('should refuse a supersedes by alias to a batch item on another target as target-mismatch on the item (D-10)', async () => {
+    it('should refuse a supersedes by alias to a batch item on another target as target-mismatch on the item', async () => {
       const harness = setup();
 
       const error = await refusal(
@@ -389,7 +389,7 @@ describe('register', () => {
       });
     });
 
-    it('should accept a revokes of a record of another target (D-10)', async () => {
+    it('should accept a revokes of a record of another target', async () => {
       const harness = setup();
       const previous = await seed(harness, ORIGIN, 'e');
 
@@ -400,7 +400,7 @@ describe('register', () => {
       expect(result.replayed).toBe(false);
     });
 
-    it('should accept the recommended way to change target: revokes on the old record and a new record with derivesFrom (D-10)', async () => {
+    it('should accept the recommended way to change target: revokes on the old record and a new record with derivesFrom', async () => {
       const harness = setup();
       const previous = await seed(harness, ORIGIN, 'e');
 
@@ -418,7 +418,7 @@ describe('register', () => {
     it.each([
       ['supports and contradicts', ['supports', 'contradicts'], 'supports-and-contradicts'],
       ['supersedes and revokes', ['supersedes', 'revokes'], 'supersedes-and-revokes'],
-    ] as const)('should refuse %s to the same destination (D-10)', async (_case, kinds, code) => {
+    ] as const)('should refuse %s to the same destination', async (_case, kinds, code) => {
       const harness = setup();
       const target = await seed(harness, ORIGIN, 'e');
 
@@ -429,7 +429,7 @@ describe('register', () => {
       expect(error).toMatchObject({ code: 'INVALID_RECORD', details: [{ code }] });
     });
 
-    it('should refuse an id of the own process that does not exist with RELATION_NOT_FOUND missing (D-10)', async () => {
+    it('should refuse an id of the own process that does not exist with RELATION_NOT_FOUND missing', async () => {
       const harness = setup();
 
       const error = await refusal(harness.register([relating(ghostId(ORIGIN), 'supports')]));
@@ -440,7 +440,7 @@ describe('register', () => {
       });
     });
 
-    it('should accept a chained supersedes inside the batch that cites an earlier item by alias (D-10)', async () => {
+    it('should accept a chained supersedes inside the batch that cites an earlier item by alias', async () => {
       const harness = setup();
 
       const result = await harness.register([
@@ -451,7 +451,7 @@ describe('register', () => {
       expect(result.replayed).toBe(false);
     });
 
-    it('should refuse with CYCLE_REJECTED, through hasCycle, when the edge is hand-built at the source (D-10)', async () => {
+    it('should refuse with CYCLE_REJECTED, through hasCycle, when the edge is hand-built at the source', async () => {
       const harness = setup();
       const [a, b] = [
         `${ORIGIN}:00000000-0000-7000-8000-00000000aaa1`,
@@ -571,7 +571,7 @@ describe('register', () => {
           note('a', { relations: [{ to: await seed(harness, ORIGIN, 'e'), as: 'only-tasks' }] }),
       ],
     ] as [string, string, string, Violation][])(
-      'should not write the two earlier items when %s hits the third item of a three-item batch (SE1)',
+      'should not write the two earlier items when %s hits the third item of a three-item batch',
       async (_case, code, detail, violate) => {
         const harness = setup();
         const failing = await violate(harness);
@@ -593,7 +593,7 @@ describe('register', () => {
   describe('with attachment fields', () => {
     const hash = sha256hex('anexo');
 
-    it('should write a marked field with an intact attachment, querying each hash once per call (D-16)', async () => {
+    it('should write a marked field with an intact attachment, querying each hash once per call', async () => {
       const harness = setup();
       harness.attachments.set(hash, 'ok');
 
@@ -603,7 +603,7 @@ describe('register', () => {
       expect(harness.attachments.calls).toEqual([hash]);
     });
 
-    it('should check both marked fields of a record, body and files (D-16)', async () => {
+    it('should check both marked fields of a record, body and files', async () => {
       const harness = setup();
       const other = sha256hex('outro anexo');
       harness.attachments.set(hash, 'ok');
@@ -615,7 +615,7 @@ describe('register', () => {
       expect(harness.attachments.calls).toEqual([hash, other]);
     });
 
-    it('should refuse the missing second marked field of a record at its own path (D-16)', async () => {
+    it('should refuse the missing second marked field of a record at its own path', async () => {
       const harness = setup();
       harness.attachments.set(hash, 'ok');
 
@@ -633,7 +633,7 @@ describe('register', () => {
       ['nonexistent', 'missing', 'ATTACHMENT_NOT_FOUND', 'not-found'],
       ['corrupted', 'corrupted', 'ATTACHMENT_CORRUPTED', 'corrupted'],
     ] as const)(
-      'should refuse a %s attachment in a marked field (D-16)',
+      'should refuse a %s attachment in a marked field',
       async (_case, status, code, subcode) => {
         const harness = setup();
         harness.attachments.set(hash, status);
@@ -648,7 +648,7 @@ describe('register', () => {
       },
     );
 
-    it('should also refuse a nonexistent item of a marked attachment list (D-16)', async () => {
+    it('should also refuse a nonexistent item of a marked attachment list', async () => {
       const harness = setup();
       harness.attachments.set(hash, 'ok');
 
@@ -664,7 +664,7 @@ describe('register', () => {
       ['field', { note: hash }],
       ['string list item', { notes: ['texto', hash] }],
     ])(
-      'should refuse an attachment hash stored in a %s without the mark as unmarked-attachment (D-16)',
+      'should refuse an attachment hash stored in a %s without the mark as unmarked-attachment',
       async (_case, data) => {
         const harness = setup();
         harness.attachments.set(hash, 'ok');
@@ -685,7 +685,7 @@ describe('register', () => {
       },
     );
 
-    it('should count a corrupted attachment as stored for the mark guard (D-16)', async () => {
+    it('should count a corrupted attachment as stored for the mark guard', async () => {
       const harness = setup();
       harness.attachments.set(hash, 'corrupted');
 
@@ -698,7 +698,7 @@ describe('register', () => {
       ['attachment hash that was never stored', { note: hash }],
       ['text that is not shaped like a sha256', { note: 'abc' }],
       ['uppercase sha256', { note: hash.toUpperCase() }],
-    ])('should let %s pass the mark guard (D-16)', async (_case, data) => {
+    ])('should let %s pass the mark guard', async (_case, data) => {
       const harness = setup();
 
       const result = await harness.register([doc(data)]);
@@ -706,7 +706,7 @@ describe('register', () => {
       expect(result.replayed).toBe(false);
     });
 
-    it('should rebuild the INVALID_INPUT path because the data hash is not the /hash field the port assumes (D-16)', async () => {
+    it('should rebuild the INVALID_INPUT path because the data hash is not the /hash field the port assumes', async () => {
       const harness = setup();
       harness.attachments.store.status = () => {
         throw new HexlogError('INVALID_INPUT', 'invalid hash', [
@@ -722,7 +722,7 @@ describe('register', () => {
       });
     });
 
-    it('should not even call the attachment port with no attachment field or hash-shaped string (D-16)', async () => {
+    it('should not even call the attachment port with no attachment field or hash-shaped string', async () => {
       const harness = setup();
 
       await harness.register([note('a'), doc({ note: 'x', notes: ['y'] })]);
@@ -758,7 +758,7 @@ describe('register', () => {
   });
 
   describe('with the size cap checked at two points', () => {
-    it('should refuse even a valid batch, without writing, on the read under the lock before decide when the log is above the cap (D-06)', async () => {
+    it('should refuse even a valid batch, without writing, on the read under the lock before decide when the log is above the cap', async () => {
       const harness = setup();
       harness.processes.flags.tooLarge.add(ORIGIN);
 
@@ -768,7 +768,7 @@ describe('register', () => {
       expect(harness.processes.counters.appends).toBe(0);
     });
 
-    it('should check the batch shape (level 1) before any read: a malformed batch on a source above the cap gives INVALID_INPUT (D-06)', async () => {
+    it('should check the batch shape (level 1) before any read: a malformed batch on a source above the cap gives INVALID_INPUT', async () => {
       const harness = setup();
       harness.processes.flags.tooLarge.add(ORIGIN);
 
@@ -781,7 +781,7 @@ describe('register', () => {
       expect(harness.processes.counters.reads).toEqual([]);
     });
 
-    it('should take the manifest from readManifest, without the log, so the static refusal beats PROCESS_TOO_LARGE (D-06)', async () => {
+    it('should take the manifest from readManifest, without the log, so the static refusal beats PROCESS_TOO_LARGE', async () => {
       const harness = setup();
       harness.processes.flags.tooLarge.add(ORIGIN);
 
@@ -791,7 +791,7 @@ describe('register', () => {
       expect(harness.processes.counters).toMatchObject({ writes: 0, appends: 0 });
     });
 
-    it('should give the violation of a batch that breaks the relation rules and would pass the cap, since the veto comes after the checks (D-06, D-10)', async () => {
+    it('should give the violation of a batch that breaks the relation rules and would pass the cap, since the veto comes after the checks', async () => {
       const harness = setup();
       harness.processes.flags.maxBytes = 1;
 
@@ -800,7 +800,7 @@ describe('register', () => {
       expect(error.code).toBe('RELATION_NOT_FOUND');
     });
 
-    it('should return replayed for an already written key even with the cap exceeded, since replay does not go through the veto (D-06)', async () => {
+    it('should return replayed for an already written key even with the cap exceeded, since replay does not go through the veto', async () => {
       const harness = setup();
       await harness.register([note('a')], { key: 'k' });
       harness.processes.flags.maxBytes = 1;

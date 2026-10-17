@@ -31,7 +31,7 @@ async function twoProcesses() {
 }
 
 describe('QueryService.queryRecords', () => {
-  it('should add up the pages to the whole list, in the same order and without repeats, for any `limit` (D-20)', async () => {
+  it('should add up the pages to the whole list, in the same order and without repeats, for any `limit`', async () => {
     const { query, ids } = await fiveNotes();
     const limits = fc.integer({ min: 1, max: 7 });
 
@@ -45,7 +45,7 @@ describe('QueryService.queryRecords', () => {
     );
   });
 
-  it('should close the list without a cursor when `limit` equals what remains (D-20)', async () => {
+  it('should close the list without a cursor when `limit` equals what remains', async () => {
     const { query, ids } = await fiveNotes();
 
     const exact = query({ process: 'run-1', limit: 5 });
@@ -54,7 +54,7 @@ describe('QueryService.queryRecords', () => {
     expect(exact.cursor).toBeUndefined();
   });
 
-  it('should leave the cursor when `limit` is one less than what remains (D-20)', async () => {
+  it('should leave the cursor when `limit` is one less than what remains', async () => {
     const { query, ids } = await fiveNotes();
 
     const short = query({ process: 'run-1', limit: 4 });
@@ -63,7 +63,7 @@ describe('QueryService.queryRecords', () => {
     expect(short.cursor).toBeDefined();
   });
 
-  it('should return the remaining record and no cursor when the character cap hits the last page (D-20)', async () => {
+  it('should return the remaining record and no cursor when the character cap hits the last page', async () => {
     const { query, ids } = await fiveNotes();
     const first = query({ process: 'run-1', limit: 4 });
 
@@ -73,7 +73,7 @@ describe('QueryService.queryRecords', () => {
     expect(last.cursor).toBeUndefined();
   });
 
-  it('should return empty `records`, no cursor and the marker of what it read for a query with no result (D-20)', async () => {
+  it('should return empty `records`, no cursor and the marker of what it read for a query with no result', async () => {
     const { query } = await fiveNotes();
 
     const page = query({ process: 'run-1', type: 'doc' });
@@ -83,7 +83,7 @@ describe('QueryService.queryRecords', () => {
     expect(Object.keys(page.marker)).toEqual(['run-1']);
   });
 
-  it('should add up the pages without repeats in project scope too (D-20)', async () => {
+  it('should add up the pages without repeats in project scope too', async () => {
     const { query, a, b, c, d } = await twoProcesses();
     const first = query({ scope: 'project', limit: 3 });
 
@@ -93,7 +93,7 @@ describe('QueryService.queryRecords', () => {
     expect(second.cursor).toBeUndefined();
   });
 
-  it('should not change the page 1 list when a supersede is written between pages, in process scope (SL6, D-20)', async () => {
+  it('should not change the page 1 list when a supersede is written between pages, in process scope', async () => {
     const { query, registerOne, ids } = await fiveNotes();
     const first = query({ process: 'run-1', limit: 2 });
     await registerOne(
@@ -108,7 +108,7 @@ describe('QueryService.queryRecords', () => {
     expect(second.marker).toEqual(first.marker);
   });
 
-  it('should not change the page 1 list when a supersede is written between pages, in project scope (SL6, D-20)', async () => {
+  it('should not change the page 1 list when a supersede is written between pages, in project scope', async () => {
     const { query, registerOne, a, b, c, d } = await twoProcesses();
     const first = query({ scope: 'project', limit: 2 });
     await registerOne('run-1', note('c2', { relations: [{ to: c, kind: 'supersedes' }] }), 5);
@@ -121,7 +121,7 @@ describe('QueryService.queryRecords', () => {
     expect(second.marker).toEqual(first.marker);
   });
 
-  it('should keep a process born after page 1 out of the following pages (SL6, D-20)', async () => {
+  it('should keep a process born after page 1 out of the following pages', async () => {
     const { createProcess, registerOne, query, a, b, c, d } = await twoProcesses();
     const first = query({ scope: 'project', limit: 2 });
     createProcess('run-3');
@@ -133,7 +133,7 @@ describe('QueryService.queryRecords', () => {
     expect(idsOf(second)).toEqual([c, d]);
   });
 
-  it('should not break the project cursor with a process named `constructor` born between pages (SL6, D-20)', async () => {
+  it('should not break the project cursor with a process named `constructor` born between pages', async () => {
     const { createProcess, registerOne, query, a, b, c, d } = await twoProcesses();
     const first = query({ scope: 'project', limit: 2 });
     createProcess('constructor');
@@ -145,7 +145,7 @@ describe('QueryService.queryRecords', () => {
     expect(idsOf(second)).toEqual([c, d]);
   });
 
-  it('should keep the same order and `lastId` with `text` of 2+ terms and `type` and an append between pages (D-20)', async () => {
+  it('should keep the same order and `lastId` with `text` of 2+ terms and `type` and an append between pages', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     await registerOne('run-1', { type: 'doc', target: 'run.doc', data: { note: 'banana uva' } }, 1);
@@ -164,7 +164,7 @@ describe('QueryService.queryRecords', () => {
     expect(second.cursor).toBeUndefined();
   });
 
-  it('should cover every process read in the project scope cursor (D-20)', async () => {
+  it('should cover every process read in the project scope cursor', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     createProcess('run-2');
@@ -178,7 +178,7 @@ describe('QueryService.queryRecords', () => {
     expect(Object.keys(first.marker)).toEqual(['run-1', 'run-2']);
   });
 
-  it('should bring a record larger than the cap alone and advance the cursor (D-20)', async () => {
+  it('should bring a record larger than the cap alone and advance the cursor', async () => {
     const { query, ids } = await fiveNotes();
     const first = query({ process: 'run-1', maxChars: 1 });
 
@@ -188,7 +188,7 @@ describe('QueryService.queryRecords', () => {
     expect(idsOf(second)).toEqual([at(ids, 1)]);
   });
 
-  it('should bring a record larger than the cap alone and advance the cursor to the last page, in project scope (D-20)', async () => {
+  it('should bring a record larger than the cap alone and advance the cursor to the last page, in project scope', async () => {
     const { query, a, b, c, d } = await twoProcesses();
 
     const pages = walkPages(query, { scope: 'project', maxChars: 1 });
@@ -196,7 +196,7 @@ describe('QueryService.queryRecords', () => {
     expect(pages.map(idsOf)).toEqual([[a], [b], [c], [d]]);
   });
 
-  it('should cut the page by the character cap before the limit (D-20)', async () => {
+  it('should cut the page by the character cap before the limit', async () => {
     const { query, ids } = await fiveNotes();
     const one = JSON.stringify(at(query({ process: 'run-1', limit: 1 }).records, 0)).length;
 
@@ -205,7 +205,7 @@ describe('QueryService.queryRecords', () => {
     expect(idsOf(page)).toEqual(ids.slice(0, 2));
   });
 
-  it('should keep the page when the character cap is at its exact size (D-20)', async () => {
+  it('should keep the page when the character cap is at its exact size', async () => {
     const { query, ids } = await fiveNotes();
     const two = query({ process: 'run-1', limit: 2 }).records;
     const exact = two.reduce((sum, record) => sum + JSON.stringify(record).length, 0);
@@ -215,7 +215,7 @@ describe('QueryService.queryRecords', () => {
     expect(idsOf(kept)).toEqual(ids.slice(0, 2));
   });
 
-  it('should cut the last record when the character cap is one less than the page size (D-20)', async () => {
+  it('should cut the last record when the character cap is one less than the page size', async () => {
     const { query, ids } = await fiveNotes();
     const two = query({ process: 'run-1', limit: 2 }).records;
     const exact = two.reduce((sum, record) => sum + JSON.stringify(record).length, 0);
@@ -225,7 +225,7 @@ describe('QueryService.queryRecords', () => {
     expect(idsOf(cut)).toEqual(ids.slice(0, 1));
   });
 
-  it('should bring 50 records without `limit` and lead the cursor to the 51st (D-20)', async () => {
+  it('should bring 50 records without `limit` and lead the cursor to the 51st', async () => {
     const { createProcess, register, query } = querySetup();
     createProcess('run-1');
     const ids = [
@@ -245,7 +245,7 @@ describe('QueryService.queryRecords', () => {
     expect(second.cursor).toBeUndefined();
   });
 
-  it('should count the page already trimmed by `fields` against the character cap, scenario from #85 (D-20)', async () => {
+  it('should count the page already trimmed by `fields` against the character cap, scenario from #85', async () => {
     const { createProcess, register, query } = querySetup();
     createProcess('run-1');
     const ids = await register(
@@ -270,7 +270,7 @@ describe('QueryService.queryRecords', () => {
     expect(some.cursor).toBeUndefined();
   });
 
-  it('should keep `fields` out of the cursor hash: page 2 may ask for others, both ways (D-20)', async () => {
+  it('should keep `fields` out of the cursor hash: page 2 may ask for others, both ways', async () => {
     const { query, ids } = await fiveNotes();
     const withFields = query({ process: 'run-1', limit: 2, fields: ['text'] });
     const withoutFields = query({ process: 'run-1', limit: 2 });
@@ -289,7 +289,7 @@ describe('QueryService.queryRecords', () => {
     expect(at(other.records, 0).data).toEqual({ text: 'c' });
   });
 
-  it('should give INVALID_CURSOR `project-mismatch` for a cursor from another project (D-20)', async () => {
+  it('should give INVALID_CURSOR `project-mismatch` for a cursor from another project', async () => {
     const { query, queries } = await fiveNotes();
     const cursor = cursorOf(query({ process: 'run-1', limit: 2 }));
 
@@ -302,7 +302,7 @@ describe('QueryService.queryRecords', () => {
     expect(at(error.details, 0).message).toContain('rerun the query without cursor');
   });
 
-  it('should give INVALID_CURSOR for a tampered cursor, or one from another filter, scope or process (D-20)', async () => {
+  it('should give INVALID_CURSOR for a tampered cursor, or one from another filter, scope or process', async () => {
     const { query, createProcess } = await fiveNotes();
     createProcess('run-2');
     const cursor = cursorOf(query({ process: 'run-1', limit: 2 }));
@@ -325,7 +325,7 @@ describe('QueryService.queryRecords', () => {
     expect(codeOf({ process: 'run-2', cursor })).toBe('process-mismatch');
   });
 
-  it('should refuse a cursor with a marker from another log, a nonexistent marked id or a `lastId` outside the result (D-20)', async () => {
+  it('should refuse a cursor with a marker from another log, a nonexistent marked id or a `lastId` outside the result', async () => {
     const { query } = await fiveNotes();
     const issued = decodeCursor(cursorOf(query({ process: 'run-1', limit: 2 })));
     const forged = (patch: Partial<typeof issued>) =>

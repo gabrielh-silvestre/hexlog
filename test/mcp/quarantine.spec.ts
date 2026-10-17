@@ -59,7 +59,7 @@ describe('query', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should serve project scope again, free the process name and drop the stale index after the tampered process is moved out (M21)', async () => {
+  it('should serve project scope again, free the process name and drop the stale index after the tampered process is moved out', async () => {
     await registerNote('run-1', 'primeira');
     await registerNote('run-1', 'segunda');
     await registerNote('run-2', 'de outro processo');
@@ -106,7 +106,7 @@ describe('query', () => {
     expect(fs.existsSync(path.join(quarantined, 'records.jsonl'))).toBe(true);
   }, 30_000);
 
-  it('should return a stored relation to the moved process without `current` (M21)', async () => {
+  it('should return a stored relation to the moved process without `current`', async () => {
     const { records } = await registerNote('run-1', 'alvo');
     const target = at(records, 0).id;
     await registerNote('run-2', 'aprova', [{ to: target, kind: 'supports', as: 'approves' }]);
@@ -122,7 +122,7 @@ describe('register', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should refuse a new relation to the moved process with RELATION_NOT_FOUND (M21)', async () => {
+  it('should refuse a new relation to the moved process with RELATION_NOT_FOUND', async () => {
     const { records } = await registerNote('run-1', 'alvo');
     const target = at(records, 0).id;
     quarantine('run-1');

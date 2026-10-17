@@ -3,7 +3,7 @@ import { note } from '../commands/register-fakes.ts';
 import { idsOf, querySetup, walkPages } from './query-setup.ts';
 
 describe('QueryService.queryRecords', () => {
-  it('should order the process scope by seq, even with the clock going backwards (P15, D-24)', async () => {
+  it('should order the process scope by seq, even with the clock going backwards', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const first = await registerOne('run-1', note('primeiro'), 30);
@@ -20,7 +20,7 @@ describe('QueryService.queryRecords', () => {
     ]);
   });
 
-  it('should order the project scope by (at, process, seq), breaking an instant tie by the name (P15, D-24)', async () => {
+  it('should order the project scope by (at, process, seq), breaking an instant tie by the name', async () => {
     const { createProcess, register, registerOne, query } = querySetup();
     createProcess('run-a');
     createProcess('run-b');
@@ -35,7 +35,7 @@ describe('QueryService.queryRecords', () => {
     expect(idsOf(page)).toEqual([a2, a3, b1, ...batch, a1]);
   });
 
-  it('should rank by relevance with text, breaking ties by the key of the scope (P15, D-24)', async () => {
+  it('should rank by relevance with text, breaking ties by the key of the scope', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-a');
     createProcess('run-b');
@@ -51,7 +51,7 @@ describe('QueryService.queryRecords', () => {
     expect(idsOf(process)).toEqual([tieLate, tieEarly]);
   });
 
-  it('should restart page 2 after the lastId in the same order, with or without text (P15, D-24)', async () => {
+  it('should restart page 2 after the lastId in the same order, with or without text', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-a');
     createProcess('run-b');
@@ -69,7 +69,7 @@ describe('QueryService.queryRecords', () => {
     }
   });
 
-  it('should output changes.entered and changes.left in the same order as the result (P15, D-24)', async () => {
+  it('should output changes.entered and changes.left in the same order as the result', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-a');
     createProcess('run-b');

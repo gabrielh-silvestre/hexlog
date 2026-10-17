@@ -266,7 +266,7 @@ describe('parseLog', () => {
   ];
 
   it.each(cases)(
-    'should give the seqs, breaks and repaired lines for $name (D-05)',
+    'should give the seqs, breaks and repaired lines for $name',
     ({ text, seqs, breaks, repaired }) => {
       const parsed = parseLog(text, START.prevHash);
 
@@ -285,7 +285,7 @@ describe('parseLog', () => {
     return `${text}${text === '' || text.endsWith('\n') ? '' : '\n'}${lineOf(link)}`;
   };
 
-  it.each(cases)('should append the next write after $name (D-05)', ({ text }) => {
+  it.each(cases)('should append the next write after $name', ({ text }) => {
     const before = parseLog(text, START.prevHash);
 
     const after = parseLog(appendNext(text, before.end), START.prevHash);
@@ -295,7 +295,7 @@ describe('parseLog', () => {
     expect(after.end.seq).toBe(before.end.seq + 1);
   });
 
-  it('should not consume a seq for a torn remainder at the end of the file, ending at the last valid link (D-05)', () => {
+  it('should not consume a seq for a torn remainder at the end of the file, ending at the last valid link', () => {
     const parsed = parseLog(`${lineOf(A)}${TORN}\n\n`, START.prevHash);
 
     expect(parsed.end).toEqual({ seq: 1, prevHash: hashLink(A) });
@@ -303,7 +303,7 @@ describe('parseLog', () => {
     expect(parsed.repairedLines).toEqual([]);
   });
 
-  it('should advance the chain over a rejected line so the following consistent lines do not break again (D-05)', () => {
+  it('should advance the chain over a rejected line so the following consistent lines do not break again', () => {
     const forged = { ...B, prevHash: sha256hex('forjado') };
     const next = { ...C, prevHash: hashLink(forged) };
 
@@ -403,7 +403,7 @@ describe('verifyProcess', () => {
     expect(chain.repairedLines).toHaveLength(100);
   });
 
-  it('should call JSON.parse once per segment of records.jsonl, in order (SL2)', () => {
+  it('should call JSON.parse once per segment of records.jsonl, in order', () => {
     const segments = [
       lineOf(A).slice(0, -1),
       TORN,

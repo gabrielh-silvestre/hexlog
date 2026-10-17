@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { execFileSync } from 'node:child_process';
 // Import padrão (não `* as fs`): o spy de `openSync`/`fstatSync`/`readSync` só intercepta o mesmo
-// objeto que `attachment-store.ts` usa (P9).
+// objeto que `attachment-store.ts` usa.
 import fs from 'node:fs';
 import * as path from 'node:path';
 import {
@@ -474,7 +474,7 @@ describe('createAttachmentStore', () => {
     expect(status).toBe('missing');
   });
 
-  it('should store the exact bytes of a file in a dot folder by relative path (P16, D-15)', () => {
+  it('should store the exact bytes of a file in a dot folder by relative path', () => {
     const text = 'Decisão longa — ação\r\n\uFEFF'.repeat(11_000);
     writeInCwd(PLAN, text);
 
@@ -485,7 +485,7 @@ describe('createAttachmentStore', () => {
     expect(relative.hash).toBe(sha256hex(Buffer.from(text, 'utf8')));
   });
 
-  it('should store the same blob, deduplicated, by absolute path (P16, D-15)', () => {
+  it('should store the same blob, deduplicated, by absolute path', () => {
     const text = 'Decisão longa — ação\r\n\uFEFF'.repeat(11_000);
     const file = writeInCwd(PLAN, text);
     const relative = store.putPath(PROJECT, PLAN);
@@ -495,7 +495,7 @@ describe('createAttachmentStore', () => {
     expect(absolute).toEqual({ ...relative, deduplicated: true });
   });
 
-  it('should read from any folder of the cwd, the cwd itself included, not only from .omc/plans (P16, D-15)', () => {
+  it('should read from any folder of the cwd, the cwd itself included, not only from .omc/plans', () => {
     writeInCwd('docs/fundo/notas.txt', 'subpasta');
     writeInCwd('raiz.md', 'raiz');
 
@@ -503,13 +503,13 @@ describe('createAttachmentStore', () => {
     expect(store.putPath(PROJECT, 'raiz.md').hash).toBe(sha256hex('raiz'));
   });
 
-  it('should accept a file of exactly 1 MiB (P16, D-15)', () => {
+  it('should accept a file of exactly 1 MiB', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES, 0x61));
 
     expect(store.putPath(PROJECT, PLAN).bytes).toBe(ATTACHMENT_MAX_BYTES);
   });
 
-  it('should land on the same blob, deduplicated, when the same content comes by path and by text (P16, D-15)', () => {
+  it('should land on the same blob, deduplicated, when the same content comes by path and by text', () => {
     writeInCwd(PLAN, 'mesmo conteúdo');
     const byPath = store.putPath(PROJECT, PLAN);
 
@@ -519,7 +519,7 @@ describe('createAttachmentStore', () => {
     expect(fs.readdirSync(attachmentsDir())).toEqual([byPath.hash]);
   });
 
-  it('should refuse paths outside the cwd, relative or absolute, with outside-allowed-root, storing nothing (P16, D-15)', () => {
+  it('should refuse paths outside the cwd, relative or absolute, with outside-allowed-root, storing nothing', () => {
     fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
 
     expect(captureError(() => store.putPath(PROJECT, '../outside/x.md'))).toMatchObject(
@@ -532,7 +532,7 @@ describe('createAttachmentStore', () => {
     expectNothingStored();
   });
 
-  it('should refuse a directory symlink pointing outside the cwd with outside-allowed-root, storing nothing (P16, D-15)', () => {
+  it('should refuse a directory symlink pointing outside the cwd with outside-allowed-root, storing nothing', () => {
     fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
     fs.symlinkSync(outside, path.join(cwd, 'atalho'));
 
@@ -547,7 +547,7 @@ describe('createAttachmentStore', () => {
     ['a missing directory', () => cwd, 'nao/existe/x.md'],
     ['a missing cwd', () => path.join(base, 'nao-existe'), PLAN],
   ] as const)(
-    'should refuse %s with outside-allowed-root, leaking neither errno nor path (P16, D-15)',
+    'should refuse %s with outside-allowed-root, leaking neither errno nor path',
     (_name, cwdOf, target) => {
       const error = captureError(() =>
         createAttachmentStore({ dataDir, cwd: cwdOf() }).putPath(PROJECT, target),
@@ -561,7 +561,7 @@ describe('createAttachmentStore', () => {
     },
   );
 
-  it('should read inside a cwd that is a symlink, as the root is the resolved target (P16, D-15)', () => {
+  it('should read inside a cwd that is a symlink, as the root is the resolved target', () => {
     const linkedCwd = path.join(base, 'cwd-link');
     fs.symlinkSync(cwd, linkedCwd);
     writeInCwd(PLAN, 'via symlink');
@@ -570,7 +570,7 @@ describe('createAttachmentStore', () => {
     expect(linked.putPath(PROJECT, PLAN).hash).toBe(sha256hex('via symlink'));
   });
 
-  it('should keep refusing outside a cwd that is a symlink (P16, D-15)', () => {
+  it('should keep refusing outside a cwd that is a symlink', () => {
     const linkedCwd = path.join(base, 'cwd-link');
     fs.symlinkSync(cwd, linkedCwd);
     fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
@@ -581,7 +581,7 @@ describe('createAttachmentStore', () => {
     );
   });
 
-  it('should refuse a file in the target of a dataDir symlink pointing inside the cwd with inside-data-dir (P16, D-15)', () => {
+  it('should refuse a file in the target of a dataDir symlink pointing inside the cwd with inside-data-dir', () => {
     const real = path.join(cwd, 'dados');
     const linkedDataDir = path.join(base, 'dados-link');
     fs.mkdirSync(real);
@@ -601,7 +601,7 @@ describe('createAttachmentStore', () => {
       store = createAttachmentStore({ dataDir, cwd });
     });
 
-    it('should refuse a file inside the dataDir with inside-data-dir, storing nothing (P16, D-15)', () => {
+    it('should refuse a file inside the dataDir with inside-data-dir, storing nothing', () => {
       const inside = path.join(dataRoot(dataDir), PROJECT, 'x.md');
       fs.mkdirSync(path.dirname(inside), { recursive: true });
       fs.writeFileSync(inside, 'dentro');
@@ -612,7 +612,7 @@ describe('createAttachmentStore', () => {
       expect(fs.existsSync(attachmentsDir())).toBe(false);
     });
 
-    it('should refuse a directory symlink pointing inside the dataDir with inside-data-dir, after the realpath (P16, D-15)', () => {
+    it('should refuse a directory symlink pointing inside the dataDir with inside-data-dir, after the realpath', () => {
       const inside = path.join(dataRoot(dataDir), PROJECT);
       fs.mkdirSync(inside, { recursive: true });
       fs.writeFileSync(path.join(inside, 'x.md'), 'dentro');
@@ -624,7 +624,7 @@ describe('createAttachmentStore', () => {
       expect(fs.existsSync(attachmentsDir())).toBe(false);
     });
 
-    it('should refuse with inside-data-dir before not-found (P16, D-15)', () => {
+    it('should refuse with inside-data-dir before not-found', () => {
       fs.mkdirSync(dataDir);
 
       expect(captureError(() => store.putPath(PROJECT, 'dados/nao-existe.md'))).toMatchObject(
@@ -632,7 +632,7 @@ describe('createAttachmentStore', () => {
       );
     });
 
-    it('should keep putting a file outside the dataDir normally (P16, D-15)', () => {
+    it('should keep putting a file outside the dataDir normally', () => {
       fs.mkdirSync(dataDir);
       writeInCwd(PLAN, 'fora do dataDir');
 
@@ -640,7 +640,7 @@ describe('createAttachmentStore', () => {
     });
   });
 
-  it('should put normally when the dataDir does not exist, as there is nothing to refuse (P16, D-15)', () => {
+  it('should put normally when the dataDir does not exist, as there is nothing to refuse', () => {
     writeInCwd(PLAN, 'sem dataDir');
     const dataDirExisted = fs.existsSync(dataDir);
 
@@ -650,13 +650,13 @@ describe('createAttachmentStore', () => {
     expect(result.hash).toBe(sha256hex('sem dataDir'));
   });
 
-  it('should refuse with outside-allowed-root before not-found (P16, D-15)', () => {
+  it('should refuse with outside-allowed-root before not-found', () => {
     expect(
       captureError(() => store.putPath(PROJECT, path.join(outside, 'nao-existe.md'))),
     ).toMatchObject(invalid('/path', 'outside-allowed-root'));
   });
 
-  it('should refuse a missing file with not-found, leaking neither errno nor path (P16, D-15)', () => {
+  it('should refuse a missing file with not-found, leaking neither errno nor path', () => {
     const error = captureError(() => store.putPath(PROJECT, '.omc/plans/nao-existe.md'));
 
     expect(error.code).toBe('INVALID_INPUT');
@@ -699,7 +699,7 @@ describe('createAttachmentStore', () => {
         return '.omc/plans/link.md';
       },
     ],
-  ])('should refuse %s with not-regular, storing nothing (P16, D-15)', (_name, prepare) => {
+  ])('should refuse %s with not-regular, storing nothing', (_name, prepare) => {
     const candidate = prepare();
 
     expect(probe({ call: 'putPath', path: candidate })).toEqual({
@@ -709,7 +709,7 @@ describe('createAttachmentStore', () => {
     expectNothingStored();
   });
 
-  it('should refuse a file above 1 MiB with too-big, storing nothing (P16, D-15)', () => {
+  it('should refuse a file above 1 MiB with too-big, storing nothing', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61));
 
     expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
@@ -719,7 +719,7 @@ describe('createAttachmentStore', () => {
     expectNothingStored();
   });
 
-  it('should refuse with too-big a file that grows between the fstat and the read (P16, D-15)', () => {
+  it('should refuse with too-big a file that grows between the fstat and the read', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61));
     understateSize(10);
 
@@ -729,7 +729,7 @@ describe('createAttachmentStore', () => {
     expect(error.message).toBe('file changed while being read');
   });
 
-  it('should refuse an empty file with bad-args, storing nothing (P16, D-15)', () => {
+  it('should refuse an empty file with bad-args, storing nothing', () => {
     writeInCwd('vazio.md', '');
 
     expect(captureError(() => store.putPath(PROJECT, 'vazio.md'))).toMatchObject(
@@ -739,7 +739,7 @@ describe('createAttachmentStore', () => {
     expectNothingStored();
   });
 
-  it('should refuse bytes that are not UTF-8 with invalid-utf8, storing nothing (P16, D-15)', () => {
+  it('should refuse bytes that are not UTF-8 with invalid-utf8, storing nothing', () => {
     writeInCwd('binario.md', Buffer.from([0x61, 0xff, 0xfe]));
 
     expect(captureError(() => store.putPath(PROJECT, 'binario.md'))).toMatchObject(
@@ -749,7 +749,7 @@ describe('createAttachmentStore', () => {
     expectNothingStored();
   });
 
-  it('should turn a file read error into IO_ERROR with only the errno and no absolute path (P16, D-15)', () => {
+  it('should turn a file read error into IO_ERROR with only the errno and no absolute path', () => {
     const file = writeInCwd(PLAN, 'conteúdo');
     jest.spyOn(fs, 'readSync').mockImplementation(() => {
       throw fsError('EIO', file);
@@ -792,7 +792,7 @@ describe('createAttachmentStore', () => {
       });
     }
 
-    it('should refuse the swap with outside-allowed-root, storing nothing, with /proc (P16, D-15)', () => {
+    it('should refuse the swap with outside-allowed-root, storing nothing, with /proc', () => {
       swapDirectoryOnOpen();
 
       expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
@@ -802,7 +802,7 @@ describe('createAttachmentStore', () => {
       expectNothingStored();
     });
 
-    it('should refuse the swap too without /proc (macOS) (P16, D-15)', () => {
+    it('should refuse the swap too without /proc (macOS)', () => {
       withoutProc();
       swapDirectoryOnOpen();
 
@@ -813,7 +813,7 @@ describe('createAttachmentStore', () => {
       expectNothingStored();
     });
 
-    it('should put normally without /proc and without a swap (P16, D-15)', () => {
+    it('should put normally without /proc and without a swap', () => {
       withoutProc();
 
       expect(store.putPath(PROJECT, PLAN).hash).toBe(sha256hex('dentro'));

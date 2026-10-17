@@ -228,7 +228,7 @@ describe('hook/bash-guard.ts', () => {
 
   describe('when the command reaches D', () => {
     it.each(denyCases)(
-      'should deny $name (I4)',
+      'should deny $name',
       (testCase) => {
         expectDenied(
           testCase,
@@ -239,11 +239,11 @@ describe('hook/bash-guard.ts', () => {
       15_000,
     );
 
-    it(`should deny ${xdgCase.name} (I4)`, () => {
+    it(`should deny ${xdgCase.name}`, () => {
       expectDenied(xdgCase, xdgCase.env!, dataDirXdg);
     });
 
-    it('should cite the new names of the read tools in the complete deny message (I4)', () => {
+    it('should cite the new names of the read tools in the complete deny message', () => {
       const result = runHook({ command: `cat ${dataDir}/x` }, envBase);
 
       expect(result.status).toBe(2);
@@ -252,7 +252,7 @@ describe('hook/bash-guard.ts', () => {
       );
     });
 
-    it('should cite exactly the tools that the server advertises with readOnlyHint (I4)', async () => {
+    it('should cite exactly the tools that the server advertises with readOnlyHint', async () => {
       const environment = await createEnvironment();
 
       try {
@@ -274,7 +274,7 @@ describe('hook/bash-guard.ts', () => {
 
   describe('when the command does not reach D', () => {
     it.each(allowCases)(
-      'should allow $name (I4)',
+      'should allow $name',
       (testCase) => {
         expectAllowed(testCase, testCase.env ?? envBase);
       },
@@ -283,7 +283,7 @@ describe('hook/bash-guard.ts', () => {
   });
 
   describe('with invalid input', () => {
-    it('should exit 0 without output for an empty stdin (I7)', () => {
+    it('should exit 0 without output for an empty stdin', () => {
       const result = spawnSync(process.execPath, [hookPath], {
         input: '',
         env: envBase,
@@ -295,7 +295,7 @@ describe('hook/bash-guard.ts', () => {
       expect(result.stderr).toBe('');
     });
 
-    it('should exit 0 without output for an invalid JSON (I7)', () => {
+    it('should exit 0 without output for an invalid JSON', () => {
       const result = spawnSync(process.execPath, [hookPath], {
         input: '{this is not json',
         env: envBase,
@@ -306,7 +306,7 @@ describe('hook/bash-guard.ts', () => {
       expect(result.stderr).toBe('');
     });
 
-    it('should exit 0 without output when tool_name is not Bash (I7)', () => {
+    it('should exit 0 without output when tool_name is not Bash', () => {
       const result = spawnSync(process.execPath, [hookPath], {
         input: JSON.stringify({ tool_name: 'Read', tool_input: { file_path: dataDir } }),
         env: envBase,
@@ -317,7 +317,7 @@ describe('hook/bash-guard.ts', () => {
       expect(result.stderr).toBe('');
     });
 
-    it('should exit 0 without output when tool_input has no command (I7)', () => {
+    it('should exit 0 without output when tool_input has no command', () => {
       const result = spawnSync(process.execPath, [hookPath], {
         input: JSON.stringify({ tool_name: 'Bash', tool_input: {} }),
         env: envBase,
@@ -328,7 +328,7 @@ describe('hook/bash-guard.ts', () => {
       expect(result.stderr).toBe('');
     });
 
-    it('should decide only by the literal check when shell-quote.parse throws, denying a command that contains D (I7)', () => {
+    it('should decide only by the literal check when shell-quote.parse throws, denying a command that contains D', () => {
       expectDenied(
         { command: `cat \${} ${dataDir}/x` },
         envBase,
@@ -404,7 +404,7 @@ describe('hook/bash-guard.ts', () => {
     ];
 
     it.each(hostileCases)(
-      'should deny $name (U1)',
+      'should deny $name',
       (testCase) => {
         expectDenied(testCase, envBase, testCase.stderr);
       },
@@ -431,28 +431,28 @@ describe('hook/bash-guard.ts', () => {
     ];
 
     it.each(ceilingCases)(
-      'should allow $name (U1)',
+      'should allow $name',
       (testCase) => {
         expectAllowed(testCase, envBase);
       },
       15_000,
     );
 
-    it('should deny a token under ~/.local/share/ with 64 brace alternatives, above the 32 limit (U1)', () => {
+    it('should deny a token under ~/.local/share/ with 64 brace alternatives, above the 32 limit', () => {
       expectDenied({ command: `ls ~/.local/share/${'{a,b}'.repeat(6)}` }, envBase, reachesMessage);
     }, 15_000);
 
-    it('should not mention D when the denial is for an undecidable command (U1)', () => {
+    it('should not mention D when the denial is for an undecidable command', () => {
       const result = runHook({ command: `cat ${'['.repeat(65)}` }, envBase);
 
       expect(result.stderr).not.toContain(dataDir);
     }, 15_000);
 
-    it('should allow a command that shell-quote cannot parse when it does not cite D (U1)', () => {
+    it('should allow a command that shell-quote cannot parse when it does not cite D', () => {
       expectAllowed({ command: 'echo ${}; cat ~/.local/share/hex""log/x' }, envBase);
     }, 15_000);
 
-    it('should allow a 5000-character token without glob characters (U1)', () => {
+    it('should allow a 5000-character token without glob characters', () => {
       expectAllowed({ command: `echo ${'a'.repeat(5000)}` }, envBase);
     }, 15_000);
   });
@@ -723,7 +723,7 @@ describe('hook/bash-guard.ts', () => {
     }, 15_000);
   });
 
-  it('should deny when run through a symlink to the hook (M2)', () => {
+  it('should deny when run through a symlink to the hook', () => {
     const result = runThroughSymlink(hookPath);
 
     expect(result.status).toBe(2);
@@ -754,7 +754,7 @@ describe('dist/bash-guard.mjs', () => {
     }
   });
 
-  it('should deny cat <D>/x with exit 2 (B1(b))', () => {
+  it('should deny cat <D>/x with exit 2', () => {
     const result = spawnSync(process.execPath, [bundle], {
       input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: `cat ${dataDir}/x` } }),
       env: envBase,
@@ -765,7 +765,7 @@ describe('dist/bash-guard.mjs', () => {
     expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
   });
 
-  it('should allow true with exit 0 (B1(b))', () => {
+  it('should allow true with exit 0', () => {
     const result = spawnSync(process.execPath, [bundle], {
       input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' } }),
       env: envBase,
@@ -776,14 +776,14 @@ describe('dist/bash-guard.mjs', () => {
     expect(result.stderr).toBe('');
   });
 
-  it('should deny when the bundled hook runs through a symlink (B1(b))', () => {
+  it('should deny when the bundled hook runs through a symlink', () => {
     const result = runThroughSymlink(bundle);
 
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('is only accessible through the hexlog MCP tools');
   }, 15_000);
 
-  it('should not contain the "Dynamic require of" shim (B1(b))', () => {
+  it('should not contain the "Dynamic require of" shim', () => {
     const bytes = fs.readFileSync(bundle);
 
     expect(bytes.includes('Dynamic require of')).toBe(false);

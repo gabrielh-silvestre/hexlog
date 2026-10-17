@@ -211,7 +211,7 @@ describe('QueryService.verifyChain', () => {
   });
 
   describe('with cited attachments', () => {
-    it('should not break on an intact attachment (D-16)', async () => {
+    it('should not break on an intact attachment', async () => {
       const { registerOne, doc, stored, verify } = verifySetup();
       await registerOne('run-1', doc({ body: stored('texto') }));
 
@@ -224,7 +224,7 @@ describe('QueryService.verifyChain', () => {
       });
     });
 
-    it('should turn a missing attachment into attachment-missing and a corrupted one into attachment-corrupted (D-16)', async () => {
+    it('should turn a missing attachment into attachment-missing and a corrupted one into attachment-corrupted', async () => {
       const { registerOne, doc, stored, blobOf, verify } = verifySetup();
       const gone = stored('sumiu');
       const bad = stored('adulterado');
@@ -242,7 +242,7 @@ describe('QueryService.verifyChain', () => {
       ]);
     });
 
-    it('should list a chain break and a missing attachment separately, each with its own total (D-16)', async () => {
+    it('should list a chain break and a missing attachment separately, each with its own total', async () => {
       const { registerOne, doc, stored, blobOf, verify, tamper } = verifySetup();
       const gone = stored('sumiu');
       const record = await registerOne('run-1', doc({ body: gone }));
@@ -262,7 +262,7 @@ describe('QueryService.verifyChain', () => {
       expect(result.totalAttachmentBreaks).toBe(1);
     });
 
-    it('should still show the attachment break in its list when the chain is already at the breaks cap (D-16)', async () => {
+    it('should still show the attachment break in its list when the chain is already at the breaks cap', async () => {
       const { registerOne, doc, stored, blobOf, verify, logFile } = verifySetup();
       const gone = stored('sumiu');
       await registerOne('run-1', doc({ body: gone }));
@@ -278,7 +278,7 @@ describe('QueryService.verifyChain', () => {
       expect(result.totalAttachmentBreaks).toBe(1);
     });
 
-    it('should cut more attachment breaks than the cap at the cap, with the right total (D-16)', async () => {
+    it('should cut more attachment breaks than the cap at the cap, with the right total', async () => {
       const { registerOne, doc, stored, blobOf, verify } = verifySetup();
       const hashes = Array.from({ length: MAX_BREAKS + 1 }, (_, n) => stored(`anexo ${n}`));
       await registerOne('run-1', doc({ files: hashes }));

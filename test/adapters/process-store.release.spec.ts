@@ -40,7 +40,7 @@ describe('ProcessStore.write', () => {
     jest.restoreAllMocks();
   });
 
-  it('should throw the primary error and log nothing as release-failed when only the try fails (M7)', async () => {
+  it('should throw the primary error and log nothing as release-failed when only the try fails', async () => {
     const { store, records } = setup();
     const primary = new HexlogError('INTERNAL', 'decide failed', []);
 
@@ -54,7 +54,7 @@ describe('ProcessStore.write', () => {
     expect(records).not.toContainEqual(expect.objectContaining({ event: 'release-failed' }));
   });
 
-  it('should throw the release error, keep the line durable and leave the lock orphaned when only the release fails (M7)', async () => {
+  it('should throw the release error, keep the line durable and leave the lock orphaned when only the release fails', async () => {
     const { store, records, dir, logFile } = setup();
     failReleaseOnce();
 
@@ -72,7 +72,7 @@ describe('ProcessStore.write', () => {
     expect(fs.readdirSync(dir)).toContain(LOCK_DIR);
   });
 
-  it('should append on the next write after the release failed, removing the orphan lock (M7)', async () => {
+  it('should append on the next write after the release failed, removing the orphan lock', async () => {
     const { store, records, logFile } = setup();
     failReleaseOnce();
     await store.write(ref, () => ({ line, result: 'ok' })).catch((reason: unknown) => reason);
@@ -83,7 +83,7 @@ describe('ProcessStore.write', () => {
     expect(records).toContainEqual(expect.objectContaining({ event: 'lock-orphan-removed' }));
   });
 
-  it('should throw the primary error unchanged and send the release error only to the log when both fail (M7)', async () => {
+  it('should throw the primary error unchanged and send the release error only to the log when both fail', async () => {
     const { store, records, dir, logFile } = setup();
     const primary = new HexlogError('INTERNAL', 'decide failed', []);
     failReleaseOnce();
@@ -103,7 +103,7 @@ describe('ProcessStore.write', () => {
     expect(JSON.stringify(records)).not.toContain(dir);
   });
 
-  it('should write the next line after the release and the try both failed (M7)', async () => {
+  it('should write the next line after the release and the try both failed', async () => {
     const { store, logFile } = setup();
     const primary = new HexlogError('INTERNAL', 'decide failed', []);
     failReleaseOnce();

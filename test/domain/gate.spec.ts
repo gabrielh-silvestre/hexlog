@@ -441,12 +441,12 @@ describe('evaluateGate', () => {
       ),
     });
 
-    it('should see support from another process only at project scope (D-24)', () => {
+    it('should see support from another process only at project scope', () => {
       expect(evaluateGate([q('process')], scoped()).passed).toBe(false);
       expect(evaluateGate([q('project')], scoped()).passed).toBe(true);
     });
 
-    it('should default to process scope (D-24)', () => {
+    it('should default to process scope', () => {
       const input = scoped();
 
       evaluateGate([question({ kind: 'occurred', select: {} })], input);
@@ -455,7 +455,7 @@ describe('evaluateGate', () => {
       expect(input.records).toHaveBeenCalledWith('process');
     });
 
-    it('should read project scope only if some question declares it (D-24)', () => {
+    it('should read project scope only if some question declares it', () => {
       const mixed = scoped();
 
       evaluateGate([q('process'), q('project'), q('project')], mixed);

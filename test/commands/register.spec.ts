@@ -393,7 +393,7 @@ describe('register', () => {
   });
 
   describe('with a key', () => {
-    it('should refuse a malformed batch for a nonexistent process with INVALID_INPUT (D-06)', async () => {
+    it('should refuse a malformed batch for a nonexistent process with INVALID_INPUT', async () => {
       const { register } = setup();
 
       const error = await refusal(
@@ -407,7 +407,7 @@ describe('register', () => {
       expect(error.code).toBe('INVALID_INPUT');
     });
 
-    it('should refuse a nonexistent process with PROCESS_NOT_FOUND even with a cross-process supersedes (D-06)', async () => {
+    it('should refuse a nonexistent process with PROCESS_NOT_FOUND even with a cross-process supersedes', async () => {
       const { register } = setup();
 
       const error = await refusal(register([supersedesElsewhere()], { key: 'k' }, 'ghost'));
@@ -415,7 +415,7 @@ describe('register', () => {
       expect(error.code).toBe('PROCESS_NOT_FOUND');
     });
 
-    it('should refuse a cross-process supersedes with cross-process-currency on an origin with a broken chain (D-06)', async () => {
+    it('should refuse a cross-process supersedes with cross-process-currency on an origin with a broken chain', async () => {
       const { register, processes } = setup();
       await register([note()], { key: 'k' });
       processes.setText(ORIGIN, `${processes.textOf(ORIGIN)}{"links":[1]}\n`);
@@ -432,7 +432,7 @@ describe('register', () => {
       ['the same fingerprint', [note()]],
       ['a different fingerprint', [note('outro')]],
     ])(
-      'should refuse with broken-chain a key already written on an origin that later broke, with %s (D-06)',
+      'should refuse with broken-chain a key already written on an origin that later broke, with %s',
       async (_case, batch) => {
         const { register, processes } = setup();
         await register([note()], { key: 'k' });
@@ -447,7 +447,7 @@ describe('register', () => {
       },
     );
 
-    it('should return replayed without a new line for the same fingerprint, with the original ids and aliases and the fsync (D-06)', async () => {
+    it('should return replayed without a new line for the same fingerprint, with the original ids and aliases and the fsync', async () => {
       const { register, processes, logger } = setup();
       const batch = [note('a', { alias: 'first' }), note('b')];
       const original = await register(batch, { key: 'k' });
@@ -474,7 +474,7 @@ describe('register', () => {
       ['the same fingerprint', [note('a')]],
       ['a different fingerprint', [note('b')]],
     ])(
-      'should not collide on the same key in another origin, since the lookup is per origin, with %s (D-06)',
+      'should not collide on the same key in another origin, since the lookup is per origin, with %s',
       async (_case, batch) => {
         const { register, processes } = setup();
         processes.add('run-2');
@@ -488,7 +488,7 @@ describe('register', () => {
       },
     );
 
-    it('should write a new batch for the same fingerprint with another key, not a replay (D-06)', async () => {
+    it('should write a new batch for the same fingerprint with another key, not a replay', async () => {
       const { register, processes } = setup();
       await register([note('a')], { key: 'k1' });
 
@@ -498,7 +498,7 @@ describe('register', () => {
       expect(verifiedOf(processes).records).toHaveLength(2);
     });
 
-    it('should return in the replay the marker of the head read in decide, not the one of the original batch (D-06)', async () => {
+    it('should return in the replay the marker of the head read in decide, not the one of the original batch', async () => {
       const { register } = setup();
       const original = await register([note('a')], { key: 'k' });
       const later = await register([note('b')]);
@@ -510,7 +510,7 @@ describe('register', () => {
       expect(again.marker).toEqual({ [ORIGIN]: later.records[0]?.id });
     });
 
-    it('should ignore key, agent and model in the fingerprint (D-06)', async () => {
+    it('should ignore key, agent and model in the fingerprint', async () => {
       const { register } = setup();
       await register([note('a')], { key: 'k1', author: AUTHOR });
 
@@ -522,7 +522,7 @@ describe('register', () => {
       expect(again.replayed).toBe(true);
     });
 
-    it('should refuse a different fingerprint with IDEMPOTENCY_CONFLICT without writing (D-06)', async () => {
+    it('should refuse a different fingerprint with IDEMPOTENCY_CONFLICT without writing', async () => {
       const { register, processes } = setup();
       await register([note('a')], { key: 'k' });
 
@@ -535,7 +535,7 @@ describe('register', () => {
       expect(processes.counters.appends).toBe(1);
     });
 
-    it('should refuse with IDEMPOTENCY_CONFLICT before the checks that depend on state (D-06)', async () => {
+    it('should refuse with IDEMPOTENCY_CONFLICT before the checks that depend on state', async () => {
       const { register } = setup();
       await register([note('a')], { key: 'k' });
 
@@ -548,7 +548,7 @@ describe('register', () => {
       expect(error.code).toBe('IDEMPOTENCY_CONFLICT');
     });
 
-    it('should still run the state checks with a new key (D-06)', async () => {
+    it('should still run the state checks with a new key', async () => {
       const { register, processes } = setup();
       await register([note('a')], { key: 'k1' });
 
@@ -562,7 +562,7 @@ describe('register', () => {
       expect(processes.counters.appends).toBe(1);
     });
 
-    it('should return replayed on the resend after an uncertain IO_ERROR, even with the destination and the attachment changed (D-06)', async () => {
+    it('should return replayed on the resend after an uncertain IO_ERROR, even with the destination and the attachment changed', async () => {
       const { register, processes, attachments, logger } = setup();
       const hash = sha256hex('anexo');
       processes.add('other');
@@ -595,7 +595,7 @@ describe('register', () => {
       expect(logger).toHaveBeenCalledTimes(1);
     });
 
-    it('should refuse the resend without a key when a new attachment now matches the unmarked-attachment guard (D-06)', async () => {
+    it('should refuse the resend without a key when a new attachment now matches the unmarked-attachment guard', async () => {
       const { register, attachments } = setup();
       const hash = sha256hex('mais tarde');
       const batch = [{ type: 'doc', target: 'run.doc', data: { note: hash } }];
@@ -605,7 +605,7 @@ describe('register', () => {
       await expect(register(batch)).rejects.toMatchObject({ code: 'INVALID_RECORD' });
     });
 
-    it('should return replayed on the resend even when a new attachment now matches the unmarked-attachment guard (D-06)', async () => {
+    it('should return replayed on the resend even when a new attachment now matches the unmarked-attachment guard', async () => {
       const { register, attachments } = setup();
       const hash = sha256hex('mais tarde');
       const batch = [{ type: 'doc', target: 'run.doc', data: { note: hash } }];
@@ -626,7 +626,7 @@ describe('register', () => {
       ['with a new key', 'novo'],
       ['with a key that replays', 'antigo'],
     ])(
-      'should read the origin log once and parse each of its lines once, %s (SL2)',
+      'should read the origin log once and parse each of its lines once, %s',
       async (_case, key) => {
         const { register, processes } = setup();
         await register([note('a')], { key: 'antigo' });

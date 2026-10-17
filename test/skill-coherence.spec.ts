@@ -126,10 +126,10 @@ describe('LINE_PROSE_CITATION', () => {
 
 // ---- catálogo real, extraído do código (nunca copiado à mão) — global ao projeto, não por skill ----
 
-/** TB5: a 1.0 expõe exatamente 12 tools. */
+/** A 1.0 expõe exatamente 12 tools. */
 const EXPECTED_TOOL_COUNT = 12;
 
-/** TM4: 35 códigos da transição menos os 8 legados e os 2 sem uso (`INVALID_ID`, `UNKNOWN_ID`). */
+/** 35 códigos da transição menos os 8 legados e os 2 sem uso (`INVALID_ID`, `UNKNOWN_ID`). */
 const EXPECTED_ERROR_CODE_COUNT = 25;
 
 const toolsDir = path.join(srcDir, 'mcp/tools');
@@ -455,14 +455,14 @@ describe.each(skillCases)('$file', ({ file }) => {
 });
 
 describe('src/mcp/tools/*.ts', () => {
-  it(`should register exactly ${EXPECTED_TOOL_COUNT} tools, with no repetition (TB5)`, () => {
+  it(`should register exactly ${EXPECTED_TOOL_COUNT} tools, with no repetition`, () => {
     expect(registeredTools).toHaveLength(EXPECTED_TOOL_COUNT);
     expect(new Set(registeredTools).size).toBe(EXPECTED_TOOL_COUNT);
   });
 });
 
 describe('src/errors.ts', () => {
-  it(`should declare exactly ${EXPECTED_ERROR_CODE_COUNT} error codes (TM4)`, () => {
+  it(`should declare exactly ${EXPECTED_ERROR_CODE_COUNT} error codes`, () => {
     expect(errorCodeCatalog).toHaveLength(EXPECTED_ERROR_CODE_COUNT);
     expect(new Set(errorCodeCatalog).size).toBe(EXPECTED_ERROR_CODE_COUNT);
   });

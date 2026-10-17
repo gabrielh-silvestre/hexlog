@@ -267,7 +267,7 @@ describe('QueryService.evaluateGate', () => {
     expect(error.details[0]).toMatchObject({ process: 'run-2' });
   });
 
-  it('should pass the plan-ready gate with scope project when the approval and the outcome come from another process (D4)', async () => {
+  it('should pass the plan-ready gate with scope project when the approval and the outcome come from another process', async () => {
     const { createProcess, registerOne, plan, approves, deviation, settles, ready } = planSetup();
     createProcess('run-1');
     createProcess('review-1');
@@ -280,7 +280,7 @@ describe('QueryService.evaluateGate', () => {
     expect(ready('run-1', READY_PROJECT.name).passed).toBe(true);
   });
 
-  it('should fail when a finding has no incoming `answers` (D5, SG4)', async () => {
+  it('should fail when a finding has no incoming `answers`', async () => {
     const { createProcess, registerOne, evaluate } = gateSetup(answered);
     createProcess('run-1');
     const answeredFinding = await registerOne('run-1', {
@@ -307,7 +307,7 @@ describe('QueryService.evaluateGate', () => {
     });
   });
 
-  it('should pass when every finding has an incoming `answers` (D5, SG4)', async () => {
+  it('should pass when every finding has an incoming `answers`', async () => {
     const { createProcess, registerOne, evaluate } = gateSetup(answered);
     createProcess('run-1');
     const answeredFinding = await registerOne('run-1', {
@@ -336,7 +336,7 @@ describe('QueryService.evaluateGate', () => {
     expect(evaluation.passed).toBe(true);
   });
 
-  it('should need a done item for every planned item of type X on target Y and point at the planned item without one (D5, SG4)', async () => {
+  it('should need a done item for every planned item of type X on target Y and point at the planned item without one', async () => {
     const planned: Gate = {
       name: 'planned-done',
       questions: [
@@ -549,7 +549,7 @@ describe('GateQuestion', () => {
 });
 
 describe('ProcessService.register', () => {
-  it('should refuse a plan revision without a diff at write time by the type schema (D4)', async () => {
+  it('should refuse a plan revision without a diff at write time by the type schema', async () => {
     const { createProcess, registerOne, plan } = planSetup();
     createProcess('run-1');
     const first = await registerOne('run-1', plan());
