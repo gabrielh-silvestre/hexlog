@@ -127,9 +127,8 @@ O `ci.yml` rodava `npm test` sem `--ci`, porque o repo não tem snapshots; hoje 
 
 ## Mutação (Stryker)
 
-> **Instalado em 2026-10-17** (branch `chore/test-suite-refactor`), só nos
-> specs unitários: `@stryker-mutator/core`, `jest-runner` e `typescript-checker`
-> em `^10.0.0`.
+> **Instalado em 2026-10-17**, só nos specs unitários: `@stryker-mutator/core`,
+> `jest-runner` e `typescript-checker` em `^10.0.0`.
 
 A rodada é manual, por `npm run test:mutation`, fora do CI e do husky. Os specs
 e os arquivos de `src/` do escopo ficam em `stryker.config.json`
