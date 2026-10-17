@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { createDefinitionStore } from '../../src/adapters/fs/definition-store.ts';
@@ -13,10 +13,6 @@ import type { DefinitionKind } from '../../src/ports.ts';
 import { types } from '../fixtures/domains/omc.ts';
 import { captureError, createTempDir, expectNoLeak } from '../helpers.ts';
 import { countFsyncs } from './fsync-spy.ts';
-
-afterEach(() => {
-  jest.restoreAllMocks();
-});
 
 const PROJECT = 'demo';
 const plan: RecordType = types.plan;
@@ -43,21 +39,55 @@ const versionsDir = (dataDir: string, kind: DefinitionKind, name: string) =>
 
 const FIRST_VERSION_FILE = `1.0${VERSION_SUFFIX}`;
 
-describe('createDefinitionStore: escrita e leitura', () => {
-  test('grava e lê de volta cada tipo de definição, no layout de D-02', () => {
+const LEGACY_BYTES = JSON.stringify({ type: 'object', legacy: true });
+
+/** Planta o arquivo legado `<nome>.json` nos dois lugares em que o formato antigo o deixava. */
+function plantLegacyFiles(dataDir: string): string[] {
+  const legacyFiles = [
+    path.join(dataDir, PROJECT, 'schemas', 'plan.json'),
+    path.join(dataRoot(dataDir), PROJECT, 'types', 'plan.json'),
+  ];
+  for (const file of legacyFiles) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, LEGACY_BYTES);
+  }
+  return legacyFiles;
+}
+
+const MALFORMED_VERSIONS = [
+  '',
+  '1',
+  '1.',
+  '1.0.0',
+  '01.0',
+  '1.07',
+  '1234567.0',
+  '1.-1',
+  '../1.0',
+  '1.0/../../x',
+  'a.b',
+];
+
+const ESCAPING_NAMES = ['..', 'a/b', 'A', '', '.hidden'];
+
+describe('createDefinitionStore', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('should write each kind of definition and read it back in the on-disk layout (D-02)', () => {
     const { dataDir, store } = setup();
 
     expect(store.write(PROJECT, 'types', 'plan', '1.0', plan)).toBe(true);
     expect(store.write(PROJECT, 'relations', 'approves', '1.0', relation)).toBe(true);
     expect(store.write(PROJECT, 'gates', 'plan-ready', '1.0', gate)).toBe(true);
-
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
     expect(store.read(PROJECT, 'relations', 'approves', '1.0')).toEqual(relation);
     expect(store.read(PROJECT, 'gates', 'plan-ready', '1.0')).toEqual(gate);
     expect(fs.existsSync(definitionFile(dataDir, PROJECT, 'types', 'plan', '1.0'))).toBe(true);
   });
 
-  test('a escrita não deixa temporário na pasta de versões', () => {
+  it('should leave no temporary file in the versions folder after a write', () => {
     const { dataDir, store } = setup();
 
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
@@ -65,7 +95,7 @@ describe('createDefinitionStore: escrita e leitura', () => {
     expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual([FIRST_VERSION_FILE]);
   });
 
-  test('names lista só as pastas de nome, em ordem alfabética, por tipo de definição', () => {
+  it('should list only the name folders of each kind, in alphabetical order', () => {
     const { dataDir, store } = setup();
     store.write(PROJECT, 'types', 'review', '1.0', plan);
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
@@ -74,21 +104,34 @@ describe('createDefinitionStore: escrita e leitura', () => {
 
     expect(store.names(PROJECT, 'types')).toEqual(['plan', 'review']);
     expect(store.names(PROJECT, 'gates')).toEqual(['plan-ready']);
+  });
+
+  it('should list no names for a kind with nothing written nor for an unknown project', () => {
+    const { dataDir, store } = setup();
+    store.write(PROJECT, 'types', 'review', '1.0', plan);
+    store.write(PROJECT, 'types', 'plan', '1.0', plan);
+    store.write(PROJECT, 'gates', 'plan-ready', '1.0', gate);
+    fs.writeFileSync(path.join(dataRoot(dataDir), PROJECT, 'types', 'solto.json'), '{}');
+
     expect(store.names(PROJECT, 'relations')).toEqual([]);
     expect(store.names('outro', 'types')).toEqual([]);
   });
 
-  test('names lista a pasta de nome que ficou sem nenhuma versão (falha no meio de write)', () => {
+  it('should list a name folder left without any version by a failed write', () => {
     const { dataDir, store } = setup();
     fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
 
     expect(store.names(PROJECT, 'types')).toEqual(['empty']);
+  });
+
+  it('should list no versions for a name folder left without any version by a failed write', () => {
+    const { dataDir, store } = setup();
+    fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
+
     expect(store.versions(PROJECT, 'types', 'empty')).toEqual([]);
   });
-});
 
-describe('createDefinitionStore: ordem das versões', () => {
-  test('versions ordena major e minor como números, não como texto', () => {
+  it('should order the versions by major and minor as numbers, not as text', () => {
     const { store } = setup();
     for (const version of ['1.10', '1.2', '2.0', '1.0', '10.1', '1.9']) {
       store.write(PROJECT, 'types', 'plan', version, plan);
@@ -104,13 +147,13 @@ describe('createDefinitionStore: ordem das versões', () => {
     ]);
   });
 
-  test('versions de um nome sem versão gravada é vazio', () => {
+  it('should list no versions for a name without any written version', () => {
     const { store } = setup();
 
     expect(store.versions(PROJECT, 'types', 'plan')).toEqual([]);
   });
 
-  test('versions ignora temporário, arquivo fora do padrão e diretório', () => {
+  it('should ignore a temporary file, a file outside the pattern and a directory in the versions', () => {
     const { dataDir, store } = setup();
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
     const dir = versionsDir(dataDir, 'types', 'plan');
@@ -121,44 +164,53 @@ describe('createDefinitionStore: ordem das versões', () => {
 
     expect(store.versions(PROJECT, 'types', 'plan')).toEqual(['1.0']);
   });
-});
 
-describe('createDefinitionStore: imutabilidade', () => {
-  test('a segunda escrita da mesma versão devolve false e preserva os bytes', () => {
+  it('should return false and keep the bytes when the same version is written a second time', () => {
     const { dataDir, store } = setup();
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
     const file = definitionFile(dataDir, PROJECT, 'types', 'plan', '1.0');
     const before = fs.readFileSync(file);
 
-    expect(store.write(PROJECT, 'types', 'plan', '1.0', planV2)).toBe(false);
+    const rewritten = store.write(PROJECT, 'types', 'plan', '1.0', planV2);
 
+    expect(rewritten).toBe(false);
     expect(fs.readFileSync(file).equals(before)).toBe(true);
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
     expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual([FIRST_VERSION_FILE]);
   });
 
-  test('outra versão do mesmo nome grava sem tocar a anterior', () => {
+  it('should write another version of the same name without touching the previous one', () => {
     const { store } = setup();
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
 
-    expect(store.write(PROJECT, 'types', 'plan', '1.1', planV2)).toBe(true);
+    const written = store.write(PROJECT, 'types', 'plan', '1.1', planV2);
 
+    expect(written).toBe(true);
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
     expect(store.read(PROJECT, 'types', 'plan', '1.1')).toEqual(planV2);
   });
 
-  test('faz fsync do diretório só na escrita que publica; a repetida (EEXIST) não dá nenhum', () => {
+  it('should fsync the directory once on the write that publishes the version', () => {
     const { store } = setup();
     const fsyncs = countFsyncs();
 
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
-    expect(fsyncs().directories).toBe(1);
 
-    expect(store.write(PROJECT, 'types', 'plan', '1.0', planV2)).toBe(false);
     expect(fsyncs().directories).toBe(1);
   });
 
-  test('corrida: o concorrente publica entre o temporário e o link, e só um escritor ganha', () => {
+  it('should not fsync the directory on a repeated write (EEXIST)', () => {
+    const { store } = setup();
+    const fsyncs = countFsyncs();
+    store.write(PROJECT, 'types', 'plan', '1.0', plan);
+
+    const rewritten = store.write(PROJECT, 'types', 'plan', '1.0', planV2);
+
+    expect(rewritten).toBe(false);
+    expect(fsyncs().directories).toBe(1);
+  });
+
+  it('should let only one writer win when a rival publishes between the temporary file and the link', () => {
     const { dataDir, store } = setup();
     const rival = createDefinitionStore({ dataDir });
     const realLink = fs.linkSync.bind(fs);
@@ -175,40 +227,48 @@ describe('createDefinitionStore: imutabilidade', () => {
     expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(planV2);
     expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual([FIRST_VERSION_FILE]);
   });
-});
 
-describe('createDefinitionStore: arquivo legado', () => {
-  test('o arquivo legado <nome>.json é ignorado e nunca materializado', () => {
+  it('should ignore a legacy <name>.json in names', () => {
     const { dataDir, store } = setup();
-    const legacyBytes = JSON.stringify({ type: 'object', legacy: true });
-    const legacyFiles = [
-      path.join(dataDir, PROJECT, 'schemas', 'plan.json'),
-      path.join(dataRoot(dataDir), PROJECT, 'types', 'plan.json'),
-    ];
-    for (const file of legacyFiles) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, legacyBytes);
-    }
+    plantLegacyFiles(dataDir);
 
     expect(store.names(PROJECT, 'types')).toEqual([]);
+  });
+
+  it('should ignore a legacy <name>.json in versions', () => {
+    const { dataDir, store } = setup();
+    plantLegacyFiles(dataDir);
+
     expect(store.versions(PROJECT, 'types', 'plan')).toEqual([]);
+  });
+
+  it('should throw TYPE_NOT_FOUND on read when only a legacy <name>.json exists', () => {
+    const { dataDir, store } = setup();
+    plantLegacyFiles(dataDir);
+
     expect(captureError(() => store.read(PROJECT, 'types', 'plan', '1.0')).code).toBe(
       'TYPE_NOT_FOUND',
     );
-    expect(store.write(PROJECT, 'types', 'plan', '1.0', plan)).toBe(true);
-
-    expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
-    for (const file of legacyFiles) expect(fs.readFileSync(file, 'utf8')).toBe(legacyBytes);
   });
-});
 
-describe('createDefinitionStore: erros', () => {
-  test.each([
+  it('should write the version over a legacy <name>.json without ever materializing the legacy file', () => {
+    const { dataDir, store } = setup();
+    const legacyFiles = plantLegacyFiles(dataDir);
+
+    const written = store.write(PROJECT, 'types', 'plan', '1.0', plan);
+
+    expect(written).toBe(true);
+    expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
+
+    for (const file of legacyFiles) expect(fs.readFileSync(file, 'utf8')).toBe(LEGACY_BYTES);
+  });
+
+  it.each([
     ['types', 'TYPE_NOT_FOUND'],
     ['relations', 'RELATION_NOT_FOUND'],
     ['gates', 'GATE_NOT_FOUND'],
   ] as const)(
-    'read de nome que nunca existiu em %s lança %s com unknown-name, sem caminho absoluto',
+    'should throw for a read of a never-existing name in %s with code %s, unknown-name and no absolute path',
     (kind, code) => {
       const { dataDir, store } = setup();
 
@@ -218,16 +278,17 @@ describe('createDefinitionStore: erros', () => {
       expect(error.details).toEqual([
         { path: '/name', code: 'unknown-name', message: 'definition name not found' },
       ]);
+
       expectNoLeak(error, dataDir);
     },
   );
 
-  test.each([
+  it.each([
     ['types', 'TYPE_NOT_FOUND', plan],
     ['relations', 'RELATION_NOT_FOUND', relation],
     ['gates', 'GATE_NOT_FOUND', gate],
   ] as const)(
-    'read de versão ausente em %s lança %s com unknown-version e as versões existentes, em ordem numérica',
+    'should throw for a read of a missing version in %s with code %s, unknown-version and the existing versions in numeric order',
     (kind, code, definition) => {
       const { dataDir, store } = setup();
       for (const version of ['1.10', '1.0', '1.2']) {
@@ -245,11 +306,12 @@ describe('createDefinitionStore: erros', () => {
           versions: ['1.0', '1.2', '1.10'],
         },
       ]);
+
       expectNoLeak(error, dataDir);
     },
   );
 
-  test('pasta do nome sem nenhuma versão é unknown-name, sem lista de versões', () => {
+  it('should throw unknown-name, without a list of versions, for a name folder without any version', () => {
     const { dataDir, store } = setup();
     fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
 
@@ -258,32 +320,32 @@ describe('createDefinitionStore: erros', () => {
     ]);
   });
 
-  test.each([
-    '',
-    '1',
-    '1.',
-    '1.0.0',
-    '01.0',
-    '1.07',
-    '1234567.0',
-    '1.-1',
-    '../1.0',
-    '1.0/../../x',
-    'a.b',
-  ])('versão malformada %j é recusada antes de qualquer I/O', (version) => {
-    const { dataDir, store } = setup();
+  it.each(MALFORMED_VERSIONS)(
+    'should refuse write of the malformed version %j before any I/O',
+    (version) => {
+      const { dataDir, store } = setup();
 
-    expect(captureError(() => store.write(PROJECT, 'types', 'plan', version, plan)).code).toBe(
-      'INVALID_INPUT',
-    );
-    expect(captureError(() => store.read(PROJECT, 'types', 'plan', version)).code).toBe(
-      'INVALID_INPUT',
-    );
-    expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
-  });
+      expect(captureError(() => store.write(PROJECT, 'types', 'plan', version, plan)).code).toBe(
+        'INVALID_INPUT',
+      );
+      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
+    },
+  );
 
-  test.each(['..', 'a/b', 'A', '', '.hidden'])(
-    'nome ou projeto %j que escapa do layout é recusado',
+  it.each(MALFORMED_VERSIONS)(
+    'should refuse read of the malformed version %j before any I/O',
+    (version) => {
+      const { dataDir, store } = setup();
+
+      expect(captureError(() => store.read(PROJECT, 'types', 'plan', version)).code).toBe(
+        'INVALID_INPUT',
+      );
+      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
+    },
+  );
+
+  it.each(ESCAPING_NAMES)(
+    'should refuse write when the project or the name is %j, which escapes the layout',
     (name) => {
       const { dataDir, store } = setup();
 
@@ -293,16 +355,34 @@ describe('createDefinitionStore: erros', () => {
       expect(captureError(() => store.write(PROJECT, 'types', name, '1.0', plan)).code).toBe(
         'INVALID_INPUT',
       );
+      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
+    },
+  );
+
+  it.each(ESCAPING_NAMES)(
+    'should refuse versions with the name %j that escapes the layout',
+    (name) => {
+      const { dataDir, store } = setup();
+
       expect(captureError(() => store.versions(PROJECT, 'types', name)).code).toBe('INVALID_INPUT');
+      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
+    },
+  );
+
+  it.each(ESCAPING_NAMES)(
+    'should refuse names with the project %j that escapes the layout',
+    (name) => {
+      const { dataDir, store } = setup();
+
       expect(captureError(() => store.names(name, 'types')).code).toBe('INVALID_INPUT');
       expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
     },
   );
 
-  test.each([
-    ['JSON inválido', '{nope'],
-    ['definição fora do schema', JSON.stringify({ name: 'x', kind: 'not-a-kind' })],
-  ])('arquivo de versão com %s lança INTERNAL sem o conteúdo', (_, content) => {
+  it.each([
+    ['invalid JSON', '{nope'],
+    ['a definition outside the schema', JSON.stringify({ name: 'x', kind: 'not-a-kind' })],
+  ])('should throw INTERNAL without the content for a version file with %s', (_, content) => {
     const { dataDir, store } = setup();
     const dir = versionsDir(dataDir, 'relations', 'approves');
     fs.mkdirSync(dir, { recursive: true });
@@ -312,15 +392,16 @@ describe('createDefinitionStore: erros', () => {
 
     expect(error.code).toBe('INTERNAL');
     expect(error.details[0]?.code).toBe('unreadable-definition');
+
     expectNoLeak(error, dataDir);
   });
 
-  test.each([
+  it.each([
     ['types', 'big-type', { type: 'object', description: 'x'.repeat(17_000) }],
     ['relations', 'approves', { ...relation, kind: 'not-a-kind' }],
     ['gates', 'plan-ready', { ...gate, questions: [] }],
   ] as const)(
-    'write de definição que o schema recusa (%s) lança INTERNAL e não grava nada',
+    'should throw INTERNAL and store nothing when write gets a definition the schema refuses (%s)',
     (kind, name, invalid) => {
       const { dataDir, store } = setup();
 
@@ -334,13 +415,15 @@ describe('createDefinitionStore: erros', () => {
           message: 'definition does not match its schema',
         },
       ]);
+
       expectNoLeak(error, 'x'.repeat(100));
+
       expect(store.versions(PROJECT, kind, name)).toEqual([]);
       expect(fs.existsSync(definitionFile(dataDir, PROJECT, kind, name, '1.0'))).toBe(false);
     },
   );
 
-  test('erro do fs vira IO_ERROR só com o errno em minúsculas, sem o caminho', () => {
+  it('should turn an fs error into IO_ERROR with only the lowercase errno and no path', () => {
     const { dataDir, store } = setup();
     // Um arquivo no lugar da pasta do projeto: o `mkdir` da escrita falha com ENOTDIR.
     fs.mkdirSync(dataRoot(dataDir), { recursive: true });
@@ -350,6 +433,7 @@ describe('createDefinitionStore: erros', () => {
 
     expect(error.code).toBe('IO_ERROR');
     expect(error.details).toEqual([{ path: '', code: 'enotdir', message: 'I/O failure' }]);
+
     expectNoLeak(error, dataDir);
   });
 });

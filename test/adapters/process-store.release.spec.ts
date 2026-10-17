@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs';
 import { LOCK_DIR, processPaths } from '../../src/adapters/fs/data-format.ts';
 import { createProcessStore } from '../../src/adapters/fs/process-store.ts';
@@ -6,10 +6,6 @@ import { HexlogError } from '../../src/errors.ts';
 import type { ProcessRef } from '../../src/ports.ts';
 import { emptyManifest } from '../fixtures/chain-line.ts';
 import { captureLog, createTempDir, errno, expectNoLeak } from '../helpers.ts';
-
-afterEach(() => {
-  jest.restoreAllMocks();
-});
 
 const ref: ProcessRef = { project: 'demo', process: 'proc-1' };
 
@@ -39,8 +35,12 @@ function failReleaseOnce(): void {
 const line = '{"n":1}\n';
 const nextLine = '{"n":2}\n';
 
-describe('ProcessStore.write: falha do release (M7)', () => {
-  test('só o try falha: o erro principal sai e nada é logado como release-failed', async () => {
+describe('ProcessStore.write', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('should throw the primary error and log nothing as release-failed when only the try fails (M7)', async () => {
     const { store, records } = setup();
     const primary = new HexlogError('INTERNAL', 'decide failed', []);
 
@@ -54,7 +54,7 @@ describe('ProcessStore.write: falha do release (M7)', () => {
     expect(records).not.toContainEqual(expect.objectContaining({ event: 'release-failed' }));
   });
 
-  test('só o release falha: o erro do release sai, a linha fica durável e o lock vira órfão', async () => {
+  it('should throw the release error, keep the line durable and leave the lock orphaned when only the release fails (M7)', async () => {
     const { store, records, dir, logFile } = setup();
     failReleaseOnce();
 
@@ -70,6 +70,12 @@ describe('ProcessStore.write: falha do release (M7)', () => {
     expect(fs.readFileSync(logFile, 'utf8')).toBe(line);
     expect(records).not.toContainEqual(expect.objectContaining({ event: 'release-failed' }));
     expect(fs.readdirSync(dir)).toContain(LOCK_DIR);
+  });
+
+  it('should append on the next write after the release failed, removing the orphan lock (M7)', async () => {
+    const { store, records, logFile } = setup();
+    failReleaseOnce();
+    await store.write(ref, () => ({ line, result: 'ok' })).catch((reason: unknown) => reason);
 
     await store.write(ref, () => ({ line: nextLine, result: 'ok' }));
 
@@ -77,7 +83,7 @@ describe('ProcessStore.write: falha do release (M7)', () => {
     expect(records).toContainEqual(expect.objectContaining({ event: 'lock-orphan-removed' }));
   });
 
-  test('os dois falham: o erro principal sai inalterado e o do release vai só ao log', async () => {
+  it('should throw the primary error unchanged and send the release error only to the log when both fail (M7)', async () => {
     const { store, records, dir, logFile } = setup();
     const primary = new HexlogError('INTERNAL', 'decide failed', []);
     failReleaseOnce();
@@ -89,10 +95,23 @@ describe('ProcessStore.write: falha do release (M7)', () => {
       .catch((reason: unknown) => reason);
 
     expect(error).toBe(primary);
+
     expectNoLeak(primary, 'EIO');
+
     expect(fs.readFileSync(logFile, 'utf8')).toBe('');
     expect(records).toContainEqual({ level: 'error', event: 'release-failed', code: 'EIO' });
     expect(JSON.stringify(records)).not.toContain(dir);
+  });
+
+  it('should write the next line after the release and the try both failed (M7)', async () => {
+    const { store, logFile } = setup();
+    const primary = new HexlogError('INTERNAL', 'decide failed', []);
+    failReleaseOnce();
+    await store
+      .write(ref, () => {
+        throw primary;
+      })
+      .catch((reason: unknown) => reason);
 
     await store.write(ref, () => ({ line, result: 'ok' }));
 
