@@ -6,6 +6,11 @@ import n from 'eslint-plugin-n';
 import tseslint from 'typescript-eslint';
 import { boundaryBlocks } from './eslint.boundaries.js';
 
+// Padrão de escrita dos specs (docs/directives/convencoes.md, "Escrita dos testes").
+const ACCENT = '[À-ÖØ-öø-ÿ]';
+const ID_LABEL =
+  '\\b(?:M|N|S|B|I|C|Q|QN|P|TF|TM|TB|SL|SE|E|G|L|f)\\d+\\b|\\b(?:R|U)-\\d+\\b|\\bD-\\d{2}\\b|\\bDE-\\d{2}\\b';
+
 export default defineConfig(
   {
     ignores: [
@@ -13,6 +18,7 @@ export default defineConfig(
       'coverage/**',
       'reports/**',
       '.stryker-tmp/**',
+      '.ignore/**',
       'graphify-out/**',
       '.gitnexus/**',
       '.omc/**',
@@ -44,6 +50,37 @@ export default defineConfig(
           ],
         },
       ],
+    },
+  },
+  {
+    // Só specs: test/cleanup.ts tem afterAll no topo.
+    files: ['test/**/*.spec.ts'],
+    ignores: [
+      'test/shared/**',
+      'test/adapters/**',
+      'test/queries/**',
+      'test/commands/**',
+      'test/mcp/**',
+      'test/*.spec.ts',
+    ],
+    rules: {
+      'jest/consistent-test-it': ['error', { fn: 'it', withinDescribe: 'it' }],
+      'jest/valid-title': [
+        'error',
+        {
+          mustMatch: { it: ['^should ', 'it titles start with "should "'] },
+          mustNotMatch: {
+            describe: [
+              `${ID_LABEL}|${ACCENT}`,
+              'describe titles carry no ID label and no accented letter',
+            ],
+            it: [ACCENT, 'titles are in English'],
+          },
+        },
+      ],
+      'jest/max-nested-describe': ['error', { max: 2 }],
+      'jest/require-top-level-describe': 'error',
+      'jest/padding-around-expect-groups': 'error',
     },
   },
   {
