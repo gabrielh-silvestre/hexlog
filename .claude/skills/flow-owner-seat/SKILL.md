@@ -20,7 +20,7 @@ Use só as que a pergunta pedir, da mais barata para a mais cara:
 2. **Pesquisa web:** `oh-my-claudecode:document-specialist` com `model: "sonnet"`.
 3. **Júri:** skill `the-jury`, jurados em `sonnet`, só quando a evidência local não decide.
 
-Todo subagente aninhado leva `model` explícito, `name` do pool de `AGENT-NAMES.md` (config global do dono, em `~/.claude/`; sem ele, só `{tipo}-{slug}`) no padrão `{nome}-{tipo}-{slug}` e o pedido de uma mensagem de conclusão com o resumo. Quem o lança espera essa mensagem antes de seguir: o retorno pode chegar pela caixa de mensagens, não inline.
+Todo subagente aninhado leva `model` explícito, `name` do pool de `AGENT-NAMES.md` (config global do dono, em `~/.claude/`; sem ele, só `{tipo}-{slug}`) no padrão `{nome}-{tipo}-{slug}` e o pedido de uma mensagem de conclusão com o resumo. Quem o lança espera essa mensagem antes de seguir: o retorno pode chegar pela caixa de mensagens, não inline. Depois dela, encerra o subagente por `TaskStop`, nunca antes.
 
 ## Crivo do júri
 
