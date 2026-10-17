@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import fc from 'fast-check';
 import { anchor, hashLink, type Expected, type Link } from '../../src/domain/chain.ts';
 import { checkExpectedHead, formatLine, verifyProcess } from '../../src/shared/loader.ts';
@@ -34,10 +34,12 @@ const cut = fc
   .integer({ min: 1, max: 20 })
   .chain((total) => fc.tuple(fc.constant(total), fc.integer({ min: 1, max: total })));
 
-describe('checkExpectedHead: propriedades', () => {
-  test('a âncora do processo é sempre aceita, com ou sem elo no log', () => {
+describe('checkExpectedHead', () => {
+  it('should always accept the process anchor, with or without a link in the log', () => {
+    const totals = fc.integer({ min: 0, max: 20 });
+
     fc.assert(
-      fc.property(fc.integer({ min: 0, max: 20 }), (total) => {
+      fc.property(totals, (total) => {
         const verified = verifiedOf(chainOf(total));
 
         expect(checkExpectedHead(verified, anchor(manifest))).toBe(verified.chain);
@@ -45,7 +47,7 @@ describe('checkExpectedHead: propriedades', () => {
     );
   });
 
-  test('o head de antes de apagar um sufixo não vazio do log vira head-not-found', () => {
+  it('should turn the head from before dropping a non-empty suffix of the log into head-not-found', () => {
     fc.assert(
       fc.property(cut, ([total, dropped]) => {
         const links = chainOf(total);
@@ -60,7 +62,7 @@ describe('checkExpectedHead: propriedades', () => {
     );
   });
 
-  test('o hash de qualquer prefixo do log segue aceito depois de o log crescer', () => {
+  it('should keep accepting the hash of any prefix of the log after the log grows', () => {
     fc.assert(
       fc.property(cut, ([total, prefix]) => {
         const links = chainOf(total);

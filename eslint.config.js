@@ -56,7 +56,6 @@ export default defineConfig(
     // Só specs: test/cleanup.ts tem afterAll no topo.
     files: ['test/**/*.spec.ts'],
     ignores: [
-      'test/shared/**',
       'test/adapters/**',
       'test/queries/**',
       'test/commands/**',
