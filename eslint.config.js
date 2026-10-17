@@ -55,7 +55,7 @@ export default defineConfig(
   {
     // Só specs: test/cleanup.ts tem afterAll no topo.
     files: ['test/**/*.spec.ts'],
-    ignores: ['test/commands/**', 'test/mcp/**', 'test/*.spec.ts'],
+    ignores: ['test/mcp/**', 'test/*.spec.ts'],
     rules: {
       'jest/consistent-test-it': ['error', { fn: 'it', withinDescribe: 'it' }],
       'jest/valid-title': [
