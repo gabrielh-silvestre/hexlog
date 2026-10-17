@@ -56,7 +56,7 @@
   "disableBail": true,
   "checkers": ["typescript"],
   "tsconfigFile": "tsconfig.json",
-  "concurrency": 4,
+  "concurrency": "40%",
   "reporters": ["clear-text", "progress", "html", "json"],
   "incremental": false,
   "thresholds": {
