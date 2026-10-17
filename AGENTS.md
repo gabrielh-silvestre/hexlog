@@ -20,9 +20,11 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `cliff.toml` | Config do `git-cliff`: mapeia os Conventional Commits para as seções do changelog e descarta os tipos internos |
 | `README.md` | Porta de entrada enxuta: o que é, instalação, exemplo mínimo, como funciona e índice de `docs/` (a referência de tools, dados, migração e instalação avançada mora em `docs/`) |
 | `CLAUDE.md` | Importa este `AGENTS.md` e as diretrizes de `docs/directives/` para toda sessão e todo subagente |
+| `CONTEXT-MAP.md` | Mapa dos glossários: liga o contexto do produto (`CONTEXT.md`) ao do fluxo de desenvolvimento (`.claude/CONTEXT.md`) e descreve a relação entre eles |
+| `CONTEXT.md` | Glossário do produto: o log append-only de registros que o servidor MCP grava, encadeia e consulta; termo canônico em pt-BR com o identificador do código ou da tool ao lado |
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
-| `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (`flow-hooks.ts`, `flow-command.ts` e `flow-sync.ts` são hooks; `flow-report.ts` não é hook: é o relatório que `flow-run` e `flow-audit` chamam e precisa de `node_modules`), as skills locais em `skills/` e `workflows/` (`friction-mining-run.js`). Fica fora do bundle do produto |
+| `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (`flow-hooks.ts`, `flow-command.ts` e `flow-sync.ts` são hooks; `flow-report.ts` não é hook: é o relatório que `flow-run` e `flow-audit` chamam e precisa de `node_modules`), as skills locais em `skills/` e `workflows/` (`friction-mining-run.js`) e `CONTEXT.md`, o glossário do fluxo de desenvolvimento. Fica fora do bundle do produto |
 | `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 9 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. Não há `.hexlog/flow.md` neste repositório: o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
 
 ## Subdirectories
