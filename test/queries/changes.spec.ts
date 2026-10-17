@@ -10,6 +10,14 @@ const supersedes = (to: RecordId) => ({ to, kind: 'supersedes' as const });
 const revokes = (to: RecordId) => ({ to, kind: 'revokes' as const });
 
 describe('QueryService.queryRecords', () => {
+  it('should fall back to any of the terms when no record matches all of them', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    const fallback = await registerOne('run-1', note('banana laranja'), 1);
+
+    expect(idsOf(query({ process: 'run-1', text: 'banana uva' }))).toEqual([fallback]);
+  });
+
   describe('with changesSince', () => {
     it('should describe the difference from the previous snapshot with entered and left, with the reason (SL7)', async () => {
       const { createProcess, register, registerOne, query } = querySetup();
@@ -112,9 +120,6 @@ describe('QueryService.queryRecords', () => {
       createProcess('run-1');
       const fallback = await registerOne('run-1', note('banana laranja'), 1);
       const snapshot = query({ process: 'run-1', text: 'banana uva' });
-
-      expect(idsOf(snapshot)).toEqual([fallback]);
-
       const exact = await registerOne('run-1', note('banana uva'), 2);
 
       const page = query({ process: 'run-1', text: 'banana uva', changesSince: snapshot.marker });
@@ -159,9 +164,8 @@ describe('QueryService.queryRecords', () => {
       expect(at(other.details, 0).code).toBe('filters-mismatch');
     });
 
-    // Exceção estreita à SL2 (ADR 0008, decisão 3): o log é lido duas vezes só na 1ª página com
-    // `changesSince`, uma para o estado de agora e outra para o do marcador.
-    it('should read the log twice only on the first page, once on the others (SL7)', async () => {
+    /** Serviço que conta as leituras do log, com 3 registros novos desde o marcador e páginas de 2. */
+    async function countingService() {
       const { dataDir, createProcess, register, query } = querySetup();
       createProcess('run-1');
       const snapshot = query({ process: 'run-1' });
@@ -170,11 +174,24 @@ describe('QueryService.queryRecords', () => {
       const read = jest.spyOn(stores.store, 'read');
       const counted = createQueryService({ ...stores, search: createSearchIndex() });
       const input = { project: PROJECT, process: 'run-1', limit: 2, changesSince: snapshot.marker };
-      const first = counted.queryRecords(input);
+      return { read, counted, input };
+    }
+
+    // Exceção estreita à SL2 (ADR 0008, decisão 3): o log é lido duas vezes só na 1ª página com
+    // `changesSince`, uma para o estado de agora e outra para o do marcador.
+    it('should read the log twice on the first page (SL7)', async () => {
+      const { read, counted, input } = await countingService();
+
+      counted.queryRecords(input);
 
       expect(read).toHaveBeenCalledTimes(2);
+    });
 
+    it('should read the log once on the pages after the first (SL7)', async () => {
+      const { read, counted, input } = await countingService();
+      const first = counted.queryRecords(input);
       read.mockClear();
+
       counted.queryRecords({ ...input, cursor: cursorOf(first) });
 
       expect(read).toHaveBeenCalledTimes(1);

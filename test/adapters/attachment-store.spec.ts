@@ -120,20 +120,22 @@ describe('createAttachmentStore', () => {
     jest.restoreAllMocks();
   });
 
-  it.each(SAMPLES)(
-    'should store the exact bytes and hash and round-trip the text identically for %s',
-    (_name, text) => {
-      const result = store.putText(PROJECT, text);
+  it.each(SAMPLES)('should store the exact bytes and hash for %s', (_name, text) => {
+    const result = store.putText(PROJECT, text);
 
-      expect(result).toEqual({
-        hash: sha256hex(Buffer.from(text, 'utf8')),
-        bytes: Buffer.byteLength(text),
-        deduplicated: false,
-      });
-      expect(fs.readFileSync(blobPath(result.hash))).toEqual(Buffer.from(text, 'utf8'));
-      expect(store.read(PROJECT, result.hash)).toBe(text);
-    },
-  );
+    expect(result).toEqual({
+      hash: sha256hex(Buffer.from(text, 'utf8')),
+      bytes: Buffer.byteLength(text),
+      deduplicated: false,
+    });
+    expect(fs.readFileSync(blobPath(result.hash))).toEqual(Buffer.from(text, 'utf8'));
+  });
+
+  it.each(SAMPLES)('should read back the stored text identically for %s', (_name, text) => {
+    const { hash } = store.putText(PROJECT, text);
+
+    expect(store.read(PROJECT, hash)).toBe(text);
+  });
 
   it('should write the blob with mode 0o600 and the folder with 0o700, leaving no temporary file', () => {
     const { hash } = store.putText(PROJECT, 'modo');

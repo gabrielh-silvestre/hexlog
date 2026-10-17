@@ -1,7 +1,8 @@
-import { describe, expect, it } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 import { median } from 'es-toolkit';
 import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { ProcessRef, SearchIndex } from '../../src/ports.ts';
+import type { HexRecord } from '../../src/domain/record.ts';
 import { writeRecordsCorpus } from '../fixtures/records-corpus.ts';
 import { createTempDir } from '../helpers.ts';
 
@@ -19,11 +20,15 @@ const WARM_MAX_CEILING_MS = 500;
 const PROCESS: ProcessRef = { project: 'proj', process: 'proc' };
 
 describe('createSearchIndex', () => {
+  let records: HexRecord[];
+
   // `writeRecordsCorpus` grava no disco para os outros specs; aqui só `records` importa e a
   // medição não lê nada de volta.
-  const { records } = writeRecordsCorpus(createTempDir('search-budget'), {
-    recordsPerProcess: SIZE,
-  });
+  beforeAll(() => {
+    ({ records } = writeRecordsCorpus(createTempDir('search-budget'), {
+      recordsPerProcess: SIZE,
+    }));
+  }, 60_000);
 
   function timeSearch(index: SearchIndex): number {
     const start = performance.now();

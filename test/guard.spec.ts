@@ -338,13 +338,15 @@ describe('applyGuard', () => {
       return (parseJsonc(text) as { hooks: { PreToolUse: unknown } }).hooks.PreToolUse;
     }
 
-    it.each([
+    const misplacedEntries = [
       {
         name: 'a wider matcher',
         entry: { matcher: 'Bash|Edit|Write', hooks: [foreignHook, hexlogHook] },
       },
       { name: 'no matcher', entry: { hooks: [hexlogHook, foreignHook] } },
-    ])(
+    ];
+
+    it.each(misplacedEntries)(
       'should move the hexlog hook to its own ^Bash$ entry and keep the foreign entry untouched with $name (M19, M1)',
       ({ entry }) => {
         const settings = sharedSettings(entry);
@@ -359,6 +361,14 @@ describe('applyGuard', () => {
         ]);
         expect(repaired).toContain('// comment that must survive');
         expect(verifyFake(repaired)).toEqual({ ok: true, missing: [] });
+      },
+    );
+
+    it.each(misplacedEntries)(
+      'should leave the settings alone when the guard runs again after moving the hexlog hook with $name (M19, M1)',
+      ({ entry }) => {
+        const repaired = applyGuard(sharedSettings(entry), fakeExpected, noneExist).text;
+
         expect(applyGuard(repaired, fakeExpected, noneExist).text).toBe(repaired);
       },
     );

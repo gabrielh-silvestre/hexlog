@@ -99,12 +99,17 @@ describe('QueryService.verifyChain', () => {
       fs.writeFileSync(file, JSON.stringify(omit(manifest, ['lineageInheritance'])));
     };
 
-    it('should break the chain when the flag is removed from a new process manifest', async () => {
-      const { dataDir, registerOne, verify } = verifySetup();
+    it('should verify a new process manifest that carries the flag', async () => {
+      const { registerOne, verify } = verifySetup();
       await registerOne('run-1', note('a'));
 
       expect(verify().ok).toBe(true);
+    });
 
+    it('should break the chain when the flag is removed from a new process manifest', async () => {
+      const { dataDir, registerOne, verify } = verifySetup();
+      await registerOne('run-1', note('a'));
+      verify();
       withoutFlag(dataDir);
 
       expect(verify().ok).toBe(false);

@@ -595,7 +595,7 @@ describe('register', () => {
       expect(logger).toHaveBeenCalledTimes(1);
     });
 
-    it('should return replayed on the resend even when a new attachment now matches the unmarked-attachment guard (D-06)', async () => {
+    it('should refuse the resend without a key when a new attachment now matches the unmarked-attachment guard (D-06)', async () => {
       const { register, attachments } = setup();
       const hash = sha256hex('mais tarde');
       const batch = [{ type: 'doc', target: 'run.doc', data: { note: hash } }];
@@ -603,6 +603,16 @@ describe('register', () => {
       attachments.set(hash, 'ok');
 
       await expect(register(batch)).rejects.toMatchObject({ code: 'INVALID_RECORD' });
+    });
+
+    it('should return replayed on the resend even when a new attachment now matches the unmarked-attachment guard (D-06)', async () => {
+      const { register, attachments } = setup();
+      const hash = sha256hex('mais tarde');
+      const batch = [{ type: 'doc', target: 'run.doc', data: { note: hash } }];
+      await register(batch, { key: 'k' });
+      attachments.set(hash, 'ok');
+
+      await refusal(register(batch));
 
       const again = await register(batch, { key: 'k' });
 

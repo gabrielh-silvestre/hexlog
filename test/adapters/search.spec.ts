@@ -92,13 +92,13 @@ describe('createSearchIndex', () => {
   });
 
   it('should not index a term that is empty after stripping the accent', () => {
-    const record = makeRecord({ data: { text: '́ webhook' } });
+    const record = makeRecord({ data: { text: '\u0301 webhook' } });
 
-    expect(search([record], '́')).toEqual([]);
+    expect(search([record], '\u0301')).toEqual([]);
   });
 
   it('should keep the rest of the record searchable when a term vanishes after stripping the accent', () => {
-    const record = makeRecord({ data: { text: '́ webhook' } });
+    const record = makeRecord({ data: { text: '\u0301 webhook' } });
 
     expect(search([record], 'webhook')).toEqual([record.id]);
   });
@@ -240,7 +240,7 @@ describe('createSearchIndex', () => {
   // Garante que `terms` nunca recusa texto que o motor casaria: sem termo a busca é vazia, e com
   // termo o registro que contém o próprio texto é achado.
   it('should find a record by its own text exactly when the text has terms', () => {
-    const symbols = fc.string({ unit: fc.constantFrom(...'aB9é!&:§ ,.=+$-́ 😀'), maxLength: 12 });
+    const symbols = fc.string({ unit: fc.constantFrom(...'aB9é!&:§ ,.=+$-́ 😀'), maxLength: 12 });
     const texts = fc.oneof(symbols, fc.string({ unit: 'grapheme', maxLength: 12 }));
     const index = createSearchIndex();
 
