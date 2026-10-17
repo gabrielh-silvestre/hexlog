@@ -1,8 +1,43 @@
 import { describe, expect, it } from '@jest/globals';
-import { sliceChars } from '../../src/shared/pages.ts';
+import { isHighSurrogate, isLowSurrogate, sliceChars } from '../../src/shared/pages.ts';
 
 // '😀' ocupa duas unidades UTF-16 (um par surrogate).
 const EMOJI = '\u{1F600}';
+
+describe('isHighSurrogate', () => {
+  it.each([
+    ['0xd800', 0xd800],
+    ['0xdbff', 0xdbff],
+  ])('should accept %s, an edge of the high surrogate range', (_label, code) => {
+    expect(isHighSurrogate(code)).toBe(true);
+  });
+
+  it.each([
+    ['0xd7ff', 0xd7ff],
+    ['0xdc00', 0xdc00],
+    ['NaN', NaN],
+  ])('should refuse %s, outside the high surrogate range', (_label, code) => {
+    expect(isHighSurrogate(code)).toBe(false);
+  });
+});
+
+describe('isLowSurrogate', () => {
+  it.each([
+    ['0xdc00', 0xdc00],
+    ['0xdfff', 0xdfff],
+  ])('should accept %s, an edge of the low surrogate range', (_label, code) => {
+    expect(isLowSurrogate(code)).toBe(true);
+  });
+
+  it.each([
+    ['0xd7ff', 0xd7ff],
+    ['0xdbff', 0xdbff],
+    ['0xe000', 0xe000],
+    ['NaN', NaN],
+  ])('should refuse %s, outside the low surrogate range', (_label, code) => {
+    expect(isLowSurrogate(code)).toBe(false);
+  });
+});
 
 describe('sliceChars', () => {
   it('should cut exactly at offset + limit for text without a surrogate', () => {
@@ -31,6 +66,10 @@ describe('sliceChars', () => {
 
   it('should not step back for a surrogate pair at the end of the text, cut exactly at it', () => {
     expect(sliceChars(`ab${EMOJI}`, 0, 4)).toEqual({ text: `ab${EMOJI}`, nextOffset: null });
+  });
+
+  it('should keep a lone high surrogate that ends the text, since the cut is the end', () => {
+    expect(sliceChars('ab\ud83d', 0, 3)).toEqual({ text: 'ab\ud83d', nextOffset: null });
   });
 
   it.each([1, 2, 3, 5])(
