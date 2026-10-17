@@ -1,6 +1,8 @@
 // Relatório das decisões de um trabalho cuja base merece revisão: `node .claude/hooks/flow-report.ts
-// <slug> [<base>]`. Só aponta, imprime e sai sempre 0; quem corrige é a skill `flow-run`. Só
-// builtins do Node, sem import fora de `.claude/hooks/`. Lê o log apenas pela exportação oficial
+// <slug> [<base>]`. Motivos: `only-objective`, `only-sentinel`, `doc-amended`, `critical-gap` (freio
+// do aval da cadeira do dono, segura o `mark`), `critical-gap-review` (só pede o julgamento da
+// review, não segura o `mark`) e `rests-on-simulated`. Só aponta, imprime e sai sempre 0; quem
+// corrige é a skill `flow-run`. Só builtins do Node, sem import fora de `.claude/hooks/`. Lê o log apenas pela exportação oficial
 // (`scripts/export.ts` em processo filho), nunca o diretório de dados; por isso precisa de
 // `node_modules`, ao contrário do `flow-hooks.ts`.
 // A entrada de `allow` (`Bash(node .claude/hooks/flow-report.ts *)`) aceita argumento livre, então
@@ -19,8 +21,22 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const BASE = /^[\w./-]+$/;
 const USAGE = 'usage: node .claude/hooks/flow-report.ts <slug> [<base>]';
 
-type Relation = { kind: string; as?: string; to?: string };
-type Row = { id: string; type?: string; target: string; in: Relation[]; out: Relation[] };
+const CRITICAL_CLASS = /^Class: critical\b/;
+const CRITICAL_RULE = /; rule: (\S+)/;
+const APPROVED_ORIGINS = new Set(['human', 'simulated-approved']);
+
+type Relation = { kind: string; as?: string; to?: string; from?: string; current?: boolean };
+type Row = {
+  id: string;
+  type?: string;
+  target: string;
+  at?: string;
+  data?: Record<string, unknown>;
+  in: Relation[];
+  out: Relation[];
+};
+/** Docs alterados no diff contra o merge-base e o instante do último commit da base..HEAD que tocou um deles. */
+type Amendments = { docs: Set<string>; committedAt: (file: string) => number | undefined };
 
 const warn = (message: string): void => void process.stderr.write(`flow-report: ${message}\n`);
 
@@ -97,17 +113,35 @@ function uncitedReason(
   return `only-${only === SENTINEL ? 'sentinel' : 'objective'}: uncited=${shown}${rest}`;
 }
 
-/** Docs de `docs/directives/` alterados no diff contra o merge-base com `base`; `undefined` se o git falhar. */
-function amendedDocs(base: string): Set<string> | undefined {
+/** Alterações em `docs/directives/` contra o merge-base com `base`; `undefined` se o git falhar. */
+function amendments(base: string): Amendments | undefined {
   const mergeBase = tryGit(process.cwd(), ['merge-base', 'HEAD', base]);
   // Saída vazia do merge-base é falha, nunca "diff vazio".
   const diff = mergeBase ? tryGit(process.cwd(), ['diff', '--name-only', mergeBase]) : undefined;
-  if (diff === undefined) {
+  if (!mergeBase || diff === undefined) {
     warn(`git: no merge-base between HEAD and "${base}", doc-amended skipped`);
     return undefined;
   }
+  const committedAt = (file: string): number | undefined => {
+    const date = tryGit(process.cwd(), [
+      'log',
+      '-1',
+      '--format=%cI',
+      `${mergeBase}..HEAD`,
+      '--',
+      file,
+    ]);
+    const time = Date.parse(date ?? '');
+    return Number.isNaN(time) ? undefined : time;
+  };
   // ponytail: arquivo novo não rastreado fica fora do diff; versionar antes de rodar
-  return new Set(diff.split('\n'));
+  return { docs: new Set(diff.split('\n')), committedAt };
+}
+
+/** `docs/directives/<doc>.md` de um target `directives.<doc>.<regra>`. */
+function docOf(target: string): string | undefined {
+  const doc = /^directives\.([^.]+)\./.exec(target)?.[1];
+  return doc === undefined ? undefined : `docs/directives/${doc}.md`;
 }
 
 function amendedReasons(
@@ -117,17 +151,89 @@ function amendedReasons(
 ): string[] {
   const reasons = relationsOf(row, 'anchored-in').flatMap((relation) => {
     const target = targetOf(relation.to ?? '');
-    const doc = target?.split('.')[1];
-    const file = `docs/directives/${doc ?? ''}.md`;
-    return target !== undefined && doc !== undefined && docs?.has(file) === true
+    const file = target === undefined ? undefined : docOf(target);
+    return target !== undefined && file !== undefined && docs?.has(file) === true
       ? [`doc-amended: ${file} (${target})`]
       : [];
   });
   return [...new Set(reasons)];
 }
 
+/** `answeredBy` de uma premissa; `undefined` para outro tipo, premissa anterior ao campo ou linha ausente. */
+function answeredByOf(row: Row | undefined): string | undefined {
+  const value = row?.type === 'premise' ? row.data?.answeredBy : undefined;
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Freio do aval: lacuna de classe crítica (literal `Class: critical; rule: <target>` no `context`). */
+function criticalGapReasons(
+  gap: Row,
+  byId: Map<string, Row>,
+  amended: Amendments | undefined,
+  targetOf: (id: string) => string | undefined,
+): string[] {
+  const context = typeof gap.data?.context === 'string' ? gap.data.context : '';
+  if (!CRITICAL_CLASS.test(context)) return [];
+  const closers = gap.in.filter(
+    (relation) =>
+      (relation.as === 'fills-gap' || relation.as === 'closes-gap') && relation.current === true,
+  );
+  if (closers.length === 0) return ['critical-gap: open, approval pending'];
+
+  const reasons = closers.flatMap(({ from = '' }) => {
+    const answeredBy = answeredByOf(byId.get(from));
+    const by = `closed by ${targetOf(from) ?? from}`;
+    if (answeredBy === undefined) return [`critical-gap-review: ${by} (answeredBy=none)`];
+    return APPROVED_ORIGINS.has(answeredBy)
+      ? []
+      : [`critical-gap: ${by} (answeredBy=${answeredBy})`];
+  });
+
+  const rule = CRITICAL_RULE.exec(context)?.[1];
+  const file = rule === undefined ? undefined : docOf(rule);
+  if (file === undefined) {
+    reasons.push('critical-gap: rule doc unknown');
+  } else if (amended !== undefined && !amended.docs.has(file)) {
+    reasons.push(`critical-gap: ${file} not in the diff`);
+  } else if (amended !== undefined) {
+    // Emenda posterior ao aval: o texto avalizado pode não ser mais o do doc.
+    const committedAt = amended.committedAt(file);
+    const amendedAfterApproval = closers.some(({ from = '' }) => {
+      const closer = byId.get(from);
+      return (
+        committedAt !== undefined &&
+        APPROVED_ORIGINS.has(answeredByOf(closer) ?? '') &&
+        Date.parse(closer?.at ?? '') < committedAt
+      );
+    });
+    if (amendedAfterApproval) {
+      reasons.push(`critical-gap: doc amended after the approval (${file})`);
+    }
+  }
+  return reasons;
+}
+
+/** `decision` apoiada em premissa `simulated` que nenhuma `simulated-approved` vigente deriva; a de classe comum (com `fills-gap`) já fechou a lacuna e fica de fora. */
+function simulatedReasons(row: Row, byId: Map<string, Row>): string[] {
+  return relationsOf(row, 'rests-on').flatMap(({ to = '' }) => {
+    const premise = byId.get(to);
+    if (premise === undefined || answeredByOf(premise) !== 'simulated') return [];
+    if (relationsOf(premise, 'fills-gap').length > 0) return [];
+    const approved = premise.in.some(
+      (relation) =>
+        relation.kind === 'derivesFrom' &&
+        relation.current === true &&
+        answeredByOf(byId.get(relation.from ?? '')) === 'simulated-approved',
+    );
+    return approved ? [] : [`rests-on-simulated: ${premise.target} has no simulated-approved`];
+  });
+}
+
+const lineOf = (row: Row, reasons: string[]): string[] =>
+  reasons.length > 0 ? [`${row.id}\t${row.target}\t${reasons.join('; ')}`] : [];
+
 function report(slug: string, base: string): string[] {
-  const rows = exportRows(slug, 'id,type,target,in,out');
+  const rows = exportRows(slug, 'id,type,target,at,data,in,out');
   const current = rows.filter(isCurrent);
   const decisions = current.filter((row) => row.type === 'decision');
   const deliveryPremises = [
@@ -138,16 +244,23 @@ function report(slug: string, base: string): string[] {
     ),
   ];
   const targetOf = createTargetOf(slug, rows);
-  const anchored = decisions.some((row) => relationsOf(row, 'anchored-in').length > 0);
-  const docs = anchored ? amendedDocs(base) : undefined;
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const amended = amendments(base);
 
-  const lines = decisions.flatMap((row) => {
-    const reasons = [
-      uncitedReason(citedTargets(row, targetOf), slug, deliveryPremises),
-      ...amendedReasons(row, docs, targetOf),
-    ].filter((reason) => reason !== undefined);
-    return reasons.length > 0 ? [`${row.id}\t${row.target}\t${reasons.join('; ')}`] : [];
-  });
+  const decisionLines = decisions.flatMap((row) =>
+    lineOf(
+      row,
+      [
+        uncitedReason(citedTargets(row, targetOf), slug, deliveryPremises),
+        ...amendedReasons(row, amended?.docs, targetOf),
+        ...simulatedReasons(row, byId),
+      ].filter((reason) => reason !== undefined),
+    ),
+  );
+  const gapLines = current
+    .filter((row) => row.type === 'gap')
+    .flatMap((gap) => lineOf(gap, criticalGapReasons(gap, byId, amended, targetOf)));
+  const lines = [...decisionLines, ...gapLines];
   if (lines.length === 0) return ['nothing to flag'];
   if (lines.length <= MAX_LINES) return lines;
   return [...lines.slice(0, MAX_LINES), `... ${lines.length - MAX_LINES} more omitted`];

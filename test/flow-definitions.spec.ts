@@ -17,6 +17,7 @@ import {
 import type { Defined } from '../src/commands/definition.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import { hashOfJcs, sha256hex } from '../src/domain/chain.ts';
+import { classifyTypeChange, type RecordType } from '../src/domain/definitions.ts';
 import type {
   GateEvaluation,
   ListResult,
@@ -372,7 +373,7 @@ describe('schemas and relations', () => {
     expectError(await writeBatch(WORK, [record]), 'INVALID_RECORD');
   });
 
-  test('a commit that is not a git-sha is refused with the format code at the field path', async () => {
+  test('a commit that is not a git-sha is refused with code format at the field path', async () => {
     const result = await writeBatch(WORK, [
       workRecord('verification', 'main', { ...verificationData('passed'), commit: 'HEAD' }),
     ]);
@@ -492,7 +493,7 @@ describe('schemas and relations', () => {
 });
 
 describe('gate pre-pr', () => {
-  test('fails without verification', async () => {
+  test('fails without a verification', async () => {
     expect(await passed('pre-pr')).toBe(false);
   });
 
@@ -513,7 +514,7 @@ describe('gate pre-pr', () => {
     expect(await passed('pre-pr')).toBe(false);
   });
 
-  test('fails with an URGENT finding lacking resolves-finding and passes with a decision that resolves it', async () => {
+  test('fails with an URGENT finding without resolves-finding and passes with a decision that resolves it', async () => {
     const directiveId = await seedDirective();
     await register(WORK, [workRecord('verification', 'main', verificationData('passed'))]);
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
@@ -536,7 +537,7 @@ describe('gate pre-pr', () => {
     expect(await passed('pre-pr')).toBe(true);
   });
 
-  test('a NORMAL finding does not block, and a raw answers from another type does not resolve the URGENT one', async () => {
+  test('a NORMAL finding does not block, and a raw answers of another type does not resolve the URGENT', async () => {
     await register(WORK, [workRecord('verification', 'main', verificationData('passed'))]);
     await registerOne(WORK, workRecord('finding', 'n', findingData('NORMAL')));
     expect(await passed('pre-pr')).toBe(true);
@@ -554,7 +555,7 @@ describe('gate gaps (directive or premise closes a gap)', () => {
   const closeWithDirective = (gapId: string) =>
     register(DIRECTIVES, [directiveItem('retries', 'v1', [{ to: gapId, as: 'closes-gap' }])]);
 
-  test('passes without any gap and fails with an open gap', async () => {
+  test('passes with no gap and fails with an open gap', async () => {
     expect(await passed('gaps')).toBe(true);
 
     await registerGap();
@@ -594,7 +595,7 @@ describe('gate gaps (directive or premise closes a gap)', () => {
 });
 
 describe('sync', () => {
-  test('(i) load of 60 rules in two pages and two batches, and the editorial edit only replaces the doc', async () => {
+  test('(i) loading 60 rules in two pages and two batches, and an editorial edit only swaps the doc', async () => {
     const rules = rulesOf(60);
 
     const load = await runSync(DIRECTIVES, 'fronteiras', 'v1', rules);
@@ -619,7 +620,7 @@ describe('sync', () => {
     );
   });
 
-  test('(i) without a hash change the result is up to date and has no batch', async () => {
+  test('(i) with no hash change the result is up to date and has no batch', async () => {
     await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(3));
 
     const again = await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(3));
@@ -627,7 +628,7 @@ describe('sync', () => {
     expect(again).toEqual({ upToDate: true, batches: [], warnings: [] });
   });
 
-  test('(ii) an intact rule is not superseded and the changed one gets a new record', async () => {
+  test('(ii) an untouched rule is not superseded and a changed one gets a new record', async () => {
     await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(2));
     const [untouched, changed] = [
       await currentDirective('r1', 'fronteiras'),
@@ -645,7 +646,7 @@ describe('sync', () => {
     expect((await currentDirective('r2', 'fronteiras')).id).not.toBe(changed.id);
   });
 
-  test('(iii) changed rule that closed a gap: with the copy the gate keeps passing', async () => {
+  test('(iii) a changed rule that closed a gap: with the copy the gate keeps passing', async () => {
     const gapId = await seedClosedGap();
     expect(await passed('gaps')).toBe(true);
 
@@ -749,7 +750,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('closes: a rule that already closes the gap generates no new record, and the copied edge is not duplicated', async () => {
+  test('closes: a rule that already closes the gap yields no new record, and the copied edge is not duplicated', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     const [firstGap, secondGap] = [await registerGap('a'), await registerGap('b')];
     await runSync(DIRECTIVES, 'convencoes', 'v2', closingRules(rulesOf(1), firstGap));
@@ -772,7 +773,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('(iv) a removed rule that closed a gap is revoked, warns, and the gate fails', async () => {
+  test('(iv) a removed rule that closed a gap is revoked, warns and the gate fails', async () => {
     const gapId = await seedClosedGap();
 
     const plan = await runSync(DIRECTIVES, 'convencoes', 'v3', rulesOf(1));
@@ -787,7 +788,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(false);
   });
 
-  test('(iv) a removed rule that did not close a gap generates no warning and does not affect the gate', async () => {
+  test('(iv) a removed rule that did not close a gap yields no warning and does not affect the gate', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(2));
     await registerGap();
 
@@ -826,7 +827,7 @@ describe('sync', () => {
     expect((await inputFor(DIRECTIVES, 'fronteiras', 'v2', null)).current?.removed).toBe(false);
   });
 
-  test('(v) a document that never had a sync and was deleted generates no batch', async () => {
+  test('(v) a document that never had a sync and was deleted yields no batch', async () => {
     expect(await runSync(DIRECTIVES, 'fantasma', null, null)).toEqual({
       upToDate: true,
       batches: [],
@@ -834,7 +835,7 @@ describe('sync', () => {
     });
   });
 
-  test('(vi) failure on the second batch, re-sync converges and the same batch resent is a replay', async () => {
+  test('(vi) failure on the second batch, a re-sync converges and the same batch resent is a replay', async () => {
     const rules = rulesOf(60);
     const plan = planSync(await inputFor(DIRECTIVES, 'fronteiras', 'v1', rules));
     await environment.ok('attach', { project: PROJECT, text: 'v1' });
@@ -962,7 +963,7 @@ describe('planSync invalid-path guard', () => {
     ['absolute', 'fronteiras', `/tmp/${docPath('fronteiras')}`],
     ['with ..', 'fronteiras', 'docs/directives/../x.md'],
     ['from another document', 'fronteiras', docPath('convencoes')],
-    ['with docSlug outside [a-z0-9-]', '../x', docPath('../x')],
+    ['with a docSlug outside [a-z0-9-]', '../x', docPath('../x')],
     ['absolute in estrategia', STRATEGY, `/tmp/${docPath(STRATEGY)}`],
     ['outside the pattern in estrategia', STRATEGY, 'docs/estrategia.md'],
   ])('path %s returns invalid-path with no batch', (_label, docSlug, path) => {
@@ -982,7 +983,7 @@ describe('planSync invalid-path guard', () => {
     expect(planSync(upToDate)).toEqual(refused);
   });
 
-  test('tombstone (extracted null) with an invalid path also returns invalid-path', () => {
+  test('a tombstone (extracted null) with an invalid path also returns invalid-path', () => {
     expect(planSync({ ...inputWith('fronteiras', ''), extracted: null })).toEqual(refused);
   });
 });
@@ -1007,7 +1008,7 @@ describe('two generations of the directives process', () => {
     expect(both.records).toHaveLength(2);
   });
 
-  test('a gap closed by generation 1 stays closed with generation 2 present; without the closure it fails', async () => {
+  test('a gap closed by generation 1 stays closed with generation 2 present; without the closing it fails', async () => {
     const gapId = await registerGap();
     await runSync(`${DIRECTIVES}-2`, 'convencoes', 'v1', rulesOf(1));
     expect(await passed('gaps')).toBe(false);
@@ -1069,6 +1070,44 @@ describe('premise and evidence', () => {
     expectError(await writeBatch(WORK, [workRecord('premise', 'bad', data)]), 'INVALID_RECORD');
   });
 
+  test.each(['human', 'simulated', 'simulated-approved'])(
+    'premise accepts answeredBy %s',
+    async (answeredBy) => {
+      const { records } = await register(WORK, [
+        workRecord('premise', 'a', { statement: 'ok', answeredBy }),
+      ]);
+
+      expect(records).toHaveLength(1);
+    },
+  );
+
+  test('premise rejects answeredBy outside the enum', async () => {
+    const result = await writeBatch(WORK, [
+      workRecord('premise', 'bad', { statement: 'ok', answeredBy: 'robot' }),
+    ]);
+
+    expectError(result, 'INVALID_RECORD');
+  });
+
+  test('premise without answeredBy stays valid', async () => {
+    const { records } = await register(WORK, [premise('a')]);
+
+    expect(records).toHaveLength(1);
+  });
+
+  test('adding the optional answeredBy to premise is a compatible change', () => {
+    const previous: RecordType = {
+      type: 'object',
+      properties: { statement: { type: 'string', minLength: 1, maxLength: 255 } },
+      required: ['statement'],
+      additionalProperties: false,
+    };
+
+    expect(classifyTypeChange(previous, fileBody('types', 'premise') as RecordType)).toBe(
+      'compatible',
+    );
+  });
+
   test('evidence accepts summary and source of an existing attachment', async () => {
     const source = await attachText();
 
@@ -1099,7 +1138,7 @@ describe('premise and evidence', () => {
   });
 
   describe('rests-on and raw derivesFrom', () => {
-    test('work decision cites a premise from directives-2, and the relation shows up in query', async () => {
+    test('a work decision cites a directives-2 premise, and the relation shows up in query', async () => {
       const premiseId = await seedPremise();
 
       const decisionId = await registerOne(
@@ -1158,7 +1197,7 @@ describe('premise and evidence', () => {
   describe('fills-gap and gate gaps', () => {
     const fillsGap = (gapId: string) => [{ to: gapId, as: 'fills-gap' }];
 
-    test('a premise registered before the gap and with no relation to it does not close it', async () => {
+    test('a premise recorded before the gap and with no relation to it does not close it', async () => {
       await register(WORK, [premise('early')]);
       expect(await passed('gaps')).toBe(true);
 
@@ -1176,7 +1215,7 @@ describe('premise and evidence', () => {
       expect(await passed('gaps')).toBe(true);
     });
 
-    test('a new premise registered after the gap, with the id, closes it', async () => {
+    test('a new premise recorded after the gap, with the id, closes it', async () => {
       const gapId = await registerGap();
       expect(await passed('gaps')).toBe(false);
 
@@ -1257,7 +1296,7 @@ describe('premise and evidence', () => {
   });
 
   describe('what the gate does not enforce', () => {
-    test('no_pending with resolvedBy derivesFrom from a premise only sees incoming relations', async () => {
+    test('no_pending with resolvedBy derivesFrom from a premise only sees an incoming relation', async () => {
       await environment.ok('define_gate', {
         project: PROJECT,
         name: 'decision-anchored',
@@ -1354,7 +1393,7 @@ describe('estrategia sync (premises)', () => {
     ).toEqual([{ kind: 'revokes', to: removed.id }]);
   });
 
-  test('closes and section do not change the result, not even with an up-to-date doc', async () => {
+  test('closes and section do not change the result, even with an up-to-date doc', async () => {
     await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
     const gapId = await registerGap();
     const noisy = premisesOf(1).map((rule) => ({ ...rule, section: 'Theme', closes: [gapId] }));
@@ -1386,7 +1425,7 @@ describe('estrategia sync (premises)', () => {
     expect(plan).toEqual({ upToDate: true, batches: [], warnings: [] });
   });
 
-  test('a convencoes doc in the same test keeps generating a directive with source and section', async () => {
+  test('a convencoes doc in the same test still generates directive with source and section', async () => {
     const strategy = await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
 
     const convencoes = await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
@@ -1398,7 +1437,7 @@ describe('estrategia sync (premises)', () => {
     });
   });
 
-  test('premise superseded by sync: query with scope project shows rests-on with current false', async () => {
+  test('a premise superseded by sync: query with scope project shows rests-on with current false', async () => {
     const premiseId = await seedPremise();
     await registerOne(WORK, {
       ...workRecord('decision', 'a', decisionData()),
@@ -1453,7 +1492,7 @@ describe('estrategia sync (premises)', () => {
     extracted: [],
   });
 
-  test('the real estrategia.md becomes a premise batch plus the doc and the second run is up to date', async () => {
+  test('the real estrategia.md becomes a batch of premises plus the doc and the second run is up to date', async () => {
     const text = fs.readFileSync(path.join(repoRoot, 'docs/directives/estrategia.md'), 'utf8');
     const count = scanPremises(text).premises.length;
 
@@ -1474,7 +1513,7 @@ describe('estrategia sync (premises)', () => {
     });
   }, 30_000);
 
-  test('a relative path is resolved from the repository root, with the cwd in another directory', () => {
+  test('a relative path resolves from the repository root, with the cwd in another directory', () => {
     const result = runHook(
       { ...inputForFile('docs/directives/estrategia.md'), extracted: [] },
       createTempDir('other-cwd'),
@@ -1517,7 +1556,7 @@ describe('estrategia sync (premises)', () => {
 
 describe('definition hashes', () => {
   test.each(KINDS.flatMap((kind) => namesIn(kind).map((name) => [kind, name] as const)))(
-    '%s/%s: the hash returned by define_* is the hashOfJcs of the body built from the file',
+    '%s/%s: the hash returned by define_* is the hashOfJcs of the assembled file body',
     (kind, name) => {
       expect(defined[`${kind}/${name}`]?.hash).toBe(hashOfJcs(definitionOf(kind, name)));
     },
@@ -1565,7 +1604,7 @@ describe('definition hashes', () => {
 });
 
 describe('rehearsal of a complete work', () => {
-  test('from opening to the two gates, with a gap closed by a new directive and a repeated sync', async () => {
+  test('from the opening to the two gates, with a gap closed by a new directive and a repeated sync', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     const directiveId = (await currentDirective('r1')).id;
     await register(WORK, [workRecord('opening', 'main', { ...opening(), sync: 'initial-load' })]);

@@ -87,7 +87,7 @@ const LINE_NUMBER_CITATION =
 /** Citação de linha em prosa ("linha 12", "linhas ~141"). */
 const LINE_PROSE_CITATION = /\blinhas?\s+~?\d+/i;
 
-describe('line citation regex (unit, over a string literal)', () => {
+describe('line citation regexes (unit, over a string literal)', () => {
   // literais montados por concatenação: o grep de aceite não pode achar citação neste arquivo
   test('LINE_NUMBER_CITATION matches file:N and file:N-M in any cited extension', () => {
     for (const citation of [
@@ -458,7 +458,7 @@ describe.each(skillCases)('SKILL.md × code coherence ($name)', ({ skillPath }) 
 });
 
 describe('real catalog extracted from the code', () => {
-  test(`src/mcp/tools/ registers exactly ${EXPECTED_TOOL_COUNT} tools, without repetition (TB5)`, () => {
+  test(`src/mcp/tools/ registers exactly ${EXPECTED_TOOL_COUNT} tools, with no repetition (TB5)`, () => {
     expect(registeredTools).toHaveLength(EXPECTED_TOOL_COUNT);
     expect(new Set(registeredTools).size).toBe(EXPECTED_TOOL_COUNT);
   });
@@ -526,8 +526,8 @@ describe('documentation does not cite line numbers', () => {
     const files = [
       ...markdownFilesUnder(path.join(repoRoot, 'skills')),
       ...markdownFilesUnder(path.join(repoRoot, 'docs')),
-      ...['friction-mining', 'flow-run', 'flow-gaps', 'flow-audit'].flatMap((name) =>
-        markdownFilesUnder(path.join(repoRoot, '.claude/skills', name)),
+      ...['friction-mining', 'flow-run', 'flow-gaps', 'flow-audit', 'flow-owner-seat'].flatMap(
+        (name) => markdownFilesUnder(path.join(repoRoot, '.claude/skills', name)),
       ),
       path.join(repoRoot, 'README.md'),
       ...agentsFilesUnder(repoRoot),

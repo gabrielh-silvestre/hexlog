@@ -46,3 +46,9 @@ As premissas atemporais ficam em [estrategia.md](estrategia.md), validadas pelo 
   - Validador do JSON de entrada do `sync-plan` e guarda `doc-path-mismatch` (hoje um `docSlug` errado mandaria `estrategia` ao ramo de `directive` sem erro; a skill deriva o slug do nome do arquivo e a auditoria detecta o caso).
   - Revisar a rota `direct` (ajuste pontual, só a premissa-objetivo derivada do pedido, sem validação).
   - Relação nomeada para `evidence`, se o `supports` solto ligar tipo errado.
+
+## Emendas datadas
+
+Um ADR aceito não é refeito: cada entrada abaixo diz o que mudou, por quê e quem decidiu.
+
+- **2026-10-16: a cadeira do dono emenda os itens 1, 3 (a 2ª condição), 5, 6, 8, 9 e 10 (decisão do dono, Gabriel Baldino).** O `autonomous` passa a ter um ocupante simulado para a lacuna, com aval humano no pré-PR na classe crítica. O que muda em cada item está em [adr-0012-cadeira-do-dono.md](adr-0012-cadeira-do-dono.md), na seção "Emendas aos ADRs 0010 e 0011".

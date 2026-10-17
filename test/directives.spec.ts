@@ -270,7 +270,9 @@ const SELECTION_TERMS =
   /amostr|estrato|sorteio|sprt|semente|\bsampling\b|\bstrat(um|a)\b|\bseed\b/i;
 const AUDIT_TERMS = /auditor|auditoria|\baudit/i;
 const FLOW_DOC = 'docs/directives/fluxo-hexlog.md';
-const FLOW_SKILLS = ['flow-run', 'flow-gaps', 'flow-audit'];
+const FLOW_SKILLS = ['flow-run', 'flow-gaps', 'flow-audit', 'flow-owner-seat'];
+// A cadeira do dono não conhece quem a ocupa nem o que ele registra.
+const OWNER_SEAT_FORBIDDEN_TERMS = /\b(ask|autonomous|critic|answeredBy|simulated|SendMessage)\b/;
 const DIRECTIVES_DOC_CITATION = /docs\/directives\/[\w.-]+\.md/g;
 
 const skillPath = (name: string): string => path.join(repoRoot, '.claude/skills', name, 'SKILL.md');
@@ -492,6 +494,72 @@ describe('local flow skills', () => {
     expect(cited).toContain(FLOW_DOC);
     expect(cited.filter((citation) => !fs.existsSync(path.join(repoRoot, citation)))).toEqual([]);
   });
+
+  test('the owner-seat skill does not know who occupies the seat', () => {
+    expect(fs.readFileSync(skillPath('flow-owner-seat'), 'utf8')).not.toMatch(
+      OWNER_SEAT_FORBIDDEN_TERMS,
+    );
+  });
+});
+
+// ---- cadeira do dono: os testes provam a presença da regra, não que a ação dispara ----
+
+const OWNER_SEAT_DOC = 'docs/directives/cadeira-do-dono.md';
+const OWNER_SEAT_BULLET_MAX_CHARS = 400;
+
+describe('owner seat rules in the doc and the entry skills', () => {
+  const ownerSeatDoc = (): string => fs.readFileSync(path.join(repoRoot, OWNER_SEAT_DOC), 'utf8');
+  const skill = (name: string): string => fs.readFileSync(skillPath(name), 'utf8');
+
+  test('every bullet of the owner seat doc fits in 400 characters', () => {
+    const tooLong = ownerSeatDoc()
+      .split('\n')
+      .filter((line) => line.startsWith('- ') && line.length > OWNER_SEAT_BULLET_MAX_CHARS);
+    expect(tooLong).toEqual([]);
+  });
+
+  test('the doc ends the critic only at the end of the work, with no `TaskStop`', () => {
+    expect(ownerSeatDoc()).toContain('O `critic` é encerrado só no fim do trabalho');
+    expect(ownerSeatDoc()).not.toContain('TaskStop');
+  });
+
+  test.each([
+    ['the doc', (): string => ownerSeatDoc()],
+    ['the flow-run skill', (): string => skill('flow-run')],
+  ])(
+    '%s says the simulated occupant does not sit without a pinned `answeredBy`',
+    (_label, read) => {
+      expect(read()).toContain('Sem `answeredBy` fixado o ocupante simulado não senta');
+    },
+  );
+
+  test('flow-run detects the occupant by `describe_type` and the Herdr environment', () => {
+    expect(skill('flow-run')).toContain('`describe_type` com `process`');
+    expect(skill('flow-run')).toContain('`HERDR_ENV`');
+  });
+
+  test('flow-run launches the durable critic, reads the neutral skill and closes the tool list', () => {
+    const run = skill('flow-run');
+    expect(run).toContain('## 6. Cadeira do dono');
+    expect(run).toContain('`Read` de `.claude/skills/flow-owner-seat/SKILL.md`');
+    expect(run).toContain('`query`, `describe_type`, `register`, `attach`, `read_attachment`');
+    expect(run).toContain('SendMessage');
+    expect(run).toContain('critic.md');
+    expect(run).toContain(OWNER_SEAT_DOC);
+  });
+
+  test.each([
+    ['the doc', (): string => ownerSeatDoc()],
+    ['the flow-run skill', (): string => skill('flow-run')],
+  ])('%s cites the subagent protocol', (_label, read) => {
+    expect(read()).toMatch(/protocolo do subagente/i);
+  });
+
+  test('flow-gaps keeps the human seat and says approval does not hold against a timeless premise', () => {
+    const gaps = skill('flow-gaps');
+    expect(gaps).toContain('O assento aqui é sempre humano');
+    expect(gaps).toContain('Aprovar não vale para contradição com premissa atemporal');
+  });
 });
 
 describe('local skills cite the strategy', () => {
@@ -501,15 +569,27 @@ describe('local skills cite the strategy', () => {
 });
 
 describe('ADR 0010 after the flow amendment', () => {
-  test('the last block of the file is the 2026-10-06 amendment', () => {
+  test('the last block of the file is the 2026-10-16 amendment', () => {
     const adr = fs.readFileSync(path.join(directivesDir, 'adr-0010-camada-sobre-omc.md'), 'utf8');
-    expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-06/);
+    expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-16/);
   });
 });
 
 describe('ADR 0011 of the strategic layer', () => {
   test.each(['Context', 'Decision', 'Consequences'])('has the "%s" section', (title) => {
     const adr = fs.readFileSync(path.join(directivesDir, 'adr-0011-camada-estrategica.md'), 'utf8');
+    expect(headingTitlesFrom(adr)).toContain(title);
+  });
+
+  test('the last block of the file is the 2026-10-16 amendment', () => {
+    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0011-camada-estrategica.md'), 'utf8');
+    expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-16/);
+  });
+});
+
+describe('ADR 0012 of the owner seat', () => {
+  test.each(['Context', 'Decision', 'Consequences'])('has the "%s" section', (title) => {
+    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0012-cadeira-do-dono.md'), 'utf8');
     expect(headingTitlesFrom(adr)).toContain(title);
   });
 });
