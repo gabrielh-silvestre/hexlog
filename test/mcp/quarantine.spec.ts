@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import type { CreateProcessResult, RegisterResult } from '../../src/commands/process.ts';
 import type { QueryResult } from '../../src/queries/query-service.ts';
 import { at, createTempDir } from '../helpers.ts';
@@ -17,17 +17,18 @@ const NOTE = {
 
 let environment: Environment;
 
-beforeEach(async () => {
+// Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
+const openEnvironment = async () => {
   environment = await createEnvironment();
   await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE });
   await environment.ok('define_relation', { project: PROJECT, name: 'approves', kind: 'supports' });
   await environment.ok('create_process', { project: PROJECT, process: 'run-1' });
   await environment.ok('create_process', { project: PROJECT, process: 'run-2' });
-});
+};
 
-afterEach(async () => {
+const closeEnvironment = async () => {
   await environment.close();
-});
+};
 
 const registerNote = (process: string, text: string, relations: unknown[] = []) =>
   environment.ok<RegisterResult>('register', {
@@ -54,11 +55,15 @@ function quarantine(process: string): string {
   return target;
 }
 
-describe('M21: runbook for quarantining a corrupted process (docs/dados.md)', () => {
-  test('moving the tampered process unlocks project scope, frees the name and discards the stale index', async () => {
+describe('query', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should serve project scope again, free the process name and drop the stale index after the tampered process is moved out', async () => {
     await registerNote('run-1', 'primeira');
     await registerNote('run-1', 'segunda');
     await registerNote('run-2', 'de outro processo');
+
     // Esquenta o índice de busca com o texto que vai sumir.
     expect(at((await query({ process: 'run-1', text: 'segunda' })).records, 0).data).toEqual({
       text: 'segunda',
@@ -69,6 +74,7 @@ describe('M21: runbook for quarantining a corrupted process (docs/dados.md)', ()
       await environment.call('query', { project: PROJECT, scope: 'project' }),
       'PROCESS_CORRUPTED',
     );
+
     expect(at(project.details, 0)).toMatchObject({ code: 'broken-chain', process: 'run-1' });
     expect(await query({ process: 'run-2' })).toMatchObject({ records: [expect.anything()] });
 
@@ -76,6 +82,7 @@ describe('M21: runbook for quarantining a corrupted process (docs/dados.md)', ()
 
     // (a) o alcance projeto volta a funcionar, só com o que sobrou
     const afterMove = await query({ scope: 'project' });
+
     expect(afterMove.records.map(({ data }) => data)).toEqual([{ text: 'de outro processo' }]);
 
     // (b) o nome do processo fica livre para `create_process`
@@ -87,6 +94,7 @@ describe('M21: runbook for quarantining a corrupted process (docs/dados.md)', ()
       project: PROJECT,
       process: 'run-1',
     });
+
     expect((await query({ process: 'run-1' })).records).toEqual([]);
 
     // (c) a busca não devolve o índice velho, no processo recriado nem no alcance projeto
@@ -98,15 +106,26 @@ describe('M21: runbook for quarantining a corrupted process (docs/dados.md)', ()
     expect(fs.existsSync(path.join(quarantined, 'records.jsonl'))).toBe(true);
   }, 30_000);
 
-  test('a stored relation that pointed to the process comes out without `current` and a new relation to it gives RELATION_NOT_FOUND', async () => {
+  it('should return a stored relation to the moved process without `current`', async () => {
     const { records } = await registerNote('run-1', 'alvo');
     const target = at(records, 0).id;
     await registerNote('run-2', 'aprova', [{ to: target, kind: 'supports', as: 'approves' }]);
-
     quarantine('run-1');
 
     const [approver] = (await query({ process: 'run-2', relations: 'full' })).records;
+
     expect(approver?.out).toEqual([{ kind: 'supports', as: 'approves', to: target }]);
+  }, 30_000);
+});
+
+describe('register', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should refuse a new relation to the moved process with RELATION_NOT_FOUND', async () => {
+    const { records } = await registerNote('run-1', 'alvo');
+    const target = at(records, 0).id;
+    quarantine('run-1');
 
     const error = expectError(
       await environment.call('register', {
@@ -124,6 +143,7 @@ describe('M21: runbook for quarantining a corrupted process (docs/dados.md)', ()
       }),
       'RELATION_NOT_FOUND',
     );
+
     expect(error.details.length).toBeGreaterThan(0);
   }, 30_000);
 });

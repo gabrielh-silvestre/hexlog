@@ -3,9 +3,18 @@
 ## Idioma
 
 - Código: arquivos, pastas, identificadores (funções, tipos, variáveis), nomes de tool MCP, campos de entrada e saída, formato em disco e mensagens em runtime (erros, logs, CLI do instalador) — tudo em **inglês**.
-- Títulos de teste (`describe`, `it`, `test`) — **inglês**. Título novo já nasce em inglês; ao alterar um spec, traduza os títulos pt-BR dele, que são dívida rastreada na issue #132.
+- Títulos de teste (`describe`, `it`) — **inglês**.
 - Comentários de código (incl. JSDoc) e documentação `.md` — **pt-BR**.
 - Nomes de arquivo de documentação (`AGENTS.md`, `docs/directives/adr-*.md`, `docs/pesquisa/**`) não são traduzidos.
+
+## Escrita dos testes
+
+- Todo caso é `it('should …')`: `should` seguido do comportamento observável, no presente. `test(` e `test.each` não são usados (`it.each`).
+- O corpo segue Arrange, Act e Assert, nessa ordem, em blocos separados por uma linha em branco e sem comentário de rótulo. Act é a chamada sob teste; chamada anterior que só prepara estado é Arrange. Arrange vazio some, e o caso de uma linha (`expect(f(x)).toBe(y)`) junta Act e Assert. Um caso prova um comportamento, o do título: chamadas de uma linha que o provam com o mesmo Arrange ficam juntas, como um grupo de `expect`; a variação que pede Arrange próprio vira linha de `it.each`; comportamento distinto vira outro caso. Em `it.each` a tabela é o Arrange; em property test os arbitrários são o Arrange e o `fc.assert` é o Act e o Assert.
+- Act que sobe processo filho, bundle ou carga e serve a vários casos pode rodar uma vez no `beforeAll` do `describe` que os agrupa, com o próprio timeout; cada caso é então só o Assert de um comportamento e não muda o resultado compartilhado.
+- Asserção sobre o que o próprio Arrange montou (guarda de pré-condição) fecha o Arrange, em bloco próprio, e não é o Assert do caso; asserção sobre o retorno do alvo antes do Act é outro comportamento e vai a outro caso. Laço com `expect` vale quando cada volta prova o comportamento do título sobre outra entrada gerada ou sobre o estado deixado pela volta anterior; lista literal de entradas com Arrange próprio vira `it.each`.
+- O `describe` de topo nomeia o que o caso chama: o símbolo exportado no unitário e no budget; a tool, o método do serviço ou o símbolo do adaptador na integração, e o método MCP (`tools/list`, `tools/call`) quando o caso chama a listagem ou o conjunto das tools; o arquivo ou glob verificado no spec de doc e coerência; o artefato executado no e2e. Um arquivo tem um `describe` de topo por alvo.
+- Dentro dele cabe no máximo um nível de `describe`, que nomeia a condição comum aos casos (`when …` ou `with …`).
 
 ## Núcleo e bordas
 

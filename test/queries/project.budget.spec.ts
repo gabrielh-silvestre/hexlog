@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 import { median } from 'es-toolkit';
 import type { Gate } from '../../src/domain/definitions.ts';
 import { writeRecordsCorpus } from '../fixtures/records-corpus.ts';
@@ -8,7 +8,7 @@ import { diskQueryService } from './query-setup.ts';
 const PROCESSES = 10;
 const PER_PROCESS = 500;
 const ROUNDS = 5;
-// P7: projeto de 10 processos somando 5.000 registros de ~1,2 KB, tempo da chamada inteira
+// Projeto de 10 processos somando 5.000 registros de ~1,2 KB, tempo da chamada inteira
 // (leitura e verificação dos 10 processos, vigência e a primeira página ou a avaliação do gate).
 const CEILING_MS = 500;
 const MAX_FACTOR = 2;
@@ -29,42 +29,47 @@ const WIDE_GATE: Gate = {
   ],
 };
 
-describe('P7', () => {
-  let dataDir: string;
-  let project: string;
-  let first: string;
+let dataDir: string;
+let project: string;
+let first: string;
 
-  beforeAll(() => {
-    dataDir = createTempDir('project-budget');
-    const processes = Array.from({ length: PROCESSES }, (_, index) => `proc-${index + 1}`);
-    const { refs } = writeRecordsCorpus(dataDir, {
-      processes,
-      recordsPerProcess: PER_PROCESS,
-      gates: [WIDE_GATE],
-    });
-    project = refs[0]!.project;
-    first = refs[0]!.process;
+// Os dois `describe` leem o mesmo corpus; `require-top-level-describe` não deixa o hook fora deles.
+function writeCorpus() {
+  dataDir = createTempDir('project-budget');
+  const processes = Array.from({ length: PROCESSES }, (_, index) => `proc-${index + 1}`);
+  const { refs } = writeRecordsCorpus(dataDir, {
+    processes,
+    recordsPerProcess: PER_PROCESS,
+    gates: [WIDE_GATE],
   });
+  project = refs[0]!.project;
+  first = refs[0]!.process;
+}
 
-  const service = () => diskQueryService(dataDir);
+const service = () => diskQueryService(dataDir);
 
-  function time(call: (queries: ReturnType<typeof service>) => void): number {
-    const queries = service();
-    const start = performance.now();
-    call(queries);
-    return performance.now() - start;
-  }
+function time(call: (queries: ReturnType<typeof service>) => void): number {
+  const queries = service();
+  const start = performance.now();
+  call(queries);
+  return performance.now() - start;
+}
 
-  function expectWithinCeiling(label: string, times: number[]): void {
-    process.stdout.write(`P7 ${label} median: ${median(times).toFixed(2)} ms\n`);
-    expect(median(times)).toBeLessThanOrEqual(CEILING_MS);
-    expect(Math.max(...times)).toBeLessThanOrEqual(CEILING_MS * MAX_FACTOR);
-  }
+function expectWithinCeiling(label: string, times: number[]): void {
+  process.stdout.write(`${label} median: ${median(times).toFixed(2)} ms\n`);
 
-  test(`query de alcance projeto sem text ≤ ${CEILING_MS} ms (mediana de ${ROUNDS}, ${PROCESSES} processos, ${PROCESSES * PER_PROCESS} registros)`, () => {
+  expect(median(times)).toBeLessThanOrEqual(CEILING_MS);
+  expect(Math.max(...times)).toBeLessThanOrEqual(CEILING_MS * MAX_FACTOR);
+}
+
+describe('QueryService.queryRecords', () => {
+  beforeAll(writeCorpus);
+
+  it(`should query the project scope without text within ${CEILING_MS} ms (median of ${ROUNDS}, ${PROCESSES} processes, ${PROCESSES * PER_PROCESS} records)`, () => {
     const times = Array.from({ length: ROUNDS }, () =>
       time((queries) => {
         const page = queries.queryRecords({ project, scope: 'project' });
+
         expect(page.records.length).toBeGreaterThan(0);
         expect(Object.keys(page.marker)).toHaveLength(PROCESSES);
       }),
@@ -72,11 +77,16 @@ describe('P7', () => {
 
     expectWithinCeiling('query', times);
   }, 120_000);
+});
 
-  test(`evaluateGate com pergunta de alcance projeto ≤ ${CEILING_MS} ms (mediana de ${ROUNDS})`, () => {
+describe('QueryService.evaluateGate', () => {
+  beforeAll(writeCorpus);
+
+  it(`should evaluate a gate with a project-scope question within ${CEILING_MS} ms (median of ${ROUNDS})`, () => {
     const times = Array.from({ length: ROUNDS }, () =>
       time((queries) => {
         const result = queries.evaluateGate({ project, process: first, gate: WIDE_GATE.name });
+
         expect(result.questions).toHaveLength(WIDE_GATE.questions.length);
         expect(Object.keys(result.marker)).toHaveLength(PROCESSES);
       }),

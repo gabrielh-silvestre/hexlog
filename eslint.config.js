@@ -6,11 +6,19 @@ import n from 'eslint-plugin-n';
 import tseslint from 'typescript-eslint';
 import { boundaryBlocks } from './eslint.boundaries.js';
 
+// Padrão de escrita dos specs (docs/directives/convencoes.md, "Escrita dos testes").
+const ACCENT = '[À-ÖØ-öø-ÿ]';
+const ID_LABEL =
+  '\\b(?:M|N|S|B|I|C|Q|QN|P|TF|TM|TB|TI|SL|SE|SF|SG|E|F|G|L|f)\\d+\\b|\\b(?:R|U)-\\d+\\b|\\bD-\\d{2}\\b|\\bDE-\\d{2}\\b';
+
 export default defineConfig(
   {
     ignores: [
       'dist/**',
       'coverage/**',
+      'reports/**',
+      '.stryker-tmp/**',
+      '.ignore/**',
       'graphify-out/**',
       '.gitnexus/**',
       '.omc/**',
@@ -45,6 +53,29 @@ export default defineConfig(
     },
   },
   {
+    // Só specs: test/cleanup.ts tem afterAll no topo.
+    files: ['test/**/*.spec.ts'],
+    rules: {
+      'jest/consistent-test-it': ['error', { fn: 'it', withinDescribe: 'it' }],
+      'jest/valid-title': [
+        'error',
+        {
+          mustMatch: { it: ['^should ', 'it titles start with "should "'] },
+          mustNotMatch: {
+            describe: [
+              `${ID_LABEL}|${ACCENT}`,
+              'describe titles carry no ID label and no accented letter',
+            ],
+            it: [`${ID_LABEL}|${ACCENT}`, 'it titles carry no ID label and are in English'],
+          },
+        },
+      ],
+      'jest/max-nested-describe': ['error', { max: 2 }],
+      'jest/require-top-level-describe': 'error',
+      'jest/padding-around-expect-groups': 'error',
+    },
+  },
+  {
     languageOptions: {
       parserOptions: {
         projectService: { allowDefaultProject: ['eslint.config.js', 'eslint.boundaries.js'] },
@@ -73,6 +104,11 @@ export default defineConfig(
           message:
             'Use createTempDir from test/helpers.ts: it registers the directory for cleanup.',
         })),
+        {
+          selector:
+            "CallExpression[callee.name='describe'] CallExpression[callee.name='describe'][arguments.0.type='Literal'][arguments.0.value!=/^(when|with) /]",
+          message: 'Nested describe titles start with "when " or "with ".',
+        },
       ],
     },
   },

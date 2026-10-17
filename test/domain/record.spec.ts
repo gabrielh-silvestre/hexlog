@@ -1,7 +1,9 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import { randomUUIDv7 } from 'node:crypto';
 import canonicalize from 'canonicalize';
+import { z } from 'zod';
 import {
+  AliasRef,
   Author,
   BATCH_MAX,
   BatchItem,
@@ -11,6 +13,7 @@ import {
   Relation,
   RelationInput,
   RelationKind,
+  withCanonicalLimit,
 } from '../../src/domain/record.ts';
 
 const id = () => `proc-1:${randomUUIDv7()}`;
@@ -22,16 +25,46 @@ function dataWithCanonicalLength(chars: number) {
   return { k: 'x'.repeat(chars - overhead) };
 }
 
-describe('tetos', () => {
-  test('teto de data é 16.000, o de lote é 50 e o de relações é 100', () => {
+describe('DATA_MAX_CHARS', () => {
+  it('should be 16,000', () => {
     expect(DATA_MAX_CHARS).toBe(16_000);
+  });
+});
+
+describe('BATCH_MAX', () => {
+  it('should be 50', () => {
     expect(BATCH_MAX).toBe(50);
+  });
+});
+
+describe('RELATIONS_MAX', () => {
+  it('should be 100', () => {
     expect(RELATIONS_MAX).toBe(100);
   });
 });
 
+describe('withCanonicalLimit', () => {
+  it('should accept a value that has no canonical form, such as undefined', () => {
+    const schema = withCanonicalLimit(z.unknown(), 1, 'value');
+
+    expect(schema.safeParse(undefined).success).toBe(true);
+  });
+
+  it('should name what was limited and the ceiling when the value exceeds it', () => {
+    const schema = withCanonicalLimit(z.string(), 3, 'name');
+
+    const result = schema.safeParse('abcd');
+
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        message: 'name exceeds 3 canonical characters or is not canonicalizable',
+      }),
+    ]);
+  });
+});
+
 describe('RelationKind', () => {
-  test('lista os oito tipos de relação', () => {
+  it('should list the eight relation kinds', () => {
     expect(RelationKind.options).toEqual([
       'supersedes',
       'revokes',
@@ -46,41 +79,68 @@ describe('RelationKind', () => {
 });
 
 describe('Author', () => {
-  test('model é opcional', () => {
+  it('should accept an author with or without model', () => {
     expect(Author.safeParse(author).success).toBe(true);
     expect(Author.safeParse({ ...author, model: 'opus' }).success).toBe(true);
   });
 
-  test.each([{ client: 'c' }, { agent: 'a' }, { ...author, agent: '' }, { ...author, extra: 1 }])(
-    '%j é inválido',
+  it.each([{ client: 'c' }, { agent: 'a' }, { ...author, agent: '' }, { ...author, extra: 1 }])(
+    'should reject %j',
     (value) => {
       expect(Author.safeParse(value).success).toBe(false);
     },
   );
 
-  test.each(['agent', 'model', 'client'])('%s com surrogate solitário é inválido', (field) => {
+  it.each(['agent', 'model', 'client'])('should reject a lone surrogate in %s', (field) => {
     expect(Author.safeParse({ ...author, [field]: 'x\ud800' }).success).toBe(false);
+  });
+
+  it('should say the field must not contain a lone surrogate', () => {
+    const result = Author.safeParse({ ...author, agent: 'x\ud800' });
+
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['agent'],
+        message: 'must not contain a lone surrogate',
+      }),
+    ]);
   });
 });
 
 describe('Relation', () => {
-  test('kind e to são obrigatórios e as é opcional', () => {
+  it('should accept a relation with kind and to', () => {
     expect(Relation.safeParse({ kind: 'supports', to: id() }).success).toBe(true);
+  });
+
+  it('should accept a relation with kind, to and as', () => {
     expect(Relation.safeParse({ kind: 'supports', to: id(), as: 'approves' }).success).toBe(true);
+  });
+
+  it('should reject a relation without kind', () => {
     expect(Relation.safeParse({ to: id() }).success).toBe(false);
   });
 
-  test('recusa chave desconhecida', () => {
+  it('should reject an unknown key', () => {
     expect(Relation.safeParse({ kind: 'supports', to: id(), extra: 1 }).success).toBe(false);
   });
 
-  test('to gravado nunca é alias', () => {
+  it('should reject an alias in the stored to', () => {
     expect(Relation.safeParse({ kind: 'supports', to: '@a' }).success).toBe(false);
   });
 });
 
+describe('AliasRef', () => {
+  it.each(['@a', '@plan-1', `@${'x'.repeat(63)}`])('should accept %s', (value) => {
+    expect(AliasRef.safeParse(value).success).toBe(true);
+  });
+
+  it.each(['plan-1', '', '@', '@A', '@-a', `@${'x'.repeat(64)}`])('should reject %s', (value) => {
+    expect(AliasRef.safeParse(value).success).toBe(false);
+  });
+});
+
 describe('RelationInput', () => {
-  test('aceita id ou @alias em to, com kind ou as', () => {
+  it('should accept an id or @alias in to, with kind or as', () => {
     expect(RelationInput.safeParse({ to: id(), kind: 'supports' }).success).toBe(true);
     expect(RelationInput.safeParse({ to: '@plan-1', kind: 'supports' }).success).toBe(true);
     expect(RelationInput.safeParse({ to: '@plan-1', as: 'approves' }).success).toBe(true);
@@ -89,16 +149,17 @@ describe('RelationInput', () => {
     ).toBe(true);
   });
 
-  test('recusa relação sem kind e sem as', () => {
+  it('should reject a relation without kind and without as', () => {
     const result = RelationInput.safeParse({ to: id() });
+
     expect(result.success).toBe(false);
     expect(result.error?.issues).toEqual([
       expect.objectContaining({ path: ['kind'], message: 'relation needs kind or as' }),
     ]);
   });
 
-  test.each([{}, { to: 'plan-1' }, { to: '@' }, { to: '@A' }, { to: id(), kind: 'likes' }])(
-    '%j é inválido',
+  it.each([{}, { to: 'plan-1' }, { to: '@' }, { to: '@A' }, { to: id(), kind: 'likes' }])(
+    'should reject %j',
     (value) => {
       expect(RelationInput.safeParse(value).success).toBe(false);
     },
@@ -107,8 +168,11 @@ describe('RelationInput', () => {
 
 describe('BatchItem', () => {
   const item = { type: 'note', target: 'a.b', data: { text: 'oi' } };
+  const emojis = (count: number) => ({ k: '😀'.repeat(count) });
+  const relations = (count: number) =>
+    Array.from({ length: count }, () => ({ to: id(), kind: 'supports' }));
 
-  test('alias e relations são opcionais', () => {
+  it('should accept an item with or without alias and relations', () => {
     expect(BatchItem.safeParse(item).success).toBe(true);
     expect(
       BatchItem.safeParse({
@@ -119,48 +183,71 @@ describe('BatchItem', () => {
     ).toBe(true);
   });
 
-  test.each([
+  it.each([
     { ...item, type: undefined },
     { ...item, target: 'A.b' },
     { ...item, data: 'texto' },
     { ...item, id: id() },
     { ...item, alias: '@first' },
-  ])('%j é inválido', (value) => {
+  ])('should reject %j', (value) => {
     expect(BatchItem.safeParse(value).success).toBe(false);
   });
 
-  test('data no teto canônico passa e um caractere a mais cai', () => {
+  it('should name data and the ceiling when data exceeds the canonical ceiling', () => {
+    const result = BatchItem.safeParse({
+      ...item,
+      data: dataWithCanonicalLength(DATA_MAX_CHARS + 1),
+    });
+
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['data'],
+        message: 'data exceeds 16000 canonical characters or is not canonicalizable',
+      }),
+    ]);
+  });
+
+  it('should accept data at the canonical ceiling', () => {
     const atCap = dataWithCanonicalLength(DATA_MAX_CHARS);
+
     expect((canonicalize(atCap) ?? '').length).toBe(DATA_MAX_CHARS);
+
     expect(BatchItem.safeParse({ ...item, data: atCap }).success).toBe(true);
+  });
+
+  it('should reject data one character over the canonical ceiling', () => {
     expect(
       BatchItem.safeParse({ ...item, data: dataWithCanonicalLength(DATA_MAX_CHARS + 1) }).success,
     ).toBe(false);
   });
 
-  test('o teto de data conta unidades UTF-16 do JCS: com emoji (2 unidades), 7996 cabem e 7997 não', () => {
-    const emojis = (count: number) => ({ k: '😀'.repeat(count) });
+  it('should accept 7996 emoji, since the data ceiling counts UTF-16 units of the JCS', () => {
     expect((canonicalize(emojis(7996)) ?? '').length).toBe(DATA_MAX_CHARS);
+
     expect(BatchItem.safeParse({ ...item, data: emojis(7996) }).success).toBe(true);
+  });
+
+  it('should reject 7997 emoji, since the data ceiling counts UTF-16 units of the JCS', () => {
     expect(BatchItem.safeParse({ ...item, data: emojis(7997) }).success).toBe(false);
   });
 
-  test('data com surrogate solitário é recusado sem lançar', () => {
+  it('should reject data with a lone surrogate without throwing', () => {
     expect(BatchItem.safeParse({ ...item, data: { text: '\ud800' } }).success).toBe(false);
   });
 
-  test('relations no teto passam e uma a mais cai', () => {
-    const relations = (count: number) =>
-      Array.from({ length: count }, () => ({ to: id(), kind: 'supports' }));
+  it('should accept relations at the ceiling', () => {
     expect(BatchItem.safeParse({ ...item, relations: relations(RELATIONS_MAX) }).success).toBe(
       true,
     );
+  });
+
+  it('should reject one relation over the ceiling', () => {
     expect(BatchItem.safeParse({ ...item, relations: relations(RELATIONS_MAX + 1) }).success).toBe(
       false,
     );
   });
 
-  test('data que não é JSON é recusado', () => {
+  it('should reject data that is not JSON', () => {
     expect(BatchItem.safeParse({ ...item, data: { fn: () => 1 } }).success).toBe(false);
     expect(BatchItem.safeParse({ ...item, data: { missing: undefined } }).success).toBe(false);
   });
@@ -176,28 +263,31 @@ describe('HexRecord', () => {
     data: { text: 'oi' },
     relations: [{ kind: 'supports', to: id() }],
   };
+  const relations = (count: number) =>
+    Array.from({ length: count }, () => ({ kind: 'supports', to: id() }));
 
-  test('aceita o registro completo', () => {
+  it('should accept the complete record', () => {
     expect(HexRecord.safeParse(record).success).toBe(true);
   });
 
-  test('relations no teto passam e uma a mais cai', () => {
-    const relations = (count: number) =>
-      Array.from({ length: count }, () => ({ kind: 'supports', to: id() }));
+  it('should accept relations at the ceiling', () => {
     expect(HexRecord.safeParse({ ...record, relations: relations(RELATIONS_MAX) }).success).toBe(
       true,
     );
+  });
+
+  it('should reject one relation over the ceiling', () => {
     expect(
       HexRecord.safeParse({ ...record, relations: relations(RELATIONS_MAX + 1) }).success,
     ).toBe(false);
   });
 
-  test.each([
+  it.each([
     { ...record, relations: undefined },
     { ...record, relations: [{ to: id() }] },
     { ...record, at: '2026-09-30' },
     { ...record, seq: 1 },
-  ])('%j é inválido', (value) => {
+  ])('should reject %j', (value) => {
     expect(HexRecord.safeParse(value).success).toBe(false);
   });
 });

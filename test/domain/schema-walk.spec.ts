@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import {
   FREE_PATTERN_KEYWORDS,
@@ -14,7 +14,7 @@ function pointersOf(schema: unknown): string[] {
 }
 
 describe('walkSubschemas', () => {
-  test('visita as palavras-chave de subschema com ponteiro RFC 6901', () => {
+  it('should visit the subschema keywords with an RFC 6901 pointer', () => {
     const schema = {
       properties: { 'a/b': { items: { type: 'string' } }, 'c~d': {} },
       allOf: [{}, { not: {} }],
@@ -35,7 +35,47 @@ describe('walkSubschemas', () => {
     ]);
   });
 
-  test('desce nos valores de patternProperties', () => {
+  it.each([
+    'additionalProperties',
+    'items',
+    'contains',
+    'propertyNames',
+    'not',
+    'if',
+    'then',
+    'else',
+    'unevaluatedItems',
+    'unevaluatedProperties',
+    'contentSchema',
+  ])('should visit the subschema under the keyword %s', (keyword) => {
+    const schema = { [keyword]: {} };
+
+    expect(pointersOf(schema)).toEqual(['', `/${keyword}`]);
+  });
+
+  it.each(['allOf', 'anyOf', 'oneOf', 'prefixItems'])(
+    'should visit each subschema of the list keyword %s',
+    (keyword) => {
+      const schema = { [keyword]: [{}, {}] };
+
+      expect(pointersOf(schema)).toEqual(['', `/${keyword}/0`, `/${keyword}/1`]);
+    },
+  );
+
+  it.each([
+    'properties',
+    'patternProperties',
+    '$defs',
+    'definitions',
+    'dependentSchemas',
+    'dependencies',
+  ])('should visit each subschema of the map keyword %s', (keyword) => {
+    const schema = { [keyword]: { a: {}, b: {} } };
+
+    expect(pointersOf(schema)).toEqual(['', `/${keyword}/a`, `/${keyword}/b`]);
+  });
+
+  it('should descend into the patternProperties values', () => {
     const schema = { patternProperties: { '^a': { items: {} } } };
 
     expect(pointersOf(schema)).toEqual([
@@ -45,30 +85,33 @@ describe('walkSubschemas', () => {
     ]);
   });
 
-  test('desce no contentSchema', () => {
+  it('should descend into contentSchema', () => {
     const schema = { type: 'string', contentSchema: { type: 'string', pattern: '^a+$' } };
 
     expect(pointersOf(schema)).toEqual(['', '/contentSchema']);
   });
 
-  test('ignora o valor em array de dependencies', () => {
+  it('should ignore a dependencies value that is an array', () => {
     const schema = { dependencies: { a: ['b'], c: { required: ['d'] } } };
 
     expect(pointersOf(schema)).toEqual(['', '/dependencies/c']);
   });
 
-  test.each(['const', 'enum', 'default', 'examples'])('não entra em %s, que é dado', (keyword) => {
-    const schema = { [keyword]: [{ properties: { x: {} } }], properties: { y: {} } };
+  it.each(['const', 'enum', 'default', 'examples'])(
+    'should not enter %s, which is data',
+    (keyword) => {
+      const schema = { [keyword]: [{ properties: { x: {} } }], properties: { y: {} } };
 
-    expect(pointersOf(schema)).toEqual(['', '/properties/y']);
-  });
+      expect(pointersOf(schema)).toEqual(['', '/properties/y']);
+    },
+  );
 
-  test('ignora raiz que não é objeto', () => {
+  it('should ignore a root that is not an object', () => {
     expect(pointersOf(true)).toEqual([]);
     expect(pointersOf(null)).toEqual([]);
   });
 
-  test('o que o visit apaga no nó não é percorrido', () => {
+  it('should not walk what the visit callback deletes from the node', () => {
     const schema: Record<string, unknown> = { properties: { x: {} }, items: {} };
     const visited: string[] = [];
 
@@ -81,12 +124,14 @@ describe('walkSubschemas', () => {
   });
 });
 
-describe('withoutFreePatterns', () => {
-  test('lista as duas palavras-chave de regex livre', () => {
+describe('FREE_PATTERN_KEYWORDS', () => {
+  it('should list the two free regex keywords', () => {
     expect(FREE_PATTERN_KEYWORDS).toEqual(['pattern', 'patternProperties']);
   });
+});
 
-  test('remove pattern e patternProperties de cada subschema, sem descer no que removeu', () => {
+describe('withoutFreePatterns', () => {
+  it('should remove pattern and patternProperties from each subschema without descending into what it removed', () => {
     const schema: RecordType = {
       type: 'object',
       properties: {
@@ -111,7 +156,7 @@ describe('withoutFreePatterns', () => {
     });
   });
 
-  test('remove o pattern de um contentSchema', () => {
+  it('should remove the pattern from a contentSchema', () => {
     const schema: RecordType = {
       type: 'string',
       contentMediaType: 'application/json',
@@ -125,7 +170,7 @@ describe('withoutFreePatterns', () => {
     });
   });
 
-  test('mantém o campo de nome pattern dentro de properties', () => {
+  it('should keep the field named pattern inside properties', () => {
     const schema: RecordType = {
       type: 'object',
       properties: { pattern: { type: 'string' }, patternProperties: { type: 'string' } },
@@ -134,7 +179,7 @@ describe('withoutFreePatterns', () => {
     expect(withoutFreePatterns(schema)).toEqual(schema);
   });
 
-  test('não muta a entrada', () => {
+  it('should not mutate the input', () => {
     const schema: RecordType = {
       type: 'object',
       properties: { code: { type: 'string', pattern: '^a$' } },
@@ -154,22 +199,24 @@ describe('hasKeywordAt', () => {
     pattern: '^root$',
     properties: { 'a/b~c': { pattern: '^x$' } },
     examples: [{ pattern: '^y$' }],
+    nothing: null,
   };
 
-  test.each([
+  it.each([
     ['', 'pattern'],
     ['/properties/a~1b~0c', 'pattern'],
     ['/examples/0', 'pattern'],
-  ])('resolve %j e encontra %s', (location, keyword) => {
+  ])('should resolve %j and find %s', (location, keyword) => {
     expect(hasKeywordAt(schema, location, keyword)).toBe(true);
   });
 
-  test.each([
-    ['ponteiro inexistente', '/properties/ghost', 'pattern'],
-    ['ponteiro com índice fora do array', '/examples/1', 'pattern'],
-    ['palavra-chave ausente no objeto', '/properties', 'pattern'],
-    ['destino que não é objeto', '/examples/0/pattern', 'pattern'],
-  ])('devolve falso para %s', (_label, location, keyword) => {
+  it.each([
+    ['a missing pointer', '/properties/ghost', 'pattern'],
+    ['a pointer with an index out of the array', '/examples/1', 'pattern'],
+    ['a keyword absent from the object', '/properties', 'pattern'],
+    ['a target that is not an object', '/examples/0/pattern', 'pattern'],
+    ['a pointer that goes through null', '/nothing/pattern', 'pattern'],
+  ])('should return false for %s', (_label, location, keyword) => {
     expect(hasKeywordAt(schema, location, keyword)).toBe(false);
   });
 });

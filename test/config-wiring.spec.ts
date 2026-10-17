@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 import { z } from 'zod';
@@ -23,27 +23,29 @@ function severitiesFor(file: string): z.infer<typeof SeveritiesSchema> {
     encoding: 'utf8',
     cwd: repoRoot,
   });
+
   expect(result.status).toBe(0);
+
   return parseJson(SeveritiesSchema, result.stdout);
 }
 
 // Prova que o `eslint.config.js` realmente inclui as travas: os specs de boundaries
 // importam `boundaryBlocks` direto e não percebem se a config deixar de usá-los.
-describe('fiação das travas no eslint.config.js', () => {
-  test('src/commands: no-restricted-imports e max-lines em error', () => {
+describe('eslint.config.js', () => {
+  it('should set no-restricted-imports and max-lines to error for src/commands', () => {
     expect(severitiesFor('src/commands/x.ts')).toMatchObject({
       'no-restricted-imports': ERROR_SEVERITY,
       'max-lines': ERROR_SEVERITY,
     });
   });
 
-  test('src/mcp/kernel.ts: no-restricted-imports em error', () => {
+  it('should set no-restricted-imports to error for src/mcp/kernel.ts', () => {
     expect(severitiesFor('src/mcp/kernel.ts')).toMatchObject({
       'no-restricted-imports': ERROR_SEVERITY,
     });
   });
 
-  test('test/**: no-restricted-syntax em error', () => {
+  it('should set no-restricted-syntax to error for test/**', () => {
     expect(severitiesFor('test/x.spec.ts')).toMatchObject({
       'no-restricted-syntax': ERROR_SEVERITY,
     });

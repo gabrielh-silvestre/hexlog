@@ -1,13 +1,9 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import canonicalize from 'canonicalize';
 import { omit } from 'es-toolkit';
 import { createValidator } from '../../src/adapters/validator.ts';
 import { createDefinitionService } from '../../src/commands/definition.ts';
-import type {
-  DefineGateInput,
-  DefineRelationInput,
-  Defined,
-} from '../../src/commands/definition.ts';
+import type { DefineGateInput, DefineRelationInput } from '../../src/commands/definition.ts';
 import { hashOfJcs } from '../../src/domain/chain.ts';
 import { compareVersions } from '../../src/domain/definitions.ts';
 import type { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts';
@@ -110,482 +106,544 @@ function relationOfLength(chars: number): DefineRelationInput {
   }
 }
 
-describe('defineType: versões imutáveis', () => {
-  test('primeira versão é 1.0, com o hash do schema canônico', () => {
-    const { service, stored } = setup();
+describe('defineType', () => {
+  describe('with immutable versions', () => {
+    it('should create version 1.0 with the hash of the canonical schema', () => {
+      const { service, stored } = setup();
 
-    const defined = service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+      const defined = service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
 
-    expect(defined).toEqual({
-      name: NAME,
-      version: '1.0',
-      hash: hashOfJcs(BASE_SCHEMA),
-      created: true,
+      expect(defined).toEqual({
+        name: NAME,
+        version: '1.0',
+        hash: hashOfJcs(BASE_SCHEMA),
+        created: true,
+      });
+      expect(stored('types', NAME, '1.0')).toEqual(BASE_SCHEMA);
     });
-    expect(stored('types', NAME, '1.0')).toEqual(BASE_SCHEMA);
+
+    it('should bump the minor on a new optional property and keep the previous version', () => {
+      const { service, versions } = setup();
+      service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+
+      const defined = service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
+
+      expect(defined).toMatchObject({ version: '1.1', created: true, previousVersion: '1.0' });
+      expect(versions('types', NAME)).toEqual(['1.0', '1.1']);
+    });
+
+    it('should refuse a breaking change without breaking: true and write nothing', () => {
+      const { service, writes } = setup();
+      service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
+      writes.length = 0;
+
+      const error = captureError(() =>
+        service.defineType({ project: PROJECT, name: NAME, schema: WITH_REQUIRED }),
+      );
+
+      expect(error).toMatchObject({
+        code: 'BREAKING_CHANGE',
+        details: [{ path: '/schema', code: 'breaking-change' }],
+      });
+      expect(writes).toEqual([]);
+    });
+
+    it('should bump the major and reset the minor with breaking: true', () => {
+      const { service, versions } = setup();
+      service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+      service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
+
+      const defined = service.defineType({
+        project: PROJECT,
+        name: NAME,
+        schema: WITH_REQUIRED,
+        breaking: true,
+      });
+
+      expect(defined).toMatchObject({ version: '2.0', previousVersion: '1.1' });
+      expect(versions('types', NAME)).toEqual(['1.0', '1.1', '2.0']);
+    });
+
+    it('should bump the major with breaking: true even without a breaking change, with no warning', () => {
+      const { service } = setup();
+      service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+
+      const defined = service.defineType({
+        project: PROJECT,
+        name: NAME,
+        schema: WITH_OPTIONAL,
+        breaking: true,
+      });
+
+      expect(defined).toMatchObject({ version: '2.0', created: true });
+    });
   });
 
-  test('propriedade opcional nova sobe a minor e guarda a anterior', () => {
-    const { service, versions } = setup();
-    service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+  describe('when the same definition is sent again', () => {
+    it('should return the current version without writing', () => {
+      const { service, writes } = setup();
+      const first = service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+      writes.length = 0;
 
-    const defined = service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
+      const replay = service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
 
-    expect(defined).toMatchObject({ version: '1.1', created: true, previousVersion: '1.0' });
-    expect(versions('types', NAME)).toEqual(['1.0', '1.1']);
+      expect(replay).toEqual({ ...first, created: false });
+      expect(writes).toEqual([]);
+    });
+
+    it('should be a replay, without bumping the major, when breaking: true comes with a definition identical to the current one', () => {
+      const { service, writes, versions } = setup();
+      const define = () =>
+        service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA, breaking: true });
+      const first = define();
+      writes.length = 0;
+
+      const replay = define();
+
+      expect(replay).toEqual({ ...first, created: false });
+      expect(replay.version).toBe('1.0');
+      expect(writes).toEqual([]);
+      expect(versions('types', NAME)).toEqual(['1.0']);
+    });
   });
 
-  test('quebra sem breaking: true é recusada e nada é gravado', () => {
-    const { service, writes } = setup();
-    service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
-    writes.length = 0;
+  describe('when another writer takes the target version', () => {
+    it('should converge to 1.0 as a replay on the first version of a new name with breaking: true', () => {
+      const { service, seed, racing, versions } = setup();
+      racing(() => seed('types', NAME, '1.0', BASE_SCHEMA));
 
-    const error = captureError(() =>
-      service.defineType({ project: PROJECT, name: NAME, schema: WITH_REQUIRED }),
+      const defined = service.defineType({
+        project: PROJECT,
+        name: NAME,
+        schema: BASE_SCHEMA,
+        breaking: true,
+      });
+
+      expect(defined).toEqual({
+        name: NAME,
+        version: '1.0',
+        hash: hashOfJcs(BASE_SCHEMA),
+        created: false,
+      });
+      expect(versions('types', NAME)).toEqual(['1.0']);
+    });
+
+    it('should turn the same definition written by another writer into a replay', () => {
+      const { service, seed, racing, versions } = setup();
+      service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+      racing(() => seed('types', NAME, '1.1', WITH_OPTIONAL));
+
+      const defined = service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
+
+      expect(defined).toEqual({
+        name: NAME,
+        version: '1.1',
+        hash: hashOfJcs(WITH_OPTIONAL),
+        created: false,
+      });
+      expect(versions('types', NAME)).toEqual(['1.0', '1.1']);
+    });
+
+    it('should refuse as a breaking change when what the other writer wrote makes the change one', () => {
+      const { service, seed, racing } = setup();
+      service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+      racing(() => seed('types', NAME, '1.1', WITH_REQUIRED));
+
+      const error = captureError(() =>
+        service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL }),
+      );
+
+      expect(error).toMatchObject({ code: 'BREAKING_CHANGE' });
+    });
+  });
+
+  describe('with a definition above the cap or the wrong shape', () => {
+    it('should refuse a schema of 16,001 canonical characters', () => {
+      const { service, writes } = setup();
+      // 34 caracteres de moldura canônica + o texto: 15.967 fecha em 16.001.
+      const schema: RecordType = { type: 'object', description: 'x'.repeat(15_967) };
+
+      expect(canonicalize(schema)).toHaveLength(16_001);
+
+      const error = captureError(() =>
+        service.defineType({ project: PROJECT, name: NAME, schema }),
+      );
+
+      expect(error).toMatchObject({ code: 'INVALID_SCHEMA', details: [{ path: '/schema' }] });
+      expect(writes).toEqual([]);
+    });
+
+    it('should still write a schema of 16,000 canonical characters', () => {
+      const { service } = setup();
+      const schema: RecordType = { type: 'object', description: 'x'.repeat(15_966) };
+
+      expect(canonicalize(schema)).toHaveLength(16_000);
+
+      const defined = service.defineType({ project: PROJECT, name: NAME, schema });
+
+      expect(defined).toMatchObject({ version: '1.0', created: true });
+    });
+
+    it.each([
+      ['array', { type: 'array', items: { type: 'string' } }],
+      ['without type', { description: 'sem type na raiz' }],
+    ])('should refuse a root that is %s', (_root, schema) => {
+      const { service, writes } = setup();
+
+      const error = captureError(() =>
+        service.defineType({ project: PROJECT, name: NAME, schema }),
+      );
+
+      expect(error).toMatchObject({
+        code: 'INVALID_SCHEMA',
+        details: [{ path: '/schema/type', code: 'invalid-type' }],
+      });
+      expect(writes).toEqual([]);
+    });
+  });
+
+  describe('with a schema the validator checks', () => {
+    it.each([
+      [
+        'a free pattern',
+        { code: { type: 'string', maxLength: 10, pattern: '^[a-z]+$' } },
+        '/schema/properties/code/pattern',
+      ],
+      [
+        'a free pattern that does not compile as a regex',
+        { code: { type: 'string', pattern: '(' } },
+        '/schema/properties/code/pattern',
+      ],
+      [
+        'patternProperties',
+        { code: { type: 'object', patternProperties: { '^x-': { type: 'string' } } } },
+        '/schema/properties/code/patternProperties',
+      ],
+      [
+        'a value that violates the metaschema',
+        { code: { minLength: -1 } },
+        '/schema/properties/code/minLength',
+      ],
+    ])(
+      'should return invalid-schema for %s with the path prefixed with /schema and write nothing',
+      (_name, properties, path) => {
+        const { service, writes } = setup();
+        const schema = { type: 'object', properties } as RecordType;
+
+        const error = captureError(() =>
+          service.defineType({ project: PROJECT, name: NAME, schema }),
+        );
+
+        expect(error).toMatchObject({ code: 'INVALID_SCHEMA', details: [{ path }] });
+        expect(writes).toEqual([]);
+      },
     );
 
-    expect(error).toMatchObject({
-      code: 'BREAKING_CHANGE',
-      details: [{ path: '/schema', code: 'breaking-change' }],
-    });
-    expect(writes).toEqual([]);
-  });
+    it('should return the pattern-not-allowed code for a free pattern', () => {
+      const { service } = setup();
+      const schema: RecordType = {
+        type: 'object',
+        properties: { code: { type: 'string', pattern: '^[a-z]+$' } },
+      };
 
-  test('breaking: true sobe o major e zera a minor', () => {
-    const { service, versions } = setup();
-    service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
-    service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
+      const error = captureError(() =>
+        service.defineType({ project: PROJECT, name: NAME, schema }),
+      );
 
-    const defined = service.defineType({
-      project: PROJECT,
-      name: NAME,
-      schema: WITH_REQUIRED,
-      breaking: true,
+      expect(error).toMatchObject({
+        code: 'INVALID_SCHEMA',
+        details: [{ path: '/schema/properties/code/pattern', code: 'pattern-not-allowed' }],
+      });
     });
 
-    expect(defined).toMatchObject({ version: '2.0', previousVersion: '1.1' });
-    expect(versions('types', NAME)).toEqual(['1.0', '1.1', '2.0']);
-  });
+    it('should refuse the resent schema of a legacy type with pattern instead of treating it as a replay', () => {
+      const { service, seed, versions, writes } = setup();
+      const legacy: RecordType = {
+        type: 'object',
+        properties: { code: { type: 'string', maxLength: 10, pattern: '^[a-z]+$' } },
+      };
+      seed('types', NAME, '1.0', legacy);
 
-  test('breaking: true sem mudança quebrada também sobe o major, sem aviso', () => {
-    const { service } = setup();
-    service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
+      const error = captureError(() =>
+        service.defineType({ project: PROJECT, name: NAME, schema: legacy }),
+      );
 
-    const defined = service.defineType({
-      project: PROJECT,
-      name: NAME,
-      schema: WITH_OPTIONAL,
-      breaking: true,
+      expect(error).toMatchObject({
+        code: 'INVALID_SCHEMA',
+        details: [{ path: '/schema/properties/code/pattern', code: 'pattern-not-allowed' }],
+      });
+      expect(versions('types', NAME)).toEqual(['1.0']);
+      expect(writes).toEqual([]);
     });
 
-    expect(defined).toMatchObject({ version: '2.0', created: true });
+    it('should point at exactly /schema, never /schema/schema, on an ajv exception', () => {
+      const { service, writes } = setup();
+      const schema: RecordType = { type: 'object', bogus: true };
+
+      const error = captureError(() =>
+        service.defineType({ project: PROJECT, name: NAME, schema }),
+      );
+
+      expect(error).toMatchObject({
+        code: 'INVALID_SCHEMA',
+        details: [{ path: '/schema', code: 'invalid-schema' }],
+      });
+      expect(writes).toEqual([]);
+    });
+
+    it('should prefix the validator details with /schema, without a new cut', () => {
+      const { store, writes } = setup();
+      const details = Array.from({ length: 51 }, (_, index) => ({
+        path: `/properties/p${index}`,
+        code: 'type',
+        message: 'must be valid',
+      }));
+      const service = createDefinitionService({
+        store,
+        validator: { checkSchema: () => details, validate: () => [] },
+      });
+
+      const error = captureError(() =>
+        service.defineType({ project: PROJECT, name: NAME, schema: { type: 'object' } }),
+      );
+
+      expect(error).toMatchObject({
+        code: 'INVALID_SCHEMA',
+        details: details.map((detail) => ({ ...detail, path: `/schema${detail.path}` })),
+      });
+      expect(writes).toEqual([]);
+    });
   });
 });
 
-describe('defineRelation e defineGate: mesmo motor de versão', () => {
-  test('relação: alargar from/to sobe a minor; estreitar é quebra', () => {
-    const { service, versions } = setup();
-    service.defineRelation(relation());
+describe('defineRelation', () => {
+  describe('with immutable versions', () => {
+    it('should bump the minor when from or to is widened', () => {
+      const { service, versions } = setup();
+      service.defineRelation(relation());
 
-    const widened = service.defineRelation(relation({ to: ['note', 'decision', 'review'] }));
-    const error = captureError(() => service.defineRelation(relation({ to: ['note'] })));
+      const widened = service.defineRelation(relation({ to: ['note', 'decision', 'review'] }));
 
-    expect(widened).toMatchObject({ version: '1.1', previousVersion: '1.0' });
-    expect(error).toMatchObject({ code: 'BREAKING_CHANGE' });
-    expect(versions('relations', 'backs')).toEqual(['1.0', '1.1']);
+      expect(widened).toMatchObject({ version: '1.1', previousVersion: '1.0' });
+      expect(versions('relations', 'backs')).toEqual(['1.0', '1.1']);
+    });
+
+    it('should refuse as a breaking change when from or to is narrowed', () => {
+      const { service, versions } = setup();
+      service.defineRelation(relation());
+      service.defineRelation(relation({ to: ['note', 'decision', 'review'] }));
+
+      const error = captureError(() => service.defineRelation(relation({ to: ['note'] })));
+
+      expect(error).toMatchObject({ code: 'BREAKING_CHANGE' });
+      expect(versions('relations', 'backs')).toEqual(['1.0', '1.1']);
+    });
   });
 
-  test('relação sem from/to grava só o que veio, sem chave undefined', () => {
+  describe('when the same definition is sent again', () => {
+    it('should return the current version without writing', () => {
+      const { service, writes } = setup();
+      const first = service.defineRelation(relation());
+      writes.length = 0;
+
+      const replay = service.defineRelation(relation());
+
+      expect(replay).toEqual({ ...first, created: false });
+      expect(writes).toEqual([]);
+    });
+  });
+
+  describe('with a definition above the cap or the wrong shape', () => {
+    it('should refuse a relation of 16,001 canonical characters', () => {
+      const { service, writes } = setup();
+      const input = relationOfLength(16_001);
+
+      expect(canonicalize(omit(input, ['project']))).toHaveLength(16_001);
+
+      const error = captureError(() => service.defineRelation(input));
+
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        details: [{ message: expect.stringContaining('relation exceeds 16000') }],
+      });
+      expect(writes).toEqual([]);
+    });
+
+    it('should refuse an empty from', () => {
+      const { service, writes } = setup();
+
+      const error = captureError(() => service.defineRelation(relation({ from: [] })));
+
+      expect(error).toMatchObject({ code: 'INVALID_INPUT', details: [{ path: '/from' }] });
+      expect(writes).toEqual([]);
+    });
+
+    it('should refuse an unknown kind', () => {
+      const { service, writes } = setup();
+      const unknown = relation({ kind: 'invented' as RelationName['kind'] });
+
+      const error = captureError(() => service.defineRelation(unknown));
+
+      expect(error).toMatchObject({ code: 'INVALID_INPUT', details: [{ path: '/kind' }] });
+      expect(writes).toEqual([]);
+    });
+  });
+
+  it('should store only what came, without an undefined key, when from and to are absent', () => {
     const { service, stored } = setup();
 
     service.defineRelation({ project: PROJECT, name: 'backs', kind: 'supports' });
 
     expect(stored('relations', 'backs', '1.0')).toStrictEqual({ name: 'backs', kind: 'supports' });
   });
+});
 
-  test('gate: qualquer mudança é minor; só breaking: true sobe o major', () => {
-    const { service } = setup();
-    service.defineGate(gate());
+describe('defineGate', () => {
+  describe('with immutable versions', () => {
+    it('should bump the minor on any change', () => {
+      const { service } = setup();
+      service.defineGate(gate());
 
-    const changed = service.defineGate(gate({ questions: [QUESTION, OTHER_QUESTION] }));
-    const flagged = service.defineGate(gate({ questions: [OTHER_QUESTION], breaking: true }));
+      const changed = service.defineGate(gate({ questions: [QUESTION, OTHER_QUESTION] }));
 
-    expect(changed).toMatchObject({ version: '1.1', previousVersion: '1.0' });
-    expect(flagged).toMatchObject({ version: '2.0', previousVersion: '1.1' });
+      expect(changed).toMatchObject({ version: '1.1', previousVersion: '1.0' });
+    });
+
+    it('should bump the major only with breaking: true', () => {
+      const { service } = setup();
+      service.defineGate(gate());
+      service.defineGate(gate({ questions: [QUESTION, OTHER_QUESTION] }));
+
+      const flagged = service.defineGate(gate({ questions: [OTHER_QUESTION], breaking: true }));
+
+      expect(flagged).toMatchObject({ version: '2.0', previousVersion: '1.1' });
+    });
   });
 
-  test('os três define* de mesmo nome não se misturam', () => {
-    const { service, versions } = setup();
+  describe('when the same definition is sent again', () => {
+    it('should return the current version without writing', () => {
+      const { service, writes } = setup();
+      const first = service.defineGate(gate());
+      writes.length = 0;
 
+      const replay = service.defineGate(gate());
+
+      expect(replay).toEqual({ ...first, created: false });
+      expect(writes).toEqual([]);
+    });
+
+    it('should be a replay, without bumping the major, when breaking: true comes with a definition identical to the current one', () => {
+      const { service, writes, versions } = setup();
+      const first = service.defineGate(gate({ breaking: true }));
+      writes.length = 0;
+
+      const replay = service.defineGate(gate({ breaking: true }));
+
+      expect(replay).toEqual({ ...first, created: false });
+      expect(replay.version).toBe('1.0');
+      expect(writes).toEqual([]);
+      expect(versions('gates', 'ready')).toEqual(['1.0']);
+    });
+  });
+
+  describe('when another writer takes the target version', () => {
+    it('should decide a different definition again and never overwrite the one of the other writer', () => {
+      const { service, seed, racing, stored } = setup();
+      service.defineGate(gate());
+      racing(() => seed('gates', 'ready', '1.1', { name: 'ready', questions: [OTHER_QUESTION] }));
+
+      const defined = service.defineGate(gate({ questions: [QUESTION, OTHER_QUESTION] }));
+
+      expect(defined).toMatchObject({
+        version: '1.2',
+        created: true,
+        previousVersion: '1.1',
+        divergentVersions: ['1.1'],
+      });
+      expect(stored('gates', 'ready', '1.1')).toEqual({
+        name: 'ready',
+        questions: [OTHER_QUESTION],
+      });
+    });
+
+    it('should exhaust the attempts, without overwriting, when the target version never frees up', () => {
+      const { store, seed } = setup();
+      seed('gates', 'ready', '1.0', { name: 'ready', questions: [QUESTION] });
+      // `write` sempre acha a versão alvo ocupada, e a leitura nunca vê o que o outro escritor gravou.
+      let writes = 0;
+      const stuck: DefinitionStore = {
+        ...store,
+        write: () => {
+          writes += 1;
+          return false;
+        },
+      };
+
+      const error = captureError(() =>
+        createDefinitionService({ store: stuck, validator: createValidator() }).defineGate(
+          gate({ questions: [OTHER_QUESTION] }),
+        ),
+      );
+
+      expect(error).toMatchObject({
+        code: 'INTERNAL',
+        details: [{ code: 'exclusive-write-exhausted' }],
+      });
+      expect(writes).toBe(10);
+    });
+  });
+
+  describe('with a definition above the cap or the wrong shape', () => {
+    it.each([
+      ['0 questions', []],
+      ['51 questions', Array.from({ length: 51 }, () => QUESTION)],
+    ])('should refuse a gate with %s', (_name, questions) => {
+      const { service, writes } = setup();
+
+      const error = captureError(() => service.defineGate(gate({ questions })));
+
+      expect(error).toMatchObject({ code: 'INVALID_INPUT', details: [{ path: '/questions' }] });
+      expect(writes).toEqual([]);
+    });
+
+    it('should still write a gate with 50 questions', () => {
+      const { service } = setup();
+
+      const defined = service.defineGate(
+        gate({ questions: Array.from({ length: 50 }, () => QUESTION) }),
+      );
+
+      expect(defined).toMatchObject({ version: '1.0', created: true });
+    });
+
+    it('should refuse a gate of 16,001 canonical characters', () => {
+      const { service, writes } = setup();
+      const withText = (text: string) =>
+        gate({ questions: [{ kind: 'occurred', select: { where: { text } } }] });
+      const base = canonicalize(omit(withText(''), ['project']))!.length;
+      const input = withText('x'.repeat(16_001 - base));
+
+      expect(canonicalize(omit(input, ['project']))).toHaveLength(16_001);
+
+      const error = captureError(() => service.defineGate(input));
+
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        details: [{ message: expect.stringContaining('gate exceeds 16000') }],
+      });
+      expect(writes).toEqual([]);
+    });
+  });
+
+  it('should keep the type and relation of the same name apart when defining a gate', () => {
+    const { service, versions } = setup();
     service.defineType({ project: PROJECT, name: 'same', schema: BASE_SCHEMA });
     service.defineRelation(relation({ name: 'same' }));
+
     service.defineGate(gate({ name: 'same' }));
 
     expect(versions('types', 'same')).toEqual(['1.0']);
     expect(versions('relations', 'same')).toEqual(['1.0']);
     expect(versions('gates', 'same')).toEqual(['1.0']);
-  });
-});
-
-describe('replay idempotente', () => {
-  test('mesma definição outra vez devolve a versão vigente sem gravar', () => {
-    const { service, writes } = setup();
-    const first = service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
-    writes.length = 0;
-
-    const replay = service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
-
-    expect(replay).toEqual({ ...first, created: false });
-    expect(writes).toEqual([]);
-  });
-
-  test.each([
-    ['relação', (s: ReturnType<typeof setup>['service']) => s.defineRelation(relation())],
-    ['gate', (s: ReturnType<typeof setup>['service']) => s.defineGate(gate())],
-  ])('%s: mesma definição outra vez é replay', (_kind, define) => {
-    const { service, writes } = setup();
-    const first = define(service);
-    writes.length = 0;
-
-    const replay = define(service);
-
-    expect(replay).toEqual({ ...first, created: false });
-    expect(writes).toEqual([]);
-  });
-
-  test.each<[string, (s: ReturnType<typeof setup>['service']) => Defined, DefinitionKind, string]>([
-    [
-      'tipo',
-      (s) => s.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA, breaking: true }),
-      'types',
-      NAME,
-    ],
-    ['gate', (s) => s.defineGate(gate({ breaking: true })), 'gates', 'ready'],
-  ])(
-    '%s: breaking: true com a definição idêntica à vigente é replay, sem subir a major',
-    (_kind, define, kind, name) => {
-      const { service, writes, versions } = setup();
-      const first = define(service);
-      writes.length = 0;
-
-      const replay = define(service);
-
-      expect(replay).toEqual({ ...first, created: false });
-      expect(replay.version).toBe('1.0');
-      expect(writes).toEqual([]);
-      expect(versions(kind, name)).toEqual(['1.0']);
-    },
-  );
-});
-
-describe('escritor concorrente ocupa a versão alvo', () => {
-  test('primeira versão de nome novo com breaking: true converge para 1.0 como replay', () => {
-    const { service, seed, racing, versions } = setup();
-    racing(() => seed('types', NAME, '1.0', BASE_SCHEMA));
-
-    const defined = service.defineType({
-      project: PROJECT,
-      name: NAME,
-      schema: BASE_SCHEMA,
-      breaking: true,
-    });
-
-    expect(defined).toEqual({
-      name: NAME,
-      version: '1.0',
-      hash: hashOfJcs(BASE_SCHEMA),
-      created: false,
-    });
-    expect(versions('types', NAME)).toEqual(['1.0']);
-  });
-
-  test('mesma definição gravada por outro escritor vira replay', () => {
-    const { service, seed, racing, versions } = setup();
-    service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
-    racing(() => seed('types', NAME, '1.1', WITH_OPTIONAL));
-
-    const defined = service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
-
-    expect(defined).toEqual({
-      name: NAME,
-      version: '1.1',
-      hash: hashOfJcs(WITH_OPTIONAL),
-      created: false,
-    });
-    expect(versions('types', NAME)).toEqual(['1.0', '1.1']);
-  });
-
-  test('definição diferente é decidida de novo e nunca sobrescreve a do outro escritor', () => {
-    const { service, seed, racing, stored } = setup();
-    service.defineGate(gate());
-    racing(() => seed('gates', 'ready', '1.1', { name: 'ready', questions: [OTHER_QUESTION] }));
-
-    const defined = service.defineGate(gate({ questions: [QUESTION, OTHER_QUESTION] }));
-
-    expect(defined).toMatchObject({
-      version: '1.2',
-      created: true,
-      previousVersion: '1.1',
-      divergentVersions: ['1.1'],
-    });
-    expect(stored('gates', 'ready', '1.1')).toEqual({ name: 'ready', questions: [OTHER_QUESTION] });
-  });
-
-  test('o que o outro escritor gravou pode tornar a mudança uma quebra', () => {
-    const { service, seed, racing } = setup();
-    service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
-    racing(() => seed('types', NAME, '1.1', WITH_REQUIRED));
-
-    const error = captureError(() =>
-      service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL }),
-    );
-
-    expect(error).toMatchObject({ code: 'BREAKING_CHANGE' });
-  });
-
-  test('versão alvo que nunca libera esgota as tentativas, sem sobrescrever', () => {
-    const { store, seed } = setup();
-    seed('gates', 'ready', '1.0', { name: 'ready', questions: [QUESTION] });
-    // `write` sempre acha a versão alvo ocupada, e a leitura nunca vê o que o outro escritor gravou.
-    let writes = 0;
-    const stuck: DefinitionStore = {
-      ...store,
-      write: () => {
-        writes += 1;
-        return false;
-      },
-    };
-
-    const error = captureError(() =>
-      createDefinitionService({ store: stuck, validator: createValidator() }).defineGate(
-        gate({ questions: [OTHER_QUESTION] }),
-      ),
-    );
-
-    expect(error).toMatchObject({
-      code: 'INTERNAL',
-      details: [{ code: 'exclusive-write-exhausted' }],
-    });
-    expect(writes).toBe(10);
-  });
-});
-
-describe('definição fora do teto ou da forma não chega a gravar', () => {
-  test('defineGate com 0 e com 51 perguntas', () => {
-    const { service, writes } = setup();
-    const fiftyOne = Array.from({ length: 51 }, () => QUESTION);
-
-    const none = captureError(() => service.defineGate(gate({ questions: [] })));
-    const tooMany = captureError(() => service.defineGate(gate({ questions: fiftyOne })));
-
-    expect(none).toMatchObject({ code: 'INVALID_INPUT', details: [{ path: '/questions' }] });
-    expect(tooMany).toMatchObject({ code: 'INVALID_INPUT', details: [{ path: '/questions' }] });
-    expect(writes).toEqual([]);
-  });
-
-  test('defineGate com 50 perguntas ainda grava', () => {
-    const { service } = setup();
-
-    const defined = service.defineGate(
-      gate({ questions: Array.from({ length: 50 }, () => QUESTION) }),
-    );
-
-    expect(defined).toMatchObject({ version: '1.0', created: true });
-  });
-
-  test('defineType com schema de 16.001 caracteres canônicos', () => {
-    const { service, writes } = setup();
-    // 34 caracteres de moldura canônica + o texto: 15.967 fecha em 16.001.
-    const schema: RecordType = { type: 'object', description: 'x'.repeat(15_967) };
-    expect(canonicalize(schema)).toHaveLength(16_001);
-
-    const error = captureError(() => service.defineType({ project: PROJECT, name: NAME, schema }));
-
-    expect(error).toMatchObject({ code: 'INVALID_SCHEMA', details: [{ path: '/schema' }] });
-    expect(writes).toEqual([]);
-  });
-
-  test('defineType com schema de 16.000 caracteres canônicos ainda grava', () => {
-    const { service } = setup();
-    const schema: RecordType = { type: 'object', description: 'x'.repeat(15_966) };
-    expect(canonicalize(schema)).toHaveLength(16_000);
-
-    const defined = service.defineType({ project: PROJECT, name: NAME, schema });
-
-    expect(defined).toMatchObject({ version: '1.0', created: true });
-  });
-
-  test('defineRelation com 16.001 caracteres canônicos', () => {
-    const { service, writes } = setup();
-    const input = relationOfLength(16_001);
-    expect(canonicalize(omit(input, ['project']))).toHaveLength(16_001);
-
-    const error = captureError(() => service.defineRelation(input));
-
-    expect(error).toMatchObject({
-      code: 'INVALID_INPUT',
-      details: [{ message: expect.stringContaining('relation exceeds 16000') }],
-    });
-    expect(writes).toEqual([]);
-  });
-
-  test('defineGate com 16.001 caracteres canônicos', () => {
-    const { service, writes } = setup();
-    const withText = (text: string) =>
-      gate({ questions: [{ kind: 'occurred', select: { where: { text } } }] });
-    const base = canonicalize(omit(withText(''), ['project']))!.length;
-    const input = withText('x'.repeat(16_001 - base));
-    expect(canonicalize(omit(input, ['project']))).toHaveLength(16_001);
-
-    const error = captureError(() => service.defineGate(input));
-
-    expect(error).toMatchObject({
-      code: 'INVALID_INPUT',
-      details: [{ message: expect.stringContaining('gate exceeds 16000') }],
-    });
-    expect(writes).toEqual([]);
-  });
-
-  test.each([
-    ['array', { type: 'array', items: { type: 'string' } }],
-    ['sem type', { description: 'sem type na raiz' }],
-  ])('defineType com raiz %s', (_root, schema) => {
-    const { service, writes } = setup();
-
-    const error = captureError(() => service.defineType({ project: PROJECT, name: NAME, schema }));
-
-    expect(error).toMatchObject({
-      code: 'INVALID_SCHEMA',
-      details: [{ path: '/schema/type', code: 'invalid-type' }],
-    });
-    expect(writes).toEqual([]);
-  });
-
-  test('defineRelation com from vazio', () => {
-    const { service, writes } = setup();
-
-    const error = captureError(() => service.defineRelation(relation({ from: [] })));
-
-    expect(error).toMatchObject({ code: 'INVALID_INPUT', details: [{ path: '/from' }] });
-    expect(writes).toEqual([]);
-  });
-
-  test('defineRelation com kind desconhecido', () => {
-    const { service, writes } = setup();
-    const unknown = relation({ kind: 'invented' as RelationName['kind'] });
-
-    const error = captureError(() => service.defineRelation(unknown));
-
-    expect(error).toMatchObject({ code: 'INVALID_INPUT', details: [{ path: '/kind' }] });
-    expect(writes).toEqual([]);
-  });
-});
-
-describe('defineType: checkSchema do validador', () => {
-  test.each([
-    [
-      'pattern livre',
-      { code: { type: 'string', maxLength: 10, pattern: '^[a-z]+$' } },
-      '/schema/properties/code/pattern',
-    ],
-    [
-      'pattern livre que não compila como regex',
-      { code: { type: 'string', pattern: '(' } },
-      '/schema/properties/code/pattern',
-    ],
-    [
-      'patternProperties',
-      { code: { type: 'object', patternProperties: { '^x-': { type: 'string' } } } },
-      '/schema/properties/code/patternProperties',
-    ],
-    [
-      'valor que viola o metaschema',
-      { code: { minLength: -1 } },
-      '/schema/properties/code/minLength',
-    ],
-  ])(
-    '%s devolve invalid-schema com o path prefixado com /schema e não grava',
-    (_name, properties, path) => {
-      const { service, writes } = setup();
-      const schema = { type: 'object', properties } as RecordType;
-
-      const error = captureError(() =>
-        service.defineType({ project: PROJECT, name: NAME, schema }),
-      );
-
-      expect(error).toMatchObject({ code: 'INVALID_SCHEMA', details: [{ path }] });
-      expect(writes).toEqual([]);
-    },
-  );
-
-  test('pattern livre sai com o código pattern-not-allowed', () => {
-    const { service } = setup();
-    const schema: RecordType = {
-      type: 'object',
-      properties: { code: { type: 'string', pattern: '^[a-z]+$' } },
-    };
-
-    const error = captureError(() => service.defineType({ project: PROJECT, name: NAME, schema }));
-
-    expect(error).toMatchObject({
-      code: 'INVALID_SCHEMA',
-      details: [{ path: '/schema/properties/code/pattern', code: 'pattern-not-allowed' }],
-    });
-  });
-
-  test('reenviar o schema de um tipo legado com pattern é recusado, não é replay', () => {
-    const { service, seed, versions, writes } = setup();
-    const legacy: RecordType = {
-      type: 'object',
-      properties: { code: { type: 'string', maxLength: 10, pattern: '^[a-z]+$' } },
-    };
-    seed('types', NAME, '1.0', legacy);
-
-    const error = captureError(() =>
-      service.defineType({ project: PROJECT, name: NAME, schema: legacy }),
-    );
-
-    expect(error).toMatchObject({
-      code: 'INVALID_SCHEMA',
-      details: [{ path: '/schema/properties/code/pattern', code: 'pattern-not-allowed' }],
-    });
-    expect(versions('types', NAME)).toEqual(['1.0']);
-    expect(writes).toEqual([]);
-  });
-
-  test('exceção do ajv aponta exatamente /schema, nunca /schema/schema', () => {
-    const { service, writes } = setup();
-    const schema: RecordType = { type: 'object', bogus: true };
-
-    const error = captureError(() => service.defineType({ project: PROJECT, name: NAME, schema }));
-
-    expect(error).toMatchObject({
-      code: 'INVALID_SCHEMA',
-      details: [{ path: '/schema', code: 'invalid-schema' }],
-    });
-    expect(writes).toEqual([]);
-  });
-
-  test('os details do validador saem prefixados com /schema, sem novo corte', () => {
-    const { store, writes } = setup();
-    const details = Array.from({ length: 51 }, (_, index) => ({
-      path: `/properties/p${index}`,
-      code: 'type',
-      message: 'must be valid',
-    }));
-    const service = createDefinitionService({
-      store,
-      validator: { checkSchema: () => details, validate: () => [] },
-    });
-
-    const error = captureError(() =>
-      service.defineType({ project: PROJECT, name: NAME, schema: { type: 'object' } }),
-    );
-
-    expect(error).toMatchObject({
-      code: 'INVALID_SCHEMA',
-      details: details.map((detail) => ({ ...detail, path: `/schema${detail.path}` })),
-    });
-    expect(writes).toEqual([]);
   });
 });
