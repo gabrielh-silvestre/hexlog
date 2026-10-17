@@ -15,11 +15,11 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 
 ## Ocupante
 
-- No `ask` o ocupante é o humano: o principal grava a `premise` com `answeredBy: human` quando o `premise` fixado tem o campo (senão grava sem ele), com `fills-gap` salvo contradição com atemporal. Texto livre pedindo contexto dispara a ação de contexto e repete a pergunta, sem gravar premissa.
+- No `ask` o ocupante é o humano: o principal grava a `premise` com a origem `human` (ver Origem abaixo), com `fills-gap` salvo contradição com atemporal. Texto livre pedindo contexto dispara a ação de contexto e repete a pergunta, sem gravar premissa.
 - No `autonomous` o ocupante é o `critic` durável, só com `answeredBy` fixado no `premise` do processo (`describe_type` com `process`; `TYPE_NOT_PINNED` conta como sem o campo) e com Herdr (`HERDR_ENV=1`).
-- Sem `answeredBy` fixado o ocupante simulado não senta; também não senta sem Herdr, sem a exceção de Opus na sessão ou com critic que nunca subiu. Então a classe comum decide como antes (`grounds: gap`, premissa da entrega com `fills-gap`, sem o campo) e a crítica volta ao teto fixo antigo. O `autonomous` não vira `ask`.
+- Sem `answeredBy` fixado o ocupante simulado não senta; também não senta sem a exceção de Opus na sessão ou com critic que nunca subiu. Então a classe comum decide como antes (`grounds: gap`, premissa da entrega com `fills-gap`, sem o campo) e a crítica volta ao teto fixo antigo. O `autonomous` não vira `ask`.
 - Headless e sem `AskUserQuestion` não tiram o ocupante: o critic responde e o aval fica pendente no pré-PR.
-- Substituir o critic por silêncio ou por `context: tight` não foi sondado com o lançamento final e pode descartar uma resposta em andamento; a guarda que procura a `simulated` vigente da lacuna evita a repetição.
+- Se o critic cai no meio de uma resposta, a guarda que procura a `simulated` vigente da lacuna evita gravar outra.
 - Origem, quando o `premise` fixado tem o campo (senão grava sem ele): `human` é gravada pelo principal quando o humano responde, `simulated` pelo critic e `simulated-approved` pelo principal no aval. O campo é autodeclarado: rastro, não prova.
 
 ## Classe da pergunta
@@ -42,10 +42,10 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 
 - Na crítica o agente executa sobre a resposta do critic e emenda a regra tocada no mesmo trabalho. A lacuna segue aberta: o gate `gaps` falha e o relatório acusa `critical-gap` até o aval. É freio, não barreira.
 - Recolher um aval é `revokes` da `simulated-approved` vigente; gravar outro aval sem esse `revokes` deixa o antigo vigente e não limpa o `doc amended after the approval`.
-- Aval no pré-PR, uma lacuna por turno: avalizou grava `simulated-approved` com `fills-gap` e `derivesFrom` cru para a `simulated`; decidiu outra coisa grava `human` com `revokes` da `simulated`; recusou revoga a `simulated`, refaz o trabalho dependente e devolve a recusa ao critic como dado; sem resposta nada se revoga e o PR fica em rascunho.
+- Aval no pré-PR, uma lacuna por turno: avalizou grava `simulated-approved` com `fills-gap` e `derivesFrom` cru para a `simulated`; decidiu outra coisa grava `human` com `revokes` da `simulated`; recusou revoga a `simulated`, refaz o dependente e devolve a recusa ao critic como dado (só no `flow-run`; no `flow-gaps` o assento é humano); sem resposta nada se revoga e o PR fica em rascunho.
 - Aprovar não vale para contradição com atemporal: o critic só recomenda, a cadeira nunca faz `fills-gap` aí e só o dono emenda `estrategia.md`.
 - A reinjeção "continue" do `autopilot` ou do `ralph` não é aval. Sem terminal, o pedido de aval vai na mensagem final.
-- A trava vale só quando a lacuna fica sem resposta (critic caído sem substituto, limites esgotados ou contradição com atemporal): o que depende dela não executa, o independente segue, a pergunta vai ao humano e o PR sai em rascunho. Com resposta do critic o agente executa, salvo na contradição com atemporal, em que o critic só recomenda.
+- A trava vale só quando a lacuna fica sem resposta (critic caído sem substituto, limites esgotados ou contradição com atemporal): o que depende dela não executa, o independente segue, a pergunta vai ao humano e o PR sai em rascunho.
 
 ## Protocolo do subagente
 
