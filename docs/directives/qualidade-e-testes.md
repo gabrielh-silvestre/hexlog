@@ -41,7 +41,7 @@
 - O `globalSetup` (`test/global-setup.ts`) apaga as variáveis locais do Git (`GIT_DIR`, `GIT_INDEX_FILE` etc.), que um hook disparado de worktree vinculada exporta: nenhum spec depende de `GIT_*` herdado, e todo `git` de spec roda com `cwd` num repositório temporário.
 - Teste que sobe bundle, processo filho ou carga declara o próprio timeout como último argumento do `it` (de 15_000 a 240_000 ms), porque o padrão do jest é 5000 ms e não há `testTimeout` global.
 - Property-based tests (`fast-check`, `fc.assert`/`fc.property`) cobrem as invariantes de vigência (`domain/vigency.property.spec.ts`), do `expectedHead` do `verify_chain` (`shared/loader.property.spec.ts`), da busca (`adapters/search.spec.ts`) e da paginação (`queries/pagination.spec.ts`).
-- Os IDs nos títulos de teste (`M#`, `N#`, `S#`, `B#`, `I#`, `C#`, `Q#`, `R-#`, `U-#`) são rótulos das famílias descritas em [documentacao.md](documentacao.md), não dos ADRs 0007 a 0010.
+- Os IDs nos títulos de teste (`M#`, `N#`, `S#`, `B#`, `I#`, `C#`, `Q#`, `R-#`, `U-#`, `D-##`, `P#`, `TF#`, `SL#` e os demais de [documentacao.md](documentacao.md)) ficam só no fim do título do `it`, entre parênteses e separados por vírgula (`it('should … (TF3, D-10)')`), nunca no `describe`; são rótulos das famílias de documentacao.md, não dos ADRs 0007 a 0010.
 
 ## Bundle e processo filho
 
