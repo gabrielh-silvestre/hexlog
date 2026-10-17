@@ -1,4 +1,7 @@
+import fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
+import { omit } from 'es-toolkit';
+import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import { NOTE } from '../commands/register-fakes.ts';
 import { captureError } from '../helpers.ts';
 import { instant, PROJECT, querySetup } from './query-setup.ts';
@@ -12,7 +15,7 @@ function listSetup() {
 }
 
 describe('list', () => {
-  test('sem projeto lista os projetos com a contagem de processos', () => {
+  test('without a project lists the projects with the process count', () => {
     const { definitions, list } = listSetup();
     definitions.write('beta', 'types', 'note', '1.0', NOTE);
 
@@ -24,7 +27,7 @@ describe('list', () => {
     });
   });
 
-  test('com projeto lista os processos em ordem de nome e as definições com a versão mais nova', () => {
+  test('with a project lists the processes in name order and the definitions with the newest version', () => {
     const { definitions, list } = listSetup();
     definitions.write(PROJECT, 'types', 'note', '1.1', NOTE);
 
@@ -43,7 +46,7 @@ describe('list', () => {
     });
   });
 
-  test('com projeto e processo devolve o que o manifesto fixou, sem as definições novas', () => {
+  test('with a project and process returns what the manifest pinned, without the new definitions', () => {
     const { definitions, list } = listSetup();
     definitions.write(PROJECT, 'gates', 'late', '1.0', {
       name: 'late',
@@ -53,6 +56,7 @@ describe('list', () => {
     expect(list({ project: PROJECT, process: 'run-1' }).process).toEqual({
       name: 'run-1',
       createdAt: instant(0).toISOString(),
+      lineageInheritance: true,
       pinned: { types: ['doc', 'note'], relations: ['approves'], gates: [] },
       hashes: {
         types: expect.stringMatching(/^[0-9a-f]{64}$/),
@@ -62,7 +66,18 @@ describe('list', () => {
     });
   });
 
-  test('projeto inexistente é PROJECT_NOT_FOUND, com e sem processo', () => {
+  test('process view omits lineageInheritance for a manifest without it', () => {
+    const { dataDir, list } = listSetup();
+    const manifestFile = processPaths(dataDir, { project: PROJECT, process: 'run-1' }).manifest;
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(manifestFile, JSON.stringify(omit(manifest, ['lineageInheritance'])));
+
+    expect(list({ project: PROJECT, process: 'run-1' }).process).not.toHaveProperty(
+      'lineageInheritance',
+    );
+  });
+
+  test('unknown project is PROJECT_NOT_FOUND, with and without a process', () => {
     const { list } = listSetup();
 
     expect(captureError(() => list({ project: 'ghost' })).code).toBe('PROJECT_NOT_FOUND');
@@ -71,7 +86,7 @@ describe('list', () => {
     );
   });
 
-  test('processo inexistente é PROCESS_NOT_FOUND e processo sem projeto é INVALID_INPUT', () => {
+  test('unknown process is PROCESS_NOT_FOUND and a process without a project is INVALID_INPUT', () => {
     const { list } = listSetup();
 
     expect(captureError(() => list({ project: PROJECT, process: 'ghost' })).code).toBe(

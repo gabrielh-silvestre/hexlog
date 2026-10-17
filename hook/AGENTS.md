@@ -12,7 +12,7 @@ tokeniza o comando recebido; nunca executa nada.
 ## Key Files
 | File | Description |
 |---|---|
-| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal, que `decide` confere antes de tokenizar. Nega também o que não consegue decidir: token com glob acima de `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou `MAX_BRACKETS`, comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH`, comando acima de `MAX_COMMAND_LENGTH` (1 MiB). Libera o comando que o `shell-quote` não parseia (`${}`) e o token cujo casamento lança. Falha aberto também para entrada que não é comando Bash: stdin vazio, JSON inválido, `tool_name` diferente de `Bash`, Node ausente (R-1) ou hook morto pelo `timeout` de 10 s. A mensagem de negação é o literal de `denialMessage`, que lista as tools de leitura (6 das 12); a negação por comando indecidível usa `undecidableMessage`, sem citar `D`. Em comando composto (`&&`, `||`, `;`, `|`, `&`, `|&`) ambas acrescentam ` Matched: <segmento>` (até 200 caracteres, controle e formatação viram `?`) |
+| `bash-guard.ts` | Lê `{tool_name, tool_input.command, cwd}` do stdin, tokeniza o comando com `shell-quote` e nega (exit 2) se algum token alcançar o diretório de dados (`dataDir`, de `src/directory.ts`), por igualdade, prefixo, glob (`*`, `?`, `[`, `{a,b}`, `**`) ou menção literal, que `decide` confere antes de tokenizar. Nega também o que não consegue decidir: token com glob que o shell expande (sem aspas e sem `\`) acima de `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou `MAX_BRACKETS`, comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH`, comando acima de `MAX_COMMAND_LENGTH` (1 MiB). Libera o comando que o `shell-quote` não parseia (`${}`) e o token cujo casamento lança. Falha aberto também para entrada que não é comando Bash: stdin vazio, JSON inválido, `tool_name` diferente de `Bash`, Node ausente ou hook morto pelo `timeout` de 10 s. A mensagem de negação é o literal de `denialMessage`, que lista as tools de leitura (6 das 12); a negação por custo usa `undecidableMessage`, que diz que o comando não cita `D` literalmente e foi negado só por um teto. Em comando composto (`&&`, `||`, `;`, `|`, `&`, `|&`) ambas acrescentam ` Matched: <segmento>` (até 200 caracteres, controle e formatação viram `?`) |
 
 ## Navigation Notes
 - A lógica de decisão é pura (`decide`, sem I/O, não exportada) e separada da
@@ -21,14 +21,20 @@ tokeniza o comando recebido; nunca executa nada.
   `isExecutedDirectly()` compara `fs.realpathSync(process.argv[1])` com
   `fileURLToPath(import.meta.url)`, para o hook valer também quando chamado por symlink.
 - Os tetos de glob (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) valem só
-  para token com caractere de glob, e `MAX_GLOB_TOTAL_LENGTH` limita a soma desses tokens no
-  comando: sem eles, um `[`×4096 ou centenas de tokens abaixo do teto levam segundos e o hook
-  morre no timeout, liberando o comando. `MAX_COMMAND_LENGTH` limita o comando
-  inteiro antes de tokenizar. O `path.matchesGlob` expande o produto das chaves e das faixas, então
-  a chave só expande até `MAX_BRACE_EXPANSION` (32) alternativas (`braceAlternatives`); acima disso,
-  ou com faixa `..`, cada grupo vira `*` (`collapseBraceGroups`), e `.*` na abertura de um segmento
-  oculto de `D`, que o `*` não casa.
-  Falso positivo aceito: token ou comando legítimo acima do teto é negado.
+  para o token que o shell expande: `maskQuoted` troca o texto entre aspas e escapado por `x` num
+  segundo parse (`maskedTokensOf`, só quando algum token passa dos tetos), `toCandidates` marca o
+  `expandable` e `skipsGlobMatch` pula o casamento do token só entre aspas acima dos tetos, que `literalPrefixReaches` confere pelo prefixo literal. As regras
+  (o que faz o `maskQuoted` desistir, o orçamento total, o limite aceito) estão em
+  `docs/directives/instalacao-e-hooks.md` (ver `## Diretrizes` abaixo).
+- O `shell-quote` só devolve `{op: 'glob'}` para `*` e `?`; `{` e `[` voltam como string, sem marca
+  de aspas, por isso o segundo parse.
+- `MAX_GLOB_TOTAL_LENGTH` e `MAX_COMMAND_LENGTH` existem para o hook não morrer no timeout, que libera
+  o comando: sem eles, um `[`×4096 ou centenas de tokens abaixo do teto levam segundos.
+- O `path.matchesGlob` expande o produto das chaves e das faixas, então a chave só expande até
+  `MAX_BRACE_EXPANSION` (32) alternativas (`braceAlternatives`); acima disso, ou com faixa `..`, cada
+  grupo vira `*` (`collapseBraceGroups`), e `.*` na abertura de um segmento oculto de `D`, que o `*`
+  não casa.
+- Falso positivo aceito: token com glob sem aspas ou comando legítimo acima do teto é negado.
 - `test/bash-guard.spec.ts`: casos de negação e permissão contra o hook
   `.ts` real (I4), entrada inválida falha aberto (I7), tokens hostis negados
   (U1; o comando que o `shell-quote` não parseia passa), trecho citado na mensagem (#45), entrypoint por symlink (M2), e um
@@ -48,7 +54,7 @@ tokeniza o comando recebido; nunca executa nada.
 
 ### External
 - `shell-quote` (parse dos tokens do comando)
-- `es-toolkit` (`isNil`, `isString`, `take`, `takeWhile`)
+- `es-toolkit` (`isNil`, `isString`, `sumBy`, `take`, `takeWhile`)
 - `node:fs`, `node:os`, `node:path`, `node:url`
 
 ## Manual Notes

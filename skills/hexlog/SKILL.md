@@ -1,6 +1,6 @@
 ---
 name: hexlog
-description: "Use when the agent needs to bootstrap a new project in hexlog (define types, relation names and gates, create a process, register records, evaluate gates) or diagnose whether an already-installed hexlog server is healthy. Examples: \"configura o hexlog nesse projeto\", \"o hexlog está funcionando?\", \"registra esse marco no hexlog\", \"avalia esse gate\""
+description: "Use when the agent needs to bootstrap a new project in hexlog (define types, relation names and gates, create a process, register records, evaluate gates) or diagnose whether an already-installed hexlog server is healthy. Examples: \"configura o hexlog nesse projeto\", \"o hexlog está funcionando?\". Not for day-to-day registering or gate evaluation in a repository that already has `.hexlog/flow.md` — that's hexlog-flow."
 ---
 
 # hexlog
@@ -44,7 +44,7 @@ As 12 tools:
 | # | Tool | Motivo |
 |---|---|---|
 | 1 | `define_type`, `define_relation`, `define_gate` | Ao menos uma definição no projeto, e **todas** antes do passo 2. Projeto sem nenhuma definição faz `create_process` recusar com `TYPE_NOT_FOUND` (`commands/process.ts#assertSomethingRegistered`) |
-| 2 | `create_process` | Fixa as versões vigentes naquele instante e devolve os nomes em `pinned`. **Idempotente por nome**: chamar de novo devolve o processo existente com `created: false`, e `stale` lista o que mudou no projeto depois da fixação — não refixa. Para valer uma definição nova, crie um processo novo |
+| 2 | `create_process` | Fixa as versões vigentes naquele instante e devolve os nomes em `pinned`, com `lineageInheritance: true` no processo novo. **Idempotente por nome**: chamar de novo devolve o processo existente com `created: false`, e `stale` lista o que mudou no projeto depois da fixação — não refixa. Para valer uma definição nova, crie um processo novo |
 | 3 | `attach`, se o registro cita texto | O `register` exige o anexo já guardado |
 | 4 | `register`, `evaluate_gate`, `query` | Dependem do processo do passo 2 |
 
@@ -55,11 +55,6 @@ minúsculo, `[a-z0-9-]`, começa com alfanumérico, até 63 caracteres.
 imutável: nomear pela versão ainda não fechada (ex.: "release 0.0.2") deixa um
 processo órfão assim que a versão real diverge; prefira o escopo (ex.:
 "release hextelemetry").
-
-**hexlog + ralplan.** Ao configurar hexlog num projeto que já roda ralplan,
-escreva no `CLAUDE.md` desse projeto a regra "cada iteração do ralplan entra
-no hexlog assim que acontece" — antes de disparar as iterações, não depois
-que o usuário notar a lacuna.
 
 ## Versão de definição e `breaking`
 
@@ -98,7 +93,8 @@ fazer quando um processo já ficou preso a um tipo sem a marca.
 Notas:
 
 - Para saber o que um processo congelou, chame `list` com `project` e
-  `process`: devolve os nomes fixados (`pinned`) e os hashes. Com só `project`,
+  `process`: devolve os nomes fixados (`pinned`), os hashes e `lineageInheritance: true`
+  (processo novo; o processo antigo vem sem o campo). Com só `project`,
   devolve as definições vigentes e todas as suas versões.
 - Para ler o schema de um tipo antes de registrar, chame `describe_type` com `project`,
   `type` e `process` (o tipo fixado, sem a versão na saída) ou sem `process` (a versão
@@ -127,6 +123,7 @@ Notas:
 
 3. create_process({ project: "myproj", process: "onboarding" })
    → { project: "myproj", process: "onboarding", created: true,
+       lineageInheritance: true,
        pinned: { types: ["note"], relations: [], gates: ["has-note"] } }
 
 4. register({
@@ -142,12 +139,14 @@ Notas:
    })
    → { passed: true,
        questions: [{ index: 0, kind: "occurred", passed: true,
-                     evidence: { found: ["onboarding:<uuid v7>"] } }],
+                     counts: { found: 1 } }],
        marker: { onboarding: "onboarding:<uuid v7>" } }
 ```
 
 O gate responde sozinho a partir dos registros vigentes: o agente não informa
-`result`. Com `target` omitido, os seletores leem todos os alvos; com `target`,
+`result`. Por padrão a resposta traz só o tamanho de cada lista de evidência
+(`counts: {...}`) e, na pergunta reprovada, os ids que explicam a reprovação; `evidence:
+"full"` devolve todas as listas de ids, e `targets: [...]` avalia vários alvos numa chamada. Com `target` omitido, os seletores leem todos os alvos; com `target`,
 os seletores sem `targetPrefix` herdam esse alvo (a fronteira é o `.`).
 
 ## Diagnóstico de saúde

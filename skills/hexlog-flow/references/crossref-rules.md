@@ -1,6 +1,6 @@
 # Regras de cruzamento
 
-Três regras, decididas no grilling do mapa de fluxo. Nenhuma delas precisa de tool
+Três regras de cruzamento. Nenhuma delas precisa de tool
 nova — todas são combinações de `register`, `query`, `evaluate_gate` e
 `verify_chain`, guiadas pela leitura do `.hexlog/flow.md`.
 
@@ -19,10 +19,18 @@ versão atual da linhagem (ou nulo, se foi revogada). Não existe gate de
 "bifurcação" nem como "cancelar" um registro já gravado: o log é append-only, e
 anular é um `revokes`. Para seguir a linhagem, `query` com `includeNonCurrent:
 true` e `relatedTo` = o `id`. O `relatedTo` devolve só os vizinhos diretos, por
-qualquer relação, de entrada ou de saída, sem o próprio `id`; cada registro traz `in`
-e `out`, e a cadeia se percorre por eles, um salto por vez.
+qualquer relação, de entrada ou de saída, sem o próprio `id`; com `relations: "full"`, cada registro
+traz `in` e `out`, e a cadeia se percorre por eles, um salto por vez.
+
+Em processo com herança (criado depois dela), as relações gravadas para a versão superada
+valem também para a atual, sem regravar: ver "Herança de relações pela linhagem" no
+`SKILL.md`. Processo anterior segue regravando `supports`, `answers` e `derivesFrom` na
+versão nova.
 
 Substituir e revogar só valem **dentro do processo** (`cross-process-currency`).
+O `supersedes` exige também o **mesmo target** (`target-mismatch`): para mudar um fato
+de target, faça `revokes` no registro antigo e grave o novo no target certo com
+`derivesFrom` para ele.
 
 ## 2. Entre fases — leitura com o alcance certo
 
@@ -32,7 +40,7 @@ que enxerga mais de um processo.
 - Para ler **uma** fase, `query` com o `process` dela (o flow map traduz "fase X"
   para o nome do processo) — nunca o `process` da fase corrente por padrão.
 - Para ler **várias** de uma vez, `query` com `scope: "project"`: lê e verifica todos
-  os processos do projeto, e `in`, `out.current` e `needsReview` passam a ver as
+  os processos do projeto, e `in` (ou `inCounts: {...}`), `out.current` e `needsReview` passam a ver as
   relações entre processos. O alcance padrão (`process`) não vê relação vinda de
   outro processo e **não avisa**.
 - Para **ligar** um registro a outro de outra fase, use qualquer relação menos
@@ -66,7 +74,13 @@ Um seletor é `{ type?, targetPrefix?, where? }`, com `where` = igualdade em cam
 de primeiro nível de `data`, só valor escalar. Uma comparação ("revisão ≥ 2") se
 modela com um campo booleano do tipo (`where: { isRevision: true }`), nunca com
 operador. Recusado e pendente se distinguem pela evidência: há `contradictions`
-versus apoio ausente (`unsupported`).
+versus apoio ausente (`unsupported`). Com o padrão `evidence: "failing"`, a
+resposta da pergunta reprovada traz esses ids; a aprovada traz só `counts: {...}`, e
+`evidence: "full"` devolve todas as listas. Em lote (`targets`) o padrão é `counts`, sem ids.
+
+`approved` e `no_pending` aceitam `inherit: true` para contar também o apoio ou a
+resolução herdados da versão superada (processo com herança); a lista `inherited` da
+evidência mostra o que conta só assim.
 
 Sem gate declarado para a fase, não invente um cruzamento — a lacuna fica sem
 prova formal, e isso é uma decisão aceita, não um bug.

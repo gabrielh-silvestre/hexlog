@@ -9,3 +9,4 @@ graphify-out/
 .gitnexus/
 .ignore/
 brag-output*/
+__pycache__/

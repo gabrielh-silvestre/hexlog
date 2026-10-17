@@ -1,7 +1,7 @@
 # Schema do `FlowMap`
 
 Forma do frontmatter YAML de `.hexlog/flow.md`. Especificação autônoma — sem
-validador programático nesta v1 (não há consumidor de código, só o agente da
+validador programático (não há consumidor de código, só o agente da
 skill `hexlog-flow`, que lê o arquivo como texto). Leia este arquivo só na hora
 de escrever o frontmatter (passo 5 do `SKILL.md`) — não precisa entrar em
 contexto durante a entrevista ou a leitura das skills apontadas.
@@ -17,12 +17,10 @@ contexto durante a entrevista ou a leitura das skills apontadas.
 | `targetIdPattern` | `string` | não | Regex source que restringe o rótulo inteiro do `target` (a sintaxe de `Target`, `domain/ids.ts#Target`, vale sempre). Ausente, só a sintaxe do `Target` vale; ver [`../../hexlog-flow/references/target-format.md`](../../hexlog-flow/references/target-format.md) |
 | `editedSkills` | `string[]` | não (default `[]`) | Nomes das skills apontadas na descoberta que a `hexlog-setup` efetivamente editou para chamar a `hexlog-flow` — ver o passo opcional do `SKILL.md` |
 
-O campo `versions` do 0.x não existe mais: nenhuma tool devolve a versão que o
-processo fixou. O `create_process` devolve só os nomes (`pinned`), e `list` com
-`project` e `process` traz `pinned` (os nomes) e `hashes` (um por tipo de
-definição). Um
-`.hexlog/flow.md` antigo que ainda o traga continua legível — a `hexlog-flow` só lê
-os campos acima.
+Nenhuma tool devolve a versão que o processo fixou: o `create_process` devolve só
+os nomes (`pinned`), e `list` com `project` e `process` traz `pinned` (os nomes) e
+`hashes` (um por tipo de definição). Por isso o frontmatter não tem campo de
+versão. A `hexlog-flow` só lê os campos acima e ignora qualquer outro.
 
 ## Validação cruzada
 

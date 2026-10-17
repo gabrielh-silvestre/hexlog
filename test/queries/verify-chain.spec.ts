@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
-import { blobFile } from '../../src/adapters/fs/data-format.ts';
+import { omit } from 'es-toolkit';
+import { blobFile, processPaths } from '../../src/adapters/fs/data-format.ts';
 import type { Hash } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { MAX_BREAKS } from '../../src/shared/loader.ts';
@@ -25,8 +26,8 @@ function verifySetup() {
   return { ...setup, verify, verifyAgainst, logFile, blobOf, stored, doc };
 }
 
-describe('verifyChain: cadeia do processo', () => {
-  test('processo íntegro dá ok, a contagem e a cabeça, sem quebra nem linha reparada', async () => {
+describe('verifyChain: process chain', () => {
+  test('intact process gives ok, the count and the head, with no break or repaired line', async () => {
     const { registerOne, verify } = verifySetup();
     await registerOne('run-1', note('a'));
     await registerOne('run-1', note('b'), 1);
@@ -41,7 +42,7 @@ describe('verifyChain: cadeia do processo', () => {
     });
   });
 
-  test('processo sem registro dá ok, totalRecords 0 e a âncora do processo como cabeça', () => {
+  test('process with no records gives ok, totalRecords 0 and the process anchor as head', () => {
     expect(verifySetup().verify()).toMatchObject({
       ok: true,
       totalRecords: 0,
@@ -49,7 +50,7 @@ describe('verifyChain: cadeia do processo', () => {
     });
   });
 
-  test('diagnostica sem gravar: o log fica byte a byte igual, também com quebra', async () => {
+  test('diagnoses without writing: the log stays byte for byte identical, also with a break', async () => {
     const { registerOne, verify, logFile, tamper } = verifySetup();
     await registerOne('run-1', note('a'));
     await registerOne('run-1', note('b'), 1);
@@ -61,7 +62,7 @@ describe('verifyChain: cadeia do processo', () => {
     expect(fs.readFileSync(logFile()).equals(before)).toBe(true);
   });
 
-  test('linha adulterada não lança: vira ok false com a quebra na linha seguinte', async () => {
+  test('tampered line does not throw: becomes ok false with the break on the next line', async () => {
     const { registerOne, verify, tamper } = verifySetup();
     await registerOne('run-1', note('a'));
     await registerOne('run-1', note('b'), 1);
@@ -74,7 +75,7 @@ describe('verifyChain: cadeia do processo', () => {
     expect(result.breaks[0]).toMatchObject({ index: 1 });
   });
 
-  test('linha rasgada seguida de linha válida é reparada: aparece em repairedLines e não quebra', async () => {
+  test('torn line followed by a valid line is repaired: shows up in repairedLines and does not break', async () => {
     const { registerOne, verify, logFile } = verifySetup();
     await registerOne('run-1', note('a'));
     fs.appendFileSync(logFile(), '{"links":[{\n');
@@ -83,12 +84,38 @@ describe('verifyChain: cadeia do processo', () => {
     expect(verify()).toMatchObject({ ok: true, totalRecords: 2, repairedLines: [1] });
   });
 
-  test('processo inexistente é PROCESS_NOT_FOUND', () => {
+  test('unknown process is PROCESS_NOT_FOUND', () => {
     expect(captureError(() => verifySetup().verify('ghost')).code).toBe('PROCESS_NOT_FOUND');
   });
 });
 
-describe('verifyChain: expectedHead como âncora contra truncamento', () => {
+describe('verifyChain: lineageInheritance in the anchor', () => {
+  const withoutFlag = (dataDir: string) => {
+    const file = processPaths(dataDir, { project: PROJECT, process: 'run-1' }).manifest;
+    const manifest = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(file, JSON.stringify(omit(manifest, ['lineageInheritance'])));
+  };
+
+  test('removing the flag from a new process manifest breaks the chain', async () => {
+    const { dataDir, registerOne, verify } = verifySetup();
+    await registerOne('run-1', note('a'));
+    expect(verify().ok).toBe(true);
+
+    withoutFlag(dataDir);
+
+    expect(verify().ok).toBe(false);
+  });
+
+  test('a manifest without the flag keeps verifying', async () => {
+    const { dataDir, registerOne, verify } = verifySetup();
+    withoutFlag(dataDir);
+    await registerOne('run-1', note('a'));
+
+    expect(verify()).toMatchObject({ ok: true, totalRecords: 1 });
+  });
+});
+
+describe('verifyChain: expectedHead as an anchor against truncation', () => {
   /** Reescreve o log sem as últimas `count` linhas, como quem apaga a cauda. */
   function dropLastLines(file: string, count: number) {
     const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
@@ -101,7 +128,7 @@ describe('verifyChain: expectedHead como âncora contra truncamento', () => {
     );
   }
 
-  test('o head do último elo passa, e o de um elo anterior também depois de o log crescer', async () => {
+  test('the head of the last link passes, and so does that of an earlier link after the log grows', async () => {
     const { registerOne, verify, verifyAgainst } = verifySetup();
     await registerOne('run-1', note('a'));
     const early = verify().head;
@@ -112,7 +139,7 @@ describe('verifyChain: expectedHead como âncora contra truncamento', () => {
     expect(verifyAgainst(early)).toMatchObject({ ok: true, breaks: [], totalBreaks: 0 });
   });
 
-  test('o head de um processo vazio segue aceito depois de o log crescer', async () => {
+  test('the head of an empty process is still accepted after the log grows', async () => {
     const { registerOne, verify, verifyAgainst } = verifySetup();
     const stored = verify().head;
     await registerOne('run-1', note('a'));
@@ -121,7 +148,7 @@ describe('verifyChain: expectedHead como âncora contra truncamento', () => {
     expect(verifyAgainst(stored)).toMatchObject({ ok: true, totalRecords: 2, breaks: [] });
   });
 
-  test('único elo apagado: o head de antes vira head-not-found com totalRecords 0', async () => {
+  test('only link deleted: the earlier head becomes head-not-found with totalRecords 0', async () => {
     const { registerOne, verify, verifyAgainst, logFile } = verifySetup();
     await registerOne('run-1', note('a'));
     const before = verify().head;
@@ -134,7 +161,7 @@ describe('verifyChain: expectedHead como âncora contra truncamento', () => {
     });
   });
 
-  test('cauda apagada: sem expectedHead segue ok, com o head de antes vira head-not-found', async () => {
+  test('tail deleted: without expectedHead it stays ok, with the earlier head it becomes head-not-found', async () => {
     const { registerOne, verify, verifyAgainst, logFile } = verifySetup();
     await registerOne('run-1', note('a'));
     await registerOne('run-1', note('b'), 1);
@@ -150,7 +177,7 @@ describe('verifyChain: expectedHead como âncora contra truncamento', () => {
     });
   });
 
-  test('hash que não é de nenhum elo vira head-not-found', async () => {
+  test('hash that belongs to no link becomes head-not-found', async () => {
     const { registerOne, verifyAgainst } = verifySetup();
     await registerOne('run-1', note('a'));
 
@@ -160,7 +187,7 @@ describe('verifyChain: expectedHead como âncora contra truncamento', () => {
     });
   });
 
-  test('a quebra vem depois das quebras da cadeia e respeita o teto de breaks', async () => {
+  test('the break comes after the chain breaks and respects the breaks cap', async () => {
     const { registerOne, verifyAgainst, logFile } = verifySetup();
     await registerOne('run-1', note('a'));
     fs.appendFileSync(logFile(), '{}\n'.repeat(MAX_BREAKS + 1));
@@ -174,8 +201,8 @@ describe('verifyChain: expectedHead como âncora contra truncamento', () => {
   });
 });
 
-describe('verifyChain: anexos citados (D-16)', () => {
-  test('anexo íntegro não quebra', async () => {
+describe('verifyChain: cited attachments (D-16)', () => {
+  test('intact attachment does not break', async () => {
     const { registerOne, doc, stored, verify } = verifySetup();
     await registerOne('run-1', doc({ body: stored('texto') }));
 
@@ -188,7 +215,7 @@ describe('verifyChain: anexos citados (D-16)', () => {
     });
   });
 
-  test('anexo ausente vira quebra attachment-missing e anexo corrompido, attachment-corrupted', async () => {
+  test('missing attachment becomes an attachment-missing break and corrupted attachment, attachment-corrupted', async () => {
     const { registerOne, doc, stored, blobOf, verify } = verifySetup();
     const gone = stored('sumiu');
     const bad = stored('adulterado');
@@ -206,7 +233,7 @@ describe('verifyChain: anexos citados (D-16)', () => {
     ]);
   });
 
-  test('quebra da cadeia e anexo ausente saem em listas separadas, cada uma com o seu total', async () => {
+  test('chain break and missing attachment come out in separate lists, each with its own total', async () => {
     const { registerOne, doc, stored, blobOf, verify, tamper } = verifySetup();
     const gone = stored('sumiu');
     const record = await registerOne('run-1', doc({ body: gone }));
@@ -226,7 +253,7 @@ describe('verifyChain: anexos citados (D-16)', () => {
     expect(result.totalAttachmentBreaks).toBe(1);
   });
 
-  test('com a cadeia já no teto de quebras, a quebra de anexo ainda aparece na sua lista', async () => {
+  test('with the chain already at the breaks cap, the attachment break still shows up in its list', async () => {
     const { registerOne, doc, stored, blobOf, verify, logFile } = verifySetup();
     const gone = stored('sumiu');
     await registerOne('run-1', doc({ body: gone }));
@@ -242,7 +269,7 @@ describe('verifyChain: anexos citados (D-16)', () => {
     expect(result.totalAttachmentBreaks).toBe(1);
   });
 
-  test('mais quebras de anexo que o teto saem cortadas no teto, com o total certo', async () => {
+  test('more attachment breaks than the cap are cut at the cap, with the right total', async () => {
     const { registerOne, doc, stored, blobOf, verify } = verifySetup();
     const hashes = Array.from({ length: MAX_BREAKS + 1 }, (_, n) => stored(`anexo ${n}`));
     await registerOne('run-1', doc({ files: hashes }));

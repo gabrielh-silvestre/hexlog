@@ -4,23 +4,27 @@ import * as omc from './fixtures/domains/omc.ts';
 import * as rdsc from './fixtures/domains/rdsc.ts';
 import { idsOf, PROJECT, querySetup, defineDomain, type Domain } from './queries/query-setup.ts';
 
-/** Projeto só com o fluxo `domain`, definido pelo serviço de definições e com o processo `run-1` criado. */
-function flowSetup(domain: Domain) {
+/**
+ * Projeto só com o fluxo `domain`, definido pelo serviço de definições e com o processo `run-1`
+ * criado; `legacy` cria o processo sem a herança de relações pela linhagem.
+ */
+function flowSetup(domain: Domain, { legacy = false } = {}) {
   const setup = querySetup({ defaults: false });
   defineDomain(setup.definitions, domain);
-  setup.createProcess('run-1');
+  if (legacy) setup.createLegacyProcess('run-1');
+  else setup.createProcess('run-1');
   const gate = (name: string) =>
     setup.queries.evaluateGate({ project: PROJECT, process: 'run-1', gate: name });
   return { ...setup, gate };
 }
 
-describe('D2: fluxos configurados só por tipos, nomes de relação e gates', () => {
-  test('cada fluxo exporta apenas dado: types, relations e gates', () => {
+describe('D2: flows configured only by types, relation names and gates', () => {
+  test('each flow exports only data: types, relations and gates', () => {
     expect(Object.keys(omc).sort()).toEqual(['gates', 'relations', 'types']);
     expect(Object.keys(rdsc).sort()).toEqual(['gates', 'relations', 'types']);
   });
 
-  test('fluxo OMC: o plano só está pronto com aprovação vigente e sem desvio pendente', async () => {
+  test('OMC flow: the plan is ready only with a current approval and no pending deviation', async () => {
     const { registerOne, gate, query } = flowSetup(omc);
     const plan = await registerOne('run-1', {
       type: 'plan',
@@ -62,8 +66,8 @@ describe('D2: fluxos configurados só por tipos, nomes de relação e gates', ()
     ]);
   });
 
-  test('fluxo rdsc: veredito vigente que cita evidência substituída pede revisão até a nova versão citar a atual', async () => {
-    const { registerOne, gate, query } = flowSetup(rdsc);
+  test('rdsc flow, legacy process: a current verdict that cites superseded evidence needs review until the new version cites the current one', async () => {
+    const { registerOne, gate, query } = flowSetup(rdsc, { legacy: true });
     const old = await registerOne('run-1', {
       type: 'evidence',
       target: 'run.rdsc',
@@ -115,7 +119,7 @@ describe('D2: fluxos configurados só por tipos, nomes de relação e gates', ()
     expect(gate('settled').passed).toBe(true);
   });
 
-  test('tipo que o fluxo não definiu não está fixado no processo (TYPE_NOT_PINNED)', async () => {
+  test('a type the flow did not define is not pinned in the process (TYPE_NOT_PINNED)', async () => {
     const { registerOne } = flowSetup(rdsc);
 
     await expect(registerOne('run-1', note('x'))).rejects.toMatchObject({

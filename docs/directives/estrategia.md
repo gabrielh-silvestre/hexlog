@@ -4,7 +4,7 @@ Premissas atemporais do hexlog, em linguagem de produto: o que não pode quebrar
 
 ## Stack
 
-- `libs-fixas`: As dependências ficam em versão exata: nenhuma atualização entra sem ser decidida, para o comportamento não mudar por baixo. Ver: [convencoes.md](convencoes.md).
+- `libs-em-faixa-caret`: As dependências usam faixa `^X.Y.Z` e o lock fixa a versão resolvida: a instalação continua reprodutível e o conjunto de pacotes só muda por decisão. Ver: [convencoes.md](convencoes.md).
 - `troca-confere-adrs`: Trocar uma biblioteca ou decisão de stack só depois de conferir os ADRs e a pesquisa, onde a maioria das alternativas já foi avaliada e tem motivo registrado. Ver: [documentacao.md](documentacao.md).
 - `node-minimo`: O produto exige a versão mínima de Node declarada em `engines`; versão menor não é suportada. Ver: [qualidade-e-testes.md](qualidade-e-testes.md).
 - `validacao-por-esquema`: Entradas e registros são validados por esquema (Zod nas entradas, JSON Schema no conteúdo dos registros), nunca por checagem solta. Ver: [convencoes.md](convencoes.md).
@@ -49,7 +49,7 @@ Premissas atemporais do hexlog, em linguagem de produto: o que não pode quebrar
 ## Propósito e modos de uso
 
 - `audita-decisoes-de-agentes`: O hexlog existe para auditar decisões de agentes de IA: o que foi decidido, por quê e com que evidência. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
-- `dois-modos-de-uso`: Há dois modos: acompanhado (hoje, o modo `ask`), em que o humano decide e o agente explora, coleta evidência e pesquisa; e autônomo, em que o agente decide dentro de objetivos, diretrizes e premissas e registra. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
+- `dois-modos-de-uso`: Há dois modos: acompanhado (modo `ask`), em que o humano decide e o agente explora, coleta evidência e pesquisa; e autônomo (modo `autonomous`, o padrão), em que o agente decide dentro de objetivos, diretrizes e premissas e registra. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 - `decisao-registrada-e-reversivel`: Toda decisão fica registrada para auditoria posterior e pode ser revertida; nada decidido some do histórico. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 - `decisao-refutavel`: Toda decisão pode ser refutada por revisão de pares, com o porquê e as evidências rastreáveis, e o processo se ajusta ao que a refutação revela. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
 - `melhoria-continua`: O registro serve à melhoria contínua: o que a auditoria revela vira regra ou premissa melhor. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).

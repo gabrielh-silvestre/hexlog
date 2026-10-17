@@ -1,11 +1,19 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { isString, isUndefined, mapValues, pickBy } from 'es-toolkit';
 import { z } from 'zod';
-import { Selector, Where } from '../../domain/gate.ts';
+import {
+  type CountedQuestion,
+  EvidenceMode,
+  type QuestionResult,
+  type QuestionSummary,
+  Selector,
+  Where,
+} from '../../domain/gate.ts';
 import { Hash, Name, RecordId, Target } from '../../domain/ids.ts';
 import { WELL_FORMED } from '../../domain/record.ts';
 import {
   type Changes,
+  type GateBatchEvaluation,
   type GateEvaluation,
   PAGE_CHARS_CAP,
   QUERY_TEXT_MAX_CHARS,
@@ -13,9 +21,13 @@ import {
   type QueryResult,
   type QueryService,
 } from '../../queries/query-service.ts';
+import { RELATION_MODES } from '../../queries/select.ts';
 import { defineTool, MarkerRecord, READ_ANNOTATIONS, type ToolDeps } from '../kernel.ts';
 
-/** Teto de `limit` no zod da tool; o serviço só exige inteiro >= 1. */
+/**
+ * Teto de `limit` no zod da tool; o serviço exige inteiro >= 1 (ou 0 com `changesSince`, sem
+ * `cursor`).
+ */
 const LIMIT_MAX = 200;
 
 /** Itens de `changes.entered` e de `changes.left` que cabem no envelope da tool (M4 da herança do PR-5). */
@@ -28,6 +40,8 @@ export const EVIDENCE_ITEMS_CAP = 100;
 const IDS_MAX = 200;
 const WHERE_KEYS_MAX = 50;
 const FIELDS_MAX = 50;
+// Alinhado a `BATCH_MAX`: o lote de targets do `evaluate_gate` (palpite, docs/tetos-dominio-v1.md).
+const TARGETS_MAX = 50;
 // O marcador tem uma chave por processo lido e é devolvido pelo servidor. Só com nomes de ~42 caracteres
 // ou mais o teto fica acima do que o cursor suporta; com nomes menores o cursor pagina além de 200 e o zod recusa antes.
 const MARKER_KEYS_MAX = 200;
@@ -51,32 +65,48 @@ const MarkerInput = boundedWellFormed(MarkerRecord, MARKER_KEYS_MAX);
 
 const WhereInput = boundedWellFormed(Where, WHERE_KEYS_MAX);
 
-const QueryInput = z.strictObject({
-  project: Name,
-  process: Name.optional(),
-  scope: z.enum(['process', 'project']).optional(),
-  includeNonCurrent: z.boolean().optional(),
-  ...Selector.shape,
-  where: WhereInput.optional(),
-  text: z
-    .string()
-    .max(QUERY_TEXT_MAX_CHARS)
-    .refine((text) => text.isWellFormed(), WELL_FORMED)
-    .optional(),
-  ids: z.array(RecordId).max(IDS_MAX).optional(),
-  fields: z.array(z.string().min(1)).max(FIELDS_MAX).optional(),
-  relatedTo: RecordId.optional(),
-  limit: z.number().int().min(1).max(LIMIT_MAX).optional(),
-  cursor: z.string().optional(),
-  changesSince: MarkerInput.optional(),
-});
+// `since` é o palpite comum para "o que mudou": a mensagem aponta `changesSince`, que aceita um
+// marcador (qualquer id de registro do processo), não um instante.
+const unrecognizedKeysMessage: z.core.$ZodErrorMap = (issue) => {
+  if (issue.code !== 'unrecognized_keys' || !issue.keys.includes('since')) return undefined;
+  const keys = issue.keys.map((key) => JSON.stringify(key)).join(', ');
+  return `Unrecognized keys: ${keys}; there is no time filter, use changesSince (a marker from an earlier query) to read what changed`;
+};
+
+const QueryInput = z.strictObject(
+  {
+    project: Name,
+    process: Name.optional(),
+    scope: z.enum(['process', 'project']).optional(),
+    includeNonCurrent: z.boolean().optional(),
+    ...Selector.shape,
+    where: WhereInput.optional(),
+    text: z
+      .string()
+      .max(QUERY_TEXT_MAX_CHARS)
+      .refine((text) => text.isWellFormed(), WELL_FORMED)
+      .optional(),
+    ids: z.array(RecordId).max(IDS_MAX).optional(),
+    fields: z.array(z.string().min(1)).max(FIELDS_MAX).optional(),
+    relatedTo: RecordId.optional(),
+    relations: z.enum(RELATION_MODES).optional(),
+    // 0 só com `changesSince` e sem `cursor`: quem confere é o serviço, com o path de `/limit`.
+    limit: z.number().int().min(0).max(LIMIT_MAX).optional(),
+    cursor: z.string().optional(),
+    changesSince: MarkerInput.optional(),
+  },
+  { error: unrecognizedKeysMessage },
+);
 
 const EvaluateGateInput = z.strictObject({
   project: Name,
   process: Name,
   gate: Name,
   target: Target.optional(),
+  // 1 a 50 targets numa só leitura; exclusivo com `target` e sem `evidence: "full"` (o serviço recusa).
+  targets: z.array(Target).min(1).max(TARGETS_MAX).optional(),
   marker: MarkerInput.optional(),
+  evidence: EvidenceMode.optional(),
 });
 
 const VerifyChainInput = z.strictObject({
@@ -98,10 +128,20 @@ const DescribeTypeInput = z.strictObject({
 // Saídas enxutas (TM7): só a forma que o cliente precisa checar; o miolo variável fica solto.
 const QueryOutput = z.object({
   records: z.array(
-    z.looseObject({ id: z.string(), type: z.string(), at: z.string(), target: z.string() }),
+    z.looseObject({
+      id: z.string(),
+      type: z.string(),
+      at: z.string(),
+      target: z.string(),
+      inCounts: z.record(z.string(), z.number()).optional(),
+      outCounts: z.record(z.string(), z.number()).optional(),
+      in: z.array(z.unknown()).optional(),
+      out: z.array(z.unknown()).optional(),
+    }),
   ),
   cursor: z.string().optional(),
   marker: MarkerRecord,
+  hint: z.string().optional(),
   changes: z
     .looseObject({
       entered: z.array(z.string()),
@@ -112,17 +152,28 @@ const QueryOutput = z.object({
     .optional(),
 });
 
+const GateQuestionOutput = z.looseObject({
+  index: z.number(),
+  kind: z.string(),
+  passed: z.boolean(),
+  counts: z.record(z.string(), z.number()).optional(),
+  evidence: z.unknown().optional(),
+  omitted: z.record(z.string(), z.number()).optional(),
+});
+
+// `questions` sai com `target` ou sem alvo; `results`, com `targets`.
 const EvaluateGateOutput = z.object({
   passed: z.boolean(),
-  questions: z.array(
-    z.looseObject({
-      index: z.number(),
-      kind: z.string(),
-      passed: z.boolean(),
-      evidence: z.unknown(),
-      omitted: z.record(z.string(), z.number()).optional(),
-    }),
-  ),
+  questions: z.array(GateQuestionOutput).optional(),
+  results: z
+    .array(
+      z.looseObject({
+        target: z.string(),
+        passed: z.boolean(),
+        questions: z.array(GateQuestionOutput),
+      }),
+    )
+    .optional(),
   marker: MarkerRecord,
 });
 
@@ -152,35 +203,47 @@ const DescribeTypeOutput = z.object({
 
 const QUERY_DESCRIPTION =
   'Read the current records of a process (scope "process", the default, needs process) or of the ' +
-  'whole project (scope "project"). Filters: type, targetPrefix, where (equality on top-level data ' +
-  'fields, scalar values only), text (full-text search, at most 200 characters, ordered by relevance), ' +
-  'ids, relatedTo (records linked to an id) and includeNonCurrent (also superseded or revoked ones). ' +
-  'Each record carries its in and out relations, needsReview when its support is dead and ' +
-  'attachmentStatus for the attachments it cites; in process scope only the relations from that ' +
-  'process are seen, so use scope project to see cross-process support. fields (at most ' +
+  'project (scope "project"). Filters: type, targetPrefix, where (equality on top-level scalar ' +
+  'data fields), text (full-text, at most 200 characters, by relevance), ids, relatedTo ' +
+  '(records linked to an id) and includeNonCurrent (also superseded or revoked). ' +
+  'targetPrefix matches whole "."-separated segments (unit-1 does not match unit-10); a near miss ' +
+  'in an empty answer carries a hint. ' +
+  'Records carry needsReview (dead support) and attachmentStatus. ' +
+  'relations: counts (default) gives inCounts and outCounts ({name: n} per edge, current or not; ' +
+  'empty maps omitted); full gives in and out; none gives neither. With lineage inheritance, relations to or ' +
+  'from a superseded version also hold for the current one: inheritedIn and inheritedOut (full), ' +
+  'inheritedInCounts and inheritedOutCounts (counts); origin {from, to} is the stored edge; a ' +
+  'contradicts between the lineages cuts it. Process scope sees only its own relations; use ' +
+  'project for cross-process ones. fields (at most ' +
   `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
   'annotations stay, filters see the whole data and the size cap counts the projected page. ' +
-  'A page holds at most limit records (default 50, ' +
-  'max 200) and also stops at a size cap, always with at least one record; pass the returned cursor ' +
-  'to continue. marker is the head of every process read: pass it back as changesSince to get ' +
-  'changes (entered, left with reason) since then, on the first page only; resend the same ' +
-  `changesSince with the cursor on later pages, or INVALID_CURSOR. changes lists at most ${CHANGES_ITEMS_CAP} ` +
-  'ids in entered and in left; when omitted (the count left out per list) comes back, the lists are ' +
-  'partial and that marker must not be reused as changesSince, because the omitted ids never show ' +
-  'again: reread everything instead (records by cursor, left with includeNonCurrent). A marker ' +
-  'covers exactly the processes it names; in project scope, any process it does not name is read ' +
-  'as empty. Fails with MARKER_NOT_FOUND or INVALID_CURSOR when changesSince or cursor do not match ' +
-  'the data read.';
+  'A page holds at most limit records (default 50, max 200) and stops at a size cap, ' +
+  'keeping at least one record; the returned cursor continues. marker is the head of every ' +
+  'process read, and any record id of the process works as its entry: pass it back as changesSince ' +
+  'to get changes (entered, left with reason) since then, on the first page only; add limit 0 to ' +
+  'get only the changes. Resend it with the cursor. ' +
+  `changes lists at most ${CHANGES_ITEMS_CAP} ids in entered and left; changes.omitted means they ` +
+  'are partial, omitted ids never reappear and that marker must not be reused as changesSince: ' +
+  'reread everything (cursor; left with includeNonCurrent). A marker covers only the ' +
+  'processes it names; in project scope others are read as empty. A mismatched ' +
+  'changesSince or cursor fails with MARKER_NOT_FOUND or INVALID_CURSOR.';
 
 const EVALUATE_GATE_DESCRIPTION =
   'Evaluate a gate pinned in a process (GATE_NOT_FOUND otherwise), without writing anything. Returns ' +
-  'passed and one result per question (index, kind, passed, evidence: the record ids behind the ' +
-  'answer, in lists named by kind: approved has of, supports, contradictions and unsupported; ' +
-  'occurred has found; no_pending has unresolved; no_open_contradiction has conflicting) plus the ' +
-  'marker of what was read. target is inherited by selectors without targetPrefix. Pass a marker ' +
-  'from an earlier read to replay the evaluation over the records that existed then; a marker ' +
-  'covers exactly the processes it names, and in project scope any process it does not name is read ' +
-  'as empty. A gate without project-scope questions reads one process: the marker must name only ' +
+  'passed and one result per question (index, kind, passed) plus the marker of what was read. ' +
+  'evidence sets the detail: failing (default with target) gives counts (size of each evidence list) and, for a ' +
+  'failed question, the ids that explain it; counts (default with targets) gives only counts; full gives every list of ids ' +
+  '(approved has of, supports, contradictions and unsupported; occurred has found; no_pending has ' +
+  'unresolved; no_open_contradiction has conflicting). A question of approved or no_pending with ' +
+  'inherit: true also counts support or resolution that a superseded version carried, in a process ' +
+  'with lineage inheritance, and adds the list inherited with those that count only that way. ' +
+  'target is inherited by selectors without ' +
+  'targetPrefix; targets (1 to 50, not with target or evidence full) evaluates several in one read ' +
+  'and answers results: one {target, passed, questions} per target, in order, with a single marker; ' +
+  'to see the ids behind a failed target, evaluate that target alone with the batch marker. ' +
+  'Pass a marker from an earlier read to replay the evaluation over the records that existed then; a ' +
+  'marker covers exactly the processes it names, and in project scope any process it does not name is ' +
+  'read as empty. A gate without project-scope questions reads one process: the marker must name only ' +
   `it (else MARKER_NOT_FOUND). Each evidence list holds at most ${EVIDENCE_ITEMS_CAP} ids and omitted counts the ` +
   'rest per list; a narrower select or where reaches them.';
 
@@ -226,29 +289,29 @@ function capChanges(changes: Changes): PagedChanges {
 
 /**
  * Única porta de `query` para as tools: passa `maxChars` (`PAGE_CHARS_CAP`) em toda chamada, porque o
- * serviço usa `Infinity` sem ele (D-20), e corta `changes` no envelope, que fica fora do teto de página.
+ * serviço usa `Infinity` sem ele (D-20), assume `relations: counts` (o serviço assume `full`) e corta
+ * `changes` no envelope, que fica fora do teto de página.
  */
 export function queryPage(
   query: Pick<QueryService, 'queryRecords'>,
   input: Omit<QueryServiceInput, 'maxChars'>,
 ): Omit<QueryResult, 'changes'> & { changes?: PagedChanges } {
-  const { changes, ...page } = query.queryRecords({ ...input, maxChars: PAGE_CHARS_CAP });
+  const { changes, ...page } = query.queryRecords({
+    ...input,
+    relations: input.relations ?? 'counts',
+    maxChars: PAGE_CHARS_CAP,
+  });
   return isUndefined(changes) ? page : { ...page, changes: capChanges(changes) };
 }
 
-type PagedQuestion = {
-  index: number;
-  kind: string;
-  passed: boolean;
-  evidence: Record<string, string[]>;
+type PagedQuestion = (Omit<QuestionResult, 'evidence'> | Omit<CountedQuestion, 'evidence'>) & {
+  evidence?: Record<string, string[]>;
   omitted?: Record<string, number>;
 };
 
 /** Corta cada lista de `evidence` em `EVIDENCE_ITEMS_CAP` ids; `omitted` conta o que ficou de fora por lista. */
-function capEvidence({
-  evidence,
-  ...question
-}: GateEvaluation['questions'][number]): PagedQuestion {
+function capEvidence({ evidence, ...question }: QuestionSummary): PagedQuestion {
+  if (isUndefined(evidence)) return question;
   const lists: Record<string, string[]> = evidence;
   const omitted = pickBy(
     mapValues(lists, (ids) => ids.length - EVIDENCE_ITEMS_CAP),
@@ -264,12 +327,19 @@ function capEvidence({
 
 /**
  * Única porta de `evaluateGate` para as tools: a evidência não tem teto no domínio, então o envelope
- * corta cada lista. `passed` e `marker` seguem intactos; o gate é sem estado, e o excedente sai com
- * um `select`/`where` mais estreito.
+ * corta cada lista, por pergunta de cada target do lote. `passed` e `marker` seguem intactos; o gate
+ * é sem estado, e o excedente sai com um `select`/`where` mais estreito.
  */
-function gatePage(
-  evaluation: GateEvaluation,
-): Omit<GateEvaluation, 'questions'> & { questions: PagedQuestion[] } {
+function gatePage(evaluation: GateEvaluation<QuestionSummary> | GateBatchEvaluation) {
+  if ('results' in evaluation) {
+    return {
+      ...evaluation,
+      results: evaluation.results.map((result) => ({
+        ...result,
+        questions: result.questions.map(capEvidence),
+      })),
+    };
+  }
   return { ...evaluation, questions: evaluation.questions.map(capEvidence) };
 }
 
@@ -300,7 +370,16 @@ export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
       outputSchema: EvaluateGateOutput,
       annotations: READ_ANNOTATIONS,
     },
-    (input) => gatePage(deps.services.query.evaluateGate(input)),
+    // O serviço assume `evidence: full`; o padrão enxuto é do envelope, como o `maxChars` de `queryPage`.
+    // Lote em `counts`: os ids de 50 targets reprovando somavam ~27x o teto de página, e quem quer os
+    // ids de um target reavalia só ele, com o `marker` do lote.
+    (input) =>
+      gatePage(
+        deps.services.query.evaluateGate({
+          ...input,
+          evidence: input.evidence ?? (isUndefined(input.targets) ? 'failing' : 'counts'),
+        }),
+      ),
   );
 
   defineTool(

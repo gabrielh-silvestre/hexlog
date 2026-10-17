@@ -5,8 +5,7 @@ schema `Target` (`domain/ids.ts#Target`). Cada segmento casa
 `[a-z0-9][a-z0-9-]{0,62}` — minúsculo, dígito e hífen, começando por letra ou
 dígito, até 63 caracteres —, os segmentos se separam por `.`, o rótulo inteiro tem
 até 200 caracteres e não termina em `.`. Maiúscula, `_`, `:` e espaço são recusados
-com `INVALID_INPUT`. O prefixo `hex:target:` do 0.x não existe mais: escreva
-`v1-f6.revisao`, não `hex:target:v1-f6`.
+com `INVALID_INPUT` (por exemplo, `v1-f6.revisao` é válido e `hex:target:v1-f6` não).
 
 ## Subárvore e `targetPrefix`
 

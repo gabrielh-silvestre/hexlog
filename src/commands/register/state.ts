@@ -83,7 +83,10 @@ type Drafted = { drafts: Draft[]; aliases: Record<Name, RecordId> };
 type Site = { index: number; at: number; draft: Draft; relation: DraftRelation };
 
 /** Registros de um processo-destino que as relações podem citar, e a vigência deles. */
-type Destination = { types: ReadonlyMap<RecordId, Name>; vigency: Vigency };
+type Destination = {
+  ends: ReadonlyMap<RecordId, Pick<RelationEnd, 'type' | 'target'>>;
+  vigency: Vigency;
+};
 
 /** D-06 nível 5: a mesma `key` com outra impressão é conflito; com a mesma, o chamador faz o replay. */
 function assertSameBatch(prior: BatchEntry, fingerprint: Hash): void {
@@ -155,7 +158,7 @@ function createEnforcer(
   const enforce = (site: Site, to: RelationEnd, vigencyFor: RuleContext['vigencyFor']) => {
     const { draft, relation, at } = site;
     const result = checkRelation(relation.input, {
-      from: { id: draft.id, type: draft.item.type },
+      from: { id: draft.id, type: draft.item.type, target: draft.item.target },
       to,
       siblings: draft.relations.filter((_, other) => other !== at).map(({ stored }) => stored),
       names,
@@ -195,7 +198,7 @@ function loadDestination(store: ProcessReader, ref: ProcessRef, path: string): D
   }
   if (!verified.chain.ok) throw relationNotFound(path, 'destination-corrupted', ref.process);
   return {
-    types: new Map(verified.records.map(({ id, type }) => [id, type])),
+    ends: new Map(verified.records.map(({ id, type, target }) => [id, { type, target }])),
     vigency: buildVigency(verified.records),
   };
 }
@@ -217,9 +220,9 @@ function checkOtherProcesses(
     const destinationProcess = processOf(to);
     if (destinationProcess === process) continue;
     const destination = destinationOf(destinationProcess);
-    const type = destination.types.get(to);
-    if (isUndefined(type)) throw relationNotFound(pathOf(site), 'missing');
-    enforcer.inDestination(site, { id: to, type }, destination);
+    const end = destination.ends.get(to);
+    if (isUndefined(end)) throw relationNotFound(pathOf(site), 'missing');
+    enforcer.inDestination(site, { id: to, ...end }, destination);
   }
 }
 
@@ -230,17 +233,18 @@ function checkOwnProcess(
   verified: VerifiedProcess,
   drafts: readonly Draft[],
 ): void {
-  const types = new Map(
-    [...verified.records, ...drafts.map(({ id, item }) => ({ id, type: item.type }))].map(
-      ({ id, type }) => [id, type],
-    ),
+  const ends = new Map(
+    [
+      ...verified.records,
+      ...drafts.map(({ id, item }) => ({ id, type: item.type, target: item.target })),
+    ].map(({ id, type, target }) => [id, { type, target }]),
   );
   for (const site of sitesOf(drafts)) {
     const { to } = site.relation.stored;
     if (processOf(to) !== process) continue;
-    const type = types.get(to);
-    if (isUndefined(type)) throw relationNotFound(pathOf(site), 'missing');
-    enforcer.inOrigin(site, { id: to, type });
+    const end = ends.get(to);
+    if (isUndefined(end)) throw relationNotFound(pathOf(site), 'missing');
+    enforcer.inOrigin(site, { id: to, ...end });
   }
 }
 

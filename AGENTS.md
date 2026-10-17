@@ -8,7 +8,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Key Files
 | File | Description |
 |------|-------------|
-| `package.json` | Dependências fixadas, scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
+| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
 | `tsconfig.json` | Configuração do TypeScript |
 | `eslint.config.js` | Config do ESLint (typescript-eslint com `stylisticTypeChecked`, `eslint-plugin-jest`, `eslint-plugin-n`); importa `boundaryBlocks` de `eslint.boundaries.js` |
 | `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
@@ -22,8 +22,8 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `CLAUDE.md` | Importa este `AGENTS.md` e as diretrizes de `docs/directives/` para toda sessão e todo subagente |
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
-| `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (`flow-hooks.ts`, `flow-command.ts`, `flow-sync.ts`), as skills locais em `skills/` e `workflows/` (`deliver-phase.js`, `friction-mining-run.js`). Fica fora do bundle do produto |
-| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 9 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. O fluxo novo substitui o setup da F9 (passo 8): não há `.hexlog/flow.md`, o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
+| `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (`flow-hooks.ts`, `flow-command.ts` e `flow-sync.ts` são hooks; `flow-report.ts` não é hook: é o relatório que `flow-run` e `flow-audit` chamam e precisa de `node_modules`), as skills locais em `skills/` e `workflows/` (`friction-mining-run.js`). Fica fora do bundle do produto |
+| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 9 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. Não há `.hexlog/flow.md` neste repositório: o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
 
 ## Subdirectories
 | Directory | Purpose |
@@ -38,7 +38,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Dependencies
 
 ### External
-- `@modelcontextprotocol/server` 2.0.0: servidor MCP stdio
+- `@modelcontextprotocol/server` 2: servidor MCP stdio
 - `zod` 4: validação de eventos e entradas
 - `ajv` + `ajv-formats`: validação de JSON Schema (`define_type`) e do `data` de cada registro
 - `canonicalize`: JCS para o hash da cadeia
@@ -61,6 +61,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 
 Regras que valem para o repositório todo, importadas pelo `CLAUDE.md`:
 
+- [fluxo-hexlog.md](docs/directives/fluxo-hexlog.md): processos e targets, premissas, `decision`, lacunas, verificação e gates do PR
 - [convencoes.md](docs/directives/convencoes.md): idioma, núcleo e bordas, dependências, hash, escrita em disco, imports
 - [fronteiras.md](docs/directives/fronteiras.md): camadas, direção de dependência, travas mecânicas e checklist de review
 - [invariantes.md](docs/directives/invariantes.md): log append-only, cadeia, lock, tools, anexos e definições

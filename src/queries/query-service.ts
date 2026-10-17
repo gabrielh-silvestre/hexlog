@@ -1,7 +1,14 @@
 import { differenceBy, isUndefined, omitBy, pick, uniq, union } from 'es-toolkit';
 import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
-import { evaluateGate, type GateResult } from '../domain/gate.ts';
+import {
+  prepareGate,
+  summarizeQuestion,
+  type EvidenceMode,
+  type GateScope,
+  type QuestionResult,
+  type QuestionSummary,
+} from '../domain/gate.ts';
 import {
   Hash,
   processOf,
@@ -11,7 +18,7 @@ import {
   type Target,
 } from '../domain/ids.ts';
 import { needsReview, type NeedsReview } from '../domain/relations.ts';
-import { HexlogError } from '../errors.ts';
+import { HexlogError, invalidInput } from '../errors.ts';
 import type { Manifest } from '../domain/manifest.ts';
 import type {
   AttachmentReader,
@@ -35,15 +42,17 @@ import {
 } from './read-attachment.ts';
 import { readScope, type Reading, type ReadTarget } from './read.ts';
 import {
+  boundaryHint,
   buildView,
+  inheritanceActivation,
   inOutputOrder,
   leftReason,
   relationsOf,
   select,
   type Filters,
-  type InRelation,
   type LeftReason,
-  type OutRelation,
+  type RelationFields,
+  type RelationsMode,
   type View,
 } from './select.ts';
 
@@ -62,7 +71,10 @@ export type QueryInput = Filters & {
   /** Obrigatório no alcance processo (o padrão). */
   process?: Name;
   scope?: 'process' | 'project';
-  /** Registros por página (padrão 50); `maxChars` pode encurtar a página. */
+  /**
+   * Registros por página (padrão 50); `maxChars` pode encurtar a página. `0` só vale com
+   * `changesSince` e sem `cursor`: devolve `records: []` e as `changes`, sem cursor.
+   */
   limit?: number;
   cursor?: string;
   /**
@@ -81,18 +93,24 @@ export type QueryInput = Filters & {
    * `fields` fica fora do hash do cursor, então cada página pode pedir outros.
    */
   fields?: readonly string[];
+  /**
+   * Relações de cada registro: `full` (padrão do serviço) traz `in` e `out`; `counts`, `inCounts` e
+   * `outCounts` (arestas por nome `as ?? kind`, mapa vazio omitido); `none`, nenhum dos quatro.
+   * Recorta só a saída, como `fields`: fica fora do hash do cursor, e `relatedTo` e `needsReview`
+   * não mudam.
+   */
+  relations?: RelationsMode;
 };
 
-export type QueryRecord = Pick<Link, 'id' | 'type' | 'at' | 'target' | 'author'> & {
-  /** Inteiro, ou só os `fields` pedidos; ausente com `fields: []`. */
-  data?: Link['data'];
-  in: InRelation[];
-  out: OutRelation[];
-  /** D-09: só registro vigente com apoio morto. */
-  needsReview?: NeedsReview;
-  /** D-16: estado de cada anexo citado nos campos marcados do tipo. */
-  attachmentStatus?: Record<Hash, AttachmentStatus>;
-};
+export type QueryRecord = Pick<Link, 'id' | 'type' | 'at' | 'target' | 'author'> &
+  RelationFields & {
+    /** Inteiro, ou só os `fields` pedidos; ausente com `fields: []`. */
+    data?: Link['data'];
+    /** D-09: só registro vigente com apoio morto. */
+    needsReview?: NeedsReview;
+    /** D-16: estado de cada anexo citado nos campos marcados do tipo. */
+    attachmentStatus?: Record<Hash, AttachmentStatus>;
+  };
 
 export type Changes = {
   entered: RecordId[];
@@ -108,6 +126,11 @@ export type QueryResult = {
   marker: Marker;
   /** Só na 1ª página e só com `changesSince`. */
   changes?: Changes;
+  /**
+   * Só na 1ª página, com `targetPrefix` e seleção vazia em que nenhum target lido o casa, mas algum
+   * começa pela string sem a fronteira de `.`. O casamento do `targetPrefix` não muda (D-07).
+   */
+  hint?: string;
 };
 
 export type EvaluateGateInput = {
@@ -115,14 +138,32 @@ export type EvaluateGateInput = {
   /** Processo onde o gate está fixado; é o lido, salvo pergunta com `scope: "project"`. */
   process: Name;
   gate: Name;
-  /** Herdado pelos seletores sem `targetPrefix`. */
+  /** Herdado pelos seletores sem `targetPrefix`. Exclusivo com `targets`. */
   target?: Target;
+  /**
+   * Lote de targets avaliados numa só leitura, com um só `marker`. Exclusivo com `target` e
+   * incompatível com `evidence: "full"` (o padrão do serviço): o lote pede `counts` ou `failing`.
+   */
+  targets?: readonly Target[];
   /** Marcador de uma leitura anterior: a avaliação se reproduz sobre o que existia então (SG3). */
   marker?: Marker;
+  /** O quanto de `evidence` cada pergunta traz; o serviço assume `full`, a forma completa. */
+  evidence?: EvidenceMode;
 };
 
 /** `passed` e a evidência de cada pergunta, mais o marcador dos processos lidos (D-24). */
-export type GateEvaluation = GateResult & { marker: Marker };
+export type GateEvaluation<Question = QuestionResult> = {
+  passed: boolean;
+  questions: Question[];
+  marker: Marker;
+};
+
+/** Lote de `targets`: um resultado por entrada, na ordem recebida; `passed` exige todos. */
+export type GateBatchEvaluation = {
+  passed: boolean;
+  results: { target: Target; passed: boolean; questions: QuestionSummary[] }[];
+  marker: Marker;
+};
 
 export type VerifyChainInput = { project: Name; process: Name; expectedHead?: Hash };
 
@@ -149,8 +190,8 @@ export type QueryService = {
    * `attachmentStatus`. Ordem de saída: alcance processo por `seq`, alcance projeto por (`at`,
    * processo, `seq`), com `text` por relevância e o mesmo desempate. Página com resultado leva ao
    * menos um registro (o 1º sai inteiro mesmo acima de `maxChars`); consulta sem resultado devolve
-   * `records: []`. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de
-   * `lastId` sobre a leitura da página 1.
+   * `records: []`, com `hint` quando o `targetPrefix` quase casou. O cursor (D-20) fixa o marcador:
+   * as páginas seguintes recomeçam depois de `lastId` sobre a leitura da página 1.
    *
    * `INVALID_FILTER` (`/process`, `/limit`, `/text`: acima de `QUERY_TEXT_MAX_CHARS` ou sem termo
    * pesquisável, `no-terms`, como `''`, `'  '` e `'!!!'`),
@@ -164,11 +205,23 @@ export type QueryService = {
    * devolvido cobre exatamente o que foi lido. A cadeia é verificada até onde a leitura vai: com
    * `marker`, só o prefixo até o id marcado: quebra depois dele não é vista.
    *
+   * Com `targets`, lê uma vez e devolve `results` (um por target, na ordem recebida) em vez de
+   * `questions`. `evidence` reduz cada pergunta por `summarizeQuestion`; sem ele, sai a forma completa.
+   *
+   * `INVALID_INPUT` (conferido antes de qualquer I/O: `with-target` em `/targets`, `target` e
+   * `targets` juntos; `empty` em `/targets`; `full-with-targets` em `/evidence`, lote com
+   * `evidence` `full`, explícito ou assumido; pela tool, o schema recusa antes a lista vazia ou
+   * acima de 50 em `/targets`, e esses códigos só valem com o serviço chamado direto),
    * `PROCESS_NOT_FOUND`, `GATE_NOT_FOUND` (`unknown-name` em `/gate`: o gate não está fixado no
    * processo), `MARKER_NOT_FOUND`, `PROCESS_CORRUPTED` (com `details[0].process`),
    * `PROCESS_TOO_LARGE` e `IO_ERROR`.
    */
-  evaluateGate(input: EvaluateGateInput): GateEvaluation;
+  evaluateGate(input: EvaluateGateInput & { targets: readonly Target[] }): GateBatchEvaluation;
+  evaluateGate(
+    input: EvaluateGateInput & { targets?: undefined; evidence?: 'full' },
+  ): GateEvaluation;
+  evaluateGate(input: EvaluateGateInput & { targets?: undefined }): GateEvaluation<QuestionSummary>;
+  evaluateGate(input: EvaluateGateInput): GateEvaluation<QuestionSummary> | GateBatchEvaluation;
   /**
    * Diagnóstico sem gravar: a cadeia do processo e os anexos que os registros citam (D-16). Quebra
    * não lança, vira `ok: false` com `breaks` (cadeia); anexo ausente ou corrompido entra em
@@ -224,9 +277,14 @@ function targetOf({ project, scope = 'process', process }: QueryInput): ReadTarg
 }
 
 /** `no-terms` vem depois de `too-long` para nunca tokenizar um texto acima do teto. */
-function assertValid({ limit, text }: QueryInput, search: SearchIndex): void {
-  if (!isUndefined(limit) && !(Number.isInteger(limit) && limit >= 1)) {
-    throw invalidFilter('/limit', 'out-of-range', 'limit must be a positive integer');
+function assertValid({ limit, text, changesSince, cursor }: QueryInput, search: SearchIndex): void {
+  const min = !isUndefined(changesSince) && isUndefined(cursor) ? 0 : 1;
+  if (!isUndefined(limit) && !(Number.isInteger(limit) && limit >= min)) {
+    throw invalidFilter(
+      '/limit',
+      'out-of-range',
+      'limit must be a positive integer, or 0 with changesSince and no cursor',
+    );
   }
   if (isUndefined(text)) return;
   if (text.length > QUERY_TEXT_MAX_CHARS) {
@@ -375,6 +433,55 @@ export function createQueryService(deps: {
     };
   }
 
+  function evaluateGateOf({
+    project,
+    process,
+    gate: name,
+    target,
+    targets,
+    marker,
+    evidence = 'full',
+  }: EvaluateGateInput): GateEvaluation<QuestionSummary> | GateBatchEvaluation {
+    if (!isUndefined(targets)) {
+      if (!isUndefined(target)) {
+        throw invalidInput('/targets', 'with-target', 'targets is not allowed with target');
+      }
+      if (targets.length === 0) {
+        throw invalidInput('/targets', 'empty', 'targets must have at least one target');
+      }
+      if (evidence === 'full') {
+        throw invalidInput('/evidence', 'full-with-targets', 'targets requires counts or failing');
+      }
+    }
+    const { gates } = store.readManifest({ project, process }).fixed;
+    if (!Object.hasOwn(gates, name)) throw gateNotFound();
+    const gate = gates[name]!;
+    const scope: ReadTarget = gate.questions.some((question) => question.scope === 'project')
+      ? { project, scope: 'project' }
+      : { project, scope: 'process', process };
+    const reading = readScope(store, scope, marker);
+    const records = (questionScope: GateScope) =>
+      questionScope === 'project'
+        ? inOutputOrder(reading, 'project')
+        : reading.processes
+            .filter(({ name: read }) => read === process)
+            .flatMap(({ verified }) => verified.records);
+    const run = prepareGate(gate.questions, {
+      records,
+      isInheritanceActive: inheritanceActivation(reading),
+    });
+    const evaluate = (forTarget: Target | undefined) => {
+      const result = run(forTarget);
+      return {
+        passed: result.passed,
+        questions: result.questions.map((question) => summarizeQuestion(question, evidence)),
+      };
+    };
+    if (isUndefined(targets)) return { ...evaluate(target), marker: reading.marker };
+    const results = targets.map((each) => ({ target: each, ...evaluate(each) }));
+    return { passed: results.every(({ passed }) => passed), results, marker: reading.marker };
+  }
+
   return {
     queryRecords(input) {
       assertValid(input, search);
@@ -389,7 +496,7 @@ export function createQueryService(deps: {
       const view = buildView(reading, target.scope);
       const selected = select(view, filters, search, target);
 
-      const reviews = needsReview(view.records, view.vigency);
+      const reviews = needsReview(view.records, view.vigency, view.inheritance);
       const manifests = new Map(
         reading.processes.map(({ name, verified }) => [name, verified.manifest]),
       );
@@ -400,7 +507,7 @@ export function createQueryService(deps: {
         return {
           ...pick(link, ['id', 'type', 'at', 'target', 'author']),
           ...(isUndefined(data) ? {} : { data }),
-          ...relationsOf(view, link),
+          ...relationsOf(view, link, input.relations ?? 'full'),
           ...(isUndefined(review) ? {} : { needsReview: review }),
           ...(isUndefined(status) ? {} : { attachmentStatus: status }),
         };
@@ -434,33 +541,21 @@ export function createQueryService(deps: {
         isUndefined(cursor) && !isUndefined(input.changesSince)
           ? changesOf(input, target, filters, { view, selected, marker: reading.marker })
           : undefined;
+      const hint =
+        isUndefined(cursor) && selected.length === 0 && !isUndefined(input.targetPrefix)
+          ? boundaryHint(view, input.targetPrefix)
+          : undefined;
       return {
         records,
         ...(isUndefined(next) ? {} : { cursor: encodeCursor(next) }),
         marker: reading.marker,
         ...(isUndefined(changes) ? {} : { changes }),
+        ...(isUndefined(hint) ? {} : { hint }),
       };
     },
 
-    evaluateGate({ project, process, gate: name, target, marker }) {
-      const { gates } = store.readManifest({ project, process }).fixed;
-      if (!Object.hasOwn(gates, name)) throw gateNotFound();
-      const gate = gates[name]!;
-      const scope: ReadTarget = gate.questions.some((question) => question.scope === 'project')
-        ? { project, scope: 'project' }
-        : { project, scope: 'process', process };
-      const reading = readScope(store, scope, marker);
-      const result = evaluateGate(gate.questions, {
-        target,
-        records: (questionScope) =>
-          questionScope === 'project'
-            ? inOutputOrder(reading, 'project')
-            : reading.processes
-                .filter(({ name: read }) => read === process)
-                .flatMap(({ verified }) => verified.records),
-      });
-      return { ...result, marker: reading.marker };
-    },
+    // As sobrecargas de `QueryService` casam com o corpo único de `evaluateGateOf`.
+    evaluateGate: evaluateGateOf as QueryService['evaluateGate'],
 
     verifyChain({ project, process, expectedHead }) {
       const verified = loadVerified(store, { project, process });

@@ -87,9 +87,9 @@ const LINE_NUMBER_CITATION =
 /** Citação de linha em prosa ("linha 12", "linhas ~141"). */
 const LINE_PROSE_CITATION = /\blinhas?\s+~?\d+/i;
 
-describe('regex de citação de linha (unitário, sobre string literal)', () => {
+describe('line citation regex (unit, over a string literal)', () => {
   // literais montados por concatenação: o grep de aceite não pode achar citação neste arquivo
-  test('LINE_NUMBER_CITATION casa arquivo:N e arquivo:N-M em qualquer extensão citada', () => {
+  test('LINE_NUMBER_CITATION matches file:N and file:N-M in any cited extension', () => {
     for (const citation of [
       'a.ts' + ':12',
       'a.ts' + ':1-3',
@@ -103,7 +103,7 @@ describe('regex de citação de linha (unitário, sobre string literal)', () => 
     }
   });
 
-  test('LINE_PROSE_CITATION casa "linha N" e "linhas ~N" e ignora "linha" sem número', () => {
+  test('LINE_PROSE_CITATION matches "linha N" and "linhas ~N" and ignores "linha" without a number', () => {
     for (const text of ['linhas 141–192 de x', 'na linha 12', 'Linhas ~40']) {
       expect(LINE_PROSE_CITATION.test(text)).toBe(true);
     }
@@ -112,7 +112,7 @@ describe('regex de citação de linha (unitário, sobre string literal)', () => 
     }
   });
 
-  test('LINE_NUMBER_CITATION não casa target hexlog, arquivo#símbolo nem nome de produto com .js', () => {
+  test('LINE_NUMBER_CITATION does not match a hexlog target, file#symbol or a product name with .js', () => {
     for (const text of ['hex:target:x', 'a.ts#sym', 'Node.js' + ':24', 'Next.js' + ':3000']) {
       expect(LINE_NUMBER_CITATION.test(text)).toBe(false);
     }
@@ -212,6 +212,7 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'code',
   'self-relation',
   'type-mismatch',
+  'target-mismatch',
   'cross-process-currency',
   'contradicts',
   'supports-and-contradicts',
@@ -294,6 +295,12 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'attachmentStatus',
   'staleOut',
   'staleIn',
+  'counts',
+  'origin',
+  'inheritedIn',
+  'inheritedOut',
+  'inheritedInCounts',
+  'inheritedOutCounts',
   'derivesFrom',
   'attachmentBreaks',
   'isRevision',
@@ -419,11 +426,11 @@ function tokensCitedBy(skillPath: string) {
   };
 }
 
-describe.each(skillCases)('coerência SKILL.md × código ($name)', ({ skillPath }) => {
+describe.each(skillCases)('SKILL.md × code coherence ($name)', ({ skillPath }) => {
   const { citedScreamingSnakeTokens, citedLowerIdentifiers, citedCamelCaseTokens } =
     tokensCitedBy(skillPath);
 
-  test('a extração não está vazia (sanity: se a skill mudar de forma, isso quebra antes das checagens abaixo)', () => {
+  test('the extraction is not empty (sanity: if the skill changes shape, this breaks before the checks below)', () => {
     expect(registeredTools.length).toBeGreaterThan(0);
     expect(citedScreamingSnakeTokens.length).toBeGreaterThan(0);
     expect(citedLowerIdentifiers.length).toBeGreaterThan(0);
@@ -431,51 +438,51 @@ describe.each(skillCases)('coerência SKILL.md × código ($name)', ({ skillPath
     expect(citedCamelCaseTokens.length).toBeGreaterThan(0);
   });
 
-  test('toda tool citada na skill está de fato registrada (src/mcp/tools/)', () => {
+  test('every tool cited in the skill is actually registered (src/mcp/tools/)', () => {
     const known = new Set([...registeredTools, ...reservedNameValues, ...FIELD_NAME_ALLOWLIST]);
     const unknown = citedLowerIdentifiers.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);
   });
 
-  test('todo código SCREAMING_SNAKE_CASE citado existe no catálogo de erros ou é constante exportada de src/domain/ ou de mcp/kernel.ts', () => {
+  test('every cited SCREAMING_SNAKE_CASE code exists in the error catalog or is a constant exported from src/domain/ or mcp/kernel.ts', () => {
     const known = new Set([...errorCodeCatalog, ...exportedConstantNames]);
     const unknown = citedScreamingSnakeTokens.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);
   });
 
-  test('todo camelCase citado é função declarada em src/ ou campo de schema conhecido', () => {
+  test('every cited camelCase is a function declared in src/ or a known schema field', () => {
     const known = new Set([...declaredFunctionNames, ...FIELD_NAME_ALLOWLIST]);
     const unknown = citedCamelCaseTokens.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);
   });
 });
 
-describe('catálogo real extraído do código', () => {
-  test(`src/mcp/tools/ registra exatamente ${EXPECTED_TOOL_COUNT} tools, sem repetição (TB5)`, () => {
+describe('real catalog extracted from the code', () => {
+  test(`src/mcp/tools/ registers exactly ${EXPECTED_TOOL_COUNT} tools, without repetition (TB5)`, () => {
     expect(registeredTools).toHaveLength(EXPECTED_TOOL_COUNT);
     expect(new Set(registeredTools).size).toBe(EXPECTED_TOOL_COUNT);
   });
 
-  test(`src/errors.ts declara exatamente ${EXPECTED_ERROR_CODE_COUNT} códigos de erro (TM4)`, () => {
+  test(`src/errors.ts declares exactly ${EXPECTED_ERROR_CODE_COUNT} error codes (TM4)`, () => {
     expect(errorCodeCatalog).toHaveLength(EXPECTED_ERROR_CODE_COUNT);
     expect(new Set(errorCodeCatalog).size).toBe(EXPECTED_ERROR_CODE_COUNT);
   });
 });
 
 describe.each([...skillCases, ...referenceCases])(
-  'citações arquivo.ts#símbolo na skill × código real em src/ ($name)',
+  'file.ts#symbol citations in the skill × real code in src/ ($name)',
   ({ skillPath, citationExpectations }) => {
     const { citedFileCitations } = tokensCitedBy(skillPath);
 
-    test('a extração de citações não está vazia (sanity)', () => {
+    test('the citation extraction is not empty (sanity)', () => {
       expect(citedFileCitations.length).toBeGreaterThan(0);
     });
 
-    test('toda citação da skill tem uma expectativa mapeada, e toda expectativa mapeada ainda é citada (nenhuma citação nova ou removida passa despercebida)', () => {
+    test('every citation in the skill has a mapped expectation, and every mapped expectation is still cited (no new or removed citation goes unnoticed)', () => {
       expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(citationExpectations)));
     });
 
-    test('cada citação aponta pra um arquivo de src/ cuja declaração do símbolo contém as substrings esperadas', () => {
+    test('each citation points to a src/ file whose symbol declaration contains the expected substrings', () => {
       for (const citation of citedFileCitations) {
         const [file = '', symbol = ''] = citation.split('#');
         const filePath = path.join(srcDir, file);
@@ -514,8 +521,8 @@ function agentsFilesUnder(dir: string): string[] {
   });
 }
 
-describe('documentação não cita número de linha', () => {
-  test('nenhum .md de skills/, docs/, skills locais, README.md ou AGENTS.md casa arquivo:N nem "linha N"', () => {
+describe('documentation does not cite line numbers', () => {
+  test('no .md in skills/, docs/, local skills, README.md or AGENTS.md matches file:N or "linha N"', () => {
     const files = [
       ...markdownFilesUnder(path.join(repoRoot, 'skills')),
       ...markdownFilesUnder(path.join(repoRoot, 'docs')),

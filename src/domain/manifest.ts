@@ -10,6 +10,8 @@ export const Manifest = z.strictObject({
   project: Name,
   process: Name,
   createdAt: Instant,
+  // Só `create_process` grava; processo sem o campo lê como antes da herança pela linhagem.
+  lineageInheritance: z.literal(true).optional(),
   fixed: z.strictObject({
     types: z.record(Name, RecordType),
     relations: z.record(Name, RelationName),
