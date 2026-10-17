@@ -22,7 +22,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 - Premissa é o porquê de uma escolha em linguagem de produto: registro `premise`, com `statement` de até 255 caracteres. A atemporal mora no processo de diretrizes vigente e vem de `estrategia.md`; a da entrega mora no processo do trabalho, em `<slug>.premise.<short>`. O objetivo da entrega é a primeira delas, `<slug>.premise.objective` (resumo do pedido: resuma, não trunque).
 - Toda `decision` liga a ao menos uma premissa por `rests-on` (decisão para `premise`): a da entrega, a atemporal ou a sentinela `directives.estrategia.none` quando nenhuma se aplica. Citar só o objetivo ou a sentinela por hábito não é citar premissa.
-- Exceção: trabalho aberto antes de `directives-2` (o `list` com `process` não mostra o tipo `premise` nos tipos fixados) não registra premissa nem `rests-on`, porque o servidor recusa a relação desconhecida e o processo mantém as versões fixadas na criação.
+- Exceção de trabalho anterior a `directives-2`: o trabalho aberto antes dela (o `list` com `process` não mostra o tipo `premise` nos tipos fixados) não registra premissa nem `rests-on`, porque o servidor recusa a relação desconhecida e o processo mantém as versões fixadas na criação.
 - A premissa da entrega que desenvolve uma atemporal pode ligar-se a ela por `derivesFrom` cru (sem `as`). É opcional.
 - A premissa da entrega não contradiz premissa atemporal nem diretriz técnica. A diretriz técnica é teto fixo: se a escolha esbarra nela, escolha outro caminho, sem perguntar.
 - Exceção ao teto fixo: a classe crítica de [cadeira-do-dono.md](cadeira-do-dono.md), em que, com ocupante (`ask`, ou `autonomous` com `answeredBy` fixado e Herdr), a escolha vai à cadeira, a regra é emendada no mesmo trabalho e o humano avaliza no pré-PR (nunca para `estrategia.md`); sem ocupante vale o teto fixo.
@@ -36,11 +36,11 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - Fica de fora a escolha mecânica: nome de variável, formatação que o lint impõe, ordem de import.
 - Registre você mesmo, na hora, também quando for subagente: a decisão nasce onde a escolha é feita, e quem a toma não delega o registro. Quem devolve ao principal a lacuna ou o ponto crítico que ninguém lhe entregou não escolheu, então não delega nada ([cadeira-do-dono.md](cadeira-do-dono.md)).
 - O registro carrega `choice`, `alternatives` (cada uma com `option` e `reason`), `rationale`, `grounds` (`directive` ou `gap`) e `confidence`.
-- Com `grounds: directive`, a decisão se liga à diretriz por `anchored-in` (decisão para `directive`). Com `grounds: gap`, por `about-gap` (decisão para `gap`). Nos dois casos, liga-se também a uma premissa por `rests-on` (salvo a exceção de Premissas).
+- Com `grounds: directive`, a decisão se liga à diretriz por `anchored-in` (decisão para `directive`). Com `grounds: gap`, por `about-gap` (decisão para `gap`). Nos dois casos, liga-se também a uma premissa por `rests-on` (salvo a exceção de trabalho anterior a `directives-2`, em "Premissas").
 - `grounds: directive` só vale quando a diretriz passa em três perguntas: trata do mesmo objeto da escolha; escolhe entre as mesmas alternativas; e a escolha não a contraria.
-- Contraria sem emendar: a diretriz é teto fixo, escolha outro caminho (seção "Premissas"), salvo a classe crítica de [cadeira-do-dono.md](cadeira-do-dono.md), com ocupante.
-- Falha na 1ª ou na 2ª pergunta, ou emenda da própria regra citada no mesmo trabalho: lacuna (seção "Lacuna": o modo `ask` para e pergunta, o `autonomous` decide); registre o `gap`, a `decision` com `grounds: gap` e `low` e a premissa que fecha a lacuna por `fills-gap`, que diz o porquê da escolha, não a emenda.
-- A emenda fecha como qualquer lacuna; o PR só sai em rascunho na contradição com premissa atemporal ou na lacuna crítica sem aval (seção "Lacuna").
+- A escolha que contraria a diretriz citada em `grounds: directive`, sem emendá-la: a diretriz é teto fixo, escolha outro caminho (seção "Premissas"), salvo a classe crítica de [cadeira-do-dono.md](cadeira-do-dono.md), com ocupante.
+- A diretriz que falha na 1ª ou na 2ª das três perguntas de `grounds: directive`, ou a emenda da própria regra citada no mesmo trabalho, vira lacuna (seção "Lacuna": o modo `ask` para e pergunta, o `autonomous` decide); registre o `gap`, a `decision` com `grounds: gap` e `low` e a premissa que fecha a lacuna por `fills-gap`, que diz o porquê da escolha, não a emenda.
+- A emenda da regra citada fecha como qualquer lacuna; o PR só sai em rascunho na contradição com premissa atemporal ou na lacuna crítica sem aval (seção "Lacuna").
 - Refazer uma decisão grava uma `decision` nova com `supersedes` da vigente, no mesmo target (`<slug>.decision.<short>`): `supersedes` entre targets diferentes é `INVALID_RECORD` (`target-mismatch`). O `supersedes` não herda relações: regrave as relações listadas em "Verificação e achados".
 
 ## Consulta antes de decidir
@@ -74,11 +74,11 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 - Antes do PR, registre `verification` com `result`, `commit` e `commands` (`typecheck`, `lint`, `format:check`, `test`).
 - Antes da `verification` e de novo depois da review, para as decisões que a review gerou, a `decision` vigente cujo texto diverge do que o diff entrega é regravada com `supersedes`, o texto do entregue e as mesmas relações (`anchored-in` ou `about-gap`, `rests-on`, `resolves-finding`, `derivesFrom`). Esta é a única lista de relações a regravar: a skill só executa.
-- No pré-PR, `node .claude/hooks/flow-report.ts <slug>` (passo 5 do `flow-run`) lista as decisões vigentes cujo `rests-on` cita só o objetivo ou a sentinela, ou cuja regra citada o diff emendou; apoia o julgamento de "Premissas" e nunca é gate.
+- No pré-PR, `node .claude/hooks/flow-report.ts <slug>` (passo 5 do `flow-run`) lista as decisões vigentes cujo `rests-on` cita só o objetivo ou a sentinela, ou cuja regra citada o diff emendou; apoia o julgamento de "Premissas" e nunca é gate (só o `critical-gap`, abaixo, segura o `mark`, como freio da skill).
 - O relatório também acusa `critical-gap` (lacuna crítica sem aval ou com doc emendado depois dele; segura o `mark`), `critical-gap-review` (fechador sem `answeredBy`; só a review confere) e `rests-on-simulated` (decisão apoiada em `simulated` sem aprovada).
 - Toda `verification` nova faz `supersedes` da vigente. Deve haver exatamente uma vigente, `passed`, com `commit` igual ao `HEAD`.
 - Registre cada achado da review como `finding` (`severity`, `origin`, `description`, `location`).
-- **Achado URGENT é corrigido.** Aceitar sem corrigir exige justificativa em `rationale`. A `decision` que o resolve usa `resolves-finding`, `grounds: directive`, `confidence: high`, `anchored-in` na regra desta seção e `rests-on` (ou a exceção de Premissas).
+- **Achado URGENT é corrigido.** Aceitar sem corrigir exige justificativa em `rationale`. A `decision` que o resolve usa `resolves-finding`, `grounds: directive`, `confidence: high`, `anchored-in` na regra desta seção e `rests-on` (ou a exceção de trabalho anterior a `directives-2`, em "Premissas").
 - Falha de verificação ou achado URGENT se corrige e se reavalia; pare só se não conseguir.
 
 ## Gates e PR
