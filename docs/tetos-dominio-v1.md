@@ -39,7 +39,7 @@ Antes desta decisão só `data` (16.000 caracteres) e o lote (`BATCH_MAX`, 50 it
 - **Recusa:** `PROCESS_TOO_LARGE`, um dos códigos de `ErrorCode` (`src/errors.ts`).
 - **Onde:** `src/adapters/fs/process-store.ts#readLogText` confere o tamanho com `stat` antes de ler, então `read` e `write` recusam um log acima do teto sem transformá-lo em string. `createProcessStore#writeLocked` confere `tamanho do arquivo + bytes do lote > 64 MiB` antes de gravar: o lote que cruzaria o teto é recusado sem gravar e o processo continua legível. Exatamente 64 MiB ainda grava e lê.
 - **Mensagem:** `details[0]` traz `process`, e a `message` (inglês) orienta criar um processo novo para seguir registrando só quando é a escrita do próprio processo do `register`; na leitura e no destino de relação a mensagem é neutra. `supersedes` e `revokes` não atravessam processos, e a rotação do log fica para um ADR futuro.
-- **Quando rever:** se o TF6 sair de ~500 ms ou se um processo real passar de ~10 MiB.
+- **Quando rever:** se o orçamento de carga de `test/adapters/load.budget.spec.ts` (carregar e verificar 5.000 registros) sair de ~500 ms ou se um processo real passar de ~10 MiB.
 - **Custo no `search`:** a busca fria monta o índice (~0,12 ms por registro; depois fica em cache, ADR 0008), então um processo no teto, com ~55 mil registros, custa ~6-7 s síncronos. Cada sessão paga o próprio índice, ~42 MiB por 10.000 registros.
 
 ## O que é palpite e o que não é
