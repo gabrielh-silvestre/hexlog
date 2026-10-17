@@ -13,6 +13,9 @@ const PROJECT: ProcessRef = { project: 'proj', process: PROJECT_INDEX };
 // Texto indexável de `textRecord('webhook')`: type, target e o texto, juntos por quebra de linha.
 const RECORD_CHARS = 'note\narea.topic\nwebhook'.length;
 
+// Texto indexável de um registro sem string em `data`: só type e target.
+const BARE_CHARS = 'note\narea.topic'.length;
+
 const textRecord = (text: string): HexRecord => makeRecord({ data: { text } });
 
 const makeRecords = (count: number, text = 'webhook') =>
@@ -249,6 +252,17 @@ describe('createSearchIndex', () => {
     expect(indexedBatches()).toEqual([3, 3]);
   });
 
+  it('should take a ref whose process is "*" as the project scope, never stored', () => {
+    const index = createSearchIndex();
+    const records = makeRecords(3);
+    const project: ProcessRef = { project: 'proj', process: '*' };
+    index.search(project, records, 'webhook');
+
+    index.search(project, records, 'webhook');
+
+    expect(indexedBatches()).toEqual([3, 3]);
+  });
+
   it('should not count the project scope in the budget nor evict the warm processes', () => {
     const index = createSearchIndex(4 * RECORD_CHARS);
     const a = makeRecords(2);
@@ -285,5 +299,107 @@ describe('createSearchIndex', () => {
         );
       }
     }
+  });
+
+  it('should not count the non-string values of data in the budget', () => {
+    const index = createSearchIndex(2 * BARE_CHARS);
+    const records = Array.from({ length: 2 }, () =>
+      makeRecord({ data: { count: 1, enabled: true, note: null } }),
+    );
+    index.search(PROC_A, records, 'note');
+
+    index.search(PROC_A, records, 'note');
+
+    expect(indexedBatches()).toEqual([2]);
+  });
+
+  it('should give the distinct terms of the text in lower case and without accent', () => {
+    const index = createSearchIndex();
+
+    expect(index.terms('Café WEBHOOK cafe webhook')).toEqual(['cafe', 'webhook']);
+  });
+
+  it('should give no term for a text of only combining marks', () => {
+    const index = createSearchIndex();
+
+    expect(index.terms('\u0301')).toEqual([]);
+  });
+
+  it('should match a record by the prefix of a term', () => {
+    const index = createSearchIndex();
+    const match = textRecord('webhook');
+    const records = [match, textRecord('retry')];
+
+    expect(index.search(PROC_A, records, 'webh')).toEqual([match.id]);
+  });
+
+  it('should tolerate one edit in a term of five characters', () => {
+    const index = createSearchIndex();
+    const match = textRecord('retry');
+    const records = [match, textRecord('webhook')];
+
+    expect(index.search(PROC_A, records, 'retri')).toEqual([match.id]);
+  });
+
+  it('should not fall back to any term when a record has all of them', () => {
+    const index = createSearchIndex();
+    const both = textRecord('webhook retry');
+    const records = [both, textRecord('webhook only'), textRecord('retry only')];
+
+    expect(index.search(PROC_A, records, 'webhook retry')).toEqual([both.id]);
+  });
+
+  it('should fall back to any term when no record has all of them', () => {
+    const index = createSearchIndex();
+    const match = textRecord('webhook');
+    const records = [match, textRecord('retry')];
+
+    expect(index.search(PROC_A, records, 'webhook kubernetes')).toEqual([match.id]);
+  });
+
+  it('should require half of the terms, rounded up, from a record in the fallback', () => {
+    const index = createSearchIndex();
+    const alphaBeta = textRecord('alpha beta');
+    const alphaBetaGamma = textRecord('alpha beta gamma');
+    const records = [textRecord('alpha'), alphaBeta, alphaBetaGamma];
+
+    const ids = index.search(PROC_A, records, 'alpha beta zeta');
+
+    expect(ids.toSorted()).toEqual([alphaBeta.id, alphaBetaGamma.id]);
+  });
+
+  it('should return only the allowed records', () => {
+    const index = createSearchIndex();
+    const records = makeRecords(3);
+    const allowed = new Set([records[0]!.id, records[2]!.id]);
+
+    expect(index.search(PROC_A, records, 'webhook', allowed)).toEqual([
+      records[0]!.id,
+      records[2]!.id,
+    ]);
+  });
+
+  it('should fall back to any term over the allowed records when none of them has all the terms', () => {
+    const index = createSearchIndex();
+    const records = [textRecord('webhook retry'), textRecord('webhook only')];
+    const allowed = new Set([records[1]!.id]);
+
+    expect(index.search(PROC_A, records, 'webhook retry', allowed)).toEqual([records[1]!.id]);
+  });
+
+  it('should rank the more relevant record before an earlier one in the log', () => {
+    const index = createSearchIndex();
+    const diluted = textRecord(`webhook ${'filler '.repeat(8)}`);
+    const focused = textRecord('webhook');
+
+    expect(index.search(PROC_A, [diluted, focused], 'webhook')).toEqual([focused.id, diluted.id]);
+  });
+
+  it('should keep the log order between records of the same relevance', () => {
+    const index = createSearchIndex();
+    // O MiniSearch percorre o prefixo 'ab' por 'abc' antes de 'abz': a ordem nativa do empate inverte o log.
+    const records = [textRecord('abz'), textRecord('abc')];
+
+    expect(index.search(PROC_A, records, 'ab')).toEqual([records[0]!.id, records[1]!.id]);
   });
 });
