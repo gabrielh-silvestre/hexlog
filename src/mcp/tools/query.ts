@@ -208,9 +208,9 @@ const QUERY_DESCRIPTION =
   '(records linked to an id) and includeNonCurrent (also superseded or revoked). ' +
   'targetPrefix matches whole "."-separated segments (unit-1 does not match unit-10); a near miss ' +
   'in an empty answer carries a hint. ' +
-  'Records carry needsReview (dead support) and attachmentStatus (cited attachments). ' +
-  'relations: counts (default) gives inCounts and outCounts ({name: n}, empty maps ' +
-  'omitted); full gives in and out; none gives neither. With lineage inheritance, relations to or ' +
+  'Records carry needsReview (dead support) and attachmentStatus. ' +
+  'relations: counts (default) gives inCounts and outCounts ({name: n} per edge, current or not; ' +
+  'empty maps omitted); full gives in and out; none gives neither. With lineage inheritance, relations to or ' +
   'from a superseded version also hold for the current one: inheritedIn and inheritedOut (full), ' +
   'inheritedInCounts and inheritedOutCounts (counts); origin {from, to} is the stored edge; a ' +
   'contradicts between the lineages cuts it. Process scope sees only its own relations; use ' +

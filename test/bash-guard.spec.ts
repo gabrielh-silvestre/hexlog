@@ -200,6 +200,11 @@ const allowCases: I4Case[] = [
     command: 'cat ~/.local/share/(hexlog|x)/p/r/events.jsonl',
     class: 'gap',
   },
+  {
+    name: 'gap: locale-translated string inside the name',
+    command: 'cat ~/.local/share/he$"x"log/x',
+    class: 'gap',
+  },
 ];
 
 describe('bash-guard (I4): nega o acesso a D por Bash', () => {
@@ -471,7 +476,7 @@ describe('bash-guard (#158): ceilings apply only to tokens the shell expands', (
 
   const deniedCases: { name: string; command: string; cwd?: string; stderr: string }[] = [
     {
-      // shell-quote 1.12 decodifica o escape ANSI-C; na 1.10 isto era uma lacuna aceita
+      // shell-quote >=1.11 decodifica o escape ANSI-C; na 1.10 isto era uma lacuna aceita
       name: "an ANSI-C quoted path whose escape spells D ($'...\\x6c...')",
       get command() {
         return `cat $'${tmpHome}/.local/share/hex\\x6cog/x'`;
