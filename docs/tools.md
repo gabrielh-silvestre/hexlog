@@ -325,9 +325,8 @@ o resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
   lote é `counts`: para ver os ids de um target reprovado, avalie só esse target com o
   `marker` do lote (a reavaliação lê os mesmos registros). `evidence: "failing"` pedido no
   lote vale, mas a resposta soma as listas de todos os targets reprovados e pode passar do
-  teto de página. Um `marker`
-  de entrada vale para todos os targets. `targets` junto de `target` ou `evidence: "full"`
-  com `targets` dão `INVALID_INPUT` (`/targets` com `with-target`, `/evidence` com
+  teto de página. Um `marker` de entrada vale para todos os targets. `targets` junto de
+  `target` ou `evidence: "full"` com `targets` dão `INVALID_INPUT` (`/targets` com `with-target`, `/evidence` com
   `full-with-targets`). Pela tool, lista vazia ou com mais de 50 itens é recusada pelo
   schema em `/targets`, antes do serviço; `with-target`, `empty` e `full-with-targets` são
   códigos do serviço, chamado direto.
