@@ -20,7 +20,7 @@ Use só as que a pergunta pedir, da mais barata para a mais cara:
 2. **Pesquisa web:** `oh-my-claudecode:document-specialist` com `model: "sonnet"`.
 3. **Júri:** skill `the-jury`, jurados em `sonnet`, só quando a evidência local não decide.
 
-Todo subagente aninhado leva `model` explícito, `name` do pool de `AGENT-NAMES.md` (config global do dono, em `~/.claude/`; sem ele, só `{tipo}-{slug}`) no padrão `{nome}-{tipo}-{slug}` e o pedido de uma mensagem de conclusão com o resumo. Quem o lança espera essa mensagem antes de seguir: o retorno pode chegar pela caixa de mensagens, não inline.
+Todo subagente aninhado leva `model` explícito, `name` do pool de `AGENT-NAMES.md` (config global do dono, em `~/.claude/`; sem ele, só `{tipo}-{slug}`) no padrão `{nome}-{tipo}-{slug}` e o pedido de uma mensagem de conclusão com o resumo. Quem o lança espera essa mensagem antes de seguir: o retorno pode chegar pela caixa de mensagens, não inline. Depois dela, encerra o subagente por `TaskStop`, nunca antes.
 
 ## Crivo do júri
 
@@ -30,7 +30,7 @@ Quem aciona o júri confere o veredito antes de usá-lo e pode reprová-lo e ref
 
 Consulte nesta ordem:
 
-1. `query` do hexlog, no processo do trabalho e no processo vigente das diretrizes.
+1. `query` do hexlog, no processo do trabalho e no processo vigente das diretrizes, relida a cada pergunta: id do hexlog só se cita depois dessa releitura, nunca de memória.
 2. Wiki OMC.
 3. Memória nativa do projeto.
 4. `docs/directives/`, os ADRs e os `AGENTS.md`.
