@@ -15,7 +15,7 @@ A lacuna fecha por uma `premise` **nova** da entrega com `fills-gap` para ela. A
 2. `evaluate_gate` de `gaps` (`target` igual ao slug). A `evidence.unresolved` lista as lacunas abertas; leia cada uma por `query`.
 3. **Uma lacuna por turno.** Apresente a pergunta, o contexto, a escolha provisória, a decisão registrada e, conforme o caso, a premissa atemporal contradita (leia `docs/directives/estrategia.md`) ou a `simulated` pendente. O dono escolhe, direto ou depois de pedir pesquisa, e a resposta vem antes da próxima lacuna:
    - **Aprovar a `simulated` pendente** (só classe crítica): grava `simulated-approved` no passo 4. Aprovar não vale para contradição com premissa atemporal: aí o dono muda de rumo ou emenda a premissa.
-   - **Recusar a `simulated`**: `revokes` dela; o trabalho dependente é refeito (a regra emendada e o código voltam atrás) e a escolha segue por um dos caminhos abaixo.
+   - **Recusar a `simulated`**: `revokes` dela; o trabalho dependente é refeito (a regra emendada e o código voltam atrás) e a escolha segue por um dos caminhos abaixo. Aqui a recusa não volta ao critic (o assento é humano): quem decide a lacuna é o dono, mesmo com o critic ainda vivo.
    - **Mudar de rumo**: o trabalho passa a respeitar a premissa atemporal; ajuste o código.
    - **Emendar a premissa atemporal**: edite `docs/directives/estrategia.md` com a validação do dono e sincronize o doc, como na seção 2 de `flow-run`. O planejador (`.claude/hooks/flow-sync.ts#planSync`) ignora `closes` nesse doc, então a emenda sozinha não fecha a lacuna.
 4. Em cada caminho, grave nesta ordem:
