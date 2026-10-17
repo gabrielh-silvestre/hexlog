@@ -231,15 +231,16 @@ const QUERY_DESCRIPTION =
 const EVALUATE_GATE_DESCRIPTION =
   'Evaluate a gate pinned in a process (GATE_NOT_FOUND otherwise), without writing anything. Returns ' +
   'passed and one result per question (index, kind, passed) plus the marker of what was read. ' +
-  'evidence sets the detail: failing (default) gives counts (size of each evidence list) and, for a ' +
-  'failed question, the ids that explain it; counts gives only counts; full gives every list of ids ' +
+  'evidence sets the detail: failing (default with target) gives counts (size of each evidence list) and, for a ' +
+  'failed question, the ids that explain it; counts (default with targets) gives only counts; full gives every list of ids ' +
   '(approved has of, supports, contradictions and unsupported; occurred has found; no_pending has ' +
   'unresolved; no_open_contradiction has conflicting). A question of approved or no_pending with ' +
   'inherit: true also counts support or resolution that a superseded version carried, in a process ' +
   'with lineage inheritance, and adds the list inherited with those that count only that way. ' +
   'target is inherited by selectors without ' +
   'targetPrefix; targets (1 to 50, not with target or evidence full) evaluates several in one read ' +
-  'and answers results: one {target, passed, questions} per target, in order, with a single marker. ' +
+  'and answers results: one {target, passed, questions} per target, in order, with a single marker; ' +
+  'to see the ids behind a failed target, evaluate that target alone with the batch marker. ' +
   'Pass a marker from an earlier read to replay the evaluation over the records that existed then; a ' +
   'marker covers exactly the processes it names, and in project scope any process it does not name is ' +
   'read as empty. A gate without project-scope questions reads one process: the marker must name only ' +
@@ -370,9 +371,14 @@ export function registerQueryTools(server: McpServer, deps: ToolDeps): void {
       annotations: READ_ANNOTATIONS,
     },
     // O serviço assume `evidence: full`; o padrão enxuto é do envelope, como o `maxChars` de `queryPage`.
+    // Lote em `counts`: os ids de 50 targets reprovando somavam ~27x o teto de página, e quem quer os
+    // ids de um target reavalia só ele, com o `marker` do lote.
     (input) =>
       gatePage(
-        deps.services.query.evaluateGate({ ...input, evidence: input.evidence ?? 'failing' }),
+        deps.services.query.evaluateGate({
+          ...input,
+          evidence: input.evidence ?? (isUndefined(input.targets) ? 'failing' : 'counts'),
+        }),
       ),
   );
 

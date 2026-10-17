@@ -309,19 +309,23 @@ até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estrei
 o resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
 
 - **Detalhe da evidência:** `evidence` escolhe o quanto cada pergunta traz.
-  - `failing` (o padrão da tool) devolve `counts`, o tamanho de cada lista da pergunta
+  - `failing` (o padrão da tool com `target`) devolve `counts`, o tamanho de cada lista da pergunta
     (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
     reprovação e não estão vazias: `unsupported` e `contradictions` em `approved`, `found`
     em `occurred`, `unresolved` em `no_pending`, `conflicting` em `no_open_contradiction`.
     Pergunta aprovada, ou reprovada sem lista de diagnóstico (um `approved` sem nenhum
     registro em `of`), vem só com `counts`, sem a chave `evidence`.
-  - `counts` devolve só `counts`, nunca ids.
+  - `counts` (o padrão da tool com `targets`) devolve só `counts`, nunca ids.
   - `full` devolve `evidence` com todas as listas de ids, sem `counts`, como antes de
     `evidence` existir.
 - **Lote:** `targets` (de 1 a 50) avalia vários targets numa só leitura. É exclusivo com
   `target` e não aceita `evidence: "full"`. A resposta troca `questions` por `results`, um
   `{target, passed, questions}` por entrada, na ordem recebida (duplicata não é removida),
-  com um só `marker` para todos; `passed` só é verdadeiro quando todos passam. Um `marker`
+  com um só `marker` para todos; `passed` só é verdadeiro quando todos passam. O padrão do
+  lote é `counts`: para ver os ids de um target reprovado, avalie só esse target com o
+  `marker` do lote (a reavaliação lê os mesmos registros). `evidence: "failing"` pedido no
+  lote vale, mas a resposta soma as listas de todos os targets reprovados e pode passar do
+  teto de página. Um `marker`
   de entrada vale para todos os targets. `targets` junto de `target` ou `evidence: "full"`
   com `targets` dão `INVALID_INPUT` (`/targets` com `with-target`, `/evidence` com
   `full-with-targets`). Pela tool, lista vazia ou com mais de 50 itens é recusada pelo
