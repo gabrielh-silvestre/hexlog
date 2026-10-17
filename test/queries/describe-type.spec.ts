@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import { NOTE } from '../commands/register-fakes.ts';
 import { captureError } from '../helpers.ts';
@@ -20,8 +20,8 @@ function describeSetup() {
   return { ...setup, describe };
 }
 
-describe('describeType', () => {
-  test('com process devolve o tipo fixado, sem version, mesmo depois de o projeto definir versão nova', () => {
+describe('QueryService.describeType', () => {
+  it('should return the pinned type with process, without version, even after the project defines a new version', () => {
     const { describe } = describeSetup();
 
     const result = describe({ type: 'note', process: 'run-1' });
@@ -30,13 +30,13 @@ describe('describeType', () => {
     expect(result).not.toHaveProperty('version');
   });
 
-  test('sem process devolve a versão vigente do projeto, com version', () => {
+  it('should return the current version of the project, with version, without process', () => {
     const { describe } = describeSetup();
 
     expect(describe({ type: 'note' })).toEqual({ name: 'note', version: '1.1', schema: NOTE_V2 });
   });
 
-  test('com version devolve a versão pedida', () => {
+  it('should return the requested version with version', () => {
     const { describe } = describeSetup();
 
     expect(describe({ type: 'note', version: '1.0' })).toEqual({
@@ -46,7 +46,7 @@ describe('describeType', () => {
     });
   });
 
-  describe('tipo legado com pattern e patternProperties', () => {
+  describe('with a legacy type that has pattern and patternProperties', () => {
     const LEGACY: RecordType = {
       type: 'object',
       properties: {
@@ -67,7 +67,7 @@ describe('describeType', () => {
       return setup;
     }
 
-    test('com process omite as duas palavras-chave e mantém o campo de nome pattern', () => {
+    it('should omit both keywords and keep the field named pattern, with process', () => {
       const { describe } = legacySetup();
 
       expect(describe({ type: 'legacy', process: 'run-legacy' })).toEqual({
@@ -76,7 +76,7 @@ describe('describeType', () => {
       });
     });
 
-    test('sem process omite as duas palavras-chave da definição lida do projeto', () => {
+    it('should omit both keywords of the definition read from the project, without process', () => {
       const { describe, definitions } = legacySetup();
 
       expect(describe({ type: 'legacy' })).toEqual({
@@ -87,7 +87,7 @@ describe('describeType', () => {
       expect(definitions.read(PROJECT, 'types', 'legacy', '1.0')).toEqual(LEGACY);
     });
 
-    test('omite o pattern de um contentSchema', () => {
+    it('should omit the pattern of a contentSchema', () => {
       const setup = describeSetup();
       setup.definitions.write(PROJECT, 'types', 'content', '1.0', {
         type: 'string',
@@ -102,7 +102,7 @@ describe('describeType', () => {
       });
     });
 
-    test('a cadeia do processo segue íntegra depois do describe', () => {
+    it('should keep the chain of the process intact after the describe', () => {
       const { describe, queries } = legacySetup();
 
       describe({ type: 'legacy', process: 'run-legacy' });
@@ -114,11 +114,12 @@ describe('describeType', () => {
     });
   });
 
-  test('tipo ausente do projeto é TYPE_NOT_FOUND em /type, com ou sem version', () => {
+  it('should refuse a type missing from the project with TYPE_NOT_FOUND at /type, with or without version', () => {
     const { describe } = describeSetup();
 
     for (const version of [undefined, '1.0']) {
       const error = captureError(() => describe({ type: 'ghost', version }));
+
       expect(error.code).toBe('TYPE_NOT_FOUND');
       expect(error.details).toEqual([
         { path: '/type', code: 'unknown-name', message: expect.any(String) },
@@ -126,13 +127,14 @@ describe('describeType', () => {
     }
   });
 
-  test('projeto inexistente é PROJECT_NOT_FOUND em /project, com ou sem version', () => {
+  it('should refuse a missing project with PROJECT_NOT_FOUND at /project, with or without version', () => {
     const { queries } = describeSetup();
 
     for (const version of [undefined, '1.0']) {
       const error = captureError(() =>
         queries.describeType({ project: 'ghost-project', type: 'note', version }),
       );
+
       expect(error.code).toBe('PROJECT_NOT_FOUND');
       expect(error.details).toEqual([
         { path: '/project', code: 'unknown-project', message: expect.any(String) },
@@ -140,7 +142,7 @@ describe('describeType', () => {
     }
   });
 
-  test('projeto inexistente com process segue PROCESS_NOT_FOUND', () => {
+  it('should keep PROCESS_NOT_FOUND for a missing project with process', () => {
     const { queries } = describeSetup();
 
     const error = captureError(() =>
@@ -150,7 +152,7 @@ describe('describeType', () => {
     expect(error.code).toBe('PROCESS_NOT_FOUND');
   });
 
-  test('versão ausente é TYPE_NOT_FOUND em /version, com as versões que existem', () => {
+  it('should refuse a missing version with TYPE_NOT_FOUND at /version, listing the versions that exist', () => {
     const { describe } = describeSetup();
 
     const error = captureError(() => describe({ type: 'note', version: '9.0' }));
@@ -166,7 +168,7 @@ describe('describeType', () => {
     ]);
   });
 
-  test('tipo do projeto que o processo não fixou é TYPE_NOT_PINNED em /type', () => {
+  it('should refuse a project type that the process did not pin with TYPE_NOT_PINNED at /type', () => {
     const { definitions, describe } = describeSetup();
     definitions.write(PROJECT, 'types', 'later', '1.0', NOTE);
 
@@ -178,7 +180,7 @@ describe('describeType', () => {
     ]);
   });
 
-  test('processo inexistente é PROCESS_NOT_FOUND', () => {
+  it('should refuse an unknown process with PROCESS_NOT_FOUND', () => {
     const { describe } = describeSetup();
 
     expect(captureError(() => describe({ type: 'note', process: 'ghost' })).code).toBe(
@@ -186,7 +188,7 @@ describe('describeType', () => {
     );
   });
 
-  test('process e version juntos são INVALID_INPUT em /version, antes de qualquer leitura', () => {
+  it('should refuse process and version together with INVALID_INPUT at /version, before any read', () => {
     const { describe } = describeSetup();
 
     const error = captureError(() => describe({ type: 'ghost', process: 'ghost', version: '1.0' }));

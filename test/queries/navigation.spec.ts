@@ -1,10 +1,10 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { note } from '../commands/register-fakes.ts';
 import { at } from '../helpers.ts';
 import { idsOf, querySetup } from './query-setup.ts';
 
-describe('SL9: navigation by text, ids and relatedTo', () => {
-  test('SL9: from a term in the old text to the current version, with no pivot by target', async () => {
+describe('QueryService.queryRecords', () => {
+  it('should navigate from a term in the old text to the current version, with no pivot by target (SL9)', async () => {
     const { createProcess, register, registerOne, query } = querySetup();
     createProcess('run-1');
     const created = await register(
@@ -21,9 +21,9 @@ describe('SL9: navigation by text, ids and relatedTo', () => {
       }),
       2,
     );
-
     const found = query({ process: 'run-1', text: 'backoff', includeNonCurrent: true });
     const neighbours = query({ process: 'run-1', relatedTo: at(idsOf(found), 0) });
+
     const detail = query({ process: 'run-1', ids: idsOf(neighbours) });
 
     expect(idsOf(query({ process: 'run-1', text: 'backoff' }))).toEqual([]);
@@ -36,7 +36,7 @@ describe('SL9: navigation by text, ids and relatedTo', () => {
     });
   });
 
-  test('SL9: from the term to the verdict that supports the evidence, via the incoming relation', async () => {
+  it('should navigate from the term to the verdict that supports the evidence, via the incoming relation (SL9)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const evidence = await registerOne('run-1', note('latência medida em 40ms'), 1);
@@ -45,8 +45,8 @@ describe('SL9: navigation by text, ids and relatedTo', () => {
       note('aprovado', { target: 'run.verdict', relations: [{ to: evidence, kind: 'supports' }] }),
       2,
     );
-
     const found = query({ process: 'run-1', text: 'latência' });
+
     const supporters = query({ process: 'run-1', relatedTo: at(idsOf(found), 0) });
 
     expect(idsOf(found)).toEqual([evidence]);
@@ -56,10 +56,8 @@ describe('SL9: navigation by text, ids and relatedTo', () => {
       { kind: 'supports', to: evidence, current: true },
     ]);
   });
-});
 
-describe('relatedTo with relations counts', () => {
-  test('relatedTo and relations counts work together', async () => {
+  it('should combine relatedTo with relations counts', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const evidence = await registerOne('run-1', note('evidence'), 1);

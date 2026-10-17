@@ -1,10 +1,10 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { note } from '../commands/register-fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { idsOf, querySetup } from './query-setup.ts';
 
-describe('queryRecords: alcance (D-24)', () => {
-  test('o alcance processo lê só o processo pedido e o marcador tem uma entrada', async () => {
+describe('QueryService.queryRecords', () => {
+  it('should read only the requested process in the process scope, with a marker of one entry (D-24)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     createProcess('run-2');
@@ -17,7 +17,7 @@ describe('queryRecords: alcance (D-24)', () => {
     expect(page.marker).toEqual({ 'run-1': mine });
   });
 
-  test('P13: no alcance processo `in` ignora outro processo e `out` para outro processo sai sem current', async () => {
+  it('should not resolve relations with other processes in the process scope (P13, D-24)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     createProcess('run-2');
@@ -37,7 +37,7 @@ describe('queryRecords: alcance (D-24)', () => {
     expect(origin.marker).toEqual({ 'run-1': source });
   });
 
-  test('P13: no alcance projeto `in` e `out.current` enxergam outro processo e o marcador cobre todos', async () => {
+  it('should resolve relations across processes in the project scope, with a marker that covers all of them (P13, D-24)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     createProcess('run-2');
@@ -61,7 +61,7 @@ describe('queryRecords: alcance (D-24)', () => {
     expect(page.marker).toEqual({ 'run-1': source, 'run-2': target, vazio: null });
   });
 
-  test('P13: processo com cadeia quebrada falha fechado, nomeado, só onde foi lido', async () => {
+  it('should fail closed naming the process with a broken chain, only where it was read (P13, D-24)', async () => {
     const { createProcess, register, registerOne, tamper, query } = querySetup();
     createProcess('run-1');
     createProcess('run-2');
@@ -78,7 +78,7 @@ describe('queryRecords: alcance (D-24)', () => {
     expect(query({ process: 'run-1' }).records).toHaveLength(1);
   });
 
-  test('alcance projeto com projeto inexistente é PROJECT_NOT_FOUND, como o `list`', () => {
+  it('should refuse a missing project with PROJECT_NOT_FOUND in the project scope, as list does (D-24)', () => {
     const { queries } = querySetup();
 
     const error = captureError(() => queries.queryRecords({ project: 'ghost', scope: 'project' }));
@@ -89,25 +89,32 @@ describe('queryRecords: alcance (D-24)', () => {
     ]);
   });
 
-  test('projeto existente sem processos devolve página vazia, não PROJECT_NOT_FOUND', () => {
+  it('should return an empty page, not PROJECT_NOT_FOUND, for an existing project without processes (D-24)', () => {
     const { query } = querySetup();
 
     expect(query({ scope: 'project' })).toEqual({ records: [], marker: {} });
   });
 
-  test('alcance processo sem `process` e processo inexistente são recusados', () => {
+  it('should refuse the process scope without process with INVALID_FILTER at /process (D-24)', () => {
     const { createProcess, query } = querySetup();
     createProcess('run-1');
 
     const missingName = captureError(() => query({}));
-    const unknown = captureError(() => query({ process: 'nao-existe' }));
 
     expect(missingName.code).toBe('INVALID_FILTER');
     expect(at(missingName.details, 0).path).toBe('/process');
+  });
+
+  it('should refuse an unknown process with PROCESS_NOT_FOUND in the process scope (D-24)', () => {
+    const { createProcess, query } = querySetup();
+    createProcess('run-1');
+
+    const unknown = captureError(() => query({ process: 'nao-existe' }));
+
     expect(unknown.code).toBe('PROCESS_NOT_FOUND');
   });
 
-  test('P13: o `in` do alcance processo lista só as origens do próprio processo e o projeto lista todas', async () => {
+  it('should list in the process scope only the origins of the own process, where the project scope lists all (P13, D-24)', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     createProcess('run-2');
