@@ -59,6 +59,14 @@ function lineageRootOf(records: readonly Linked[]): (id: RecordId) => RecordId {
   const find = (id: RecordId): RecordId => {
     let root = id;
     for (let next = parent.get(root); !isUndefined(next); next = parent.get(root)) root = next;
+    // Compressão de caminho: sem ela, registros em ordem decrescente formam uma cadeia e cada `find`
+    // a percorre inteira (O(L²)).
+    for (
+      let node = id, next = parent.get(node);
+      !isUndefined(next);
+      node = next, next = parent.get(node)
+    )
+      parent.set(node, root);
     return root;
   };
   for (const { id, relations } of records) {

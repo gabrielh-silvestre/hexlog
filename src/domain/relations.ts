@@ -54,20 +54,34 @@ export function buildVigency(records: readonly Linked[]): Vigency {
 
   const isCurrent = (id: RecordId) => !revoked.has(id) && !successors.has(id);
 
-  // ponytail: memoizado por registro, e cada primeira busca é O(n) na linhagem; memoizar também os
-  // registros visitados se linhagens longas pesarem. A herança chama `currentOf` por aresta.
+  // A herança chama `currentOf` por aresta; sem memoizar o caminho todo, cada partida percorreria a
+  // linhagem inteira (O(L²)). Num caminho sem bifurcação, que a escrita garante, todo nó visitado
+  // tem o mesmo resultado da partida. Com bifurcação só a partida é memoizada.
   const memo = new Map<RecordId, RecordId | null>();
   const search = (start: RecordId): RecordId | null => {
     const pending = [start];
     const seen = new Set<RecordId>();
+    const path: RecordId[] = [];
+    let linear = true;
+    const settle = (head: RecordId | null): RecordId | null => {
+      if (linear) for (const id of path) memo.set(id, head);
+      return head;
+    };
     for (let id = pending.pop(); !isUndefined(id); id = pending.pop()) {
       if (seen.has(id) || revoked.has(id)) continue;
+      if (memo.has(id)) {
+        const known = memo.get(id) ?? null;
+        if (known !== null) return settle(known);
+        continue;
+      }
       seen.add(id);
       const next = successors.get(id);
-      if (!next) return id;
+      if (!next) return settle(id);
+      if (next.length > 1) linear = false;
+      path.push(id);
       pending.push(...[...next].reverse());
     }
-    return null;
+    return settle(null);
   };
   const currentOf = (start: RecordId): RecordId | null => {
     if (!memo.has(start)) memo.set(start, search(start));
