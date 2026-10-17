@@ -35,6 +35,46 @@ describe('walkSubschemas', () => {
     ]);
   });
 
+  it.each([
+    'additionalProperties',
+    'items',
+    'contains',
+    'propertyNames',
+    'not',
+    'if',
+    'then',
+    'else',
+    'unevaluatedItems',
+    'unevaluatedProperties',
+    'contentSchema',
+  ])('should visit the subschema under the keyword %s', (keyword) => {
+    const schema = { [keyword]: {} };
+
+    expect(pointersOf(schema)).toEqual(['', `/${keyword}`]);
+  });
+
+  it.each(['allOf', 'anyOf', 'oneOf', 'prefixItems'])(
+    'should visit each subschema of the list keyword %s',
+    (keyword) => {
+      const schema = { [keyword]: [{}, {}] };
+
+      expect(pointersOf(schema)).toEqual(['', `/${keyword}/0`, `/${keyword}/1`]);
+    },
+  );
+
+  it.each([
+    'properties',
+    'patternProperties',
+    '$defs',
+    'definitions',
+    'dependentSchemas',
+    'dependencies',
+  ])('should visit each subschema of the map keyword %s', (keyword) => {
+    const schema = { [keyword]: { a: {}, b: {} } };
+
+    expect(pointersOf(schema)).toEqual(['', `/${keyword}/a`, `/${keyword}/b`]);
+  });
+
   it('should descend into the patternProperties values', () => {
     const schema = { patternProperties: { '^a': { items: {} } } };
 
@@ -159,6 +199,7 @@ describe('hasKeywordAt', () => {
     pattern: '^root$',
     properties: { 'a/b~c': { pattern: '^x$' } },
     examples: [{ pattern: '^y$' }],
+    nothing: null,
   };
 
   it.each([
@@ -174,6 +215,7 @@ describe('hasKeywordAt', () => {
     ['a pointer with an index out of the array', '/examples/1', 'pattern'],
     ['a keyword absent from the object', '/properties', 'pattern'],
     ['a target that is not an object', '/examples/0/pattern', 'pattern'],
+    ['a pointer that goes through null', '/nothing/pattern', 'pattern'],
   ])('should return false for %s', (_label, location, keyword) => {
     expect(hasKeywordAt(schema, location, keyword)).toBe(false);
   });

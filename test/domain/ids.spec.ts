@@ -7,6 +7,7 @@ import {
   RecordId,
   RESERVED_PROCESS_NAMES,
   Target,
+  TypeNames,
   alias,
   processOf,
 } from '../../src/domain/ids.ts';
@@ -40,7 +41,14 @@ describe('Hash', () => {
     expect(Hash.safeParse('a'.repeat(64)).success).toBe(true);
   });
 
-  it.each(['a'.repeat(63), 'A'.repeat(64), 'g'.repeat(64)])('should reject %s', (value) => {
+  it.each([
+    'a'.repeat(63),
+    'A'.repeat(64),
+    'g'.repeat(64),
+    `${'a'.repeat(64)}g`,
+    `g${'a'.repeat(64)}`,
+    'a'.repeat(65),
+  ])('should reject %s', (value) => {
     expect(Hash.safeParse(value).success).toBe(false);
   });
 });
@@ -107,6 +115,17 @@ describe('RecordId', () => {
     `Proc:${randomUUIDv7()}`,
   ])('should reject %s (D-01)', (value) => {
     expect(RecordId.safeParse(value).success).toBe(false);
+  });
+});
+
+describe('TypeNames', () => {
+  it('should reject a repeated type name with the duplicate message', () => {
+    const result = TypeNames.safeParse(['note', 'decision', 'note']);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({ message: 'duplicate type name' }),
+    ]);
   });
 });
 
