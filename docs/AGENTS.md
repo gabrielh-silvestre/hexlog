@@ -38,3 +38,4 @@ Os ADRs de `directives/` registram as decisões da arquitetura de `src/` (domín
 ## Diretrizes
 
 - [documentacao.md](directives/documentacao.md): ADR só por emenda, como citar, `pesquisa/` congelado e famílias de ID
+<!-- r3 probe -->
