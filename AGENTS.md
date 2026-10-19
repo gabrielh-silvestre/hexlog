@@ -15,6 +15,8 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
 | `.prettierrc`, `.prettierignore`, `.editorconfig` | Formatação (aspas simples, vírgula final, 100 colunas); `*.md` e `package-lock.json` ficam fora do Prettier |
 | `.husky/pre-commit` | Roda `lint-staged` (`eslint --fix` e `prettier --write` nos `*.ts` do commit) |
+| `.husky/commit-msg` | Roda o `commitlint` na mensagem do commit (`commitlint.config.js`) |
+| `commitlint.config.js` | Config do `commitlint`: `config-conventional`, header até 80 caracteres, corpo vazio; `Merge` e `Revert` do Git passam pelos ignores padrão e o commit do Dependabot pelo rodapé `Signed-off-by: dependabot[bot]` |
 | `.github/workflows/ci.yml` | CI: `npm audit signatures`, `typecheck`, `lint`, `knip`, `format:check`, `test:coverage` (piso de 90%) e `test:budget` (Node 24.18.1) |
 | `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`: version updates semanais em `develop`, minor e patch num único PR por ecossistema, major ignorado, `cooldown` de 7 dias; security updates seguem um PR por pacote na branch padrão |
 | `.github/pull_request_template.md` | Template de PR só com os vínculos: `Closes #N`, linha do `CHANGELOG.md` em `[Não lançado]`, PR relacionado, versão ou tag |
@@ -22,6 +24,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `.github/workflows/changelog-draft.yml` | Em PR para `main`, comenta o rascunho do `git-cliff` para o `CHANGELOG.md` |
 | `.github/workflows/workflow-lint.yml` | Job `workflow-lint` em todo PR: se o diff toca `.github/`, roda actionlint (binário de versão fixa com sha256 conferido) e zizmor (action fixada por SHA); sem mudança em `.github/`, os steps de lint são pulados e o check reporta sucesso |
 | `.github/workflows/changelog-line.yml` | Job `changelog-line` em PR para `develop`: commit `feat`, `fix`, `perf` ou `revert` (menos os escopos `flow` e `claude`) exige linha nova em `[Não lançado]` citando o `#N` do próprio PR; Dependabot e `chore/back-merge-*` pulam o job |
+| `.github/workflows/commitlint.yml` | Job `commitlint` em todo PR, qualquer base: confere as mensagens de `base.sha..head.sha` com `commitlint.config.js`; `chore/back-merge-*` pula o job |
 | `.github/workflows/dependency-review.yml` | Job `dependency-review` em todo PR: a `dependency-review-action` (fixada por SHA) falha em dependência nova com advisory `high` ou acima, sem filtro de licença |
 | `.github/workflows/scorecard.yml` | Job `scorecard` do OpenSSF Scorecard, medidor e não gate (fora do ruleset): semanal, em push na branch padrão `develop` e sob demanda; a `scorecard-action` e o `upload-sarif` são fixados por SHA, o SARIF vai para a aba Security e nada é publicado na API do Scorecard (sem `id-token: write` e sem selo no `README`) |
 | `CHANGELOG.md` | Mudanças visíveis por versão, no Keep a Changelog em pt-BR, desde a 1.0.0; `test/changelog.spec.ts` exige a seção da versão do `package.json` |
@@ -63,6 +66,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `jest` + `ts-jest`, `fast-check`, `@modelcontextprotocol/client` (cliente dos specs MCP e e2e): testes
 - `typescript`, `eslint` (+ `typescript-eslint`, `eslint-plugin-jest`, `eslint-plugin-n`, `eslint-config-prettier`), `prettier`: tipos, lint e formatação
 - `husky` + `lint-staged`: hook de pré-commit
+- `@commitlint/cli` + `@commitlint/config-conventional`: mensagem de commit no hook `commit-msg` e no CI (`commitlint.config.js`)
 - `git-cliff`: rascunho do `CHANGELOG.md` (`cliff.toml`)
 - `knip`: código, arquivo e dependência mortos (`knip.json`)
 
