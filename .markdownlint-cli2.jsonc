@@ -1,0 +1,21 @@
+{
+  // Sem linha longa e sem as regras que o AGENTS.md gerado ou os ADRs aceitos (imutáveis) violam por formato.
+  "config": {
+    "default": true,
+    "MD005": false,
+    "MD007": false,
+    "MD013": false,
+    "MD024": { "siblings_only": true },
+    "MD022": false,
+    "MD029": false,
+    "MD032": false,
+    "MD033": false,
+    "MD034": false,
+    "MD038": false,
+    "MD056": false,
+    "MD058": false,
+    "MD060": false,
+  },
+  "gitignore": true,
+  "ignores": ["docs/pesquisa/**", ".github/pull_request_template.md"],
+}

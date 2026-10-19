@@ -130,6 +130,10 @@ describe('N11', () => {
     // Mensagem de commit no hook commit-msg e no CI (commitlint.config.js).
     '@commitlint/cli',
     '@commitlint/config-conventional',
+    // Lint e ortografia dos `.md` no commit e no CI (.markdownlint-cli2.jsonc, cspell.json).
+    'markdownlint-cli2',
+    'cspell',
+    '@cspell/dict-pt-br',
   ];
   const CARET_RANGE = /^\^\d+\.\d+\.\d+$/;
   const outsideCaret = (deps: Record<string, string>) =>

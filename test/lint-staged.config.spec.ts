@@ -26,10 +26,16 @@ describe('lint-staged config', () => {
     expect((tasks[2] as () => string)()).toBe('npm run typecheck');
   });
 
-  it('should run the doc specs for .md', () => {
-    const task = config['*.md'];
+  it('should lint, spell-check and run the doc specs in sequence for .md', () => {
+    const tasks = config['*.md'] as Task[];
 
-    expect(task()).toBe('npm test -- test/directives.spec.ts test/skill-coherence.spec.ts');
+    expect(tasks.slice(0, 2)).toEqual([
+      'markdownlint-cli2',
+      'cspell --no-progress --no-must-find-files',
+    ]);
+    expect((tasks[2] as () => string)()).toBe(
+      'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts',
+    );
   });
 
   it('should map src/x/y.ts to the spec and the property spec of the same folder', () => {

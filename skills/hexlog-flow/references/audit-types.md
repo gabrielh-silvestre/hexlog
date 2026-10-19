@@ -28,7 +28,7 @@ Todo campo que guarda hash de anexo tem `format: "attachment"` (a palavra-chave 
 `domain/definitions.ts#attachmentFields` procura). Os campos que um gate filtra com
 `where` ficam no primeiro nível de `data` e são escalares.
 
-```
+```text
 define_type({ project, name: "plan", schema: {
   type: "object",
   properties: {
@@ -82,7 +82,7 @@ e qual achado motivou cada mudança.
 
 ## Os nomes de relação e o gate
 
-```
+```text
 define_relation({ project, name: "approves", kind: "supports",    from: ["review"], to: ["plan"] })
 define_relation({ project, name: "rejects",  kind: "contradicts", from: ["review"], to: ["plan"] })
 define_relation({ project, name: "settles",  kind: "answers",     to: ["deviation"] })

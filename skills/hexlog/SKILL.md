@@ -108,7 +108,7 @@ Notas:
 
 ## Exemplo mínimo: do zero a um `register` e um `evaluate_gate` verdes
 
-```
+```text
 1. define_type({
      project: "myproj", name: "note",
      schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] }

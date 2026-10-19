@@ -17,6 +17,8 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "knip": "knip",
+    "lint:md": "markdownlint-cli2 \"**/*.md\"",
+    "spell": "cspell --no-progress \"**/*.md\"",
     "prepare": "husky"
   },
   "jest": {
@@ -76,10 +78,12 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
+    "@cspell/dict-pt-br": "^2.4.4",
     "@eslint/js": "^10.0.1",
     "@jest/globals": "^30.5.1",
     "@modelcontextprotocol/client": "^2.3.1",
     "@types/node": "^24.8.1",
+    "cspell": "^10.4.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
@@ -91,6 +95,7 @@
     "jest": "^30.5.1",
     "knip": "^6.41.0",
     "lint-staged": "^17.6.0",
+    "markdownlint-cli2": "^0.23.3",
     "prettier": "^3.9.10",
     "tar": "^7.5.22",
     "ts-jest": "^29.4.14",

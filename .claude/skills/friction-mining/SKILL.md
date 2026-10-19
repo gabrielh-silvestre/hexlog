@@ -12,7 +12,7 @@ metadata:
 
 Minera as sessões do Claude Code de um projeto-fonte numa janela de datas atrás de atrito no uso real das tools `mcp__hexlog__*` e transforma o que achar em relatório, issues e comentários no repo do hexlog. As decisões de método já estão fixadas (sinais, critério de confiança, harness separado); a rodada só escolhe janela e projeto-fonte.
 
-```
+```text
 skill (gate 1: janela + fonte) → Workflow friction-mining-run
   Extract (scripts/mine.py) → Analyze (lanes) → Consolidate → Write → Verify (≤2 voltas)
 skill (gate 2: aprovar publicação) → labels → issues/comentários
