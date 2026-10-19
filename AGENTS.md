@@ -20,6 +20,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `SECURITY.md` | Política de segurança: só a versão mais recente recebe correção; o relato é privado, pela aba Security |
 | `.github/workflows/changelog-draft.yml` | Em PR para `main`, comenta o rascunho do `git-cliff` para o `CHANGELOG.md` |
 | `.github/workflows/workflow-lint.yml` | Job `workflow-lint` em todo PR: se o diff toca `.github/`, roda actionlint (binário de versão fixa com sha256 conferido) e zizmor (action fixada por SHA); sem mudança em `.github/`, os steps de lint são pulados e o check reporta sucesso |
+| `.github/workflows/changelog-line.yml` | Job `changelog-line` em PR para `develop`: commit `feat`, `fix`, `perf` ou `revert` (menos os escopos `flow` e `claude`) exige linha nova em `[Não lançado]` citando o `#N` do próprio PR; Dependabot e `chore/back-merge-*` pulam o job |
 | `CHANGELOG.md` | Mudanças visíveis por versão, no Keep a Changelog em pt-BR, desde a 1.0.0; `test/changelog.spec.ts` exige a seção da versão do `package.json` |
 | `cliff.toml` | Config do `git-cliff`: mapeia os Conventional Commits para as seções do changelog e descarta os tipos internos |
 | `README.md` | Porta de entrada enxuta: o que é, instalação, exemplo mínimo, como funciona e índice de `docs/` (a referência de tools, dados, migração e instalação avançada mora em `docs/`) |
