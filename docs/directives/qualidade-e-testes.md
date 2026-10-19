@@ -12,6 +12,13 @@
 - Os testes lentos do `npm test` são TF1 (kill -9 no meio do lote), TF4 (dono do lock vivo pausado), P1 e o estresse 8x25 do lock.
 - Sobra de execução interrompida (`kill -9` pula o `globalTeardown`): `find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'hexlog-suite-*' -exec rm -rf {} +`.
 
+## Hooks locais
+
+- `.husky/pre-commit` roda o `lint-staged` (`lint-staged.config.ts`). Com `.ts` em stage: `eslint --fix`, `prettier --write`, `npm run typecheck` e o spec espelho de cada arquivo (`src/x/y.ts` roda `test/x/y.spec.ts` e `test/x/y.property.spec.ts`; arquivo fora de `src/` roda `test/y*.spec.ts`; spec em stage roda a si mesmo; sem espelho, nenhum teste). Com `.md` em stage: `test/directives.spec.ts` e `test/skill-coherence.spec.ts`. O `tsc` confere o projeto inteiro, no estado do stash do `lint-staged`, e erro de tipo bloqueia o commit.
+- `.husky/pre-push` roda `npm run build` e `npm run test:coverage` só no 1º push de uma branch (`refs/heads/*` com sha remoto zerado). Push de tag, de remoção e os pushes seguintes pulam, e o CI cobre o resto. O 1º push leva de 3 a 5 minutos: o agente roda o `git push` com `timeout` de ao menos 600000 ms ou em background, porque o padrão do Bash é 120 s.
+- Limites conhecidos: o hook pega descuido, não burla (`--no-verify` e `HUSKY=0` o pulam); só o espelho por nome é rodado, então a mudança em helper ou fixture de `test/` não dispara nenhum spec; o espelho de um arquivo cujo spec tem outro nome (`scripts/timeline.ts` e `timeline-cli.spec.ts`) fica sem teste no commit; a cobertura do 1º push vale para o estado do `HEAD`, não para o que vier depois.
+- O `prepare` do `npm ci` aponta o `core.hooksPath` para `.husky/_`, que o Husky gera dentro do checkout: worktree nova sem `npm ci` fica sem hooks. No CI o `HUSKY: 0` desliga o `prepare`.
+
 ## Orçamentos de tempo
 
 - `npm run test:budget` roda os specs de orçamento em série (`jest --runInBand`): `adapters/load.budget.spec.ts`, `adapters/search.budget.spec.ts`, `adapters/lock.budget.spec.ts`, `queries/query.budget.spec.ts`, `queries/project.budget.spec.ts` e `domain/inheritance.budget.spec.ts`. O CI o roda depois de `npm run test:coverage` ([ADR 0009](adr-0009-ferramental.md), item 4).

@@ -8,13 +8,15 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Key Files
 | File | Description |
 |------|-------------|
-| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `knip`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
+| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `knip`, `format`, `format:check`, `build`, `prepare`) e config do jest (ts-jest em CJS) |
 | `tsconfig.json` | Configuração do TypeScript |
 | `knip.json` | Config do `knip` (`npm run knip`): entradas explícitas (`src/server.ts`, `hook/bash-guard.ts`, `scripts/*.ts`, `.claude/hooks/*.ts`, `.claude/workflows/*.js` e os fixtures de `test/fixtures/` que rodam como processo filho), fixtures de `test/fixtures/boundaries/` fora da análise, `mkfifo` em `ignoreBinaries` e a duplicata `Name`/`alias` de `src/domain/ids.ts` em `ignoreIssues` |
 | `eslint.config.js` | Config do ESLint (typescript-eslint com `stylisticTypeChecked`, `eslint-plugin-jest`, `eslint-plugin-n`); importa `boundaryBlocks` de `eslint.boundaries.js` |
 | `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
 | `.prettierrc`, `.prettierignore`, `.editorconfig` | Formatação (aspas simples, vírgula final, 100 colunas); `*.md` e `package-lock.json` ficam fora do Prettier |
-| `.husky/pre-commit` | Roda `lint-staged` (`eslint --fix` e `prettier --write` nos `*.ts` do commit) |
+| `.husky/pre-commit` | Roda `lint-staged` (`lint-staged.config.ts`) |
+| `lint-staged.config.ts` | Config do `lint-staged`: nos `*.ts` em stage roda `eslint --fix`, `prettier --write`, `npm run typecheck` e o spec espelho (`src/x/y.ts` casa `test/x/y*.spec.ts`; fora de `src/`, `test/y*.spec.ts`); nos `*.md`, `directives.spec.ts` e `skill-coherence.spec.ts` |
+| `.husky/pre-push` | No 1º push de uma branch (sha remoto zerado) roda `npm run build` e `npm run test:coverage`; tag, remoção e pushes seguintes pulam |
 | `.husky/commit-msg` | Roda o `commitlint` na mensagem do commit (`commitlint.config.js`) |
 | `commitlint.config.js` | Config do `commitlint`: `config-conventional`, header até 80 caracteres, corpo vazio; `Merge` e `Revert` do Git passam pelos ignores padrão e o commit do Dependabot pelo rodapé `Signed-off-by: dependabot[bot]` |
 | `.github/workflows/ci.yml` | CI: `npm audit signatures`, `typecheck`, `lint`, `knip`, `format:check`, `test:coverage` (piso de 90%) e `test:budget` (Node 24.18.1) |
@@ -65,7 +67,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `tar`: geração do `.tar` do arquivamento do dado 0.x (`src/archive.ts`, só pelo instalador, que roda do repositório)
 - `jest` + `ts-jest`, `fast-check`, `@modelcontextprotocol/client` (cliente dos specs MCP e e2e): testes
 - `typescript`, `eslint` (+ `typescript-eslint`, `eslint-plugin-jest`, `eslint-plugin-n`, `eslint-config-prettier`), `prettier`: tipos, lint e formatação
-- `husky` + `lint-staged`: hook de pré-commit
+- `husky` + `lint-staged`: hooks de pré-commit e pré-push
 - `@commitlint/cli` + `@commitlint/config-conventional`: mensagem de commit no hook `commit-msg` e no CI (`commitlint.config.js`)
 - `git-cliff`: rascunho do `CHANGELOG.md` (`cliff.toml`)
 - `knip`: código, arquivo e dependência mortos (`knip.json`)
