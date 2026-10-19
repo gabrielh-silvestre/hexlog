@@ -10,7 +10,7 @@ while read -r local_ref local_sha _remote_ref remote_sha; do
 done
 
 if [ -n "$first_push" ]; then
-  echo "pre-push: 1º push da branch, rodando build e test:coverage (3 a 5 min)"
+  echo "pre-push: first push of the branch, running build and test:coverage (3 to 5 min)"
   npm run build
   npm run test:coverage
 fi
