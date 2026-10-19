@@ -1,0 +1,34 @@
+name: Commitlint
+
+# Em todo PR, qualquer base, as mensagens de `base.sha..head.sha` seguem a regra do commit-msg
+# local (`commitlint.config.js`). O commit do Dependabot passa pelos `ignores` da config, não por
+# um `if:` de autor: assim o job nunca fica pulado nem Pending no ruleset de `develop` e `main`.
+# Só o PR de back-merge fica de fora (job pulado): a branch é de nome fixo e traz commits que já
+# passaram pelo check nos PRs de origem. `edited` reexecuta o check quando a base é trocada.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+env:
+  HUSKY: 0
+
+jobs:
+  commitlint:
+    if: ${{ !startsWith(github.event.pull_request.head.ref, 'chore/back-merge-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+      - run: npm ci
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npx --no commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
