@@ -127,6 +127,9 @@ describe('N11', () => {
     'git-cliff',
     // Código, arquivo e dependência mortos no CI (knip.json).
     'knip',
+    // Mensagem de commit no hook commit-msg e no CI (commitlint.config.js).
+    '@commitlint/cli',
+    '@commitlint/config-conventional',
   ];
   const CARET_RANGE = /^\^\d+\.\d+\.\d+$/;
   const outsideCaret = (deps: Record<string, string>) =>
