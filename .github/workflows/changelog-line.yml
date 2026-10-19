@@ -1,0 +1,49 @@
+name: Changelog line
+
+# Em PR para `develop`, commit que aparece no CHANGELOG.md (feat, fix, perf, revert; escopos `flow`
+# e `claude` de fora, como no `cliff.toml`) exige uma linha nova em `[Não lançado]` com o `#N` do
+# próprio PR. Dependabot e back-merge entram na exceção (job pulado): o back-merge traz commits cujas
+# linhas já foram escritas nos PRs de origem. `edited` reexecuta o check quando a base é trocada.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog-line:
+    if: >-
+      github.event.pull_request.base.ref == 'develop'
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && !startsWith(github.event.pull_request.head.ref, 'chore/back-merge-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # `feat!` conta como `feat`; o commit de merge não conta.
+          eligible=$(git log --no-merges --format=%s "$BASE_SHA..$HEAD_SHA" \
+            | grep -E '^(feat|fix|perf|revert)(\([^)]*\))?!?:' \
+            | grep -vE '^[a-z]+\((flow|claude)\)!?:' || true)
+          if [ -z "$eligible" ]; then
+            echo 'Nenhum commit elegível para o CHANGELOG.md.'
+            exit 0
+          fi
+          # O número do PR não existia antes dele: citá-lo em `[Não lançado]` prova linha nova.
+          if git show "$HEAD_SHA:CHANGELOG.md" \
+            | awk '/^## \[Não lançado\]/ { in_section = 1; next } /^## \[/ { in_section = 0 } in_section' \
+            | grep -qE "#${PR}([^0-9]|$)"; then
+            echo "Linha com #${PR} encontrada em [Não lançado]."
+            exit 0
+          fi
+          echo "::error::Falta uma linha em [Não lançado] do CHANGELOG.md citando #${PR}."
+          echo 'Commits que pedem a linha:'
+          echo "$eligible" | sed 's/^/  - /'
+          exit 1
