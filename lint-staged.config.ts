@@ -31,7 +31,13 @@ const config = {
   // corrigidos por `eslint --fix` e `prettier --write`. Função sem argumento não recebe a lista de
   // arquivos: o `tsc` confere o projeto inteiro, no estado do stash do lint-staged.
   '*.ts': ['eslint --fix', 'prettier --write', () => 'npm run typecheck', mirrorSpecs],
-  '*.md': () => 'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts',
+  // Os dois linters leem só os `.md` em stage (`ignores` e `ignorePaths` valem para arquivo explícito);
+  // `--no-must-find-files` deixa passar o commit só de `docs/pesquisa/**`, que o cspell ignora.
+  '*.md': [
+    'markdownlint-cli2',
+    'cspell --no-progress --no-must-find-files',
+    () => 'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts',
+  ],
 } satisfies Configuration;
 
 export default config;
