@@ -2,7 +2,8 @@
 
 ## Antes de concluir
 
-- Rode `npm run typecheck`, `npm run lint` e `npm run format:check` (o CI roda os três, mais `npm run test:coverage` e `npm run test:budget`).
+- Rode `npm run typecheck`, `npm run lint`, `npm run knip` e `npm run format:check` (o CI roda os quatro, mais `npm run test:coverage` e `npm run test:budget`).
+- `npm run knip` falha com export, arquivo ou dependência morta. As entradas são declaradas em `knip.json`; falso positivo se resolve com entrada nova ou `ignoreDependencies` por nome com o motivo registrado, nunca com supressão geral. Fixture novo de `test/fixtures/` que roda como processo filho entra em `entry` por nome.
 - `npm run test:coverage` é o `npm test` com cobertura de `src/**/*.ts` e piso global de 90% em statements, branches, functions e lines (`package.json#jest.coverageThreshold`); o CI o roda no lugar de `npm test`, e abaixo do piso o job `quality` falha. O CI também roda `npm audit signatures` depois do `npm ci`, sem `continue-on-error`: registry fora do ar ou pacote sem assinatura reprova. O CI não roda `npm run build`.
 - `npm test` roda tudo, exceto os specs de orçamento (`*.budget.spec.ts`), e termina em até 300 s (P5). `npx jest test/<arquivo>.spec.ts` (ou `npm test -- test/<arquivo>.spec.ts`) roda um spec.
 - `npm ci` precisa ser completo (sem `--omit=dev`): `esbuild` e `@modelcontextprotocol/client` são devDependencies usadas pelo instalador e pelos testes. Node `>= 24.18.1` (`package.json#engines`).
