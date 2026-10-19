@@ -106,18 +106,9 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --title "hexlog $VERSION" --notes-file "$NOTES"
           fi
-      # A branch sai do merge commit de `main` por REST (sem `git push`: o App não tem `workflows`).
-      - if: env.DRY_RUN == 'false'
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          BRANCH: ${{ steps.version.outputs.branch }}
-        run: |
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" > /dev/null 2>&1; then
-            echo "Branch $BRANCH already exists."
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$GITHUB_SHA" --jq .ref
-          fi
-      # `mergeable` é calculado de forma assíncrona (UNKNOWN no início); `pull_request` não dispara
+      # A branch sai do merge commit de `main` por REST (sem `git push`: o App não tem `workflows`) e só
+      # é criada quando o PR não existe em nenhum estado: a head apagada no merge do back-merge não
+      # volta. `mergeable` é calculado de forma assíncrona (UNKNOWN no início); `pull_request` não dispara
       # checks em PR conflitante, então o conflito comenta no PR e deixa o job vermelho.
       - if: env.DRY_RUN == 'false'
         env:
@@ -128,6 +119,9 @@ jobs:
         run: |
           number=$(gh pr list --head "$BRANCH" --state all --json number --jq '.[0].number // empty')
           if [ -z "$number" ]; then
+            if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" > /dev/null 2>&1; then
+              gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$GITHUB_SHA" --jq .ref
+            fi
             body="Back-merge automático da release v$VERSION${RELEASE_PR:+ (#$RELEASE_PR)}: traz a main para o develop. Mergear com merge commit, não squash, para o develop voltar a ser descendente da main."
             url=$(gh pr create --base develop --head "$BRANCH" --title "chore: back-merge v$VERSION into develop" --body "$body")
             number=${url##*/}
