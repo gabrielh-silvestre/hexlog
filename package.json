@@ -10,7 +10,7 @@
   "scripts": {
     "test": "jest --errorOnDeprecated",
     "test:budget": "jest --errorOnDeprecated --runInBand --testPathPatterns=budget.spec.ts --testPathIgnorePatterns=/node_modules/",
-    "test:coverage": "jest --coverage",
+    "test:coverage": "jest --errorOnDeprecated --coverage",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "format": "prettier --write .",
@@ -38,6 +38,17 @@
           }
         }
       ]
+    },
+    "collectCoverageFrom": [
+      "src/**/*.ts"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 90,
+        "branches": 90,
+        "functions": 90,
+        "lines": 90
+      }
     },
     "testPathIgnorePatterns": [
       "/node_modules/",
