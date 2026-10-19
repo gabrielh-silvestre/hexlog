@@ -4,6 +4,8 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+- Probe do P5 (#198)
+
 ## [1.2.0] - 2026-10-16
 
 Esta versão quebra o contrato em três pontos e sai como minor: o formato padrão da `query` e do `evaluate_gate` mudou (`relations: "full"` e `evidence: "full"` trazem o antigo de volta), `limit: 0` sem `changesSince` troca de código de erro, e o `register` recusa `supersedes` entre targets. A Migração abaixo diz o que fazer em cada caso.
