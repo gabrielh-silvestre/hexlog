@@ -1,0 +1,37 @@
+name: Dependabot auto-merge
+
+# Liga o auto-merge (`gh pr merge --auto --merge`) no PR do Dependabot que é de `npm`, de minor ou
+# patch, e abre contra `develop`; vale para o PR agrupado e para o de segurança. O merge só
+# acontece quando os checks exigidos pelo ruleset ficam verdes: o workflow não aprova nem pula
+# check. Major nunca entra (nem o de segurança, que o `ignore` do dependabot.yml não alcança), e
+# `github-actions` fica com merge manual. Roda em `pull_request`, nunca em `pull_request_target`.
+# A flag `allow_auto_merge` do repositório liga depois do ensaio do token (plano de P12).
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  dependabot-auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.base.ref == 'develop'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      # O `package-ecosystem` sai do nome da branch do PR: `npm_and_yarn` para o npm,
+      # `github_actions` para as actions. O `update-type` é a maior mudança do PR agrupado.
+      - env:
+          ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: echo "package-ecosystem=$ECOSYSTEM update-type=$UPDATE_TYPE"
+      - if: >-
+          steps.metadata.outputs.package-ecosystem == 'npm_and_yarn' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-patch')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --merge "$PR_URL"
