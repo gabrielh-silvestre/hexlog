@@ -22,8 +22,11 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # O diff é capturado antes do grep: se o git falhar, o `bash -e` aborta o step em vez de cair
+        # no else. Sem `pipefail`: o `grep -q` fecha o pipe no primeiro achado e daria SIGPIPE (141).
         run: |
-          if git diff --name-only "$BASE_SHA...$HEAD_SHA" | grep -q '^\.github/'; then
+          changed=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+          if grep -q '^\.github/' <<<"$changed"; then
             echo 'github=true' >> "$GITHUB_OUTPUT"
           else
             echo 'github=false' >> "$GITHUB_OUTPUT"
