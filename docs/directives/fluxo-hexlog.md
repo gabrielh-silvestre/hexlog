@@ -64,7 +64,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Verificação e achados
 
-- Antes do PR, registre `verification` com `result`, `commit` e `commands` (`typecheck`, `lint`, `format:check`, `test`).
+- Antes do PR, registre `verification` com `result`, `commit` e `commands` (`typecheck`, `lint`, `knip`, `format:check`, `test:coverage`).
 - Antes da `verification` e de novo depois da review, para as decisões que a review gerou, a `decision` vigente cujo texto diverge do que o diff entrega é regravada com `supersedes`, o texto do entregue e as mesmas relações (`anchored-in` ou `about-gap`, `rests-on`, `resolves-finding`, `derivesFrom`). Esta é a única lista de relações a regravar: a skill só executa.
 - No pré-PR, `node .claude/hooks/flow-report.ts <slug>` (passo 5 do `flow-run`) lista as decisões vigentes cujo `rests-on` cita só o objetivo ou a sentinela, ou cuja regra citada o diff emendou; apoia o julgamento de "Premissas" e nunca é gate.
 - Toda `verification` nova faz `supersedes` da vigente. Deve haver exatamente uma vigente, `passed`, com `commit` igual ao `HEAD`.
