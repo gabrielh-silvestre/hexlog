@@ -13,7 +13,7 @@ import {
   type SyncInput,
   type SyncPlan,
   type VigentRule,
-} from '../.claude/hooks/flow-sync.ts';
+} from '../scripts/flow/sync.ts';
 import type { Defined } from '../src/commands/definition.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import { hashOfJcs, sha256hex } from '../src/domain/chain.ts';
@@ -24,12 +24,12 @@ import type {
   QueryResult,
   VerifyChainResult,
 } from '../src/queries/query-service.ts';
-import { at, createTempDir, parseJson } from './helpers.ts';
+import { KINDS, defineFlowDefinitions, definitionOf, namesIn } from './flow-data.ts';
+import { at, createTempDir } from './helpers.ts';
 import { type Environment, createEnvironment, expectError } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
-const hexlogDir = path.join(repoRoot, '.hexlog');
-const hookPath = path.join(repoRoot, '.claude/hooks/flow-hooks.ts');
+const flowDir = path.join(repoRoot, 'scripts/flow');
 
 const PROJECT = 'hexlog';
 const DIRECTIVES = 'directives';
@@ -37,47 +37,12 @@ const WORK = 'feat-x';
 const AGENT = 'flow-run';
 const COMMIT = 'abc1234';
 
-type Kind = 'types' | 'relations' | 'gates';
-const KINDS: Kind[] = ['types', 'relations', 'gates'];
-const DEFINE_TOOL: Record<Kind, string> = {
-  types: 'define_type',
-  relations: 'define_relation',
-  gates: 'define_gate',
-};
-
-const namesIn = (kind: Kind): string[] =>
-  fs
-    .readdirSync(path.join(hexlogDir, kind))
-    .filter((file) => file.endsWith('.json'))
-    .map((file) => file.replace(/\.json$/, ''))
-    .sort();
-
-const fileBody = (kind: Kind, name: string): Record<string, unknown> =>
-  parseJson(
-    z.record(z.string(), z.json()),
-    fs.readFileSync(path.join(hexlogDir, kind, `${name}.json`), 'utf8'),
-  );
-
-/** Corpo que a chamada `define_*` recebe a partir do arquivo: o tipo é o schema; as demais levam o nome. */
-const definitionOf = (kind: Kind, name: string): Record<string, unknown> =>
-  kind === 'types' ? fileBody(kind, name) : { name, ...fileBody(kind, name) };
-
 let environment: Environment;
 let defined: Record<string, Defined>;
 
 beforeEach(async () => {
   environment = await createEnvironment();
-  defined = {};
-  for (const kind of KINDS) {
-    for (const name of namesIn(kind)) {
-      const body = definitionOf(kind, name);
-      const input = kind === 'types' ? { name, schema: body } : body;
-      defined[`${kind}/${name}`] = await environment.ok<Defined>(DEFINE_TOOL[kind], {
-        project: PROJECT,
-        ...input,
-      });
-    }
-  }
+  defined = await defineFlowDefinitions(environment);
   for (const process of [DIRECTIVES, `${DIRECTIVES}-2`, WORK]) {
     await environment.ok('create_process', { project: PROJECT, process });
   }
@@ -135,7 +100,12 @@ async function queryAll(
   let cursor: string | undefined;
   let pages = 0;
   do {
-    const page = await environment.ok<QueryResult>('query', { project: PROJECT, ...args, cursor });
+    const page = await environment.ok<QueryResult>('query', {
+      project: PROJECT,
+      relations: 'full',
+      ...args,
+      cursor,
+    });
     records.push(...page.records);
     cursor = page.cursor;
     pages += 1;
@@ -184,12 +154,6 @@ const findingData = (severity: string) => ({
   origin: 'review',
   description: 'Retry loop has no upper bound',
   location: 'src/upload.ts',
-});
-
-const verificationData = (result: 'passed' | 'failed') => ({
-  result,
-  commit: COMMIT,
-  commands: [{ command: 'npm test', ok: result === 'passed', summary: `tests ${result}` }],
 });
 
 const workRecord = (type: string, short: string, data: Record<string, unknown>): Item => ({
@@ -248,7 +212,7 @@ async function inputFor(
     id,
     target,
     ...(strategy ? PremiseData : RuleData).parse(data),
-    out: out.map(({ as, kind, to }) => ({ ...(as && { as }), kind, to })),
+    out: (out ?? []).map(({ as, kind, to }) => ({ ...(as && { as }), kind, to })),
   }));
   return {
     docSlug,
@@ -316,8 +280,8 @@ async function seedDirective(): Promise<string> {
   return (await currentDirective('r1')).id;
 }
 
-describe('schemas e relações', () => {
-  test('cada tipo aceita um registro válido', async () => {
+describe('schemas and relations', () => {
+  test('each type accepts a valid record', async () => {
     await seedDirective();
 
     const { records } = await register(WORK, [
@@ -325,48 +289,43 @@ describe('schemas e relações', () => {
       workRecord('decision', 'a', decisionData()),
       workRecord('gap', 'a', gapData()),
       workRecord('finding', 'a', findingData('NORMAL')),
-      workRecord('verification', 'main', verificationData('passed')),
     ]);
 
-    expect(records).toHaveLength(5);
+    expect(records).toHaveLength(4);
     const seeded = await queryAll({ process: DIRECTIVES });
     expect(seeded.records.map(({ type }) => type).sort()).toEqual(['directive', 'doc']);
   });
 
   test.each([
-    ['sem grounds', omit(decisionData(), ['grounds'])],
-    ['sem rationale', omit(decisionData(), ['rationale'])],
-    ['com campo desconhecido', decisionData({ extra: 'x' })],
-    ['sem alternativas', decisionData({ alternatives: [] })],
-    ['com confiança fora do enum', decisionData({ confidence: 'sure' })],
-  ])('decision %s é INVALID_RECORD', async (_label, data) => {
+    ['without grounds', omit(decisionData(), ['grounds'])],
+    ['without rationale', omit(decisionData(), ['rationale'])],
+    ['with an unknown field', decisionData({ extra: 'x' })],
+    ['without alternatives', decisionData({ alternatives: [] })],
+    ['with confidence outside the enum', decisionData({ confidence: 'sure' })],
+  ])('decision %s is INVALID_RECORD', async (_label, data) => {
     const result = await writeBatch(WORK, [workRecord('decision', 'bad', data)]);
 
     expectError(result, 'INVALID_RECORD');
   });
 
   test.each([
-    ['opening com modo fora do enum', workRecord('opening', 'main', { ...opening(), mode: 'x' })],
     [
-      'opening com commit que não é sha',
+      'opening with mode outside the enum',
+      workRecord('opening', 'main', { ...opening(), mode: 'x' }),
+    ],
+    [
+      'opening with a commit that is not a sha',
       workRecord('opening', 'main', { ...opening(), commit: 'HEAD' }),
     ],
-    ['gap sem contexto', workRecord('gap', 'a', { question: 'Q?' })],
-    ['finding com severidade fora do enum', workRecord('finding', 'a', findingData('HIGH'))],
-    [
-      'verification com 13 comandos',
-      workRecord('verification', 'main', {
-        ...verificationData('passed'),
-        commands: Array.from({ length: 13 }, () => ({ command: 'npm test', ok: true })),
-      }),
-    ],
-  ])('%s é INVALID_RECORD', async (_label, record) => {
+    ['gap without context', workRecord('gap', 'a', { question: 'Q?' })],
+    ['finding with severity outside the enum', workRecord('finding', 'a', findingData('HIGH'))],
+  ])('%s is INVALID_RECORD', async (_label, record) => {
     expectError(await writeBatch(WORK, [record]), 'INVALID_RECORD');
   });
 
-  test('commit que não é git-sha recusa com o code format no caminho do campo', async () => {
+  test('a commit that is not a git-sha is refused with the format code at the field path', async () => {
     const result = await writeBatch(WORK, [
-      workRecord('verification', 'main', { ...verificationData('passed'), commit: 'HEAD' }),
+      workRecord('opening', 'main', { ...opening(), commit: 'HEAD' }),
     ]);
 
     expect(expectError(result, 'INVALID_RECORD').details).toEqual([
@@ -374,7 +333,7 @@ describe('schemas e relações', () => {
     ]);
   });
 
-  test('doc com caminho vazio é INVALID_RECORD; a regra do caminho mora na guarda do planSync', async () => {
+  test('doc with an empty path is INVALID_RECORD; the path rule lives in the planSync guard', async () => {
     const { hash: source } = await environment.ok<{ hash: string }>('attach', {
       project: PROJECT,
       text: 'v1',
@@ -392,13 +351,13 @@ describe('schemas e relações', () => {
     expect(records).toHaveLength(2);
   });
 
-  test('hash de anexo que não foi guardado é ATTACHMENT_NOT_FOUND', async () => {
+  test('an attachment hash that was not stored is ATTACHMENT_NOT_FOUND', async () => {
     const result = await writeBatch(DIRECTIVES, [directiveItem('r1', 'never attached')]);
 
     expectError(result, 'ATTACHMENT_NOT_FOUND');
   });
 
-  test('as quatro relações aceitam as pontas declaradas', async () => {
+  test('the four relations accept the declared endpoints', async () => {
     const directiveId = await seedDirective();
     const gapId = await registerGap();
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
@@ -426,7 +385,7 @@ describe('schemas e relações', () => {
     expect(outOf(closerId)?.map(({ as }) => as)).toEqual(['closes-gap']);
   });
 
-  test('decision não fecha lacuna: closes-gap exige origem directive (endpoint-type)', async () => {
+  test('decision does not close a gap: closes-gap requires a directive origin (endpoint-type)', async () => {
     const gapId = await registerGap();
 
     const body = expectError(
@@ -445,14 +404,14 @@ describe('schemas e relações', () => {
   type Ends = { gapId: string; findingId: string };
   test.each([
     [
-      'directive com resolves-finding',
+      'directive with resolves-finding',
       ({ findingId }: Ends): [string, Item] => [
         DIRECTIVES,
         directiveItem('r9', 'v1', [{ to: findingId, as: 'resolves-finding' }]),
       ],
     ],
     [
-      'decision com anchored-in para lacuna',
+      'decision with anchored-in to a gap',
       ({ gapId }: Ends): [string, Item] => [
         WORK,
         {
@@ -462,7 +421,7 @@ describe('schemas e relações', () => {
       ],
     ],
     [
-      'decision com about-gap para achado',
+      'decision with about-gap to a finding',
       ({ findingId }: Ends): [string, Item] => [
         WORK,
         {
@@ -471,7 +430,7 @@ describe('schemas e relações', () => {
         },
       ],
     ],
-  ])('ponta fora do declarado: %s é INVALID_RECORD', async (_label, build) => {
+  ])('endpoint outside the declared ones: %s is INVALID_RECORD', async (_label, build) => {
     await seedDirective();
     const gapId = await registerGap();
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
@@ -484,30 +443,12 @@ describe('schemas e relações', () => {
 });
 
 describe('gate pre-pr', () => {
-  test('falha sem verificação', async () => {
-    expect(await passed('pre-pr')).toBe(false);
-  });
-
-  test('passa com verificação passed e volta a falhar quando uma failed a supera', async () => {
-    const passedId = await registerOne(
-      WORK,
-      workRecord('verification', 'main', verificationData('passed')),
-    );
+  test('passes without any finding', async () => {
     expect(await passed('pre-pr')).toBe(true);
-
-    await register(WORK, [
-      {
-        ...workRecord('verification', 'main', verificationData('failed')),
-        relations: [{ kind: 'supersedes', to: passedId }],
-      },
-    ]);
-
-    expect(await passed('pre-pr')).toBe(false);
   });
 
-  test('falha com achado URGENT sem resolves-finding e passa com uma decisão que o resolve', async () => {
+  test('fails with an URGENT finding lacking resolves-finding and passes with a decision that resolves it', async () => {
     const directiveId = await seedDirective();
-    await register(WORK, [workRecord('verification', 'main', verificationData('passed'))]);
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
     expect(await passed('pre-pr')).toBe(false);
 
@@ -528,8 +469,7 @@ describe('gate pre-pr', () => {
     expect(await passed('pre-pr')).toBe(true);
   });
 
-  test('achado NORMAL não barra, e answers cru de outro tipo não resolve o URGENT', async () => {
-    await register(WORK, [workRecord('verification', 'main', verificationData('passed'))]);
+  test('a NORMAL finding does not block, and a raw answers from another type does not resolve the URGENT one', async () => {
     await registerOne(WORK, workRecord('finding', 'n', findingData('NORMAL')));
     expect(await passed('pre-pr')).toBe(true);
 
@@ -542,11 +482,11 @@ describe('gate pre-pr', () => {
   });
 });
 
-describe('gate gaps (directive ou premise fecha lacuna)', () => {
+describe('gate gaps (directive or premise closes a gap)', () => {
   const closeWithDirective = (gapId: string) =>
     register(DIRECTIVES, [directiveItem('retries', 'v1', [{ to: gapId, as: 'closes-gap' }])]);
 
-  test('passa sem nenhuma lacuna e falha com lacuna aberta', async () => {
+  test('passes without any gap and fails with an open gap', async () => {
     expect(await passed('gaps')).toBe(true);
 
     await registerGap();
@@ -554,7 +494,7 @@ describe('gate gaps (directive ou premise fecha lacuna)', () => {
     expect(await passed('gaps')).toBe(false);
   });
 
-  test('passa quando uma directive de outro processo fecha a lacuna', async () => {
+  test('passes when a directive from another process closes the gap', async () => {
     await environment.ok('attach', { project: PROJECT, text: 'v1' });
     const gapId = await registerGap();
 
@@ -563,7 +503,7 @@ describe('gate gaps (directive ou premise fecha lacuna)', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('continua falhando com decisão refeita e answers cru de decision para a lacuna', async () => {
+  test('keeps failing with a redone decision and a raw answers from a decision to the gap', async () => {
     const gapId = await registerGap();
     const firstId = await registerOne(WORK, {
       ...workRecord('decision', 'a', decisionData({ grounds: 'gap' })),
@@ -586,7 +526,7 @@ describe('gate gaps (directive ou premise fecha lacuna)', () => {
 });
 
 describe('sync', () => {
-  test('(i) carga de 60 regras em duas páginas e dois lotes, e a edição editorial só troca o doc', async () => {
+  test('(i) load of 60 rules in two pages and two batches, and the editorial edit only replaces the doc', async () => {
     const rules = rulesOf(60);
 
     const load = await runSync(DIRECTIVES, 'fronteiras', 'v1', rules);
@@ -611,7 +551,7 @@ describe('sync', () => {
     );
   });
 
-  test('(i) sem mudança de hash o resultado é em dia e sem lote', async () => {
+  test('(i) without a hash change the result is up to date and has no batch', async () => {
     await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(3));
 
     const again = await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(3));
@@ -619,7 +559,7 @@ describe('sync', () => {
     expect(again).toEqual({ upToDate: true, batches: [], warnings: [] });
   });
 
-  test('(ii) regra intacta não é superada e a alterada ganha registro novo', async () => {
+  test('(ii) an intact rule is not superseded and the changed one gets a new record', async () => {
     await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(2));
     const [untouched, changed] = [
       await currentDirective('r1', 'fronteiras'),
@@ -637,7 +577,7 @@ describe('sync', () => {
     expect((await currentDirective('r2', 'fronteiras')).id).not.toBe(changed.id);
   });
 
-  test('(iii) regra alterada que fechava lacuna: com a cópia o gate segue passando', async () => {
+  test('(iii) changed rule that closed a gap: with the copy the gate keeps passing', async () => {
     const gapId = await seedClosedGap();
     expect(await passed('gaps')).toBe(true);
 
@@ -652,7 +592,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('(iii) sem copiar closes-gap o gate volta a falhar', async () => {
+  test('(iii) without copying closes-gap the gate fails again', async () => {
     await seedClosedGap();
     await runSync(
       DIRECTIVES,
@@ -669,7 +609,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(false);
   });
 
-  test('closes: regra nova fecha a lacuna e o gate passa; sem closes a lacuna segue aberta', async () => {
+  test('closes: a new rule closes the gap and the gate passes; without closes the gap stays open', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     const gapId = await registerGap();
 
@@ -689,7 +629,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('closes: regra nova sem versão anterior leva só o closes-gap, sem supersedes', async () => {
+  test('closes: a new rule with no previous version carries only closes-gap, without supersedes', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     const gapId = await registerGap();
 
@@ -702,7 +642,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('closes: regra existente e inalterada vira supersedes e o gate passa', async () => {
+  test('closes: an existing unchanged rule becomes supersedes and the gate passes', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(2));
     const gapId = await registerGap();
     const before = await currentDirective('r1');
@@ -723,7 +663,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('closes: doc em dia (mesmo texto) ainda grava o closes-gap, sem doc novo', async () => {
+  test('closes: an up-to-date doc (same text) still writes closes-gap, with no new doc', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     const gapId = await registerGap();
     const before = await currentDirective('r1');
@@ -741,7 +681,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('closes: regra que já fecha a lacuna não gera registro novo, e o edge copiado não duplica', async () => {
+  test('closes: a rule that already closes the gap generates no new record, and the copied edge is not duplicated', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     const [firstGap, secondGap] = [await registerGap('a'), await registerGap('b')];
     await runSync(DIRECTIVES, 'convencoes', 'v2', closingRules(rulesOf(1), firstGap));
@@ -764,7 +704,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('(iv) regra removida que fechava lacuna é revogada, avisa e o gate falha', async () => {
+  test('(iv) a removed rule that closed a gap is revoked, warns, and the gate fails', async () => {
     const gapId = await seedClosedGap();
 
     const plan = await runSync(DIRECTIVES, 'convencoes', 'v3', rulesOf(1));
@@ -779,7 +719,7 @@ describe('sync', () => {
     expect(await passed('gaps')).toBe(false);
   });
 
-  test('(iv) regra removida que não fechava lacuna não gera aviso nem afeta o gate', async () => {
+  test('(iv) a removed rule that did not close a gap generates no warning and does not affect the gate', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(2));
     await registerGap();
 
@@ -793,7 +733,7 @@ describe('sync', () => {
     ).toHaveLength(1);
   });
 
-  test('(v) documento apagado vira lápide e some do vigente; recriado supera a lápide', async () => {
+  test('(v) a deleted document becomes a tombstone and leaves the current set; recreated, it supersedes the tombstone', async () => {
     await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(2));
     const before = await inputFor(DIRECTIVES, 'fronteiras', null, null);
 
@@ -818,7 +758,7 @@ describe('sync', () => {
     expect((await inputFor(DIRECTIVES, 'fronteiras', 'v2', null)).current?.removed).toBe(false);
   });
 
-  test('(v) documento que nunca teve sync e foi apagado não gera lote', async () => {
+  test('(v) a document that never had a sync and was deleted generates no batch', async () => {
     expect(await runSync(DIRECTIVES, 'fantasma', null, null)).toEqual({
       upToDate: true,
       batches: [],
@@ -826,7 +766,7 @@ describe('sync', () => {
     });
   });
 
-  test('(vi) falha no segundo lote, re-sync converge e o mesmo lote reenviado é replay', async () => {
+  test('(vi) failure on the second batch, re-sync converges and the same batch resent is a replay', async () => {
     const rules = rulesOf(60);
     const plan = planSync(await inputFor(DIRECTIVES, 'fronteiras', 'v1', rules));
     await environment.ok('attach', { project: PROJECT, text: 'v1' });
@@ -849,7 +789,7 @@ describe('sync', () => {
     expect(replay.records).toEqual(firstResult.records);
   });
 
-  test('(vi) a mesma key com outro lote é IDEMPOTENCY_CONFLICT, por isso a key deriva do conteúdo', async () => {
+  test('(vi) the same key with another batch is IDEMPOTENCY_CONFLICT, so the key derives from the content', async () => {
     const rules = rulesOf(60);
     const plan = planSync(await inputFor(DIRECTIVES, 'fronteiras', 'v1', rules));
     await environment.ok('attach', { project: PROJECT, text: 'v1' });
@@ -862,7 +802,7 @@ describe('sync', () => {
     expect(at(plan.batches, 1).key).not.toBe(first.key);
   });
 
-  test('(vii) dois syncs concorrentes: o segundo recebe FORK_REJECTED e refaz a partir do estado novo', async () => {
+  test('(vii) two concurrent syncs: the second gets FORK_REJECTED and redoes from the new state', async () => {
     await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(1));
     const stale = planSync(await inputFor(DIRECTIVES, 'fronteiras', 'v2', rulesOf(1, 'r', 2)));
     await runSync(DIRECTIVES, 'fronteiras', 'v3', rulesOf(1, 'r', 3));
@@ -878,7 +818,7 @@ describe('sync', () => {
     expect((await currentDirective('r1', 'fronteiras')).data?.rule).toContain('v2');
   });
 
-  test('(passo 8) a query de auditoria lista target vigente duplicado e não acusa sync normal', async () => {
+  test('(step 8) the audit query lists a duplicated current target and does not flag a normal sync', async () => {
     await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(2));
     const duplicates = async (): Promise<string[]> => {
       const { records } = await queryAll({ process: DIRECTIVES, type: 'directive' });
@@ -895,7 +835,7 @@ describe('sync', () => {
     expect(await duplicates()).toEqual(['directives.fronteiras.r1']);
   });
 
-  test('(viii) regra interpreted não muda os registros gerados', async () => {
+  test('(viii) an interpreted rule does not change the generated records', async () => {
     const input = await inputFor(DIRECTIVES, 'fronteiras', 'v1', rulesOf(2));
     const interpreted = {
       ...input,
@@ -910,7 +850,7 @@ describe('sync', () => {
     await register(DIRECTIVES, at(plan.batches, 0).records, at(plan.batches, 0).key);
   });
 
-  test('revogar 99 regras de uma vez cabe em 100 relações e 100 devolvem too-many-relations', async () => {
+  test('revoking 99 rules at once fits in 100 relations and 100 return too-many-relations', async () => {
     await runSync(DIRECTIVES, 'fronteiras', 'v1', rulesOf(99));
 
     const plan = await runSync(DIRECTIVES, 'fronteiras', 'v2', []);
@@ -937,7 +877,7 @@ describe('sync', () => {
   });
 });
 
-describe('guarda invalid-path do planSync', () => {
+describe('planSync invalid-path guard', () => {
   const inputWith = (docSlug: string, path: string): SyncInput => ({
     docSlug,
     path,
@@ -949,23 +889,23 @@ describe('guarda invalid-path do planSync', () => {
   const refused = { upToDate: false, batches: [], warnings: [], error: 'invalid-path' };
 
   test.each([
-    ['vazio', 'fronteiras', ''],
-    ['fora de docs/directives', 'fronteiras', 'docs/x.md'],
-    ['absoluto', 'fronteiras', `/tmp/${docPath('fronteiras')}`],
-    ['com ..', 'fronteiras', 'docs/directives/../x.md'],
-    ['de outro documento', 'fronteiras', docPath('convencoes')],
-    ['com docSlug fora de [a-z0-9-]', '../x', docPath('../x')],
-    ['absoluto em estrategia', STRATEGY, `/tmp/${docPath(STRATEGY)}`],
-    ['fora do padrão em estrategia', STRATEGY, 'docs/estrategia.md'],
-  ])('path %s devolve invalid-path sem lote', (_label, docSlug, path) => {
+    ['empty', 'fronteiras', ''],
+    ['outside docs/directives', 'fronteiras', 'docs/x.md'],
+    ['absolute', 'fronteiras', `/tmp/${docPath('fronteiras')}`],
+    ['with ..', 'fronteiras', 'docs/directives/../x.md'],
+    ['from another document', 'fronteiras', docPath('convencoes')],
+    ['with docSlug outside [a-z0-9-]', '../x', docPath('../x')],
+    ['absolute in estrategia', STRATEGY, `/tmp/${docPath(STRATEGY)}`],
+    ['outside the pattern in estrategia', STRATEGY, 'docs/estrategia.md'],
+  ])('path %s returns invalid-path with no batch', (_label, docSlug, path) => {
     expect(planSync(inputWith(docSlug, path))).toEqual(refused);
   });
 
-  test('o path certo planeja normalmente', () => {
+  test('the right path plans normally', () => {
     expect(planSync(inputWith('fronteiras', docPath('fronteiras'))).error).toBeUndefined();
   });
 
-  test('documento em dia com path inválido também devolve invalid-path', () => {
+  test('an up-to-date document with an invalid path also returns invalid-path', () => {
     const upToDate: SyncInput = {
       ...inputWith('fronteiras', 'docs/x.md'),
       current: { id: 'directives:0', source: sha256hex('v1') },
@@ -974,13 +914,13 @@ describe('guarda invalid-path do planSync', () => {
     expect(planSync(upToDate)).toEqual(refused);
   });
 
-  test('lápide (extracted null) com path inválido também devolve invalid-path', () => {
+  test('tombstone (extracted null) with an invalid path also returns invalid-path', () => {
     expect(planSync({ ...inputWith('fronteiras', ''), extracted: null })).toEqual(refused);
   });
 });
 
-describe('duas gerações do processo de diretrizes', () => {
-  test('query com process devolve uma, com scope project devolve as duas', async () => {
+describe('two generations of the directives process', () => {
+  test('query with process returns one, with scope project returns both', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     await runSync(`${DIRECTIVES}-2`, 'convencoes', 'v1', rulesOf(1));
 
@@ -999,7 +939,7 @@ describe('duas gerações do processo de diretrizes', () => {
     expect(both.records).toHaveLength(2);
   });
 
-  test('lacuna fechada pela geração 1 segue fechada com a geração 2 existente; sem o fechamento falha', async () => {
+  test('a gap closed by generation 1 stays closed with generation 2 present; without the closure it fails', async () => {
     const gapId = await registerGap();
     await runSync(`${DIRECTIVES}-2`, 'convencoes', 'v1', rulesOf(1));
     expect(await passed('gaps')).toBe(false);
@@ -1009,7 +949,7 @@ describe('duas gerações do processo de diretrizes', () => {
     expect(await passed('gaps')).toBe(true);
   });
 
-  test('premissa atemporal da geração 2: a decisão a cita e a query com process não vê a geração 1', async () => {
+  test('timeless premise of generation 2: the decision cites it and a query with process does not see generation 1', async () => {
     await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
     const premiseId = await seedPremise();
 
@@ -1035,7 +975,7 @@ describe('duas gerações do processo de diretrizes', () => {
   });
 });
 
-describe('premise e evidence', () => {
+describe('premise and evidence', () => {
   const withRelations = (item: Item, relations: Record<string, unknown>[]): Item => ({
     ...item,
     relations,
@@ -1046,22 +986,22 @@ describe('premise e evidence', () => {
   const attachText = async (text = 'research notes'): Promise<string> =>
     (await environment.ok<{ hash: string }>('attach', { project: PROJECT, text })).hash;
 
-  test('premise aceita statement de até 255 caracteres', async () => {
+  test('premise accepts a statement of up to 255 characters', async () => {
     const { records } = await register(WORK, [premise('a', 'x'.repeat(255))]);
 
     expect(records).toHaveLength(1);
   });
 
   test.each([
-    ['com 256 caracteres', { statement: 'x'.repeat(256) }],
-    ['vazia', { statement: '' }],
-    ['com campo extra', { statement: 'ok', extra: 'x' }],
-    ['sem statement', {}],
-  ])('premise %s é INVALID_RECORD', async (_label, data) => {
+    ['with 256 characters', { statement: 'x'.repeat(256) }],
+    ['empty', { statement: '' }],
+    ['with an extra field', { statement: 'ok', extra: 'x' }],
+    ['without statement', {}],
+  ])('premise %s is INVALID_RECORD', async (_label, data) => {
     expectError(await writeBatch(WORK, [workRecord('premise', 'bad', data)]), 'INVALID_RECORD');
   });
 
-  test('evidence aceita summary e source de anexo existente', async () => {
+  test('evidence accepts summary and source of an existing attachment', async () => {
     const source = await attachText();
 
     const { records } = await register(WORK, [
@@ -1072,10 +1012,16 @@ describe('premise e evidence', () => {
   });
 
   test.each([
-    ['sem source', () => ({ summary: 'Benchmarks agree' })],
-    ['com source que não é hash', () => ({ summary: 'Benchmarks agree', source: 'not-a-hash' })],
-    ['com campo extra', (source: string) => ({ summary: 'Benchmarks agree', source, extra: 'x' })],
-  ])('evidence %s é INVALID_RECORD', async (_label, build) => {
+    ['without source', () => ({ summary: 'Benchmarks agree' })],
+    [
+      'with a source that is not a hash',
+      () => ({ summary: 'Benchmarks agree', source: 'not-a-hash' }),
+    ],
+    [
+      'with an extra field',
+      (source: string) => ({ summary: 'Benchmarks agree', source, extra: 'x' }),
+    ],
+  ])('evidence %s is INVALID_RECORD', async (_label, build) => {
     const source = await attachText();
 
     expectError(
@@ -1084,8 +1030,8 @@ describe('premise e evidence', () => {
     );
   });
 
-  describe('rests-on e derivesFrom cru', () => {
-    test('decision do trabalho cita premise de directives-2, e a relação aparece em query', async () => {
+  describe('rests-on and raw derivesFrom', () => {
+    test('work decision cites a premise from directives-2, and the relation shows up in query', async () => {
       const premiseId = await seedPremise();
 
       const decisionId = await registerOne(
@@ -1096,25 +1042,25 @@ describe('premise e evidence', () => {
       );
 
       const [stored] = (await queryAll({ scope: 'project', ids: [decisionId] })).records;
-      expect(stored?.out.map(({ as }) => as)).toEqual(['rests-on']);
+      expect(stored?.out?.map(({ as }) => as)).toEqual(['rests-on']);
     });
 
     test.each([
       [
-        'decision para directive',
+        'decision to directive',
         ({ directiveId }: { directiveId: string; premiseId: string }): Item =>
           withRelations(workRecord('decision', 'a', decisionData()), [
             { to: directiveId, as: 'rests-on' },
           ]),
       ],
       [
-        'finding para premise',
+        'finding to premise',
         ({ premiseId }: { directiveId: string; premiseId: string }): Item =>
           withRelations(workRecord('finding', 'a', findingData('NORMAL')), [
             { to: premiseId, as: 'rests-on' },
           ]),
       ],
-    ])('ponta fora do declarado: %s é endpoint-type', async (_label, build) => {
+    ])('endpoint outside the declared ones: %s is endpoint-type', async (_label, build) => {
       const directiveId = await seedDirective();
       const premiseId = await seedPremise();
 
@@ -1126,7 +1072,7 @@ describe('premise e evidence', () => {
       expect(body.details[0]?.code).toBe('endpoint-type');
     });
 
-    test('derivesFrom cru de premise do trabalho para premise atemporal é aceito e sai em query', async () => {
+    test('raw derivesFrom from a work premise to a timeless premise is accepted and shows up in query', async () => {
       const timelessId = await seedPremise();
 
       const deliveryId = await registerOne(
@@ -1141,10 +1087,10 @@ describe('premise e evidence', () => {
     });
   });
 
-  describe('fills-gap e gate gaps', () => {
+  describe('fills-gap and gate gaps', () => {
     const fillsGap = (gapId: string) => [{ to: gapId, as: 'fills-gap' }];
 
-    test('premise registrada antes da lacuna e sem relação para ela não a fecha', async () => {
+    test('a premise registered before the gap and with no relation to it does not close it', async () => {
       await register(WORK, [premise('early')]);
       expect(await passed('gaps')).toBe(true);
 
@@ -1153,7 +1099,7 @@ describe('premise e evidence', () => {
       expect(await passed('gaps')).toBe(false);
     });
 
-    test('premise nova no mesmo lote, depois da lacuna e com alias, fecha', async () => {
+    test('a new premise in the same batch, after the gap and with an alias, closes it', async () => {
       await register(WORK, [
         { ...workRecord('gap', 'retry', gapData()), alias: 'gap' },
         withRelations(premise('fill'), [{ to: '@gap', as: 'fills-gap' }]),
@@ -1162,7 +1108,7 @@ describe('premise e evidence', () => {
       expect(await passed('gaps')).toBe(true);
     });
 
-    test('premise nova registrada depois da lacuna, com o id, fecha', async () => {
+    test('a new premise registered after the gap, with the id, closes it', async () => {
       const gapId = await registerGap();
       expect(await passed('gaps')).toBe(false);
 
@@ -1171,7 +1117,7 @@ describe('premise e evidence', () => {
       expect(await passed('gaps')).toBe(true);
     });
 
-    test('decision com fills-gap é endpoint-type', async () => {
+    test('decision with fills-gap is endpoint-type', async () => {
       const gapId = await registerGap();
 
       const body = expectError(
@@ -1184,7 +1130,7 @@ describe('premise e evidence', () => {
       expect(body.details[0]?.code).toBe('endpoint-type');
     });
 
-    test('lacuna fechada por directive e outra por premise passam juntas', async () => {
+    test('a gap closed by a directive and another by a premise pass together', async () => {
       await environment.ok('attach', { project: PROJECT, text: 'v1' });
       const [byDirective, byPremise] = [await registerGap('a'), await registerGap('b')];
 
@@ -1197,7 +1143,7 @@ describe('premise e evidence', () => {
       expect(await passed('gaps')).toBe(true);
     });
 
-    test('premise que fechava, revogada por outra, reabre a lacuna e uma terceira com fills-gap a fecha', async () => {
+    test('a premise that closed, revoked by another, reopens the gap and a third with fills-gap closes it', async () => {
       const gapId = await registerGap();
       const firstId = await registerOne(WORK, withRelations(premise('first'), fillsGap(gapId)));
       expect(await passed('gaps')).toBe(true);
@@ -1211,8 +1157,8 @@ describe('premise e evidence', () => {
     });
   });
 
-  describe('evidence com supports', () => {
-    test('supports para a decision vigente é aceito; superada a decisão, novo supports é stale-destination', async () => {
+  describe('evidence with supports', () => {
+    test('supports to the current decision is accepted; once the decision is superseded, a new supports is stale-destination', async () => {
       const source = await attachText();
       const decisionId = await registerOne(WORK, workRecord('decision', 'a', decisionData()));
 
@@ -1242,8 +1188,8 @@ describe('premise e evidence', () => {
     });
   });
 
-  describe('o que o gate não impõe', () => {
-    test('no_pending com resolvedBy derivesFrom de premise só enxerga relação de entrada', async () => {
+  describe('what the gate does not enforce', () => {
+    test('no_pending with resolvedBy derivesFrom from a premise only sees incoming relations', async () => {
       await environment.ok('define_gate', {
         project: PROJECT,
         name: 'decision-anchored',
@@ -1288,11 +1234,11 @@ describe('premise e evidence', () => {
   });
 });
 
-describe('sync de estrategia (premissas)', () => {
+describe('estrategia sync (premises)', () => {
   const premiseTypes = (plan: SyncPlan) =>
     plan.batches.flatMap(({ records }) => records.map(({ type }) => type));
 
-  test('gera premise com data só de statement e uma segunda execução com o mesmo texto não gera nada', async () => {
+  test('generates a premise with data of only statement and a second run with the same text generates nothing', async () => {
     const plan = await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(2));
 
     const [first] = at(plan.batches, 0).records;
@@ -1310,7 +1256,7 @@ describe('sync de estrategia (premissas)', () => {
     });
   });
 
-  test('statement mudado supera a vigente e nunca gera closes-gap', async () => {
+  test('a changed statement supersedes the current one and never generates closes-gap', async () => {
     await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(2));
     const before = await currentPremise('p2');
     const gapId = await registerGap();
@@ -1327,7 +1273,7 @@ describe('sync de estrategia (premissas)', () => {
     ]);
   });
 
-  test('slug removido vira revokes no doc', async () => {
+  test('a removed slug becomes revokes in the doc', async () => {
     await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(2));
     const removed = await currentPremise('p2');
 
@@ -1340,7 +1286,7 @@ describe('sync de estrategia (premissas)', () => {
     ).toEqual([{ kind: 'revokes', to: removed.id }]);
   });
 
-  test('closes e section não alteram o resultado, nem com o doc em dia', async () => {
+  test('closes and section do not change the result, not even with an up-to-date doc', async () => {
     await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
     const gapId = await registerGap();
     const noisy = premisesOf(1).map((rule) => ({ ...rule, section: 'Theme', closes: [gapId] }));
@@ -1362,7 +1308,7 @@ describe('sync de estrategia (premissas)', () => {
     expect(withNoise).toEqual(clean);
   });
 
-  test('closes não regrava a premissa com o doc em dia, mesmo com o statement diferente', async () => {
+  test('closes does not rewrite the premise with an up-to-date doc, even with a different statement', async () => {
     await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
     const gapId = await registerGap();
     const closing = premisesOf(1, 'p', 2).map((rule) => ({ ...rule, closes: [gapId] }));
@@ -1372,7 +1318,7 @@ describe('sync de estrategia (premissas)', () => {
     expect(plan).toEqual({ upToDate: true, batches: [], warnings: [] });
   });
 
-  test('um doc convencoes no mesmo teste segue gerando directive com source e section', async () => {
+  test('a convencoes doc in the same test keeps generating a directive with source and section', async () => {
     const strategy = await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
 
     const convencoes = await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
@@ -1384,7 +1330,7 @@ describe('sync de estrategia (premissas)', () => {
     });
   });
 
-  test('premise superada por sync: query com scope project mostra rests-on com current false', async () => {
+  test('premise superseded by sync: query with scope project shows rests-on with current false', async () => {
     const premiseId = await seedPremise();
     await registerOne(WORK, {
       ...workRecord('decision', 'a', decisionData()),
@@ -1402,32 +1348,32 @@ describe('sync de estrategia (premissas)', () => {
     ]);
   });
 
-  /** O mesmo caminho da skill: o hook lê o documento em `input.path`, extrai as premissas e planeja. */
-  const runHook = (input: SyncInput, cwd = repoRoot, hook = hookPath) =>
-    spawnSync(process.execPath, [hook, 'sync-plan'], {
+  /** O mesmo caminho da skill: o CLI lê o documento em `input.path`, extrai as premissas e planeja. */
+  const runFlow = (input: SyncInput, cwd = repoRoot, script = path.join(flowDir, 'flow.ts')) =>
+    spawnSync(process.execPath, [script, 'sync-plan'], {
       cwd,
       input: JSON.stringify(input),
       encoding: 'utf8',
     });
 
   const hookPlan = (input: SyncInput): SyncPlan => {
-    const result = runHook(input);
+    const result = runFlow(input);
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     return JSON.parse(result.stdout) as SyncPlan;
   };
 
-  /** Roda o hook num repositório temporário: o `REPO_ROOT` dele é o temporário e o `path` relativo vale ali. */
-  const runHookWithStrategy = (lines: string[]) => {
+  /** Roda o CLI num repositório temporário: o `REPO_ROOT` dele é o temporário e o `path` relativo vale ali. */
+  const runFlowWithStrategy = (lines: string[]) => {
     const root = createTempDir('strategy');
-    const hooks = path.join(root, '.claude/hooks');
-    fs.mkdirSync(hooks, { recursive: true });
-    for (const file of fs.readdirSync(path.dirname(hookPath)).filter((f) => f.endsWith('.ts'))) {
-      fs.copyFileSync(path.join(path.dirname(hookPath), file), path.join(hooks, file));
+    const scripts = path.join(root, 'scripts/flow');
+    fs.mkdirSync(scripts, { recursive: true });
+    for (const file of fs.readdirSync(flowDir).filter((f) => f.endsWith('.ts'))) {
+      fs.copyFileSync(path.join(flowDir, file), path.join(scripts, file));
     }
     fs.mkdirSync(path.join(root, 'docs/directives'), { recursive: true });
     fs.writeFileSync(path.join(root, docPath(STRATEGY)), ['## Tema', ...lines].join('\n'));
-    return runHook(inputForFile(docPath(STRATEGY)), root, path.join(hooks, 'flow-hooks.ts'));
+    return runFlow(inputForFile(docPath(STRATEGY)), root, path.join(scripts, 'flow.ts'));
   };
 
   const inputForFile = (file: string): SyncInput => ({
@@ -1439,7 +1385,7 @@ describe('sync de estrategia (premissas)', () => {
     extracted: [],
   });
 
-  test('o estrategia.md real vira um lote de premise mais o doc e a segunda execução fica em dia', async () => {
+  test('the real estrategia.md becomes a premise batch plus the doc and the second run is up to date', async () => {
     const text = fs.readFileSync(path.join(repoRoot, 'docs/directives/estrategia.md'), 'utf8');
     const count = scanPremises(text).premises.length;
 
@@ -1460,8 +1406,8 @@ describe('sync de estrategia (premissas)', () => {
     });
   }, 30_000);
 
-  test('path relativo vale a partir da raiz do repositório, com o cwd em outro diretório', () => {
-    const result = runHook(
+  test('a relative path is resolved from the repository root, with the cwd in another directory', () => {
+    const result = runFlow(
       { ...inputForFile('docs/directives/estrategia.md'), extracted: [] },
       createTempDir('other-cwd'),
     );
@@ -1471,7 +1417,7 @@ describe('sync de estrategia (premissas)', () => {
     expect((JSON.parse(result.stdout) as SyncPlan).batches).toHaveLength(1);
   }, 15_000);
 
-  test('statement de 255 code points passa, mesmo com 510 unidades UTF-16', () => {
+  test('a statement of 255 code points passes, even with 510 UTF-16 units', () => {
     const text = ['## Tema', `- \`a\`: ${'𝒳'.repeat(255)} Ver: [x](x.md)`].join('\n');
 
     expect(parsePremises(text)).toEqual({
@@ -1481,17 +1427,17 @@ describe('sync de estrategia (premissas)', () => {
   });
 
   test.each([
-    ['linha malformada', ['- sem crase: linha ruim'], /- sem crase: linha ruim/],
+    ['malformed line', ['- sem crase: linha ruim'], /- sem crase: linha ruim/],
     [
-      'slug repetido',
+      'repeated slug',
       ['- `a`: Um. Ver: [x](x.md)', '- `a`: Dois. Ver: [x](x.md)'],
       /duplicate slug "a"/,
     ],
-    ['statement de 256 code points', [`- \`a\`: ${'𝒳'.repeat(256)}`], /"a" has 256 code points/],
+    ['statement of 256 code points', [`- \`a\`: ${'𝒳'.repeat(256)}`], /"a" has 256 code points/],
   ])(
-    '%s sai com 2 e o motivo no stderr',
+    '%s exits with 2 and the reason on stderr',
     (_name, lines, reason) => {
-      const result = runHookWithStrategy(lines);
+      const result = runFlowWithStrategy(lines);
 
       expect(result.status).toBe(2);
       expect(result.stdout).toBe('');
@@ -1501,21 +1447,21 @@ describe('sync de estrategia (premissas)', () => {
   );
 });
 
-describe('hashes das definições', () => {
+describe('definition hashes', () => {
   test.each(KINDS.flatMap((kind) => namesIn(kind).map((name) => [kind, name] as const)))(
-    '%s/%s: o hash devolvido por define_* é o hashOfJcs do corpo montado do arquivo',
+    '%s/%s: the hash returned by define_* is the hashOfJcs of the body built from the file',
     (kind, name) => {
       expect(defined[`${kind}/${name}`]?.hash).toBe(hashOfJcs(definitionOf(kind, name)));
     },
   );
 
-  test('o hash de uma relação sem o nome não coincide', () => {
+  test('the hash of a relation without the name does not match', () => {
     const withoutName = omit(definitionOf('relations', 'closes-gap'), ['name']);
 
     expect(hashOfJcs(withoutName)).not.toBe(defined['relations/closes-gap']?.hash);
   });
 
-  test('os 3 hashes de list com process são o hashOfJcs do mapa nome para definição de cada tipo', async () => {
+  test('the 3 hashes of list with process are the hashOfJcs of the name-to-definition map of each kind', async () => {
     const list = await environment.ok<ListResult>('list', {
       project: PROJECT,
       process: DIRECTIVES,
@@ -1530,12 +1476,12 @@ describe('hashes das definições', () => {
       ]),
     );
     expect(list.process?.hashes).toEqual(expected);
-    expect(list.process?.pinned.types).toHaveLength(9);
+    expect(list.process?.pinned.types).toHaveLength(8);
     expect(list.process?.pinned.relations).toHaveLength(6);
     expect(list.process?.pinned.gates).toHaveLength(2);
   });
 
-  test('o mapa sem um dos arquivos dá outro hash', async () => {
+  test('the map without one of the files gives another hash', async () => {
     const list = await environment.ok<ListResult>('list', {
       project: PROJECT,
       process: DIRECTIVES,
@@ -1550,8 +1496,8 @@ describe('hashes das definições', () => {
   });
 });
 
-describe('ensaio de um trabalho completo', () => {
-  test('da abertura aos dois gates, com lacuna fechada por diretriz nova e sync repetido', async () => {
+describe('rehearsal of a complete work', () => {
+  test('from opening to the two gates, with a gap closed by a new directive and a repeated sync', async () => {
     await runSync(DIRECTIVES, 'convencoes', 'v1', rulesOf(1));
     const directiveId = (await currentDirective('r1')).id;
     await register(WORK, [workRecord('opening', 'main', { ...opening(), sync: 'initial-load' })]);
@@ -1571,10 +1517,6 @@ describe('ensaio de um trabalho completo', () => {
       relations: [{ to: gapId, as: 'about-gap' }],
     });
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
-    const failedId = await registerOne(
-      WORK,
-      workRecord('verification', 'main', verificationData('failed')),
-    );
     expect(await passed('pre-pr')).toBe(false);
     expect(await passed('gaps')).toBe(false);
 
@@ -1585,10 +1527,6 @@ describe('ensaio de um trabalho completo', () => {
           { to: findingId, as: 'resolves-finding' },
           { to: directiveId, as: 'anchored-in' },
         ],
-      },
-      {
-        ...workRecord('verification', 'main', verificationData('passed')),
-        relations: [{ kind: 'supersedes', to: failedId }],
       },
     ]);
     expect(await passed('pre-pr')).toBe(true);

@@ -7,8 +7,16 @@ npm test            # jest: testa o código-fonte .ts diretamente
 npm run typecheck   # tsc --noEmit
 npm run lint        # eslint
 npm run format:check
+npm run knip        # export, arquivo e dependência mortos
+npm run lint:md     # markdownlint dos .md
+npm run spell       # cspell (pt-BR) dos .md
+npm run test:coverage  # npm test com cobertura de src/ e piso de 90%
 npm run build       # esbuild, gera os bundles .mjs (equivalente ao passo 1 do instalador)
 ```
+
+O CI, os hooks locais (`pre-commit`, `commit-msg` e `pre-push`) e o que cada
+um roda estão em [qualidade-e-testes.md](directives/qualidade-e-testes.md); o
+estudo de plataformas está em [qualidade-ci.md](qualidade-ci.md).
 
 Os specs de orçamento de tempo (`*.budget.spec.ts`) ficam fora do `npm test` e rodam
 em série em `npm run test:budget`, no CI.
@@ -35,8 +43,10 @@ node scripts/export.ts <project>/<process> [--fields a,b,c]
 
 Imprime em stdout uma linha JSON por registro do processo, vigentes ou não
 (JSONL), com os campos de `QueryRecord` (`id`, `type`, `at`, `target`, `author`,
-`data`, `in`, `out`, `needsReview`, `attachmentStatus`). Não emite `seq`, `prevHash`
-nem `relations`: a relação sai como `in` e `out`. Com `--fields`, cada linha só traz
+`data`, `in`, `out`, `inheritedIn`, `inheritedOut`, `needsReview`, `attachmentStatus`;
+os dois `inherited*` só saem em processo com herança, com `origin` em cada item). Não emite
+`seq`, `prevHash` nem `relations`: a relação sai como `in`, `out` e, com herança,
+`inheritedIn` e `inheritedOut`. Com `--fields`, cada linha só traz
 as chaves pedidas, e `seq`, `timestamp`, `agent` e `prevHash`, do 0.x, são recusados
 como campo desconhecido. O processo sai numa consulta só, carregado inteiro em
 memória (o teto de 64 MiB por processo limita o tamanho). Erro de uso (inclusive

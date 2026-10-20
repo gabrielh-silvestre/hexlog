@@ -36,7 +36,7 @@ export const WRITE_ANNOTATIONS = {
 export const READ_ANNOTATIONS = { readOnlyHint: true, openWorldHint: false };
 
 /** Os quatro serviços que `compose.ts#compose` monta; o kernel só os repassa às tools. */
-export type Services = {
+type Services = {
   definition: DefinitionService;
   attachment: AttachmentService;
   process: ProcessService;

@@ -1,7 +1,8 @@
 import { isUndefined, orderBy } from 'es-toolkit';
 import type { Link } from '../domain/chain.ts';
-import { matchesSelector, type Selector } from '../domain/gate.ts';
-import { processOf, type Name, type RecordId } from '../domain/ids.ts';
+import { matchesSelector, matchesTargetPrefix, type Selector } from '../domain/gate.ts';
+import { processOf, type Name, type RecordId, type Target } from '../domain/ids.ts';
+import { buildInheritance, NO_INHERITANCE, type Inheritance } from '../domain/inheritance.ts';
 import type { RelationKind } from '../domain/record.ts';
 import { buildVigency, incomingOf, type Incoming, type Vigency } from '../domain/relations.ts';
 import { PROJECT_INDEX, type ProcessRef, type SearchIndex } from '../ports.ts';
@@ -15,13 +16,15 @@ export type Filters = Selector & {
   relatedTo?: RecordId;
 };
 
-/** Tudo que se deriva de uma leitura: registros na ordem de saída, vigência e relações de entrada. */
+/** Tudo que se deriva de uma leitura: registros na ordem de saída, vigência, relações de entrada e herança. */
 export type View = {
   /** D-24: ordem de saída. */
   records: readonly Link[];
   byId: ReadonlyMap<RecordId, Link>;
   vigency: Vigency;
   incoming: ReadonlyMap<RecordId, Incoming<Link>[]>;
+  /** Relações herdadas pela linhagem de `supersedes`; vazia quando nenhum processo lido a liga. */
+  inheritance: Inheritance;
 };
 
 /**
@@ -40,13 +43,31 @@ export function inOutputOrder(reading: Reading, scope: ReadTarget['scope']): Lin
 
 const withAs = (as: Name | undefined) => (isUndefined(as) ? {} : { as });
 
+/**
+ * A herança é ativada pelo manifesto do processo cuja linhagem sobe, não pelo alcance da leitura;
+ * `undefined` quando nenhum processo lido a liga, para quem lê não pagar o cálculo (ADR 0008, item 3).
+ */
+export function inheritanceActivation(reading: Reading): ((process: Name) => boolean) | undefined {
+  const active = new Set(
+    reading.processes
+      .filter(({ verified }) => verified.manifest.lineageInheritance === true)
+      .map(({ name }) => name),
+  );
+  return active.size === 0 ? undefined : (process) => active.has(process);
+}
+
 export function buildView(reading: Reading, scope: ReadTarget['scope']): View {
   const records = inOutputOrder(reading, scope);
+  const vigency = buildVigency(records);
+  const isActive = inheritanceActivation(reading);
   return {
     records,
     byId: new Map(records.map((link) => [link.id, link])),
-    vigency: buildVigency(records),
+    vigency,
     incoming: incomingOf(records),
+    inheritance: isUndefined(isActive)
+      ? NO_INHERITANCE
+      : buildInheritance(records, vigency, isActive),
   };
 }
 
@@ -98,6 +119,22 @@ export function select(
   );
 }
 
+/**
+ * Aviso para a seleção vazia com `targetPrefix`: o 1º target lido que começa pela string, mas não
+ * casa por segmento (`a.b` não casa `a.b-2` nem `a.bc`). Sem aviso quando algum target lido casa:
+ * o vazio vem dos outros filtros. Não muda o casamento, só aponta o quase-acerto.
+ */
+export function boundaryHint(view: View, prefix: Target): string | undefined {
+  const targets = view.records.map(({ target }) => target);
+  if (targets.some((target) => matchesTargetPrefix(target, prefix))) return undefined;
+  const near = targets.find((target) => target.startsWith(prefix));
+  if (isUndefined(near)) return undefined;
+  return (
+    `targetPrefix matches whole "."-separated segments: nothing matches "${prefix}", but ` +
+    `"${near}" starts with it; use that target or a prefix that ends at a "." boundary.`
+  );
+}
+
 export type LeftReason = 'superseded' | 'revoked' | 'no-longer-matches';
 
 /** Por que `id` saiu do resultado: a relação de entrada que o tornou não vigente, ou o filtro. */
@@ -108,16 +145,81 @@ export function leftReason(view: View, id: RecordId): LeftReason {
 }
 
 /** Relação de entrada de um registro; `current` diz se a outra ponta (`from`) é vigente. */
-export type InRelation = { kind: RelationKind; as?: Name; from: RecordId; current: boolean };
+type InRelation = { kind: RelationKind; as?: Name; from: RecordId; current: boolean };
 
 /**
  * Relação gravada no registro; `current` diz se o destino é vigente e só sai quando o destino foi
  * lido (D-24: alcance processo não lê o processo de um destino de outro processo).
  */
-export type OutRelation = { kind: RelationKind; as?: Name; to: RecordId; current?: boolean };
+type OutRelation = { kind: RelationKind; as?: Name; to: RecordId; current?: boolean };
 
-/** D-24: relações de entrada (de quem foi lido) e de saída (as gravadas) de `link`. */
-export function relationsOf(view: View, link: Link): { in: InRelation[]; out: OutRelation[] } {
+/** Relação herdada que chega ao registro; `origin` é a aresta gravada de onde ela vem. */
+type InheritedIn = {
+  kind: RelationKind;
+  as?: Name;
+  from: RecordId;
+  origin: { from: RecordId; to: RecordId };
+};
+
+/** Relação herdada que sai do registro; `origin` é a aresta gravada de onde ela vem. */
+type InheritedOut = {
+  kind: RelationKind;
+  as?: Name;
+  to: RecordId;
+  origin: { from: RecordId; to: RecordId };
+};
+
+/** Como `query` devolve as relações: arestas inteiras, contagem por nome ou nada. */
+export const RELATION_MODES = ['counts', 'full', 'none'] as const;
+export type RelationsMode = (typeof RELATION_MODES)[number];
+
+/**
+ * Campos de relação de um registro; o modo decide quais existem (`counts` só inclui o mapa não
+ * vazio). Os herdados só saem quando há herança, e `none` não traz nenhum.
+ */
+export type RelationFields = {
+  in?: InRelation[];
+  out?: OutRelation[];
+  inCounts?: Record<string, number>;
+  outCounts?: Record<string, number>;
+  inheritedIn?: InheritedIn[];
+  inheritedOut?: InheritedOut[];
+  inheritedInCounts?: Record<string, number>;
+  inheritedOutCounts?: Record<string, number>;
+};
+
+/**
+ * Arestas por nome (`as ?? kind`), vigentes ou não; sem aresta devolve `undefined`. O `Map` evita
+ * que um nome como `constructor` herde do protótipo.
+ */
+function countByName(
+  edges: readonly { kind: RelationKind; as?: Name }[],
+): Record<string, number> | undefined {
+  const counts = new Map<string, number>();
+  for (const { kind, as } of edges) {
+    const name = as ?? kind;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts.size === 0 ? undefined : Object.fromEntries(counts);
+}
+
+/** D-24: relações de entrada (de quem foi lido) e de saída (as gravadas) de `link`, no modo pedido. */
+export function relationsOf(view: View, link: Link, mode: RelationsMode): RelationFields {
+  if (mode === 'none') return {};
+  const inheritedIn = view.inheritance.into(link.id);
+  const inheritedOut = view.inheritance.outOf(link.id);
+  if (mode === 'counts') {
+    const inCounts = countByName(view.incoming.get(link.id) ?? []);
+    const outCounts = countByName(link.relations);
+    const inheritedInCounts = countByName(inheritedIn);
+    const inheritedOutCounts = countByName(inheritedOut);
+    return {
+      ...(isUndefined(inCounts) ? {} : { inCounts }),
+      ...(isUndefined(outCounts) ? {} : { outCounts }),
+      ...(isUndefined(inheritedInCounts) ? {} : { inheritedInCounts }),
+      ...(isUndefined(inheritedOutCounts) ? {} : { inheritedOutCounts }),
+    };
+  }
   return {
     in: (view.incoming.get(link.id) ?? []).map(({ kind, as, from }) => ({
       kind,
@@ -131,5 +233,25 @@ export function relationsOf(view: View, link: Link): { in: InRelation[]; out: Ou
       to,
       ...(view.byId.has(to) ? { current: view.vigency.isCurrent(to) } : {}),
     })),
+    ...(inheritedIn.length === 0
+      ? {}
+      : {
+          inheritedIn: inheritedIn.map(({ kind, as, from, origin }) => ({
+            kind,
+            ...withAs(as),
+            from,
+            origin,
+          })),
+        }),
+    ...(inheritedOut.length === 0
+      ? {}
+      : {
+          inheritedOut: inheritedOut.map(({ kind, as, to, origin }) => ({
+            kind,
+            ...withAs(as),
+            to,
+            origin,
+          })),
+        }),
   };
 }

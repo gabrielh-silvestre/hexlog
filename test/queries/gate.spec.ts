@@ -26,8 +26,8 @@ const PROPOSED: Gate = {
   questions: [{ kind: 'approved', of: { type: 'note', where: { text: 'proposta' } } }],
 };
 
-describe('evaluateGate: marcador e nomes herdados', () => {
-  test('alcance processo: marcador sem a entrada do processo lido é MARKER_NOT_FOUND em /marker, não vacuidade', async () => {
+describe('evaluateGate: marker and inherited names', () => {
+  test('process scope: a marker without the entry of the process read is MARKER_NOT_FOUND at /marker, not vacuity', async () => {
     const { createProcess, registerOne, evaluate } = gateSetup(PROPOSED);
     createProcess('run-1');
     const head = await registerOne('run-1', note('proposta'));
@@ -45,7 +45,7 @@ describe('evaluateGate: marcador e nomes herdados', () => {
     });
   });
 
-  test('gate chamado `constructor` e não fixado é GATE_NOT_FOUND, não INTERNAL', () => {
+  test('a gate named `constructor` and not pinned is GATE_NOT_FOUND, not INTERNAL', () => {
     const { createProcess, evaluate } = gateSetup(PROPOSED);
     createProcess('run-1');
 
@@ -55,8 +55,8 @@ describe('evaluateGate: marcador e nomes herdados', () => {
   });
 });
 
-describe('evaluateGate: não grava, marcador e reprodução', () => {
-  test('avaliar o gate não grava: o log fica byte a byte igual', async () => {
+describe('evaluateGate: no writes, marker and replay', () => {
+  test('evaluating the gate does not write: the log stays byte for byte equal', async () => {
     const { logPath, createProcess, registerOne, evaluate } = gateSetup(PROPOSED);
     createProcess('run-1');
     await registerOne('run-1', note('proposta'));
@@ -68,7 +68,7 @@ describe('evaluateGate: não grava, marcador e reprodução', () => {
     expect(fs.readFileSync(logPath('run-1')).equals(before)).toBe(true);
   });
 
-  test('o marcador cobre só o processo da chamada, mesmo com outros no projeto', async () => {
+  test('the marker covers only the process of the call, even with others in the project', async () => {
     const { createProcess, registerOne, evaluate } = gateSetup(PROPOSED);
     createProcess('run-1');
     createProcess('run-2');
@@ -78,7 +78,7 @@ describe('evaluateGate: não grava, marcador e reprodução', () => {
     expect(evaluate('run-1', PROPOSED.name).marker).toEqual({ 'run-1': head });
   });
 
-  test('o marcador de pergunta com scope project cobre todos os processos lidos, o vazio como null', async () => {
+  test('the marker of a question with scope project covers every process read, the empty one as null', async () => {
     const wide: Gate = {
       name: 'wide',
       questions: [{ kind: 'occurred', select: { type: 'note' }, scope: 'project' }],
@@ -91,7 +91,7 @@ describe('evaluateGate: não grava, marcador e reprodução', () => {
     expect(evaluate('run-1', 'wide').marker).toEqual({ 'run-1': head, 'run-2': null });
   });
 
-  test('a reprodução com marcador dá o resultado de antes, mesmo com registro novo que mudaria a resposta', async () => {
+  test('a replay with a marker gives the earlier result, even with a new record that would change the answer', async () => {
     const { createProcess, registerOne, evaluate } = gateSetup(PROPOSED);
     createProcess('run-1');
     const proposal = await registerOne('run-1', note('proposta'));
@@ -108,7 +108,7 @@ describe('evaluateGate: não grava, marcador e reprodução', () => {
     expect(evaluate('run-1', PROPOSED.name, { marker: before.marker })).toEqual(before);
   });
 
-  test('a reprodução no alcance projeto lê o processo que nasceu depois como vazio', async () => {
+  test('a replay in project scope reads the process born later as empty', async () => {
     const wide: Gate = {
       name: 'wide-approved',
       questions: [{ ...PROPOSED.questions[0]!, scope: 'project' }],
@@ -132,8 +132,8 @@ describe('evaluateGate: não grava, marcador e reprodução', () => {
   });
 });
 
-describe('evaluateGate: alcance por pergunta e nomes inexistentes', () => {
-  test('o scope por pergunta: a aprovação de outro processo só conta com scope project', async () => {
+describe('evaluateGate: per-question scope and nonexistent names', () => {
+  test('per-question scope: an approval from another process counts only with scope project', async () => {
     const gate = (scope: 'process' | 'project'): Gate => ({
       name: `cross-${scope}`,
       questions: [{ kind: 'approved', of: { type: 'note', where: { text: 'proposta' } }, scope }],
@@ -152,7 +152,7 @@ describe('evaluateGate: alcance por pergunta e nomes inexistentes', () => {
     expect(evaluate('run-1', 'cross-project').passed).toBe(true);
   });
 
-  test('gate inexistente é GATE_NOT_FOUND e processo inexistente é PROCESS_NOT_FOUND', () => {
+  test('a nonexistent gate is GATE_NOT_FOUND and a nonexistent process is PROCESS_NOT_FOUND', () => {
     const { createProcess, evaluate } = gateSetup(PROPOSED);
     createProcess('run-1');
 
@@ -165,8 +165,8 @@ describe('evaluateGate: alcance por pergunta e nomes inexistentes', () => {
   });
 });
 
-describe('evaluateGate: higiene da cadeia', () => {
-  test('higiene: a cadeia é verificada sempre e quebra dá PROCESS_CORRUPTED nomeando o processo', async () => {
+describe('evaluateGate: chain hygiene', () => {
+  test('hygiene: the chain is always verified and a break gives PROCESS_CORRUPTED naming the process', async () => {
     const { createProcess, registerOne, tamper, evaluate } = gateSetup(PROPOSED);
     createProcess('run-1');
     await registerOne('run-1', note('proposta'));
@@ -179,7 +179,7 @@ describe('evaluateGate: higiene da cadeia', () => {
     expect(error.details[0]).toMatchObject({ code: 'broken-chain', process: 'run-1' });
   });
 
-  test('higiene: pergunta de alcance projeto falha fechado com o processo quebrado, não o da chamada', async () => {
+  test('hygiene: a project-scope question fails closed with the broken process, not the one of the call', async () => {
     const wide: Gate = {
       name: 'wide-hygiene',
       questions: [{ kind: 'occurred', select: { type: 'note' }, scope: 'project' }],
@@ -198,7 +198,7 @@ describe('evaluateGate: higiene da cadeia', () => {
     expect(error.details[0]).toMatchObject({ process: 'run-2' });
   });
 
-  test('higiene: "sem bifurcação" não existe como pergunta de gate', () => {
+  test('hygiene: "no fork" does not exist as a gate question', () => {
     expect(GateQuestion.safeParse({ kind: 'no_fork' }).success).toBe(false);
   });
 });
@@ -241,8 +241,8 @@ function planSetup() {
   return { ...setup, plan, approves, deviation, settles, ready };
 }
 
-describe('D4: gate plano-pronto', () => {
-  test('plano-pronto: revisão de plano sem diff é recusada na gravação pelo schema do tipo', async () => {
+describe('D4: plan-ready gate', () => {
+  test('plan-ready: a plan revision without diff is refused at write time by the type schema', async () => {
     const { createProcess, registerOne, plan } = planSetup();
     createProcess('run-1');
     const first = await registerOne('run-1', plan());
@@ -258,7 +258,7 @@ describe('D4: gate plano-pronto', () => {
     expect(error.code).toBe('INVALID_RECORD');
   });
 
-  test('plano-pronto: com scope project a aprovação e o desfecho vêm de outro processo', async () => {
+  test('plan-ready: with scope project the approval and the outcome come from another process', async () => {
     const { createProcess, registerOne, plan, approves, deviation, settles, ready } = planSetup();
     createProcess('run-1');
     createProcess('review-1');
@@ -272,7 +272,7 @@ describe('D4: gate plano-pronto', () => {
   });
 });
 
-describe('D5 e SG4: gate de achados e previstos', () => {
+describe('D5 and SG4: findings and planned gate', () => {
   const answered: Gate = {
     name: 'all-answered',
     questions: [
@@ -280,7 +280,7 @@ describe('D5 e SG4: gate de achados e previstos', () => {
     ],
   };
 
-  test('achado: reprova quando um achado não tem `answers` de entrada e passa quando todos têm', async () => {
+  test('finding: fails when a finding has no incoming `answers` and passes when all have one', async () => {
     const { createProcess, registerOne, evaluate } = gateSetup(answered);
     createProcess('run-1');
     const answeredFinding = await registerOne('run-1', {
@@ -312,7 +312,7 @@ describe('D5 e SG4: gate de achados e previstos', () => {
     expect(evaluate('run-1', 'all-answered').passed).toBe(true);
   });
 
-  test('previsto: todo previsto do tipo X no alvo Y precisa de feito, e o gate aponta o previsto sem feito', async () => {
+  test('planned: every planned item of type X on target Y needs a done item, and the gate points at the planned item without one', async () => {
     const planned: Gate = {
       name: 'planned-done',
       questions: [
@@ -350,5 +350,190 @@ describe('D5 e SG4: gate de achados e previstos', () => {
       passed: false,
       evidence: { unresolved: [missing] },
     });
+  });
+});
+
+describe('evaluateGate: evidence and targets', () => {
+  /** `run.a` aprovado, `run.b` com proposta sem apoio, `run.c` sem proposta. */
+  async function proposals() {
+    const setup = gateSetup(PROPOSED);
+    setup.createProcess('run-1');
+    const proposalA = await setup.registerOne('run-1', note('proposta', { target: 'run.a' }));
+    const supportA = await setup.registerOne(
+      'run-1',
+      note('apoio', { target: 'run.a', relations: [{ to: proposalA, kind: 'supports' }] }),
+      1,
+    );
+    const proposalB = await setup.registerOne('run-1', note('proposta', { target: 'run.b' }), 2);
+    const call = <Extra extends Partial<EvaluateGateInput>>(extra: Extra) => ({
+      project: PROJECT,
+      process: 'run-1',
+      gate: PROPOSED.name,
+      ...extra,
+    });
+    return { ...setup, proposalA, supportA, proposalB, call };
+  }
+
+  test('evaluateGate without options keeps the full evidence', async () => {
+    const { queries, call, proposalA, supportA } = await proposals();
+
+    const { questions } = queries.evaluateGate(call({ target: 'run.a' }));
+
+    expect(questions).toEqual([
+      {
+        index: 0,
+        kind: 'approved',
+        passed: true,
+        evidence: { of: [proposalA], supports: [supportA], contradictions: [], unsupported: [] },
+      },
+    ]);
+  });
+
+  test('evaluateGate with evidence counts returns counts and no evidence', async () => {
+    const { queries, call } = await proposals();
+
+    const { questions } = queries.evaluateGate(call({ target: 'run.b', evidence: 'counts' }));
+
+    expect(questions).toEqual([
+      {
+        index: 0,
+        kind: 'approved',
+        passed: false,
+        counts: { of: 1, supports: 0, contradictions: 0, unsupported: 1 },
+      },
+    ]);
+  });
+
+  test('evaluateGate with evidence failing lists only the unsupported ids of a failing approved question', async () => {
+    const { queries, call, proposalB } = await proposals();
+
+    const { questions } = queries.evaluateGate(call({ target: 'run.b', evidence: 'failing' }));
+
+    expect(questions).toEqual([
+      {
+        index: 0,
+        kind: 'approved',
+        passed: false,
+        counts: { of: 1, supports: 0, contradictions: 0, unsupported: 1 },
+        evidence: { unsupported: [proposalB] },
+      },
+    ]);
+  });
+
+  test('evaluateGate with targets returns one result per target in input order', async () => {
+    const { queries, call, proposalB } = await proposals();
+
+    const evaluation = queries.evaluateGate(
+      call({ targets: ['run.b', 'run.a', 'run.c', 'run.a'], evidence: 'failing' }),
+    );
+
+    expect(evaluation.results.map(({ target, passed }) => [target, passed])).toEqual([
+      ['run.b', false],
+      ['run.a', true],
+      ['run.c', false],
+      ['run.a', true],
+    ]);
+    expect(evaluation.results[0]!.questions[0]).toMatchObject({
+      evidence: { unsupported: [proposalB] },
+    });
+    expect(evaluation.results[1]!.questions[0]).not.toHaveProperty('evidence');
+  });
+
+  test('evaluateGate with targets reads once and returns a single marker', async () => {
+    const { queries, call, proposalB } = await proposals();
+
+    const evaluation = queries.evaluateGate(
+      call({ targets: ['run.a', 'run.b'], evidence: 'counts' }),
+    );
+
+    expect(evaluation.marker).toEqual({ 'run-1': proposalB });
+    expect(evaluation.marker).toEqual(queries.evaluateGate(call({ target: 'run.a' })).marker);
+  });
+
+  test('evaluateGate with targets and a marker replays every target over the same records', async () => {
+    const { queries, call, registerOne, proposalB } = await proposals();
+    const targets = ['run.a', 'run.b'];
+    const before = queries.evaluateGate(call({ targets, evidence: 'counts' }));
+    await registerOne(
+      'run-1',
+      note('apoio', { target: 'run.b', relations: [{ to: proposalB, kind: 'supports' }] }),
+      3,
+    );
+
+    expect(queries.evaluateGate(call({ targets, evidence: 'counts' })).passed).toBe(true);
+    expect(
+      queries.evaluateGate(call({ targets, evidence: 'counts', marker: before.marker })),
+    ).toEqual(before);
+  });
+
+  test('evaluateGate with targets passes only when every target passes', async () => {
+    const { queries, call } = await proposals();
+
+    expect(queries.evaluateGate(call({ targets: ['run.a'], evidence: 'counts' })).passed).toBe(
+      true,
+    );
+    expect(
+      queries.evaluateGate(call({ targets: ['run.a', 'run.b'], evidence: 'counts' })).passed,
+    ).toBe(false);
+  });
+
+  test('evaluateGate rejects target together with targets', () => {
+    const { queries } = gateSetup(PROPOSED);
+
+    const error = captureError(() =>
+      queries.evaluateGate({
+        project: PROJECT,
+        process: 'missing',
+        gate: PROPOSED.name,
+        target: 'run.a',
+        targets: ['run.a'],
+        evidence: 'counts',
+      }),
+    );
+
+    expect(error.code).toBe('INVALID_INPUT');
+    expect(error.details).toEqual([
+      expect.objectContaining({ path: '/targets', code: 'with-target' }),
+    ]);
+  });
+
+  test('evaluateGate rejects an empty targets list', () => {
+    const { queries } = gateSetup(PROPOSED);
+
+    const error = captureError(() =>
+      queries.evaluateGate({
+        project: PROJECT,
+        process: 'missing',
+        gate: PROPOSED.name,
+        targets: [],
+        evidence: 'counts',
+      }),
+    );
+
+    expect(error.code).toBe('INVALID_INPUT');
+    expect(error.details).toEqual([expect.objectContaining({ path: '/targets', code: 'empty' })]);
+  });
+
+  test('evaluateGate rejects evidence full together with targets', () => {
+    const { queries } = gateSetup(PROPOSED);
+    const input = { project: PROJECT, process: 'missing', gate: PROPOSED.name, targets: ['run.a'] };
+
+    for (const evidence of [undefined, 'full' as const]) {
+      const error = captureError(() => queries.evaluateGate({ ...input, evidence }));
+
+      expect(error.code).toBe('INVALID_INPUT');
+      expect(error.details).toEqual([
+        expect.objectContaining({ path: '/evidence', code: 'full-with-targets' }),
+      ]);
+    }
+  });
+
+  test('evaluateGate with targets does not write', async () => {
+    const { queries, call, logPath } = await proposals();
+    const before = fs.readFileSync(logPath('run-1'));
+
+    queries.evaluateGate(call({ targets: ['run.a', 'run.b'], evidence: 'failing' }));
+
+    expect(fs.readFileSync(logPath('run-1')).equals(before)).toBe(true);
   });
 });

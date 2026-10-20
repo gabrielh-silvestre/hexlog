@@ -11,7 +11,7 @@ import { isPidAlive } from './adapters/fs/lock.ts';
 import { sha256hex } from './domain/chain.ts';
 
 /** Arquivo regular do dado 0.x; `path` relativo a `<D>`. */
-export type LegacyFile = { path: string; size: number; sha256: string };
+type LegacyFile = { path: string; size: number; sha256: string };
 
 /** Tudo que o 0.x deixou em `<D>`; `dirs` (relativos, inclui a própria entrada) sai em ordem de varredura. */
 export type LegacyInventory = { files: LegacyFile[]; dirs: string[] };

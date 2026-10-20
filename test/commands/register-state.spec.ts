@@ -35,8 +35,8 @@ async function seed(harness: Harness, process: string, text = 'destino'): Promis
   return at(result.records, 0).id;
 }
 
-describe('register: destinos de outro processo (D-10)', () => {
-  test('supports para registro vigente de outro processo grava, lendo cada destino uma vez e sem travá-lo', async () => {
+describe('register: destinations in another process (D-10)', () => {
+  test('supports to a current record of another process writes, reading each destination once and without locking it', async () => {
     const harness = setup();
     const target = await seed(harness, OTHER);
     const { counters } = harness.processes;
@@ -56,7 +56,7 @@ describe('register: destinos de outro processo (D-10)', () => {
     ]);
   });
 
-  test('dois destinos distintos: cada um é lido uma vez, mesmo com várias relações para ele', async () => {
+  test('two distinct destinations: each is read once, even with several relations to it', async () => {
     const harness = setup();
     const first = await seed(harness, OTHER, 'a');
     const second = await seed(harness, THIRD, 'b');
@@ -76,7 +76,7 @@ describe('register: destinos de outro processo (D-10)', () => {
     expect(readsOf(THIRD)).toBe(before[THIRD] + 1);
   });
 
-  test('a segunda relação para o mesmo destino viola uma regra sem ler o destino de novo', async () => {
+  test('the second relation to the same destination violates a rule without reading the destination again', async () => {
     const harness = setup();
     const target = await seed(harness, OTHER);
     const readsBefore = harness.processes.counters.reads.filter((read) => read === OTHER).length;
@@ -96,7 +96,7 @@ describe('register: destinos de outro processo (D-10)', () => {
     expect(readsNow).toBe(readsBefore + 1);
   });
 
-  test('processo-destino inexistente é RELATION_NOT_FOUND missing, no path da relação', async () => {
+  test('a nonexistent destination process is RELATION_NOT_FOUND missing, at the relation path', async () => {
     const harness = setup();
     await harness.register([note()]);
 
@@ -111,7 +111,7 @@ describe('register: destinos de outro processo (D-10)', () => {
     expect(harness.processes.counters.appends).toBe(1);
   });
 
-  test('registro inexistente num processo que existe é RELATION_NOT_FOUND missing', async () => {
+  test('a nonexistent record in an existing process is RELATION_NOT_FOUND missing', async () => {
     const harness = setup();
     await seed(harness, OTHER);
 
@@ -121,10 +121,10 @@ describe('register: destinos de outro processo (D-10)', () => {
   });
 
   test.each([
-    ['cadeia quebrada', (h: Harness) => h.processes.setText(OTHER, '{"links":[1]}\n')],
-    ['manifesto ilegível', (h: Harness) => h.processes.flags.unreadable.add(OTHER)],
+    ['broken chain', (h: Harness) => h.processes.setText(OTHER, '{"links":[1]}\n')],
+    ['unreadable manifest', (h: Harness) => h.processes.flags.unreadable.add(OTHER)],
   ])(
-    'destino com %s é RELATION_NOT_FOUND destination-corrupted com o processo',
+    'destination with %s is RELATION_NOT_FOUND destination-corrupted with the process',
     async (_case, corrupt) => {
       const harness = setup();
       const target = await seed(harness, OTHER);
@@ -142,7 +142,7 @@ describe('register: destinos de outro processo (D-10)', () => {
     },
   );
 
-  test('supports para destino substituído é stale-destination com a versão atual', async () => {
+  test('supports to a superseded destination is stale-destination with the current version', async () => {
     const harness = setup();
     const target = await seed(harness, OTHER);
     const successor = await harness.register([relating(target, 'supersedes', 'v2')], {}, OTHER);
@@ -162,7 +162,7 @@ describe('register: destinos de outro processo (D-10)', () => {
   });
 
   test.each(['contradicts', 'answers', 'derivesFrom', 'complements', 'reopens'] as const)(
-    '%s para destino substituído não confere vigência: só supports confere',
+    '%s to a superseded destination does not check vigency: only supports does',
     async (kind) => {
       const harness = setup();
       const target = await seed(harness, OTHER);
@@ -174,7 +174,7 @@ describe('register: destinos de outro processo (D-10)', () => {
     },
   );
 
-  test('as com pontas por tipo: tipo fora de from é endpoint-type', async () => {
+  test('as with endpoints by type: a type outside from is endpoint-type', async () => {
     const harness = setup();
     const target = await seed(harness, OTHER);
 
@@ -188,7 +188,7 @@ describe('register: destinos de outro processo (D-10)', () => {
     });
   });
 
-  test('PROCESS_TOO_LARGE na leitura do destino aponta o `to` da relação e nomeia o destino', async () => {
+  test('PROCESS_TOO_LARGE reading the destination points at the relation `to` and names the destination', async () => {
     const harness = setup();
     const target = await seed(harness, OTHER);
     harness.processes.flags.tooLarge.add(OTHER);
@@ -201,7 +201,7 @@ describe('register: destinos de outro processo (D-10)', () => {
     });
   });
 
-  test('IO_ERROR na leitura do destino aponta o `to` da relação e nomeia o destino', async () => {
+  test('IO_ERROR reading the destination points at the relation `to` and names the destination', async () => {
     const harness = setup();
     const target = await seed(harness, OTHER);
     const { store } = harness.processes;
@@ -222,8 +222,8 @@ describe('register: destinos de outro processo (D-10)', () => {
   });
 });
 
-describe('register: regras de D-10 no próprio processo', () => {
-  test('supersedes de registro já substituído é FORK_REJECTED com a versão atual', async () => {
+describe('register: D-10 rules within the own process', () => {
+  test('supersedes of an already superseded record is FORK_REJECTED with the current version', async () => {
     const harness = setup();
     const first = await seed(harness, ORIGIN, 'v1');
     const second = await harness.register([relating(first, 'supersedes', 'v2')]);
@@ -243,7 +243,7 @@ describe('register: regras de D-10 no próprio processo', () => {
     expect(harness.processes.counters.appends).toBe(2);
   });
 
-  test('bifurcação: revokes de registro já substituído é FORK_REJECTED com a versão atual', async () => {
+  test('fork: revokes of an already superseded record is FORK_REJECTED with the current version', async () => {
     const harness = setup();
     const first = await seed(harness, ORIGIN, 'v1');
     const second = await harness.register([relating(first, 'supersedes', 'v2')]);
@@ -264,7 +264,7 @@ describe('register: regras de D-10 no próprio processo', () => {
   });
 
   test.each(['revokes', 'supersedes'] as const)(
-    'linhagem revogada encerra: %s dela é FORK_REJECTED com current null',
+    'a revoked lineage is closed: %s of it is FORK_REJECTED with current null',
     async (kind) => {
       const harness = setup();
       const first = await seed(harness, ORIGIN, 'v1');
@@ -276,7 +276,7 @@ describe('register: regras de D-10 no próprio processo', () => {
     },
   );
 
-  test('dois supersedes do mesmo alvo no lote: o segundo é FORK_REJECTED, apontando o item', async () => {
+  test('two supersedes of the same target in the batch: the second is FORK_REJECTED, pointing at the item', async () => {
     const harness = setup();
     const first = await seed(harness, ORIGIN, 'v1');
 
@@ -294,10 +294,10 @@ describe('register: regras de D-10 no próprio processo', () => {
   });
 
   test.each([
-    ['supersedes antes de supports', ['supersedes', 'supports'], 1],
-    ['supports antes de supersedes', ['supports', 'supersedes'], 0],
+    ['supersedes before supports', ['supersedes', 'supports'], 1],
+    ['supports before supersedes', ['supports', 'supersedes'], 0],
   ] as const)(
-    'o supports confere a vigência do lote inteiro: %s é stale-destination',
+    'supports checks the vigency of the whole batch: %s is stale-destination',
     async (_case, kinds, supportsAt) => {
       const harness = setup();
       const target = await seed(harness, ORIGIN, 'e');
@@ -313,7 +313,7 @@ describe('register: regras de D-10 no próprio processo', () => {
     },
   );
 
-  test('supports de item posterior do lote para o registro que um item anterior substituiu', async () => {
+  test('supports from a later batch item to the record an earlier item superseded', async () => {
     const harness = setup();
     const target = await seed(harness, ORIGIN, 'e');
 
@@ -327,7 +327,7 @@ describe('register: regras de D-10 no próprio processo', () => {
     });
   });
 
-  test('supersedes entre tipos diferentes é type-mismatch', async () => {
+  test('supersedes between different types is type-mismatch', async () => {
     const harness = setup();
     const target = await seed(harness, ORIGIN, 'e');
 
@@ -345,10 +345,76 @@ describe('register: regras de D-10 no próprio processo', () => {
     expect(error).toMatchObject({ details: [{ code: 'type-mismatch' }] });
   });
 
+  test('supersedes to a record of another target is target-mismatch and nothing is written', async () => {
+    const harness = setup();
+    const previous = await seed(harness, ORIGIN, 'e');
+    const logBefore = harness.processes.textOf(ORIGIN);
+
+    const error = await refusal(
+      harness.register([
+        note('x', { target: 'run.other', relations: [{ to: previous, kind: 'supersedes' }] }),
+      ]),
+    );
+
+    expect(error).toMatchObject({
+      code: 'INVALID_RECORD',
+      details: [
+        {
+          path: '/records/0/relations/0',
+          code: 'target-mismatch',
+          message: expect.stringMatching(/revoke.*derivesFrom/),
+        },
+      ],
+    });
+    expect(harness.processes.textOf(ORIGIN)).toBe(logBefore);
+  });
+
+  test('supersedes by alias to a batch item on another target is target-mismatch on the item', async () => {
+    const harness = setup();
+
+    const error = await refusal(
+      harness.register([
+        note('a', { alias: 'a' }),
+        note('b', { target: 'run.other', relations: [{ to: '@a', kind: 'supersedes' }] }),
+      ]),
+    );
+
+    expect(error).toMatchObject({
+      code: 'INVALID_RECORD',
+      details: [{ path: '/records/1/relations/0', code: 'target-mismatch' }],
+    });
+  });
+
+  test('revokes of a record of another target is accepted', async () => {
+    const harness = setup();
+    const previous = await seed(harness, ORIGIN, 'e');
+
+    const result = await harness.register([
+      note('x', { target: 'run.other', relations: [{ to: previous, kind: 'revokes' }] }),
+    ]);
+
+    expect(result.replayed).toBe(false);
+  });
+
+  test('the recommended way to change target is accepted: revokes on the old one and a new record with derivesFrom', async () => {
+    const harness = setup();
+    const previous = await seed(harness, ORIGIN, 'e');
+
+    const result = await harness.register([
+      note('revoke', { relations: [{ to: previous, kind: 'revokes' }] }),
+      note('moved', {
+        target: 'run.other',
+        relations: [{ to: previous, kind: 'derivesFrom' }],
+      }),
+    ]);
+
+    expect(result.records).toHaveLength(2);
+  });
+
   test.each([
-    ['supports e contradicts', ['supports', 'contradicts'], 'supports-and-contradicts'],
-    ['supersedes e revokes', ['supersedes', 'revokes'], 'supersedes-and-revokes'],
-  ] as const)('%s ao mesmo destino é %s', async (_case, kinds, code) => {
+    ['supports and contradicts', ['supports', 'contradicts'], 'supports-and-contradicts'],
+    ['supersedes and revokes', ['supersedes', 'revokes'], 'supersedes-and-revokes'],
+  ] as const)('%s to the same destination is %s', async (_case, kinds, code) => {
     const harness = setup();
     const target = await seed(harness, ORIGIN, 'e');
 
@@ -359,7 +425,7 @@ describe('register: regras de D-10 no próprio processo', () => {
     expect(error).toMatchObject({ code: 'INVALID_RECORD', details: [{ code }] });
   });
 
-  test('id do próprio processo que não existe é RELATION_NOT_FOUND missing', async () => {
+  test('an id of the own process that does not exist is RELATION_NOT_FOUND missing', async () => {
     const harness = setup();
 
     const error = await refusal(harness.register([relating(ghostId(ORIGIN), 'supports')]));
@@ -370,7 +436,7 @@ describe('register: regras de D-10 no próprio processo', () => {
     });
   });
 
-  test('o lote cita item anterior por apelido: supersedes encadeado dentro do lote é aceito', async () => {
+  test('the batch cites an earlier item by alias: chained supersedes inside the batch is accepted', async () => {
     const harness = setup();
 
     const result = await harness.register([
@@ -381,7 +447,7 @@ describe('register: regras de D-10 no próprio processo', () => {
     expect(result.replayed).toBe(false);
   });
 
-  test('hasCycle recusa com CYCLE_REJECTED, com a aresta montada à mão na origem', async () => {
+  test('hasCycle refuses with CYCLE_REJECTED, with the edge hand-built at the source', async () => {
     const harness = setup();
     const [a, b] = [
       `${ORIGIN}:00000000-0000-7000-8000-00000000aaa1`,
@@ -418,7 +484,7 @@ describe('register: regras de D-10 no próprio processo', () => {
   });
 });
 
-describe('register: tudo ou nada nas recusas de estado (SE1)', () => {
+describe('register: all or nothing on state refusals (SE1)', () => {
   /** Monta o estado e devolve o item que viola a regra; vai sempre como terceiro de um lote de três. */
   type Violation = (harness: Harness) => Promise<BatchItem>;
   const supersededTarget = async (harness: Harness) => {
@@ -450,6 +516,16 @@ describe('register: tudo ou nada nas recusas de estado (SE1)', () => {
         data: { text: 't' },
         relations: [{ to: await seed(harness, ORIGIN, 'e'), kind: 'supersedes' }],
       }),
+    ],
+    [
+      'target-mismatch',
+      'INVALID_RECORD',
+      'target-mismatch',
+      async (harness) =>
+        note('x', {
+          target: 'run.other',
+          relations: [{ to: await seed(harness, ORIGIN, 'e'), kind: 'supersedes' }],
+        }),
     ],
     [
       'supports-and-contradicts',
@@ -487,7 +563,7 @@ describe('register: tudo ou nada nas recusas de estado (SE1)', () => {
         note('a', { relations: [{ to: await seed(harness, ORIGIN, 'e'), as: 'only-tasks' }] }),
     ],
   ] as [string, string, string, Violation][])(
-    'tudo ou nada: %s no terceiro item de um lote de três não grava os dois anteriores',
+    'all or nothing: %s on the third item of a three-item batch does not write the two before',
     async (_case, code, detail, violate) => {
       const harness = setup();
       const failing = await violate(harness);
@@ -506,10 +582,10 @@ describe('register: tudo ou nada nas recusas de estado (SE1)', () => {
   );
 });
 
-describe('register: anexos (D-16)', () => {
+describe('register: attachments (D-16)', () => {
   const hash = sha256hex('anexo');
 
-  test('campo marcado com anexo íntegro grava, e cada hash é consultado uma vez por chamada', async () => {
+  test('a marked field with an intact attachment writes, and each hash is queried once per call', async () => {
     const harness = setup();
     harness.attachments.set(hash, 'ok');
 
@@ -519,7 +595,7 @@ describe('register: anexos (D-16)', () => {
     expect(harness.attachments.calls).toEqual([hash]);
   });
 
-  test('um registro com dois campos marcados (body e files): os dois são conferidos', async () => {
+  test('a record with two marked fields (body and files): both are checked', async () => {
     const harness = setup();
     const other = sha256hex('outro anexo');
     harness.attachments.set(hash, 'ok');
@@ -531,7 +607,7 @@ describe('register: anexos (D-16)', () => {
     expect(harness.attachments.calls).toEqual([hash, other]);
   });
 
-  test('um registro com dois campos marcados: o segundo ausente é recusado no path dele', async () => {
+  test('a record with two marked fields: the missing second one is refused at its own path', async () => {
     const harness = setup();
     harness.attachments.set(hash, 'ok');
 
@@ -546,9 +622,9 @@ describe('register: anexos (D-16)', () => {
   });
 
   test.each([
-    ['inexistente', 'missing', 'ATTACHMENT_NOT_FOUND', 'not-found'],
-    ['corrompido', 'corrupted', 'ATTACHMENT_CORRUPTED', 'corrupted'],
-  ] as const)('anexo %s em campo marcado é %s', async (_case, status, code, subcode) => {
+    ['nonexistent', 'missing', 'ATTACHMENT_NOT_FOUND', 'not-found'],
+    ['corrupted', 'corrupted', 'ATTACHMENT_CORRUPTED', 'corrupted'],
+  ] as const)('attachment %s in a marked field is %s', async (_case, status, code, subcode) => {
     const harness = setup();
     harness.attachments.set(hash, status);
 
@@ -561,7 +637,7 @@ describe('register: anexos (D-16)', () => {
     expect(harness.processes.counters.appends).toBe(0);
   });
 
-  test('item de lista de anexos marcada que não existe também é recusado', async () => {
+  test('a nonexistent item of a marked attachment list is also refused', async () => {
     const harness = setup();
     harness.attachments.set(hash, 'ok');
 
@@ -574,28 +650,31 @@ describe('register: anexos (D-16)', () => {
   });
 
   test.each([
-    ['campo', { note: hash }],
-    ['item de lista de strings', { notes: ['texto', hash] }],
-  ])('hash de anexo guardado em %s sem a marca é unmarked-attachment', async (_case, data) => {
-    const harness = setup();
-    harness.attachments.set(hash, 'ok');
+    ['field', { note: hash }],
+    ['string list item', { notes: ['texto', hash] }],
+  ])(
+    'attachment hash stored in %s without the mark is unmarked-attachment',
+    async (_case, data) => {
+      const harness = setup();
+      harness.attachments.set(hash, 'ok');
 
-    const error = await refusal(harness.register([doc(data)]));
+      const error = await refusal(harness.register([doc(data)]));
 
-    expect(error).toMatchObject({
-      code: 'INVALID_RECORD',
-      details: [
-        {
-          path: `/records/0/data/${Object.keys(data)[0]}`,
-          code: 'unmarked-attachment',
-          message: expect.stringContaining('create a new process'),
-        },
-      ],
-    });
-    expect(harness.processes.counters.appends).toBe(0);
-  });
+      expect(error).toMatchObject({
+        code: 'INVALID_RECORD',
+        details: [
+          {
+            path: `/records/0/data/${Object.keys(data)[0]}`,
+            code: 'unmarked-attachment',
+            message: expect.stringContaining('create a new process'),
+          },
+        ],
+      });
+      expect(harness.processes.counters.appends).toBe(0);
+    },
+  );
 
-  test('anexo corrompido também conta como guardado para a guarda de marca', async () => {
+  test('a corrupted attachment also counts as stored for the mark guard', async () => {
     const harness = setup();
     harness.attachments.set(hash, 'corrupted');
 
@@ -605,10 +684,10 @@ describe('register: anexos (D-16)', () => {
   });
 
   test.each([
-    ['hash de anexo que nunca foi guardado', { note: hash }],
-    ['texto que não tem forma de sha256', { note: 'abc' }],
-    ['sha256 em maiúsculas', { note: hash.toUpperCase() }],
-  ])('%s passa na guarda de marca', async (_case, data) => {
+    ['attachment hash that was never stored', { note: hash }],
+    ['text that is not shaped like a sha256', { note: 'abc' }],
+    ['uppercase sha256', { note: hash.toUpperCase() }],
+  ])('%s passes the mark guard', async (_case, data) => {
     const harness = setup();
 
     const result = await harness.register([doc(data)]);
@@ -616,7 +695,7 @@ describe('register: anexos (D-16)', () => {
     expect(result.replayed).toBe(false);
   });
 
-  test('o hash de data não é o campo /hash que a porta presume: o path de INVALID_INPUT é refeito', async () => {
+  test('the data hash is not the /hash field the port assumes: the INVALID_INPUT path is rebuilt', async () => {
     const harness = setup();
     harness.attachments.store.status = () => {
       throw new HexlogError('INVALID_INPUT', 'invalid hash', [
@@ -632,7 +711,7 @@ describe('register: anexos (D-16)', () => {
     });
   });
 
-  test('sem campo de anexo nem string em forma de hash, a porta de anexos nem é chamada', async () => {
+  test('with no attachment field or hash-shaped string, the attachment port is not even called', async () => {
     const harness = setup();
 
     await harness.register([note('a'), doc({ note: 'x', notes: ['y'] })]);
@@ -641,10 +720,10 @@ describe('register: anexos (D-16)', () => {
   });
 });
 
-describe('register: ordem das checagens de estado (nível 6)', () => {
+describe('register: order of the state checks (level 6)', () => {
   const hash = sha256hex('anexo');
 
-  test('destino de outro processo vem antes do anexo', async () => {
+  test('a destination in another process comes before the attachment', async () => {
     const harness = setup();
 
     const error = await refusal(
@@ -654,7 +733,7 @@ describe('register: ordem das checagens de estado (nível 6)', () => {
     expect(error.code).toBe('RELATION_NOT_FOUND');
   });
 
-  test('anexo vem antes das regras do próprio processo', async () => {
+  test('the attachment comes before the own-process rules', async () => {
     const harness = setup();
     const target = await seed(harness, ORIGIN, 'e');
     await harness.register([relating(target, 'supersedes', 'v2')]);
@@ -667,8 +746,8 @@ describe('register: ordem das checagens de estado (nível 6)', () => {
   });
 });
 
-describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
-  test('na leitura sob o lock, antes de decide: log acima do teto recusa mesmo um lote válido, sem gravar', async () => {
+describe('register: PROCESS_TOO_LARGE at two points (D-06)', () => {
+  test('on the read under the lock, before decide: a log above the cap refuses even a valid batch, without writing', async () => {
     const harness = setup();
     harness.processes.flags.tooLarge.add(ORIGIN);
 
@@ -678,7 +757,7 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
     expect(harness.processes.counters.appends).toBe(0);
   });
 
-  test('a forma do lote (nível 1) vem antes de qualquer leitura: lote malformado em origem acima do teto dá INVALID_INPUT', async () => {
+  test('the batch shape (level 1) comes before any read: a malformed batch on a source above the cap gives INVALID_INPUT', async () => {
     const harness = setup();
     harness.processes.flags.tooLarge.add(ORIGIN);
 
@@ -691,7 +770,7 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
     expect(harness.processes.counters.reads).toEqual([]);
   });
 
-  test('o manifesto vem de readManifest, sem o log: a recusa estática vence PROCESS_TOO_LARGE', async () => {
+  test('the manifest comes from readManifest, without the log: the static refusal beats PROCESS_TOO_LARGE', async () => {
     const harness = setup();
     harness.processes.flags.tooLarge.add(ORIGIN);
 
@@ -701,7 +780,7 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
     expect(harness.processes.counters).toMatchObject({ writes: 0, appends: 0 });
   });
 
-  test('o veto vem depois das checagens: lote que viola D-10 e passaria do teto dá a violação', async () => {
+  test('the veto comes after the checks: a batch that violates D-10 and would pass the cap gives the violation', async () => {
     const harness = setup();
     harness.processes.flags.maxBytes = 1;
 
@@ -710,7 +789,7 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
     expect(error.code).toBe('RELATION_NOT_FOUND');
   });
 
-  test('replay não passa pelo veto: a chave já gravada devolve replayed mesmo com o teto estourado', async () => {
+  test('replay does not go through the veto: an already written key returns replayed even with the cap exceeded', async () => {
     const harness = setup();
     await harness.register([note('a')], { key: 'k' });
     harness.processes.flags.maxBytes = 1;
@@ -721,8 +800,8 @@ describe('register: PROCESS_TOO_LARGE em dois pontos (D-06)', () => {
   });
 });
 
-describe('register: linha montada inválida', () => {
-  test('uuid fora do formato v7 dá INTERNAL sem gravar nem vazar o id', async () => {
+describe('register: invalid built line', () => {
+  test('a uuid outside the v7 format gives INTERNAL without writing or leaking the id', async () => {
     const harness = setup(() => 'not-a-uuid');
 
     const error = await refusal(harness.register([note('a')]));

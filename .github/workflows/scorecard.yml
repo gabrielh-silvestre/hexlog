@@ -1,0 +1,33 @@
+name: Scorecard
+
+# Medidor, não gate: roda só na branch padrão (`schedule` e `push` em `develop`) e sob demanda
+# (`workflow_dispatch`, a medida que vale depois que o ruleset e os demais workflows existem).
+# O SARIF vai para a aba Security; não publica na API do Scorecard (`publish_results: false`),
+# então o job dispensa `id-token: write`. Não está no ruleset.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: false
+      - uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif

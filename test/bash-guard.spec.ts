@@ -196,15 +196,13 @@ const allowCases: I4Case[] = [
     class: 'gap',
   },
   {
-    name: "gap: ANSI-C quoting ($'...\\x6c...')",
-    get command() {
-      return `cat $'${tmpHome}/.local/share/hex\\x6cog/x'`;
-    },
+    name: 'gap: zsh alternation ((hexlog|x))',
+    command: 'cat ~/.local/share/(hexlog|x)/p/r/events.jsonl',
     class: 'gap',
   },
   {
-    name: 'gap: zsh alternation ((hexlog|x))',
-    command: 'cat ~/.local/share/(hexlog|x)/p/r/events.jsonl',
+    name: 'gap: locale-translated string inside the name',
+    command: 'cat ~/.local/share/he$"x"log/x',
     class: 'gap',
   },
 ];
@@ -311,7 +309,7 @@ describe('bash-guard (I7): entrada inválida falha aberto', () => {
 
 describe('bash-guard (U1): hostile tokens are denied, not released', () => {
   const reachesMessage = 'is only accessible through the hexlog MCP tools';
-  const undecidableMessage = 'could not be checked against the hexlog data directory';
+  const undecidableMessage = 'was denied only because it exceeds a safety limit';
   // Trecho final com `~`: o `includes` literal de D não o vê, então só o teto ou o orçamento
   // sob teste decide antes dele (sem o teto, o hook estoura o timeout e o status não é 2).
   const homeTail = '; cat ~/.local/share/hexlog/x';
@@ -434,6 +432,206 @@ describe('bash-guard (U1): hostile tokens are denied, not released', () => {
   }, 15_000);
 });
 
+describe('bash-guard (#158): ceilings apply only to tokens the shell expands', () => {
+  const reachesMessage = 'is only accessible through the hexlog MCP tools';
+  const costMessage = 'does not cite the hexlog data directory literally';
+  const script = `${'{'.repeat(20)}${'['.repeat(100)}`;
+  // Glob que casa D (glob no último segmento do HOME) e passa do teto de comprimento: sem a
+  // checagem de custo, um `cat` dele leria D.
+  // Prefixo de `find -path` sem citar D literalmente: o glob começa no último segmento do HOME.
+  const findPrefix = () => `${tmpHome.slice(0, -1)}*/.local/share/hex*`;
+  const bigGlob = () => `${tmpHome.slice(0, -1)}*/.local/share/hexlog${'/'.repeat(5000)}p/*`;
+
+  const allowedCases: { name: string; command: string }[] = [
+    {
+      name: 'a single-quoted node -e script with 20 braces and 100 brackets',
+      command: `node -e '${script}'`,
+    },
+    {
+      name: 'a double-quoted python -c script with 20 braces and 100 brackets',
+      command: `python -c "${script}"`,
+    },
+    {
+      name: 'a quoted script above the length ceiling and the glob budget',
+      command: `node -e '${script}${'a'.repeat(20_000)}'`,
+    },
+    { name: 'backslash-escaped brackets', command: `cat ${'\\['.repeat(100)}` },
+    {
+      name: 'a quoted script followed by an unquoted command that does not reach D',
+      command: `node -e '${script}' && ls -la`,
+    },
+    {
+      name: 'a double-quoted script with an escaped quote before the brackets',
+      command: `node -e "a\\"${'['.repeat(100)}"`,
+    },
+  ];
+
+  for (const testCase of allowedCases) {
+    test(`allows ${testCase.name}`, () => {
+      const result = runHook(testCase, envBase);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+    }, 15_000);
+  }
+
+  const deniedCases: { name: string; command: string; cwd?: string; stderr: string }[] = [
+    {
+      // shell-quote >=1.11 decodifica o escape ANSI-C; na 1.10 isto era uma lacuna aceita
+      name: "an ANSI-C quoted path whose escape spells D ($'...\\x6c...')",
+      get command() {
+        return `cat $'${tmpHome}/.local/share/hex\\x6cog/x'`;
+      },
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted script that cites D',
+      get command() {
+        return `node -e '${script} ${dataDir}'`;
+      },
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted token above the ceilings that reaches D through "~"',
+      command: `cat '~/.local/share/hexlog/x${'['.repeat(100)}'`,
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted relative token above the ceilings that resolves inside D',
+      command: `cat "hexlog/${'['.repeat(100)}"`,
+      cwd: 'PARENT_OF_D',
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted find -path pattern padded with 5000 "*" whose literal prefix is an ancestor of D',
+      get command() {
+        return `find / -path '${findPrefix()}/.v1/${'*'.repeat(5000)}records.jsonl' -exec cat {} +`;
+      },
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted find -path pattern with 9 brace groups whose literal prefix is an ancestor of D',
+      get command() {
+        return `find / -path '${findPrefix()}/${'{a,b}'.repeat(9)}'`;
+      },
+      stderr: reachesMessage,
+    },
+    {
+      name: 'a quoted find -path pattern with 65 bracket classes whose literal prefix is an ancestor of D',
+      get command() {
+        return `find / -path '${findPrefix()}/${'[a]'.repeat(65)}'`;
+      },
+      stderr: reachesMessage,
+    },
+    {
+      name: 'an unquoted token with 20 opening braces',
+      command: `cat ${'{'.repeat(20)}`,
+      stderr: costMessage,
+    },
+    {
+      name: 'an unquoted token with 100 opening brackets',
+      command: `cat ${'['.repeat(100)}`,
+      stderr: costMessage,
+    },
+    {
+      name: 'a mixed token, quoted brackets followed by an unquoted "*"',
+      command: `cat '${'['.repeat(100)}'*`,
+      stderr: costMessage,
+    },
+    {
+      name: 'a mixed token, a quoted prefix followed by 14 unquoted brace groups',
+      command: `cat "x"${'{a,b}'.repeat(14)}`,
+      stderr: costMessage,
+    },
+    {
+      name: 'a mixed token, an unquoted "*" followed by quoted brackets',
+      command: `cat *"${'['.repeat(100)}"`,
+      stderr: costMessage,
+    },
+    {
+      name: 'an ANSI-C quoted token above the ceilings (the quote tracker does not model it)',
+      command: `node -e $'${'['.repeat(100)}'`,
+      stderr: costMessage,
+    },
+    {
+      name: 'a heredoc body above the ceilings',
+      command: `cat <<'EOF'\n${'['.repeat(100)}\nEOF`,
+      stderr: costMessage,
+    },
+    {
+      name: 'an unterminated quote, where the shell-quote splits the token and the masked command merges it',
+      command: `node -e '${'['.repeat(100)}\n--flag`,
+      stderr: costMessage,
+    },
+  ];
+
+  // Cada comando põe, depois de uma construção que o rastreador de aspas do `maskQuoted` não
+  // modela como o bash, um glob que casa D acima dos tetos; o bash o expande e lê D.
+  const desyncPrefixes: { name: string; prefix: string }[] = [
+    { name: 'an ANSI-C quote with an escaped apostrophe', prefix: String.raw`cat $'a\'b' ` },
+    {
+      name: 'a command substitution with quotes inside double quotes',
+      prefix: String.raw`echo x\\ "\"" "$(echo 'a"b')" && cat `,
+    },
+    {
+      name: 'an ANSI-C quote after a command substitution on the previous line',
+      prefix: String.raw`echo "\\" $'a\'b' $(echo 1) "\\"` + '\ncat ',
+    },
+    {
+      name: 'a heredoc with a lone double quote in its body',
+      prefix: String.raw`echo "\\"'' <<'E'` + '\n"\nE\n"a" ; cat ',
+    },
+    {
+      name: 'a locale-translated string and an ANSI-C quote',
+      prefix: String.raw`echo $"a\"b" x\\ $'\''` + '\ncat ',
+    },
+    { name: 'no quotes at all (control)', prefix: 'cat ' },
+  ];
+
+  for (const { name, prefix } of desyncPrefixes) {
+    test(`denies for cost a D-matching glob above the ceilings after ${name}`, () => {
+      const result = runHook({ command: `${prefix}${bigGlob()}` }, envBase);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(costMessage);
+    }, 15_000);
+  }
+
+  for (const testCase of deniedCases) {
+    test(`denies ${testCase.name}`, () => {
+      const cwd = testCase.cwd === 'PARENT_OF_D' ? cwdParentOfData : undefined;
+      const result = runHook({ command: testCase.command, cwd }, envBase);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(testCase.stderr);
+    }, 15_000);
+  }
+
+  test('keeps matching a quoted glob under the ceilings against D', () => {
+    const result = runHook({ command: `find / -path '${tmpHome}/.local/share/hex*'` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(reachesMessage);
+  }, 15_000);
+
+  test('says the command does not cite D and was denied only for cost', () => {
+    const result = runHook({ command: `cat ${'['.repeat(100)}` }, envBase);
+    expect(result.stderr).toContain(costMessage);
+    expect(result.stderr).toContain('was denied only because it exceeds a safety limit');
+    expect(result.stderr).not.toContain(dataDir);
+  }, 15_000);
+
+  test('does not tell the user to quote text that the glob budget still sums', () => {
+    const result = runHook({ command: `cat ${'['.repeat(100)}` }, envBase);
+    expect(result.stderr).not.toMatch(/quote/i);
+  }, 15_000);
+
+  test('still sums quoted glob tokens under the ceilings in the command budget', () => {
+    const result = runHook(
+      { command: `ls ${Array(5000).fill("'*a*a*a*a*b'").join(' ')}` },
+      envBase,
+    );
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(costMessage);
+  }, 15_000);
+});
+
 describe('bash-guard (#45): a mensagem cita o trecho que casou', () => {
   test('names the matched segment when a compound command reaches D', () => {
     const result = runHook({ command: `ls /tmp && cat ${dataDir}/x` }, envBase);
@@ -468,9 +666,9 @@ describe('bash-guard (#45): a mensagem cita o trecho que casou', () => {
 
   test('replaces format and line separator characters in the matched segment with "?"', () => {
     const token = `${'['.repeat(100)}\u202e\u200b\u2028`;
-    const result = runHook({ command: `true ; cat "${token}"` }, envBase);
+    const result = runHook({ command: `true ; cat "${token}"*` }, envBase);
     expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/Matched: cat \[+\?\?\?$/);
+    expect(result.stderr).toMatch(/Matched: cat \[+\?\?\?\*$/);
   }, 15_000);
 
   test('truncates the matched segment to 200 characters', () => {

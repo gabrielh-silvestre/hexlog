@@ -9,7 +9,7 @@ vazia ou não for um caminho absoluto, `<D>` cai em `~/.local/share/hexlog`
 (`src/directory.ts#dataDir`). `<D>` precisa de um sistema de arquivos com hard link e semântica
 POSIX (`rename` e `link` atômicos).
 
-```
+```text
 <D>/                                   # 0700; $XDG_DATA_HOME/hexlog ou ~/.local/share/hexlog
   .v1/                                 # raiz do dado 1.0; o 0.x nunca grava aqui
     <project>/                         # 0700
@@ -26,7 +26,9 @@ POSIX (`rename` e `link` atômicos).
 
 - **`process.json`** guarda `project`, `process`, `createdAt`, as definições fixadas
   (`fixed.types`, `fixed.relations`, `fixed.gates`, com o conteúdo completo) e os
-  hashes de cada grupo. O sha256 do JCS dele é a âncora da cadeia.
+  hashes de cada grupo, e `lineageInheritance: true` só nos processos criados com a herança de
+  relações (opcional, ausente nos anteriores; ver `create_process` em [tools.md](tools.md)).
+  O sha256 do JCS dele, com o campo quando existe, é a âncora da cadeia.
 - **`records.jsonl`** é append-only. Cada linha é um lote `{"links":[...]}` de 1 a 50 elos,
   um por registro; cada elo é o registro mais `seq` (contíguo, por processo) e `prevHash`, e só
   o primeiro elo do lote carrega `batch` (impressão do lote, `key` e apelidos). O hash de um
@@ -55,7 +57,7 @@ entrada, vazio quando o erro é da chamada toda). O catálogo completo é
 | Código | Quando |
 |---|---|
 | `INVALID_INPUT` | entrada fora do schema, chave desconhecida, `__proto__`, args aninhados além de 64 níveis (`too-deep`, em qualquer tool), `offset` de `read_attachment` no meio de um par surrogate (`mid-surrogate-pair`), ou `attach` com `path` recusado (o motivo vem em `details[0].code`) |
-| `INVALID_FILTER` | filtro da `query` inconsistente: `process` ausente no alcance processo (`required`) ou `text` sem termo pesquisável (`no-terms`: espaço e pontuação não são termos). `text` acima de 200 caracteres e `limit` fora de 1 a 200 saem como `INVALID_INPUT`, porque o zod da tool barra antes; `too-long` e `out-of-range` só saem pelo serviço, nos scripts |
+| `INVALID_FILTER` | filtro da `query` inconsistente: `process` ausente no alcance processo (`required`) ou `text` sem termo pesquisável (`no-terms`: espaço e pontuação não são termos). `limit` igual a 0 sem `changesSince`, ou com `cursor`, é `out-of-range` em `/limit`. `text` acima de 200 caracteres e `limit` acima de 200, negativo ou fracionário saem como `INVALID_INPUT`, porque o zod da tool barra antes; `too-long` só sai pelo serviço, nos scripts |
 | `INVALID_CURSOR` / `MARKER_NOT_FOUND` | `cursor`, `changesSince` ou `marker` que não batem com o dado lido. `INVALID_CURSOR`: `malformed`, `too-long`, campo do cursor inválido, `scope-mismatch`, `project-mismatch`, `process-mismatch`, `filters-mismatch`, `marker-hash-mismatch` ou `last-id-not-found`, e a mensagem manda reexecutar a consulta sem `cursor`. `MARKER_NOT_FOUND`: `marker-not-found` (o id não está no log do processo) ou `process-not-found` (o marcador nomeia processo inexistente ou não lido); os dois levam `process`, o processo cujo marcador falhou |
 | `RESERVED_NAME` | nome de processo reservado |
 | `INVALID_SCHEMA` | schema de tipo que o `ajv` recusa, `$async`, raiz diferente de `object`, `pattern` ou `patternProperties` em qualquer subschema (`pattern-not-allowed`, `path` no ponteiro do `pattern`), `format` fora do catálogo e do `ajv-formats` ou marca `attachment` fora do primeiro nível (`path` `.../format`) |
@@ -167,10 +169,17 @@ PreToolUse na tool Bash que tokeniza o comando e nega quem alcançar o
 diretório de dados. A mensagem de negação cita as tools que dão acesso ao dado
 (`list`, `query`, `verify_chain`, `read_attachment`, `evaluate_gate`, `describe_type`). Em comando
 composto, a mensagem acrescenta ` Matched: <segmento>` com o trecho que casou. O que o hook não
-consegue decidir por custo ele nega (`hook/bash-guard.ts#decide`): o comando acima de `MAX_COMMAND_LENGTH` (1 MiB) e o token com caractere de glob acima dos tetos
+consegue decidir por custo ele nega (`hook/bash-guard.ts#decide`): o comando acima de `MAX_COMMAND_LENGTH` (1 MiB) e o token com caractere de glob que o shell expande (sem aspas e sem `\`) acima dos tetos
 (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) ou além do orçamento por comando
-(`MAX_GLOB_TOTAL_LENGTH`, a soma dos tamanhos dos tokens com glob). A negação por esses motivos não
-cita `<D>`. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
+(`MAX_GLOB_TOTAL_LENGTH`, a soma dos tamanhos dos tokens com glob, inclusive os entre aspas que passam
+pela checagem de caminho). Os tetos por token valem só para o que o shell expande: o texto só entre
+aspas ou escapado acima deles não é casado como glob, só conferido como caminho literal e pelo prefixo
+literal (os segmentos até o primeiro com glob não podem ser `<D>`, ancestral nem descendente dela), e o
+orçamento total não o soma. Diante de crase, `$(` ou `${` fora de aspas simples, ou de `$'`, `$"`, `#`
+ou `<<` fora de qualquer aspa (o rastreador de aspas do hook não os modela como o bash), todo token vale
+como expansível. A negação
+por esses motivos não cita `<D>` literalmente: a mensagem diz que o comando não o cita e foi negado
+só por um teto de segurança. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
 `..`, cada grupo vira `*` antes do casamento (`.*` na abertura de um segmento oculto de `<D>`, que
 o `*` não casa), então faixas como `{1..9999999}` não se expandem. Ele libera o que não consegue
 decidir por falha da checagem: o comando que o `shell-quote` não parseia (`${}`) e o token cujo
@@ -190,12 +199,13 @@ o teste automatizado as marque como "passa":
 | `cd` seguido de caminho relativo | `cd ~/.local/share && cat hexlog/.v1/p/r/records.jsonl` |
 | `grep -r` no diretório pai | `grep -r foo ~/.local/share/` |
 | Subprocessos | `node -e …`, `python -c …` |
+| Glob só entre aspas acima dos tetos, expandido por um re-parseador | `bash -c 'cat $0' '<glob grande>'`, `eval '…'`: o hook não casa como glob o token só entre aspas acima dos tetos, só o confere como caminho literal e pelo prefixo literal; um glob relativo cujo prefixo não alcança `<D>` passa. É a mesma lacuna de `bash -c 'cat /home/g*/…/*'`, que já passa sem enchimento |
 | Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full` e `node scripts/insights.ts`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
 | Grep/Glob tool do Claude Code apontando pro pai | `Grep path=~/.local/share` |
 | Variável definida no mesmo comando | `d=~/.local/share; cat $d/hexlog/x` |
-| ANSI-C quoting | `cat $'/home/…/hex\x6cog/x'` |
 | Alternância de zsh | `cat ~/.local/share/(hexlog\|x)/p/r/records.jsonl` |
 | Substituição de comando dentro do nome | `cat ~/.local/share/hex$(true)log/x`: o `shell-quote` não avalia `$(…)`, então o token nunca vira o caminho de `<D>` |
+| Aspas de locale dentro do nome | `cat ~/.local/share/he$"x"log/x`: o `shell-quote` deixa o `$` no token e o `bash` o descarta, então o token nunca vira o caminho de `<D>` (o ANSI-C `$'…'` é negado) |
 | Symlink para o pai de `<D>` | `ln -s ~/.local/share /tmp/p; cat /tmp/p/hexlog/x`: o hook compara o texto do caminho e não resolve link |
 | Comando que recebe o pai de `<D>` | `tar -C ~/.local/share -cf - hexlog`, `find ~/.local/share -name x` e `git -C ~/.local/share status`: o token é o pai, que não alcança `<D>`, e o nome do filho vem depois |
 | `PowerShell` | O matcher de `src/guard.ts` é `^Bash$` e o `extractCommand` do hook só lê `tool_name` igual a `Bash`; a tool `PowerShell` fica fora do hook, por decisão de escopo (o produto só suporta Linux) |
@@ -217,11 +227,14 @@ que o shell não expande mas o hook trata como caminho; e um `**` ou uma chave
 como `ls ~/**/*.md` ou `ls ~/{docs/a,b}`. Um `**` dentro de outros
 repositórios (por exemplo `/caminho/do/repo/**/*.ts`) não é afetado, porque
 o prefixo não é ancestral do diretório de dados. Também é negado o token com
-caractere de glob que passa dos tetos `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou
+caractere de glob sem aspas que passa dos tetos `MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES` ou
 `MAX_BRACKETS`, um comando cujos tokens com glob somam mais que `MAX_GLOB_TOTAL_LENGTH` ou um comando acima de
-`MAX_COMMAND_LENGTH`, como
-`python -c '<script grande com colchetes>'`: tetos e orçamento valem para qualquer token ou
-comando com glob, legítimo ou não. O comando que o `shell-quote` não parseia passa, mesmo com
+`MAX_COMMAND_LENGTH`, como `cat [[[...` com mais de 64 colchetes: os tetos por token valem para
+qualquer token que o shell expande, legítimo ou não, e o orçamento total ainda soma os tokens entre
+aspas que passam pela checagem de caminho. O texto entre aspas ou escapado, como o script de
+`python -c '<script grande com colchetes>'`, fica fora dos tetos por token. Falsos positivos que sobram: o
+corpo de um heredoc com muitos colchetes ou chaves, e o comando com uma dessas construções, que o hook
+trata como palavras expansíveis. O comando que o `shell-quote` não parseia passa, mesmo com
 `cat ~/.local/share/hex""log/x` depois do `${}`: é o preço de liberar na dúvida. Em `.claude/settings.json`, o padrão `Bash(node *scripts/install.ts*)` também
 pergunta no `--check` (só leitura) e não pega `cd scripts && node install.ts`.
 

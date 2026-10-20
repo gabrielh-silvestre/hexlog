@@ -1,42 +1,47 @@
-// Relatório das decisões de um trabalho cuja base merece revisão: `node .claude/hooks/flow-report.ts
-// <slug> [<base>]`. Só aponta, imprime e sai sempre 0; quem corrige é a skill `flow-run`. Só
-// builtins do Node, sem import fora de `.claude/hooks/`. Lê o log apenas pela exportação oficial
-// (`scripts/export.ts` em processo filho), nunca o diretório de dados; por isso precisa de
-// `node_modules`, ao contrário do `flow-hooks.ts`.
-// A entrada de `allow` (`Bash(node .claude/hooks/flow-report.ts *)`) aceita argumento livre, então
-// as duas regex abaixo são o freio.
+// Relatório das decisões de um trabalho cuja base merece revisão: `node scripts/flow/report.ts
+// <slug> [<base>]`. Só aponta, imprime e sai sempre 0; quem corrige é a skill `flow-run`. Lê o log
+// apenas pelo `composeReader` (`scripts/cli-error.ts#openReadOnly`), nunca o diretório de dados;
+// por isso precisa de `node_modules`, ao contrário do hook `flow-hooks.ts`.
+// A entrada de `allow` (`Bash(node scripts/flow/report.ts *)`) aceita argumento livre, então as
+// duas regex abaixo são o freio.
 import { spawnSync } from 'node:child_process';
-import * as path from 'node:path';
+import { Name } from '../../src/domain/ids.ts';
+import { formatCliError, openReadOnly } from '../cli-error.ts';
 
-const REPO_ROOT = path.resolve(import.meta.dirname, '../..');
-const PROJECT = 'hexlog';
+const PROJECT = Name.parse('hexlog');
 const SENTINEL = 'directives.estrategia.none';
 const DEFAULT_BASE = 'origin/develop';
 const MAX_LINES = 100;
 const MAX_UNCITED = 10;
-const MAX_BUFFER = 64 * 1024 * 1024;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const BASE = /^[\w./-]+$/;
-const USAGE = 'usage: node .claude/hooks/flow-report.ts <slug> [<base>]';
+const USAGE = 'usage: node scripts/flow/report.ts <slug> [<base>]';
 
 type Relation = { kind: string; as?: string; to?: string };
 type Row = { id: string; type?: string; target: string; in: Relation[]; out: Relation[] };
 
 const warn = (message: string): void => void process.stderr.write(`flow-report: ${message}\n`);
 
-/** Linhas do `scripts/export.ts` de `proc`; lança com o stderr do filho se ele falhar. */
-function exportRows(proc: string, fields: string): Row[] {
-  const result = spawnSync(
-    process.execPath,
-    ['scripts/export.ts', `${PROJECT}/${proc}`, '--fields', fields],
-    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER },
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(result.stderr.trim());
-  return result.stdout
-    .split('\n')
-    .filter((line) => line !== '')
-    .map((line) => ({ in: [], out: [], ...(JSON.parse(line) as Partial<Row>) }) as Row);
+/** Registros de `proc`, inclusive os não vigentes, como `scripts/export.ts`; lança com o erro do servidor se a leitura falhar. */
+function exportRows(proc: string): Row[] {
+  try {
+    const { records } = openReadOnly().query.queryRecords({
+      project: PROJECT,
+      process: Name.parse(proc),
+      includeNonCurrent: true,
+      relations: 'full',
+      limit: Number.MAX_SAFE_INTEGER,
+    });
+    return records.map(({ id, type, target, in: incoming = [], out = [] }) => ({
+      id,
+      type,
+      target,
+      in: incoming,
+      out,
+    }));
+  } catch (error) {
+    throw new Error(formatCliError('export', error).text, { cause: error });
+  }
 }
 
 /** Vigência como o servidor a vê (`src/domain/relations.ts#buildVigency`): sem `supersedes` nem `revokes` de entrada. */
@@ -59,7 +64,7 @@ function createTargetOf(slug: string, own: Row[]): (id: string) => string | unde
     if (!byProcess.has(proc)) {
       try {
         if (!SLUG.test(proc)) throw new Error(`cannot read the process of id "${id}"`);
-        byProcess.set(proc, new Map(exportRows(proc, 'id,target').map((r) => [r.id, r.target])));
+        byProcess.set(proc, new Map(exportRows(proc).map((r) => [r.id, r.target])));
       } catch (error) {
         warn(error instanceof Error ? error.message : String(error));
         byProcess.set(proc, null);
@@ -127,7 +132,7 @@ function amendedReasons(
 }
 
 function report(slug: string, base: string): string[] {
-  const rows = exportRows(slug, 'id,type,target,in,out');
+  const rows = exportRows(slug);
   const current = rows.filter(isCurrent);
   const decisions = current.filter((row) => row.type === 'decision');
   const deliveryPremises = [

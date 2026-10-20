@@ -1,33 +1,10 @@
-// CLI do fluxo autônomo guiado por diretrizes (modos `subagent-start`, `pre-pr`, `slug`, `mark` e
-// `sync-plan`). Só builtins do Node, para rodar em worktree sem `node_modules`. Não lê o log do
-// hexlog: a decisão de PR olha só o git e o marcador. Este arquivo é o único lugar do algoritmo do
-// slug, da escrita do marcador e (via `flow-sync.ts`) do planejador de sync.
-import { spawnSync } from 'node:child_process';
+// Hook do fluxo autônomo guiado por diretrizes (modos `pre-pr` e `subagent-start`). O hook só
+// importa builtins e `scripts/flow/marker.ts`, para rodar em worktree sem `node_modules`. Não lê o
+// log do hexlog: a decisão de PR olha só o git e o marcador.
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { currentBranch, git, markerPath, slugOf, tryGit } from '../../scripts/flow/marker.ts';
 import { findPrCommands, type PrCommand } from './flow-command.ts';
-import {
-  STRATEGY_DOC,
-  invalidDocPath,
-  parsePremises,
-  planSync,
-  sha256,
-  type SyncInput,
-} from './flow-sync.ts';
 
-const SLUG_MAX = 63;
-const RESERVED_SLUGS = new Set([
-  'types',
-  'relations',
-  'gates',
-  'attachments',
-  'archive',
-  'main',
-  'develop',
-]);
-const LONG_LIVED_SLUG = /^(directives|audits)(-[0-9]+)?$/;
-const MARKER_DIR = 'hexlog-flow';
-const REPO_ROOT = path.resolve(import.meta.dirname, '../..');
 const PR_TOOLS = {
   create: 'mcp__github-official__create_pull_request',
   update: 'mcp__github-official__update_pull_request',
@@ -50,43 +27,6 @@ function readInput(): HookInput {
   if (!isRecord(input)) throw new Error('hook input is not a JSON object');
   return input;
 }
-
-/** Slug de uma branch (nome do processo do trabalho); lança se vazio ou reservado. */
-function slugOf(branch: string): string {
-  const slug = branch
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, SLUG_MAX)
-    .replace(/-+$/, '');
-  if (slug === '') throw new Error(`branch "${branch}" yields an empty slug`);
-  if (RESERVED_SLUGS.has(slug) || LONG_LIVED_SLUG.test(slug)) {
-    throw new Error(`branch "${branch}" yields the reserved process name "${slug}"`);
-  }
-  return slug;
-}
-
-/** `git <args>` em `cwd`; devolve a saída sem a quebra final, ou `undefined` se o git sair não-zero. */
-function tryGit(cwd: string, args: string[]): string | undefined {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
-  if (result.error) throw result.error;
-  return result.status === 0 ? result.stdout.trimEnd() : undefined;
-}
-
-function git(cwd: string, args: string[]): string {
-  const output = tryGit(cwd, args);
-  if (output === undefined) throw new Error(`git ${args.join(' ')} failed in ${cwd}`);
-  return output;
-}
-
-const currentBranch = (cwd: string): string => git(cwd, ['symbolic-ref', '--short', 'HEAD']);
-
-const markerPath = (cwd: string, slug: string): string =>
-  path.join(
-    git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
-    MARKER_DIR,
-    `${slug}.ok`,
-  );
 
 /** `owner/repo` em minúsculas de uma URL de remoto (ssh, https, com ou sem `.git`). */
 function ownerRepoOf(url: string): string {
@@ -213,57 +153,21 @@ function subagentStart(): void {
   );
 }
 
-/** Grava o marcador do pré-PR de `slug`, se a árvore está limpa e a branch atual gera esse slug. */
-function mark(slug: string | undefined): void {
-  const cwd = process.cwd();
-  const branch = currentBranch(cwd);
-  if (slugOf(branch) !== slug) throw new Error(`branch "${branch}" does not yield slug "${slug}"`);
-  if (git(cwd, ['status', '--porcelain']) !== '') throw new Error('working tree is not clean');
-  const file = markerPath(cwd, slug);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${branch}\n${git(cwd, ['rev-parse', 'HEAD'])}\n`);
-}
-
-/**
- * Para `estrategia`, o hook lê o documento e entrega hash e premissas ao planejador, no lugar do
- * que veio no stdin; premissa inválida lança. O documento apagado (`extracted: null`) passa direto,
- * e o `path` inválido também, sem ler nada: o `planSync` responde `invalid-path`.
- * O `input.path` relativo vale a partir da raiz do repositório, não do cwd de quem roda o hook.
- */
-function withStrategyPremises(input: SyncInput): SyncInput {
-  if (input.docSlug !== STRATEGY_DOC || input.extracted === null || invalidDocPath(input)) {
-    return input;
-  }
-  const bytes = fs.readFileSync(path.resolve(REPO_ROOT, input.path));
-  const { rules, malformed } = parsePremises(bytes.toString('utf8'));
-  if (malformed.length > 0) {
-    throw new Error(`${input.path} has invalid premises:\n- ${malformed.join('\n- ')}`);
-  }
-  return { ...input, hash: sha256(bytes), extracted: rules };
-}
-
-function run(mode: string | undefined, arg: string | undefined): void {
+function run(mode: string | undefined): void {
   if (mode === 'pre-pr') return assertPrAllowed(readInput());
   if (mode === 'subagent-start') return subagentStart();
-  if (mode === 'slug') return void process.stdout.write(`${slugOf(arg ?? '')}\n`);
-  if (mode === 'mark') return mark(arg);
-  if (mode === 'sync-plan') {
-    const input = JSON.parse(fs.readFileSync(0, 'utf8')) as SyncInput;
-    return void process.stdout.write(JSON.stringify(planSync(withStrategyPremises(input))));
-  }
   throw new Error(`unknown mode "${mode ?? ''}"`);
 }
 
-/** `slug` e `mark` recusam com exit 1 (quem chama é a skill); o resto bloqueia com exit 2. */
+/** Bloqueia com exit 2 e o motivo no stderr. */
 function main(): void {
-  const [, , mode, arg] = process.argv;
   try {
-    run(mode, arg);
+    run(process.argv[2]);
   } catch (error) {
     process.stderr.write(
       `hexlog flow: ${error instanceof Error ? error.message : String(error)}\n`,
     );
-    process.exitCode = mode === 'slug' || mode === 'mark' ? 1 : 2;
+    process.exitCode = 2;
   }
 }
 

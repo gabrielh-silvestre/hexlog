@@ -1,0 +1,16 @@
+# Build e cobertura só no 1º push da branch (sha remoto zerado): os pushes seguintes ficam com o CI.
+# Tag (refs/tags/*) e remoção (sha local zerado) pulam. O stdin do Git traz uma linha por ref:
+# <ref local> <sha local> <ref remoto> <sha remoto>. Zerado = sem nenhum dígito diferente de 0.
+first_push=
+while read -r local_ref local_sha _remote_ref remote_sha; do
+  case "$local_ref" in refs/heads/*) ;; *) continue ;; esac
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+  case "$remote_sha" in *[!0]*) continue ;; esac
+  first_push=1
+done
+
+if [ -n "$first_push" ]; then
+  echo "pre-push: first push of the branch, running build and test:coverage (3 to 5 min)"
+  npm run build
+  npm run test:coverage
+fi

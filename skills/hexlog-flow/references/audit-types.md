@@ -28,7 +28,7 @@ Todo campo que guarda hash de anexo tem `format: "attachment"` (a palavra-chave 
 `domain/definitions.ts#attachmentFields` procura). Os campos que um gate filtra com
 `where` ficam no primeiro nível de `data` e são escalares.
 
-```
+```text
 define_type({ project, name: "plan", schema: {
   type: "object",
   properties: {
@@ -82,7 +82,7 @@ e qual achado motivou cada mudança.
 
 ## Os nomes de relação e o gate
 
-```
+```text
 define_relation({ project, name: "approves", kind: "supports",    from: ["review"], to: ["plan"] })
 define_relation({ project, name: "rejects",  kind: "contradicts", from: ["review"], to: ["plan"] })
 define_relation({ project, name: "settles",  kind: "answers",     to: ["deviation"] })
@@ -145,8 +145,8 @@ Numa iteração de planejamento:
 4. **Fim do loop de plan ou ralplan, antes de executar.** `attach` com o `path` do
    plano final (depois de aplicadas as melhorias, se houve); `evaluate_gate` com
    `gate: "plan-ready"` e `target` = o alvo do plano. `passed: false` barra a
-   execução: a `evidence` de cada pergunta diz o que falta (`unsupported`,
-   `contradictions`, `unresolved`). Se vier `omitted`, a lista é parcial: um
+   execução: a `evidence` de cada pergunta reprovada diz o que falta (`unsupported`,
+   `contradictions`, `unresolved`); a aprovada traz só `counts: {...}`. Se vier `omitted`, a lista é parcial: um
    `select` ou `where` mais estreito alcança o resto. Audite o alvo (abaixo) e registre agora a
    lacuna que achar, dizendo no `summary` que o registro foi tardio.
 

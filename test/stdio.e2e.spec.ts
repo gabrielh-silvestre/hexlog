@@ -141,7 +141,7 @@ describe('P8 e TM1: bundle real por stdio', () => {
     const { client, call, stderr } = await connect();
     try {
       const body = errorBodyOf(
-        await call('query', { project: PROJECT, process: PROCESS, limit: 0 }),
+        await call('query', { project: PROJECT, process: PROCESS, limit: 201 }),
       );
 
       expect(body.code).toBe('INVALID_INPUT');

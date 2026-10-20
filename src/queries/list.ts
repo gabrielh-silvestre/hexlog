@@ -23,6 +23,7 @@ export type ListResult = {
   process?: {
     name: Name;
     createdAt: string;
+    lineageInheritance?: true;
     pinned: Record<DefinitionKind, Name[]>;
     hashes: Manifest['hashes'];
   };
@@ -47,11 +48,15 @@ export function createList(deps: {
     }
     if (!store.listProjects().includes(project)) throw projectNotFound();
     if (!isUndefined(process)) {
-      const { createdAt, fixed, hashes } = store.readManifest({ project, process });
+      const { createdAt, lineageInheritance, fixed, hashes } = store.readManifest({
+        project,
+        process,
+      });
       return {
         process: {
           name: process,
           createdAt,
+          ...(lineageInheritance === true && { lineageInheritance }),
           pinned: mapValues(fixed, (byName) => Object.keys(byName)),
           hashes,
         },

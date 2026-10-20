@@ -30,7 +30,7 @@ import { orIfMissing, readIfPresent } from './adapters/fs/io.ts';
 
 export type Bundles = { server: Buffer; hook: Buffer };
 /** sha256 dos 2 artefatos (server/hook) de um build ou de uma instalação. */
-export type BuildShas = { server: string; hook: string };
+type BuildShas = { server: string; hook: string };
 export type InstallManifest = {
   version: string;
   sha256: BuildShas;

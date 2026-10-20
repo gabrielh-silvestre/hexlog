@@ -96,7 +96,7 @@ export function formatLine(links: readonly Link[]): string {
 }
 
 /** Linha que entrou no log, com a posição dela no arquivo. */
-export type ParsedLine = { index: number; links: Link[] };
+type ParsedLine = { index: number; links: Link[] };
 
 export type ParsedLog = {
   lines: ParsedLine[];

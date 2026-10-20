@@ -2,15 +2,19 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test } from '@jest/
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { planSync, type SyncInput } from '../.claude/hooks/flow-sync.ts';
+import { planSync, type SyncInput } from '../scripts/flow/sync.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import type { QueryResult } from '../src/queries/query-service.ts';
+import { createFlowEnvironment, registerFlowRecord } from './flow-data.ts';
 import { at, copyToXdg, createTempDir } from './helpers.ts';
 import { type Environment, createEnvironment } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const hookPath = path.join(repoRoot, '.claude/hooks/flow-hooks.ts');
+const flowPath = path.join(repoRoot, 'scripts/flow/flow.ts');
+const markPath = path.join(repoRoot, 'scripts/flow/mark.ts');
+const markerSource = path.join(repoRoot, 'scripts/flow/marker.ts');
 
 const MCP_CREATE = 'mcp__github-official__create_pull_request';
 const MCP_UPDATE = 'mcp__github-official__update_pull_request';
@@ -23,6 +27,7 @@ let worktree: string;
 let baseSha: string;
 let tipSha: string;
 let markerDir: string;
+let xdgHome: string;
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -30,7 +35,7 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.trim();
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   const root = createTempDir('flow-hooks');
   repo = path.join(root, 'repo');
   worktree = path.join(root, 'wt');
@@ -48,7 +53,11 @@ beforeAll(() => {
   git(repo, 'worktree', 'add', '-q', worktree, 'feat/y');
   fs.mkdirSync(path.join(repo, 'sub'));
   markerDir = path.join(repo, '.git', 'hexlog-flow');
-}, 15_000);
+  // dado do hexlog com os gates verdes (sem URGENT nem lacuna) para os dois trabalhos que o `mark` marca
+  const flow = await createFlowEnvironment(['feat-x', 'feat-y']);
+  xdgHome = copyToXdg(flow.dataDir);
+  await flow.close();
+}, 30_000);
 
 beforeEach(() => {
   fs.rmSync(markerDir, { recursive: true, force: true });
@@ -69,6 +78,22 @@ function runHook(args: string[], options: { input?: string; cwd?: string } = {})
   });
 }
 
+function runFlow(args: string[], options: { input?: string; cwd?: string } = {}): HookResult {
+  return spawnSync(process.execPath, [flowPath, ...args], {
+    input: options.input ?? '',
+    cwd: options.cwd ?? repo,
+    encoding: 'utf8',
+  });
+}
+
+function runMark(slug: string, cwd = repo, xdg = xdgHome): HookResult {
+  return spawnSync(process.execPath, [markPath, slug], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, XDG_DATA_HOME: xdg },
+  });
+}
+
 function preHook(toolName: string, toolInput: object, cwd = repo): HookResult {
   return runHook(['pre-pr'], {
     input: JSON.stringify({ tool_name: toolName, tool_input: toolInput, cwd }),
@@ -82,7 +107,7 @@ const mcpCreate = (head: string, extra: object = {}, cwd = repo): HookResult =>
 
 function writeMarker(branch: string, sha: string): void {
   fs.mkdirSync(markerDir, { recursive: true });
-  const slug = runHook(['slug', branch]).stdout.trim();
+  const slug = runFlow(['slug', branch]).stdout.trim();
   fs.writeFileSync(path.join(markerDir, `${slug}.ok`), `${branch}\n${sha}\n`);
 }
 
@@ -105,37 +130,37 @@ const settings = JSON.parse(
   permissions: { allow: string[]; ask: string[] };
 };
 
-describe('pre-pr: create_pull_request e marcador', () => {
-  test('nega sem draft e sem marcador', () => {
+describe('pre-pr: create_pull_request and the marker', () => {
+  test('denies without draft and without a marker', () => {
     expectDenied(mcpCreate('feat/x'), /no valid pre-PR marker/);
   }, 15_000);
 
-  test('permite draft true mesmo sem marcador', () => {
+  test('allows draft true even without a marker', () => {
     expectAllowed(mcpCreate('feat/x', { draft: true }));
   }, 15_000);
 
-  test('permite com marcador de sha igual ao da branch', () => {
+  test('allows with a marker whose sha equals the branch sha', () => {
     writeMarker('feat/x', tipSha);
     expectAllowed(mcpCreate('feat/x'));
   }, 15_000);
 
-  test('nega marcador com sha diferente do da branch', () => {
+  test('denies a marker whose sha differs from the branch sha', () => {
     writeMarker('feat/x', baseSha);
     expectDenied(mcpCreate('feat/x'), /no valid pre-PR marker/);
   }, 15_000);
 
-  test('nega marcador cuja branch não é a do head', () => {
+  test('denies a marker whose branch is not the head branch', () => {
     fs.mkdirSync(markerDir, { recursive: true });
     fs.writeFileSync(path.join(markerDir, 'feat-x.ok'), `other\n${tipSha}\n`);
     expectDenied(mcpCreate('feat/x'), /no valid pre-PR marker/);
   }, 15_000);
 
-  test('nega quando a ref local da branch não existe', () => {
+  test('denies when the local branch ref does not exist', () => {
     writeMarker('ghost/branch', tipSha);
     expectDenied(mcpCreate('ghost/branch'));
   }, 15_000);
 
-  test('nega quando origin/<head> aponta para outro sha e permite quando é o mesmo', () => {
+  test('denies when origin/<head> points to another sha and allows when it is the same', () => {
     writeMarker('feat/x', tipSha);
     git(repo, 'update-ref', 'refs/remotes/origin/feat/x', baseSha);
     expectDenied(mcpCreate('feat/x'), /no valid pre-PR marker/);
@@ -143,7 +168,7 @@ describe('pre-pr: create_pull_request e marcador', () => {
     expectAllowed(mcpCreate('feat/x'));
   }, 15_000);
 
-  test('nega head de outro dono (owner:branch)', () => {
+  test('denies a head from another owner (owner:branch)', () => {
     writeMarker('feat/x', tipSha);
     expectDenied(mcpCreate('someone:feat/x'), /cross-repo PRs unsupported/);
   }, 15_000);
@@ -154,7 +179,7 @@ describe('pre-pr: create_pull_request e marcador', () => {
     'https://github.com/acme/widgets.git',
     'ssh://git@github.com/acme/widgets.git',
   ])(
-    'confere owner/repo contra o origin %s',
+    'checks owner/repo against the origin %s',
     (url) => {
       git(repo, 'remote', 'set-url', 'origin', url);
       writeMarker('feat/x', tipSha);
@@ -171,7 +196,7 @@ describe('pre-pr: create_pull_request e marcador', () => {
     15_000,
   );
 
-  test('gh pr create --head X usa o marcador de X', () => {
+  test('gh pr create --head X uses the marker of X', () => {
     writeMarker('feat/y', tipSha);
     expectAllowed(bash('gh pr create --head feat/y --title t'));
     expectAllowed(bash('gh pr create -H feat/y'));
@@ -179,19 +204,19 @@ describe('pre-pr: create_pull_request e marcador', () => {
     expectDenied(bash('gh pr create --title t'));
   }, 15_000);
 
-  test('gh com -R ou --repo é negado', () => {
+  test('gh with -R or --repo is denied', () => {
     writeMarker('feat/x', tipSha);
     expectDenied(bash('gh pr create -R x/y'), /-R\/--repo is denied/);
     expectDenied(bash('gh pr create --repo x/y'), /-R\/--repo is denied/);
   }, 15_000);
 
-  test('sessão num checkout e branch do PR em outro worktree compartilham o marcador', () => {
+  test('a session in one checkout and the PR branch in another worktree share the marker', () => {
     writeMarker('feat/y', tipSha);
     expectAllowed(mcpCreate('feat/y', {}, repo));
     expectAllowed(mcpCreate('feat/y', {}, worktree));
   }, 15_000);
 
-  test('cwd em subpasta e em worktree resolvem o mesmo marcador', () => {
+  test('cwd in a subfolder and in a worktree resolve the same marker', () => {
     writeMarker('feat/x', tipSha);
     expectAllowed(mcpCreate('feat/x', {}, path.join(repo, 'sub')));
     expectAllowed(mcpCreate('feat/x', {}, worktree));
@@ -199,20 +224,20 @@ describe('pre-pr: create_pull_request e marcador', () => {
 });
 
 describe('pre-pr: gh pr ready', () => {
-  test('nega sem marcador e passa com marcador de sha igual (branch atual)', () => {
+  test('denies without a marker and passes with a marker of the same sha (current branch)', () => {
     expectDenied(bash('gh pr ready'), /no valid pre-PR marker/);
     writeMarker('feat/x', tipSha);
     expectAllowed(bash('gh pr ready'));
   }, 15_000);
 
-  test('com nome de branch como argumento usa o marcador dessa branch', () => {
+  test('with a branch name as argument uses the marker of that branch', () => {
     writeMarker('feat/y', tipSha);
     expectAllowed(bash('gh pr ready feat/y'));
     expectDenied(bash('gh pr ready'), /no valid pre-PR marker/);
   }, 15_000);
 
   test.each(['gh pr ready 42', 'gh pr ready https://github.com/acme/widgets/pull/42'])(
-    'nega por número ou URL: %s',
+    'denies by number or URL: %s',
     (command) => {
       writeMarker('feat/x', tipSha);
       expectDenied(bash(command), /by number or URL is denied/);
@@ -220,12 +245,12 @@ describe('pre-pr: gh pr ready', () => {
     15_000,
   );
 
-  test('nega -R x/y', () => {
+  test('denies -R x/y', () => {
     writeMarker('feat/x', tipSha);
     expectDenied(bash('gh pr ready -R x/y'), /-R\/--repo is denied/);
   }, 15_000);
 
-  test('passa --undo', () => {
+  test('passes --undo', () => {
     expectAllowed(bash('gh pr ready --undo'));
   }, 15_000);
 
@@ -238,7 +263,7 @@ describe('pre-pr: gh pr ready', () => {
     'gh "pr" ready',
     'bash -c "gh pr ready"',
   ])(
-    'nega em posição de comando: %s',
+    'denies in command position: %s',
     (command) => {
       expectDenied(bash(command));
     },
@@ -251,7 +276,7 @@ describe('pre-pr: gh pr ready', () => {
     "rg 'gh pr ready'",
     "cat <<'EOF'\ngh pr ready\nEOF",
   ])(
-    'passa quando a frase está entre aspas ou em heredoc: %s',
+    'passes when the phrase is quoted or in a heredoc: %s',
     (command) => {
       expectAllowed(bash(command));
     },
@@ -260,7 +285,7 @@ describe('pre-pr: gh pr ready', () => {
 });
 
 describe('pre-pr: update_pull_request', () => {
-  test('nega draft false com a mensagem que cita gh pr ready', () => {
+  test('denies draft false with the message that cites gh pr ready', () => {
     expectDenied(
       preHook(MCP_UPDATE, { owner: 'acme', repo: 'widgets', draft: false }),
       /gh pr ready/,
@@ -273,7 +298,7 @@ describe('pre-pr: update_pull_request', () => {
     { body: 'novo corpo' },
     { state: 'closed' },
   ])(
-    'passa com %j',
+    'passes with %j',
     (extra) => {
       expectAllowed(
         preHook(MCP_UPDATE, { owner: 'acme', repo: 'widgets', pullNumber: 1, ...extra }),
@@ -283,7 +308,7 @@ describe('pre-pr: update_pull_request', () => {
   );
 });
 
-describe('pre-pr: casamento do Bash (create)', () => {
+describe('pre-pr: Bash matching (create)', () => {
   test.each([
     'gh pr create',
     'gh -R x  pr  create',
@@ -302,14 +327,14 @@ describe('pre-pr: casamento do Bash (create)', () => {
     'echo $(gh pr create)',
     'echo hi && gh pr create',
   ])(
-    'nega: %s',
+    'denies: %s',
     (command) => {
       expectDenied(bash(command));
     },
     15_000,
   );
 
-  test('permite gh pr create --draft e -d', () => {
+  test('allows gh pr create --draft and -d', () => {
     expectAllowed(bash('gh pr create --draft --title t'));
     expectAllowed(bash('gh pr create -d'));
   }, 15_000);
@@ -323,7 +348,7 @@ describe('pre-pr: casamento do Bash (create)', () => {
     'echo hi # gh pr create',
     'ls -la',
   ])(
-    'permite: %s',
+    'allows: %s',
     (command) => {
       expectAllowed(bash(command));
     },
@@ -331,33 +356,33 @@ describe('pre-pr: casamento do Bash (create)', () => {
   );
 
   test.each(['gh pr create --title "x', "echo 'gh pr create", 'echo $(gh pr create'])(
-    'nega aspa sem par que casa a regex solta: %s',
+    'denies an unpaired quote that matches the loose regex: %s',
     (command) => {
       expectDenied(bash(command));
     },
     15_000,
   );
 
-  test('permite aspa sem par que não menciona gh pr create nem ready', () => {
+  test('allows an unpaired quote that mentions neither gh pr create nor ready', () => {
     expectAllowed(bash('echo "abc'));
   }, 15_000);
 });
 
-describe('pre-pr: entrada e falha', () => {
-  test('nega stdin que não é JSON', () => {
+describe('pre-pr: input and failure', () => {
+  test('denies stdin that is not JSON', () => {
     expectDenied(runHook(['pre-pr'], { input: 'not json' }));
   }, 15_000);
 
-  test('ignora ferramenta que não é de PR nem Bash', () => {
+  test('ignores a tool that is neither PR nor Bash', () => {
     expectAllowed(preHook('Read', { file_path: '/x' }));
   }, 15_000);
 
-  test('nega git falhando (cwd fora de repositório)', () => {
+  test('denies a failing git (cwd outside a repository)', () => {
     const outside = createTempDir('flow-hooks-outside');
     expectDenied(bash('gh pr ready', outside));
   }, 15_000);
 
-  test('o comando do matcher de PR, com PATH vazio, sai com 2', () => {
+  test('the PR matcher command, with an empty PATH, exits with 2', () => {
     const entry = (settings.hooks.PreToolUse ?? []).find((e) =>
       e.matcher?.includes('(create|update)_pull_request'),
     );
@@ -372,8 +397,8 @@ describe('pre-pr: entrada e falha', () => {
   }, 15_000);
 });
 
-describe('modos', () => {
-  test('subagent-start devolve o caminho do doc e o slug da branch', () => {
+describe('modes', () => {
+  test('subagent-start returns the doc path and the branch slug', () => {
     const result = runHook(['subagent-start'], { input: JSON.stringify({ cwd: repo }) });
     expect(result.status).toBe(0);
     const { hookSpecificOutput } = JSON.parse(result.stdout) as {
@@ -386,7 +411,7 @@ describe('modos', () => {
     expect(hookSpecificOutput.additionalContext).toContain('tell whoever launched you');
   }, 15_000);
 
-  test('subagent-start sem entrada legível ainda devolve o contexto', () => {
+  test('subagent-start without readable input still returns the context', () => {
     const result = runHook(['subagent-start'], { input: 'not json' });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('additionalContext');
@@ -399,41 +424,30 @@ describe('modos', () => {
     ['Feat/UPPER', 'feat-upper'],
     [`${'a'.repeat(62)}/b`, 'a'.repeat(62)],
     ['a'.repeat(70), 'a'.repeat(63)],
+    ['types', 'types'],
   ])(
-    'slug de %s é %s',
+    'slug of %s is %s',
     (branch, expected) => {
-      const result = runHook(['slug', branch]);
+      const result = runFlow(['slug', branch]);
       expect(result.status).toBe(0);
       expect(result.stdout).toBe(`${expected}\n`);
     },
     15_000,
   );
 
-  test.each([
-    '///',
-    '',
-    'directives',
-    'audits-2',
-    'types',
-    'relations',
-    'gates',
-    'attachments',
-    'archive',
-    'main',
-    'develop',
-  ])(
-    'slug recusa "%s" com exit 1',
+  test.each(['///', '', 'directives', 'audits', 'audits-2', 'directives-4', 'main', 'develop'])(
+    'slug refuses "%s" with exit 1',
     (branch) => {
-      const result = runHook(['slug', branch]);
+      const result = runFlow(['slug', branch]);
       expect(result.status).toBe(1);
       expect(result.stdout).toBe('');
     },
     15_000,
   );
 
-  test('mark grava o marcador no git-common-dir e o hook passa a aceitar o PR e o gh pr ready', () => {
+  test('mark writes the marker in the git-common-dir and the hook starts accepting the PR and gh pr ready', () => {
     expectDenied(mcpCreate('feat/x'));
-    const result = runHook(['mark', 'feat-x']);
+    const result = runMark('feat-x');
     expect(result.status).toBe(0);
     expect(fs.readFileSync(path.join(markerDir, 'feat-x.ok'), 'utf8')).toBe(`feat/x\n${tipSha}\n`);
     expectAllowed(mcpCreate('feat/x'));
@@ -441,33 +455,51 @@ describe('modos', () => {
     expectAllowed(bash('gh pr ready'));
   }, 15_000);
 
-  test('mark no worktree grava no git-common-dir compartilhado', () => {
-    const result = runHook(['mark', 'feat-y'], { cwd: worktree });
+  test('mark in a worktree writes to the shared git-common-dir', () => {
+    const result = runMark('feat-y', worktree);
     expect(result.status).toBe(0);
     expect(fs.existsSync(path.join(markerDir, 'feat-y.ok'))).toBe(true);
   }, 15_000);
 
-  test('mark recusa árvore suja', () => {
+  test('mark writes the marker with a dirty working tree and green gates', () => {
     const dirty = path.join(repo, 'dirty.txt');
     fs.writeFileSync(dirty, 'x');
     try {
-      const result = runHook(['mark', 'feat-x']);
-      expect(result.status).toBe(1);
-      expect(result.stderr).toMatch(/not clean/);
-      expect(fs.existsSync(path.join(markerDir, 'feat-x.ok'))).toBe(false);
+      const result = runMark('feat-x');
+      expect(result.status).toBe(0);
+      expect(fs.readFileSync(path.join(markerDir, 'feat-x.ok'), 'utf8')).toBe(
+        `feat/x\n${tipSha}\n`,
+      );
     } finally {
       fs.rmSync(dirty);
     }
   }, 15_000);
 
-  test('mark recusa branch que não gera o slug', () => {
-    const result = runHook(['mark', 'other-slug']);
+  test('mark refuses and writes nothing when a gate is red', async () => {
+    const flow = await createFlowEnvironment(['feat-x']);
+    try {
+      const findingId = await registerFlowRecord(flow, 'feat-x', {
+        type: 'finding',
+        target: 'feat-x.finding.a',
+        data: { severity: 'URGENT', origin: 'review', description: 'No bound', location: 'a.ts' },
+      });
+      const result = runMark('feat-x', repo, copyToXdg(flow.dataDir));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`gates are not green\npre-pr: no_pending: ${findingId}`);
+      expect(fs.existsSync(markerDir)).toBe(false);
+    } finally {
+      await flow.close();
+    }
+  }, 30_000);
+
+  test('mark refuses a branch that yields no slug', () => {
+    const result = runMark('other-slug');
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/does not yield slug/);
     expect(fs.existsSync(markerDir)).toBe(false);
   }, 15_000);
 
-  test('sync-plan devolve o mesmo plano que flow-sync chamado direto', () => {
+  test('sync-plan returns the same plan as planSync called directly', () => {
     const input: SyncInput = {
       docSlug: 'convencoes',
       path: 'docs/directives/convencoes.md',
@@ -476,14 +508,14 @@ describe('modos', () => {
       vigent: [],
       extracted: [{ slug: 'idioma', rule: 'Código em inglês.', section: 'Idioma' }],
     };
-    const result = runHook(['sync-plan'], { input: JSON.stringify(input) });
+    const result = runFlow(['sync-plan'], { input: JSON.stringify(input) });
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(JSON.parse(JSON.stringify(planSync(input))));
   }, 15_000);
 
-  describe('sync-plan com path inválido', () => {
+  describe('sync-plan with an invalid path', () => {
     const syncPlan = (input: Partial<SyncInput>) => {
-      const result = runHook(['sync-plan'], {
+      const result = runFlow(['sync-plan'], {
         input: JSON.stringify({
           docSlug: 'estrategia',
           path: 'docs/directives/estrategia.md',
@@ -506,72 +538,101 @@ describe('modos', () => {
       plan: expect.objectContaining({ batches: [], error: 'invalid-path' }),
     };
 
-    test('path vazio sai com 0 e o erro no JSON', () => {
+    test('an empty path exits with 0 and the error in the JSON', () => {
       expect(syncPlan({ path: '' })).toEqual(refused);
     }, 15_000);
 
-    test('path fora de docs/directives sai com 0 e o erro no JSON', () => {
+    test('a path outside docs/directives exits with 0 and the error in the JSON', () => {
       expect(syncPlan({ docSlug: 'convencoes', path: 'docs/x.md' })).toEqual(refused);
     }, 15_000);
 
     // sem o pré-check o hook leria o arquivo malformado e sairia com 2 e o motivo no stderr
-    test('estrategia com path absoluto de arquivo malformado não é lido', () => {
+    test('estrategia with an absolute path to a malformed file is not read', () => {
       const file = path.join(createTempDir('strategy'), 'estrategia.md');
       fs.writeFileSync(file, '## Tema\n- sem crase: linha ruim');
 
       expect(syncPlan({ path: file })).toEqual(refused);
     }, 15_000);
 
-    test('estrategia com path absoluto de arquivo inexistente não é lido', () => {
+    test('estrategia with an absolute path to a missing file is not read', () => {
       const file = path.join(createTempDir('strategy'), 'faltando.md');
 
       expect(syncPlan({ path: file })).toEqual(refused);
     }, 15_000);
   });
 
-  test('modo desconhecido sai com 2', () => {
+  test('an unknown mode exits with 2', () => {
     expectDenied(runHook(['nope']), /unknown mode/);
+    expectDenied(runFlow(['nope']), /unknown mode/);
   }, 15_000);
+
+  test.each(['slug', 'mark', 'sync-plan'])(
+    'the hook only has pre-pr and subagent-start: %s is unknown',
+    (mode) => {
+      expectDenied(runHook([mode, 'feat-x']), /unknown mode/);
+    },
+    15_000,
+  );
+
+  test('marker.ts imports only node builtins', () => {
+    const specifiers = [...fs.readFileSync(markerSource, 'utf8').matchAll(/from '([^']+)'/g)].map(
+      (match) => match[1],
+    );
+    expect(specifiers.length).toBeGreaterThan(0);
+    for (const specifier of specifiers) expect(specifier).toMatch(/^node:/);
+  });
 });
 
 describe('settings.json', () => {
   const flowCommand = (mode: string): string =>
     `node "$CLAUDE_PROJECT_DIR/.claude/hooks/flow-hooks.ts" ${mode}`;
 
-  test('tem uma entrada SubagentStart com matcher vazio', () => {
+  test('has a SubagentStart entry with an empty matcher', () => {
     const entries = settings.hooks.SubagentStart ?? [];
     expect(entries).toHaveLength(1);
     expect(entries[0]?.matcher).toBe('');
     expect(entries[0]?.hooks[0]?.command).toBe(flowCommand('subagent-start'));
   }, 15_000);
 
-  test('o matcher de PR do MCP termina em || exit 2', () => {
+  test('the MCP PR matcher ends with || exit 2', () => {
     const entry = (settings.hooks.PreToolUse ?? []).find(
       (e) => e.matcher === '^mcp__github-official__(create|update)_pull_request$',
     );
     expect(entry?.hooks[0]?.command).toBe(`${flowCommand('pre-pr')} || exit 2`);
   }, 15_000);
 
-  test('a entrada Bash tem if Bash(gh *) e não termina em || exit 2', () => {
-    const hook = (settings.hooks.PreToolUse ?? [])
+  const bashPrHook = (): Hook | undefined =>
+    (settings.hooks.PreToolUse ?? [])
       .filter((e) => e.matcher === 'Bash')
       .flatMap((e) => e.hooks)
-      .find((h) => h.command === flowCommand('pre-pr'));
+      .find((h) => h.command.startsWith(flowCommand('pre-pr')));
+
+  test('the Bash entry has if Bash(gh *) and ends with || exit 2', () => {
+    const hook = bashPrHook();
+    expect(hook?.command).toBe(`${flowCommand('pre-pr')} || exit 2`);
     expect(hook?.if).toBe('Bash(gh *)');
   }, 15_000);
 
-  test('tem as regras allow do padrão 15', () => {
-    expect(settings.permissions.allow).toEqual(
-      expect.arrayContaining([
-        'Bash(node .claude/hooks/flow-hooks.ts slug *)',
-        'Bash(node .claude/hooks/flow-hooks.ts mark *)',
-        'Bash(node .claude/hooks/flow-hooks.ts sync-plan *)',
-        'Bash(node .claude/hooks/flow-report.ts *)',
-      ]),
-    );
+  test('the Bash matcher command, with an empty PATH, exits with 2', () => {
+    const result = spawnSync('/bin/sh', ['-c', bashPrHook()?.command ?? ''], {
+      env: { PATH: '', CLAUDE_PROJECT_DIR: repoRoot },
+      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'gh pr create' } }),
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(2);
   }, 15_000);
 
-  test('flow-report não é hook: nenhum command de hooks o cita', () => {
+  test('has the allow rules of the flow scripts', () => {
+    expect(settings.permissions.allow).toEqual([
+      'Bash(node scripts/flow/flow.ts slug *)',
+      'Bash(node scripts/flow/flow.ts sync-plan *)',
+      'Bash(node scripts/flow/mark.ts *)',
+      'Bash(node scripts/flow/gate.ts *)',
+      'Bash(node scripts/flow/report.ts *)',
+    ]);
+  }, 15_000);
+
+  test('flow-report is not a hook: no hooks command cites it', () => {
     const commands = Object.values(settings.hooks).flatMap((entries) =>
       entries.flatMap((entry) => entry.hooks.map((hook) => hook.command)),
     );
@@ -590,7 +651,7 @@ describe('settings.json', () => {
     expect(matcher.test('node scripts/build.ts')).toBe(false);
   }, 15_000);
 
-  test('preserva o hook antigo do gitnexus', () => {
+  test('preserves the old gitnexus hook', () => {
     const gitnexus = (settings.hooks.PreToolUse ?? [])
       .flatMap((e) => e.hooks)
       .find((h) => h.if === 'Bash(*gitnexus*)');
@@ -599,7 +660,7 @@ describe('settings.json', () => {
 });
 
 describe('flow-report', () => {
-  const reportPath = path.join(repoRoot, '.claude/hooks/flow-report.ts');
+  const reportPath = path.join(repoRoot, 'scripts/flow/report.ts');
   const hexlogDir = path.join(repoRoot, '.hexlog');
   const PROJECT = 'hexlog';
   const AGENT = 'flow-report-spec';
@@ -749,10 +810,17 @@ describe('flow-report', () => {
       'd-both': decision('feat-r', 'd-both', [anchoredIn(directive('r1')), rests('@objective')]),
       'd-no-rest': decision('feat-r', 'd-no-rest', []),
       'd-old': decision('feat-r', 'd-old', [rests('@objective')]),
-      'd-new': decision('feat-r', 'd-new', [{ kind: 'supersedes', to: '@d-old' }, rests('@alpha')]),
+      // `supersedes` exige o mesmo target do antecessor
+      'd-new': {
+        ...decision('feat-r', 'd-new', [{ kind: 'supersedes', to: '@d-old' }, rests('@alpha')]),
+        target: 'feat-r.decision.d-old',
+      },
       'd-rev': decision('feat-r', 'd-rev', [rests('@objective')]),
       'd-a': decision('feat-r', 'd-a', [rests('@objective')]),
-      'd-b': decision('feat-r', 'd-b', [{ kind: 'supersedes', to: '@d-a' }, rests('@alpha')]),
+      'd-b': {
+        ...decision('feat-r', 'd-b', [{ kind: 'supersedes', to: '@d-a' }, rests('@alpha')]),
+        target: 'feat-r.decision.d-a',
+      },
       // revoga `d-rev` e o superseder `d-b`: nem `d-a` nem `d-b` voltam a valer
       revoker: {
         type: 'gap',
@@ -839,11 +907,8 @@ describe('flow-report', () => {
     git(gitRepo, 'checkout', '-q', 'feat/r');
   }, 60_000);
 
-  function runReport(
-    args: string[],
-    options: { xdg?: string; script?: string } = {},
-  ): SpawnSyncReturns<string> {
-    return spawnSync(process.execPath, [options.script ?? reportPath, ...args], {
+  function runReport(args: string[], options: { xdg?: string } = {}): SpawnSyncReturns<string> {
+    return spawnSync(process.execPath, [reportPath, ...args], {
       cwd: gitRepo,
       encoding: 'utf8',
       env: { ...process.env, XDG_DATA_HOME: options.xdg ?? xdg },
@@ -866,19 +931,19 @@ describe('flow-report', () => {
   const OBJECTIVE_UNCITED = 'only-objective: uncited=feat-r.premise.alpha,feat-r.premise.beta';
   const DOC_AMENDED = 'doc-amended: docs/directives/convencoes.md (directives.convencoes.r1)';
 
-  describe('feat-r contra a base padrão', () => {
+  describe('feat-r against the default base', () => {
     let result: SpawnSyncReturns<string>;
 
     beforeAll(() => {
       result = runReport(['feat-r']);
     }, 30_000);
 
-    test('sai com status 0 e sem aviso no stderr', () => {
+    test('exits with status 0 and no warning on stderr', () => {
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
     });
 
-    test('aponta a decisão que só cita a premissa-objetivo com as premissas não citadas', () => {
+    test('flags the decision that cites only the objective premise, with the uncited premises', () => {
       expect(rowFor(result, 'd-obj')).toEqual([
         idOf('d-obj'),
         'feat-r.decision.d-obj',
@@ -886,7 +951,7 @@ describe('flow-report', () => {
       ]);
     });
 
-    test('aponta a decisão que só cita a sentinela com as premissas não citadas', () => {
+    test('flags the decision that cites only the sentinel, with the uncited premises', () => {
       expect(rowFor(result, 'd-none')).toEqual([
         idOf('d-none'),
         'feat-r.decision.d-none',
@@ -894,15 +959,15 @@ describe('flow-report', () => {
       ]);
     });
 
-    test('não aponta a decisão que cita uma premissa da entrega', () => {
+    test('does not flag the decision that cites a delivery premise', () => {
       expect(rowFor(result, 'd-ok')).toBeUndefined();
     });
 
-    test('não aponta a decisão sem nenhum rests-on', () => {
+    test('does not flag the decision without any rests-on', () => {
       expect(rowFor(result, 'd-no-rest')).toBeUndefined();
     });
 
-    test('aponta como doc-amended a decisão ancorada num doc alterado no diff', () => {
+    test('flags as doc-amended the decision anchored in a doc changed in the diff', () => {
       expect(rowFor(result, 'd-doc')).toEqual([
         idOf('d-doc'),
         'feat-r.decision.d-doc',
@@ -910,11 +975,11 @@ describe('flow-report', () => {
       ]);
     });
 
-    test('não aponta a decisão ancorada num doc alterado só na base depois do merge-base', () => {
+    test('does not flag the decision anchored in a doc changed only on the base after the merge-base', () => {
       expect(rowFor(result, 'd-far')).toBeUndefined();
     });
 
-    test('junta os dois motivos na mesma linha, separados por "; "', () => {
+    test('joins both reasons on the same line, separated by "; "', () => {
       expect(rowFor(result, 'd-both')).toEqual([
         idOf('d-both'),
         'feat-r.decision.d-both',
@@ -922,64 +987,63 @@ describe('flow-report', () => {
       ]);
     });
 
-    test.each(['d-old', 'd-rev', 'd-a', 'd-b'])('não aponta %s, que não é vigente', (name) => {
-      expect(rowFor(result, name)).toBeUndefined();
-    });
+    test.each(['d-old', 'd-rev', 'd-a', 'd-b'])(
+      'does not flag %s, which is not current',
+      (name) => {
+        expect(rowFor(result, name)).toBeUndefined();
+      },
+    );
 
-    test('não aponta d-new, vigente e citando uma premissa da entrega', () => {
+    test('does not flag d-new, which is current and cites a delivery premise', () => {
       expect(rowFor(result, 'd-new')).toBeUndefined();
     });
 
-    test('só imprime ids que a query do servidor tem como vigentes', () => {
+    test('prints only ids that the server query reports as current', () => {
       const printed = printedIds(result);
       expect(printed.length).toBeGreaterThan(0);
       for (const id of printed) expect(currentIds).toContain(id);
     });
 
-    test('nenhum id impresso consta dos não vigentes da query', () => {
+    test('no printed id is among the non-current ones of the query', () => {
       expect(nonCurrentIds.size).toBeGreaterThan(0);
       for (const id of printedIds(result)) expect(nonCurrentIds).not.toContain(id);
     });
   });
 
-  test('com a base trocada por feat/r o diff zera e o doc-amended some', () => {
+  test('with the base swapped for feat/r the diff is empty and doc-amended disappears', () => {
     const result = runReport(['feat-r', 'feat/r']);
     expect(result.status).toBe(0);
     expect(rowFor(result, 'd-doc')).toBeUndefined();
     expect(rowFor(result, 'd-both')?.[2]).toBe(OBJECTIVE_UNCITED);
   }, 30_000);
 
-  test('imprime nothing to flag quando o processo não tem nada a apontar', () => {
+  test('prints nothing to flag when the process has nothing to flag', () => {
     const result = runReport(['feat-clean']);
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('nothing to flag\n');
   }, 30_000);
 
-  test('processo inexistente avisa PROCESS_NOT_FOUND no stderr, sem stdout e com status 0', () => {
+  test('a missing process warns PROCESS_NOT_FOUND on stderr, with no stdout and status 0', () => {
     const result = runReport(['ghost']);
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
     expect(result.stderr).toMatch(/^flow-report: [\s\S]*PROCESS_NOT_FOUND/);
   }, 30_000);
 
-  test('sem node_modules avisa no stderr, sem stdout e com status 0', () => {
-    // `export.ts` de uma linha reproduz o ERR_MODULE_NOT_FOUND de um worktree sem `npm ci`
-    const root = createTempDir('flow-report-bare');
-    fs.mkdirSync(path.join(root, '.claude/hooks'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'scripts'));
-    fs.copyFileSync(reportPath, path.join(root, '.claude/hooks/flow-report.ts'));
-    fs.writeFileSync(path.join(root, 'scripts/export.ts'), "import 'pacote-inexistente';\n");
-
-    const result = runReport(['feat-r'], {
-      script: path.join(root, '.claude/hooks/flow-report.ts'),
+  test('legacy 0.x data warns on stderr, with no stdout and status 0', () => {
+    const legacy = createTempDir('flow-report-legacy');
+    fs.cpSync(path.join(__dirname, 'fixtures', 'legacy-0x'), path.join(legacy, 'hexlog'), {
+      recursive: true,
     });
+
+    const result = runReport(['feat-r'], { xdg: legacy });
 
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toMatch(/^flow-report: [\s\S]*pacote-inexistente/);
+    expect(result.stderr).toMatch(/^flow-report: [\s\S]*LEGACY_DATA/);
   }, 30_000);
 
-  test('ref de base desconhecido avisa do git e mantém só o only-objective', () => {
+  test('an unknown base ref warns from git and keeps only the only-objective', () => {
     const result = runReport(['feat-r', 'origin/nope']);
     expect(result.status).toBe(0);
     expect(result.stderr).toMatch(/^flow-report: git: /);
@@ -987,44 +1051,44 @@ describe('flow-report', () => {
     expect(rowFor(result, 'd-doc')).toBeUndefined();
   }, 30_000);
 
-  test('base que parece opção sai com o uso no stderr e status 0', () => {
+  test('a base that looks like an option exits with usage on stderr and status 0', () => {
     const result = runReport(['feat-r', '-x']);
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
     expect(result.stderr).toMatch(/^flow-report: usage:/);
   }, 30_000);
 
-  test('sem argumento sai com o uso no stderr e status 0', () => {
+  test('no argument exits with usage on stderr and status 0', () => {
     const result = runReport([]);
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
     expect(result.stderr).toMatch(/^flow-report: usage:/);
   }, 30_000);
 
-  describe('export estrangeiro que falha', () => {
+  describe('a failing read of the foreign process', () => {
     let result: SpawnSyncReturns<string>;
 
     beforeAll(() => {
       result = runReport(['feat-r'], { xdg: xdgWithoutDirectives });
     }, 30_000);
 
-    test('sai com status 0 e um aviso por prefixo, não por id', () => {
+    test('exits with status 0 and one warning per prefix, not per id', () => {
       expect(result.status).toBe(0);
       expect(result.stderr.match(/flow-report:/g)).toHaveLength(1);
       expect(result.stderr).toContain('PROCESS_NOT_FOUND');
     });
 
-    test('mantém o only-objective, que não depende do processo estrangeiro', () => {
+    test('keeps the only-objective, which does not depend on the foreign process', () => {
       expect(rowFor(result, 'd-obj')?.[2]).toBe(OBJECTIVE_UNCITED);
     });
 
-    test('não aponta por engano a citação da sentinela nem o doc-amended sem target', () => {
+    test('does not wrongly flag the sentinel citation nor doc-amended without a target', () => {
       expect(rowFor(result, 'd-none')).toBeUndefined();
       expect(rowFor(result, 'd-doc')).toBeUndefined();
     });
   });
 
-  test('corta em 100 linhas e diz quantas omitiu', () => {
+  test('cuts at 100 lines and says how many were omitted', () => {
     const rows = runReport(['feat-many'])
       .stdout.split('\n')
       .filter((line) => line !== '');
@@ -1032,7 +1096,7 @@ describe('flow-report', () => {
     expect(rows.at(-1)).toBe('... 1 more omitted');
   }, 30_000);
 
-  test('lista até 10 premissas não citadas e conta as demais', () => {
+  test('lists up to 10 uncited premises and counts the rest', () => {
     const [row] = rowsOf(runReport(['feat-wide']));
     const uncited = row?.[2]?.split('uncited=')[1];
     expect(uncited?.endsWith(' (+2)')).toBe(true);

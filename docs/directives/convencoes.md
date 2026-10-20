@@ -4,6 +4,7 @@
 
 - Código: arquivos, pastas, identificadores (funções, tipos, variáveis), nomes de tool MCP, campos de entrada e saída, formato em disco e mensagens em runtime (erros, logs, CLI do instalador) — tudo em **inglês**.
 - Títulos de teste (`describe`, `it`, `test`) — **inglês**. Título novo já nasce em inglês; ao alterar um spec, traduza os títulos pt-BR dele, que são dívida rastreada na issue #132.
+- Workflow e script de CI: log e anotação (`echo`, `::error::`, `::warning::`) em **inglês**; o texto que o workflow ou o script publica para um leitor (corpo de PR, comentário, corpo do Release) segue o idioma da documentação, **pt-BR**.
 - Comentários de código (incl. JSDoc) e documentação `.md` — **pt-BR**.
 - Nomes de arquivo de documentação (`AGENTS.md`, `docs/directives/adr-*.md`, `docs/pesquisa/**`) não são traduzidos.
 
