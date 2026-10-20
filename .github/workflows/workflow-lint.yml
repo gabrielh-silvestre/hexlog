@@ -14,7 +14,7 @@ jobs:
   workflow-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -42,7 +42,7 @@ jobs:
       # advanced-security: false imprime os achados no log e falha o step, sem
       # `security-events: write` (o token de PR do Dependabot é só de leitura).
       - if: steps.changes.outputs.github == 'true'
-        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        uses: zizmorcore/zizmor-action@v0.7.1
         with:
           advanced-security: false
           inputs: .github

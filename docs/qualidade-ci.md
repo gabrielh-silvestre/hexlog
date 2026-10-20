@@ -4,8 +4,8 @@ Estudo para quando o hexlog virar repositório público no GitHub. **Só o
 Dependabot version updates está instalado** (`.github/dependabot.yml`, `npm` e
 `github-actions`, semanal, com PRs para `develop`); o resto não. O CI atual
 (`.github/workflows/ci.yml`) roda só `typecheck`, `lint`, `format:check`, `test`
-e `test:budget`, e toda action dos workflows fica fixada por SHA de commit, com
-a tag ao lado em comentário.
+e `test:budget`, e toda action dos workflows vem pela tag (a major quando a
+action publica uma, a tag exata quando não), nunca pelo SHA do commit.
 
 Fontes consultadas em **2026-09-17**. Preço e plano mudam; reconfira a fonte
 antes de adotar qualquer item.

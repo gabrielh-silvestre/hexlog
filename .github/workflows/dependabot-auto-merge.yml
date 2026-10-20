@@ -20,7 +20,7 @@ jobs:
       pull-requests: write
     steps:
       - id: metadata
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        uses: dependabot/fetch-metadata@v3
       # O `package-ecosystem` sai do nome da branch do PR: `npm_and_yarn` para o npm,
       # `github_actions` para as actions. O `update-type` é a maior mudança do PR agrupado.
       - env:
