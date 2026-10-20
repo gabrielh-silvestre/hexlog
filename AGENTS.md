@@ -23,7 +23,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `.github/workflows/ci.yml` | CI: `npm audit signatures`, `typecheck`, `lint`, `knip`, `format:check`, `test:coverage` (piso de 90%) e `test:budget` (Node 24.18.1) |
 | `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`: version updates semanais em `develop`, minor e patch num único PR por ecossistema, major de `npm` ignorado (o de `github-actions` vem por PR, com merge manual), `cooldown` de 7 dias; security updates seguem um PR por pacote na branch padrão |
 | `.github/pull_request_template.md` | Template de PR só com os vínculos: `Closes #N`, linha do `CHANGELOG.md` em `[Não lançado]`, PR relacionado, versão ou tag |
-| `SECURITY.md` | Política de segurança: só a versão mais recente recebe correção; o relato é privado, pela aba Security |
+| `SECURITY.md` | Política de segurança: só a versão mais recente recebe correção; o relato é privado, pelo formulário de reporte privado do GitHub (aba Security) |
 | `.github/workflows/changelog-draft.yml` | Em PR para `main`, comenta o rascunho do `git-cliff` para o `CHANGELOG.md` |
 | `.github/workflows/workflow-lint.yml` | Job `workflow-lint` em todo PR: se o diff toca `.github/`, roda actionlint (binário de versão fixa com sha256 conferido) e zizmor (`zizmor-action` pela tag); sem mudança em `.github/`, os steps de lint são pulados e o check reporta sucesso |
 | `.github/zizmor.yml` | Config do zizmor: `unpinned-uses` com política `ref-pin` para toda action, porque os workflows referenciam a action pela tag (major quando existe, tag exata quando não) e não pelo SHA do commit |
