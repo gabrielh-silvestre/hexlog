@@ -2,8 +2,8 @@
 // directives-<N> [--apply]`. Sem `--apply` só lê e imprime o plano; com `--apply` grava, por
 // `writer.ts#openWriter`, só as decisões de âncoras idênticas e confere o log relido. Precisa de
 // `node_modules`. Sai 0 concluído, 1 recusa, lote recusado ou conferência divergente, e 2 para dado
-// 0.x ou log quebrado. Só este script usa `import.meta.dirname`: é a raiz do checkout que a trava
-// de código instalado compara com o commit do build.
+// 0.x ou log quebrado. Aqui `import.meta.dirname` dá a raiz do checkout que a trava de código
+// instalado compara com o commit do build.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';

@@ -115,7 +115,8 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 - `esbuild`
 - `@modelcontextprotocol/client` (`Client`, `StdioClientTransport`; devDependency)
 - `es-toolkit` (só o core; `es-toolkit/compat` não é importado)
-- `node:fs`, `node:os`, `node:path`, `node:child_process` (`execFileSync`), `node:util` (`parseArgs`, em `cli-error.ts`)
+- `zod` (`flow/writer.ts`)
+- `node:fs`, `node:os`, `node:path`, `node:child_process` (`execFileSync`, `spawnSync`), `node:util` (`parseArgs`, em `cli-error.ts`)
 
 ## Manual Notes
 

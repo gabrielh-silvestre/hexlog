@@ -64,7 +64,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Verificação e achados
 
-- No pré-PR e de novo depois da review, para as decisões que a review gerou, a `decision` vigente cujo texto diverge do que o diff entrega é regravada com `supersedes`, o texto do entregue e as mesmas relações (`anchored-in` ou `about-gap`, `rests-on`, `resolves-finding`, `derivesFrom`). Esta é a única lista de relações a regravar: a skill só executa.
+- No pré-PR e de novo depois da review, para as decisões que a review gerou, a `decision` vigente cujo texto diverge do que o diff entrega é regravada com `supersedes`, o texto do entregue e as mesmas relações (`anchored-in` ou `about-gap`, `rests-on`, `resolves-finding`, `derivesFrom`). Esta é a única lista de relações a regravar: a skill e `scripts/flow/reanchor-plan.ts#COPIED_NAMES` só executam.
 - No pré-PR, `node scripts/flow/report.ts <slug>` (passo 3 do pré-PR do `flow-run`) lista as decisões vigentes cujo `rests-on` cita só o objetivo ou a sentinela, ou cuja regra citada o diff emendou; apoia o julgamento de "Premissas" e nunca é gate.
 - Registre cada achado da review como `finding` (`severity`, `origin`, `description`, `location`).
 - **Achado URGENT é corrigido.** Aceitar sem corrigir exige justificativa em `rationale`. A `decision` que o resolve usa `resolves-finding`, `grounds: directive`, `confidence: high`, `anchored-in` na regra desta seção e `rests-on` (ou a exceção de Premissas).
