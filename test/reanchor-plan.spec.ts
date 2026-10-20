@@ -301,6 +301,15 @@ describe('planReanchor', () => {
     expect(result.owner[0]?.reasons).toEqual([{ code: 'supported' }]);
   });
 
+  test('sends a decision supported by a current evidence of another process to the owner', () => {
+    const supports = { kind: 'supports', from: own('work-b', 80), current: true };
+
+    const result = plan([decision({ in: [supports] })]);
+
+    expect(result.rewrites).toEqual([]);
+    expect(result.owner[0]?.reasons).toEqual([{ code: 'supported' }]);
+  });
+
   test('rewrites a supported decision when the process has lineage inheritance', () => {
     const supports = { kind: 'supports', from: own('work-a', 80), current: true };
 

@@ -2,12 +2,17 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
+import { omit } from 'es-toolkit';
+import { createValidator } from '../src/adapters/validator.ts';
+import { createProcessService } from '../src/commands/process.ts';
 import { composeReader } from '../src/compose.ts';
 import { Name } from '../src/domain/ids.ts';
 import { VERSION } from '../src/version.ts';
+import { createUuids } from './commands/register-fakes.ts';
 import { createFlowEnvironment, registerFlowRecord, type FlowRecord } from './flow-data.ts';
 import { copyToXdg, createTempDir, snapshot } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
+import { diskStores } from './queries/query-setup.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const reanchorPath = path.join(repoRoot, 'scripts/flow/reanchor.ts');
@@ -296,6 +301,62 @@ describe('reanchor.ts --apply', () => {
     expect(currentDecision(xdg, 'feat-b', 'feat-b.decision.fix').id).not.toBe(idOf('b.fix'));
     expect(after.status).toBe(before.status);
     expect(after.stderr).toBe(before.stderr);
+  }, 60_000);
+
+  test('sends to the owner a decision supported by an evidence of another process', async () => {
+    const supported = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-q']);
+    try {
+      // `create_process` sempre liga a herança; o processo de antes dela nasce sem o campo.
+      const stores = diskStores(supported.dataDir);
+      createProcessService({
+        ...stores,
+        store: {
+          ...stores.store,
+          create: (ref, manifest) =>
+            stores.store.create(ref, omit(manifest, ['lineageInheritance'])),
+        },
+        validator: createValidator(),
+        clock: () => new Date(),
+        newUuid: createUuids(),
+        logger: () => undefined,
+      }).createProcess({ project: PROJECT, process: Name.parse('feat-p') });
+      const { hash: source } = await supported.ok<{ hash: string }>('attach', {
+        project: 'hexlog',
+        text: 'rule text',
+      });
+      const g1 = await registerFlowRecord(
+        supported,
+        'directives-1',
+        directive('directives.convencoes.r1', 'Rule one', source),
+      );
+      await registerFlowRecord(
+        supported,
+        'directives-2',
+        directive('directives.convencoes.r1', 'Rule one', source),
+      );
+      const target = await registerFlowRecord(
+        supported,
+        'feat-p',
+        decision('feat-p.decision.supported', [anchoredIn(g1)]),
+      );
+      await registerFlowRecord(supported, 'feat-q', {
+        type: 'evidence',
+        target: 'feat-q.evidence.x',
+        data: { summary: 'Backs the decision', source },
+        relations: [{ kind: 'supports', to: target }],
+      });
+
+      const xdg = copyToXdg(supported.dataDir);
+      const before = snapshot(xdg);
+      const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('rewritable: 0');
+      expect(result.stdout).toMatch(/feat-p\tfeat-p\.decision\.supported\t.*\tsupported/);
+      expect(snapshot(xdg)).toEqual(before);
+    } finally {
+      await supported.close();
+    }
   }, 60_000);
 
   test('reports a batch the register refuses, keeps the other processes and exits 1', async () => {

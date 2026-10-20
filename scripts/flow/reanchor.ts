@@ -18,6 +18,7 @@ import {
   isCurrent,
   isLatestGeneration,
   planReanchor,
+  processOf,
   toBatches,
   verifyReanchor,
   type DecisionRow,
@@ -35,16 +36,19 @@ type Reader = ReturnType<typeof openReadOnly>;
 type Rewrite = ReturnType<typeof planReanchor>['rewrites'][number];
 type Row = LogRow & { type: string };
 
-/** Registros de `process` numa só chamada, como `report.ts#exportRows`, com relações inteiras. */
+/**
+ * Registros de `process` numa só chamada, como `report.ts#exportRows`, com relações inteiras; sem
+ * `process`, os do projeto inteiro, o único alcance que traz as relações vindas de outro processo.
+ */
 function readRows(
   reader: Reader,
-  process: string,
+  process: string | undefined,
   filter: { type?: string; fields?: string[]; includeNonCurrent?: boolean },
 ): Row[] {
   const { type, ...rest } = filter;
   const { records } = reader.query.queryRecords({
     project: PROJECT,
-    process: Name.parse(process),
+    ...(isUndefined(process) ? { scope: 'project' as const } : { process: Name.parse(process) }),
     ...rest,
     ...(isUndefined(type) ? {} : { type: Name.parse(type) }),
     relations: 'full',
@@ -104,8 +108,12 @@ function installedCheck() {
 function readWork(reader: Reader, names: string[]) {
   const decisions: DecisionRow[] = [];
   const before: LogRow[] = [];
+  const rowsByProcess = Map.groupBy(
+    readRows(reader, undefined, { type: 'decision', includeNonCurrent: true }),
+    ({ id }) => processOf(id),
+  );
   for (const process of names) {
-    const rows = readRows(reader, process, { type: 'decision', includeNonCurrent: true });
+    const rows = rowsByProcess.get(process) ?? [];
     before.push(...rows);
     const lineage =
       reader.query.list({ project: PROJECT, process: Name.parse(process) }).process

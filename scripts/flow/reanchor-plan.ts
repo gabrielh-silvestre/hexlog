@@ -218,7 +218,7 @@ export function toBatches(process: string, to: string, items: readonly PlannedIt
   }));
 }
 
-const processOf = (id: string): string => id.slice(0, Math.max(id.indexOf(':'), 0));
+export const processOf = (id: string): string => id.slice(0, Math.max(id.indexOf(':'), 0));
 
 /** Vigência como o servidor a vê: sem `supersedes` nem `revokes` de entrada. */
 export const isCurrent = ({ in: incoming }: LogRow): boolean =>
