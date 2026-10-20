@@ -10,7 +10,7 @@ import type { LogRecord } from '../../src/shared/logger.ts';
 import { createTempDir } from '../helpers.ts';
 
 /** Identidade que o cliente declara no envelope por requisição (TM6). */
-export type ClientInfo = { name: string; version: string };
+type ClientInfo = { name: string; version: string };
 
 export type ErrorBody = { code: ErrorCode; message: string; details: Detail[] };
 

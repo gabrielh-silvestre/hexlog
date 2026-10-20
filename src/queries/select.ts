@@ -145,16 +145,16 @@ export function leftReason(view: View, id: RecordId): LeftReason {
 }
 
 /** Relação de entrada de um registro; `current` diz se a outra ponta (`from`) é vigente. */
-export type InRelation = { kind: RelationKind; as?: Name; from: RecordId; current: boolean };
+type InRelation = { kind: RelationKind; as?: Name; from: RecordId; current: boolean };
 
 /**
  * Relação gravada no registro; `current` diz se o destino é vigente e só sai quando o destino foi
  * lido (D-24: alcance processo não lê o processo de um destino de outro processo).
  */
-export type OutRelation = { kind: RelationKind; as?: Name; to: RecordId; current?: boolean };
+type OutRelation = { kind: RelationKind; as?: Name; to: RecordId; current?: boolean };
 
 /** Relação herdada que chega ao registro; `origin` é a aresta gravada de onde ela vem. */
-export type InheritedIn = {
+type InheritedIn = {
   kind: RelationKind;
   as?: Name;
   from: RecordId;
@@ -162,7 +162,7 @@ export type InheritedIn = {
 };
 
 /** Relação herdada que sai do registro; `origin` é a aresta gravada de onde ela vem. */
-export type InheritedOut = {
+type InheritedOut = {
   kind: RelationKind;
   as?: Name;
   to: RecordId;

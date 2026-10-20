@@ -10,12 +10,13 @@
   "scripts": {
     "test": "jest --errorOnDeprecated",
     "test:budget": "jest --errorOnDeprecated --runInBand --testPathPatterns=budget.spec.ts --testPathIgnorePatterns=/node_modules/",
-    "test:coverage": "jest --coverage",
+    "test:coverage": "jest --errorOnDeprecated --coverage",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "knip": "knip",
     "prepare": "husky"
   },
   "jest": {
@@ -38,6 +39,17 @@
           }
         }
       ]
+    },
+    "collectCoverageFrom": [
+      "src/**/*.ts"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 90,
+        "branches": 90,
+        "functions": 90,
+        "lines": 90
+      }
     },
     "testPathIgnorePatterns": [
       "/node_modules/",
@@ -66,7 +78,6 @@
     "@jest/globals": "^30.5.1",
     "@modelcontextprotocol/client": "^2.3.1",
     "@types/node": "^24.8.1",
-    "@types/shell-quote": "^1.7.5",
     "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
@@ -76,6 +87,7 @@
     "git-cliff": "^2.14.2",
     "husky": "^9.1.7",
     "jest": "^30.5.1",
+    "knip": "^6.41.0",
     "lint-staged": "^17.6.0",
     "prettier": "^3.9.10",
     "tar": "^7.5.22",

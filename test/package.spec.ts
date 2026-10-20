@@ -110,7 +110,6 @@ describe('N11', () => {
     'ts-jest',
     'typescript',
     '@types/node',
-    '@types/shell-quote',
     'fast-check',
     'esbuild',
     // Deps de lint/format do plano de quality-tooling (fora do conjunto inicial de dependências).
@@ -126,6 +125,8 @@ describe('N11', () => {
     'tar',
     // Rascunho do CHANGELOG.md a partir dos Conventional Commits (cliff.toml).
     'git-cliff',
+    // Código, arquivo e dependência mortos no CI (knip.json).
+    'knip',
   ];
   const CARET_RANGE = /^\^\d+\.\d+\.\d+$/;
   const outsideCaret = (deps: Record<string, string>) =>

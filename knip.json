@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/server.ts",
+    "hook/bash-guard.ts",
+    "scripts/*.ts",
+    ".claude/hooks/*.ts",
+    ".claude/workflows/*.js",
+    "test/fixtures/attachment-probe.ts",
+    "test/fixtures/build-entry.ts",
+    "test/fixtures/concurrent-install.ts",
+    "test/fixtures/crash-writer.ts",
+    "test/fixtures/fake-mcp-install.ts",
+    "test/fixtures/lock-holder.ts"
+  ],
+  "ignore": ["test/fixtures/boundaries/**"],
+  "ignoreBinaries": ["mkfifo"],
+  "ignoreIssues": {
+    "src/domain/ids.ts": ["duplicates"]
+  }
+}

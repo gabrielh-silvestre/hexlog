@@ -8,13 +8,14 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Key Files
 | File | Description |
 |------|-------------|
-| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
+| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `knip`, `format`, `format:check`, `build`, `prepare`), `lint-staged` e config do jest (ts-jest em CJS) |
 | `tsconfig.json` | Configuração do TypeScript |
+| `knip.json` | Config do `knip` (`npm run knip`): entradas explícitas (`src/server.ts`, `hook/bash-guard.ts`, `scripts/*.ts`, `.claude/hooks/*.ts`, `.claude/workflows/*.js` e os fixtures de `test/fixtures/` que rodam como processo filho), fixtures de `test/fixtures/boundaries/` fora da análise, `mkfifo` em `ignoreBinaries` e a duplicata `Name`/`alias` de `src/domain/ids.ts` em `ignoreIssues` |
 | `eslint.config.js` | Config do ESLint (typescript-eslint com `stylisticTypeChecked`, `eslint-plugin-jest`, `eslint-plugin-n`); importa `boundaryBlocks` de `eslint.boundaries.js` |
 | `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
 | `.prettierrc`, `.prettierignore`, `.editorconfig` | Formatação (aspas simples, vírgula final, 100 colunas); `*.md` e `package-lock.json` ficam fora do Prettier |
 | `.husky/pre-commit` | Roda `lint-staged` (`eslint --fix` e `prettier --write` nos `*.ts` do commit) |
-| `.github/workflows/ci.yml` | CI: `typecheck`, `lint`, `format:check`, `test` e `test:budget` (Node 24.18.1) |
+| `.github/workflows/ci.yml` | CI: `npm audit signatures`, `typecheck`, `lint`, `knip`, `format:check`, `test:coverage` (piso de 90%) e `test:budget` (Node 24.18.1) |
 | `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`: version updates semanais em `develop`, minor e patch num único PR por ecossistema, major ignorado, `cooldown` de 7 dias; security updates seguem um PR por pacote na branch padrão |
 | `.github/pull_request_template.md` | Template de PR só com os vínculos: `Closes #N`, linha do `CHANGELOG.md` em `[Não lançado]`, PR relacionado, versão ou tag |
 | `SECURITY.md` | Política de segurança: só a versão mais recente recebe correção; o relato é privado, pela aba Security |
@@ -63,6 +64,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `typescript`, `eslint` (+ `typescript-eslint`, `eslint-plugin-jest`, `eslint-plugin-n`, `eslint-config-prettier`), `prettier`: tipos, lint e formatação
 - `husky` + `lint-staged`: hook de pré-commit
 - `git-cliff`: rascunho do `CHANGELOG.md` (`cliff.toml`)
+- `knip`: código, arquivo e dependência mortos (`knip.json`)
 
 ## Manual Notes
 

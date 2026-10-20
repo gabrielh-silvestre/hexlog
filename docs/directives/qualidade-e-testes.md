@@ -2,7 +2,9 @@
 
 ## Antes de concluir
 
-- Rode `npm run typecheck`, `npm run lint` e `npm run format:check` (o CI roda os três, mais `npm test` e `npm run test:budget`).
+- Rode `npm run typecheck`, `npm run lint`, `npm run knip` e `npm run format:check` (o CI roda os quatro, mais `npm run test:coverage` e `npm run test:budget`).
+- `npm run knip` falha com export, arquivo ou dependência morta. As entradas são declaradas em `knip.json`; falso positivo se resolve com entrada nova ou `ignoreDependencies` por nome com o motivo registrado, nunca com supressão geral. Fixture novo de `test/fixtures/` que roda como processo filho entra em `entry` por nome.
+- `npm run test:coverage` é o `npm test` com cobertura de `src/**/*.ts` e piso global de 90% em statements, branches, functions e lines (`package.json#jest.coverageThreshold`); o CI o roda no lugar de `npm test`, e abaixo do piso o job `quality` falha. O CI também roda `npm audit signatures` depois do `npm ci`, sem `continue-on-error`: registry fora do ar ou pacote sem assinatura reprova. O CI não roda `npm run build`.
 - `npm test` roda tudo, exceto os specs de orçamento (`*.budget.spec.ts`), e termina em até 300 s (P5). `npx jest test/<arquivo>.spec.ts` (ou `npm test -- test/<arquivo>.spec.ts`) roda um spec.
 - `npm ci` precisa ser completo (sem `--omit=dev`): `esbuild` e `@modelcontextprotocol/client` são devDependencies usadas pelo instalador e pelos testes. Node `>= 24.18.1` (`package.json#engines`).
 - Não precisa de `npm run build` prévio: os specs que dependem de bundle constroem o artefato num processo filho. `npm run build` só cabe antes de PR que toque `scripts/build.ts` ou `scripts/install.ts`.
@@ -11,7 +13,7 @@
 
 ## Orçamentos de tempo
 
-- `npm run test:budget` roda os specs de orçamento em série (`jest --runInBand`): `adapters/load.budget.spec.ts`, `adapters/search.budget.spec.ts`, `adapters/lock.budget.spec.ts`, `queries/query.budget.spec.ts`, `queries/project.budget.spec.ts` e `domain/inheritance.budget.spec.ts`. O CI o roda depois de `npm test` ([ADR 0009](adr-0009-ferramental.md), item 4).
+- `npm run test:budget` roda os specs de orçamento em série (`jest --runInBand`): `adapters/load.budget.spec.ts`, `adapters/search.budget.spec.ts`, `adapters/lock.budget.spec.ts`, `queries/query.budget.spec.ts`, `queries/project.budget.spec.ts` e `domain/inheritance.budget.spec.ts`. O CI o roda depois de `npm run test:coverage` ([ADR 0009](adr-0009-ferramental.md), item 4).
 - Eles medem tempo e podem falhar em máquina lenta, por isso só rodam nesse script. `adapters/load.budget.spec.ts` compara o mínimo das medições, não a mediana.
 
 ## Convenções dos specs
