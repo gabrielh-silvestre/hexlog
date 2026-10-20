@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { parsePremises, scanPremises, type ScannedPremise } from '../.claude/hooks/flow-sync.ts';
+import { parsePremises, scanPremises, type ScannedPremise } from '../scripts/flow/sync.ts';
 import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');

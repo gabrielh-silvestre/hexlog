@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test } from '@jest/
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { planSync, type SyncInput } from '../.claude/hooks/flow-sync.ts';
+import { planSync, type SyncInput } from '../scripts/flow/sync.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import type { QueryResult } from '../src/queries/query-service.ts';
@@ -11,6 +11,9 @@ import { type Environment, createEnvironment } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const hookPath = path.join(repoRoot, '.claude/hooks/flow-hooks.ts');
+const flowPath = path.join(repoRoot, 'scripts/flow/flow.ts');
+const markPath = path.join(repoRoot, 'scripts/flow/mark.ts');
+const markerSource = path.join(repoRoot, 'scripts/flow/marker.ts');
 
 const MCP_CREATE = 'mcp__github-official__create_pull_request';
 const MCP_UPDATE = 'mcp__github-official__update_pull_request';
@@ -69,6 +72,18 @@ function runHook(args: string[], options: { input?: string; cwd?: string } = {})
   });
 }
 
+function runFlow(args: string[], options: { input?: string; cwd?: string } = {}): HookResult {
+  return spawnSync(process.execPath, [flowPath, ...args], {
+    input: options.input ?? '',
+    cwd: options.cwd ?? repo,
+    encoding: 'utf8',
+  });
+}
+
+function runMark(slug: string, cwd = repo): HookResult {
+  return spawnSync(process.execPath, [markPath, slug], { cwd, encoding: 'utf8' });
+}
+
 function preHook(toolName: string, toolInput: object, cwd = repo): HookResult {
   return runHook(['pre-pr'], {
     input: JSON.stringify({ tool_name: toolName, tool_input: toolInput, cwd }),
@@ -82,7 +97,7 @@ const mcpCreate = (head: string, extra: object = {}, cwd = repo): HookResult =>
 
 function writeMarker(branch: string, sha: string): void {
   fs.mkdirSync(markerDir, { recursive: true });
-  const slug = runHook(['slug', branch]).stdout.trim();
+  const slug = runFlow(['slug', branch]).stdout.trim();
   fs.writeFileSync(path.join(markerDir, `${slug}.ok`), `${branch}\n${sha}\n`);
 }
 
@@ -399,32 +414,21 @@ describe('modos', () => {
     ['Feat/UPPER', 'feat-upper'],
     [`${'a'.repeat(62)}/b`, 'a'.repeat(62)],
     ['a'.repeat(70), 'a'.repeat(63)],
+    ['types', 'types'],
   ])(
     'slug de %s é %s',
     (branch, expected) => {
-      const result = runHook(['slug', branch]);
+      const result = runFlow(['slug', branch]);
       expect(result.status).toBe(0);
       expect(result.stdout).toBe(`${expected}\n`);
     },
     15_000,
   );
 
-  test.each([
-    '///',
-    '',
-    'directives',
-    'audits-2',
-    'types',
-    'relations',
-    'gates',
-    'attachments',
-    'archive',
-    'main',
-    'develop',
-  ])(
+  test.each(['///', '', 'directives', 'audits', 'audits-2', 'directives-4', 'main', 'develop'])(
     'slug recusa "%s" com exit 1',
     (branch) => {
-      const result = runHook(['slug', branch]);
+      const result = runFlow(['slug', branch]);
       expect(result.status).toBe(1);
       expect(result.stdout).toBe('');
     },
@@ -433,7 +437,7 @@ describe('modos', () => {
 
   test('mark grava o marcador no git-common-dir e o hook passa a aceitar o PR e o gh pr ready', () => {
     expectDenied(mcpCreate('feat/x'));
-    const result = runHook(['mark', 'feat-x']);
+    const result = runMark('feat-x');
     expect(result.status).toBe(0);
     expect(fs.readFileSync(path.join(markerDir, 'feat-x.ok'), 'utf8')).toBe(`feat/x\n${tipSha}\n`);
     expectAllowed(mcpCreate('feat/x'));
@@ -442,7 +446,7 @@ describe('modos', () => {
   }, 15_000);
 
   test('mark no worktree grava no git-common-dir compartilhado', () => {
-    const result = runHook(['mark', 'feat-y'], { cwd: worktree });
+    const result = runMark('feat-y', worktree);
     expect(result.status).toBe(0);
     expect(fs.existsSync(path.join(markerDir, 'feat-y.ok'))).toBe(true);
   }, 15_000);
@@ -451,7 +455,7 @@ describe('modos', () => {
     const dirty = path.join(repo, 'dirty.txt');
     fs.writeFileSync(dirty, 'x');
     try {
-      const result = runHook(['mark', 'feat-x']);
+      const result = runMark('feat-x');
       expect(result.status).toBe(1);
       expect(result.stderr).toMatch(/not clean/);
       expect(fs.existsSync(path.join(markerDir, 'feat-x.ok'))).toBe(false);
@@ -461,13 +465,13 @@ describe('modos', () => {
   }, 15_000);
 
   test('mark recusa branch que não gera o slug', () => {
-    const result = runHook(['mark', 'other-slug']);
+    const result = runMark('other-slug');
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/does not yield slug/);
     expect(fs.existsSync(markerDir)).toBe(false);
   }, 15_000);
 
-  test('sync-plan devolve o mesmo plano que flow-sync chamado direto', () => {
+  test('sync-plan devolve o mesmo plano que o planSync chamado direto', () => {
     const input: SyncInput = {
       docSlug: 'convencoes',
       path: 'docs/directives/convencoes.md',
@@ -476,14 +480,14 @@ describe('modos', () => {
       vigent: [],
       extracted: [{ slug: 'idioma', rule: 'Código em inglês.', section: 'Idioma' }],
     };
-    const result = runHook(['sync-plan'], { input: JSON.stringify(input) });
+    const result = runFlow(['sync-plan'], { input: JSON.stringify(input) });
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(JSON.parse(JSON.stringify(planSync(input))));
   }, 15_000);
 
   describe('sync-plan com path inválido', () => {
     const syncPlan = (input: Partial<SyncInput>) => {
-      const result = runHook(['sync-plan'], {
+      const result = runFlow(['sync-plan'], {
         input: JSON.stringify({
           docSlug: 'estrategia',
           path: 'docs/directives/estrategia.md',
@@ -531,7 +535,24 @@ describe('modos', () => {
 
   test('modo desconhecido sai com 2', () => {
     expectDenied(runHook(['nope']), /unknown mode/);
+    expectDenied(runFlow(['nope']), /unknown mode/);
   }, 15_000);
+
+  test.each(['slug', 'mark', 'sync-plan'])(
+    'the hook only has pre-pr and subagent-start: %s is unknown',
+    (mode) => {
+      expectDenied(runHook([mode, 'feat-x']), /unknown mode/);
+    },
+    15_000,
+  );
+
+  test('marker.ts imports only node builtins', () => {
+    const specifiers = [...fs.readFileSync(markerSource, 'utf8').matchAll(/from '([^']+)'/g)].map(
+      (match) => match[1],
+    );
+    expect(specifiers.length).toBeGreaterThan(0);
+    for (const specifier of specifiers) expect(specifier).toMatch(/^node:/);
+  });
 });
 
 describe('settings.json', () => {
@@ -552,23 +573,35 @@ describe('settings.json', () => {
     expect(entry?.hooks[0]?.command).toBe(`${flowCommand('pre-pr')} || exit 2`);
   }, 15_000);
 
-  test('a entrada Bash tem if Bash(gh *) e não termina em || exit 2', () => {
-    const hook = (settings.hooks.PreToolUse ?? [])
+  const bashPrHook = (): Hook | undefined =>
+    (settings.hooks.PreToolUse ?? [])
       .filter((e) => e.matcher === 'Bash')
       .flatMap((e) => e.hooks)
-      .find((h) => h.command === flowCommand('pre-pr'));
+      .find((h) => h.command.startsWith(flowCommand('pre-pr')));
+
+  test('a entrada Bash tem if Bash(gh *) e termina em || exit 2', () => {
+    const hook = bashPrHook();
+    expect(hook?.command).toBe(`${flowCommand('pre-pr')} || exit 2`);
     expect(hook?.if).toBe('Bash(gh *)');
   }, 15_000);
 
-  test('tem as regras allow do padrão 15', () => {
-    expect(settings.permissions.allow).toEqual(
-      expect.arrayContaining([
-        'Bash(node .claude/hooks/flow-hooks.ts slug *)',
-        'Bash(node .claude/hooks/flow-hooks.ts mark *)',
-        'Bash(node .claude/hooks/flow-hooks.ts sync-plan *)',
-        'Bash(node .claude/hooks/flow-report.ts *)',
-      ]),
-    );
+  test('o comando do matcher de Bash, com PATH vazio, sai com 2', () => {
+    const result = spawnSync('/bin/sh', ['-c', bashPrHook()?.command ?? ''], {
+      env: { PATH: '', CLAUDE_PROJECT_DIR: repoRoot },
+      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'gh pr create' } }),
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(2);
+  }, 15_000);
+
+  test('tem as regras allow dos scripts do fluxo', () => {
+    expect(settings.permissions.allow).toEqual([
+      'Bash(node scripts/flow/flow.ts slug *)',
+      'Bash(node scripts/flow/flow.ts sync-plan *)',
+      'Bash(node scripts/flow/mark.ts *)',
+      'Bash(node scripts/flow/gate.ts *)',
+      'Bash(node scripts/flow/report.ts *)',
+    ]);
   }, 15_000);
 
   test('flow-report não é hook: nenhum command de hooks o cita', () => {
@@ -599,7 +632,7 @@ describe('settings.json', () => {
 });
 
 describe('flow-report', () => {
-  const reportPath = path.join(repoRoot, '.claude/hooks/flow-report.ts');
+  const reportPath = path.join(repoRoot, 'scripts/flow/report.ts');
   const hexlogDir = path.join(repoRoot, '.hexlog');
   const PROJECT = 'hexlog';
   const AGENT = 'flow-report-spec';
@@ -846,11 +879,8 @@ describe('flow-report', () => {
     git(gitRepo, 'checkout', '-q', 'feat/r');
   }, 60_000);
 
-  function runReport(
-    args: string[],
-    options: { xdg?: string; script?: string } = {},
-  ): SpawnSyncReturns<string> {
-    return spawnSync(process.execPath, [options.script ?? reportPath, ...args], {
+  function runReport(args: string[], options: { xdg?: string } = {}): SpawnSyncReturns<string> {
+    return spawnSync(process.execPath, [reportPath, ...args], {
       cwd: gitRepo,
       encoding: 'utf8',
       env: { ...process.env, XDG_DATA_HOME: options.xdg ?? xdg },
@@ -969,21 +999,17 @@ describe('flow-report', () => {
     expect(result.stderr).toMatch(/^flow-report: [\s\S]*PROCESS_NOT_FOUND/);
   }, 30_000);
 
-  test('sem node_modules avisa no stderr, sem stdout e com status 0', () => {
-    // `export.ts` de uma linha reproduz o ERR_MODULE_NOT_FOUND de um worktree sem `npm ci`
-    const root = createTempDir('flow-report-bare');
-    fs.mkdirSync(path.join(root, '.claude/hooks'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'scripts'));
-    fs.copyFileSync(reportPath, path.join(root, '.claude/hooks/flow-report.ts'));
-    fs.writeFileSync(path.join(root, 'scripts/export.ts'), "import 'pacote-inexistente';\n");
-
-    const result = runReport(['feat-r'], {
-      script: path.join(root, '.claude/hooks/flow-report.ts'),
+  test('legacy 0.x data warns on stderr, with no stdout and status 0', () => {
+    const legacy = createTempDir('flow-report-legacy');
+    fs.cpSync(path.join(__dirname, 'fixtures', 'legacy-0x'), path.join(legacy, 'hexlog'), {
+      recursive: true,
     });
+
+    const result = runReport(['feat-r'], { xdg: legacy });
 
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toMatch(/^flow-report: [\s\S]*pacote-inexistente/);
+    expect(result.stderr).toMatch(/^flow-report: [\s\S]*LEGACY_DATA/);
   }, 30_000);
 
   test('ref de base desconhecido avisa do git e mantém só o only-objective', () => {

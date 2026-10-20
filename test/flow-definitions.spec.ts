@@ -13,7 +13,7 @@ import {
   type SyncInput,
   type SyncPlan,
   type VigentRule,
-} from '../.claude/hooks/flow-sync.ts';
+} from '../scripts/flow/sync.ts';
 import type { Defined } from '../src/commands/definition.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import { hashOfJcs, sha256hex } from '../src/domain/chain.ts';
@@ -29,7 +29,7 @@ import { type Environment, createEnvironment, expectError } from './mcp/environm
 
 const repoRoot = path.resolve(__dirname, '..');
 const hexlogDir = path.join(repoRoot, '.hexlog');
-const hookPath = path.join(repoRoot, '.claude/hooks/flow-hooks.ts');
+const flowDir = path.join(repoRoot, 'scripts/flow');
 
 const PROJECT = 'hexlog';
 const DIRECTIVES = 'directives';
@@ -1416,32 +1416,32 @@ describe('estrategia sync (premises)', () => {
     ]);
   });
 
-  /** O mesmo caminho da skill: o hook lê o documento em `input.path`, extrai as premissas e planeja. */
-  const runHook = (input: SyncInput, cwd = repoRoot, hook = hookPath) =>
-    spawnSync(process.execPath, [hook, 'sync-plan'], {
+  /** O mesmo caminho da skill: o CLI lê o documento em `input.path`, extrai as premissas e planeja. */
+  const runFlow = (input: SyncInput, cwd = repoRoot, script = path.join(flowDir, 'flow.ts')) =>
+    spawnSync(process.execPath, [script, 'sync-plan'], {
       cwd,
       input: JSON.stringify(input),
       encoding: 'utf8',
     });
 
   const hookPlan = (input: SyncInput): SyncPlan => {
-    const result = runHook(input);
+    const result = runFlow(input);
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     return JSON.parse(result.stdout) as SyncPlan;
   };
 
-  /** Roda o hook num repositório temporário: o `REPO_ROOT` dele é o temporário e o `path` relativo vale ali. */
-  const runHookWithStrategy = (lines: string[]) => {
+  /** Roda o CLI num repositório temporário: o `REPO_ROOT` dele é o temporário e o `path` relativo vale ali. */
+  const runFlowWithStrategy = (lines: string[]) => {
     const root = createTempDir('strategy');
-    const hooks = path.join(root, '.claude/hooks');
-    fs.mkdirSync(hooks, { recursive: true });
-    for (const file of fs.readdirSync(path.dirname(hookPath)).filter((f) => f.endsWith('.ts'))) {
-      fs.copyFileSync(path.join(path.dirname(hookPath), file), path.join(hooks, file));
+    const scripts = path.join(root, 'scripts/flow');
+    fs.mkdirSync(scripts, { recursive: true });
+    for (const file of fs.readdirSync(flowDir).filter((f) => f.endsWith('.ts'))) {
+      fs.copyFileSync(path.join(flowDir, file), path.join(scripts, file));
     }
     fs.mkdirSync(path.join(root, 'docs/directives'), { recursive: true });
     fs.writeFileSync(path.join(root, docPath(STRATEGY)), ['## Tema', ...lines].join('\n'));
-    return runHook(inputForFile(docPath(STRATEGY)), root, path.join(hooks, 'flow-hooks.ts'));
+    return runFlow(inputForFile(docPath(STRATEGY)), root, path.join(scripts, 'flow.ts'));
   };
 
   const inputForFile = (file: string): SyncInput => ({
@@ -1475,7 +1475,7 @@ describe('estrategia sync (premises)', () => {
   }, 30_000);
 
   test('a relative path is resolved from the repository root, with the cwd in another directory', () => {
-    const result = runHook(
+    const result = runFlow(
       { ...inputForFile('docs/directives/estrategia.md'), extracted: [] },
       createTempDir('other-cwd'),
     );
@@ -1505,7 +1505,7 @@ describe('estrategia sync (premises)', () => {
   ])(
     '%s exits with 2 and the reason on stderr',
     (_name, lines, reason) => {
-      const result = runHookWithStrategy(lines);
+      const result = runFlowWithStrategy(lines);
 
       expect(result.status).toBe(2);
       expect(result.stdout).toBe('');
