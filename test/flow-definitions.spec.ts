@@ -24,11 +24,11 @@ import type {
   QueryResult,
   VerifyChainResult,
 } from '../src/queries/query-service.ts';
-import { at, createTempDir, parseJson } from './helpers.ts';
+import { KINDS, defineFlowDefinitions, definitionOf, namesIn } from './flow-data.ts';
+import { at, createTempDir } from './helpers.ts';
 import { type Environment, createEnvironment, expectError } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
-const hexlogDir = path.join(repoRoot, '.hexlog');
 const flowDir = path.join(repoRoot, 'scripts/flow');
 
 const PROJECT = 'hexlog';
@@ -37,47 +37,12 @@ const WORK = 'feat-x';
 const AGENT = 'flow-run';
 const COMMIT = 'abc1234';
 
-type Kind = 'types' | 'relations' | 'gates';
-const KINDS: Kind[] = ['types', 'relations', 'gates'];
-const DEFINE_TOOL: Record<Kind, string> = {
-  types: 'define_type',
-  relations: 'define_relation',
-  gates: 'define_gate',
-};
-
-const namesIn = (kind: Kind): string[] =>
-  fs
-    .readdirSync(path.join(hexlogDir, kind))
-    .filter((file) => file.endsWith('.json'))
-    .map((file) => file.replace(/\.json$/, ''))
-    .sort();
-
-const fileBody = (kind: Kind, name: string): Record<string, unknown> =>
-  parseJson(
-    z.record(z.string(), z.json()),
-    fs.readFileSync(path.join(hexlogDir, kind, `${name}.json`), 'utf8'),
-  );
-
-/** Corpo que a chamada `define_*` recebe a partir do arquivo: o tipo é o schema; as demais levam o nome. */
-const definitionOf = (kind: Kind, name: string): Record<string, unknown> =>
-  kind === 'types' ? fileBody(kind, name) : { name, ...fileBody(kind, name) };
-
 let environment: Environment;
 let defined: Record<string, Defined>;
 
 beforeEach(async () => {
   environment = await createEnvironment();
-  defined = {};
-  for (const kind of KINDS) {
-    for (const name of namesIn(kind)) {
-      const body = definitionOf(kind, name);
-      const input = kind === 'types' ? { name, schema: body } : body;
-      defined[`${kind}/${name}`] = await environment.ok<Defined>(DEFINE_TOOL[kind], {
-        project: PROJECT,
-        ...input,
-      });
-    }
-  }
+  defined = await defineFlowDefinitions(environment);
   for (const process of [DIRECTIVES, `${DIRECTIVES}-2`, WORK]) {
     await environment.ok('create_process', { project: PROJECT, process });
   }

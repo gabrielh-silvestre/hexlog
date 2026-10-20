@@ -6,6 +6,7 @@ import { planSync, type SyncInput } from '../scripts/flow/sync.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import type { QueryResult } from '../src/queries/query-service.ts';
+import { createFlowEnvironment, passedVerification, registerFlowRecord } from './flow-data.ts';
 import { at, copyToXdg, createTempDir } from './helpers.ts';
 import { type Environment, createEnvironment } from './mcp/environment.ts';
 
@@ -26,6 +27,7 @@ let worktree: string;
 let baseSha: string;
 let tipSha: string;
 let markerDir: string;
+let xdgHome: string;
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -33,7 +35,7 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.trim();
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   const root = createTempDir('flow-hooks');
   repo = path.join(root, 'repo');
   worktree = path.join(root, 'wt');
@@ -51,7 +53,14 @@ beforeAll(() => {
   git(repo, 'worktree', 'add', '-q', worktree, 'feat/y');
   fs.mkdirSync(path.join(repo, 'sub'));
   markerDir = path.join(repo, '.git', 'hexlog-flow');
-}, 15_000);
+  // dado do hexlog com os gates verdes para os dois trabalhos que o `mark` marca (`feat-x` e `feat-y`)
+  const flow = await createFlowEnvironment(['feat-x', 'feat-y']);
+  for (const slug of ['feat-x', 'feat-y']) {
+    await registerFlowRecord(flow, slug, passedVerification(slug));
+  }
+  xdgHome = copyToXdg(flow.dataDir);
+  await flow.close();
+}, 30_000);
 
 beforeEach(() => {
   fs.rmSync(markerDir, { recursive: true, force: true });
@@ -80,8 +89,12 @@ function runFlow(args: string[], options: { input?: string; cwd?: string } = {})
   });
 }
 
-function runMark(slug: string, cwd = repo): HookResult {
-  return spawnSync(process.execPath, [markPath, slug], { cwd, encoding: 'utf8' });
+function runMark(slug: string, cwd = repo, xdg = xdgHome): HookResult {
+  return spawnSync(process.execPath, [markPath, slug], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, XDG_DATA_HOME: xdg },
+  });
 }
 
 function preHook(toolName: string, toolInput: object, cwd = repo): HookResult {
@@ -451,18 +464,31 @@ describe('modos', () => {
     expect(fs.existsSync(path.join(markerDir, 'feat-y.ok'))).toBe(true);
   }, 15_000);
 
-  test('mark recusa árvore suja', () => {
+  test('mark writes the marker with a dirty working tree and green gates', () => {
     const dirty = path.join(repo, 'dirty.txt');
     fs.writeFileSync(dirty, 'x');
     try {
       const result = runMark('feat-x');
-      expect(result.status).toBe(1);
-      expect(result.stderr).toMatch(/not clean/);
-      expect(fs.existsSync(path.join(markerDir, 'feat-x.ok'))).toBe(false);
+      expect(result.status).toBe(0);
+      expect(fs.readFileSync(path.join(markerDir, 'feat-x.ok'), 'utf8')).toBe(
+        `feat/x\n${tipSha}\n`,
+      );
     } finally {
       fs.rmSync(dirty);
     }
   }, 15_000);
+
+  test('mark refuses and writes nothing when a gate is red', async () => {
+    const flow = await createFlowEnvironment(['feat-x']);
+    try {
+      const result = runMark('feat-x', repo, copyToXdg(flow.dataDir));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/gates are not green\npre-pr: occurred/);
+      expect(fs.existsSync(markerDir)).toBe(false);
+    } finally {
+      await flow.close();
+    }
+  }, 30_000);
 
   test('mark recusa branch que não gera o slug', () => {
     const result = runMark('other-slug');
