@@ -298,6 +298,72 @@ describe('reanchor.ts --apply', () => {
     expect(after.stderr).toBe(before.stderr);
   }, 60_000);
 
+  test('reports a batch the register refuses, keeps the other processes and exits 1', async () => {
+    const refused = await createFlowEnvironment([
+      'directives-1',
+      'directives-2',
+      'feat-c',
+      'feat-d',
+    ]);
+    try {
+      const { hash: source } = await refused.ok<{ hash: string }>('attach', {
+        project: 'hexlog',
+        text: 'rule text',
+      });
+      const g1 = await registerFlowRecord(
+        refused,
+        'directives-1',
+        directive('directives.convencoes.r1', 'Rule one', source),
+      );
+      await registerFlowRecord(
+        refused,
+        'directives-2',
+        directive('directives.convencoes.r1', 'Rule one', source),
+      );
+      for (const slug of ['feat-c', 'feat-d']) {
+        await registerFlowRecord(
+          refused,
+          slug,
+          decision(`${slug}.decision.same`, [anchoredIn(g1)]),
+        );
+      }
+
+      // O 1º apply, numa cópia, revela a `key` do lote de feat-d; o lote com a mesma `key` e outro
+      // conteúdo, gravado antes, faz o `register` real devolver IDEMPOTENCY_CONFLICT.
+      const probe = copyToXdg(refused.dataDir);
+      expect(runReanchor(['--to', 'directives-2', '--apply'], probe).status).toBe(0);
+      const log = fs.readFileSync(
+        path.join(probe, 'hexlog/.v1/hexlog/feat-d/records.jsonl'),
+        'utf8',
+      );
+      const key = /"key":"(reanchor-directives-2-feat-d-[^"]+)"/.exec(log)?.[1];
+      expect(key).toBeDefined();
+      await refused.ok('register', {
+        project: 'hexlog',
+        process: 'feat-d',
+        agent: 'flow-run',
+        key,
+        records: [
+          { type: 'premise', target: 'feat-d.premise.other', data: { statement: 'Other' } },
+        ],
+      });
+
+      const xdg = copyToXdg(refused.dataDir);
+      const before = currentDecision(xdg, 'feat-d', 'feat-d.decision.same');
+      const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`batch refused: feat-d ${key}`);
+      expect(result.stdout).toContain('rewrote 1 of 2 decisions');
+      expect(currentDecision(xdg, 'feat-c', 'feat-c.decision.same').edges).toContainEqual(
+        expect.stringMatching(/^supersedes:/),
+      );
+      expect(currentDecision(xdg, 'feat-d', 'feat-d.decision.same')).toEqual(before);
+    } finally {
+      await refused.close();
+    }
+  }, 120_000);
+
   test.each([
     ['a dirty build', { dirty: true }, /dirty tree/],
     ['a missing ~/.claude.json', { claudeJson: false }, /not registered in ~\/\.claude\.json/],
