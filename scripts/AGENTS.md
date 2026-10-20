@@ -27,6 +27,17 @@ dado 0.x com exit 2.
 | `export.ts` | Exportação read-only dos registros de um processo em JSONL, uma linha por registro (inclui os não vigentes), lidos por `composeReader` em uma única consulta sem laço de cursor (o teto de 64 MiB por processo limita a memória). Uso: `node scripts/export.ts <project>/<process> [--fields a,b,c]`; `--fields` projeta só as chaves pedidas e recusa nome fora das chaves de `QueryRecord` (que incluem `inheritedIn` e `inheritedOut`); `--fields` sem valor, flag desconhecida e argumento a mais saem com o uso e exit 1. Cadeia adulterada ou dado 0.x saem com 2; demais erros saem com `export failed: ...` e exit 1. Sem script `npm` dedicado; nunca escreve no diretório de dados. Também é consumido, como processo filho, por `.claude/hooks/flow-report.ts`, que lê `in`, `out`, `as`, `kind` e `to` (o export pede `relations: full` ao serviço, que sem a opção já assume `full`; o padrão `counts` é só da tool MCP); `test/flow-hooks.spec.ts` trava esse formato |
 | `timeline.ts` | Linha do tempo read-only de targets por consulta de alcance projeto com registros não vigentes, lida por `composeReader`, sem teto de página nem de texto por entrada, numa consulta só sem laço de cursor (o teto de 64 MiB vale por processo e o alcance projeto soma todos eles, limite aceito, pendência aberta sem ADR): o caminho para ler anexo grande. Uso: `node scripts/timeline.ts <project> <target-prefix>... [--full] [--json] [--raw]`. Texto legível por padrão (uma seção por target, marca `[superseded by <id>]`/`[revoked by <id>]`, relações de entrada e saída, e as herdadas como `inherited in:`/`inherited out:` com a `origin`); `--full` imprime cada anexo entre `----- attachment <hash> (<n> bytes) -----` e `----- end -----`; `--json` é JSONL (`kind: "record"`). A saída (texto e `--json`) passa uma vez por `escapeControls` na string final antes do `process.stdout.write`: ESC, CSI, OSC, U+009B, U+009D e os controles bidi saem como `\uXXXX` visível, e o `--json` volta ao original no `JSON.parse`. `--raw` imprime o byte exato (o `--full --raw` entre os delimitadores é idêntico ao anexo) e fica por conta de quem lê. Um anexo com a linha `----- end -----` ainda forja o delimitador no modo texto. Exit 0 íntegro, 2 cadeia, `process.json` ou anexo quebrado e dado 0.x, 1 uso incorreto ou erro (`timeline failed: CODE: msg`). Sem script `npm` dedicado; nunca escreve no diretório de dados |
 
+### Fluxo autônomo (`flow/`)
+CLIs do fluxo guiado por diretrizes deste repositório, chamados pelas skills `flow-run`, `flow-gaps` e `flow-audit` e por `.claude/hooks/flow-hooks.ts` (só o `marker.ts`). Não entram nos bundles do produto. `gate.ts`, `mark.ts` e `report.ts` leem o log por `composeReader` (`cli-error.ts#openReadOnly`) e precisam de `node_modules`; `marker.ts`, `sync.ts` e `flow.ts` usam só builtins e rodam em worktree sem `npm ci`.
+| File | Description |
+|---|---|
+| `flow/marker.ts` | Só builtins: `slugOf` (slug da branch, que recusa `main`, `develop`, `directives*` e `audits*`), `markerPath` (`<git-common-dir>/hexlog-flow/<slug>.ok`) e os helpers de `git` de que eles precisam |
+| `flow/sync.ts` | Planejador do sync das diretrizes (`planSync`, `parsePremises`, `scanPremises`): função pura, sem I/O |
+| `flow/flow.ts` | CLI sem dependência com os modos `slug <branch>` e `sync-plan` (lê o `SyncInput` do stdin; para `estrategia`, lê o documento e extrai as premissas) |
+| `flow/gate.ts` | `gateFailures` e CLI `pre-pr <slug>`: avalia os gates `pre-pr` e `gaps` fixados no processo; sai 0 com os dois verdes, 1 listando gate, pergunta e ids, 2 com dado 0.x ou log quebrado |
+| `flow/mark.ts` | `mark <slug>`: confere o slug da branch e os gates por `gateFailures` e só então grava o `.ok` (branch e sha da ponta); a árvore suja não importa; recusa com exit 1 e não grava nada |
+| `flow/report.ts` | `report <slug> [<base>]`: lista as decisões vigentes cuja base merece revisão; só imprime e sai sempre 0 |
+
 ### Exit codes dos scripts de leitura
 | Exit | `export.ts` | `timeline.ts` | `insights.ts` |
 |---|---|---|---|
@@ -95,6 +106,7 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 - `insights.ts`: `./cli-error.ts`, `../src/directory.ts` (`dataDir`, só para a mensagem de "No processes found"), `../src/domain/chain.ts` (tipo `Link`)
 - `export.ts`: `./cli-error.ts`, `../src/domain/ids.ts`, `../src/queries/query-service.ts` (tipo `QueryRecord`)
 - `timeline.ts`: `./cli-error.ts`, `./escape-controls.ts`, `../src/domain/ids.ts`, `../src/queries/query-service.ts`
+- `flow/marker.ts`: nenhuma; `flow/sync.ts`: nenhuma; `flow/flow.ts`: `./marker.ts`, `./sync.ts`; `flow/gate.ts`: `../cli-error.ts`, `../../src/domain/ids.ts`, `../../src/compose.ts` (só o tipo); `flow/mark.ts`: `./gate.ts`, `./marker.ts`, `../cli-error.ts`, `../../src/errors.ts`; `flow/report.ts`: `../cli-error.ts`, `../../src/domain/ids.ts`
 
 ### External
 - `esbuild`
