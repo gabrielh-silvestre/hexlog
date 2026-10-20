@@ -45,7 +45,7 @@ export const DOC: RecordType = {
   additionalProperties: false,
 };
 
-export const DEFAULT_RELATIONS: RelationName[] = [
+const DEFAULT_RELATIONS: RelationName[] = [
   { name: 'approves', kind: 'supports' },
   { name: 'replaces', kind: 'supersedes' },
   { name: 'only-tasks', kind: 'supports', from: ['task'] },
@@ -200,7 +200,7 @@ export function fakeProcessStore() {
 }
 
 /** `AttachmentStore` em memória: só `status`, que é o que `register` usa; conta as consultas. */
-export function fakeAttachments() {
+function fakeAttachments() {
   const statuses = new Map<Hash, AttachmentStatus>();
   const calls: Hash[] = [];
   const store: AttachmentStore = {

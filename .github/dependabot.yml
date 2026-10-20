@@ -1,16 +1,36 @@
 version: 2
 
-# PRs de atualização vão para develop, a base de trabalho (main só recebe hotfix e release).
-# `target-branch` vale só para version updates: as security updates ignoram estas opções e abrem
-# PR na branch padrão (main), então um PR de segurança pode chegar em main fora do fluxo de hotfix.
+# PRs de version update vão para develop, a base de trabalho (main só recebe hotfix e release).
+# `target-branch`, `cooldown`, `ignore` e o prefixo valem só para version updates: as security
+# updates ignoram essas opções e abrem PR na branch padrão, que é develop, um PR por pacote (o
+# grupo não tem `applies-to`). Hoje todas têm merge manual: o auto-merge das de npm passa a valer
+# quando o PR final levar o dependabot-auto-merge.yml para develop; as de github-actions seguem
+# manuais.
 # O prefixo mantém o título como Conventional Commit (o cliff.toml descarta os demais), mas só nos
 # version updates: o PR de segurança sai sem ele e o cliff.toml o descarta.
+# Major de npm nunca vem pelo Dependabot (`ignore`): entra por PR manual. Major de action vem: as
+# actions por tag major (`@v7`) só têm a próxima major como candidata, então ignorá-la as deixaria
+# sem PR nenhum. Minor e patch saem em um PR por ecossistema, depois de 7 dias de cooldown. O
+# esbuild (0.x) fica no grupo: o quality, que constrói o bundle nos specs, pega a quebra.
 updates:
   - package-ecosystem: npm
     directory: /
     target-branch: develop
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
     commit-message:
       prefix: chore(deps)
   - package-ecosystem: github-actions
@@ -18,5 +38,14 @@ updates:
     target-branch: develop
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
     commit-message:
       prefix: chore(deps)

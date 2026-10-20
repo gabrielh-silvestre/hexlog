@@ -1,0 +1,7 @@
+# As actions seguem a tag (major quando existe, tag exata quando não), não o
+# hash do commit: por decisão do dono, o repositório não fixa action por SHA.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        '*': ref-pin

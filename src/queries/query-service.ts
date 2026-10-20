@@ -57,7 +57,7 @@ import {
 } from './select.ts';
 
 export { PAGE_CHARS_CAP } from './read-attachment.ts';
-export type { AttachmentPage, DescribeTypeInput, DescribeTypeResult, ListInput, ListResult };
+export type { AttachmentPage, DescribeTypeResult, ListResult };
 
 const DEFAULT_LIMIT = 50;
 /**
@@ -165,7 +165,7 @@ export type GateBatchEvaluation = {
   marker: Marker;
 };
 
-export type VerifyChainInput = { project: Name; process: Name; expectedHead?: Hash };
+type VerifyChainInput = { project: Name; process: Name; expectedHead?: Hash };
 
 /** D-16: anexo citado por um registro que não está inteiro no projeto. */
 type AttachmentBreak = {

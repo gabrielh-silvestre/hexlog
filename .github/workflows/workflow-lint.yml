@@ -1,0 +1,49 @@
+name: Workflow lint
+
+# O job `workflow-lint` roda em todo PR e sempre reporta sucesso quando há o que lintar ou não:
+# sem filtro de `paths`, o check obrigatório do ruleset nunca fica pendente. O step `changes`
+# decide por `git diff` se o PR toca `.github/`, e os steps de lint têm `if:` nessa saída (steps
+# pulados, nunca job pulado).
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # O diff é capturado antes do grep: se o git falhar, o `bash -e` aborta o step em vez de cair
+        # no else. Sem `pipefail`: o `grep -q` fecha o pipe no primeiro achado e daria SIGPIPE (141).
+        run: |
+          changed=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+          if grep -q '^\.github/' <<<"$changed"; then
+            echo 'github=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'github=false' >> "$GITHUB_OUTPUT"
+          fi
+      # actionlint não é action: binário de versão fixa, com o sha256 do checksums.txt oficial da
+      # release (rhysd/actionlint v1.7.12, linux_amd64). Troca de versão atualiza as duas linhas.
+      - if: steps.changes.outputs.github == 'true'
+        run: |
+          curl -fsSL -o actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz' | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -color
+      # advanced-security: false imprime os achados no log e falha o step, sem
+      # `security-events: write` (o token de PR do Dependabot é só de leitura).
+      - if: steps.changes.outputs.github == 'true'
+        uses: zizmorcore/zizmor-action@v0.7.1
+        with:
+          advanced-security: false
+          inputs: .github
+          collect: all

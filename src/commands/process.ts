@@ -18,14 +18,14 @@ import { checkBatchShape, prepareBatch, relationNames } from './register/static.
 
 export type { RegisterInput, RegisterResult } from './register/state.ts';
 
-export type CreateProcessInput = { project: Name; process: Name };
+type CreateProcessInput = { project: Name; process: Name };
 
 /**
  * Definição fixada no processo que difere da vigente agora: `current` é a versão vigente, ou `null`
  * quando o nome não tem mais versão no projeto. O manifesto guarda o conteúdo fixado, não a versão
  * (D-03), então a versão fixada não é reportada.
  */
-export type StaleDefinition = { kind: DefinitionKind; name: Name; current: string | null };
+type StaleDefinition = { kind: DefinitionKind; name: Name; current: string | null };
 
 export type CreateProcessResult = {
   project: Name;

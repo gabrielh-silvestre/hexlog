@@ -9,7 +9,7 @@ vazia ou não for um caminho absoluto, `<D>` cai em `~/.local/share/hexlog`
 (`src/directory.ts#dataDir`). `<D>` precisa de um sistema de arquivos com hard link e semântica
 POSIX (`rename` e `link` atômicos).
 
-```
+```text
 <D>/                                   # 0700; $XDG_DATA_HOME/hexlog ou ~/.local/share/hexlog
   .v1/                                 # raiz do dado 1.0; o 0.x nunca grava aqui
     <project>/                         # 0700

@@ -1,11 +1,16 @@
 # Plataformas de qualidade para CI/CD
 
-Estudo para quando o hexlog virar repositório público no GitHub. **Só o
-Dependabot version updates está instalado** (`.github/dependabot.yml`, `npm` e
-`github-actions`, semanal, com PRs para `develop`); o resto não. O CI atual
-(`.github/workflows/ci.yml`) roda só `typecheck`, `lint`, `format:check`, `test`
-e `test:budget`, e toda action dos workflows fica fixada por SHA de commit, com
-a tag ao lado em comentário.
+Estudo para quando o hexlog virar repositório público no GitHub. O que já está
+instalado não mora aqui: o `AGENTS.md` da raiz lista cada workflow e config, e
+[qualidade-e-testes.md](directives/qualidade-e-testes.md) tem as regras. Hoje há
+o Dependabot (`.github/dependabot.yml`), o CI (`.github/workflows/ci.yml`:
+`npm audit signatures`, `typecheck`, `lint`, `knip`, `format:check`,
+`test:coverage` com piso de 90% e `test:budget`), o `commitlint`, o job `docs`
+(`lint:md` e `spell`), o `workflow-lint`, o `dependency-review`, o
+`changelog-line`, o auto-merge do Dependabot, o `release` e o OpenSSF Scorecard
+(medidor, não gate). Os hooks locais são `pre-commit`, `commit-msg` e
+`pre-push`. Toda action dos workflows vem pela tag (a major quando a action
+publica uma, a tag exata quando não), nunca pelo SHA do commit.
 
 Fontes consultadas em **2026-09-17**. Preço e plano mudam; reconfira a fonte
 antes de adotar qualquer item.
@@ -29,8 +34,7 @@ Adotar um por vez, cada um no próprio PR, quando o repo tiver tração.
 | Ferramenta | Grátis p/ público | O que exige | Esforço | Valor para o hexlog | Fonte |
 |---|---|---|---|---|---|
 | SonarQube Cloud | Sim, plano OSS sem limite de LOC para público (o "Free" de 50k LOC é o de privado) | Conta + GitHub App + step no CI | ~20–30 min | Smells, duplicação, hotspots e quality gate no PR; cobre o que o CodeQL não cobre | [planos](https://docs.sonarsource.com/sonarqube-cloud/administering-sonarcloud/managing-subscription/subscription-plans), [preços](https://www.sonarsource.com/plans-and-pricing/sonarcloud/) |
-| Codecov | Sim, uploads ilimitados em repo público | Conta + GitHub App + upload de cobertura (hoje o CI não gera cobertura) | ~15 min | Diff de cobertura comentado no PR | [preços](https://about.codecov.io/pricing/) |
-| knip | Sim (ISC, CLI local) | `npm i -D knip` + config | ~15–30 min para calibrar ignores | Arquivo, export e dependência sem uso | [knip.dev](https://knip.dev/) |
+| Codecov | Sim, uploads ilimitados em repo público | Conta + GitHub App + upload de cobertura (o CI já gera cobertura com `test:coverage`; falta o upload) | ~15 min | Diff de cobertura comentado no PR | [preços](https://about.codecov.io/pricing/) |
 | dependency-cruiser | Sim (MIT, CLI local) | `npm i -D dependency-cruiser` + `.dependency-cruiser.js` | ~30–60 min para escrever regras úteis | Barra ciclo; o import entre camadas já é travado por `eslint.boundaries.js` (`boundaryBlocks`) | [repo](https://github.com/sverweij/dependency-cruiser) |
 | Semgrep CE | Sim; a CLI (LGPL-2.1) com regras da comunidade não pede conta nem tem limite. O limite de 10 repos/10 contribuidores é da plataforma cloud, opcional | Job no CI com `semgrep` e ruleset da comunidade | ~15–20 min | Segundo motor de SAST, com cobertura de regra diferente da do CodeQL | [Community Edition](https://semgrep.dev/products/community-edition/), [preços](https://semgrep.dev/pricing/) |
 
@@ -51,5 +55,8 @@ do Semgrep mudar; rodar os dois é redundante.
 
 1. Ligar CodeQL default setup e Dependabot alerts/security updates em Settings.
 2. Adicionar `.github/dependabot.yml` para `npm` e `github-actions` (feito).
-3. Reavaliar a camada **Depois** quando a base crescer a ponto de duplicação e
-   cobertura virarem sinal útil.
+3. Código morto (`knip`), cobertura com piso (`test:coverage`), mensagem de
+   commit (`commitlint`), `.md` (`lint:md` e `spell`), workflows
+   (`workflow-lint`), `dependency-review` e Scorecard (feito).
+4. Reavaliar a camada **Depois** quando a base crescer a ponto de duplicação e
+   o diff de cobertura virarem sinal útil.

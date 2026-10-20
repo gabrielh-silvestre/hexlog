@@ -11,7 +11,10 @@ Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na ba
 - `adapters/` só implementa portas: não importa `commands/`, `queries/` nem `mcp/` (`eslint.boundaries.js#adaptersBlock`); builtins do Node e libs de infraestrutura são o que ele existe para usar.
 - `mcp/` chama só serviços: não importa `adapters/`, builtin do Node nem `compose.ts`; `mcp/kernel.ts` também não importa `mcp/tools/`.
 - Só `server.ts`, os scripts e os testes importam `compose.ts`. Scripts de leitura passam por `compose.ts#composeReader` (só o lado de leitura, sem serviço de escrita: "script de leitura não grava" é garantia de tipo) e não importam `adapters/` nem `mcp/` (`scripts/install.ts` e `scripts/build.ts` ficam de fora).
+- `scripts/release-notes.ts` e `scripts/release-notes-cli.ts` são um terceiro tipo de script: sem dado e sem `src/`, só builtins do Node, porque o `release.yml` os roda sem `npm ci`. O `scriptsBlock` só barra `adapters/` e `mcp/`; a restrição a builtins é convenção, sem trava no lint.
 - `guard.ts` e `installation.ts` não são importados por `server.ts` nem pelo hook: `installation.ts` só entra por `scripts/install.ts`, e `guard.ts` só por `installation.ts` e `scripts/install.ts`. Toda execução externa (spawn do hook, subida do servidor, relógio, `claude mcp`) entra por parâmetro injetado, nunca por chamada direta a `child_process` ou `Date.now` dentro da lógica testável; é isso que torna `installArtifact` e `verifyInstallation` testáveis sem processo real.
+- `scripts/flow/` lê o log pelo `composeReader` (`scripts/cli-error.ts#openReadOnly`), como os demais scripts de leitura, e não grava no diretório de dados; o `mark.ts` só grava o `.ok` do marcador no git-common-dir.
+- O hook `.claude/hooks/flow-hooks.ts` só importa builtins do Node e `scripts/flow/marker.ts`, que também só importa builtins; o resto de `scripts/flow/` e de `src/` não entra no hook, porque ele roda em worktree sem `node_modules`. `test/flow-hooks.spec.ts` trava os imports do `marker.ts`.
 
 ## Travas mecânicas
 
