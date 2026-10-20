@@ -21,7 +21,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `.husky/commit-msg` | Roda o `commitlint` na mensagem do commit (`commitlint.config.js`) |
 | `commitlint.config.js` | Config do `commitlint`: `config-conventional`, header até 80 caracteres, corpo vazio; `Merge` e `Revert` do Git passam pelos ignores padrão e o commit do Dependabot pelo rodapé `Signed-off-by: dependabot[bot]` |
 | `.github/workflows/ci.yml` | CI: `npm audit signatures`, `typecheck`, `lint`, `knip`, `format:check`, `test:coverage` (piso de 90%) e `test:budget` (Node 24.18.1) |
-| `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`: version updates semanais em `develop`, minor e patch num único PR por ecossistema, major ignorado, `cooldown` de 7 dias; security updates seguem um PR por pacote na branch padrão |
+| `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`: version updates semanais em `develop`, minor e patch num único PR por ecossistema, major de `npm` ignorado (o de `github-actions` vem por PR, com merge manual), `cooldown` de 7 dias; security updates seguem um PR por pacote na branch padrão |
 | `.github/pull_request_template.md` | Template de PR só com os vínculos: `Closes #N`, linha do `CHANGELOG.md` em `[Não lançado]`, PR relacionado, versão ou tag |
 | `SECURITY.md` | Política de segurança: só a versão mais recente recebe correção; o relato é privado, pela aba Security |
 | `.github/workflows/changelog-draft.yml` | Em PR para `main`, comenta o rascunho do `git-cliff` para o `CHANGELOG.md` |
