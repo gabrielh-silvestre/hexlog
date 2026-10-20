@@ -220,7 +220,8 @@ export function toBatches(process: string, to: string, items: readonly PlannedIt
 
 const processOf = (id: string): string => id.slice(0, Math.max(id.indexOf(':'), 0));
 
-const isCurrent = ({ in: incoming }: LogRow): boolean =>
+/** Vigência como o servidor a vê: sem `supersedes` nem `revokes` de entrada. */
+export const isCurrent = ({ in: incoming }: LogRow): boolean =>
   !incoming.some(({ kind }) => kind === 'supersedes' || kind === 'revokes');
 
 const edgeKeys = (edges: readonly OutEdge[]): string[] =>
