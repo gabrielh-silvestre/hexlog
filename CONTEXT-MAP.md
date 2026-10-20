@@ -9,4 +9,4 @@ O termo canônico de cada glossário é em pt-BR, com o identificador do código
 
 ## Relationships
 
-- **Fluxo → Produto**: o fluxo é cliente do produto. Cada trabalho vira um processo do projeto `hexlog`, e diretriz, premissa, decisão, lacuna, achado e verificação são tipos de registro desse projeto
+- **Fluxo → Produto**: o fluxo é cliente do produto. Cada trabalho vira um processo do projeto `hexlog`, e diretriz, premissa, decisão, lacuna e achado são tipos de registro desse projeto

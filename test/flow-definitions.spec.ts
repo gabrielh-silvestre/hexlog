@@ -13,7 +13,7 @@ import {
   type SyncInput,
   type SyncPlan,
   type VigentRule,
-} from '../.claude/hooks/flow-sync.ts';
+} from '../scripts/flow/sync.ts';
 import type { Defined } from '../src/commands/definition.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import { hashOfJcs, sha256hex } from '../src/domain/chain.ts';
@@ -24,12 +24,12 @@ import type {
   QueryResult,
   VerifyChainResult,
 } from '../src/queries/query-service.ts';
-import { at, createTempDir, parseJson } from './helpers.ts';
+import { KINDS, defineFlowDefinitions, definitionOf, namesIn } from './flow-data.ts';
+import { at, createTempDir } from './helpers.ts';
 import { type Environment, createEnvironment, expectError } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
-const hexlogDir = path.join(repoRoot, '.hexlog');
-const hookPath = path.join(repoRoot, '.claude/hooks/flow-hooks.ts');
+const flowDir = path.join(repoRoot, 'scripts/flow');
 
 const PROJECT = 'hexlog';
 const DIRECTIVES = 'directives';
@@ -37,47 +37,12 @@ const WORK = 'feat-x';
 const AGENT = 'flow-run';
 const COMMIT = 'abc1234';
 
-type Kind = 'types' | 'relations' | 'gates';
-const KINDS: Kind[] = ['types', 'relations', 'gates'];
-const DEFINE_TOOL: Record<Kind, string> = {
-  types: 'define_type',
-  relations: 'define_relation',
-  gates: 'define_gate',
-};
-
-const namesIn = (kind: Kind): string[] =>
-  fs
-    .readdirSync(path.join(hexlogDir, kind))
-    .filter((file) => file.endsWith('.json'))
-    .map((file) => file.replace(/\.json$/, ''))
-    .sort();
-
-const fileBody = (kind: Kind, name: string): Record<string, unknown> =>
-  parseJson(
-    z.record(z.string(), z.json()),
-    fs.readFileSync(path.join(hexlogDir, kind, `${name}.json`), 'utf8'),
-  );
-
-/** Corpo que a chamada `define_*` recebe a partir do arquivo: o tipo é o schema; as demais levam o nome. */
-const definitionOf = (kind: Kind, name: string): Record<string, unknown> =>
-  kind === 'types' ? fileBody(kind, name) : { name, ...fileBody(kind, name) };
-
 let environment: Environment;
 let defined: Record<string, Defined>;
 
 beforeEach(async () => {
   environment = await createEnvironment();
-  defined = {};
-  for (const kind of KINDS) {
-    for (const name of namesIn(kind)) {
-      const body = definitionOf(kind, name);
-      const input = kind === 'types' ? { name, schema: body } : body;
-      defined[`${kind}/${name}`] = await environment.ok<Defined>(DEFINE_TOOL[kind], {
-        project: PROJECT,
-        ...input,
-      });
-    }
-  }
+  defined = await defineFlowDefinitions(environment);
   for (const process of [DIRECTIVES, `${DIRECTIVES}-2`, WORK]) {
     await environment.ok('create_process', { project: PROJECT, process });
   }
@@ -189,12 +154,6 @@ const findingData = (severity: string) => ({
   origin: 'review',
   description: 'Retry loop has no upper bound',
   location: 'src/upload.ts',
-});
-
-const verificationData = (result: 'passed' | 'failed') => ({
-  result,
-  commit: COMMIT,
-  commands: [{ command: 'npm test', ok: result === 'passed', summary: `tests ${result}` }],
 });
 
 const workRecord = (type: string, short: string, data: Record<string, unknown>): Item => ({
@@ -330,10 +289,9 @@ describe('schemas and relations', () => {
       workRecord('decision', 'a', decisionData()),
       workRecord('gap', 'a', gapData()),
       workRecord('finding', 'a', findingData('NORMAL')),
-      workRecord('verification', 'main', verificationData('passed')),
     ]);
 
-    expect(records).toHaveLength(5);
+    expect(records).toHaveLength(4);
     const seeded = await queryAll({ process: DIRECTIVES });
     expect(seeded.records.map(({ type }) => type).sort()).toEqual(['directive', 'doc']);
   });
@@ -361,20 +319,13 @@ describe('schemas and relations', () => {
     ],
     ['gap without context', workRecord('gap', 'a', { question: 'Q?' })],
     ['finding with severity outside the enum', workRecord('finding', 'a', findingData('HIGH'))],
-    [
-      'verification with 13 commands',
-      workRecord('verification', 'main', {
-        ...verificationData('passed'),
-        commands: Array.from({ length: 13 }, () => ({ command: 'npm test', ok: true })),
-      }),
-    ],
   ])('%s is INVALID_RECORD', async (_label, record) => {
     expectError(await writeBatch(WORK, [record]), 'INVALID_RECORD');
   });
 
   test('a commit that is not a git-sha is refused with the format code at the field path', async () => {
     const result = await writeBatch(WORK, [
-      workRecord('verification', 'main', { ...verificationData('passed'), commit: 'HEAD' }),
+      workRecord('opening', 'main', { ...opening(), commit: 'HEAD' }),
     ]);
 
     expect(expectError(result, 'INVALID_RECORD').details).toEqual([
@@ -492,30 +443,12 @@ describe('schemas and relations', () => {
 });
 
 describe('gate pre-pr', () => {
-  test('fails without verification', async () => {
-    expect(await passed('pre-pr')).toBe(false);
-  });
-
-  test('passes with a passed verification and fails again when a failed one supersedes it', async () => {
-    const passedId = await registerOne(
-      WORK,
-      workRecord('verification', 'main', verificationData('passed')),
-    );
+  test('passes without any finding', async () => {
     expect(await passed('pre-pr')).toBe(true);
-
-    await register(WORK, [
-      {
-        ...workRecord('verification', 'main', verificationData('failed')),
-        relations: [{ kind: 'supersedes', to: passedId }],
-      },
-    ]);
-
-    expect(await passed('pre-pr')).toBe(false);
   });
 
   test('fails with an URGENT finding lacking resolves-finding and passes with a decision that resolves it', async () => {
     const directiveId = await seedDirective();
-    await register(WORK, [workRecord('verification', 'main', verificationData('passed'))]);
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
     expect(await passed('pre-pr')).toBe(false);
 
@@ -537,7 +470,6 @@ describe('gate pre-pr', () => {
   });
 
   test('a NORMAL finding does not block, and a raw answers from another type does not resolve the URGENT one', async () => {
-    await register(WORK, [workRecord('verification', 'main', verificationData('passed'))]);
     await registerOne(WORK, workRecord('finding', 'n', findingData('NORMAL')));
     expect(await passed('pre-pr')).toBe(true);
 
@@ -1416,32 +1348,32 @@ describe('estrategia sync (premises)', () => {
     ]);
   });
 
-  /** O mesmo caminho da skill: o hook lê o documento em `input.path`, extrai as premissas e planeja. */
-  const runHook = (input: SyncInput, cwd = repoRoot, hook = hookPath) =>
-    spawnSync(process.execPath, [hook, 'sync-plan'], {
+  /** O mesmo caminho da skill: o CLI lê o documento em `input.path`, extrai as premissas e planeja. */
+  const runFlow = (input: SyncInput, cwd = repoRoot, script = path.join(flowDir, 'flow.ts')) =>
+    spawnSync(process.execPath, [script, 'sync-plan'], {
       cwd,
       input: JSON.stringify(input),
       encoding: 'utf8',
     });
 
   const hookPlan = (input: SyncInput): SyncPlan => {
-    const result = runHook(input);
+    const result = runFlow(input);
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     return JSON.parse(result.stdout) as SyncPlan;
   };
 
-  /** Roda o hook num repositório temporário: o `REPO_ROOT` dele é o temporário e o `path` relativo vale ali. */
-  const runHookWithStrategy = (lines: string[]) => {
+  /** Roda o CLI num repositório temporário: o `REPO_ROOT` dele é o temporário e o `path` relativo vale ali. */
+  const runFlowWithStrategy = (lines: string[]) => {
     const root = createTempDir('strategy');
-    const hooks = path.join(root, '.claude/hooks');
-    fs.mkdirSync(hooks, { recursive: true });
-    for (const file of fs.readdirSync(path.dirname(hookPath)).filter((f) => f.endsWith('.ts'))) {
-      fs.copyFileSync(path.join(path.dirname(hookPath), file), path.join(hooks, file));
+    const scripts = path.join(root, 'scripts/flow');
+    fs.mkdirSync(scripts, { recursive: true });
+    for (const file of fs.readdirSync(flowDir).filter((f) => f.endsWith('.ts'))) {
+      fs.copyFileSync(path.join(flowDir, file), path.join(scripts, file));
     }
     fs.mkdirSync(path.join(root, 'docs/directives'), { recursive: true });
     fs.writeFileSync(path.join(root, docPath(STRATEGY)), ['## Tema', ...lines].join('\n'));
-    return runHook(inputForFile(docPath(STRATEGY)), root, path.join(hooks, 'flow-hooks.ts'));
+    return runFlow(inputForFile(docPath(STRATEGY)), root, path.join(scripts, 'flow.ts'));
   };
 
   const inputForFile = (file: string): SyncInput => ({
@@ -1475,7 +1407,7 @@ describe('estrategia sync (premises)', () => {
   }, 30_000);
 
   test('a relative path is resolved from the repository root, with the cwd in another directory', () => {
-    const result = runHook(
+    const result = runFlow(
       { ...inputForFile('docs/directives/estrategia.md'), extracted: [] },
       createTempDir('other-cwd'),
     );
@@ -1505,7 +1437,7 @@ describe('estrategia sync (premises)', () => {
   ])(
     '%s exits with 2 and the reason on stderr',
     (_name, lines, reason) => {
-      const result = runHookWithStrategy(lines);
+      const result = runFlowWithStrategy(lines);
 
       expect(result.status).toBe(2);
       expect(result.stdout).toBe('');
@@ -1544,7 +1476,7 @@ describe('definition hashes', () => {
       ]),
     );
     expect(list.process?.hashes).toEqual(expected);
-    expect(list.process?.pinned.types).toHaveLength(9);
+    expect(list.process?.pinned.types).toHaveLength(8);
     expect(list.process?.pinned.relations).toHaveLength(6);
     expect(list.process?.pinned.gates).toHaveLength(2);
   });
@@ -1585,10 +1517,6 @@ describe('rehearsal of a complete work', () => {
       relations: [{ to: gapId, as: 'about-gap' }],
     });
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
-    const failedId = await registerOne(
-      WORK,
-      workRecord('verification', 'main', verificationData('failed')),
-    );
     expect(await passed('pre-pr')).toBe(false);
     expect(await passed('gaps')).toBe(false);
 
@@ -1599,10 +1527,6 @@ describe('rehearsal of a complete work', () => {
           { to: findingId, as: 'resolves-finding' },
           { to: directiveId, as: 'anchored-in' },
         ],
-      },
-      {
-        ...workRecord('verification', 'main', verificationData('passed')),
-        relations: [{ kind: 'supersedes', to: failedId }],
       },
     ]);
     expect(await passed('pre-pr')).toBe(true);

@@ -6,8 +6,8 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Processos e targets
 
-- Projeto: `hexlog`. Processo de cada trabalho: o slug da branch, calculado só por `node .claude/hooks/flow-hooks.ts slug <branch>` (nunca à mão). Processo das diretrizes vigente: `directives-3`; quando schema, relação ou gate mudar, vira `directives-4` e esta linha troca.
-- Targets de um trabalho: `<slug>.opening`, `<slug>.premise.objective`, `<slug>.premise.<short>`, `<slug>.decision.<short>`, `<slug>.gap.<short>`, `<slug>.evidence.<short>`, `<slug>.verification`, `<slug>.finding.<short>`.
+- Projeto: `hexlog`. Processo de cada trabalho: o slug da branch, calculado só por `node scripts/flow/flow.ts slug <branch>` (nunca à mão). Processo das diretrizes vigente: `directives-4`; quando schema, relação ou gate mudar, vira `directives-5` e esta linha troca.
+- Targets de um trabalho: `<slug>.opening`, `<slug>.premise.objective`, `<slug>.premise.<short>`, `<slug>.decision.<short>`, `<slug>.gap.<short>`, `<slug>.evidence.<short>`, `<slug>.finding.<short>`.
 - Targets das diretrizes: `directives.<doc>` (registro `doc`, um por documento de `docs/directives/`) e `directives.<doc>.<rule>` (registro `directive`, uma regra atômica; `<doc>` é o nome do arquivo sem `.md` e `<rule>` uma chave curta em inglês).
 - Targets das premissas atemporais: `directives.estrategia.<slug>` (registro `premise`, um por bullet de [estrategia.md](estrategia.md)) e `directives.estrategia.none`, a sentinela "nenhuma premissa se aplica".
 - Toda consulta às diretrizes fixa o processo vigente (o `process` da linha "Processo das diretrizes vigente" acima): `supersedes` e `revokes` não cruzam processos, então o alcance projeto enxergaria duas gerações.
@@ -64,19 +64,17 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Verificação e achados
 
-- Antes do PR, registre `verification` com `result`, `commit` e `commands` (`typecheck`, `lint`, `knip`, `format:check`, `test:coverage`).
-- Antes da `verification` e de novo depois da review, para as decisões que a review gerou, a `decision` vigente cujo texto diverge do que o diff entrega é regravada com `supersedes`, o texto do entregue e as mesmas relações (`anchored-in` ou `about-gap`, `rests-on`, `resolves-finding`, `derivesFrom`). Esta é a única lista de relações a regravar: a skill só executa.
-- No pré-PR, `node .claude/hooks/flow-report.ts <slug>` (passo 5 do `flow-run`) lista as decisões vigentes cujo `rests-on` cita só o objetivo ou a sentinela, ou cuja regra citada o diff emendou; apoia o julgamento de "Premissas" e nunca é gate.
-- Toda `verification` nova faz `supersedes` da vigente. Deve haver exatamente uma vigente, `passed`, com `commit` igual ao `HEAD`.
+- No pré-PR e de novo depois da review, para as decisões que a review gerou, a `decision` vigente cujo texto diverge do que o diff entrega é regravada com `supersedes`, o texto do entregue e as mesmas relações (`anchored-in` ou `about-gap`, `rests-on`, `resolves-finding`, `derivesFrom`). Esta é a única lista de relações a regravar: a skill só executa.
+- No pré-PR, `node scripts/flow/report.ts <slug>` (passo 3 do pré-PR do `flow-run`) lista as decisões vigentes cujo `rests-on` cita só o objetivo ou a sentinela, ou cuja regra citada o diff emendou; apoia o julgamento de "Premissas" e nunca é gate.
 - Registre cada achado da review como `finding` (`severity`, `origin`, `description`, `location`).
 - **Achado URGENT é corrigido.** Aceitar sem corrigir exige justificativa em `rationale`. A `decision` que o resolve usa `resolves-finding`, `grounds: directive`, `confidence: high`, `anchored-in` na regra desta seção e `rests-on` (ou a exceção de Premissas).
-- Falha de verificação ou achado URGENT se corrige e se reavalia; pare só se não conseguir.
+- Achado URGENT se corrige e se reavalia; pare só se não conseguir.
 
 ## Gates e PR
 
-- `pre-pr`: há `verification` `passed` e todo `finding` URGENT tem `decision` que o resolve.
+- `pre-pr`: todo `finding` URGENT tem `decision` que o resolve. Comandos de verificação (tipos, lint, testes) ficam com o husky, o commitlint e o CI, não com o log.
 - `gaps`: toda `gap` tem um fechador, `directive` por `closes-gap` ou `premise` por `fills-gap`. Premissa revogada deixa de fechar: a lacuna reabre até outra premissa nova, com `fills-gap`, fechá-la.
-- Os dois verdes: `flow-run` grava o marcador (`node .claude/hooks/flow-hooks.ts mark <slug>`, nunca por Write nem redirecionamento) e abre o PR.
+- Os dois verdes: `flow-run` grava o marcador (`node scripts/flow/mark.ts <slug>`, nunca por Write nem redirecionamento) e abre o PR. O `mark` confere `pre-pr` e `gaps` por `scripts/flow/gate.ts` antes de gravar e, com algum reprovado, recusa listando gate, pergunta e ids, sem gravar.
 - Lacuna fechada por premissa (`fills-gap`): o corpo do PR lista cada uma (id da lacuna, `question`, `statement` da premissa e id da `decision`), com os gates verdes e o PR fora de rascunho também. A premissa vive só no log, então o corpo é o único lugar em que o revisor a vê.
 - Lacuna aberta: o PR abre **em rascunho**, com as lacunas citadas no corpo e o detalhe em `.ignore/flow/<slug>/lacunas.md`.
 - O rascunho só sai por `gh pr ready` (sem argumento, na branch do PR), depois de `flow-gaps` fechar as lacunas e regravar o marcador. `update_pull_request` com `draft: false` é sempre negado.

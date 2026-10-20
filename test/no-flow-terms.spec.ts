@@ -5,6 +5,8 @@ import ts from 'typescript';
 
 const repoRoot = path.resolve(__dirname, '..');
 const SCANNED_DIRS = ['src', 'hook', 'scripts'];
+// `scripts/flow/` é código do fluxo por definição (`sync-plan`, `planSync` e `SyncPlan` usam `plan`).
+const FLOW_SCRIPTS_DIR = path.join('scripts', 'flow') + path.sep;
 
 // Arquivos que a varredura tem de achar, senão um filtro quebrado a faria passar sem olhar nada.
 const KNOWN_FILES = [
@@ -14,13 +16,14 @@ const KNOWN_FILES = [
   'scripts/build.ts',
 ];
 
-/** Arquivos .ts de src/, hook/ e scripts/, em qualquer profundidade. */
+/** Arquivos .ts de src/, hook/ e scripts/ (menos scripts/flow/), em qualquer profundidade. */
 function listScannedFiles(): string[] {
   return SCANNED_DIRS.flatMap((dir) =>
     fs
       .readdirSync(path.join(repoRoot, dir), { recursive: true, encoding: 'utf8' })
-      .filter((entry) => entry.endsWith('.ts'))
-      .map((entry) => path.join(repoRoot, dir, entry)),
+      .map((entry) => path.join(dir, entry))
+      .filter((entry) => entry.endsWith('.ts') && !entry.startsWith(FLOW_SCRIPTS_DIR))
+      .map((entry) => path.join(repoRoot, entry)),
   );
 }
 

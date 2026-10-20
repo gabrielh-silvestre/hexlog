@@ -19,11 +19,11 @@ Como o trabalho trata uma lacuna: parando para perguntar ao dono, ou decidindo e
 _Avoid_: nível de autonomia
 
 **Pré-PR**:
-A etapa que fecha o trabalho: verificação, review, gates e abertura do PR.
+A etapa que fecha o trabalho: review, relatório das decisões, push, marcador e abertura do PR. Os comandos de checagem (tipos, lint, testes) ficam com o husky, o commitlint e o CI, não com o log.
 _Avoid_: checklist final, fechamento
 
 **Marcador do pré-PR**:
-A prova, gravada pelo fluxo, de que os gates do trabalho passaram num commit da branch; sem ela o PR só abre em rascunho.
+A prova, gravada por `scripts/flow/mark.ts` só quando os gates `pre-pr` e `gaps` do trabalho estão verdes, de que eles passaram num commit da branch; sem ela o PR só abre em rascunho. A árvore suja não importa.
 _Avoid_: marcador (sozinho), selo, flag
 
 ### Regras
@@ -92,11 +92,7 @@ _Avoid_: resolução, resposta
 Lacuna sem fechador vigente; deixa o PR em rascunho.
 _Avoid_: lacuna pendente
 
-### Verificação
-
-**Verificação** (`verification`):
-O resultado dos comandos de checagem num commit do trabalho.
-_Avoid_: build, CI, teste
+### Review
 
 **Achado** (`finding`):
 Um problema que a review apontou, com severidade e origem.
