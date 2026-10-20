@@ -8,8 +8,9 @@ version: 2
 # manuais.
 # O prefixo mantém o título como Conventional Commit (o cliff.toml descarta os demais), mas só nos
 # version updates: o PR de segurança sai sem ele e o cliff.toml o descarta.
-# Major nunca vem pelo Dependabot (`ignore`): entra por PR manual. Minor e patch saem em um PR por
-# ecossistema, depois de 7 dias de cooldown. O esbuild (0.x) fica no grupo: o quality, que constrói
+# Major de npm nunca vem pelo Dependabot (`ignore`): entra por PR manual. Major de action vem: as
+# actions por tag major (`@v7`) só têm a próxima major como candidata, então ignorá-la as deixaria
+# sem PR nenhum. Minor e patch saem em um PR por ecossistema, depois de 7 dias de cooldown. O esbuild (0.x) fica no grupo: o quality, que constrói
 # o bundle nos specs, pega a quebra.
 updates:
   - package-ecosystem: npm
@@ -46,9 +47,5 @@ updates:
         update-types:
           - minor
           - patch
-    ignore:
-      - dependency-name: '*'
-        update-types:
-          - version-update:semver-major
     commit-message:
       prefix: chore(deps)

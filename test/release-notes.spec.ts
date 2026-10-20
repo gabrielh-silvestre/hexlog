@@ -1,8 +1,10 @@
 import { describe, expect, test } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { releaseNotes } from '../scripts/release-notes.ts';
 import { VERSION } from '../src/version.ts';
+import { createTempDir } from './helpers.ts';
 
 const PR = { number: 7, url: 'https://github.com/o/r/pull/7' };
 
@@ -85,22 +87,60 @@ describe('releaseNotes', () => {
 });
 
 describe('release-notes-cli', () => {
+  const CLI_TIMEOUT = 15_000;
   const cli = path.resolve(__dirname, '..', 'scripts', 'release-notes-cli.ts');
   const run = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 15_000 });
+    spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: CLI_TIMEOUT });
 
-  test('prints the body of the package.json version from the real CHANGELOG.md', () => {
-    const result = run(VERSION, '--pr', '12', '--repo', 'o/r');
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('PR da release: [#12](https://github.com/o/r/pull/12)');
-    expect(result.stdout).toContain('## Instalação');
-  });
+  test(
+    'prints the body of the package.json version from the real CHANGELOG.md',
+    () => {
+      const result = run(VERSION, '--pr', '12', '--repo', 'o/r');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('PR da release: [#12](https://github.com/o/r/pull/12)');
+      expect(result.stdout).toContain('## Instalação');
+    },
+    CLI_TIMEOUT,
+  );
 
-  test('an empty --pr means no PR line', () => {
-    const result = run(VERSION, '--pr', '');
-    expect(result.status).toBe(0);
-    expect(result.stdout).not.toContain('PR da release');
-  });
+  // Sem `node_modules`: o `release.yml` roda a CLI sem `npm ci`, então um import de pacote quebra a release
+  test(
+    'runs without node_modules, as the release workflow does',
+    () => {
+      const root = createTempDir('release-notes-bare');
+      fs.mkdirSync(path.join(root, 'scripts'));
+      for (const file of ['release-notes.ts', 'release-notes-cli.ts']) {
+        fs.copyFileSync(
+          path.resolve(__dirname, '..', 'scripts', file),
+          path.join(root, 'scripts', file),
+        );
+      }
+      fs.copyFileSync(
+        path.resolve(__dirname, '..', 'CHANGELOG.md'),
+        path.join(root, 'CHANGELOG.md'),
+      );
+
+      const result = spawnSync(
+        process.execPath,
+        [path.join(root, 'scripts', 'release-notes-cli.ts'), VERSION],
+        { encoding: 'utf8', timeout: CLI_TIMEOUT },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('## Instalação');
+    },
+    CLI_TIMEOUT,
+  );
+
+  test(
+    'an empty --pr means no PR line',
+    () => {
+      const result = run(VERSION, '--pr', '');
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('PR da release');
+    },
+    CLI_TIMEOUT,
+  );
 
   test.each([
     ['no version', []],
@@ -108,15 +148,23 @@ describe('release-notes-cli', () => {
     ['a non-numeric --pr', [VERSION, '--pr', 'x', '--repo', 'o/r']],
     ['--pr without --repo', [VERSION, '--pr', '1']],
     ['an unknown option', [VERSION, '--nope']],
-  ])('rejects %s with exit 1', (_name, args) => {
-    const result = run(...args);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('release-notes failed');
-  });
+  ])(
+    'rejects %s with exit 1',
+    (_name, args) => {
+      const result = run(...args);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('release-notes failed');
+    },
+    CLI_TIMEOUT,
+  );
 
-  test('an unknown version exits 1', () => {
-    const result = run('0.0.0');
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('no section for 0.0.0');
-  });
+  test(
+    'an unknown version exits 1',
+    () => {
+      const result = run('0.0.0');
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('no section for 0.0.0');
+    },
+    CLI_TIMEOUT,
+  );
 });

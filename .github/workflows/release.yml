@@ -5,6 +5,8 @@ name: Release
 # existe, então reexecutar completa o que falta. O `workflow_dispatch` é só o ensaio: roda sempre em
 # dry-run (sem entrada que o desligue), ignora a existência de tag e Release, só imprime o que faria
 # e prova a permissão do App criando e apagando a ref `chore/back-merge-dry-run`.
+# Os secrets do App moram no environment `release`, restrito a `main`: só o job desta branch os lê,
+# e o ensaio também só roda a partir de `main`.
 # O App cria a branch e o PR de back-merge: um PR aberto com `GITHUB_TOKEN` não dispara `ci.yml` nem
 # o CodeQL. Tag e Release saem com o `GITHUB_TOKEN` (`contents: write`).
 on:
@@ -21,6 +23,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
     env:

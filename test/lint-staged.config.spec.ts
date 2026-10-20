@@ -5,10 +5,10 @@ import config from '../lint-staged.config.ts';
 type Task = string | ((files: readonly string[]) => string | string[]);
 
 const abs = (file: string): string => path.resolve(file);
-const mirror = (...files: string[]): string | string[] => {
+const staged = (...files: string[]): string | string[] => {
   const tasks = config['*.ts'] as Task[];
   const task = tasks.at(-1);
-  if (typeof task !== 'function') throw new Error('mirror task missing');
+  if (typeof task !== 'function') throw new Error('staged-specs task missing');
   return task(files.map(abs));
 };
 const patternsOf = (command: string | string[]): RegExp[] => {
@@ -19,7 +19,7 @@ const matchesAny = (patterns: RegExp[], file: string): boolean =>
   patterns.some((pattern) => pattern.test(abs(file)));
 
 describe('lint-staged config', () => {
-  it('should fix, format, typecheck and run the mirror specs in sequence for .ts', () => {
+  it('should fix, format, typecheck and run the staged specs in sequence for .ts', () => {
     const tasks = config['*.ts'] as Task[];
 
     expect(tasks.slice(0, 2)).toEqual(['eslint --fix', 'prettier --write']);
@@ -38,29 +38,46 @@ describe('lint-staged config', () => {
     );
   });
 
-  it('should map src/x/y.ts to the spec and the property spec of the same folder', () => {
-    const patterns = patternsOf(mirror('src/domain/inheritance.ts'));
+  it('should map src/x/y.ts to the spec and the property spec of the same name', () => {
+    const patterns = patternsOf(staged('src/domain/inheritance.ts'));
 
     expect(matchesAny(patterns, 'test/domain/inheritance.spec.ts')).toBe(true);
     expect(matchesAny(patterns, 'test/domain/inheritance.property.spec.ts')).toBe(true);
-    expect(matchesAny(patterns, 'test/domain/inheritance-extra.spec.ts')).toBe(false);
-    expect(matchesAny(patterns, 'test/queries/inheritance.spec.ts')).toBe(false);
+    expect(matchesAny(patterns, 'test/queries/inheritance-extra.spec.ts')).toBe(false);
   });
 
-  it('should map a file outside src/ to the root of test/', () => {
-    const patterns = patternsOf(mirror('scripts/export.ts', '.claude/hooks/flow-hooks.ts'));
+  it('should find the spec by name in any folder of test/', () => {
+    const patterns = patternsOf(staged('src/adapters/fs/lock.ts'));
+
+    expect(matchesAny(patterns, 'test/adapters/lock.spec.ts')).toBe(true);
+    expect(matchesAny(patterns, 'test/lock.spec.ts')).toBe(true);
+    expect(matchesAny(patterns, 'test/adapters/unlock.spec.ts')).toBe(false);
+  });
+
+  it('should map a file outside src/ to the spec of the same name', () => {
+    const patterns = patternsOf(staged('scripts/export.ts', '.claude/hooks/flow-hooks.ts'));
 
     expect(matchesAny(patterns, 'test/export.spec.ts')).toBe(true);
     expect(matchesAny(patterns, 'test/flow-hooks.spec.ts')).toBe(true);
     expect(matchesAny(patterns, 'test/flowXhooks.spec.ts')).toBe(false);
   });
 
-  it('should run a staged spec itself and nothing for a staged helper', () => {
-    expect(matchesAny(patternsOf(mirror('test/export.spec.ts')), 'test/export.spec.ts')).toBe(true);
-    expect(mirror('test/helpers.ts')).toEqual([]);
+  it('should run a staged spec itself and no spec of its own for a staged helper', () => {
+    expect(matchesAny(patternsOf(staged('test/export.spec.ts')), 'test/export.spec.ts')).toBe(true);
+    expect(matchesAny(patternsOf(staged('test/helpers.ts')), 'test/helpers.spec.ts')).toBe(false);
   });
 
-  it('should pass the command with --passWithNoTests so a file without a mirror exits 0', () => {
-    expect(mirror('src/server.ts')).toEqual([expect.stringContaining('--passWithNoTests')]);
+  it('should always run the core, even for a file without a spec', () => {
+    const patterns = patternsOf(staged('scripts/timeline.ts'));
+
+    expect(matchesAny(patterns, 'test/domain/chain.spec.ts')).toBe(true);
+    expect(matchesAny(patterns, 'test/shared/loader.spec.ts')).toBe(true);
+    expect(matchesAny(patterns, 'test/commands/register.spec.ts')).toBe(true);
+    expect(matchesAny(patterns, 'test/commands/register-state.spec.ts')).toBe(true);
+    expect(matchesAny(patterns, 'test/commands/define.spec.ts')).toBe(false);
+  });
+
+  it('should pass the command with --passWithNoTests so a file without a spec exits 0', () => {
+    expect(staged('src/server.ts')).toContain('--passWithNoTests');
   });
 });
