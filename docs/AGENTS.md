@@ -16,6 +16,7 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 | `migracao.md` | Arquivamento do dado 0.x (`--archive-0x`), releitura da trilha arquivada, volta ao 0.x e migração 0.x para 1.0. |
 | `dados.md` | Layout de dados em `<D>`, erros e avisos, tetos do lock, destravamento manual, recuperação de `PROCESS_CORRUPTED` e lacunas de isolamento. |
 | `desenvolvimento.md` | Comandos de desenvolvimento, scripts de leitura (`insights`, `export`, `timeline`) e como os testes se organizam. |
+| `feedback-loops.md` | Onde o erro é pego antes do CI: o que o `pre-commit`, o `commit-msg`, o `pre-push`, o pré-PR do agente (`flow-run`, `mark`) e o hook de PR conferem, o que bloqueia, quanto leva e como rodar na mão. |
 | `friction-mining.md` | Como a skill `friction-mining` minera transcripts do Claude Code atrás de atrito no uso de uma tool MCP, e como portá-la a outro projeto. |
 | `qualidade-ci.md` | Estudo de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17; o que está instalado vive no `AGENTS.md` da raiz e em `directives/qualidade-e-testes.md`. |
 | `qualidade-codigo.md` | Estudo de qualidade de código e teste — TypeScript, ESLint, jest, property-based testing, mutação — consultado em 2026-09-17; o tier "Agora" já está instalado, o resto é estudo. |
