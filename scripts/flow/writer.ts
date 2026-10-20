@@ -7,8 +7,6 @@ import { Name } from '../../src/domain/ids.ts';
 import { Author, type BatchItem } from '../../src/domain/record.ts';
 import { legacyDataError } from '../../src/errors.ts';
 
-const PROJECT = Name.parse('hexlog');
-
 const INSTALL = 'run node scripts/install.ts';
 
 // Só os campos que a trava lê de `InstallManifest` (`src/installation.ts`); o resto do manifesto não importa.
@@ -149,7 +147,7 @@ export function openWriter({
   return {
     write: async ({ process, key, records }: WriteBatch) =>
       services.process.register({
-        project: PROJECT,
+        project: Name.parse('hexlog'),
         process: Name.parse(process),
         author: checkedAuthor,
         key: BatchKey.parse(key),
