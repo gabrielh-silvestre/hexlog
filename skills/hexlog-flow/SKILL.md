@@ -267,7 +267,7 @@ nunca mais grava esse hash nesse campo. Duas saídas, nesta ordem de preferênci
    hipotéticos: `plan-legacy` (fixado com o campo `file` sem marca, opcional) e
    `evidence-file` (marcado, com o campo `file`):
 
-   ```
+   ```text
    records: [
      { alias: "file", type: "evidence-file", target: "x.y", data: { file: "<hash>" } },
      { type: "plan-legacy", target: "x.y", data: { isRevision: true, diff: "…" },
