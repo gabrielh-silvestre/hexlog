@@ -34,16 +34,6 @@ type InstalledCheck = {
   gitDiffQuiet: (commit: string) => DiffResult;
 };
 
-/** `undefined` quando o texto é ausente ou não é JSON: o `safeParse` seguinte já o recusa. */
-function parseJson(text: string | null): unknown {
-  if (text === null) return undefined;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Confere que o servidor que as sessões executam é o código deste repositório: pasta da versão
  * igual a `version`, manifesto de build limpo e `src/` do `HEAD` igual ao do commit instalado.
@@ -55,14 +45,27 @@ export function checkInstalled({
   readManifest,
   gitDiffQuiet: diffSrc,
 }: InstalledCheck): string[] {
-  const parsed = ClaudeJson.safeParse(parseJson(claudeJsonText));
+  // Texto ausente ou que não é JSON fica `undefined`: o `safeParse` seguinte já o recusa.
+  let claudeJson: unknown;
+  try {
+    claudeJson = JSON.parse(claudeJsonText ?? '');
+  } catch {
+    claudeJson = undefined;
+  }
+  const parsed = ClaudeJson.safeParse(claudeJson);
   if (!parsed.success) {
     return [`hexlog server not registered in ~/.claude.json: ${INSTALL}`];
   }
   const versionDir = path.dirname(parsed.data.mcpServers.hexlog.args[0]);
   const problems: string[] = [];
 
-  const manifest = Manifest.safeParse(parseJson(readManifest(versionDir)));
+  let manifestJson: unknown;
+  try {
+    manifestJson = JSON.parse(readManifest(versionDir) ?? '');
+  } catch {
+    manifestJson = undefined;
+  }
+  const manifest = Manifest.safeParse(manifestJson);
   if (!manifest.success) {
     problems.push(`manifest.json missing or invalid in ${versionDir}: ${INSTALL}`);
   }

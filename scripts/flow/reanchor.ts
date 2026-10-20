@@ -78,19 +78,24 @@ function sourceOf(row: Row): Source {
 const readSources = (reader: Reader, process: string, includeNonCurrent: boolean): Source[] =>
   readRows(reader, process, { fields: ['rule', 'statement'], includeNonCurrent }).map(sourceOf);
 
-const readOrNull = (file: string): string | null => {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch {
-    return null;
-  }
-};
-
 function installedCheck() {
   return {
     version: VERSION,
-    claudeJsonText: readOrNull(path.join(os.homedir(), '.claude.json')),
-    readManifest: (versionDir: string) => readOrNull(path.join(versionDir, 'manifest.json')),
+    // Arquivo ausente ou ilegível vira `null`, que `checkInstalled` relata como problema.
+    claudeJsonText: (() => {
+      try {
+        return fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8');
+      } catch {
+        return null;
+      }
+    })(),
+    readManifest: (versionDir: string) => {
+      try {
+        return fs.readFileSync(path.join(versionDir, 'manifest.json'), 'utf8');
+      } catch {
+        return null;
+      }
+    },
     gitDiffQuiet: gitDiffQuiet(path.resolve(import.meta.dirname, '../..')),
   };
 }
