@@ -80,4 +80,5 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - Lacuna fechada por premissa (`fills-gap`): o corpo do PR lista cada uma (id da lacuna, `question`, `statement` da premissa e id da `decision`), com os gates verdes e o PR fora de rascunho também. A premissa vive só no log, então o corpo é o único lugar em que o revisor a vê.
 - Lacuna aberta: o PR abre **em rascunho**, com as lacunas citadas no corpo e o detalhe em `.ignore/flow/<slug>/lacunas.md`.
 - O rascunho só sai por `gh pr ready` (sem argumento, na branch do PR), depois de `flow-gaps` fechar as lacunas e regravar o marcador. `update_pull_request` com `draft: false` é sempre negado.
+- Exceção declarada: o PR de back-merge que o `release.yml` abre sozinho (`chore/back-merge-vX-Y-Z`, para `develop`) não passa pelo gate `pre-pr` nem pelo marcador, porque só traz de volta commits que já passaram pela revisão da release e o hook de PR só vale em sessão do Claude Code. Não é descuido.
 - O marcador vale para o `HEAD` em que foi gravado: depois de commit novo, rebase ou squash, rode `mark` de novo.

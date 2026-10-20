@@ -3,7 +3,7 @@
 **Generated:** 2026-09-17 · **Updated:** 2026-10-07
 
 ## Purpose
-Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: registros tipados com relações e gates declarativos, sem termo de fluxo no código. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 12 tools. Não há CLI nem daemon (só scripts read-only em `scripts/`): servidor MCP e hook de isolamento Bash são instalados no Claude Code como dois bundles esbuild em `~/.local/lib/hexlog/<versão>/`, junto com as skills de `skills/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/.v1/` (fallback `~/.local/share/hexlog/.v1/`); dado 0.x em `<D>` é recusado com `LEGACY_DATA` até o instalador arquivá-lo.
+Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: registros tipados com relações e gates declarativos, sem termo de fluxo no código. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 12 tools. Não há CLI nem daemon para o agente (só scripts em `scripts/`: os relatórios read-only e o `release-notes-cli.ts`, que só o `release.yml` chama, sem `src/` e sem dado): servidor MCP e hook de isolamento Bash são instalados no Claude Code como dois bundles esbuild em `~/.local/lib/hexlog/<versão>/`, junto com as skills de `skills/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/.v1/` (fallback `~/.local/share/hexlog/.v1/`); dado 0.x em `<D>` é recusado com `LEGACY_DATA` até o instalador arquivá-lo.
 
 ## Key Files
 | File | Description |
@@ -15,7 +15,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
 | `.prettierrc`, `.prettierignore`, `.editorconfig` | Formatação (aspas simples, vírgula final, 100 colunas); `*.md` e `package-lock.json` ficam fora do Prettier |
 | `.husky/pre-commit` | Roda `lint-staged` (`lint-staged.config.ts`) |
-| `lint-staged.config.ts` | Config do `lint-staged`: nos `*.ts` em stage roda `eslint --fix`, `prettier --write`, `npm run typecheck` e o spec espelho (`src/x/y.ts` casa `test/x/y*.spec.ts`; fora de `src/`, `test/y*.spec.ts`); nos `*.md`, `markdownlint-cli2`, `cspell`, `directives.spec.ts` e `skill-coherence.spec.ts` |
+| `lint-staged.config.ts` | Config do `lint-staged`: nos `*.ts` em stage roda `eslint --fix`, `prettier --write`, `npm run typecheck` e o spec espelho (`src/x/y.ts` casa `test/x/y.spec.ts` e `test/x/y.<x>.spec.ts`; fora de `src/`, `test/y.spec.ts` e `test/y.<x>.spec.ts`); nos `*.md`, `markdownlint-cli2`, `cspell`, `directives.spec.ts` e `skill-coherence.spec.ts` |
 | `.markdownlint-cli2.jsonc`, `cspell.json` | Lint e ortografia dos `.md` (`npm run lint:md`, `npm run spell`): `docs/pesquisa/**` fora, MD013 e as regras de formato do `AGENTS.md` gerado e dos ADRs desligadas, dicionário pt-BR (`@cspell/dict-pt-br`) e `words` do projeto |
 | `.husky/pre-push` | No 1º push de uma branch (sha remoto zerado) roda `npm run build` e `npm run test:coverage`; tag, remoção e pushes seguintes pulam |
 | `.husky/commit-msg` | Roda o `commitlint` na mensagem do commit (`commitlint.config.js`) |
@@ -88,7 +88,7 @@ Regras que valem para o repositório todo, importadas pelo `CLAUDE.md`:
 - [convencoes.md](docs/directives/convencoes.md): idioma, núcleo e bordas, dependências, hash, escrita em disco, imports
 - [fronteiras.md](docs/directives/fronteiras.md): camadas, direção de dependência, travas mecânicas e checklist de review
 - [invariantes.md](docs/directives/invariantes.md): log append-only, cadeia, lock, tools, anexos e definições
-- [qualidade-e-testes.md](docs/directives/qualidade-e-testes.md): comandos antes de concluir, orçamentos e convenções dos specs
-- [documentacao.md](docs/directives/documentacao.md): ADR e doc vivo, como citar, `pesquisa/` congelado, famílias de ID
+- [qualidade-e-testes.md](docs/directives/qualidade-e-testes.md): comandos antes de concluir, hooks locais, dependências e actions no CI, orçamentos e convenções dos specs
+- [documentacao.md](docs/directives/documentacao.md): ADR e doc vivo, changelog (gate `changelog-line` e release), como citar, `pesquisa/` congelado, famílias de ID
 - [instalacao-e-hooks.md](docs/directives/instalacao-e-hooks.md): instalador, hook de isolamento e hooks do fluxo
 - [estrategia.md](docs/directives/estrategia.md): premissas atemporais do produto, validadas pelo dono; cada decisão deve se apoiar em pelo menos uma, ou declarar que nenhuma se aplica
