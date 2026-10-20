@@ -61,10 +61,10 @@ Pergunte com `AskUserQuestion`: publicar tudo / revisar item a item / parar. Em 
 
 Ordem fixa; cada passo usa o conteúdo do arquivo aprovado, sem reescrever:
 
-1. Labels `confidence:high|medium|low`: `mcp__github-official__get_label`; se faltar, `gh label create <nome> --color <0e8a16|fbca04|c5def5> -R gabrielh-silvestre/hexlog` (o MCP não cria label).
-2. Cada `issue-H-xx.md`: `mcp__github-official__issue_write` (`method: create`), título e label das duas primeiras linhas, corpo = resto do arquivo. Anote `H-xx → #N`.
+1. Labels `mining` e `confidence:high|medium|low`: `mcp__github-official__get_label`; se faltar, `gh label create <nome> --color <5319e7|0e8a16|fbca04|c5def5> -R gabrielh-silvestre/hexlog` (o MCP não cria label).
+2. Cada `issue-H-xx.md`: `mcp__github-official__issue_write` (`method: create`), título e labels das duas primeiras linhas, corpo = resto do arquivo. Toda issue aberta pela mineração leva `mining`, além da `confidence:<nível>`; se a linha `labels:` do rascunho não trouxer `mining`, acrescente. Anote `H-xx → #N`.
 3. Cada `comment-<N>.md`: `mcp__github-official__add_issue_comment` na issue `#N`.
-4. Confira com `gh issue list -R gabrielh-silvestre/hexlog --state open --json number,title,labels` que cada issue saiu com a label certa.
+4. Confira com `gh issue list -R gabrielh-silvestre/hexlog --state open --json number,title,labels` que cada issue saiu com `mining` e a `confidence:<nível>` certa.
 
 Se o hook stop-slop barrar um corpo: reescreva o rascunho seguindo a mensagem do hook e `references/output-format.md`, mostre texto antigo → novo, peça ok para aquele item e só então publique.
 
