@@ -6,7 +6,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Processos e targets
 
-- Projeto: `hexlog`. Processo de cada trabalho: o slug da branch, calculado só por `node .claude/hooks/flow-hooks.ts slug <branch>` (nunca à mão). Processo das diretrizes vigente: `directives-3`; quando schema, relação ou gate mudar, vira `directives-4` e esta linha troca.
+- Projeto: `hexlog`. Processo de cada trabalho: o slug da branch, calculado só por `node .claude/hooks/flow-hooks.ts slug <branch>` (nunca à mão). Processo das diretrizes vigente: `directives-4`; quando schema, relação ou gate mudar, vira `directives-5` e esta linha troca.
 - Targets de um trabalho: `<slug>.opening`, `<slug>.premise.objective`, `<slug>.premise.<short>`, `<slug>.decision.<short>`, `<slug>.gap.<short>`, `<slug>.evidence.<short>`, `<slug>.verification`, `<slug>.finding.<short>`.
 - Targets das diretrizes: `directives.<doc>` (registro `doc`, um por documento de `docs/directives/`) e `directives.<doc>.<rule>` (registro `directive`, uma regra atômica; `<doc>` é o nome do arquivo sem `.md` e `<rule>` uma chave curta em inglês).
 - Targets das premissas atemporais: `directives.estrategia.<slug>` (registro `premise`, um por bullet de [estrategia.md](estrategia.md)) e `directives.estrategia.none`, a sentinela "nenhuma premissa se aplica".

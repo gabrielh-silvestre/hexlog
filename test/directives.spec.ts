@@ -417,12 +417,12 @@ describe('estrategia.md premises', () => {
 });
 
 describe('fluxo-hexlog.md with the strategic layer', () => {
-  // `directives-3` só prova que o token existe: `directives-2` segue citado como corte de trabalhos
+  // `directives-4` só prova que o token existe: `directives-2` segue citado como corte de trabalhos
   // antigos, então a prova do processo vigente está em "processo vigente de diretrizes escrito num lugar só".
   test.each([
     'rests-on',
     'fills-gap',
-    'directives-3',
+    'directives-4',
     'premise.objective',
     'directives.estrategia.none',
   ])('cites `%s`', (token) => {
@@ -434,7 +434,7 @@ describe('current directives process written in a single place', () => {
   const flowDoc = (): string => fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8');
   const skill = (name: string): string => fs.readFileSync(skillPath(name), 'utf8');
   // Geração vigente ou futura; `directives-2` segue citado como corte de trabalhos antigos.
-  const currentGeneration = /directives-[3-9]/;
+  const currentGeneration = /directives-[4-9]/;
 
   test('only the "Processo das diretrizes vigente" line of fluxo-hexlog.md cites the current generation', () => {
     const lines = flowDoc()
@@ -445,12 +445,12 @@ describe('current directives process written in a single place', () => {
     expect(flowDoc()).not.toMatch(/process: directives-\d/);
   });
 
-  test('the current process is `directives-3` and the next generation is `directives-4`', () => {
+  test('the current process is `directives-4` and the next generation is `directives-5`', () => {
     const line = flowDoc()
       .split('\n')
       .find((candidate) => candidate.includes('Processo das diretrizes vigente:'));
-    expect(line).toContain('vigente: `directives-3`');
-    expect(line).toContain('vira `directives-4`');
+    expect(line).toContain('vigente: `directives-4`');
+    expect(line).toContain('vira `directives-5`');
   });
 
   test('flow-run neither pins the current generation nor points to the process without a generation', () => {

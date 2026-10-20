@@ -6,7 +6,7 @@ import { planSync, type SyncInput } from '../scripts/flow/sync.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import type { QueryResult } from '../src/queries/query-service.ts';
-import { createFlowEnvironment, passedVerification, registerFlowRecord } from './flow-data.ts';
+import { createFlowEnvironment, registerFlowRecord } from './flow-data.ts';
 import { at, copyToXdg, createTempDir } from './helpers.ts';
 import { type Environment, createEnvironment } from './mcp/environment.ts';
 
@@ -53,11 +53,8 @@ beforeAll(async () => {
   git(repo, 'worktree', 'add', '-q', worktree, 'feat/y');
   fs.mkdirSync(path.join(repo, 'sub'));
   markerDir = path.join(repo, '.git', 'hexlog-flow');
-  // dado do hexlog com os gates verdes para os dois trabalhos que o `mark` marca (`feat-x` e `feat-y`)
+  // dado do hexlog com os gates verdes (sem URGENT nem lacuna) para os dois trabalhos que o `mark` marca
   const flow = await createFlowEnvironment(['feat-x', 'feat-y']);
-  for (const slug of ['feat-x', 'feat-y']) {
-    await registerFlowRecord(flow, slug, passedVerification(slug));
-  }
   xdgHome = copyToXdg(flow.dataDir);
   await flow.close();
 }, 30_000);
@@ -481,9 +478,14 @@ describe('modos', () => {
   test('mark refuses and writes nothing when a gate is red', async () => {
     const flow = await createFlowEnvironment(['feat-x']);
     try {
+      const findingId = await registerFlowRecord(flow, 'feat-x', {
+        type: 'finding',
+        target: 'feat-x.finding.a',
+        data: { severity: 'URGENT', origin: 'review', description: 'No bound', location: 'a.ts' },
+      });
       const result = runMark('feat-x', repo, copyToXdg(flow.dataDir));
       expect(result.status).toBe(1);
-      expect(result.stderr).toMatch(/gates are not green\npre-pr: occurred/);
+      expect(result.stderr).toContain(`gates are not green\npre-pr: no_pending: ${findingId}`);
       expect(fs.existsSync(markerDir)).toBe(false);
     } finally {
       await flow.close();

@@ -9,7 +9,6 @@ import { type Environment, createEnvironment } from './mcp/environment.ts';
 const hexlogDir = path.join(__dirname, '..', '.hexlog');
 
 const PROJECT = 'hexlog';
-const COMMIT = 'abc1234';
 
 type Kind = 'types' | 'relations' | 'gates';
 export const KINDS: Kind[] = ['types', 'relations', 'gates'];
@@ -85,14 +84,3 @@ export async function registerFlowRecord(
   });
   return at(records, 0).id;
 }
-
-/** `verification` `passed` de `slug`: a pergunta `occurred` do gate `pre-pr`. */
-export const passedVerification = (slug: string): FlowRecord => ({
-  type: 'verification',
-  target: `${slug}.verification`,
-  data: {
-    result: 'passed',
-    commit: COMMIT,
-    commands: [{ command: 'npm test', ok: true, summary: 'tests passed' }],
-  },
-});

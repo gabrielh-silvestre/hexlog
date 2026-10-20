@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
-import {
-  createFlowEnvironment,
-  passedVerification,
-  registerFlowRecord,
-  type FlowRecord,
-} from './flow-data.ts';
+import { createFlowEnvironment, registerFlowRecord, type FlowRecord } from './flow-data.ts';
 import { copyToXdg } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
 
@@ -45,9 +40,7 @@ const openGap: FlowRecord = {
 };
 
 describe('gate.ts pre-pr', () => {
-  test('exits 0 with both gates green', async () => {
-    await register(passedVerification(SLUG));
-
+  test('exits 0 with both gates green', () => {
     const result = runGate(['pre-pr', SLUG]);
 
     expect(result.status).toBe(0);
@@ -55,7 +48,6 @@ describe('gate.ts pre-pr', () => {
   }, 30_000);
 
   test('exits 1 listing an URGENT finding without resolves-finding', async () => {
-    await register(passedVerification(SLUG));
     const findingId = await register(urgentFinding);
 
     const result = runGate(['pre-pr', SLUG]);
@@ -65,20 +57,12 @@ describe('gate.ts pre-pr', () => {
   }, 30_000);
 
   test('exits 1 listing a gap without a closer', async () => {
-    await register(passedVerification(SLUG));
     const gapId = await register(openGap);
 
     const result = runGate(['pre-pr', SLUG]);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(`gaps: no_pending: ${gapId}\n`);
-  }, 30_000);
-
-  test('evaluates the gate pinned in the process, so a missing verification fails occurred', () => {
-    const result = runGate(['pre-pr', SLUG]);
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toBe('pre-pr: occurred\n');
   }, 30_000);
 
   test('exits 2 on 0.x data', () => {

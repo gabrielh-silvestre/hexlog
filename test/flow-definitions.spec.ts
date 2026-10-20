@@ -156,12 +156,6 @@ const findingData = (severity: string) => ({
   location: 'src/upload.ts',
 });
 
-const verificationData = (result: 'passed' | 'failed') => ({
-  result,
-  commit: COMMIT,
-  commands: [{ command: 'npm test', ok: result === 'passed', summary: `tests ${result}` }],
-});
-
 const workRecord = (type: string, short: string, data: Record<string, unknown>): Item => ({
   type,
   target: `${WORK}.${type}.${short}`,
@@ -295,10 +289,9 @@ describe('schemas and relations', () => {
       workRecord('decision', 'a', decisionData()),
       workRecord('gap', 'a', gapData()),
       workRecord('finding', 'a', findingData('NORMAL')),
-      workRecord('verification', 'main', verificationData('passed')),
     ]);
 
-    expect(records).toHaveLength(5);
+    expect(records).toHaveLength(4);
     const seeded = await queryAll({ process: DIRECTIVES });
     expect(seeded.records.map(({ type }) => type).sort()).toEqual(['directive', 'doc']);
   });
@@ -326,20 +319,13 @@ describe('schemas and relations', () => {
     ],
     ['gap without context', workRecord('gap', 'a', { question: 'Q?' })],
     ['finding with severity outside the enum', workRecord('finding', 'a', findingData('HIGH'))],
-    [
-      'verification with 13 commands',
-      workRecord('verification', 'main', {
-        ...verificationData('passed'),
-        commands: Array.from({ length: 13 }, () => ({ command: 'npm test', ok: true })),
-      }),
-    ],
   ])('%s is INVALID_RECORD', async (_label, record) => {
     expectError(await writeBatch(WORK, [record]), 'INVALID_RECORD');
   });
 
   test('a commit that is not a git-sha is refused with the format code at the field path', async () => {
     const result = await writeBatch(WORK, [
-      workRecord('verification', 'main', { ...verificationData('passed'), commit: 'HEAD' }),
+      workRecord('opening', 'main', { ...opening(), commit: 'HEAD' }),
     ]);
 
     expect(expectError(result, 'INVALID_RECORD').details).toEqual([
@@ -457,30 +443,12 @@ describe('schemas and relations', () => {
 });
 
 describe('gate pre-pr', () => {
-  test('fails without verification', async () => {
-    expect(await passed('pre-pr')).toBe(false);
-  });
-
-  test('passes with a passed verification and fails again when a failed one supersedes it', async () => {
-    const passedId = await registerOne(
-      WORK,
-      workRecord('verification', 'main', verificationData('passed')),
-    );
+  test('passes without any finding', async () => {
     expect(await passed('pre-pr')).toBe(true);
-
-    await register(WORK, [
-      {
-        ...workRecord('verification', 'main', verificationData('failed')),
-        relations: [{ kind: 'supersedes', to: passedId }],
-      },
-    ]);
-
-    expect(await passed('pre-pr')).toBe(false);
   });
 
   test('fails with an URGENT finding lacking resolves-finding and passes with a decision that resolves it', async () => {
     const directiveId = await seedDirective();
-    await register(WORK, [workRecord('verification', 'main', verificationData('passed'))]);
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
     expect(await passed('pre-pr')).toBe(false);
 
@@ -502,7 +470,6 @@ describe('gate pre-pr', () => {
   });
 
   test('a NORMAL finding does not block, and a raw answers from another type does not resolve the URGENT one', async () => {
-    await register(WORK, [workRecord('verification', 'main', verificationData('passed'))]);
     await registerOne(WORK, workRecord('finding', 'n', findingData('NORMAL')));
     expect(await passed('pre-pr')).toBe(true);
 
@@ -1509,7 +1476,7 @@ describe('definition hashes', () => {
       ]),
     );
     expect(list.process?.hashes).toEqual(expected);
-    expect(list.process?.pinned.types).toHaveLength(9);
+    expect(list.process?.pinned.types).toHaveLength(8);
     expect(list.process?.pinned.relations).toHaveLength(6);
     expect(list.process?.pinned.gates).toHaveLength(2);
   });
@@ -1550,10 +1517,6 @@ describe('rehearsal of a complete work', () => {
       relations: [{ to: gapId, as: 'about-gap' }],
     });
     const findingId = await registerOne(WORK, workRecord('finding', 'a', findingData('URGENT')));
-    const failedId = await registerOne(
-      WORK,
-      workRecord('verification', 'main', verificationData('failed')),
-    );
     expect(await passed('pre-pr')).toBe(false);
     expect(await passed('gaps')).toBe(false);
 
@@ -1564,10 +1527,6 @@ describe('rehearsal of a complete work', () => {
           { to: findingId, as: 'resolves-finding' },
           { to: directiveId, as: 'anchored-in' },
         ],
-      },
-      {
-        ...workRecord('verification', 'main', verificationData('passed')),
-        relations: [{ kind: 'supersedes', to: failedId }],
       },
     ]);
     expect(await passed('pre-pr')).toBe(true);
