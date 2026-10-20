@@ -40,7 +40,7 @@ Estratos pela `confidence` da `decision`:
 Os relatórios ficam em `.ignore/flow/audits/`. Valem para a população inteira, salvo o 1, que é amostra acima de 30 premissas. Trabalho sem `premise` nos tipos fixados fica fora das contas. Duas rotas de leitura, à escolha de quem roda:
 
 - `query` com `scope: project`: cara, porque cada página tem teto de 24.000 caracteres e uma `decision` chega a 3 ou 4 mil de `data`. Com `relations: "full"`, a vigência do destino de `rests-on` vem em `current` na relação de saída (o padrão só traz contagens); destino de outro processo exige `scope: project`, e com ele o `process` é ignorado (restrinja por `targetPrefix` ou `ids`).
-- `node scripts/export.ts hexlog/<processo> --fields id,type,target,in,out`, contado num `ctx_execute`; o `in` serve para saber quais `decision` estão vigentes. O export é por processo: para a vigência de `rests-on` para as diretrizes, exporte também o processo de diretrizes vigente (`docs/directives/fluxo-hexlog.md`) e, para decisões antigas, as gerações anteriores, com `--fields id,type,target,in,out` e cruze os ids.
+- `node scripts/export.ts hexlog/<processo> --fields id,type,target,in,out`, contado num `ctx_execute`; o `in` serve para saber quais `decision` estão vigentes. O export é por processo: para a vigência de `rests-on` para as diretrizes, exporte também o processo de diretrizes vigente (`docs/directives/fluxo-hexlog.md`) e, só para a decisão que a reancoragem deixou ao dono (âncora ainda em geração antiga), as gerações anteriores, com `--fields id,type,target,in,out` e cruze os ids.
 
 O resultado vai numa seção "Indicadores" do relatório, com o valor da rodada anterior ao lado para a tendência.
 
