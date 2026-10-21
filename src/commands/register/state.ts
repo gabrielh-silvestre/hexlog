@@ -17,6 +17,7 @@ import {
   brokenChain,
   cycleRejected,
   HexlogError,
+  internalError,
   keyConflict,
   relationNotFound,
   withPath,
@@ -322,7 +323,7 @@ export function createDecide(
     const links = linkItems(call, verified, drafts, aliases, deps.clock().toISOString());
     const line = formatLine(links);
     if (isValidLine(line, verified.end).status !== 'valid') {
-      throw new HexlogError('INTERNAL', 'built an invalid batch line');
+      throw internalError('built an invalid batch line');
     }
     const last = links.at(-1)!;
     return {

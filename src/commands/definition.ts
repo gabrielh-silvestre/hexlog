@@ -15,8 +15,8 @@ import type { Hash, Name } from '../domain/ids.ts';
 import {
   breakingChange,
   exclusiveWriteExhausted,
+  fromDetails,
   fromIssues,
-  HexlogError,
   schemaRootNotObject,
 } from '../errors.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore, Validator } from '../ports.ts';
@@ -97,10 +97,11 @@ function typeRule(validator: Validator): Rule<'types'> {
       // schema, `''` na raiz: aqui vira o ponteiro para o campo `schema` da entrada.
       const details = validator.checkSchema(parsed.data);
       if (details.length > 0) {
-        throw new HexlogError(
+        throw fromDetails(
           'INVALID_SCHEMA',
           'schema is not a valid JSON Schema',
-          details.map((detail) => ({ ...detail, path: `/schema${detail.path}` })),
+          details,
+          '/schema',
         );
       }
       // O `data` de um registro é sempre objeto: schema de outra raiz nunca aceitaria nenhum.

@@ -14,6 +14,7 @@ import {
   capDetails,
   type Detail,
   HexlogError,
+  internalError,
   invalidArgs,
   issueDetails,
   legacyDataError,
@@ -115,7 +116,7 @@ export function toHexlogError(e: unknown, logger: Logger): HexlogError {
     event: 'internal-error',
     stack: e instanceof Error ? e.stack : String(e),
   });
-  return new HexlogError('INTERNAL', 'internal error');
+  return internalError('internal error');
 }
 
 /**

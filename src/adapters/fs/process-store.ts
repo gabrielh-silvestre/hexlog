@@ -5,7 +5,7 @@ import { isUndefined } from 'es-toolkit';
 import { isReservedProcessName, type Name } from '../../domain/ids.ts';
 import { Manifest } from '../../domain/manifest.ts';
 import {
-  HexlogError,
+  internalError,
   processNotFound,
   processTooLarge,
   reservedName,
@@ -159,7 +159,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
         const paths = pathsOf(ref);
         if (isReservedProcessName(ref.process)) throw reservedName();
         if (manifest.project !== ref.project || manifest.process !== ref.process) {
-          throw new HexlogError('INTERNAL', 'manifest does not match ref');
+          throw internalError('manifest does not match ref');
         }
         // ponytail: o fsync cobre só o diretório do processo, não o do projeto nem o `.v1`; queda de
         // energia na primeira criação pode perder o processo. Melhoria: fsync da cadeia de pais criados.

@@ -23,7 +23,7 @@ import {
   type MissingItem,
 } from './guard.ts';
 import { sha256hex } from './domain/chain.ts';
-import { HexlogError } from './errors.ts';
+import { internalError } from './errors.ts';
 import { dataDir } from './directory.ts';
 import { errnoCode, isDirectoryTaken, writeFileAtomic } from './adapters/fs/atomic.ts';
 import { orIfMissing, readIfPresent } from './adapters/fs/io.ts';
@@ -99,7 +99,7 @@ async function verifyPreparedArtifact(args: {
 }): Promise<void> {
   const { tmp, bundles, runHook, verifyServer } = args;
   if (hasDynamicRequire(bundles.server) || hasDynamicRequire(bundles.hook)) {
-    throw new HexlogError('INTERNAL', 'bundle contains "Dynamic require of"; installation aborted');
+    throw internalError('bundle contains "Dynamic require of"; installation aborted');
   }
 
   // Mesma checagem funcional de `verifyGuard` (nega o diretório de dados, permite o resto),
@@ -107,10 +107,10 @@ async function verifyPreparedArtifact(args: {
   const hookFile = path.join(tmp, 'bash-guard.mjs');
   const probes = hookProbes(dataDir(process.env));
   if (runHook(hookFile, probes.deny).status !== 2) {
-    throw new HexlogError('INTERNAL', 'prepared hook does not deny access to the data directory');
+    throw internalError('prepared hook does not deny access to the data directory');
   }
   if (runHook(hookFile, probes.allow).status !== 0) {
-    throw new HexlogError('INTERNAL', 'prepared hook does not allow harmless commands');
+    throw internalError('prepared hook does not allow harmless commands');
   }
 
   let toolsCount: number;
@@ -118,13 +118,10 @@ async function verifyPreparedArtifact(args: {
     toolsCount = await verifyServer(path.join(tmp, 'server.mjs'));
   } catch (error) {
     const message = isError(error) ? error.message : String(error);
-    throw new HexlogError('INTERNAL', `prepared server failed to start: ${message}`);
+    throw internalError(`prepared server failed to start: ${message}`);
   }
   if (toolsCount !== TOOLS_COUNT) {
-    throw new HexlogError(
-      'INTERNAL',
-      `prepared server listed ${toolsCount} tools, expected ${TOOLS_COUNT}`,
-    );
+    throw internalError(`prepared server listed ${toolsCount} tools, expected ${TOOLS_COUNT}`);
   }
 }
 
@@ -145,8 +142,7 @@ function resolveConcurrency(
   if (shasEqual(installedNow, shaBuild)) {
     return { action: 'none', extraWarning: null };
   }
-  throw new HexlogError(
-    'INTERNAL',
+  throw internalError(
     `another installation swapped ${version} at the same time; run the installer again`,
   );
 }
@@ -290,7 +286,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
 } {
   const { settingsPath, expected } = args;
   if (!existsSync(settingsPath)) {
-    throw new HexlogError('INTERNAL', 'install the harness before installing hexlog');
+    throw internalError('install the harness before installing hexlog');
   }
   const oldText = readFileSync(settingsPath, 'utf8');
   const { text: newText, removed } = applyGuard(oldText, expected, existsSync);
@@ -298,7 +294,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   const parseErrors: ParseError[] = [];
   parseJsonc(newText, parseErrors);
   if (parseErrors.length > 0) {
-    throw new HexlogError('INTERNAL', 'refusing to write invalid settings.json');
+    throw internalError('refusing to write invalid settings.json');
   }
 
   // `rename` sobre o próprio symlink o trocaria por arquivo regular; o destino real preserva o link.
@@ -308,7 +304,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   try {
     fs.accessSync(path.dirname(target), fs.constants.W_OK);
   } catch {
-    throw new HexlogError('INTERNAL', `settings.json target directory is not writable: ${target}`);
+    throw internalError(`settings.json target directory is not writable: ${target}`);
   }
   const { mode } = fs.statSync(target);
   try {
@@ -332,7 +328,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
 /** `name` vira um segmento de path (`<home>/.claude/skills/<name>/`): rejeita o que escaparia dele. */
 function assertValidSkillName(name: string): void {
   if (name === '' || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
-    throw new HexlogError('INTERNAL', `invalid skill name: ${JSON.stringify(name)}`);
+    throw internalError(`invalid skill name: ${JSON.stringify(name)}`);
   }
 }
 
