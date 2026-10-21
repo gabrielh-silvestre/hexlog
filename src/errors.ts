@@ -203,3 +203,99 @@ export function withPath(error: unknown, path: string, process?: string): unknow
   if (!(error instanceof HexlogError)) return error;
   return mapDetails(error, (detail) => ({ ...detail, path, ...omitBy({ process }, isUndefined) }));
 }
+
+/** `IO_ERROR` só com o errno em minúsculas: a `message` do fs carrega o caminho absoluto (D-26). */
+export function ioError(errno: string): HexlogError {
+  return domainError('IO_ERROR', '', errno, 'I/O failure');
+}
+
+/** `LOCK_TIMEOUT` em `/process`; `pid` é o do detentor, quando se sabe. */
+export function lockTimeout(
+  code: 'lock-busy' | 'lock-lost' | 'holder-unreadable',
+  message: string,
+  pid?: number,
+): HexlogError {
+  return domainError('LOCK_TIMEOUT', '/process', code, message, { pid });
+}
+
+/** `path` é o campo que a porta presume (`/hash`) ou o de `records[i]` onde o hash foi citado. */
+export function attachmentNotFound(path: string, hash: string): HexlogError {
+  return domainError('ATTACHMENT_NOT_FOUND', path, 'not-found', `attachment '${hash}' not found`);
+}
+
+export function attachmentCorrupted(path: string, hash: string): HexlogError {
+  return domainError(
+    'ATTACHMENT_CORRUPTED',
+    path,
+    'corrupted',
+    `attachment '${hash}' does not match its hash`,
+  );
+}
+
+export function outsideAllowedRoot(): HexlogError {
+  return invalidInput('/path', 'outside-allowed-root', 'path is outside the allowed root');
+}
+
+/** `grewWhileReading`: o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
+export function tooBigFile(maxBytes: number, grewWhileReading = false): HexlogError {
+  const message = grewWhileReading
+    ? 'file changed while being read'
+    : `file exceeds ${maxBytes} bytes`;
+  return invalidInput('/path', 'too-big', message);
+}
+
+export function processNotFound(process: Name): HexlogError {
+  return domainError('PROCESS_NOT_FOUND', '/process', 'not-found', 'process not found', {
+    process,
+  });
+}
+
+export function unreadableManifest(process: Name): HexlogError {
+  return domainError(
+    'PROCESS_CORRUPTED',
+    '/process',
+    'unreadable-manifest',
+    'process manifest is unreadable',
+    { process },
+  );
+}
+
+/** A recomendação de criar outro processo só vale para quem grava: leitura e destino de relação ficam neutros. */
+export function processTooLarge(process: Name, limitBytes: number, advice = false): HexlogError {
+  const base = `process '${process}' log exceeds ${limitBytes / 2 ** 20} MiB`;
+  const message = advice ? `${base}; create a new process to keep recording` : base;
+  return domainError('PROCESS_TOO_LARGE', '/process', 'too-large', message, { process });
+}
+
+/**
+ * Definição ausente: com a lista `existing` vazia, o nome não tem nenhuma versão (pasta inexistente
+ * ou vazia: `unknown-name`); com versões, o nome existe e a pedida não (`unknown-version`,
+ * listando as que existem, nunca vazia). `code` é o `*_NOT_FOUND` do tipo de definição.
+ */
+export function definitionNotFound(code: ErrorCode, existing: string[]): HexlogError {
+  if (existing.length === 0) {
+    return domainError(code, '/name', 'unknown-name', 'definition name not found');
+  }
+  return domainError(code, '/version', 'unknown-version', 'definition version not found', {
+    versions: existing,
+  });
+}
+
+export function unreadableDefinition(): HexlogError {
+  return domainError(
+    'INTERNAL',
+    '/version',
+    'unreadable-definition',
+    'definition file is unreadable',
+  );
+}
+
+/** Definição que o próprio `read` recusaria: gravá-la envenenaria uma versão imutável. */
+export function invalidDefinition(): HexlogError {
+  return domainError(
+    'INTERNAL',
+    '/definition',
+    'invalid-definition',
+    'definition does not match its schema',
+  );
+}

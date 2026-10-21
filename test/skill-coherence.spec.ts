@@ -359,7 +359,7 @@ const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string[]> = {
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string[]> = {
   'commands/register/state.ts#assertSameBatch': ['IDEMPOTENCY_CONFLICT'],
   'commands/register/errors.ts#ruleRefusal': ['FORK_REJECTED'],
-  'adapters/fs/lock.ts#lockTimeout': ['LOCK_TIMEOUT'],
+  'errors.ts#lockTimeout': ['LOCK_TIMEOUT'],
   'commands/register/attachments.ts#checkAttachments': ['unmarked-attachment'],
 };
 

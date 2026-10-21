@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import { isUndefined } from 'es-toolkit';
 import { Name } from '../../domain/ids.ts';
-import { HexlogError, invalidInput } from '../../errors.ts';
+import { HexlogError, invalidInput, ioError } from '../../errors.ts';
 import { errnoCode } from './atomic.ts';
 
 /** D-26: `IO_ERROR` traz só o errno; o `message` do fs carrega o caminho absoluto. */
@@ -11,9 +11,7 @@ export function toHexlogError(error: unknown): unknown {
   if (error instanceof HexlogError || isUndefined(code) || !/^E[A-Z0-9]+$/.test(code)) {
     return error;
   }
-  return new HexlogError('IO_ERROR', 'I/O failure', [
-    { path: '', code: code.toLowerCase(), message: 'I/O failure' },
-  ]);
+  return ioError(code.toLowerCase());
 }
 
 export function mapIo<T>(operation: () => T): T {
