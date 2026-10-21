@@ -169,7 +169,7 @@ describe('execute', () => {
       });
     });
 
-    test('logger que lança no warn não troca o resultado já produzido por INTERNAL', async () => {
+    test('a logger that throws on the over-cap warn does not turn the produced result into INTERNAL', async () => {
       const { deps, logger } = makeDeps();
       logger.mockImplementation((record) => {
         if (record.event === 'tool-over-cap') throw new Error('stderr closed');
