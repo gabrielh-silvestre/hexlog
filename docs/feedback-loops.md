@@ -47,7 +47,7 @@ Linha pontilhada = bloqueio: corrija e repita o passo. A tabela abaixo detalha c
 
 Roda em todo `git commit`. Se qualquer etapa falhar, o commit não é criado.
 
-1. **`pre-commit`** (`lint-staged`, só nos arquivos em stage)
+1. **`pre-commit`** (`lint-staged --concurrent false`, só nos arquivos em stage; com `.ts` e `.md` juntos, uma chave termina antes de a outra começar)
    - Com `.ts` em stage:
      1. `eslint --fix`
      2. `prettier --write`
