@@ -4,8 +4,14 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+### Alterado
+
+- A descrição do `register`, o `docs/tools.md`, a mensagem de `target-mismatch` e a skill `hexlog-flow` passam a ensinar a troca de target com um registro só, com `revokes` e `derivesFrom` para o antigo (#241).
+
 ### Corrigido
 
+- O hook de isolamento do Bash passa a conferir o trecho que vem depois de um `#`: `echo hi # x` seguido de quebra de linha e `cat <glob>`, ou `echo a#b; cat <glob>`, passavam sem checagem. Só a linha que o `shell-quote` não parseia (`${}`) continua liberada (#242).
+- O hook de isolamento mede o token entre aspas depois de expandir o `~`, como a classificação: `cat '~/<token acima do teto só depois de expandir>*'` deixa de ser negado por custo (#242).
 - A varredura dos temporários legados do instalador casa `<nome>.(tmp|old)-<dígitos>` por prefixo, sem regex com o nome: nome de skill com `+`, `(` ou `[` não quebra mais a instalação (#244).
 - A limpeza dos temporários legados de skills roda depois da troca da skill e ignora erro de remoção (`EACCES`): um resíduo sem permissão não aborta mais a instalação (#244).
 - O instalador remove, na instalação seguinte, os temporários `.hexlog-skill-<nome>.tmp-<pid>` e `.old-<pid>` que um `kill -9` deixava em `~/.claude/`, só quando o pid do sufixo está morto (#244).
