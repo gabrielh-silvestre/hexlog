@@ -52,8 +52,8 @@ const REGISTER_DESCRIPTION =
   'item in the same batch, and carries kind (supersedes, revokes, supports, contradicts, answers, ' +
   'derivesFrom, complements, reopens), as (a relation name pinned in the process) or both. supersedes and revokes only reach records of ' +
   'the same process and need a current target (else FORK_REJECTED); supersedes also needs the same ' +
-  'type and target (to move a fact to another target, revoke the old record and register a new one ' +
-  'there with derivesFrom to it; else INVALID_RECORD, target-mismatch); supports needs a current target. An attachment hash is accepted only in a field declared ' +
+  'type and target, else INVALID_RECORD (target-mismatch); to move a fact to another target, register ' +
+  'one record there with revokes and derivesFrom to the old one; supports needs a current target. An attachment hash is accepted only in a field declared ' +
   'format "attachment". Pass key to make a retry safe: the same key with the same batch returns the ' +
   'records as stored with replayed=true and the current head as marker; with a different batch it ' +
   'fails with IDEMPOTENCY_CONFLICT. After ' +

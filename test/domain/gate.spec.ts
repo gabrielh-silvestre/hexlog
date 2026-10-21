@@ -13,8 +13,7 @@ import { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts'
 import type { HexRecord, RelationKind } from '../../src/domain/record.ts';
 import * as omc from '../fixtures/domains/omc.ts';
 import * as rdsc from '../fixtures/domains/rdsc.ts';
-
-const id = (process: string, n: number) => `${process}:${String(n).padStart(8, '0')}`;
+import { recordId } from '../helpers.ts';
 
 type Extra = { target?: string; data?: HexRecord['data'] };
 
@@ -45,7 +44,13 @@ const reading = (records: HexRecord[], target?: string): SpiedInput => ({
 
 const question = (raw: unknown) => GateQuestion.parse(raw);
 
-const [p1, p2, p3, p4, p5] = [id('p', 1), id('p', 2), id('p', 3), id('p', 4), id('p', 5)];
+const [p1, p2, p3, p4, p5] = [
+  recordId('p', 1),
+  recordId('p', 2),
+  recordId('p', 3),
+  recordId('p', 4),
+  recordId('p', 5),
+];
 
 describe('Selector and GateQuestion (schemas)', () => {
   test('where accepts only a scalar value', () => {
@@ -329,8 +334,8 @@ describe('no_open_contradiction', () => {
 });
 
 describe('scope (D-24)', () => {
-  const plan = rec(id('p', 1), 'plan');
-  const foreignReview = rec(id('other', 1), 'review', [['supports', plan.id]]);
+  const plan = rec(recordId('p', 1), 'plan');
+  const foreignReview = rec(recordId('other', 1), 'review', [['supports', plan.id]]);
   const q = (scope: GateScope) =>
     question({ kind: 'approved', of: { type: 'plan' }, by: { type: 'review' }, scope });
 
@@ -413,10 +418,11 @@ describe('prepareGate', () => {
 describe('plan-ready gate (omc fixture)', () => {
   const questions = Gate.parse(omc.gates[0]).questions;
   const plan = (n: number, relations: [RelationKind, string][] = [], isRevision = false) =>
-    rec(id('p', n), 'plan', relations, { data: { isRevision, diff: 'd' } });
+    rec(recordId('p', n), 'plan', relations, { data: { isRevision, diff: 'd' } });
   const review = (n: number, kind: RelationKind, to: string) =>
-    rec(id('p', n), 'review', [[kind, to]]);
-  const deviation = (n: number) => rec(id('p', n), 'deviation', [], { data: { description: 'x' } });
+    rec(recordId('p', n), 'review', [[kind, to]]);
+  const deviation = (n: number) =>
+    rec(recordId('p', n), 'deviation', [], { data: { description: 'x' } });
 
   test('a current approval with no open deviation passes', () => {
     const records = [plan(1), review(2, 'supports', p1)];

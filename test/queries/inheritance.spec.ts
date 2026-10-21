@@ -1,9 +1,10 @@
 import { describe, expect, test } from '@jest/globals';
+import { countBy } from 'es-toolkit';
 import type { Gate } from '../../src/domain/definitions.ts';
 import type { Marker, RecordId } from '../../src/domain/ids.ts';
 import { NOTE, note } from '../commands/register-fakes.ts';
 import { at } from '../helpers.ts';
-import { PROJECT, querySetup, walkPages } from './query-setup.ts';
+import { idsOf, PROJECT, querySetup, walkPages } from './query-setup.ts';
 
 const UNIT_APPROVED: Gate = {
   name: 'unit-approved',
@@ -128,6 +129,46 @@ describe('queryRecords: inherited relations', () => {
     expect(at(page.records, 0).inheritedIn).toEqual([
       { kind: 'supports', as: 'approves', from: e1, origin: { from: e1, to: u1 } },
     ]);
+  });
+
+  test('counts mode tallies the same inherited edges that full mode lists, over five records', async () => {
+    const { createProcess, registerOne, unit, evidence, supersede, query } = setup();
+    createProcess('run-1');
+    const u1 = await registerOne('run-1', unit(), 1);
+    const e1 = await registerOne('run-1', evidence(u1), 2);
+    const e2 = await registerOne(
+      'run-1',
+      note('evidência', { target: 'run.ev', relations: [{ to: u1, as: 'approves' }] }),
+      3,
+    );
+    const u2 = await registerOne('run-1', supersede(u1), 4);
+    const u3 = await registerOne('run-1', supersede(u2), 5);
+    const everything = { process: 'run-1', ids: [u1, e1, e2, u2, u3], includeNonCurrent: true };
+
+    const full = query({ ...everything, relations: 'full' });
+    const counts = query({ ...everything, relations: 'counts' });
+
+    const tally = (edges: readonly { kind: string; as?: string }[] = []) =>
+      edges.length === 0 ? undefined : countBy(edges, ({ as, kind }) => as ?? kind);
+    expect(idsOf(counts)).toEqual(idsOf(full));
+    full.records.forEach((record, index) => {
+      expect(at(counts.records, index).inheritedInCounts).toEqual(tally(record.inheritedIn));
+      expect(at(counts.records, index).inheritedOutCounts).toEqual(tally(record.inheritedOut));
+    });
+    const latest = at(counts.records, idsOf(counts).indexOf(u3));
+    expect(latest.inheritedInCounts).toEqual({ supports: 1, approves: 1 });
+  });
+
+  test('`relatedTo` follows the stored edges only, never the inherited ones', async () => {
+    const { superseded, query } = setup();
+    const { u1, e1, u2 } = await superseded('run-1');
+
+    const aroundSuperseding = query({ process: 'run-1', relatedTo: u2, includeNonCurrent: true });
+    const aroundSupport = query({ process: 'run-1', relatedTo: e1, includeNonCurrent: true });
+
+    // `e1` herda o apoio de `u2` e `u2` herda `e1`, mas nenhum dos dois grava a aresta.
+    expect(idsOf(aroundSuperseding)).toEqual([u1]);
+    expect(idsOf(aroundSupport)).toEqual([u1]);
   });
 
   test('counts mode counts the inherited edges by name and none mode brings no field', async () => {

@@ -240,8 +240,9 @@ export function checkExpectedHead(
 ): Chain {
   // O head da própria verificação fecha sem re-hashear o log e vale mesmo com quebra no meio, onde
   // `chain.head` pode ser de uma linha rejeitada que não está em `records`.
-  // ponytail: o `some` re-hasheia todos os elos quando o head não é o último; o teto de 64 MiB do
-  // log (`MAX_LOG_BYTES`) limita essa segunda passada, e expor os hashes que o `parseLog` já calcula em `isValidLink` a evitaria.
+  // ponytail: o `some` re-hasheia os elos até casar; a passada inteira só acontece no
+  // `head-not-found`. O teto de 64 MiB do log (`MAX_LOG_BYTES`) limita esse custo, e expor os
+  // hashes que o `parseLog` já calcula em `after` (dentro de `checkLinks`) o evitaria.
   if (
     expectedHead === chain.head ||
     expectedHead === anchor(manifest) ||

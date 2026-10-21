@@ -83,7 +83,7 @@ describe('query tool: inherited relations', () => {
 });
 
 describe('evaluate_gate tool: inherit', () => {
-  test('lists the inherited supporter in the failing and counts modes', async () => {
+  test('counts the inherited supporter in counts mode and lists it in full mode', async () => {
     const counts = await environment.ok<GateEvaluation<{ counts?: Record<string, number> }>>(
       'evaluate_gate',
       { project: PROJECT, process: 'run-1', gate: GATE.name, evidence: 'counts' },

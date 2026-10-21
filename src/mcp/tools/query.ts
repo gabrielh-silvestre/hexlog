@@ -17,11 +17,11 @@ import {
   type GateEvaluation,
   PAGE_CHARS_CAP,
   QUERY_TEXT_MAX_CHARS,
+  RELATION_MODES,
   type QueryInput as QueryServiceInput,
   type QueryResult,
   type QueryService,
 } from '../../queries/query-service.ts';
-import { RELATION_MODES } from '../../queries/select.ts';
 import { defineTool, MarkerRecord, READ_ANNOTATIONS, type ToolDeps } from '../kernel.ts';
 
 /**
@@ -135,8 +135,12 @@ const QueryOutput = z.object({
       target: z.string(),
       inCounts: z.record(z.string(), z.number()).optional(),
       outCounts: z.record(z.string(), z.number()).optional(),
+      inheritedInCounts: z.record(z.string(), z.number()).optional(),
+      inheritedOutCounts: z.record(z.string(), z.number()).optional(),
       in: z.array(z.unknown()).optional(),
       out: z.array(z.unknown()).optional(),
+      inheritedIn: z.array(z.unknown()).optional(),
+      inheritedOut: z.array(z.unknown()).optional(),
     }),
   ),
   cursor: z.string().optional(),

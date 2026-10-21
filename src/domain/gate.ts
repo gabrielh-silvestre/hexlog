@@ -2,7 +2,7 @@ import { isUndefined, memoize, uniq } from 'es-toolkit';
 import { z } from 'zod';
 import { Name, Target, TypeNames } from './ids.ts';
 import type { RecordId } from './ids.ts';
-import { buildInheritance, NO_INHERITANCE } from './inheritance.ts';
+import { buildInheritance } from './inheritance.ts';
 import type { Inheritance } from './inheritance.ts';
 import { RelationKind } from './record.ts';
 import type { HexRecord } from './record.ts';
@@ -145,16 +145,17 @@ type View = {
   byId: ReadonlyMap<RecordId, HexRecord>;
 };
 
-/** `isActive` só vem quando alguma pergunta do alcance pede `inherit`: sem pedido, nada é construído. */
+/**
+ * `isActive` só vem quando alguma pergunta do alcance pede `inherit`: sem pedido, a herança é
+ * vazia.
+ */
 function buildView(records: readonly HexRecord[], isActive?: (process: Name) => boolean): View {
   const vigency = buildVigency(records);
   return {
     records,
     vigency,
     incoming: incomingOf(records),
-    inheritance: isUndefined(isActive)
-      ? NO_INHERITANCE
-      : buildInheritance(records, vigency, isActive),
+    inheritance: buildInheritance(records, vigency, isActive),
     byId: new Map(isUndefined(isActive) ? [] : records.map((record) => [record.id, record])),
   };
 }
@@ -182,6 +183,26 @@ function inheritedSources({ view }: Context, id: RecordId, kind: RelationKind): 
     .flatMap((edge) => view.byId.get(edge.from) ?? []);
 }
 
+/**
+ * Origens de `kind` que chegam a `id` e passam em `accepted`: as diretas e, com `inherit`, as que
+ * só contam por herança (a direta idêntica não se repete).
+ */
+function sourcesOf(
+  context: Context,
+  id: RecordId,
+  kind: RelationKind,
+  accepted: (source: HexRecord) => boolean,
+  inherit: boolean | undefined,
+): { direct: HexRecord[]; viaLineage: HexRecord[] } {
+  const direct = currentSources(context, id, kind).filter(accepted);
+  if (!inherit) return { direct, viaLineage: [] };
+  const directIds = new Set(ids(direct));
+  const viaLineage = inheritedSources(context, id, kind).filter(
+    (source) => accepted(source) && !directIds.has(source.id),
+  );
+  return { direct, viaLineage };
+}
+
 const ids = (records: readonly HexRecord[]): RecordId[] => records.map((record) => record.id);
 
 type Outcome<K extends QuestionResult['kind']> = Omit<
@@ -202,13 +223,7 @@ function approved(
   const accepted = (source: HexRecord) =>
     isUndefined(approvers) || matchesSelector(source, approvers, context.target);
   for (const { id } of subjects) {
-    const direct = currentSources(context, id, 'supports').filter(accepted);
-    const directIds = new Set(ids(direct));
-    const viaLineage = question.inherit
-      ? inheritedSources(context, id, 'supports').filter(
-          (source) => accepted(source) && !directIds.has(source.id),
-        )
-      : [];
+    const { direct, viaLineage } = sourcesOf(context, id, 'supports', accepted, question.inherit);
     const supporters = [...direct, ...viaLineage];
     inherited.push(...ids(viaLineage));
     supports.push(...ids(supporters));
@@ -244,13 +259,13 @@ function noPending(
   const unresolved: HexRecord[] = [];
   const inherited: RecordId[] = [];
   for (const record of currentMatching(context, pending)) {
-    const direct = currentSources(context, record.id, resolvedBy.kind).filter(accepted);
-    const directIds = new Set(ids(direct));
-    const viaLineage = inherit
-      ? inheritedSources(context, record.id, resolvedBy.kind).filter(
-          (source) => accepted(source) && !directIds.has(source.id),
-        )
-      : [];
+    const { direct, viaLineage } = sourcesOf(
+      context,
+      record.id,
+      resolvedBy.kind,
+      accepted,
+      inherit,
+    );
     inherited.push(...ids(viaLineage));
     if (direct.length === 0 && viaLineage.length === 0) unresolved.push(record);
   }
@@ -284,7 +299,10 @@ function answer(context: Context, question: GateQuestion, index: number): Questi
 }
 
 /** Listas de `evidence` que explicam a reprovação de cada `kind`; as demais só confirmam. */
-const DIAGNOSTIC_LISTS: Record<QuestionResult['kind'], readonly string[]> = {
+const DIAGNOSTIC_LISTS: {
+  [K in QuestionResult['kind']]: readonly (keyof Extract<QuestionResult, { kind: K }>['evidence'] &
+    string)[];
+} = {
   approved: ['unsupported', 'contradictions'],
   occurred: ['found'],
   no_pending: ['unresolved'],
@@ -303,8 +321,9 @@ export function summarizeQuestion(result: QuestionResult, mode: EvidenceMode): Q
     counts: Object.fromEntries(lists.map(([name, list]) => [name, list.length])),
   };
   if (mode === 'counts' || passed) return counted;
+  const diagnosticNames: readonly string[] = DIAGNOSTIC_LISTS[kind];
   const diagnostic = lists.filter(
-    ([name, list]) => DIAGNOSTIC_LISTS[kind].includes(name) && list.length > 0,
+    ([name, list]) => diagnosticNames.includes(name) && list.length > 0,
   );
   return diagnostic.length === 0
     ? counted
@@ -337,7 +356,7 @@ export function prepareGate(
   const viewOf = memoize((questionScope: GateScope): View =>
     buildView(
       input.records(questionScope),
-      asksInherit(questionScope) ? (input.isInheritanceActive ?? (() => false)) : undefined,
+      asksInherit(questionScope) ? input.isInheritanceActive : undefined,
     ),
   );
 

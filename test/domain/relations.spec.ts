@@ -4,14 +4,13 @@ import { buildVigency, checkRelation, hasCycle, needsReview } from '../../src/do
 import type { Linked, NamedRelation, RuleContext, Vigency } from '../../src/domain/relations.ts';
 import type { RelationInput, RelationKind as Kind } from '../../src/domain/record.ts';
 import * as rdsc from '../fixtures/domains/rdsc.ts';
-
-const id = (process: string, n: number) => `${process}:${String(n).padStart(8, '0')}`;
+import { recordId } from '../helpers.ts';
 
 function rec(recordId: string, ...relations: [Kind, string][]): Linked {
   return { id: recordId, relations: relations.map(([kind, to]) => ({ kind, to })) };
 }
 
-const [e1, e2, v1, v2] = [id('p', 1), id('p', 2), id('p', 3), id('p', 4)];
+const [e1, e2, v1, v2] = [recordId('p', 1), recordId('p', 2), recordId('p', 3), recordId('p', 4)];
 
 const SAME_TARGET = 'p.step';
 const OTHER_TARGET = 'p.other';
@@ -20,7 +19,7 @@ describe('vigency and lineage (D-08)', () => {
   test('a record with no incoming relation is current, and so is an unknown id', () => {
     const vigency = buildVigency([rec(e1)]);
     expect(vigency.isCurrent(e1)).toBe(true);
-    expect(vigency.isCurrent(id('p', 99))).toBe(true);
+    expect(vigency.isCurrent(recordId('p', 99))).toBe(true);
     expect(vigency.currentOf(e1)).toBe(e1);
   });
 
@@ -73,7 +72,7 @@ describe('cycle', () => {
       hasCycle([
         rec(e1),
         rec(e2, ['supersedes', e1]),
-        rec(v1, ['supersedes', e2], ['supersedes', id('q', 1)]),
+        rec(v1, ['supersedes', e2], ['supersedes', recordId('q', 1)]),
       ]),
     ).toBe(false);
   });
@@ -110,7 +109,7 @@ describe('structural rules (D-10)', () => {
 
   function ctx(overrides: Partial<RuleContext> = {}): RuleContext {
     return {
-      from: { id: id('p', 10), type: 'verdict', target: SAME_TARGET },
+      from: { id: recordId('p', 10), type: 'verdict', target: SAME_TARGET },
       to: { id: e1, type: 'evidence', target: SAME_TARGET },
       siblings: [],
       names,
@@ -129,7 +128,7 @@ describe('structural rules (D-10)', () => {
   test('self-relation', () => {
     const result = checkRelation(
       { kind: 'supports' },
-      ctx({ to: { id: id('p', 10), type: 'verdict', target: SAME_TARGET } }),
+      ctx({ to: { id: recordId('p', 10), type: 'verdict', target: SAME_TARGET } }),
     );
     expect(violationOf(result)).toEqual({ code: 'self-relation' });
   });
@@ -151,7 +150,9 @@ describe('structural rules (D-10)', () => {
   });
 
   test('endpoint-type refuses a source or destination outside the name lists', () => {
-    const wrongFrom = ctx({ from: { id: id('p', 10), type: 'evidence', target: SAME_TARGET } });
+    const wrongFrom = ctx({
+      from: { id: recordId('p', 10), type: 'evidence', target: SAME_TARGET },
+    });
     const wrongTo = ctx({ to: { id: e1, type: 'verdict', target: SAME_TARGET } });
     expect(violationOf(checkRelation({ as: 'based-on' }, wrongFrom))).toEqual({
       code: 'endpoint-type',
@@ -162,12 +163,12 @@ describe('structural rules (D-10)', () => {
   });
 
   test('endpoints with no declared list accept any type', () => {
-    const base = ctx({ from: { id: id('p', 10), type: 'evidence', target: SAME_TARGET } });
+    const base = ctx({ from: { id: recordId('p', 10), type: 'evidence', target: SAME_TARGET } });
     expect(checkRelation({ as: 'replaces' }, base)).toEqual({ kind: 'supersedes' });
   });
 
   test('cross-process-currency on supersedes and on revokes across processes', () => {
-    const other = { to: { id: id('q', 1), type: 'verdict', target: SAME_TARGET } };
+    const other = { to: { id: recordId('q', 1), type: 'verdict', target: SAME_TARGET } };
     expect(violationOf(checkRelation({ kind: 'supersedes' }, ctx(other)))).toEqual({
       code: 'cross-process-currency',
     });
@@ -184,7 +185,7 @@ describe('structural rules (D-10)', () => {
   });
 
   test('target-mismatch only on supersedes: revokes accepts another target', () => {
-    const sameType = { from: { id: id('p', 10), type: 'evidence', target: SAME_TARGET } };
+    const sameType = { from: { id: recordId('p', 10), type: 'evidence', target: SAME_TARGET } };
     const elsewhere = { to: { id: e1, type: 'evidence', target: OTHER_TARGET } };
     expect(
       violationOf(checkRelation({ kind: 'supersedes' }, ctx({ ...sameType, ...elsewhere }))),
@@ -195,7 +196,7 @@ describe('structural rules (D-10)', () => {
   });
 
   test('supersedes on the same target and type passes', () => {
-    const sameType = { from: { id: id('p', 10), type: 'evidence', target: SAME_TARGET } };
+    const sameType = { from: { id: recordId('p', 10), type: 'evidence', target: SAME_TARGET } };
     expect(checkRelation({ kind: 'supersedes' }, ctx(sameType))).toEqual({ kind: 'supersedes' });
   });
 
@@ -246,7 +247,7 @@ describe('structural rules (D-10)', () => {
   });
 
   test('not-current on supersedes and revokes over an already superseded or revoked record', () => {
-    const sameType = { from: { id: id('p', 10), type: 'evidence', target: SAME_TARGET } };
+    const sameType = { from: { id: recordId('p', 10), type: 'evidence', target: SAME_TARGET } };
     const replaced = buildVigency([rec(e1), rec(e2, ['supersedes', e1])]);
     const revoked = buildVigency([rec(e1), rec(v1, ['revokes', e1])]);
     expect(
@@ -266,8 +267,8 @@ describe('structural rules (D-10)', () => {
   });
 
   describe('vigency by relation kind (U1, D-10)', () => {
-    const sameType = { from: { id: id('p', 10), type: 'evidence', target: SAME_TARGET } };
-    const self = id('p', 10);
+    const sameType = { from: { id: recordId('p', 10), type: 'evidence', target: SAME_TARGET } };
+    const self = recordId('p', 10);
 
     /** Um lote de um item: `before` é o que vigora antes dele, `whole` inclui as relações dele. */
     function checkInBatch(relations: [Kind, string][], index: number) {
@@ -329,7 +330,7 @@ describe('structural rules (D-10)', () => {
   });
 
   test('supersedes-and-revokes in both directions, and only for the same destination', () => {
-    const sameType = { from: { id: id('p', 10), type: 'evidence', target: SAME_TARGET } };
+    const sameType = { from: { id: recordId('p', 10), type: 'evidence', target: SAME_TARGET } };
     const revokes = [{ kind: 'revokes' as const, to: e1 }];
     const supersedes = [{ kind: 'supersedes' as const, to: e1 }];
     expect(
@@ -345,8 +346,8 @@ describe('structural rules (D-10)', () => {
   });
 
   describe('fixed rule order (D-06, D-10)', () => {
-    const sameType = { from: { id: id('p', 10), type: 'evidence', target: SAME_TARGET } };
-    const otherProcess = { to: { id: id('q', 1), type: 'verdict', target: SAME_TARGET } };
+    const sameType = { from: { id: recordId('p', 10), type: 'evidence', target: SAME_TARGET } };
+    const otherProcess = { to: { id: recordId('q', 1), type: 'verdict', target: SAME_TARGET } };
     const replaced = buildVigency([rec(e1), rec(e2, ['supersedes', e1])]);
 
     // Cada caso viola duas regras vizinhas da ordem; vale a primeira.
@@ -354,7 +355,7 @@ describe('structural rules (D-10)', () => {
       [
         'self-relation before unknown-relation-name',
         { as: 'nope' },
-        { to: { id: id('p', 10), type: 'verdict', target: SAME_TARGET } },
+        { to: { id: recordId('p', 10), type: 'verdict', target: SAME_TARGET } },
         'self-relation',
       ],
       [
@@ -378,14 +379,14 @@ describe('structural rules (D-10)', () => {
       [
         'cross-process-currency before target-mismatch',
         { kind: 'supersedes' },
-        { ...sameType, to: { id: id('q', 1), type: 'evidence', target: OTHER_TARGET } },
+        { ...sameType, to: { id: recordId('q', 1), type: 'evidence', target: OTHER_TARGET } },
         'cross-process-currency',
       ],
       [
         'target-mismatch before endpoint-type',
         { as: 'replaces-doc' },
         {
-          from: { id: id('p', 10), type: 'verdict', target: SAME_TARGET },
+          from: { id: recordId('p', 10), type: 'verdict', target: SAME_TARGET },
           to: { id: e1, type: 'verdict', target: OTHER_TARGET },
         },
         'target-mismatch',
@@ -454,10 +455,10 @@ describe('structural rules (D-10)', () => {
 
 describe('proof expired by the lineage (D-09)', () => {
   // Caso rdsc: veredito (verdict) apoiado por evidência (evidence) via based-on = supports.
-  const evidence = id('p', 1);
-  const evidence2 = id('p', 2);
-  const verdict = id('p', 3);
-  const verdict2 = id('p', 4);
+  const evidence = recordId('p', 1);
+  const evidence2 = recordId('p', 2);
+  const verdict = recordId('p', 3);
+  const verdict2 = recordId('p', 4);
 
   test('a current verdict that cites evidence later superseded gets staleOut', () => {
     const marks = needsReview([
@@ -493,7 +494,7 @@ describe('proof expired by the lineage (D-09)', () => {
     const marks = needsReview([
       rec(evidence),
       rec(verdict, ['supports', evidence]),
-      rec(id('p', 5), ['revokes', evidence]),
+      rec(recordId('p', 5), ['revokes', evidence]),
     ]);
     expect(marks.get(verdict)).toEqual({ staleIn: [], staleOut: [evidence] });
   });
@@ -503,9 +504,9 @@ describe('proof expired by the lineage (D-09)', () => {
   });
 
   // Plano aprovado por revisão: a revisão (review) apoia o plano (plan).
-  const plan = id('p', 11);
-  const review = id('p', 12);
-  const review2 = id('p', 13);
+  const plan = recordId('p', 11);
+  const review = recordId('p', 12);
+  const review2 = recordId('p', 13);
 
   test('a plan approved by a review later superseded gets staleIn if the current one no longer supports it', () => {
     const marks = needsReview([
@@ -529,7 +530,7 @@ describe('proof expired by the lineage (D-09)', () => {
     const marks = needsReview([
       rec(plan),
       rec(review, ['supports', plan]),
-      rec(id('p', 14), ['revokes', review]),
+      rec(recordId('p', 14), ['revokes', review]),
     ]);
     expect(marks.get(plan)).toEqual({ staleIn: [review], staleOut: [] });
   });
@@ -539,26 +540,26 @@ describe('proof expired by the lineage (D-09)', () => {
       rec(evidence),
       rec(evidence2),
       rec(verdict, ['supports', evidence2], ['supports', evidence]),
-      rec(id('p', 6), ['supersedes', evidence]),
-      rec(id('p', 7), ['supersedes', evidence2]),
+      rec(recordId('p', 6), ['supersedes', evidence]),
+      rec(recordId('p', 7), ['supersedes', evidence2]),
     ]);
     expect(marks.get(verdict)?.staleOut).toEqual([evidence, evidence2]);
   });
 
   test('staleIn also comes out sorted, whatever the read order', () => {
-    const [reviewA, reviewB] = [id('p', 12), id('p', 13)];
+    const [reviewA, reviewB] = [recordId('p', 12), recordId('p', 13)];
     const marks = needsReview([
       rec(plan),
       rec(reviewB, ['supports', plan]),
       rec(reviewA, ['supports', plan]),
-      rec(id('p', 14), ['supersedes', reviewA]),
-      rec(id('p', 15), ['supersedes', reviewB]),
+      rec(recordId('p', 14), ['supersedes', reviewA]),
+      rec(recordId('p', 15), ['supersedes', reviewB]),
     ]);
     expect(marks.get(plan)?.staleIn).toEqual([reviewA, reviewB]);
   });
 
   test('a destination not in records generates no mark (D-24, D-09)', () => {
-    const unread = id('q', 1);
+    const unread = recordId('q', 1);
     const marks = needsReview([
       rec(evidence, ['supports', unread]),
       rec(evidence2, ['supersedes', evidence]),
@@ -578,11 +579,11 @@ describe('proof expired by the lineage (D-09)', () => {
 
 describe('needsReview with inheritance (ADR 0007, item 10)', () => {
   const [evidence, unit, unit2, review, review2] = [
-    id('p', 1),
-    id('p', 2),
-    id('p', 3),
-    id('p', 4),
-    id('p', 5),
+    recordId('p', 1),
+    recordId('p', 2),
+    recordId('p', 3),
+    recordId('p', 4),
+    recordId('p', 5),
   ];
 
   function marksOf(records: Linked[]) {
