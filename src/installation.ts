@@ -364,9 +364,13 @@ export function writeSkillFolder(home: string, name: string, srcDir: string): vo
     cpSync(srcDir, tmp, { recursive: true });
     // Versões antigas deixavam `<name>.tmp-<pid>`/`.old-<pid>` dentro de `skills/`, lidos como skill.
     // O sufixo é só dígitos: pasta do usuário como `<name>.old-notas` não é temporário nosso.
-    const legacyTemp = new RegExp(`^${name.replaceAll('.', '\\.')}\\.(tmp|old)-\\d+$`);
+    // O nome nunca entra num regex: só o sufixo é testado, então `+`, `(` e `[` no nome não importam.
+    const legacyPrefix = `${name}.`;
     for (const entry of fs.readdirSync(skillsDir)) {
-      if (legacyTemp.test(entry)) {
+      if (
+        entry.startsWith(legacyPrefix) &&
+        /^(tmp|old)-\d+$/.test(entry.slice(legacyPrefix.length))
+      ) {
         rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
       }
     }

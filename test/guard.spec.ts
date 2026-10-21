@@ -1567,6 +1567,51 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
+  test('legacy sweep keeps entries whose suffix is not tmp-/old- plus digits', () => {
+    const home = createTempDir('skill-legacy-suffix');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    try {
+      const skillsDir = path.join(home, '.claude', 'skills');
+      const kept = [
+        'hexlog.tmp-',
+        'hexlog.tmp-12a',
+        'hexlog.old-1-2',
+        'hexlog.bak-123',
+        'hexlog-tmp-123',
+      ];
+      for (const leftover of ['hexlog.tmp-7', 'hexlog.old-42', ...kept]) {
+        fs.mkdirSync(path.join(skillsDir, leftover), { recursive: true });
+      }
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', ...kept].sort());
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('legacy sweep handles a skill name with regex metacharacters', () => {
+    const home = createTempDir('skill-legacy-meta');
+    const srcDir = buildSrcDir('# c++ skill\n');
+    try {
+      const skillsDir = path.join(home, '.claude', 'skills');
+      const kept = ['c++.old-notes', 'cc.tmp-123', 'c+(a[b.tmp-9x'];
+      for (const leftover of ['c++.tmp-123', 'c++.old-123', 'c+(a[b.old-5', ...kept]) {
+        fs.mkdirSync(path.join(skillsDir, leftover), { recursive: true });
+      }
+
+      writeSkillFolder(home, 'c++', srcDir);
+      writeSkillFolder(home, 'c+(a[b', srcDir);
+
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['c++', 'c+(a[b', ...kept].sort());
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
   test('falha no 2º renameSync não deixa temporário em skills/ nem em .claude/ e preserva a skill anterior', () => {
     const home = createTempDir('skill-h');
     const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
