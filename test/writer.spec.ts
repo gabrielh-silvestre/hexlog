@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { checkInstalled, gitDiffQuiet, openWriter } from '../scripts/flow/writer.ts';
 import { createFlowEnvironment } from './flow-data.ts';
 import { createTempDir, snapshot } from './helpers.ts';
@@ -31,11 +31,11 @@ function installed(overrides: Partial<Parameters<typeof checkInstalled>[0]> = {}
 }
 
 describe('checkInstalled', () => {
-  test('returns no problem when the installed code is the repository code', () => {
+  it('should return no problem when the installed code is the repository code', () => {
     expect(checkInstalled(installed())).toEqual([]);
   });
 
-  test('reads the manifest from the folder of the registered server', () => {
+  it('should read the manifest from the folder of the registered server', () => {
     const readManifest = jest.fn<(versionDir: string) => string>(() => manifestText());
 
     checkInstalled(installed({ readManifest }));
@@ -43,19 +43,19 @@ describe('checkInstalled', () => {
     expect(readManifest).toHaveBeenCalledWith(VERSION_DIR);
   });
 
-  test.each([
+  it.each([
     ['a missing ~/.claude.json', null],
     ['invalid JSON', '{'],
     ['no hexlog entry', JSON.stringify({ mcpServers: {} })],
     ['args that are not a list', JSON.stringify({ mcpServers: { hexlog: { args: 'x' } } })],
     ['an empty args list', JSON.stringify({ mcpServers: { hexlog: { args: [] } } })],
-  ])('reports the server as unregistered with %s', (_title, claudeJsonText) => {
+  ])('should report the server as unregistered with %s', (_title, claudeJsonText) => {
     expect(checkInstalled(installed({ claudeJsonText }))).toEqual([
       'hexlog server not registered in ~/.claude.json: run node scripts/install.ts',
     ]);
   });
 
-  test('reports a version folder that differs from the repository version', () => {
+  it('should report a version folder that differs from the repository version', () => {
     const claudeJsonText = claudeJson('/home/dev/.local/lib/hexlog/1.1.0/server.mjs');
 
     const problems = checkInstalled(installed({ claudeJsonText }));
@@ -65,7 +65,7 @@ describe('checkInstalled', () => {
     ]);
   });
 
-  test('reports a manifest whose version differs from the repository version', () => {
+  it('should report a manifest whose version differs from the repository version', () => {
     const problems = checkInstalled(
       installed({ readManifest: () => manifestText({ version: '1.1.0' }) }),
     );
@@ -75,55 +75,77 @@ describe('checkInstalled', () => {
     ]);
   });
 
-  test.each([
-    ['an absent file', null],
-    ['invalid JSON', '{'],
-    ['an array', '[]'],
-    ['a numeric version', manifestText({ version: 1 })],
-    ['a numeric commit', manifestText({ commit: 1 })],
-    ['a string dirty', manifestText({ dirty: 'false' })],
-    ['a missing dirty', JSON.stringify({ version: VERSION, commit: COMMIT })],
-  ])('reports the manifest as invalid with %s', (_title, text) => {
-    const gitDiffQuietSpy = jest.fn(() => 'same' as const);
+  describe('with a manifest that is invalid', () => {
+    const INVALID_MANIFESTS = [
+      ['an absent file', null],
+      ['invalid JSON', '{'],
+      ['an array', '[]'],
+      ['a numeric version', manifestText({ version: 1 })],
+      ['a numeric commit', manifestText({ commit: 1 })],
+      ['a string dirty', manifestText({ dirty: 'false' })],
+      ['a missing dirty', JSON.stringify({ version: VERSION, commit: COMMIT })],
+    ] as const;
 
-    const problems = checkInstalled(
-      installed({ readManifest: () => text, gitDiffQuiet: gitDiffQuietSpy }),
-    );
+    it.each(INVALID_MANIFESTS)('should report the manifest as invalid with %s', (_title, text) => {
+      const problems = checkInstalled(installed({ readManifest: () => text }));
 
-    expect(problems).toContain(
-      `manifest.json missing or invalid in ${VERSION_DIR}: run node scripts/install.ts`,
-    );
-    expect(gitDiffQuietSpy).not.toHaveBeenCalled();
+      expect(problems).toContain(
+        `manifest.json missing or invalid in ${VERSION_DIR}: run node scripts/install.ts`,
+      );
+    });
+
+    it.each(INVALID_MANIFESTS)('should skip the src/ comparison with %s', (_title, text) => {
+      const gitDiffQuietSpy = jest.fn(() => 'same' as const);
+
+      checkInstalled(installed({ readManifest: () => text, gitDiffQuiet: gitDiffQuietSpy }));
+
+      expect(gitDiffQuietSpy).not.toHaveBeenCalled();
+    });
   });
 
-  test.each([
-    ['a dirty tree', manifestText({ dirty: true })],
-    ['an unknown commit', manifestText({ commit: null })],
-  ])('asks to move the version folder aside and reinstall with %s', (_title, text) => {
-    const gitDiffQuietSpy = jest.fn(() => 'same' as const);
+  describe('with a build that is dirty or has an unknown commit', () => {
+    const UNTRUSTED_BUILDS = [
+      ['a dirty tree', manifestText({ dirty: true })],
+      ['an unknown commit', manifestText({ commit: null })],
+    ] as const;
 
-    const problems = checkInstalled(
-      installed({ readManifest: () => text, gitDiffQuiet: gitDiffQuietSpy }),
+    it.each(UNTRUSTED_BUILDS)(
+      'should ask to move the version folder aside and reinstall with %s',
+      (_title, text) => {
+        const problems = checkInstalled(installed({ readManifest: () => text }));
+
+        expect(problems).toEqual([
+          `installed build has a dirty tree or an unknown commit: with a clean tree at the wanted commit, move ${VERSION_DIR} aside and run node scripts/install.ts`,
+        ]);
+      },
     );
 
-    expect(problems).toEqual([
-      `installed build has a dirty tree or an unknown commit: with a clean tree at the wanted commit, move ${VERSION_DIR} aside and run node scripts/install.ts`,
-    ]);
-    expect(gitDiffQuietSpy).not.toHaveBeenCalled();
+    it.each(UNTRUSTED_BUILDS)('should skip the src/ comparison with %s', (_title, text) => {
+      const gitDiffQuietSpy = jest.fn(() => 'same' as const);
+
+      checkInstalled(installed({ readManifest: () => text, gitDiffQuiet: gitDiffQuietSpy }));
+
+      expect(gitDiffQuietSpy).not.toHaveBeenCalled();
+    });
   });
 
-  test('reports src/ that differs from the installed commit', () => {
-    const gitDiffQuietSpy = jest.fn<(commit: string) => 'differs'>(() => 'differs');
+  it('should compare src/ with the installed commit', () => {
+    const gitDiffQuietSpy = jest.fn<(commit: string) => 'same'>(() => 'same');
 
-    const problems = checkInstalled(installed({ gitDiffQuiet: gitDiffQuietSpy }));
+    checkInstalled(installed({ gitDiffQuiet: gitDiffQuietSpy }));
 
     expect(gitDiffQuietSpy).toHaveBeenCalledWith(COMMIT);
+  });
+
+  it('should report src/ that differs from the installed commit', () => {
+    const problems = checkInstalled(installed({ gitDiffQuiet: () => 'differs' }));
+
     expect(problems).toEqual([
       `src/ differs from the installed commit ${COMMIT}: run node scripts/install.ts`,
     ]);
   });
 
-  test('reports a git failure when comparing src/', () => {
+  it('should report a git failure when comparing src/', () => {
     const problems = checkInstalled(installed({ gitDiffQuiet: () => 'error' }));
 
     expect(problems).toEqual([
@@ -171,14 +193,19 @@ describe('gitDiffQuiet', () => {
     }
   }
 
-  test('returns same for the HEAD commit and differs for an older commit', () => {
-    const { root, first, second } = repoWithTwoCommits();
+  it('should return same for the HEAD commit', () => {
+    const { root, second } = repoWithTwoCommits();
 
     expect(gitDiffQuiet(root)(second)).toBe('same');
+  }, 30_000);
+
+  it('should return differs for an older commit', () => {
+    const { root, first } = repoWithTwoCommits();
+
     expect(gitDiffQuiet(root)(first)).toBe('differs');
   }, 30_000);
 
-  test('ignores a change outside src/', () => {
+  it('should ignore a change outside src/', () => {
     const { root, second } = repoWithTwoCommits();
     fs.writeFileSync(path.join(root, 'scripts', 'b.ts'), 'export const b = 2;\n');
     git(root, 'commit', '-q', '-am', 'third');
@@ -186,14 +213,14 @@ describe('gitDiffQuiet', () => {
     expect(gitDiffQuiet(root)(second)).toBe('same');
   }, 30_000);
 
-  test('returns error for an unknown commit', () => {
+  it('should return error for an unknown commit', () => {
     const { root } = repoWithTwoCommits();
 
     expect(gitDiffQuiet(root)('deadbeef')).toBe('error');
   }, 30_000);
 
-  test.each(['--help', '-p', 'HEAD; echo', ''])(
-    'returns error for %p without running git',
+  it.each(['--help', '-p', 'HEAD; echo', ''])(
+    'should return error for %p without running git',
     (commit) => {
       const { root } = repoWithTwoCommits();
 
@@ -202,21 +229,26 @@ describe('gitDiffQuiet', () => {
     30_000,
   );
 
-  test('returns error when the root is not a repository', () => {
+  it('should return error when the root is not a repository', () => {
     const { first } = repoWithTwoCommits();
 
     expect(gitDiffQuiet(createTempDir('writer-not-git'))(first)).toBe('error');
   }, 30_000);
 
-  test('gives the same answer from inside scripts/ and from outside the repository', () => {
-    const { root, first, second } = repoWithTwoCommits();
-    const outside = createTempDir('writer-outside');
+  it.each([
+    { place: 'inside scripts/', cwdOf: (root: string) => path.join(root, 'scripts') },
+    { place: 'outside the repository', cwdOf: () => createTempDir('writer-outside') },
+  ])(
+    'should give the same answer from $place',
+    ({ cwdOf }) => {
+      const { root, first, second } = repoWithTwoCommits();
+      const cwd = cwdOf(root);
 
-    for (const cwd of [path.join(root, 'scripts'), outside]) {
       expect(withCwd(cwd, () => gitDiffQuiet(root)(first))).toBe('differs');
       expect(withCwd(cwd, () => gitDiffQuiet(root)(second))).toBe('same');
-    }
-  }, 30_000);
+    },
+    30_000,
+  );
 });
 
 describe('openWriter', () => {
@@ -253,8 +285,10 @@ describe('openWriter', () => {
     return records;
   };
 
-  test('writes a batch through the real register, with the given author', async () => {
-    const result = await open().write({ process: SLUG, key: 'k1', records: [premise('a')] });
+  const batch = { process: SLUG, key: 'k1', records: [premise('a')] };
+
+  it('should write a batch through the real register, with the given author', async () => {
+    const result = await open().write(batch);
 
     expect(result.records).toHaveLength(1);
     expect(await premisesInLog()).toEqual([
@@ -265,50 +299,76 @@ describe('openWriter', () => {
     ]);
   }, 30_000);
 
-  test('replays a repeated key without writing again', async () => {
+  it('should replay a repeated key', async () => {
     const writer = open();
-    const batch = { process: SLUG, key: 'k1', records: [premise('a')] };
     await writer.write(batch);
 
     const replay = await writer.write(batch);
 
     expect(replay.replayed).toBe(true);
+  }, 30_000);
+
+  it('should not write again on a repeated key', async () => {
+    const writer = open();
+    await writer.write(batch);
+
+    await writer.write(batch);
+
     expect(await premisesInLog()).toHaveLength(1);
   }, 30_000);
 
-  test('refuses to open with the problems of the installed check, before touching the data', () => {
-    const before = snapshot(environment.dataDir);
-
+  it('should refuse to open with the problems of the installed check', () => {
     expect(() => open({ installed: installed({ gitDiffQuiet: () => 'differs' }) })).toThrow(
       /installed code check failed:\n- src\/ differs from the installed commit abc1234: run node scripts\/install\.ts/,
     );
+  });
+
+  it('should not touch the data when the installed check fails', () => {
+    const before = snapshot(environment.dataDir);
+
+    expect(() => open({ installed: installed({ gitDiffQuiet: () => 'differs' }) })).toThrow();
+
     expect(snapshot(environment.dataDir)).toEqual(before);
   });
 
-  test('refuses legacy 0.x data', () => {
+  it('should refuse legacy 0.x data', () => {
     environment.seedLegacy();
 
     expect(() => open()).toThrow(expect.objectContaining({ code: 'LEGACY_DATA' }));
   });
 
-  test('refuses an invalid author', () => {
+  it('should refuse an invalid author', () => {
     expect(() => open({ author: { agent: '', client: 'c' } })).toThrow();
   });
 
-  test.each([
-    ['a key that is empty', { key: '' }],
-    ['a key above 200 characters', { key: 'k'.repeat(201) }],
-    ['a process name that is not a name', { process: 'Not A Name' }],
-  ])(
-    'rejects %s without writing',
-    async (_title, patch) => {
-      const before = snapshot(environment.dataDir);
-      const batch = { process: SLUG, key: 'k1', records: [premise('a')], ...patch };
+  describe('with a batch that is invalid', () => {
+    const INVALID_BATCHES = [
+      ['a key that is empty', { key: '' }],
+      ['a key above 200 characters', { key: 'k'.repeat(201) }],
+      ['a process name that is not a name', { process: 'Not A Name' }],
+    ] as const;
 
-      await expect(open().write(batch)).rejects.toThrow();
+    it.each(INVALID_BATCHES)(
+      'should reject %s',
+      async (_title, patch) => {
+        const invalid = { ...batch, ...patch };
 
-      expect(snapshot(environment.dataDir)).toEqual(before);
-    },
-    30_000,
-  );
+        await expect(open().write(invalid)).rejects.toThrow();
+      },
+      30_000,
+    );
+
+    it.each(INVALID_BATCHES)(
+      'should write nothing for %s',
+      async (_title, patch) => {
+        const before = snapshot(environment.dataDir);
+        const invalid = { ...batch, ...patch };
+
+        await expect(open().write(invalid)).rejects.toThrow();
+
+        expect(snapshot(environment.dataDir)).toEqual(before);
+      },
+      30_000,
+    );
+  });
 });
