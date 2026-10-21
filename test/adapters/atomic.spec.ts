@@ -1,15 +1,15 @@
-import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { writeFileAtomic } from '../../src/adapters/fs/atomic.ts';
 import { createTempDir } from '../helpers.ts';
 
-afterEach(() => {
-  jest.restoreAllMocks();
-});
-
 describe('writeFileAtomic', () => {
-  test('grava texto e bytes sem deixar temporário no diretório', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('should write text and bytes without leaving a temporary in the directory', () => {
     const dir = createTempDir('atomic');
 
     writeFileAtomic(path.join(dir, 'a.json'), '{"ok":true}');
@@ -20,7 +20,7 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir).sort()).toEqual(['a.json', 'b.bin']);
   });
 
-  test('cria os diretórios ausentes com modo 0o700', () => {
+  it('should create the missing directories with mode 0o700', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'x', 'y', 'f.txt');
 
@@ -30,7 +30,7 @@ describe('writeFileAtomic', () => {
     expect(fs.statSync(path.dirname(file)).mode & 0o777).toBe(0o700);
   });
 
-  test('sem exclusive, substitui o arquivo existente', () => {
+  it('should replace the existing file without exclusive', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
     fs.writeFileSync(file, 'velho');
@@ -41,7 +41,7 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual(['f.txt']);
   });
 
-  test('com mode, publica o arquivo já no modo pedido, sem passar pela umask', () => {
+  it('should publish the file already in the requested mode with mode, bypassing the umask', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
     const previousUmask = process.umask(0o077);
@@ -55,7 +55,7 @@ describe('writeFileAtomic', () => {
     expect(fs.statSync(file).mode & 0o7777).toBe(0o664);
   });
 
-  test('com exclusive, grava quando o arquivo não existe', () => {
+  it('should write when the file does not exist with exclusive', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
 
@@ -65,7 +65,7 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual(['f.txt']);
   });
 
-  test('com exclusive, lança EEXIST cru, preserva o conteúdo e remove o temporário', () => {
+  it('should throw a raw EEXIST with exclusive, keep the content and remove the temporary', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
     writeFileAtomic(file, 'primeiro', { exclusive: true });
@@ -78,7 +78,7 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual(['f.txt']);
   });
 
-  test('erro de I/O que não é EEXIST sai cru e não deixa temporário', () => {
+  it('should throw an I/O error other than EEXIST raw and leave no temporary', () => {
     const dir = createTempDir('atomic');
     const target = path.join(dir, 'pasta');
     fs.mkdirSync(target);
@@ -89,7 +89,7 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual(['pasta']);
   });
 
-  test('falha do fsync do arquivo sai crua, não publica o arquivo e não deixa temporário', () => {
+  it('should throw a raw file fsync failure, not publish the file and leave no temporary', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
     jest.spyOn(fs, 'fsyncSync').mockImplementation(() => {
@@ -101,7 +101,7 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 
-  test('com exclusive, link negado (EPERM, sem hard link no sistema de arquivos) sai cru e não deixa temporário', () => {
+  it('should throw a raw denied link with exclusive (EPERM, no hard link on the file system) and leave no temporary', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
     jest.spyOn(fs, 'linkSync').mockImplementation(() => {
@@ -115,7 +115,7 @@ describe('writeFileAtomic', () => {
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 
-  test('o temporário leva pid e 8 bytes aleatórios (16 hex) no nome, para dois escritores não colidirem', () => {
+  it('should name the temporary with the pid and 8 random bytes (16 hex), so two writers do not collide', () => {
     const dir = createTempDir('atomic');
     const realOpen = fs.openSync;
     const opened: string[] = [];
@@ -131,7 +131,7 @@ describe('writeFileAtomic', () => {
     ]);
   });
 
-  test('o arquivo nasce com modo 0o600', () => {
+  it('should create the file with mode 0o600', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
 
@@ -140,11 +140,11 @@ describe('writeFileAtomic', () => {
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
   });
 
-  test.each([
+  it.each([
     { fsyncDir: false, directoryFsyncs: 0 },
     { fsyncDir: true, directoryFsyncs: 1 },
   ])(
-    'fsyncDir $fsyncDir dá $directoryFsyncs fsync no diretório',
+    'should fsync the directory $directoryFsyncs times with fsyncDir $fsyncDir',
     ({ fsyncDir, directoryFsyncs }) => {
       const dir = createTempDir('atomic');
       const realFsync = fs.fsyncSync;

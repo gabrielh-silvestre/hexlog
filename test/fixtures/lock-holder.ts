@@ -1,4 +1,4 @@
-// Processo filho do lock por pid (P2, TF2, TF4) e do `register` concorrente (SE5), com cinco modos.
+// Processo filho do lock por pid e do `register` concorrente, com cinco modos.
 // Uso: `lock-holder.ts <modo> <json>`, com um único argumento JSON por modo (formato em
 // `fixture-args.ts#LockHolderArgs`):
 //  - `rounds`: espera os `total` irmãos na barreira e faz `rounds` rodadas de adquirir, criar
@@ -11,7 +11,7 @@
 //    qualquer outro erro derruba o filho (status 1, stderr). Imprime `{ rounds, retries }`.
 //  - `write-gated`: grava 1 elo pelo `ProcessStore`; com o lock na mão e o lote montado, imprime
 //    `{ pid }` e espera (bloqueado, sem devolver ao laço de eventos) até `goFile` existir. O pai
-//    pausa o filho nesse ponto com SIGSTOP (TF4) e depois o libera.
+//    pausa o filho nesse ponto com SIGSTOP e depois o libera.
 //  - `register`: espera os `total` irmãos na barreira e faz um `register` pelo `compose` real com
 //    `input` (`{ key?, records }`). Imprime uma linha com o registro de log `lock-wait` quando espera
 //    o lock de outro dono e, por último, `{ ok: true, replayed }` ou, se o domínio recusar,
@@ -116,7 +116,7 @@ async function runWrites({
         }));
         break;
       } catch (error) {
-        // `lock-lost` é a resposta retentável do D-12 e nada foi gravado antes do `confirm`;
+        // `lock-lost` é a resposta retentável e nada foi gravado antes do `confirm`;
         // qualquer outro erro é falha crua e derruba o filho.
         if (!(error instanceof HexlogError) || error.details[0]?.code !== 'lock-lost') throw error;
         retries += 1;

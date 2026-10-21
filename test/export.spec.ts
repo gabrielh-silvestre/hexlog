@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -26,7 +26,7 @@ function runExport(xdg: string, ...args: string[]) {
 }
 
 // alpha/run-1: três registros; o terceiro supersede o primeiro.
-beforeAll(async () => {
+const seedProcess = async () => {
   const xdg = createTempDir('xdg');
   const dataDir = path.join(xdg, 'hexlog');
   fs.mkdirSync(dataDir);
@@ -50,10 +50,13 @@ beforeAll(async () => {
   );
   ids = [first, second, third];
   xdgHome = xdg;
-});
+};
 
-describe('sem --fields', () => {
-  test('uma linha JSON por registro, na ordem do log, incluindo o não vigente', () => {
+describe('scripts/export.ts', () => {
+  // `jest/require-top-level-describe` barra hook fora de describe.
+  beforeAll(seedProcess);
+
+  it('should print one JSON line per record in log order, including the non-current one', () => {
     const { code, out } = runExport(xdgHome, `${PROJECT}/${PROCESS}`);
     const lines = out
       .trim()
@@ -67,7 +70,7 @@ describe('sem --fields', () => {
     expect(code).toBe(0);
   });
 
-  test('processo com mais registros que uma página sai inteiro, em uma chamada só', () => {
+  it('should export a process with more records than a page whole, in a single call', () => {
     const xdg = createTempDir('xdg');
     const corpus = writeRecordsCorpus(path.join(xdg, 'hexlog'), { recordsPerProcess: 120 });
     const { project, process: processName } = at(corpus.refs, 0);
@@ -78,13 +81,12 @@ describe('sem --fields', () => {
       .trim()
       .split('\n')
       .map((line) => (JSON.parse(line) as { id: string }).id);
+
     expect(exported).toEqual(corpus.records.map(({ id }) => id));
     expect(code).toBe(0);
   });
-});
 
-describe('--fields', () => {
-  test('projeta só as chaves pedidas, em cada linha', () => {
+  it('should project only the requested keys on each line with --fields', () => {
     const { code, out } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields', 'id,type');
     const lines = out
       .trim()
@@ -92,48 +94,49 @@ describe('--fields', () => {
       .map((line) => JSON.parse(line) as Record<string, unknown>);
 
     expect(lines).toHaveLength(3);
+
     for (const line of lines) expect(Object.keys(line).sort()).toEqual(['id', 'type']);
+
     expect(code).toBe(0);
   });
 
-  test('campo desconhecido falha com mensagem clara e código diferente de zero', () => {
+  it('should fail with a clear message and a non-zero code for an unknown --fields field', () => {
     const { code, err } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields', 'id,bogus');
+
     expect(err).toContain('invalid field(s): bogus');
     expect(code).toBe(1);
   });
 
-  test('--fields sem valor falha com o uso em vez de exportar tudo', () => {
+  it('should fail with the usage instead of exporting everything when --fields has no value', () => {
     const { code, out, err } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields');
 
     expect(err).toContain('export failed: usage:');
     expect(out).toBe('');
     expect(code).toBe(1);
   });
-});
 
-describe('uso incorreto e processo inexistente', () => {
-  test.each([
-    ['sem argumentos', []],
-    ['sem barra', [PROJECT]],
-    ['nome inválido', ['A/b']],
-    ['três partes', ['a/b/c']],
-    ['flag desconhecida', [`${PROJECT}/${PROCESS}`, '--bogus']],
-    ['argumento a mais', [`${PROJECT}/${PROCESS}`, 'extra']],
-  ])('%s → exit 1 com o uso no stderr', (_name, args) => {
+  it.each([
+    ['without arguments', []],
+    ['without a slash', [PROJECT]],
+    ['with an invalid name', ['A/b']],
+    ['with three parts', ['a/b/c']],
+    ['with an unknown flag', [`${PROJECT}/${PROCESS}`, '--bogus']],
+    ['with an extra argument', [`${PROJECT}/${PROCESS}`, 'extra']],
+  ])('should exit 1 with the usage on stderr when called %s', (_name, args) => {
     const { code, err } = runExport(xdgHome, ...args);
+
     expect(err).toContain('export failed: usage:');
     expect(code).toBe(1);
   });
 
-  test('processo inexistente falha com PROCESS_NOT_FOUND e exit 1', () => {
+  it('should fail with PROCESS_NOT_FOUND and exit 1 for a missing process', () => {
     const { code, err } = runExport(xdgHome, `${PROJECT}/ghost`);
+
     expect(err).toContain('export failed: PROCESS_NOT_FOUND:');
     expect(code).toBe(1);
   });
-});
 
-describe('integridade', () => {
-  test('SL1: cadeia adulterada é detectada pelo script e sai com 2 sem exportar nada', () => {
+  it('should detect a tampered chain and exit 2 without exporting anything', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
     const { log } = processPaths(path.join(xdg, 'hexlog'), REF);
     fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"um"', '"trocado"'));
@@ -145,7 +148,7 @@ describe('integridade', () => {
     expect(code).toBe(2);
   });
 
-  test('process.json truncado → exit 2 e PROCESS_CORRUPTED, sem exportar nada', () => {
+  it('should exit 2 with PROCESS_CORRUPTED and export nothing for a truncated process.json', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
     const { manifest } = processPaths(path.join(xdg, 'hexlog'), REF);
     fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').slice(0, 20));
@@ -157,7 +160,7 @@ describe('integridade', () => {
     expect(code).toBe(2);
   });
 
-  test('sobre <D> com dado 0.x sai com código 2 e a mensagem do LEGACY_DATA', () => {
+  it('should exit 2 with the LEGACY_DATA message over a <D> with 0.x data', () => {
     const xdg = createTempDir('xdg');
     fs.cpSync(legacyFixture, path.join(xdg, 'hexlog'), { recursive: true });
 
@@ -168,12 +171,12 @@ describe('integridade', () => {
     expect(out).toBe('');
     expect(code).toBe(2);
   }, 15_000);
-});
 
-describe('read-only', () => {
-  test('hash e mtime de tudo sob <D> ficam iguais depois da execução', () => {
+  it('should leave the hash and mtime of everything under <D> unchanged', () => {
     const before = snapshot(path.join(xdgHome, 'hexlog'));
+
     runExport(xdgHome, `${PROJECT}/${PROCESS}`);
+
     expect(snapshot(path.join(xdgHome, 'hexlog'))).toEqual(before);
   });
 });

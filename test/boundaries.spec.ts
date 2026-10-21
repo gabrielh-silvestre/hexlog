@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import { ESLint } from 'eslint';
 import * as path from 'node:path';
 import tseslint from 'typescript-eslint';
@@ -23,12 +23,12 @@ const errorRuleIds = (messages: { ruleId: string | null; severity: number }[]) =
 
 async function ruleIdsOfFile(relativePath: string): Promise<(string | null)[]> {
   const [result] = await eslint.lintFiles([relativePath]);
-  return result ? errorRuleIds(result.messages) : ['sem resultado'];
+  return result ? errorRuleIds(result.messages) : ['no result'];
 }
 
 async function ruleIdsOfText(relativePath: string, code: string): Promise<(string | null)[]> {
   const [result] = await eslint.lintText(code, { filePath: path.join(fixturesRoot, relativePath) });
-  return result ? errorRuleIds(result.messages) : ['sem resultado'];
+  return result ? errorRuleIds(result.messages) : ['no result'];
 }
 
 const importing = (specifier: string) => `import x from '${specifier}';\nexport default x;\n`;
@@ -65,76 +65,79 @@ const FORBIDDEN_SPECIFIERS = [
   '../compose.ts',
 ];
 
-describe('travas de fronteira (SF1/TB1)', () => {
-  test.each([
+describe('boundaryBlocks', () => {
+  it.each([
     'src/domain/violates-fs.ts',
     'src/shared/violates-sdk.ts',
     'src/ports.ts',
     'src/commands/violates-adapter.ts',
     'src/queries/violates-minisearch.ts',
-  ])('fixture %s falha em no-restricted-imports', async (file) => {
+  ])('should fail the fixture %s on no-restricted-imports', async (file) => {
     expect(await ruleIdsOfFile(file)).toEqual(['no-restricted-imports']);
   });
 
-  test.each(
+  it.each(
     RESTRICTED_LAYERS.flatMap((layer) =>
       FORBIDDEN_SPECIFIERS.map((specifier) => [layer, specifier] as const),
     ),
-  )('%s não importa %s', async (layer, specifier) => {
+  )('should forbid %s from importing %s', async (layer, specifier) => {
     expect(await ruleIdsOfText(`src/${layer}/probe.ts`, importing(specifier))).toEqual([
       'no-restricted-imports',
     ]);
   });
 
-  test.each(RESTRICTED_LAYERS)('%s barra o especificador em subdiretório fundo', async (layer) => {
-    expect(await ruleIdsOfText(`src/${layer}/sub/deep/probe.ts`, importing('node:fs'))).toEqual([
-      'no-restricted-imports',
-    ]);
-  });
+  it.each(RESTRICTED_LAYERS)(
+    'should block the restricted specifier in a deep subdirectory of %s',
+    async (layer) => {
+      expect(await ruleIdsOfText(`src/${layer}/sub/deep/probe.ts`, importing('node:fs'))).toEqual([
+        'no-restricted-imports',
+      ]);
+    },
+  );
 
-  test.each(RESTRICTED_LAYERS)('%s permite ./ajv local', async (layer) => {
+  it.each(RESTRICTED_LAYERS)('should allow a local ./ajv in %s', async (layer) => {
     expect(await ruleIdsOfText(`src/${layer}/probe.ts`, importing('./ajv'))).toEqual([]);
   });
 
-  test.each(RESTRICTED_LAYERS)('%s não usa import dinâmico', async (layer) => {
+  it.each(RESTRICTED_LAYERS)('should forbid a dynamic import in %s', async (layer) => {
     const code = `export const load = () => import('node:path');\n`;
+
     expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual(['no-restricted-syntax']);
   });
 
-  test('commands não importa queries', async () => {
+  it('should forbid commands from importing queries', async () => {
     expect(await ruleIdsOfFile('src/commands/violates-queries.ts')).toEqual([
       'no-restricted-imports',
     ]);
   });
 
-  test('queries não importa commands', async () => {
+  it('should forbid queries from importing commands', async () => {
     expect(await ruleIdsOfFile('src/queries/violates-commands.ts')).toEqual([
       'no-restricted-imports',
     ]);
   });
 
-  test.each(['src/domain/clean.ts', 'src/commands/clean.ts'])(
-    'arquivo limpo %s passa',
+  it.each(['src/domain/clean.ts', 'src/commands/clean.ts'])(
+    'should pass the clean file %s',
     async (file) => {
       expect(await ruleIdsOfFile(file)).toEqual([]);
     },
   );
 
-  test('adapters fica fora das travas e pode importar node:fs e o SDK', async () => {
+  it('should leave adapters outside the locks, free to import node:fs and the SDK', async () => {
     const code = `import 'node:fs';\nimport '@modelcontextprotocol/server';\n`;
+
     expect(await ruleIdsOfText('src/adapters/fs/store.ts', code)).toEqual([]);
   });
 
-  test('mcp pode importar o SDK do MCP', async () => {
+  it('should allow mcp to import the MCP SDK', async () => {
     expect(
       await ruleIdsOfText('src/mcp/server.ts', importing('@modelcontextprotocol/server')),
     ).toEqual([]);
   });
-});
 
-describe('domain sem camadas de fora do núcleo (N6)', () => {
-  test.each(['../commands/x.ts', '../queries/x.ts', '../mcp/kernel.ts', '../shared/logger.ts'])(
-    'domain não importa %s',
+  it.each(['../commands/x.ts', '../queries/x.ts', '../mcp/kernel.ts', '../shared/logger.ts'])(
+    'should forbid domain from importing %s',
     async (specifier) => {
       expect(await ruleIdsOfText('src/domain/probe.ts', importing(specifier))).toEqual([
         'no-restricted-imports',
@@ -142,14 +145,15 @@ describe('domain sem camadas de fora do núcleo (N6)', () => {
     },
   );
 
-  test.each(['node:crypto', '../errors.ts'])('domain pode importar %s', async (specifier) => {
-    expect(await ruleIdsOfText('src/domain/probe.ts', importing(specifier))).toEqual([]);
-  });
-});
+  it.each(['node:crypto', '../errors.ts'])(
+    'should allow domain to import %s',
+    async (specifier) => {
+      expect(await ruleIdsOfText('src/domain/probe.ts', importing(specifier))).toEqual([]);
+    },
+  );
 
-describe('ports.ts na raiz de src/ (M6)', () => {
-  test.each(['node:fs', '../adapters/fs/store.ts', '@modelcontextprotocol/server', './compose.ts'])(
-    'ports.ts não importa %s',
+  it.each(['node:fs', '../adapters/fs/store.ts', '@modelcontextprotocol/server', './compose.ts'])(
+    'should forbid ports.ts from importing %s',
     async (specifier) => {
       expect(await ruleIdsOfText('src/ports.ts', importing(specifier))).toEqual([
         'no-restricted-imports',
@@ -157,166 +161,162 @@ describe('ports.ts na raiz de src/ (M6)', () => {
     },
   );
 
-  test.each(['./domain/ids.ts', './errors.ts'])('ports.ts pode importar %s', async (specifier) => {
-    expect(await ruleIdsOfText('src/ports.ts', importing(specifier))).toEqual([]);
-  });
-});
+  it.each(['./domain/ids.ts', './errors.ts'])(
+    'should allow ports.ts to import %s',
+    async (specifier) => {
+      expect(await ruleIdsOfText('src/ports.ts', importing(specifier))).toEqual([]);
+    },
+  );
 
-describe('shared e ports.ts abaixo dos serviços e da camada MCP (M12)', () => {
-  test.each([
+  it.each([
     ['src/shared/probe.ts', '../commands/x.ts'],
     ['src/shared/probe.ts', '../queries/x.ts'],
     ['src/shared/probe.ts', '../mcp/kernel.ts'],
     ['src/ports.ts', './commands/x.ts'],
     ['src/ports.ts', './queries/x.ts'],
     ['src/ports.ts', './mcp/kernel.ts'],
-  ])('%s não importa %s', async (file, specifier) => {
+  ])('should forbid %s from importing %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
   });
 
-  test.each([
+  it.each([
     ['src/shared/probe.ts', '../domain/ids.ts'],
     ['src/shared/probe.ts', '../ports.ts'],
     ['src/shared/probe.ts', '../errors.ts'],
     ['src/shared/probe.ts', './logger.ts'],
-  ])('%s pode importar %s', async (file, specifier) => {
+  ])('should allow %s to import %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
   });
-});
 
-describe('commands e queries não importam mcp (M12)', () => {
-  test.each(['commands', 'queries'])('%s não importa mcp', async (layer) => {
+  it.each(['commands', 'queries'])('should forbid %s from importing mcp', async (layer) => {
     expect(await ruleIdsOfText(`src/${layer}/probe.ts`, importing('../mcp/kernel.ts'))).toEqual([
       'no-restricted-imports',
     ]);
   });
 
-  test.each(['commands', 'queries'])(
-    '%s pode importar domain, shared, ports e errors',
+  it.each(['commands', 'queries'])(
+    'should allow %s to import domain, shared, ports and errors',
     async (layer) => {
       const code = ['../domain/ids.ts', '../shared/loader.ts', '../ports.ts', '../errors.ts']
         .map((specifier) => `import '${specifier}';\n`)
         .join('');
+
       expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual([]);
     },
   );
 
-  test.each([
+  it.each([
     ['src/mcp/tools/probe.ts', '../../commands/x.ts'],
     ['src/mcp/tools/probe.ts', '../../queries/x.ts'],
-  ])('%s pode importar %s (mcp chama serviços)', async (file, specifier) => {
+  ])('should allow %s to import %s, as mcp calls services', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
   });
-});
 
-describe('adapters sem commands, queries nem mcp (M30)', () => {
-  test.each(['commands', 'queries', 'mcp'])('adapters não importa %s', async (layer) => {
-    expect(
-      await ruleIdsOfText('src/adapters/fs/probe.ts', importing(`../../${layer}/x.ts`)),
-    ).toEqual(['no-restricted-imports']);
-  });
+  it.each(['commands', 'queries', 'mcp'])(
+    'should forbid adapters from importing %s',
+    async (layer) => {
+      expect(
+        await ruleIdsOfText('src/adapters/fs/probe.ts', importing(`../../${layer}/x.ts`)),
+      ).toEqual(['no-restricted-imports']);
+    },
+  );
 
-  test('adapters pode importar domain, ports e errors', async () => {
+  it('should allow adapters to import domain, ports and errors', async () => {
     const code = ['../../domain/ids.ts', '../../ports.ts', '../../errors.ts']
       .map((specifier) => `import '${specifier}';\n`)
       .join('');
+
     expect(await ruleIdsOfText('src/adapters/fs/probe.ts', code)).toEqual([]);
   });
-});
 
-describe('mcp sem builtins nem adapters (N6)', () => {
-  test.each([
+  it.each([
     ['src/mcp/tools/process.ts', '../../adapters/fs/store.ts'],
     ['src/mcp/tools/process.ts', 'node:fs'],
     ['src/mcp/server.ts', 'node:os'],
     ['src/mcp/kernel.ts', 'node:fs'],
     ['src/mcp/kernel.ts', '../adapters/fs/store.ts'],
     ['src/mcp/kernel.ts', './tools/process.ts'],
-  ])('%s não importa %s', async (file, specifier) => {
+  ])('should forbid %s from importing %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
   });
 
-  test.each([
+  it.each([
     ['src/mcp/server.ts', '../compose.ts'],
     ['src/mcp/tools/process.ts', '../../compose.ts'],
   ])(
-    '%s não importa %s (só server.ts, scripts e testes usam compose.ts)',
+    'should forbid %s from importing %s, as only server.ts, scripts and tests use compose.ts',
     async (file, specifier) => {
       expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
     },
   );
 
-  test.each([
+  it.each([
     ['src/server.ts', './compose.ts'],
     ['src/adapters/probe.ts', '../compose.ts'],
-  ])('%s pode importar %s (o compose.ts de src/)', async (file, specifier) => {
+  ])('should allow %s to import %s, the compose.ts of src/', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
   });
 
-  test('mcp não usa import dinâmico', async () => {
+  it('should forbid a dynamic import in mcp', async () => {
     const code = `export const load = () => import('node:path');\n`;
+
     expect(await ruleIdsOfText('src/mcp/server.ts', code)).toEqual(['no-restricted-syntax']);
   });
-});
 
-describe('limite de tamanho (SF2/TB2)', () => {
-  test.each(['commands', 'queries'])('%s com 801 linhas falha em max-lines', async (layer) => {
+  it.each(['commands', 'queries'])('should fail %s with 801 lines on max-lines', async (layer) => {
     expect(await ruleIdsOfText(`src/${layer}/big.ts`, linesOfCode(801))).toEqual(['max-lines']);
   });
 
-  test.each(['commands', 'queries'])('%s com 800 linhas passa', async (layer) => {
+  it.each(['commands', 'queries'])('should pass %s with 800 lines', async (layer) => {
     expect(await ruleIdsOfText(`src/${layer}/big.ts`, linesOfCode(800))).toEqual([]);
   });
 
-  test.each(['domain', 'shared', 'mcp', 'adapters'])(
-    '%s não tem limite de linhas',
+  it.each(['domain', 'shared', 'mcp', 'adapters'])(
+    'should not limit the lines of %s',
     async (layer) => {
       expect(await ruleIdsOfText(`src/${layer}/big.ts`, linesOfCode(801))).toEqual([]);
     },
   );
-});
 
-describe('kernel MCP sem tools (TB3)', () => {
-  test('kernel.ts que importa ./tools/** falha em no-restricted-imports', async () => {
+  it('should fail a kernel.ts that imports ./tools/** on no-restricted-imports', async () => {
     expect(await ruleIdsOfFile('src/mcp/kernel.ts')).toEqual(['no-restricted-imports']);
   });
 
-  test('kernel.ts que importa só irmãos fora de tools passa', async () => {
+  it('should pass a kernel.ts that imports only siblings outside tools', async () => {
     expect(await ruleIdsOfText('src/mcp/kernel.ts', importing('./server.ts'))).toEqual([]);
   });
 
-  test('server.ts pode importar ./tools/process.ts', async () => {
+  it('should allow server.ts to import ./tools/process.ts', async () => {
     expect(await ruleIdsOfText('src/mcp/server.ts', importing('./tools/process.ts'))).toEqual([]);
   });
 
-  test('uma tool pode importar o kernel', async () => {
+  it('should allow a tool to import the kernel', async () => {
     expect(await ruleIdsOfText('src/mcp/tools/process.ts', importing('../kernel.ts'))).toEqual([]);
   });
-});
 
-describe('scripts de leitura só leem por compose.ts', () => {
-  test.each([
+  it.each([
     ['scripts/probe.ts', '../src/adapters/fs/process-store.ts'],
     ['scripts/probe.ts', '../src/mcp/kernel.ts'],
-  ])('%s não importa %s', async (file, specifier) => {
+  ])('should forbid %s from importing %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
   });
 
-  test.each([
+  it.each([
     ['scripts/probe.ts', '../src/compose.ts'],
     ['scripts/probe.ts', '../src/errors.ts'],
     ['scripts/probe.ts', '../src/directory.ts'],
     ['scripts/install.ts', '../src/adapters/fs/data-format.ts'],
     ['scripts/build.ts', '../src/mcp/server.ts'],
-  ])('%s pode importar %s', async (file, specifier) => {
+  ])('should allow %s to import %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
   });
 
-  test.each([
+  it.each([
     ['scripts/probe.ts', ['no-restricted-syntax']],
     ['scripts/install.ts', []],
-  ])('%s com import() de adapters resulta em %j', async (file, expected) => {
+  ])('should report an import() of adapters in %s as %j', async (file, expected) => {
     const code = `export const load = () => import('../src/adapters/fs/process-store.ts');\n`;
+
     expect(await ruleIdsOfText(file, code)).toEqual(expected);
   });
 });

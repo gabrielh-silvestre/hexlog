@@ -19,7 +19,7 @@ os roda sem `npm ci`, então só usam builtins do Node e leem apenas o `CHANGELO
 | File | Description |
 |---|---|
 | `build.ts` | Builda com `esbuild` os dois entrypoints (`server`: `src/server.ts`, `bash-guard`: `hook/bash-guard.ts`) para ESM `node24`, bundled, extensão `.mjs`. Sempre resolve a partir da raiz do repo (`import.meta.dirname`), nunca do cwd, pra garantir os mesmos bytes independente de quem chama. Exporta `build()` (usado por `install.ts` com `write: false` para pegar os bytes em memória) e `repoRoot` |
-| `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 12 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), copia as skills de `skills/` para `~/.claude/skills/<nome>/` (`writeSkillFolder`, antes de tocar o `settings.json`, para uma falha da troca não deixar o guard novo com skills antigas), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e registra o servidor MCP via `claude mcp add`/`remove`. A saída é só o resumo `hexlog <versão>: installed|reinstalled|repaired` (ou `already installed and intact; nothing to do`), os dois sha256, `settings.json: updated|already correct` e as linhas `warning: ...`. `node scripts/install.ts --check` só verifica, sem tocar em nada: ignora `--archive-0x` e nem chama `detectLegacy`, então um `<D>` ilegível (`EACCES`, `ENOTDIR`) não o derruba. Regra de `permissions.deny` de um `<D>` antigo que o guard tira é impressa (`removed deny rule: <regra>`), nunca em silêncio. Com dado 0.x em `<D>` (`adapters/fs/data-format.ts#detectLegacy`), sem flag lista o que `src/archive.ts#inspectLegacy` arquivaria e sai 2 sem alterar `<D>` nem a instalação; `--archive-0x` roda `archiveLegacy` e segue para a instalação (imprime arquivos e caminho do `.tar`, ou `removed N empty 0.x directories` quando só havia diretórios vazios; `ArchiveError`: stderr, exit 1, sem instalar). A listagem cita `<D>/archive/` porque o nome do `.tar` só existe depois de `archiveLegacy`. Argumento desconhecido é recusado com exit 1 antes de qualquer escrita (coberta em `test/guard.spec.ts`, describe B3) |
+| `install.ts` | Instalador/verificador versionado. `node scripts/install.ts` builda os bundles, verifica o artefato preparado antes de trocar qualquer coisa (hook nega `D`/permite o resto; servidor sobe e anuncia as 12 tools), copia para `~/.local/lib/hexlog/<versão>/` com troca atômica, grava `manifest.json` (sha256, commit, `dirty`), copia as skills de `skills/` para `~/.claude/skills/<nome>/` (`writeSkillFolder`, antes de tocar o `settings.json`, para uma falha da troca não deixar o guard novo com skills antigas), registra as 4 regras de deny + o hook `PreToolUse` em `~/.claude/settings.json` (backup em `settings.json.bak-hexlog`) e registra o servidor MCP via `claude mcp add`/`remove`. A saída é só o resumo `hexlog <versão>: installed|reinstalled|repaired` (ou `already installed and intact; nothing to do`), os dois sha256, `settings.json: updated|already correct` e as linhas `warning: ...`. `node scripts/install.ts --check` só verifica, sem tocar em nada: ignora `--archive-0x` e nem chama `detectLegacy`, então um `<D>` ilegível (`EACCES`, `ENOTDIR`) não o derruba. Regra de `permissions.deny` de um `<D>` antigo que o guard tira é impressa (`removed deny rule: <regra>`), nunca em silêncio. Com dado 0.x em `<D>` (`adapters/fs/data-format.ts#detectLegacy`), sem flag lista o que `src/archive.ts#inspectLegacy` arquivaria e sai 2 sem alterar `<D>` nem a instalação; `--archive-0x` roda `archiveLegacy` e segue para a instalação (imprime arquivos e caminho do `.tar`, ou `removed N empty 0.x directories` quando só havia diretórios vazios; `ArchiveError`: stderr, exit 1, sem instalar). A listagem cita `<D>/archive/` porque o nome do `.tar` só existe depois de `archiveLegacy`. Argumento desconhecido é recusado com exit 1 antes de qualquer escrita (coberta em `test/guard.spec.ts`, describe `scripts/install.ts`) |
 | `cli-error.ts` | `formatCliError(prefix, error)`: a linha `<prefix> failed: CODE: message (detalhes)` e o exit code (2 para `LEGACY_DATA` e `PROCESS_CORRUPTED`, 1 para o resto) dos scripts de leitura; a recusa de dado 0.x vem de `src/errors.ts#legacyDataError`, a mesma do kernel MCP. Omite o detalhe que só repete a mensagem (`project not found (project not found)`) e mantém o `processo:` do `PROCESS_CORRUPTED`. `reportCliError(prefix, error)` imprime essa linha no stderr e devolve o exit code: é o `catch` de `main` do `export`, `insights`, `timeline`, `flow gate` e `flow reanchor`. `openReadOnly()` abre o `composeReader` sobre o `<D>` de `XDG_DATA_HOME` e lança `LEGACY_DATA` com dado 0.x (o preâmbulo único dos três scripts). `parseCliArgs(argv, options)` é o `node:util#parseArgs` estrito: opção desconhecida ou sem valor devolve `undefined`, e o script imprime o uso com exit 1 |
 | `escape-controls.ts` | `escapeControls(text)`: troca C0 (menos LF e TAB), DEL, C1 e os controles bidi por `\uXXXX` visível (minúsculo, como o `JSON.stringify`). Mora em módulo próprio porque importar `timeline.ts` executaria o `main`; só o `timeline.ts` o usa |
 | `release-notes.ts` | `releaseNotes(changelog, version, pr?)`: monta o corpo do GitHub Release a partir da seção `## [version]` do `CHANGELOG.md` (parágrafo de abertura, linha "PR da release" se houver PR, subseções com `###` virando `##` fora de cerca de código e bloco de instalação literal); as três buscas (fim da seção por `## `, 1º `###` e rebaixe) seguem a cerca do CommonMark (crases ou til, fecho do mesmo caractere e tamanho igual ou maior, até 3 espaços de recuo) por `outsideFences`; seção ausente ou vazia lança. Só builtins e nenhum import de `src/`, porque o `release.yml` roda sem `npm ci` |
@@ -66,28 +66,31 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
   rodando ao mesmo tempo via troca atômica (`renameSync`) com fallback em
   `ENOTEMPTY`/`EEXIST`/`ENOENT`.
 - `npm test` (jest) roda tudo, incluindo:
-  - `test/package.spec.ts` (N11): `dependencies`/`devDependencies` do
-    `package.json` batem exatamente com o manifesto do projeto (sem
-    `^`/`~`/faixas), `engines.node` é `>=24.18.1`.
-  - `test/guard.spec.ts`: `B2` chama `installArtifact`/`registerGuard`
-    direto; `B3` roda `scripts/install.ts --check` como processo real
-    (`spawnSync`), sempre com `HOME` temporário — nunca o `HOME` real.
-  - `test/insights.spec.ts`: roda `scripts/insights.ts` como processo real
-    (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `relatório de
-    integridade e linha do tempo` (inclui o filtro projeto/processo e a trava de que
-    nada foi escrito no diretório de dados), `linha do tempo`, `sinais da chave
-    (SE8)`, `cadeia adulterada (SL1)` (inclui o `process.json` truncado e o caso
-    misto de exit 1 e 2), `uso incorreto` e `dado 0.x (P11)`.
-  - `test/export.spec.ts`: roda `scripts/export.ts` como processo real
-    (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `sem
-    --fields`, `--fields`, `uso incorreto e processo inexistente`,
-    `integridade` (SL1) e `read-only`.
-  - `test/timeline-cli.spec.ts`: roda `scripts/timeline.ts` como processo real
-    (`spawnSync`) contra um `XDG_DATA_HOME` temporário; describes `--full`
-    (com `--raw`, texto ≥ 200 KB idêntico entre os delimitadores), `escape de
-    terminal` (sem `--raw`, com `--raw` e com `--json`), `texto legível`,
-    `agent hostil`, `muitos registros`, `--json`, `read-only`, `integridade`
-    (exit 2) e `uso incorreto e erros`.
+  - `test/package.spec.ts`: `dependencies`/`devDependencies` do
+    `package.json` têm exatamente os pacotes esperados, todos em faixa
+    `^X.Y.Z` (a versão resolvida fica no lock), `engines.node` é `>=24.18.1`.
+  - `test/guard.spec.ts`: os describes `installArtifact` e `registerGuard`
+    chamam as funções direto; o describe `scripts/install.ts` (com
+    `with --check`) roda o script como processo real (`spawnSync`), sempre
+    com `HOME` temporário — nunca o `HOME` real.
+  - `test/insights.spec.ts`: describe `scripts/insights.ts`, que roda o script
+    como processo real (`spawnSync`) contra um `XDG_DATA_HOME` temporário:
+    relatório de integridade e linha do tempo (com as condições
+    `with the alpha/run-2 filter` e `with the alpha/run-1 filter` e a trava de
+    que nada foi escrito no diretório de dados), sinais da chave, cadeia
+    adulterada (inclui o `process.json` truncado e o caso misto de exit 1 e 2),
+    uso incorreto e dado 0.x.
+  - `test/export.spec.ts`: describe `scripts/export.ts`, que roda o script como
+    processo real (`spawnSync`) contra um `XDG_DATA_HOME` temporário: sem e com
+    `--fields`, uso incorreto e processo inexistente, integridade e read-only.
+  - `test/timeline-cli.spec.ts`: describe `scripts/timeline.ts`, que roda o
+    script como processo real (`spawnSync`) contra um `XDG_DATA_HOME`
+    temporário: `--full` (com `--raw`, texto ≥ 200 KB idêntico entre os
+    delimitadores), escape de terminal (condição
+    `with terminal control characters in the record and its attachment`: sem
+    `--raw`, com `--raw` e com `--json`), texto legível
+    (`with only the project and the target`), agent hostil, muitos registros,
+    `--json`, read-only, integridade (exit 2) e uso incorreto e erros.
   - `test/escape-controls.spec.ts`: `escapeControls` sobre cada classe de
     controle (C0, DEL, C1, bidi), o que passa intacto (LF, TAB, acento, emoji,
     BOM) e a idempotência.

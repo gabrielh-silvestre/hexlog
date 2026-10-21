@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from '@jest/globals';
+import { afterEach, describe, expect, it } from '@jest/globals';
 import { sumBy } from 'es-toolkit';
 import { once } from 'node:events';
 import * as path from 'node:path';
@@ -34,10 +34,10 @@ function readRounds(raw: string | undefined): number {
 const ROUNDS = readRounds(process.env.LOCK_BUDGET_ROUNDS);
 const EXPECTED_RECORDS = 200;
 
-afterEach(killChildren);
+describe('createProcessStore', () => {
+  afterEach(killChildren);
 
-describe('N7', () => {
-  test(`medição: ${ROUNDS} rodadas do estresse de 8 filhos x 25 gravações imprimem lock-lost e lock-busy`, async () => {
+  it(`should print lock-lost and lock-busy over ${ROUNDS} rounds of the 8 children x 25 writes stress`, async () => {
     const samples: {
       round: number;
       lockLost: number;
@@ -57,14 +57,14 @@ describe('N7', () => {
       const { ok: chainOk, totalRecords: records } = verifyProcess(store.read(ref)).chain;
       samples.push({ round, lockLost, failedChildren, chainOk, records });
       process.stdout.write(
-        `N7 round=${round} lock-lost=${lockLost} lock-busy=${failedChildren} chain-ok=${chainOk} records=${records}\n`,
+        `round=${round} lock-lost=${lockLost} lock-busy=${failedChildren} chain-ok=${chainOk} records=${records}\n`,
       );
     }
 
     const lockLostRounds = samples.filter(({ lockLost }) => lockLost > 0).length;
     const failedRounds = samples.filter(({ failedChildren }) => failedChildren > 0).length;
     process.stdout.write(
-      `N7 summary rounds=${ROUNDS} rounds-with-lock-lost=${lockLostRounds} rounds-with-child-failure=${failedRounds}\n`,
+      `summary rounds=${ROUNDS} rounds-with-lock-lost=${lockLostRounds} rounds-with-child-failure=${failedRounds}\n`,
     );
 
     expect(samples.filter(({ chainOk }) => !chainOk)).toEqual([]);
@@ -74,24 +74,8 @@ describe('N7', () => {
       ),
     ).toEqual([]);
   }, 900_000);
-});
 
-describe('prazo do roubo de lock órfão', () => {
-  test('dono morto por kill -9 é roubado em menos de 1 s', async () => {
-    const lockDir = path.join(createTempDir('lock'), LOCK_DIR);
-    const { child } = await startHolder(lockDir);
-    child.kill('SIGKILL');
-    await once(child, 'exit');
-    const manager = createLockManager({ log: () => undefined });
-
-    const started = performance.now();
-    const lock = await manager.acquire(lockDir);
-
-    expect(performance.now() - started).toBeLessThan(1000);
-    await manager.release(lock);
-  }, 15_000);
-
-  test('store.write depois do kill -9 do dono entra em menos de 1 s (TF3)', async () => {
+  it('should enter store.write in under 1 s after the owner is killed with kill -9', async () => {
     const { store, ref, lockDir } = createProcess();
     const { child } = await startHolder(lockDir);
     child.kill('SIGKILL');
@@ -107,5 +91,24 @@ describe('prazo do roubo de lock órfão', () => {
     }));
 
     expect(performance.now() - started).toBeLessThan(1000);
+  }, 15_000);
+});
+
+describe('createLockManager', () => {
+  afterEach(killChildren);
+
+  it('should steal the lock of an owner killed with kill -9 in under 1 s', async () => {
+    const lockDir = path.join(createTempDir('lock'), LOCK_DIR);
+    const { child } = await startHolder(lockDir);
+    child.kill('SIGKILL');
+    await once(child, 'exit');
+    const manager = createLockManager({ log: () => undefined });
+
+    const started = performance.now();
+    const lock = await manager.acquire(lockDir);
+
+    expect(performance.now() - started).toBeLessThan(1000);
+
+    await manager.release(lock);
   }, 15_000);
 });

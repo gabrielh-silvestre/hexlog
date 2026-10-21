@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -16,7 +16,7 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.trim();
 }
 
-describe('flow-report', () => {
+describe('scripts/flow/report.ts', () => {
   const reportPath = path.join(repoRoot, 'scripts/flow/report.ts');
   const hexlogDir = path.join(repoRoot, '.hexlog');
   const PROJECT = 'hexlog';
@@ -324,19 +324,19 @@ describe('flow-report', () => {
   const OBJECTIVE_UNCITED = 'only-objective: uncited=feat-r.premise.alpha,feat-r.premise.beta';
   const DOC_AMENDED = 'doc-amended: docs/directives/convencoes.md (directives.convencoes.r1)';
 
-  describe('feat-r against the default base', () => {
+  describe('with feat-r against the default base', () => {
     let result: SpawnSyncReturns<string>;
 
     beforeAll(() => {
       result = runReport(['feat-r']);
     }, 30_000);
 
-    test('exits with status 0 and no warning on stderr', () => {
+    it('should exit with status 0 and no warning on stderr', () => {
       expect(result.status).toBe(0);
       expect(result.stderr).not.toMatch(/flow-report:/);
     });
 
-    test('flags the decision that cites only the objective premise, with the uncited premises', () => {
+    it('should flag the decision that cites only the objective premise, with the uncited premises', () => {
       expect(rowFor(result, 'd-obj')).toEqual([
         idOf('d-obj'),
         'feat-r.decision.d-obj',
@@ -344,7 +344,7 @@ describe('flow-report', () => {
       ]);
     });
 
-    test('flags the decision that cites only the sentinel, with the uncited premises', () => {
+    it('should flag the decision that cites only the sentinel, with the uncited premises', () => {
       expect(rowFor(result, 'd-none')).toEqual([
         idOf('d-none'),
         'feat-r.decision.d-none',
@@ -352,7 +352,7 @@ describe('flow-report', () => {
       ]);
     });
 
-    test('flags the decision that cites the objective and the sentinel together', () => {
+    it('should flag the decision that cites the objective and the sentinel together', () => {
       expect(rowFor(result, 'd-both-none')).toEqual([
         idOf('d-both-none'),
         'feat-r.decision.d-both-none',
@@ -360,19 +360,19 @@ describe('flow-report', () => {
       ]);
     });
 
-    test('counts a revoked premise as a citation, so the decision is not flagged', () => {
+    it('should count a revoked premise as a citation, so the decision is not flagged', () => {
       expect(rowFor(result, 'd-revoked-prem')).toBeUndefined();
     });
 
-    test('does not flag the decision that cites a delivery premise', () => {
+    it('should not flag the decision that cites a delivery premise', () => {
       expect(rowFor(result, 'd-ok')).toBeUndefined();
     });
 
-    test('does not flag the decision without any rests-on', () => {
+    it('should not flag the decision without any rests-on', () => {
       expect(rowFor(result, 'd-no-rest')).toBeUndefined();
     });
 
-    test('flags as doc-amended the decision anchored in a doc changed in the diff', () => {
+    it('should flag as doc-amended the decision anchored in a doc changed in the diff', () => {
       expect(rowFor(result, 'd-doc')).toEqual([
         idOf('d-doc'),
         'feat-r.decision.d-doc',
@@ -380,11 +380,11 @@ describe('flow-report', () => {
       ]);
     });
 
-    test('does not flag the decision anchored in a doc changed only on the base after the merge-base', () => {
+    it('should not flag the decision anchored in a doc changed only on the base after the merge-base', () => {
       expect(rowFor(result, 'd-far')).toBeUndefined();
     });
 
-    test('joins both reasons on the same line, separated by "; "', () => {
+    it('should join both reasons on the same line, separated by "; "', () => {
       expect(rowFor(result, 'd-both')).toEqual([
         idOf('d-both'),
         'feat-r.decision.d-both',
@@ -392,33 +392,60 @@ describe('flow-report', () => {
       ]);
     });
 
-    test.each(['d-old', 'd-rev', 'd-a', 'd-b'])(
-      'does not flag %s, which is not current',
+    it.each(['d-old', 'd-rev', 'd-a', 'd-b'])(
+      'should not flag %s, which is not current',
       (name) => {
         expect(rowFor(result, name)).toBeUndefined();
       },
     );
 
-    test('does not flag d-new, which is current and cites a delivery premise', () => {
+    it('should not flag d-new, which is current and cites a delivery premise', () => {
       expect(rowFor(result, 'd-new')).toBeUndefined();
     });
 
-    test('prints only ids that the server query reports as current', () => {
+    it('should print only ids that the server query reports as current', () => {
       const printed = printedIds(result);
+
       expect(printed.length).toBeGreaterThan(0);
-      for (const id of printed) expect(currentIds).toContain(id);
+
+      expect([...currentIds]).toEqual(expect.arrayContaining(printed));
     });
   });
 
-  test('with the base swapped for feat/r the diff is empty and doc-amended disappears', () => {
+  describe('when the foreign process read fails', () => {
+    let result: SpawnSyncReturns<string>;
+
+    beforeAll(() => {
+      result = runReport(['feat-r'], { xdg: xdgWithoutDirectives });
+    }, 30_000);
+
+    it('should exit with status 0 and one warning per prefix, not per id', () => {
+      expect(result.status).toBe(0);
+      expect(result.stderr.match(/flow-report:/g)).toHaveLength(1);
+      expect(result.stderr).toContain('PROCESS_NOT_FOUND');
+    });
+
+    it('should keep the only-objective, which does not depend on the foreign process', () => {
+      expect(rowFor(result, 'd-obj')?.[2]).toBe(OBJECTIVE_UNCITED);
+    });
+
+    it('should not wrongly flag the sentinel citation nor doc-amended without a target', () => {
+      expect(rowFor(result, 'd-none')).toBeUndefined();
+      expect(rowFor(result, 'd-doc')).toBeUndefined();
+    });
+  });
+
+  it('should drop doc-amended when the base is swapped for feat/r and the diff is empty', () => {
     const result = runReport(['feat-r', 'feat/r']);
+
     expect(result.status).toBe(0);
     expect(rowFor(result, 'd-doc')).toBeUndefined();
     expect(rowFor(result, 'd-both')?.[2]).toBe(OBJECTIVE_UNCITED);
   }, 30_000);
 
-  test('counts the rests-on that a superseding decision inherits from its lineage', () => {
+  it('should count the rests-on that a superseding decision inherits from its lineage', () => {
     const result = runReport(['feat-inherit']);
+
     expect(result.status).toBe(0);
     expect(rowsOf(result)).toEqual([
       [
@@ -429,20 +456,22 @@ describe('flow-report', () => {
     ]);
   }, 30_000);
 
-  test('prints nothing to flag when the process has nothing to flag', () => {
+  it('should print nothing to flag when the process has nothing to flag', () => {
     const result = runReport(['feat-clean']);
+
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('nothing to flag\n');
   }, 30_000);
 
-  test('a missing process warns PROCESS_NOT_FOUND on stderr, with no stdout and status 0', () => {
+  it('should warn PROCESS_NOT_FOUND on stderr, with no stdout and status 0, for a missing process', () => {
     const result = runReport(['ghost']);
+
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
     expect(result.stderr).toMatch(/^flow-report: [\s\S]*PROCESS_NOT_FOUND/);
   }, 30_000);
 
-  test('legacy 0.x data warns on stderr, with no stdout and status 0', () => {
+  it('should warn LEGACY_DATA on stderr, with no stdout and status 0, for legacy 0.x data', () => {
     const legacy = createTempDir('flow-report-legacy');
     fs.cpSync(path.join(__dirname, 'fixtures', 'legacy-0x'), path.join(legacy, 'hexlog'), {
       recursive: true,
@@ -455,8 +484,9 @@ describe('flow-report', () => {
     expect(result.stderr).toMatch(/^flow-report: [\s\S]*LEGACY_DATA/);
   }, 30_000);
 
-  test('an unknown base ref warns from git and keeps only the only-objective', () => {
+  it('should warn from git and keep only the only-objective for an unknown base ref', () => {
     const result = runReport(['feat-r', 'origin/nope']);
+
     expect(result.status).toBe(0);
     expect(result.stderr).toMatch(
       /^flow-report: git: cannot diff HEAD against "origin\/nope", doc-amended skipped\n$/,
@@ -465,14 +495,15 @@ describe('flow-report', () => {
     expect(rowFor(result, 'd-doc')).toBeUndefined();
   }, 30_000);
 
-  test('a base that looks like an option exits with usage on stderr and status 0', () => {
+  it('should exit with usage on stderr and status 0 for a base that looks like an option', () => {
     const result = runReport(['feat-r', '-x']);
+
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
     expect(result.stderr).toMatch(/^flow-report: usage:/);
   }, 30_000);
 
-  test.each([
+  it.each([
     [['Feat_R']],
     [['../x']],
     [['a$b']],
@@ -480,9 +511,10 @@ describe('flow-report', () => {
     [['feat-r', 'x;y']],
     [['feat-r', '$(id)']],
   ])(
-    'refuses the invalid slug or base %j with usage on stderr and status 0',
+    'should refuse the invalid slug or base %j with usage on stderr and status 0',
     (args) => {
       const result = runReport(args);
+
       expect(result.status).toBe(0);
       expect(result.stdout).toBe('');
       expect(result.stderr).toMatch(/^flow-report: usage:/);
@@ -490,62 +522,44 @@ describe('flow-report', () => {
     30_000,
   );
 
-  test('no argument exits with usage on stderr and status 0', () => {
+  it('should exit with usage on stderr and status 0 without an argument', () => {
     const result = runReport([]);
+
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
     expect(result.stderr).toMatch(/^flow-report: usage:/);
   }, 30_000);
 
-  describe('a failing read of the foreign process', () => {
-    let result: SpawnSyncReturns<string>;
-
-    beforeAll(() => {
-      result = runReport(['feat-r'], { xdg: xdgWithoutDirectives });
-    }, 30_000);
-
-    test('exits with status 0 and one warning per prefix, not per id', () => {
-      expect(result.status).toBe(0);
-      expect(result.stderr.match(/flow-report:/g)).toHaveLength(1);
-      expect(result.stderr).toContain('PROCESS_NOT_FOUND');
-    });
-
-    test('keeps the only-objective, which does not depend on the foreign process', () => {
-      expect(rowFor(result, 'd-obj')?.[2]).toBe(OBJECTIVE_UNCITED);
-    });
-
-    test('does not wrongly flag the sentinel citation nor doc-amended without a target', () => {
-      expect(rowFor(result, 'd-none')).toBeUndefined();
-      expect(rowFor(result, 'd-doc')).toBeUndefined();
-    });
-  });
-
-  test('cuts at 100 lines and says how many were omitted', () => {
+  it('should cut at 100 lines and say how many were omitted', () => {
     const rows = runReport(['feat-many'])
       .stdout.split('\n')
       .filter((line) => line !== '');
+
     expect(rows).toHaveLength(101);
     expect(rows.at(-1)).toBe('... 1 more omitted');
   }, 30_000);
 
-  test('lists up to 10 uncited premises and counts the rest', () => {
+  it('should list up to 10 uncited premises and count the rest', () => {
     const [row] = rowsOf(runReport(['feat-wide']));
     const uncited = row?.[2]?.split('uncited=')[1];
+
     expect(uncited?.endsWith(' (+2)')).toBe(true);
     expect(uncited?.replace(' (+2)', '').split(',')).toHaveLength(10);
   }, 30_000);
 
-  test('prints exactly 100 lines without the omitted line', () => {
+  it('should print exactly 100 lines without the omitted line', () => {
     const rows = runReport(['feat-edge-lines'])
       .stdout.split('\n')
       .filter((line) => line !== '');
+
     expect(rows).toHaveLength(100);
     expect(rows.join('\n')).not.toContain('omitted');
   }, 30_000);
 
-  test('lists exactly 10 uncited premises without the count suffix', () => {
+  it('should list exactly 10 uncited premises without the count suffix', () => {
     const [row] = rowsOf(runReport(['feat-edge-wide']));
     const uncited = row?.[2]?.split('uncited=')[1];
+
     expect(uncited).not.toContain('(+');
     expect(uncited?.split(',')).toHaveLength(10);
   }, 30_000);

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 import { createFlowEnvironment, registerFlowRecord, type FlowRecord } from './flow-data.ts';
@@ -9,14 +9,6 @@ const gatePath = path.resolve(__dirname, '..', 'scripts/flow/gate.ts');
 const SLUG = 'feat-x';
 
 let environment: Environment;
-
-beforeEach(async () => {
-  environment = await createFlowEnvironment([SLUG]);
-});
-
-afterEach(async () => {
-  await environment.close();
-});
 
 function runGate(args: string[], xdg = copyToXdg(environment.dataDir)) {
   return spawnSync(process.execPath, [gatePath, ...args], {
@@ -39,15 +31,23 @@ const openGap: FlowRecord = {
   data: { question: 'How many attempts?', context: 'No directive covers it' },
 };
 
-describe('gate.ts pre-pr', () => {
-  test('exits 0 with both gates green', () => {
+describe('scripts/flow/gate.ts', () => {
+  beforeEach(async () => {
+    environment = await createFlowEnvironment([SLUG]);
+  });
+
+  afterEach(async () => {
+    await environment.close();
+  });
+
+  it('should exit 0 for pre-pr with both gates green', () => {
     const result = runGate(['pre-pr', SLUG]);
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
   }, 30_000);
 
-  test('exits 1 listing an URGENT finding without resolves-finding', async () => {
+  it('should exit 1 for pre-pr listing an URGENT finding without resolves-finding', async () => {
     const findingId = await register(urgentFinding);
 
     const result = runGate(['pre-pr', SLUG]);
@@ -56,7 +56,7 @@ describe('gate.ts pre-pr', () => {
     expect(result.stderr).toBe(`pre-pr: no_pending: ${findingId}\n`);
   }, 30_000);
 
-  test('exits 1 listing a gap without a closer', async () => {
+  it('should exit 1 for pre-pr listing a gap without a closer', async () => {
     const gapId = await register(openGap);
 
     const result = runGate(['pre-pr', SLUG]);
@@ -65,7 +65,7 @@ describe('gate.ts pre-pr', () => {
     expect(result.stderr).toBe(`gaps: no_pending: ${gapId}\n`);
   }, 30_000);
 
-  test('exits 2 on 0.x data', () => {
+  it('should exit 2 on 0.x data', () => {
     environment.seedLegacy();
 
     const result = runGate(['pre-pr', SLUG]);
@@ -74,14 +74,14 @@ describe('gate.ts pre-pr', () => {
     expect(result.stderr).toMatch(/LEGACY_DATA/);
   }, 30_000);
 
-  test.each([
+  it.each([
     [[]],
     [['nope', SLUG]],
     [['pre-pr']],
     [['pre-pr', 'Bad Slug']],
     [['pre-pr', SLUG, 'x']],
   ])(
-    'exits 1 with the usage for the arguments %j',
+    'should exit 1 with the usage for the arguments %j',
     (args) => {
       const result = runGate(args);
 

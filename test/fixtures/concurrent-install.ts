@@ -1,6 +1,5 @@
-// Processo filho pro teste de concorrência de `installArtifact` (B2(h), passo
-// 10b): hook e servidor são buffers sintéticos e as duas checagens são stubs —
-// só a troca atômica de `installArtifact` importa aqui. Uma barreira em
+// Processo filho pro teste de concorrência de `installArtifact`: hook e servidor são
+// buffers sintéticos e as duas checagens são stubs — só a troca atômica de `installArtifact` importa aqui. Uma barreira em
 // arquivos garante que os processos irmãos cheguem juntos na instalação, em
 // vez de torcer pra concorrência real de processo acontecer por sorte. São duas
 // barreiras: uma na chegada e outra dentro de `verifyServer`, depois de
@@ -37,7 +36,7 @@ const BARRIER_TIMEOUT_MS = 5_000;
 // vantagem sistemática a quem chega por último (o que já viu a barreira cheia
 // não dorme, quem chegou primeiro ainda está no timeout) — isso serializa os
 // processos em vez de fazê-los colidir na troca atômica, que é o que o teste
-// de concorrência (B2(h)) precisa provocar de propósito. Com `BARRIER_TIMEOUT_MS`,
+// de concorrência precisa provocar de propósito. Com `BARRIER_TIMEOUT_MS`,
 // uma barreira que nunca enche falha em vez de travar o teste.
 // `performance.now` e não `Date.now`: o modo `interleave` congela o relógio.
 const spinUntil = (name: string, isDone: () => boolean): void => {

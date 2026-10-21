@@ -11,6 +11,7 @@
     "test": "jest --errorOnDeprecated",
     "test:budget": "jest --errorOnDeprecated --runInBand --testPathPatterns=budget.spec.ts --testPathIgnorePatterns=/node_modules/",
     "test:coverage": "jest --errorOnDeprecated --coverage",
+    "test:mutation": "stryker run",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "format": "prettier --write .",
@@ -56,7 +57,11 @@
     },
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "\\.budget\\.spec\\.ts$"
+      "\\.budget\\.spec\\.ts$",
+      "<rootDir>/\\.stryker-tmp/"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/\\.stryker-tmp/"
     ],
     "transformIgnorePatterns": [
       "/node_modules/(?!canonicalize/)"
@@ -83,6 +88,9 @@
     "@eslint/js": "^10.0.1",
     "@jest/globals": "^30.5.2",
     "@modelcontextprotocol/client": "^2.3.1",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/jest-runner": "^10.0.0",
+    "@stryker-mutator/typescript-checker": "^10.0.0",
     "@types/node": "^24.19.2",
     "cspell": "^10.4.0",
     "esbuild": "^0.28.2",

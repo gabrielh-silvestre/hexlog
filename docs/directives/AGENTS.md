@@ -1,7 +1,7 @@
 # directives
 
 **Parent context:** `../AGENTS.md`
-**Generated:** 2026-10-06 · **Updated:** 2026-10-07
+**Generated:** 2026-10-06 · **Updated:** 2026-10-17
 
 ## Purpose
 Diretrizes do hexlog: os docs vivos de regras, importados pelo `CLAUDE.md`, e os ADRs da 1.0. As regras de ADR (só emenda, nunca reescrita) e de doc vivo estão em `documentacao.md`.
@@ -9,10 +9,10 @@ Diretrizes do hexlog: os docs vivos de regras, importados pelo `CLAUDE.md`, e os
 ## Key Files
 | File | Description |
 |---|---|
-| `convencoes.md` | Doc vivo: idioma, núcleo e bordas, dependências, asserção não nula, hash JCS e hash de bytes, tetos de lista, escrita atômica, import padrão de `fs` e `import()`. |
+| `convencoes.md` | Doc vivo: idioma, escrita dos testes (`it('should …')`, AAA, `describe` pelo alvo), núcleo e bordas, dependências, asserção não nula, hash JCS e hash de bytes, tetos de lista, escrita atômica, import padrão de `fs` e `import()`. |
 | `fronteiras.md` | Doc vivo: mapa de camadas, direção permitida de dependência, travas mecânicas e checklist de review (violação é URGENT). |
 | `invariantes.md` | Doc vivo: log append-only e predicado único, cadeia, lock, 12 tools e `execute()`, erros, consulta (`fields` e o id do `supersedes`), anexos, validação do `register` e versionamento de definições, com o item de ADR de cada um. |
-| `qualidade-e-testes.md` | Doc vivo: comandos antes de concluir, orçamentos só no CI, convenções dos specs, bundle por processo filho e fixtures. |
+| `qualidade-e-testes.md` | Doc vivo: comandos antes de concluir, mutação com Stryker, orçamentos só no CI, convenções dos specs (sem rótulo de ID, exceção do servidor falso), bundle por processo filho e fixtures. |
 | `documentacao.md` | Doc vivo: ADR e doc vivo, ADR só por emenda, como citar, `pesquisa/` congelado, famílias de ID e o papel do `AGENTS.md`. |
 | `fluxo-hexlog.md` | Doc vivo, importado em primeiro no `CLAUDE.md`: regras de uso do registro de trabalho — processos e targets, premissas (`premise` e `rests-on`), quando uma escolha vira `decision`, consulta antes de decidir, confiança, `gap` (`directive` ou `premise` da entrega fecha), `finding` e achado URGENT, gates `pre-pr` (só achado URGENT sem decisão) e `gaps` conferidos pelo `mark`, e PR em rascunho. |
 | `estrategia.md` | Doc vivo, importado no `CLAUDE.md`: premissas atemporais do produto em linguagem de produto, em 6 temas mais a sentinela `none`; uma linha por premissa (`slug`, `statement` até 255 caracteres e link `Ver:` para o doc técnico de origem). Só muda com validação do dono; vira `premise` no processo de diretrizes vigente (ver `fluxo-hexlog.md`) pelo sync. |

@@ -1,7 +1,7 @@
 // e2e por stdio contra o bundle real (`server.mjs`, entry `src/server.ts`), construído pelo mesmo
-// `scripts/build.ts#build` dos bundles de produção (P8): é o caminho que as sessões executam, e o
+// `scripts/build.ts#build` dos bundles de produção: é o caminho que as sessões executam, e o
 // `.ts` já é coberto em processo por `test/mcp/`.
-import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
+import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
@@ -28,20 +28,6 @@ type CallResult = {
 
 let bundleDir: string;
 
-beforeAll(() => {
-  bundleDir = createTempDir('e2e-bundle');
-  const result = spawnSync(
-    process.execPath,
-    [path.join(repoRoot, 'test/fixtures/build-entry.ts'), bundleDir, 'server=src/server.ts'],
-    { cwd: repoRoot, encoding: 'utf8' },
-  );
-  if (result.status !== 0) throw new Error(`e2e build failed: ${result.stderr}`);
-}, 30_000);
-
-afterAll(() => {
-  fs.rmSync(bundleDir, { recursive: true, force: true });
-});
-
 /** Cliente stdio sobre o bundle; `HOME` e `XDG_DATA_HOME` temporários, o `<D>` real nunca é tocado. */
 async function connect(options: { xdg?: string; clientName?: string; noEnvelope?: boolean } = {}) {
   const transport = new StdioClientTransport({
@@ -64,7 +50,7 @@ async function connect(options: { xdg?: string; clientName?: string; noEnvelope?
   const transportErrors: Error[] = [];
   client.onerror = (error) => transportErrors.push(error);
   await client.connect(transport);
-  // O envelope vai por `_meta` em cada chamada: é de onde o servidor lê o `client` do autor (D-21).
+  // O envelope vai por `_meta` em cada chamada: é de onde o servidor lê o `client` do autor.
   const _meta = options.noEnvelope
     ? undefined
     : { [CLIENT_INFO_META_KEY]: { name: clientName, version: '0.0.0' } };
@@ -91,6 +77,7 @@ async function seedNotes(call: Awaited<ReturnType<typeof connect>>['call'], coun
       data: { text: `nota ${n}` },
     })),
   });
+
   expect(registered.isError).not.toBe(true);
 }
 
@@ -104,15 +91,30 @@ function stderrRecords(
     .map((line) => JSON.parse(line) as { level: string; event: string });
 }
 
-describe('P8 e TM1: bundle real por stdio', () => {
-  test('o bundle não contém o shim "Dynamic require of"', () => {
+describe('dist/server.mjs over stdio', () => {
+  beforeAll(() => {
+    bundleDir = createTempDir('e2e-bundle');
+    const result = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, 'test/fixtures/build-entry.ts'), bundleDir, 'server=src/server.ts'],
+      { cwd: repoRoot, encoding: 'utf8' },
+    );
+    if (result.status !== 0) throw new Error(`e2e build failed: ${result.stderr}`);
+  }, 30_000);
+
+  afterAll(() => {
+    fs.rmSync(bundleDir, { recursive: true, force: true });
+  });
+
+  it('should not contain the "Dynamic require of" shim in the bundle', () => {
     expect(fs.readFileSync(path.join(bundleDir, 'server.mjs'), 'utf8')).not.toContain(
       'Dynamic require of',
     );
   });
 
-  test('o bundle anuncia TOOLS_COUNT tools, describe_type entre elas', async () => {
+  it('should advertise TOOLS_COUNT tools with describe_type among them', async () => {
     const { client } = await connect();
+
     try {
       const { tools } = await client.listTools();
 
@@ -123,10 +125,11 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
-  test('<D> com a fixture de dado 0.x responde LEGACY_DATA com o comando em details', async () => {
+  it('should answer LEGACY_DATA with the command in details when <D> holds the 0.x fixture data', async () => {
     const xdg = createTempDir('e2e-xdg');
     fs.cpSync(LEGACY_FIXTURE, path.join(xdg, 'hexlog'), { recursive: true });
     const { client, call } = await connect({ xdg });
+
     try {
       const body = errorBodyOf(await call('list'));
 
@@ -137,8 +140,9 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
-  test('entrada fora do schema dá INVALID_INPUT estruturado, sem INTERNAL no stderr', async () => {
+  it('should answer a structured INVALID_INPUT without INTERNAL on stderr for input outside the schema', async () => {
     const { client, call, stderr } = await connect();
+
     try {
       const body = errorBodyOf(
         await call('query', { project: PROJECT, process: PROCESS, limit: 201 }),
@@ -149,11 +153,13 @@ describe('P8 e TM1: bundle real por stdio', () => {
     } finally {
       await client.close();
     }
+
     expect(stderr()).not.toContain('"code":"INTERNAL"');
   }, 20_000);
 
-  test('o client do autor é gravado a partir do clientInfo do envelope', async () => {
+  it('should record the author client from the clientInfo of the envelope', async () => {
     const { client, call } = await connect({ clientName: 'claude-code' });
+
     try {
       await seedNotes(call, 1);
 
@@ -166,8 +172,9 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
-  test('sem o envelope clientInfo o client do autor é gravado como unknown', async () => {
+  it('should record the author client as unknown without the clientInfo envelope', async () => {
     const { client, call } = await connect({ noEnvelope: true });
+
     try {
       await seedNotes(call, 1);
 
@@ -180,8 +187,9 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
-  test('query com fields vazio devolve os registros sem data', async () => {
+  it('should return the records without data for a query with empty fields', async () => {
     const { client, call } = await connect();
+
     try {
       await seedNotes(call, 2);
 
@@ -195,8 +203,9 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
   }, 20_000);
 
-  test('define_type com pattern é recusado com pattern-not-allowed e o catálogo aceita git-sha', async () => {
+  it('should refuse define_type with a pattern, with pattern-not-allowed', async () => {
     const { client, call } = await connect();
+
     try {
       const refused = errorBodyOf(
         await call('define_type', {
@@ -208,11 +217,6 @@ describe('P8 e TM1: bundle real por stdio', () => {
           },
         }),
       );
-      const accepted = await call('define_type', {
-        project: PROJECT,
-        name: 'commit',
-        schema: { type: 'object', properties: { sha: { type: 'string', format: 'git-sha' } } },
-      });
 
       expect(refused.code).toBe('INVALID_SCHEMA');
       expect(refused.details).toContainEqual(
@@ -221,13 +225,28 @@ describe('P8 e TM1: bundle real por stdio', () => {
           code: 'pattern-not-allowed',
         }),
       );
+    } finally {
+      await client.close();
+    }
+  }, 15_000);
+
+  it('should accept define_type with the git-sha format of the catalog', async () => {
+    const { client, call } = await connect();
+
+    try {
+      const accepted = await call('define_type', {
+        project: PROJECT,
+        name: 'commit',
+        schema: { type: 'object', properties: { sha: { type: 'string', format: 'git-sha' } } },
+      });
+
       expect(accepted.isError).not.toBe(true);
     } finally {
       await client.close();
     }
   }, 15_000);
 
-  describe('tipo legado com pattern, gravado antes da recusa', () => {
+  describe('with a legacy type that carries a pattern stored before the refusal', () => {
     const LEGACY_PATTERNS = [
       // Prova direta de que o pattern não é aplicado, sem depender de tempo.
       ['^[a-z]+$', '123'],
@@ -235,8 +254,8 @@ describe('P8 e TM1: bundle real por stdio', () => {
       ['^(a|aa)+$', `${'a'.repeat(299)}b`],
     ];
 
-    test.each(LEGACY_PATTERNS)(
-      'register aceita o valor que o pattern %s recusaria, sem rodar o regex',
+    it.each(LEGACY_PATTERNS)(
+      'should accept in register the value that the pattern %s would refuse, without running the regex',
       async (pattern, text) => {
         const xdg = createTempDir('e2e-xdg');
         const typeDir = path.join(xdg, 'hexlog', '.v1', PROJECT, 'types', 'note');
@@ -249,6 +268,7 @@ describe('P8 e TM1: bundle real por stdio', () => {
           }),
         );
         const { client, call } = await connect({ xdg });
+
         try {
           await call('create_process', { project: PROJECT, process: PROCESS });
           const start = performance.now();
@@ -270,9 +290,10 @@ describe('P8 e TM1: bundle real por stdio', () => {
     );
   });
 
-  test('uma chamada de cada tool no bundle: stdout só JSON-RPC e stderr JSON estruturado', async () => {
+  it('should keep stdout as JSON-RPC only and stderr as structured JSON after one call of each tool in the bundle', async () => {
     const xdg = createTempDir('e2e-xdg');
     const { client, call, stderr, transportErrors } = await connect({ xdg });
+
     try {
       // `create_process` fixa os gates do projeto: o gate vem antes dele
       const gate = await call('define_gate', {
@@ -299,12 +320,15 @@ describe('P8 e TM1: bundle real por stdio', () => {
     }
 
     const records = stderrRecords(stderr());
+
     expect(transportErrors).toEqual([]);
     expect(stderr()).not.toContain('"code":"INTERNAL"');
+
     for (const record of records) {
       expect(['debug', 'info', 'warn', 'error']).toContain(record.level);
       expect(typeof record.event).toBe('string');
     }
+
     expect(records).toContainEqual(
       expect.objectContaining({
         event: 'start',
@@ -315,7 +339,7 @@ describe('P8 e TM1: bundle real por stdio', () => {
     expect(records.filter(({ event }) => event === 'tool').length).toBeGreaterThanOrEqual(9);
   }, 20_000);
 
-  test('a stdin line over the 10 MiB buffer cap logs transport-error before the server exits', () => {
+  it('should log transport-error for a stdin line over the 10 MiB buffer cap before the server exits', () => {
     const result = spawnSync(process.execPath, [path.join(bundleDir, 'server.mjs')], {
       input: Buffer.alloc(10 * 1024 * 1024 + 1, 'x'),
       encoding: 'utf8',

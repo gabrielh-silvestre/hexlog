@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -23,7 +23,8 @@ const run = (script: string, ...args: string[]) => {
 };
 
 // run-1: a evidência apoia a unidade, que é superada por uma versão sem relações.
-beforeAll(async () => {
+// Cada describe de topo liga esta função ao hook: `jest/require-top-level-describe` barra hook fora de describe.
+const seedInheritance = async () => {
   xdgHome = createTempDir('xdg');
   const dataDir = path.join(xdgHome, 'hexlog');
   fs.mkdirSync(dataDir);
@@ -54,17 +55,20 @@ beforeAll(async () => {
     note('unit 2', { target: 'run.unit', relations: [{ to: unit, kind: 'supersedes' }] }),
   );
   ids = { unit, evidence, revised };
-});
+};
 
-describe('export: inherited relations', () => {
-  test('each record carries the inherited edges with the stored edge as origin', () => {
+describe('scripts/export.ts', () => {
+  beforeAll(seedInheritance);
+
+  it('should give each record the inherited edges with the stored edge as origin', () => {
+    const origin = { from: ids.evidence, to: ids.unit };
+
     const { code, out } = run('export', `${PROJECT}/run-1`);
     const lines = out
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as Record<string, unknown>);
 
-    const origin = { from: ids.evidence, to: ids.unit };
     expect(lines.find(({ id }) => id === ids.revised)).toMatchObject({
       inheritedIn: [{ kind: 'supports', from: ids.evidence, origin }],
     });
@@ -74,7 +78,7 @@ describe('export: inherited relations', () => {
     expect(code).toBe(0);
   }, 30_000);
 
-  test('--fields accepts inheritedIn and inheritedOut', () => {
+  it('should accept inheritedIn and inheritedOut in --fields', () => {
     const { code, out } = run('export', `${PROJECT}/run-1`, '--fields', 'id,inheritedIn');
     const lines = out
       .trim()
@@ -82,16 +86,21 @@ describe('export: inherited relations', () => {
       .map((line) => JSON.parse(line) as Record<string, unknown>);
 
     expect(lines.find(({ id }) => id === ids.revised)).toHaveProperty('inheritedIn');
+
     for (const line of lines) expect(line).not.toHaveProperty('inheritedOut');
+
     expect(code).toBe(0);
   }, 30_000);
 });
 
-describe('timeline: inherited relations', () => {
-  test('the readable text prints inherited in and inherited out with the origin', () => {
+describe('scripts/timeline.ts', () => {
+  beforeAll(seedInheritance);
+
+  it('should print inherited in and inherited out with the origin in the readable text', () => {
+    const origin = `origin ${ids.evidence} -> ${ids.unit}`;
+
     const { code, out } = run('timeline', PROJECT, 'run');
 
-    const origin = `origin ${ids.evidence} -> ${ids.unit}`;
     expect(out).toContain(`inherited in: supports <- ${ids.evidence} (${origin})`);
     expect(out).toContain(`inherited out: supports -> ${ids.revised} (${origin})`);
     expect(code).toBe(0);

@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -59,102 +59,119 @@ const sectionWithFence = (open: string, close: string) =>
   ].join('\n');
 
 describe('releaseNotes', () => {
-  const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+  it('should put the opening paragraph before the PR line', () => {
+    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
 
-  test('puts the opening paragraph before the PR line', () => {
     expect(body.indexOf('Summary of 2.0.0.')).toBeLessThan(body.indexOf(PR_LINE));
   });
 
-  test('puts the PR line before the subsections', () => {
+  it('should put the PR line before the subsections', () => {
+    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+
     expect(body.indexOf(PR_LINE)).toBeLessThan(body.indexOf('## Added'));
   });
 
-  test('puts the subsections before the install block', () => {
+  it('should put the subsections before the install block', () => {
+    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+
     expect(body.indexOf('## Migration')).toBeLessThan(body.indexOf('## Instalação'));
   });
 
-  test('ends with the install block', () => {
+  it('should end with the install block', () => {
+    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+
     expect(body).toContain('node scripts/install.ts --check');
     expect(body.endsWith('e `docs/`.\n')).toBe(true);
   });
 
-  test('demotes ### to ## outside code fences only', () => {
+  it('should demote ### to ## outside code fences only', () => {
+    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+
     expect(body).not.toMatch(/^### (Added|Migration)/m);
     expect(body).toContain('\n### not a heading\n');
   });
 
-  test('stops at the next version section', () => {
+  it('should stop at the next version section', () => {
+    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+
     expect(body).not.toContain('Old thing');
     expect(body).not.toContain('Unreleased');
   });
 
-  test('without an opening paragraph, only the PR line precedes the subsections', () => {
+  it('should put only the PR line before the subsections when there is no opening paragraph', () => {
     expect(releaseNotes(CHANGELOG, '1.0.0', PR).startsWith(`${PR_LINE}\n\n## Added`)).toBe(true);
   });
 
-  test('without a PR, the line is omitted', () => {
+  it('should omit the PR line when there is no PR', () => {
     const withoutPr = releaseNotes(CHANGELOG, '2.0.0');
+
     expect(withoutPr).not.toContain('PR da release');
     expect(withoutPr.startsWith('Summary of 2.0.0.\n\n## Added')).toBe(true);
   });
 
-  test('a section with an opening paragraph and no subsection keeps the paragraph', () => {
+  it('should keep the paragraph of a section with an opening paragraph and no subsection', () => {
     const only = releaseNotes('## [3.0.0] - 2026-12-01\n\nOnly a summary.\n', '3.0.0');
+
     expect(only.startsWith('Only a summary.\n\n## Instalação')).toBe(true);
   });
 
-  test('a missing version throws', () => {
+  it('should throw for a missing version', () => {
     expect(() => releaseNotes(CHANGELOG, '9.9.9')).toThrow('no section for 9.9.9');
   });
 
-  test('a version prefix does not match another section', () => {
+  it('should not match another section by a version prefix', () => {
     expect(() => releaseNotes(CHANGELOG, '2.0')).toThrow('no section for 2.0');
   });
 
-  test('an empty section throws', () => {
+  it('should throw for an empty section', () => {
     expect(() => releaseNotes('## [4.0.0] - 2027-01-01\n\n## [3.0.0]\n- x\n', '4.0.0')).toThrow(
       'is empty',
     );
   });
 
-  describe('code fences (CommonMark)', () => {
-    test.each([
+  describe('with code fences', () => {
+    it.each([
       ['a backtick fence', '```sh', '```'],
       ['a tilde fence', '~~~', '~~~'],
       ['a fence indented by three spaces', '   ```', '   ```'],
       ['a closing fence longer than the opening one', '```', '`````'],
-    ])('keeps a section heading inside %s in the section', (_name, open, close) => {
+    ])('should keep a section heading inside %s in the section', (_name, open, close) => {
       const notes = releaseNotes(sectionWithFence(open, close), '5.0.0');
+
       expect(notes).toContain('## inside the fence');
       expect(notes).toContain('- Real thing.');
       expect(notes).not.toContain('Older thing');
     });
 
-    test('does not demote or take as the first subsection a ### inside a fence', () => {
+    it('should neither demote nor take as the first subsection a ### inside a fence', () => {
       const notes = releaseNotes(sectionWithFence('~~~', '~~~'), '5.0.0');
+
       expect(notes).toContain('\n### also inside the fence\n');
       expect(notes.startsWith('Summary of 5.0.0.\n\n~~~\n## inside the fence')).toBe(true);
       expect(notes).toContain('\n\n## Added\n');
     });
 
-    test('a shorter fence line does not close a longer fence', () => {
+    it('should not close a longer fence with a shorter fence line', () => {
       const notes = releaseNotes(sectionWithFence('````', '```\n````'), '5.0.0');
+
       expect(notes).toContain('\n### also inside the fence\n');
       expect(notes).not.toContain('Older thing');
     });
 
-    test('a closing line with text after it does not close the fence', () => {
+    it('should not close the fence with a closing line that has text after it', () => {
       const notes = releaseNotes(sectionWithFence('```', '``` text\n```'), '5.0.0');
+
       expect(notes).toContain('\n### also inside the fence\n');
       expect(notes).toContain('- Real thing.');
     });
 
-    test('a backtick line whose info string has a backtick is not a fence', () => {
+    it('should not take a backtick line whose info string has a backtick as a fence', () => {
       const changelog = ['## [6.0.0] - 2027-03-01', '', '```a`b', '### Added', '- x'].join('\n');
+
       expect(releaseNotes(changelog, '6.0.0')).toContain('\n## Added\n');
     });
 
-    test('a fence indented by four spaces is indented code, not a fence', () => {
+    it('should take a fence indented by four spaces as indented code, not a fence', () => {
       const changelog = [
         '## [6.0.0] - 2027-03-01',
         '',
@@ -164,21 +181,23 @@ describe('releaseNotes', () => {
         '### Added',
         '- x',
       ].join('\n');
+
       expect(releaseNotes(changelog, '6.0.0')).toContain('\n## Added\n');
     });
   });
 });
 
-describe('release-notes-cli', () => {
+describe('scripts/release-notes-cli.ts', () => {
   const CLI_TIMEOUT = 15_000;
   const cli = path.resolve(__dirname, '..', 'scripts', 'release-notes-cli.ts');
   const run = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: CLI_TIMEOUT });
 
-  test(
-    'prints the body of the package.json version from the real CHANGELOG.md',
+  it(
+    'should print the body of the package.json version from the real CHANGELOG.md',
     () => {
       const result = run(VERSION, '--pr', '12', '--repo', 'o/r');
+
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('PR da release: [#12](https://github.com/o/r/pull/12)');
       expect(result.stdout).toContain('## Instalação');
@@ -187,8 +206,8 @@ describe('release-notes-cli', () => {
   );
 
   // Sem `node_modules`: o `release.yml` roda a CLI sem `npm ci`, então um import de pacote quebra a release
-  test(
-    'runs without node_modules, as the release workflow does',
+  it(
+    'should run without node_modules, as the release workflow does',
     () => {
       const root = createTempDir('release-notes-bare');
       fs.mkdirSync(path.join(root, 'scripts'));
@@ -215,17 +234,18 @@ describe('release-notes-cli', () => {
     CLI_TIMEOUT,
   );
 
-  test(
-    'an empty --pr with a valid --repo means no PR line, as the release workflow passes them',
+  it(
+    'should omit the PR line for an empty --pr with a valid --repo, as the release workflow passes them',
     () => {
       const result = run(VERSION, '--pr', '', '--repo', 'o/r');
+
       expect(result.status).toBe(0);
       expect(result.stdout).not.toContain('PR da release');
     },
     CLI_TIMEOUT,
   );
 
-  test.each([
+  it.each([
     ['no version', []],
     ['an extra argument', [VERSION, 'x']],
     ['a non-numeric --pr', [VERSION, '--pr', 'x', '--repo', 'o/r']],
@@ -238,19 +258,21 @@ describe('release-notes-cli', () => {
     ['an invalid --repo with an empty --pr', [VERSION, '--pr', '', '--repo', 'repo']],
     ['an unknown option', [VERSION, '--nope']],
   ])(
-    'rejects %s with exit 1',
+    'should reject %s with exit 1',
     (_name, args) => {
       const result = run(...args);
+
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('release-notes failed');
     },
     CLI_TIMEOUT,
   );
 
-  test(
-    'an unknown version exits 1',
+  it(
+    'should exit 1 for an unknown version',
     () => {
       const result = run('0.0.0');
+
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('no section for 0.0.0');
     },

@@ -16,6 +16,8 @@ const lint = (message: string): { status: number | null; output: string } => {
   return { status: result.status, output: result.stdout + result.stderr };
 };
 
+const header = (length: number): string => `fix: ${'x'.repeat(length - 5)}`;
+
 describe('commitlint.config.js', () => {
   it(
     'should accept a conventional header without a body',
@@ -37,16 +39,22 @@ describe('commitlint.config.js', () => {
   );
 
   it(
-    'should reject a header of 81 characters and accept one of 80',
+    'should accept a header of 80 characters',
     () => {
-      const header = (length: number): string => `fix: ${'x'.repeat(length - 5)}`;
-
       expect(lint(header(80)).status).toBe(0);
+    },
+    CLI_TIMEOUT,
+  );
+
+  it(
+    'should reject a header of 81 characters',
+    () => {
       const result = lint(header(81));
+
       expect(result.status).not.toBe(0);
       expect(result.output).toContain('header-max-length');
     },
-    CLI_TIMEOUT * 2,
+    CLI_TIMEOUT,
   );
 
   it(
