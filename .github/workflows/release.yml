@@ -93,7 +93,13 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
-            echo "Tag $TAG already exists."
+            # Tag em outro commit: hotfix sem bump de versão. Sem falhar aqui, o job sairia 0 sem o back-merge.
+            tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
+            if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $TAG points to $tag_sha, not $GITHUB_SHA; a hotfix must bump package.json version"
+              exit 1
+            fi
+            echo "Tag $TAG already exists at $GITHUB_SHA."
           else
             gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" --jq .ref
           fi
