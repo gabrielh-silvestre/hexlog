@@ -1,13 +1,15 @@
 import fs from 'node:fs';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
+import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { Gate } from '../../src/domain/definitions.ts';
 import type { Marker } from '../../src/domain/ids.ts';
 import { GateQuestion } from '../../src/domain/gate.ts';
+import { createQueryService } from '../../src/queries/query-service.ts';
 import type { EvaluateGateInput } from '../../src/queries/query-service.ts';
 import { NOTE, note, refusal } from '../commands/register-fakes.ts';
 import * as omc from '../fixtures/domains/omc.ts';
 import { captureError } from '../helpers.ts';
-import { defineDomain, PROJECT, querySetup } from './query-setup.ts';
+import { defineDomain, diskStores, PROJECT, querySetup } from './query-setup.ts';
 
 type Extra = Pick<EvaluateGateInput, 'target' | 'marker'>;
 
@@ -525,6 +527,40 @@ describe('evaluateGate: evidence and targets', () => {
       expect(error.details).toEqual([
         expect.objectContaining({ path: '/evidence', code: 'full-with-targets' }),
       ]);
+    }
+  });
+
+  test('evaluateGate with 50 targets reads each process once, in the process and project scopes', async () => {
+    const projectProposed: Gate = {
+      name: 'project-proposed-approved',
+      questions: [{ kind: 'approved', of: {}, scope: 'project' }],
+    };
+    const { dataDir, createProcess, registerOne } = gateSetup(PROPOSED, projectProposed);
+    createProcess('run-1');
+    createProcess('run-2');
+    await registerOne('run-1', note('proposta', { target: 'run.t0' }));
+    await registerOne('run-2', note('proposta', { target: 'run.t1' }), 1);
+    const stores = diskStores(dataDir);
+    const read = jest.spyOn(stores.store, 'read');
+    const queries = createQueryService({ ...stores, search: createSearchIndex() });
+    const targets = Array.from({ length: 50 }, (_, index) => `run.t${index}`);
+
+    for (const [gate, reads] of [
+      [PROPOSED.name, 1],
+      [projectProposed.name, 2],
+    ] as const) {
+      read.mockClear();
+
+      const { results } = queries.evaluateGate({
+        project: PROJECT,
+        process: 'run-1',
+        gate,
+        targets,
+        evidence: 'counts',
+      });
+
+      expect(results).toHaveLength(50);
+      expect(read).toHaveBeenCalledTimes(reads);
     }
   });
 
