@@ -71,7 +71,7 @@ estourar o limite de PNG. `domain/` não importa camada nenhuma acima, só
 
 | Componente | O que faz |
 |---|---|
-| `server.ts` | Entry point: `compose`, log `start` (`dataDir` e `version`), `createServer` e `serveStdio` |
+| `server.ts` | Entry point: `compose`, log `start` (`dataDir` e `version`), `createServer` e `serveStdio` (com `onerror` que loga `transport-error`) |
 | `compose.ts` | `compose`: a raiz de composição; único módulo do servidor em runtime, fora de `adapters/`, que conhece os adaptadores de disco; liga validador, stores e `createSearchIndex` aos quatro serviços |
 | `mcp/kernel.ts`, `mcp/server.ts` | `execute()` (envelope de erro e log de toda tool) e `createServer` (`McpServer` com as 12 tools) |
 | `mcp/tools/` | `process.ts`, `definition.ts`, `attachment.ts` e `query.ts`: uma `register*Tools` por família |

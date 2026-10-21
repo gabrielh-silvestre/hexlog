@@ -314,4 +314,26 @@ describe('P8 e TM1: bundle real por stdio', () => {
     );
     expect(records.filter(({ event }) => event === 'tool').length).toBeGreaterThanOrEqual(9);
   }, 20_000);
+
+  test('a stdin line over the 10 MiB buffer cap logs transport-error before the server exits', () => {
+    const result = spawnSync(process.execPath, [path.join(bundleDir, 'server.mjs')], {
+      input: Buffer.alloc(10 * 1024 * 1024 + 1, 'x'),
+      encoding: 'utf8',
+      env: {
+        ...(omitBy(process.env, isUndefined) as Record<string, string>),
+        HOME: createTempDir('e2e-home'),
+        XDG_DATA_HOME: createTempDir('e2e-xdg'),
+      },
+      cwd: bundleDir,
+    });
+
+    expect(result.status).toBe(0);
+    expect(stderrRecords(result.stderr)).toContainEqual(
+      expect.objectContaining({
+        level: 'error',
+        event: 'transport-error',
+        message: expect.stringContaining('exceeded maximum size') as unknown,
+      }),
+    );
+  }, 30_000);
 });
