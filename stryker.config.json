@@ -2,7 +2,6 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "jest",
   "jest": {
-    "projectType": "custom",
     "enableFindRelatedTests": false,
     "config": {
       "testMatch": [
@@ -52,16 +51,8 @@
     "src/shared/loader.ts",
     "src/shared/pages.ts"
   ],
-  "coverageAnalysis": "perTest",
   "disableBail": true,
   "checkers": ["typescript"],
-  "tsconfigFile": "tsconfig.json",
   "concurrency": "40%",
-  "reporters": ["clear-text", "progress", "html", "json"],
-  "incremental": false,
-  "thresholds": {
-    "high": 80,
-    "low": 60,
-    "break": null
-  }
+  "reporters": ["clear-text", "progress", "html"]
 }
