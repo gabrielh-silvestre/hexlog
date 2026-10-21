@@ -25,7 +25,7 @@ Patch de correções. O hook de isolamento do Bash passa a conferir o que vem de
 
 ### Migração
 
-- Desde a 1.1.2, `read_attachment` recusa com `INVALID_INPUT` (`mid-surrogate-pair`) o `offset` que cai no meio de um par surrogate: quem pagina por passo fixo deve seguir o `next` de cada página. O servidor também recusa com `too-deep` argumentos aninhados além de 64 níveis (`data` do `register` acima de 61), que antes só falhavam perto de 2.000 níveis. A 1.1.2 listou o primeiro item só em Corrigido e nenhum dos dois na Migração (#126, PR da release; a mudança veio no #107).
+- Desde a 1.1.2, `read_attachment` recusa com `INVALID_INPUT` (`mid-surrogate-pair`) o `offset` que cai no meio de um par surrogate: quem pagina por passo fixo deve seguir o `next` de cada página. O servidor também recusa com `too-deep` argumentos aninhados além de 64 níveis (`data` do `register` acima de 61), que antes só falhavam perto de 2.000 níveis. A 1.1.2 listou o primeiro item só em Corrigido e nenhum dos dois na Migração (#126, release da 1.1.2; a mudança veio no #107).
 
 ## [1.2.0] - 2026-10-16
 
