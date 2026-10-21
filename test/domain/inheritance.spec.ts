@@ -307,6 +307,10 @@ describe('buildInheritance', () => {
         NO_INHERITANCE,
       );
     });
+
+    it('should return the empty inheritance when the records have no relations at all', () => {
+      expect(inherit([rec(e1), rec(u1)])).toBe(NO_INHERITANCE);
+    });
   });
 
   describe('with more than one inherited edge', () => {

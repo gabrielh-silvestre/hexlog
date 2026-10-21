@@ -696,6 +696,14 @@ describe('evaluateGate', () => {
       ]);
     });
 
+    it('should not count an inherited supporter for a question without the option in a shared scope', () => {
+      const input = active(supersededPlan);
+
+      const results = evaluateGate([approvedQ, approvedInherit], input);
+
+      expect(results.questions.map(({ passed }) => passed)).toEqual([false, true]);
+    });
+
     it('should build inheritance only for a scope that asks for it', () => {
       const projectInherit = question({ ...approvedInherit, scope: 'project' });
       const input = active(supersededPlan);
