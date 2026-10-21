@@ -3,8 +3,11 @@ name: Dependabot auto-merge
 # Liga o auto-merge (`gh pr merge --auto --merge`) no PR do Dependabot que é de `npm`, de minor ou
 # patch, e abre contra `develop`; vale para o PR agrupado e para o de segurança. O merge só
 # acontece quando os checks exigidos pelo ruleset ficam verdes: o workflow não aprova nem pula
-# check. Major nunca entra (nem o de segurança, que o `ignore` do dependabot.yml não alcança), e
-# `github-actions` fica com merge manual. Roda em `pull_request`, nunca em `pull_request_target`.
+# check. Minor e patch de produção e de 0.x, inclusive o `esbuild` do grupo, entram em `develop` sem
+# revisão humana, risco aceito pelo dono: o gate é `quality` (que roda `npm audit signatures`) e
+# `dependency-review`, e o `cooldown` do dependabot.yml não cobre security update. Major nunca
+# entra, e `github-actions` fica com merge manual. Roda em `pull_request`, nunca em
+# `pull_request_target`.
 # Pré-condição: o ruleset de `develop` já exige `quality` antes de `allow_auto_merge` ficar ligado;
 # com a flag ligada e o ruleset sem esse check, `gh pr merge --auto` mergeia o PR do bot na hora,
 # com o CI ainda rodando. Desligar a flag ou afrouxar o ruleset reabre esse furo.
