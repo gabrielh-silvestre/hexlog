@@ -267,6 +267,39 @@ describe('M7: aninhamento acima de 64 níveis nos args crus', () => {
     expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
   });
 
+  describe('register data at the 64-level cap of the raw args', () => {
+    // A raiz dos args é o nível 1, `records` o 2 e o registro o 3: o `data` começa no nível 4.
+    const dataOfLevels = (levels: number) => nest(levels - 1);
+
+    beforeEach(async () => {
+      await environment.call('define_type', {
+        project: PROJECT,
+        name: 'free',
+        schema: { type: 'object' },
+      });
+      await environment.call('create_process', { project: PROJECT, process: PROCESS });
+    });
+
+    test('accepts data nested 61 levels deep', async () => {
+      const result = await environment.call(
+        'register',
+        registerInput({ records: [item({ type: 'free', data: dataOfLevels(61) })] }),
+      );
+
+      expect(result.isError).not.toBe(true);
+    });
+
+    test('rejects data nested 62 levels deep with too-deep', async () => {
+      const result = await environment.call(
+        'register',
+        registerInput({ records: [item({ type: 'free', data: dataOfLevels(62) })] }),
+      );
+
+      const body = expectError(result, 'INVALID_INPUT');
+      expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
+    });
+  });
+
   test('schema de define_type com 2.000 níveis é INVALID_INPUT too-deep, não INTERNAL', async () => {
     const result = await environment.call('define_type', {
       project: PROJECT,

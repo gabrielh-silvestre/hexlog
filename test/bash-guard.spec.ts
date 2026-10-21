@@ -502,6 +502,14 @@ describe('bash-guard (#158): ceilings apply only to tokens the shell expands', (
       stderr: reachesMessage,
     },
     {
+      // Falso positivo aceito (`hooks-sao-freios`): o prefixo literal do token, resolvido contra um
+      // `cwd` pai de D, alcança D mesmo sem citá-lo; um script comum acima dos tetos sai negado.
+      name: 'accepted false positive: a quoted node -e script above the ceilings with cwd in D parent dir',
+      command: `node -e '${script}'`,
+      cwd: 'PARENT_OF_D',
+      stderr: reachesMessage,
+    },
+    {
       name: 'a quoted find -path pattern padded with 5000 "*" whose literal prefix is an ancestor of D',
       get command() {
         return `find / -path '${findPrefix()}/.v1/${'*'.repeat(5000)}records.jsonl' -exec cat {} +`;
@@ -610,6 +618,21 @@ describe('bash-guard (#158): ceilings apply only to tokens the shell expands', (
     expect(result.stderr).toContain(reachesMessage);
   }, 15_000);
 
+  test('measures a quoted "~" token after the expansion, as the classification does', () => {
+    // 4096 caracteres crus (no teto), mais que o teto depois de expandir o `~`; entre aspas, o
+    // shell não o expande, então só o caminho e o prefixo literais contam.
+    const result = runHook({ command: `cat '~/sub/${'a'.repeat(4089)}*'` }, envBase);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+  }, 15_000);
+
+  test('denies by literal prefix, not by cost, a quoted "~" token over the ceiling once expanded', () => {
+    // O prefixo literal `~` é ancestral de D: nega por alcançar D, não por teto de custo.
+    const result = runHook({ command: `cat '~/${'a'.repeat(4093)}*'` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(reachesMessage);
+  }, 15_000);
+
   test('says the command does not cite D and was denied only for cost', () => {
     const result = runHook({ command: `cat ${'['.repeat(100)}` }, envBase);
     expect(result.stderr).toContain(costMessage);
@@ -629,6 +652,70 @@ describe('bash-guard (#158): ceilings apply only to tokens the shell expands', (
     );
     expect(result.status).toBe(2);
     expect(result.stderr).toContain(costMessage);
+  }, 15_000);
+});
+
+describe('bash-guard (#180): the text after a "#" is still checked', () => {
+  const reachesMessage = 'is only accessible through the hexlog MCP tools';
+  // Glob que alcança D por `~`: o `includes` literal de D não o vê, só a checagem dos tokens.
+  const globToD = '~/.local/share/hex*/x';
+
+  test.each([
+    {
+      name: 'a comment line followed by a line break and a glob reaching D',
+      command: `echo hi # x\ncat ${globToD}`,
+    },
+    {
+      name: 'a "#" in the middle of a word followed by ";" and a glob reaching D',
+      command: `echo a#b; cat ${globToD}`,
+    },
+    {
+      name: 'a comment with a stray quote followed by a line break and a glob',
+      command: `echo hi # don't\ncat ${globToD}`,
+    },
+    {
+      name: 'a glob reaching D after a second "#" on the same line',
+      command: `echo hi # a # cat ${globToD}`,
+    },
+    {
+      name: 'a glob reaching D before a comment holding a line the shell-quote cannot parse',
+      command: `cat ${globToD} # \${}`,
+    },
+    {
+      name: 'a comment line the shell-quote cannot parse followed by a line break and a glob',
+      command: `echo hi # \${}\ncat ${globToD}`,
+    },
+  ])(
+    'denies $name',
+    ({ command }) => {
+      const result = runHook({ command }, envBase);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(reachesMessage);
+    },
+    15_000,
+  );
+
+  test.each([
+    { name: 'a trailing comment', command: 'echo hi # done' },
+    { name: 'a comment line followed by a glob outside D', command: 'echo hi # x\ncat /tmp/*' },
+    {
+      name: 'a "#" in the middle of a word followed by a command outside D',
+      command: 'echo a#b; ls /tmp',
+    },
+  ])(
+    'allows $name',
+    ({ command }) => {
+      const result = runHook({ command }, envBase);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+    },
+    15_000,
+  );
+
+  test('denies a glob reaching D after 900 thousand line breaks inside a comment', () => {
+    const result = runHook({ command: `echo hi #${'\n'.repeat(900_000)}cat ${globToD}` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(reachesMessage);
   }, 15_000);
 });
 

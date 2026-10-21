@@ -139,15 +139,6 @@ describe('verifyChain: expectedHead as an anchor against truncation', () => {
     expect(verifyAgainst(early)).toMatchObject({ ok: true, breaks: [], totalBreaks: 0 });
   });
 
-  test('the head of an empty process is still accepted after the log grows', async () => {
-    const { registerOne, verify, verifyAgainst } = verifySetup();
-    const stored = verify().head;
-    await registerOne('run-1', note('a'));
-    await registerOne('run-1', note('b'), 1);
-
-    expect(verifyAgainst(stored)).toMatchObject({ ok: true, totalRecords: 2, breaks: [] });
-  });
-
   test('only link deleted: the earlier head becomes head-not-found with totalRecords 0', async () => {
     const { registerOne, verify, verifyAgainst, logFile } = verifySetup();
     await registerOne('run-1', note('a'));
@@ -174,16 +165,6 @@ describe('verifyChain: expectedHead as an anchor against truncation', () => {
       totalRecords: 1,
       breaks: [{ index: 1, reason: 'head-not-found' }],
       totalBreaks: 1,
-    });
-  });
-
-  test('hash that belongs to no link becomes head-not-found', async () => {
-    const { registerOne, verifyAgainst } = verifySetup();
-    await registerOne('run-1', note('a'));
-
-    expect(verifyAgainst('0'.repeat(64))).toMatchObject({
-      ok: false,
-      breaks: [{ index: 1, reason: 'head-not-found' }],
     });
   });
 

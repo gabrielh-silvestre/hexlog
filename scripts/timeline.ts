@@ -3,7 +3,7 @@
 // (adulterada, o script sai com 2), e anexo ausente ou corrompido também sai com 2. A saída escapa
 // os controles de terminal (`escapeControls`); `--raw` imprime o byte exato.
 // Uso: node scripts/timeline.ts <project> <target-prefix>... [--full] [--json] [--raw]
-import { isNil, isUndefined } from 'es-toolkit';
+import { isNil, memoize } from 'es-toolkit';
 import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
 import { escapeControls } from './escape-controls.ts';
 import { Name, Target, type Hash } from '../src/domain/ids.ts';
@@ -29,30 +29,14 @@ function recordsOf(query: QueryService, project: string, target: string): QueryR
 }
 
 /**
- * Só os anexos `ok` têm texto a ler (inteiro, numa chamada: `maxChars` sem teto); os outros aparecem
- * pelo status. `cache` guarda o texto por hash: o mesmo anexo citado de novo não é relido.
+ * Só os anexos `ok` têm texto a ler; os outros aparecem pelo status. `textOf` é o leitor
+ * memoizado por hash: o mesmo anexo citado de novo não é relido.
  */
-function textsOf(
-  query: QueryService,
-  project: string,
-  record: QueryRecord,
-  cache: Map<Hash, string>,
-): Record<Hash, string> {
-  const cited = Object.entries(record.attachmentStatus ?? {});
+function textsOf(record: QueryRecord, textOf: (hash: Hash) => string): Record<Hash, string> {
   return Object.fromEntries(
-    cited
+    Object.entries(record.attachmentStatus ?? {})
       .filter(([, status]) => status === 'ok')
-      .map(([hash]) => {
-        const cached = cache.get(hash);
-        if (!isUndefined(cached)) return [hash, cached];
-        const { text } = query.readAttachment({
-          project,
-          hash,
-          maxChars: Number.MAX_SAFE_INTEGER,
-        });
-        cache.set(hash, text);
-        return [hash, text];
-      }),
+      .map(([hash]) => [hash, textOf(hash)]),
   );
 }
 
@@ -154,12 +138,17 @@ function main(argv: string[]): number {
 
   try {
     const { query } = openReadOnly();
-    const attachmentTexts = new Map<Hash, string>();
+    // texto inteiro numa chamada: `maxChars` sem teto
+    const textOf = memoize(
+      (hash: Hash) =>
+        query.readAttachment({ project: project.data, hash, maxChars: Number.MAX_SAFE_INTEGER })
+          .text,
+    );
     const sections = targetArgs.map((target): Section => ({
       target,
       entries: recordsOf(query, project.data, target).map((record) => ({
         record,
-        texts: full ? textsOf(query, project.data, record, attachmentTexts) : {},
+        texts: full ? textsOf(record, textOf) : {},
       })),
     }));
     const output = json ? renderJson(sections, full) : renderText(sections);
