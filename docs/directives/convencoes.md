@@ -22,6 +22,7 @@
 - O núcleo (`src/domain/`, `src/shared/`) é puro, e o I/O fica em `src/adapters/`.
 - Toda função pura que decide algo (`evaluateGate`, `checkRelation`, `select`, `verifyProcess`) recebe dados já carregados e devolve um valor; nenhuma faz I/O.
 - Esquemas Zod para registros e entradas de tools.
+- Toda construção de `HexlogError` fica em `src/errors.ts`, nas fábricas nomeadas; `src/`, `scripts/` e `hook/` chamam a fábrica, nunca `new HexlogError`, e só os specs constroem o erro direto. É convenção conferida em review, sem trava no lint.
 
 ## Dependências
 
