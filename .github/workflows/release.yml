@@ -4,11 +4,13 @@ name: Release
 # Release e o PR de back-merge para `develop`. Cada passo testa o próprio recurso e só cria o que não
 # existe, então reexecutar completa o que falta. O `workflow_dispatch` é só o ensaio: roda sempre em
 # dry-run (sem entrada que o desligue), ignora a existência de tag e Release, só imprime o que faria
-# e prova a permissão do App criando e apagando a ref `chore/back-merge-dry-run`.
+# e prova as permissões criando e apagando a tag `v0.0.0-dry-run` (`GITHUB_TOKEN`, que um ruleset de tag
+# `v*` pode barrar) e a ref `chore/back-merge-dry-run` (App).
 # Os secrets do App moram no environment `release`, restrito a `main`: só o job desta branch os lê,
 # e o ensaio também só roda a partir de `main`.
 # O App cria a branch e o PR de back-merge: um PR aberto com `GITHUB_TOKEN` não dispara `ci.yml` nem
-# o CodeQL. Tag e Release saem com o `GITHUB_TOKEN` (`contents: write`).
+# o CodeQL. Tag e Release saem com o `GITHUB_TOKEN` (`contents: write`), antes do passo do App: App
+# ausente ou chave rotacionada derruba o job só depois deles, e a reexecução completa o back-merge.
 on:
   push:
     branches: [main]
@@ -16,6 +18,8 @@ on:
 
 permissions: {}
 
+# O grupo guarda uma execução pendente: dois pushes seguidos em `main` descartam a do meio. Cada passo é
+# idempotente e a última execução vê o estado final, então o dano é pequeno.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -48,52 +52,39 @@ jobs:
             echo "tag=v$version"
             echo "branch=chore/back-merge-v${version//./-}"
           } >> "$GITHUB_OUTPUT"
-      # `app-id` está marcado como obsoleto na v3 em favor de `client-id`; o dono entregou o id
-      # numérico do App, então ele segue até o `client-id` (Iv...) ser guardado como secret.
-      - id: app
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
       # O PR da release é o que contém o merge commit; sem PR (push direto), a linha some do corpo.
+      # Logo após o merge a consulta pode voltar vazia: repete até 3 vezes e avisa se continuar vazia.
       - id: notes
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
-            --jq '[.[] | select(.base.ref == "main")][0].number // empty')
+          for attempt in 1 2 3; do
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+              --jq '[.[] | select(.base.ref == "main")][0].number // empty')
+            if [ -n "$pr" ]; then break; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          if [ -z "$pr" ]; then
+            echo "::warning::No pull request into main found for $GITHUB_SHA after 3 attempts; the Release body has no release PR line"
+          fi
           node scripts/release-notes-cli.ts "$VERSION" --pr "$pr" --repo "$GITHUB_REPOSITORY" \
             > "$RUNNER_TEMP/notes.md"
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
           echo "file=$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
-      - if: env.DRY_RUN == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          BRANCH: ${{ steps.version.outputs.branch }}
-          NOTES: ${{ steps.notes.outputs.file }}
-          PR: ${{ steps.notes.outputs.pr }}
-        run: |
-          echo "Dry run: nothing is created except the probe ref below."
-          echo "Would create tag $TAG at $GITHUB_SHA"
-          echo "Would create the Release $TAG with this body:"
-          cat "$NOTES"
-          echo "Would create branch $BRANCH at $GITHUB_SHA and open the back-merge PR into develop (release PR: ${PR:-none})"
-          probe=chore/back-merge-dry-run
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$probe" > /dev/null 2>&1 || true
-          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$probe" -f sha="$GITHUB_SHA" --jq .ref
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$probe"
-          echo "The App token created and deleted $probe."
       - if: env.DRY_RUN == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
-            echo "Tag $TAG already exists."
+            # Tag em outro commit: hotfix sem bump de versão. Sem falhar aqui, o job sairia 0 sem o back-merge.
+            tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
+            if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $TAG points to $tag_sha, not $GITHUB_SHA; a hotfix must bump package.json version"
+              exit 1
+            fi
+            echo "Tag $TAG already exists at $GITHUB_SHA."
           else
             gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" --jq .ref
           fi
@@ -109,6 +100,42 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --title "hexlog $VERSION" --notes-file "$NOTES"
           fi
+      # `app-id` está marcado como obsoleto na v3 em favor de `client-id`; o dono entregou o id
+      # numérico do App, então ele segue até o `client-id` (Iv...) ser guardado como secret.
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - if: env.DRY_RUN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          probe=v0.0.0-dry-run
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$probe" > /dev/null 2>&1 || true
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$probe" -f sha="$GITHUB_SHA" --jq .ref
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$probe"
+          echo "GITHUB_TOKEN created and deleted tag $probe."
+      - if: env.DRY_RUN == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          BRANCH: ${{ steps.version.outputs.branch }}
+          NOTES: ${{ steps.notes.outputs.file }}
+          PR: ${{ steps.notes.outputs.pr }}
+        run: |
+          echo "Dry run: nothing is created except the probe tag and ref."
+          echo "Would create tag $TAG at $GITHUB_SHA"
+          echo "Would create the Release $TAG with this body:"
+          cat "$NOTES"
+          echo "Would create branch $BRANCH at $GITHUB_SHA and open the back-merge PR into develop (release PR: ${PR:-none})"
+          probe=chore/back-merge-dry-run
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$probe" > /dev/null 2>&1 || true
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$probe" -f sha="$GITHUB_SHA" --jq .ref
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$probe"
+          echo "The App token created and deleted $probe."
       # A branch sai do merge commit de `main` por REST (sem `git push`: o App não tem `workflows`) e só
       # é criada quando o PR não existe em nenhum estado: a head apagada no merge do back-merge não
       # volta. `mergeable` é calculado de forma assíncrona (UNKNOWN no início); `pull_request` não dispara
@@ -120,7 +147,9 @@ jobs:
           BRANCH: ${{ steps.version.outputs.branch }}
           RELEASE_PR: ${{ steps.notes.outputs.pr }}
         run: |
-          number=$(gh pr list --head "$BRANCH" --state all --json number --jq '.[0].number // empty')
+          # `--head` casa só o nome da branch: o filtro por `isCrossRepository` ignora PR de fork com o mesmo nome.
+          number=$(gh pr list --head "$BRANCH" --state all --json number,isCrossRepository \
+            --jq 'map(select(.isCrossRepository | not)) | .[0].number // empty')
           if [ -z "$number" ]; then
             if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" > /dev/null 2>&1; then
               gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$GITHUB_SHA" --jq .ref
@@ -143,7 +172,11 @@ jobs:
                 exit 0
                 ;;
               CONFLICTING)
-                gh pr comment "$number" --body "O back-merge conflita com o develop: resolver à mão (merge do develop na branch $BRANCH)."
+                msg="O back-merge conflita com o develop: resolver à mão (merge do develop na branch $BRANCH)."
+                # A reexecução com conflito não repete o comentário que já está no PR.
+                if ! gh pr view "$number" --json comments | jq -e --arg msg "$msg" 'any(.comments[]; .body == $msg)' > /dev/null; then
+                  gh pr comment "$number" --body "$msg"
+                fi
                 echo "::error::PR #$number conflicts with develop"
                 exit 1
                 ;;

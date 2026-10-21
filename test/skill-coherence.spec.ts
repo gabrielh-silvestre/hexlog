@@ -159,7 +159,8 @@ const reservedNameValues: readonly string[] = RESERVED_PROCESS_NAMES;
 /**
  * Campos de entrada/saída, relações, valores de enum e exemplos citados em crase nas skills que coincidem em
  * forma com nome de tool ou de valor reservado, mas não são nenhum dos dois — allowlist explícita em vez de
- * afrouxar o regex de identificador. Global ao projeto, não por skill.
+ * afrouxar o regex de identificador. Vale para toda skill; o que só uma skill cita fica em
+ * `SKILL_FIELD_ALLOWLIST`, para não afrouxar a checagem das outras.
  */
 const FIELD_NAME_ALLOWLIST = new Set([
   'type',
@@ -295,12 +296,6 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'attachmentStatus',
   'staleOut',
   'staleIn',
-  'counts',
-  'origin',
-  'inheritedIn',
-  'inheritedOut',
-  'inheritedInCounts',
-  'inheritedOutCounts',
   'derivesFrom',
   'attachmentBreaks',
   'isRevision',
@@ -319,6 +314,21 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'plan-legacy',
   'evidence-file',
 ]);
+
+/**
+ * Campos citados em crase por uma só skill (nome do `skillCases`), além da
+ * `FIELD_NAME_ALLOWLIST`.
+ */
+const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
+  'hexlog-flow': [
+    'counts',
+    'origin',
+    'inheritedIn',
+    'inheritedOut',
+    'inheritedInCounts',
+    'inheritedOutCounts',
+  ],
+};
 
 /**
  * Substrings esperadas no corpo da declaração de cada `arquivo.ts#símbolo` citado — mapa explícito em vez
@@ -426,7 +436,8 @@ function tokensCitedBy(skillPath: string) {
   };
 }
 
-describe.each(skillCases)('SKILL.md × code coherence ($name)', ({ skillPath }) => {
+describe.each(skillCases)('SKILL.md × code coherence ($name)', ({ name, skillPath }) => {
+  const fieldNames = new Set([...FIELD_NAME_ALLOWLIST, ...(SKILL_FIELD_ALLOWLIST[name] ?? [])]);
   const { citedScreamingSnakeTokens, citedLowerIdentifiers, citedCamelCaseTokens } =
     tokensCitedBy(skillPath);
 
@@ -439,7 +450,7 @@ describe.each(skillCases)('SKILL.md × code coherence ($name)', ({ skillPath }) 
   });
 
   test('every tool cited in the skill is actually registered (src/mcp/tools/)', () => {
-    const known = new Set([...registeredTools, ...reservedNameValues, ...FIELD_NAME_ALLOWLIST]);
+    const known = new Set([...registeredTools, ...reservedNameValues, ...fieldNames]);
     const unknown = citedLowerIdentifiers.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);
   });
@@ -451,7 +462,7 @@ describe.each(skillCases)('SKILL.md × code coherence ($name)', ({ skillPath }) 
   });
 
   test('every cited camelCase is a function declared in src/ or a known schema field', () => {
-    const known = new Set([...declaredFunctionNames, ...FIELD_NAME_ALLOWLIST]);
+    const known = new Set([...declaredFunctionNames, ...fieldNames]);
     const unknown = citedCamelCaseTokens.filter((token) => !known.has(token));
     expect(unknown).toEqual([]);
   });

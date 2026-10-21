@@ -157,8 +157,8 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   (`cross-process-currency`), e só o vigente: sobre um destino que já foi superado ou
   revogado, é `FORK_REJECTED`, com `current` apontando a versão atual da linhagem.
 - `supersedes` exige o mesmo tipo (`type-mismatch`) e o mesmo target (`target-mismatch`).
-  Para mudar um fato de target, faça `revokes` no registro antigo e grave um registro novo
-  no target certo com `derivesFrom` para ele; `revokes` entre targets é aceito.
+  Para mudar um fato de target, grave um registro só no target certo, com `revokes` e
+  `derivesFrom` para o antigo; `revokes` entre targets é aceito.
 - `supports` só aceita destino vigente (`stale-destination`); pode cruzar processos.
 - Um registro não pode apoiar e contradizer, nem superar e revogar, o mesmo destino.
 - Relação para si mesmo, `as` que não existe fixado no processo, `kind` que não bate com
@@ -217,7 +217,8 @@ processo em `details[0].process`.
   (traz também os superados e revogados). O `targetPrefix` casa por segmento, na fronteira de
   `.`: `a.b` casa `a.b` e `a.b.c`, não `a.b-2` nem `a.bc` (`unit-1` não casa `unit-10`). A
   resposta vazia em que nenhum target lido casa, mas algum começa pela string sem a fronteira,
-  traz `hint` com esse target; o casamento não muda. Não há filtro por tempo (`since` dá
+  traz `hint` com esse target, mesmo que o registro dele já esteja superado ou revogado e
+  com `includeNonCurrent` ligado ou não; o casamento não muda. Não há filtro por tempo (`since` dá
   `INVALID_INPUT`, e a mensagem aponta `changesSince`). A
   busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
   busca o monta, e o alcance projeto o monta a cada busca.

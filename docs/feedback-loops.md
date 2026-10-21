@@ -16,7 +16,7 @@ flowchart TB
 
     subgraph PREPR["Pré-PR"]
         G["pré-PR do agente<br/>decisões, review, flow-report"] --> E(["git push<br/>1º da branch"])
-        E --> F["pre-push<br/>build + cobertura 90%"]
+        E --> F["pre-push<br/>cobertura 90%"]
         F -->|passa| H["mark<br/>gates pre-pr e gaps"]
         H -->|verdes| I{"hook de PR<br/>marcador bate<br/>com a ponta?"}
         I -->|sim| K(["PR aberto"])
@@ -39,7 +39,7 @@ Linha pontilhada = bloqueio: corrija e repita o passo. A tabela abaixo detalha c
 | --- | --- | --- | --- | --- |
 | `pre-commit` | `git commit` | `eslint --fix`, `prettier --write`, `typecheck` e specs (`.ts`); `markdownlint`, `cspell` e dois specs de doc (`.md`) | lint sem correção automática, erro de tipo, spec vermelho, `.md` fora da regra | ~5 s de núcleo, mais o spec espelho |
 | `commit-msg` | `git commit` | `commitlint` na mensagem | fora do Conventional Commits, header acima de 80 caracteres, corpo preenchido | instantâneo |
-| `pre-push` | 1º push de uma branch | `npm run build` e `npm run test:coverage` | build quebrado, spec vermelho, cobertura abaixo de 90% | 3 a 5 min |
+| `pre-push` | 1º push de uma branch | `npm run test:coverage` | spec vermelho (inclusive os de bundle, que constroem o artefato), cobertura abaixo de 90% | 3 a 5 min |
 | Pré-PR do agente | "faz o pré-PR" (skill `flow-run`) | texto das decisões, review, `flow-report`, `mark` | `finding` URGENT sem `decision`, `gap` sem fechador | minutos, depende da review |
 | Hook de PR | abrir o PR (MCP ou `gh`) | confere o marcador do `mark` | sem marcador válido para a ponta da branch | instantâneo |
 
@@ -47,7 +47,7 @@ Linha pontilhada = bloqueio: corrija e repita o passo. A tabela abaixo detalha c
 
 Roda em todo `git commit`. Se qualquer etapa falhar, o commit não é criado.
 
-1. **`pre-commit`** (`lint-staged`, só nos arquivos em stage)
+1. **`pre-commit`** (`lint-staged --concurrent false`, só nos arquivos em stage; com `.ts` e `.md` juntos, uma chave termina antes de a outra começar)
    - Com `.ts` em stage:
      1. `eslint --fix`
      2. `prettier --write`
@@ -84,7 +84,7 @@ Da última decisão até o PR aberto, nesta ordem:
    3. Rodar o `flow-report`
       - Só aponta decisões com base fraca; nunca bloqueia
    4. Fazer o `git push`
-      - No **1º push da branch** o `pre-push` roda `build` e `test:coverage` (piso de 90%), de 3 a 5 min
+      - No **1º push da branch** o `pre-push` roda `test:coverage` (piso de 90%), de 3 a 5 min
       - Falhou: o push é bloqueado
    5. Rodar o `mark`
       - Confere dois gates
@@ -121,7 +121,7 @@ Da última decisão até o PR aberto, nesta ordem:
 | `.md` com ortografia, link ou lint quebrado | `pre-commit` | No commit |
 | Mensagem de commit fora do padrão | `commit-msg` | No commit |
 | Regressão em quem importa o arquivo, e specs de bundle | `pre-push` | 1º push |
-| Cobertura abaixo de 90%, build quebrado | `pre-push` | 1º push |
+| Cobertura abaixo de 90% | `pre-push` | 1º push |
 | Decisão com texto diferente do diff | passo 1 do pré-PR | Antes do PR |
 | URGENT sem decisão, lacuna sem fechador | `mark` | Antes do PR |
 | PR aberto sem passar pelo pré-PR | hook de PR | Ao abrir |

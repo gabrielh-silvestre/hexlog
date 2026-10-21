@@ -53,6 +53,8 @@ function brokenAttachments(sections: Section[]): string[] {
   );
 }
 
+// Lê `in` do registro: só existe com `relations: 'full'` (o padrão do serviço), como pede
+// `recordsOf`.
 function markOf({ in: incoming = [] }: QueryRecord): string {
   const by = (kind: string) =>
     incoming.filter((relation) => relation.kind === kind).map((r) => r.from);
