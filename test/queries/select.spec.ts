@@ -1,12 +1,8 @@
-import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import * as inheritanceModule from '../../src/domain/inheritance.ts';
 import { note } from '../commands/register-fakes.ts';
 import { at } from '../helpers.ts';
 import { querySetup } from './query-setup.ts';
-
-afterEach(() => {
-  jest.restoreAllMocks();
-});
 
 /** Processo com herança ligada, com duas versões de `run.unit` e um registro revogado. */
 async function seeded() {
@@ -27,8 +23,12 @@ async function seeded() {
   return { ...base, u1, gone };
 }
 
-describe('buildView: lazy inheritance', () => {
-  test('a page with records computes the inheritance once', async () => {
+describe('QueryService.query', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('should compute the inheritance once for a page with records', async () => {
     const { query } = await seeded();
     const build = jest.spyOn(inheritanceModule, 'buildInheritance');
 
@@ -38,7 +38,7 @@ describe('buildView: lazy inheritance', () => {
     expect(build).toHaveBeenCalledTimes(1);
   });
 
-  test('limit 0 with changesSince does not compute the inheritance', async () => {
+  it('should not compute the inheritance for limit 0 with changesSince', async () => {
     const { query, u1 } = await seeded();
     const build = jest.spyOn(inheritanceModule, 'buildInheritance');
 
@@ -49,7 +49,7 @@ describe('buildView: lazy inheritance', () => {
     expect(build).not.toHaveBeenCalled();
   });
 
-  test('the past view of changesSince does not add a second computation', async () => {
+  it('should not add a second inheritance computation for the past view of changesSince', async () => {
     const { query, u1 } = await seeded();
     const build = jest.spyOn(inheritanceModule, 'buildInheritance');
 
@@ -57,15 +57,20 @@ describe('buildView: lazy inheritance', () => {
 
     expect(build).toHaveBeenCalledTimes(1);
   });
-});
 
-describe('boundaryHint: scans every read record', () => {
-  test.each([
+  it('should omit a revoked record from the ids lookup', async () => {
+    const { query, gone } = await seeded();
+
+    const page = query({ process: 'run-1', ids: [gone] });
+
+    expect(page.records).toEqual([]);
+  });
+
+  it.each([
     ['without includeNonCurrent', {}],
     ['with includeNonCurrent', { includeNonCurrent: true }],
-  ])('the target of a revoked record still feeds the hint, %s', async (_title, extra) => {
-    const { query, gone } = await seeded();
-    expect(query({ process: 'run-1', ids: [gone] }).records).toEqual([]);
+  ])('should feed the hint with the target of a revoked record, %s', async (_title, extra) => {
+    const { query } = await seeded();
 
     const page = query({ process: 'run-1', targetPrefix: 'run.go', ...extra });
 
