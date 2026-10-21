@@ -21,6 +21,7 @@ Estratos pela `confidence` da `decision`:
 4. O sorteio usa semente, registrada no relatório.
 5. Parada antecipada, por estrato: 0 achados em 10 aceita; 2 achados nos 6 primeiros, ou 3 em até 15, rejeita e audita 100% do estrato na sessão.
 6. Regras de troca, **só depois de ao menos 10 execuções auditadas**: normal para rigorosa (2n) com achado em 2 das últimas 5 features do estrato; rigorosa para normal com 5 limpas; normal para reduzida (metade, mínimo 4) com 10 limpas, só no estrato `high`. `low` e `medium` nunca reduzem.
+7. Decisão de `author.agent` `flow-reanchor` é cópia feita pela reancoragem: siga o `supersedes` até a original para auditar quem decidiu.
 
 ## Suspeitas a listar
 
