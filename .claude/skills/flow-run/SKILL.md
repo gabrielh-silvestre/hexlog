@@ -10,7 +10,7 @@ Camada fina sobre o OMC: abre o trabalho, registra no hexlog, chama as skills do
 ## 1. Abertura
 
 1. Branch atual: `git branch --show-current`. Em `main` ou `develop`, pare e peça uma branch de trabalho.
-2. Slug: `node scripts/flow/flow.ts slug <branch>`. Saída vazia ou código 1 (nome reservado, `main`, `develop`, `directives`, `audits`), pare e pergunte.
+2. Slug: `node scripts/flow/flow.ts slug <branch>`. Saída vazia ou código 1 (nome reservado, `main`, `develop`, `directives`, `audits` ou um nome que o `create_process` recusa: `types`, `relations`, `gates`, `attachments`, `archive`), pare e pergunte.
 3. Processo existente: `list` no projeto `hexlog`. Se o slug já existe, leia o `opening` por `query`:
    - `opening.branch` igual à branch atual: é retomada, siga para a seção 4 (pule o `create_process` e o `opening`). Confira `pinned.types` com `list` e `process` igual ao slug: sem `premise`, o trabalho nasceu antes de `directives-2` e segue sem premissas, como `docs/directives/fluxo-hexlog.md` prevê. Pule também a seção 3 só se `<slug>.premise.objective` já existe (`query`) ou o trabalho é anterior a `directives-2`; senão grave o objetivo conforme a seção 3. O sync da abertura roda antes do `create_process`, então processo novo sempre fixa as definições novas; `pinned.types` é só um proxy para o trabalho retomado.
    - `opening.branch` diferente (`feat/x` contra `feat-x`, ou truncamento): colisão. Pare e pergunte ao dono, nunca reaproveite.

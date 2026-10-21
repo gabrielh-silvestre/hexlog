@@ -5,7 +5,18 @@ import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 
 const SLUG_MAX = 63;
-const RESERVED_SLUGS = new Set(['main', 'develop']);
+// `main` e `develop`, mais os nomes que `create_process` recusa com `RESERVED_NAME`
+// (`src/domain/ids.ts#RESERVED_PROCESS_NAMES`): copiados aqui porque este arquivo só importa
+// builtins, e o `flow-hooks.spec.ts` trava a paridade com a lista do domínio.
+const RESERVED_SLUGS = new Set([
+  'main',
+  'develop',
+  'types',
+  'relations',
+  'gates',
+  'attachments',
+  'archive',
+]);
 const LONG_LIVED_SLUG = /^(directives|audits)(-[0-9]+)?$/;
 const MARKER_DIR = 'hexlog-flow';
 

@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { planSync, type SyncInput } from '../scripts/flow/sync.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
+import { RESERVED_PROCESS_NAMES } from '../src/domain/ids.ts';
 import type { QueryResult } from '../src/queries/query-service.ts';
 import { createFlowEnvironment, registerFlowRecord } from './flow-data.ts';
 import { at, copyToXdg, createTempDir } from './helpers.ts';
@@ -424,7 +425,6 @@ describe('modes', () => {
     ['Feat/UPPER', 'feat-upper'],
     [`${'a'.repeat(62)}/b`, 'a'.repeat(62)],
     ['a'.repeat(70), 'a'.repeat(63)],
-    ['types', 'types'],
   ])(
     'slug of %s is %s',
     (branch, expected) => {
@@ -437,6 +437,16 @@ describe('modes', () => {
 
   test.each(['///', '', 'directives', 'audits', 'audits-2', 'directives-4', 'main', 'develop'])(
     'slug refuses "%s" with exit 1',
+    (branch) => {
+      const result = runFlow(['slug', branch]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+    },
+    15_000,
+  );
+
+  test.each(RESERVED_PROCESS_NAMES)(
+    'slug refuses "%s", a name create_process rejects, with exit 1',
     (branch) => {
       const result = runFlow(['slug', branch]);
       expect(result.status).toBe(1);
