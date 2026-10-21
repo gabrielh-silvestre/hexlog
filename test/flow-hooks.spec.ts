@@ -810,8 +810,17 @@ describe('flow-report', () => {
       objective: premise('feat-r', 'objective'),
       alpha: premise('feat-r', 'alpha'),
       beta: premise('feat-r', 'beta'),
+      gamma: premise('feat-r', 'gamma'),
       'd-obj': decision('feat-r', 'd-obj', [rests('@objective')]),
       'd-none': decision('feat-r', 'd-none', [rests(directive('none'))]),
+      'd-both-none': decision('feat-r', 'd-both-none', [
+        rests('@objective'),
+        rests(directive('none')),
+      ]),
+      'd-revoked-prem': decision('feat-r', 'd-revoked-prem', [
+        rests('@objective'),
+        rests('@gamma'),
+      ]),
       'd-ok': decision('feat-r', 'd-ok', [rests('@alpha')]),
       'd-doc': decision('feat-r', 'd-doc', [anchoredIn(directive('r1')), rests('@alpha')]),
       'd-far': decision('feat-r', 'd-far', [anchoredIn(directive('r2')), rests('@beta')]),
@@ -838,6 +847,13 @@ describe('flow-report', () => {
           { kind: 'revokes', to: '@d-rev' },
           { kind: 'revokes', to: '@d-b' },
         ],
+      },
+      // revoga a premissa `gamma`, que `d-revoked-prem` ainda cita
+      'revoker-prem': {
+        type: 'gap',
+        target: 'feat-r.gap.revoker-prem',
+        data: { question: 'Why revoke the premise?', context: 'Fixture' },
+        relations: [{ kind: 'revokes', to: '@gamma' }],
       },
     });
 
@@ -973,6 +989,18 @@ describe('flow-report', () => {
         'feat-r.decision.d-none',
         'only-sentinel: uncited=feat-r.premise.objective,feat-r.premise.alpha,feat-r.premise.beta',
       ]);
+    });
+
+    test('flags the decision that cites the objective and the sentinel together', () => {
+      expect(rowFor(result, 'd-both-none')).toEqual([
+        idOf('d-both-none'),
+        'feat-r.decision.d-both-none',
+        OBJECTIVE_UNCITED.replace('only-objective:', 'only-objective+sentinel:'),
+      ]);
+    });
+
+    test('counts a revoked premise as a citation, so the decision is not flagged', () => {
+      expect(rowFor(result, 'd-revoked-prem')).toBeUndefined();
     });
 
     test('does not flag the decision that cites a delivery premise', () => {

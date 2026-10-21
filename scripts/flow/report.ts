@@ -21,6 +21,7 @@ const BASE = /^[\w./-]+$/;
 const USAGE = 'usage: node scripts/flow/report.ts <slug> [<base>]';
 
 type Relation = { kind: string; as?: string; to?: string };
+type LinkedRelation = Relation & { to: string };
 type Row = {
   id: string;
   type?: string;
@@ -86,18 +87,18 @@ function createTargetOf(slug: string, own: Row[]): (id: string) => string | unde
 }
 
 /** Relações gravadas e herdadas pela linhagem de `supersedes` (`inheritedOut`, só derivado na leitura). */
-const relationsOf = (row: Row, alias: string): Relation[] =>
+const relationsOf = (row: Row, alias: string): LinkedRelation[] =>
   [...row.out, ...row.inheritedOut].filter(
-    (relation) => relation.as === alias && relation.to !== undefined,
+    (relation): relation is LinkedRelation => relation.as === alias && relation.to !== undefined,
   );
 
-/** Citações distintas por target; id sem target conta como citação distinta e desconhecida. */
+/**
+ * Citações distintas por target; id sem target conta como citação distinta e desconhecida. Premissa
+ * revogada continua contando: o relatório lê a citação gravada, não a vigência da premissa.
+ */
 function citedTargets(row: Row, targetOf: (id: string) => string | undefined): Set<string> {
   return new Set(
-    relationsOf(row, 'rests-on').map((relation) => {
-      const id = relation.to ?? '';
-      return targetOf(id) ?? `?${id}`;
-    }),
+    relationsOf(row, 'rests-on').map((relation) => targetOf(relation.to) ?? `?${relation.to}`),
   );
 }
 
@@ -106,14 +107,14 @@ function uncitedReason(
   slug: string,
   deliveryPremises: string[],
 ): string | undefined {
-  const [only] = cited;
-  if (cited.size !== 1 || (only !== `${slug}.premise.objective` && only !== SENTINEL)) {
-    return undefined;
-  }
+  const objective = `${slug}.premise.objective`;
+  const decorative = [objective, SENTINEL].filter((target) => cited.has(target));
+  if (decorative.length === 0 || decorative.length !== cited.size) return undefined;
   const uncited = deliveryPremises.filter((target) => !cited.has(target));
   const shown = uncited.slice(0, MAX_UNCITED).join(',') || '-';
   const rest = uncited.length > MAX_UNCITED ? ` (+${uncited.length - MAX_UNCITED})` : '';
-  return `only-${only === SENTINEL ? 'sentinel' : 'objective'}: uncited=${shown}${rest}`;
+  const label = decorative.map((target) => (target === SENTINEL ? 'sentinel' : 'objective'));
+  return `only-${label.join('+')}: uncited=${shown}${rest}`;
 }
 
 /** Docs de `docs/directives/` alterados no diff contra o merge-base com `base`; `undefined` se o git falhar. */
@@ -136,12 +137,11 @@ function amendedReasons(
   targetOf: (id: string) => string | undefined,
 ): string[] {
   const reasons = relationsOf(row, 'anchored-in').flatMap((relation) => {
-    const target = targetOf(relation.to ?? '');
+    const target = targetOf(relation.to);
     const doc = target?.split('.')[1];
-    const file = `docs/directives/${doc ?? ''}.md`;
-    return target !== undefined && doc !== undefined && docs?.has(file) === true
-      ? [`doc-amended: ${file} (${target})`]
-      : [];
+    if (target === undefined || doc === undefined) return [];
+    const file = `docs/directives/${doc}.md`;
+    return docs?.has(file) === true ? [`doc-amended: ${file} (${target})`] : [];
   });
   return [...new Set(reasons)];
 }
@@ -183,7 +183,6 @@ function main(): void {
   } catch (error) {
     warn(error instanceof Error ? error.message : String(error));
   }
-  process.exitCode = 0;
 }
 
 main();
