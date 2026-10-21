@@ -82,12 +82,12 @@ function lineageRootOf(records: readonly Linked[]): (id: RecordId) => RecordId {
 /**
  * Resolve a herança de `records` pela vigência dada. `isActive` diz se o processo cuja linhagem sobe
  * tem a herança ligada; processo inativo não herda nada, e sem `isActive` a resposta é
- * `NO_INHERITANCE`. Qualquer `contradicts` vigente (o registro
- * que o grava não foi superado nem revogado) entre a linhagem de uma ponta e a da outra, em qualquer
- * direção, corta a herança do par; superar ou revogar esse registro religa a herança, como a
- * contradição no gate. A aresta direta nunca é cortada, e a direta idêntica (mesma espécie, nome,
- * origem e destino) vence a herdada. Sem nenhum `supersedes` no log não há linhagem, e a resposta é
- * `NO_INHERITANCE`. Só enxerga os registros recebidos, e o resultado não depende da ordem deles.
+ * `NO_INHERITANCE`. Qualquer `contradicts` vigente (o registro que o grava não foi superado nem
+ * revogado) entre a linhagem de uma ponta e a da outra, em qualquer direção, corta a herança do
+ * par; superar ou revogar esse registro religa a herança, como a contradição no gate. A aresta
+ * direta nunca é cortada, e a direta idêntica (mesma espécie, nome, origem e destino) vence a
+ * herdada. Sem nenhum `supersedes` no log não há linhagem, e a resposta é `NO_INHERITANCE`. Só
+ * enxerga os registros recebidos, e o resultado não depende da ordem deles.
  *
  * ponytail: o corte vale para o par de linhagens inteiro e sem ordem de versão; para cortar só o
  * que veio antes do `contradicts`, exigir sucessor mais novo que a aresta e cortar por aresta.

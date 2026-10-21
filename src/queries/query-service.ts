@@ -194,14 +194,14 @@ export type QueryService = {
    * menos um registro (o 1º sai inteiro mesmo acima de `maxChars`); consulta sem resultado devolve
    * `records: []`, com `hint` quando o `targetPrefix` quase casou. Exceção a "ao menos um
    * registro": `limit: 0`, aceito só com `changesSince` e sem `cursor`, devolve `records: []` e as
-   * `changes`, sem cursor. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de
-   * `lastId` sobre a leitura da página 1.
+   * `changes`, sem cursor. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois
+   * de `lastId` sobre a leitura da página 1.
    *
-   * `INVALID_FILTER` (`/process`, `/limit` fora de 1 ou, com `changesSince` e sem `cursor`, de 0,
-   * `/text`: acima de `QUERY_TEXT_MAX_CHARS` ou sem termo
-   * pesquisável, `no-terms`, como `''`, `'  '` e `'!!!'`),
-   * `INVALID_CURSOR`, `MARKER_NOT_FOUND`, `PROJECT_NOT_FOUND` (alcance projeto), `PROCESS_NOT_FOUND`,
-   * `PROCESS_CORRUPTED` (com `details[0].process`), `PROCESS_TOO_LARGE` e `IO_ERROR`.
+   * `INVALID_FILTER` (`/process`; `/limit`, inteiro >= 1, ou 0 só com `changesSince` e sem
+   * `cursor`; `/text`, acima de `QUERY_TEXT_MAX_CHARS` ou sem termo pesquisável, `no-terms`, como
+   * `''`, `'  '` e `'!!!'`), `INVALID_CURSOR`, `MARKER_NOT_FOUND`, `PROJECT_NOT_FOUND` (alcance
+   * projeto), `PROCESS_NOT_FOUND`, `PROCESS_CORRUPTED` (com `details[0].process`),
+   * `PROCESS_TOO_LARGE` e `IO_ERROR`.
    */
   queryRecords(input: QueryInput): QueryResult;
   /**
