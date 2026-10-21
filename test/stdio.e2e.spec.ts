@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
@@ -89,6 +89,20 @@ function stderrRecords(
     .split('\n')
     .filter((line) => line !== '')
     .map((line) => JSON.parse(line) as { level: string; event: string });
+}
+
+/** Sobe o bundle com `input` no stdin e espera o servidor sair sozinho, com HOME e dados isolados. */
+function runBundleWithStdin(input: string | Buffer): SpawnSyncReturns<string> {
+  return spawnSync(process.execPath, [path.join(bundleDir, 'server.mjs')], {
+    input,
+    encoding: 'utf8',
+    env: {
+      ...(omitBy(process.env, isUndefined) as Record<string, string>),
+      HOME: createTempDir('e2e-home'),
+      XDG_DATA_HOME: createTempDir('e2e-xdg'),
+    },
+    cwd: bundleDir,
+  });
 }
 
 describe('dist/server.mjs over stdio', () => {
@@ -340,16 +354,7 @@ describe('dist/server.mjs over stdio', () => {
   }, 20_000);
 
   it('should log transport-error for a stdin line over the 10 MiB buffer cap before the server exits', () => {
-    const result = spawnSync(process.execPath, [path.join(bundleDir, 'server.mjs')], {
-      input: Buffer.alloc(10 * 1024 * 1024 + 1, 'x'),
-      encoding: 'utf8',
-      env: {
-        ...(omitBy(process.env, isUndefined) as Record<string, string>),
-        HOME: createTempDir('e2e-home'),
-        XDG_DATA_HOME: createTempDir('e2e-xdg'),
-      },
-      cwd: bundleDir,
-    });
+    const result = runBundleWithStdin(Buffer.alloc(10 * 1024 * 1024 + 1, 'x'));
 
     expect(result.status).toBe(0);
     expect(stderrRecords(result.stderr)).toContainEqual(
@@ -359,5 +364,21 @@ describe('dist/server.mjs over stdio', () => {
         message: expect.stringMatching(/.+/) as unknown,
       }),
     );
+  }, 30_000);
+
+  it('should log a transport-error under 1 KiB without the message for an envelope with 100k extra keys', () => {
+    const extraKeys = Object.fromEntries(Array.from({ length: 100_000 }, (_, i) => [`k${i}`, 0]));
+    const envelope = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', ...extraKeys });
+
+    const result = runBundleWithStdin(`${envelope}\n`);
+
+    const line = result.stderr.split('\n').find((l) => l.includes('"transport-error"')) ?? '';
+
+    expect(line.length).toBeGreaterThan(0);
+    expect(line.length).toBeLessThan(1024);
+    expect(JSON.parse(line)).toEqual(
+      expect.objectContaining({ name: 'ZodError', issues: expect.any(Number) as unknown }),
+    );
+    expect(JSON.parse(line)).not.toHaveProperty('message');
   }, 30_000);
 });
