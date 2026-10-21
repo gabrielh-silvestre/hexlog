@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { omit } from 'es-toolkit';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
 import { NOTE } from '../commands/register-fakes.ts';
@@ -14,8 +14,8 @@ function listSetup() {
   return { ...setup, list };
 }
 
-describe('list', () => {
-  test('without a project lists the projects with the process count', () => {
+describe('QueryService.list', () => {
+  it('should list the projects with the process count without a project', () => {
     const { definitions, list } = listSetup();
     definitions.write('beta', 'types', 'note', '1.0', NOTE);
 
@@ -27,7 +27,7 @@ describe('list', () => {
     });
   });
 
-  test('with a project lists the processes in name order and the definitions with the newest version', () => {
+  it('should list the processes in name order, with the newest version of each definition, with a project', () => {
     const { definitions, list } = listSetup();
     definitions.write(PROJECT, 'types', 'note', '1.1', NOTE);
 
@@ -46,7 +46,7 @@ describe('list', () => {
     });
   });
 
-  test('with a project and process returns what the manifest pinned, without the new definitions', () => {
+  it('should return what the manifest pinned, without the new definitions, with a project and process', () => {
     const { definitions, list } = listSetup();
     definitions.write(PROJECT, 'gates', 'late', '1.0', {
       name: 'late',
@@ -66,7 +66,7 @@ describe('list', () => {
     });
   });
 
-  test('process view omits lineageInheritance for a manifest without it', () => {
+  it('should omit lineageInheritance from the process view for a manifest without it', () => {
     const { dataDir, list } = listSetup();
     const manifestFile = processPaths(dataDir, { project: PROJECT, process: 'run-1' }).manifest;
     const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as Record<string, unknown>;
@@ -77,7 +77,7 @@ describe('list', () => {
     );
   });
 
-  test('unknown project is PROJECT_NOT_FOUND, with and without a process', () => {
+  it('should refuse an unknown project with PROJECT_NOT_FOUND, with or without a process', () => {
     const { list } = listSetup();
 
     expect(captureError(() => list({ project: 'ghost' })).code).toBe('PROJECT_NOT_FOUND');
@@ -86,13 +86,19 @@ describe('list', () => {
     );
   });
 
-  test('unknown process is PROCESS_NOT_FOUND and a process without a project is INVALID_INPUT', () => {
+  it('should refuse an unknown process with PROCESS_NOT_FOUND', () => {
     const { list } = listSetup();
 
     expect(captureError(() => list({ project: PROJECT, process: 'ghost' })).code).toBe(
       'PROCESS_NOT_FOUND',
     );
+  });
+
+  it('should refuse a process without a project with INVALID_INPUT', () => {
+    const { list } = listSetup();
+
     const orphan = captureError(() => list({ process: 'run-1' }));
+
     expect(orphan.code).toBe('INVALID_INPUT');
     expect(orphan.details[0]).toMatchObject({ path: '/project', code: 'required' });
   });

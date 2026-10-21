@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { createQueryService } from '../../src/queries/query-service.ts';
 
 type Deps = Parameters<typeof createQueryService>[0];
@@ -10,8 +10,8 @@ const unused = (): never => {
   throw new Error('unused');
 };
 
-describe('queries/ só enxerga o lado de leitura das portas (ISP)', () => {
-  test('os Readers de createQueryService não têm write, create nem putText', () => {
+describe('createQueryService', () => {
+  it('should see only the read side of the ports: no write, create or putText on the Readers', () => {
     expect(key<Deps['store']>('read')).toBeDefined();
     expect(key<Deps['definitions']>('names')).toBeDefined();
     expect(key<Deps['definitions']>('read')).toBeDefined();
@@ -28,7 +28,7 @@ describe('queries/ só enxerga o lado de leitura das portas (ISP)', () => {
     expect(key<Deps['attachments']>('putPath')).toBeDefined();
   });
 
-  test('createQueryService aceita um fake só de leitura', () => {
+  it('should accept a fake with only the read side', () => {
     const service = createQueryService({
       store: { read: unused, readManifest: unused, list: () => [], listProjects: () => ['p'] },
       definitions: { names: () => [], versions: () => [], read: unused },

@@ -1,16 +1,44 @@
 version: 2
 
-# PRs de atualização vão para develop, a base de trabalho (main só recebe hotfix e release).
-# `target-branch` vale só para version updates: as security updates ignoram estas opções e abrem
-# PR na branch padrão (main), então um PR de segurança pode chegar em main fora do fluxo de hotfix.
-# O prefixo mantém o título como Conventional Commit (o cliff.toml descarta os demais), mas só nos
-# version updates: o PR de segurança sai sem ele e o cliff.toml o descarta.
+# PRs de version update vão para develop, a base de trabalho (main só recebe hotfix e release).
+# Pela doc do GitHub (dependabot-options-reference), só `target-branch` e `cooldown` valem apenas
+# para version updates. Se `ignore` e `commit-message` alcançam as security updates, a doc é
+# ambígua com `target-branch` definido: a introdução diz que as opções com o selo de segurança
+# também as mudam, "except where `target-branch` is used", e a seção `target-branch` diz que as
+# opções do ecossistema "no longer apply to security updates"; já `commit-message` ressalva só a
+# branch que não é a padrão, e develop é a padrão. O grupo só as alcançaria com
+# `applies-to: security-updates`, que não está aqui. A security update abre PR na branch padrão,
+# que é develop, um PR por pacote e sem cooldown; o resto está a conferir (abaixo).
+# O auto-merge das de npm (minor e patch, agrupadas ou de segurança) é do
+# dependabot-auto-merge.yml e só vale com `allow_auto_merge` ligado no repositório; sem a flag, e
+# para github-actions e major, o merge é manual.
+# O prefixo mantém o título como Conventional Commit (o cliff.toml descarta os demais).
+# Major de npm nunca vem pelo Dependabot como version update (`ignore`). Se o `ignore` alcançar a
+# security update, o alerta cuja correção só existe numa major fica sem PR automático (segue aberto
+# na aba Security) e entra por PR manual; senão, o PR abre e o auto-merge o ignora por ser major.
+# O 1º security update real confere isso. Major de action vem: as
+# actions por tag major (`@v7`) só têm a próxima major como candidata, então ignorá-la as deixaria
+# sem PR nenhum. Minor e patch saem em um PR por ecossistema, depois de 7 dias de cooldown. O
+# esbuild (0.x) fica no grupo: o quality, que constrói o bundle nos specs, pega a quebra.
 updates:
   - package-ecosystem: npm
     directory: /
     target-branch: develop
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
     commit-message:
       prefix: chore(deps)
   - package-ecosystem: github-actions
@@ -18,5 +46,14 @@ updates:
     target-branch: develop
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
     commit-message:
       prefix: chore(deps)

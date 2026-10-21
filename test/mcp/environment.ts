@@ -9,8 +9,8 @@ import { createServer } from '../../src/mcp/server.ts';
 import type { LogRecord } from '../../src/shared/logger.ts';
 import { createTempDir } from '../helpers.ts';
 
-/** Identidade que o cliente declara no envelope por requisição (TM6). */
-export type ClientInfo = { name: string; version: string };
+/** Identidade que o cliente declara no envelope por requisição. */
+type ClientInfo = { name: string; version: string };
 
 export type ErrorBody = { code: ErrorCode; message: string; details: Detail[] };
 
@@ -24,7 +24,8 @@ export type CallResult = {
 /**
  * Corpo `{ code, message, details }` de um resultado com `isError`. Trava a forma: erro nunca leva
  * `structuredContent`, que descreveria o erro como saída do `outputSchema` de sucesso; o
- * `validateToolOutput` do SDK 2.0 já retorna cedo com `isError`, e o teste guarda a invariante.
+ * `validateToolOutput` do SDK 2.x (conferido na 2.3.1) já retorna cedo com `isError`, e o teste
+ * guarda a invariante.
  */
 export function errorBodyOf(result: CallResult): ErrorBody {
   expect(result.isError).toBe(true);
@@ -50,7 +51,7 @@ export type Environment = {
   ok: <T>(name: string, args?: Record<string, unknown>) => Promise<T>;
   /** Chama a tool, afirma erro de domínio e devolve o corpo `{ code, message, details }` de `content[0].text`. */
   fail: (name: string, args?: Record<string, unknown>) => Promise<ErrorBody>;
-  /** Cria em `<D>` uma entrada de nome minúsculo, o que a detecção do dado 0.x enxerga (D-13). */
+  /** Cria em `<D>` uma entrada de nome minúsculo, o que a detecção do dado 0.x enxerga. */
   seedLegacy: (name?: string) => void;
   setClock: (date: Date) => void;
   close: () => Promise<void>;

@@ -9,7 +9,7 @@ vazia ou não for um caminho absoluto, `<D>` cai em `~/.local/share/hexlog`
 (`src/directory.ts#dataDir`). `<D>` precisa de um sistema de arquivos com hard link e semântica
 POSIX (`rename` e `link` atômicos).
 
-```
+```text
 <D>/                                   # 0700; $XDG_DATA_HOME/hexlog ou ~/.local/share/hexlog
   .v1/                                 # raiz do dado 1.0; o 0.x nunca grava aqui
     <project>/                         # 0700
@@ -132,6 +132,11 @@ pelo usuário, num terminal fora do Claude Code:
    rmdir "$L"        # falha se sobrou algo além do holder: pare e confira
    ```
 
+   O `D` supõe `XDG_DATA_HOME` ausente, vazia ou absoluta. Com valor relativo o servidor o
+   ignora e usa `~/.local/share/hexlog`, mas o shell o usa: confirme que `$L` é o caminho
+   real de `<D>` antes do `rm` (um caminho relativo que exista a partir do diretório atual
+   passa no `ls -d` e apaga o holder errado) e, se não for, defina `D` à mão.
+
 4. Confira que `records.jsonl.lock` não está mais na pasta do processo
    (`ls <D>/.v1/<projeto>/<processo>`). A prova de que o processo volta a gravar é o
    próximo `register` numa sessão nova; `export.ts` e `verify_chain` leem sem o lock,
@@ -175,9 +180,19 @@ consegue decidir por custo ele nega (`hook/bash-guard.ts#decide`): o comando aci
 pela checagem de caminho). Os tetos por token valem só para o que o shell expande: o texto só entre
 aspas ou escapado acima deles não é casado como glob, só conferido como caminho literal e pelo prefixo
 literal (os segmentos até o primeiro com glob não podem ser `<D>`, ancestral nem descendente dela), e o
-orçamento total não o soma. Diante de crase, `$(` ou `${` fora de aspas simples, ou de `$'`, `$"`, `#`
-ou `<<` fora de qualquer aspa (o rastreador de aspas do hook não os modela como o bash), todo token vale
-como expansível. A negação
+orçamento total não o soma. Diante de crase, `$(` ou `${` fora de aspas simples, ou de `$'`, `$"`, `#` ou `<<` fora de qualquer aspa
+(o rastreador de aspas do hook não os modela como o bash), todo token vale como expansível.
+
+O trecho que o `shell-quote` engole depois de um `#` fora de aspas
+(`hook/bash-guard.ts#parseCommand`) volta como tokens e é conferido como o resto do comando; o glob que
+alcança `<D>` dentro de um comentário de verdade também é negado (falso positivo aceito). Nesse trecho,
+só a linha que o `shell-quote` não parseia (`${}`) é liberada. A releitura é linha a linha, então um par de
+aspas que cruza a quebra de linha desalinha a leitura do hook (lacuna na tabela abaixo).
+
+Os tetos e o orçamento medem o token com o `~` já expandido (`hook/bash-guard.ts#toCandidates`). O texto
+só entre aspas acima dos tetos é negado pelo prefixo literal sem citar `<D>` quando o primeiro segmento
+do token já tem caractere de glob e o `cwd` é ancestral de `<D>` (`node -e '<script grande>'` rodado do
+pai de `<D>`, com glob no primeiro segmento do script, falso positivo aceito). A negação
 por esses motivos não cita `<D>` literalmente: a mensagem diz que o comando não o cita e foi negado
 só por um teto de segurança. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
 `..`, cada grupo vira `*` antes do casamento (`.*` na abertura de um segmento oculto de `<D>`, que
@@ -200,6 +215,8 @@ o teste automatizado as marque como "passa":
 | `grep -r` no diretório pai | `grep -r foo ~/.local/share/` |
 | Subprocessos | `node -e …`, `python -c …` |
 | Glob só entre aspas acima dos tetos, expandido por um re-parseador | `bash -c 'cat $0' '<glob grande>'`, `eval '…'`: o hook não casa como glob o token só entre aspas acima dos tetos, só o confere como caminho literal e pelo prefixo literal; um glob relativo cujo prefixo não alcança `<D>` passa. É a mesma lacuna de `bash -c 'cat /home/g*/…/*'`, que já passa sem enchimento |
+| Par de aspas que cruza a quebra de linha depois de um `#` | `echo a#b "a⏎b" ; cat ~/.local/share/hexlog/.v1/… "⏎"`: o hook relê o trecho depois do `#` linha a linha e lê o `cat ~/…` como texto entre aspas, sem expandir o `~`; com o caminho absoluto de `<D>`, a menção literal nega |
+| `~usuário` no lugar de `~` | `cat ~gabriel/.local/share/hexlog/.v1/…`: o hook só expande o `~` seguido de `/` (e o `$HOME`), então `~nome` fica literal e o token nunca vira o caminho de `<D>` |
 | Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full` e `node scripts/insights.ts`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
 | Grep/Glob tool do Claude Code apontando pro pai | `Grep path=~/.local/share` |
 | Variável definida no mesmo comando | `d=~/.local/share; cat $d/hexlog/x` |

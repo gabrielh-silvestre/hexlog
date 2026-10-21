@@ -38,6 +38,13 @@ export function at<T>(items: readonly T[], index: number): T {
   return value;
 }
 
+/**
+ * Id de registro determinístico `<process>:<n com 8 dígitos>`, para specs de domínio que montam o
+ * log à mão.
+ */
+export const recordId = (process: string, n: number): string =>
+  `${process}:${String(n).padStart(8, '0')}`;
+
 /** Executa `fn`, afirma que lançou `HexlogError` e devolve o erro para asserções específicas. */
 export function captureError(fn: () => unknown): HexlogError {
   try {
@@ -49,12 +56,12 @@ export function captureError(fn: () => unknown): HexlogError {
   throw new Error('expected the function to throw HexlogError');
 }
 
-/** Confere que nem `message` nem `details` do erro trazem `secret` (D-26); `JSON.stringify(error)` não vê o `message`. */
+/** Confere que nem `message` nem `details` do erro trazem `secret`; `JSON.stringify(error)` não vê o `message`. */
 export function expectNoLeak(error: HexlogError, secret: string): void {
   expect(error.message + JSON.stringify(error.details)).not.toContain(secret);
 }
 
-/** Espera a rejeição com `HexlogError`, aplica `expectNoLeak` com `secret` (D-26) e a devolve. */
+/** Espera a rejeição com `HexlogError`, aplica `expectNoLeak` com `secret` e a devolve. */
 export async function rejectionOf(promise: Promise<unknown>, secret: string): Promise<HexlogError> {
   const error = await promise.then(
     () => undefined,
@@ -79,7 +86,7 @@ export function spyOnWriteSync(
 }
 
 /**
- * P9, exceção declarada ao princípio 3: roteiro de `fs.writeSync` do log. Cada chamada consome um
+ * Exceção declarada ao princípio 3: roteiro de `fs.writeSync` do log. Cada chamada consome um
  * passo: `n >= 0` grava só `n` bytes (de verdade) e devolve `n`; `n < 0` grava `tamanho + n`;
  * `'enospc'` lança `ENOSPC` com o caminho na mensagem, como o fs real. Sem passos, grava tudo.
  */

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { compose } from '../../src/compose.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import type { RegisterResult } from '../../src/commands/process.ts';
@@ -21,7 +21,8 @@ const NOTE = {
 
 let environment: Environment;
 
-beforeEach(async () => {
+// Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
+const openEnvironment = async () => {
   environment = await createEnvironment();
   await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE });
   await environment.ok('define_gate', {
@@ -35,11 +36,11 @@ beforeEach(async () => {
     questions: [{ kind: 'approved', of: { type: 'note', where: { text: 'proposta' } } }],
   });
   await environment.ok('create_process', { project: PROJECT, process: PROCESS });
-});
+};
 
-afterEach(async () => {
+const closeEnvironment = async () => {
   await environment.close();
-});
+};
 
 const registerNotes = (texts: string[], target = 'run.step') =>
   environment.ok<RegisterResult>('register', {
@@ -52,8 +53,11 @@ const registerNotes = (texts: string[], target = 'run.step') =>
 const evaluate = <T = GateEvaluation>(args: Record<string, unknown>) =>
   environment.ok<T>('evaluate_gate', { project: PROJECT, process: PROCESS, ...args });
 
-describe('evaluate_gate: lean responses', () => {
-  test('evaluate_gate defaults to failing: an approved gate answers with counts and no ids', async () => {
+describe('evaluate_gate', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it('should answer a passing gate with counts and no ids by default', async () => {
     await registerNotes(['olá']);
 
     const result = await evaluate({ gate: 'has-note' });
@@ -64,7 +68,7 @@ describe('evaluate_gate: lean responses', () => {
     ]);
   });
 
-  test('evaluate_gate failing returns the ids of what blocks the gate', async () => {
+  it('should return the ids of what blocks a failing gate', async () => {
     const { records } = await registerNotes(['proposta', 'proposta', 'outra']);
     const proposed = records.slice(0, 2).map(({ id }) => id);
 
@@ -82,22 +86,22 @@ describe('evaluate_gate: lean responses', () => {
     ]);
   });
 
-  test('evaluate_gate evidence full matches the service default byte for byte', async () => {
+  it('should match the service default byte for byte with evidence full', async () => {
     await registerNotes(['proposta']);
     const input = { project: PROJECT, process: PROCESS, gate: 'proposed-approved' } as const;
-
-    const viaTool = await evaluate({ gate: input.gate, evidence: 'full' });
-
     const viaService = compose({
       dataDir: environment.dataDir,
       cwd: process.cwd(),
       clock: () => new Date('2026-01-01T00:00:00.000Z'),
       logger: () => undefined,
     }).services.query.evaluateGate(input);
+
+    const viaTool = await evaluate({ gate: input.gate, evidence: 'full' });
+
     expect(JSON.stringify(viaTool)).toBe(JSON.stringify(viaService));
   });
 
-  test('evaluate_gate evidence counts returns counts only', async () => {
+  it('should return counts only with evidence counts', async () => {
     await registerNotes(['proposta']);
 
     const result = await evaluate({ gate: 'proposed-approved', evidence: 'counts' });
@@ -112,7 +116,7 @@ describe('evaluate_gate: lean responses', () => {
     ]);
   });
 
-  test('evaluate_gate targets returns one result per target and one marker', async () => {
+  it('should return one result per target with a single marker', async () => {
     await registerNotes(['olá'], 'a.step');
 
     const result = await evaluate<GateBatchEvaluation>({
@@ -133,13 +137,13 @@ describe('evaluate_gate: lean responses', () => {
     expect(result).not.toHaveProperty('questions');
   });
 
-  test('evaluate_gate targets defaults to counts, and the batch marker replays one target with ids', async () => {
-    const { records } = await registerNotes(['proposta'], 'a.step');
+  it('should default targets to counts without ids', async () => {
+    await registerNotes(['proposta'], 'a.step');
+
     const batch = await evaluate<GateBatchEvaluation>({
       gate: 'proposed-approved',
       targets: ['a'],
     });
-    await registerNotes(['proposta'], 'a.step');
 
     expect(batch.results[0]?.questions).toEqual([
       {
@@ -149,11 +153,30 @@ describe('evaluate_gate: lean responses', () => {
         counts: { of: 1, supports: 0, contradictions: 0, unsupported: 1 },
       },
     ]);
+  });
+
+  it('should return the ids of a failing target with targets and evidence failing', async () => {
+    await registerNotes(['proposta'], 'a.step');
+
     const explicit = await evaluate<GateBatchEvaluation>({
       gate: 'proposed-approved',
       targets: ['a'],
       evidence: 'failing',
     });
+
+    expect(explicit.results[0]?.questions[0]).toMatchObject({
+      evidence: { unsupported: expect.any(Array) },
+    });
+  });
+
+  it('should replay one target with the batch marker and return its ids', async () => {
+    const { records } = await registerNotes(['proposta'], 'a.step');
+    const batch = await evaluate<GateBatchEvaluation>({
+      gate: 'proposed-approved',
+      targets: ['a'],
+    });
+    await registerNotes(['proposta'], 'a.step');
+
     const replay = await evaluate({
       gate: 'proposed-approved',
       target: 'a',
@@ -161,15 +184,23 @@ describe('evaluate_gate: lean responses', () => {
     });
 
     const proposed = records.map(({ id }) => id);
-    expect(explicit.results[0]?.questions[0]).toMatchObject({
-      evidence: { unsupported: expect.any(Array) },
-    });
+
     expect(replay.questions).toEqual([
       expect.objectContaining({ evidence: { unsupported: proposed } }),
     ]);
   });
 
-  test('evaluate_gate target keeps the single-target shape', async () => {
+  it('should accept exactly 50 targets and answer each one', async () => {
+    await registerNotes(['olá'], 't0.step');
+    const targets = Array.from({ length: 50 }, (_, index) => `t${index}`);
+
+    const result = await evaluate<GateBatchEvaluation>({ gate: 'has-note', targets });
+
+    expect(result.results.map(({ target }) => target)).toEqual(targets);
+    expect(result.results.filter(({ passed }) => passed)).toHaveLength(1);
+  });
+
+  it('should keep the single-target shape with target', async () => {
     await registerNotes(['olá'], 'a.step');
 
     const result = await evaluate({ gate: 'has-note', target: 'a' });
@@ -178,32 +209,41 @@ describe('evaluate_gate: lean responses', () => {
     expect(result).not.toHaveProperty('results');
   });
 
-  test('evaluate_gate refuses target with targets, an empty targets list, more than 50 targets and evidence full with targets', async () => {
-    const call = (extra: Record<string, unknown>) =>
-      environment.call('evaluate_gate', {
-        project: PROJECT,
-        process: PROCESS,
-        gate: 'has-note',
-        ...extra,
-      });
-    const tooMany = Array.from({ length: BATCH_MAX + 1 }, (_, i) => `t${i}`);
+  it.each([
+    {
+      scenario: 'target together with targets',
+      patch: { target: 'a', targets: ['a'] },
+      expected: { path: '/targets', code: 'with-target' },
+    },
+    {
+      scenario: 'an empty targets list',
+      patch: { targets: [] },
+      expected: { path: '/targets' },
+    },
+    {
+      scenario: 'more than 50 targets',
+      patch: { targets: Array.from({ length: BATCH_MAX + 1 }, (_, i) => `t${i}`) },
+      expected: { path: '/targets' },
+    },
+    {
+      scenario: 'evidence full with targets',
+      patch: { targets: ['a'], evidence: 'full' },
+      expected: { path: '/evidence', code: 'full-with-targets' },
+    },
+  ])('should refuse $scenario with INVALID_INPUT', async ({ patch, expected }) => {
+    const result = await environment.call('evaluate_gate', {
+      project: PROJECT,
+      process: PROCESS,
+      gate: 'has-note',
+      ...patch,
+    });
 
-    const withTarget = expectError(await call({ target: 'a', targets: ['a'] }), 'INVALID_INPUT');
-    const empty = expectError(await call({ targets: [] }), 'INVALID_INPUT');
-    const many = expectError(await call({ targets: tooMany }), 'INVALID_INPUT');
-    const full = expectError(await call({ targets: ['a'], evidence: 'full' }), 'INVALID_INPUT');
+    const body = expectError(result, 'INVALID_INPUT');
 
-    expect(withTarget.details).toEqual([
-      expect.objectContaining({ path: '/targets', code: 'with-target' }),
-    ]);
-    expect(empty.details).toEqual([expect.objectContaining({ path: '/targets' })]);
-    expect(many.details).toEqual([expect.objectContaining({ path: '/targets' })]);
-    expect(full.details).toEqual([
-      expect.objectContaining({ path: '/evidence', code: 'full-with-targets' }),
-    ]);
+    expect(body.details).toEqual([expect.objectContaining(expected)]);
   });
 
-  test('evaluate_gate caps a failing evidence list at EVIDENCE_ITEMS_CAP and reports omitted', async () => {
+  it('should cap a failing evidence list at EVIDENCE_ITEMS_CAP and report omitted', async () => {
     const total = BATCH_MAX * 3;
     for (let batch = 0; batch < 3; batch += 1) {
       await registerNotes(Array.from({ length: BATCH_MAX }, () => 'proposta'));
@@ -214,6 +254,7 @@ describe('evaluate_gate: lean responses', () => {
     });
 
     const [question] = result.questions;
+
     expect(question).toMatchObject({
       passed: false,
       counts: { of: total, unsupported: total },
@@ -222,7 +263,32 @@ describe('evaluate_gate: lean responses', () => {
     expect(question?.evidence).toHaveProperty('unsupported.length', EVIDENCE_ITEMS_CAP);
   });
 
-  test('evaluate_gate caps each batch target evidence list at EVIDENCE_ITEMS_CAP and reports omitted', async () => {
+  it('should cap every list of a full evidence at EVIDENCE_ITEMS_CAP and report omitted', async () => {
+    const total = BATCH_MAX * 3;
+    for (let batch = 0; batch < 3; batch += 1) {
+      await registerNotes(Array.from({ length: BATCH_MAX }, () => 'proposta'));
+    }
+
+    const result = await evaluate<GateEvaluation & { questions: { omitted?: unknown }[] }>({
+      gate: 'proposed-approved',
+      evidence: 'full',
+    });
+
+    const [question] = result.questions;
+
+    expect(question).toMatchObject({
+      passed: false,
+      omitted: { of: total - EVIDENCE_ITEMS_CAP, unsupported: total - EVIDENCE_ITEMS_CAP },
+    });
+    expect(question?.evidence).toMatchObject({
+      of: { length: EVIDENCE_ITEMS_CAP },
+      unsupported: { length: EVIDENCE_ITEMS_CAP },
+      supports: [],
+      contradictions: [],
+    });
+  });
+
+  it('should cap each batch target evidence list at EVIDENCE_ITEMS_CAP and report omitted', async () => {
     const total = BATCH_MAX * 3;
     for (let batch = 0; batch < 3; batch += 1) {
       await registerNotes(Array.from({ length: BATCH_MAX }, () => 'proposta'));
@@ -238,12 +304,16 @@ describe('evaluate_gate: lean responses', () => {
       omitted?: unknown;
       evidence?: { unsupported: unknown[] };
     }[];
+
     expect(question).toMatchObject({ omitted: { unsupported: total - EVIDENCE_ITEMS_CAP } });
     expect(question?.evidence?.unsupported).toHaveLength(EVIDENCE_ITEMS_CAP);
   });
 });
 
-describe('query: lean responses', () => {
+describe('query', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
   const query = (args: Record<string, unknown> = {}) =>
     environment.ok<QueryResult>('query', { project: PROJECT, process: PROCESS, ...args });
 
@@ -267,35 +337,37 @@ describe('query: lean responses', () => {
     return targetId;
   }
 
-  test('query defaults to relation counts', async () => {
+  it('should default to relation counts', async () => {
     const targetId = await registerDerived(1);
 
     const { records } = await query();
 
     const target = records.find(({ id }) => id === targetId);
     const derived = records.find(({ id }) => id !== targetId);
+
     expect(target).toMatchObject({ inCounts: { derivesFrom: 1 } });
     expect(derived).toMatchObject({ outCounts: { derivesFrom: 1 } });
+
     for (const record of records) {
       expect(Object.keys(record)).toEqual(expect.not.arrayContaining(['in', 'out']));
     }
   });
 
-  test('query relations full matches the service default byte for byte', async () => {
+  it('should match the service default byte for byte with relations full', async () => {
     await registerDerived(2);
-
-    const viaTool = await query({ relations: 'full' });
-
     const viaService = compose({
       dataDir: environment.dataDir,
       cwd: process.cwd(),
       clock: () => new Date('2026-01-01T00:00:00.000Z'),
       logger: () => undefined,
     }).services.query.queryRecords({ project: PROJECT, process: PROCESS });
+
+    const viaTool = await query({ relations: 'full' });
+
     expect(JSON.stringify(viaTool)).toBe(JSON.stringify(viaService));
   });
 
-  test('query relations none drops the relation fields', async () => {
+  it('should drop the relation fields with relations none', async () => {
     await registerDerived(1);
 
     const { records } = await query({ relations: 'none' });
@@ -307,18 +379,18 @@ describe('query: lean responses', () => {
     }
   });
 
-  test('query with fields [] and counts stays small and fits more records per page', async () => {
+  it('should fit more records in a smaller page with fields [] and counts than with full relations', async () => {
     await registerDerived(BATCH_MAX * 5);
     const input = { fields: [], limit: 100 };
-
     const full = await query({ ...input, relations: 'full' });
+
     const counts = await query(input);
 
     expect(counts.records.length).toBeGreaterThan(full.records.length);
     expect(JSON.stringify(counts).length).toBeLessThan(JSON.stringify(full).length);
   });
 
-  test('query refuses an unknown relations value', async () => {
+  it('should refuse an unknown relations value with INVALID_INPUT', async () => {
     const result = await environment.call('query', {
       project: PROJECT,
       process: PROCESS,
@@ -326,6 +398,7 @@ describe('query: lean responses', () => {
     });
 
     const body = expectError(result, 'INVALID_INPUT');
+
     expect(body.details).toEqual([expect.objectContaining({ path: '/relations' })]);
   });
 });

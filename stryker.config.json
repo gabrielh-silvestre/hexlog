@@ -1,0 +1,58 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "jest",
+  "jest": {
+    "enableFindRelatedTests": false,
+    "config": {
+      "testMatch": [
+        "<rootDir>/test/adapters/search.cache.spec.ts",
+        "<rootDir>/test/directory.spec.ts",
+        "<rootDir>/test/domain/chain.spec.ts",
+        "<rootDir>/test/domain/definitions.spec.ts",
+        "<rootDir>/test/domain/formats.spec.ts",
+        "<rootDir>/test/domain/gate.spec.ts",
+        "<rootDir>/test/domain/ids.spec.ts",
+        "<rootDir>/test/domain/inheritance.property.spec.ts",
+        "<rootDir>/test/domain/inheritance.spec.ts",
+        "<rootDir>/test/domain/record.spec.ts",
+        "<rootDir>/test/domain/relations.spec.ts",
+        "<rootDir>/test/domain/schema-walk.spec.ts",
+        "<rootDir>/test/domain/vigency.property.spec.ts",
+        "<rootDir>/test/mcp/query-page.spec.ts",
+        "<rootDir>/test/queries/cursor.spec.ts",
+        "<rootDir>/test/queries/read-only.spec.ts",
+        "<rootDir>/test/shared/loader.property.spec.ts",
+        "<rootDir>/test/shared/loader.spec.ts",
+        "<rootDir>/test/shared/pages.spec.ts",
+        "<rootDir>/test/errors.spec.ts",
+        "<rootDir>/test/queries/query-service.spec.ts"
+      ],
+      "globalSetup": null,
+      "globalTeardown": null
+    }
+  },
+  "mutate": [
+    "src/adapters/search.ts",
+    "src/directory.ts",
+    "src/domain/chain.ts",
+    "src/domain/definitions.ts",
+    "src/domain/formats.ts",
+    "src/domain/gate.ts",
+    "src/domain/ids.ts",
+    "src/domain/inheritance.ts",
+    "src/domain/record.ts",
+    "src/domain/relations.ts",
+    "src/domain/schema-walk.ts",
+    "src/errors.ts",
+    "src/mcp/tools/query.ts",
+    "src/ports.ts",
+    "src/queries/cursor.ts",
+    "src/queries/query-service.ts",
+    "src/shared/loader.ts",
+    "src/shared/pages.ts"
+  ],
+  "disableBail": true,
+  "checkers": ["typescript"],
+  "concurrency": "40%",
+  "reporters": ["clear-text", "progress", "html"]
+}

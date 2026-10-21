@@ -1,6 +1,6 @@
 import { isEqual, isPlainObject, isSubset, isSubsetWith, isUndefined } from 'es-toolkit';
 import { z } from 'zod';
-import { HexlogError } from '../errors.ts';
+import { internalError } from '../errors.ts';
 import { GateQuestion } from './gate.ts';
 import { Name, TypeNames } from './ids.ts';
 import { RelationKind, withCanonicalLimit } from './record.ts';
@@ -63,7 +63,7 @@ export const CANONICAL_VERSION = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/;
 export function parseVersion(v: string): Version {
   const match = CANONICAL_VERSION.exec(v);
   if (match === null) {
-    throw new HexlogError('INTERNAL', `malformed version string '${v}'`);
+    throw internalError(`malformed version string '${v}'`);
   }
   return { major: Number(match[1]), minor: Number(match[2]) };
 }

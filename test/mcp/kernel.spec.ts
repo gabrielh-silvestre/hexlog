@@ -1,4 +1,4 @@
-import { describe, test, expect, jest } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { HexlogError } from '../../src/errors.ts';
@@ -31,7 +31,7 @@ const ctxOf = (envelope?: Record<string, unknown>): CallContext => ({ mcpReq: { 
 const callOf = (args: unknown, ctx = ctxOf()) => ({ name: 'demo', schema: Input, args, ctx });
 
 describe('execute', () => {
-  test('devolve o resultado como structuredContent e como texto JSON', async () => {
+  it('should return the result as structuredContent and as JSON text', async () => {
     const { deps } = makeDeps();
 
     const result = await execute(deps, callOf({ project: 'p', count: 2 }), (input) => ({
@@ -44,7 +44,7 @@ describe('execute', () => {
     });
   });
 
-  test('registra um log tool com name e ms, sem o conteúdo da entrada', async () => {
+  it('should log a tool record with name and ms, without the input content', async () => {
     const { deps, logger } = makeDeps();
 
     await execute(deps, callOf({ project: 'segredo', count: 1 }), () => ({}));
@@ -60,7 +60,7 @@ describe('execute', () => {
     expect(JSON.stringify(logger.mock.calls)).not.toContain('segredo');
   });
 
-  test('entrada fora do schema vira INVALID_INPUT com details[].path, nunca "Input validation error"', async () => {
+  it('should turn input outside the schema into INVALID_INPUT with details[].path, never "Input validation error"', async () => {
     const { deps } = makeDeps();
     const run = jest.fn(() => ({}));
 
@@ -77,7 +77,7 @@ describe('execute', () => {
     expect(JSON.stringify(result)).not.toContain('Input validation error');
   });
 
-  test('chave própria __proto__ em qualquer nível vira INVALID_INPUT reserved-key, sem chamar run', async () => {
+  it('should turn an own __proto__ key at any level into INVALID_INPUT reserved-key, without calling run', async () => {
     const { deps } = makeDeps();
     const run = jest.fn(() => ({}));
     const args: unknown = JSON.parse('{"project":"p","count":1,"deep":[{"a/b":{"__proto__":1}}]}');
@@ -91,7 +91,7 @@ describe('execute', () => {
     });
   });
 
-  describe('profundidade dos args crus', () => {
+  describe('with deeply nested raw args', () => {
     const Anything = z.looseObject({});
     // `nest(n)` tem n objetos aninhados, contando a raiz dos args como o nível 1.
     const nest = (levels: number): Record<string, unknown> =>
@@ -101,7 +101,7 @@ describe('execute', () => {
       );
     const callWith = (args: unknown) => ({ name: 'demo', schema: Anything, args, ctx: ctxOf() });
 
-    test('64 níveis passam e chegam ao run', async () => {
+    it('should let 64 levels through to run', async () => {
       const { deps } = makeDeps();
       const run = jest.fn(() => ({}));
 
@@ -110,7 +110,7 @@ describe('execute', () => {
       expect(run).toHaveBeenCalledTimes(1);
     });
 
-    test('65 níveis viram INVALID_INPUT too-deep no nó do nível 65, sem chamar run', async () => {
+    it('should turn 65 levels into INVALID_INPUT too-deep at the level 65 node, without calling run', async () => {
       const { deps } = makeDeps();
       const run = jest.fn(() => ({}));
 
@@ -123,7 +123,7 @@ describe('execute', () => {
       });
     });
 
-    test('array também conta como nível', async () => {
+    it('should count an array as a level', async () => {
       const { deps } = makeDeps();
       const args = { a: Array.from({ length: 63 }).reduce<unknown>((inner) => [inner], {}) };
 
@@ -132,29 +132,29 @@ describe('execute', () => {
       expect(errorBodyOf(result)).toMatchObject({ details: [{ code: 'too-deep' }] });
     });
 
-    test('2.000 níveis dão um só detalhe e nunca INTERNAL', async () => {
+    it('should give a single detail and never INTERNAL for 2,000 levels', async () => {
       const { deps } = makeDeps();
 
       const result = await execute(deps, callWith(nest(2000)), () => ({}));
 
       const body = errorBodyOf(result);
+
       expect(body.code).toBe('INVALID_INPUT');
       expect(body.details).toHaveLength(1);
     });
   });
 
-  describe('resposta acima do dobro de PAGE_CHARS_CAP', () => {
+  describe('with a response size around twice PAGE_CHARS_CAP', () => {
     const OVER_CAP = 2 * PAGE_CHARS_CAP;
 
     // `{"t":""}` tem 8 caracteres, então `chars - 8` letras dão um texto de `chars`.
     const resultOf = (chars: number) => ({ t: 'x'.repeat(chars - 8) });
 
-    test('emite o warn tool-over-cap com name e chars, sem a entrada, e não corta a resposta', async () => {
+    it('should emit the tool-over-cap warn with name and chars, never the input', async () => {
       const { deps, logger } = makeDeps();
-
       const full = resultOf(OVER_CAP + 1);
 
-      const result = await execute(deps, callOf({ project: 'segredo', count: 1 }), () => full);
+      await execute(deps, callOf({ project: 'segredo', count: 1 }), () => full);
 
       expect(logger).toHaveBeenCalledWith({
         level: 'warn',
@@ -163,13 +163,37 @@ describe('execute', () => {
         chars: OVER_CAP + 1,
       });
       expect(JSON.stringify(logger.mock.calls)).not.toContain('segredo');
+    });
+
+    it('should return the response uncut when it is over the cap', async () => {
+      const { deps } = makeDeps();
+      const full = resultOf(OVER_CAP + 1);
+
+      const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => full);
+
       expect(result).toEqual({
         structuredContent: full,
         content: [{ type: 'text', text: JSON.stringify(full) }],
       });
     });
 
-    test('no teto não emite', async () => {
+    it('should not turn the produced result into INTERNAL when the logger throws on the over-cap warn', async () => {
+      const { deps, logger } = makeDeps();
+      logger.mockImplementation((record) => {
+        if (record.event === 'tool-over-cap') throw new Error('stderr closed');
+      });
+      const full = resultOf(OVER_CAP + 1);
+
+      const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => full);
+
+      expect(logger).toHaveBeenCalledWith(expect.objectContaining({ event: 'tool-over-cap' }));
+      expect(result).toEqual({
+        structuredContent: full,
+        content: [{ type: 'text', text: JSON.stringify(full) }],
+      });
+    });
+
+    it('should not emit the warn when the response is exactly at the cap', async () => {
       const { deps, logger } = makeDeps();
 
       await execute(deps, callOf({ project: 'p', count: 1 }), () => resultOf(OVER_CAP));
@@ -178,7 +202,7 @@ describe('execute', () => {
     });
   });
 
-  test('args ausente é tratado como objeto vazio', async () => {
+  it('should treat missing args as an empty object', async () => {
     const { deps } = makeDeps();
 
     const result = await execute(deps, callOf(undefined), () => ({}));
@@ -186,8 +210,8 @@ describe('execute', () => {
     expect(errorBodyOf(result)).toMatchObject({ code: 'INVALID_INPUT' });
   });
 
-  test('HexlogError da operação sai como {code, message, details}', async () => {
-    const { deps, logger } = makeDeps();
+  it('should return a HexlogError thrown by the operation as {code, message, details}', async () => {
+    const { deps } = makeDeps();
     const details = [{ path: '/project', code: 'unknown-name', message: 'no such project' }];
 
     const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => {
@@ -199,12 +223,21 @@ describe('execute', () => {
       message: 'project not found',
       details,
     });
+  });
+
+  it('should log a HexlogError thrown by the operation at error level with its code', async () => {
+    const { deps, logger } = makeDeps();
+
+    await execute(deps, callOf({ project: 'p', count: 1 }), () => {
+      throw new HexlogError('PROJECT_NOT_FOUND', 'project not found');
+    });
+
     expect(logger).toHaveBeenCalledWith(
       expect.objectContaining({ level: 'error', event: 'tool', code: 'PROJECT_NOT_FOUND' }),
     );
   });
 
-  test('logger que lança no sucesso não troca o resultado já produzido por INTERNAL', async () => {
+  it('should keep the result already produced when the logger throws on success', async () => {
     const { deps, logger } = makeDeps();
     logger.mockImplementation(() => {
       throw new Error('stderr closed');
@@ -220,7 +253,7 @@ describe('execute', () => {
     });
   });
 
-  test('logger que lança no erro não escapa de execute', async () => {
+  it('should not let a throwing logger escape execute on an error', async () => {
     const { deps, logger } = makeDeps();
     logger.mockImplementation(() => {
       throw new Error('stderr closed');
@@ -233,7 +266,7 @@ describe('execute', () => {
     expect(errorBodyOf(result)).toMatchObject({ code: 'PROJECT_NOT_FOUND' });
   });
 
-  test('logger que lança ao registrar a exceção ainda devolve INTERNAL', async () => {
+  it('should still return INTERNAL when the logger throws while recording the exception', async () => {
     const { deps, logger } = makeDeps();
     logger.mockImplementation(() => {
       throw new Error('stderr closed');
@@ -246,7 +279,7 @@ describe('execute', () => {
     expect(errorBodyOf(result)).toMatchObject({ code: 'INTERNAL' });
   });
 
-  test('exceção qualquer vira INTERNAL sem stack na resposta; a stack vai só para o log', async () => {
+  it('should turn any exception into INTERNAL, keeping the stack only in the log', async () => {
     const { deps, logger } = makeDeps();
 
     const result = await execute(deps, callOf({ project: 'p', count: 1 }), () =>
@@ -266,10 +299,8 @@ describe('execute', () => {
       }),
     );
   });
-});
 
-describe('LEGACY_DATA', () => {
-  test('responde antes de validar a entrada e antes de qualquer serviço', async () => {
+  it('should answer LEGACY_DATA before validating the input or reaching any service', async () => {
     const { deps } = makeDeps(true);
     const run = jest.fn(() => ({}));
 
@@ -282,7 +313,7 @@ describe('LEGACY_DATA', () => {
     });
   });
 
-  test('exceção do próprio isLegacy vira INTERNAL, não escapa para o SDK', async () => {
+  it('should turn an exception from isLegacy into INTERNAL instead of letting it reach the SDK', async () => {
     const { deps } = makeDeps();
     const broken: ToolDeps = {
       ...deps,
@@ -295,37 +326,39 @@ describe('LEGACY_DATA', () => {
 
     expect(errorBodyOf(result)).toMatchObject({ code: 'INTERNAL' });
   });
-});
 
-describe('client', () => {
-  const envelopeOf = (clientInfo: unknown) => ctxOf({ [CLIENT_INFO_META_KEY]: clientInfo });
-  const clientOf = (ctx: CallContext) =>
-    execute(makeDeps().deps, callOf({ project: 'p', count: 1 }, ctx), (_input, client) => ({
-      client,
-    }));
+  describe('with the client info in the envelope', () => {
+    const envelopeOf = (clientInfo: unknown) => ctxOf({ [CLIENT_INFO_META_KEY]: clientInfo });
+    const clientOf = (ctx: CallContext) =>
+      execute(makeDeps().deps, callOf({ project: 'p', count: 1 }, ctx), (_input, client) => ({
+        client,
+      }));
 
-  test('D-21: client vem de clientInfo.name do envelope', async () => {
-    const result = await clientOf(envelopeOf({ name: 'claude-code', version: '2' }));
+    it('should take the client from clientInfo.name of the envelope', async () => {
+      const ctx = envelopeOf({ name: 'claude-code', version: '2' });
 
-    expect(result).toMatchObject({ structuredContent: { client: 'claude-code' } });
-  });
+      const result = await clientOf(ctx);
 
-  test.each([
-    ['sem envelope', ctxOf()],
-    ['envelope sem clientInfo', ctxOf({})],
-    ['clientInfo sem name', envelopeOf({ version: '1' })],
-    ['name vazio', envelopeOf({ name: '' })],
-    ['name acima de 100 caracteres', envelopeOf({ name: 'x'.repeat(101) })],
-    ['name com surrogate solto', envelopeOf({ name: 'cl\ud800' })],
-  ])('client é "unknown" %s', async (_title, ctx) => {
-    const result = await clientOf(ctx);
+      expect(result).toMatchObject({ structuredContent: { client: 'claude-code' } });
+    });
 
-    expect(result).toMatchObject({ structuredContent: { client: 'unknown' } });
+    it.each([
+      { scenario: 'no envelope', ctx: ctxOf() },
+      { scenario: 'an envelope without clientInfo', ctx: ctxOf({}) },
+      { scenario: 'a clientInfo without name', ctx: envelopeOf({ version: '1' }) },
+      { scenario: 'an empty name', ctx: envelopeOf({ name: '' }) },
+      { scenario: 'a name over 100 characters', ctx: envelopeOf({ name: 'x'.repeat(101) }) },
+      { scenario: 'a name with a lone surrogate', ctx: envelopeOf({ name: 'cl\ud800' }) },
+    ])('should report the client as "unknown" for $scenario', async ({ ctx }) => {
+      const result = await clientOf(ctx);
+
+      expect(result).toMatchObject({ structuredContent: { client: 'unknown' } });
+    });
   });
 });
 
 describe('toHexlogError', () => {
-  test('HexlogError passa intacto e não loga', () => {
+  it('should return a HexlogError as is, without logging', () => {
     const { logger } = makeDeps();
     const error = new HexlogError('IO_ERROR', 'disk', [{ path: '', code: 'enospc', message: 'x' }]);
 
@@ -333,16 +366,23 @@ describe('toHexlogError', () => {
     expect(logger).not.toHaveBeenCalled();
   });
 
-  test('valor que não é Error vira INTERNAL e entra no log como texto', () => {
+  it('should turn a value that is not an Error into INTERNAL', () => {
     const { logger } = makeDeps();
 
     const error = toHexlogError('algo', logger);
 
     expect(error).toMatchObject({ code: 'INTERNAL', message: 'internal error', details: [] });
+  });
+
+  it('should log a value that is not an Error as text', () => {
+    const { logger } = makeDeps();
+
+    toHexlogError('algo', logger);
+
     expect(logger).toHaveBeenCalledWith({ level: 'error', event: 'internal-error', stack: 'algo' });
   });
 
-  test('logger que lança não impede o INTERNAL', () => {
+  it('should still return INTERNAL when the logger throws', () => {
     const { logger } = makeDeps();
     logger.mockImplementation(() => {
       throw new Error('stderr closed');
@@ -353,7 +393,7 @@ describe('toHexlogError', () => {
 });
 
 describe('advertise', () => {
-  test('anuncia o JSON Schema do zod', () => {
+  it('should advertise the JSON Schema of the zod schema', () => {
     const standard = advertise(Input)['~standard'];
 
     expect(standard.jsonSchema.input({ target: 'draft-2020-12' })).toMatchObject({
@@ -363,7 +403,7 @@ describe('advertise', () => {
     });
   });
 
-  test('validate deixa a entrada crua passar, mesmo inválida', async () => {
+  it('should let the raw input through validate, even when invalid', async () => {
     const raw = { project: 1, lixo: true };
 
     const result = await advertise(Input)['~standard'].validate(raw);

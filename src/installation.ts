@@ -10,7 +10,7 @@ import * as path from 'node:path';
 // a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/adapters/fs/process-store.ts).
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
-import { isError, isNil } from 'es-toolkit';
+import { isError, isNil, isUndefined } from 'es-toolkit';
 import {
   expectedRules,
   libDirOf,
@@ -23,14 +23,15 @@ import {
   type MissingItem,
 } from './guard.ts';
 import { sha256hex } from './domain/chain.ts';
-import { HexlogError } from './errors.ts';
+import { internalError } from './errors.ts';
 import { dataDir } from './directory.ts';
 import { errnoCode, isDirectoryTaken, writeFileAtomic } from './adapters/fs/atomic.ts';
 import { orIfMissing, readIfPresent } from './adapters/fs/io.ts';
+import { isPidAlive } from './adapters/fs/lock.ts';
 
 export type Bundles = { server: Buffer; hook: Buffer };
 /** sha256 dos 2 artefatos (server/hook) de um build ou de uma instalação. */
-export type BuildShas = { server: string; hook: string };
+type BuildShas = { server: string; hook: string };
 export type InstallManifest = {
   version: string;
   sha256: BuildShas;
@@ -98,7 +99,7 @@ async function verifyPreparedArtifact(args: {
 }): Promise<void> {
   const { tmp, bundles, runHook, verifyServer } = args;
   if (hasDynamicRequire(bundles.server) || hasDynamicRequire(bundles.hook)) {
-    throw new HexlogError('INTERNAL', 'bundle contains "Dynamic require of"; installation aborted');
+    throw internalError('bundle contains "Dynamic require of"; installation aborted');
   }
 
   // Mesma checagem funcional de `verifyGuard` (nega o diretório de dados, permite o resto),
@@ -106,10 +107,10 @@ async function verifyPreparedArtifact(args: {
   const hookFile = path.join(tmp, 'bash-guard.mjs');
   const probes = hookProbes(dataDir(process.env));
   if (runHook(hookFile, probes.deny).status !== 2) {
-    throw new HexlogError('INTERNAL', 'prepared hook does not deny access to the data directory');
+    throw internalError('prepared hook does not deny access to the data directory');
   }
   if (runHook(hookFile, probes.allow).status !== 0) {
-    throw new HexlogError('INTERNAL', 'prepared hook does not allow harmless commands');
+    throw internalError('prepared hook does not allow harmless commands');
   }
 
   let toolsCount: number;
@@ -117,13 +118,10 @@ async function verifyPreparedArtifact(args: {
     toolsCount = await verifyServer(path.join(tmp, 'server.mjs'));
   } catch (error) {
     const message = isError(error) ? error.message : String(error);
-    throw new HexlogError('INTERNAL', `prepared server failed to start: ${message}`);
+    throw internalError(`prepared server failed to start: ${message}`);
   }
   if (toolsCount !== TOOLS_COUNT) {
-    throw new HexlogError(
-      'INTERNAL',
-      `prepared server listed ${toolsCount} tools, expected ${TOOLS_COUNT}`,
-    );
+    throw internalError(`prepared server listed ${toolsCount} tools, expected ${TOOLS_COUNT}`);
   }
 }
 
@@ -144,8 +142,7 @@ function resolveConcurrency(
   if (shasEqual(installedNow, shaBuild)) {
     return { action: 'none', extraWarning: null };
   }
-  throw new HexlogError(
-    'INTERNAL',
+  throw internalError(
     `another installation swapped ${version} at the same time; run the installer again`,
   );
 }
@@ -289,7 +286,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
 } {
   const { settingsPath, expected } = args;
   if (!existsSync(settingsPath)) {
-    throw new HexlogError('INTERNAL', 'install the harness before installing hexlog');
+    throw internalError('install the harness before installing hexlog');
   }
   const oldText = readFileSync(settingsPath, 'utf8');
   const { text: newText, removed } = applyGuard(oldText, expected, existsSync);
@@ -297,7 +294,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   const parseErrors: ParseError[] = [];
   parseJsonc(newText, parseErrors);
   if (parseErrors.length > 0) {
-    throw new HexlogError('INTERNAL', 'refusing to write invalid settings.json');
+    throw internalError('refusing to write invalid settings.json');
   }
 
   // `rename` sobre o próprio symlink o trocaria por arquivo regular; o destino real preserva o link.
@@ -307,13 +304,20 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   try {
     fs.accessSync(path.dirname(target), fs.constants.W_OK);
   } catch {
-    throw new HexlogError('INTERNAL', `settings.json target directory is not writable: ${target}`);
+    throw internalError(`settings.json target directory is not writable: ${target}`);
   }
   const { mode } = fs.statSync(target);
   try {
     writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText, { exclusive: true });
   } catch (error) {
-    if (errnoCode(error) !== 'EEXIST') throw error;
+    const code = errnoCode(error);
+    // Sem hard link o backup exclusivo é impossível e `COPYFILE_EXCL` não é atômico: recusa antes de gravar.
+    if (code === 'EPERM' || code === 'ENOTSUP') {
+      throw internalError(
+        `cannot create the settings.json backup hard link (${code}): the filesystem may not support hard links`,
+      );
+    }
+    if (code !== 'EEXIST') throw error;
   }
   // O modo vai no temporário, antes do rename: sem janela em 0600 e sem lançar depois de gravar.
   writeFileAtomic(target, newText, { mode: mode & 0o7777 });
@@ -323,7 +327,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
 /** `name` vira um segmento de path (`<home>/.claude/skills/<name>/`): rejeita o que escaparia dele. */
 function assertValidSkillName(name: string): void {
   if (name === '' || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
-    throw new HexlogError('INTERNAL', `invalid skill name: ${JSON.stringify(name)}`);
+    throw internalError(`invalid skill name: ${JSON.stringify(name)}`);
   }
 }
 
@@ -336,6 +340,28 @@ function tempParentOf(skillsDir: string, fallback: string): string {
     return parent;
   } catch {
     return fallback;
+  }
+}
+
+/** Sufixo `tmp-<pid>`/`old-<pid>` dos temporários do instalador: só dígitos, ancorado. */
+const RESIDUE_SUFFIX = /^(?:tmp|old)-(\d+)$/;
+
+/** Remove de `dir` as entradas `<prefix><sufixo>` em que `isResidue(sufixo)`; erro de listagem
+ * ou de remoção é ignorado: a varredura é best-effort e roda depois da troca da skill. */
+function sweepResidue(dir: string, prefix: string, isResidue: (suffix: string) => boolean): void {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith(prefix) || !isResidue(entry.slice(prefix.length))) continue;
+    try {
+      rmSync(path.join(dir, entry), { recursive: true, force: true });
+    } catch {
+      // resíduo que sobra é varrido na próxima instalação
+    }
   }
 }
 
@@ -362,15 +388,20 @@ export function writeSkillFolder(home: string, name: string, srcDir: string): vo
   rmSync(tmp, { recursive: true, force: true });
   try {
     cpSync(srcDir, tmp, { recursive: true });
+    swapDirectory(tmp, dstDir, old);
     // Versões antigas deixavam `<name>.tmp-<pid>`/`.old-<pid>` dentro de `skills/`, lidos como skill.
     // O sufixo é só dígitos: pasta do usuário como `<name>.old-notas` não é temporário nosso.
-    const legacyTemp = new RegExp(`^${name.replaceAll('.', '\\.')}\\.(tmp|old)-\\d+$`);
-    for (const entry of fs.readdirSync(skillsDir)) {
-      if (legacyTemp.test(entry)) {
-        rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
-      }
-    }
-    swapDirectory(tmp, dstDir, old);
+    // O nome nunca entra num regex: só o sufixo é testado, então `+`, `(` e `[` no nome não importam.
+    // A limpeza vem depois da troca e ignora o erro de cada `rmSync` (ex.: `EACCES`): é só resíduo,
+    // e a skill nova já está instalada.
+    sweepResidue(skillsDir, `${name}.`, (suffix) => RESIDUE_SUFFIX.test(suffix));
+    // Órfãos de `kill -9` (o `finally` não roda): só os de pid morto, porque um pid vivo pode ser
+    // outro instalador trocando a mesma skill. Pid reusado por processo alheio conta como vivo, e
+    // o resíduo fica até esse pid sumir.
+    sweepResidue(tempDir, `.hexlog-skill-${name}.`, (suffix) => {
+      const pid = RESIDUE_SUFFIX.exec(suffix)?.[1];
+      return !isUndefined(pid) && Number(pid) !== process.pid && !isPidAlive(Number(pid));
+    });
   } finally {
     // Sucesso: `tmp` já virou `dstDir`. Falha: não deixa o temporário para trás.
     rmSync(tmp, { recursive: true, force: true });

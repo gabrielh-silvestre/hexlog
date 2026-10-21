@@ -1,7 +1,7 @@
 {
   "name": "hexlog",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -10,16 +10,21 @@
   "scripts": {
     "test": "jest --errorOnDeprecated",
     "test:budget": "jest --errorOnDeprecated --runInBand --testPathPatterns=budget.spec.ts --testPathIgnorePatterns=/node_modules/",
-    "test:coverage": "jest --coverage",
+    "test:coverage": "jest --errorOnDeprecated --coverage",
+    "test:mutation": "stryker run",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "knip": "knip",
+    "lint:md": "markdownlint-cli2 \"**/*.md\"",
+    "spell": "cspell --no-progress \"**/*.md\"",
     "prepare": "husky"
   },
   "jest": {
     "testEnvironment": "node",
+    "maxWorkers": "40%",
     "globalSetup": "<rootDir>/test/global-setup.ts",
     "globalTeardown": "<rootDir>/test/global-teardown.ts",
     "setupFilesAfterEnv": [
@@ -39,9 +44,24 @@
         }
       ]
     },
+    "collectCoverageFrom": [
+      "src/**/*.ts"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 90,
+        "branches": 90,
+        "functions": 90,
+        "lines": 90
+      }
+    },
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "\\.budget\\.spec\\.ts$"
+      "\\.budget\\.spec\\.ts$",
+      "<rootDir>/\\.stryker-tmp/"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/\\.stryker-tmp/"
     ],
     "transformIgnorePatterns": [
       "/node_modules/(?!canonicalize/)"
@@ -59,35 +79,37 @@
     "jsonc-parser": "^3.3.1",
     "minisearch": "^7.2.0",
     "shell-quote": "^1.12.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@cspell/dict-pt-br": "^2.4.4",
     "@eslint/js": "^10.0.1",
-    "@jest/globals": "^30.5.1",
+    "@jest/globals": "^30.5.2",
     "@modelcontextprotocol/client": "^2.3.1",
-    "@types/node": "^24.8.1",
-    "@types/shell-quote": "^1.7.5",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/jest-runner": "^10.0.0",
+    "@stryker-mutator/typescript-checker": "^10.0.0",
+    "@types/node": "^24.19.2",
+    "cspell": "^10.4.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-jest": "^29.16.6",
+    "eslint-plugin-jest": "^29.17.0",
     "eslint-plugin-n": "^18.4.1",
     "fast-check": "^4.10.2",
     "git-cliff": "^2.14.2",
     "husky": "^9.1.7",
-    "jest": "^30.5.1",
+    "jest": "^30.5.2",
+    "knip": "^6.41.0",
     "lint-staged": "^17.6.0",
-    "prettier": "^3.9.7",
+    "markdownlint-cli2": "^0.24.0",
+    "prettier": "^3.9.10",
     "tar": "^7.5.22",
     "ts-jest": "^29.4.14",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.70.0"
-  },
-  "lint-staged": {
-    "*.ts": [
-      "eslint --fix",
-      "prettier --write"
-    ]
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.2"
   },
   "allowScripts": {
     "@parcel/watcher@2.6.0": true,

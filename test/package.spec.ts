@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
@@ -75,21 +75,23 @@ function usesNetworkServerModule(content: string): boolean {
 
 const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
-describe('N7', () => {
-  test('nenhum import relativo/absoluto em src/, hook/, scripts/ ou test/ sai do repo', () => {
+describe('{src,hook,scripts,test}/**/*.ts', () => {
+  it('should not let any relative or absolute import leave the repo', () => {
     const files = ['src', 'hook', 'scripts', 'test'].flatMap((dir) =>
       listFilesRecursive(path.join(repoRoot, dir)),
     );
+
     const violations = files.flatMap((file) =>
       extractSpecifiers(fs.readFileSync(file, 'utf8'))
         .filter((specifier) => leavesRepo(specifier, file))
         .map((specifier) => `${path.relative(repoRoot, file)}: ${specifier}`),
     );
+
     expect(violations).toEqual([]);
   });
 });
 
-describe('N11', () => {
+describe('package.json', () => {
   // Nomes esperados: o conjunto de pacotes é travado, a versão não. Cada um fica em `^X.Y.Z` e o lock
   // fixa a resolvida.
   const EXPECTED_DEPENDENCIES = [
@@ -110,7 +112,6 @@ describe('N11', () => {
     'ts-jest',
     'typescript',
     '@types/node',
-    '@types/shell-quote',
     'fast-check',
     'esbuild',
     // Deps de lint/format do plano de quality-tooling (fora do conjunto inicial de dependências).
@@ -126,6 +127,23 @@ describe('N11', () => {
     'tar',
     // Rascunho do CHANGELOG.md a partir dos Conventional Commits (cliff.toml).
     'git-cliff',
+    // Código, arquivo e dependência mortos no CI (knip.json).
+    'knip',
+    // Mensagem de commit no hook commit-msg e no CI (commitlint.config.js).
+    '@commitlint/cli',
+    '@commitlint/config-conventional',
+    // Lint e ortografia dos `.md` no commit e no CI (.markdownlint-cli2.jsonc, cspell.json).
+    'markdownlint-cli2',
+    'cspell',
+    '@cspell/dict-pt-br',
+    // Teste de mutação dos unitários (stryker.config.json).
+    '@stryker-mutator/core',
+    '@stryker-mutator/jest-runner',
+    '@stryker-mutator/typescript-checker',
+  ];
+  const MANIFESTS = [
+    { name: 'dependencies', declared: pkg.dependencies, expected: EXPECTED_DEPENDENCIES },
+    { name: 'devDependencies', declared: pkg.devDependencies, expected: EXPECTED_DEV_DEPENDENCIES },
   ];
   const CARET_RANGE = /^\^\d+\.\d+\.\d+$/;
   const outsideCaret = (deps: Record<string, string>) =>
@@ -133,69 +151,79 @@ describe('N11', () => {
       .filter(([, range]) => !CARET_RANGE.test(range))
       .map(([name, range]) => `${name}@${range}`);
 
-  test('dependencies tem exatamente os pacotes esperados, todos em ^X.Y.Z', () => {
-    expect(Object.keys(pkg.dependencies).sort()).toEqual([...EXPECTED_DEPENDENCIES].sort());
-    expect(outsideCaret(pkg.dependencies)).toEqual([]);
+  it.each(MANIFESTS)(
+    'should declare exactly the expected packages in $name',
+    ({ declared, expected }) => {
+      expect(Object.keys(declared).sort()).toEqual([...expected].sort());
+    },
+  );
+
+  it.each(MANIFESTS)('should declare every package in $name in a ^X.Y.Z range', ({ declared }) => {
+    expect(outsideCaret(declared)).toEqual([]);
   });
 
-  test('devDependencies tem exatamente os pacotes esperados, todos em ^X.Y.Z', () => {
-    expect(Object.keys(pkg.devDependencies).sort()).toEqual([...EXPECTED_DEV_DEPENDENCIES].sort());
-    expect(outsideCaret(pkg.devDependencies)).toEqual([]);
-  });
-
-  test('engines.node é >=24.18.1', () => {
+  it('should require node >=24.18.1 in engines', () => {
     expect(pkg.engines).toEqual({ node: '>=24.18.1' });
   });
 
-  test('VERSION de src/version.ts bate com package.json.version', () => {
+  it('should declare the same version as VERSION in src/version.ts', () => {
     expect(VERSION).toBe(pkg.version);
   });
 
-  test('.gitignore contém a linha dist/', () => {
+  it('should not declare bin', () => {
+    expect(pkg.bin).toBeUndefined();
+  });
+});
+
+describe('.gitignore', () => {
+  it('should contain the dist/ line', () => {
     const gitignore = fs.readFileSync(path.join(repoRoot, '.gitignore'), 'utf8');
+
     expect(gitignore.split('\n')).toContain('dist/');
   });
 });
 
-describe('M5', () => {
-  test('package.json não declara bin', () => {
-    expect(pkg.bin).toBeUndefined();
-  });
-
-  test('nenhum arquivo em src/ importa módulo de servidor de rede nem chama .listen(', () => {
-    // M5: hexlog é stdio-only — proíbe http/https/http2/net e `.listen(`.
+describe('src/**/*.ts', () => {
+  it('should not import a network server module nor call .listen(', () => {
+    // hexlog é stdio-only: proíbe http/https/http2/net e `.listen(`.
     const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
       usesNetworkServerModule(fs.readFileSync(file, 'utf8')),
     );
+
     expect(violations).toEqual([]);
   });
 
-  test('não existe diretório cli no repo (fora de node_modules)', () => {
+  it('should not use debug console or process.stdout.write in the static check', () => {
+    const FORBIDDEN_OUTPUT_REGEX =
+      /console\.(log|info|debug|dir|table|trace)|process\.stdout\.write/;
+
+    const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
+      FORBIDDEN_OUTPUT_REGEX.test(fs.readFileSync(file, 'utf8')),
+    );
+
+    expect(violations).toEqual([]);
+  });
+});
+
+describe('**/cli', () => {
+  it('should not exist as a directory in the repo, outside node_modules', () => {
     const hasCliDir = listDirectories(repoRoot).some((dir) => path.basename(dir) === 'cli');
+
     expect(hasCliDir).toBe(false);
   });
 });
 
-describe('M6 (estático)', () => {
-  test('nenhum arquivo .ts em src/ usa console de depuração ou process.stdout.write', () => {
-    const FORBIDDEN_OUTPUT_REGEX =
-      /console\.(log|info|debug|dir|table|trace)|process\.stdout\.write/;
-    const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
-      FORBIDDEN_OUTPUT_REGEX.test(fs.readFileSync(file, 'utf8')),
-    );
-    expect(violations).toEqual([]);
-  });
-});
-
-describe('I1 (parcial)', () => {
-  test('src/directory.ts só importa node:* e es-toolkit, nunca zod/canonicalize/minisearch', () => {
+describe('src/directory.ts', () => {
+  it('should import only node:* and es-toolkit, never zod, canonicalize or minisearch, in the partial check', () => {
     const content = fs.readFileSync(path.join(repoRoot, 'src/directory.ts'), 'utf8');
+
     const violations = extractSpecifiers(content).filter(
       (specifier) =>
         !specifier.startsWith('node:') &&
         specifier !== 'es-toolkit' &&
         !specifier.startsWith('es-toolkit/'),
     );
+
     expect(violations).toEqual([]);
   });
 });

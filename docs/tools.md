@@ -157,8 +157,8 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   (`cross-process-currency`), e só o vigente: sobre um destino que já foi superado ou
   revogado, é `FORK_REJECTED`, com `current` apontando a versão atual da linhagem.
 - `supersedes` exige o mesmo tipo (`type-mismatch`) e o mesmo target (`target-mismatch`).
-  Para mudar um fato de target, faça `revokes` no registro antigo e grave um registro novo
-  no target certo com `derivesFrom` para ele; `revokes` entre targets é aceito.
+  Para mudar um fato de target, grave um registro só no target certo, com `revokes` e
+  `derivesFrom` para o antigo; `revokes` entre targets é aceito.
 - `supports` só aceita destino vigente (`stale-destination`); pode cruzar processos.
 - Um registro não pode apoiar e contradizer, nem superar e revogar, o mesmo destino.
 - Relação para si mesmo, `as` que não existe fixado no processo, `kind` que não bate com
@@ -217,7 +217,8 @@ processo em `details[0].process`.
   (traz também os superados e revogados). O `targetPrefix` casa por segmento, na fronteira de
   `.`: `a.b` casa `a.b` e `a.b.c`, não `a.b-2` nem `a.bc` (`unit-1` não casa `unit-10`). A
   resposta vazia em que nenhum target lido casa, mas algum começa pela string sem a fronteira,
-  traz `hint` com esse target; o casamento não muda. Não há filtro por tempo (`since` dá
+  traz `hint` com esse target, mesmo que o registro dele já esteja superado ou revogado e
+  com `includeNonCurrent` ligado ou não; o casamento não muda. Não há filtro por tempo (`since` dá
   `INVALID_INPUT`, e a mensagem aponta `changesSince`). A
   busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
   busca o monta, e o alcance projeto o monta a cada busca.
@@ -352,13 +353,15 @@ que sobra é uma cadeia íntegra, e isso só aparece contra um head guardado ant
 A entrada opcional `expectedHead` (hash sha256 hex, o mesmo valor do campo `head` de uma
 verificação anterior) é essa âncora externa. Se for o hash de algum elo válido do log, o último
 ou um anterior (o log pode ter crescido depois), ou a âncora do processo, nada muda. Se não for
-nenhum desses, `breaks`
-ganha `{ index: totalRecords, reason: "head-not-found" }`, contada em `totalBreaks`, e `ok` fica
-`false`: cauda apagada ou reescrita. A entrada respeita o teto de 100 de `breaks`. Sem
-`expectedHead` o comportamento é o de sempre, e formato que não é hash é `INVALID_INPUT` em
-`/expectedHead`, inclusive a string vazia. Enviar sempre a âncora equivale a omitir
-`expectedHead`, e `totalRecords: 0` indica log vazio. O `register` não muda, e o marcador de `query` e `evaluate_gate` continua sendo
-um id de registro.
+nenhum desses, `breaks` ganha `{ index: totalRecords, reason: "head-not-found" }`, contada em
+`totalBreaks`, e `ok` fica `false`: cauda apagada ou reescrita. A entrada respeita o teto de 100
+de `breaks`. Sem `expectedHead` o comportamento é o de sempre, e formato que não é hash é
+`INVALID_INPUT` em `/expectedHead`, inclusive a string vazia. Guarde o `head` fora do log do
+hexlog (um arquivo, o corpo de um PR): um head gravado no próprio log some junto com a cauda
+apagada. Passe o da verificação mais recente: um head antigo ainda é aceito, mas só prova o trecho
+até ele. Enviar sempre a âncora equivale a omitir `expectedHead`, e `totalRecords: 0` indica log
+vazio. O `register` não muda, e o marcador de `query` e `evaluate_gate` continua sendo um id de
+registro.
 
 ## `attach` e `read_attachment`
 

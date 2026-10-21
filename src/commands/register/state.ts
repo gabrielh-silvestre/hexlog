@@ -5,6 +5,7 @@ import type { Author, BatchItem, Relation, RelationInput } from '../../domain/re
 import {
   buildVigency,
   checkRelation,
+  endsVigency,
   hasCycle,
   type Linked,
   type NamedRelation,
@@ -12,7 +13,15 @@ import {
   type RuleContext,
   type Vigency,
 } from '../../domain/relations.ts';
-import { brokenChain, HexlogError } from '../../errors.ts';
+import {
+  brokenChain,
+  cycleRejected,
+  HexlogError,
+  internalError,
+  keyConflict,
+  relationNotFound,
+  withPath,
+} from '../../errors.ts';
 import type {
   AttachmentReader,
   Decision,
@@ -29,7 +38,7 @@ import {
   type VerifiedProcess,
 } from '../../shared/loader.ts';
 import { checkAttachments } from './attachments.ts';
-import { relationNotFound, ruleRefusal, withPath } from './errors.ts';
+import { ruleRefusal } from './errors.ts';
 import { isAliasRef, type PreparedItem } from './static.ts';
 
 /**
@@ -91,10 +100,7 @@ type Destination = {
 /** D-06 nível 5: a mesma `key` com outra impressão é conflito; com a mesma, o chamador faz o replay. */
 function assertSameBatch(prior: BatchEntry, fingerprint: Hash): void {
   if (prior.fingerprint === fingerprint) return;
-  const message = 'key was already used with a different batch';
-  throw new HexlogError('IDEMPOTENCY_CONFLICT', message, [
-    { path: '/key', code: 'key-conflict', message },
-  ]);
+  throw keyConflict();
 }
 
 function registeredOf(links: readonly Link[]): RegisteredRecord[] {
@@ -172,9 +178,7 @@ function createEnforcer(
     inDestination: (site: Site, to: RelationEnd, { vigency }: Destination) =>
       enforce(site, to, () => vigency),
     inOrigin: (site: Site, to: RelationEnd) =>
-      enforce(site, to, (kind) =>
-        kind === 'supersedes' || kind === 'revokes' ? before(site.index) : wholeBatch(),
-      ),
+      enforce(site, to, (kind) => (endsVigency(kind) ? before(site.index) : wholeBatch())),
   };
 }
 
@@ -248,11 +252,6 @@ function checkOwnProcess(
   }
 }
 
-function cycleRejected(): HexlogError {
-  const message = 'batch would create a supersedes cycle';
-  return new HexlogError('CYCLE_REJECTED', message, [{ path: '', code: 'cycle', message }]);
-}
-
 /** D-04: um elo por item, só o primeiro leva `batch`, o hash de cada um encadeia no seguinte. */
 function linkItems(
   call: DecideCall,
@@ -324,7 +323,7 @@ export function createDecide(
     const links = linkItems(call, verified, drafts, aliases, deps.clock().toISOString());
     const line = formatLine(links);
     if (isValidLine(line, verified.end).status !== 'valid') {
-      throw new HexlogError('INTERNAL', 'built an invalid batch line');
+      throw internalError('built an invalid batch line');
     }
     const last = links.at(-1)!;
     return {

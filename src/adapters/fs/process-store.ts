@@ -4,7 +4,13 @@ import * as path from 'node:path';
 import { isUndefined } from 'es-toolkit';
 import { isReservedProcessName, type Name } from '../../domain/ids.ts';
 import { Manifest } from '../../domain/manifest.ts';
-import { HexlogError, reservedName } from '../../errors.ts';
+import {
+  internalError,
+  processNotFound,
+  processTooLarge,
+  reservedName,
+  unreadableManifest,
+} from '../../errors.ts';
 import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { dataRoot, MANIFEST_FILE, processPaths } from './data-format.ts';
@@ -23,35 +29,12 @@ export type ProcessStoreOptions = LockOptions & {
   dataDir: string;
 };
 
-function notFound(ref: ProcessRef): HexlogError {
-  const message = 'process not found';
-  return new HexlogError('PROCESS_NOT_FOUND', message, [
-    { path: '/process', code: 'not-found', message, process: ref.process },
-  ]);
-}
-
-function unreadableManifest(ref: ProcessRef): HexlogError {
-  const message = 'process manifest is unreadable';
-  return new HexlogError('PROCESS_CORRUPTED', message, [
-    { path: '/process', code: 'unreadable-manifest', message, process: ref.process },
-  ]);
-}
-
 /**
  * Teto do `records.jsonl` de um processo (N8, `docs/tetos-dominio-v1.md`): 64 MiB. O lote que
  * faria o arquivo passar disso é recusado na escrita com `PROCESS_TOO_LARGE`; exatamente 64 MiB
  * ainda grava e lê.
  */
 export const MAX_LOG_BYTES = 64 * 1024 * 1024;
-
-/** A recomendação de criar outro processo só vale para quem grava: leitura e destino de relação ficam neutros. */
-function tooLarge(ref: ProcessRef, advice = false): HexlogError {
-  const base = `process '${ref.process}' log exceeds ${MAX_LOG_BYTES / 2 ** 20} MiB`;
-  const message = advice ? `${base}; create a new process to keep recording` : base;
-  return new HexlogError('PROCESS_TOO_LARGE', message, [
-    { path: '/process', code: 'too-large', message, process: ref.process },
-  ]);
-}
 
 /** Tamanho em bytes do `records.jsonl` (arquivo inexistente vale 0). */
 function logSize(file: string): number {
@@ -64,7 +47,7 @@ function logSize(file: string): number {
  * `createProcessStore#readProcess`, escrever sobre processo acima do teto recusa sem gravar.
  */
 function readLogText(file: string, ref: ProcessRef, advice: boolean): string {
-  if (logSize(file) > MAX_LOG_BYTES) throw tooLarge(ref, advice);
+  if (logSize(file) > MAX_LOG_BYTES) throw processTooLarge(ref.process, MAX_LOG_BYTES, advice);
   return readIfPresent(file) ?? '';
 }
 
@@ -73,10 +56,10 @@ function parseManifest(ref: ProcessRef, text: string): Manifest {
   try {
     value = JSON.parse(text);
   } catch {
-    throw unreadableManifest(ref);
+    throw unreadableManifest(ref.process);
   }
   const parsed = Manifest.safeParse(value);
-  if (!parsed.success) throw unreadableManifest(ref);
+  if (!parsed.success) throw unreadableManifest(ref.process);
   return parsed.data;
 }
 
@@ -108,7 +91,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
 
   function readManifest(ref: ProcessRef): Manifest {
     const manifestText = readIfPresent(pathsOf(ref).manifest);
-    if (isUndefined(manifestText)) throw notFound(ref);
+    if (isUndefined(manifestText)) throw processNotFound(ref.process);
     return parseManifest(ref, manifestText);
   }
 
@@ -123,7 +106,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     decide: (raw: RawProcess) => Decision<T>,
   ): Promise<T> {
     const paths = pathsOf(ref);
-    if (!existsStrict(paths.manifest)) throw notFound(ref);
+    if (!existsStrict(paths.manifest)) throw processNotFound(ref.process);
     const lock = await locks.acquire(paths.lock);
     let result: T;
     try {
@@ -133,7 +116,9 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
         ? undefined
         : `${raw.endsWithNewline ? '' : '\n'}${decision.line}`;
       if (!isUndefined(text)) {
-        if (logSize(paths.log) + Buffer.byteLength(text) > MAX_LOG_BYTES) throw tooLarge(ref, true);
+        if (logSize(paths.log) + Buffer.byteLength(text) > MAX_LOG_BYTES) {
+          throw processTooLarge(ref.process, MAX_LOG_BYTES, true);
+        }
         await locks.confirm(lock);
       }
       appendAndSync(paths.log, text);
@@ -174,7 +159,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
         const paths = pathsOf(ref);
         if (isReservedProcessName(ref.process)) throw reservedName();
         if (manifest.project !== ref.project || manifest.process !== ref.process) {
-          throw new HexlogError('INTERNAL', 'manifest does not match ref');
+          throw internalError('manifest does not match ref');
         }
         // ponytail: o fsync cobre só o diretório do processo, não o do projeto nem o `.v1`; queda de
         // energia na primeira criação pode perder o processo. Melhoria: fsync da cadeia de pais criados.

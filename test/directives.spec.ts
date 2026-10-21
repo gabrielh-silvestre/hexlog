@@ -1,7 +1,7 @@
-import { describe, test, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect, beforeAll } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { parsePremises, scanPremises, type ScannedPremise } from '../.claude/hooks/flow-sync.ts';
+import { parsePremises, scanPremises, type ScannedPremise } from '../scripts/flow/sync.ts';
 import { at } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -97,89 +97,6 @@ function manualMarkerOffsetFrom(content: string): number {
   return stripFencedCodeBlocks(content).indexOf('## Manual Notes');
 }
 
-describe('link and citation extraction (unit, over a string literal)', () => {
-  test('linksWithOffsetFrom and manualMarkerOffsetFrom measure the position in the same text', () => {
-    const content = '[a](x.md)\n## Manual Notes\n[b](y.md#s)';
-    const marker = manualMarkerOffsetFrom(content);
-    expect(linksWithOffsetFrom(content).map((link) => [link.target, link.index > marker])).toEqual([
-      ['x.md', false],
-      ['y.md', true],
-    ]);
-  });
-
-  test('relativeLinkTargetsFrom ignores URLs, bare anchors and fenced blocks, and strips the anchor from the target', () => {
-    const content = [
-      '[a](docs/a.md#secao) [b](https://x.dev/b.md) [c](#topo) [d](../d.md)',
-      '```',
-      '[e](nao-existe.md)',
-      '```',
-    ].join('\n');
-    expect(relativeLinkTargetsFrom(content)).toEqual(['docs/a.md', '../d.md']);
-  });
-
-  test('atImportsFrom reads only a `@path` alone on its line', () => {
-    expect(atImportsFrom('@AGENTS.md\ntexto @fora.md\n@docs/x.md')).toEqual([
-      'AGENTS.md',
-      'docs/x.md',
-    ]);
-  });
-
-  test('headingCitationsFrom splits path and title, and headingTitlesFrom reads the heading text', () => {
-    expect(headingCitationsFrom('veja `docs/AGENTS.md#Common Patterns` e `src/a.ts#f`')).toEqual([
-      { file: 'docs/AGENTS.md', title: 'Common Patterns' },
-    ]);
-    expect(headingTitlesFrom('# Um\n### Common Patterns \n```\n# fora\n```')).toEqual([
-      'Um',
-      'Common Patterns',
-    ]);
-  });
-});
-
-// ---- links e citações dos documentos reais ----
-
-describe('repository documents', () => {
-  test('the collection is not empty (sanity: the lock does not pass by reading nothing)', () => {
-    const relative = documents.map((file) => path.relative(repoRoot, file));
-    expect(relative).toEqual(
-      expect.arrayContaining(['README.md', 'CLAUDE.md', 'AGENTS.md', 'docs/AGENTS.md']),
-    );
-    expect(relative.some((file) => file.startsWith('docs/pesquisa/'))).toBe(false);
-  });
-
-  test('every relative markdown link resolves to an existing file', () => {
-    const broken = documents.flatMap((file) =>
-      relativeLinkTargetsFrom(fs.readFileSync(file, 'utf8'))
-        .filter((target) => !fs.existsSync(path.resolve(path.dirname(file), target)))
-        .map((target) => `${path.relative(repoRoot, file)} → ${target}`),
-    );
-    expect(broken).toEqual([]);
-  });
-
-  test('every `@path` in CLAUDE.md exists', () => {
-    const claudeMd = path.join(repoRoot, 'CLAUDE.md');
-    const imports = atImportsFrom(fs.readFileSync(claudeMd, 'utf8'));
-    expect(imports.length).toBeGreaterThan(0);
-    expect(imports.filter((target) => !fs.existsSync(path.resolve(repoRoot, target)))).toEqual([]);
-  });
-
-  // O caminho da citação vale a partir da raiz do repositório (`docs/AGENTS.md#...`) ou da pasta do documento.
-  test('every `path.md#title` citation points to an existing file with that title', () => {
-    const broken = documents.flatMap((file) =>
-      headingCitationsFrom(fs.readFileSync(file, 'utf8')).flatMap(({ file: cited, title }) => {
-        const target = [repoRoot, path.dirname(file)]
-          .map((base) => path.resolve(base, cited))
-          .find((candidate) => fs.existsSync(candidate));
-        const titles =
-          target === undefined ? [] : headingTitlesFrom(fs.readFileSync(target, 'utf8'));
-        return titles.includes(title)
-          ? []
-          : [`${path.relative(repoRoot, file)} → ${cited}#${title}`];
-      }),
-    );
-    expect(broken).toEqual([]);
-  });
-});
-
 // ---- docs vivos e extração das regras dos AGENTS.md ----
 
 const claudeMdPath = path.join(repoRoot, 'CLAUDE.md');
@@ -195,74 +112,6 @@ function lineCount(file: string): number {
   return fs.readFileSync(file, 'utf8').split('\n').length - 1;
 }
 
-describe('living docs in docs/directives', () => {
-  test('the collection is not empty (sanity: the lock does not pass by finding no doc)', () => {
-    expect(livingDocs).toEqual(expect.arrayContaining(['convencoes.md', 'fronteiras.md']));
-  });
-
-  test('every living doc is imported by CLAUDE.md, with fluxo-hexlog.md first and convencoes.md next', () => {
-    const importedLivingDocs = claudeMdImports().filter((target) =>
-      livingDocs.includes(path.basename(target)),
-    );
-    expect(importedLivingDocs).toEqual(
-      expect.arrayContaining(livingDocs.map((name) => `docs/directives/${name}`)),
-    );
-    expect(importedLivingDocs.slice(0, 2)).toEqual([
-      'docs/directives/fluxo-hexlog.md',
-      'docs/directives/convencoes.md',
-    ]);
-  });
-
-  test('every living doc fits in 150 lines and what CLAUDE.md imports fits in 1000 in total', () => {
-    const tooLong = livingDocs.filter(
-      (name) => lineCount(path.join(directivesDir, name)) > LIVING_DOC_MAX_LINES,
-    );
-    expect(tooLong).toEqual([]);
-
-    const total = claudeMdImports().reduce(
-      (sum, target) => sum + lineCount(path.join(repoRoot, target)),
-      0,
-    );
-    expect(total).toBeLessThanOrEqual(IMPORTED_MAX_LINES);
-  });
-});
-
-describe('AGENTS.md after the rules extraction', () => {
-  const agentsFiles = documents.filter((file) => path.basename(file) === 'AGENTS.md');
-
-  test('the collection includes the AGENTS.md of test/fixtures (sanity)', () => {
-    const relative = agentsFiles.map((file) => path.relative(repoRoot, file));
-    expect(relative).toEqual(
-      expect.arrayContaining(['AGENTS.md', 'src/AGENTS.md', 'test/fixtures/AGENTS.md']),
-    );
-  });
-
-  test('no AGENTS.md has the headings the extraction removed', () => {
-    const found = agentsFiles.flatMap((file) =>
-      headingTitlesFrom(fs.readFileSync(file, 'utf8'))
-        .filter((title) => EXTRACTED_HEADINGS.includes(title))
-        .map((title) => `${path.relative(repoRoot, file)} → ${title}`),
-    );
-    expect(found).toEqual([]);
-  });
-
-  test('the link to docs/directives/ comes after the Manual Notes heading', () => {
-    const misplaced = agentsFiles
-      .filter((file) => path.dirname(file) !== directivesDir)
-      .flatMap((file) => {
-        const content = fs.readFileSync(file, 'utf8');
-        const marker = manualMarkerOffsetFrom(content);
-        return linksWithOffsetFrom(content)
-          .filter(({ target }) =>
-            path.resolve(path.dirname(file), target).startsWith(`${directivesDir}${path.sep}`),
-          )
-          .filter(({ index }) => marker === -1 || index < marker)
-          .map(({ target }) => `${path.relative(repoRoot, file)} → ${target}`);
-      });
-    expect(misplaced).toEqual([]);
-  });
-});
-
 // ---- fluxo do hexlog: o que o agente lê não ensina a se esquivar da checagem ----
 
 // A regra de seleção da checagem mora só na skill dela; o que o CLAUDE.md importa não a cita.
@@ -274,6 +123,12 @@ const FLOW_SKILLS = ['flow-run', 'flow-gaps', 'flow-audit'];
 const DIRECTIVES_DOC_CITATION = /docs\/directives\/[\w.-]+\.md/g;
 
 const skillPath = (name: string): string => path.join(repoRoot, '.claude/skills', name, 'SKILL.md');
+
+const flowDoc = (): string => fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8');
+const skill = (name: string): string => fs.readFileSync(skillPath(name), 'utf8');
+
+// Geração vigente ou futura; `directives-2` segue citado como corte de trabalhos antigos.
+const currentGeneration = /directives-[4-9]/;
 
 /** Nome declarado no frontmatter de um `SKILL.md`, ou `undefined` sem `name:`. */
 function skillNameFrom(content: string): string | undefined {
@@ -290,38 +145,6 @@ function lastBlockOf(content: string): string {
   );
 }
 
-describe('audit selection terms kept out of what the agent reads', () => {
-  test('the terms regex matches in Portuguese and English and ignores common prose (unit)', () => {
-    for (const text of [
-      'amostragem',
-      'Estrato alto',
-      'sorteio',
-      'SPRT',
-      'semente',
-      'seed',
-      'strata',
-    ]) {
-      expect(SELECTION_TERMS.test(text)).toBe(true);
-    }
-    for (const text of ['estratégia', 'demonstrar', 'needs']) {
-      expect(SELECTION_TERMS.test(text)).toBe(false);
-    }
-  });
-
-  test('no doc imported by CLAUDE.md matches the selection terms', () => {
-    const imported = claudeMdImports();
-    expect(imported).toContain(FLOW_DOC);
-    const hits = imported.filter((target) =>
-      SELECTION_TERMS.test(fs.readFileSync(path.join(repoRoot, target), 'utf8')),
-    );
-    expect(hits).toEqual([]);
-  });
-
-  test('fluxo-hexlog.md does not mention the audit check either', () => {
-    expect(AUDIT_TERMS.test(fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8'))).toBe(false);
-  });
-});
-
 // ---- estratégia: premissas atemporais em formato determinístico ----
 
 const STRATEGY_DOC = 'docs/directives/estrategia.md';
@@ -335,14 +158,70 @@ const STRATEGY_THEMES = [
 ];
 const SENTINEL_THEME = 'Nenhuma premissa se aplica';
 const SENTINEL_SLUG = 'none';
-describe('premise extraction (unit, over a string literal)', () => {
-  test('scanPremises splits slug, a statement containing `: ` and the Ver link, and flags a malformed line', () => {
+
+// O doc e a skill `flow-run` dizem a mesma frase: um caso em cada arquivo, a frase num lugar só.
+const CREATE_PROCESS_FORBIDDEN = '`create_process` de `directives-N`';
+
+describe('linksWithOffsetFrom', () => {
+  it('should report positions comparable with manualMarkerOffsetFrom on the same text', () => {
+    const content = '[a](x.md)\n## Manual Notes\n[b](y.md#s)';
+    const marker = manualMarkerOffsetFrom(content);
+
+    expect(linksWithOffsetFrom(content).map((link) => [link.target, link.index > marker])).toEqual([
+      ['x.md', false],
+      ['y.md', true],
+    ]);
+  });
+});
+
+describe('relativeLinkTargetsFrom', () => {
+  it('should ignore URLs, bare anchors and fenced blocks, and strip the anchor from the target', () => {
+    const content = [
+      '[a](docs/a.md#secao) [b](https://x.dev/b.md) [c](#topo) [d](../d.md)',
+      '```',
+      '[e](nao-existe.md)',
+      '```',
+    ].join('\n');
+
+    expect(relativeLinkTargetsFrom(content)).toEqual(['docs/a.md', '../d.md']);
+  });
+});
+
+describe('atImportsFrom', () => {
+  it('should read only a `@path` alone on its line', () => {
+    expect(atImportsFrom('@AGENTS.md\ntexto @fora.md\n@docs/x.md')).toEqual([
+      'AGENTS.md',
+      'docs/x.md',
+    ]);
+  });
+});
+
+describe('headingCitationsFrom', () => {
+  it('should split the citation into path and title', () => {
+    expect(headingCitationsFrom('veja `docs/AGENTS.md#Common Patterns` e `src/a.ts#f`')).toEqual([
+      { file: 'docs/AGENTS.md', title: 'Common Patterns' },
+    ]);
+  });
+});
+
+describe('headingTitlesFrom', () => {
+  it('should read the heading text', () => {
+    expect(headingTitlesFrom('# Um\n### Common Patterns \n```\n# fora\n```')).toEqual([
+      'Um',
+      'Common Patterns',
+    ]);
+  });
+});
+
+describe('scanPremises', () => {
+  it('should split slug, a statement containing `: ` and the Ver link, and flag a malformed line', () => {
     const content = [
       '## Tema',
       '- `a-b`: Regra: com dois pontos. Ver: [x.md](x.md).',
       '- `none`: Sem premissa.',
       '- sem crase: linha ruim',
     ].join('\n');
+
     expect(scanPremises(content)).toEqual({
       premises: [
         {
@@ -358,57 +237,262 @@ describe('premise extraction (unit, over a string literal)', () => {
   });
 });
 
-describe('estrategia.md', () => {
-  const strategyPath = path.join(repoRoot, STRATEGY_DOC);
+describe('SELECTION_TERMS', () => {
+  it('should match the selection terms in Portuguese and English', () => {
+    for (const text of [
+      'amostragem',
+      'Estrato alto',
+      'sorteio',
+      'SPRT',
+      'semente',
+      'seed',
+      'strata',
+    ]) {
+      expect(SELECTION_TERMS.test(text)).toBe(true);
+    }
+  });
 
-  test('is imported by CLAUDE.md after fluxo-hexlog.md and convencoes.md', () => {
+  it('should ignore common prose', () => {
+    for (const text of ['estratégia', 'demonstrar', 'needs']) {
+      expect(SELECTION_TERMS.test(text)).toBe(false);
+    }
+  });
+});
+
+describe('README.md, CLAUDE.md, **/AGENTS.md and docs/**/*.md', () => {
+  // Sanidade: sem ela a trava passaria lendo uma coleção vazia.
+  it('should collect the covered documents and leave docs/pesquisa out', () => {
+    const relative = documents.map((file) => path.relative(repoRoot, file));
+
+    expect(relative).toEqual(
+      expect.arrayContaining(['README.md', 'CLAUDE.md', 'AGENTS.md', 'docs/AGENTS.md']),
+    );
+    expect(relative.some((file) => file.startsWith('docs/pesquisa/'))).toBe(false);
+  });
+
+  it('should resolve every relative markdown link to an existing file', () => {
+    const broken = documents.flatMap((file) =>
+      relativeLinkTargetsFrom(fs.readFileSync(file, 'utf8'))
+        .filter((target) => !fs.existsSync(path.resolve(path.dirname(file), target)))
+        .map((target) => `${path.relative(repoRoot, file)} → ${target}`),
+    );
+
+    expect(broken).toEqual([]);
+  });
+
+  // O caminho da citação vale a partir da raiz do repositório (`docs/AGENTS.md#...`) ou da pasta do documento.
+  it('should point every `path.md#title` citation to an existing file with that title', () => {
+    const broken = documents.flatMap((file) =>
+      headingCitationsFrom(fs.readFileSync(file, 'utf8')).flatMap(({ file: cited, title }) => {
+        const target = [repoRoot, path.dirname(file)]
+          .map((base) => path.resolve(base, cited))
+          .find((candidate) => fs.existsSync(candidate));
+        const titles =
+          target === undefined ? [] : headingTitlesFrom(fs.readFileSync(target, 'utf8'));
+        return titles.includes(title)
+          ? []
+          : [`${path.relative(repoRoot, file)} → ${cited}#${title}`];
+      }),
+    );
+
+    expect(broken).toEqual([]);
+  });
+});
+
+describe('CLAUDE.md', () => {
+  it('should resolve every `@path` to an existing file', () => {
+    const imports = claudeMdImports();
+
+    expect(imports.length).toBeGreaterThan(0);
+    expect(imports.filter((target) => !fs.existsSync(path.resolve(repoRoot, target)))).toEqual([]);
+  });
+
+  it('should import every living doc, with fluxo-hexlog.md first and convencoes.md next', () => {
+    const importedLivingDocs = claudeMdImports().filter((target) =>
+      livingDocs.includes(path.basename(target)),
+    );
+
+    expect(importedLivingDocs).toEqual(
+      expect.arrayContaining(livingDocs.map((name) => `docs/directives/${name}`)),
+    );
+    expect(importedLivingDocs.slice(0, 2)).toEqual([
+      'docs/directives/fluxo-hexlog.md',
+      'docs/directives/convencoes.md',
+    ]);
+  });
+
+  it('should keep what it imports within 1000 lines in total', () => {
+    const total = claudeMdImports().reduce(
+      (sum, target) => sum + lineCount(path.join(repoRoot, target)),
+      0,
+    );
+
+    expect(total).toBeLessThanOrEqual(IMPORTED_MAX_LINES);
+  });
+
+  it('should import estrategia.md after fluxo-hexlog.md and convencoes.md', () => {
     const imports = claudeMdImports();
     const position = (target: string): number => imports.indexOf(target);
+
     expect(position(STRATEGY_DOC)).toBeGreaterThan(position('docs/directives/convencoes.md'));
     expect(position('docs/directives/convencoes.md')).toBeGreaterThan(position(FLOW_DOC));
     expect(position(FLOW_DOC)).toBeGreaterThanOrEqual(0);
   });
 
-  test('fits in 150 lines', () => {
-    expect(lineCount(strategyPath)).toBeLessThanOrEqual(LIVING_DOC_MAX_LINES);
+  it('should import no doc that matches the selection terms', () => {
+    const imported = claudeMdImports();
+    const hits = imported.filter((target) =>
+      SELECTION_TERMS.test(fs.readFileSync(path.join(repoRoot, target), 'utf8')),
+    );
+
+    expect(imported).toContain(FLOW_DOC);
+    expect(hits).toEqual([]);
   });
 });
 
-describe('estrategia.md premises', () => {
-  let content: string;
-  let premises: ScannedPremise[];
-  let malformed: string[];
-
-  beforeAll(() => {
-    content = fs.readFileSync(path.join(repoRoot, STRATEGY_DOC), 'utf8');
-    ({ premises } = scanPremises(content));
-    ({ malformed } = parsePremises(content));
+describe('docs/directives/*.md', () => {
+  // Sanidade: sem ela a trava passaria sem achar doc nenhum.
+  it('should find the living docs', () => {
+    expect(livingDocs).toEqual(expect.arrayContaining(['convencoes.md', 'fronteiras.md']));
   });
 
-  test('has the 6 theme sections and the sentinel one, in that order', () => {
+  it('should keep every living doc within 150 lines', () => {
+    const tooLong = livingDocs.filter(
+      (name) => lineCount(path.join(directivesDir, name)) > LIVING_DOC_MAX_LINES,
+    );
+
+    expect(tooLong).toEqual([]);
+  });
+});
+
+describe('**/AGENTS.md', () => {
+  const agentsFiles = documents.filter((file) => path.basename(file) === 'AGENTS.md');
+
+  // Sanidade: sem ela a trava passaria sem achar o `AGENTS.md` de `test/fixtures`.
+  it('should collect the AGENTS.md of the root, src and test/fixtures', () => {
+    const relative = agentsFiles.map((file) => path.relative(repoRoot, file));
+
+    expect(relative).toEqual(
+      expect.arrayContaining(['AGENTS.md', 'src/AGENTS.md', 'test/fixtures/AGENTS.md']),
+    );
+  });
+
+  it('should have none of the headings the extraction removed', () => {
+    const found = agentsFiles.flatMap((file) =>
+      headingTitlesFrom(fs.readFileSync(file, 'utf8'))
+        .filter((title) => EXTRACTED_HEADINGS.includes(title))
+        .map((title) => `${path.relative(repoRoot, file)} → ${title}`),
+    );
+
+    expect(found).toEqual([]);
+  });
+
+  it('should link to docs/directives/ only after the Manual Notes heading', () => {
+    const misplaced = agentsFiles
+      .filter((file) => path.dirname(file) !== directivesDir)
+      .flatMap((file) => {
+        const content = fs.readFileSync(file, 'utf8');
+        const marker = manualMarkerOffsetFrom(content);
+        return linksWithOffsetFrom(content)
+          .filter(({ target }) =>
+            path.resolve(path.dirname(file), target).startsWith(`${directivesDir}${path.sep}`),
+          )
+          .filter(({ index }) => marker === -1 || index < marker)
+          .map(({ target }) => `${path.relative(repoRoot, file)} → ${target}`);
+      });
+
+    expect(misplaced).toEqual([]);
+  });
+});
+
+describe('docs/directives/fluxo-hexlog.md', () => {
+  // `directives-4` só prova que o token existe: `directives-2` segue citado como corte de trabalhos
+  // antigos, então a prova do processo vigente está em "processo vigente de diretrizes escrito num lugar só".
+  it.each([
+    'rests-on',
+    'fills-gap',
+    'directives-4',
+    'premise.objective',
+    'directives.estrategia.none',
+  ])('should cite `%s`', (token) => {
+    expect(flowDoc()).toContain(token);
+  });
+
+  it('should not mention the audit check either', () => {
+    expect(AUDIT_TERMS.test(flowDoc())).toBe(false);
+  });
+
+  it('should cite the current generation only in the "Processo das diretrizes vigente" line', () => {
+    const lines = flowDoc()
+      .split('\n')
+      .filter((line) => currentGeneration.test(line));
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('Processo das diretrizes vigente:');
+    expect(flowDoc()).not.toMatch(/process: directives-\d/);
+  });
+
+  it('should name `directives-4` as the current process and `directives-5` as the next generation', () => {
+    const line = flowDoc()
+      .split('\n')
+      .find((candidate) => candidate.includes('Processo das diretrizes vigente:'));
+
+    expect(line).toContain('vigente: `directives-4`');
+    expect(line).toContain('vira `directives-5`');
+  });
+
+  it('should forbid the agent from `create_process` of `directives-N`', () => {
+    expect(flowDoc()).toContain(CREATE_PROCESS_FORBIDDEN);
+  });
+
+  it('should not say the timeless premise lives in directives-2', () => {
+    expect(flowDoc()).not.toContain('mora em `directives-2`');
+  });
+});
+
+describe('docs/directives/estrategia.md', () => {
+  const strategyPath = path.join(repoRoot, STRATEGY_DOC);
+  let content: string;
+  let premises: ScannedPremise[];
+
+  beforeAll(() => {
+    content = fs.readFileSync(strategyPath, 'utf8');
+    ({ premises } = scanPremises(content));
+  });
+
+  it('should fit in 150 lines', () => {
+    expect(lineCount(strategyPath)).toBeLessThanOrEqual(LIVING_DOC_MAX_LINES);
+  });
+
+  it('should have the 6 theme sections and the sentinel one, in that order', () => {
     const themes = headingTitlesFrom(content);
+
     expect(themes.slice(1)).toEqual([...STRATEGY_THEMES, SENTINEL_THEME]);
   });
 
-  test('every premise line matches the format, with a unique slug and a statement of 1 to 255 code points', () => {
+  it('should have every premise line matching the format, with a unique slug and a statement of 1 to 255 code points', () => {
+    const { malformed } = parsePremises(content);
+
     expect(malformed).toEqual([]);
   });
 
-  test('every theme has at least one premise', () => {
+  it('should have at least one premise in every theme', () => {
     const empty = STRATEGY_THEMES.filter(
       (theme) => !premises.some((premise) => premise.theme === theme),
     );
+
     expect(empty).toEqual([]);
   });
 
-  test('every premise except the sentinel ends with a relative `Ver:` link', () => {
+  it('should end every premise except the sentinel with a relative `Ver:` link', () => {
     const withoutLink = premises
       .filter((premise) => premise.slug !== SENTINEL_SLUG)
       .filter((premise) => relativeLinkTargetsFrom(premise.ver ?? '').length === 0);
+
     expect(withoutLink.map((premise) => premise.slug)).toEqual([]);
   });
 
-  test('the `none` sentinel exists, without a `Ver:` link', () => {
+  it('should have the `none` sentinel, without a `Ver:` link', () => {
     expect(premises.find((premise) => premise.slug === SENTINEL_SLUG)).toMatchObject({
       theme: SENTINEL_THEME,
       ver: undefined,
@@ -416,100 +500,59 @@ describe('estrategia.md premises', () => {
   });
 });
 
-describe('fluxo-hexlog.md with the strategic layer', () => {
-  // `directives-3` só prova que o token existe: `directives-2` segue citado como corte de trabalhos
-  // antigos, então a prova do processo vigente está em "processo vigente de diretrizes escrito num lugar só".
-  test.each([
-    'rests-on',
-    'fills-gap',
-    'directives-3',
-    'premise.objective',
-    'directives.estrategia.none',
-  ])('cites `%s`', (token) => {
-    expect(fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8')).toContain(token);
+describe('.claude/skills/flow-*/SKILL.md', () => {
+  it('should declare a `name` equal to its folder', () => {
+    const wrong = FLOW_SKILLS.filter((name) => skillNameFrom(skill(name)) !== name);
+
+    expect(wrong).toEqual([]);
+  });
+
+  it('should cite only existing docs/directives/ paths, fluxo-hexlog.md among them', () => {
+    const cited = FLOW_SKILLS.flatMap((name) => {
+      const content = skill(name);
+      return [...content.matchAll(DIRECTIVES_DOC_CITATION)].map(([citation]) => citation);
+    });
+
+    expect(cited).toContain(FLOW_DOC);
+    expect(cited.filter((citation) => !fs.existsSync(path.join(repoRoot, citation)))).toEqual([]);
+  });
+
+  it.each(FLOW_SKILLS)('should cite docs/directives/estrategia.md in %s', (name) => {
+    expect(skill(name)).toContain(STRATEGY_DOC);
   });
 });
 
-describe('current directives process written in a single place', () => {
-  const flowDoc = (): string => fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8');
-  const skill = (name: string): string => fs.readFileSync(skillPath(name), 'utf8');
-  // Geração vigente ou futura; `directives-2` segue citado como corte de trabalhos antigos.
-  const currentGeneration = /directives-[3-9]/;
-
-  test('only the "Processo das diretrizes vigente" line of fluxo-hexlog.md cites the current generation', () => {
-    const lines = flowDoc()
-      .split('\n')
-      .filter((line) => currentGeneration.test(line));
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain('Processo das diretrizes vigente:');
-    expect(flowDoc()).not.toMatch(/process: directives-\d/);
-  });
-
-  test('the current process is `directives-3` and the next generation is `directives-4`', () => {
-    const line = flowDoc()
-      .split('\n')
-      .find((candidate) => candidate.includes('Processo das diretrizes vigente:'));
-    expect(line).toContain('vigente: `directives-3`');
-    expect(line).toContain('vira `directives-4`');
-  });
-
-  test('flow-run neither pins the current generation nor points to the process without a generation', () => {
+describe('.claude/skills/flow-run/SKILL.md', () => {
+  it('should neither pin the current generation nor point to the process without a generation', () => {
     expect(skill('flow-run')).not.toMatch(currentGeneration);
     expect(skill('flow-run')).not.toMatch(/process: directives\b(?!-)/);
   });
 
-  test.each([
-    ['the doc', (): string => flowDoc()],
-    ['the flow-run skill', (): string => skill('flow-run')],
-  ])('%s forbids the agent from `create_process` of `directives-N`', (_label, read) => {
-    expect(read()).toContain('`create_process` de `directives-N`');
+  it('should forbid the agent from `create_process` of `directives-N`', () => {
+    expect(skill('flow-run')).toContain(CREATE_PROCESS_FORBIDDEN);
   });
+});
 
-  test('flow-audit covers the current generation and the earlier ones without pinning the number', () => {
+describe('.claude/skills/flow-audit/SKILL.md', () => {
+  it('should cover the current generation and the earlier ones without pinning the number', () => {
     expect(skill('flow-audit')).toContain('o processo de diretrizes vigente');
     expect(skill('flow-audit')).toContain('as gerações anteriores');
     expect(skill('flow-audit')).not.toMatch(/directives-\d/);
   });
-
-  test('the timeless premise does not "mora em `directives-2`"', () => {
-    expect(flowDoc()).not.toContain('mora em `directives-2`');
-  });
 });
 
-describe('local flow skills', () => {
-  test('every skill has `name` equal to its folder', () => {
-    const wrong = FLOW_SKILLS.filter(
-      (name) => skillNameFrom(fs.readFileSync(skillPath(name), 'utf8')) !== name,
-    );
-    expect(wrong).toEqual([]);
-  });
-
-  test('cite only existing docs/directives/ paths, fluxo-hexlog.md among them', () => {
-    const cited = FLOW_SKILLS.flatMap((name) => {
-      const content = fs.readFileSync(skillPath(name), 'utf8');
-      return [...content.matchAll(DIRECTIVES_DOC_CITATION)].map(([citation]) => citation);
-    });
-    expect(cited).toContain(FLOW_DOC);
-    expect(cited.filter((citation) => !fs.existsSync(path.join(repoRoot, citation)))).toEqual([]);
-  });
-});
-
-describe('local skills cite the strategy', () => {
-  test.each(FLOW_SKILLS)('%s cites docs/directives/estrategia.md', (name) => {
-    expect(fs.readFileSync(skillPath(name), 'utf8')).toContain(STRATEGY_DOC);
-  });
-});
-
-describe('ADR 0010 after the flow amendment', () => {
-  test('the last block of the file is the 2026-10-06 amendment', () => {
+describe('docs/directives/adr-0010-camada-sobre-omc.md', () => {
+  it('should end with the 2026-10-06 amendment', () => {
     const adr = fs.readFileSync(path.join(directivesDir, 'adr-0010-camada-sobre-omc.md'), 'utf8');
+
     expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-06/);
   });
 });
 
-describe('ADR 0011 of the strategic layer', () => {
-  test.each(['Context', 'Decision', 'Consequences'])('has the "%s" section', (title) => {
+describe('docs/directives/adr-0011-camada-estrategica.md', () => {
+  it.each(['Context', 'Decision', 'Consequences'])('should have the "%s" section', (title) => {
     const adr = fs.readFileSync(path.join(directivesDir, 'adr-0011-camada-estrategica.md'), 'utf8');
+
     expect(headingTitlesFrom(adr)).toContain(title);
   });
 });

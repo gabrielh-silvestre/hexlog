@@ -13,7 +13,7 @@ import {
   take,
   windowed,
 } from 'es-toolkit';
-import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
+import { formatCliError, openReadOnly, parseCliArgs, reportCliError } from './cli-error.ts';
 import type { Link } from '../src/domain/chain.ts';
 import { dataDir } from '../src/directory.ts';
 
@@ -189,9 +189,7 @@ function main(argv: string[]): number {
     console.log(['# hexlog insights', '', ...reports.flatMap((report) => report.lines)].join('\n'));
     return Math.max(...reports.map((report) => report.exitCode));
   } catch (error) {
-    const { text, exitCode } = formatCliError('insights', error);
-    console.error(text);
-    return exitCode;
+    return reportCliError('insights', error);
   }
 }
 

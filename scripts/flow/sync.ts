@@ -24,7 +24,7 @@ const VER_SEPARATOR = ' Ver: ';
 const STATEMENT_MAX_CODE_POINTS = 255;
 
 /** Relação de saída de um registro vigente, como o `query` a devolve. */
-export type OutRelation = { as?: string; kind: string; to: string };
+type OutRelation = { as?: string; kind: string; to: string };
 
 /** Regra (`directive`) vigente de um documento; `target` é `directives.<doc>.<slug>`. */
 export type VigentRule = {
@@ -60,7 +60,7 @@ export type SyncInput = {
   extracted: ExtractedRule[] | null;
 };
 
-export type PlannedRelation = { to: string; kind?: string; as?: string };
+type PlannedRelation = { to: string; kind?: string; as?: string };
 
 /** Registro no formato de entrada do `register`. */
 export type PlannedRecord = {
@@ -70,10 +70,10 @@ export type PlannedRecord = {
   relations: PlannedRelation[];
 };
 
-export type SyncBatch = { key: string; records: PlannedRecord[] };
+type SyncBatch = { key: string; records: PlannedRecord[] };
 
 /** Regra revogada que fechava lacunas: as lacunas voltam a pendente e o gate `gaps` falha. */
-export type SyncWarning = { code: 'reopens-gap'; rule: string; gaps: string[] };
+type SyncWarning = { code: 'reopens-gap'; rule: string; gaps: string[] };
 
 export type SyncPlan = {
   upToDate: boolean;

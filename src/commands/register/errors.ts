@@ -1,10 +1,6 @@
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { RuleCode, Violation } from '../../domain/relations.ts';
-import { HexlogError, type Detail } from '../../errors.ts';
-
-export function invalidRecord(details: Detail[]): HexlogError {
-  return new HexlogError('INVALID_RECORD', 'record violates a type or relation rule', details);
-}
+import { domainError, type HexlogError, invalidRecord } from '../../errors.ts';
 
 const RULE_MESSAGES: Record<RuleCode, string> = {
   'self-relation': 'a record cannot relate to itself',
@@ -13,7 +9,7 @@ const RULE_MESSAGES: Record<RuleCode, string> = {
   'cross-process-currency': 'supersedes and revokes only target records of the same process',
   'type-mismatch': 'supersedes only targets a record of the same type',
   'target-mismatch':
-    'supersedes only targets a record of the same target; to move a fact to another target, revoke the old record and register a new one at the right target with derivesFrom to it',
+    'supersedes only targets a record of the same target; to move a fact to another target, register one record at the right target with revokes and derivesFrom to the old one',
   'endpoint-type': 'record type is not allowed at this end of the relation name',
   'supports-and-contradicts': 'a record cannot both support and contradict the same destination',
   'supersedes-and-revokes': 'a record cannot both supersede and revoke the same destination',
@@ -27,32 +23,6 @@ const RULE_MESSAGES: Record<RuleCode, string> = {
  */
 export function ruleRefusal(path: string, { code, current }: Violation): HexlogError {
   const message = RULE_MESSAGES[code];
-  const detail: Detail = { path, code, message, ...omitBy({ current }, isUndefined) };
-  if (code === 'not-current') return new HexlogError('FORK_REJECTED', message, [detail]);
-  return invalidRecord([detail]);
-}
-
-export function relationNotFound(
-  path: string,
-  code: 'missing' | 'destination-corrupted',
-  process?: string,
-): HexlogError {
-  const message =
-    code === 'missing' ? 'relation destination not found' : 'relation destination is corrupted';
-  const detail: Detail = { path, code, message, ...omitBy({ process }, isUndefined) };
-  return new HexlogError('RELATION_NOT_FOUND', message, [detail]);
-}
-
-/**
- * As portas apontam o campo da tool que presumem (`/process`, `/hash`...) ou nenhum (`IO_ERROR`).
- * Quando o valor veio de `records[i]`, o serviço refaz o `path` de qualquer erro de porta para o
- * campo certo do lote e, se o erro é de outro processo que o da chamada, `process` o nomeia.
- */
-export function withPath(error: unknown, path: string, process?: string): unknown {
-  if (!(error instanceof HexlogError)) return error;
-  return new HexlogError(
-    error.code,
-    error.message,
-    error.details.map((detail) => ({ ...detail, path, ...omitBy({ process }, isUndefined) })),
-  );
+  if (code === 'not-current') return domainError('FORK_REJECTED', path, code, message, { current });
+  return invalidRecord([{ path, code, message, ...omitBy({ current }, isUndefined) }]);
 }

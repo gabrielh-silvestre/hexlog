@@ -29,8 +29,8 @@ versão nova.
 
 Substituir e revogar só valem **dentro do processo** (`cross-process-currency`).
 O `supersedes` exige também o **mesmo target** (`target-mismatch`): para mudar um fato
-de target, faça `revokes` no registro antigo e grave o novo no target certo com
-`derivesFrom` para ele.
+de target, grave um registro só no target certo, com `revokes` e `derivesFrom` para o
+antigo.
 
 ## 2. Entre fases — leitura com o alcance certo
 

@@ -33,7 +33,7 @@ export const NOTE: RecordType = {
   additionalProperties: false,
 };
 
-/** Tipo com campos de anexo marcados (D-16) e um campo livre que um hash pode vazar para ele. */
+/** Tipo com campos de anexo marcados e um campo livre que um hash pode vazar para ele. */
 export const DOC: RecordType = {
   type: 'object',
   properties: {
@@ -45,7 +45,7 @@ export const DOC: RecordType = {
   additionalProperties: false,
 };
 
-export const DEFAULT_RELATIONS: RelationName[] = [
+const DEFAULT_RELATIONS: RelationName[] = [
   { name: 'approves', kind: 'supports' },
   { name: 'replaces', kind: 'supersedes' },
   { name: 'only-tasks', kind: 'supports', from: ['task'] },
@@ -200,7 +200,7 @@ export function fakeProcessStore() {
 }
 
 /** `AttachmentStore` em memória: só `status`, que é o que `register` usa; conta as consultas. */
-export function fakeAttachments() {
+function fakeAttachments() {
   const statuses = new Map<Hash, AttachmentStatus>();
   const calls: Hash[] = [];
   const store: AttachmentStore = {
@@ -270,7 +270,7 @@ export const note = (text = 'x', extra: Partial<BatchItem> = {}): BatchItem => (
   ...extra,
 });
 
-/** Espera a rejeição de domínio e confere que ela não vaza pilha nem caminho de módulo (D-26). */
+/** Espera a rejeição de domínio e confere que ela não vaza pilha nem caminho de módulo. */
 export const refusal = (promise: Promise<unknown>) => rejectionOf(promise, 'node_modules');
 
 export const verifiedOf = (
@@ -278,5 +278,5 @@ export const verifiedOf = (
   process: Name = ORIGIN,
 ) => verifyProcess(processes.store.read({ project: PROJECT, process }));
 
-/** Id de registro bem formado (D-01) de um processo que nunca recebeu o registro. */
+/** Id de registro bem formado de um processo que nunca recebeu o registro. */
 export const ghostId = (process: Name, n = 999) => `${process}:00000000-0000-7000-8000-${HEX(n)}`;

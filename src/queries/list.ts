@@ -1,10 +1,9 @@
 import { isUndefined, mapValues } from 'es-toolkit';
 import type { Name } from '../domain/ids.ts';
 import type { Manifest } from '../domain/manifest.ts';
-import { invalidInput } from '../errors.ts';
+import { invalidInput, projectNotFound } from '../errors.ts';
 import type { DefinitionKind, DefinitionReader, ProcessReader } from '../ports.ts';
 import { latestVersions } from '../shared/latest.ts';
-import { projectNotFound } from './read.ts';
 
 export type ListInput = { project?: Name; process?: Name };
 

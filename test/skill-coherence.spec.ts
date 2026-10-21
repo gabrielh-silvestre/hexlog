@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { RESERVED_PROCESS_NAMES } from '../src/domain/ids.ts';
@@ -87,9 +87,9 @@ const LINE_NUMBER_CITATION =
 /** Citação de linha em prosa ("linha 12", "linhas ~141"). */
 const LINE_PROSE_CITATION = /\blinhas?\s+~?\d+/i;
 
-describe('line citation regex (unit, over a string literal)', () => {
+describe('LINE_NUMBER_CITATION', () => {
   // literais montados por concatenação: o grep de aceite não pode achar citação neste arquivo
-  test('LINE_NUMBER_CITATION matches file:N and file:N-M in any cited extension', () => {
+  it('should match file:N and file:N-M in any cited extension', () => {
     for (const citation of [
       'a.ts' + ':12',
       'a.ts' + ':1-3',
@@ -103,28 +103,33 @@ describe('line citation regex (unit, over a string literal)', () => {
     }
   });
 
-  test('LINE_PROSE_CITATION matches "linha N" and "linhas ~N" and ignores "linha" without a number', () => {
-    for (const text of ['linhas 141–192 de x', 'na linha 12', 'Linhas ~40']) {
-      expect(LINE_PROSE_CITATION.test(text)).toBe(true);
-    }
-    for (const text of ['da linha da declaração', 'uma linha só', 'linhagem 3']) {
-      expect(LINE_PROSE_CITATION.test(text)).toBe(false);
-    }
-  });
-
-  test('LINE_NUMBER_CITATION does not match a hexlog target, file#symbol or a product name with .js', () => {
+  it('should not match a hexlog target, file#symbol or a product name with .js', () => {
     for (const text of ['hex:target:x', 'a.ts#sym', 'Node.js' + ':24', 'Next.js' + ':3000']) {
       expect(LINE_NUMBER_CITATION.test(text)).toBe(false);
     }
   });
 });
 
+describe('LINE_PROSE_CITATION', () => {
+  it('should match "linha N" and "linhas ~N"', () => {
+    for (const text of ['linhas 141–192 de x', 'na linha 12', 'Linhas ~40']) {
+      expect(LINE_PROSE_CITATION.test(text)).toBe(true);
+    }
+  });
+
+  it('should ignore "linha" without a number', () => {
+    for (const text of ['da linha da declaração', 'uma linha só', 'linhagem 3']) {
+      expect(LINE_PROSE_CITATION.test(text)).toBe(false);
+    }
+  });
+});
+
 // ---- catálogo real, extraído do código (nunca copiado à mão) — global ao projeto, não por skill ----
 
-/** TB5: a 1.0 expõe exatamente 12 tools. */
+/** A 1.0 expõe exatamente 12 tools. */
 const EXPECTED_TOOL_COUNT = 12;
 
-/** TM4: 35 códigos da transição menos os 8 legados e os 2 sem uso (`INVALID_ID`, `UNKNOWN_ID`). */
+/** 35 códigos da transição menos os 8 legados e os 2 sem uso (`INVALID_ID`, `UNKNOWN_ID`). */
 const EXPECTED_ERROR_CODE_COUNT = 25;
 
 const toolsDir = path.join(srcDir, 'mcp/tools');
@@ -159,7 +164,8 @@ const reservedNameValues: readonly string[] = RESERVED_PROCESS_NAMES;
 /**
  * Campos de entrada/saída, relações, valores de enum e exemplos citados em crase nas skills que coincidem em
  * forma com nome de tool ou de valor reservado, mas não são nenhum dos dois — allowlist explícita em vez de
- * afrouxar o regex de identificador. Global ao projeto, não por skill.
+ * afrouxar o regex de identificador. Vale para toda skill; o que só uma skill cita fica em
+ * `SKILL_FIELD_ALLOWLIST`, para não afrouxar a checagem das outras.
  */
 const FIELD_NAME_ALLOWLIST = new Set([
   'type',
@@ -295,12 +301,6 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'attachmentStatus',
   'staleOut',
   'staleIn',
-  'counts',
-  'origin',
-  'inheritedIn',
-  'inheritedOut',
-  'inheritedInCounts',
-  'inheritedOutCounts',
   'derivesFrom',
   'attachmentBreaks',
   'isRevision',
@@ -321,35 +321,50 @@ const FIELD_NAME_ALLOWLIST = new Set([
 ]);
 
 /**
+ * Campos citados em crase por uma só skill (campo `file` do `skillCases`), além da
+ * `FIELD_NAME_ALLOWLIST`.
+ */
+const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
+  'skills/hexlog-flow/SKILL.md': [
+    'counts',
+    'origin',
+    'inheritedIn',
+    'inheritedOut',
+    'inheritedInCounts',
+    'inheritedOutCounts',
+  ],
+};
+
+/**
  * Substrings esperadas no corpo da declaração de cada `arquivo.ts#símbolo` citado — mapa explícito em vez
  * de inferir a partir de outras crases da mesma linha. A substring prova o vínculo símbolo ↔ código de erro
  * ou mensagem: mover o `throw` para outra função quebra o teste, de propósito. `installation.ts#installArtifact`
  * espera a chamada de `verifyPreparedArtifact` para provar que a checagem ocorre dentro da instalação.
  */
 const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'commands/process.ts#assertSomethingRegistered': ['TYPE_NOT_FOUND'],
+  'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
   'domain/ids.ts#Name': ['Name'],
-  'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
+  'errors.ts#breakingChange': ['BREAKING_CHANGE'],
   'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
   'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-  'commands/register/static.ts#pinnedSchema': ['TYPE_NOT_PINNED'],
+  'errors.ts#typeNotPinned': ['TYPE_NOT_PINNED'],
   'commands/register/static.ts#checkData': ['checkData'],
-  'queries/query-service.ts#gateNotFound': ['GATE_NOT_FOUND'],
+  'errors.ts#gateNotFound': ['GATE_NOT_FOUND'],
   'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
   'installation.ts#installArtifact': ['verifyPreparedArtifact'],
 };
 
 const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'commands/process.ts#assertSomethingRegistered': ['TYPE_NOT_FOUND'],
+  'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
   'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
   'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-  'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
+  'errors.ts#breakingChange': ['BREAKING_CHANGE'],
 };
 
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'commands/register/state.ts#assertSameBatch': ['IDEMPOTENCY_CONFLICT'],
+  'errors.ts#keyConflict': ['IDEMPOTENCY_CONFLICT'],
   'commands/register/errors.ts#ruleRefusal': ['FORK_REJECTED'],
-  'adapters/fs/lock.ts#lockTimeout': ['LOCK_TIMEOUT'],
+  'errors.ts#lockTimeout': ['LOCK_TIMEOUT'],
   'commands/register/attachments.ts#checkAttachments': ['unmarked-attachment'],
 };
 
@@ -369,30 +384,19 @@ const AUDIT_TYPES_CITATION_EXPECTATIONS: Record<string, string[]> = {
 };
 
 type SkillCase = {
-  name: string;
-  skillPath: string;
+  file: string;
   citationExpectations: Record<string, string[]>;
 };
 
 const skillCases: SkillCase[] = [
+  { file: 'skills/hexlog/SKILL.md', citationExpectations: HEXLOG_CITATION_EXPECTATIONS },
   {
-    name: 'hexlog',
-    skillPath: path.join(repoRoot, 'skills/hexlog/SKILL.md'),
-    citationExpectations: HEXLOG_CITATION_EXPECTATIONS,
-  },
-  {
-    name: 'hexlog-setup',
-    skillPath: path.join(repoRoot, 'skills/hexlog-setup/SKILL.md'),
+    file: 'skills/hexlog-setup/SKILL.md',
     citationExpectations: HEXLOG_SETUP_CITATION_EXPECTATIONS,
   },
+  { file: 'skills/hexlog-flow/SKILL.md', citationExpectations: HEXLOG_FLOW_CITATION_EXPECTATIONS },
   {
-    name: 'hexlog-flow',
-    skillPath: path.join(repoRoot, 'skills/hexlog-flow/SKILL.md'),
-    citationExpectations: HEXLOG_FLOW_CITATION_EXPECTATIONS,
-  },
-  {
-    name: 'hexlog-flow/references/audit-types',
-    skillPath: path.join(repoRoot, 'skills/hexlog-flow/references/audit-types.md'),
+    file: 'skills/hexlog-flow/references/audit-types.md',
     citationExpectations: AUDIT_TYPES_CITATION_EXPECTATIONS,
   },
 ];
@@ -401,13 +405,11 @@ const skillCases: SkillCase[] = [
 // (`phases`, `process`) em crases, que a checagem de identificadores leria como tool inexistente.
 const referenceCases: SkillCase[] = [
   {
-    name: 'hexlog-setup/references/flow-map-schema',
-    skillPath: path.join(repoRoot, 'skills/hexlog-setup/references/flow-map-schema.md'),
+    file: 'skills/hexlog-setup/references/flow-map-schema.md',
     citationExpectations: FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS,
   },
   {
-    name: 'hexlog-flow/references/target-format',
-    skillPath: path.join(repoRoot, 'skills/hexlog-flow/references/target-format.md'),
+    file: 'skills/hexlog-flow/references/target-format.md',
     citationExpectations: TARGET_FORMAT_CITATION_EXPECTATIONS,
   },
 ];
@@ -426,11 +428,14 @@ function tokensCitedBy(skillPath: string) {
   };
 }
 
-describe.each(skillCases)('SKILL.md × code coherence ($name)', ({ skillPath }) => {
-  const { citedScreamingSnakeTokens, citedLowerIdentifiers, citedCamelCaseTokens } =
-    tokensCitedBy(skillPath);
+describe.each(skillCases)('$file', ({ file }) => {
+  const fieldNames = new Set([...FIELD_NAME_ALLOWLIST, ...(SKILL_FIELD_ALLOWLIST[file] ?? [])]);
+  const { citedScreamingSnakeTokens, citedLowerIdentifiers, citedCamelCaseTokens } = tokensCitedBy(
+    path.join(repoRoot, file),
+  );
 
-  test('the extraction is not empty (sanity: if the skill changes shape, this breaks before the checks below)', () => {
+  // Sanidade: se a skill mudar de forma, este quebra antes das checagens abaixo.
+  it('should extract non-empty catalogs and tokens', () => {
     expect(registeredTools.length).toBeGreaterThan(0);
     expect(citedScreamingSnakeTokens.length).toBeGreaterThan(0);
     expect(citedLowerIdentifiers.length).toBeGreaterThan(0);
@@ -438,64 +443,71 @@ describe.each(skillCases)('SKILL.md × code coherence ($name)', ({ skillPath }) 
     expect(citedCamelCaseTokens.length).toBeGreaterThan(0);
   });
 
-  test('every tool cited in the skill is actually registered (src/mcp/tools/)', () => {
-    const known = new Set([...registeredTools, ...reservedNameValues, ...FIELD_NAME_ALLOWLIST]);
+  it('should cite only tools that are actually registered (src/mcp/tools/)', () => {
+    const known = new Set([...registeredTools, ...reservedNameValues, ...fieldNames]);
     const unknown = citedLowerIdentifiers.filter((token) => !known.has(token));
+
     expect(unknown).toEqual([]);
   });
 
-  test('every cited SCREAMING_SNAKE_CASE code exists in the error catalog or is a constant exported from src/domain/ or mcp/kernel.ts', () => {
+  it('should cite only SCREAMING_SNAKE_CASE codes that exist in the error catalog or are constants exported from src/domain/ or mcp/kernel.ts', () => {
     const known = new Set([...errorCodeCatalog, ...exportedConstantNames]);
     const unknown = citedScreamingSnakeTokens.filter((token) => !known.has(token));
+
     expect(unknown).toEqual([]);
   });
 
-  test('every cited camelCase is a function declared in src/ or a known schema field', () => {
-    const known = new Set([...declaredFunctionNames, ...FIELD_NAME_ALLOWLIST]);
+  it('should cite only camelCase names that are functions declared in src/ or known schema fields', () => {
+    const known = new Set([...declaredFunctionNames, ...fieldNames]);
     const unknown = citedCamelCaseTokens.filter((token) => !known.has(token));
+
     expect(unknown).toEqual([]);
   });
 });
 
-describe('real catalog extracted from the code', () => {
-  test(`src/mcp/tools/ registers exactly ${EXPECTED_TOOL_COUNT} tools, without repetition (TB5)`, () => {
+describe('src/mcp/tools/*.ts', () => {
+  it(`should register exactly ${EXPECTED_TOOL_COUNT} tools, with no repetition`, () => {
     expect(registeredTools).toHaveLength(EXPECTED_TOOL_COUNT);
     expect(new Set(registeredTools).size).toBe(EXPECTED_TOOL_COUNT);
   });
+});
 
-  test(`src/errors.ts declares exactly ${EXPECTED_ERROR_CODE_COUNT} error codes (TM4)`, () => {
+describe('src/errors.ts', () => {
+  it(`should declare exactly ${EXPECTED_ERROR_CODE_COUNT} error codes`, () => {
     expect(errorCodeCatalog).toHaveLength(EXPECTED_ERROR_CODE_COUNT);
     expect(new Set(errorCodeCatalog).size).toBe(EXPECTED_ERROR_CODE_COUNT);
   });
 });
 
-describe.each([...skillCases, ...referenceCases])(
-  'file.ts#symbol citations in the skill × real code in src/ ($name)',
-  ({ skillPath, citationExpectations }) => {
-    const { citedFileCitations } = tokensCitedBy(skillPath);
+describe.each([...skillCases, ...referenceCases])('$file', ({ file, citationExpectations }) => {
+  const { citedFileCitations } = tokensCitedBy(path.join(repoRoot, file));
 
-    test('the citation extraction is not empty (sanity)', () => {
-      expect(citedFileCitations.length).toBeGreaterThan(0);
-    });
+  // Sanidade: sem citação, as checagens abaixo passariam vazias.
+  it('should extract at least one file.ts#symbol citation', () => {
+    expect(citedFileCitations.length).toBeGreaterThan(0);
+  });
 
-    test('every citation in the skill has a mapped expectation, and every mapped expectation is still cited (no new or removed citation goes unnoticed)', () => {
-      expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(citationExpectations)));
-    });
+  it('should cite exactly the mapped citations, so no new or removed citation goes unnoticed', () => {
+    expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(citationExpectations)));
+  });
 
-    test('each citation points to a src/ file whose symbol declaration contains the expected substrings', () => {
-      for (const citation of citedFileCitations) {
-        const [file = '', symbol = ''] = citation.split('#');
-        const filePath = path.join(srcDir, file);
-        expect(fs.existsSync(filePath)).toBe(true);
-        const body = declarationBodyFrom(fs.readFileSync(filePath, 'utf8'), symbol);
-        expect(body).toBeDefined();
-        for (const substring of citationExpectations[citation] ?? []) {
-          expect(body).toContain(substring);
-        }
+  it('should point each citation to a src/ file whose symbol declaration contains the expected substrings', () => {
+    for (const citation of citedFileCitations) {
+      const [citedFile = '', symbol = ''] = citation.split('#');
+      const filePath = path.join(srcDir, citedFile);
+
+      expect(fs.existsSync(filePath)).toBe(true);
+
+      const body = declarationBodyFrom(fs.readFileSync(filePath, 'utf8'), symbol);
+
+      expect(body).toBeDefined();
+
+      for (const substring of citationExpectations[citation] ?? []) {
+        expect(body).toContain(substring);
       }
-    });
-  },
-);
+    }
+  });
+});
 
 // ---- trava: documentação nunca cita linha de arquivo (arquivo + símbolo) ----
 
@@ -521,8 +533,8 @@ function agentsFilesUnder(dir: string): string[] {
   });
 }
 
-describe('documentation does not cite line numbers', () => {
-  test('no .md in skills/, docs/, local skills, README.md or AGENTS.md matches file:N or "linha N"', () => {
+describe('skills/**/*.md, docs/**/*.md, .claude/skills/**/*.md, README.md and **/AGENTS.md', () => {
+  it('should not cite line numbers as file:N or "linha N"', () => {
     const files = [
       ...markdownFilesUnder(path.join(repoRoot, 'skills')),
       ...markdownFilesUnder(path.join(repoRoot, 'docs')),
@@ -532,6 +544,7 @@ describe('documentation does not cite line numbers', () => {
       path.join(repoRoot, 'README.md'),
       ...agentsFilesUnder(repoRoot),
     ];
+
     const hits = files.flatMap((file) =>
       fs
         .readFileSync(file, 'utf8')
@@ -543,6 +556,7 @@ describe('documentation does not cite line numbers', () => {
             : [`${path.relative(repoRoot, file)}:${index + 1} → ${match[0]}`];
         }),
     );
+
     expect(hits).toEqual([]);
   });
 });

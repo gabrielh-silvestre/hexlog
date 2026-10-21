@@ -2,7 +2,7 @@ import { parseArgs, type ParseArgsOptionsConfig } from 'node:util';
 import { isUndefined } from 'es-toolkit';
 import { composeReader } from '../src/compose.ts';
 import { dataDir } from '../src/directory.ts';
-import { HexlogError, legacyDataError } from '../src/errors.ts';
+import { HexlogError, internalError, legacyDataError } from '../src/errors.ts';
 
 /** Recusa que o operador resolve no dado, não no comando: sai com 2. */
 const DATA_CODES = new Set(['LEGACY_DATA', 'PROCESS_CORRUPTED']);
@@ -10,7 +10,7 @@ const DATA_CODES = new Set(['LEGACY_DATA', 'PROCESS_CORRUPTED']);
 /** Linha de erro dos scripts de leitura (`<prefix> failed: code: message (detalhes)`) e o exit code dela. */
 export function formatCliError(prefix: string, error: unknown): { text: string; exitCode: number } {
   const { code, message, details } =
-    error instanceof HexlogError ? error : new HexlogError('INTERNAL', String(error));
+    error instanceof HexlogError ? error : internalError(String(error));
   const detail = details
     // detalhe sem processo que só repete a mensagem (`project not found`) não acrescenta nada
     .filter((item) => !isUndefined(item.process) || item.message !== message)
@@ -20,6 +20,13 @@ export function formatCliError(prefix: string, error: unknown): { text: string; 
     text: `${prefix} failed: ${code}: ${message}${detail.length === 0 ? '' : ` (${detail})`}`,
     exitCode: DATA_CODES.has(code) ? 2 : 1,
   };
+}
+
+/** Imprime a linha de erro no stderr e devolve o exit code dela. */
+export function reportCliError(prefix: string, error: unknown): number {
+  const { text, exitCode } = formatCliError(prefix, error);
+  console.error(text);
+  return exitCode;
 }
 
 /** Lado de leitura sobre o `<D>` de `XDG_DATA_HOME`; dado 0.x lança `LEGACY_DATA`. */

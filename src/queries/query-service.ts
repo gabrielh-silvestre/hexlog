@@ -1,4 +1,4 @@
-import { differenceBy, isUndefined, omitBy, pick, uniq, union } from 'es-toolkit';
+import { differenceBy, isUndefined, omitBy, once, pick, uniq, union } from 'es-toolkit';
 import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
 import {
@@ -18,7 +18,7 @@ import {
   type Target,
 } from '../domain/ids.ts';
 import { needsReview, type NeedsReview } from '../domain/relations.ts';
-import { HexlogError, invalidInput } from '../errors.ts';
+import { gateNotFound, invalidCursor, invalidFilter, invalidInput } from '../errors.ts';
 import type { Manifest } from '../domain/manifest.ts';
 import type {
   AttachmentReader,
@@ -28,7 +28,7 @@ import type {
   SearchIndex,
 } from '../ports.ts';
 import { checkExpectedHead, loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
-import { decodeCursor, encodeCursor, invalidCursor, type CursorPayload } from './cursor.ts';
+import { decodeCursor, encodeCursor, type CursorPayload } from './cursor.ts';
 import {
   createDescribeType,
   type DescribeTypeInput,
@@ -47,6 +47,7 @@ import {
   inheritanceActivation,
   inOutputOrder,
   leftReason,
+  RELATION_MODES,
   relationsOf,
   select,
   type Filters,
@@ -57,7 +58,8 @@ import {
 } from './select.ts';
 
 export { PAGE_CHARS_CAP } from './read-attachment.ts';
-export type { AttachmentPage, DescribeTypeInput, DescribeTypeResult, ListInput, ListResult };
+export { RELATION_MODES };
+export type { AttachmentPage, DescribeTypeResult, ListResult };
 
 const DEFAULT_LIMIT = 50;
 /**
@@ -165,7 +167,7 @@ export type GateBatchEvaluation = {
   marker: Marker;
 };
 
-export type VerifyChainInput = { project: Name; process: Name; expectedHead?: Hash };
+type VerifyChainInput = { project: Name; process: Name; expectedHead?: Hash };
 
 /** D-16: anexo citado por um registro que não está inteiro no projeto. */
 type AttachmentBreak = {
@@ -190,13 +192,16 @@ export type QueryService = {
    * `attachmentStatus`. Ordem de saída: alcance processo por `seq`, alcance projeto por (`at`,
    * processo, `seq`), com `text` por relevância e o mesmo desempate. Página com resultado leva ao
    * menos um registro (o 1º sai inteiro mesmo acima de `maxChars`); consulta sem resultado devolve
-   * `records: []`, com `hint` quando o `targetPrefix` quase casou. O cursor (D-20) fixa o marcador:
-   * as páginas seguintes recomeçam depois de `lastId` sobre a leitura da página 1.
+   * `records: []`, com `hint` quando o `targetPrefix` quase casou. Exceção a "ao menos um
+   * registro": `limit: 0`, aceito só com `changesSince` e sem `cursor`, devolve `records: []` e as
+   * `changes`, sem cursor. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois
+   * de `lastId` sobre a leitura da página 1.
    *
-   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: acima de `QUERY_TEXT_MAX_CHARS` ou sem termo
-   * pesquisável, `no-terms`, como `''`, `'  '` e `'!!!'`),
-   * `INVALID_CURSOR`, `MARKER_NOT_FOUND`, `PROJECT_NOT_FOUND` (alcance projeto), `PROCESS_NOT_FOUND`,
-   * `PROCESS_CORRUPTED` (com `details[0].process`), `PROCESS_TOO_LARGE` e `IO_ERROR`.
+   * `INVALID_FILTER` (`/process`; `/limit`, inteiro >= 1, ou 0 só com `changesSince` e sem
+   * `cursor`; `/text`, acima de `QUERY_TEXT_MAX_CHARS` ou sem termo pesquisável, `no-terms`, como
+   * `''`, `'  '` e `'!!!'`), `INVALID_CURSOR`, `MARKER_NOT_FOUND`, `PROJECT_NOT_FOUND` (alcance
+   * projeto), `PROCESS_NOT_FOUND`, `PROCESS_CORRUPTED` (com `details[0].process`),
+   * `PROCESS_TOO_LARGE` e `IO_ERROR`.
    */
   queryRecords(input: QueryInput): QueryResult;
   /**
@@ -256,17 +261,6 @@ export type QueryService = {
    */
   describeType(input: DescribeTypeInput): DescribeTypeResult;
 };
-
-function invalidFilter(path: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_FILTER', 'Invalid filter', [{ path, code, message }]);
-}
-
-function gateNotFound(): HexlogError {
-  const message = 'gate is not pinned in the process';
-  return new HexlogError('GATE_NOT_FOUND', message, [
-    { path: '/gate', code: 'unknown-name', message },
-  ]);
-}
 
 function targetOf({ project, scope = 'process', process }: QueryInput): ReadTarget {
   if (scope === 'project') return { project, scope };
@@ -433,7 +427,20 @@ export function createQueryService(deps: {
     };
   }
 
-  function evaluateGateOf({
+  // As sobrecargas repetem as de `QueryService`: o corpo tem de casar com todas, sem cast.
+  function evaluateGate(
+    input: EvaluateGateInput & { targets: readonly Target[] },
+  ): GateBatchEvaluation;
+  function evaluateGate(
+    input: EvaluateGateInput & { targets?: undefined; evidence?: 'full' },
+  ): GateEvaluation;
+  function evaluateGate(
+    input: EvaluateGateInput & { targets?: undefined },
+  ): GateEvaluation<QuestionSummary>;
+  function evaluateGate(
+    input: EvaluateGateInput,
+  ): GateEvaluation<QuestionSummary> | GateBatchEvaluation;
+  function evaluateGate({
     project,
     process,
     gate: name,
@@ -496,12 +503,13 @@ export function createQueryService(deps: {
       const view = buildView(reading, target.scope);
       const selected = select(view, filters, search, target);
 
-      const reviews = needsReview(view.records, view.vigency, view.inheritance);
+      // Sob demanda: com `limit: 0` nenhum registro é renderizado e a herança não é calculada.
+      const reviews = once(() => needsReview(view.records, view.vigency, view.inheritance));
       const manifests = new Map(
         reading.processes.map(({ name, verified }) => [name, verified.manifest]),
       );
       const render = (link: Link): QueryRecord => {
-        const review = reviews.get(link.id);
+        const review = reviews().get(link.id);
         const status = attachmentStatusOf(target.project, manifests.get(processOf(link.id)), link);
         const data = projectData(link.data, input.fields);
         return {
@@ -541,8 +549,9 @@ export function createQueryService(deps: {
         isUndefined(cursor) && !isUndefined(input.changesSince)
           ? changesOf(input, target, filters, { view, selected, marker: reading.marker })
           : undefined;
+      // Com cursor e seleção vazia, `startAfter` já lançou: seleção vazia aqui é sempre a página 1.
       const hint =
-        isUndefined(cursor) && selected.length === 0 && !isUndefined(input.targetPrefix)
+        selected.length === 0 && !isUndefined(input.targetPrefix)
           ? boundaryHint(view, input.targetPrefix)
           : undefined;
       return {
@@ -554,8 +563,7 @@ export function createQueryService(deps: {
       };
     },
 
-    // As sobrecargas de `QueryService` casam com o corpo único de `evaluateGateOf`.
-    evaluateGate: evaluateGateOf as QueryService['evaluateGate'],
+    evaluateGate,
 
     verifyChain({ project, process, expectedHead }) {
       const verified = loadVerified(store, { project, process });
