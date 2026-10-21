@@ -53,7 +53,8 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    do passo 3); mantenha `skills/`
    no filesystem de `~/.claude/`. Temporários
    `skills/<nome>.tmp-<pid>` e `.old-<pid>` de versões antigas do instalador são
-   removidos nessa cópia.
+   removidos depois da troca da skill; se a remoção de um deles falha (por
+   exemplo, `EACCES`), o instalador ignora o erro e a skill nova fica instalada.
 
 Com dado 0.x em `<D>`, o comando só lista o que arquivaria (`scripts/install.ts#listLegacy`)
 e sai com 2, sem instalar nada: veja [Dado 0.x](migracao.md#dado-0x-arquivamento---archive-0x).

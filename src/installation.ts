@@ -362,19 +362,25 @@ export function writeSkillFolder(home: string, name: string, srcDir: string): vo
   rmSync(tmp, { recursive: true, force: true });
   try {
     cpSync(srcDir, tmp, { recursive: true });
+    swapDirectory(tmp, dstDir, old);
     // Versões antigas deixavam `<name>.tmp-<pid>`/`.old-<pid>` dentro de `skills/`, lidos como skill.
     // O sufixo é só dígitos: pasta do usuário como `<name>.old-notas` não é temporário nosso.
     // O nome nunca entra num regex: só o sufixo é testado, então `+`, `(` e `[` no nome não importam.
+    // A limpeza vem depois da troca e ignora o erro de cada `rmSync` (ex.: `EACCES`): é só resíduo,
+    // e a skill nova já está instalada.
     const legacyPrefix = `${name}.`;
     for (const entry of fs.readdirSync(skillsDir)) {
       if (
         entry.startsWith(legacyPrefix) &&
         /^(tmp|old)-\d+$/.test(entry.slice(legacyPrefix.length))
       ) {
-        rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
+        try {
+          rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
+        } catch {
+          // resíduo que sobra é varrido na próxima instalação
+        }
       }
     }
-    swapDirectory(tmp, dstDir, old);
   } finally {
     // Sucesso: `tmp` já virou `dstDir`. Falha: não deixa o temporário para trás.
     rmSync(tmp, { recursive: true, force: true });

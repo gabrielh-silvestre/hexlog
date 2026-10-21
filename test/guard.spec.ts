@@ -1612,6 +1612,34 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
+  test('legacy sweep runs after the swap and ignores an rmSync failure', () => {
+    const home = createTempDir('skill-legacy-eacces');
+    const srcDir = buildSrcDir('# hexlog skill v2\n');
+    const originalRmSync = fsDefault.rmSync;
+    try {
+      const skillsDir = path.join(home, '.claude', 'skills');
+      fs.mkdirSync(path.join(skillsDir, 'hexlog.tmp-1'), { recursive: true });
+      fs.mkdirSync(path.join(skillsDir, 'hexlog.old-2'), { recursive: true });
+      jest.spyOn(fsDefault, 'rmSync').mockImplementation((target, options) => {
+        if (String(target).endsWith('hexlog.tmp-1')) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+        originalRmSync(target, options);
+      });
+
+      expect(() => writeSkillFolder(home, 'hexlog', srcDir)).not.toThrow();
+
+      expect(fs.readFileSync(path.join(skillsDir, 'hexlog', 'SKILL.md'), 'utf8')).toBe(
+        '# hexlog skill v2\n',
+      );
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', 'hexlog.tmp-1']);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
   test('falha no 2º renameSync não deixa temporário em skills/ nem em .claude/ e preserva a skill anterior', () => {
     const home = createTempDir('skill-h');
     const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
