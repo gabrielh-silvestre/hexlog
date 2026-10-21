@@ -47,6 +47,7 @@ import {
   inheritanceActivation,
   inOutputOrder,
   leftReason,
+  RELATION_MODES,
   relationsOf,
   select,
   type Filters,
@@ -57,6 +58,7 @@ import {
 } from './select.ts';
 
 export { PAGE_CHARS_CAP } from './read-attachment.ts';
+export { RELATION_MODES };
 export type { AttachmentPage, DescribeTypeResult, ListResult };
 
 const DEFAULT_LIMIT = 50;
