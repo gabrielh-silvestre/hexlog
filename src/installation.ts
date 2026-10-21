@@ -313,8 +313,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
     const code = errnoCode(error);
     // Sem hard link o backup exclusivo é impossível e `COPYFILE_EXCL` não é atômico: recusa antes de gravar.
     if (code === 'EPERM' || code === 'ENOTSUP') {
-      throw new HexlogError(
-        'INTERNAL',
+      throw internalError(
         `cannot create the settings.json backup hard link (${code}): the filesystem may not support hard links`,
       );
     }
