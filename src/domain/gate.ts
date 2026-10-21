@@ -145,7 +145,10 @@ type View = {
   byId: ReadonlyMap<RecordId, HexRecord>;
 };
 
-/** `isActive` só vem quando alguma pergunta do alcance pede `inherit`: sem pedido, a herança é vazia. */
+/**
+ * `isActive` só vem quando alguma pergunta do alcance pede `inherit`: sem pedido, a herança é
+ * vazia.
+ */
 function buildView(records: readonly HexRecord[], isActive?: (process: Name) => boolean): View {
   const vigency = buildVigency(records);
   return {
@@ -181,8 +184,8 @@ function inheritedSources({ view }: Context, id: RecordId, kind: RelationKind): 
 }
 
 /**
- * Origens de `kind` que chegam a `id` e passam em `accepted`: as diretas e, com `inherit`, as que só
- * contam por herança (a direta idêntica não se repete).
+ * Origens de `kind` que chegam a `id` e passam em `accepted`: as diretas e, com `inherit`, as que
+ * só contam por herança (a direta idêntica não se repete).
  */
 function sourcesOf(
   context: Context,

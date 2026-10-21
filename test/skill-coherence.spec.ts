@@ -315,7 +315,10 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'evidence-file',
 ]);
 
-/** Campos citados em crase por uma só skill (nome do `skillCases`), além da `FIELD_NAME_ALLOWLIST`. */
+/**
+ * Campos citados em crase por uma só skill (nome do `skillCases`), além da
+ * `FIELD_NAME_ALLOWLIST`.
+ */
 const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
   'hexlog-flow': [
     'counts',

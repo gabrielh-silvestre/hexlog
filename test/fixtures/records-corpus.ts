@@ -120,7 +120,10 @@ function linkOf(
   return link;
 }
 
-/** Manifesto vazio, com `gates` fixados quando houver (o hash dos gates acompanha) e a herança ligada se pedida. */
+/**
+ * Manifesto vazio, com `gates` fixados quando houver (o hash dos gates acompanha) e a herança
+ * ligada se pedida.
+ */
 function manifestOf(
   ref: ProcessRef,
   gates: readonly Gate[],
@@ -169,9 +172,14 @@ export type RecordsCorpusOptions = {
   recordsPerProcess: number;
   /** Gates fixados no manifesto de cada processo. */
   gates?: Gate[];
-  /** Registros que superam o apoiado de um `supports`, para haver linhagem; só pesa na leitura com `lineageInheritance`. */
+  /**
+   * Registros que superam o apoiado de um `supports`, para haver linhagem; só pesa na leitura com
+   * `lineageInheritance`.
+   */
   supersedes?: boolean;
-  /** `lineageInheritance` no manifesto de cada processo: a leitura calcula a herança de relações. */
+  /**
+   * `lineageInheritance` no manifesto de cada processo: a leitura calcula a herança de relações.
+   */
   lineageInheritance?: boolean;
 };
 

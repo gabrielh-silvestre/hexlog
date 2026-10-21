@@ -38,7 +38,10 @@ export function at<T>(items: readonly T[], index: number): T {
   return value;
 }
 
-/** Id de registro determinístico `<process>:<n com 8 dígitos>`, para specs de domínio que montam o log à mão. */
+/**
+ * Id de registro determinístico `<process>:<n com 8 dígitos>`, para specs de domínio que montam o
+ * log à mão.
+ */
 export const recordId = (process: string, n: number): string =>
   `${process}:${String(n).padStart(8, '0')}`;
 

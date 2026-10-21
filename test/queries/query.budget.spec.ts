@@ -70,10 +70,12 @@ describe('SL4', () => {
 
 describe('SL4 with lineage inheritance', () => {
   // Mínimo das rodadas, como em `adapters/load.budget.spec.ts`: o teto vale para a melhor medição e
-  // não para o pior ruído do runner. Mesmo teto da página sem `text`: a herança liga o cálculo, não o custo.
+  // não para o pior ruído do runner. Mesmo teto da página sem `text`: a herança liga o cálculo,
+  // não o custo.
   const MIN_CEILING_MS = PLAIN_MEDIAN_CEILING_MS;
 
-  // Os dois corpora têm os mesmos registros, com `supersedes` nos dois; só o manifesto liga a herança.
+  // Os dois corpora têm os mesmos registros, com `supersedes` nos dois; só o manifesto liga a
+  // herança.
   function minFirstPage(lineageInheritance: boolean) {
     const dataDir = createTempDir('query-budget-inheritance');
     const { refs } = writeRecordsCorpus(dataDir, {

@@ -209,7 +209,8 @@ describe('relation inheritance (properties)', () => {
     );
   });
 
-  // A escrita recusa o ciclo de `supersedes`; só um log forjado à mão o traz, e a leitura não pode travar.
+  // A escrita recusa o ciclo de `supersedes`; só um log forjado à mão o traz, e a leitura não pode
+  // travar.
   test('a forged supersedes cycle ends and leaves no current record to raise an edge to', () => {
     const records: Linked[] = [
       { id: 'a:1', relations: [{ kind: 'supersedes', to: 'a:2' }] },
