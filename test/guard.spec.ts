@@ -589,6 +589,21 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
+  test('registerGuard refuses a missing settings.json with an INTERNAL error and no details', () => {
+    const tmpHome = createTempDir('deny-missing');
+    try {
+      const settingsPath = path.join(tmpHome, 'settings.json');
+
+      expect(captureError(() => registerGuard({ settingsPath, expected }))).toMatchObject({
+        code: 'INTERNAL',
+        message: 'install the harness before installing hexlog',
+        details: [],
+      });
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
   test('deny: registerGuard recusa gravar settings.json inválido e não toca o original', () => {
     const tmpHome = createTempDir('deny-invalid');
     try {
@@ -1280,6 +1295,48 @@ describe('B2: instalação versionada do artefato (installArtifact)', () => {
         hookBefore,
       );
       expect(fs.readdirSync(path.join(home, '.local', 'lib', 'hexlog')).sort()).toEqual(['0.1.0']);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  test('(f2) preparation failures are INTERNAL errors with exact messages and no details', async () => {
+    const home = createTempDir('install-f2');
+    try {
+      const baseArgs = {
+        home,
+        version: '0.1.0',
+        bundles: realBundles,
+        commit: null,
+        dirty: false,
+        clock: () => new Date(),
+      };
+
+      // a 1ª sonda (deny) devolve 2 e a 2ª (allow) devolve diferente de 0
+      const statuses = [2, 1];
+      await expect(
+        installArtifact({
+          ...baseArgs,
+          runHook: () => ({ status: statuses.shift() ?? null }),
+          verifyServer: fakeVerifyServer,
+        }),
+      ).rejects.toMatchObject({
+        code: 'INTERNAL',
+        message: 'prepared hook does not allow harmless commands',
+        details: [],
+      });
+
+      await expect(
+        installArtifact({
+          ...baseArgs,
+          runHook: runRealHookForInstall,
+          verifyServer: () => Promise.reject(new Error('boom')),
+        }),
+      ).rejects.toMatchObject({
+        code: 'INTERNAL',
+        message: 'prepared server failed to start: boom',
+        details: [],
+      });
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
