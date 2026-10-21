@@ -22,11 +22,13 @@ tokeniza o comando recebido; nunca executa nada.
   `fileURLToPath(import.meta.url)`, para o hook valer também quando chamado por symlink.
 - Os tetos de glob (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) valem só
   para o token que o shell expande: `maskQuoted` troca o texto entre aspas e escapado por `x` num
-  segundo parse (`maskedTokensOf`, só quando algum token passa dos tetos), `toCandidates` marca o
-  `expandable` e `expanded` (o token com o `~` expandido, que `skipsGlobMatch`, o orçamento e
-  `classifyToken` medem do mesmo jeito) e `skipsGlobMatch` pula o casamento do token só entre aspas acima dos tetos, que `literalPrefixReaches` confere pelo prefixo literal. As regras
-  (o que faz o `maskQuoted` desistir, o orçamento total, o limite aceito) estão em
-  `docs/directives/instalacao-e-hooks.md` (ver `## Diretrizes` abaixo).
+  segundo parse (`maskedTokensOf`, só quando algum token passa dos tetos) e `toCandidates` marca o
+  `expandable` de cada token. As regras (o que faz o `maskQuoted` desistir, o orçamento total, o
+  limite aceito) estão em `docs/directives/instalacao-e-hooks.md` (ver `## Diretrizes` abaixo).
+- `decide` expande o `~` de cada token uma vez e `toCandidates` guarda o resultado em `expanded`:
+  `skipsGlobMatch`, o orçamento e `classifyToken` medem esse mesmo valor. `skipsGlobMatch` pula o
+  casamento do token só entre aspas acima dos tetos, que `literalPrefixReaches` confere pelo prefixo
+  literal.
 - O `shell-quote` só devolve `{op: 'glob'}` para `*` e `?`; `{` e `[` voltam como string, sem marca
   de aspas, por isso o segundo parse.
 - `MAX_GLOB_TOTAL_LENGTH` e `MAX_COMMAND_LENGTH` existem para o hook não morrer no timeout, que libera
