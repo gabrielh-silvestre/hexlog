@@ -356,7 +356,9 @@ nenhum desses, `breaks`
 ganha `{ index: totalRecords, reason: "head-not-found" }`, contada em `totalBreaks`, e `ok` fica
 `false`: cauda apagada ou reescrita. A entrada respeita o teto de 100 de `breaks`. Sem
 `expectedHead` o comportamento é o de sempre, e formato que não é hash é `INVALID_INPUT` em
-`/expectedHead`, inclusive a string vazia. Enviar sempre a âncora equivale a omitir
+`/expectedHead`, inclusive a string vazia. Guarde o `head` fora do log do hexlog (um arquivo, o
+corpo de um PR): um head gravado no próprio log some junto com a cauda apagada. Passe o da
+verificação mais recente: um head antigo ainda é aceito, mas só prova o trecho até ele. Enviar sempre a âncora equivale a omitir
 `expectedHead`, e `totalRecords: 0` indica log vazio. O `register` não muda, e o marcador de `query` e `evaluate_gate` continua sendo
 um id de registro.
 
