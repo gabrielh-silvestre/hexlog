@@ -8,7 +8,7 @@ import {
   type RelationInput,
   type RelationKind,
 } from '../../domain/record.ts';
-import { resolveKind, type NamedRelation } from '../../domain/relations.ts';
+import { endsVigency, resolveKind, type NamedRelation } from '../../domain/relations.ts';
 import { capDetails, HexlogError, invalidInput, type Detail } from '../../errors.ts';
 import type { Validator } from '../../ports.ts';
 import { invalidRecord, ruleRefusal } from './errors.ts';
@@ -106,7 +106,7 @@ function checkCurrencyScope(prepared: readonly PreparedItem[], origin: Name): vo
   for (const [index, { relations }] of prepared.entries()) {
     for (const [at, { input, kind }] of relations.entries()) {
       const crosses = !isAliasRef(input.to) && processOf(input.to) !== origin;
-      if (crosses && (kind === 'supersedes' || kind === 'revokes')) {
+      if (crosses && endsVigency(kind)) {
         throw ruleRefusal(`/records/${index}/relations/${at}`, { code: 'cross-process-currency' });
       }
     }
