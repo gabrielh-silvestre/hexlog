@@ -674,6 +674,10 @@ describe('bash-guard (#180): the text after a "#" is still checked', () => {
       command: `echo hi # don't\ncat ${globToD}`,
     },
     {
+      name: 'a glob reaching D after a second "#" on the same line',
+      command: `echo hi # a # cat ${globToD}`,
+    },
+    {
       name: 'a glob reaching D before a comment holding a line the shell-quote cannot parse',
       command: `cat ${globToD} # \${}`,
     },
