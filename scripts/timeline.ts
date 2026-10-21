@@ -4,7 +4,7 @@
 // os controles de terminal (`escapeControls`); `--raw` imprime o byte exato.
 // Uso: node scripts/timeline.ts <project> <target-prefix>... [--full] [--json] [--raw]
 import { isNil, memoize } from 'es-toolkit';
-import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
+import { openReadOnly, parseCliArgs, reportCliError } from './cli-error.ts';
 import { escapeControls } from './escape-controls.ts';
 import { Name, Target, type Hash } from '../src/domain/ids.ts';
 import type { QueryRecord, QueryService } from '../src/queries/query-service.ts';
@@ -160,9 +160,7 @@ function main(argv: string[]): number {
     for (const warning of warnings) console.error(warning);
     return warnings.length > 0 ? 2 : 0;
   } catch (error) {
-    const { text, exitCode } = formatCliError('timeline', error);
-    console.error(text);
-    return exitCode;
+    return reportCliError('timeline', error);
   }
 }
 

@@ -7,7 +7,7 @@
 // argumento aceito é `pre-pr` e ele avalia os dois gates, `pre-pr` e `gaps`.
 import type { composeReader } from '../../src/compose.ts';
 import { Name, Target } from '../../src/domain/ids.ts';
-import { formatCliError, openReadOnly } from '../cli-error.ts';
+import { openReadOnly, reportCliError } from '../cli-error.ts';
 
 const PROJECT = Name.parse('hexlog');
 const GATES = ['pre-pr', 'gaps'] as const;
@@ -64,9 +64,7 @@ function main(argv: string[]): number {
     console.error(describeFailures(failures));
     return 1;
   } catch (error) {
-    const { text, exitCode } = formatCliError('flow gate', error);
-    console.error(text);
-    return exitCode;
+    return reportCliError('flow gate', error);
   }
 }
 

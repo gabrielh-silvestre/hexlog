@@ -5,6 +5,7 @@ import type { Author, BatchItem, Relation, RelationInput } from '../../domain/re
 import {
   buildVigency,
   checkRelation,
+  endsVigency,
   hasCycle,
   type Linked,
   type NamedRelation,
@@ -172,9 +173,7 @@ function createEnforcer(
     inDestination: (site: Site, to: RelationEnd, { vigency }: Destination) =>
       enforce(site, to, () => vigency),
     inOrigin: (site: Site, to: RelationEnd) =>
-      enforce(site, to, (kind) =>
-        kind === 'supersedes' || kind === 'revokes' ? before(site.index) : wholeBatch(),
-      ),
+      enforce(site, to, (kind) => (endsVigency(kind) ? before(site.index) : wholeBatch())),
   };
 }
 

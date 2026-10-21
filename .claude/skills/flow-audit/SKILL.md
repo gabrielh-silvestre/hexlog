@@ -21,6 +21,7 @@ Estratos pela `confidence` da `decision`:
 4. O sorteio usa semente, registrada no relatório.
 5. Parada antecipada, por estrato: 0 achados em 10 aceita; 2 achados nos 6 primeiros, ou 3 em até 15, rejeita e audita 100% do estrato na sessão.
 6. Regras de troca, **só depois de ao menos 10 execuções auditadas**: normal para rigorosa (2n) com achado em 2 das últimas 5 features do estrato; rigorosa para normal com 5 limpas; normal para reduzida (metade, mínimo 4) com 10 limpas, só no estrato `high`. `low` e `medium` nunca reduzem.
+7. Decisão de `author.agent` `flow-reanchor` é cópia feita pela reancoragem: siga o `supersedes` até a original para auditar quem decidiu.
 
 ## Suspeitas a listar
 
@@ -40,7 +41,7 @@ Estratos pela `confidence` da `decision`:
 Os relatórios ficam em `.ignore/flow/audits/`. Valem para a população inteira, salvo o 1, que é amostra acima de 30 premissas. Trabalho sem `premise` nos tipos fixados fica fora das contas. Duas rotas de leitura, à escolha de quem roda:
 
 - `query` com `scope: project`: cara, porque cada página tem teto de 24.000 caracteres e uma `decision` chega a 3 ou 4 mil de `data`. Com `relations: "full"`, a vigência do destino de `rests-on` vem em `current` na relação de saída (o padrão só traz contagens); destino de outro processo exige `scope: project`, e com ele o `process` é ignorado (restrinja por `targetPrefix` ou `ids`).
-- `node scripts/export.ts hexlog/<processo> --fields id,type,target,in,out`, contado num `ctx_execute`; o `in` serve para saber quais `decision` estão vigentes. O export é por processo: para a vigência de `rests-on` para as diretrizes, exporte também o processo de diretrizes vigente (`docs/directives/fluxo-hexlog.md`) e, para decisões antigas, as gerações anteriores, com `--fields id,type,target,in,out` e cruze os ids.
+- `node scripts/export.ts hexlog/<processo> --fields id,type,target,in,out`, contado num `ctx_execute`; o `in` serve para saber quais `decision` estão vigentes. O export é por processo: para a vigência de `rests-on` para as diretrizes, exporte também o processo de diretrizes vigente (`docs/directives/fluxo-hexlog.md`) e, só para a decisão que a reancoragem deixou ao dono (âncora ainda em geração antiga), as gerações anteriores, com `--fields id,type,target,in,out` e cruze os ids.
 
 O resultado vai numa seção "Indicadores" do relatório, com o valor da rodada anterior ao lado para a tendência.
 

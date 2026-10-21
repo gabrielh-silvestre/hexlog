@@ -55,7 +55,8 @@
       "Bash(node scripts/flow/report.ts *)"
     ],
     "ask": [
-      "Bash(node *scripts/install.ts*)"
+      "Bash(node *scripts/install.ts*)",
+      "Bash(node *scripts/flow/reanchor.ts*--apply*)"
     ]
   }
 }

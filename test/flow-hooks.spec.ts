@@ -657,6 +657,19 @@ describe('settings.json', () => {
     expect(matcher.test('node scripts/build.ts')).toBe(false);
   }, 15_000);
 
+  test('asks before reanchor.ts --apply and not before the dry-run', () => {
+    const pattern = 'Bash(node *scripts/flow/reanchor.ts*--apply*)';
+    expect(settings.permissions.ask).toContain(pattern);
+    expect(settings.permissions.allow).not.toContain(pattern);
+    // o motor de permissões não roda no jest: o curinga vira regex só para provar o alcance
+    const inner = pattern.slice('Bash('.length, -1);
+    const matcher = new RegExp(`^${inner.replaceAll('.', '\\.').replaceAll('*', '.*')}$`);
+    expect(matcher.test('node scripts/flow/reanchor.ts --to directives-4 --apply')).toBe(true);
+    expect(matcher.test('node scripts/flow/reanchor.ts --apply --to directives-4')).toBe(true);
+    expect(matcher.test('node ./scripts/flow/reanchor.ts --apply')).toBe(true);
+    expect(matcher.test('node scripts/flow/reanchor.ts --to directives-4')).toBe(false);
+  }, 15_000);
+
   test('preserves the old gitnexus hook', () => {
     const gitnexus = (settings.hooks.PreToolUse ?? [])
       .flatMap((e) => e.hooks)
