@@ -4,6 +4,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+## [1.2.1] - 2026-10-21
+
+Patch de correções. O hook de isolamento do Bash passa a conferir o que vem depois de um `#` no comando, o instalador deixa de quebrar com resíduos de execução interrompida e com filesystem sem hard link, e o servidor registra no stderr a queda do transporte stdio. A seção Migração traz o que a 1.1.2 deixou de avisar.
+
 ### Alterado
 
 - A descrição do `register`, o `docs/tools.md`, a mensagem de `target-mismatch` e a skill `hexlog-flow` passam a ensinar a troca de target com um registro só, com `revokes` e `derivesFrom` para o antigo (#241).
@@ -17,7 +21,6 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - O instalador remove, na instalação seguinte, os temporários `.hexlog-skill-<nome>.tmp-<pid>` e `.old-<pid>` que um `kill -9` deixava em `~/.claude/`, só quando o pid do sufixo está morto (#244).
 - O instalador recusa com mensagem clara o filesystem de `~/.claude` sem hard link (`EPERM` ou `ENOTSUP` no backup `settings.json.bak-hexlog`), antes de gravar o `settings.json` (#244).
 - O servidor registra `transport-error` no stderr quando o transporte stdio falha, como uma linha de entrada acima de 10 MiB, que antes encerrava o servidor sem deixar rastro (#244).
-- O patch 1.2.1 chega a `develop` pelo PR de entrega, com as correções do instalador e do servidor listadas acima (#246).
 
 ### Migração
 
@@ -132,7 +135,8 @@ Esta versão quebra o contrato em três pontos e sai como minor: o formato padr�
 - Tools, erros e formato em disco mudam, e não há migração do dado: o instalador arquiva o dado 0.x num `.tar` verificado (`node scripts/install.ts --archive-0x`). Até lá, as tools respondem `LEGACY_DATA`.
 - Feche todas as sessões do Claude Code antes de instalar e reinicie depois.
 
-[Não lançado]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.0...HEAD
+[Não lançado]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.0...v1.1.1
