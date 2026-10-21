@@ -1668,6 +1668,37 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
+  test('orphan sweep ignores a failure to list the temporary directory', () => {
+    const home = createTempDir('skill-orphans-unreadable');
+    const srcDir = buildSrcDir('# hexlog skill v2\n');
+    const originalReaddirSync = fsDefault.readdirSync.bind(fsDefault) as (
+      dir: fs.PathLike,
+    ) => string[];
+    try {
+      const claudeDir = path.join(fs.realpathSync(home), '.claude');
+      const orphan = `.hexlog-skill-hexlog.tmp-${spawnSync(process.execPath, ['-e', '']).pid}`;
+      fs.mkdirSync(path.join(claudeDir, orphan), { recursive: true });
+      jest.spyOn(fsDefault, 'readdirSync').mockImplementation(((dir: fs.PathLike) => {
+        if (String(dir) === claudeDir) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+        return originalReaddirSync(dir);
+      }) as typeof fsDefault.readdirSync);
+
+      expect(() => writeSkillFolder(home, 'hexlog', srcDir)).not.toThrow();
+
+      jest.restoreAllMocks();
+      expect(fs.readFileSync(path.join(claudeDir, 'skills', 'hexlog', 'SKILL.md'), 'utf8')).toBe(
+        '# hexlog skill v2\n',
+      );
+      expect(fs.readdirSync(claudeDir).sort()).toEqual([orphan, 'skills'].sort());
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
   test('orphan sweep removes temporaries of a dead pid and keeps live, foreign and non-numeric ones', () => {
     const home = createTempDir('skill-orphans');
     const srcDir = buildSrcDir('# hexlog skill\n');

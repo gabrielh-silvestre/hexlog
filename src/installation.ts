@@ -351,9 +351,16 @@ function tempParentOf(skillsDir: string, fallback: string): string {
 /** Sufixo `tmp-<pid>`/`old-<pid>` dos temporários do instalador: só dígitos, ancorado. */
 const RESIDUE_SUFFIX = /^(?:tmp|old)-(\d+)$/;
 
-/** Remove de `dir` as entradas `<prefix><sufixo>` em que `isResidue(sufixo)`; erro de remoção é ignorado. */
+/** Remove de `dir` as entradas `<prefix><sufixo>` em que `isResidue(sufixo)`; erro de listagem
+ * ou de remoção é ignorado: a varredura é best-effort e roda depois da troca da skill. */
 function sweepResidue(dir: string, prefix: string, isResidue: (suffix: string) => boolean): void {
-  for (const entry of fs.readdirSync(dir)) {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
     if (!entry.startsWith(prefix) || !isResidue(entry.slice(prefix.length))) continue;
     try {
       rmSync(path.join(dir, entry), { recursive: true, force: true });
