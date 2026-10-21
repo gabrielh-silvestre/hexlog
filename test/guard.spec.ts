@@ -670,7 +670,7 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
 
         expect(error).toMatchObject({
           code: 'INTERNAL',
-          message: expect.stringContaining('does not support hard links'),
+          message: expect.stringContaining('may not support hard links'),
         });
         expect(error.message).not.toContain('/abs/secret/path');
         expect(fs.readFileSync(settingsPath, 'utf8')).toBe(before);

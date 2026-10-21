@@ -319,7 +319,7 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
     if (code === 'EPERM' || code === 'ENOTSUP') {
       throw new HexlogError(
         'INTERNAL',
-        `cannot create the settings.json backup: the filesystem does not support hard links (${code})`,
+        `cannot create the settings.json backup hard link (${code}): the filesystem may not support hard links`,
       );
     }
     if (code !== 'EEXIST') throw error;
