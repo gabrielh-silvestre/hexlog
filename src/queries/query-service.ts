@@ -1,4 +1,4 @@
-import { differenceBy, isUndefined, omitBy, pick, uniq, union } from 'es-toolkit';
+import { differenceBy, isUndefined, omitBy, once, pick, uniq, union } from 'es-toolkit';
 import { hashOfJcs, type Link } from '../domain/chain.ts';
 import { attachmentFields } from '../domain/definitions.ts';
 import {
@@ -512,12 +512,13 @@ export function createQueryService(deps: {
       const view = buildView(reading, target.scope);
       const selected = select(view, filters, search, target);
 
-      const reviews = needsReview(view.records, view.vigency, view.inheritance);
+      // Sob demanda: com `limit: 0` nenhum registro é renderizado e a herança não é calculada.
+      const reviews = once(() => needsReview(view.records, view.vigency, view.inheritance));
       const manifests = new Map(
         reading.processes.map(({ name, verified }) => [name, verified.manifest]),
       );
       const render = (link: Link): QueryRecord => {
-        const review = reviews.get(link.id);
+        const review = reviews().get(link.id);
         const status = attachmentStatusOf(target.project, manifests.get(processOf(link.id)), link);
         const data = projectData(link.data, input.fields);
         return {

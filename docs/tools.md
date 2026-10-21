@@ -217,7 +217,8 @@ processo em `details[0].process`.
   (traz também os superados e revogados). O `targetPrefix` casa por segmento, na fronteira de
   `.`: `a.b` casa `a.b` e `a.b.c`, não `a.b-2` nem `a.bc` (`unit-1` não casa `unit-10`). A
   resposta vazia em que nenhum target lido casa, mas algum começa pela string sem a fronteira,
-  traz `hint` com esse target; o casamento não muda. Não há filtro por tempo (`since` dá
+  traz `hint` com esse target, mesmo que o registro dele já esteja superado ou revogado e
+  com `includeNonCurrent` ligado ou não; o casamento não muda. Não há filtro por tempo (`since` dá
   `INVALID_INPUT`, e a mensagem aponta `changesSince`). A
   busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
   busca o monta, e o alcance projeto o monta a cada busca.

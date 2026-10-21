@@ -1,4 +1,4 @@
-import { isUndefined, orderBy } from 'es-toolkit';
+import { isUndefined, once, orderBy } from 'es-toolkit';
 import type { Link } from '../domain/chain.ts';
 import { matchesSelector, matchesTargetPrefix, type Selector } from '../domain/gate.ts';
 import { processOf, type Name, type RecordId, type Target } from '../domain/ids.ts';
@@ -23,8 +23,11 @@ export type View = {
   byId: ReadonlyMap<RecordId, Link>;
   vigency: Vigency;
   incoming: ReadonlyMap<RecordId, Incoming<Link>[]>;
-  /** Relações herdadas pela linhagem de `supersedes`; vazia quando nenhum processo lido a liga. */
-  inheritance: Inheritance;
+  /**
+   * Relações herdadas pela linhagem de `supersedes`; vazia quando nenhum processo lido a liga.
+   * Calculada na 1ª leitura, uma vez: quem só usa registros e vigência não paga a herança.
+   */
+  readonly inheritance: Inheritance;
 };
 
 /**
@@ -60,14 +63,17 @@ export function buildView(reading: Reading, scope: ReadTarget['scope']): View {
   const records = inOutputOrder(reading, scope);
   const vigency = buildVigency(records);
   const isActive = inheritanceActivation(reading);
+  const inheritance = once(() =>
+    isUndefined(isActive) ? NO_INHERITANCE : buildInheritance(records, vigency, isActive),
+  );
   return {
     records,
     byId: new Map(records.map((link) => [link.id, link])),
     vigency,
     incoming: incomingOf(records),
-    inheritance: isUndefined(isActive)
-      ? NO_INHERITANCE
-      : buildInheritance(records, vigency, isActive),
+    get inheritance() {
+      return inheritance();
+    },
   };
 }
 
@@ -122,7 +128,9 @@ export function select(
 /**
  * Aviso para a seleção vazia com `targetPrefix`: o 1º target lido que começa pela string, mas não
  * casa por segmento (`a.b` não casa `a.b-2` nem `a.bc`). Sem aviso quando algum target lido casa:
- * o vazio vem dos outros filtros. Não muda o casamento, só aponta o quase-acerto.
+ * o vazio vem dos outros filtros. Não muda o casamento, só aponta o quase-acerto. Varre todo
+ * registro lido, vigente ou não, e ignora `includeNonCurrent`: o alvo de um registro superado ou
+ * revogado também sugere a correção.
  */
 export function boundaryHint(view: View, prefix: Target): string | undefined {
   const targets = view.records.map(({ target }) => target);
