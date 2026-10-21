@@ -132,6 +132,10 @@ pelo usuário, num terminal fora do Claude Code:
    rmdir "$L"        # falha se sobrou algo além do holder: pare e confira
    ```
 
+   O `D` supõe `XDG_DATA_HOME` ausente, vazia ou absoluta. Com valor relativo o servidor o
+   ignora e usa `~/.local/share/hexlog`, mas o shell o usa, então `ls -d` falha antes do
+   `rm`: nesse caso defina `D` à mão com o caminho real de `<D>`.
+
 4. Confira que `records.jsonl.lock` não está mais na pasta do processo
    (`ls <D>/.v1/<projeto>/<processo>`). A prova de que o processo volta a gravar é o
    próximo `register` numa sessão nova; `export.ts` e `verify_chain` leem sem o lock,
