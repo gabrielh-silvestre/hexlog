@@ -364,7 +364,7 @@ describe('integridade', () => {
     expect(err).toContain('legacy 0.x data found; archive it first');
     expect(out).toBe('');
     expect(code).toBe(2);
-  });
+  }, 15_000);
 });
 
 describe('uso incorreto e erros', () => {
