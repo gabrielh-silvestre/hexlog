@@ -387,11 +387,9 @@ describe('toBatches', () => {
 
     expect(batches.flatMap((batch) => batch.rewrites)).toEqual(all);
 
-    for (const batch of batches) {
-      expect(batch.rewrites.map(({ item: { target } }) => target)).toEqual(
-        batch.records.map(({ target }) => target),
-      );
-    }
+    expect(batches.map((batch) => batch.rewrites.map(({ item: { target } }) => target))).toEqual(
+      batches.map((batch) => batch.records.map(({ target }) => target)),
+    );
   });
 
   it('should derive a deterministic key that follows the content', () => {
@@ -504,7 +502,7 @@ describe('formatPlan', () => {
     expect(formatPlan({ rewrites: [], owner: [] }, options)).toBe('nothing to reanchor');
   });
 
-  it('should print both lists when one of them is empty', () => {
+  it('should print the apply header and both lists when one of them is empty', () => {
     const planned = plan([decision()]);
 
     const text = formatPlan(planned, { to: 'directives-4', apply: true });
@@ -513,7 +511,7 @@ describe('formatPlan', () => {
     expect(text).toContain('rewritable: 1\n  work-a: 1\nfor the owner: 0');
   });
 
-  it('should list the owner items with the state of each anchor', () => {
+  it('should print the dry-run header and list the owner items with the state of each anchor', () => {
     const planned = plan([decision()], { current: [NEW_DIRECTIVE] });
 
     const text = formatPlan(planned, options);

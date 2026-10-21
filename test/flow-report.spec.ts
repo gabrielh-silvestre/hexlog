@@ -408,7 +408,7 @@ describe('scripts/flow/report.ts', () => {
 
       expect(printed.length).toBeGreaterThan(0);
 
-      for (const id of printed) expect(currentIds).toContain(id);
+      expect([...currentIds]).toEqual(expect.arrayContaining(printed));
     });
   });
 

@@ -309,10 +309,9 @@ describe('scripts/flow/reanchor.ts', () => {
     it('should be idempotent', () => {
       const xdg = copyToXdg(environment.dataDir);
       const first = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+      const written = snapshot(xdg);
 
       expect(first.status).toBe(0);
-
-      const written = snapshot(xdg);
 
       const again = runReanchor(['--to', 'directives-2', '--apply'], xdg);
 
@@ -454,6 +453,7 @@ describe('scripts/flow/reanchor.ts', () => {
         'utf8',
       );
       key = /"key":"(reanchor-directives-2-feat-d-[^"]+)"/.exec(log)?.[1];
+      if (key === undefined) throw new Error('probe apply wrote no feat-d batch key');
       await refused.ok('register', {
         project: 'hexlog',
         process: 'feat-d',
@@ -474,7 +474,6 @@ describe('scripts/flow/reanchor.ts', () => {
     });
 
     it('should exit 1 and report the refused batch', () => {
-      expect(key).toBeDefined();
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(`batch refused: feat-d ${key}`);
     });
@@ -544,17 +543,15 @@ describe('scripts/flow/reanchor.ts', () => {
       }
     }, 240_000);
 
-    it('should keep the first batch and count only it when the second is refused', async () => {
+    it('should exit 1, report the refused second batch and count only the first one', async () => {
       const many = await openManyDecisions();
       try {
         const probe = copyToXdg(many.dataDir);
 
-        expect(runReanchor(['--to', 'directives-2', '--apply'], probe).status).toBe(0);
-
+        const probed = runReanchor(['--to', 'directives-2', '--apply'], probe);
+        if (probed.status !== 0) throw new Error(`probe apply failed: ${probed.stderr}`);
         const secondKey = batchKeys(probe)[1];
-
-        expect(secondKey).toBeDefined();
-
+        if (secondKey === undefined) throw new Error('probe apply wrote fewer than two batches');
         await many.ok('register', {
           project: 'hexlog',
           process: 'feat-e',
