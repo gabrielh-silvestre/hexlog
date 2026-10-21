@@ -4,6 +4,25 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+### Alterado
+
+- A descrição do `register`, o `docs/tools.md`, a mensagem de `target-mismatch` e a skill `hexlog-flow` passam a ensinar a troca de target com um registro só, com `revokes` e `derivesFrom` para o antigo (#241).
+
+### Corrigido
+
+- O hook de isolamento do Bash passa a conferir o trecho que vem depois de um `#`: `echo hi # x` seguido de quebra de linha e `cat <glob>`, ou `echo a#b; cat <glob>`, passavam sem checagem. Só a linha que o `shell-quote` não parseia (`${}`) continua liberada (#242).
+- O hook de isolamento mede o token entre aspas depois de expandir o `~`, como a classificação: `cat '~/<token acima do teto só depois de expandir>*'` deixa de ser negado por custo (#242).
+- A varredura dos temporários legados do instalador casa `<nome>.(tmp|old)-<dígitos>` por prefixo, sem regex com o nome: nome de skill com `+`, `(` ou `[` não quebra mais a instalação (#244).
+- A limpeza dos temporários legados de skills roda depois da troca da skill e ignora erro de remoção (`EACCES`): um resíduo sem permissão não aborta mais a instalação (#244).
+- O instalador remove, na instalação seguinte, os temporários `.hexlog-skill-<nome>.tmp-<pid>` e `.old-<pid>` que um `kill -9` deixava em `~/.claude/`, só quando o pid do sufixo está morto (#244).
+- O instalador recusa com mensagem clara o filesystem de `~/.claude` sem hard link (`EPERM` ou `ENOTSUP` no backup `settings.json.bak-hexlog`), antes de gravar o `settings.json` (#244).
+- O servidor registra `transport-error` no stderr quando o transporte stdio falha, como uma linha de entrada acima de 10 MiB, que antes encerrava o servidor sem deixar rastro (#244).
+- O patch 1.2.1 chega a `develop` pelo PR de entrega, com as correções do instalador e do servidor listadas acima (#246).
+
+### Migração
+
+- Desde a 1.1.2, `read_attachment` recusa com `INVALID_INPUT` (`mid-surrogate-pair`) o `offset` que cai no meio de um par surrogate: quem pagina por passo fixo deve seguir o `next` de cada página. O servidor também recusa com `too-deep` argumentos aninhados além de 64 níveis (`data` do `register` acima de 61), que antes só falhavam perto de 2.000 níveis. A 1.1.2 listou o primeiro item só em Corrigido e nenhum dos dois na Migração (#244).
+
 ## [1.2.0] - 2026-10-16
 
 Esta versão quebra o contrato em três pontos e sai como minor: o formato padrão da `query` e do `evaluate_gate` mudou (`relations: "full"` e `evidence: "full"` trazem o antigo de volta), `limit: 0` sem `changesSince` troca de código de erro, e o `register` recusa `supersedes` entre targets. A Migração abaixo diz o que fazer em cada caso.

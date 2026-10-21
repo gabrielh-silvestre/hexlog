@@ -3,7 +3,8 @@
 Estudo para quando o hexlog virar repositório público no GitHub. O que já está
 instalado não mora aqui: o `AGENTS.md` da raiz lista cada workflow e config, e
 [qualidade-e-testes.md](directives/qualidade-e-testes.md) tem as regras. Hoje há
-o Dependabot (`.github/dependabot.yml`), o CI (`.github/workflows/ci.yml`:
+o Dependabot (`.github/dependabot.yml`: `npm` e `github-actions`, semanal, minor e patch
+agrupados num PR por ecossistema, sem major em `npm` (major de `github-actions` vem por PR), `cooldown` de 7 dias), o CI (`.github/workflows/ci.yml`:
 `npm audit signatures`, `typecheck`, `lint`, `knip`, `format:check`,
 `test:coverage` com piso de 90% e `test:budget`), o `commitlint`, o job `docs`
 (`lint:md` e `spell`), o `workflow-lint`, o `dependency-review`, o
@@ -54,7 +55,8 @@ do Semgrep mudar; rodar os dois é redundante.
 ## Ordem sugerida quando o repo for público
 
 1. Ligar CodeQL default setup e Dependabot alerts/security updates em Settings.
-2. Adicionar `.github/dependabot.yml` para `npm` e `github-actions` (feito).
+2. Adicionar `.github/dependabot.yml` para `npm` e `github-actions`, agrupado (sem major em `npm`) e com
+   `cooldown` de 7 dias (feito).
 3. Código morto (`knip`), cobertura com piso (`test:coverage`), mensagem de
    commit (`commitlint`), `.md` (`lint:md` e `spell`), workflows
    (`workflow-lint`), `dependency-review` e Scorecard (feito).

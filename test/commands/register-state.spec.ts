@@ -396,19 +396,21 @@ describe('register: D-10 rules within the own process', () => {
     expect(result.replayed).toBe(false);
   });
 
-  test('the recommended way to change target is accepted: revokes on the old one and a new record with derivesFrom', async () => {
+  test('the recommended way to change target is accepted: one record at the new target with revokes and derivesFrom to the old one', async () => {
     const harness = setup();
     const previous = await seed(harness, ORIGIN, 'e');
 
     const result = await harness.register([
-      note('revoke', { relations: [{ to: previous, kind: 'revokes' }] }),
       note('moved', {
         target: 'run.other',
-        relations: [{ to: previous, kind: 'derivesFrom' }],
+        relations: [
+          { to: previous, kind: 'revokes' },
+          { to: previous, kind: 'derivesFrom' },
+        ],
       }),
     ]);
 
-    expect(result.records).toHaveLength(2);
+    expect(result.records).toHaveLength(1);
   });
 
   test.each([

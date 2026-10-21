@@ -2,8 +2,11 @@
 // <slug> [<base>]`. Só aponta, imprime e sai sempre 0; quem corrige é a skill `flow-run`. Lê o log
 // apenas pelo `composeReader` (`scripts/cli-error.ts#openReadOnly`), nunca o diretório de dados;
 // por isso precisa de `node_modules`, ao contrário do hook `flow-hooks.ts`.
-// A entrada de `allow` (`Bash(node scripts/flow/report.ts *)`) aceita argumento livre, então as
-// duas regex abaixo são o freio.
+// O `git` roda em `process.cwd()`, não na raiz do script, e o log vem de `openReadOnly`, também por
+// cwd e `XDG_DATA_HOME`: o spec aponta os dois para um repositório e um diretório de dados
+// temporários, e trocar o cwd quebraria o spec.
+// As regex `SLUG` e `BASE` só validam o argv, que o shell já expandiu: protegem o script e nada
+// executa o argv; o que sobra cai em `hooks-sao-freios` (`docs/directives/estrategia.md`).
 import { spawnSync } from 'node:child_process';
 import { Name } from '../../src/domain/ids.ts';
 import { formatCliError, openReadOnly } from '../cli-error.ts';
@@ -18,7 +21,15 @@ const BASE = /^[\w./-]+$/;
 const USAGE = 'usage: node scripts/flow/report.ts <slug> [<base>]';
 
 type Relation = { kind: string; as?: string; to?: string };
-type Row = { id: string; type?: string; target: string; in: Relation[]; out: Relation[] };
+type LinkedRelation = Relation & { to: string };
+type Row = {
+  id: string;
+  type?: string;
+  target: string;
+  in: Relation[];
+  out: Relation[];
+  inheritedOut: Relation[];
+};
 
 const warn = (message: string): void => void process.stderr.write(`flow-report: ${message}\n`);
 
@@ -32,12 +43,13 @@ function exportRows(proc: string): Row[] {
       relations: 'full',
       limit: Number.MAX_SAFE_INTEGER,
     });
-    return records.map(({ id, type, target, in: incoming = [], out = [] }) => ({
+    return records.map(({ id, type, target, in: incoming = [], out = [], inheritedOut = [] }) => ({
       id,
       type,
       target,
       in: incoming,
       out,
+      inheritedOut,
     }));
   } catch (error) {
     throw new Error(formatCliError('export', error).text, { cause: error });
@@ -74,16 +86,19 @@ function createTargetOf(slug: string, own: Row[]): (id: string) => string | unde
   };
 }
 
-const relationsOf = (row: Row, alias: string): Relation[] =>
-  row.out.filter((relation) => relation.as === alias && relation.to !== undefined);
+/** Relações gravadas e herdadas pela linhagem de `supersedes` (`inheritedOut`, só derivado na leitura). */
+const relationsOf = (row: Row, alias: string): LinkedRelation[] =>
+  [...row.out, ...row.inheritedOut].filter(
+    (relation): relation is LinkedRelation => relation.as === alias && relation.to !== undefined,
+  );
 
-/** Citações distintas por target; id sem target conta como citação distinta e desconhecida. */
+/**
+ * Citações distintas por target; id sem target conta como citação distinta e desconhecida. Premissa
+ * revogada continua contando: o relatório lê a citação gravada, não a vigência da premissa.
+ */
 function citedTargets(row: Row, targetOf: (id: string) => string | undefined): Set<string> {
   return new Set(
-    relationsOf(row, 'rests-on').map((relation) => {
-      const id = relation.to ?? '';
-      return targetOf(id) ?? `?${id}`;
-    }),
+    relationsOf(row, 'rests-on').map((relation) => targetOf(relation.to) ?? `?${relation.to}`),
   );
 }
 
@@ -92,14 +107,14 @@ function uncitedReason(
   slug: string,
   deliveryPremises: string[],
 ): string | undefined {
-  const [only] = cited;
-  if (cited.size !== 1 || (only !== `${slug}.premise.objective` && only !== SENTINEL)) {
-    return undefined;
-  }
+  const objective = `${slug}.premise.objective`;
+  const decorative = [objective, SENTINEL].filter((target) => cited.has(target));
+  if (decorative.length === 0 || decorative.length !== cited.size) return undefined;
   const uncited = deliveryPremises.filter((target) => !cited.has(target));
   const shown = uncited.slice(0, MAX_UNCITED).join(',') || '-';
   const rest = uncited.length > MAX_UNCITED ? ` (+${uncited.length - MAX_UNCITED})` : '';
-  return `only-${only === SENTINEL ? 'sentinel' : 'objective'}: uncited=${shown}${rest}`;
+  const label = decorative.map((target) => (target === SENTINEL ? 'sentinel' : 'objective'));
+  return `only-${label.join('+')}: uncited=${shown}${rest}`;
 }
 
 /** Docs de `docs/directives/` alterados no diff contra o merge-base com `base`; `undefined` se o git falhar. */
@@ -108,7 +123,8 @@ function amendedDocs(base: string): Set<string> | undefined {
   // Saída vazia do merge-base é falha, nunca "diff vazio".
   const diff = mergeBase ? tryGit(process.cwd(), ['diff', '--name-only', mergeBase]) : undefined;
   if (diff === undefined) {
-    warn(`git: no merge-base between HEAD and "${base}", doc-amended skipped`);
+    // O prefixo `git:` fica: a skill `flow-audit` filtra o aviso por ele.
+    warn(`git: cannot diff HEAD against "${base}", doc-amended skipped`);
     return undefined;
   }
   // ponytail: arquivo novo não rastreado fica fora do diff; versionar antes de rodar
@@ -121,12 +137,11 @@ function amendedReasons(
   targetOf: (id: string) => string | undefined,
 ): string[] {
   const reasons = relationsOf(row, 'anchored-in').flatMap((relation) => {
-    const target = targetOf(relation.to ?? '');
+    const target = targetOf(relation.to);
     const doc = target?.split('.')[1];
-    const file = `docs/directives/${doc ?? ''}.md`;
-    return target !== undefined && doc !== undefined && docs?.has(file) === true
-      ? [`doc-amended: ${file} (${target})`]
-      : [];
+    if (target === undefined || doc === undefined) return [];
+    const file = `docs/directives/${doc}.md`;
+    return docs?.has(file) === true ? [`doc-amended: ${file} (${target})`] : [];
   });
   return [...new Set(reasons)];
 }
@@ -168,7 +183,6 @@ function main(): void {
   } catch (error) {
     warn(error instanceof Error ? error.message : String(error));
   }
-  process.exitCode = 0;
 }
 
 main();

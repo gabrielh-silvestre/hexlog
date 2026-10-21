@@ -15,5 +15,5 @@ import * as path from 'node:path';
 export default function setup(): void {
   process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-suite-'));
   const names = spawnSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' });
-  for (const name of names.stdout.split('\n')) delete process.env[name];
+  for (const name of (names.stdout ?? '').split('\n')) delete process.env[name];
 }

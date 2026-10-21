@@ -12,13 +12,13 @@ As 12 tools do servidor, agrupadas em quatro famílias. Cada arquivo exporta `re
 | `process.ts` | `registerProcessTools`: `create_process` e `register` (só o `register` leva `_meta` `anthropic/alwaysLoad`; o `Author` é montado aqui, com o `client` do envelope). Tools de escrita |
 | `definition.ts` | `registerDefinitionTools`: `define_type`, `define_relation` e `define_gate`, uma operação de `DefinitionService` cada. Tools de escrita |
 | `attachment.ts` | `registerAttachmentTools`: `attach` (escrita; `text` ou `path`) e `read_attachment` (leitura; `offset` e `maxChars` limitados por `PAGE_CHARS_CAP`) |
-| `query.ts` | `registerQueryTools`: `query`, `evaluate_gate`, `verify_chain`, `list` e `describe_type`, todas de leitura (`readOnlyHint`). Exporta `queryPage` (única porta de `queryRecords`, que passa `maxChars`, assume `relations: counts` (o serviço assume `full`) e corta `changes`); `gatePage` (corta `evidence` por pergunta, também em cada target do lote) é interna; o `run` de `evaluate_gate` assume `evidence: failing` com `target` e `counts` com `targets` (o serviço assume `full`) e aceita `targets` (1 a `TARGETS_MAX` = 50) |
+| `query.ts` | `registerQueryTools` (o `outputSchema` do `query` declara as relações herdadas, `inheritedIn`, `inheritedOut` e os dois `inherited*Counts`): `query`, `evaluate_gate`, `verify_chain`, `list` e `describe_type`, todas de leitura (`readOnlyHint`). Exporta `queryPage` (única porta de `queryRecords`, que passa `maxChars`, assume `relations: counts` (o serviço assume `full`) e corta `changes`); `gatePage` (corta `evidence` por pergunta, também em cada target do lote) é interna; o `run` de `evaluate_gate` assume `evidence: failing` com `target` e `counts` com `targets` (o serviço assume `full`) e aceita `targets` (1 a `TARGETS_MAX` = 50) |
 
 ## Dependencies
 
 ### Internal
 - `../kernel.ts`: `defineTool`, `ToolDeps`, anotações e `MarkerRecord`
-- `../../queries/query-service.ts`: `QueryService` e `PAGE_CHARS_CAP`
+- `../../queries/query-service.ts`: `QueryService`, `PAGE_CHARS_CAP` e `RELATION_MODES`
 - `../../domain/`: schemas de entrada reaproveitados (`Name`, `Hash`, `Author`, `BatchItem`, `Selector`, `RecordType` etc.)
 
 ### External

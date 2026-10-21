@@ -208,4 +208,19 @@ describe('relation inheritance (properties)', () => {
       }),
     );
   });
+
+  // A escrita recusa o ciclo de `supersedes`; só um log forjado à mão o traz, e a leitura não pode
+  // travar.
+  test('a forged supersedes cycle ends and leaves no current record to raise an edge to', () => {
+    const records: Linked[] = [
+      { id: 'a:1', relations: [{ kind: 'supersedes', to: 'a:2' }] },
+      { id: 'a:2', relations: [{ kind: 'supersedes', to: 'a:3' }] },
+      { id: 'a:3', relations: [{ kind: 'supersedes', to: 'a:1' }] },
+      { id: 'a:4', relations: [{ kind: 'supports', to: 'a:1' }] },
+    ];
+
+    const inheritance = resolve(records, { a: true, b: true });
+
+    expect(edgesOf(inheritance, records)).toEqual([]);
+  });
 });

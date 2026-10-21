@@ -74,11 +74,12 @@ type ToolCall<Input> = {
 
 /**
  * Corpo de sucesso ou erro que uma tool devolve ao SDK: nunca uma exceção. O erro leva o JSON
- * `{code, message, details}` só em `content[0].text`, sem `structuredContent`, porque o `outputSchema`
- * descreve só o sucesso: o `validateToolOutput` do SDK 2.0 já retorna cedo com `isError`, e a
- * invariante fica travada em `test/mcp/environment.ts#errorBodyOf`. "Nunca uma exceção" vale
- * para o handler: o SDK valida o `outputSchema` depois dele, e saída fora do schema volta como `isError`
- * com o texto livre `Output validation error: ...`, sem `code` (risco aceito, ADR 0009).
+ * `{code, message, details}` só em `content[0].text`, sem `structuredContent`, porque o
+ * `outputSchema` descreve só o sucesso: o `validateToolOutput` do SDK 2.x (conferido na 2.3.1) já
+ * retorna cedo com `isError`, e a invariante fica travada em `test/mcp/environment.ts#errorBodyOf`.
+ * "Nunca uma exceção" vale para o handler: o SDK valida o `outputSchema` depois dele, e saída fora
+ * do schema volta como `isError` com o texto livre `Output validation error: ...`, sem `code`
+ * (risco aceito, ADR 0009).
  */
 export type ToolResult<Output> =
   | { structuredContent: Output; content: [{ type: 'text'; text: string }] }
@@ -88,8 +89,9 @@ export type ToolResult<Output> =
  * Ponte zod → SDK: anuncia o JSON Schema do próprio zod (`~standard.jsonSchema`), mas troca o
  * `validate` por um que deixa a entrada crua passar. Quem valida de verdade é `execute`, para o erro
  * sair como `INVALID_INPUT` com `details[]` (D-26) e não como "Input validation error" do SDK.
- * Depende de `schema['~standard']` trazer `jsonSchema` (zod 4.6.5) e de o SDK 2.0.0 exigir
- * `StandardSchemaWithJSON`: bump de zod ou do SDK exige rodar `test/mcp/kernel.spec.ts`.
+ * Depende de `schema['~standard']` trazer `jsonSchema` (zod 4.6.5) e de o SDK 2.x (conferido na
+ * 2.3.1) exigir `StandardSchemaWithJSON`: bump de zod ou do SDK exige rodar
+ * `test/mcp/kernel.spec.ts`.
  */
 export function advertise(schema: z.ZodType): StandardSchemaWithJSON {
   return { '~standard': { ...schema['~standard'], validate: (value) => ({ value }) } };

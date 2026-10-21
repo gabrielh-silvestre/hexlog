@@ -153,7 +153,7 @@ Esquema definido como migração Alembic embutida em
 `get_conport_schema`, `get_recent_activity_summary`, `batch_log_items`.
 
 **Imutabilidade.** Decisões são apagadas com `DELETE` físico, sem histórico.
-Só product/active context guardam versões. Nenhuma ocorrência de "supersed" no
+Só product/active context guardam versões. Nenhuma ocorrência de `supersed` no
 código ou README. Nada impede editar o `context.db` direto.
 
 **Fluxo.** Nenhum: `progress_entries.status` é texto livre, sem gates.

@@ -178,6 +178,16 @@ describe('evaluate_gate: lean responses', () => {
     expect(result).not.toHaveProperty('results');
   });
 
+  test('evaluate_gate accepts exactly 50 targets and answers each one', async () => {
+    await registerNotes(['olá'], 't0.step');
+    const targets = Array.from({ length: 50 }, (_, index) => `t${index}`);
+
+    const result = await evaluate<GateBatchEvaluation>({ gate: 'has-note', targets });
+
+    expect(result.results.map(({ target }) => target)).toEqual(targets);
+    expect(result.results.filter(({ passed }) => passed)).toHaveLength(1);
+  });
+
   test('evaluate_gate refuses target with targets, an empty targets list, more than 50 targets and evidence full with targets', async () => {
     const call = (extra: Record<string, unknown>) =>
       environment.call('evaluate_gate', {
@@ -220,6 +230,30 @@ describe('evaluate_gate: lean responses', () => {
       omitted: { unsupported: total - EVIDENCE_ITEMS_CAP },
     });
     expect(question?.evidence).toHaveProperty('unsupported.length', EVIDENCE_ITEMS_CAP);
+  });
+
+  test('evaluate_gate caps every list of a full evidence at EVIDENCE_ITEMS_CAP and reports omitted', async () => {
+    const total = BATCH_MAX * 3;
+    for (let batch = 0; batch < 3; batch += 1) {
+      await registerNotes(Array.from({ length: BATCH_MAX }, () => 'proposta'));
+    }
+
+    const result = await evaluate<GateEvaluation & { questions: { omitted?: unknown }[] }>({
+      gate: 'proposed-approved',
+      evidence: 'full',
+    });
+
+    const [question] = result.questions;
+    expect(question).toMatchObject({
+      passed: false,
+      omitted: { of: total - EVIDENCE_ITEMS_CAP, unsupported: total - EVIDENCE_ITEMS_CAP },
+    });
+    expect(question?.evidence).toMatchObject({
+      of: { length: EVIDENCE_ITEMS_CAP },
+      unsupported: { length: EVIDENCE_ITEMS_CAP },
+      supports: [],
+      contradictions: [],
+    });
   });
 
   test('evaluate_gate caps each batch target evidence list at EVIDENCE_ITEMS_CAP and reports omitted', async () => {

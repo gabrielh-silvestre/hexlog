@@ -39,6 +39,11 @@ def user_text(content):
     return ''.join(b.get('text', '') for b in content or [] if isinstance(b, dict) and b.get('type') == 'text')
 
 
+def read_key(args):
+    # query da 1.x escolhe a seleção por targetPrefix, text e ids; só target/targets não distingue duas queries
+    return [args.get(k) for k in ('target', 'targets', 'targetPrefix', 'text', 'ids')]
+
+
 def ids_of(path):
     if '/subagents/' in path:
         return os.path.basename(path)[:-6], path.split('/')[-3], True
@@ -168,7 +173,7 @@ def main():
                 continue
             a_ = c['args']
             key = (c['tool'], json.dumps(a_, sort_keys=True))
-            proc, target = a_.get('process'), a_.get('target') or a_.get('targets')
+            proc = a_.get('process')
             brief = {'session': c['session'], 'parent': c['parent'], 'ts': c['ts'], 'tool': c['tool'],
                      'args': json.dumps(a_, ensure_ascii=False)[:500], 'size': c['size'], 'origin': c['origin'],
                      'before': c['before']}
@@ -185,7 +190,7 @@ def main():
                 follows = [n for n in nxt if n['tool'] in WRITES]
                 same = [n for n in follows if proc and n['args'].get('process') == proc]
                 rep = [p for p in calls[:i] if p['tool'] == c['tool'] and p['args'].get('process') == proc
-                       and (p['args'].get('target') or p['args'].get('targets')) == target]
+                       and read_key(p['args']) == read_key(a_)]
                 kind = 'legit' if same else ('repeat_no_write' if rep and not follows else 'other')
                 stats[f'c_orient:{kind}'] += 1
                 if kind == 'repeat_no_write':

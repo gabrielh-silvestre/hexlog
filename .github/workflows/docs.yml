@@ -1,7 +1,7 @@
 name: Docs
 
-# O job `docs` roda em todo PR, qualquer base e sem filtro de `paths`, para o check obrigatório do
-# ruleset nunca ficar pendente. Confere todos os `.md` do repositório (menos `docs/pesquisa/**`,
+# O job `docs` roda em todo PR, qualquer base e sem filtro de `paths`, para o check que o ruleset
+# vai exigir nunca ficar pendente. Confere todos os `.md` do repositório (menos `docs/pesquisa/**`,
 # congelado) com o markdownlint e o cspell, as mesmas configs do pre-commit.
 on:
   pull_request:
