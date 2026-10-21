@@ -2,17 +2,21 @@ version: 2
 
 # PRs de version update vão para develop, a base de trabalho (main só recebe hotfix e release).
 # Pela doc do GitHub (dependabot-options-reference), só `target-branch` e `cooldown` valem apenas
-# para version updates. `ignore` e `commit-message` também alcançam as security updates, e o grupo
-# só as alcançaria com `applies-to: security-updates`, que não está aqui. Então a security update
-# abre PR na branch padrão, que é develop, um PR por pacote, sem cooldown, com o prefixo e
-# sujeita ao `ignore`.
+# para version updates. Se `ignore` e `commit-message` alcançam as security updates, a doc é
+# ambígua com `target-branch` definido: a introdução diz que as opções com o selo de segurança
+# também as mudam, "except where `target-branch` is used", e a seção `target-branch` diz que as
+# opções do ecossistema "no longer apply to security updates"; já `commit-message` ressalva só a
+# branch que não é a padrão, e develop é a padrão. O grupo só as alcançaria com
+# `applies-to: security-updates`, que não está aqui. A security update abre PR na branch padrão,
+# que é develop, um PR por pacote e sem cooldown; o resto está a conferir (abaixo).
 # O auto-merge das de npm (minor e patch, agrupadas ou de segurança) é do
 # dependabot-auto-merge.yml e só vale com `allow_auto_merge` ligado no repositório; sem a flag, e
 # para github-actions e major, o merge é manual.
 # O prefixo mantém o título como Conventional Commit (o cliff.toml descarta os demais).
-# Major de npm nunca vem pelo Dependabot (`ignore`), nem como security update: alerta cuja correção
-# só existe numa major fica sem PR automático (o alerta segue aberto na aba Security) e entra por
-# PR manual. O 1º security update real confere isso. Major de action vem: as
+# Major de npm nunca vem pelo Dependabot como version update (`ignore`). Se o `ignore` alcançar a
+# security update, o alerta cuja correção só existe numa major fica sem PR automático (segue aberto
+# na aba Security) e entra por PR manual; senão, o PR abre e o auto-merge o ignora por ser major.
+# O 1º security update real confere isso. Major de action vem: as
 # actions por tag major (`@v7`) só têm a próxima major como candidata, então ignorá-la as deixaria
 # sem PR nenhum. Minor e patch saem em um PR por ecossistema, depois de 7 dias de cooldown. O
 # esbuild (0.x) fica no grupo: o quality, que constrói o bundle nos specs, pega a quebra.
