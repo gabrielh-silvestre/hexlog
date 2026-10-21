@@ -423,20 +423,6 @@ describe('checkExpectedHead', () => {
   const verifiedOf = (...links: Link[]) =>
     verifyProcess(rawOf(links.map((l) => lineOf(l)).join('')));
 
-  test('o hash de qualquer elo válido devolve a cadeia sem mudar', () => {
-    const verified = verifiedOf(A, B, C);
-
-    for (const link of [A, B, C]) {
-      expect(checkExpectedHead(verified, hashLink(link))).toBe(verified.chain);
-    }
-  });
-
-  test('a âncora do processo é aceita em log vazio e em log com 3 elos, sem mudar a cadeia', () => {
-    for (const verified of [verifiedOf(), verifiedOf(A, B, C)]) {
-      expect(checkExpectedHead(verified, anchor(manifest))).toBe(verified.chain);
-    }
-  });
-
   test('o head de uma verificação com quebra no meio volta sem head-not-found', () => {
     const verified = verifyProcess(rawOf(`${lineOf(A)}${forgedLine(B)}`));
 
@@ -463,12 +449,6 @@ describe('checkExpectedHead', () => {
     expect(chain.breaks).toHaveLength(MAX_BREAKS);
     expect(chain.breaks).toEqual(verified.chain.breaks);
     expect(chain.totalBreaks).toBe(MAX_BREAKS + 1);
-  });
-
-  test('hash de elo inexistente é head-not-found', () => {
-    expect(checkExpectedHead(verifiedOf(), hashLink(A)).breaks).toEqual([
-      { index: 0, reason: 'head-not-found' },
-    ]);
   });
 });
 

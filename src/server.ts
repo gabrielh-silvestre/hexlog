@@ -20,4 +20,9 @@ const { services, isLegacy } = compose({
 });
 
 logger({ level: 'info', event: 'start', dataDir: dir, version: VERSION });
-serveStdio(() => createServer({ services, isLegacy, logger }));
+// O SDK encerra o servidor sem resposta quando uma linha passa do teto do buffer (10 MiB): o
+// `onerror` é o único rastro da causa. Só relata, não muda o que vai ao fio.
+serveStdio(() => createServer({ services, isLegacy, logger }), {
+  onerror: (error) =>
+    logger({ level: 'error', event: 'transport-error', name: error.name, message: error.message }),
+});

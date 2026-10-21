@@ -654,6 +654,34 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
+  test.each(['EPERM', 'ENOTSUP'])(
+    'deny: registerGuard turns %s from the backup hard link into a HexlogError before writing',
+    (code) => {
+      const tmpHome = createTempDir('deny-bak-no-hardlink');
+      const linkSpy = jest.spyOn(fsDefault, 'linkSync').mockImplementation(() => {
+        throw Object.assign(new Error(`${code}: /abs/secret/path`), { code });
+      });
+      try {
+        const settingsPath = path.join(tmpHome, 'settings.json');
+        const before = settingsWithDeny(trioOf(oldD));
+        fs.writeFileSync(settingsPath, before);
+
+        const error = captureError(() => registerGuard({ settingsPath, expected }));
+
+        expect(error).toMatchObject({
+          code: 'INTERNAL',
+          message: expect.stringContaining('may not support hard links'),
+        });
+        expect(error.message).not.toContain('/abs/secret/path');
+        expect(fs.readFileSync(settingsPath, 'utf8')).toBe(before);
+        expect(fs.readdirSync(tmpHome)).toEqual(['settings.json']);
+      } finally {
+        linkSpy.mockRestore();
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    },
+  );
+
   test('deny: registerGuard grava no destino do symlink e mantém o link e o modo', () => {
     const tmpHome = createTempDir('deny-symlink');
     try {
@@ -1561,6 +1589,142 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
       writeSkillFolder(home, 'hexlog', srcDir);
 
       expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', ...kept]);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('legacy sweep keeps entries whose suffix is not tmp-/old- plus digits', () => {
+    const home = createTempDir('skill-legacy-suffix');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    try {
+      const skillsDir = path.join(home, '.claude', 'skills');
+      const kept = [
+        'hexlog.tmp-',
+        'hexlog.tmp-12a',
+        'hexlog.old-1-2',
+        'hexlog.bak-123',
+        'hexlog-tmp-123',
+      ];
+      for (const leftover of ['hexlog.tmp-7', 'hexlog.old-42', ...kept]) {
+        fs.mkdirSync(path.join(skillsDir, leftover), { recursive: true });
+      }
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', ...kept].sort());
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('legacy sweep handles a skill name with regex metacharacters', () => {
+    const home = createTempDir('skill-legacy-meta');
+    const srcDir = buildSrcDir('# c++ skill\n');
+    try {
+      const skillsDir = path.join(home, '.claude', 'skills');
+      const kept = ['c++.old-notes', 'cc.tmp-123', 'c+(a[b.tmp-9x'];
+      for (const leftover of ['c++.tmp-123', 'c++.old-123', 'c+(a[b.old-5', ...kept]) {
+        fs.mkdirSync(path.join(skillsDir, leftover), { recursive: true });
+      }
+
+      writeSkillFolder(home, 'c++', srcDir);
+      writeSkillFolder(home, 'c+(a[b', srcDir);
+
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['c++', 'c+(a[b', ...kept].sort());
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('legacy sweep runs after the swap and ignores an rmSync failure', () => {
+    const home = createTempDir('skill-legacy-eacces');
+    const srcDir = buildSrcDir('# hexlog skill v2\n');
+    const originalRmSync = fsDefault.rmSync;
+    try {
+      const skillsDir = path.join(home, '.claude', 'skills');
+      fs.mkdirSync(path.join(skillsDir, 'hexlog.tmp-1'), { recursive: true });
+      fs.mkdirSync(path.join(skillsDir, 'hexlog.old-2'), { recursive: true });
+      jest.spyOn(fsDefault, 'rmSync').mockImplementation((target, options) => {
+        if (String(target).endsWith('hexlog.tmp-1')) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+        originalRmSync(target, options);
+      });
+
+      expect(() => writeSkillFolder(home, 'hexlog', srcDir)).not.toThrow();
+
+      expect(fs.readFileSync(path.join(skillsDir, 'hexlog', 'SKILL.md'), 'utf8')).toBe(
+        '# hexlog skill v2\n',
+      );
+      expect(fs.readdirSync(skillsDir).sort()).toEqual(['hexlog', 'hexlog.tmp-1']);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('orphan sweep ignores a failure to list the temporary directory', () => {
+    const home = createTempDir('skill-orphans-unreadable');
+    const srcDir = buildSrcDir('# hexlog skill v2\n');
+    const originalReaddirSync = fsDefault.readdirSync.bind(fsDefault) as (
+      dir: fs.PathLike,
+    ) => string[];
+    try {
+      const claudeDir = path.join(fs.realpathSync(home), '.claude');
+      const orphan = `.hexlog-skill-hexlog.tmp-${spawnSync(process.execPath, ['-e', '']).pid}`;
+      fs.mkdirSync(path.join(claudeDir, orphan), { recursive: true });
+      jest.spyOn(fsDefault, 'readdirSync').mockImplementation(((dir: fs.PathLike) => {
+        if (String(dir) === claudeDir) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+        return originalReaddirSync(dir);
+      }) as typeof fsDefault.readdirSync);
+
+      expect(() => writeSkillFolder(home, 'hexlog', srcDir)).not.toThrow();
+
+      jest.restoreAllMocks();
+      expect(fs.readFileSync(path.join(claudeDir, 'skills', 'hexlog', 'SKILL.md'), 'utf8')).toBe(
+        '# hexlog skill v2\n',
+      );
+      expect(fs.readdirSync(claudeDir).sort()).toEqual([orphan, 'skills'].sort());
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  test('orphan sweep removes temporaries of a dead pid and keeps live, foreign and non-numeric ones', () => {
+    const home = createTempDir('skill-orphans');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    try {
+      const claudeDir = path.join(home, '.claude');
+      const deadPid = spawnSync(process.execPath, ['-e', '']).pid;
+      const orphans = [
+        `.hexlog-skill-hexlog.tmp-${deadPid}`,
+        `.hexlog-skill-hexlog.old-${deadPid}`,
+      ];
+      const kept = [
+        `.hexlog-skill-hexlog.tmp-${process.ppid}`,
+        `.hexlog-skill-hexlog.old-${process.ppid}`,
+        `.hexlog-skill-hexlog.old-${deadPid}x`,
+        `.hexlog-skill-other.tmp-${deadPid}`,
+      ];
+      for (const leftover of [...orphans, ...kept]) {
+        fs.mkdirSync(path.join(claudeDir, leftover), { recursive: true });
+      }
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      const remaining = fs
+        .readdirSync(claudeDir)
+        .filter((entry) => entry.startsWith('.hexlog-skill-'));
+      expect(remaining.sort()).toEqual([...kept].sort());
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
       fs.rmSync(srcDir, { recursive: true, force: true });
