@@ -1,9 +1,9 @@
 import { isString, isUndefined } from 'es-toolkit';
 import { attachmentFields } from '../../domain/definitions.ts';
 import { Hash, type Name } from '../../domain/ids.ts';
-import { attachmentCorrupted, attachmentNotFound } from '../../errors.ts';
+import { attachmentCorrupted, attachmentNotFound, invalidRecord } from '../../errors.ts';
 import type { AttachmentReader, AttachmentStatus } from '../../ports.ts';
-import { invalidRecord, withPath } from './errors.ts';
+import { withPath } from './errors.ts';
 import type { PreparedItem } from './static.ts';
 
 // Mensagem fixa de D-16: aponta as duas saídas para quem ficou preso a um tipo sem a marca.

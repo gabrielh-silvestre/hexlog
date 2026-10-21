@@ -344,7 +344,7 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
   'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
   'commands/register/static.ts#pinnedSchema': ['TYPE_NOT_PINNED'],
   'commands/register/static.ts#checkData': ['checkData'],
-  'queries/query-service.ts#gateNotFound': ['GATE_NOT_FOUND'],
+  'errors.ts#gateNotFound': ['GATE_NOT_FOUND'],
   'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
   'installation.ts#installArtifact': ['verifyPreparedArtifact'],
 };

@@ -9,9 +9,9 @@ import {
   type RelationKind,
 } from '../../domain/record.ts';
 import { endsVigency, resolveKind, type NamedRelation } from '../../domain/relations.ts';
-import { capDetails, HexlogError, invalidInput, type Detail } from '../../errors.ts';
+import { capDetails, HexlogError, invalidInput, invalidRecord, type Detail } from '../../errors.ts';
 import type { Validator } from '../../ports.ts';
-import { invalidRecord, ruleRefusal } from './errors.ts';
+import { ruleRefusal } from './errors.ts';
 
 /** Relação com o `kind` já resolvido; `input` é como o agente a enviou (`to` ainda pode ser `@alias`). */
 type PreparedRelation = { input: RelationInput; kind: RelationKind };

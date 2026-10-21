@@ -13,7 +13,7 @@ import {
   type RuleContext,
   type Vigency,
 } from '../../domain/relations.ts';
-import { brokenChain, HexlogError } from '../../errors.ts';
+import { brokenChain, cycleRejected, HexlogError, relationNotFound } from '../../errors.ts';
 import type {
   AttachmentReader,
   Decision,
@@ -30,7 +30,7 @@ import {
   type VerifiedProcess,
 } from '../../shared/loader.ts';
 import { checkAttachments } from './attachments.ts';
-import { relationNotFound, ruleRefusal, withPath } from './errors.ts';
+import { ruleRefusal, withPath } from './errors.ts';
 import { isAliasRef, type PreparedItem } from './static.ts';
 
 /**
@@ -245,11 +245,6 @@ function checkOwnProcess(
     if (isUndefined(end)) throw relationNotFound(pathOf(site), 'missing');
     enforcer.inOrigin(site, { id: to, ...end });
   }
-}
-
-function cycleRejected(): HexlogError {
-  const message = 'batch would create a supersedes cycle';
-  return new HexlogError('CYCLE_REJECTED', message, [{ path: '', code: 'cycle', message }]);
 }
 
 /** D-04: um elo por item, só o primeiro leva `batch`, o hash de cada um encadeia no seguinte. */

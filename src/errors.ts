@@ -299,3 +299,68 @@ export function invalidDefinition(): HexlogError {
     'definition does not match its schema',
   );
 }
+
+export function projectNotFound(): HexlogError {
+  return domainError('PROJECT_NOT_FOUND', '/project', 'unknown-project', 'project not found');
+}
+
+/** O campo da entrada é `/type`, diferente do `/name` que a leitura de definição aponta. */
+export function typeNotFound(): HexlogError {
+  return domainError('TYPE_NOT_FOUND', '/type', 'unknown-name', 'type not found in the project');
+}
+
+export function gateNotFound(): HexlogError {
+  return domainError(
+    'GATE_NOT_FOUND',
+    '/gate',
+    'unknown-name',
+    'gate is not pinned in the process',
+  );
+}
+
+/** `INVALID_FILTER` com um único `Detail`; a `message` do erro é fixa, a do `Detail` é a de quem recusa. */
+export function invalidFilter(path: string, code: string, message: string): HexlogError {
+  return new HexlogError('INVALID_FILTER', 'Invalid filter', [{ path, code, message }]);
+}
+
+export function markerProcessNotFound(
+  process: Name,
+  message = 'marker names a process that does not exist',
+): HexlogError {
+  return domainError('MARKER_NOT_FOUND', '/marker', 'process-not-found', message, { process });
+}
+
+const RERUN_ADVICE = '; rerun the query without cursor';
+
+/** `INVALID_CURSOR` com um único `Detail` em `/cursor`; toda mensagem manda reexecutar sem cursor. */
+export function invalidCursor(code: string, message: string): HexlogError {
+  return new HexlogError('INVALID_CURSOR', 'Invalid cursor', [
+    { path: '/cursor', code, message: message + RERUN_ADVICE },
+  ]);
+}
+
+/** `INVALID_CURSOR` de payload que não passa pelo esquema do cursor, um `Detail` por issue do Zod. */
+export function invalidCursorPayload(issues: z.core.$ZodIssue[]): HexlogError {
+  return new HexlogError(
+    'INVALID_CURSOR',
+    'Invalid cursor',
+    issueDetails(issues, '/cursor').map((detail) => ({
+      ...detail,
+      message: detail.message + RERUN_ADVICE,
+    })),
+  );
+}
+
+export function relationNotFound(
+  path: string,
+  code: 'missing' | 'destination-corrupted',
+  process?: string,
+): HexlogError {
+  const message =
+    code === 'missing' ? 'relation destination not found' : 'relation destination is corrupted';
+  return domainError('RELATION_NOT_FOUND', path, code, message, { process });
+}
+
+export function cycleRejected(): HexlogError {
+  return domainError('CYCLE_REJECTED', '', 'cycle', 'batch would create a supersedes cycle');
+}

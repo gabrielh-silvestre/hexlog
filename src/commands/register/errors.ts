@@ -1,10 +1,6 @@
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { RuleCode, Violation } from '../../domain/relations.ts';
-import { HexlogError, type Detail } from '../../errors.ts';
-
-export function invalidRecord(details: Detail[]): HexlogError {
-  return new HexlogError('INVALID_RECORD', 'record violates a type or relation rule', details);
-}
+import { domainError, HexlogError, invalidRecord } from '../../errors.ts';
 
 const RULE_MESSAGES: Record<RuleCode, string> = {
   'self-relation': 'a record cannot relate to itself',
@@ -27,20 +23,8 @@ const RULE_MESSAGES: Record<RuleCode, string> = {
  */
 export function ruleRefusal(path: string, { code, current }: Violation): HexlogError {
   const message = RULE_MESSAGES[code];
-  const detail: Detail = { path, code, message, ...omitBy({ current }, isUndefined) };
-  if (code === 'not-current') return new HexlogError('FORK_REJECTED', message, [detail]);
-  return invalidRecord([detail]);
-}
-
-export function relationNotFound(
-  path: string,
-  code: 'missing' | 'destination-corrupted',
-  process?: string,
-): HexlogError {
-  const message =
-    code === 'missing' ? 'relation destination not found' : 'relation destination is corrupted';
-  const detail: Detail = { path, code, message, ...omitBy({ process }, isUndefined) };
-  return new HexlogError('RELATION_NOT_FOUND', message, [detail]);
+  if (code === 'not-current') return domainError('FORK_REJECTED', path, code, message, { current });
+  return invalidRecord([{ path, code, message, ...omitBy({ current }, isUndefined) }]);
 }
 
 /**
