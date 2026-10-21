@@ -180,7 +180,8 @@ ou `<<` fora de qualquer aspa (o rastreador de aspas do hook não os modela como
 como expansível. O trecho que o
 `shell-quote` engole depois de um `#` fora de aspas (`hook/bash-guard.ts#parseCommand`) volta como
 tokens e é conferido como o resto do comando; o glob que alcança `<D>` dentro de um comentário de verdade
-também é negado (falso positivo aceito). Os tetos e o orçamento medem o token com o `~` já expandido
+também é negado (falso positivo aceito); nesse trecho, só a linha que o `shell-quote` não parseia
+(`${}`) é liberada. Os tetos e o orçamento medem o token com o `~` já expandido
 (`hook/bash-guard.ts#toCandidates`). O texto só entre aspas acima dos tetos, com `cwd` ancestral de
 `<D>`, é negado pelo prefixo literal sem citar `<D>` (`node -e '<script grande>'` rodado do pai de `<D>`,
 falso positivo aceito). A negação

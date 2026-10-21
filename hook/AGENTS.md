@@ -37,7 +37,8 @@ tokeniza o comando recebido; nunca executa nada.
   não casa.
 - O `shell-quote` devolve `{comment}` com todo o resto da entrada a partir de um `#` fora de aspas
   (inclusive `a#b` e as linhas seguintes); `parseCommand` tokeniza esse trecho de novo, uma linha por
-  vez e com o `#` trocado por espaço, para o `cat <glob>` depois do comentário ser conferido.
+  vez e com o `#` trocado por espaço, para o `cat <glob>` depois do comentário ser conferido. A
+  linha desse trecho que o `shell-quote` não parseia (`${}`) é liberada sozinha, sem levar as outras.
 - Falso positivo aceito: token com glob sem aspas ou comando legítimo acima do teto é negado, e o glob
   que alcança `D` dentro de um comentário de verdade também.
 - `test/bash-guard.spec.ts`: casos de negação e permissão contra o hook

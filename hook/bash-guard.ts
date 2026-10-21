@@ -175,7 +175,8 @@ function maskedTokensOf(
  * palavra (`a#b`), e engole o resto, quebras de linha incluídas, que o bash executa. O trecho
  * engolido volta como tokens vivos, uma linha por vez (uma aspa solta só desalinha a própria
  * linha) e com o `#` trocado por espaço (sem novo comentário, custo linear): superconjunto do que o
- * bash executa, que pode negar um glob dentro de um comentário de verdade.
+ * bash executa, que pode negar um glob dentro de um comentário de verdade. A linha que o
+ * `shell-quote` não parseia (`${}`) vira lista vazia, sem levar os tokens das outras linhas.
  */
 function parseCommand(command: string, vars: Record<string, string>): ParseEntry[] {
   const tokens = shellQuoteParse(command, vars);
@@ -186,7 +187,13 @@ function parseCommand(command: string, vars: Record<string, string>): ParseEntry
     ...last.comment
       .replaceAll('#', ' ')
       .split('\n')
-      .flatMap((line) => shellQuoteParse(line, vars)),
+      .flatMap((line) => {
+        try {
+          return shellQuoteParse(line, vars);
+        } catch {
+          return [];
+        }
+      }),
   ];
 }
 

@@ -673,6 +673,14 @@ describe('bash-guard (#180): the text after a "#" is still checked', () => {
       name: 'a comment with a stray quote followed by a line break and a glob',
       command: `echo hi # don't\ncat ${globToD}`,
     },
+    {
+      name: 'a glob reaching D before a comment holding a line the shell-quote cannot parse',
+      command: `cat ${globToD} # \${}`,
+    },
+    {
+      name: 'a comment line the shell-quote cannot parse followed by a line break and a glob',
+      command: `echo hi # \${}\ncat ${globToD}`,
+    },
   ])(
     'denies $name',
     ({ command }) => {
