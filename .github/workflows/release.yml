@@ -58,13 +58,21 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
       # O PR da release é o que contém o merge commit; sem PR (push direto), a linha some do corpo.
+      # Logo após o merge a consulta pode voltar vazia: repete até 3 vezes e avisa se continuar vazia.
       - id: notes
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
-            --jq '[.[] | select(.base.ref == "main")][0].number // empty')
+          for attempt in 1 2 3; do
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+              --jq '[.[] | select(.base.ref == "main")][0].number // empty')
+            if [ -n "$pr" ]; then break; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          if [ -z "$pr" ]; then
+            echo "::warning::No pull request into main found for $GITHUB_SHA after 3 attempts; the Release body has no release PR line"
+          fi
           node scripts/release-notes-cli.ts "$VERSION" --pr "$pr" --repo "$GITHUB_REPOSITORY" \
             > "$RUNNER_TEMP/notes.md"
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
