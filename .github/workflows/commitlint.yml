@@ -4,7 +4,8 @@ name: Commitlint
 # local (`commitlint.config.js`). O commit do Dependabot passa pelos `ignores` da config, não por
 # um `if:` de autor: assim o job nunca fica pulado nem Pending no ruleset de `develop` e `main`.
 # Só o PR de back-merge fica de fora (job pulado): a branch é de nome fixo e traz commits que já
-# passaram pelo check nos PRs de origem. `edited` reexecuta o check quando a base é trocada.
+# passaram pelo check nos PRs de origem. A exceção exige a branch no próprio repositório: PR de fork
+# com o mesmo nome de branch passa pelo check. `edited` reexecuta o check quando a base é trocada.
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
@@ -17,7 +18,9 @@ env:
 
 jobs:
   commitlint:
-    if: ${{ !startsWith(github.event.pull_request.head.ref, 'chore/back-merge-') }}
+    if: >-
+      ${{ !(startsWith(github.event.pull_request.head.ref, 'chore/back-merge-')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

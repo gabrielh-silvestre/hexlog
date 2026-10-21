@@ -120,7 +120,9 @@ jobs:
           BRANCH: ${{ steps.version.outputs.branch }}
           RELEASE_PR: ${{ steps.notes.outputs.pr }}
         run: |
-          number=$(gh pr list --head "$BRANCH" --state all --json number --jq '.[0].number // empty')
+          # `--head` casa só o nome da branch: o filtro por `isCrossRepository` ignora PR de fork com o mesmo nome.
+          number=$(gh pr list --head "$BRANCH" --state all --json number,isCrossRepository \
+            --jq 'map(select(.isCrossRepository | not)) | .[0].number // empty')
           if [ -z "$number" ]; then
             if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" > /dev/null 2>&1; then
               gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$GITHUB_SHA" --jq .ref
