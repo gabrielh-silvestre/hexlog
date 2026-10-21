@@ -1,8 +1,18 @@
 import { describe, test, expect, jest } from '@jest/globals';
 import { buildInheritance, NO_INHERITANCE } from '../../src/domain/inheritance.ts';
-import { buildVigency, checkRelation, hasCycle, needsReview } from '../../src/domain/relations.ts';
+import {
+  buildVigency,
+  checkRelation,
+  endsVigency,
+  hasCycle,
+  needsReview,
+} from '../../src/domain/relations.ts';
 import type { Linked, NamedRelation, RuleContext, Vigency } from '../../src/domain/relations.ts';
-import type { RelationInput, RelationKind as Kind } from '../../src/domain/record.ts';
+import {
+  RelationKind,
+  type RelationInput,
+  type RelationKind as Kind,
+} from '../../src/domain/record.ts';
 import * as rdsc from '../fixtures/domains/rdsc.ts';
 
 const id = (process: string, n: number) => `${process}:${String(n).padStart(8, '0')}`;
@@ -59,6 +69,15 @@ describe('vigency and lineage (D-08)', () => {
     expect([e1, e2].map((x) => vigency.isCurrent(x))).toEqual([false, false]);
     expect(vigency.currentOf(e1)).toBeNull();
     expect(vigency.currentOf(e2)).toBeNull();
+  });
+});
+
+describe('endsVigency', () => {
+  // percorre o enum inteiro: uma espécie nova entra no teste sem edição e cai em "não encerra"
+  const ENDING: Kind[] = ['supersedes', 'revokes'];
+
+  test.each(RelationKind.options)('%s', (kind) => {
+    expect(endsVigency(kind)).toBe(ENDING.includes(kind));
   });
 });
 
