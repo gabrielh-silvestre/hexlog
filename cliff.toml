@@ -1,6 +1,10 @@
 # Rascunho do CHANGELOG.md a partir dos Conventional Commits. O rascunho é ponto de partida:
 # quem fecha o release reescreve em linguagem de usuário, acrescenta o número do PR e escreve a
 # seção Migração à mão antes de gravar no CHANGELOG.md.
+#
+# A regra de quais commits aparecem no CHANGELOG.md (feat, fix, perf, revert; escopos `flow` e
+# `claude` de fora) vive também em `.github/workflows/changelog-line.yml`, com outra sintaxe de
+# regex: mudar o filtro de `commit_parsers` aqui exige mudar o de lá, e o contrário.
 
 [changelog]
 body = """
