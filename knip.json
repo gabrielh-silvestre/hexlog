@@ -8,6 +8,7 @@
     "scripts/flow/gate.ts",
     "scripts/flow/mark.ts",
     "scripts/flow/report.ts",
+    "scripts/flow/reanchor.ts",
     ".claude/hooks/*.ts",
     ".claude/workflows/*.js",
     "test/fixtures/attachment-probe.ts",
