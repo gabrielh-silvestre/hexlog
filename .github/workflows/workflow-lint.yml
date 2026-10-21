@@ -1,7 +1,7 @@
 name: Workflow lint
 
 # O job `workflow-lint` roda em todo PR e sempre reporta sucesso quando há o que lintar ou não:
-# sem filtro de `paths`, o check obrigatório do ruleset nunca fica pendente. O step `changes`
+# sem filtro de `paths`, o check que o ruleset vai exigir nunca fica pendente. O step `changes`
 # decide por `git diff` se o PR toca `.github/`, e os steps de lint têm `if:` nessa saída (steps
 # pulados, nunca job pulado).
 on:
