@@ -29,4 +29,13 @@ describe('CHANGELOG.md', () => {
     );
     expect(bySection.get(VERSION)).toMatch(/^- \S/m);
   });
+
+  // A release acrescenta a seção e a linha de rodapé à mão, e esquecer o rodapé quebra o link.
+  test('every section title has its [x]: https:// link line', () => {
+    const missing = [...bySection.keys()].filter(
+      (title) =>
+        !new RegExp(`^\\[${title.replaceAll('.', '\\.')}\\]: https://`, 'm').test(changelog),
+    );
+    expect(missing).toEqual([]);
+  });
 });
