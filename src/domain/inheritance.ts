@@ -81,7 +81,8 @@ function lineageRootOf(records: readonly Linked[]): (id: RecordId) => RecordId {
 
 /**
  * Resolve a herança de `records` pela vigência dada. `isActive` diz se o processo cuja linhagem sobe
- * tem a herança ligada; processo inativo não herda nada. Qualquer `contradicts` vigente (o registro
+ * tem a herança ligada; processo inativo não herda nada, e sem `isActive` a resposta é
+ * `NO_INHERITANCE`. Qualquer `contradicts` vigente (o registro
  * que o grava não foi superado nem revogado) entre a linhagem de uma ponta e a da outra, em qualquer
  * direção, corta a herança do par; superar ou revogar esse registro religa a herança, como a
  * contradição no gate. A aresta direta nunca é cortada, e a direta idêntica (mesma espécie, nome,
@@ -94,8 +95,9 @@ function lineageRootOf(records: readonly Linked[]): (id: RecordId) => RecordId {
 export function buildInheritance(
   records: readonly Linked[],
   vigency: Vigency,
-  isActive: (process: Name) => boolean,
+  isActive?: (process: Name) => boolean,
 ): Inheritance {
+  if (isUndefined(isActive)) return NO_INHERITANCE;
   if (!records.some(({ relations }) => relations.some(({ kind }) => kind === 'supersedes')))
     return NO_INHERITANCE;
 

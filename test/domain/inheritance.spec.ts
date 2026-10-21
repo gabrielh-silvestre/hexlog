@@ -270,6 +270,13 @@ describe('log without lineage', () => {
   });
 });
 
+describe('without isActive', () => {
+  test('returns the empty inheritance even when the log has a lineage', () => {
+    const records = [rec(e1, ['supports', u1]), rec(u2, ['supersedes', u1])];
+    expect(buildInheritance(records, buildVigency(records))).toBe(NO_INHERITANCE);
+  });
+});
+
 describe('deduplication and order', () => {
   test('two physical edges leading to the same inherited one keep the smallest origin source', () => {
     const records = [

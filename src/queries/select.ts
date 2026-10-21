@@ -2,7 +2,7 @@ import { isUndefined, once, orderBy } from 'es-toolkit';
 import type { Link } from '../domain/chain.ts';
 import { matchesSelector, matchesTargetPrefix, type Selector } from '../domain/gate.ts';
 import { processOf, type Name, type RecordId, type Target } from '../domain/ids.ts';
-import { buildInheritance, NO_INHERITANCE, type Inheritance } from '../domain/inheritance.ts';
+import { buildInheritance, type Inheritance } from '../domain/inheritance.ts';
 import type { RelationKind } from '../domain/record.ts';
 import { buildVigency, incomingOf, type Incoming, type Vigency } from '../domain/relations.ts';
 import { PROJECT_INDEX, type ProcessRef, type SearchIndex } from '../ports.ts';
@@ -63,9 +63,7 @@ export function buildView(reading: Reading, scope: ReadTarget['scope']): View {
   const records = inOutputOrder(reading, scope);
   const vigency = buildVigency(records);
   const isActive = inheritanceActivation(reading);
-  const inheritance = once(() =>
-    isUndefined(isActive) ? NO_INHERITANCE : buildInheritance(records, vigency, isActive),
-  );
+  const inheritance = once(() => buildInheritance(records, vigency, isActive));
   return {
     records,
     byId: new Map(records.map((link) => [link.id, link])),
