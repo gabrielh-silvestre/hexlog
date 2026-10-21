@@ -28,11 +28,15 @@ const stagedSpecs = (files: readonly string[]): string =>
   `npm test -- --passWithNoTests --testPathPatterns ${[...CORE_PATTERNS, ...namePatterns(files)].map((p) => `'${p}'`).join(' ')}`;
 
 const config = {
-  // Uma chave só: o `tsc` e o jest têm de ler os arquivos já corrigidos por `eslint --fix` e
-  // `prettier --write`. As duas chaves (`*.ts` e `*.md`) rodam em série por `--concurrent false` em
-  // `.husky/pre-commit`: o arquivo de config não tem essa opção, e o spec de doc lê `src/**/*.ts`,
-  // que a outra chave ainda pode estar reescrevendo. Função sem argumento não recebe a lista de
-  // arquivos: o `tsc` confere o projeto inteiro, no estado do stash do lint-staged.
+  // Dentro da chave `*.ts` a ordem importa: o `tsc` e o jest têm de ler os arquivos já corrigidos
+  // por `eslint --fix` e `prettier --write`.
+  //
+  // As duas chaves (`*.ts` e `*.md`) rodam em série por `--concurrent false` em `.husky/pre-commit`:
+  // o arquivo de config não tem essa opção, e o spec de doc lê `src/**/*.ts`, que a outra chave
+  // ainda pode estar reescrevendo.
+  //
+  // Função sem argumento não recebe a lista de arquivos: o `tsc` confere o projeto inteiro, no
+  // estado do stash do lint-staged.
   '*.ts': ['eslint --fix', 'prettier --write', () => 'npm run typecheck', stagedSpecs],
   // Os dois linters leem só os `.md` em stage (`ignores` e `ignorePaths` valem para arquivo explícito);
   // `--no-must-find-files` deixa passar o commit só de `docs/pesquisa/**`, que o cspell ignora.
