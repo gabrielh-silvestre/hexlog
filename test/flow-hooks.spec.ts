@@ -759,6 +759,7 @@ describe('flow-report', () => {
   let xdgWithoutDirectives: string;
   let gitRepo: string;
   let ids: Record<string, string>;
+  let inheritedIds: Record<string, string>;
   let currentIds: Set<string>;
   let nonCurrentIds: Set<string>;
 
@@ -771,7 +772,14 @@ describe('flow-report', () => {
   beforeAll(async () => {
     const environment = await createEnvironment();
     await defineFlow(environment);
-    for (const proc of ['directives-9', 'feat-r', 'feat-clean', 'feat-many', 'feat-wide']) {
+    for (const proc of [
+      'directives-9',
+      'feat-r',
+      'feat-clean',
+      'feat-many',
+      'feat-wide',
+      'feat-inherit',
+    ]) {
       await environment.ok('create_process', { project: PROJECT, process: proc });
     }
     const { hash: source } = await environment.ok<{ hash: string }>('attach', {
@@ -840,6 +848,14 @@ describe('flow-report', () => {
     await registerItems(environment, 'feat-clean', [
       decision('feat-clean', 'd-ok', [rests(clean.alpha ?? '')]),
     ]);
+
+    // `d-new` não regrava o `rests-on` de `d-old`: o apoio só chega pela herança da linhagem
+    inheritedIds = await registerNamed(environment, 'feat-inherit', {
+      objective: premise('feat-inherit', 'objective'),
+      alpha: premise('feat-inherit', 'alpha'),
+      'd-old': decision('feat-inherit', 'd-old', [rests('@objective')]),
+      'd-new': decision('feat-inherit', 'd-old', [{ kind: 'supersedes', to: '@d-old' }]),
+    });
 
     const [manyObjective] = await registerItems(environment, 'feat-many', [
       premise('feat-many', 'objective'),
@@ -1015,6 +1031,18 @@ describe('flow-report', () => {
     expect(result.status).toBe(0);
     expect(rowFor(result, 'd-doc')).toBeUndefined();
     expect(rowFor(result, 'd-both')?.[2]).toBe(OBJECTIVE_UNCITED);
+  }, 30_000);
+
+  test('counts the rests-on that a superseding decision inherits from its lineage', () => {
+    const result = runReport(['feat-inherit']);
+    expect(result.status).toBe(0);
+    expect(rowsOf(result)).toEqual([
+      [
+        inheritedIds['d-new'] ?? '',
+        'feat-inherit.decision.d-old',
+        'only-objective: uncited=feat-inherit.premise.alpha',
+      ],
+    ]);
   }, 30_000);
 
   test('prints nothing to flag when the process has nothing to flag', () => {

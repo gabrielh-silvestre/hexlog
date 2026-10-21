@@ -18,7 +18,14 @@ const BASE = /^[\w./-]+$/;
 const USAGE = 'usage: node scripts/flow/report.ts <slug> [<base>]';
 
 type Relation = { kind: string; as?: string; to?: string };
-type Row = { id: string; type?: string; target: string; in: Relation[]; out: Relation[] };
+type Row = {
+  id: string;
+  type?: string;
+  target: string;
+  in: Relation[];
+  out: Relation[];
+  inheritedOut: Relation[];
+};
 
 const warn = (message: string): void => void process.stderr.write(`flow-report: ${message}\n`);
 
@@ -32,12 +39,13 @@ function exportRows(proc: string): Row[] {
       relations: 'full',
       limit: Number.MAX_SAFE_INTEGER,
     });
-    return records.map(({ id, type, target, in: incoming = [], out = [] }) => ({
+    return records.map(({ id, type, target, in: incoming = [], out = [], inheritedOut = [] }) => ({
       id,
       type,
       target,
       in: incoming,
       out,
+      inheritedOut,
     }));
   } catch (error) {
     throw new Error(formatCliError('export', error).text, { cause: error });
@@ -74,8 +82,11 @@ function createTargetOf(slug: string, own: Row[]): (id: string) => string | unde
   };
 }
 
+/** Relações gravadas e herdadas pela linhagem de `supersedes` (`inheritedOut`, só derivado na leitura). */
 const relationsOf = (row: Row, alias: string): Relation[] =>
-  row.out.filter((relation) => relation.as === alias && relation.to !== undefined);
+  [...row.out, ...row.inheritedOut].filter(
+    (relation) => relation.as === alias && relation.to !== undefined,
+  );
 
 /** Citações distintas por target; id sem target conta como citação distinta e desconhecida. */
 function citedTargets(row: Row, targetOf: (id: string) => string | undefined): Set<string> {

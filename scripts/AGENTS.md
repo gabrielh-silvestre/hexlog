@@ -36,7 +36,7 @@ CLIs do fluxo guiado por diretrizes deste repositório, chamados pelas skills `f
 | `flow/flow.ts` | CLI sem dependência com os modos `slug <branch>` e `sync-plan` (lê o `SyncInput` do stdin; para `estrategia`, lê o documento e extrai as premissas) |
 | `flow/gate.ts` | `gateFailures` e CLI `pre-pr <slug>`: avalia os gates `pre-pr` e `gaps` fixados no processo; sai 0 com os dois verdes, 1 listando gate, pergunta e ids, 2 com dado 0.x ou log quebrado |
 | `flow/mark.ts` | `mark <slug>`: confere o slug da branch e os gates por `gateFailures` e só então grava o `.ok` (branch e sha da ponta); a árvore suja não importa; recusa com exit 1 e não grava nada |
-| `flow/report.ts` | `report <slug> [<base>]`: lista as decisões vigentes cuja base merece revisão; só imprime e sai sempre 0 |
+| `flow/report.ts` | `report <slug> [<base>]`: lista as decisões vigentes cuja base merece revisão (o `rests-on` e o `anchored-in` herdados pela linhagem, `inheritedOut`, contam como os gravados); só imprime e sai sempre 0 |
 
 ### Exit codes dos scripts de leitura
 | Exit | `export.ts` | `timeline.ts` | `insights.ts` |
