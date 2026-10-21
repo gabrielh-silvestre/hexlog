@@ -190,10 +190,13 @@ export type QueryService = {
    * `attachmentStatus`. Ordem de saída: alcance processo por `seq`, alcance projeto por (`at`,
    * processo, `seq`), com `text` por relevância e o mesmo desempate. Página com resultado leva ao
    * menos um registro (o 1º sai inteiro mesmo acima de `maxChars`); consulta sem resultado devolve
-   * `records: []`, com `hint` quando o `targetPrefix` quase casou. O cursor (D-20) fixa o marcador:
-   * as páginas seguintes recomeçam depois de `lastId` sobre a leitura da página 1.
+   * `records: []`, com `hint` quando o `targetPrefix` quase casou. Exceção a "ao menos um
+   * registro": `limit: 0`, aceito só com `changesSince` e sem `cursor`, devolve `records: []` e as
+   * `changes`, sem cursor. O cursor (D-20) fixa o marcador: as páginas seguintes recomeçam depois de
+   * `lastId` sobre a leitura da página 1.
    *
-   * `INVALID_FILTER` (`/process`, `/limit`, `/text`: acima de `QUERY_TEXT_MAX_CHARS` ou sem termo
+   * `INVALID_FILTER` (`/process`, `/limit` fora de 1 ou, com `changesSince` e sem `cursor`, de 0,
+   * `/text`: acima de `QUERY_TEXT_MAX_CHARS` ou sem termo
    * pesquisável, `no-terms`, como `''`, `'  '` e `'!!!'`),
    * `INVALID_CURSOR`, `MARKER_NOT_FOUND`, `PROJECT_NOT_FOUND` (alcance projeto), `PROCESS_NOT_FOUND`,
    * `PROCESS_CORRUPTED` (com `details[0].process`), `PROCESS_TOO_LARGE` e `IO_ERROR`.
@@ -433,7 +436,20 @@ export function createQueryService(deps: {
     };
   }
 
-  function evaluateGateOf({
+  // As sobrecargas repetem as de `QueryService`: o corpo tem de casar com todas, sem cast.
+  function evaluateGate(
+    input: EvaluateGateInput & { targets: readonly Target[] },
+  ): GateBatchEvaluation;
+  function evaluateGate(
+    input: EvaluateGateInput & { targets?: undefined; evidence?: 'full' },
+  ): GateEvaluation;
+  function evaluateGate(
+    input: EvaluateGateInput & { targets?: undefined },
+  ): GateEvaluation<QuestionSummary>;
+  function evaluateGate(
+    input: EvaluateGateInput,
+  ): GateEvaluation<QuestionSummary> | GateBatchEvaluation;
+  function evaluateGate({
     project,
     process,
     gate: name,
@@ -541,8 +557,9 @@ export function createQueryService(deps: {
         isUndefined(cursor) && !isUndefined(input.changesSince)
           ? changesOf(input, target, filters, { view, selected, marker: reading.marker })
           : undefined;
+      // Com cursor e seleção vazia, `startAfter` já lançou: seleção vazia aqui é sempre a página 1.
       const hint =
-        isUndefined(cursor) && selected.length === 0 && !isUndefined(input.targetPrefix)
+        selected.length === 0 && !isUndefined(input.targetPrefix)
           ? boundaryHint(view, input.targetPrefix)
           : undefined;
       return {
@@ -554,8 +571,7 @@ export function createQueryService(deps: {
       };
     },
 
-    // As sobrecargas de `QueryService` casam com o corpo único de `evaluateGateOf`.
-    evaluateGate: evaluateGateOf as QueryService['evaluateGate'],
+    evaluateGate,
 
     verifyChain({ project, process, expectedHead }) {
       const verified = loadVerified(store, { project, process });
