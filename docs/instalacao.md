@@ -55,6 +55,10 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    `skills/<nome>.tmp-<pid>` e `.old-<pid>` de versões antigas do instalador são
    removidos depois da troca da skill; se a remoção de um deles falha (por
    exemplo, `EACCES`), o instalador ignora o erro e a skill nova fica instalada.
+   Os temporários da troca atual, `.hexlog-skill-<nome>.tmp-<pid>` e `.old-<pid>`,
+   que um `kill -9` deixa ao lado de `skills/`, também são removidos na instalação
+   seguinte, só quando o pid do sufixo está morto; pid vivo (outro instalador) ou
+   reusado por outro processo fica, e o resíduo some quando esse pid some.
 
 Com dado 0.x em `<D>`, o comando só lista o que arquivaria (`scripts/install.ts#listLegacy`)
 e sai com 2, sem instalar nada: veja [Dado 0.x](migracao.md#dado-0x-arquivamento---archive-0x).

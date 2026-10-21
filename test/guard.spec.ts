@@ -1640,6 +1640,38 @@ describe('B2b: gravação da pasta de uma skill (writeSkillFolder)', () => {
     }
   });
 
+  test('orphan sweep removes temporaries of a dead pid and keeps live, foreign and non-numeric ones', () => {
+    const home = createTempDir('skill-orphans');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    try {
+      const claudeDir = path.join(home, '.claude');
+      const deadPid = spawnSync(process.execPath, ['-e', '']).pid;
+      const orphans = [
+        `.hexlog-skill-hexlog.tmp-${deadPid}`,
+        `.hexlog-skill-hexlog.old-${deadPid}`,
+      ];
+      const kept = [
+        `.hexlog-skill-hexlog.tmp-${process.ppid}`,
+        `.hexlog-skill-hexlog.old-${process.ppid}`,
+        `.hexlog-skill-hexlog.old-${deadPid}x`,
+        `.hexlog-skill-other.tmp-${deadPid}`,
+      ];
+      for (const leftover of [...orphans, ...kept]) {
+        fs.mkdirSync(path.join(claudeDir, leftover), { recursive: true });
+      }
+
+      writeSkillFolder(home, 'hexlog', srcDir);
+
+      const remaining = fs
+        .readdirSync(claudeDir)
+        .filter((entry) => entry.startsWith('.hexlog-skill-'));
+      expect(remaining.sort()).toEqual([...kept].sort());
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
   test('falha no 2º renameSync não deixa temporário em skills/ nem em .claude/ e preserva a skill anterior', () => {
     const home = createTempDir('skill-h');
     const srcDirV1 = buildSrcDir('# hexlog skill v1\n');
