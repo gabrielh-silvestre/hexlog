@@ -22,6 +22,13 @@ export function formatCliError(prefix: string, error: unknown): { text: string; 
   };
 }
 
+/** Imprime a linha de erro no stderr e devolve o exit code dela. */
+export function reportCliError(prefix: string, error: unknown): number {
+  const { text, exitCode } = formatCliError(prefix, error);
+  console.error(text);
+  return exitCode;
+}
+
 /** Lado de leitura sobre o `<D>` de `XDG_DATA_HOME`; dado 0.x lança `LEGACY_DATA`. */
 export function openReadOnly() {
   const reader = composeReader({

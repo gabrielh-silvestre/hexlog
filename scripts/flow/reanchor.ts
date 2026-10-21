@@ -11,7 +11,7 @@ import { isUndefined } from 'es-toolkit';
 import { dataDir } from '../../src/directory.ts';
 import { Name } from '../../src/domain/ids.ts';
 import { VERSION } from '../../src/version.ts';
-import { formatCliError, openReadOnly, parseCliArgs } from '../cli-error.ts';
+import { formatCliError, openReadOnly, parseCliArgs, reportCliError } from '../cli-error.ts';
 import {
   formatPlan,
   generationOf,
@@ -234,9 +234,7 @@ async function main(argv: string[]): Promise<number> {
   try {
     return await run(to, args.values.apply === true);
   } catch (error) {
-    const { text, exitCode } = formatCliError('flow reanchor', error);
-    console.error(text);
-    return exitCode;
+    return reportCliError('flow reanchor', error);
   }
 }
 
