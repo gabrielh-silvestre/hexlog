@@ -77,7 +77,7 @@ type PlanInput = {
   current: Source[];
 };
 
-type Batch = { process: string; key: string; records: BatchItem[] };
+type Batch = { process: string; key: string; records: BatchItem[]; rewrites: Rewrite[] };
 
 /** Registro lido do log, inclusive os não vigentes, para a conferência. */
 export type LogRow = {
@@ -205,17 +205,22 @@ export function planReanchor({ to, decisions, older, current }: PlanInput): Plan
 /**
  * Valida só a forma de cada item (`BatchItem`; tipo fixado, schema e regras de relação são do
  * `register`), fatia em `BATCH_MAX` e dá a cada lote uma `key` que depende do conteúdo: o mesmo
- * lote repetido é replay, e um lote diferente nunca colide.
+ * lote repetido é replay, e um lote diferente nunca colide. Cada lote leva as `rewrites` de que
+ * saíram os `records`, na mesma ordem, para quem grava saber o que o lote aceito cobre.
  */
-export function toBatches(process: string, to: string, items: readonly PlannedItem[]): Batch[] {
+export function toBatches(process: string, to: string, rewrites: readonly Rewrite[]): Batch[] {
   return chunk(
-    items.map((item) => BatchItem.parse(item)),
+    rewrites.map((rewrite) => ({ rewrite, record: BatchItem.parse(rewrite.item) })),
     BATCH_MAX,
-  ).map((records) => ({
-    process,
-    key: `reanchor-${to}-${process}-${fingerprint(records).slice(0, KEY_HASH_CHARS)}`,
-    records,
-  }));
+  ).map((pairs) => {
+    const records = pairs.map(({ record }) => record);
+    return {
+      process,
+      key: `reanchor-${to}-${process}-${fingerprint(records).slice(0, KEY_HASH_CHARS)}`,
+      records,
+      rewrites: pairs.map(({ rewrite }) => rewrite),
+    };
+  });
 }
 
 export const processOf = (id: string): string => id.slice(0, Math.max(id.indexOf(':'), 0));

@@ -365,20 +365,32 @@ describe('toBatches', () => {
     data: { choice: `C${n}` },
     relations: [{ kind: 'supersedes', to: own('work-a', n) }],
   });
-  const items = (count: number): PlannedItem[] =>
-    Array.from({ length: count }, (_unused, n) => item(n + 1));
+  const rewrite = (n: number) => ({ process: 'work-a', id: own('work-a', n), item: item(n) });
+  const rewrites = (count: number) => Array.from({ length: count }, (_unused, n) => rewrite(n + 1));
 
-  test('slices 120 items into batches of 50, 50 and 20', () => {
-    const batches = toBatches('work-a', 'directives-4', items(120));
+  test('slices 120 rewrites into batches of 50, 50 and 20', () => {
+    const batches = toBatches('work-a', 'directives-4', rewrites(120));
 
     expect(batches.map(({ records }) => records.length)).toEqual([50, 50, 20]);
     expect(batches.every(({ process }) => process === 'work-a')).toBe(true);
   });
 
+  test('carries in each batch the rewrites its records came from, in the same order', () => {
+    const all = rewrites(120);
+    const batches = toBatches('work-a', 'directives-4', all);
+
+    expect(batches.flatMap((batch) => batch.rewrites)).toEqual(all);
+    for (const batch of batches) {
+      expect(batch.rewrites.map(({ item: { target } }) => target)).toEqual(
+        batch.records.map(({ target }) => target),
+      );
+    }
+  });
+
   test('derives a deterministic key that follows the content and stays within 200 characters', () => {
-    const [first] = toBatches('work-a', 'directives-4', items(3));
-    const [again] = toBatches('work-a', 'directives-4', items(3));
-    const [other] = toBatches('work-a', 'directives-4', items(4));
+    const [first] = toBatches('work-a', 'directives-4', rewrites(3));
+    const [again] = toBatches('work-a', 'directives-4', rewrites(3));
+    const [other] = toBatches('work-a', 'directives-4', rewrites(4));
 
     expect(first?.key).toBe(again?.key);
     expect(first?.key).not.toBe(other?.key);
@@ -387,9 +399,9 @@ describe('toBatches', () => {
   });
 
   test('rejects an item that BatchItem refuses before returning any batch', () => {
-    const bad = { ...item(1), target: 'Not A Target' };
+    const bad = { ...rewrite(1), item: { ...item(1), target: 'Not A Target' } };
 
-    expect(() => toBatches('work-a', 'directives-4', [item(2), bad])).toThrow();
+    expect(() => toBatches('work-a', 'directives-4', [rewrite(2), bad])).toThrow();
   });
 });
 

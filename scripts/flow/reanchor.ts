@@ -136,13 +136,11 @@ function readWork(reader: Reader, names: string[]) {
 /** Grava os lotes processo a processo; devolve as regravações gravadas e se algum lote foi recusado. */
 async function applyBatches(
   batchesByProcess: Map<string, ReturnType<typeof toBatches>>,
-  rewritesByProcess: Map<string, Rewrite[]>,
   write: ReturnType<typeof openWriter>['write'],
 ) {
   const written: Rewrite[] = [];
   let refused = false;
   for (const [process, batches] of batchesByProcess) {
-    let offset = 0;
     for (const batch of batches) {
       try {
         await write(batch);
@@ -153,9 +151,7 @@ async function applyBatches(
         );
         break;
       }
-      const count = batch.records.length;
-      written.push(...(rewritesByProcess.get(process) ?? []).slice(offset, offset + count));
-      offset += count;
+      written.push(...batch.rewrites);
     }
   }
   return { written, refused };
@@ -186,11 +182,7 @@ async function run(to: string, apply: boolean): Promise<number> {
   const batchesByProcess = new Map(
     [...rewritesByProcess].map(([process, rewrites]) => [
       process,
-      toBatches(
-        process,
-        to,
-        rewrites.map(({ item }) => item),
-      ),
+      toBatches(process, to, rewrites),
     ]),
   );
 
@@ -216,11 +208,7 @@ async function run(to: string, apply: boolean): Promise<number> {
     author: AUTHOR,
     installed,
   });
-  const { written, refused } = await applyBatches(
-    batchesByProcess,
-    rewritesByProcess,
-    writer.write,
-  );
+  const { written, refused } = await applyBatches(batchesByProcess, writer.write);
 
   const after = [...new Set(written.map(({ process }) => process))].flatMap((process) =>
     readRows(openReadOnly(), process, { type: 'decision', includeNonCurrent: true }),

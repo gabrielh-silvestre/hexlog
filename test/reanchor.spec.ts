@@ -425,6 +425,88 @@ describe('reanchor.ts --apply', () => {
     }
   }, 120_000);
 
+  describe('a process with 51 decisions (batches of 50 and 1)', () => {
+    const COUNT = 51;
+    const keyPattern = /"key":"(reanchor-directives-2-feat-e-[^"]+)"/g;
+
+    async function openManyDecisions(): Promise<Environment> {
+      const many = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-e']);
+      const { hash: source } = await many.ok<{ hash: string }>('attach', {
+        project: 'hexlog',
+        text: 'rule text',
+      });
+      const g1 = await registerFlowRecord(
+        many,
+        'directives-1',
+        directive('directives.convencoes.r1', 'Rule one', source),
+      );
+      await registerFlowRecord(
+        many,
+        'directives-2',
+        directive('directives.convencoes.r1', 'Rule one', source),
+      );
+      for (let n = 1; n <= COUNT; n++) {
+        await registerFlowRecord(
+          many,
+          'feat-e',
+          decision(`feat-e.decision.d${n}`, [anchoredIn(g1)]),
+        );
+      }
+      return many;
+    }
+
+    const batchKeys = (xdg: string): string[] =>
+      [
+        ...fs
+          .readFileSync(path.join(xdg, 'hexlog/.v1/hexlog/feat-e/records.jsonl'), 'utf8')
+          .matchAll(keyPattern),
+      ].map(([, key]) => key ?? '');
+
+    test('writes both batches and counts every decision', async () => {
+      const many = await openManyDecisions();
+      try {
+        const xdg = copyToXdg(many.dataDir);
+        const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain(`rewrote ${COUNT} of ${COUNT} decisions`);
+        expect(result.stderr).not.toContain('verify failed');
+        expect(batchKeys(xdg)).toHaveLength(2);
+      } finally {
+        await many.close();
+      }
+    }, 240_000);
+
+    test('keeps the first batch and counts only it when the second is refused', async () => {
+      const many = await openManyDecisions();
+      try {
+        const probe = copyToXdg(many.dataDir);
+        expect(runReanchor(['--to', 'directives-2', '--apply'], probe).status).toBe(0);
+        const secondKey = batchKeys(probe)[1];
+        expect(secondKey).toBeDefined();
+        await many.ok('register', {
+          project: 'hexlog',
+          process: 'feat-e',
+          agent: 'flow-run',
+          key: secondKey,
+          records: [
+            { type: 'premise', target: 'feat-e.premise.other', data: { statement: 'Other' } },
+          ],
+        });
+
+        const xdg = copyToXdg(many.dataDir);
+        const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(`batch refused: feat-e ${secondKey}`);
+        expect(result.stderr).not.toContain('verify failed');
+        expect(result.stdout).toContain(`rewrote ${COUNT - 1} of ${COUNT} decisions`);
+      } finally {
+        await many.close();
+      }
+    }, 240_000);
+  });
+
   test.each([
     ['a dirty build', { dirty: true }, /dirty tree/],
     ['a missing ~/.claude.json', { claudeJson: false }, /not registered in ~\/\.claude\.json/],
