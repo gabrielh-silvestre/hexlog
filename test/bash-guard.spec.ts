@@ -610,6 +610,21 @@ describe('bash-guard (#158): ceilings apply only to tokens the shell expands', (
     expect(result.stderr).toContain(reachesMessage);
   }, 15_000);
 
+  test('measures a quoted "~" token after the expansion, as the classification does', () => {
+    // 4096 caracteres crus (no teto), mais que o teto depois de expandir o `~`; entre aspas, o
+    // shell não o expande, então só o caminho e o prefixo literais contam.
+    const result = runHook({ command: `cat '~/sub/${'a'.repeat(4089)}*'` }, envBase);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+  }, 15_000);
+
+  test('denies by literal prefix, not by cost, a quoted "~" token over the ceiling once expanded', () => {
+    // O prefixo literal `~` é ancestral de D: nega por alcançar D, não por teto de custo.
+    const result = runHook({ command: `cat '~/${'a'.repeat(4093)}*'` }, envBase);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(reachesMessage);
+  }, 15_000);
+
   test('says the command does not cite D and was denied only for cost', () => {
     const result = runHook({ command: `cat ${'['.repeat(100)}` }, envBase);
     expect(result.stderr).toContain(costMessage);

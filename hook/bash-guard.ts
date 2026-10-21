@@ -98,7 +98,8 @@ function splitSegments(tokens: ParseEntry[]): string[][] {
   return segments;
 }
 
-type Candidate = { token: string; expandable: boolean };
+/** `expanded` é o token com o `~` já expandido: a medida dos tetos, do orçamento e da checagem. */
+type Candidate = { token: string; expanded: string; expandable: boolean };
 
 /**
  * Troca por `x` o texto entre aspas e o escapado por `\`, que o shell nunca expande. As aspas ficam,
@@ -144,10 +145,11 @@ function maskQuoted(command: string): string | undefined {
  * Se o `shell-quote` não devolve a mesma quantidade de tokens para o comando mascarado, todos valem
  * como expansíveis (o caminho conservador).
  */
-function toCandidates(tokens: string[], maskedTokens: string[]): Candidate[] {
+function toCandidates(tokens: string[], maskedTokens: string[], home: string): Candidate[] {
   const aligned = tokens.length === maskedTokens.length;
   return tokens.map((token, index) => ({
     token,
+    expanded: expandTilde(token, home),
     expandable: !aligned || GLOB_CHARS_REGEX.test(maskedTokens[index] ?? ''),
   }));
 }
@@ -217,8 +219,8 @@ function exceedsGlobLimits(token: string): boolean {
 }
 
 /** O token só entre aspas acima dos tetos não é casado como glob: só o caminho e o prefixo literais contam. */
-function skipsGlobMatch({ token, expandable }: Candidate): boolean {
-  return !expandable && exceedsGlobLimits(token);
+function skipsGlobMatch({ expanded, expandable }: Candidate): boolean {
+  return !expandable && exceedsGlobLimits(expanded);
 }
 
 /** Orçamento por comando: a soma dos tokens com glob, entre aspas ou não, que o hook casa passou do teto? */
@@ -226,9 +228,9 @@ function exceedsGlobBudget(candidates: Candidate[]): boolean {
   return (
     sumBy(
       candidates.filter(
-        (candidate) => GLOB_CHARS_REGEX.test(candidate.token) && !skipsGlobMatch(candidate),
+        (candidate) => GLOB_CHARS_REGEX.test(candidate.expanded) && !skipsGlobMatch(candidate),
       ),
-      ({ token }) => token.length,
+      ({ expanded }) => expanded.length,
     ) > MAX_GLOB_TOTAL_LENGTH
   );
 }
@@ -342,14 +344,9 @@ function literalPrefixReaches(resolvedPath: string, dataDir: string): boolean {
  * acima dos tetos é conferido como caminho literal e pelo prefixo literal, que pega o glob que o
  * próprio programa expande (`find -path`). Casamento que lança libera o token.
  */
-function classifyToken(
-  candidate: Candidate,
-  cwd: string,
-  dataDir: string,
-  home: string,
-): TokenClass {
+function classifyToken(candidate: Candidate, cwd: string, dataDir: string): TokenClass {
   try {
-    const token = expandTilde(candidate.token, home);
+    const token = candidate.expanded;
     if (token.includes(dataDir)) return 'reaches';
     if (skipsGlobMatch(candidate)) {
       const resolved = path.resolve(cwd, token);
@@ -370,11 +367,10 @@ function findBlockingToken(
   candidates: Candidate[],
   cwd: string,
   dataDir: string,
-  home: string,
 ): { token?: string; tokenClass: Exclude<TokenClass, 'clear'> } | undefined {
   if (exceedsGlobBudget(candidates)) return { tokenClass: 'undecidable' };
   for (const candidate of candidates) {
-    const tokenClass = classifyToken(candidate, cwd, dataDir, home);
+    const tokenClass = classifyToken(candidate, cwd, dataDir);
     if (tokenClass !== 'clear') return { token: candidate.token, tokenClass };
   }
   return undefined;
@@ -424,10 +420,9 @@ function decide(
 
   const tokens = segments.flat();
   const blocking = findBlockingToken(
-    toCandidates(tokens, maskedTokensOf(command, tokens, home, env)),
+    toCandidates(tokens, maskedTokensOf(command, tokens, home, env), home),
     cwd,
     dataDirPath,
-    home,
   );
   if (isNil(blocking)) return { deny: false };
   const matched = matchedSegment(segments, (token) => token === blocking.token);

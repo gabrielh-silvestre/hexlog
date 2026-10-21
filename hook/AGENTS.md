@@ -23,7 +23,8 @@ tokeniza o comando recebido; nunca executa nada.
 - Os tetos de glob (`MAX_GLOB_TOKEN_LENGTH`, `MAX_BRACES`, `MAX_BRACKETS`) valem só
   para o token que o shell expande: `maskQuoted` troca o texto entre aspas e escapado por `x` num
   segundo parse (`maskedTokensOf`, só quando algum token passa dos tetos), `toCandidates` marca o
-  `expandable` e `skipsGlobMatch` pula o casamento do token só entre aspas acima dos tetos, que `literalPrefixReaches` confere pelo prefixo literal. As regras
+  `expandable` e `expanded` (o token com o `~` expandido, que `skipsGlobMatch`, o orçamento e
+  `classifyToken` medem do mesmo jeito) e `skipsGlobMatch` pula o casamento do token só entre aspas acima dos tetos, que `literalPrefixReaches` confere pelo prefixo literal. As regras
   (o que faz o `maskQuoted` desistir, o orçamento total, o limite aceito) estão em
   `docs/directives/instalacao-e-hooks.md` (ver `## Diretrizes` abaixo).
 - O `shell-quote` só devolve `{op: 'glob'}` para `*` e `?`; `{` e `[` voltam como string, sem marca
