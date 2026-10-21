@@ -5,7 +5,9 @@ name: Dependabot auto-merge
 # acontece quando os checks exigidos pelo ruleset ficam verdes: o workflow não aprova nem pula
 # check. Major nunca entra (nem o de segurança, que o `ignore` do dependabot.yml não alcança), e
 # `github-actions` fica com merge manual. Roda em `pull_request`, nunca em `pull_request_target`.
-# A flag `allow_auto_merge` do repositório liga depois do ensaio do token (plano de P12).
+# Pré-condição: o ruleset de `develop` já exige `quality` antes de `allow_auto_merge` ficar ligado;
+# com a flag ligada e o ruleset sem esse check, `gh pr merge --auto` mergeia o PR do bot na hora,
+# com o CI ainda rodando. Desligar a flag ou afrouxar o ruleset reabre esse furo.
 on:
   pull_request:
 
@@ -15,19 +17,24 @@ jobs:
   dependabot-auto-merge:
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.base.ref == 'develop'
+    # Pushes ou rebases seguidos do Dependabot no mesmo PR cancelam a execução anterior.
+    concurrency:
+      group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - id: metadata
+      - name: Read Dependabot metadata
+        id: metadata
         uses: dependabot/fetch-metadata@v3
       # O `package-ecosystem` sai do nome da branch do PR: `npm_and_yarn` para o npm,
       # `github_actions` para as actions. O `update-type` é a maior mudança do PR agrupado.
-      - env:
-          ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
-          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
-        run: echo "package-ecosystem=$ECOSYSTEM update-type=$UPDATE_TYPE"
-      - if: >-
+      # Filtro fail-closed: valor vazio não mergeia. O formato do PR de security update nunca foi
+      # visto; o 1º real confere se os dois outputs vêm preenchidos (o log do fetch-metadata
+      # mostra os valores).
+      - name: Enable auto-merge for npm minor and patch
+        if: >-
           steps.metadata.outputs.package-ecosystem == 'npm_and_yarn' &&
           (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
           steps.metadata.outputs.update-type == 'version-update:semver-patch')
