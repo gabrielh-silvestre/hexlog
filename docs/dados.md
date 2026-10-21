@@ -182,9 +182,10 @@ como expansível. O trecho que o
 tokens e é conferido como o resto do comando; o glob que alcança `<D>` dentro de um comentário de verdade
 também é negado (falso positivo aceito); nesse trecho, só a linha que o `shell-quote` não parseia
 (`${}`) é liberada. Os tetos e o orçamento medem o token com o `~` já expandido
-(`hook/bash-guard.ts#toCandidates`). O texto só entre aspas acima dos tetos, com `cwd` ancestral de
-`<D>`, é negado pelo prefixo literal sem citar `<D>` (`node -e '<script grande>'` rodado do pai de `<D>`,
-falso positivo aceito). A negação
+(`hook/bash-guard.ts#toCandidates`). O texto só entre aspas acima dos tetos é negado pelo prefixo
+literal sem citar `<D>` quando o primeiro segmento do token já tem caractere de glob e o `cwd` é
+ancestral de `<D>` (`node -e '<script grande>'` rodado do pai de `<D>`, com glob no primeiro segmento
+do script, falso positivo aceito). A negação
 por esses motivos não cita `<D>` literalmente: a mensagem diz que o comando não o cita e foi negado
 só por um teto de segurança. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
 `..`, cada grupo vira `*` antes do casamento (`.*` na abertura de um segmento oculto de `<D>`, que
