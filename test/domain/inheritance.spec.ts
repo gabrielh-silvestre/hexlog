@@ -3,8 +3,7 @@ import { buildInheritance, NO_INHERITANCE } from '../../src/domain/inheritance.t
 import { buildVigency } from '../../src/domain/relations.ts';
 import type { Linked } from '../../src/domain/relations.ts';
 import type { RelationKind as Kind } from '../../src/domain/record.ts';
-
-const id = (process: string, n: number) => `${process}:${String(n).padStart(8, '0')}`;
+import { recordId } from '../helpers.ts';
 
 type Rel = [Kind, string] | [Kind, string, string];
 
@@ -19,8 +18,8 @@ function inherit(records: Linked[], isActive: (process: string) => boolean = () 
   return buildInheritance(records, buildVigency(records), isActive);
 }
 
-const [e1, e2, e3] = [id('p', 1), id('p', 2), id('p', 3)];
-const [u1, u2, u3] = [id('p', 11), id('p', 12), id('p', 13)];
+const [e1, e2, e3] = [recordId('p', 1), recordId('p', 2), recordId('p', 3)];
+const [u1, u2, u3] = [recordId('p', 11), recordId('p', 12), recordId('p', 13)];
 
 describe('NO_INHERITANCE', () => {
   test('inherits nothing in any direction', () => {
@@ -105,17 +104,17 @@ describe('kinds that never inherit', () => {
       rec(e1, ['contradicts', u1]),
       rec(e2, ['supersedes', e1]),
       rec(u2, ['supersedes', u1]),
-      rec(e3, ['revokes', id('p', 21)]),
-      rec(id('p', 22), ['supersedes', e3]),
+      rec(e3, ['revokes', recordId('p', 21)]),
+      rec(recordId('p', 22), ['supersedes', e3]),
     ]);
     expect(inheritance.outOf(e2)).toEqual([]);
     expect(inheritance.into(u2)).toEqual([]);
-    expect(inheritance.outOf(id('p', 22))).toEqual([]);
+    expect(inheritance.outOf(recordId('p', 22))).toEqual([]);
   });
 
   test('the supersedes of a superseded record is not carried to its successor', () => {
     const inheritance = inherit([
-      rec(e1, ['supersedes', id('p', 30)]),
+      rec(e1, ['supersedes', recordId('p', 30)]),
       rec(e2, ['supersedes', e1]),
     ]);
     expect(inheritance.outOf(e2)).toEqual([]);
@@ -146,7 +145,7 @@ describe('revoked lineages', () => {
     const inheritance = inherit([
       rec(e1, ['supports', u1]),
       rec(u2, ['supersedes', u1]),
-      rec(id('p', 40), ['revokes', u2]),
+      rec(recordId('p', 40), ['revokes', u2]),
     ]);
     expect(inheritance.into(u2)).toEqual([]);
     expect(inheritance.outOf(e1)).toEqual([]);
@@ -156,7 +155,7 @@ describe('revoked lineages', () => {
     const inheritance = inherit([
       rec(e1, ['derivesFrom', u1]),
       rec(e2, ['supersedes', e1]),
-      rec(id('p', 40), ['revokes', e2]),
+      rec(recordId('p', 40), ['revokes', e2]),
     ]);
     expect(inheritance.outOf(e2)).toEqual([]);
     expect(inheritance.into(u1)).toEqual([]);
@@ -164,7 +163,7 @@ describe('revoked lineages', () => {
 });
 
 describe('activation per process', () => {
-  const [ea, ub1, ub2] = [id('a', 1), id('b', 1), id('b', 2)];
+  const [ea, ub1, ub2] = [recordId('a', 1), recordId('b', 1), recordId('b', 2)];
 
   test('supports follows the process of the lineage that rises', () => {
     const records = [rec(ea, ['supports', ub1]), rec(ub2, ['supersedes', ub1])];
@@ -173,7 +172,7 @@ describe('activation per process', () => {
   });
 
   test('the origin kinds follow the process of the record that rises', () => {
-    const [ra1, ra2, tb] = [id('a', 11), id('a', 12), id('b', 11)];
+    const [ra1, ra2, tb] = [recordId('a', 11), recordId('a', 12), recordId('b', 11)];
     const records = [rec(ra1, ['derivesFrom', tb]), rec(ra2, ['supersedes', ra1])];
     expect(inherit(records, (process) => process === 'a').outOf(ra2)).toHaveLength(1);
     expect(inherit(records, (process) => process === 'b').outOf(ra2)).toEqual([]);
@@ -220,9 +219,14 @@ describe('explicit cut by contradicts', () => {
   });
 
   test('a contradicts between other lineages does not cut', () => {
-    const other = [rec(id('p', 50)), rec(id('p', 51), ['contradicts', id('p', 50)])];
+    const other = [
+      rec(recordId('p', 50)),
+      rec(recordId('p', 51), ['contradicts', recordId('p', 50)]),
+    ];
     expect(inherit([...base, ...other]).into(u2)).toHaveLength(1);
-    expect(inherit([...base, rec(id('p', 52), ['contradicts', u2])]).into(u2)).toHaveLength(1);
+    expect(inherit([...base, rec(recordId('p', 52), ['contradicts', u2])]).into(u2)).toHaveLength(
+      1,
+    );
   });
 
   test('superseding the record that holds the cutting contradicts reconnects the inheritance', () => {
@@ -242,7 +246,9 @@ describe('explicit cut by contradicts', () => {
       rec(u1, ['contradicts', e1]),
     ];
     expect(inherit(records).outOf(e2)).toEqual([]);
-    expect(inherit([...records, rec(id('p', 61), ['revokes', u1])]).outOf(e2)).toHaveLength(1);
+    expect(inherit([...records, rec(recordId('p', 61), ['revokes', u1])]).outOf(e2)).toHaveLength(
+      1,
+    );
   });
 
   test('a cutting contradicts superseded by a version that repeats it keeps the cut', () => {
@@ -267,6 +273,13 @@ describe('explicit cut by contradicts', () => {
 describe('log without lineage', () => {
   test('returns the empty inheritance when no record supersedes another', () => {
     expect(inherit([rec(e1, ['supports', u1]), rec(u2, ['contradicts', e1])])).toBe(NO_INHERITANCE);
+  });
+});
+
+describe('without isActive', () => {
+  test('returns the empty inheritance even when the log has a lineage', () => {
+    const records = [rec(e1, ['supports', u1]), rec(u2, ['supersedes', u1])];
+    expect(buildInheritance(records, buildVigency(records))).toBe(NO_INHERITANCE);
   });
 });
 

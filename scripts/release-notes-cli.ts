@@ -7,6 +7,8 @@ import { releaseNotes } from './release-notes.ts';
 
 const USAGE = 'usage: release-notes-cli.ts <version> [--pr <number> --repo <owner/repo>]';
 
+const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
+
 function main(): void {
   const { values, positionals } = parseArgs({
     args: process.argv.slice(2),
@@ -18,6 +20,10 @@ function main(): void {
   const { pr: prNumber, repo } = values;
   const withPr = prNumber !== undefined && prNumber !== '';
   if (version === undefined || positionals.length > 1) throw new Error(USAGE);
+  // --repo vem sempre com --pr (o `release.yml` passa os dois, --pr pode ser vazio)
+  if (repo !== undefined && (prNumber === undefined || !REPO_PATTERN.test(repo))) {
+    throw new Error(USAGE);
+  }
   if (withPr && (!/^\d+$/.test(prNumber) || repo === undefined)) throw new Error(USAGE);
   const changelog = readFileSync(resolve(import.meta.dirname, '..', 'CHANGELOG.md'), 'utf8');
   const pr = withPr

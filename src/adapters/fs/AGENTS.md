@@ -27,7 +27,7 @@ Adaptadores de disco do dado 1.0, sob `<D>/.v1/`: os três stores (`ProcessStore
 - `../../domain/`: `Name`, `Hash`, `Manifest`, definições e `sha256hex`
 - `../../errors.ts`: `HexlogError` e os construtores de erro
 - `../../shared/logger.ts`: `Logger`, usado por `lock.ts`
-- Importados de fora desta pasta: `compose.ts` (os três stores e `detectLegacy`), `archive.ts` (`errnoCode`, `fsyncPath`, `isDirectoryTaken`, `orIfMissing`, `readIfPresent`, `ARCHIVE_DIR`, `detectLegacy`, `isPidAlive`) e `installation.ts` (`errnoCode`, `isDirectoryTaken`, `writeFileAtomic`, `orIfMissing`, `readIfPresent`)
+- Importados de fora desta pasta: `compose.ts` (os três stores e `detectLegacy`), `archive.ts` (`errnoCode`, `fsyncPath`, `isDirectoryTaken`, `orIfMissing`, `readIfPresent`, `ARCHIVE_DIR`, `detectLegacy`, `isPidAlive`) e `installation.ts` (`errnoCode`, `isDirectoryTaken`, `writeFileAtomic`, `orIfMissing`, `readIfPresent`, `isPidAlive`)
 
 ### External
 

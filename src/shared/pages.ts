@@ -3,11 +3,6 @@ export function isHighSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff;
 }
 
-/** Code unit na faixa do low surrogate; `NaN` (índice fora do texto em `charCodeAt`) dá `false`. */
-export function isLowSurrogate(code: number): boolean {
-  return code >= 0xdc00 && code <= 0xdfff;
-}
-
 /**
  * Corta `text` em `[offset, offset + limit)` sem partir um par surrogate: se o corte cair depois
  * de um high surrogate, recua 1 (ou avança 1, se recuar deixaria a página vazia). Puro: usado pela

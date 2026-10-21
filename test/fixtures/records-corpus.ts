@@ -81,8 +81,17 @@ function recordId(processName: string, processIndex: number, seq: number): strin
   return `${processName}:0198f4a0-${hex(processIndex, 4)}-7000-8000-${hex(seq, 12)}`;
 }
 
-/** Elo `seq` do processo; a cada 5 registros um `supports` para o anterior. */
-function linkOf(ref: ProcessRef, processIndex: number, expected: Expected, batch?: Link['batch']) {
+/**
+ * Elo `seq` do processo; a cada 5 registros um `supports` para o anterior e, com `supersedes`, o
+ * registro seguinte (`seq % 5 === 1`) supera o apoiado, para o apoio ser herdável pela linhagem.
+ */
+function linkOf(
+  ref: ProcessRef,
+  processIndex: number,
+  expected: Expected,
+  supersedes: boolean,
+  batch?: Link['batch'],
+) {
   const { seq } = expected;
   const type = TYPES[seq % TYPES.length]!;
   const area = TARGET_AREAS[seq % TARGET_AREAS.length]!;
@@ -97,29 +106,47 @@ function linkOf(ref: ProcessRef, processIndex: number, expected: Expected, batch
       text: textFor(processIndex, seq),
       ...(type === 'verdict' ? { result: seq % 2 === 0 ? 'pass' : 'fail' } : {}),
     },
-    relations:
-      seq > 0 && seq % 5 === 0
-        ? [{ kind: 'supports', to: recordId(ref.process, processIndex, seq - 1) }]
-        : [],
+    relations: [
+      ...(seq > 0 && seq % 5 === 0
+        ? [{ kind: 'supports' as const, to: recordId(ref.process, processIndex, seq - 1) }]
+        : []),
+      ...(supersedes && seq > 5 && seq % 5 === 1
+        ? [{ kind: 'supersedes' as const, to: recordId(ref.process, processIndex, seq - 2) }]
+        : []),
+    ],
     prevHash: expected.prevHash,
     ...(batch === undefined ? {} : { batch }),
   };
   return link;
 }
 
-/** Manifesto vazio, com `gates` fixados quando houver (o hash dos gates acompanha). */
-function manifestOf(ref: ProcessRef, gates: readonly Gate[]): Manifest {
+/**
+ * Manifesto vazio, com `gates` fixados quando houver (o hash dos gates acompanha) e a herança
+ * ligada se pedida.
+ */
+function manifestOf(
+  ref: ProcessRef,
+  gates: readonly Gate[],
+  lineageInheritance: boolean,
+): Manifest {
   const empty = emptyManifest(ref, CREATED_AT);
   const fixed = Object.fromEntries(gates.map((gate) => [gate.name, gate]));
   return {
     ...empty,
+    ...(lineageInheritance && { lineageInheritance: true as const }),
     fixed: { ...empty.fixed, gates: fixed },
     hashes: { ...empty.hashes, gates: gates.length === 0 ? empty.hashes.gates : anchor(fixed) },
   };
 }
 
 /** Processo encadeado de `count` elos em linhas de 1 a 3 elos (as de 2 ou mais levam `batch.key`). */
-function buildProcess(ref: ProcessRef, processIndex: number, count: number, manifest: Manifest) {
+function buildProcess(
+  ref: ProcessRef,
+  processIndex: number,
+  count: number,
+  manifest: Manifest,
+  supersedes: boolean,
+) {
   const records: Link[] = [];
   const lines: string[] = [];
   let expected: Expected = { seq: 0, prevHash: anchor(manifest) };
@@ -129,7 +156,7 @@ function buildProcess(ref: ProcessRef, processIndex: number, count: number, mani
     for (let item = 0; item < size; item += 1) {
       const key = `batch-${lineNumber}`;
       const batch = item === 0 && size > 1 ? { fingerprint: sha256hex(key), key } : undefined;
-      const link = linkOf(ref, processIndex, expected, batch);
+      const link = linkOf(ref, processIndex, expected, supersedes, batch);
       links.push(link);
       expected = { seq: link.seq + 1, prevHash: hashLink(link) };
     }
@@ -145,6 +172,15 @@ export type RecordsCorpusOptions = {
   recordsPerProcess: number;
   /** Gates fixados no manifesto de cada processo. */
   gates?: Gate[];
+  /**
+   * Registros que superam o apoiado de um `supports`, para haver linhagem; só pesa na leitura com
+   * `lineageInheritance`.
+   */
+  supersedes?: boolean;
+  /**
+   * `lineageInheritance` no manifesto de cada processo: a leitura calcula a herança de relações.
+   */
+  lineageInheritance?: boolean;
 };
 
 export type RecordsCorpus = {
@@ -159,11 +195,18 @@ export type RecordsCorpus = {
  * linhas por `formatLine`, sem passar pelo `ProcessStore`.
  */
 export function writeRecordsCorpus(dataDir: string, options: RecordsCorpusOptions): RecordsCorpus {
-  const { project = 'budget', processes = ['proc1'], recordsPerProcess, gates = [] } = options;
+  const {
+    project = 'budget',
+    processes = ['proc1'],
+    recordsPerProcess,
+    gates = [],
+    supersedes = false,
+    lineageInheritance = false,
+  } = options;
   const refs = processes.map((name) => ({ project, process: name }));
   const records = refs.flatMap((ref, processIndex) => {
-    const manifest = manifestOf(ref, gates);
-    const built = buildProcess(ref, processIndex, recordsPerProcess, manifest);
+    const manifest = manifestOf(ref, gates, lineageInheritance);
+    const built = buildProcess(ref, processIndex, recordsPerProcess, manifest, supersedes);
     const paths = processPaths(dataDir, ref);
     fs.mkdirSync(paths.dir, { recursive: true });
     fs.writeFileSync(paths.manifest, JSON.stringify(manifest));

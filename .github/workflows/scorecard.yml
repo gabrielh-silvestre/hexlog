@@ -4,6 +4,11 @@ name: Scorecard
 # (`workflow_dispatch`, a medida que vale depois que o ruleset e os demais workflows existem).
 # O SARIF vai para a aba Security; não publica na API do Scorecard (`publish_results: false`),
 # então o job dispensa `id-token: write`. Não está no ruleset.
+#
+# Limitação aceita: o job usa só o `GITHUB_TOKEN` padrão, sem `repo_token`. Com ele, os checks que
+# leem proteção de branch e ruleset (Branch-Protection) podem sair inconclusivos, e a medida do
+# `workflow_dispatch` pode não enxergar o ruleset. Adotar `repo_token` pediria um token com leitura
+# de administração do repositório, acima do mínimo de permissão deste job.
 on:
   schedule:
     - cron: '17 6 * * 1'
