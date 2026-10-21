@@ -12,7 +12,13 @@ import {
 } from '../domain/definitions.ts';
 import type { Change } from '../domain/definitions.ts';
 import type { Hash, Name } from '../domain/ids.ts';
-import { fromIssues, HexlogError } from '../errors.ts';
+import {
+  breakingChange,
+  exclusiveWriteExhausted,
+  fromIssues,
+  HexlogError,
+  schemaRootNotObject,
+} from '../errors.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore, Validator } from '../ports.ts';
 
 type Breaking = { breaking?: boolean };
@@ -99,10 +105,7 @@ function typeRule(validator: Validator): Rule<'types'> {
       }
       // O `data` de um registro é sempre objeto: schema de outra raiz nunca aceitaria nenhum.
       if (parsed.data.type !== 'object') {
-        const message = 'schema root must be "type": "object"';
-        throw new HexlogError('INVALID_SCHEMA', message, [
-          { path: '/schema/type', code: 'invalid-type', message },
-        ]);
+        throw schemaRootNotObject();
       }
       return parsed.data;
     },
@@ -137,12 +140,7 @@ function targetVersion<K extends DefinitionKind>(
 ): string {
   if (isUndefined(previous)) return FIRST_VERSION;
   const broken = rule.classify(previous.definition, next) === 'breaking';
-  if (broken && !breaking) {
-    const message = 'change requires breaking: true';
-    throw new HexlogError('BREAKING_CHANGE', message, [
-      { path: rule.breakingPath, code: 'breaking-change', message },
-    ]);
-  }
+  if (broken && !breaking) throw breakingChange(rule.breakingPath);
   return bumpVersion(previous.version, broken || breaking ? 'major' : 'minor');
 }
 
@@ -193,10 +191,7 @@ function defineVersioned<K extends DefinitionKind>(
     };
   }
 
-  const message = 'exclusive write did not succeed';
-  throw new HexlogError('INTERNAL', message, [
-    { path: '', code: 'exclusive-write-exhausted', message },
-  ]);
+  throw exclusiveWriteExhausted();
 }
 
 export function createDefinitionService(deps: {

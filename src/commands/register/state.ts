@@ -17,6 +17,7 @@ import {
   brokenChain,
   cycleRejected,
   HexlogError,
+  keyConflict,
   relationNotFound,
   withPath,
 } from '../../errors.ts';
@@ -98,10 +99,7 @@ type Destination = {
 /** D-06 nível 5: a mesma `key` com outra impressão é conflito; com a mesma, o chamador faz o replay. */
 function assertSameBatch(prior: BatchEntry, fingerprint: Hash): void {
   if (prior.fingerprint === fingerprint) return;
-  const message = 'key was already used with a different batch';
-  throw new HexlogError('IDEMPOTENCY_CONFLICT', message, [
-    { path: '/key', code: 'key-conflict', message },
-  ]);
+  throw keyConflict();
 }
 
 function registeredOf(links: readonly Link[]): RegisteredRecord[] {

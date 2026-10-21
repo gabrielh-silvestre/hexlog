@@ -112,7 +112,7 @@ carregá-las: a leitura as estende à versão atual, sem gravar nada.
 
 `key` torna o reenvio seguro: a mesma `key` com o mesmo lote devolve o resultado
 guardado com `replayed: true`, sem gravar de novo; a mesma `key` com lote
-diferente é `IDEMPOTENCY_CONFLICT` (`commands/register/state.ts#assertSameBatch`). A `key` vale dentro do processo, tem até 200
+diferente é `IDEMPOTENCY_CONFLICT` (`errors.ts#keyConflict`). A `key` vale dentro do processo, tem até 200
 caracteres e identifica a **intenção**, não a tentativa: derive-a do que o lote
 faz (ex.: `<target>:abertura`), nunca gere uma nova para reenviar.
 

@@ -383,3 +383,48 @@ export function relationNotFound(
 export function cycleRejected(): HexlogError {
   return domainError('CYCLE_REJECTED', '', 'cycle', 'batch would create a supersedes cycle');
 }
+
+/** D-06 nível 5: a mesma `key` já usada com outra impressão de lote. */
+export function keyConflict(): HexlogError {
+  return domainError(
+    'IDEMPOTENCY_CONFLICT',
+    '/key',
+    'key-conflict',
+    'key was already used with a different batch',
+  );
+}
+
+/** `create_process` num projeto sem nenhuma definição: o manifesto vazio seria imutável. */
+export function noDefinitions(project: Name): HexlogError {
+  return domainError(
+    'TYPE_NOT_FOUND',
+    '/project',
+    'unknown-name',
+    `project '${project}' has no definitions; call define_type first`,
+  );
+}
+
+/** Schema de `define_type` com raiz diferente de `"type": "object"`. */
+export function schemaRootNotObject(): HexlogError {
+  return domainError(
+    'INVALID_SCHEMA',
+    '/schema/type',
+    'invalid-type',
+    'schema root must be "type": "object"',
+  );
+}
+
+/** `path` é onde a mudança que quebra se aplica na definição (`''` na raiz). */
+export function breakingChange(path: string): HexlogError {
+  return domainError('BREAKING_CHANGE', path, 'breaking-change', 'change requires breaking: true');
+}
+
+/** A gravação exclusiva de uma versão de definição esgotou as tentativas. */
+export function exclusiveWriteExhausted(): HexlogError {
+  return domainError(
+    'INTERNAL',
+    '',
+    'exclusive-write-exhausted',
+    'exclusive write did not succeed',
+  );
+}

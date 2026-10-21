@@ -337,9 +337,9 @@ const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
  * espera a chamada de `verifyPreparedArtifact` para provar que a checagem ocorre dentro da instalação.
  */
 const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'commands/process.ts#assertSomethingRegistered': ['TYPE_NOT_FOUND'],
+  'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
   'domain/ids.ts#Name': ['Name'],
-  'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
+  'errors.ts#breakingChange': ['BREAKING_CHANGE'],
   'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
   'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
   'errors.ts#typeNotPinned': ['TYPE_NOT_PINNED'],
@@ -350,14 +350,14 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
 };
 
 const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'commands/process.ts#assertSomethingRegistered': ['TYPE_NOT_FOUND'],
+  'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
   'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
   'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-  'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
+  'errors.ts#breakingChange': ['BREAKING_CHANGE'],
 };
 
 const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'commands/register/state.ts#assertSameBatch': ['IDEMPOTENCY_CONFLICT'],
+  'errors.ts#keyConflict': ['IDEMPOTENCY_CONFLICT'],
   'commands/register/errors.ts#ruleRefusal': ['FORK_REJECTED'],
   'errors.ts#lockTimeout': ['LOCK_TIMEOUT'],
   'commands/register/attachments.ts#checkAttachments': ['unmarked-attachment'],
