@@ -11,7 +11,7 @@
 - `npm test` roda tudo, exceto os specs de orçamento (`*.budget.spec.ts`), e termina em até 300 s (P5). `npx jest test/<arquivo>.spec.ts` (ou `npm test -- test/<arquivo>.spec.ts`) roda um spec.
 - `npm ci` precisa ser completo (sem `--omit=dev`): `esbuild` e `@modelcontextprotocol/client` são devDependencies usadas pelo instalador e pelos testes. Node `>= 24.18.1` (`package.json#engines`).
 - Não precisa de `npm run build` prévio: os specs que dependem de bundle constroem o artefato num processo filho. `npm run build` só cabe antes de PR que toque `scripts/build.ts` ou `scripts/install.ts`.
-- Os testes lentos do `npm test` são TF1 (kill -9 no meio do lote), TF4 (dono do lock vivo pausado), P1 e o estresse 8x25 do lock.
+- Os testes lentos do `npm test` são TF1 (kill -9 no meio do lote), o dono do lock vivo pausado (`adapters/lock.spec.ts`, `SIGSTOP`), P1 e o estresse 8x25 do lock.
 - Sobra de execução interrompida (`kill -9` pula o `globalTeardown`): `find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'hexlog-suite-*' -exec rm -rf {} +`.
 
 ## Hooks locais
@@ -23,7 +23,7 @@
 
 ## Dependências e actions no CI
 
-- Toda action dos workflows vem pela tag, sem o SHA do commit, por decisão do dono: a major quando a action publica uma, a tag exata quando não. O `zizmor` roda com a política `ref-pin` (`.github/zizmor.yml`) por isso, e com `collect: all` em `workflow-lint.yml`, então também audita `.github/dependabot.yml`.
+- Toda action dos workflows vem pela tag, sem o SHA do commit, por decisão do dono: a major quando a action publica uma, a tag exata quando não. O `zizmor` roda com a política `ref-pin` (`.github/zizmor.yml`) por isso, e também audita `.github/dependabot.yml`.
 - O Dependabot (`.github/dependabot.yml`) cobre `npm` e `github-actions`, semanal, com `cooldown` de 7 dias e minor e patch num PR por ecossistema. Major de `npm` nunca vem por ele (`ignore`): entra por PR manual. Major de `github-actions` vem por PR, com merge manual, porque as actions por tag major (`@v7`) só têm a próxima major como candidata.
 - O auto-merge (`.github/workflows/dependabot-auto-merge.yml`) liga `gh pr merge --auto --merge` só no PR do Dependabot com base `develop` que é de `npm` e de minor ou patch. Major e `github-actions` ficam com merge manual. O merge espera os checks do ruleset, e a flag `allow_auto_merge` do repositório liga à parte.
 
