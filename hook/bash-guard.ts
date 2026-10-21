@@ -145,11 +145,11 @@ function maskQuoted(command: string): string | undefined {
  * Se o `shell-quote` não devolve a mesma quantidade de tokens para o comando mascarado, todos valem
  * como expansíveis (o caminho conservador).
  */
-function toCandidates(tokens: string[], maskedTokens: string[], home: string): Candidate[] {
+function toCandidates(tokens: string[], expanded: string[], maskedTokens: string[]): Candidate[] {
   const aligned = tokens.length === maskedTokens.length;
   return tokens.map((token, index) => ({
     token,
-    expanded: expandTilde(token, home),
+    expanded: expanded[index] ?? token,
     expandable: !aligned || GLOB_CHARS_REGEX.test(maskedTokens[index] ?? ''),
   }));
 }
@@ -161,11 +161,11 @@ function toCandidates(tokens: string[], maskedTokens: string[], home: string): C
  */
 function maskedTokensOf(
   command: string,
-  tokens: string[],
+  expanded: string[],
   home: string,
   env: NodeJS.ProcessEnv,
 ): string[] {
-  if (!tokens.some((token) => exceedsGlobLimits(expandTilde(token, home)))) return [];
+  if (!expanded.some(exceedsGlobLimits)) return [];
   const masked = maskQuoted(command);
   return isUndefined(masked) ? [] : splitSegments(tryTokenize(masked, home, env) ?? []).flat();
 }
@@ -426,8 +426,9 @@ function decide(
   if (isNil(segments)) return denied(undecidableMessage());
 
   const tokens = segments.flat();
+  const expanded = tokens.map((token) => expandTilde(token, home));
   const blocking = findBlockingToken(
-    toCandidates(tokens, maskedTokensOf(command, tokens, home, env), home),
+    toCandidates(tokens, expanded, maskedTokensOf(command, expanded, home, env)),
     cwd,
     dataDirPath,
   );
