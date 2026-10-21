@@ -133,8 +133,9 @@ pelo usuário, num terminal fora do Claude Code:
    ```
 
    O `D` supõe `XDG_DATA_HOME` ausente, vazia ou absoluta. Com valor relativo o servidor o
-   ignora e usa `~/.local/share/hexlog`, mas o shell o usa, então `ls -d` falha antes do
-   `rm`: nesse caso defina `D` à mão com o caminho real de `<D>`.
+   ignora e usa `~/.local/share/hexlog`, mas o shell o usa: confirme que `$L` é o caminho
+   real de `<D>` antes do `rm` (um caminho relativo que exista a partir do diretório atual
+   passa no `ls -d` e apaga o holder errado) e, se não for, defina `D` à mão.
 
 4. Confira que `records.jsonl.lock` não está mais na pasta do processo
    (`ls <D>/.v1/<projeto>/<processo>`). A prova de que o processo volta a gravar é o
