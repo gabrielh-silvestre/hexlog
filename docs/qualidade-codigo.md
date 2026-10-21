@@ -136,6 +136,14 @@ e os arquivos de `src/` do escopo ficam em `stryker.config.json`
 ignorado pelo git. O Stryker roda o jest sem `globalSetup`, sem `globalTeardown`
 e sem `--findRelatedTests`.
 
+Três opções têm motivo próprio. `disableBail: true` guarda o `killedBy` completo de
+cada mutante, que a remoção de teste com prova exige, sem custo, porque o jest já
+roda sem `--bail` dentro do Stryker. `ignoreStatic` fica desligado de propósito: o
+mutante estático mata de verdade, ao preço de rodar a suíte inteira para cada um.
+O `typescript-checker` fica no padrão `prioritizePerformanceOverAccuracy: true`,
+por tempo: o score absoluto é aproximado, e a comparação entre rodadas vale porque a
+config é a mesma. Mudar qualquer uma das três pede rodada-base nova.
+
 ## Depois
 
 Valor real, mas custo maior (triagem de regras, calibração, ou infra nova).
