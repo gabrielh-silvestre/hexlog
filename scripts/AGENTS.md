@@ -12,7 +12,8 @@ nada; `export.ts` despeja o log de um processo em JSONL, também sem escrever;
 `timeline.ts` cruza os processos de um projeto por prefixo de target e imprime a
 linha do tempo (com anexos e estado de integridade), também sem escrever. Os três
 leem por `src/compose.ts#composeReader` (só o lado de leitura, sem serviço de escrita) e recusam
-dado 0.x com exit 2.
+dado 0.x com exit 2. `release-notes.ts` e `release-notes-cli.ts` são de outro tipo: o `release.yml`
+os roda sem `npm ci`, então só usam builtins do Node e leem apenas o `CHANGELOG.md`, sem `src/` e sem dado.
 
 ## Key Files
 | File | Description |

@@ -35,6 +35,13 @@ fonte antes de adotar qualquer item.
 > `consistent-type-definitions` padroniza em `type`; cobertura roda só via
 > `npm run test:coverage`, sem `coverageThreshold`; `jest/expect-expect`
 > reconhece `expectError` e `expectDeduplicated` como asserts.
+>
+> **Atualizado em 2026-10-21:** o `ci.yml` roda `npm run test:coverage` (com
+> `--errorOnDeprecated`) no lugar de `npm test`, com piso global de 90%
+> (`package.json#jest.coverageThreshold`), e o `knip` está instalado
+> (`knip.json`, `npm run knip` no CI). Os trechos abaixo sobre cobertura
+> informativa e sobre o `ci.yml` rodar `npm test` descrevem o estado de
+> 2026-09-28.
 
 Baixo custo, zero conta externa, todos tocam arquivos que o repo já tem
 (`tsconfig.json`, `eslint.config.js`, `package.json`, `ci.yml`).
@@ -45,7 +52,7 @@ Baixo custo, zero conta externa, todos tocam arquivos que o repo já tem
 | `tseslint.configs.stylisticTypeChecked` | ~15 min | Regras de estilo type-aware, maioria autofixável por `eslint --fix` | [typescript-eslint shared configs](https://typescript-eslint.io/users/configs/) |
 | `eslint-plugin-n` (`flat/recommended-module`) | ~15–20 min | Barra API deprecada/não suportada no piso de Node declarado em `engines` (`package.json`, `engines.node`) | [eslint-plugin-n README](https://github.com/eslint-community/eslint-plugin-n) |
 | `eslint-plugin-jest` (`flat/recommended`, escopado a `test/**`) | ~10 min | Pega `no-conditional-expect`, `no-disabled-tests`, `valid-expect` numa suíte com specs de até 1.646 linhas (`test/guard.spec.ts`) | [eslint-plugin-jest README](https://github.com/jest-community/eslint-plugin-jest) |
-| jest hardening (`test:coverage` local sem gate e `--errorOnDeprecated`; `--ci` ficou de fora) | ~10 min | Visibilidade de cobertura sem travar PR; erro cedo em API deprecada | [jest configuration](https://jestjs.io/docs/configuration), [jest CLI](https://jestjs.io/docs/cli) |
+| jest hardening (`test:coverage` e `--errorOnDeprecated`; `--ci` ficou de fora; o piso de 90 veio depois) | ~10 min | Visibilidade de cobertura sem travar PR; erro cedo em API deprecada | [jest configuration](https://jestjs.io/docs/configuration), [jest CLI](https://jestjs.io/docs/cli) |
 
 ### `noUncheckedIndexedAccess` + `noImplicitOverride`
 
@@ -109,11 +116,12 @@ O plugin está instalado em 18.4.0 (`package.json`), junto do ESLint 10.10.0.
 
 ```jsonc
 // package.json > scripts
-"test:coverage": "jest --coverage", // informativo, sem coverageThreshold
+"test:coverage": "jest --coverage", // estado de 2026-09-28: informativo; hoje tem piso de 90
 "test": "jest --errorOnDeprecated",
 ```
 
-O `ci.yml` roda `npm test` sem `--ci`, porque o repo não tem snapshots.
+O `ci.yml` rodava `npm test` sem `--ci`, porque o repo não tem snapshots; hoje roda
+`npm run test:coverage`, também sem `--ci`.
 `eslint.config.js` (`ignores`) já ignora `coverage/**`, a pasta de saída do
 `test:coverage`.
 
@@ -146,5 +154,5 @@ Linhas `Depois` (Stryker) e `Nunca` revalidadas em 2026-10-03 contra a árvore 1
 
 1. Instalado: `noUncheckedIndexedAccess` + `noImplicitOverride` no `tsconfig.json`.
 2. Instalado: `stylisticTypeChecked` + `eslint-plugin-n` + `eslint-plugin-jest`.
-3. Instalado, sem `--ci`: jest hardening (`test:coverage` local, `--errorOnDeprecated`).
+3. Instalado, sem `--ci`: jest hardening (`test:coverage` com piso de 90 no CI, `--errorOnDeprecated`).
 4. Reavaliar `strictTypeChecked`, `eslint-plugin-unicorn`, Stryker e o resto da camada **Depois** quando a base de código crescer.
