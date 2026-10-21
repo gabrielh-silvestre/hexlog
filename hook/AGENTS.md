@@ -34,7 +34,11 @@ tokeniza o comando recebido; nunca executa nada.
   `MAX_BRACE_EXPANSION` (32) alternativas (`braceAlternatives`); acima disso, ou com faixa `..`, cada
   grupo vira `*` (`collapseBraceGroups`), e `.*` na abertura de um segmento oculto de `D`, que o `*`
   não casa.
-- Falso positivo aceito: token com glob sem aspas ou comando legítimo acima do teto é negado.
+- O `shell-quote` devolve `{comment}` com todo o resto da entrada a partir de um `#` fora de aspas
+  (inclusive `a#b` e as linhas seguintes); `parseCommand` tokeniza esse trecho de novo, uma linha por
+  vez e com o `#` trocado por espaço, para o `cat <glob>` depois do comentário ser conferido.
+- Falso positivo aceito: token com glob sem aspas ou comando legítimo acima do teto é negado, e o glob
+  que alcança `D` dentro de um comentário de verdade também.
 - `test/bash-guard.spec.ts`: casos de negação e permissão contra o hook
   `.ts` real (I4), entrada inválida falha aberto (I7), tokens hostis negados
   (U1; o comando que o `shell-quote` não parseia passa), trecho citado na mensagem (#45), entrypoint por symlink (M2), e um

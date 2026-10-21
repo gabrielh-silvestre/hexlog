@@ -168,6 +168,26 @@ function maskedTokensOf(
   return isUndefined(masked) ? [] : splitSegments(tryTokenize(masked, home, env) ?? []).flat();
 }
 
+/**
+ * O `shell-quote` lê todo `#` fora de aspas como comentário até o fim da entrada, até o do meio da
+ * palavra (`a#b`), e engole o resto, quebras de linha incluídas, que o bash executa. O trecho
+ * engolido volta como tokens vivos, uma linha por vez (uma aspa solta só desalinha a própria
+ * linha) e com o `#` trocado por espaço (sem novo comentário, custo linear): superconjunto do que o
+ * bash executa, que pode negar um glob dentro de um comentário de verdade.
+ */
+function parseCommand(command: string, vars: Record<string, string>): ParseEntry[] {
+  const tokens = shellQuoteParse(command, vars);
+  const last = tokens.at(-1);
+  if (isNil(last) || isString(last) || !('comment' in last)) return tokens;
+  return [
+    ...tokens.slice(0, -1),
+    ...last.comment
+      .replaceAll('#', ' ')
+      .split('\n')
+      .flatMap((line) => shellQuoteParse(line, vars)),
+  ];
+}
+
 function tryTokenize(
   command: string,
   home: string,
@@ -175,7 +195,7 @@ function tryTokenize(
 ): ParseEntry[] | undefined {
   if (command.length > MAX_COMMAND_LENGTH) return undefined;
   try {
-    return shellQuoteParse(command, { HOME: home, XDG_DATA_HOME: env.XDG_DATA_HOME ?? '' });
+    return parseCommand(command, { HOME: home, XDG_DATA_HOME: env.XDG_DATA_HOME ?? '' });
   } catch {
     // Parse que lança (`${}`): sem tokens para checar, o hook libera na dúvida (hooks-sao-freios).
     return [];

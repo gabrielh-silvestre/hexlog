@@ -177,7 +177,9 @@ aspas ou escapado acima deles não é casado como glob, só conferido como camin
 literal (os segmentos até o primeiro com glob não podem ser `<D>`, ancestral nem descendente dela), e o
 orçamento total não o soma. Diante de crase, `$(` ou `${` fora de aspas simples, ou de `$'`, `$"`, `#`
 ou `<<` fora de qualquer aspa (o rastreador de aspas do hook não os modela como o bash), todo token vale
-como expansível. A negação
+como expansível. O trecho que o
+`shell-quote` engole depois de um `#` fora de aspas (`hook/bash-guard.ts#parseCommand`) volta como
+tokens e é conferido como o resto do comando. A negação
 por esses motivos não cita `<D>` literalmente: a mensagem diz que o comando não o cita e foi negado
 só por um teto de segurança. A chave expande de verdade até `MAX_BRACE_EXPANSION` (32) alternativas; acima disso, ou com faixa
 `..`, cada grupo vira `*` antes do casamento (`.*` na abertura de um segmento oculto de `<D>`, que
