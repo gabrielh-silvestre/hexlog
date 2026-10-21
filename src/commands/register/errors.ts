@@ -13,7 +13,7 @@ const RULE_MESSAGES: Record<RuleCode, string> = {
   'cross-process-currency': 'supersedes and revokes only target records of the same process',
   'type-mismatch': 'supersedes only targets a record of the same type',
   'target-mismatch':
-    'supersedes only targets a record of the same target; to move a fact to another target, revoke the old record and register a new one at the right target with derivesFrom to it',
+    'supersedes only targets a record of the same target; to move a fact to another target, register one record at the right target with revokes and derivesFrom to the old one',
   'endpoint-type': 'record type is not allowed at this end of the relation name',
   'supports-and-contradicts': 'a record cannot both support and contradict the same destination',
   'supersedes-and-revokes': 'a record cannot both supersede and revoke the same destination',
