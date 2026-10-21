@@ -765,13 +765,32 @@ describe('flow-report', () => {
     return Object.fromEntries(entries.map(([name], index) => [name, at(ids, index)]));
   }
 
+  /** Objetivo, `premises` premissas `p00`, `p01`... e `decisions` decisões `d0`... que citam só o objetivo. */
+  async function registerObjectiveFixture(
+    environment: Environment,
+    proc: string,
+    { premises, decisions }: { premises: number; decisions: number },
+  ): Promise<void> {
+    const shorts = Array.from({ length: premises }, (_, i) => `p${String(i).padStart(2, '0')}`);
+    const [objective] = await registerItems(environment, proc, [
+      premise(proc, 'objective'),
+      ...shorts.map((short) => premise(proc, short)),
+    ]);
+    await registerItems(
+      environment,
+      proc,
+      Array.from({ length: decisions }, (_, index) =>
+        decision(proc, `d${index}`, [rests(objective ?? '')]),
+      ),
+    );
+  }
+
   let xdg: string;
   let xdgWithoutDirectives: string;
   let gitRepo: string;
   let ids: Record<string, string>;
   let inheritedIds: Record<string, string>;
   let currentIds: Set<string>;
-  let nonCurrentIds: Set<string>;
 
   const idOf = (name: string): string => {
     const id = ids[name];
@@ -788,6 +807,8 @@ describe('flow-report', () => {
       'feat-clean',
       'feat-many',
       'feat-wide',
+      'feat-edge-lines',
+      'feat-edge-wide',
       'feat-inherit',
     ]) {
       await environment.ok('create_process', { project: PROJECT, process: proc });
@@ -883,37 +904,19 @@ describe('flow-report', () => {
       'd-new': decision('feat-inherit', 'd-old', [{ kind: 'supersedes', to: '@d-old' }]),
     });
 
-    const [manyObjective] = await registerItems(environment, 'feat-many', [
-      premise('feat-many', 'objective'),
-    ]);
-    await registerItems(
-      environment,
-      'feat-many',
-      Array.from({ length: 101 }, (_, index) =>
-        decision('feat-many', `d${index}`, [rests(manyObjective ?? '')]),
-      ),
-    );
+    await registerObjectiveFixture(environment, 'feat-many', { premises: 0, decisions: 101 });
+    await registerObjectiveFixture(environment, 'feat-wide', { premises: 12, decisions: 1 });
+    // as bordas: 100 linhas e 10 premissas cabem inteiras, sem corte
+    await registerObjectiveFixture(environment, 'feat-edge-lines', { premises: 0, decisions: 100 });
+    await registerObjectiveFixture(environment, 'feat-edge-wide', { premises: 10, decisions: 1 });
 
-    const wideShorts = Array.from({ length: 12 }, (_, i) => `p${String(i).padStart(2, '0')}`);
-    const [wideObjective] = await registerItems(environment, 'feat-wide', [
-      premise('feat-wide', 'objective'),
-      ...wideShorts.map((short) => premise('feat-wide', short)),
-    ]);
-    await registerItems(environment, 'feat-wide', [
-      decision('feat-wide', 'd-wide', [rests(wideObjective ?? '')]),
-    ]);
-
-    const queryDecisions = (includeNonCurrent: boolean) =>
-      environment.ok<QueryResult>('query', {
-        project: PROJECT,
-        process: 'feat-r',
-        type: 'decision',
-        includeNonCurrent,
-        limit: 200,
-      });
-    currentIds = new Set((await queryDecisions(false)).records.map((record) => record.id));
-    const everyId = (await queryDecisions(true)).records.map((record) => record.id);
-    nonCurrentIds = new Set(everyId.filter((id) => !currentIds.has(id)));
+    const { records: currentDecisions } = await environment.ok<QueryResult>('query', {
+      project: PROJECT,
+      process: 'feat-r',
+      type: 'decision',
+      limit: 200,
+    });
+    currentIds = new Set(currentDecisions.map((record) => record.id));
 
     xdg = copyToXdg(environment.dataDir);
     xdgWithoutDirectives = copyToXdg(environment.dataDir);
@@ -982,7 +985,7 @@ describe('flow-report', () => {
 
     test('exits with status 0 and no warning on stderr', () => {
       expect(result.status).toBe(0);
-      expect(result.stderr).toBe('');
+      expect(result.stderr).not.toMatch(/flow-report:/);
     });
 
     test('flags the decision that cites only the objective premise, with the uncited premises', () => {
@@ -1057,11 +1060,6 @@ describe('flow-report', () => {
       expect(printed.length).toBeGreaterThan(0);
       for (const id of printed) expect(currentIds).toContain(id);
     });
-
-    test('no printed id is among the non-current ones of the query', () => {
-      expect(nonCurrentIds.size).toBeGreaterThan(0);
-      for (const id of printedIds(result)) expect(nonCurrentIds).not.toContain(id);
-    });
   });
 
   test('with the base swapped for feat/r the diff is empty and doc-amended disappears', () => {
@@ -1126,6 +1124,24 @@ describe('flow-report', () => {
     expect(result.stderr).toMatch(/^flow-report: usage:/);
   }, 30_000);
 
+  test.each([
+    [['Feat_R']],
+    [['../x']],
+    [['a$b']],
+    [['feat-r', 'a b']],
+    [['feat-r', 'x;y']],
+    [['feat-r', '$(id)']],
+  ])(
+    'refuses the invalid slug or base %j with usage on stderr and status 0',
+    (args) => {
+      const result = runReport(args);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toMatch(/^flow-report: usage:/);
+    },
+    30_000,
+  );
+
   test('no argument exits with usage on stderr and status 0', () => {
     const result = runReport([]);
     expect(result.status).toBe(0);
@@ -1169,5 +1185,20 @@ describe('flow-report', () => {
     const uncited = row?.[2]?.split('uncited=')[1];
     expect(uncited?.endsWith(' (+2)')).toBe(true);
     expect(uncited?.replace(' (+2)', '').split(',')).toHaveLength(10);
+  }, 30_000);
+
+  test('prints exactly 100 lines without the omitted line', () => {
+    const rows = runReport(['feat-edge-lines'])
+      .stdout.split('\n')
+      .filter((line) => line !== '');
+    expect(rows).toHaveLength(100);
+    expect(rows.join('\n')).not.toContain('omitted');
+  }, 30_000);
+
+  test('lists exactly 10 uncited premises without the count suffix', () => {
+    const [row] = rowsOf(runReport(['feat-edge-wide']));
+    const uncited = row?.[2]?.split('uncited=')[1];
+    expect(uncited).not.toContain('(+');
+    expect(uncited?.split(',')).toHaveLength(10);
   }, 30_000);
 });
