@@ -104,7 +104,7 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 ### Internal
 - `build.ts`: nenhuma (só resolve caminhos da raiz do repo)
 - `install.ts`: `./build.ts` (`build`, `repoRoot`), `../src/adapters/fs/data-format.ts` (`detectLegacy`), `../src/adapters/fs/io.ts` (`readIfPresent`), `../src/archive.ts` (`archiveLegacy`, `inspectLegacy`), `../src/directory.ts`, `../src/guard.ts`, `../src/installation.ts`
-- `cli-error.ts`: `../src/compose.ts` (`composeReader`), `../src/directory.ts`, `../src/errors.ts` (`HexlogError`, `legacyDataError`)
+- `cli-error.ts`: `../src/compose.ts` (`composeReader`), `../src/directory.ts`, `../src/errors.ts` (`HexlogError`, `internalError`, `legacyDataError`)
 - `escape-controls.ts`: nenhuma
 - `release-notes.ts`: nenhuma; `release-notes-cli.ts`: `./release-notes.ts`
 - `insights.ts`: `./cli-error.ts`, `../src/directory.ts` (`dataDir`, só para a mensagem de "No processes found"), `../src/domain/chain.ts` (tipo `Link`)

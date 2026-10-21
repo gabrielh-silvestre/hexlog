@@ -21,7 +21,7 @@ Código compartilhado entre `commands/` e `queries/`: o carregador que lê e ver
 ### Internal
 
 - `../domain/`: `chain.ts`, `ids.ts`, `manifest.ts` e `record.ts` no `loader.ts`; `ids.ts` no `latest.ts`.
-- `../errors.ts`: `HexlogError` no `loader.ts`.
+- `../errors.ts`: `markerNotFound` no `loader.ts`.
 - `../ports.ts`: `ProcessReader`, `ProcessRef`, `RawProcess` no `loader.ts`; `DefinitionReader` e `DefinitionKind` no `latest.ts`.
 
 ### External

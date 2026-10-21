@@ -66,7 +66,7 @@ C4Component
 
 Toda camada importa `errors.ts`; as arestas ficam fora do desenho para não
 estourar o limite de PNG. `domain/` não importa camada nenhuma acima, só
-`errors.ts` (`domain/definitions.ts` e `domain/chain.ts` usam `HexlogError`), e
+`errors.ts` (`domain/definitions.ts` e `domain/chain.ts` usam `internalError`), e
 `errors.ts` importa de volta só os tipos `Name` e `RecordId`, sem ciclo em runtime.
 
 | Componente | O que faz |
@@ -82,7 +82,7 @@ estourar o limite de PNG. `domain/` não importa camada nenhuma acima, só
 | `domain/` | Núcleo puro: `ids.ts`, `record.ts`, `chain.ts` (`hashLink`, `anchor`, `isValidLink`), `relations.ts` (`checkRelation`), `definitions.ts`, `gate.ts` (`evaluateGate`) e `manifest.ts` |
 | `adapters/fs/` | Stores de processo, definição e anexo, lock, gravação atômica, formato em disco (`<D>/.v1`) e helpers de I/O; um módulo por linha em [`src/AGENTS.md`](../src/AGENTS.md) |
 | `adapters/validator.ts`, `adapters/search.ts` | `createValidator` (ajv, `ajv-formats` e o catálogo de formatos de `domain/formats.ts`) e `createSearchIndex` (MiniSearch cacheado por processo) |
-| `errors.ts` | `HexlogError`, `ErrorCode`, `issueDetails` |
+| `errors.ts` | `HexlogError`, `ErrorCode`, `issueDetails` e as fábricas de erro (`domainError`, `internalError` e uma por fato do contrato), o único lugar que constrói `HexlogError` |
 | `directory.ts` | `dataDir(env)`: resolve `$XDG_DATA_HOME/hexlog` (fallback `~/.local/share/hexlog`) |
 | `version.ts` | `VERSION`: versão do servidor, reportada no handshake MCP e no log `start` |
 
