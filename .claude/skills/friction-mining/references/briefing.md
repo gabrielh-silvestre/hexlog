@@ -23,7 +23,7 @@ Leia inteiro antes de abrir qualquer bucket. Tarefa READ-ONLY: não edite arquiv
 
 - Regex sobre o texto do `tool_result` conta como erro os códigos de domínio que o cliente grava no payload (ex.: `AGENT_BUILDER_DISPATCH_FAILED`) e o `"warnings":[]` vazio de todo sucesso. Classifique erro só pelo JSON estruturado.
 - Resposta acima do limite do Claude Code vira `Error: result (N characters) exceeds maximum allowed tokens. Output has been saved to <arquivo>`. O script já trata (`persisted: true`); se você reextrair, trate também.
-- O bucket `c_orient_*` usa adjacência posicional: toda chamada sem `target` conta como repetida. Confira se o par compartilha processo/target antes de chamar de atrito, e descarte subagentes read-only por desenho ("não registre no hexlog").
+- O bucket `c_orient_*` usa adjacência posicional: a repetição compara processo e os filtros `target`, `targets`, `targetPrefix`, `text` e `ids`; outro parâmetro (`type`, `fields`) não a distingue. Confira se o par compartilha processo e seleção antes de chamar de atrito, e descarte subagentes read-only por desenho ("não registre no hexlog").
 - `role=user` inclui carga de skill, mensagens entre agentes e o 1º prompt de subagente; `e_user` já filtra, mas confira. Ela só pega mensagens que citam "hexlog": correções sem a palavra ("não, registra como milestone") aparecem perto das chamadas, no transcript.
 - Heurística de redundância do script subconta custo: meça a composição do payload (quanto é metadado que o agente não cita depois) antes de concluir que não há custo.
 
