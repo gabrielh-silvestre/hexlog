@@ -502,6 +502,14 @@ describe('bash-guard (#158): ceilings apply only to tokens the shell expands', (
       stderr: reachesMessage,
     },
     {
+      // Falso positivo aceito (`hooks-sao-freios`): o prefixo literal do token, resolvido contra um
+      // `cwd` pai de D, alcança D mesmo sem citá-lo; um script comum acima dos tetos sai negado.
+      name: 'accepted false positive: a quoted node -e script above the ceilings with cwd in D parent dir',
+      command: `node -e '${script}'`,
+      cwd: 'PARENT_OF_D',
+      stderr: reachesMessage,
+    },
+    {
       name: 'a quoted find -path pattern padded with 5000 "*" whose literal prefix is an ancestor of D',
       get command() {
         return `find / -path '${findPrefix()}/.v1/${'*'.repeat(5000)}records.jsonl' -exec cat {} +`;
