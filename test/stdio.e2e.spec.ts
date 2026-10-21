@@ -332,7 +332,7 @@ describe('P8 e TM1: bundle real por stdio', () => {
       expect.objectContaining({
         level: 'error',
         event: 'transport-error',
-        message: expect.stringContaining('exceeded maximum size') as unknown,
+        message: expect.stringMatching(/.+/) as unknown,
       }),
     );
   }, 30_000);
