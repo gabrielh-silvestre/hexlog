@@ -9,7 +9,8 @@ Requisitos, instalação, verificação e como reverter. O resumo está no [READ
   Windows, FAT, exFAT e drvfs (`/mnt/c` no WSL) ficam fora. O diretório de dados `<D>` precisa de
   hard link e de `rename`/`link` atômicos: ver [Layout de dados](dados.md#layout-de-dados). O
   backup `settings.json.bak-hexlog` do guard também sai por hard link: em filesystem sem ele, a
-  primeira troca do guard falha em vez de cair para outro método.
+  primeira troca do guard falha, com `HexlogError` `INTERNAL` e mensagem de que o filesystem pode
+  não suportar hard link (`EPERM` ou `ENOTSUP`), em vez de cair para outro método.
 - Node `>= 24.18.1`.
 - Claude Code, com `~/.claude/settings.json` já existente (o instalador grava
   nele; harness não instalado = instalação falha com uma mensagem explícita).
@@ -53,7 +54,12 @@ e `@modelcontextprotocol/client`, que são dependências de desenvolvimento.
    do passo 3); mantenha `skills/`
    no filesystem de `~/.claude/`. Temporários
    `skills/<nome>.tmp-<pid>` e `.old-<pid>` de versões antigas do instalador são
-   removidos nessa cópia.
+   removidos depois da troca da skill; se a remoção de um deles falha (por
+   exemplo, `EACCES`), o instalador ignora o erro e a skill nova fica instalada.
+   Os temporários da troca atual, `.hexlog-skill-<nome>.tmp-<pid>` e `.old-<pid>`,
+   que um `kill -9` deixa ao lado de `skills/`, também são removidos na instalação
+   seguinte, só quando o pid do sufixo está morto; pid vivo (outro instalador) ou
+   reusado por outro processo fica, e o resíduo some quando esse pid some.
 
 Com dado 0.x em `<D>`, o comando só lista o que arquivaria (`scripts/install.ts#listLegacy`)
 e sai com 2, sem instalar nada: veja [Dado 0.x](migracao.md#dado-0x-arquivamento---archive-0x).

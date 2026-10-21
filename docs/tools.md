@@ -353,13 +353,15 @@ que sobra é uma cadeia íntegra, e isso só aparece contra um head guardado ant
 A entrada opcional `expectedHead` (hash sha256 hex, o mesmo valor do campo `head` de uma
 verificação anterior) é essa âncora externa. Se for o hash de algum elo válido do log, o último
 ou um anterior (o log pode ter crescido depois), ou a âncora do processo, nada muda. Se não for
-nenhum desses, `breaks`
-ganha `{ index: totalRecords, reason: "head-not-found" }`, contada em `totalBreaks`, e `ok` fica
-`false`: cauda apagada ou reescrita. A entrada respeita o teto de 100 de `breaks`. Sem
-`expectedHead` o comportamento é o de sempre, e formato que não é hash é `INVALID_INPUT` em
-`/expectedHead`, inclusive a string vazia. Enviar sempre a âncora equivale a omitir
-`expectedHead`, e `totalRecords: 0` indica log vazio. O `register` não muda, e o marcador de `query` e `evaluate_gate` continua sendo
-um id de registro.
+nenhum desses, `breaks` ganha `{ index: totalRecords, reason: "head-not-found" }`, contada em
+`totalBreaks`, e `ok` fica `false`: cauda apagada ou reescrita. A entrada respeita o teto de 100
+de `breaks`. Sem `expectedHead` o comportamento é o de sempre, e formato que não é hash é
+`INVALID_INPUT` em `/expectedHead`, inclusive a string vazia. Guarde o `head` fora do log do
+hexlog (um arquivo, o corpo de um PR): um head gravado no próprio log some junto com a cauda
+apagada. Passe o da verificação mais recente: um head antigo ainda é aceito, mas só prova o trecho
+até ele. Enviar sempre a âncora equivale a omitir `expectedHead`, e `totalRecords: 0` indica log
+vazio. O `register` não muda, e o marcador de `query` e `evaluate_gate` continua sendo um id de
+registro.
 
 ## `attach` e `read_attachment`
 

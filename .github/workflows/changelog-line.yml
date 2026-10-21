@@ -3,7 +3,9 @@ name: Changelog line
 # Em PR para `develop`, commit que aparece no CHANGELOG.md (feat, fix, perf, revert; escopos `flow`
 # e `claude` de fora, como no `cliff.toml`) exige uma linha nova em `[Não lançado]` com o `#N` do
 # próprio PR. Dependabot e back-merge entram na exceção (job pulado): o back-merge traz commits cujas
-# linhas já foram escritas nos PRs de origem. `edited` reexecuta o check quando a base é trocada.
+# linhas já foram escritas nos PRs de origem. O back-merge só vale com a branch no próprio
+# repositório: PR de fork com o mesmo nome de branch passa pelo check. `edited` reexecuta o check
+# quando a base é trocada.
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
@@ -16,7 +18,8 @@ jobs:
     if: >-
       github.event.pull_request.base.ref == 'develop'
       && github.event.pull_request.user.login != 'dependabot[bot]'
-      && !startsWith(github.event.pull_request.head.ref, 'chore/back-merge-')
+      && !(startsWith(github.event.pull_request.head.ref, 'chore/back-merge-')
+      && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -33,17 +36,17 @@ jobs:
             | grep -E '^(feat|fix|perf|revert)(\([^)]*\))?!?:' \
             | grep -vE '^[a-z]+\((flow|claude)\)!?:' || true)
           if [ -z "$eligible" ]; then
-            echo 'Nenhum commit elegível para o CHANGELOG.md.'
+            echo 'No commit eligible for CHANGELOG.md.'
             exit 0
           fi
           # O número do PR não existia antes dele: citá-lo em `[Não lançado]` prova linha nova.
           if git show "$HEAD_SHA:CHANGELOG.md" \
             | awk '/^## \[Não lançado\]/ { in_section = 1; next } /^## \[/ { in_section = 0 } in_section' \
             | grep -qE "#${PR}([^0-9]|$)"; then
-            echo "Linha com #${PR} encontrada em [Não lançado]."
+            echo "Found a line citing #${PR} under [Não lançado]."
             exit 0
           fi
-          echo "::error::Falta uma linha em [Não lançado] do CHANGELOG.md citando #${PR}."
-          echo 'Commits que pedem a linha:'
+          echo "::error::CHANGELOG.md has no line citing #${PR} under [Não lançado]."
+          echo 'Commits that require the line:'
           echo "  - ${eligible//$'\n'/$'\n'  - }"
           exit 1

@@ -5,7 +5,12 @@ import { once } from 'node:events';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { LOCK_DIR, LOG_FILE, MANIFEST_FILE } from '../../src/adapters/fs/data-format.ts';
+import {
+  LOCK_DIR,
+  LOG_FILE,
+  MANIFEST_FILE,
+  processPaths,
+} from '../../src/adapters/fs/data-format.ts';
 import { createLockManager, isPidAlive, moveAside } from '../../src/adapters/fs/lock.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import type { LogRecord } from '../../src/shared/logger.ts';
@@ -290,9 +295,11 @@ describe('exclusão do lock por pid (D-12, P2)', () => {
       expect(await timeoutOf(error, dir)).toEqual(timeout('holder-unreadable'));
       const { message } = (await rejectionOf(error, dir)).details[0] ?? {};
       expect(message).toContain('ask the user to remove the lock');
-      expect(message).toContain(
-        'L="${XDG_DATA_HOME:-$HOME/.local/share}/hexlog/.v1/<project>/<process>/records.jsonl.lock"',
-      );
+      const { lock } = processPaths('${XDG_DATA_HOME:-$HOME/.local/share}/hexlog', {
+        project: '<project>',
+        process: '<process>',
+      });
+      expect(message).toContain(`L="${lock}"`);
       expect(message).not.toContain('<D>');
       expect(message).toContain('rmdir');
       expect(message).toContain('never rm -r');
