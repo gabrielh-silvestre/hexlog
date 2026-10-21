@@ -112,7 +112,7 @@ carregá-las: a leitura as estende à versão atual, sem gravar nada.
 
 `key` torna o reenvio seguro: a mesma `key` com o mesmo lote devolve o resultado
 guardado com `replayed: true`, sem gravar de novo; a mesma `key` com lote
-diferente é `IDEMPOTENCY_CONFLICT` (`commands/register/state.ts#assertSameBatch`). A `key` vale dentro do processo, tem até 200
+diferente é `IDEMPOTENCY_CONFLICT` (`errors.ts#keyConflict`). A `key` vale dentro do processo, tem até 200
 caracteres e identifica a **intenção**, não a tentativa: derive-a do que o lote
 faz (ex.: `<target>:abertura`), nunca gere uma nova para reenviar.
 
@@ -210,7 +210,7 @@ processo num gate com pergunta de projeto lê os demais processos como vazios.
 | Situação | O que fazer |
 |---|---|
 | `IO_ERROR` no `register` (`details[0].code` = o errno em minúsculas, como no ENOSPC) | **Resultado incerto**: o lote pode ter ficado inteiro no disco. Reenvie com a **mesma** `key`: devolve `replayed: true` ou grava. Sem `key`, o reenvio pode duplicar. Um `replayed` depois de um fsync que falhou não garante o lote no disco; o servidor não corrige esse caso |
-| `LOCK_TIMEOUT` com `lock-busy` ou `lock-lost` (`adapters/fs/lock.ts#lockTimeout`) | Retentável com a mesma `key`. `lock-busy`: um dono vivo segurou o processo além da espera (15 s). `lock-lost`: nada foi gravado |
+| `LOCK_TIMEOUT` com `lock-busy` ou `lock-lost` (`errors.ts#lockTimeout`) | Retentável com a mesma `key`. `lock-busy`: um dono vivo segurou o processo além da espera (15 s). `lock-lost`: nada foi gravado |
 | `LOCK_TIMEOUT` com `holder-unreadable` | **Não se resolve repetindo.** O dono do lock não pode ser lido: pare e peça ao usuário que remova o lock |
 | `INTERNAL` no `register` | Resultado incerto: reenvie com a **mesma** `key` |
 | Cancelamento ou tempo estourado no `register`, e o reenvio com `key` dá `ATTACHMENT_NOT_FOUND` | **Não prova que o lote ficou fora.** A chamada original pode ainda esperar o lock e grava se o anexo for guardado antes de ela pegá-lo. Guarde o anexo (`attach`, idempotente) e reenvie com a mesma `key`: devolve `replayed: true` (a original gravou) ou grava |

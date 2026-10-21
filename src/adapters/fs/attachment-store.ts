@@ -5,7 +5,13 @@ import * as path from 'node:path';
 import { isUndefined, pick } from 'es-toolkit';
 import { sha256hex } from '../../domain/chain.ts';
 import { Hash, Name } from '../../domain/ids.ts';
-import { HexlogError, invalidInput } from '../../errors.ts';
+import {
+  attachmentCorrupted,
+  attachmentNotFound,
+  invalidInput,
+  outsideAllowedRoot,
+  tooBigFile,
+} from '../../errors.ts';
 import type { AttachmentPut, AttachmentStatus, AttachmentStore } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { blobFile } from './data-format.ts';
@@ -25,20 +31,6 @@ export type AttachmentStoreOptions = {
 };
 
 type BlobRead = { status: 'ok'; bytes: Buffer } | { status: 'missing' } | { status: 'corrupted' };
-
-function attachmentNotFound(hash: string): HexlogError {
-  const message = `attachment '${hash}' not found`;
-  return new HexlogError('ATTACHMENT_NOT_FOUND', message, [
-    { path: '/hash', code: 'not-found', message },
-  ]);
-}
-
-function attachmentCorrupted(hash: string): HexlogError {
-  const message = `attachment '${hash}' does not match its hash`;
-  return new HexlogError('ATTACHMENT_CORRUPTED', message, [
-    { path: '/hash', code: 'corrupted', message },
-  ]);
-}
 
 /** Abre sem seguir symlink no componente final (`ELOOP`) e sem travar num FIFO com esse nome. */
 function openForRead(file: string): number {
@@ -90,18 +82,6 @@ function readBlob(file: string, hash: Hash): BlobRead {
 function isWithin(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return relative !== '..' && !relative.startsWith(`..${path.sep}`);
-}
-
-function outsideAllowedRoot(): HexlogError {
-  return invalidInput('/path', 'outside-allowed-root', 'path is outside the allowed root');
-}
-
-/** `grewWhileReading`: o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
-function tooBigFile(grewWhileReading = false): HexlogError {
-  const message = grewWhileReading
-    ? 'file changed while being read'
-    : `file exceeds ${ATTACHMENT_MAX_BYTES} bytes`;
-  return invalidInput('/path', 'too-big', message);
 }
 
 /** `realpath` de `target`, ou `undefined` se falhar (ENOENT, ENOTDIR, permissão...). */
@@ -189,10 +169,10 @@ function readFileWithin(options: AttachmentStoreOptions, candidate: string): Buf
     if (!isOpenedAt(fd, file, stat, () => allowedDirectory(options, directory))) {
       throw outsideAllowedRoot();
     }
-    if (stat.size > ATTACHMENT_MAX_BYTES) throw tooBigFile();
+    if (stat.size > ATTACHMENT_MAX_BYTES) throw tooBigFile(ATTACHMENT_MAX_BYTES);
 
     const bytes = readBounded(fd, stat.size);
-    if (bytes.length > stat.size) throw tooBigFile(true);
+    if (bytes.length > stat.size) throw tooBigFile(ATTACHMENT_MAX_BYTES, true);
     return bytes;
   } finally {
     fs.closeSync(fd);
@@ -233,7 +213,7 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
         if (errnoCode(error) !== 'EEXIST') throw error;
       }
     }
-    if (readBlob(file, hash).status !== 'ok') throw attachmentCorrupted(hash);
+    if (readBlob(file, hash).status !== 'ok') throw attachmentCorrupted('/hash', hash);
     return { hash, bytes: bytes.length, deduplicated: true };
   }
 
@@ -283,10 +263,10 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
     read: (project, hash) =>
       mapIo(() => {
         const blob = readBlob(checkedBlobFile(project, hash), hash);
-        if (blob.status === 'missing') throw attachmentNotFound(hash);
+        if (blob.status === 'missing') throw attachmentNotFound('/hash', hash);
         const text =
           blob.status === 'ok' && isUtf8(blob.bytes) ? blob.bytes.toString('utf8') : undefined;
-        if (isUndefined(text)) throw attachmentCorrupted(hash);
+        if (isUndefined(text)) throw attachmentCorrupted('/hash', hash);
         return text;
       }),
   };

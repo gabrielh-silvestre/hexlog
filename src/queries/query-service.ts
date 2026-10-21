@@ -18,7 +18,7 @@ import {
   type Target,
 } from '../domain/ids.ts';
 import { needsReview, type NeedsReview } from '../domain/relations.ts';
-import { HexlogError, invalidInput } from '../errors.ts';
+import { gateNotFound, invalidCursor, invalidFilter, invalidInput } from '../errors.ts';
 import type { Manifest } from '../domain/manifest.ts';
 import type {
   AttachmentReader,
@@ -28,7 +28,7 @@ import type {
   SearchIndex,
 } from '../ports.ts';
 import { checkExpectedHead, loadVerified, MAX_BREAKS, type Chain } from '../shared/loader.ts';
-import { decodeCursor, encodeCursor, invalidCursor, type CursorPayload } from './cursor.ts';
+import { decodeCursor, encodeCursor, type CursorPayload } from './cursor.ts';
 import {
   createDescribeType,
   type DescribeTypeInput,
@@ -261,17 +261,6 @@ export type QueryService = {
    */
   describeType(input: DescribeTypeInput): DescribeTypeResult;
 };
-
-function invalidFilter(path: string, code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_FILTER', 'Invalid filter', [{ path, code, message }]);
-}
-
-function gateNotFound(): HexlogError {
-  const message = 'gate is not pinned in the process';
-  return new HexlogError('GATE_NOT_FOUND', message, [
-    { path: '/gate', code: 'unknown-name', message },
-  ]);
-}
 
 function targetOf({ project, scope = 'process', process }: QueryInput): ReadTarget {
   if (scope === 'project') return { project, scope };

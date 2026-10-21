@@ -9,7 +9,13 @@ import {
   compareVersions,
 } from '../../domain/definitions.ts';
 import type { Name } from '../../domain/ids.ts';
-import { HexlogError, invalidInput, type ErrorCode } from '../../errors.ts';
+import {
+  definitionNotFound,
+  invalidDefinition,
+  invalidInput,
+  unreadableDefinition,
+  type ErrorCode,
+} from '../../errors.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { definitionDir, definitionFile, VERSION_SUFFIX } from './data-format.ts';
@@ -40,24 +46,6 @@ function safeVersion(version: string): string {
   return version;
 }
 
-/**
- * Definição ausente: com a lista `existing` vazia, o nome não tem nenhuma versão (pasta inexistente
- * ou vazia: `unknown-name`); com versões, o nome existe e a pedida não (`unknown-version`,
- * listando as que existem, nunca vazia).
- */
-function definitionNotFound(kind: DefinitionKind, existing: string[]): HexlogError {
-  if (existing.length === 0) {
-    const message = 'definition name not found';
-    return new HexlogError(NOT_FOUND[kind], message, [
-      { path: '/name', code: 'unknown-name', message },
-    ]);
-  }
-  const message = 'definition version not found';
-  return new HexlogError(NOT_FOUND[kind], message, [
-    { path: '/version', code: 'unknown-version', message, versions: existing },
-  ]);
-}
-
 /** Versões canônicas em `dir`, da menor para a maior; pasta inexistente não tem nenhuma. */
 function readVersions(dir: string): string[] {
   return orIfMissing(() => fs.readdirSync(dir, { withFileTypes: true }), [])
@@ -65,21 +53,6 @@ function readVersions(dir: string): string[] {
     .map((entry) => entry.name.slice(0, -VERSION_SUFFIX.length))
     .filter((version) => CANONICAL_VERSION.test(version))
     .sort(compareVersions);
-}
-
-function unreadableDefinition(): HexlogError {
-  const message = 'definition file is unreadable';
-  return new HexlogError('INTERNAL', message, [
-    { path: '/version', code: 'unreadable-definition', message },
-  ]);
-}
-
-/** Definição que o próprio `read` recusaria: gravá-la envenenaria uma versão imutável. */
-function invalidDefinition(): HexlogError {
-  const message = 'definition does not match its schema';
-  return new HexlogError('INTERNAL', message, [
-    { path: '/definition', code: 'invalid-definition', message },
-  ]);
 }
 
 /**
@@ -110,7 +83,7 @@ export function createDefinitionStore({ dataDir }: DefinitionStoreOptions): Defi
       mapIo(() => {
         const text = readIfPresent(versionFile(project, kind, name, version));
         if (isUndefined(text)) {
-          throw definitionNotFound(kind, readVersions(nameDir(project, kind, name)));
+          throw definitionNotFound(NOT_FOUND[kind], readVersions(nameDir(project, kind, name)));
         }
         let value: unknown;
         try {

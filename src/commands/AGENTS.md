@@ -19,14 +19,14 @@ Serviços de escrita do servidor: cada um recebe as portas por injeção (`creat
 
 | Directory | Purpose |
 |-----------|---------|
-| `register/` | Peças do `register`: regras estáticas (`static.ts`), `decide` sob o lock (`state.ts`), checagem de anexos (`attachments.ts`) e fábricas de erro (`errors.ts`) (see `register/AGENTS.md`) |
+| `register/` | Peças do `register`: regras estáticas (`static.ts`), `decide` sob o lock (`state.ts`), checagem de anexos (`attachments.ts`) e a recusa de regra de relação (`errors.ts`) (see `register/AGENTS.md`) |
 
 ## Dependencies
 
 ### Internal
 - `../domain/` (`chain.ts`, `ids.ts`, `manifest.ts`, `definitions.ts`, `record.ts`, `relations.ts`): tipos, schemas e regras puras que os serviços aplicam
 - `../ports.ts`: `DefinitionStore`, `ProcessStore`, `AttachmentStore` e `Validator`, injetados em cada `createXService`
-- `../errors.ts`: `HexlogError` e os construtores de erro estruturado
+- `../errors.ts`: as fábricas de erro estruturado, mais `HexlogError` para o `instanceof` de `register/state.ts`
 - `../shared/` (`latest.ts`, `loader.ts`, `logger.ts`): versões vigentes, verificação do log e o tipo `Logger`
 
 ### External

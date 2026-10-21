@@ -63,11 +63,11 @@ entra no array `editedSkills` (ver `references/flow-map-schema.md`) do frontmatt
 
 | Situação | Resultado |
 |---|---|
-| Nenhuma definição no projeto antes de `create_process` | `TYPE_NOT_FOUND` (`commands/process.ts#assertSomethingRegistered`) |
+| Nenhuma definição no projeto antes de `create_process` | `TYPE_NOT_FOUND` (`errors.ts#noDefinitions`) |
 | Nome de processo em `RESERVED_PROCESS_NAMES` (`domain/ids.ts#RESERVED_PROCESS_NAMES`) | `RESERVED_NAME` |
 | Nome fora da regex `Name`, campo desconhecido, relação sem `kind` nem `as` | `INVALID_INPUT`: corrija o campo de `details[].path` e reenvie |
 | Schema de `define_type` que não é JSON Schema válido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` ou `patternProperties` em qualquer subschema (`pattern-not-allowed`: valide o formato com `format: "git-sha"` ou com `minLength`/`maxLength`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` (`commands/definition.ts#typeRule`) |
-| Mudança que quebra em `define_type`/`define_relation` sem `breaking: true` | `BREAKING_CHANGE` (`commands/definition.ts#targetVersion`) |
+| Mudança que quebra em `define_type`/`define_relation` sem `breaking: true` | `BREAKING_CHANGE` (`errors.ts#breakingChange`) |
 | Definição criada **depois** de um `create_process` | O processo não a enxerga (`TYPE_NOT_PINNED` no `register`, `GATE_NOT_FOUND` no `evaluate_gate`); crie um processo novo |
 
 ## Referências

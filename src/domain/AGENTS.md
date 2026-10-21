@@ -26,7 +26,7 @@ Domínio puro do hexlog: esquemas Zod dos registros, da cadeia de hash, do manif
 
 ### Internal
 
-- `../errors.ts`: `HexlogError`, usado por `chain.ts` e `definitions.ts`, e `pointer`, usado por `schema-walk.ts`.
+- `../errors.ts`: `internalError`, usado por `chain.ts` e `definitions.ts`, e `pointer`, usado por `schema-walk.ts`.
 
 ### External
 

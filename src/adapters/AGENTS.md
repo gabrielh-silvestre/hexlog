@@ -25,7 +25,7 @@ Implementações das portas declaradas em `src/ports.ts`: disco (`fs/`), valida�
 ### Internal
 
 - `../ports.ts`: as portas que cada adaptador implementa
-- `../domain/`, `../errors.ts`: tipos, `HexlogError` e hash (`sha256hex`)
+- `../domain/`, `../errors.ts`: tipos, hash (`sha256hex`) e as fábricas de erro de `errors.ts`
 - `../shared/logger.ts`: só `fs/lock.ts` o usa
 
 ### External

@@ -864,6 +864,23 @@ describe('registerGuard', () => {
     }
   });
 
+  it('should refuse a missing settings.json with an INTERNAL error and no details', () => {
+    const tmpHome = createTempDir('deny-missing');
+    try {
+      const settingsPath = path.join(tmpHome, 'settings.json');
+
+      expect(
+        captureError(() => registerGuard({ settingsPath, expected: fakeExpected })),
+      ).toMatchObject({
+        code: 'INTERNAL',
+        message: 'install the harness before installing hexlog',
+        details: [],
+      });
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
   it('should refuse to write an invalid settings.json and leave the original untouched', () => {
     const tmpHome = createTempDir('deny-invalid');
     try {
@@ -1415,6 +1432,57 @@ describe('installArtifact', () => {
         hookBefore,
       );
       expect(fs.readdirSync(path.join(home, '.local', 'lib', 'hexlog')).sort()).toEqual(['0.1.0']);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it('should refuse a prepared hook that denies a harmless command with an INTERNAL error and no details', async () => {
+    const home = createTempDir('install-hook-allow');
+    try {
+      // a 1ª sonda (deny) devolve 2 e a 2ª (allow) devolve diferente de 0
+      const statuses = [2, 1];
+
+      await expect(
+        installArtifact({
+          home,
+          version: '0.1.0',
+          bundles: realBundles,
+          commit: null,
+          dirty: false,
+          clock: () => new Date(),
+          runHook: () => ({ status: statuses.shift() ?? null }),
+          verifyServer: fakeVerifyServer,
+        }),
+      ).rejects.toMatchObject({
+        code: 'INTERNAL',
+        message: 'prepared hook does not allow harmless commands',
+        details: [],
+      });
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it('should refuse a prepared server that fails to start with an INTERNAL error and no details', async () => {
+    const home = createTempDir('install-server-start');
+    try {
+      await expect(
+        installArtifact({
+          home,
+          version: '0.1.0',
+          bundles: realBundles,
+          commit: null,
+          dirty: false,
+          clock: () => new Date(),
+          runHook: runRealHookForInstall,
+          verifyServer: () => Promise.reject(new Error('boom')),
+        }),
+      ).rejects.toMatchObject({
+        code: 'INTERNAL',
+        message: 'prepared server failed to start: boom',
+        details: [],
+      });
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }

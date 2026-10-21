@@ -2,7 +2,7 @@ import { hash } from 'node:crypto';
 import canonicalize from 'canonicalize';
 import { isUndefined, omit } from 'es-toolkit';
 import { z } from 'zod';
-import { HexlogError } from '../errors.ts';
+import { internalError } from '../errors.ts';
 import { alias, Hash, RecordId } from './ids.ts';
 import { BATCH_MAX, BatchItem, HexRecord } from './record.ts';
 
@@ -43,7 +43,7 @@ export type Expected = { seq: number; prevHash: Hash };
 // diferentes, então vira INTERNAL: só chega aqui valor que os schemas não validaram.
 function jcs(value: unknown): string {
   const text = canonicalize(value);
-  if (isUndefined(text)) throw new HexlogError('INTERNAL', 'value is not canonicalizable');
+  if (isUndefined(text)) throw internalError('value is not canonicalizable');
   return text;
 }
 

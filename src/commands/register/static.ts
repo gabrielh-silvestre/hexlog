@@ -9,9 +9,15 @@ import {
   type RelationKind,
 } from '../../domain/record.ts';
 import { endsVigency, resolveKind, type NamedRelation } from '../../domain/relations.ts';
-import { capDetails, HexlogError, invalidInput, type Detail } from '../../errors.ts';
+import {
+  capDetails,
+  invalidInput,
+  invalidRecord,
+  typeNotPinned,
+  type Detail,
+} from '../../errors.ts';
 import type { Validator } from '../../ports.ts';
-import { invalidRecord, ruleRefusal } from './errors.ts';
+import { ruleRefusal } from './errors.ts';
 
 /** Relação com o `kind` já resolvido; `input` é como o agente a enviou (`to` ainda pode ser `@alias`). */
 type PreparedRelation = { input: RelationInput; kind: RelationKind };
@@ -63,10 +69,7 @@ function pinnedSchema(manifest: Manifest, item: BatchItem, index: number): Recor
   const { types } = manifest.fixed;
   const schema = Object.hasOwn(types, item.type) ? types[item.type] : undefined;
   if (!isUndefined(schema)) return schema;
-  const message = `type '${item.type}' is not pinned in the process`;
-  throw new HexlogError('TYPE_NOT_PINNED', message, [
-    { path: `/records/${index}/type`, code: 'not-pinned', message },
-  ]);
+  throw typeNotPinned(item.type, `/records/${index}/type`);
 }
 
 /**

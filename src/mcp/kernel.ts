@@ -14,6 +14,8 @@ import {
   capDetails,
   type Detail,
   HexlogError,
+  internalError,
+  invalidArgs,
   issueDetails,
   legacyDataError,
   pointer,
@@ -114,7 +116,7 @@ export function toHexlogError(e: unknown, logger: Logger): HexlogError {
     event: 'internal-error',
     stack: e instanceof Error ? e.stack : String(e),
   });
-  return new HexlogError('INTERNAL', 'internal error');
+  return internalError('internal error');
 }
 
 /**
@@ -206,14 +208,10 @@ export async function execute<Input, Output>(
   try {
     if (deps.isLegacy()) throw legacyDataError();
     const rawDetails = rawArgsDetails(call.args);
-    if (rawDetails.length > 0) throw new HexlogError('INVALID_INPUT', 'invalid input', rawDetails);
+    if (rawDetails.length > 0) throw invalidArgs(rawDetails);
     const parsed = call.schema.safeParse(call.args ?? {});
     if (!parsed.success) {
-      throw new HexlogError(
-        'INVALID_INPUT',
-        'invalid input',
-        issueDetails(parsed.error.issues, ''),
-      );
+      throw invalidArgs(issueDetails(parsed.error.issues, ''));
     }
     const result = await run(parsed.data, clientOf(call.ctx));
     log('info');
