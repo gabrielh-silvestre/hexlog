@@ -36,17 +36,17 @@ jobs:
             | grep -E '^(feat|fix|perf|revert)(\([^)]*\))?!?:' \
             | grep -vE '^[a-z]+\((flow|claude)\)!?:' || true)
           if [ -z "$eligible" ]; then
-            echo 'Nenhum commit elegível para o CHANGELOG.md.'
+            echo 'No commit eligible for CHANGELOG.md.'
             exit 0
           fi
           # O número do PR não existia antes dele: citá-lo em `[Não lançado]` prova linha nova.
           if git show "$HEAD_SHA:CHANGELOG.md" \
             | awk '/^## \[Não lançado\]/ { in_section = 1; next } /^## \[/ { in_section = 0 } in_section' \
             | grep -qE "#${PR}([^0-9]|$)"; then
-            echo "Linha com #${PR} encontrada em [Não lançado]."
+            echo "Found a line citing #${PR} under [Não lançado]."
             exit 0
           fi
-          echo "::error::Falta uma linha em [Não lançado] do CHANGELOG.md citando #${PR}."
-          echo 'Commits que pedem a linha:'
+          echo "::error::CHANGELOG.md has no line citing #${PR} under [Não lançado]."
+          echo 'Commits that require the line:'
           echo "  - ${eligible//$'\n'/$'\n'  - }"
           exit 1
