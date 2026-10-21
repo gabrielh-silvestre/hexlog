@@ -9,7 +9,8 @@ Requisitos, instalação, verificação e como reverter. O resumo está no [READ
   Windows, FAT, exFAT e drvfs (`/mnt/c` no WSL) ficam fora. O diretório de dados `<D>` precisa de
   hard link e de `rename`/`link` atômicos: ver [Layout de dados](dados.md#layout-de-dados). O
   backup `settings.json.bak-hexlog` do guard também sai por hard link: em filesystem sem ele, a
-  primeira troca do guard falha em vez de cair para outro método.
+  primeira troca do guard falha, com `HexlogError` `INTERNAL` e mensagem sobre hard link (`EPERM` ou
+  `ENOTSUP`), em vez de cair para outro método.
 - Node `>= 24.18.1`.
 - Claude Code, com `~/.claude/settings.json` já existente (o instalador grava
   nele; harness não instalado = instalação falha com uma mensagem explícita).

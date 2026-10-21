@@ -314,7 +314,15 @@ export function registerGuard(args: { settingsPath: string; expected: ExpectedRu
   try {
     writeFileAtomic(`${settingsPath}.bak-hexlog`, oldText, { exclusive: true });
   } catch (error) {
-    if (errnoCode(error) !== 'EEXIST') throw error;
+    const code = errnoCode(error);
+    // Sem hard link o backup exclusivo é impossível e `COPYFILE_EXCL` não é atômico: recusa antes de gravar.
+    if (code === 'EPERM' || code === 'ENOTSUP') {
+      throw new HexlogError(
+        'INTERNAL',
+        `cannot create the settings.json backup: the filesystem does not support hard links (${code})`,
+      );
+    }
+    if (code !== 'EEXIST') throw error;
   }
   // O modo vai no temporário, antes do rename: sem janela em 0600 e sem lançar depois de gravar.
   writeFileAtomic(target, newText, { mode: mode & 0o7777 });

@@ -654,6 +654,34 @@ describe('TI6: deny de <D> antigo removido só pelo predicado fechado', () => {
     }
   });
 
+  test.each(['EPERM', 'ENOTSUP'])(
+    'deny: registerGuard turns %s from the backup hard link into a HexlogError before writing',
+    (code) => {
+      const tmpHome = createTempDir('deny-bak-no-hardlink');
+      const linkSpy = jest.spyOn(fsDefault, 'linkSync').mockImplementation(() => {
+        throw Object.assign(new Error(`${code}: /abs/secret/path`), { code });
+      });
+      try {
+        const settingsPath = path.join(tmpHome, 'settings.json');
+        const before = settingsWithDeny(trioOf(oldD));
+        fs.writeFileSync(settingsPath, before);
+
+        const error = captureError(() => registerGuard({ settingsPath, expected }));
+
+        expect(error).toMatchObject({
+          code: 'INTERNAL',
+          message: expect.stringContaining('does not support hard links'),
+        });
+        expect(error.message).not.toContain('/abs/secret/path');
+        expect(fs.readFileSync(settingsPath, 'utf8')).toBe(before);
+        expect(fs.readdirSync(tmpHome)).toEqual(['settings.json']);
+      } finally {
+        linkSpy.mockRestore();
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+      }
+    },
+  );
+
   test('deny: registerGuard grava no destino do symlink e mantém o link e o modo', () => {
     const tmpHome = createTempDir('deny-symlink');
     try {
