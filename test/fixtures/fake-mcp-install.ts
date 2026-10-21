@@ -1,4 +1,4 @@
-// Substitui `claude mcp add`/`remove` no B3 (`HEXLOG_REGISTER_MCP`): grava
+// Substitui `claude mcp add`/`remove` no instalador (`HEXLOG_REGISTER_MCP`): grava
 // `mcpServers.hexlog` em `~/.claude.json` na mesma forma real (confirmada em
 // `.mcpServers.gitnexus`: command+args+env), sem exigir o binário `claude`.
 import * as fs from 'node:fs';

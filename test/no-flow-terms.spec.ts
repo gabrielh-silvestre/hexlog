@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ts from 'typescript';
@@ -83,43 +83,45 @@ function findFlowTerms(fileName: string, code: string): string[] {
   return found;
 }
 
-describe('D1: src/, hook/ e scripts/ sem termo de fluxo', () => {
-  test('a varredura acha os arquivos de src/, hook/ e scripts/', () => {
+describe('{src,hook,scripts}/**/*.ts', () => {
+  it('should find the files of src/, hook/ and scripts/ in the scan', () => {
     const scanned = listScannedFiles().map((file) => path.relative(repoRoot, file));
+
     expect(scanned).toEqual(expect.arrayContaining(KNOWN_FILES));
   });
 
-  test('nenhum arquivo de src/, hook/ ou scripts/ usa termo de fluxo em identificador ou literal', () => {
+  it('should use no flow term in any identifier or literal of src/, hook/ or scripts/', () => {
     const violations = listScannedFiles().flatMap((file) =>
       findFlowTerms(file, fs.readFileSync(file, 'utf8')).map(
         (hit) => `${path.relative(repoRoot, file)}: ${hit}`,
       ),
     );
+
     expect(violations).toEqual([]);
   });
 
-  test.each([
-    ['identificador', 'const phase = 1;', ['phase@1']],
-    ['camelCase em identificador', 'function planArchive() {}', ['plan@1']],
-    ['chave de objeto', 'const o = { milestone: 1 };', ['milestone@1']],
-    ['snake_case e dígito', 'const omc_2 = 1;', ['omc@1']],
-    ['literal de string', `const s = 'the verdict';`, ['verdict@1']],
-    ['literal separado por hífen', `const s = 'plan-ready';`, ['plan@1']],
-    ['literal em camelCase', `const s = 'claimOwner';`, ['claim@1']],
-    ['parte de template', 'const s = `x ${y} fase`;', ['fase@1']],
-    ['termo em português', 'const plano = 1;', ['plano@1']],
-    ['linha correta', 'const a = 1;\nconst critic = 2;', ['critic@2']],
-  ])('detecta %s', (_label, code, expected) => {
+  it.each([
+    ['an identifier', 'const phase = 1;', ['phase@1']],
+    ['a camelCase identifier', 'function planArchive() {}', ['plan@1']],
+    ['an object key', 'const o = { milestone: 1 };', ['milestone@1']],
+    ['a snake_case identifier with a digit', 'const omc_2 = 1;', ['omc@1']],
+    ['a string literal', `const s = 'the verdict';`, ['verdict@1']],
+    ['a hyphen-separated literal', `const s = 'plan-ready';`, ['plan@1']],
+    ['a camelCase literal', `const s = 'claimOwner';`, ['claim@1']],
+    ['a template part', 'const s = `x ${y} fase`;', ['fase@1']],
+    ['a Portuguese term', 'const plano = 1;', ['plano@1']],
+    ['a later line, reporting its number', 'const a = 1;\nconst critic = 2;', ['critic@2']],
+  ])('should detect a flow term in %s (D1)', (_label, code, expected) => {
     expect(findFlowTerms('probe.ts', code)).toEqual(expected);
   });
 
-  test.each([
-    ['critical não casa critic', 'const critical = 1;'],
-    ['planet não casa plan', 'const planet = 1;'],
-    ['literal com palavra maior', `const s = 'explanation';`],
-    ['dígito cola no literal', `const s = 'plan2';`],
-    ['comentário é ignorado', '// phase and plan\n/* verdict */ const a = 1;'],
-  ])('não dispara: %s', (_label, code) => {
+  it.each([
+    ['critical, which is not critic', 'const critical = 1;'],
+    ['planet, which is not plan', 'const planet = 1;'],
+    ['a literal with a longer word', `const s = 'explanation';`],
+    ['a digit glued to the literal', `const s = 'plan2';`],
+    ['a comment', '// phase and plan\n/* verdict */ const a = 1;'],
+  ])('should not flag %s (D1)', (_label, code) => {
     expect(findFlowTerms('probe.ts', code)).toEqual([]);
   });
 });

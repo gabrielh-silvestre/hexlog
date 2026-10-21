@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import { NOTE } from '../commands/register-fakes.ts';
 import { captureError } from '../helpers.ts';
@@ -15,38 +15,38 @@ function describeSetup() {
   const setup = querySetup();
   setup.createProcess('run-1');
   setup.definitions.write(PROJECT, 'types', 'note', '1.1', NOTE_V2);
-  const describe = (input: { type: string; process?: string; version?: string }) =>
+  const readType = (input: { type: string; process?: string; version?: string }) =>
     setup.queries.describeType({ project: PROJECT, ...input });
-  return { ...setup, describe };
+  return { ...setup, readType };
 }
 
-describe('describeType', () => {
-  test('com process devolve o tipo fixado, sem version, mesmo depois de o projeto definir versão nova', () => {
-    const { describe } = describeSetup();
+describe('QueryService.describeType', () => {
+  it('should return the pinned type with process, without version, even after the project defines a new version', () => {
+    const { readType } = describeSetup();
 
-    const result = describe({ type: 'note', process: 'run-1' });
+    const result = readType({ type: 'note', process: 'run-1' });
 
     expect(result).toEqual({ name: 'note', schema: NOTE });
     expect(result).not.toHaveProperty('version');
   });
 
-  test('sem process devolve a versão vigente do projeto, com version', () => {
-    const { describe } = describeSetup();
+  it('should return the current version of the project, with version, without process', () => {
+    const { readType } = describeSetup();
 
-    expect(describe({ type: 'note' })).toEqual({ name: 'note', version: '1.1', schema: NOTE_V2 });
+    expect(readType({ type: 'note' })).toEqual({ name: 'note', version: '1.1', schema: NOTE_V2 });
   });
 
-  test('com version devolve a versão pedida', () => {
-    const { describe } = describeSetup();
+  it('should return the requested version with version', () => {
+    const { readType } = describeSetup();
 
-    expect(describe({ type: 'note', version: '1.0' })).toEqual({
+    expect(readType({ type: 'note', version: '1.0' })).toEqual({
       name: 'note',
       version: '1.0',
       schema: NOTE,
     });
   });
 
-  describe('tipo legado com pattern e patternProperties', () => {
+  describe('with a legacy type that has pattern and patternProperties', () => {
     const LEGACY: RecordType = {
       type: 'object',
       properties: {
@@ -67,19 +67,19 @@ describe('describeType', () => {
       return setup;
     }
 
-    test('com process omite as duas palavras-chave e mantém o campo de nome pattern', () => {
-      const { describe } = legacySetup();
+    it('should omit both keywords and keep the field named pattern, with process', () => {
+      const { readType } = legacySetup();
 
-      expect(describe({ type: 'legacy', process: 'run-legacy' })).toEqual({
+      expect(readType({ type: 'legacy', process: 'run-legacy' })).toEqual({
         name: 'legacy',
         schema: SHOWN,
       });
     });
 
-    test('sem process omite as duas palavras-chave da definição lida do projeto', () => {
-      const { describe, definitions } = legacySetup();
+    it('should omit both keywords of the definition read from the project, without process', () => {
+      const { readType, definitions } = legacySetup();
 
-      expect(describe({ type: 'legacy' })).toEqual({
+      expect(readType({ type: 'legacy' })).toEqual({
         name: 'legacy',
         version: '1.0',
         schema: SHOWN,
@@ -87,7 +87,7 @@ describe('describeType', () => {
       expect(definitions.read(PROJECT, 'types', 'legacy', '1.0')).toEqual(LEGACY);
     });
 
-    test('omite o pattern de um contentSchema', () => {
+    it('should omit the pattern of a contentSchema', () => {
       const setup = describeSetup();
       setup.definitions.write(PROJECT, 'types', 'content', '1.0', {
         type: 'string',
@@ -95,17 +95,17 @@ describe('describeType', () => {
         contentSchema: { type: 'string', pattern: '^a+$' },
       });
 
-      expect(setup.describe({ type: 'content' }).schema).toEqual({
+      expect(setup.readType({ type: 'content' }).schema).toEqual({
         type: 'string',
         contentMediaType: 'application/json',
         contentSchema: { type: 'string' },
       });
     });
 
-    test('a cadeia do processo segue íntegra depois do describe', () => {
-      const { describe, queries } = legacySetup();
+    it('should keep the chain of the process intact after the describe', () => {
+      const { readType, queries } = legacySetup();
 
-      describe({ type: 'legacy', process: 'run-legacy' });
+      readType({ type: 'legacy', process: 'run-legacy' });
 
       expect(queries.verifyChain({ project: PROJECT, process: 'run-legacy' })).toMatchObject({
         ok: true,
@@ -114,11 +114,12 @@ describe('describeType', () => {
     });
   });
 
-  test('tipo ausente do projeto é TYPE_NOT_FOUND em /type, com ou sem version', () => {
-    const { describe } = describeSetup();
+  it('should refuse a type missing from the project with TYPE_NOT_FOUND at /type, with or without version', () => {
+    const { readType } = describeSetup();
 
     for (const version of [undefined, '1.0']) {
-      const error = captureError(() => describe({ type: 'ghost', version }));
+      const error = captureError(() => readType({ type: 'ghost', version }));
+
       expect(error.code).toBe('TYPE_NOT_FOUND');
       expect(error.details).toEqual([
         { path: '/type', code: 'unknown-name', message: expect.any(String) },
@@ -126,13 +127,14 @@ describe('describeType', () => {
     }
   });
 
-  test('projeto inexistente é PROJECT_NOT_FOUND em /project, com ou sem version', () => {
+  it('should refuse a missing project with PROJECT_NOT_FOUND at /project, with or without version', () => {
     const { queries } = describeSetup();
 
     for (const version of [undefined, '1.0']) {
       const error = captureError(() =>
         queries.describeType({ project: 'ghost-project', type: 'note', version }),
       );
+
       expect(error.code).toBe('PROJECT_NOT_FOUND');
       expect(error.details).toEqual([
         { path: '/project', code: 'unknown-project', message: expect.any(String) },
@@ -140,7 +142,7 @@ describe('describeType', () => {
     }
   });
 
-  test('projeto inexistente com process segue PROCESS_NOT_FOUND', () => {
+  it('should keep PROCESS_NOT_FOUND for a missing project with process', () => {
     const { queries } = describeSetup();
 
     const error = captureError(() =>
@@ -150,10 +152,10 @@ describe('describeType', () => {
     expect(error.code).toBe('PROCESS_NOT_FOUND');
   });
 
-  test('versão ausente é TYPE_NOT_FOUND em /version, com as versões que existem', () => {
-    const { describe } = describeSetup();
+  it('should refuse a missing version with TYPE_NOT_FOUND at /version, listing the versions that exist', () => {
+    const { readType } = describeSetup();
 
-    const error = captureError(() => describe({ type: 'note', version: '9.0' }));
+    const error = captureError(() => readType({ type: 'note', version: '9.0' }));
 
     expect(error.code).toBe('TYPE_NOT_FOUND');
     expect(error.details).toEqual([
@@ -166,11 +168,11 @@ describe('describeType', () => {
     ]);
   });
 
-  test('tipo do projeto que o processo não fixou é TYPE_NOT_PINNED em /type', () => {
-    const { definitions, describe } = describeSetup();
+  it('should refuse a project type that the process did not pin with TYPE_NOT_PINNED at /type', () => {
+    const { definitions, readType } = describeSetup();
     definitions.write(PROJECT, 'types', 'later', '1.0', NOTE);
 
-    const error = captureError(() => describe({ type: 'later', process: 'run-1' }));
+    const error = captureError(() => readType({ type: 'later', process: 'run-1' }));
 
     expect(error.code).toBe('TYPE_NOT_PINNED');
     expect(error.details).toEqual([
@@ -178,18 +180,18 @@ describe('describeType', () => {
     ]);
   });
 
-  test('processo inexistente é PROCESS_NOT_FOUND', () => {
-    const { describe } = describeSetup();
+  it('should refuse an unknown process with PROCESS_NOT_FOUND', () => {
+    const { readType } = describeSetup();
 
-    expect(captureError(() => describe({ type: 'note', process: 'ghost' })).code).toBe(
+    expect(captureError(() => readType({ type: 'note', process: 'ghost' })).code).toBe(
       'PROCESS_NOT_FOUND',
     );
   });
 
-  test('process e version juntos são INVALID_INPUT em /version, antes de qualquer leitura', () => {
-    const { describe } = describeSetup();
+  it('should refuse process and version together with INVALID_INPUT at /version, before any read', () => {
+    const { readType } = describeSetup();
 
-    const error = captureError(() => describe({ type: 'ghost', process: 'ghost', version: '1.0' }));
+    const error = captureError(() => readType({ type: 'ghost', process: 'ghost', version: '1.0' }));
 
     expect(error.code).toBe('INVALID_INPUT');
     expect(error.details).toEqual([

@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import fc from 'fast-check';
 import { buildInheritance } from '../../src/domain/inheritance.ts';
 import type { Inheritance, InheritedEdge } from '../../src/domain/inheritance.ts';
@@ -80,19 +80,22 @@ function rootOf(records: Linked[]): (id: string) => string {
   return find;
 }
 
-describe('relation inheritance (properties)', () => {
-  test('with every process inactive nothing is inherited', () => {
+describe('buildInheritance', () => {
+  it('should inherit nothing with every process inactive', () => {
     fc.assert(
       fc.property(graph, (ops) => {
         const records = recordsOf(ops);
+
         const inheritance = resolve(records, { a: false, b: false });
+
         expect(edgesOf(inheritance, records)).toEqual([]);
+
         for (const { id } of records) expect(inheritance.into(id)).toEqual([]);
       }),
     );
   });
 
-  test('every inherited edge follows the kind table and raises only current ends', () => {
+  it('should give only edges that follow the kind table and raise only current ends', () => {
     fc.assert(
       fc.property(graph, active, (ops, flags) => {
         const records = recordsOf(ops);
@@ -108,6 +111,7 @@ describe('relation inheritance (properties)', () => {
               !vigency.isCurrent(edge.origin.from) &&
               vigency.currentOf(edge.origin.from) === edge.from &&
               edge.origin.to === edge.to;
+
         expect(edgesOf(resolve(records, flags), records).filter((edge) => !isValid(edge))).toEqual(
           [],
         );
@@ -115,7 +119,7 @@ describe('relation inheritance (properties)', () => {
     );
   });
 
-  test('the output does not depend on the order of the records', () => {
+  it('should not depend on the order of the records', () => {
     const shuffled = graph.chain((ops) => {
       const records = recordsOf(ops);
       return fc.tuple(
@@ -123,9 +127,11 @@ describe('relation inheritance (properties)', () => {
         fc.shuffledSubarray(records, { minLength: records.length }),
       );
     });
+
     fc.assert(
       fc.property(shuffled, active, ([records, reordered], flags) => {
         const [first, second] = [resolve(records, flags), resolve(reordered, flags)];
+
         for (const { id } of records) {
           expect(second.outOf(id)).toEqual(first.outOf(id));
           expect(second.into(id)).toEqual(first.into(id));
@@ -134,8 +140,9 @@ describe('relation inheritance (properties)', () => {
     );
   });
 
-  test('adding the identical direct edge removes the inherited one and leaves the others', () => {
+  it('should remove the inherited edge and leave the others when the identical direct edge is added', () => {
     const picked = fc.tuple(graph, active, fc.nat());
+
     fc.assert(
       fc.property(picked, ([ops, flags, index]) => {
         const records = recordsOf(ops);
@@ -153,14 +160,17 @@ describe('relation inheritance (properties)', () => {
               }
             : record,
         );
+
         const after = edgesOf(resolve(withDirect, flags), withDirect);
+
         expect(after).toEqual(before.filter((other) => !sameEdge(other, edge)));
       }),
     );
   });
 
-  test('a current contradicts between the two lineages removes the pair and leaves the others', () => {
+  it('should remove the pair and leave the others with a current contradicts between the two lineages', () => {
     const picked = fc.tuple(graph, active, fc.nat());
+
     fc.assert(
       fc.property(picked, ([ops, flags, index]) => {
         const records = recordsOf(ops);
@@ -175,17 +185,20 @@ describe('relation inheritance (properties)', () => {
               }
             : record,
         );
-        const after = edgesOf(resolve(cut, flags), cut);
         const root = rootOf(records);
         const pairOf = ({ from, to }: InheritedEdge) => [root(from), root(to)].sort().join('|');
         const samePair = (other: InheritedEdge) => pairOf(other) === pairOf(edge);
+
+        const after = edgesOf(resolve(cut, flags), cut);
+
         expect(after).toEqual(before.filter((other) => !samePair(other)));
       }),
     );
   });
 
-  test('a contradicts recorded by a non-current record cuts nothing', () => {
+  it('should cut nothing with a contradicts recorded by a non-current record', () => {
     const picked = fc.tuple(graph, active, fc.nat(), fc.nat());
+
     fc.assert(
       fc.property(picked, ([ops, flags, holderIndex, targetIndex]) => {
         const records = recordsOf(ops);
@@ -202,6 +215,7 @@ describe('relation inheritance (properties)', () => {
               }
             : record,
         );
+
         expect(edgesOf(resolve(withContradicts, flags), withContradicts)).toEqual(
           edgesOf(resolve(records, flags), records),
         );
@@ -211,7 +225,7 @@ describe('relation inheritance (properties)', () => {
 
   // A escrita recusa o ciclo de `supersedes`; só um log forjado à mão o traz, e a leitura não pode
   // travar.
-  test('a forged supersedes cycle ends and leaves no current record to raise an edge to', () => {
+  it('should end a forged supersedes cycle and leave no current record to raise an edge to', () => {
     const records: Linked[] = [
       { id: 'a:1', relations: [{ kind: 'supersedes', to: 'a:2' }] },
       { id: 'a:2', relations: [{ kind: 'supersedes', to: 'a:3' }] },

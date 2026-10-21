@@ -1,6 +1,6 @@
 # hexlog
 
-**Generated:** 2026-09-17 · **Updated:** 2026-10-07
+**Generated:** 2026-09-17 · **Updated:** 2026-10-17
 
 ## Purpose
 Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: registros tipados com relações e gates declarativos, sem termo de fluxo no código. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 12 tools. Não há CLI nem daemon para o agente (só scripts em `scripts/`: os relatórios read-only, o `flow/reanchor.ts`, o único que grava no log e só com `--apply`, e o `release-notes-cli.ts`, que só o `release.yml` chama, sem `src/` e sem dado): servidor MCP e hook de isolamento Bash são instalados no Claude Code como dois bundles esbuild em `~/.local/lib/hexlog/<versão>/`, junto com as skills de `skills/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/.v1/` (fallback `~/.local/share/hexlog/.v1/`); dado 0.x em `<D>` é recusado com `LEGACY_DATA` até o instalador arquivá-lo.
@@ -8,8 +8,9 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 ## Key Files
 | File | Description |
 |------|-------------|
-| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `typecheck`, `lint`, `lint:md`, `spell`, `knip`, `format`, `format:check`, `build`, `prepare`) e config do jest (ts-jest em CJS) |
+| `package.json` | Dependências em faixa `^X.Y.Z` (o lock fixa a resolvida), scripts (`test`, `test:budget`, `test:coverage`, `test:mutation`, `typecheck`, `lint`, `lint:md`, `spell`, `knip`, `format`, `format:check`, `build`, `prepare`) e config do jest (ts-jest em CJS) |
 | `tsconfig.json` | Configuração do TypeScript |
+| `stryker.config.json` | Config do Stryker (`npm run test:mutation`): roda só os specs unitários de `stryker.config.json#jest.config.testMatch` contra os arquivos de `mutate`, fora do CI e do husky; relatórios em `reports/mutation/` (ignorado pelo git) |
 | `knip.json` | Config do `knip` (`npm run knip`): entradas explícitas (`src/server.ts`, `hook/bash-guard.ts`, `scripts/*.ts`, `.claude/hooks/*.ts`, `.claude/workflows/*.js` e os fixtures de `test/fixtures/` que rodam como processo filho), fixtures de `test/fixtures/boundaries/` fora da análise, `mkfifo` em `ignoreBinaries` e a duplicata `Name`/`alias` de `src/domain/ids.ts` em `ignoreIssues`; o `$schema` é local, em `node_modules/knip/schema.json` |
 | `eslint.config.js` | Config do ESLint (typescript-eslint com `stylisticTypeChecked`, `eslint-plugin-jest`, `eslint-plugin-n`); importa `boundaryBlocks` de `eslint.boundaries.js` |
 | `eslint.boundaries.js` | Blocos `no-restricted-imports` que travam a direção de dependência entre camadas (`boundaryBlocks`); `eslint.boundaries.d.ts` só tipa o export |
@@ -71,6 +72,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 - `esbuild`: build dos dois bundles
 - `tar`: geração do `.tar` do arquivamento do dado 0.x (`src/archive.ts`, só pelo instalador, que roda do repositório)
 - `jest` + `ts-jest`, `fast-check`, `@modelcontextprotocol/client` (cliente dos specs MCP e e2e): testes
+- `@stryker-mutator/core` + `@stryker-mutator/jest-runner` + `@stryker-mutator/typescript-checker`: teste de mutação dos unitários (`stryker.config.json`)
 - `typescript`, `eslint` (+ `typescript-eslint`, `eslint-plugin-jest`, `eslint-plugin-n`, `eslint-config-prettier`), `prettier`: tipos, lint e formatação
 - `husky` + `lint-staged`: hooks de pré-commit e pré-push
 - `@commitlint/cli` + `@commitlint/config-conventional`: mensagem de commit no hook `commit-msg` e no CI (`commitlint.config.js`)

@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import {
   type DecisionRow,
   type LogRow,
@@ -59,29 +59,34 @@ function plan(
   return planReanchor({ to: 'directives-4', decisions, older: { 'directives-3': older }, current });
 }
 
-describe('generationOf and isLatestGeneration', () => {
-  test('reads the generation from an id and from a process name', () => {
+describe('generationOf', () => {
+  it('should read the generation from an id and from a process name', () => {
     expect(generationOf(id(10, 1))).toBe(10);
     expect(generationOf('directives-4')).toBe(4);
+  });
+
+  it('should be undefined for a name that is not a generation', () => {
     expect(generationOf('directives-4x')).toBeUndefined();
     expect(generationOf('feat-x:01a15a00')).toBeUndefined();
   });
+});
 
-  test('compares generations as numbers', () => {
+describe('isLatestGeneration', () => {
+  it('should compare generations as numbers', () => {
     const names = ['directives-9', 'directives-10', 'work-a'];
 
     expect(isLatestGeneration('directives-10', names)).toBe(true);
     expect(isLatestGeneration('directives-9', names)).toBe(false);
   });
 
-  test('is false when the target generation is absent or invalid', () => {
+  it('should be false when the target generation is absent or invalid', () => {
     expect(isLatestGeneration('directives-4', ['directives-3'])).toBe(false);
     expect(isLatestGeneration('work-a', ['work-a'])).toBe(false);
   });
 });
 
 describe('planReanchor', () => {
-  test('rewrites a decision whose anchors are all the same', () => {
+  it('should rewrite a decision whose anchors are all the same', () => {
     const result = plan([
       decision({
         out: [
@@ -118,7 +123,7 @@ describe('planReanchor', () => {
     ]);
   });
 
-  test('keeps the sentinel premise as an ordinary same anchor', () => {
+  it('should keep the sentinel premise as an ordinary same anchor', () => {
     const oldSentinel = premise(3, 9, 'directives.estrategia.none', 'No premise applies');
     const newSentinel = premise(4, 9, 'directives.estrategia.none', 'No premise applies');
 
@@ -133,7 +138,7 @@ describe('planReanchor', () => {
     ]);
   });
 
-  test('copies about-gap and raw derivesFrom to an old generation as they are', () => {
+  it('should copy about-gap and raw derivesFrom to an old generation as they are', () => {
     const result = plan([
       decision({
         out: [
@@ -152,7 +157,7 @@ describe('planReanchor', () => {
     ]);
   });
 
-  test('drops the stored current flag from the copied relations', () => {
+  it('should drop the stored current flag from the copied relations', () => {
     const result = plan([
       decision({
         out: [{ ...anchoredIn(OLD_DIRECTIVE.id), current: true } as never],
@@ -162,7 +167,7 @@ describe('planReanchor', () => {
     expect(result.rewrites[0]?.item.relations[1]).toEqual(anchoredIn(NEW_DIRECTIVE.id));
   });
 
-  test.each([
+  it.each([
     ['changed rule', { current: [directive(4, 1, 'directives.a.rule', 'Other text')] }, 'changed'],
     ['changed type', { current: [premise(4, 1, 'directives.a.rule', 'Rule text')] }, 'changed'],
     ['missing target', { current: [] }, 'gone'],
@@ -171,7 +176,7 @@ describe('planReanchor', () => {
       { current: [NEW_DIRECTIVE, directive(4, 7, 'directives.a.rule', 'Rule text')] },
       'ambiguous',
     ],
-  ])('sends the decision to the owner on %s', (_label, options, state) => {
+  ])('should send the decision to the owner on %s', (_label, options, state) => {
     const result = plan([decision({ out: [anchoredIn(OLD_DIRECTIVE.id)] })], {
       older: [OLD_DIRECTIVE],
       ...options,
@@ -196,7 +201,7 @@ describe('planReanchor', () => {
     ]);
   });
 
-  test('sends a type without a text field to the owner as changed', () => {
+  it('should send a type without a text field to the owner as changed', () => {
     const oldDoc: Source = { id: id(3, 5), type: 'doc', target: 'directives.a', current: true };
     const newDoc: Source = { id: id(4, 5), type: 'doc', target: 'directives.a', current: true };
 
@@ -208,7 +213,7 @@ describe('planReanchor', () => {
     expect(result.owner[0]?.reasons).toMatchObject([{ state: 'changed' }]);
   });
 
-  test('flags a non-current cited record as stale even when the new text is equal', () => {
+  it('should flag a non-current cited record as stale even when the new text is equal', () => {
     const result = plan([decision({ out: [anchoredIn(OLD_DIRECTIVE.id)] })], {
       older: [{ ...OLD_DIRECTIVE, current: false }],
     });
@@ -216,7 +221,7 @@ describe('planReanchor', () => {
     expect(result.owner[0]?.reasons).toMatchObject([{ state: 'stale' }]);
   });
 
-  test('flags a cited id missing from the old generation as stale', () => {
+  it('should flag a cited id missing from the old generation as stale', () => {
     const result = plan([decision({ out: [anchoredIn(id(3, 99))] })]);
 
     expect(result.owner[0]?.reasons).toEqual([
@@ -224,7 +229,7 @@ describe('planReanchor', () => {
     ]);
   });
 
-  test('handles anchors in two old generations', () => {
+  it('should handle anchors in two old generations', () => {
     const older = {
       'directives-2': [directive(2, 1, 'directives.a.rule', 'Rule text')],
       'directives-3': [OLD_PREMISE],
@@ -244,7 +249,7 @@ describe('planReanchor', () => {
     ]);
   });
 
-  test('ignores anchors to the target generation or later and decisions without old anchors', () => {
+  it('should ignore anchors to the target generation or later and decisions without old anchors', () => {
     const result = plan([
       decision({ out: [anchoredIn(NEW_DIRECTIVE.id), anchoredIn(id(5, 1))] }),
       decision({ id: own('work-a', 2), out: [restsOn(own('work-a', 60))] }),
@@ -253,7 +258,7 @@ describe('planReanchor', () => {
     expect(result).toEqual({ rewrites: [], owner: [] });
   });
 
-  test('one anchor outside same takes the whole decision out, listing every anchor', () => {
+  it('should take the whole decision out, listing every anchor, when one anchor is outside same', () => {
     const result = plan([decision()], {
       current: [NEW_DIRECTIVE, { ...NEW_PREMISE, text: 'Changed' }],
     });
@@ -265,8 +270,8 @@ describe('planReanchor', () => {
     ]);
   });
 
-  test.each(['supports', 'contradicts', 'answers', 'complements', 'reopens', 'revokes'])(
-    'sends a decision with an outgoing %s to the owner',
+  it.each(['supports', 'contradicts', 'answers', 'complements', 'reopens', 'revokes'])(
+    'should send a decision with an outgoing %s to the owner',
     (kind) => {
       const result = plan([
         decision({ out: [anchoredIn(OLD_DIRECTIVE.id), { kind, to: own('work-a', 70) }] }),
@@ -279,7 +284,7 @@ describe('planReanchor', () => {
     },
   );
 
-  test('rewrites a decision that was already a version, dropping the old outgoing supersedes', () => {
+  it('should rewrite a decision that was already a version, dropping the old outgoing supersedes', () => {
     const result = plan([
       decision({
         out: [{ kind: 'supersedes', to: own('work-a', 0) }, anchoredIn(OLD_DIRECTIVE.id)],
@@ -292,7 +297,7 @@ describe('planReanchor', () => {
     ]);
   });
 
-  test('sends a decision with a current incoming supports to the owner without lineage', () => {
+  it('should send a decision with a current incoming supports to the owner without lineage', () => {
     const supports = { kind: 'supports', from: own('work-a', 80), current: true };
 
     const result = plan([decision({ in: [supports] })]);
@@ -301,7 +306,7 @@ describe('planReanchor', () => {
     expect(result.owner[0]?.reasons).toEqual([{ code: 'supported' }]);
   });
 
-  test('sends a decision supported by a current evidence of another process to the owner', () => {
+  it('should send a decision supported by a current evidence of another process to the owner', () => {
     const supports = { kind: 'supports', from: own('work-b', 80), current: true };
 
     const result = plan([decision({ in: [supports] })]);
@@ -310,7 +315,7 @@ describe('planReanchor', () => {
     expect(result.owner[0]?.reasons).toEqual([{ code: 'supported' }]);
   });
 
-  test('rewrites a supported decision when the process has lineage inheritance', () => {
+  it('should rewrite a supported decision when the process has lineage inheritance', () => {
     const supports = { kind: 'supports', from: own('work-a', 80), current: true };
 
     const result = plan([decision({ in: [supports], lineage: true })]);
@@ -319,7 +324,7 @@ describe('planReanchor', () => {
     expect(result.owner).toEqual([]);
   });
 
-  test('ignores a non-current incoming supports and other incoming edges', () => {
+  it('should ignore a non-current incoming supports and other incoming edges', () => {
     const result = plan([
       decision({
         in: [
@@ -332,7 +337,7 @@ describe('planReanchor', () => {
     expect(result.rewrites).toHaveLength(1);
   });
 
-  test('plans nothing over a decision that was already rewritten', () => {
+  it('should plan nothing over a decision that was already rewritten', () => {
     const [first] = plan([decision()]).rewrites;
     if (first === undefined) throw new Error('expected a rewrite');
     const rewritten = decision({
@@ -343,7 +348,7 @@ describe('planReanchor', () => {
     expect(plan([rewritten])).toEqual({ rewrites: [], owner: [] });
   });
 
-  test('orders the plan by process, target and id', () => {
+  it('should order the plan by process, target and id', () => {
     const result = plan([
       decision({ process: 'work-b', id: own('work-b', 1), target: 'work-b.decision.x' }),
       decision({ id: own('work-a', 2), target: 'work-a.decision.y' }),
@@ -368,37 +373,42 @@ describe('toBatches', () => {
   const rewrite = (n: number) => ({ process: 'work-a', id: own('work-a', n), item: item(n) });
   const rewrites = (count: number) => Array.from({ length: count }, (_unused, n) => rewrite(n + 1));
 
-  test('slices 120 rewrites into batches of 50, 50 and 20', () => {
+  it('should slice 120 rewrites into batches of 50, 50 and 20 for the process', () => {
     const batches = toBatches('work-a', 'directives-4', rewrites(120));
 
     expect(batches.map(({ records }) => records.length)).toEqual([50, 50, 20]);
     expect(batches.every(({ process }) => process === 'work-a')).toBe(true);
   });
 
-  test('carries in each batch the rewrites its records came from, in the same order', () => {
+  it('should carry in each batch the rewrites its records came from, in the same order', () => {
     const all = rewrites(120);
+
     const batches = toBatches('work-a', 'directives-4', all);
 
     expect(batches.flatMap((batch) => batch.rewrites)).toEqual(all);
-    for (const batch of batches) {
-      expect(batch.rewrites.map(({ item: { target } }) => target)).toEqual(
-        batch.records.map(({ target }) => target),
-      );
-    }
+
+    expect(batches.map((batch) => batch.rewrites.map(({ item: { target } }) => target))).toEqual(
+      batches.map((batch) => batch.records.map(({ target }) => target)),
+    );
   });
 
-  test('derives a deterministic key that follows the content and stays within 200 characters', () => {
+  it('should derive a deterministic key that follows the content', () => {
     const [first] = toBatches('work-a', 'directives-4', rewrites(3));
     const [again] = toBatches('work-a', 'directives-4', rewrites(3));
     const [other] = toBatches('work-a', 'directives-4', rewrites(4));
 
     expect(first?.key).toBe(again?.key);
     expect(first?.key).not.toBe(other?.key);
+  });
+
+  it('should derive a key of the reanchor-<to>-<process>-<hash> form within 200 characters', () => {
+    const [first] = toBatches('work-a', 'directives-4', rewrites(3));
+
     expect(first?.key).toMatch(/^reanchor-directives-4-work-a-[0-9a-f]{12}$/);
     expect(first?.key.length).toBeLessThanOrEqual(200);
   });
 
-  test('rejects an item that BatchItem refuses before returning any batch', () => {
+  it('should reject an item that BatchItem refuses before returning any batch', () => {
     const bad = { ...rewrite(1), item: { ...item(1), target: 'Not A Target' } };
 
     expect(() => toBatches('work-a', 'directives-4', [rewrite(2), bad])).toThrow();
@@ -432,11 +442,11 @@ describe('verifyReanchor', () => {
   const superseded = (): LogRow =>
     oldRow({ in: [{ kind: 'supersedes', from: NEW, current: true }] });
 
-  test('passes when the replacement is current with the same data and relations', () => {
+  it('should pass when the replacement is current with the same data and relations', () => {
     expect(verifyReanchor(planned(), [oldRow()], [superseded(), newRow()])).toEqual([]);
   });
 
-  test('passes in a process that already had two current decisions on the target', () => {
+  it('should pass in a process that already had two current decisions on the target', () => {
     const sibling: LogRow = { ...oldRow(), id: own('work-a', 9) };
 
     expect(
@@ -444,27 +454,27 @@ describe('verifyReanchor', () => {
     ).toEqual([]);
   });
 
-  test('reports different data', () => {
+  it('should report different data', () => {
     expect(
       verifyReanchor(planned(), [oldRow()], [superseded(), newRow({ data: { choice: 'B' } })]),
     ).toEqual([{ id: OLD, problem: 'data-differs' }]);
   });
 
-  test('reports an old record that is still current', () => {
+  it('should report an old record that is still current', () => {
     expect(verifyReanchor(planned(), [oldRow()], [oldRow(), newRow()])).toEqual([
       { id: OLD, problem: 'old-still-current' },
       { id: OLD, problem: 'current-count-changed' },
     ]);
   });
 
-  test('reports a missing replacement', () => {
+  it('should report a missing replacement', () => {
     expect(verifyReanchor(planned(), [oldRow()], [oldRow()])).toEqual([
       { id: OLD, problem: 'new-missing' },
       { id: OLD, problem: 'old-still-current' },
     ]);
   });
 
-  test('reports a replacement that is not current', () => {
+  it('should report a replacement that is not current', () => {
     const replaced = newRow({
       in: [{ kind: 'supersedes', from: own('work-a', 3), current: true }],
     });
@@ -475,7 +485,7 @@ describe('verifyReanchor', () => {
     ]);
   });
 
-  test('reports a missing relation', () => {
+  it('should report a missing relation', () => {
     const [rewrite] = planned();
     const out = (rewrite?.item.relations ?? []).slice(0, -1);
 
@@ -488,19 +498,23 @@ describe('verifyReanchor', () => {
 describe('formatPlan', () => {
   const options = { to: 'directives-4', apply: false };
 
-  test('says there is nothing to reanchor when both lists are empty', () => {
+  it('should say there is nothing to reanchor when both lists are empty', () => {
     expect(formatPlan({ rewrites: [], owner: [] }, options)).toBe('nothing to reanchor');
   });
 
-  test('prints both lists when one of them is empty', () => {
-    const text = formatPlan(plan([decision()]), { to: 'directives-4', apply: true });
+  it('should print the apply header and both lists when one of them is empty', () => {
+    const planned = plan([decision()]);
+
+    const text = formatPlan(planned, { to: 'directives-4', apply: true });
 
     expect(text).toContain('reanchor to directives-4 (apply)');
     expect(text).toContain('rewritable: 1\n  work-a: 1\nfor the owner: 0');
   });
 
-  test('lists the owner items with the state of each anchor', () => {
-    const text = formatPlan(plan([decision()], { current: [NEW_DIRECTIVE] }), options);
+  it('should print the dry-run header and list the owner items with the state of each anchor', () => {
+    const planned = plan([decision()], { current: [NEW_DIRECTIVE] });
+
+    const text = formatPlan(planned, options);
 
     expect(text).toContain('(dry-run)');
     expect(text).toContain(
@@ -508,12 +522,13 @@ describe('formatPlan', () => {
     );
   });
 
-  test('caps the owner list at 100 lines and says how many it cut', () => {
+  it('should cap the owner list at 100 lines and say how many it cut', () => {
     const decisions = Array.from({ length: 130 }, (_unused, n) =>
       decision({ id: own('work-a', n + 1), target: `work-a.decision.d${n}` }),
     );
+    const planned = plan(decisions, { current: [] });
 
-    const lines = formatPlan(plan(decisions, { current: [] }), options).split('\n');
+    const lines = formatPlan(planned, options).split('\n');
 
     expect(lines.filter((line) => line.startsWith('  work-a\t'))).toHaveLength(100);
     expect(lines.at(-1)).toBe('... 30 more omitted');

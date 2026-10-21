@@ -11,6 +11,7 @@
     "test": "jest --errorOnDeprecated",
     "test:budget": "jest --errorOnDeprecated --runInBand --testPathPatterns=budget.spec.ts --testPathIgnorePatterns=/node_modules/",
     "test:coverage": "jest --errorOnDeprecated --coverage",
+    "test:mutation": "stryker run",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "format": "prettier --write .",
@@ -23,6 +24,7 @@
   },
   "jest": {
     "testEnvironment": "node",
+    "maxWorkers": "40%",
     "globalSetup": "<rootDir>/test/global-setup.ts",
     "globalTeardown": "<rootDir>/test/global-teardown.ts",
     "setupFilesAfterEnv": [
@@ -55,7 +57,11 @@
     },
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "\\.budget\\.spec\\.ts$"
+      "\\.budget\\.spec\\.ts$",
+      "<rootDir>/\\.stryker-tmp/"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/\\.stryker-tmp/"
     ],
     "transformIgnorePatterns": [
       "/node_modules/(?!canonicalize/)"
@@ -82,6 +88,9 @@
     "@eslint/js": "^10.0.1",
     "@jest/globals": "^30.5.2",
     "@modelcontextprotocol/client": "^2.3.1",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/jest-runner": "^10.0.0",
+    "@stryker-mutator/typescript-checker": "^10.0.0",
     "@types/node": "^24.19.2",
     "cspell": "^10.4.0",
     "esbuild": "^0.28.2",
@@ -95,7 +104,7 @@
     "jest": "^30.5.2",
     "knip": "^6.41.0",
     "lint-staged": "^17.6.0",
-    "markdownlint-cli2": "^0.23.3",
+    "markdownlint-cli2": "^0.24.0",
     "prettier": "^3.9.10",
     "tar": "^7.5.22",
     "ts-jest": "^29.4.14",

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { omit } from 'es-toolkit';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { QUERY_TEXT_MAX_CHARS } from '../../src/queries/query-service.ts';
@@ -15,11 +15,37 @@ const doc = (data: BatchItem['data'], extra: Partial<BatchItem> = {}): BatchItem
   ...extra,
 });
 
-describe('queryRecords: filters and embedded data', () => {
-  test('only current records come out by default, and `includeNonCurrent` brings the superseded ones', async () => {
-    const { query, v1, v2, task, other } = await seeded();
+const supports = (to: string) => ({ to, kind: 'supports' as const });
+const supersedes = (to: string) => ({ to, kind: 'supersedes' as const });
+
+/** `evidence` com duas relações `approves`, uma `supports` sem nome e uma `supersedes` que a substitui. */
+async function wired() {
+  const setup = querySetup();
+  setup.createProcess('run-1');
+  const { registerOne } = setup;
+  const evidence = await registerOne('run-1', note('evidence'), 1);
+  const approve = (text: string) => note(text, { relations: [{ to: evidence, as: 'approves' }] });
+  await registerOne('run-1', approve('a'), 2);
+  await registerOne('run-1', approve('b'), 3);
+  await registerOne('run-1', note('c', { relations: [{ to: evidence, kind: 'supports' }] }), 4);
+  const newer = await registerOne(
+    'run-1',
+    note('evidence 2', { relations: [{ to: evidence, kind: 'supersedes' }] }),
+    5,
+  );
+  return { ...setup, evidence, newer };
+}
+
+describe('QueryService.queryRecords', () => {
+  it('should return only the current records by default', async () => {
+    const { query, v2, task, other } = await seeded();
 
     expect(idsOf(query({ process: 'run-1' }))).toEqual([task, other, v2]);
+  });
+
+  it('should bring the superseded records with `includeNonCurrent`', async () => {
+    const { query, v1, v2, task, other } = await seeded();
+
     expect(idsOf(query({ process: 'run-1', includeNonCurrent: true }))).toEqual([
       v1,
       task,
@@ -28,20 +54,20 @@ describe('queryRecords: filters and embedded data', () => {
     ]);
   });
 
-  test('`type` and scalar `where` filter by equality', async () => {
+  it('should filter by equality with `type` and with a scalar `where`', async () => {
     const { query, other, task } = await seeded();
 
     expect(idsOf(query({ process: 'run-1', type: 'doc' }))).toEqual([other]);
     expect(idsOf(query({ process: 'run-1', where: { text: 'tarefa' } }))).toEqual([task]);
   });
 
-  test('`targetPrefix` respects the dot boundary', async () => {
+  it('should respect the dot boundary in `targetPrefix`', async () => {
     const { query, v2, task } = await seeded();
 
     expect(idsOf(query({ process: 'run-1', targetPrefix: 'run.step' }))).toEqual([task, v2]);
   });
 
-  test('filters combine with AND', async () => {
+  it('should combine filters with AND', async () => {
     const { query, task } = await seeded();
 
     const page = query({
@@ -54,7 +80,7 @@ describe('queryRecords: filters and embedded data', () => {
     expect(idsOf(page)).toEqual([task]);
   });
 
-  test('`text` with 2+ terms and `type`: the OR fallback decides over the records that pass the filters', async () => {
+  it('should decide the OR fallback over the records that pass the filters with `text` of 2+ terms and `type`', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     await registerOne('run-1', doc({ note: 'banana uva' }), 1);
@@ -66,7 +92,7 @@ describe('queryRecords: filters and embedded data', () => {
     expect(idsOf(page)).toEqual([banana, uva]);
   });
 
-  test('`text` with 2+ terms: the OR fallback also decides over currency', async () => {
+  it('should decide the OR fallback also over currency with `text` of 2+ terms', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const old = await registerOne('run-1', note('banana uva'), 1);
@@ -84,7 +110,7 @@ describe('queryRecords: filters and embedded data', () => {
     );
   });
 
-  test('`text` above the cap is INVALID_FILTER `too-long`, and at the cap it passes', () => {
+  it('should refuse `text` above the cap with INVALID_FILTER `too-long`', () => {
     const { createProcess, query } = querySetup();
     createProcess('run-1');
 
@@ -94,21 +120,30 @@ describe('queryRecords: filters and embedded data', () => {
 
     expect(error.code).toBe('INVALID_FILTER');
     expect(error.details).toEqual([expect.objectContaining({ path: '/text', code: 'too-long' })]);
-    expect(query({ process: 'run-1', text: 'a'.repeat(QUERY_TEXT_MAX_CHARS) }).records).toEqual([]);
   });
 
-  test.each([0, -1, 1.5, NaN, Infinity])('`limit` %p is INVALID_FILTER at /limit', (limit) => {
+  it('should accept `text` at the cap', () => {
     const { createProcess, query } = querySetup();
     createProcess('run-1');
 
-    const error = captureError(() => query({ process: 'run-1', limit }));
-
-    expect(error.code).toBe('INVALID_FILTER');
-    expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
+    expect(query({ process: 'run-1', text: 'a'.repeat(QUERY_TEXT_MAX_CHARS) }).records).toEqual([]);
   });
 
-  test.each(['', '  ', '!!!', '&&', '::', '§', '́', ' '])(
-    '`text` %j without a searchable term is INVALID_FILTER `no-terms` at /text',
+  it.each([0, -1, 1.5, NaN, Infinity])(
+    'should refuse `limit` %p with INVALID_FILTER at /limit',
+    (limit) => {
+      const { createProcess, query } = querySetup();
+      createProcess('run-1');
+
+      const error = captureError(() => query({ process: 'run-1', limit }));
+
+      expect(error.code).toBe('INVALID_FILTER');
+      expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
+    },
+  );
+
+  it.each(['', '  ', '!!!', '&&', '::', '§', '́', ' '])(
+    'should refuse `text` %j without a searchable term with INVALID_FILTER `no-terms` at /text',
     (text) => {
       const { createProcess, query } = querySetup();
       createProcess('run-1');
@@ -121,8 +156,8 @@ describe('queryRecords: filters and embedded data', () => {
     },
   );
 
-  test.each(['=>', '+++', '$$$', 'C++', '😀'])(
-    '`text` %j has a term: returns empty, no error',
+  it.each(['=>', '+++', '$$$', 'C++', '😀'])(
+    'should return empty with no error for `text` %j, which has a term',
     (text) => {
       const { createProcess, query } = querySetup();
       createProcess('run-1');
@@ -131,7 +166,7 @@ describe('queryRecords: filters and embedded data', () => {
     },
   );
 
-  test('`ids` with an unknown or repeated id returns each record once, in output order', async () => {
+  it('should return each record once, in output order, for `ids` with an unknown or repeated id', async () => {
     const { query, task, other } = await seeded();
 
     const page = query({ process: 'run-1', ids: [other, ghostId('run-1'), task, other] });
@@ -139,7 +174,7 @@ describe('queryRecords: filters and embedded data', () => {
     expect(idsOf(page)).toEqual([task, other]);
   });
 
-  test('`relatedTo` with an anchor from another process finds who cites it; an anchor that does not exist finds nothing', async () => {
+  it('should find who cites an anchor from another process with `relatedTo`', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     createProcess('run-2');
@@ -151,12 +186,19 @@ describe('queryRecords: filters and embedded data', () => {
     );
 
     expect(idsOf(query({ process: 'run-1', relatedTo: anchor }))).toEqual([citing]);
+  });
+
+  it('should find nothing with `relatedTo` for an anchor that does not exist', async () => {
+    const { createProcess, registerOne, query } = querySetup();
+    createProcess('run-1');
+    createProcess('run-2');
+    const anchor = await registerOne('run-2', note('âncora'), 1);
+    await registerOne('run-1', note('cita', { relations: [{ to: anchor, kind: 'supports' }] }), 2);
+
     expect(idsOf(query({ process: 'run-1', relatedTo: ghostId('run-1') }))).toEqual([]);
   });
-});
 
-describe('queryRecords: attachmentStatus', () => {
-  test('each cited attachment comes out with the blob state and a record without attachments carries no field', async () => {
+  it('should bring each cited attachment with the blob state and no field for a record without attachments', async () => {
     const { createProcess, registerOne, attachments, dataDir, query } = querySetup();
     createProcess('run-1');
     const kept = attachments.putText(PROJECT, 'guardado').hash;
@@ -177,10 +219,8 @@ describe('queryRecords: attachmentStatus', () => {
     });
     expect(at(page.records, 1)).not.toHaveProperty('attachmentStatus');
   });
-});
 
-describe('queryRecords: fields', () => {
-  test('without `fields` the page is unchanged, with `data` right after the envelope', async () => {
+  it('should leave the page unchanged without `fields`, with `data` right after the envelope', async () => {
     const { query } = await seeded();
 
     const page = query({ process: 'run-1' });
@@ -198,7 +238,7 @@ describe('queryRecords: fields', () => {
     ]);
   });
 
-  test('only `data` is trimmed: envelope, relations and `attachmentStatus` come out whole', async () => {
+  it('should trim only `data`, with envelope, relations and `attachmentStatus` whole', async () => {
     const { createProcess, registerOne, attachments, query } = querySetup();
     createProcess('run-1');
     const kept = attachments.putText(PROJECT, 'guardado').hash;
@@ -217,7 +257,7 @@ describe('queryRecords: fields', () => {
     expect(at(page.records, 1)).toEqual({ ...at(full.records, 1), data: {} });
   });
 
-  test('`needsReview` comes out whole even with trimmed `data`', async () => {
+  it('should bring `needsReview` whole even with trimmed `data`', async () => {
     const { createLegacyProcess, registerOne, query } = querySetup();
     createLegacyProcess('run-1');
     createLegacyProcess('run-2');
@@ -238,7 +278,7 @@ describe('queryRecords: fields', () => {
     expect(at(page.records, 0).needsReview).toEqual({ staleIn: [], staleOut: [evidence] });
   });
 
-  test('`fields: []` omits the `data` key and keeps the rest of the record', async () => {
+  it('should omit the `data` key and keep the rest of the record with `fields: []`', async () => {
     const { query, task } = await seeded();
 
     const page = query({ process: 'run-1', ids: [task], fields: [] });
@@ -249,7 +289,7 @@ describe('queryRecords: fields', () => {
     expect(at(page.records, 0)).toHaveProperty('out');
   });
 
-  test('`where` and `text` filter by the whole `data`, even with the field outside `fields`', async () => {
+  it('should filter by the whole `data` with `where` and with `text`, even with the field outside `fields`', async () => {
     const { query, task } = await seeded();
 
     const byWhere = query({ process: 'run-1', where: { text: 'tarefa' }, fields: [] });
@@ -259,7 +299,7 @@ describe('queryRecords: fields', () => {
     expect(idsOf(byText)).toEqual([task]);
   });
 
-  test('a requested field the record lacks disappears: `data` is `{}` when none exists (project scope)', async () => {
+  it('should drop a requested field the record lacks, with `data` as `{}` when none exists, in project scope', async () => {
     const { query, task, other } = await seeded();
 
     const page = query({ scope: 'project', ids: [task, other], fields: ['text'] });
@@ -268,8 +308,8 @@ describe('queryRecords: fields', () => {
     expect(at(page.records, 1).data).toEqual({});
   });
 
-  test.each(['__proto__', 'constructor', 'toString'])(
-    '`fields` with `%s` brings nothing from the prototype',
+  it.each(['__proto__', 'constructor', 'toString'])(
+    'should bring nothing from the prototype for `fields` with `%s`',
     async (name) => {
       const { query, task } = await seeded();
 
@@ -279,13 +319,21 @@ describe('queryRecords: fields', () => {
       expect(Object.keys(at(page.records, 0).data ?? {})).toEqual(['text']);
     },
   );
-});
 
-describe('queryRecords: needsReview (D-09)', () => {
-  const supports = (to: string) => ({ to, kind: 'supports' as const });
-  const supersedes = (to: string) => ({ to, kind: 'supersedes' as const });
+  it('should not see the dead support from another process in process scope', async () => {
+    const { createLegacyProcess, registerOne, query } = querySetup();
+    createLegacyProcess('run-1');
+    createLegacyProcess('run-2');
+    const evidence = await registerOne('run-1', note('evidência'), 1);
+    await registerOne('run-2', note('veredito', { relations: [supports(evidence)] }), 2);
+    await registerOne('run-1', note('evidência 2', { relations: [supersedes(evidence)] }), 3);
 
-  test('dead support: process scope does not see support from another process and project scope does', async () => {
+    const own = query({ process: 'run-2' });
+
+    expect(at(own.records, 0)).not.toHaveProperty('needsReview');
+  });
+
+  it('should see the dead support from another process in project scope', async () => {
     const { createLegacyProcess, registerOne, query } = querySetup();
     createLegacyProcess('run-1');
     createLegacyProcess('run-2');
@@ -297,16 +345,12 @@ describe('queryRecords: needsReview (D-09)', () => {
     );
     await registerOne('run-1', note('evidência 2', { relations: [supersedes(evidence)] }), 3);
 
-    const own = query({ process: 'run-2' });
     const project = query({ scope: 'project', ids: [verdict] });
 
-    expect(at(own.records, 0)).not.toHaveProperty('needsReview');
     expect(at(project.records, 0).needsReview).toEqual({ staleIn: [], staleOut: [evidence] });
   });
-});
 
-describe('queryRecords: targetPrefix hint without boundary', () => {
-  test('an empty selection with a prefix that only matches without the dot boundary carries the hint', async () => {
+  it('should carry the hint for an empty selection with a prefix that only matches without the dot boundary', async () => {
     const { query } = await seeded();
 
     const page = query({ process: 'run-1', targetPrefix: 'run.ste' });
@@ -316,7 +360,7 @@ describe('queryRecords: targetPrefix hint without boundary', () => {
     expect(page.hint).toContain('"run.step"');
   });
 
-  test.each([
+  it.each([
     ['prefix with no similar target', { targetPrefix: 'run.nothing' }],
     ['selection with results', { targetPrefix: 'run.step' }],
     [
@@ -324,21 +368,19 @@ describe('queryRecords: targetPrefix hint without boundary', () => {
       { targetPrefix: 'run.step', type: 'nope' },
     ],
     ['without targetPrefix', { type: 'nope' }],
-  ])('no hint: %s', async (_title, filters) => {
+  ])('should carry no hint: %s', async (_title, filters) => {
     const { query } = await seeded();
 
     expect(query({ process: 'run-1', ...filters })).not.toHaveProperty('hint');
   });
 
-  test('matching does not change: the prefix without boundary still returns no records', async () => {
+  it('should still return no records for a prefix without the dot boundary', async () => {
     const { query } = await seeded();
 
     expect(idsOf(query({ process: 'run-1', targetPrefix: 'run.ste' }))).toEqual([]);
   });
-});
 
-describe('queryRecords: limit 0 with changesSince', () => {
-  test('returns only the changes, with no records or cursor', async () => {
+  it('should return only the changes, with no records or cursor, for `limit: 0` with `changesSince`', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     await registerOne('run-1', note('a'), 1);
@@ -352,7 +394,7 @@ describe('queryRecords: limit 0 with changesSince', () => {
     expect(page.changes).toEqual({ entered: [added], left: [], marker: page.marker });
   });
 
-  test('without changesSince is INVALID_FILTER at /limit', () => {
+  it('should refuse `limit: 0` without `changesSince` with INVALID_FILTER at /limit', () => {
     const { createProcess, query } = querySetup();
     createProcess('run-1');
 
@@ -362,7 +404,7 @@ describe('queryRecords: limit 0 with changesSince', () => {
     expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
   });
 
-  test('with a cursor is INVALID_FILTER at /limit, even with changesSince', async () => {
+  it('should refuse `limit: 0` with a cursor, even with `changesSince`, with INVALID_FILTER at /limit', async () => {
     const { createProcess, register, query } = querySetup();
     createProcess('run-1');
     await register('run-1', [note('a'), note('b')], 1);
@@ -380,28 +422,8 @@ describe('queryRecords: limit 0 with changesSince', () => {
     expect(error.code).toBe('INVALID_FILTER');
     expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
   });
-});
 
-describe('queryRecords: relations mode', () => {
-  /** `evidence` com duas relações `approves`, uma `supports` sem nome e uma `supersedes` que a substitui. */
-  async function wired() {
-    const setup = querySetup();
-    setup.createProcess('run-1');
-    const { registerOne } = setup;
-    const evidence = await registerOne('run-1', note('evidence'), 1);
-    const approve = (text: string) => note(text, { relations: [{ to: evidence, as: 'approves' }] });
-    await registerOne('run-1', approve('a'), 2);
-    await registerOne('run-1', approve('b'), 3);
-    await registerOne('run-1', note('c', { relations: [{ to: evidence, kind: 'supports' }] }), 4);
-    const newer = await registerOne(
-      'run-1',
-      note('evidence 2', { relations: [{ to: evidence, kind: 'supersedes' }] }),
-      5,
-    );
-    return { ...setup, evidence, newer };
-  }
-
-  test('counts replaces in and out with inCounts and outCounts keyed by relation name', async () => {
+  it('should replace `in` and `out` with `inCounts` and `outCounts` keyed by relation name in counts mode', async () => {
     const { query, evidence, newer } = await wired();
 
     const page = query({
@@ -417,7 +439,7 @@ describe('queryRecords: relations mode', () => {
     expect(at(page.records, 1).outCounts).toEqual({ supersedes: 1 });
   });
 
-  test('counts omits empty maps and zero kinds', async () => {
+  it('should omit empty maps and zero kinds in counts mode', async () => {
     const { query, evidence, newer } = await wired();
 
     const page = query({
@@ -436,7 +458,7 @@ describe('queryRecords: relations mode', () => {
     ]);
   });
 
-  test('none omits in, out and both count maps', async () => {
+  it('should omit `in`, `out` and both count maps in none mode', async () => {
     const { query, evidence } = await wired();
 
     const page = query({
@@ -451,7 +473,7 @@ describe('queryRecords: relations mode', () => {
     }
   });
 
-  test('full matches the default', async () => {
+  it('should match the default in full mode', async () => {
     const { query } = await wired();
 
     const withFull = query({ process: 'run-1', includeNonCurrent: true, relations: 'full' });
@@ -461,8 +483,8 @@ describe('queryRecords: relations mode', () => {
     expect(at(byDefault.records, 0).in).toHaveLength(4);
   });
 
-  test.each(['counts', 'none', 'full'] as const)(
-    'keeps needsReview and attachmentStatus in %s mode',
+  it.each(['counts', 'none', 'full'] as const)(
+    'should keep `needsReview` and `attachmentStatus` in %s mode',
     async (relations) => {
       const { createLegacyProcess, registerOne, attachments, query } = querySetup();
       createLegacyProcess('run-1');
@@ -486,7 +508,7 @@ describe('queryRecords: relations mode', () => {
     },
   );
 
-  test('counts counts non-current edges too', async () => {
+  it('should count non-current edges too in counts mode', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const evidence = await registerOne('run-1', note('evidence'), 1);

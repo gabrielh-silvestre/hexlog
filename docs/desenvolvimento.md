@@ -21,6 +21,12 @@ estudo de plataformas está em [qualidade-ci.md](qualidade-ci.md).
 Os specs de orçamento de tempo (`*.budget.spec.ts`) ficam fora do `npm test` e rodam
 em série em `npm run test:budget`, no CI.
 
+`npm run test:mutation` roda o Stryker só nos specs unitários de `stryker.config.json`,
+à mão, fora do CI e do husky; os relatórios saem em `reports/mutation/`. O `globalSetup`
+fica desligado no Stryker, então a rodada usa o `TMPDIR` real: rode com
+`TMPDIR=$(mktemp -d) npm run test:mutation`. Piso, pedido do dono e limpeza de
+sobra estão em [qualidade-e-testes.md](directives/qualidade-e-testes.md).
+
 ## Scripts de leitura
 
 `scripts/insights.ts`, `scripts/export.ts` e `scripts/timeline.ts` são CLIs

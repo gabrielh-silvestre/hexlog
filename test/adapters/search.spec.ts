@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 import fc from 'fast-check';
 import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { RecordId } from '../../src/domain/ids.ts';
@@ -17,37 +17,49 @@ const search = (records: HexRecord[], text: string, allowed?: ReadonlySet<Record
 const idsOf = (records: HexRecord[]) => records.map((record) => record.id);
 
 describe('createSearchIndex', () => {
-  test('não acha nada em lista vazia nem sem correspondência', () => {
+  it('should find nothing in an empty list', () => {
     expect(search([], 'anything')).toEqual([]);
-    expect(search([makeRecord({ data: { text: 'webhook' } })], 'kubernetes')).toEqual([]);
   });
 
-  test('indexa type, target e as strings de data, inclusive as aninhadas', () => {
-    const byType = makeRecord({ type: 'decision' });
-    const byTarget = makeRecord({ target: 'billing.invoice' });
-    const byData = makeRecord({ data: { text: 'refund' } });
-    const nested = makeRecord({ data: { deep: { list: [{ note: 'quarantine' }] } } });
-    const records = [byType, byTarget, byData, nested];
+  it('should find nothing when no record matches', () => {
+    const records = [makeRecord({ data: { text: 'webhook' } })];
 
-    expect(search(records, 'decision')).toEqual([byType.id]);
-    expect(search(records, 'invoice')).toEqual([byTarget.id]);
-    expect(search(records, 'refund')).toEqual([byData.id]);
-    expect(search(records, 'quarantine')).toEqual([nested.id]);
+    expect(search(records, 'kubernetes')).toEqual([]);
   });
 
-  test('não indexa id, autor, relações, chaves de data nem valores que não são string', () => {
+  it.each([
+    { field: 'type', term: 'decision', expected: 'byType' },
+    { field: 'target', term: 'invoice', expected: 'byTarget' },
+    { field: 'data string', term: 'refund', expected: 'byData' },
+    { field: 'nested data string', term: 'quarantine', expected: 'nested' },
+  ] as const)('should index the record $field', ({ term, expected }) => {
+    const indexed = {
+      byType: makeRecord({ type: 'decision' }),
+      byTarget: makeRecord({ target: 'billing.invoice' }),
+      byData: makeRecord({ data: { text: 'refund' } }),
+      nested: makeRecord({ data: { deep: { list: [{ note: 'quarantine' }] } } }),
+    };
+
+    expect(search(Object.values(indexed), term)).toEqual([indexed[expected].id]);
+  });
+
+  it.each([
+    { field: 'data key', term: 'secretkey' },
+    { field: 'author agent', term: 'zebra' },
+    { field: 'author client', term: 'quokka' },
+    { field: 'relation kind', term: 'supports' },
+    { field: 'record id', term: 'proc' },
+  ])('should not index the $field', ({ term }) => {
     const record = makeRecord({
       data: { secretkey: 1, flag: true, none: null },
       relations: [{ kind: 'supports', to: 'other:0198f4a0-0000-7000-8000-000000000001' }],
       author: { agent: 'zebra', client: 'quokka' },
     });
 
-    for (const term of ['secretkey', 'zebra', 'quokka', 'supports', 'proc']) {
-      expect(search([record], term)).toEqual([]);
-    }
+    expect(search([record], term)).toEqual([]);
   });
 
-  test('devolve os ids por relevância decrescente', () => {
+  it('should return the ids by decreasing relevance', () => {
     const weak = makeRecord({ data: { text: 'one webhook among many other filler words here' } });
     const strong = makeRecord({ data: { text: 'webhook' }, target: 'webhook.retry' });
     const none = makeRecord({ data: { text: 'unrelated' } });
@@ -55,107 +67,159 @@ describe('createSearchIndex', () => {
     expect(search([weak, none, strong], 'webhook')).toEqual([strong.id, weak.id]);
   });
 
-  test('empate de relevância mantém a ordem dos registros', () => {
+  it('should keep the record order on a relevance tie', () => {
     const records = [1, 2, 3].map(() => makeRecord({ data: { text: 'webhook' } }));
 
     expect(search(records, 'webhook')).toEqual(idsOf(records));
+  });
+
+  it('should keep the reversed record order on a relevance tie', () => {
+    const records = [1, 2, 3].map(() => makeRecord({ data: { text: 'webhook' } }));
+
     expect(search([...records].reverse(), 'webhook')).toEqual(idsOf(records).reverse());
   });
 
-  test('ignora acento e caixa, na consulta e no texto', () => {
+  it('should ignore accents and case in the text', () => {
     const record = makeRecord({ data: { text: 'Configuração Crítica' } });
 
     expect(search([record], 'configuracao critica')).toEqual([record.id]);
-    expect(search([makeRecord({ data: { text: 'configuracao' } })], 'CONFIGURAÇÃO')).toHaveLength(
-      1,
-    );
   });
 
-  test('termo que some depois de tirar o acento não é indexado, e o resto do registro continua achável', () => {
+  it('should ignore accents and case in the query', () => {
+    const record = makeRecord({ data: { text: 'configuracao' } });
+
+    expect(search([record], 'CONFIGURAÇÃO')).toHaveLength(1);
+  });
+
+  it('should not index a term that is empty after stripping the accent', () => {
     const record = makeRecord({ data: { text: '\u0301 webhook' } });
 
-    expect(search([record], 'webhook')).toEqual([record.id]);
     expect(search([record], '\u0301')).toEqual([]);
   });
 
-  test('casa por prefixo e tolera um erro de digitação', () => {
+  it('should keep the rest of the record searchable when a term vanishes after stripping the accent', () => {
+    const record = makeRecord({ data: { text: '\u0301 webhook' } });
+
+    expect(search([record], 'webhook')).toEqual([record.id]);
+  });
+
+  it('should match by prefix', () => {
     const record = makeRecord({ data: { text: 'authentication' } });
 
     expect(search([record], 'authent')).toEqual([record.id]);
+  });
+
+  it('should tolerate one typo', () => {
+    const record = makeRecord({ data: { text: 'authentication' } });
+
     expect(search([record], 'authentcation')).toEqual([record.id]);
   });
 
-  test('exige todos os termos (AND) quando algum registro os tem todos', () => {
+  it('should require every term (AND) when some record has them all', () => {
     const both = makeRecord({ data: { text: 'webhook retry' } });
     const one = makeRecord({ data: { text: 'webhook only' } });
 
     expect(search([one, both], 'webhook retry')).toEqual([both.id]);
   });
 
-  test('cai para OR quando o AND não acha nada, exigindo metade dos termos arredondada para cima', () => {
+  it('should fall back to OR when AND finds nothing, so any of 2 terms is enough', () => {
     const webhookOnly = makeRecord({ data: { text: 'webhook and unrelated words' } });
-    const webhookAndTimeout = makeRecord({ data: { text: 'webhook timeout' } });
 
     // 2 termos: o piso é 1, qualquer um dos dois basta.
     expect(search([webhookOnly], 'webhook retry')).toEqual([webhookOnly.id]);
+  });
+
+  it('should fall back to OR when AND finds nothing, requiring 2 of 3 terms', () => {
+    const webhookOnly = makeRecord({ data: { text: 'webhook and unrelated words' } });
+    const webhookAndTimeout = makeRecord({ data: { text: 'webhook timeout' } });
+
     // 3 termos: o piso é 2, e só o registro com dois dos três entra.
     expect(search([webhookOnly, webhookAndTimeout], 'webhook timeout retry')).toEqual([
       webhookAndTimeout.id,
     ]);
   });
 
-  test('com `allowed`, o AND e o piso do OR decidem sobre os registros permitidos (paridade com o 0.x)', () => {
+  it('should let the unfiltered AND match both terms in the doc without allowed (parity with 0.x)', () => {
     const doc = makeRecord({ type: 'doc', data: { text: 'banana uva' } });
     const banana = makeRecord({ data: { text: 'banana' } });
     const uva = makeRecord({ data: { text: 'uva' } });
-    const records = [doc, banana, uva];
 
     // Sem o filtro o doc casa os dois termos e o OR nunca roda.
-    expect(search(records, 'banana uva')).toEqual([doc.id]);
+    expect(search([doc, banana, uva], 'banana uva')).toEqual([doc.id]);
+  });
+
+  it('should decide the AND and the OR floor over the allowed records (parity with 0.x)', () => {
+    const doc = makeRecord({ type: 'doc', data: { text: 'banana uva' } });
+    const banana = makeRecord({ data: { text: 'banana' } });
+    const uva = makeRecord({ data: { text: 'uva' } });
+
     // Só as notas permitidas: nenhuma casa os dois, então o OR devolve as duas.
-    expect(search(records, 'banana uva', new Set([banana.id, uva.id]))).toEqual([
+    expect(search([doc, banana, uva], 'banana uva', new Set([banana.id, uva.id]))).toEqual([
       banana.id,
       uva.id,
     ]);
   });
 
-  test('`allowed` vazio não devolve nada e um permitido que não casa não entra', () => {
+  it('should find nothing with an empty allowed set', () => {
     const banana = makeRecord({ data: { text: 'banana' } });
     const other = makeRecord({ data: { text: 'laranja' } });
 
     expect(search([banana, other], 'banana', new Set())).toEqual([]);
+  });
+
+  it('should not return an allowed record that does not match', () => {
+    const banana = makeRecord({ data: { text: 'banana' } });
+    const other = makeRecord({ data: { text: 'laranja' } });
+
     expect(search([banana, other], 'banana', new Set([other.id]))).toEqual([]);
   });
 
-  test.each(['', '   ', '\n\t', '!!! ---'])('consulta em branco %j não acha nada', (text) => {
-    expect(search([makeRecord({ data: { text: 'webhook' } })], text)).toEqual([]);
+  it.each(['', '   ', '\n\t', '!!! ---'])('should find nothing for the blank query %j', (text) => {
+    const records = [makeRecord({ data: { text: 'webhook' } })];
+
+    expect(search(records, text)).toEqual([]);
   });
 
-  test('uma consulta de um termo só nunca cai para OR', () => {
-    expect(search([makeRecord({ data: { text: 'webhook' } })], 'retry')).toEqual([]);
+  it('should never fall back to OR for a single-term query', () => {
+    const records = [makeRecord({ data: { text: 'webhook' } })];
+
+    expect(search(records, 'retry')).toEqual([]);
   });
 
-  test('repetir um termo não o torna mais pesado que os outros da consulta', () => {
+  it('should not weigh a repeated query term more than the other terms', () => {
+    const mostlyBeta = makeRecord({ data: { text: 'beta beta beta beta alpha' } });
+    const mostlyAlpha = makeRecord({ data: { text: 'alpha alpha alpha alpha beta' } });
+    const records = [mostlyBeta, mostlyAlpha];
+    const deduplicated = search(records, 'alpha beta');
+
+    // `Alpha alpha` não pode empurrar `mostlyAlpha` para cima.
+    expect(search(records, 'Alpha alpha beta')).toEqual(deduplicated);
+  });
+
+  it('should rank records that match both terms equally in record order', () => {
     const mostlyBeta = makeRecord({ data: { text: 'beta beta beta beta alpha' } });
     const mostlyAlpha = makeRecord({ data: { text: 'alpha alpha alpha alpha beta' } });
     const records = [mostlyBeta, mostlyAlpha];
 
-    // Os dois casam igual `alpha beta`; `Alpha alpha` não pode empurrar `mostlyAlpha` para cima.
-    expect(search(records, 'Alpha alpha beta')).toEqual(search(records, 'alpha beta'));
     expect(search(records, 'alpha beta')).toEqual(idsOf(records));
   });
 
-  test('termo repetido conta uma vez só no AND e no piso do OR', () => {
+  it('should count a repeated term once in the AND', () => {
     const both = makeRecord({ data: { text: 'webhook retry' } });
     const webhookOnly = makeRecord({ data: { text: 'webhook and unrelated words' } });
 
-    // AND: `webhook` repetido não exige nada além de `webhook` e `retry`.
+    // `webhook` repetido não exige nada além de `webhook` e `retry`.
     expect(search([webhookOnly, both], 'webhook webhook retry')).toEqual([both.id]);
-    // OR: 2 termos distintos dão piso 1; contados com a repetição seriam 3 e piso 2.
+  });
+
+  it('should count a repeated term once in the OR floor', () => {
+    const webhookOnly = makeRecord({ data: { text: 'webhook and unrelated words' } });
+
+    // 2 termos distintos dão piso 1; contados com a repetição seriam 3 e piso 2.
     expect(search([webhookOnly], 'webhook webhook retry')).toEqual([webhookOnly.id]);
   });
 
-  test('consulta com o mesmo termo repetido milhares de vezes custa como a de um termo só', () => {
+  it('should cost the same for a term repeated thousands of times as for a single term', () => {
     const records = Array.from({ length: 5_000 }, () =>
       makeRecord({ data: { text: 'webhook delivery' } }),
     );
@@ -168,21 +232,20 @@ describe('createSearchIndex', () => {
     // Sem o dedupe passa de 12 s; com ele o custo é o do índice (~100 ms).
     expect(elapsed).toBeLessThanOrEqual(2_000);
   });
-});
 
-describe('createSearchIndex: terms', () => {
-  test('devolve os termos distintos da consulta, sem acento e em minúsculas', () => {
+  it('should return the distinct query terms without accents and in lower case', () => {
     expect(createSearchIndex().terms('Ação ação, WEBHOOK')).toEqual(['acao', 'webhook']);
   });
 
   // Garante que `terms` nunca recusa texto que o motor casaria: sem termo a busca é vazia, e com
   // termo o registro que contém o próprio texto é achado.
-  test('propriedade: texto sem termo não acha nada, e com termo acha o registro que o contém', () => {
+  it('should find a record by its own text exactly when the text has terms', () => {
     const symbols = fc.string({ unit: fc.constantFrom(...'aB9é!&:§ ,.=+$-́ 😀'), maxLength: 12 });
+    const texts = fc.oneof(symbols, fc.string({ unit: 'grapheme', maxLength: 12 }));
     const index = createSearchIndex();
 
     fc.assert(
-      fc.property(fc.oneof(symbols, fc.string({ unit: 'grapheme', maxLength: 12 })), (text) => {
+      fc.property(texts, (text) => {
         const record = makeRecord({ data: { text } });
 
         const found = index.search(PROCESS, [record], text).length === 1;
@@ -191,56 +254,66 @@ describe('createSearchIndex: terms', () => {
       }),
     );
   });
-});
 
-describe('createSearchIndex sobre o corpus de writeRecordsCorpus (N9)', () => {
-  let corpus: HexRecord[];
+  describe('with the writeRecordsCorpus corpus', () => {
+    let corpus: HexRecord[];
 
-  beforeAll(() => {
-    corpus = writeRecordsCorpus(createTempDir('search-corpus'), { recordsPerProcess: 300 }).records;
-  });
-
-  /** Gabarito: registros cujo `data.text` tem `word` como palavra inteira. */
-  const withWord = (word: string) =>
-    corpus.filter((record) => {
-      const { text } = record.data;
-      return typeof text === 'string' && new RegExp(`\\b${word}\\b`).test(text);
+    beforeAll(() => {
+      corpus = writeRecordsCorpus(createTempDir('search-corpus'), {
+        recordsPerProcess: 300,
+      }).records;
     });
 
-  test('recall 1,0 com um erro de digitação: acha todo registro da palavra "authentication"', () => {
-    const expected = idsOf(withWord('authentication'));
-    expect(expected.length).toBeGreaterThan(0);
+    /** Gabarito: registros cujo `data.text` tem `word` como palavra inteira. */
+    const withWord = (word: string) =>
+      corpus.filter((record) => {
+        const { text } = record.data;
+        return typeof text === 'string' && new RegExp(`\\b${word}\\b`).test(text);
+      });
 
-    expect(search(corpus, 'authentcation')).toEqual(expect.arrayContaining(expected));
-  });
+    it('should find every record of "authentication" with one typo, a recall of 1.0', () => {
+      const expected = idsOf(withWord('authentication'));
 
-  test('precisão 1,0: a palavra "authentication" devolve só os registros que a têm', () => {
-    const expected = idsOf(withWord('authentication'));
+      const found = search(corpus, 'authentcation');
 
-    expect([...search(corpus, 'authentication')].sort()).toEqual([...expected].sort());
-  });
+      expect(expected.length).toBeGreaterThan(0);
+      expect(found).toEqual(expect.arrayContaining(expected));
+    });
 
-  test('precisão 1,0 no AND: "webhook retry" devolve só quem tem as duas palavras', () => {
-    const retry = new Set(idsOf(withWord('retry')));
-    const expected = idsOf(withWord('webhook')).filter((id) => retry.has(id));
-    expect(expected.length).toBeGreaterThan(0);
+    it('should return only the records that have "authentication", a precision of 1.0', () => {
+      const expected = idsOf(withWord('authentication'));
 
-    expect([...search(corpus, 'webhook retry')].sort()).toEqual([...expected].sort());
-  });
+      const found = search(corpus, 'authentication');
 
-  test('um termo que não está no corpus não acha nada', () => {
-    expect(search(corpus, 'zzqxwv')).toEqual([]);
-  });
+      expect([...found].sort()).toEqual([...expected].sort());
+    });
 
-  test('determinismo: o índice frio, o cacheado e um índice novo devolvem o mesmo resultado', () => {
-    const index = createSearchIndex();
-    const calls = [
-      index.search(PROCESS, corpus, 'webhook retry', undefined),
-      index.search(PROCESS, corpus, 'webhook retry', undefined),
-      ...Array.from({ length: 3 }, () => search(corpus, 'webhook retry')),
-    ];
+    it('should return only the records with both words for "webhook retry" in the AND, a precision of 1.0', () => {
+      const retry = new Set(idsOf(withWord('retry')));
+      const expected = idsOf(withWord('webhook')).filter((id) => retry.has(id));
 
-    expect(calls[0]).not.toHaveLength(0);
-    for (const call of calls) expect(call).toEqual(calls[0]);
+      const found = search(corpus, 'webhook retry');
+
+      expect(expected.length).toBeGreaterThan(0);
+      expect([...found].sort()).toEqual([...expected].sort());
+    });
+
+    it('should find nothing for a term that is not in the corpus', () => {
+      expect(search(corpus, 'zzqxwv')).toEqual([]);
+    });
+
+    it('should return the same result from the cold index, the cached one and a fresh one', () => {
+      const index = createSearchIndex();
+
+      const calls = [
+        index.search(PROCESS, corpus, 'webhook retry', undefined),
+        index.search(PROCESS, corpus, 'webhook retry', undefined),
+        ...Array.from({ length: 3 }, () => search(corpus, 'webhook retry')),
+      ];
+
+      expect(calls[0]).not.toHaveLength(0);
+
+      for (const call of calls) expect(call).toEqual(calls[0]);
+    });
   });
 });

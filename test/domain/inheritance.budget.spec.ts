@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 import { median } from 'es-toolkit';
 import { buildInheritance } from '../../src/domain/inheritance.ts';
 import { buildVigency } from '../../src/domain/relations.ts';
@@ -39,14 +39,15 @@ function timeInheritance(records: Linked[]) {
   return { ms: performance.now() - start, inheritance };
 }
 
-describe('lineage inheritance cost', () => {
-  test.each([
+describe('buildInheritance', () => {
+  it.each([
     ['ascending', (records: Linked[]) => records],
     ['descending', (records: Linked[]) => [...records].reverse()],
   ])(
-    'stays linear on a %s lineage of 8000 versions',
+    `should stay linear on a %s lineage of ${VERSIONS} versions, median of ${ROUNDS} rounds within ${CEILING_MS} ms`,
     (_label, order) => {
       const records = order(longLineage());
+
       const runs = Array.from({ length: ROUNDS }, () => timeInheritance(records));
 
       expect(median(runs.map(({ ms }) => ms))).toBeLessThanOrEqual(CEILING_MS);
@@ -56,7 +57,7 @@ describe('lineage inheritance cost', () => {
     60_000,
   );
 
-  test('stays linear with a current contradicts on every support of a descending lineage', () => {
+  it('should stay linear with a current contradicts on every support of a descending lineage', () => {
     const records = [...longLineage({ contradicts: true })].reverse();
     const runs = Array.from({ length: ROUNDS }, () => timeInheritance(records));
 
