@@ -169,6 +169,22 @@ describe('execute', () => {
       });
     });
 
+    test('logger que lança no warn não troca o resultado já produzido por INTERNAL', async () => {
+      const { deps, logger } = makeDeps();
+      logger.mockImplementation((record) => {
+        if (record.event === 'tool-over-cap') throw new Error('stderr closed');
+      });
+      const full = resultOf(OVER_CAP + 1);
+
+      const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => full);
+
+      expect(logger).toHaveBeenCalledWith(expect.objectContaining({ event: 'tool-over-cap' }));
+      expect(result).toEqual({
+        structuredContent: full,
+        content: [{ type: 'text', text: JSON.stringify(full) }],
+      });
+    });
+
     test('no teto não emite', async () => {
       const { deps, logger } = makeDeps();
 
