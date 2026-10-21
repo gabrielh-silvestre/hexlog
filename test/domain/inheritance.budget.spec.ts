@@ -57,7 +57,7 @@ describe('buildInheritance', () => {
     60_000,
   );
 
-  test('stays linear with a current contradicts on every support of a descending lineage', () => {
+  it('should stay linear with a current contradicts on every support of a descending lineage', () => {
     const records = [...longLineage({ contradicts: true })].reverse();
     const runs = Array.from({ length: ROUNDS }, () => timeInheritance(records));
 

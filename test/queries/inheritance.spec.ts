@@ -150,12 +150,15 @@ describe('QueryService.queryRecords', () => {
 
     const tally = (edges: readonly { kind: string; as?: string }[] = []) =>
       edges.length === 0 ? undefined : countBy(edges, ({ as, kind }) => as ?? kind);
+
     expect(idsOf(counts)).toEqual(idsOf(full));
+
     full.records.forEach((record, index) => {
       expect(at(counts.records, index).inheritedInCounts).toEqual(tally(record.inheritedIn));
       expect(at(counts.records, index).inheritedOutCounts).toEqual(tally(record.inheritedOut));
     });
     const latest = at(counts.records, idsOf(counts).indexOf(u3));
+
     expect(latest.inheritedInCounts).toEqual({ supports: 1, approves: 1 });
   });
 

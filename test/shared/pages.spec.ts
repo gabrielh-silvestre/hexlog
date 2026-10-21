@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { isHighSurrogate, isLowSurrogate, sliceChars } from '../../src/shared/pages.ts';
+import { isHighSurrogate, sliceChars } from '../../src/shared/pages.ts';
 
 // '😀' ocupa duas unidades UTF-16 (um par surrogate).
 const EMOJI = '\u{1F600}';
@@ -18,24 +18,6 @@ describe('isHighSurrogate', () => {
     ['NaN', NaN],
   ])('should refuse %s, outside the high surrogate range', (_label, code) => {
     expect(isHighSurrogate(code)).toBe(false);
-  });
-});
-
-describe('isLowSurrogate', () => {
-  it.each([
-    ['0xdc00', 0xdc00],
-    ['0xdfff', 0xdfff],
-  ])('should accept %s, an edge of the low surrogate range', (_label, code) => {
-    expect(isLowSurrogate(code)).toBe(true);
-  });
-
-  it.each([
-    ['0xd7ff', 0xd7ff],
-    ['0xdbff', 0xdbff],
-    ['0xe000', 0xe000],
-    ['NaN', NaN],
-  ])('should refuse %s, outside the low surrogate range', (_label, code) => {
-    expect(isLowSurrogate(code)).toBe(false);
   });
 });
 

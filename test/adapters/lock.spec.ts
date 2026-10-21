@@ -311,10 +311,12 @@ describe('createLockManager', () => {
 
       expect(refusal).toEqual(timeout('holder-unreadable'));
       expect(message).toContain('ask the user to remove the lock');
+
       const { lock } = processPaths('${XDG_DATA_HOME:-$HOME/.local/share}/hexlog', {
         project: '<project>',
         process: '<process>',
       });
+
       expect(message).toContain(`L="${lock}"`);
       expect(message).not.toContain('<D>');
       expect(message).toContain('rmdir');

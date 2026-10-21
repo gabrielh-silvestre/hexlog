@@ -3,7 +3,6 @@ import { randomUUIDv7 } from 'node:crypto';
 import canonicalize from 'canonicalize';
 import { z } from 'zod';
 import {
-  AliasRef,
   Author,
   BATCH_MAX,
   BatchItem,
@@ -129,17 +128,18 @@ describe('Relation', () => {
   });
 });
 
-describe('AliasRef', () => {
-  it.each(['@a', '@plan-1', `@${'x'.repeat(63)}`])('should accept %s', (value) => {
-    expect(AliasRef.safeParse(value).success).toBe(true);
-  });
-
-  it.each(['plan-1', '', '@', '@A', '@-a', `@${'x'.repeat(64)}`])('should reject %s', (value) => {
-    expect(AliasRef.safeParse(value).success).toBe(false);
-  });
-});
-
 describe('RelationInput', () => {
+  it.each(['@a', '@plan-1', `@${'x'.repeat(63)}`])('should accept the alias %s in to', (value) => {
+    expect(RelationInput.safeParse({ to: value, kind: 'supports' }).success).toBe(true);
+  });
+
+  it.each(['plan-1', '', '@', '@A', '@-a', `@${'x'.repeat(64)}`])(
+    'should reject %s in to',
+    (value) => {
+      expect(RelationInput.safeParse({ to: value, kind: 'supports' }).success).toBe(false);
+    },
+  );
+
   it('should accept an id or @alias in to, with kind or as', () => {
     expect(RelationInput.safeParse({ to: id(), kind: 'supports' }).success).toBe(true);
     expect(RelationInput.safeParse({ to: '@plan-1', kind: 'supports' }).success).toBe(true);

@@ -1839,6 +1839,7 @@ describe('writeSkillFolder', () => {
       expect(() => writeSkillFolder(home, 'hexlog', srcDir)).not.toThrow();
 
       jest.restoreAllMocks();
+
       expect(fs.readFileSync(path.join(claudeDir, 'skills', 'hexlog', 'SKILL.md'), 'utf8')).toBe(
         '# hexlog skill v2\n',
       );
@@ -1875,6 +1876,7 @@ describe('writeSkillFolder', () => {
       const remaining = fs
         .readdirSync(claudeDir)
         .filter((entry) => entry.startsWith('.hexlog-skill-'));
+
       expect(remaining.sort()).toEqual([...kept].sort());
     } finally {
       fs.rmSync(home, { recursive: true, force: true });

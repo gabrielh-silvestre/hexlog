@@ -339,7 +339,7 @@ describe('dist/server.mjs over stdio', () => {
     expect(records.filter(({ event }) => event === 'tool').length).toBeGreaterThanOrEqual(9);
   }, 20_000);
 
-  test('a stdin line over the 10 MiB buffer cap logs transport-error before the server exits', () => {
+  it('should log transport-error for a stdin line over the 10 MiB buffer cap before the server exits', () => {
     const result = spawnSync(process.execPath, [path.join(bundleDir, 'server.mjs')], {
       input: Buffer.alloc(10 * 1024 * 1024 + 1, 'x'),
       encoding: 'utf8',

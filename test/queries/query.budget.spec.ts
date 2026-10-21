@@ -74,7 +74,7 @@ describe('QueryService.queryRecords', () => {
   }, 120_000);
 });
 
-describe('SL4 with lineage inheritance', () => {
+describe('QueryService.queryRecords with lineage inheritance', () => {
   // Mínimo das rodadas, como em `adapters/load.budget.spec.ts`: o teto vale para a melhor medição e
   // não para o pior ruído do runner. Mesmo teto da página sem `text`: a herança liga o cálculo,
   // não o custo.
@@ -98,15 +98,16 @@ describe('SL4 with lineage inheritance', () => {
     return { min: Math.min(...runs.map(({ ms }) => ms)), page: runs[0]!.page };
   }
 
-  test.each([
+  it.each([
     ['on', true],
     ['off', false],
   ])(
-    `first page with the inheritance %s ≤ ${MIN_CEILING_MS} ms (minimum of ${ROUNDS}, ${SIZE} records)`,
+    `should serve the first page with the inheritance %s in ≤ ${MIN_CEILING_MS} ms (minimum of ${ROUNDS}, ${SIZE} records)`,
     (label, lineageInheritance) => {
       const { min, page } = minFirstPage(lineageInheritance);
 
       process.stdout.write(`SL4 min first page, inheritance ${label}: ${min.toFixed(2)} ms\n`);
+
       // Prova que o corpus exercita a herança: sem ela ligada nenhum registro traz relação herdada.
       expect(page.records.some((record) => 'inheritedIn' in record)).toBe(lineageInheritance);
       expect(min).toBeLessThanOrEqual(MIN_CEILING_MS);
