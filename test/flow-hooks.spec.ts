@@ -1074,7 +1074,9 @@ describe('flow-report', () => {
   test('an unknown base ref warns from git and keeps only the only-objective', () => {
     const result = runReport(['feat-r', 'origin/nope']);
     expect(result.status).toBe(0);
-    expect(result.stderr).toMatch(/^flow-report: git: /);
+    expect(result.stderr).toMatch(
+      /^flow-report: git: cannot diff HEAD against "origin\/nope", doc-amended skipped\n$/,
+    );
     expect(rowFor(result, 'd-obj')?.[2]).toBe(OBJECTIVE_UNCITED);
     expect(rowFor(result, 'd-doc')).toBeUndefined();
   }, 30_000);

@@ -2,8 +2,11 @@
 // <slug> [<base>]`. Só aponta, imprime e sai sempre 0; quem corrige é a skill `flow-run`. Lê o log
 // apenas pelo `composeReader` (`scripts/cli-error.ts#openReadOnly`), nunca o diretório de dados;
 // por isso precisa de `node_modules`, ao contrário do hook `flow-hooks.ts`.
-// A entrada de `allow` (`Bash(node scripts/flow/report.ts *)`) aceita argumento livre, então as
-// duas regex abaixo são o freio.
+// O `git` roda em `process.cwd()`, não na raiz do script, e o log vem de `openReadOnly`, também por
+// cwd e `XDG_DATA_HOME`: o spec aponta os dois para um repositório e um diretório de dados
+// temporários, e trocar o cwd quebraria o spec.
+// As regex `SLUG` e `BASE` só validam o argv, que o shell já expandiu: protegem o script e nada
+// executa o argv; o que sobra cai em `hooks-sao-freios` (`docs/directives/estrategia.md`).
 import { spawnSync } from 'node:child_process';
 import { Name } from '../../src/domain/ids.ts';
 import { formatCliError, openReadOnly } from '../cli-error.ts';
@@ -119,7 +122,8 @@ function amendedDocs(base: string): Set<string> | undefined {
   // Saída vazia do merge-base é falha, nunca "diff vazio".
   const diff = mergeBase ? tryGit(process.cwd(), ['diff', '--name-only', mergeBase]) : undefined;
   if (diff === undefined) {
-    warn(`git: no merge-base between HEAD and "${base}", doc-amended skipped`);
+    // O prefixo `git:` fica: a skill `flow-audit` filtra o aviso por ele.
+    warn(`git: cannot diff HEAD against "${base}", doc-amended skipped`);
     return undefined;
   }
   // ponytail: arquivo novo não rastreado fica fora do diff; versionar antes de rodar
