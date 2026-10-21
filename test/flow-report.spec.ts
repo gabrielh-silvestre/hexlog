@@ -119,15 +119,16 @@ describe('flow-report', () => {
     { premises, decisions }: { premises: number; decisions: number },
   ): Promise<void> {
     const shorts = Array.from({ length: premises }, (_, i) => `p${String(i).padStart(2, '0')}`);
-    const [objective] = await registerItems(environment, proc, [
+    const ids = await registerItems(environment, proc, [
       premise(proc, 'objective'),
       ...shorts.map((short) => premise(proc, short)),
     ]);
+    const objective = at(ids, 0);
     await registerItems(
       environment,
       proc,
       Array.from({ length: decisions }, (_, index) =>
-        decision(proc, `d${index}`, [rests(objective ?? '')]),
+        decision(proc, `d${index}`, [rests(objective)]),
       ),
     );
   }
