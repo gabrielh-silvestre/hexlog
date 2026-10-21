@@ -2,6 +2,8 @@
 // Sai 0 com os dois verdes e 1 listando as perguntas reprovadas. Lê o log só pelo `composeReader`
 // (`scripts/cli-error.ts#openReadOnly`), nunca o diretório de dados; por isso precisa de
 // `node_modules`, ao contrário do hook `flow-hooks.ts`. O `mark.ts` chama `gateFailures`.
+// Uso do CLI: conferir os gates à mão antes do `mark.ts`, sem gravar o marcador; nenhuma skill o
+// chama. O único argumento aceito é `pre-pr` e ele avalia os dois gates, `pre-pr` e `gaps`.
 import type { composeReader } from '../../src/compose.ts';
 import { Name, Target } from '../../src/domain/ids.ts';
 import { formatCliError, openReadOnly } from '../cli-error.ts';
