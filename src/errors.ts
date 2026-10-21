@@ -323,6 +323,25 @@ export function invalidFilter(path: string, code: string, message: string): Hexl
   return new HexlogError('INVALID_FILTER', 'Invalid filter', [{ path, code, message }]);
 }
 
+/** `path` é o campo da entrada (`/type`) ou o do `records[i]` onde o tipo foi citado. */
+export function typeNotPinned(type: string, path = '/type'): HexlogError {
+  return domainError(
+    'TYPE_NOT_PINNED',
+    path,
+    'not-pinned',
+    `type '${type}' is not pinned in the process`,
+  );
+}
+
+export function markerNotFound(): HexlogError {
+  return domainError(
+    'MARKER_NOT_FOUND',
+    '/marker',
+    'marker-not-found',
+    'marker record not found in process',
+  );
+}
+
 export function markerProcessNotFound(
   process: Name,
   message = 'marker names a process that does not exist',

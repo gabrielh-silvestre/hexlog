@@ -1,6 +1,6 @@
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { RuleCode, Violation } from '../../domain/relations.ts';
-import { domainError, HexlogError, invalidRecord } from '../../errors.ts';
+import { domainError, type HexlogError, invalidRecord } from '../../errors.ts';
 
 const RULE_MESSAGES: Record<RuleCode, string> = {
   'self-relation': 'a record cannot relate to itself',
@@ -25,18 +25,4 @@ export function ruleRefusal(path: string, { code, current }: Violation): HexlogE
   const message = RULE_MESSAGES[code];
   if (code === 'not-current') return domainError('FORK_REJECTED', path, code, message, { current });
   return invalidRecord([{ path, code, message, ...omitBy({ current }, isUndefined) }]);
-}
-
-/**
- * As portas apontam o campo da tool que presumem (`/process`, `/hash`...) ou nenhum (`IO_ERROR`).
- * Quando o valor veio de `records[i]`, o serviço refaz o `path` de qualquer erro de porta para o
- * campo certo do lote e, se o erro é de outro processo que o da chamada, `process` o nomeia.
- */
-export function withPath(error: unknown, path: string, process?: string): unknown {
-  if (!(error instanceof HexlogError)) return error;
-  return new HexlogError(
-    error.code,
-    error.message,
-    error.details.map((detail) => ({ ...detail, path, ...omitBy({ process }, isUndefined) })),
-  );
 }

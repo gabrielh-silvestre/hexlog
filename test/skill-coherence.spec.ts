@@ -342,7 +342,7 @@ const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
   'commands/definition.ts#targetVersion': ['BREAKING_CHANGE'],
   'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
   'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-  'commands/register/static.ts#pinnedSchema': ['TYPE_NOT_PINNED'],
+  'errors.ts#typeNotPinned': ['TYPE_NOT_PINNED'],
   'commands/register/static.ts#checkData': ['checkData'],
   'errors.ts#gateNotFound': ['GATE_NOT_FOUND'],
   'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],

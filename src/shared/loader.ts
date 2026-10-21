@@ -11,7 +11,7 @@ import {
 import type { Hash, RecordId } from '../domain/ids.ts';
 import type { Manifest } from '../domain/manifest.ts';
 import { BATCH_MAX } from '../domain/record.ts';
-import { HexlogError } from '../errors.ts';
+import { markerNotFound } from '../errors.ts';
 import type { ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
 
 // Tetos de saída da verificação de cadeia, como no 0.x.
@@ -179,10 +179,7 @@ function cutAtMarker(parsed: ParsedLog, marker: RecordId | null, start: Expected
       end: isUndefined(last) ? start : after(last),
     };
   }
-  const message = 'marker record not found in process';
-  throw new HexlogError('MARKER_NOT_FOUND', message, [
-    { path: '/marker', code: 'marker-not-found', message },
-  ]);
+  throw markerNotFound();
 }
 
 function indexBatches(lines: readonly ParsedLine[]): Map<string, BatchEntry> {

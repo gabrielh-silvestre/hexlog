@@ -13,7 +13,13 @@ import {
   type RuleContext,
   type Vigency,
 } from '../../domain/relations.ts';
-import { brokenChain, cycleRejected, HexlogError, relationNotFound } from '../../errors.ts';
+import {
+  brokenChain,
+  cycleRejected,
+  HexlogError,
+  relationNotFound,
+  withPath,
+} from '../../errors.ts';
 import type {
   AttachmentReader,
   Decision,
@@ -30,7 +36,7 @@ import {
   type VerifiedProcess,
 } from '../../shared/loader.ts';
 import { checkAttachments } from './attachments.ts';
-import { ruleRefusal, withPath } from './errors.ts';
+import { ruleRefusal } from './errors.ts';
 import { isAliasRef, type PreparedItem } from './static.ts';
 
 /**

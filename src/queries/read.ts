@@ -1,6 +1,12 @@
 import { isNotNil, isUndefined } from 'es-toolkit';
 import type { Hash, Marker, Name, RecordId } from '../domain/ids.ts';
-import { brokenChain, HexlogError, markerProcessNotFound, projectNotFound } from '../errors.ts';
+import {
+  brokenChain,
+  HexlogError,
+  mapDetails,
+  markerProcessNotFound,
+  projectNotFound,
+} from '../errors.ts';
 import type { ProcessReader, ProcessRef } from '../ports.ts';
 import { loadVerified, type VerifiedProcess } from '../shared/loader.ts';
 
@@ -61,10 +67,7 @@ function loadCut(
     if (lostMarker && isNotNil(cutAt) && !loadVerified(store, ref).chain.ok) {
       throw brokenChain(ref.process);
     }
-    if (lostMarker) {
-      const details = error.details.map((detail) => ({ ...detail, process: ref.process }));
-      throw new HexlogError(error.code, error.message, details);
-    }
+    if (lostMarker) throw mapDetails(error, (detail) => ({ ...detail, process: ref.process }));
     throw error;
   }
 }
@@ -87,11 +90,7 @@ export function readScope(
     return readCut(store, target, marker);
   } catch (error) {
     if (!(error instanceof HexlogError) || error.code !== 'MARKER_NOT_FOUND') throw error;
-    throw new HexlogError(
-      error.code,
-      error.message,
-      error.details.map((detail) => ({ ...detail, path: markerPath })),
-    );
+    throw mapDetails(error, (detail) => ({ ...detail, path: markerPath }));
   }
 }
 

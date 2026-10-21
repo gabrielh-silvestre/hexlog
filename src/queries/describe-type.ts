@@ -2,7 +2,7 @@ import { isUndefined } from 'es-toolkit';
 import type { RecordType } from '../domain/definitions.ts';
 import type { Name } from '../domain/ids.ts';
 import { withoutFreePatterns } from '../domain/schema-walk.ts';
-import { HexlogError, invalidInput, projectNotFound, typeNotFound } from '../errors.ts';
+import { invalidInput, projectNotFound, typeNotFound, typeNotPinned } from '../errors.ts';
 import type { DefinitionReader, ProcessReader } from '../ports.ts';
 
 export type DescribeTypeInput = {
@@ -21,13 +21,6 @@ export type DescribeTypeResult = {
   /** Sem `pattern` e `patternProperties`: o hexlog não os aplica, então não os mostra. */
   schema: RecordType;
 };
-
-function typeNotPinned(type: Name): HexlogError {
-  const message = `type '${type}' is not pinned in the process`;
-  return new HexlogError('TYPE_NOT_PINNED', message, [
-    { path: '/type', code: 'not-pinned', message },
-  ]);
-}
 
 export function createDescribeType(deps: {
   store: ProcessReader;

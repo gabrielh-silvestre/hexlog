@@ -12,7 +12,7 @@ import {
 } from '../domain/definitions.ts';
 import type { Change } from '../domain/definitions.ts';
 import type { Hash, Name } from '../domain/ids.ts';
-import { HexlogError, issueDetails } from '../errors.ts';
+import { fromIssues, HexlogError } from '../errors.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore, Validator } from '../ports.ts';
 
 type Breaking = { breaking?: boolean };
@@ -64,10 +64,11 @@ function shapeOf<T>(schema: ZodType<T>): (candidate: unknown) => T {
   return (candidate) => {
     const parsed = schema.safeParse(candidate);
     if (parsed.success) return parsed.data;
-    throw new HexlogError(
+    throw fromIssues(
       'INVALID_INPUT',
       'definition does not match its shape',
-      issueDetails(parsed.error.issues, ''),
+      parsed.error.issues,
+      '',
     );
   };
 }
@@ -79,10 +80,11 @@ function typeRule(validator: Validator): Rule<'types'> {
     shape(schema) {
       const parsed = RecordType.safeParse(schema);
       if (!parsed.success) {
-        throw new HexlogError(
+        throw fromIssues(
           'INVALID_SCHEMA',
           'schema is not a JSON object within the size ceiling',
-          issueDetails(parsed.error.issues, '/schema'),
+          parsed.error.issues,
+          '/schema',
         );
       }
       // O validador já limita a 50 (não trunca de novo) e devolve o `path` relativo ao documento do
