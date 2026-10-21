@@ -156,7 +156,7 @@ const denyCases: I4Case[] = [
     command: 'cat ~/.local/*/hexlog/x',
   },
   {
-    name: '** whose literal prefix is an ancestor of D (R-6)',
+    name: '** whose literal prefix is an ancestor of D',
     command: 'cat ~/.local/**/events.jsonl',
   },
   {

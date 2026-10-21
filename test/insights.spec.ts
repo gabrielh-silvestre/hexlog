@@ -53,7 +53,7 @@ describe('scripts/insights.ts', () => {
   //   seq 0 note com chave `k-a` e seq 4 note com outra chave e o mesmo conteúdo (nenhum é chave em excesso);
   //   seq 1 note sem chave e seq 2 note sem chave com o mesmo conteúdo (possível duplicata);
   //   seq 3 task com chave e conteúdo único (chave em excesso).
-  // alpha/run-3: um lote de 2 registros com chave e conteúdo único (G4: não é chave em excesso) e um
+  // alpha/run-3: um lote de 2 registros com chave e conteúdo único (não é chave em excesso) e um
   //   registro `doc` que cita um anexo.
   beforeAll(async () => {
     ({ xdg: xdgHome, dataDir: dataHome } = newDataHome());

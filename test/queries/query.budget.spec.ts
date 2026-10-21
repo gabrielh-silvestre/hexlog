@@ -106,7 +106,7 @@ describe('QueryService.queryRecords with lineage inheritance', () => {
     (label, lineageInheritance) => {
       const { min, page } = minFirstPage(lineageInheritance);
 
-      process.stdout.write(`SL4 min first page, inheritance ${label}: ${min.toFixed(2)} ms\n`);
+      process.stdout.write(`min first page, inheritance ${label}: ${min.toFixed(2)} ms\n`);
 
       // Prova que o corpus exercita a herança: sem ela ligada nenhum registro traz relação herdada.
       expect(page.records.some((record) => 'inheritedIn' in record)).toBe(lineageInheritance);
