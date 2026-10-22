@@ -4,6 +4,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+### Alterado
+
+- A skill `hexlog-flow` ganha a seção "Leitura enxuta", que ensina `fields`, `relations`, `changesSince` com `limit: 0` e `targets` para ler o log gastando menos contexto (#172).
+
 ## [1.2.1] - 2026-10-21
 
 Patch de correções. O hook de isolamento do Bash passa a conferir o que vem depois de um `#` no comando, o instalador passa a limpar resíduos de execução interrompida e recusa com mensagem clara o filesystem sem hard link, e o servidor registra no stderr a queda do transporte stdio. A seção Migração traz o que a 1.1.2 deixou de avisar.
