@@ -350,6 +350,52 @@ describe('QueryService.queryRecords', () => {
     expect(at(project.records, 0).needsReview).toEqual({ staleIn: [], staleOut: [evidence] });
   });
 
+  describe('with an edge to a record of another process', () => {
+    async function verdictSupportingEvidenceOfRun1(supersedeEvidence: boolean) {
+      const setup = querySetup();
+      setup.createLegacyProcess('run-1');
+      setup.createLegacyProcess('run-2');
+      const { registerOne } = setup;
+      const evidence = await registerOne('run-1', note('evidence'), 1);
+      const verdict = await registerOne(
+        'run-2',
+        note('verdict', { relations: [supports(evidence)] }),
+        2,
+      );
+      if (supersedeEvidence) {
+        await registerOne('run-1', note('evidence 2', { relations: [supersedes(evidence)] }), 3);
+      }
+      return { ...setup, verdict };
+    }
+
+    it('should count the edge in `outCounts` and not in `nonCurrentOutCounts` in process scope', async () => {
+      const { query, verdict } = await verdictSupportingEvidenceOfRun1(true);
+
+      const page = query({ process: 'run-2', ids: [verdict], relations: 'counts' });
+
+      expect(at(page.records, 0).outCounts).toEqual({ supports: 1 });
+      expect(at(page.records, 0)).not.toHaveProperty('nonCurrentOutCounts');
+    });
+
+    it('should move the edge to `nonCurrentOutCounts` in project scope when the target is superseded', async () => {
+      const { query, verdict } = await verdictSupportingEvidenceOfRun1(true);
+
+      const page = query({ scope: 'project', ids: [verdict], relations: 'counts' });
+
+      expect(at(page.records, 0).nonCurrentOutCounts).toEqual({ supports: 1 });
+      expect(at(page.records, 0)).not.toHaveProperty('outCounts');
+    });
+
+    it('should count the edge in `outCounts` in project scope when the target is current', async () => {
+      const { query, verdict } = await verdictSupportingEvidenceOfRun1(false);
+
+      const page = query({ scope: 'project', ids: [verdict], relations: 'counts' });
+
+      expect(at(page.records, 0).outCounts).toEqual({ supports: 1 });
+      expect(at(page.records, 0)).not.toHaveProperty('nonCurrentOutCounts');
+    });
+  });
+
   it('should carry the hint for an empty selection with a prefix that only matches without the dot boundary', async () => {
     const { query } = await seeded();
 

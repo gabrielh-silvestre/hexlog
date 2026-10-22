@@ -6,7 +6,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ### Alterado
 
-- A `query` em `counts` (o padrão da tool) passa a contar em `inCounts` e `outCounts` só as arestas vigentes e traz as não vigentes em `nonCurrentInCounts` e `nonCurrentOutCounts`, no mesmo formato: o apoio de uma premissa revogada deixa de parecer apoio vivo.
+- A `query` em `counts` (o padrão da tool) passa a contar em `inCounts` e `outCounts` só as arestas vigentes e traz as não vigentes em `nonCurrentInCounts` e `nonCurrentOutCounts`, no mesmo formato: o apoio de uma premissa revogada deixa de parecer apoio vivo (#261).
 - A skill `hexlog-flow` ganha a seção "Leitura enxuta", que ensina `fields`, `relations`, `changesSince` com `limit: 0` e `targets` para ler o log gastando menos contexto (#172).
 
 ### Migração
