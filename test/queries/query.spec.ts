@@ -608,7 +608,7 @@ describe('QueryService.queryRecords', () => {
       return { ...setup, decision, premise };
     }
 
-    it('should count the revoked premise only in `nonCurrentInCounts` of the decision it supports', async () => {
+    it('should split the supports of a decision between `inCounts` and `nonCurrentInCounts` when a premise is revoked', async () => {
       const { query, decision } = await withRevokedPremise();
 
       const page = query({ process: 'run-1', ids: [decision], relations: 'counts' });
@@ -636,6 +636,9 @@ describe('QueryService.queryRecords', () => {
     it('should omit each empty count map independently of the others', async () => {
       const { query, decision, premise } = await withRevokedPremise();
 
+      const countKeys = (record: object) =>
+        Object.keys(record).filter((key) => key.endsWith('Counts'));
+
       const page = query({
         process: 'run-1',
         ids: [decision, premise],
@@ -643,11 +646,8 @@ describe('QueryService.queryRecords', () => {
         relations: 'counts',
       });
 
-      const countKeys = (index: number) =>
-        Object.keys(at(page.records, index)).filter((key) => key.endsWith('Counts'));
-
-      expect(countKeys(0)).toEqual(['inCounts', 'nonCurrentInCounts']);
-      expect(countKeys(1)).toEqual(['inCounts', 'outCounts']);
+      expect(countKeys(at(page.records, 0))).toEqual(['inCounts', 'nonCurrentInCounts']);
+      expect(countKeys(at(page.records, 1))).toEqual(['inCounts', 'outCounts']);
     });
   });
 });

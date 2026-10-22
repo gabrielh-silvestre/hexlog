@@ -238,8 +238,12 @@ processo em `details[0].process`.
   só as arestas vigentes; as não vigentes saem nos mapas irmãos `nonCurrentInCounts` e
   `nonCurrentOutCounts`, no mesmo formato (a soma antiga é `inCounts` mais
   `nonCurrentInCounts`, por chave). O nome sem aresta não aparece, e cada mapa vazio é
-  omitido, sem depender dos outros (ausência de um mapa é zero). Vigente é "sem sucessor nem revogação conhecidos na leitura": o destino de outro processo, que o alcance processo não lê, conta em `outCounts`. `full` devolve `in` e `out` por inteiro,
-  como antes de `relations` existir, e `none` não devolve nenhum dos quatro campos. Para
+  omitido, sem depender dos outros (ausência de um mapa é zero). Vigente é "sem sucessor nem
+  revogação conhecidos na leitura": o destino de outro processo, que o alcance processo não
+  lê, conta em `outCounts`. A aresta `supersedes` ou `revokes` de saída sempre conta em
+  `nonCurrentOutCounts`, porque ela própria torna o destino não vigente. `full` devolve `in`
+  e `out` por inteiro, como antes de `relations` existir, e `none` não devolve nenhum dos
+  quatro campos. Para
   seguir uma aresta, peça o registro com `relations: "full"`, ou use `relatedTo` com o id,
   que independe do modo. `relations` fica fora do hash do cursor, como `fields`: a página 2
   pode pedir outro modo. Valor fora de `counts`, `full` e `none` dá `INVALID_INPUT`.
@@ -270,8 +274,9 @@ processo em `details[0].process`.
     cortado, volta a marcar.
 - **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data` (inteiro, ou só
   os `fields` pedidos), as relações no formato de `relations` (`inCounts` e `outCounts` com
-  `nonCurrentInCounts` e `nonCurrentOutCounts`, `in` e `out`, ou nenhuma), `needsReview` (registro vigente cujo apoio
-  morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`, `missing` ou
+  `nonCurrentInCounts` e `nonCurrentOutCounts`, `in` e `out`, ou nenhuma), `needsReview`
+  (registro vigente cujo apoio morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`,
+  `missing` ou
   `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como status, não
   como erro. Com `relations: "full"`, cada relação de entrada é `{kind, as?, from, current}`
   e cada relação de saída é `{kind, as?, to, current?}`: `current` diz se a outra ponta é

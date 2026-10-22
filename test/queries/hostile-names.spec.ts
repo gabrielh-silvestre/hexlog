@@ -46,27 +46,8 @@ describe('QueryService.queryRecords', () => {
   });
 
   describe('with relation names that clash with Object.prototype', () => {
-    it('should handle a relation named constructor in relations counts', async () => {
-      const { definitions, createProcess, registerOne, query } = querySetup();
-      definitions.write(PROJECT, 'relations', 'constructor', '1.0', {
-        name: 'constructor',
-        kind: 'supports',
-      });
-      createProcess('run-1');
-      const evidence = await registerOne('run-1', note('evidence'), 1);
-      await registerOne(
-        'run-1',
-        note('support', { relations: [{ to: evidence, as: 'constructor' }] }),
-        2,
-      );
-
-      const page = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
-
-      expect(at(page.records, 0).inCounts).toEqual({ constructor: 1 });
-      expect(Object.hasOwn(at(page.records, 0).inCounts ?? {}, 'constructor')).toBe(true);
-    });
-
-    it('should handle a relation named constructor in the non-current counts', async () => {
+    /** `support` aponta para `evidence` pela relação `constructor`; `superseded` troca um dos dois. */
+    async function constructorEdge({ superseded }: { superseded?: 'support' | 'evidence' }) {
       const { definitions, createProcess, registerOne, query } = querySetup();
       definitions.write(PROJECT, 'relations', 'constructor', '1.0', {
         name: 'constructor',
@@ -79,17 +60,41 @@ describe('QueryService.queryRecords', () => {
         note('support', { relations: [{ to: evidence, as: 'constructor' }] }),
         2,
       );
-      await registerOne(
-        'run-1',
-        note('support 2', { relations: [{ to: support, kind: 'supersedes' }] }),
-        3,
-      );
+      if (superseded) {
+        await registerOne(
+          'run-1',
+          note('replacement', {
+            relations: [{ to: superseded === 'support' ? support : evidence, kind: 'supersedes' }],
+          }),
+          3,
+        );
+      }
+      return { query, evidence, support };
+    }
+
+    it('should handle a relation named constructor in relations counts', async () => {
+      const { query, evidence } = await constructorEdge({});
 
       const page = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
 
-      expect(at(page.records, 0).nonCurrentInCounts).toEqual({ constructor: 1 });
-      expect(Object.hasOwn(at(page.records, 0).nonCurrentInCounts ?? {}, 'constructor')).toBe(true);
+      expect(at(page.records, 0).inCounts).toEqual({ constructor: 1 });
+      expect(Object.hasOwn(at(page.records, 0).inCounts ?? {}, 'constructor')).toBe(true);
     });
+
+    it.each([
+      { side: 'nonCurrentInCounts', superseded: 'support', target: 'evidence' },
+      { side: 'nonCurrentOutCounts', superseded: 'evidence', target: 'support' },
+    ] as const)(
+      'should handle a relation named constructor in $side',
+      async ({ side, superseded, target }) => {
+        const { query, ...ids } = await constructorEdge({ superseded });
+
+        const page = query({ process: 'run-1', ids: [ids[target]], relations: 'counts' });
+
+        expect(at(page.records, 0)[side]).toEqual({ constructor: 1 });
+        expect(Object.hasOwn(at(page.records, 0)[side] ?? {}, 'constructor')).toBe(true);
+      },
+    );
   });
 });
 

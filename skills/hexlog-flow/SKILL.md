@@ -51,8 +51,10 @@ Registro se acha por busca e se liga por id:
 1. **Busque.** `query` com `type`, `targetPrefix`, `where` (igualdade em campo de
    primeiro nível de `data`, valor escalar) ou `text` (busca textual, até 200
    caracteres, por relevância). Cada registro volta com `id`, `type`, `target`,
-   `author`, `data`, `inCounts: {...}` e `outCounts: {...}` (arestas vigentes por nome de relação; as não
-   vigentes vêm em `nonCurrentInCounts` e `nonCurrentOutCounts`; sem aresta, o mapa não vem), e `needsReview` e `attachmentStatus` quando se aplicam.
+   `author`, `data`, `inCounts: {...}` e `outCounts: {...}` (arestas vigentes por nome de
+   relação; as não vigentes vêm em `nonCurrentInCounts` e `nonCurrentOutCounts`, e a saída
+   `supersedes` ou `revokes` cai sempre nelas; sem aresta, o mapa não vem), e `needsReview`
+   e `attachmentStatus` quando se aplicam.
    Para as arestas inteiras, passe `relations: "full"` (`in` e `out`).
 2. **Pegue o `id`.** Ele é do servidor (`<processo>:<uuid v7>`): nunca monte um à
    mão. Dentro de um mesmo `register`, um item se refere a outro anterior por
