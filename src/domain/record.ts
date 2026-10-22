@@ -73,7 +73,7 @@ export const Relation = z.strictObject({
 export type Relation = z.infer<typeof Relation>;
 
 /** Referência a um item anterior do mesmo lote (D-01). */
-export const AliasRef = z.string().regex(new RegExp(`^@${NAME_SRC}$`));
+const AliasRef = z.string().regex(new RegExp(`^@${NAME_SRC}$`));
 
 /**
  * Relação como o agente a envia: `to` pode ser `@<alias>` e `kind` pode vir de `as` (D-10).

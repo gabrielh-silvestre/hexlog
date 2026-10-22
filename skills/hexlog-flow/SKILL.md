@@ -37,7 +37,7 @@ pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
 | Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou `relations: "full"` e ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
 | Saber o que mudou desde a última leitura | `query` com `changesSince` = o `marker` da leitura anterior | Só na primeira página; ver "Marcador" |
 | Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência. Por padrão (`evidence: "failing"`) a resposta traz só `counts: {...}` e os ids do que reprova; `targets: [...]` avalia vários alvos numa chamada, só com `counts` (para os ids de um alvo reprovado, avalie-o sozinho com o `marker` do lote) |
-| Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro. Para detectar cauda apagada, passe `expectedHead` = o `head` de uma verificação anterior (`head-not-found`) |
+| Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro. Para detectar cauda apagada, passe `expectedHead` = o `head` da verificação mais recente (`head-not-found`), guardado fora do log do hexlog (arquivo, corpo de PR): gravado no log, some com a cauda |
 | Saber o que existe (projetos, processos, o que um processo fixou) | `list` | Sem parâmetros, com `project`, ou com `project` e `process` |
 | Registrar num tipo que você não conhece | `describe_type` com `project`, `type` e `process` | Leia o schema fixado **antes** do `register`; com `process` devolve o tipo que o processo fixou, sem a versão na saída, e `process` junto de uma versão pedida é `INVALID_INPUT` |
 | Guardar o texto de um agente ou de um plano | `attach`, depois `register` com o `hash` devolvido no campo marcado | Duas chamadas, nessa ordem; ver "Anexos" |
@@ -131,7 +131,7 @@ decisão usa:
 
 `key` torna o reenvio seguro: a mesma `key` com o mesmo lote devolve o resultado
 guardado com `replayed: true`, sem gravar de novo; a mesma `key` com lote
-diferente é `IDEMPOTENCY_CONFLICT` (`commands/register/state.ts#assertSameBatch`). A `key` vale dentro do processo, tem até 200
+diferente é `IDEMPOTENCY_CONFLICT` (`errors.ts#keyConflict`). A `key` vale dentro do processo, tem até 200
 caracteres e identifica a **intenção**, não a tentativa: derive-a do que o lote
 faz (ex.: `<target>:abertura`), nunca gere uma nova para reenviar.
 
@@ -229,7 +229,7 @@ processo num gate com pergunta de projeto lê os demais processos como vazios.
 | Situação | O que fazer |
 |---|---|
 | `IO_ERROR` no `register` (`details[0].code` = o errno em minúsculas, como no ENOSPC) | **Resultado incerto**: o lote pode ter ficado inteiro no disco. Reenvie com a **mesma** `key`: devolve `replayed: true` ou grava. Sem `key`, o reenvio pode duplicar. Um `replayed` depois de um fsync que falhou não garante o lote no disco; o servidor não corrige esse caso |
-| `LOCK_TIMEOUT` com `lock-busy` ou `lock-lost` (`adapters/fs/lock.ts#lockTimeout`) | Retentável com a mesma `key`. `lock-busy`: um dono vivo segurou o processo além da espera (15 s). `lock-lost`: nada foi gravado |
+| `LOCK_TIMEOUT` com `lock-busy` ou `lock-lost` (`errors.ts#lockTimeout`) | Retentável com a mesma `key`. `lock-busy`: um dono vivo segurou o processo além da espera (15 s). `lock-lost`: nada foi gravado |
 | `LOCK_TIMEOUT` com `holder-unreadable` | **Não se resolve repetindo.** O dono do lock não pode ser lido: pare e peça ao usuário que remova o lock |
 | `INTERNAL` no `register` | Resultado incerto: reenvie com a **mesma** `key` |
 | Cancelamento ou tempo estourado no `register`, e o reenvio com `key` dá `ATTACHMENT_NOT_FOUND` | **Não prova que o lote ficou fora.** A chamada original pode ainda esperar o lock e grava se o anexo for guardado antes de ela pegá-lo. Guarde o anexo (`attach`, idempotente) e reenvie com a mesma `key`: devolve `replayed: true` (a original gravou) ou grava |
@@ -286,7 +286,7 @@ nunca mais grava esse hash nesse campo. Duas saídas, nesta ordem de preferênci
    hipotéticos: `plan-legacy` (fixado com o campo `file` sem marca, opcional) e
    `evidence-file` (marcado, com o campo `file`):
 
-   ```
+   ```text
    records: [
      { alias: "file", type: "evidence-file", target: "x.y", data: { file: "<hash>" } },
      { type: "plan-legacy", target: "x.y", data: { isRevision: true, diff: "…" },

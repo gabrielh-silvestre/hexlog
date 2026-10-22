@@ -1,4 +1,4 @@
-// Processo filho do kill -9 (TF1, SE3b): `crash-writer.ts <json>`, com o argumento JSON de
+// Processo filho do kill -9: `crash-writer.ts <json>`, com o argumento JSON de
 // `fixture-args.ts#CrashWriterArgs`.
 // Carrega os módulos e espera uma linha no stdin (o pai sobe os filhos adiantados, porque o
 // carregamento custa ~340 ms); depois grava lotes de 10 registros, um atrás do outro, pelo

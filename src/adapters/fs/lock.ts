@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isUndefined } from 'es-toolkit';
 import { z } from 'zod';
-import { HexlogError, type Detail } from '../../errors.ts';
+import { lockTimeout, type HexlogError } from '../../errors.ts';
 import type { Logger } from '../../shared/logger.ts';
 import { errnoCode, isDirectoryTaken, writeSynced } from './atomic.ts';
 
@@ -110,15 +110,6 @@ function isOrphan(holder: Holder, bootId: string | null): boolean {
   if (holder.bootId !== bootId) return true;
   if (holder.pid === process.pid) return !heldTokens.has(holder.token);
   return !isPidAlive(holder.pid);
-}
-
-function lockTimeout(
-  code: 'lock-busy' | 'lock-lost' | 'holder-unreadable',
-  message: string,
-  pid?: number,
-): HexlogError {
-  const detail: Detail = { path: '/process', code, message, ...(isUndefined(pid) ? {} : { pid }) };
-  return new HexlogError('LOCK_TIMEOUT', message, [detail]);
 }
 
 /**

@@ -9,6 +9,11 @@ import type { HexRecord, KindOrAs, Relation, RelationKind } from './record.ts';
 /** O que a vigência e a prova vencida leem de um registro: o id e as relações gravadas. */
 export type Linked = Pick<HexRecord, 'id' | 'relations'>;
 
+/** A relação encerra a vigência do destino (CONTEXT.md, "Vigente"): `supersedes` ou `revokes`. */
+export function endsVigency(kind: RelationKind): boolean {
+  return kind === 'supersedes' || kind === 'revokes';
+}
+
 export function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
   if (list) list.push(value);
@@ -239,7 +244,7 @@ export function resolveKind(input: KindOrAs, names: RuleContext['names']): Relat
 }
 
 function checkSuccession(kind: RelationKind, { from, to }: RuleContext): Violation | undefined {
-  if (kind !== 'supersedes' && kind !== 'revokes') return undefined;
+  if (!endsVigency(kind)) return undefined;
   if (processOf(from.id) !== processOf(to.id)) return { code: 'cross-process-currency' };
   if (kind === 'supersedes' && from.type !== to.type) return { code: 'type-mismatch' };
   if (kind === 'supersedes' && from.target !== to.target) return { code: 'target-mismatch' };
@@ -276,7 +281,7 @@ function checkVigency(kind: RelationKind, context: RuleContext): Violation | und
   const vigency = context.vigencyFor(kind);
   if (vigency.isCurrent(to.id)) return undefined;
   const current = vigency.currentOf(to.id);
-  if (kind === 'supersedes' || kind === 'revokes') return { code: 'not-current', current };
+  if (endsVigency(kind)) return { code: 'not-current', current };
   if (kind === 'supports') return { code: 'stale-destination', current };
   return undefined;
 }

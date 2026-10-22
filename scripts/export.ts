@@ -2,7 +2,7 @@
 // verificada na leitura; adulterada, o script sai com 2). Inclui os registros não vigentes.
 // Uso: node scripts/export.ts <project>/<process> [--fields a,b,c]
 import { difference, isNil, pick } from 'es-toolkit';
-import { formatCliError, openReadOnly, parseCliArgs } from './cli-error.ts';
+import { openReadOnly, parseCliArgs, reportCliError } from './cli-error.ts';
 import { Name } from '../src/domain/ids.ts';
 import type { QueryRecord } from '../src/queries/query-service.ts';
 
@@ -72,9 +72,7 @@ function main(argv: string[]): number {
     }
     return 0;
   } catch (error) {
-    const { text, exitCode } = formatCliError('export', error);
-    console.error(text);
-    return exitCode;
+    return reportCliError('export', error);
   }
 }
 

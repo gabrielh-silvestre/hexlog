@@ -7,11 +7,25 @@ npm test            # jest: testa o código-fonte .ts diretamente
 npm run typecheck   # tsc --noEmit
 npm run lint        # eslint
 npm run format:check
+npm run knip        # export, arquivo e dependência mortos
+npm run lint:md     # markdownlint dos .md
+npm run spell       # cspell (pt-BR) dos .md
+npm run test:coverage  # npm test com cobertura de src/ e piso de 90%
 npm run build       # esbuild, gera os bundles .mjs (equivalente ao passo 1 do instalador)
 ```
 
+O CI, os hooks locais (`pre-commit`, `commit-msg` e `pre-push`) e o que cada
+um roda estão em [qualidade-e-testes.md](directives/qualidade-e-testes.md); o
+estudo de plataformas está em [qualidade-ci.md](qualidade-ci.md).
+
 Os specs de orçamento de tempo (`*.budget.spec.ts`) ficam fora do `npm test` e rodam
 em série em `npm run test:budget`, no CI.
+
+`npm run test:mutation` roda o Stryker só nos specs unitários de `stryker.config.json`,
+à mão, fora do CI e do husky; os relatórios saem em `reports/mutation/`. O `globalSetup`
+fica desligado no Stryker, então a rodada usa o `TMPDIR` real: rode com
+`TMPDIR=$(mktemp -d) npm run test:mutation`. Piso, pedido do dono e limpeza de
+sobra estão em [qualidade-e-testes.md](directives/qualidade-e-testes.md).
 
 ## Scripts de leitura
 

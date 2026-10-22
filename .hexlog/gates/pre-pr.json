@@ -1,6 +1,5 @@
 {
   "questions": [
-    { "kind": "occurred", "select": { "type": "verification", "where": { "result": "passed" } } },
     {
       "kind": "no_pending",
       "pending": { "type": "finding", "where": { "severity": "URGENT" } },

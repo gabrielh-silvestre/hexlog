@@ -1,9 +1,8 @@
 import { isString, isUndefined } from 'es-toolkit';
 import { attachmentFields } from '../../domain/definitions.ts';
 import { Hash, type Name } from '../../domain/ids.ts';
-import { HexlogError } from '../../errors.ts';
+import { attachmentCorrupted, attachmentNotFound, invalidRecord, withPath } from '../../errors.ts';
 import type { AttachmentReader, AttachmentStatus } from '../../ports.ts';
-import { invalidRecord, withPath } from './errors.ts';
 import type { PreparedItem } from './static.ts';
 
 // Mensagem fixa de D-16: aponta as duas saídas para quem ficou preso a um tipo sem a marca.
@@ -14,16 +13,6 @@ const UNMARKED_MESSAGE =
 function stringsOf(value: unknown): string[] {
   if (isString(value)) return [value];
   return Array.isArray(value) ? value.filter(isString) : [];
-}
-
-function missingOrCorrupted(path: string, hash: Hash, status: AttachmentStatus): HexlogError {
-  const [code, message] =
-    status === 'missing'
-      ? (['ATTACHMENT_NOT_FOUND', `attachment '${hash}' not found`] as const)
-      : (['ATTACHMENT_CORRUPTED', `attachment '${hash}' does not match its hash`] as const);
-  return new HexlogError(code, message, [
-    { path, code: status === 'missing' ? 'not-found' : 'corrupted', message },
-  ]);
 }
 
 /**
@@ -58,7 +47,8 @@ export function checkAttachments(
       for (const hash of stringsOf(value)) {
         if (marked.has(field)) {
           const status = statusOf(hash, path);
-          if (status !== 'ok') throw missingOrCorrupted(path, hash, status);
+          if (status === 'missing') throw attachmentNotFound(path, hash);
+          if (status !== 'ok') throw attachmentCorrupted(path, hash);
         } else if (Hash.safeParse(hash).success && statusOf(hash, path) !== 'missing') {
           throw invalidRecord([{ path, code: 'unmarked-attachment', message: UNMARKED_MESSAGE }]);
         }

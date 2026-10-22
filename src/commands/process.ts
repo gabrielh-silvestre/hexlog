@@ -2,7 +2,7 @@ import { isEqual, isUndefined, mapValues, omitBy, union } from 'es-toolkit';
 import { fingerprint, hashOfJcs } from '../domain/chain.ts';
 import { isReservedProcessName, type Name } from '../domain/ids.ts';
 import type { Manifest } from '../domain/manifest.ts';
-import { HexlogError, reservedName } from '../errors.ts';
+import { noDefinitions, reservedName } from '../errors.ts';
 import type {
   AttachmentReader,
   DefinitionKind,
@@ -18,14 +18,14 @@ import { checkBatchShape, prepareBatch, relationNames } from './register/static.
 
 export type { RegisterInput, RegisterResult } from './register/state.ts';
 
-export type CreateProcessInput = { project: Name; process: Name };
+type CreateProcessInput = { project: Name; process: Name };
 
 /**
  * Definição fixada no processo que difere da vigente agora: `current` é a versão vigente, ou `null`
  * quando o nome não tem mais versão no projeto. O manifesto guarda o conteúdo fixado, não a versão
  * (D-03), então a versão fixada não é reportada.
  */
-export type StaleDefinition = { kind: DefinitionKind; name: Name; current: string | null };
+type StaleDefinition = { kind: DefinitionKind; name: Name; current: string | null };
 
 export type CreateProcessResult = {
   project: Name;
@@ -128,10 +128,7 @@ function assertNotReserved(processName: Name): void {
 /** Manifesto vazio é imutável e todo `register` daria `TYPE_NOT_PINNED`: melhor recusar a criar o processo. */
 function assertSomethingRegistered(project: Name, fixed: Manifest['fixed']): void {
   if (KINDS.some((kind) => Object.keys(fixed[kind]).length > 0)) return;
-  const message = `project '${project}' has no definitions; call define_type first`;
-  throw new HexlogError('TYPE_NOT_FOUND', message, [
-    { path: '/project', code: 'unknown-name', message },
-  ]);
+  throw noDefinitions(project);
 }
 
 export function createProcessService(deps: {

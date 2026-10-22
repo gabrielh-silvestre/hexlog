@@ -24,7 +24,7 @@ IDs `H-xx`/`W-xx` recomeçam em 01 a cada relatório. Links internos usam o slug
 
 Um arquivo por publicação; o conteúdo do arquivo é exatamente o que vai ao GitHub.
 
-- `issue-H-xx.md`: primeira linha `title: <título>`, segunda `labels: confidence:<nível>`, linha em branco, corpo.
+- `issue-H-xx.md`: primeira linha `title: <título>`, segunda `labels: mining, confidence:<nível>`, linha em branco, corpo.
 - `comment-<N>.md`: corpo do comentário na issue `#N`, com a evidência nova (frequência, sessões, citação). Achados que reforçam a mesma `#N` vão no mesmo arquivo, um parágrafo por H-xx.
 - Achado `reinforce-only` (prior art sem issue) e achados W-xx não geram rascunho.
 

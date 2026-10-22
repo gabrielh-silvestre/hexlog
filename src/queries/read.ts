@@ -1,6 +1,12 @@
 import { isNotNil, isUndefined } from 'es-toolkit';
 import type { Hash, Marker, Name, RecordId } from '../domain/ids.ts';
-import { brokenChain, HexlogError } from '../errors.ts';
+import {
+  brokenChain,
+  HexlogError,
+  mapDetails,
+  markerProcessNotFound,
+  projectNotFound,
+} from '../errors.ts';
 import type { ProcessReader, ProcessRef } from '../ports.ts';
 import { loadVerified, type VerifiedProcess } from '../shared/loader.ts';
 
@@ -18,22 +24,6 @@ export type Reading = {
   /** Hash da cabeça lida de cada processo (`null` se vazio): prende o cursor ao conteúdo (D-20). */
   markerHashes: Record<Name, Hash | null>;
 };
-
-export function projectNotFound(): HexlogError {
-  const message = 'project not found';
-  return new HexlogError('PROJECT_NOT_FOUND', message, [
-    { path: '/project', code: 'unknown-project', message },
-  ]);
-}
-
-function markerProcessNotFound(
-  process: Name,
-  message = 'marker names a process that does not exist',
-): HexlogError {
-  return new HexlogError('MARKER_NOT_FOUND', message, [
-    { path: '/marker', code: 'process-not-found', message, process },
-  ]);
-}
 
 /**
  * D-24: alcance processo, o marcador tem exatamente uma entrada, a do processo lido; ausente ou
@@ -77,10 +67,7 @@ function loadCut(
     if (lostMarker && isNotNil(cutAt) && !loadVerified(store, ref).chain.ok) {
       throw brokenChain(ref.process);
     }
-    if (lostMarker) {
-      const details = error.details.map((detail) => ({ ...detail, process: ref.process }));
-      throw new HexlogError(error.code, error.message, details);
-    }
+    if (lostMarker) throw mapDetails(error, (detail) => ({ ...detail, process: ref.process }));
     throw error;
   }
 }
@@ -103,11 +90,7 @@ export function readScope(
     return readCut(store, target, marker);
   } catch (error) {
     if (!(error instanceof HexlogError) || error.code !== 'MARKER_NOT_FOUND') throw error;
-    throw new HexlogError(
-      error.code,
-      error.message,
-      error.details.map((detail) => ({ ...detail, path: markerPath })),
-    );
+    throw mapDetails(error, (detail) => ({ ...detail, path: markerPath }));
   }
 }
 

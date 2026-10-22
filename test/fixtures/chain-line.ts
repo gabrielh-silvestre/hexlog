@@ -7,7 +7,7 @@ export type ChainLineOptions = {
   agent: string;
   /** Texto do elo `item` do lote. */
   text: (item: number) => string;
-  /** Com `key`, o primeiro elo leva `batch.key` (D-06). */
+  /** Com `key`, o primeiro elo leva `batch.key`. */
   key?: string;
 };
 

@@ -12,7 +12,13 @@ import {
 } from '../domain/definitions.ts';
 import type { Change } from '../domain/definitions.ts';
 import type { Hash, Name } from '../domain/ids.ts';
-import { HexlogError, issueDetails } from '../errors.ts';
+import {
+  breakingChange,
+  exclusiveWriteExhausted,
+  fromDetails,
+  fromIssues,
+  schemaRootNotObject,
+} from '../errors.ts';
 import type { DefinitionKind, DefinitionOf, DefinitionStore, Validator } from '../ports.ts';
 
 type Breaking = { breaking?: boolean };
@@ -64,10 +70,11 @@ function shapeOf<T>(schema: ZodType<T>): (candidate: unknown) => T {
   return (candidate) => {
     const parsed = schema.safeParse(candidate);
     if (parsed.success) return parsed.data;
-    throw new HexlogError(
+    throw fromIssues(
       'INVALID_INPUT',
       'definition does not match its shape',
-      issueDetails(parsed.error.issues, ''),
+      parsed.error.issues,
+      '',
     );
   };
 }
@@ -79,28 +86,27 @@ function typeRule(validator: Validator): Rule<'types'> {
     shape(schema) {
       const parsed = RecordType.safeParse(schema);
       if (!parsed.success) {
-        throw new HexlogError(
+        throw fromIssues(
           'INVALID_SCHEMA',
           'schema is not a JSON object within the size ceiling',
-          issueDetails(parsed.error.issues, '/schema'),
+          parsed.error.issues,
+          '/schema',
         );
       }
       // O validador já limita a 50 (não trunca de novo) e devolve o `path` relativo ao documento do
       // schema, `''` na raiz: aqui vira o ponteiro para o campo `schema` da entrada.
       const details = validator.checkSchema(parsed.data);
       if (details.length > 0) {
-        throw new HexlogError(
+        throw fromDetails(
           'INVALID_SCHEMA',
           'schema is not a valid JSON Schema',
-          details.map((detail) => ({ ...detail, path: `/schema${detail.path}` })),
+          details,
+          '/schema',
         );
       }
       // O `data` de um registro é sempre objeto: schema de outra raiz nunca aceitaria nenhum.
       if (parsed.data.type !== 'object') {
-        const message = 'schema root must be "type": "object"';
-        throw new HexlogError('INVALID_SCHEMA', message, [
-          { path: '/schema/type', code: 'invalid-type', message },
-        ]);
+        throw schemaRootNotObject();
       }
       return parsed.data;
     },
@@ -135,12 +141,7 @@ function targetVersion<K extends DefinitionKind>(
 ): string {
   if (isUndefined(previous)) return FIRST_VERSION;
   const broken = rule.classify(previous.definition, next) === 'breaking';
-  if (broken && !breaking) {
-    const message = 'change requires breaking: true';
-    throw new HexlogError('BREAKING_CHANGE', message, [
-      { path: rule.breakingPath, code: 'breaking-change', message },
-    ]);
-  }
+  if (broken && !breaking) throw breakingChange(rule.breakingPath);
   return bumpVersion(previous.version, broken || breaking ? 'major' : 'minor');
 }
 
@@ -191,10 +192,7 @@ function defineVersioned<K extends DefinitionKind>(
     };
   }
 
-  const message = 'exclusive write did not succeed';
-  throw new HexlogError('INTERNAL', message, [
-    { path: '', code: 'exclusive-write-exhausted', message },
-  ]);
+  throw exclusiveWriteExhausted();
 }
 
 export function createDefinitionService(deps: {

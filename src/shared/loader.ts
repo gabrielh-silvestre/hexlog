@@ -11,7 +11,7 @@ import {
 import type { Hash, RecordId } from '../domain/ids.ts';
 import type { Manifest } from '../domain/manifest.ts';
 import { BATCH_MAX } from '../domain/record.ts';
-import { HexlogError } from '../errors.ts';
+import { markerNotFound } from '../errors.ts';
 import type { ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
 
 // Tetos de saída da verificação de cadeia, como no 0.x.
@@ -96,7 +96,7 @@ export function formatLine(links: readonly Link[]): string {
 }
 
 /** Linha que entrou no log, com a posição dela no arquivo. */
-export type ParsedLine = { index: number; links: Link[] };
+type ParsedLine = { index: number; links: Link[] };
 
 export type ParsedLog = {
   lines: ParsedLine[];
@@ -179,10 +179,7 @@ function cutAtMarker(parsed: ParsedLog, marker: RecordId | null, start: Expected
       end: isUndefined(last) ? start : after(last),
     };
   }
-  const message = 'marker record not found in process';
-  throw new HexlogError('MARKER_NOT_FOUND', message, [
-    { path: '/marker', code: 'marker-not-found', message },
-  ]);
+  throw markerNotFound();
 }
 
 function indexBatches(lines: readonly ParsedLine[]): Map<string, BatchEntry> {
@@ -240,8 +237,9 @@ export function checkExpectedHead(
 ): Chain {
   // O head da própria verificação fecha sem re-hashear o log e vale mesmo com quebra no meio, onde
   // `chain.head` pode ser de uma linha rejeitada que não está em `records`.
-  // ponytail: o `some` re-hasheia todos os elos quando o head não é o último; o teto de 64 MiB do
-  // log (`MAX_LOG_BYTES`) limita essa segunda passada, e expor os hashes que o `parseLog` já calcula em `isValidLink` a evitaria.
+  // ponytail: o `some` re-hasheia os elos até casar; a passada inteira só acontece no
+  // `head-not-found`. O teto de 64 MiB do log (`MAX_LOG_BYTES`) limita esse custo, e expor os
+  // hashes que o `parseLog` já calcula em `after` (dentro de `checkLinks`) o evitaria.
   if (
     expectedHead === chain.head ||
     expectedHead === anchor(manifest) ||

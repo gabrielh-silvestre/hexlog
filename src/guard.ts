@@ -103,7 +103,7 @@ type ClaudeJsonData = {
 };
 
 /** `permissions.deny` de um `settings.json` já parseado (`parse` do jsonc-parser devolve `any`). */
-export function denyOf(settingsData: unknown): unknown[] {
+function denyOf(settingsData: unknown): unknown[] {
   const deny = (settingsData as SettingsData | undefined)?.permissions?.deny;
   return Array.isArray(deny) ? deny : [];
 }
@@ -154,7 +154,7 @@ function applyMissingDeny(settingsText: string, expected: ExpectedRules): string
  * `<D>` atual e `X` ausente do disco (`exists`): um `X` que ainda existe pode guardar log, e o deny
  * é o isolamento dele. Um trio incompleto, outro basename ou regra avulsa do usuário nunca entra.
  */
-export function staleDenyRules(
+function staleDenyRules(
   currentDeny: unknown[],
   expected: ExpectedRules,
   exists: (path: string) => boolean,

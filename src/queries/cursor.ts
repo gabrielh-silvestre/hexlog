@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Hash, Name, RecordId } from '../domain/ids.ts';
-import { HexlogError, issueDetails } from '../errors.ts';
+import { invalidCursor, invalidCursorPayload } from '../errors.ts';
 
 /**
  * Teto do texto do cursor, conferido antes de decodificar. **Palpite**: um cursor real tem
@@ -34,15 +34,6 @@ export function encodeCursor(payload: CursorPayload): string {
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
 
-const RERUN_ADVICE = '; rerun the query without cursor';
-
-/** `INVALID_CURSOR` com um único `Detail` em `/cursor`; toda mensagem manda reexecutar sem cursor. */
-export function invalidCursor(code: string, message: string): HexlogError {
-  return new HexlogError('INVALID_CURSOR', 'Invalid cursor', [
-    { path: '/cursor', code, message: message + RERUN_ADVICE },
-  ]);
-}
-
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(Buffer.from(text, 'base64url').toString('utf8'));
@@ -58,14 +49,7 @@ export function decodeCursor(text: string): CursorPayload {
   }
   const result = CursorPayload.safeParse(parseJson(text));
   if (!result.success) {
-    throw new HexlogError(
-      'INVALID_CURSOR',
-      'Invalid cursor',
-      issueDetails(result.error.issues, '/cursor').map((detail) => ({
-        ...detail,
-        message: detail.message + RERUN_ADVICE,
-      })),
-    );
+    throw invalidCursorPayload(result.error.issues);
   }
   return result.data;
 }

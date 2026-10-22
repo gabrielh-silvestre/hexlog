@@ -1,31 +1,34 @@
-// Relatório das decisões de um trabalho cuja base merece revisão: `node .claude/hooks/flow-report.ts
+// Relatório das decisões de um trabalho cuja base merece revisão: `node scripts/flow/report.ts
 // <slug> [<base>]`. Motivos: `only-objective`, `only-sentinel`, `doc-amended`, `critical-gap` (freio
 // do aval da cadeira do dono, segura o `mark`), `critical-gap-review` (só pede o julgamento da
 // review, não segura o `mark`) e `rests-on-simulated`. Só aponta, imprime e sai sempre 0; quem
-// corrige é a skill `flow-run`. Só builtins do Node, sem import fora de `.claude/hooks/`. Lê o log apenas pela exportação oficial
-// (`scripts/export.ts` em processo filho), nunca o diretório de dados; por isso precisa de
-// `node_modules`, ao contrário do `flow-hooks.ts`.
-// A entrada de `allow` (`Bash(node .claude/hooks/flow-report.ts *)`) aceita argumento livre, então
-// as duas regex abaixo são o freio.
+// corrige é a skill `flow-run`. Lê o log apenas pelo `composeReader`
+// (`scripts/cli-error.ts#openReadOnly`), nunca o diretório de dados; por isso precisa de
+// `node_modules`, ao contrário do hook `flow-hooks.ts`.
+// O `git` roda em `process.cwd()`, não na raiz do script, e o log vem de `openReadOnly`, também por
+// cwd e `XDG_DATA_HOME`: o spec aponta os dois para um repositório e um diretório de dados
+// temporários, e trocar o cwd quebraria o spec.
+// As regex `SLUG` e `BASE` só validam o argv, que o shell já expandiu: protegem o script e nada
+// executa o argv; o que sobra cai em `hooks-sao-freios` (`docs/directives/estrategia.md`).
 import { spawnSync } from 'node:child_process';
-import * as path from 'node:path';
+import { Name } from '../../src/domain/ids.ts';
+import { formatCliError, openReadOnly } from '../cli-error.ts';
 
-const REPO_ROOT = path.resolve(import.meta.dirname, '../..');
-const PROJECT = 'hexlog';
+const PROJECT = Name.parse('hexlog');
 const SENTINEL = 'directives.estrategia.none';
 const DEFAULT_BASE = 'origin/develop';
 const MAX_LINES = 100;
 const MAX_UNCITED = 10;
-const MAX_BUFFER = 64 * 1024 * 1024;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const BASE = /^[\w./-]+$/;
-const USAGE = 'usage: node .claude/hooks/flow-report.ts <slug> [<base>]';
+const USAGE = 'usage: node scripts/flow/report.ts <slug> [<base>]';
 
 const CRITICAL_CLASS = /^Class: critical\b/;
 const CRITICAL_RULE = /; rule: (\S+)/;
 const APPROVED_ORIGINS = new Set(['human', 'simulated-approved']);
 
 type Relation = { kind: string; as?: string; to?: string; from?: string; current?: boolean };
+type LinkedRelation = Relation & { to: string };
 type Row = {
   id: string;
   type?: string;
@@ -34,25 +37,38 @@ type Row = {
   data?: Record<string, unknown>;
   in: Relation[];
   out: Relation[];
+  inheritedOut: Relation[];
 };
 /** Docs alterados no diff contra o merge-base e o instante do último commit da base..HEAD que tocou um deles. */
 type Amendments = { docs: Set<string>; committedAt: (file: string) => number | undefined };
 
 const warn = (message: string): void => void process.stderr.write(`flow-report: ${message}\n`);
 
-/** Linhas do `scripts/export.ts` de `proc`; lança com o stderr do filho se ele falhar. */
-function exportRows(proc: string, fields: string): Row[] {
-  const result = spawnSync(
-    process.execPath,
-    ['scripts/export.ts', `${PROJECT}/${proc}`, '--fields', fields],
-    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER },
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(result.stderr.trim());
-  return result.stdout
-    .split('\n')
-    .filter((line) => line !== '')
-    .map((line) => ({ in: [], out: [], ...(JSON.parse(line) as Partial<Row>) }) as Row);
+/** Registros de `proc`, inclusive os não vigentes, como `scripts/export.ts`; lança com o erro do servidor se a leitura falhar. */
+function exportRows(proc: string): Row[] {
+  try {
+    const { records } = openReadOnly().query.queryRecords({
+      project: PROJECT,
+      process: Name.parse(proc),
+      includeNonCurrent: true,
+      relations: 'full',
+      limit: Number.MAX_SAFE_INTEGER,
+    });
+    return records.map(
+      ({ id, type, target, at, data, in: incoming = [], out = [], inheritedOut = [] }) => ({
+        id,
+        type,
+        target,
+        at,
+        data,
+        in: incoming,
+        out,
+        inheritedOut,
+      }),
+    );
+  } catch (error) {
+    throw new Error(formatCliError('export', error).text, { cause: error });
+  }
 }
 
 /** Vigência como o servidor a vê (`src/domain/relations.ts#buildVigency`): sem `supersedes` nem `revokes` de entrada. */
@@ -75,7 +91,7 @@ function createTargetOf(slug: string, own: Row[]): (id: string) => string | unde
     if (!byProcess.has(proc)) {
       try {
         if (!SLUG.test(proc)) throw new Error(`cannot read the process of id "${id}"`);
-        byProcess.set(proc, new Map(exportRows(proc, 'id,target').map((r) => [r.id, r.target])));
+        byProcess.set(proc, new Map(exportRows(proc).map((r) => [r.id, r.target])));
       } catch (error) {
         warn(error instanceof Error ? error.message : String(error));
         byProcess.set(proc, null);
@@ -85,16 +101,19 @@ function createTargetOf(slug: string, own: Row[]): (id: string) => string | unde
   };
 }
 
-const relationsOf = (row: Row, alias: string): Relation[] =>
-  row.out.filter((relation) => relation.as === alias && relation.to !== undefined);
+/** Relações gravadas e herdadas pela linhagem de `supersedes` (`inheritedOut`, só derivado na leitura). */
+const relationsOf = (row: Row, alias: string): LinkedRelation[] =>
+  [...row.out, ...row.inheritedOut].filter(
+    (relation): relation is LinkedRelation => relation.as === alias && relation.to !== undefined,
+  );
 
-/** Citações distintas por target; id sem target conta como citação distinta e desconhecida. */
+/**
+ * Citações distintas por target; id sem target conta como citação distinta e desconhecida. Premissa
+ * revogada continua contando: o relatório lê a citação gravada, não a vigência da premissa.
+ */
 function citedTargets(row: Row, targetOf: (id: string) => string | undefined): Set<string> {
   return new Set(
-    relationsOf(row, 'rests-on').map((relation) => {
-      const id = relation.to ?? '';
-      return targetOf(id) ?? `?${id}`;
-    }),
+    relationsOf(row, 'rests-on').map((relation) => targetOf(relation.to) ?? `?${relation.to}`),
   );
 }
 
@@ -103,14 +122,14 @@ function uncitedReason(
   slug: string,
   deliveryPremises: string[],
 ): string | undefined {
-  const [only] = cited;
-  if (cited.size !== 1 || (only !== `${slug}.premise.objective` && only !== SENTINEL)) {
-    return undefined;
-  }
+  const objective = `${slug}.premise.objective`;
+  const decorative = [objective, SENTINEL].filter((target) => cited.has(target));
+  if (decorative.length === 0 || decorative.length !== cited.size) return undefined;
   const uncited = deliveryPremises.filter((target) => !cited.has(target));
   const shown = uncited.slice(0, MAX_UNCITED).join(',') || '-';
   const rest = uncited.length > MAX_UNCITED ? ` (+${uncited.length - MAX_UNCITED})` : '';
-  return `only-${only === SENTINEL ? 'sentinel' : 'objective'}: uncited=${shown}${rest}`;
+  const label = decorative.map((target) => (target === SENTINEL ? 'sentinel' : 'objective'));
+  return `only-${label.join('+')}: uncited=${shown}${rest}`;
 }
 
 /** Alterações em `docs/directives/` contra o merge-base com `base`; `undefined` se o git falhar. */
@@ -119,7 +138,8 @@ function amendments(base: string): Amendments | undefined {
   // Saída vazia do merge-base é falha, nunca "diff vazio".
   const diff = mergeBase ? tryGit(process.cwd(), ['diff', '--name-only', mergeBase]) : undefined;
   if (!mergeBase || diff === undefined) {
-    warn(`git: no merge-base between HEAD and "${base}", doc-amended skipped`);
+    // O prefixo `git:` fica: a skill `flow-audit` filtra o aviso por ele.
+    warn(`git: cannot diff HEAD against "${base}", doc-amended skipped`);
     return undefined;
   }
   const committedAt = (file: string): number | undefined => {
@@ -150,7 +170,7 @@ function amendedReasons(
   targetOf: (id: string) => string | undefined,
 ): string[] {
   const reasons = relationsOf(row, 'anchored-in').flatMap((relation) => {
-    const target = targetOf(relation.to ?? '');
+    const target = targetOf(relation.to);
     const file = target === undefined ? undefined : docOf(target);
     return target !== undefined && file !== undefined && docs?.has(file) === true
       ? [`doc-amended: ${file} (${target})`]
@@ -215,7 +235,7 @@ function criticalGapReasons(
 
 /** `decision` apoiada em premissa `simulated` que nenhuma `simulated-approved` vigente deriva; a de classe comum (com `fills-gap`) já fechou a lacuna e fica de fora. */
 function simulatedReasons(row: Row, byId: Map<string, Row>): string[] {
-  return relationsOf(row, 'rests-on').flatMap(({ to = '' }) => {
+  return relationsOf(row, 'rests-on').flatMap(({ to }) => {
     const premise = byId.get(to);
     if (premise === undefined || answeredByOf(premise) !== 'simulated') return [];
     if (relationsOf(premise, 'fills-gap').length > 0) return [];
@@ -233,7 +253,7 @@ const lineOf = (row: Row, reasons: string[]): string[] =>
   reasons.length > 0 ? [`${row.id}\t${row.target}\t${reasons.join('; ')}`] : [];
 
 function report(slug: string, base: string): string[] {
-  const rows = exportRows(slug, 'id,type,target,at,data,in,out');
+  const rows = exportRows(slug);
   const current = rows.filter(isCurrent);
   const decisions = current.filter((row) => row.type === 'decision');
   const deliveryPremises = [
@@ -276,7 +296,6 @@ function main(): void {
   } catch (error) {
     warn(error instanceof Error ? error.message : String(error));
   }
-  process.exitCode = 0;
 }
 
 main();
