@@ -186,6 +186,19 @@ describe('QueryService.queryRecords', () => {
     expect(at(counts.records, 0)).not.toHaveProperty('inheritedInCounts');
   });
 
+  it('should keep the inherited counts out of the vigency split of the stored counts', async () => {
+    const { superseded, query } = setup();
+    const { e1 } = await superseded('run-1');
+
+    const counts = query({ process: 'run-1', relations: 'counts', ids: [e1] });
+
+    expect(at(counts.records, 0)).toMatchObject({
+      nonCurrentOutCounts: { supports: 1 },
+      inheritedOutCounts: { supports: 1 },
+    });
+    expect(at(counts.records, 0)).not.toHaveProperty('outCounts');
+  });
+
   it('should bring no inherited field in none mode', async () => {
     const { superseded, query } = setup();
     const { e1, u2 } = await superseded('run-1');

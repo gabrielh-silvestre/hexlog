@@ -436,7 +436,7 @@ describe('QueryService.queryRecords', () => {
     expect(at(page.records, 0)).not.toHaveProperty('in');
     expect(at(page.records, 0)).not.toHaveProperty('out');
     expect(at(page.records, 0).inCounts).toEqual({ approves: 2, supports: 1, supersedes: 1 });
-    expect(at(page.records, 1).outCounts).toEqual({ supersedes: 1 });
+    expect(at(page.records, 1).nonCurrentOutCounts).toEqual({ supersedes: 1 });
   });
 
   it('should omit empty maps and zero kinds in counts mode', async () => {
@@ -468,7 +468,14 @@ describe('QueryService.queryRecords', () => {
       relations: 'none',
     });
 
-    for (const key of ['in', 'out', 'inCounts', 'outCounts']) {
+    for (const key of [
+      'in',
+      'out',
+      'inCounts',
+      'outCounts',
+      'nonCurrentInCounts',
+      'nonCurrentOutCounts',
+    ]) {
       expect(at(page.records, 0)).not.toHaveProperty(key);
     }
   });
@@ -508,7 +515,7 @@ describe('QueryService.queryRecords', () => {
     },
   );
 
-  it('should count non-current edges too in counts mode', async () => {
+  it('should move an edge from a superseded record to `nonCurrentInCounts` in counts mode', async () => {
     const { createProcess, registerOne, query } = querySetup();
     createProcess('run-1');
     const evidence = await registerOne('run-1', note('evidence'), 1);
@@ -527,6 +534,74 @@ describe('QueryService.queryRecords', () => {
     const counts = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
 
     expect(at(full.records, 0).in).toEqual([{ kind: 'supports', from: support, current: false }]);
-    expect(at(counts.records, 0).inCounts).toEqual({ supports: 1 });
+    expect(at(counts.records, 0)).toMatchObject({ nonCurrentInCounts: { supports: 1 } });
+    expect(at(counts.records, 0)).not.toHaveProperty('inCounts');
+  });
+
+  describe('with a revoked premise', () => {
+    async function withRevokedPremise() {
+      const setup = querySetup();
+      setup.createProcess('run-1');
+      const { registerOne } = setup;
+      const decision = await registerOne('run-1', note('decision'), 1);
+      const premise = await registerOne(
+        'run-1',
+        note('premise', { relations: [{ to: decision, kind: 'supports' }] }),
+        2,
+      );
+      await registerOne(
+        'run-1',
+        note('current support', { relations: [{ to: decision, kind: 'supports' }] }),
+        3,
+      );
+      await registerOne(
+        'run-1',
+        note('revoker', { relations: [{ to: premise, kind: 'revokes' }] }),
+        4,
+      );
+      return { ...setup, decision, premise };
+    }
+
+    it('should count the revoked premise only in `nonCurrentInCounts` of the decision it supports', async () => {
+      const { query, decision } = await withRevokedPremise();
+
+      const page = query({ process: 'run-1', ids: [decision], relations: 'counts' });
+
+      expect(at(page.records, 0)).toMatchObject({
+        inCounts: { supports: 1 },
+        nonCurrentInCounts: { supports: 1 },
+      });
+    });
+
+    it('should keep the edge from the revoked premise to the current decision in its `outCounts`', async () => {
+      const { query, premise } = await withRevokedPremise();
+
+      const page = query({
+        process: 'run-1',
+        ids: [premise],
+        includeNonCurrent: true,
+        relations: 'counts',
+      });
+
+      expect(at(page.records, 0)).toMatchObject({ outCounts: { supports: 1 } });
+      expect(at(page.records, 0)).not.toHaveProperty('nonCurrentOutCounts');
+    });
+
+    it('should omit each empty count map independently of the others', async () => {
+      const { query, decision, premise } = await withRevokedPremise();
+
+      const page = query({
+        process: 'run-1',
+        ids: [decision, premise],
+        includeNonCurrent: true,
+        relations: 'counts',
+      });
+
+      const countKeys = (index: number) =>
+        Object.keys(at(page.records, index)).filter((key) => key.endsWith('Counts'));
+
+      expect(countKeys(0)).toEqual(['inCounts', 'nonCurrentInCounts']);
+      expect(countKeys(1)).toEqual(['inCounts', 'outCounts']);
+    });
   });
 });

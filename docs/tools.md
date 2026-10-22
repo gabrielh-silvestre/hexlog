@@ -235,8 +235,10 @@ processo em `details[0].process`.
   padrão da tool) devolve `inCounts` e `outCounts`, mapas `{<nome>: n}` em que `<nome>` é
   o `as` da relação, ou o `kind` quando não há `as`: as relações `rests-on`, `anchored-in` e
   `about-gap` são todas `derivesFrom` e saem separadas pelo nome que o agente gravou. Conta
-  toda aresta, vigente ou não; o nome sem aresta não aparece, e o mapa vazio é omitido
-  (ausência de `inCounts` ou `outCounts` é zero). `full` devolve `in` e `out` por inteiro,
+  só as arestas vigentes; as não vigentes saem nos mapas irmãos `nonCurrentInCounts` e
+  `nonCurrentOutCounts`, no mesmo formato (a soma antiga é `inCounts` mais
+  `nonCurrentInCounts`, por chave). O nome sem aresta não aparece, e cada mapa vazio é
+  omitido, sem depender dos outros (ausência de um mapa é zero). Vigente é "sem sucessor nem revogação conhecidos na leitura": o destino de outro processo, que o alcance processo não lê, conta em `outCounts`. `full` devolve `in` e `out` por inteiro,
   como antes de `relations` existir, e `none` não devolve nenhum dos quatro campos. Para
   seguir uma aresta, peça o registro com `relations: "full"`, ou use `relatedTo` com o id,
   que independe do modo. `relations` fica fora do hash do cursor, como `fields`: a página 2
@@ -267,8 +269,8 @@ processo em `details[0].process`.
   - **`needsReview`:** o `supports` herdado conta como apoio vivo, então some o `staleOut`;
     cortado, volta a marcar.
 - **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data` (inteiro, ou só
-  os `fields` pedidos), as relações no formato de `relations` (`inCounts` e `outCounts`,
-  `in` e `out`, ou nenhuma), `needsReview` (registro vigente cujo apoio
+  os `fields` pedidos), as relações no formato de `relations` (`inCounts` e `outCounts` com
+  `nonCurrentInCounts` e `nonCurrentOutCounts`, `in` e `out`, ou nenhuma), `needsReview` (registro vigente cujo apoio
   morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`, `missing` ou
   `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como status, não
   como erro. Com `relations: "full"`, cada relação de entrada é `{kind, as?, from, current}`

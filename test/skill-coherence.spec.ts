@@ -332,6 +332,8 @@ const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
     'inheritedOut',
     'inheritedInCounts',
     'inheritedOutCounts',
+    'nonCurrentInCounts',
+    'nonCurrentOutCounts',
   ],
 };
 

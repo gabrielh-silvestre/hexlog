@@ -65,6 +65,31 @@ describe('QueryService.queryRecords', () => {
       expect(at(page.records, 0).inCounts).toEqual({ constructor: 1 });
       expect(Object.hasOwn(at(page.records, 0).inCounts ?? {}, 'constructor')).toBe(true);
     });
+
+    it('should handle a relation named constructor in the non-current counts', async () => {
+      const { definitions, createProcess, registerOne, query } = querySetup();
+      definitions.write(PROJECT, 'relations', 'constructor', '1.0', {
+        name: 'constructor',
+        kind: 'supports',
+      });
+      createProcess('run-1');
+      const evidence = await registerOne('run-1', note('evidence'), 1);
+      const support = await registerOne(
+        'run-1',
+        note('support', { relations: [{ to: evidence, as: 'constructor' }] }),
+        2,
+      );
+      await registerOne(
+        'run-1',
+        note('support 2', { relations: [{ to: support, kind: 'supersedes' }] }),
+        3,
+      );
+
+      const page = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
+
+      expect(at(page.records, 0).nonCurrentInCounts).toEqual({ constructor: 1 });
+      expect(Object.hasOwn(at(page.records, 0).nonCurrentInCounts ?? {}, 'constructor')).toBe(true);
+    });
   });
 });
 
