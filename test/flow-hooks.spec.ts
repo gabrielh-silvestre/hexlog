@@ -453,27 +453,23 @@ describe('.claude/hooks/flow-hooks.ts subagent-start', () => {
     expect(hookSpecificOutput.additionalContext).toContain('tell whoever launched you');
   }, 15_000);
 
-  it.each(['oh-my-claudecode:critic', 'oh-my-claudecode:executor'])(
-    'should put the hand-back rule with the owner-seat carve-out on line 1 for %s',
-    (agentType) => {
-      const result = runHook(['subagent-start'], {
-        input: JSON.stringify({ cwd: repo, agent_type: agentType }),
-      });
-      const { hookSpecificOutput } = JSON.parse(result.stdout) as {
-        hookSpecificOutput: { additionalContext: string };
-      };
-      const lines = hookSpecificOutput.additionalContext.split('\n');
+  it('should put the hand-back rule with the owner-seat carve-out on line 1 for any agent', () => {
+    const result = runHook(['subagent-start'], {
+      input: JSON.stringify({ cwd: repo }),
+    });
+    const { hookSpecificOutput } = JSON.parse(result.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    const lines = hookSpecificOutput.additionalContext.split('\n');
 
-      expect(result.status).toBe(0);
-      expect(lines).toHaveLength(3);
-      expect(lines[0]).toContain(
-        'Found a NEW gap or critical point nobody handed you? Stop and hand it back to whoever ' +
-          'launched you (docs/directives/cadeira-do-dono.md); the owner-seat critic and its ' +
-          'context actions answer instead of handing back.',
-      );
-    },
-    15_000,
-  );
+    expect(result.status).toBe(0);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain(
+      'Found a NEW gap or critical point nobody handed you? Stop and hand it back to whoever ' +
+        'launched you (docs/directives/cadeira-do-dono.md); the owner-seat critic and its ' +
+        'context actions answer instead of handing back.',
+    );
+  }, 15_000);
 
   it('should still return the context without readable input', () => {
     const result = runHook(['subagent-start'], { input: 'not json' });

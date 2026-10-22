@@ -636,9 +636,12 @@ describe('docs/directives/adr-0011-camada-estrategica.md', () => {
 });
 
 describe('docs/directives/adr-0012-cadeira-do-dono.md', () => {
-  it.each(['Context', 'Decision', 'Consequences'])('should have the "%s" section', (title) => {
-    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0012-cadeira-do-dono.md'), 'utf8');
+  it.each(['Context', 'Decision', 'Emendas aos ADRs 0010 e 0011', 'Consequences'])(
+    'should have the "%s" section',
+    (title) => {
+      const adr = fs.readFileSync(path.join(directivesDir, 'adr-0012-cadeira-do-dono.md'), 'utf8');
 
-    expect(headingTitlesFrom(adr)).toContain(title);
-  });
+      expect(headingTitlesFrom(adr)).toContain(title);
+    },
+  );
 });
