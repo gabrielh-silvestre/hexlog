@@ -31,7 +31,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `.github/workflows/dependency-review.yml` | Job `dependency-review` em todo PR: a `dependency-review-action` (tag exata `v5.0.0`, sem major publicada) falha em dependência nova com advisory `high` ou acima, sem filtro de licença |
 | `.github/workflows/dependabot-auto-merge.yml` | Job `dependabot-auto-merge` em PR do `dependabot[bot]`: liga o auto-merge nos PRs de `npm` minor e patch; regra em `docs/directives/qualidade-e-testes.md`, pré-condição e risco aceito no cabeçalho do workflow |
 | `.github/workflows/scorecard.yml` | Job `scorecard` do OpenSSF Scorecard, medidor e não gate, com SARIF na aba Security; limitações no cabeçalho do workflow |
-| `.github/workflows/release.yml` | Job `release` no `push` em `main`: cria a tag `vX.Y.Z`, o GitHub Release e o PR de back-merge para `develop`; fluxo em `docs/directives/documentacao.md`, o resto no cabeçalho do workflow |
+| `.github/workflows/release.yml` | Job `release` no `push` em `main`: cria a tag `vX.Y.Z`, o GitHub Release e o PR de back-merge para `develop`; fluxo em `docs/directives/documentacao.md`, o resto no workflow |
 | `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`, version updates semanais em `develop`; regra em `docs/directives/qualidade-e-testes.md`, security updates e `ignore` no cabeçalho do arquivo |
 | `.github/pull_request_template.md` | Template de PR só com os vínculos: `Closes #N`, linha do `CHANGELOG.md` em `[Não lançado]`, PR relacionado, versão ou tag |
 | `SECURITY.md` | Política de segurança: só a versão mais recente recebe correção; o relato é privado, pelo formulário de reporte privado do GitHub (aba Security) |
