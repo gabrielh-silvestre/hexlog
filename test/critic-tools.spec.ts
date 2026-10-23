@@ -102,6 +102,12 @@ describe('buildCommand', () => {
       expect(command.args.at(-1)).toBe('the question with spaces');
     });
 
+    it('should put -- right before a prompt that starts with a dash', () => {
+      const command = buildCommand('claude', { ...turn, prompt: '- a question' });
+
+      expect(command.args.slice(-2)).toEqual(['--', '- a question']);
+    });
+
     it('should pass the mcp config with an equals sign and never as a separate argument', () => {
       const command = buildCommand('claude', turn);
 

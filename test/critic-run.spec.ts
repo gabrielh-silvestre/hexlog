@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from '@jest/globals';
+import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -232,14 +232,13 @@ describe('startSession', () => {
       expect(fs.statSync(reply.message).mode & 0o777).toBe(0o700);
     });
 
-    it('should write the mcp config with mode 0600 and only the hexlog server', () => {
-      const file = path.join(reply.message, 'mcp.json');
+    it('should write the mcp config with mode 0600', () => {
+      expect(fs.statSync(path.join(reply.message, 'mcp.json')).mode & 0o777).toBe(0o600);
+    });
 
-      expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-      expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({
-        mcpServers: {
-          hexlog: { command: 'node', args: ['server.mjs'], env: { HEXLOG_X: '1' } },
-        },
+    it('should keep only the command and args of the hexlog server, without its env', () => {
+      expect(JSON.parse(fs.readFileSync(path.join(reply.message, 'mcp.json'), 'utf8'))).toEqual({
+        mcpServers: { hexlog: { command: 'node', args: ['server.mjs'] } },
       });
     });
 
@@ -799,6 +798,33 @@ describe('askQuestion', () => {
     });
   });
 
+  describe('when a grandchild leaves the process group and keeps the stdout open', () => {
+    let s: Scenario;
+    let reply: Reply;
+
+    beforeAll(async () => {
+      s = scenario();
+      reply = await ask(s, {
+        env: { FAKE_CRITIC_MODE: 'detached-grandchild' },
+        timing: { idleMs: 400 },
+      });
+    }, SPEC_TIMEOUT);
+
+    afterAll(() => {
+      if (fs.existsSync(s.shims.pidFile)) {
+        process.kill(Number(fs.readFileSync(s.shims.pidFile, 'utf8')), 'SIGKILL');
+      }
+    });
+
+    it('should still exit 7 inside the idle window it was given', () => {
+      expect(reply.exitCode).toBe(7);
+    });
+
+    it('should release the lock', () => {
+      expect(fs.existsSync(lockFile(s))).toBe(false);
+    });
+  });
+
   describe('with a credential failure', () => {
     it(
       'should exit 4 without retry and without counting a failure',
@@ -854,18 +880,67 @@ describe('askQuestion', () => {
   );
 
   it.each([
-    ['a question over 100000 bytes', ['x'.repeat(100_001)]],
-    ['an opening prompt over the argv limit', ['a'.repeat(80_000), 'b'.repeat(80_000)]],
+    ['a question over 100000 bytes', ['x'.repeat(100_001)], 'question is over 100000 bytes'],
+    [
+      'an opening prompt over the argv limit',
+      ['a'.repeat(80_000), 'b'.repeat(80_000)],
+      'prompt is over 131000 bytes',
+    ],
   ])(
-    'should refuse %s with a clear message and exit 1',
-    async (_case, questions) => {
+    'should refuse %s with its own message and exit 1',
+    async (_case, questions, message) => {
       const s = scenario({ questions });
 
       const reply = await ask(s);
 
       expect(reply.exitCode).toBe(1);
-      expect(reply.message).toContain('100000 bytes');
+      expect(reply.message).toContain(message);
       expect(turns(s)).toEqual([]);
+    },
+    SPEC_TIMEOUT,
+  );
+
+  it(
+    'should not read the opening question when the session is already confirmed',
+    async () => {
+      const s = scenario({
+        questions: ['x'.repeat(100_001), 'SECOND QUESTION'],
+        session: { confirmed: true, sessionId: 'sess-9' },
+      });
+
+      const reply = await ask(s);
+
+      expect(reply.exitCode).toBe(0);
+    },
+    SPEC_TIMEOUT,
+  );
+
+  it(
+    'should exit 3 saying the cwd is gone when the session directory was removed',
+    async () => {
+      const s = scenario();
+      fs.rmSync(s.cwd, { recursive: true });
+
+      const reply = await ask(s);
+
+      expect(reply.exitCode).toBe(3);
+      expect(reply.message).toContain(`the session cwd is gone: ${s.cwd}`);
+      expect(turns(s)).toEqual([]);
+    },
+    SPEC_TIMEOUT,
+  );
+
+  it(
+    'should escape the control characters of the failure detail',
+    async () => {
+      const s = scenario();
+
+      const reply = await ask(s, {
+        env: { FAKE_CRITIC_MODE: 'error', FAKE_CRITIC_ERROR: 'bad \u001b[31mred' },
+      });
+
+      expect(reply.message).toContain('bad \\u001b[31mred');
+      expect(reply.message).not.toContain('\u001b');
     },
     SPEC_TIMEOUT,
   );
@@ -962,6 +1037,26 @@ describe('closeMailbox', () => {
 
     expect(reply.exitCode).toBe(1);
     expect(fs.existsSync(path.join(dir, 'keep.txt'))).toBe(true);
+  });
+
+  it('should refuse a directory with the mailbox prefix but without session.json', () => {
+    const dir = createTempDir('critic-bare');
+
+    const reply = closeMailbox(dir);
+
+    expect(reply.exitCode).toBe(1);
+    expect(fs.existsSync(dir)).toBe(true);
+  });
+
+  it('should refuse a mailbox that is not directly inside the tmpdir', () => {
+    const dir = path.join(createTempDir('critic-elsewhere'), 'hexlog-critic-nested');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'session.json'), '{}');
+
+    const reply = closeMailbox(dir);
+
+    expect(reply.exitCode).toBe(1);
+    expect(fs.existsSync(dir)).toBe(true);
   });
 });
 

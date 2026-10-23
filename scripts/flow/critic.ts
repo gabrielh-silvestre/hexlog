@@ -8,30 +8,29 @@
 // `--tool` vence `HEXLOG_CRITIC_CLI`; sem nenhum dos dois o critic é o Claude. `--cwd` é o worktree
 // em que o critic roda (padrão: o diretório atual). Saídas: 0 ok, 1 uso, 2 mailbox ausente,
 // 3 ferramenta indisponível (binário, login ou MCP), 4 credencial, 5 turno falho ou sessão
-// `broken`, 6 pergunta em curso, 7 timeout; `ask` interrompido por SIGINT ou SIGTERM sai 130 ou 143.
+// `broken`, 6 pergunta em curso, 7 timeout; `ask` interrompido por SIGHUP, SIGINT ou SIGTERM sai
+// 129, 130 ou 143.
 // A mensagem de sucesso vai ao stdout e a de falha ao stderr. Só age como CLI: importar o módulo não
 // roda nada (guard `import.meta.main`, como o `mark.ts`). Usa `parseArgs` direto, e não o
 // `cli-error.ts#parseCliArgs`, para não puxar o `compose` e ficar só com builtins.
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { askQuestion, closeMailbox, EXIT, startSession, type Reply } from './critic-run.ts';
-import { resolveTool } from './critic-tools.ts';
+import { resolveTool, type Tool } from './critic-tools.ts';
 
 const USAGE =
   'usage: node scripts/flow/critic.ts start <slug> [--cwd <dir>] [--tool claude|agy] | ask <mailbox> | close <mailbox>';
 
 const usage = (message: string): Reply => ({ exitCode: EXIT.usage, message });
 
-function start(slug: string, tool: string | undefined, cwd: string, env: NodeJS.ProcessEnv) {
+function start(slug: string, tool: string | undefined, cwd: string, env: NodeJS.ProcessEnv): Reply {
+  let resolved: Tool;
   try {
-    return startSession({
-      tool: resolveTool({ flag: tool, env: env.HEXLOG_CRITIC_CLI }),
-      slug,
-      cwd,
-    });
+    resolved = resolveTool({ flag: tool, env: env.HEXLOG_CRITIC_CLI });
   } catch (error) {
     return usage(error instanceof Error ? error.message : String(error));
   }
+  return startSession({ tool: resolved, slug, cwd });
 }
 
 const parse = (argv: string[]) =>

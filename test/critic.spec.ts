@@ -133,6 +133,21 @@ describe('scripts/flow/critic.ts', () => {
     );
 
     it(
+      'should prefix an I/O failure of the session with critic: and exit 1',
+      async () => {
+        const s = scenario();
+
+        const result = await cli(s, ['start', 'task-1'], {
+          TMPDIR: path.join(s.tmpdir, 'missing'),
+        });
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toMatch(/^critic: /);
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
       'should exit 3 with the reason on stderr when the tool is unavailable',
       async () => {
         const result = await cli(scenario(), ['start', 'task-1'], { FAKE_CRITIC_LOGGED_OUT: '1' });
@@ -160,6 +175,26 @@ describe('scripts/flow/critic.ts', () => {
           stderr: '',
         });
         expect(readAnswer(mailbox, 1)).toBe('cli answer');
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should resolve a relative mailbox path against the directory the command runs in',
+      async () => {
+        const mailbox = fs.realpathSync(makeMailbox().mailbox);
+
+        const result = await cli(
+          scenario(),
+          ['ask', path.basename(mailbox)],
+          {},
+          path.dirname(mailbox),
+        );
+
+        expect(result).toMatchObject({
+          exitCode: 0,
+          stdout: `${path.join(mailbox, 'a-1.txt')}\n`,
+        });
       },
       SPEC_TIMEOUT,
     );
@@ -193,7 +228,7 @@ describe('scripts/flow/critic.ts', () => {
   });
 
   describe('when a signal interrupts an ask', () => {
-    const signals = ['SIGTERM', 'SIGINT'] as const;
+    const signals = ['SIGTERM', 'SIGINT', 'SIGHUP'] as const;
     type Outcome = {
       run: Run;
       shims: Shims;
@@ -227,6 +262,7 @@ describe('scripts/flow/critic.ts', () => {
     it.each([
       ['SIGTERM', 143],
       ['SIGINT', 130],
+      ['SIGHUP', 129],
     ] as const)('should exit by the signal convention when it gets %s', (signal, code) => {
       expect(outcomes[signal].run.exitCode).toBe(code);
     });

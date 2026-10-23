@@ -12,16 +12,18 @@
 //     slow                  igual a `reply`, com `FAKE_CRITIC_GAP_MS` entre os eventos (4 intervalos)
 //     silent                emite o início e cala para sempre (estoura a inatividade)
 //     grandchild            como `silent`, com um neto vivo no mesmo grupo (pid em `FAKE_CRITIC_PID_FILE`)
+//     detached-grandchild   como `grandchild`, mas o neto sai do grupo (`setsid`) e herda o stdout
 //     credential            resultado `is_error` de credencial, exit 1
-//     error                 resultado `is_error` que não é de credencial, exit 1
+//     error                 resultado `is_error` que não é de credencial, exit 1 (texto em `FAKE_CRITIC_ERROR`)
 //     init-then-fail        emite o `init` e sai 1 sem resultado, com erro em stderr
 //     init-then-fail-once   o 1º turno do log é `init-then-fail`, os seguintes `reply`
 //     fail-once             o 1º turno do log sai 1 sem nenhum evento, os seguintes `reply`
 //     no-id                 `agy` com resultado de sucesso sem id de conversa
 //     huge-line             `reply` com uma linha de 300 KB antes do resultado
 //   FAKE_CRITIC_REPLY       texto da resposta final (padrão `fake critic answer`)
+//   FAKE_CRITIC_ERROR       texto do modo `error` (padrão `API Error: overloaded`)
 //   FAKE_CRITIC_GAP_MS      pausa do modo `slow` (padrão 100)
-//   FAKE_CRITIC_PID_FILE    onde o modo `grandchild` grava o pid do neto
+//   FAKE_CRITIC_PID_FILE    onde os modos `grandchild` e `detached-grandchild` gravam o pid do neto
 //   FAKE_CRITIC_AGY_ID      id de conversa que o `agy` entrega no primeiro turno
 //   FAKE_CRITIC_LOGGED_OUT  `1` faz `claude auth status` e `agy models` saírem 1
 //   FAKE_CRITIC_NO_AGY_MCP  `1` faz `agy mcp list` sair 0 sem listar o `hexlog`
@@ -144,7 +146,9 @@ async function turn(): Promise<void> {
     process.exitCode = 1;
   } else if (mode === 'credential' || mode === 'error') {
     dialect.failure(
-      mode === 'credential' ? CREDENTIAL_TEXT[claude ? 'claude' : 'agy'] : 'API Error: overloaded',
+      mode === 'credential'
+        ? CREDENTIAL_TEXT[claude ? 'claude' : 'agy']
+        : (env.FAKE_CRITIC_ERROR ?? 'API Error: overloaded'),
     );
     process.exitCode = 1;
   } else if (mode === 'init-then-fail') {
@@ -154,10 +158,12 @@ async function turn(): Promise<void> {
     process.exitCode = 1;
   } else if (mode === 'no-id' && !claude) {
     out({ event: 'result', result: { status: 'SUCCESS', response: reply } });
-  } else if (mode === 'silent' || mode === 'grandchild') {
-    if (mode === 'grandchild') {
+  } else if (mode === 'silent' || mode === 'grandchild' || mode === 'detached-grandchild') {
+    if (mode !== 'silent') {
+      const detached = mode === 'detached-grandchild';
       const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
-        stdio: 'ignore',
+        detached,
+        stdio: ['ignore', detached ? 'inherit' : 'ignore', 'ignore'],
       });
       fs.writeFileSync(env.FAKE_CRITIC_PID_FILE ?? '', String(grandchild.pid));
     }

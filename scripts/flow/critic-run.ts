@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
+import { escapeControls } from '../escape-controls.ts';
 import {
   buildCommand,
   buildPrompt,
@@ -34,6 +35,7 @@ export const EXIT = {
   failed: 5,
   busy: 6,
   timeout: 7,
+  sighup: 129,
   sigint: 130,
   sigterm: 143,
 } as const;
@@ -120,20 +122,17 @@ function readHolder(lock: string): Holder | undefined {
   }
 }
 
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
-
 /** Pid morto ou `startTime` diferente (pid reaproveitado); dono vivo nunca. */
 function isOrphan(lock: string, readStartTime: ReadStartTime): boolean {
   const holder = readHolder(lock);
   if (holder === undefined) return true;
-  return !isAlive(holder.pid) || (readStartTime(holder.pid) ?? null) !== holder.startTime;
+  try {
+    process.kill(holder.pid, 0);
+  } catch (error) {
+    // `EPERM`: o pid existe, é de outro usuário
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') return true;
+  }
+  return (readStartTime(holder.pid) ?? null) !== holder.startTime;
 }
 
 function tryLink(staged: string, lock: string): boolean {
@@ -200,6 +199,9 @@ export function runTurn(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const killGroup = () => {
+      // o `close` só chega com os pipes fechados: neto fora do grupo (`setsid`) que herdou o stdout os seguraria
+      child.stdout.destroy();
+      child.stderr.destroy();
       if (child.pid === undefined) return;
       try {
         process.kill(-child.pid, 'SIGKILL');
@@ -221,16 +223,13 @@ export function runTurn(
     };
     signal.addEventListener('abort', onAbort, { once: true });
 
-    const feed = (line: string) => {
-      turn = foldTurn(tool, turn, line);
-    };
     const settle = (exitCode: number | null, spawnError?: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(idle);
       clearTimeout(cap);
       signal.removeEventListener('abort', onAbort);
-      if (!discarding) feed(pending + decoder.end());
+      if (!discarding) turn = foldTurn(tool, turn, pending + decoder.end());
       resolve({ exitCode, timedOut, spawnError, turn, aborted, stderrTail });
     };
 
@@ -245,7 +244,7 @@ export function runTurn(
       }
       const lines = (pending + text).split('\n');
       pending = lines.pop() ?? '';
-      lines.forEach(feed);
+      for (const line of lines) turn = foldTurn(tool, turn, line);
       if (pending.length > lineCap) {
         pending = '';
         discarding = true;
@@ -285,14 +284,19 @@ function loginState(tool: Tool): Login {
   return result.status === 0 ? 'ok' : 'logged-out';
 }
 
-/** Entrada `hexlog` de `~/.claude.json`, ou `undefined` quando falta ou o arquivo não lê. */
+/**
+ * Entrada `hexlog` de `~/.claude.json` só com `type`, `command` e `args` (um `env` com segredo não
+ * vai para `/tmp`), ou `undefined` quando falta ou o arquivo não lê.
+ */
 function hexlogServer(claudeJsonPath: string): object | undefined {
   try {
     const parsed = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf8')) as {
       mcpServers?: { hexlog?: unknown };
     };
     const server = parsed.mcpServers?.hexlog;
-    return typeof server === 'object' && server !== null ? server : undefined;
+    if (typeof server !== 'object' || server === null) return undefined;
+    const { type, command, args } = server as Record<string, unknown>;
+    return { type, command, args };
   } catch {
     return undefined;
   }
@@ -344,7 +348,6 @@ export function startSession({
 
   const mailbox = fs.mkdtempSync(path.join(tmpdir, `${MAILBOX_PREFIX}${slug}-`));
   try {
-    fs.chmodSync(mailbox, 0o700);
     writeAtomic(
       path.join(mailbox, 'mcp.json'),
       JSON.stringify({ mcpServers: { hexlog: server } }),
@@ -375,9 +378,6 @@ function latestQuestion(mailbox: string): number | undefined {
   return numbers.length === 0 ? undefined : Math.max(...numbers);
 }
 
-const readText = (mailbox: string, name: string): string =>
-  fs.readFileSync(path.join(mailbox, name), 'utf8');
-
 function turnFor(session: Session, mailbox: string, prompt: string): Turn {
   const known = session.sessionId;
   return {
@@ -401,7 +401,8 @@ function rememberSession(mailbox: string, session: Session, run: TurnRun): Sessi
 function describeRun(run: TurnRun): string {
   const answer = run.turn.final?.text ?? '';
   const detail = [answer, run.stderrTail.trim()].find((text) => text !== '');
-  return (detail ?? `exit ${run.exitCode}`).slice(0, DETAIL_CHARS);
+  // o texto vem do stream e do stderr da ferramenta e chega ao terminal do dono
+  return escapeControls(detail ?? `exit ${run.exitCode}`).slice(0, DETAIL_CHARS);
 }
 
 const interrupted = (signal: AbortSignal): Reply =>
@@ -415,10 +416,16 @@ type Attempts = {
   signal: AbortSignal;
 };
 
-async function runAttempts(
-  { mailbox, n, prompt, timing, signal }: Attempts,
-  initial: Session,
-): Promise<Reply> {
+/** Grava `a-<n>.txt` (texto truncado) e a sessão confirmada; a mensagem de sucesso é o caminho. */
+function recordAnswer({ mailbox, n, timing }: Attempts, session: Session, run: TurnRun): Reply {
+  const answer = path.join(mailbox, `a-${n}.txt`);
+  writeAtomic(answer, truncateText(run.turn.final?.text ?? '', timing.maxTextBytes), 0o600);
+  writeSession(mailbox, { ...session, confirmed: true, failures: 0 });
+  return reply(EXIT.ok, answer);
+}
+
+async function runAttempts(input: Attempts, initial: Session): Promise<Reply> {
+  const { mailbox, prompt, timing, signal } = input;
   let session = initial;
   let detail = '';
   const attempts = timing.backoffMs.length + 1;
@@ -437,13 +444,7 @@ async function runAttempts(
     }
     detail = describeRun(run);
     const failure = classifyFailure(session.tool, run);
-    if (failure === undefined) {
-      const answer = path.join(mailbox, `a-${n}.txt`);
-      const text = truncateText(run.turn.final?.text ?? '', timing.maxTextBytes);
-      writeAtomic(answer, text, 0o600);
-      writeSession(mailbox, { ...session, confirmed: true, failures: 0 });
-      return reply(EXIT.ok, answer);
-    }
+    if (failure === undefined) return recordAnswer(input, session, run);
     if (failure === 'credential') return reply(EXIT.credential, `credential failure: ${detail}`);
     if (failure === 'timeout') return reply(EXIT.timeout, `turn timed out: ${detail}`);
     const pause = timing.backoffMs[attempt];
@@ -462,16 +463,20 @@ function pendingPrompt(
   session: Session,
   n: number,
 ): { prompt: string } | { refusal: Reply } {
-  const first = readText(mailbox, 'q-1.txt');
-  const current = n === 1 ? first : readText(mailbox, `q-${n}.txt`);
+  const current = fs.readFileSync(path.join(mailbox, `q-${n}.txt`), 'utf8');
+  // com a sessão confirmada o prompt é só a pergunta atual: `q-1` não entra
+  const first =
+    n === 1 || session.confirmed ? current : fs.readFileSync(path.join(mailbox, 'q-1.txt'), 'utf8');
+  if (Math.max(Buffer.byteLength(first), Buffer.byteLength(current)) > QUESTION_MAX_BYTES) {
+    return {
+      refusal: reply(EXIT.usage, `question is over ${QUESTION_MAX_BYTES} bytes (argv limit)`),
+    };
+  }
   const prompt = buildPrompt({ confirmed: session.confirmed, n, first, current });
-  const tooLong =
-    Buffer.byteLength(first) > QUESTION_MAX_BYTES ||
-    Buffer.byteLength(current) > QUESTION_MAX_BYTES ||
-    Buffer.byteLength(prompt) > PROMPT_MAX_BYTES;
-  return tooLong
-    ? { refusal: reply(EXIT.usage, `question is over ${QUESTION_MAX_BYTES} bytes (argv limit)`) }
-    : { prompt };
+  if (Buffer.byteLength(prompt) > PROMPT_MAX_BYTES) {
+    return { refusal: reply(EXIT.usage, `prompt is over ${PROMPT_MAX_BYTES} bytes (argv limit)`) };
+  }
+  return { prompt };
 }
 
 async function answerPending(
@@ -487,6 +492,9 @@ async function answerPending(
   if (fs.existsSync(answer)) return reply(EXIT.ok, answer);
   const built = pendingPrompt(mailbox, session, n);
   if ('refusal' in built) return built.refusal;
+  if (!fs.statSync(session.cwd, { throwIfNoEntry: false })?.isDirectory()) {
+    return reply(EXIT.unavailable, `the session cwd is gone: ${session.cwd}`);
+  }
   // `agy -p` sem login espera 60 s pela OAuth em vez de falhar: confere antes de rodar
   const login = session.tool === 'agy' ? loginState('agy') : 'ok';
   if (login === 'missing') return reply(EXIT.unavailable, 'agy is not available on the PATH');
@@ -499,22 +507,24 @@ export type AskOptions = {
   readStartTime?: ReadStartTime;
 };
 
-const SIGNAL_EXIT = { SIGINT: EXIT.sigint, SIGTERM: EXIT.sigterm } as const;
+const SIGNAL_EXIT = { SIGHUP: EXIT.sighup, SIGINT: EXIT.sigint, SIGTERM: EXIT.sigterm } as const;
 
 /**
  * Responde à pergunta mais recente da mailbox (`q-<n>.txt` para `a-<n>.txt`). Um `ask` por vez
- * (`ask.lock`); SIGINT e SIGTERM matam o grupo do filho e soltam o lock, e a mailbox fica.
+ * (`ask.lock`); SIGHUP, SIGINT e SIGTERM matam o grupo do filho e soltam o lock, e a mailbox fica.
  * A mensagem de sucesso é o caminho da resposta.
  */
 export async function askQuestion(
-  mailbox: string,
+  given: string,
   { timing, readStartTime = procStartTime }: AskOptions = {},
 ): Promise<Reply> {
+  // o `mcp.json` e a saída são lidos de outro `cwd`: o caminho relativo quebraria os dois
+  const mailbox = path.resolve(given);
   if (!fs.existsSync(sessionFile(mailbox))) {
     return reply(EXIT.missingMailbox, `mailbox not found: ${mailbox}`);
   }
   const controller = new AbortController();
-  const handlers = (['SIGINT', 'SIGTERM'] as const).map((name) => {
+  const handlers = (Object.keys(SIGNAL_EXIT) as (keyof typeof SIGNAL_EXIT)[]).map((name) => {
     const handler = () => controller.abort(SIGNAL_EXIT[name]);
     process.on(name, handler);
     return { name, handler };
@@ -535,11 +545,19 @@ export async function askQuestion(
   }
 }
 
-/** Remove a mailbox; idempotente. Só apaga pasta com o prefixo da mailbox, nunca um caminho qualquer. */
-export function closeMailbox(mailbox: string): Reply {
-  if (!path.basename(path.resolve(mailbox)).startsWith(MAILBOX_PREFIX)) {
-    return reply(EXIT.usage, `not a critic mailbox: ${mailbox}`);
+/**
+ * Remove a mailbox; idempotente. Só apaga pasta com o prefixo da mailbox, direto em `os.tmpdir()` e
+ * com `session.json` dentro, nunca um caminho qualquer; pasta ausente sai 0.
+ */
+export function closeMailbox(given: string): Reply {
+  const mailbox = path.resolve(given);
+  const direct = path.dirname(mailbox) === path.resolve(os.tmpdir());
+  if (!direct || !path.basename(mailbox).startsWith(MAILBOX_PREFIX)) {
+    return reply(EXIT.usage, `not a critic mailbox: ${given}`);
+  }
+  if (fs.existsSync(mailbox) && !fs.existsSync(sessionFile(mailbox))) {
+    return reply(EXIT.usage, `not a critic mailbox (no session.json): ${given}`);
   }
   fs.rmSync(mailbox, { recursive: true, force: true });
-  return reply(EXIT.ok, mailbox);
+  return reply(EXIT.ok, given);
 }

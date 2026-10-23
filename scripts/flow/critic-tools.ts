@@ -77,13 +77,16 @@ function claudeCommand({ prompt, mcpConfigPath, sessionId, resume }: Turn): Comm
       CRITIC_RULES,
       resume ? '--resume' : '--session-id',
       sessionId,
-      // o prompt vai por último, depois de toda flag
+      // o prompt vai por último, depois de `--`: pergunta que começa com `-` não vira opção
+      '--',
       prompt,
     ],
   };
 }
 
-function agyCommand({ prompt, sessionId }: Turn): Command {
+export function buildCommand(tool: Tool, turn: Turn): Command {
+  if (tool === 'claude') return claudeCommand(turn);
+  const { prompt, sessionId } = turn;
   return {
     bin: 'agy',
     args: [
@@ -98,10 +101,6 @@ function agyCommand({ prompt, sessionId }: Turn): Command {
       prompt,
     ],
   };
-}
-
-export function buildCommand(tool: Tool, turn: Turn): Command {
-  return tool === 'claude' ? claudeCommand(turn) : agyCommand(turn);
 }
 
 /**
