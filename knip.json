@@ -16,6 +16,8 @@
     "test/fixtures/build-entry.ts",
     "test/fixtures/concurrent-install.ts",
     "test/fixtures/crash-writer.ts",
+    "test/fixtures/critic-driver.ts",
+    "test/fixtures/fake-critic-cli.ts",
     "test/fixtures/fake-mcp-install.ts",
     "test/fixtures/lock-holder.ts"
   ],

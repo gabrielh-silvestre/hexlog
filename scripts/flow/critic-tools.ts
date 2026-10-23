@@ -2,11 +2,11 @@
 // leitura do stream e classificação de falha. Só tipos e funções, sem I/O: `critic-run.ts` spawna e
 // grava, `critic.ts` é a borda de argv. Só builtins do Node, como `marker.ts`.
 
-export const TOOLS = ['claude', 'agy'] as const;
+const TOOLS = ['claude', 'agy'] as const;
 export type Tool = (typeof TOOLS)[number];
 
 /** Modelo fixado do critic `agy` (lista do dono por `agy models`); o nome pode mudar entre versões. */
-export const AGY_MODEL = 'gemini-4-argon-high';
+const AGY_MODEL = 'gemini-4-argon-high';
 /** O tier é o contrato do critic Claude (`cadeira-do-dono.md`, "Exceção de modelo"). */
 const CLAUDE_MODEL = 'opus';
 

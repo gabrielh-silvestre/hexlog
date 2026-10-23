@@ -53,7 +53,7 @@ type Timing = {
   maxTextBytes: number;
 };
 
-export const DEFAULT_TIMING: Timing = {
+const DEFAULT_TIMING: Timing = {
   idleMs: 300_000,
   capMs: 1_800_000,
   backoffMs: [5_000, 20_000],
