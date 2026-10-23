@@ -1,4 +1,4 @@
-import { isUndefined, once, orderBy } from 'es-toolkit';
+import { isUndefined, once, orderBy, partition } from 'es-toolkit';
 import type { Link } from '../domain/chain.ts';
 import { matchesSelector, matchesTargetPrefix, type Selector } from '../domain/gate.ts';
 import { processOf, type Name, type RecordId, type Target } from '../domain/ids.ts';
@@ -181,13 +181,18 @@ export type RelationsMode = (typeof RELATION_MODES)[number];
 
 /**
  * Campos de relação de um registro; o modo decide quais existem (`counts` só inclui o mapa não
- * vazio). Os herdados só saem quando há herança, e `none` não traz nenhum.
+ * vazio). Os herdados só saem quando há herança, e `none` não traz nenhum. No `counts`, `inCounts`
+ * e `outCounts` contam só as arestas cuja outra ponta é vigente; as demais vão em
+ * `nonCurrentInCounts` e `nonCurrentOutCounts`. Os herdados não separam: a aresta herdada não
+ * carrega `current` (`InheritedEdge`).
  */
 export type RelationFields = {
   in?: InRelation[];
   out?: OutRelation[];
   inCounts?: Record<string, number>;
   outCounts?: Record<string, number>;
+  nonCurrentInCounts?: Record<string, number>;
+  nonCurrentOutCounts?: Record<string, number>;
   inheritedIn?: InheritedIn[];
   inheritedOut?: InheritedOut[];
   inheritedInCounts?: Record<string, number>;
@@ -195,8 +200,8 @@ export type RelationFields = {
 };
 
 /**
- * Arestas por nome (`as ?? kind`), vigentes ou não; sem aresta devolve `undefined`. O `Map` evita
- * que um nome como `constructor` herde do protótipo.
+ * Arestas por nome (`as ?? kind`), sem olhar a vigência; sem aresta devolve `undefined`. O `Map`
+ * evita que um nome como `constructor` herde do protótipo.
  */
 function countByName(
   edges: readonly { kind: RelationKind; as?: Name }[],
@@ -215,13 +220,25 @@ export function relationsOf(view: View, link: Link, mode: RelationsMode): Relati
   const inheritedIn = view.inheritance.into(link.id);
   const inheritedOut = view.inheritance.outOf(link.id);
   if (mode === 'counts') {
-    const inCounts = countByName(view.incoming.get(link.id) ?? []);
-    const outCounts = countByName(link.relations);
+    const [currentIn, nonCurrentIn] = partition(view.incoming.get(link.id) ?? [], ({ from }) =>
+      view.vigency.isCurrent(from.id),
+    );
+    // Destino que a leitura não alcança (outro processo no alcance processo) não tem sucessor nem
+    // revogação conhecidos: `isCurrent` o dá por vigente e a aresta conta em `outCounts`.
+    const [currentOut, nonCurrentOut] = partition(link.relations, ({ to }) =>
+      view.vigency.isCurrent(to),
+    );
+    const inCounts = countByName(currentIn);
+    const nonCurrentInCounts = countByName(nonCurrentIn);
+    const outCounts = countByName(currentOut);
+    const nonCurrentOutCounts = countByName(nonCurrentOut);
     const inheritedInCounts = countByName(inheritedIn);
     const inheritedOutCounts = countByName(inheritedOut);
     return {
       ...(isUndefined(inCounts) ? {} : { inCounts }),
       ...(isUndefined(outCounts) ? {} : { outCounts }),
+      ...(isUndefined(nonCurrentInCounts) ? {} : { nonCurrentInCounts }),
+      ...(isUndefined(nonCurrentOutCounts) ? {} : { nonCurrentOutCounts }),
       ...(isUndefined(inheritedInCounts) ? {} : { inheritedInCounts }),
       ...(isUndefined(inheritedOutCounts) ? {} : { inheritedOutCounts }),
     };

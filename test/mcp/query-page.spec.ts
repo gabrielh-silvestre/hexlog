@@ -111,6 +111,8 @@ const record = {
   target: 'unit-1',
   inCounts: { supports: 1 },
   outCounts: { supports: 2 },
+  nonCurrentInCounts: { supports: 3 },
+  nonCurrentOutCounts: { supports: 4 },
   in: [{ kind: 'supports' }],
   out: [{ kind: 'supports' }],
   data: { ref: 'x' },
@@ -276,6 +278,7 @@ describe('registerQueryTools', () => {
       expect(description).toContain('hint');
       expect(description).toContain('attachmentStatus');
       expect(description).toContain('relations: counts (default)');
+      expect(description).toContain('nonCurrentInCounts and nonCurrentOutCounts');
       expect(description).toContain('none gives neither');
       expect(description).toContain('inheritedIn and inheritedOut');
       expect(description).toContain('inheritedInCounts');
@@ -573,6 +576,16 @@ describe('registerQueryTools', () => {
 
     it.each([
       ['query', 'the id of a record', { ...queryOutput, records: [{ ...record, id: 1 }] }],
+      [
+        'query',
+        'the non-current in counts of a record',
+        { ...queryOutput, records: [{ ...record, nonCurrentInCounts: 'x' }] },
+      ],
+      [
+        'query',
+        'the non-current out counts of a record',
+        { ...queryOutput, records: [{ ...record, nonCurrentOutCounts: { supports: 'x' } }] },
+      ],
       [
         'query',
         'the entered list of changes',

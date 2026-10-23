@@ -97,7 +97,8 @@ export type QueryInput = Filters & {
   fields?: readonly string[];
   /**
    * Relações de cada registro: `full` (padrão do serviço) traz `in` e `out`; `counts`, `inCounts` e
-   * `outCounts` (arestas por nome `as ?? kind`, mapa vazio omitido); `none`, nenhum dos quatro.
+   * `outCounts` (arestas por nome `as ?? kind` com a outra ponta vigente) e `nonCurrentInCounts` e
+   * `nonCurrentOutCounts` (as demais), cada mapa vazio omitido; `none`, nenhum deles.
    * Recorta só a saída, como `fields`: fica fora do hash do cursor, e `relatedTo` e `needsReview`
    * não mudam.
    */
