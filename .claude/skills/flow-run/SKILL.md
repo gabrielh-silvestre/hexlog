@@ -101,7 +101,7 @@ A mecânica de ter um ocupante simulado. As regras (classe, registro do critic, 
    - 4 (credencial) e 1 (uso): regime sem ocupante e avise o dono, sem substituir.
    - 6 (outro `ask` em curso na mailbox): espere a notificação desse `ask` por no máximo 30 minutos; passado esse limite, trate como 5.
    - 130 e 143 só surgem quando o principal ou a sessão matou o `ask`: não são tratados aqui.
-   - Substitua também quando ele informa `context: tight`, há sinal objetivo (`attach` sem ids do hexlog) ou o humano aponta a queda. Só 5, 7 duplo, queda e `context: tight` contam nas 2 substituições do item 7.
+   - Substitua também quando ele informa `context: tight`, há sinal objetivo (`attach` sem ids do hexlog) ou o humano aponta a queda. Só 5, 7 duplo e a queda apontada pelo humano contam nas 2 substituições do item 7; `context: tight` e o sinal objetivo substituem sem contar.
    - Substituir é `close` da mailbox antiga e `start` de novo, porque o substituto só tem o hexlog como memória; atualize o `critic.md`.
 7. **Limites.** Cada um com o destino:
    - Sem teto de perguntas por trabalho.
