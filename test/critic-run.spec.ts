@@ -520,8 +520,8 @@ describe('askQuestion', () => {
       expect(valueAfter(at(turns(s), 1), '--conversation')).toBe('conv-42');
     });
 
-    it('should send only the question on the second turn', () => {
-      expect(turnArgs(s, 1).at(-1)).toBe('SECOND QUESTION');
+    it('should send the rules before the question on the second turn', () => {
+      expect(turnArgs(s, 1).at(-1)).toBe(`${CRITIC_RULES}\n\nSECOND QUESTION`);
     });
   });
 
@@ -771,6 +771,57 @@ describe('askQuestion', () => {
     );
   });
 
+  describe('when the claude init does not connect the hexlog server', () => {
+    let s: Scenario;
+    let reply: Reply;
+
+    beforeAll(async () => {
+      s = scenario({ session: { failures: 1 } });
+      reply = await ask(s, { env: { FAKE_CRITIC_MODE: 'mcp-down' } });
+    }, SPEC_TIMEOUT);
+
+    it('should exit 3 with its own message', () => {
+      expect(reply.exitCode).toBe(3);
+      expect(reply.message).toContain('hexlog MCP server not connected');
+    });
+
+    it('should not retry', () => {
+      expect(turns(s)).toHaveLength(1);
+    });
+
+    it('should write no answer', () => {
+      expect(fs.existsSync(path.join(s.mailbox, 'a-1.txt'))).toBe(false);
+    });
+
+    it('should leave the failure counter and the broken flag alone', () => {
+      expect(readSession(s.mailbox)).toMatchObject({ failures: 1, broken: false });
+    });
+  });
+
+  describe('when the tool exits 1 after an intact answer', () => {
+    let s: Scenario;
+    let reply: Reply;
+
+    beforeAll(async () => {
+      s = scenario();
+      reply = await ask(s, {
+        env: { FAKE_CRITIC_MODE: 'exit-after-answer', FAKE_CRITIC_REPLY: 'kept answer' },
+      });
+    }, SPEC_TIMEOUT);
+
+    it('should exit 0 and print the answer path', () => {
+      expect(reply).toEqual({ exitCode: 0, message: path.join(s.mailbox, 'a-1.txt') });
+    });
+
+    it('should write the answer', () => {
+      expect(readAnswer(s.mailbox, 1)).toBe('kept answer');
+    });
+
+    it('should run a single turn', () => {
+      expect(turns(s)).toHaveLength(1);
+    });
+  });
+
   describe('when the turn goes quiet', () => {
     let s: Scenario;
     let reply: Reply;
@@ -887,13 +938,13 @@ describe('askQuestion', () => {
       'prompt is over 131000 bytes',
     ],
   ])(
-    'should refuse %s with its own message and exit 1',
+    'should refuse %s with its own message and exit 8',
     async (_case, questions, message) => {
       const s = scenario({ questions });
 
       const reply = await ask(s);
 
-      expect(reply.exitCode).toBe(1);
+      expect(reply.exitCode).toBe(8);
       expect(reply.message).toContain(message);
       expect(turns(s)).toEqual([]);
     },

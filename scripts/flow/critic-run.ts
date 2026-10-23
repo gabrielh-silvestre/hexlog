@@ -35,6 +35,7 @@ export const EXIT = {
   failed: 5,
   busy: 6,
   timeout: 7,
+  tooLarge: 8,
   sighup: 129,
   sigint: 130,
   sigterm: 143,
@@ -445,6 +446,8 @@ async function runAttempts(input: Attempts, initial: Session): Promise<Reply> {
     const failure = classifyFailure(session.tool, run);
     if (failure === undefined) return recordAnswer(input, session, run);
     if (failure === 'credential') return reply(EXIT.credential, `credential failure: ${detail}`);
+    if (failure === 'mcp')
+      return reply(EXIT.unavailable, 'hexlog MCP server not connected in the claude session');
     if (failure === 'timeout') return reply(EXIT.timeout, `turn timed out: ${detail}`);
     const pause = timing.backoffMs[attempt];
     if (pause !== undefined) await sleep(pause, signal);
@@ -468,12 +471,20 @@ function pendingPrompt(
     n === 1 || session.confirmed ? current : fs.readFileSync(path.join(mailbox, 'q-1.txt'), 'utf8');
   if (Math.max(Buffer.byteLength(first), Buffer.byteLength(current)) > QUESTION_MAX_BYTES) {
     return {
-      refusal: reply(EXIT.usage, `question is over ${QUESTION_MAX_BYTES} bytes (argv limit)`),
+      refusal: reply(EXIT.tooLarge, `question is over ${QUESTION_MAX_BYTES} bytes (argv limit)`),
     };
   }
-  const prompt = buildPrompt({ confirmed: session.confirmed, n, first, current });
+  const prompt = buildPrompt({
+    tool: session.tool,
+    confirmed: session.confirmed,
+    n,
+    first,
+    current,
+  });
   if (Buffer.byteLength(prompt) > PROMPT_MAX_BYTES) {
-    return { refusal: reply(EXIT.usage, `prompt is over ${PROMPT_MAX_BYTES} bytes (argv limit)`) };
+    return {
+      refusal: reply(EXIT.tooLarge, `prompt is over ${PROMPT_MAX_BYTES} bytes (argv limit)`),
+    };
   }
   return { prompt };
 }

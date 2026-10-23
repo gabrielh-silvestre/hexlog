@@ -6,10 +6,8 @@
 //   close <mailbox>                                  remove a mailbox (idempotente)
 //
 // `--tool` vence `HEXLOG_CRITIC_CLI`; sem nenhum dos dois o critic é o Claude. `--cwd` é o worktree
-// em que o critic roda (padrão: o diretório atual). Saídas: 0 ok, 1 uso, 2 mailbox ausente,
-// 3 ferramenta indisponível (binário, login ou MCP), 4 credencial, 5 turno falho ou sessão
-// `broken`, 6 pergunta em curso, 7 timeout; `ask` interrompido por SIGHUP, SIGINT ou SIGTERM sai
-// 129, 130 ou 143.
+// em que o critic roda (padrão: o diretório atual). Saídas em `critic-run.ts#EXIT`; o que a skill
+// faz com cada uma, em `flow-run`, seção 6.
 // A mensagem de sucesso vai ao stdout e a de falha ao stderr. Só age como CLI: importar o módulo não
 // roda nada (guard `import.meta.main`, como o `mark.ts`). Usa `parseArgs` direto, e não o
 // `cli-error.ts#parseCliArgs`, para não puxar o `compose` e ficar só com builtins.
@@ -61,7 +59,10 @@ async function main(): Promise<void> {
   try {
     result = await run(process.argv.slice(2), process.env, process.cwd());
   } catch (error) {
-    result = usage(`critic: ${error instanceof Error ? error.message : String(error)}`);
+    result = {
+      exitCode: EXIT.failed,
+      message: `critic: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
   const stream = result.exitCode === EXIT.ok ? process.stdout : process.stderr;
   stream.write(`${result.message}\n`);

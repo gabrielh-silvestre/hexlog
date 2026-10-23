@@ -20,6 +20,8 @@
 //     fail-once             o 1º turno do log sai 1 sem nenhum evento, os seguintes `reply`
 //     no-id                 `agy` com resultado de sucesso sem id de conversa
 //     huge-line             `reply` com uma linha de 300 KB antes do resultado
+//     mcp-down              `reply` do Claude cujo `init` declara o `hexlog` como `failed`, exit 0
+//     exit-after-answer     `reply` que sai 1 depois do resultado íntegro
 //   FAKE_CRITIC_REPLY       texto da resposta final (padrão `fake critic answer`)
 //   FAKE_CRITIC_ERROR       texto do modo `error` (padrão `API Error: overloaded`)
 //   FAKE_CRITIC_GAP_MS      pausa do modo `slow` (padrão 100)
@@ -48,6 +50,10 @@ const CREDENTIAL_TEXT = {
   agy: 'authentication failed or timed out',
 } as const;
 
+const mcpServers = [
+  { name: 'hexlog', status: env.FAKE_CRITIC_MODE === 'mcp-down' ? 'failed' : 'connected' },
+];
+
 const isTurn = (call: Call): boolean => call.args.includes('-p');
 const valueAfter = (flag: string): string | undefined =>
   args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
@@ -74,12 +80,25 @@ function claudeDialect(id: string): Dialect {
       });
       process.stdout.write('global hook noise that is not json\n');
     },
-    init: () => out({ type: 'system', subtype: 'init', session_id: id, model: 'opus' }),
+    init: () =>
+      out({
+        type: 'system',
+        subtype: 'init',
+        session_id: id,
+        model: 'opus',
+        mcp_servers: mcpServers,
+      }),
     progress: () => out({ type: 'assistant', session_id: id, message: { role: 'assistant' } }),
     answer: (text) =>
       out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: id }),
     failure: (text) => {
-      out({ type: 'system', subtype: 'init', session_id: id, model: 'opus' });
+      out({
+        type: 'system',
+        subtype: 'init',
+        session_id: id,
+        model: 'opus',
+        mcp_servers: mcpServers,
+      });
       out({ type: 'result', subtype: 'success', is_error: true, result: text, session_id: id });
     },
   };
@@ -179,6 +198,7 @@ async function turn(): Promise<void> {
       dialect.progress();
     }
     dialect.answer(reply);
+    if (mode === 'exit-after-answer') process.exitCode = 1;
   }
 }
 

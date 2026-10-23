@@ -21,6 +21,8 @@ const AGY_ID = 'fbedda55-ffdb-4379-97ef-abe91017ad73';
 
 const claudeHook = `{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup","session_id":"${CLAUDE_ID}"}`;
 const claudeInit = `{"type":"system","subtype":"init","cwd":"/work","session_id":"${CLAUDE_ID}","model":"claude-opus-5-5"}`;
+const claudeInitWithMcp = (status: string) =>
+  `{"type":"system","subtype":"init","session_id":"${CLAUDE_ID}","model":"claude-opus-5-5","mcp_servers":[{"name":"other","status":"connected"},{"name":"hexlog","status":"${status}"}]}`;
 const claudeAssistant = `{"type":"assistant","session_id":"${CLAUDE_ID}","message":{"role":"assistant"}}`;
 const claudeResult = `{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"${CLAUDE_ID}","terminal_reason":"completed"}`;
 const claudeNotLoggedIn = `{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login","session_id":"${CLAUDE_ID}","terminal_reason":"api_error"}`;
@@ -239,6 +241,25 @@ describe('parseTurn', () => {
       expect(state.final).toEqual({ text: 'Not logged in · Please run /login', isError: true });
     });
 
+    it('should keep the mcp servers the init event declares', () => {
+      const state = parseTurn('claude', stream(claudeHook, claudeInitWithMcp('connected')));
+
+      expect(state.mcp).toEqual([
+        { name: 'other', status: 'connected' },
+        { name: 'hexlog', status: 'connected' },
+      ]);
+    });
+
+    it('should leave the mcp servers undefined when the init event carries none', () => {
+      expect(parseTurn('claude', stream(claudeInit, claudeResult)).mcp).toBeUndefined();
+    });
+
+    it('should ignore the mcp servers of an event that is not the init', () => {
+      const other = `{"type":"assistant","session_id":"${CLAUDE_ID}","mcp_servers":[{"name":"hexlog","status":"failed"}]}`;
+
+      expect(parseTurn('claude', stream(claudeInit, other)).mcp).toBeUndefined();
+    });
+
     it('should ignore lines that are not json', () => {
       const noisy = stream('global hook banner', claudeInit, '{broken', '', claudeResult);
 
@@ -349,14 +370,22 @@ describe('classifyFailure', () => {
     expect(classifyFailure('claude', outcome())).toBeUndefined();
   });
 
-  it('should classify inactivity as timeout', () => {
-    expect(classifyFailure('claude', outcome({ timedOut: true, exitCode: null }))).toBe('timeout');
+  it('should classify a timeout without a final text as timeout', () => {
+    const turn = answered({ final: undefined });
+
+    expect(classifyFailure('claude', outcome({ timedOut: true, exitCode: null, turn }))).toBe(
+      'timeout',
+    );
   });
 
-  it('should classify a timeout even when the stream already carried a credential error', () => {
+  it('should report no failure for a timeout after an intact final', () => {
+    expect(classifyFailure('claude', outcome({ timedOut: true, exitCode: null }))).toBeUndefined();
+  });
+
+  it('should classify a credential error as credential even when the turn also timed out', () => {
     const turn = errored('Not logged in · Please run /login');
 
-    expect(classifyFailure('claude', outcome({ timedOut: true, turn }))).toBe('timeout');
+    expect(classifyFailure('claude', outcome({ timedOut: true, turn }))).toBe('credential');
   });
 
   it('should classify the real claude logged-out result as credential', () => {
@@ -364,6 +393,30 @@ describe('classifyFailure', () => {
 
     expect(classifyFailure('claude', outcome({ exitCode: 1, turn }))).toBe('credential');
   });
+
+  it.each([
+    'not logged in',
+    '/login',
+    'failed to authenticate',
+    'authentication required',
+    'oauth token',
+    'invalid api key',
+    'api error: 401',
+    'invalid auth',
+  ])('should classify the claude error text "%s" as credential', (literal) => {
+    const turn = errored(`Error: ${literal.toUpperCase()} (retry later)`);
+
+    expect(classifyFailure('claude', outcome({ exitCode: 1, turn }))).toBe('credential');
+  });
+
+  it.each(['authentication failed', 'authentication required', 'sign in'])(
+    'should classify the agy error text "%s" as credential',
+    (literal) => {
+      const turn = errored(`Error: ${literal.toUpperCase()} (retry later)`, { sessionId: AGY_ID });
+
+      expect(classifyFailure('agy', outcome({ exitCode: 1, turn }))).toBe('credential');
+    },
+  );
 
   it('should classify the real agy authentication failure as credential', () => {
     const turn = parseTurn('agy', agyAuthFailed);
@@ -401,8 +454,47 @@ describe('classifyFailure', () => {
     expect(classifyFailure('claude', outcome({ exitCode: 1, turn }))).toBe('transient');
   });
 
-  it('should classify exit 1 as transient even when a final text arrived', () => {
-    expect(classifyFailure('claude', outcome({ exitCode: 1 }))).toBe('transient');
+  it('should report no failure for exit 1 after an intact final text', () => {
+    expect(classifyFailure('claude', outcome({ exitCode: 1 }))).toBeUndefined();
+  });
+
+  it('should classify a spawn error as transient even when a final text arrived', () => {
+    expect(classifyFailure('claude', outcome({ exitCode: null, spawnError: 'EACCES' }))).toBe(
+      'transient',
+    );
+  });
+
+  it('should classify a claude init that lists the hexlog server as failed as mcp', () => {
+    const turn = parseTurn('claude', stream(claudeInitWithMcp('failed'), claudeResult));
+
+    expect(classifyFailure('claude', outcome({ turn }))).toBe('mcp');
+  });
+
+  it('should classify a claude init that does not list the hexlog server as mcp', () => {
+    const turn = answered({ mcp: [{ name: 'other', status: 'connected' }] });
+
+    expect(classifyFailure('claude', outcome({ turn }))).toBe('mcp');
+  });
+
+  it('should report no failure when the claude init lists the hexlog server as connected', () => {
+    const turn = parseTurn('claude', stream(claudeInitWithMcp('connected'), claudeResult));
+
+    expect(classifyFailure('claude', outcome({ turn }))).toBeUndefined();
+  });
+
+  it('should not look at the mcp servers when the claude stream carried none', () => {
+    const turn = parseTurn('claude', stream(claudeInit, claudeResult));
+
+    expect(classifyFailure('claude', outcome({ turn }))).toBeUndefined();
+  });
+
+  it('should never classify an agy turn as mcp', () => {
+    const turn = {
+      ...parseTurn('agy', stream(agyInit, agyResult)),
+      mcp: [{ name: 'hexlog', status: 'failed' }],
+    };
+
+    expect(classifyFailure('agy', outcome({ turn }))).toBeUndefined();
   });
 
   it('should classify a spawn error as transient', () => {
@@ -466,18 +558,24 @@ describe('buildPrompt', () => {
   const first = 'FIRST QUESTION';
   const current = 'SECOND QUESTION';
 
-  it('should send only the current question once a turn was confirmed', () => {
-    expect(buildPrompt({ confirmed: true, n: 2, first, current })).toBe(current);
+  it('should send only the current question to claude once a turn was confirmed', () => {
+    expect(buildPrompt({ tool: 'claude', confirmed: true, n: 2, first, current })).toBe(current);
+  });
+
+  it('should send the rules before the current question to agy once a turn was confirmed', () => {
+    expect(buildPrompt({ tool: 'agy', confirmed: true, n: 2, first, current })).toBe(
+      `${CRITIC_RULES}\n\n${current}`,
+    );
   });
 
   it('should send the rules and the first question as the opening', () => {
-    expect(buildPrompt({ confirmed: false, n: 1, first, current: first })).toBe(
+    expect(buildPrompt({ tool: 'claude', confirmed: false, n: 1, first, current: first })).toBe(
       `${CRITIC_RULES}\n\n${first}`,
     );
   });
 
   it('should add the current question after the opening when n is above 1', () => {
-    expect(buildPrompt({ confirmed: false, n: 2, first, current })).toBe(
+    expect(buildPrompt({ tool: 'claude', confirmed: false, n: 2, first, current })).toBe(
       `${CRITIC_RULES}\n\n${first}\n\n${current}`,
     );
   });
@@ -495,6 +593,10 @@ describe('CRITIC_RULES', () => {
     ['forbids git push', 'run `git push`'],
     ['forbids gh', 'run `gh`'],
     ['forbids rm', 'run `rm`'],
+    [
+      'forbids silent long commands',
+      'Never run a test suite or any command that stays silent for minutes (npm test, test:coverage)',
+    ],
     [
       'forbids touching the data directory through Bash',
       'touch the hexlog data directory through Bash',
@@ -518,6 +620,6 @@ describe('CRITIC_RULES', () => {
   });
 
   it('should keep the context line as the last rule', () => {
-    expect(at(CRITIC_RULES.split('\n'), 7)).toContain('context: ok');
+    expect(at(CRITIC_RULES.split('\n'), 8)).toContain('context: ok');
   });
 });

@@ -133,7 +133,7 @@ describe('scripts/flow/critic.ts', () => {
     );
 
     it(
-      'should prefix an I/O failure of the session with critic: and exit 1',
+      'should prefix an I/O failure of the session with critic: and exit 5',
       async () => {
         const s = scenario();
 
@@ -141,7 +141,7 @@ describe('scripts/flow/critic.ts', () => {
           TMPDIR: path.join(s.tmpdir, 'missing'),
         });
 
-        expect(result.exitCode).toBe(1);
+        expect(result.exitCode).toBe(5);
         expect(result.stderr).toMatch(/^critic: /);
       },
       SPEC_TIMEOUT,
@@ -208,6 +208,20 @@ describe('scripts/flow/critic.ts', () => {
 
         expect(result.exitCode).toBe(2);
         expect(result.stderr).toContain('mailbox not found');
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should prefix an unreadable session.json with critic: and exit 5',
+      async () => {
+        const { mailbox } = makeMailbox();
+        fs.writeFileSync(path.join(mailbox, 'session.json'), 'not json');
+
+        const result = await cli(scenario(), ['ask', mailbox]);
+
+        expect(result.exitCode).toBe(5);
+        expect(result.stderr).toMatch(/^critic: /);
       },
       SPEC_TIMEOUT,
     );
