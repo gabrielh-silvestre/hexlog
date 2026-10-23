@@ -207,7 +207,7 @@ Lê os registros **vigentes** (não superados nem revogados) de um processo
 quebrada ou manifesto ilegível falha fechado com `PROCESS_CORRUPTED` nomeando o
 processo em `details[0].process`.
 
-- **Alcance processo** lê um processo só: as relações de entrada (`in`, ou `inCounts`)
+- **Alcance processo** lê um processo só: as relações de entrada (`in`, ou `inCounts` e `nonCurrentInCounts`)
   trazem só as vindas do próprio processo, e `out` para um registro de outro processo sai
   sem `current`. Quem espera evidência de outro processo declara `scope: "project"`.
 - **Filtros:** `type`, `targetPrefix`, `where` (igualdade em campos de primeiro nível
@@ -241,12 +241,13 @@ processo em `details[0].process`.
   omitido, sem depender dos outros (ausência de um mapa é zero). Vigente é "sem sucessor nem
   revogação conhecidos na leitura": o destino de outro processo, que o alcance processo não
   lê, conta em `outCounts`. A aresta `supersedes` ou `revokes` de saída sempre conta em
-  `nonCurrentOutCounts`, porque ela própria torna o destino não vigente. `full` devolve `in`
-  e `out` por inteiro, como antes de `relations` existir, e `none` não devolve nenhum dos
-  quatro campos. Para
-  seguir uma aresta, peça o registro com `relations: "full"`, ou use `relatedTo` com o id,
-  que independe do modo. `relations` fica fora do hash do cursor, como `fields`: a página 2
-  pode pedir outro modo. Valor fora de `counts`, `full` e `none` dá `INVALID_INPUT`.
+  `nonCurrentOutCounts`, porque ela própria torna o destino não vigente; a de entrada conta
+  em `inCounts`, porque a origem (o sucessor ou o revogador) é vigente. `full` devolve `in`
+  e `out` por inteiro, como antes de `relations` existir, e `none` não devolve nenhum desses
+  campos. Para seguir uma aresta, peça o registro com `relations: "full"`, ou use
+  `relatedTo` com o id, que independe do modo. `relations` fica fora do hash do cursor, como
+  `fields`: a página 2 pode pedir outro modo. Valor fora de `counts`, `full` e `none` dá
+  `INVALID_INPUT`.
 - **Relações herdadas:** num registro cuja linhagem de `supersedes` está num processo com
   `lineageInheritance` (ver `create_process`), a leitura soma às arestas gravadas as que ele
   herda das versões superadas, sem regravar nada. Os campos são irmãos dos de `relations`:
@@ -276,9 +277,8 @@ processo em `details[0].process`.
   os `fields` pedidos), as relações no formato de `relations` (`inCounts` e `outCounts` com
   `nonCurrentInCounts` e `nonCurrentOutCounts`, `in` e `out`, ou nenhuma), `needsReview`
   (registro vigente cujo apoio morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`,
-  `missing` ou
-  `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como status, não
-  como erro. Com `relations: "full"`, cada relação de entrada é `{kind, as?, from, current}`
+  `missing` ou `corrupted` por anexo citado). Anexo ausente ou adulterado aparece como
+  status, não como erro. Com `relations: "full"`, cada relação de entrada é `{kind, as?, from, current}`
   e cada relação de saída é `{kind, as?, to, current?}`: `current` diz se a outra ponta é
   vigente, e na saída só sai quando o destino foi lido.
 - **Ordem:** por `seq` no alcance processo e por (`at`, processo, `seq`) no alcance

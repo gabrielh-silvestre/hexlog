@@ -40,7 +40,7 @@ que enxerga mais de um processo.
 - Para ler **uma** fase, `query` com o `process` dela (o flow map traduz "fase X"
   para o nome do processo) — nunca o `process` da fase corrente por padrão.
 - Para ler **várias** de uma vez, `query` com `scope: "project"`: lê e verifica todos
-  os processos do projeto, e `in` (ou `inCounts: {...}`), `out.current` e `needsReview` passam a ver as
+  os processos do projeto, e `in` (ou `inCounts` e `nonCurrentInCounts`), `out.current` e `needsReview` passam a ver as
   relações entre processos. O alcance padrão (`process`) não vê relação vinda de
   outro processo e **não avisa**.
 - Para **ligar** um registro a outro de outra fase, use qualquer relação menos

@@ -192,7 +192,7 @@ novo não substitui nem revoga nada do antigo; ele o cita por `derivesFrom` ou
 `query` e as perguntas de gate leem **um processo** por padrão (`scope:
 "process"`). Nesse alcance:
 
-- `in` (ou `inCounts: {...}`), `needsReview` e as perguntas `approved`, `no_pending` e
+- `in` (ou `inCounts: {...}` e `nonCurrentInCounts`), `needsReview` e as perguntas `approved`, `no_pending` e
   `no_open_contradiction` só veem relações com as duas pontas no processo; relação vinda de outro processo não
   aparece, e **a resposta não avisa**;
 - com `relations: "full"`, `out` de um destino em outro processo sai sem `current`.
