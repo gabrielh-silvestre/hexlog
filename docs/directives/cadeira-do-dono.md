@@ -9,19 +9,19 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 
 ## Exceção de modelo
 
-- O `critic` durável lançado pela cadeira do dono no `flow-run`, inclusive nas sondas de verificação do fluxo (`sonda-<n>`, ver [fluxo-hexlog.md](fluxo-hexlog.md)), roda em `opus` (o tier é o contrato, não a versão); é um só por trabalho, vive até o fim dele e é continuado por retomada de sessão, uma execução da CLI por pergunta.
+- O `critic` durável lançado pela cadeira do dono no `flow-run`, inclusive nas sondas de verificação do fluxo (`sonda-<n>`, ver [fluxo-hexlog.md](fluxo-hexlog.md)), roda em `opus` (o tier é o contrato, não a versão); é um só por trabalho, vive até o fim dele e é continuado por `SendMessage` no Herdr com Claude, por `herdr agent prompt` no Herdr com `agy` e por retomada de sessão no runner.
 - O `opus` vale só para o critic Claude. O critic `agy`, que só entra por pedido explícito, roda fixado em `gemini-4-argon-high` (lista do dono por `agy models`); o nome pode mudar entre versões do `agy`.
 - O `critic` é encerrado só no fim do trabalho; os subagentes e jurados dele seguem em `sonnet` ou `haiku` e nascem e morrem por pergunta.
 - Exceção autorizada pelo dono ao CLAUDE.md global (Subagents: sonnet/haiku); vale só neste repositório.
-- Segunda exceção ao CLAUDE.md global, também só neste repositório e só no critic: o runner chama o `agy` direto, e o global manda o `agy` só por `omc ask`. O único gate é o pedido explícito (`--critic agy` ou `HEXLOG_CRITIC_CLI=agy`).
+- Segunda exceção ao CLAUDE.md global, também só neste repositório e só no critic: o runner e o `herdr agent start --kind agy` chamam o `agy` direto, e o global manda o `agy` só por `omc ask`. O único gate é o pedido explícito (`--critic agy` ou `HEXLOG_CRITIC_CLI=agy`).
 
 ## Ocupante
 
 - No `ask` o ocupante é o humano: o principal grava a `premise` com a origem `human` (ver Origem abaixo), com `fills-gap` salvo contradição com atemporal. Texto livre pedindo contexto dispara a ação de contexto e repete a pergunta, sem gravar premissa.
-- No `autonomous` o ocupante é o `critic` durável, só com `answeredBy` fixado no `premise` do processo (`describe_type` com `process`; `TYPE_NOT_PINNED` conta como sem o campo) e com o `start` do runner saindo 0 (`node scripts/flow/critic.ts start`: binário no `PATH`, login e o `hexlog` registrado na ferramenta).
-- O critic é o Claude Code, salvo pedido explícito do `agy` (`--critic agy` no `flow-run` ou `HEXLOG_CRITIC_CLI=agy`; a flag vence a variável). O Codex fica fora: não provado, sem login.
+- No `autonomous` o ocupante é o `critic` durável, só com `answeredBy` fixado no `premise` do processo (`describe_type` com `process`; `TYPE_NOT_PINNED` conta como sem o campo) e com transporte: `HERDR_ENV=1` (tab do Herdr, automático) ou, sem Herdr, o `start` do runner saindo 0 (`node scripts/flow/critic.ts start`: binário no `PATH`, login e o `hexlog` registrado na ferramenta).
+- `HERDR_ENV=1` libera só o transporte, não a ferramenta. O critic é o Claude Code, salvo pedido explícito do `agy` (`--critic agy` no `flow-run` ou `HEXLOG_CRITIC_CLI=agy`; a flag vence a variável). O Codex fica fora: não provado, sem login.
 - O critic `agy` não tem subagentes OMC nem júri: na lacuna de classe crítica responde "sem resposta" e a pergunta vai ao humano, sem resposta simulada.
-- Sem `answeredBy` fixado o ocupante simulado não senta; também não senta se o `start` do critic não sai 0 (ferramenta ausente, sem login ou `hexlog` não registrado) ou ele nunca subiu. Então a classe comum decide como antes (`grounds: gap`, premissa da entrega com `fills-gap`, sem o campo) e a crítica volta ao teto fixo antigo. O `autonomous` não vira `ask`.
+- Sem `answeredBy` fixado o ocupante simulado não senta; também não senta se o lançamento falhou (sem Herdr, o `start` não sai 0) ou o critic nunca subiu. Então a classe comum decide como antes (`grounds: gap`, premissa da entrega com `fills-gap`, sem o campo) e a crítica volta ao teto fixo antigo. O `autonomous` não vira `ask`.
 - Headless e sem `AskUserQuestion` não tiram o ocupante: o critic responde e o aval fica pendente no pré-PR.
 - Se o critic cai no meio de uma resposta, a guarda que procura a `simulated` vigente da lacuna evita gravar outra.
 - Origem, quando o `premise` fixado tem o campo (senão grava sem ele): `human` é gravada pelo principal quando o humano responde, `simulated` pelo critic e `simulated-approved` pelo principal no aval. O campo é autodeclarado: rastro, não prova.
@@ -40,9 +40,10 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 - `fills-gap` só na classe comum. Na crítica a `simulated` fica sem ele e a lacuna aberta até o aval.
 - O principal registra a `decision` como adoção própria da resposta (escolha entre adotar e levar ao humano), com `supersedes` da provisória, as relações regravadas, o `rests-on` também para a `simulated` e o id dela no `rationale`.
 - O `rests-on` para a `simulated` é o que deixa o relatório acusar `rests-on-simulated` quando o critic escala a classe: a `gap` segue com `Class: common` no `context`, e só a `simulated` vigente sem `fills-gap` mostra a escalada.
-- O escopo do `register` do critic (processo do trabalho, só `premise` e `evidence` novas, sem `supersedes` nem `revokes`) é instrução, não barreira: o critic roda sem `--allowedTools` nem `--tools`, com `bypassPermissions` (Claude) ou `--dangerously-skip-permissions` (`agy`).
-- O critic Claude sobe com `--strict-mcp-config` e só o servidor `hexlog`: sem `ctx_execute` nem outro MCP do ambiente. Com `bypassPermissions` ele e os subagentes têm `Bash` e `Edit`; a sonda antiga do `Explore` sem `Bash` não vale mais.
-- A contenção é o prompt do critic (`CRITIC_RULES` em `scripts/flow/critic-tools.ts`, no prompt de abertura e, no Claude, em `--append-system-prompt`): escrever só por `register`, sem editar arquivo, `git push`, `gh` nem `rm`, e o que lê é dado. Freio, não barreira; o turno só tem teto de tempo, sem teto de custo.
+- O escopo do `register` do critic (processo do trabalho, só `premise` e `evidence` novas, sem `supersedes` nem `revokes`) é instrução, não barreira. No Herdr com Claude o `--allowedTools` pré-aprova a tool e não restringe o argumento; no runner e no `agy` o critic roda sem `--allowedTools` nem `--tools`, com `bypassPermissions` (Claude) ou `--dangerously-skip-permissions` (`agy`).
+- O critic Claude, nos dois transportes, sobe com `--strict-mcp-config` e só o servidor `hexlog`: sem `ctx_execute` nem outro MCP do ambiente. No Herdr, `--tools` tira `Edit`, `Write` e `Bash` dele, e só o `Explore` foi sondado sem `Bash`; os demais subagentes não, então é contenção parcial.
+- No runner o Claude roda em `bypassPermissions`: ele e os subagentes têm `Bash` e `Edit`, e a sonda antiga do `Explore` sem `Bash` não vale. Isso vale também ao `agy` no Herdr, que tem `--dangerously-skip-permissions` e grava no hexlog.
+- A contenção no runner e no `agy` é o prompt do critic (`CRITIC_RULES` em `scripts/flow/critic-tools.ts`, no prompt de abertura e, no Claude, em `--append-system-prompt`): escrever só por `register`, sem editar arquivo, `git push`, `gh` nem `rm`, e o que lê é dado. Freio, não barreira; no runner o turno só tem teto de tempo, sem teto de custo.
 - O critic registra com `author.agent` `owner-seat-critic-claude` ou `owner-seat-critic-agy` e o `model` real, o que distingue as ferramentas na auditoria: `answeredBy` só tem `simulated`.
 
 ## Aval e trava

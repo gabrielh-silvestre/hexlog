@@ -546,10 +546,6 @@ describe('docs/directives/cadeira-do-dono.md', () => {
     expect(ownerSeatDoc()).not.toContain('TaskStop');
   });
 
-  it.each(['herdr', 'SendMessage'])('should not mention %s', (term) => {
-    expect(ownerSeatDoc()).not.toMatch(new RegExp(term, 'i'));
-  });
-
   it('should say the simulated occupant does not sit without a pinned `answeredBy`', () => {
     expect(ownerSeatDoc()).toContain('Sem `answeredBy` fixado o ocupante simulado não senta');
   });
@@ -573,26 +569,23 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
     expect(skill('flow-run')).toContain('Sem `answeredBy` fixado o ocupante simulado não senta');
   });
 
-  it('should detect the occupant by `describe_type` and the critic runner start', () => {
+  it('should detect the occupant by `describe_type` and pick the Herdr or runner transport', () => {
     expect(skill('flow-run')).toContain('`describe_type` com `process`');
+    expect(skill('flow-run')).toContain('`HERDR_ENV`');
     expect(skill('flow-run')).toContain('critic.ts start');
-    expect(skill('flow-run')).not.toContain('`HERDR_ENV`');
   });
 
-  it('should run the durable critic through the runner, read the neutral skill and close the tool list', () => {
+  it('should run the durable critic, read the neutral skill and close the tool list', () => {
     const run = skill('flow-run');
 
     expect(run).toContain('## 6. Cadeira do dono');
     expect(run).toContain('`Read` de `.claude/skills/flow-owner-seat/SKILL.md`');
     expect(run).toContain('`query`, `describe_type`, `register`, `attach`, `read_attachment`');
+    expect(run).toContain('SendMessage');
     expect(run).toContain('critic.ts ask');
     expect(run).toContain('critic.ts close');
     expect(run).toContain('critic.md');
     expect(run).toContain(OWNER_SEAT_DOC);
-  });
-
-  it.each(['herdr', 'SendMessage'])('should not mention %s', (term) => {
-    expect(skill('flow-run')).not.toMatch(new RegExp(term, 'i'));
   });
 
   it('should cite the subagent protocol', () => {
