@@ -33,18 +33,15 @@ function start(slug: string, tool: string | undefined, cwd: string, env: NodeJS.
   return startSession({ tool: resolved, slug, cwd });
 }
 
-const parse = (argv: string[]) =>
-  parseArgs({
-    args: argv,
-    options: { tool: { type: 'string' }, cwd: { type: 'string' } },
-    allowPositionals: true,
-    strict: true,
-  });
-
 async function run(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<Reply> {
-  let parsed: ReturnType<typeof parse>;
+  let parsed;
   try {
-    parsed = parse(argv);
+    parsed = parseArgs({
+      args: argv,
+      options: { tool: { type: 'string' }, cwd: { type: 'string' } },
+      allowPositionals: true,
+      strict: true,
+    });
   } catch {
     return usage(USAGE);
   }

@@ -31,14 +31,13 @@ export const CRITIC_RULES = [
   'The last line of your reply is `context: ok` or `context: tight`.',
 ].join('\n');
 
-const isTool = (value: string): value is Tool => (TOOLS as readonly string[]).includes(value);
-
 /** A flag vence a variável; sem nenhuma das duas, `claude`. Valor fora de `TOOLS` lança. */
 export function resolveTool({ flag, env }: { flag?: string; env?: string }): Tool {
-  const value = [flag, env].find((candidate) => candidate !== undefined && candidate !== '');
-  const tool = value ?? 'claude';
-  if (!isTool(tool)) {
-    throw new Error(`unknown critic tool "${tool}" (expected ${TOOLS.join(' or ')})`);
+  const value =
+    [flag, env].find((candidate) => candidate !== undefined && candidate !== '') ?? 'claude';
+  const tool = TOOLS.find((candidate) => candidate === value);
+  if (tool === undefined) {
+    throw new Error(`unknown critic tool "${value}" (expected ${TOOLS.join(' or ')})`);
   }
   return tool;
 }

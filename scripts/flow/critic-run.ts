@@ -135,16 +135,6 @@ function isOrphan(lock: string, readStartTime: ReadStartTime): boolean {
   return (readStartTime(holder.pid) ?? null) !== holder.startTime;
 }
 
-function tryLink(staged: string, lock: string): boolean {
-  try {
-    fs.linkSync(staged, lock);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
-    throw error;
-  }
-}
-
 /**
  * Cria `ask.lock` por `link` exclusivo de um arquivo já completo (nunca há lock meio escrito).
  * Devolve quem solta o lock, ou `undefined` quando o dono está vivo. `ponytail:` dois que roubam o
@@ -161,10 +151,19 @@ function acquireLock(mailbox: string, readStartTime: ReadStartTime): (() => void
     if (readHolder(lock)?.token === token) fs.rmSync(lock, { force: true });
   };
   try {
-    if (tryLink(staged, lock)) return release;
-    if (!isOrphan(lock, readStartTime)) return undefined;
-    fs.rmSync(lock, { force: true });
-    return tryLink(staged, lock) ? release : undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        fs.linkSync(staged, lock);
+        return release;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+      if (attempt === 0) {
+        if (!isOrphan(lock, readStartTime)) return undefined;
+        fs.rmSync(lock, { force: true });
+      }
+    }
+    return undefined;
   } finally {
     fs.rmSync(staged, { force: true });
   }
