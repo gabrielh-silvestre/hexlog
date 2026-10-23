@@ -449,6 +449,11 @@ describe('truncateText', () => {
   it('should truncate a multibyte text that is over the byte limit', () => {
     expect(truncateText('éééé', 6)).toBe('ééé\n[truncated]');
   });
+
+  it('should cut on a character boundary when the limit falls inside a multibyte character', () => {
+    expect(truncateText('aéé', 2)).toBe('a\n[truncated]');
+    expect(truncateText('aéé', 4)).toBe('aé\n[truncated]');
+  });
 });
 
 describe('buildPrompt', () => {

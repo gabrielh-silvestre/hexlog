@@ -196,11 +196,14 @@ export function parseTurn(tool: Tool, stream: string): TurnState {
   return stream.split('\n').reduce((state, line) => foldTurn(tool, state, line), EMPTY_TURN);
 }
 
-/** Corta o texto em `maxBytes` (UTF-8) e marca o corte. */
+/** Corta o texto em até `maxBytes` (UTF-8), na fronteira de um caractere, e marca o corte. */
 export function truncateText(text: string, maxBytes: number): string {
   const bytes = Buffer.from(text, 'utf8');
   if (bytes.length <= maxBytes) return text;
-  return `${bytes.subarray(0, maxBytes).toString('utf8')}${TRUNCATED}`;
+  let end = maxBytes;
+  // byte de continuação (10xxxxxx) no ponto de corte: o caractere começou antes, recua até o início dele
+  while (end > 0 && (bytes.readUInt8(end) & 0xc0) === 0x80) end--;
+  return `${bytes.subarray(0, end).toString('utf8')}${TRUNCATED}`;
 }
 
 export type Failure = 'credential' | 'timeout' | 'transient';
