@@ -9,6 +9,7 @@
     "scripts/flow/mark.ts",
     "scripts/flow/report.ts",
     "scripts/flow/reanchor.ts",
+    "scripts/flow/critic.ts",
     ".claude/hooks/*.ts",
     ".claude/workflows/*.js",
     "test/fixtures/attachment-probe.ts",
@@ -19,7 +20,7 @@
     "test/fixtures/lock-holder.ts"
   ],
   "ignore": ["test/fixtures/boundaries/**"],
-  "ignoreBinaries": ["mkfifo"],
+  "ignoreBinaries": ["mkfifo", "agy"],
   "ignoreIssues": {
     "src/domain/ids.ts": ["duplicates"]
   }
