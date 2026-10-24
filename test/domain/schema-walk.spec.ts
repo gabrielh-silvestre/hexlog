@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import {
+  countNodes,
+  expandedSize,
   FREE_PATTERN_KEYWORDS,
   hasKeywordAt,
   walkSubschemas,
@@ -218,5 +220,70 @@ describe('hasKeywordAt', () => {
     ['a pointer that goes through null', '/nothing/pattern', 'pattern'],
   ])('should return false for %s', (_label, location, keyword) => {
     expect(hasKeywordAt(schema, location, keyword)).toBe(false);
+  });
+});
+
+const doubling = (levels: number): RecordType => {
+  const defs: RecordType = { [`d${levels}`]: { type: 'string' } };
+  for (let i = 0; i < levels; i++) {
+    defs[`d${i}`] = { allOf: [{ $ref: `#/$defs/d${i + 1}` }, { $ref: `#/$defs/d${i + 1}` }] };
+  }
+  return { $defs: defs, properties: { x: { $ref: '#/$defs/d0' } } };
+};
+
+describe('expandedSize', () => {
+  it.each<[string, unknown, number]>([
+    ['a schema that is not an object', true, 0],
+    ['a leaf schema', { type: 'string' }, 1],
+    ['the properties of an object', { properties: { a: {}, b: {} } }, 3],
+    ['the branches of an allOf', { allOf: [{}, {}] }, 3],
+    [
+      'a $ref by the size of its target',
+      { $defs: { a: {} }, properties: { x: { $ref: '#/$defs/a' } } },
+      3,
+    ],
+    ['a $defs entry that nothing cites as zero', { $defs: { a: { allOf: [{}, {}] } } }, 1],
+  ])('should count %s', (_label, schema, expected) => {
+    expect(expandedSize(schema)).toBe(expected);
+  });
+
+  it('should count a $ref cited twice twice', () => {
+    const schema = { $defs: { a: {} }, allOf: [{ $ref: '#/$defs/a' }, { $ref: '#/$defs/a' }] };
+
+    expect(expandedSize(schema)).toBe(1 + 2 * (1 + 1));
+  });
+
+  it('should measure references that double at each level in linear time', () => {
+    expect(expandedSize(doubling(40))).toBeGreaterThan(2 ** 40);
+  });
+
+  it('should saturate instead of growing without bound', () => {
+    expect(expandedSize(doubling(80))).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it.each([
+    ['a $ref that is not a local pointer', { $ref: 'https://example.com/other' }],
+    ['a $dynamicRef', { $dynamicRef: '#meta' }],
+    [
+      'a $ref that points back to itself',
+      { $defs: { a: { $ref: '#/$defs/a' } }, $ref: '#/$defs/a' },
+    ],
+  ])('should assume the worst for %s', (_label, schema) => {
+    expect(expandedSize(schema)).toBe(Number.MAX_SAFE_INTEGER);
+  });
+});
+
+describe('countNodes', () => {
+  it('should count every object, array and scalar of the value', () => {
+    expect(countNodes({ a: [1, 2], b: 'x' }, 100)).toBe(5);
+  });
+
+  it('should stop counting once the limit is passed', () => {
+    expect(
+      countNodes(
+        Array.from({ length: 1_000 }, () => 1),
+        10,
+      ),
+    ).toBe(11);
   });
 });

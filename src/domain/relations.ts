@@ -201,8 +201,11 @@ export type RuleCode =
   | 'not-current'
   | 'stale-destination';
 
-/** `current` só sai em `not-current` e `stale-destination`: versão atual da linhagem ou `null`. */
-export type Violation = { code: RuleCode; current?: RecordId | null };
+/**
+ * `current` só sai em `not-current` e `stale-destination`: versão atual da linhagem ou `null`.
+ * `kind` só sai em `kind-mismatch`: o `kind` do nome de relação fixado.
+ */
+export type Violation = { code: RuleCode; current?: RecordId | null; kind?: RelationKind };
 
 type RelationCheck = { kind: RelationKind } | { violation: Violation };
 
@@ -238,7 +241,7 @@ export function resolveKind(input: KindOrAs, names: RuleContext['names']): Relat
   const named = names.get(input.as);
   if (!named) return { violation: { code: 'unknown-relation-name' } };
   if (!isUndefined(input.kind) && input.kind !== named.kind) {
-    return { violation: { code: 'kind-mismatch' } };
+    return { violation: { code: 'kind-mismatch', kind: named.kind } };
   }
   return { kind: named.kind };
 }

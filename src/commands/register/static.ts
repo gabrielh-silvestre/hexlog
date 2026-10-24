@@ -74,8 +74,8 @@ function pinnedSchema(manifest: Manifest, item: BatchItem, index: number): Recor
 
 /**
  * Violações de schema de UM registro, com o `path` refeito para `/records/<i>/data/...`. O
- * `validate` para no primeiro erro de cada subschema (em `anyOf`/`oneOf`/`propertyNames` saem os dos
- * ramos), então a resposta traz a primeira violação do registro, não todas.
+ * `validate` devolve todas as violações do registro (em `anyOf`/`oneOf`/`propertyNames` saem as dos
+ * ramos), cada uma com o valor medido quando é de tamanho.
  */
 function checkData(
   validator: Validator,
@@ -124,7 +124,7 @@ function checkCurrencyScope(prepared: readonly PreparedItem[], origin: Name): vo
  * Roda antes do lock (`commands/process.ts#register` a chama antes de `store.write`; só o `decide`
  * roda sob o lock, síncrono), então a compilação do schema não alonga a seção crítica. O tipo
  * fixado vem antes do dado: `TYPE_NOT_PINNED` de qualquer registro vence o `INVALID_RECORD` de dado
- * de um anterior. A agregação cobre só a violação de schema (a primeira de cada registro do lote,
+ * de um anterior. A agregação cobre só a violação de schema (todas as de cada registro do lote,
  * com o teto de `capDetails`); as demais regras seguem recusando no primeiro erro. Tudo-ou-nada.
  */
 export function prepareBatch(

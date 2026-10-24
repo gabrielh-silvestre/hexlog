@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { fingerprint, sha256hex } from '../../src/domain/chain.ts';
+import type { RecordType } from '../../src/domain/definitions.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import {
@@ -8,11 +9,30 @@ import {
   ORIGIN,
   PROJECT,
   ghostId,
+  manifestOf,
   note,
   refusal,
   setup,
   verifiedOf,
 } from './register-fakes.ts';
+
+const LIMITED: RecordType = {
+  type: 'object',
+  properties: { name: { type: 'string', maxLength: 3 }, count: { type: 'integer', minimum: 1 } },
+  required: ['name', 'count'],
+};
+
+const LISTED: RecordType = {
+  type: 'object',
+  properties: { items: { type: 'array', items: { type: 'string' } } },
+  required: ['items'],
+};
+
+const numbers = (length: number): BatchItem => ({
+  type: 'listed',
+  target: 'run.step',
+  data: { items: Array.from({ length }, () => 1) },
+});
 
 const supersedesElsewhere = (): BatchItem =>
   note('x', { relations: [{ to: ghostId('other'), kind: 'supersedes' }] });
@@ -267,16 +287,19 @@ describe('register', () => {
       expect(processes.counters.writes).toBe(0);
     });
 
-    it('should return only the first violation of a record with several, with the record path', async () => {
+    it('should return every violation of a record with several, with the record path', async () => {
       const { register } = setup();
 
       const error = await refusal(register([{ ...note(), data: { other: 1, extra: 2 } }]));
 
-      expect(error.details).toHaveLength(1);
-      expect(error.details[0]!.path).toMatch(/^\/records\/0\/data/);
+      expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual([
+        { path: '/records/0/data/text', code: 'required' },
+        { path: '/records/0/data/other', code: 'additional-properties' },
+        { path: '/records/0/data/extra', code: 'additional-properties' },
+      ]);
     });
 
-    it('should give the first violation of each record when two records of the batch are invalid', async () => {
+    it('should give every violation of each record when two records of the batch are invalid', async () => {
       const { register, processes } = setup();
 
       const error = await refusal(
@@ -287,10 +310,64 @@ describe('register', () => {
         ]),
       );
 
-      expect(error.details).toHaveLength(2);
-      expect(error.details[0]!.path).toMatch(/^\/records\/0\/data/);
-      expect(error.details[1]!.path).toMatch(/^\/records\/2\/data/);
+      expect(error.details.map(({ path }) => path).sort()).toEqual([
+        '/records/0/data/extra',
+        '/records/0/data/other',
+        '/records/0/data/text',
+        '/records/2/data/other',
+        '/records/2/data/text',
+      ]);
       expect(processes.counters.writes).toBe(0);
+    });
+
+    it('should count in the last detail every violation a record left out past the 50', async () => {
+      const { register, processes } = setup();
+      processes.add(ORIGIN, manifestOf(ORIGIN, { listed: LISTED }));
+
+      const error = await refusal(register([numbers(5_000)]));
+
+      expect(error.details).toHaveLength(51);
+      expect(error.details.at(-1)).toEqual({
+        path: '',
+        code: 'too-many-errors',
+        message: '4950 more errors omitted',
+      });
+    }, 15_000);
+
+    it('should count the violations of every record in the last detail when two records overflow', async () => {
+      const { register, processes } = setup();
+      processes.add(ORIGIN, manifestOf(ORIGIN, { listed: LISTED }));
+
+      const error = await refusal(register([numbers(3_000), numbers(3_000)]));
+
+      expect(error.details).toHaveLength(51);
+      expect(error.details.at(-1)).toEqual({
+        path: '',
+        code: 'too-many-errors',
+        message: '5950 more errors omitted',
+      });
+    }, 15_000);
+
+    it('should report the measured value of a size limit next to another violation of the same record', async () => {
+      const { register, processes } = setup();
+      processes.add(ORIGIN, manifestOf(ORIGIN, { limited: LIMITED }));
+
+      const error = await refusal(
+        register([{ type: 'limited', target: 'run.step', data: { name: 'abcdef', count: 0 } }]),
+      );
+
+      expect(error.details).toEqual([
+        {
+          path: '/records/0/data/name',
+          code: 'max-length',
+          message: 'must NOT have more than 3 characters (got 6)',
+        },
+        {
+          path: '/records/0/data/count',
+          code: 'minimum',
+          message: 'must be >= 1 (got 0)',
+        },
+      ]);
     });
 
     it('should refuse with the TYPE_NOT_PINNED of a record over the INVALID_RECORD data refusal of an earlier one', async () => {
@@ -335,6 +412,35 @@ describe('register', () => {
         expect(processes.counters.writes).toBe(0);
       },
     );
+
+    it('should return the kind of the pinned name in the detail of a kind-mismatch', async () => {
+      const { register } = setup();
+      const relation = { to: ghostId(ORIGIN), as: 'approves', kind: 'answers' } as const;
+
+      const error = await refusal(register([note('a', { relations: [relation] })]));
+
+      expect(error.details).toEqual([
+        {
+          path: '/records/0/relations/0',
+          code: 'kind-mismatch',
+          message: expect.stringContaining('kind "supports"'),
+          kind: 'supports',
+        },
+      ]);
+    });
+
+    it('should accept an as with a kind equal to the pinned one and write the resolved kind', async () => {
+      const { register, processes } = setup();
+
+      const result = await register([
+        note('a', { alias: 'base' }),
+        note('b', { relations: [{ to: '@base', as: 'approves', kind: 'supports' }] }),
+      ]);
+
+      expect(verifiedOf(processes).records[1]?.relations).toEqual([
+        { kind: 'supports', to: result.records[0]?.id, as: 'approves' },
+      ]);
+    });
 
     it.each([
       ['an explicit kind', { to: ghostId('other'), kind: 'supersedes' }],

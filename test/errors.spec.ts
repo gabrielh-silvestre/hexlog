@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { z } from 'zod';
+import { ruleRefusal } from '../src/commands/register/errors.ts';
 import type { RecordId } from '../src/domain/ids.ts';
 import {
   HexlogError,
@@ -100,6 +101,16 @@ describe('domainError', () => {
 
     expect(error.details).toStrictEqual([
       { path: '/process', code: 'lock-busy', message: 'lock is busy' },
+    ]);
+  });
+
+  it('should carry the kind when given', () => {
+    const error = domainError('INVALID_RECORD', '/records/0/relations/0', 'kind-mismatch', 'm', {
+      kind: 'supports',
+    });
+
+    expect(error.details).toStrictEqual([
+      { path: '/records/0/relations/0', code: 'kind-mismatch', message: 'm', kind: 'supports' },
     ]);
   });
 
@@ -307,6 +318,30 @@ describe('capDetails', () => {
 
     expect(capDetails(repeated)).toEqual(makeDetails(50));
   });
+
+  describe('with a too-many-errors detail already in the list', () => {
+    const omitted = (count: number): Detail => ({
+      path: '',
+      code: 'too-many-errors',
+      message: `${count} more errors omitted`,
+    });
+
+    it('should add the omitted count of the earlier cut to the ones it cuts itself', () => {
+      const details = [...makeDetails(50), omitted(100), ...makeDetails(60).slice(50)];
+
+      expect(capDetails(details).at(-1)).toEqual(omitted(110));
+    });
+
+    it('should keep the earlier cut notice when nothing else is cut', () => {
+      expect(capDetails([...makeDetails(3), omitted(7)])).toEqual([...makeDetails(3), omitted(7)]);
+    });
+
+    it('should sum the notices of several earlier cuts', () => {
+      const details = [omitted(4), ...makeDetails(2), omitted(6)];
+
+      expect(capDetails(details)).toEqual([...makeDetails(2), omitted(10)]);
+    });
+  });
 });
 
 describe('issueDetails', () => {
@@ -491,5 +526,38 @@ describe('withPath', () => {
     expect(
       (withPath(internalError('boom'), '/records/0', 'p') as HexlogError).details,
     ).toStrictEqual([]);
+  });
+});
+
+describe('ruleRefusal', () => {
+  const path = '/records/0/relations/0';
+
+  it('should name the right kind in the detail and in the message on kind-mismatch', () => {
+    const error = ruleRefusal(path, { code: 'kind-mismatch', kind: 'supports' });
+
+    expect(error).toMatchObject({
+      code: 'INVALID_RECORD',
+      details: [
+        {
+          path,
+          code: 'kind-mismatch',
+          message:
+            'kind does not match the kind of the pinned relation name; send as alone, or kind "supports"',
+          kind: 'supports',
+        },
+      ],
+    });
+  });
+
+  it('should keep the generic message and no kind when the violation has no kind', () => {
+    const error = ruleRefusal(path, { code: 'kind-mismatch' });
+
+    expect(error.details).toStrictEqual([
+      {
+        path,
+        code: 'kind-mismatch',
+        message: 'kind does not match the kind of the pinned relation name',
+      },
+    ]);
   });
 });
