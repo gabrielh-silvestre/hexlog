@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from '@jest/globals';
+import { omit } from 'es-toolkit';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -10,11 +11,13 @@ import { type Environment, createEnvironment } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 
-function git(cwd: string, ...args: string[]): string {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+function gitWithEnv(cwd: string, env: NodeJS.ProcessEnv, ...args: string[]): string {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
   if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
   return result.stdout.trim();
 }
+
+const git = (cwd: string, ...args: string[]): string => gitWithEnv(cwd, {}, ...args);
 
 describe('scripts/flow/report.ts', () => {
   const reportPath = path.join(repoRoot, 'scripts/flow/report.ts');
@@ -34,11 +37,36 @@ describe('scripts/flow/report.ts', () => {
   const rests = (to: string) => ({ kind: 'derivesFrom', as: 'rests-on', to });
   const anchoredIn = (to: string) => ({ kind: 'derivesFrom', as: 'anchored-in', to });
 
-  const premise = (proc: string, short: string): Item => ({
+  const premise = (
+    proc: string,
+    short: string,
+    extra: { answeredBy?: string; relations?: Record<string, unknown>[] } = {},
+  ): Item => ({
     type: 'premise',
     target: `${proc}.premise.${short}`,
-    data: { statement: `Premise ${short}` },
+    data: {
+      statement: `Premise ${short}`,
+      ...(extra.answeredBy === undefined ? {} : { answeredBy: extra.answeredBy }),
+    },
+    ...(extra.relations === undefined ? {} : { relations: extra.relations }),
   });
+
+  const gapOf = (
+    proc: string,
+    short: string,
+    context: string,
+    relations: Record<string, unknown>[] = [],
+  ): Item => ({
+    type: 'gap',
+    target: `${proc}.gap.${short}`,
+    data: { question: `Question ${short}`, context },
+    relations,
+  });
+
+  const criticalGap = (proc: string, short: string, rule: string): Item =>
+    gapOf(proc, short, `Class: critical; rule: ${rule}`);
+
+  const fillsGap = (to: string) => ({ kind: 'answers', as: 'fills-gap', to });
 
   const decision = (proc: string, short: string, relations: Record<string, unknown>[]): Item => ({
     type: 'decision',
@@ -53,19 +81,29 @@ describe('scripts/flow/report.ts', () => {
     relations,
   });
 
+  const bodyOf = (kind: string, file: string) =>
+    JSON.parse(fs.readFileSync(path.join(hexlogDir, kind, file), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+
+  /** `premise` como era antes do campo `answeredBy`: o processo que a fixa assim não o tem. */
+  const premiseWithoutAnsweredBy = (): Record<string, unknown> => {
+    const { properties, ...rest } = bodyOf('types', 'premise.json');
+    return { ...rest, properties: omit(properties as Record<string, unknown>, ['answeredBy']) };
+  };
+
   /** Define os tipos e as relações de `.hexlog/` no projeto, como `flow-definitions.spec.ts`. */
-  async function defineFlow(environment: Environment): Promise<void> {
-    const bodyOf = (kind: string, file: string) =>
-      JSON.parse(fs.readFileSync(path.join(hexlogDir, kind, file), 'utf8')) as Record<
-        string,
-        unknown
-      >;
+  async function defineFlow(
+    environment: Environment,
+    schemas: Record<string, Record<string, unknown>> = {},
+  ): Promise<void> {
     for (const file of fs.readdirSync(path.join(hexlogDir, 'types'))) {
       const name = file.replace(/\.json$/, '');
       await environment.ok('define_type', {
         project: PROJECT,
         name,
-        schema: bodyOf('types', file),
+        schema: schemas[name] ?? bodyOf('types', file),
       });
     }
     for (const file of fs.readdirSync(path.join(hexlogDir, 'relations'))) {
@@ -148,16 +186,26 @@ describe('scripts/flow/report.ts', () => {
 
   beforeAll(async () => {
     const environment = await createEnvironment();
-    await defineFlow(environment);
+    await defineFlow(environment, { premise: premiseWithoutAnsweredBy() });
+    // o processo fixa o `premise` sem `answeredBy`; a versão com o campo vale só dos próximos
+    await environment.ok('create_process', { project: PROJECT, process: 'feat-nopin' });
+    await environment.ok('define_type', {
+      project: PROJECT,
+      name: 'premise',
+      schema: bodyOf('types', 'premise.json'),
+    });
     for (const proc of [
       'directives-9',
       'feat-r',
       'feat-clean',
       'feat-many',
+      'feat-cut',
       'feat-wide',
       'feat-edge-lines',
       'feat-edge-wide',
       'feat-inherit',
+      'feat-c',
+      'feat-class',
     ]) {
       await environment.ok('create_process', { project: PROJECT, process: proc });
     }
@@ -218,22 +266,14 @@ describe('scripts/flow/report.ts', () => {
         target: 'feat-r.decision.d-a',
       },
       // revoga `d-rev` e o superseder `d-b`: nem `d-a` nem `d-b` voltam a valer
-      revoker: {
-        type: 'gap',
-        target: 'feat-r.gap.revoker',
-        data: { question: 'Why revoke?', context: 'Fixture' },
-        relations: [
-          { kind: 'revokes', to: '@d-rev' },
-          { kind: 'revokes', to: '@d-b' },
-        ],
-      },
+      revoker: gapOf('feat-r', 'revoker', 'Fixture', [
+        { kind: 'revokes', to: '@d-rev' },
+        { kind: 'revokes', to: '@d-b' },
+      ]),
       // revoga a premissa `gamma`, que `d-revoked-prem` ainda cita
-      'revoker-prem': {
-        type: 'gap',
-        target: 'feat-r.gap.revoker-prem',
-        data: { question: 'Why revoke the premise?', context: 'Fixture' },
-        relations: [{ kind: 'revokes', to: '@gamma' }],
-      },
+      'revoker-prem': gapOf('feat-r', 'revoker-prem', 'Fixture', [
+        { kind: 'revokes', to: '@gamma' },
+      ]),
     });
 
     const clean = await registerNamed(environment, 'feat-clean', {
@@ -252,7 +292,164 @@ describe('scripts/flow/report.ts', () => {
       'd-new': decision('feat-inherit', 'd-old', [{ kind: 'supersedes', to: '@d-old' }]),
     });
 
+    // lacunas críticas: a chave do fixture é o alias do lote
+    Object.assign(
+      ids,
+      await registerNamed(environment, 'feat-c', {
+        objective: premise('feat-c', 'objective'),
+        'g-open': criticalGap('feat-c', 'open', 'directives.fronteiras.r1'),
+        'p-open-sim': premise('feat-c', 'open-sim', { answeredBy: 'simulated' }),
+        'g-sim': criticalGap('feat-c', 'sim', 'directives.convencoes.r1'),
+        'p-sim': premise('feat-c', 'sim', {
+          answeredBy: 'simulated',
+          relations: [fillsGap('@g-sim')],
+        }),
+        'g-ok': criticalGap('feat-c', 'ok', 'directives.invariantes.r2'),
+        'p-ok-sim': premise('feat-c', 'ok-sim', { answeredBy: 'simulated' }),
+        'p-ok': premise('feat-c', 'ok', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-ok'), { kind: 'derivesFrom', to: '@p-ok-sim' }],
+        }),
+        'g-noamend': criticalGap('feat-c', 'noamend', 'directives.fronteiras.r1'),
+        'p-noamend': premise('feat-c', 'noamend', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-noamend')],
+        }),
+        'g-dir': criticalGap('feat-c', 'dir', 'directives.convencoes.r1'),
+        'g-none': criticalGap('feat-c', 'none', 'directives.convencoes.r1'),
+        'p-none': premise('feat-c', 'none', { relations: [fillsGap('@g-none')] }),
+        'g-amended': criticalGap('feat-c', 'amended', 'directives.convencoes.r1'),
+        'p-amended': premise('feat-c', 'amended', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-amended')],
+        }),
+        'g-human': criticalGap('feat-c', 'human', 'directives.invariantes.r2'),
+        'p-human': premise('feat-c', 'human', {
+          answeredBy: 'human',
+          relations: [fillsGap('@g-human')],
+        }),
+        // `human` não precisa de emenda: decidiu outra coisa, a regra segue como está
+        'g-human-nodiff': criticalGap('feat-c', 'human-nodiff', 'directives.fronteiras.r1'),
+        'p-human-nodiff': premise('feat-c', 'human-nodiff', {
+          answeredBy: 'human',
+          relations: [fillsGap('@g-human-nodiff')],
+        }),
+        'g-human-late': criticalGap('feat-c', 'human-late', 'directives.convencoes.r1'),
+        'p-human-late': premise('feat-c', 'human-late', {
+          answeredBy: 'human',
+          relations: [fillsGap('@g-human-late')],
+        }),
+        // dois fechadores: basta um aprovado (ou um não `human`) para o relatório acusar
+        'g-two': criticalGap('feat-c', 'two', 'directives.convencoes.r1'),
+        'p-two-approved': premise('feat-c', 'two-approved', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-two')],
+        }),
+        'p-two-simulated': premise('feat-c', 'two-simulated', {
+          answeredBy: 'simulated',
+          relations: [fillsGap('@g-two')],
+        }),
+        'g-two-nodiff': criticalGap('feat-c', 'two-nodiff', 'directives.fronteiras.r1'),
+        'p-two-nodiff-human': premise('feat-c', 'two-nodiff-human', {
+          answeredBy: 'human',
+          relations: [fillsGap('@g-two-nodiff')],
+        }),
+        'p-two-nodiff-approved': premise('feat-c', 'two-nodiff-approved', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-two-nodiff')],
+        }),
+        'g-norule': gapOf('feat-c', 'norule', 'Class: critical'),
+        'p-norule': premise('feat-c', 'norule', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-norule')],
+        }),
+        'g-common': gapOf('feat-c', 'common', 'Class: common'),
+        'g-common-closed': gapOf('feat-c', 'common-closed', 'Class: common'),
+        'p-common': premise('feat-c', 'common', {
+          answeredBy: 'simulated',
+          relations: [fillsGap('@g-common-closed')],
+        }),
+        'g-old': criticalGap('feat-c', 'old', 'directives.fronteiras.r1'),
+        'g-new': {
+          ...gapOf('feat-c', 'new', 'Class: critical; rule: directives.invariantes.r2', [
+            { kind: 'supersedes', to: '@g-old' },
+          ]),
+          target: 'feat-c.gap.old',
+        },
+        'p-new': premise('feat-c', 'new', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-new')],
+        }),
+        'g-revoked': criticalGap('feat-c', 'revoked', 'directives.invariantes.r2'),
+        'p-revoked': premise('feat-c', 'revoked', {
+          answeredBy: 'simulated-approved',
+          relations: [fillsGap('@g-revoked')],
+        }),
+        'revoke-closer': gapOf('feat-c', 'revoke-closer', 'Fixture', [
+          { kind: 'revokes', to: '@p-revoked' },
+        ]),
+        // a aprovação revogada deixa de valer: a decisão volta a apoiar-se só na `simulated`
+        'p-rv-sim': premise('feat-c', 'rv-sim', { answeredBy: 'simulated' }),
+        'p-rv-approved': premise('feat-c', 'rv-approved', {
+          answeredBy: 'simulated-approved',
+          relations: [{ kind: 'derivesFrom', to: '@p-rv-sim' }],
+        }),
+        'rv-revoker': gapOf('feat-c', 'rv-revoker', 'Fixture', [
+          { kind: 'revokes', to: '@p-rv-approved' },
+        ]),
+        'd-rests-revoked': decision('feat-c', 'rests-revoked', [rests('@p-rv-sim')]),
+        'd-rests-sim': decision('feat-c', 'rests-sim', [rests('@p-open-sim')]),
+        'd-rests-approved': decision('feat-c', 'rests-approved', [rests('@p-ok-sim')]),
+        'd-rests-common': decision('feat-c', 'rests-common', [rests('@p-common')]),
+      }),
+    );
+    // a diretriz que fecha a lacuna vive em `directives-9`, outro processo, como no dado real
+    await registerItems(environment, 'directives-9', [
+      {
+        type: 'directive',
+        target: 'directives.convencoes.r9',
+        data: { rule: 'Rule nine', section: 'Section', source },
+        relations: [{ kind: 'answers', as: 'closes-gap', to: idOf('g-dir') }],
+      },
+    ]);
+
+    // processo que fixa o `premise` sem `answeredBy`
+    await registerNamed(environment, 'feat-nopin', {
+      'g-nopin': criticalGap('feat-nopin', 'nopin', 'directives.invariantes.r2'),
+      'p-nopin': premise('feat-nopin', 'nopin', { relations: [fillsGap('@g-nopin')] }),
+    });
+
+    // `Class:` fora do literal exato: o freio erra para o falso positivo
+    const classOf = (context: string, short: string) =>
+      gapOf('feat-class', short, `${context}; rule: directives.fronteiras.r1`);
+    Object.assign(
+      ids,
+      await registerNamed(environment, 'feat-class', {
+        'k-lower': classOf('class: critical', 'lower'),
+        'k-tight': classOf('Class:critical', 'tight'),
+        'k-spaced': classOf(' Class: critical', 'spaced'),
+        'k-upper': classOf('Class: Critical', 'upper'),
+        'k-longer': classOf('Class: criticality', 'longer'),
+        'k-mixed': classOf('Class: common; critical', 'mixed'),
+        // ESC na regra: não chega ao stdout, a linha diz só que o doc é desconhecido
+        'k-control': gapOf(
+          'feat-class',
+          'control',
+          'Class: critical; rule: directives.adr\u001b[31m.x',
+        ),
+        'p-control': premise('feat-class', 'control', {
+          answeredBy: 'human',
+          relations: [fillsGap('@k-control')],
+        }),
+      }),
+    );
+
     await registerObjectiveFixture(environment, 'feat-many', { premises: 0, decisions: 101 });
+    // o corte de 100 linhas não pode levar a lacuna crítica, que fica depois de 101 decisões
+    await registerObjectiveFixture(environment, 'feat-cut', { premises: 0, decisions: 101 });
+    await registerItems(environment, 'feat-cut', [
+      criticalGap('feat-cut', 'open', 'directives.fronteiras.r1'),
+    ]);
     await registerObjectiveFixture(environment, 'feat-wide', { premises: 12, decisions: 1 });
     // as bordas: 100 linhas e 10 premissas cabem inteiras, sem corte
     await registerObjectiveFixture(environment, 'feat-edge-lines', { premises: 0, decisions: 100 });
@@ -283,7 +480,7 @@ describe('scripts/flow/report.ts', () => {
     git(gitRepo, 'config', 'user.email', 'test@example.com');
     git(gitRepo, 'config', 'user.name', 'Test');
     fs.mkdirSync(path.join(gitRepo, 'docs/directives'), { recursive: true });
-    for (const doc of ['convencoes', 'fluxo-hexlog']) {
+    for (const doc of ['convencoes', 'fluxo-hexlog', 'invariantes']) {
       fs.writeFileSync(path.join(gitRepo, `docs/directives/${doc}.md`), `# ${doc}\n`);
     }
     git(gitRepo, 'add', '.');
@@ -291,7 +488,25 @@ describe('scripts/flow/report.ts', () => {
     git(gitRepo, 'update-ref', 'refs/remotes/origin/develop', 'HEAD');
     git(gitRepo, 'checkout', '-q', '-b', 'feat/r');
     fs.appendFileSync(path.join(gitRepo, 'docs/directives/convencoes.md'), 'amended\n');
-    git(gitRepo, 'commit', '-q', '-am', 'amend convencoes');
+    // datas fixas separam "antes" e "depois" dos registros, que nascem segundos antes do repositório
+    const committedOn = (date: string) => ({ GIT_COMMITTER_DATE: date });
+    gitWithEnv(
+      gitRepo,
+      committedOn('2099-01-01T00:00:00Z'),
+      'commit',
+      '-q',
+      '-am',
+      'amend convencoes',
+    );
+    fs.appendFileSync(path.join(gitRepo, 'docs/directives/invariantes.md'), 'amended\n');
+    gitWithEnv(
+      gitRepo,
+      committedOn('2000-01-01T00:00:00Z'),
+      'commit',
+      '-q',
+      '-am',
+      'amend invariantes',
+    );
     // a base avança com `fluxo-hexlog.md` depois de `feat/r` sair: só o diff contra o merge-base o ignora
     git(gitRepo, 'checkout', '-q', 'main');
     fs.appendFileSync(path.join(gitRepo, 'docs/directives/fluxo-hexlog.md'), 'amended on base\n');
@@ -404,7 +619,7 @@ describe('scripts/flow/report.ts', () => {
     });
 
     it('should print only ids that the server query reports as current', () => {
-      const printed = printedIds(result);
+      const printed = printedIds(result).filter((id) => id !== '-');
 
       expect(printed.length).toBeGreaterThan(0);
 
@@ -435,6 +650,198 @@ describe('scripts/flow/report.ts', () => {
     });
   });
 
+  describe('with feat-c: critical gaps and simulated premises', () => {
+    let result: SpawnSyncReturns<string>;
+
+    beforeAll(() => {
+      result = runReport(['feat-c']);
+    }, 30_000);
+
+    it('should flag an open critical gap as pending approval', () => {
+      expect(rowFor(result, 'g-open')).toEqual([
+        idOf('g-open'),
+        'feat-c.gap.open',
+        'critical-gap: open, approval pending',
+      ]);
+    });
+
+    it('should flag a critical gap closed by a simulated premise', () => {
+      expect(rowFor(result, 'g-sim')).toEqual([
+        idOf('g-sim'),
+        'feat-c.gap.sim',
+        'critical-gap: closed by feat-c.premise.sim (answeredBy=simulated)',
+      ]);
+    });
+
+    it('should keep clean a gap closed by simulated-approved with the doc in the diff', () => {
+      expect(rowFor(result, 'g-ok')).toBeUndefined();
+    });
+
+    it('should flag a gap closed without the amendment of its critical doc in the diff', () => {
+      expect(rowFor(result, 'g-noamend')).toEqual([
+        idOf('g-noamend'),
+        'feat-c.gap.noamend',
+        'critical-gap: docs/directives/fronteiras.md not in the diff',
+      ]);
+    });
+
+    it('should list a gap closed by a directive of another process as answeredBy=none', () => {
+      expect(rowFor(result, 'g-dir')).toEqual([
+        idOf('g-dir'),
+        'feat-c.gap.dir',
+        'critical-gap-review: closed by directives.convencoes.r9 (answeredBy=none)',
+      ]);
+    });
+
+    it('should flag a gap closed by a premise without answeredBy when the process pins the field', () => {
+      expect(rowFor(result, 'g-none')).toEqual([
+        idOf('g-none'),
+        'feat-c.gap.none',
+        'critical-gap: closed by feat-c.premise.none (answeredBy=none, field pinned)',
+      ]);
+    });
+
+    it('should keep clean a human closer whose doc is not in the diff', () => {
+      expect(rowFor(result, 'g-human-nodiff')).toBeUndefined();
+    });
+
+    it('should flag a human closer recorded before the commit that amended the doc', () => {
+      expect(rowFor(result, 'g-human-late')).toEqual([
+        idOf('g-human-late'),
+        'feat-c.gap.human-late',
+        'critical-gap: doc amended after the approval (docs/directives/convencoes.md)',
+      ]);
+    });
+
+    it('should flag the simulated closer and the late approval of the same gap', () => {
+      expect(rowFor(result, 'g-two')).toEqual([
+        idOf('g-two'),
+        'feat-c.gap.two',
+        'critical-gap: closed by feat-c.premise.two-simulated (answeredBy=simulated); ' +
+          'critical-gap: doc amended after the approval (docs/directives/convencoes.md)',
+      ]);
+    });
+
+    it('should flag the doc missing from the diff when only one of the closers is human', () => {
+      expect(rowFor(result, 'g-two-nodiff')).toEqual([
+        idOf('g-two-nodiff'),
+        'feat-c.gap.two-nodiff',
+        'critical-gap: docs/directives/fronteiras.md not in the diff',
+      ]);
+    });
+
+    it('should flag a simulated-approved recorded before the commit that amended the doc', () => {
+      expect(rowFor(result, 'g-amended')).toEqual([
+        idOf('g-amended'),
+        'feat-c.gap.amended',
+        'critical-gap: doc amended after the approval (docs/directives/convencoes.md)',
+      ]);
+    });
+
+    it('should keep clean a human closer when the doc was amended before the approval', () => {
+      expect(rowFor(result, 'g-human')).toBeUndefined();
+    });
+
+    it('should flag a critical gap without a rule target as an unknown rule doc', () => {
+      expect(rowFor(result, 'g-norule')).toEqual([
+        idOf('g-norule'),
+        'feat-c.gap.norule',
+        'critical-gap: rule doc unknown',
+      ]);
+    });
+
+    it('should not flag a common-class gap', () => {
+      expect(rowFor(result, 'g-common')).toBeUndefined();
+    });
+
+    it('should not flag a superseded critical gap nor the one that replaced it', () => {
+      expect(rowFor(result, 'g-old')).toBeUndefined();
+      expect(rowFor(result, 'g-new')).toBeUndefined();
+    });
+
+    it('should treat a gap whose closer was revoked as open', () => {
+      expect(rowFor(result, 'g-revoked')).toEqual([
+        idOf('g-revoked'),
+        'feat-c.gap.revoked',
+        'critical-gap: open, approval pending',
+      ]);
+    });
+
+    it('should flag a decision resting on a simulated premise without simulated-approved', () => {
+      expect(rowFor(result, 'd-rests-sim')).toEqual([
+        idOf('d-rests-sim'),
+        'feat-c.decision.rests-sim',
+        'rests-on-simulated: feat-c.premise.open-sim has no simulated-approved',
+      ]);
+    });
+
+    it('should keep clean a decision resting on a simulated premise with simulated-approved', () => {
+      expect(rowFor(result, 'd-rests-approved')).toBeUndefined();
+    });
+
+    it('should keep clean a decision resting on a simulated premise that filled a common gap', () => {
+      expect(rowFor(result, 'd-rests-common')).toBeUndefined();
+    });
+
+    it('should flag a decision resting on a simulated premise whose approval was revoked', () => {
+      expect(rowFor(result, 'd-rests-revoked')?.[2]).toBe(
+        'rests-on-simulated: feat-c.premise.rv-sim has no simulated-approved',
+      );
+    });
+
+    it('should not flag a critical doc that a critical gap covers', () => {
+      expect(result.stdout).not.toContain('critical-doc-touched');
+    });
+  });
+
+  it('should only list a gap closed by a premise without answeredBy when the process does not pin the field', () => {
+    const result = runReport(['feat-nopin']);
+
+    expect(rowsOf(result)).toEqual([
+      [
+        expect.stringMatching(/^feat-nopin:/),
+        'feat-nopin.gap.nopin',
+        'critical-gap-review: closed by feat-nopin.premise.nopin (answeredBy=none)',
+      ],
+      ['-', '-', 'critical-doc-touched: docs/directives/convencoes.md'],
+    ]);
+  }, 30_000);
+
+  describe('with feat-class: the Class literal of a gap context', () => {
+    let result: SpawnSyncReturns<string>;
+
+    beforeAll(() => {
+      result = runReport(['feat-class']);
+    }, 30_000);
+
+    it.each(['k-lower', 'k-tight', 'k-spaced', 'k-upper'])(
+      'should still read %s as a critical gap',
+      (name) => {
+        expect(rowFor(result, name)?.[2]).toBe('critical-gap: open, approval pending');
+      },
+    );
+
+    it.each(['k-longer', 'k-mixed'])('should not read %s as a critical gap', (name) => {
+      expect(rowFor(result, name)).toBeUndefined();
+    });
+
+    it('should report an unknown rule doc when the rule carries a terminal control', () => {
+      expect(rowFor(result, 'k-control')?.[2]).toBe('critical-gap: rule doc unknown');
+      expect(result.stdout).not.toContain('\u001b');
+    });
+  });
+
+  it('should skip the doc checks of a closed critical gap when git cannot resolve the base', () => {
+    const result = runReport(['feat-c', 'no-such-base']);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain('doc-amended skipped');
+    expect(rowFor(result, 'g-amended')).toBeUndefined();
+    expect(rowFor(result, 'g-noamend')).toBeUndefined();
+    expect(rowFor(result, 'g-norule')?.[2]).toBe('critical-gap: rule doc unknown');
+    expect(rowFor(result, 'g-open')?.[2]).toBe('critical-gap: open, approval pending');
+  }, 30_000);
+
   it('should drop doc-amended when the base is swapped for feat/r and the diff is empty', () => {
     const result = runReport(['feat-r', 'feat/r']);
 
@@ -444,7 +851,7 @@ describe('scripts/flow/report.ts', () => {
   }, 30_000);
 
   it('should count the rests-on that a superseding decision inherits from its lineage', () => {
-    const result = runReport(['feat-inherit']);
+    const result = runReport(['feat-inherit', 'feat/r']);
 
     expect(result.status).toBe(0);
     expect(rowsOf(result)).toEqual([
@@ -457,7 +864,7 @@ describe('scripts/flow/report.ts', () => {
   }, 30_000);
 
   it('should print nothing to flag when the process has nothing to flag', () => {
-    const result = runReport(['feat-clean']);
+    const result = runReport(['feat-clean', 'feat/r']);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('nothing to flag\n');
@@ -531,7 +938,7 @@ describe('scripts/flow/report.ts', () => {
   }, 30_000);
 
   it('should cut at 100 lines and say how many were omitted', () => {
-    const rows = runReport(['feat-many'])
+    const rows = runReport(['feat-many', 'feat/r'])
       .stdout.split('\n')
       .filter((line) => line !== '');
 
@@ -539,8 +946,26 @@ describe('scripts/flow/report.ts', () => {
     expect(rows.at(-1)).toBe('... 1 more omitted');
   }, 30_000);
 
+  it('should keep the critical gap line when the cut applies', () => {
+    const rows = runReport(['feat-cut', 'feat/r'])
+      .stdout.split('\n')
+      .filter((line) => line !== '');
+
+    expect(rows.some((row) => row.endsWith('critical-gap: open, approval pending'))).toBe(true);
+    expect(rows.at(-1)).toBe('... 2 more omitted');
+  }, 30_000);
+
+  it('should list a critical doc in the diff that no critical gap covers', () => {
+    const result = runReport(['feat-r']);
+
+    expect(rowsOf(result).filter(([id]) => id === '-')).toEqual([
+      ['-', '-', 'critical-doc-touched: docs/directives/convencoes.md'],
+      ['-', '-', 'critical-doc-touched: docs/directives/invariantes.md'],
+    ]);
+  }, 30_000);
+
   it('should list up to 10 uncited premises and count the rest', () => {
-    const [row] = rowsOf(runReport(['feat-wide']));
+    const [row] = rowsOf(runReport(['feat-wide', 'feat/r']));
     const uncited = row?.[2]?.split('uncited=')[1];
 
     expect(uncited?.endsWith(' (+2)')).toBe(true);
@@ -548,7 +973,7 @@ describe('scripts/flow/report.ts', () => {
   }, 30_000);
 
   it('should print exactly 100 lines without the omitted line', () => {
-    const rows = runReport(['feat-edge-lines'])
+    const rows = runReport(['feat-edge-lines', 'feat/r'])
       .stdout.split('\n')
       .filter((line) => line !== '');
 
@@ -557,7 +982,7 @@ describe('scripts/flow/report.ts', () => {
   }, 30_000);
 
   it('should list exactly 10 uncited premises without the count suffix', () => {
-    const [row] = rowsOf(runReport(['feat-edge-wide']));
+    const [row] = rowsOf(runReport(['feat-edge-wide', 'feat/r']));
     const uncited = row?.[2]?.split('uncited=')[1];
 
     expect(uncited).not.toContain('(+');

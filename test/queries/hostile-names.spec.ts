@@ -46,7 +46,8 @@ describe('QueryService.queryRecords', () => {
   });
 
   describe('with relation names that clash with Object.prototype', () => {
-    it('should handle a relation named constructor in relations counts', async () => {
+    /** `support` aponta para `evidence` pela relação `constructor`; `superseded` troca um dos dois. */
+    async function constructorEdge({ superseded }: { superseded?: 'support' | 'evidence' }) {
       const { definitions, createProcess, registerOne, query } = querySetup();
       definitions.write(PROJECT, 'relations', 'constructor', '1.0', {
         name: 'constructor',
@@ -54,17 +55,46 @@ describe('QueryService.queryRecords', () => {
       });
       createProcess('run-1');
       const evidence = await registerOne('run-1', note('evidence'), 1);
-      await registerOne(
+      const support = await registerOne(
         'run-1',
         note('support', { relations: [{ to: evidence, as: 'constructor' }] }),
         2,
       );
+      if (superseded) {
+        await registerOne(
+          'run-1',
+          note('replacement', {
+            relations: [{ to: superseded === 'support' ? support : evidence, kind: 'supersedes' }],
+          }),
+          3,
+        );
+      }
+      return { query, evidence, support };
+    }
+
+    it('should handle a relation named constructor in relations counts', async () => {
+      const { query, evidence } = await constructorEdge({});
 
       const page = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
 
       expect(at(page.records, 0).inCounts).toEqual({ constructor: 1 });
       expect(Object.hasOwn(at(page.records, 0).inCounts ?? {}, 'constructor')).toBe(true);
     });
+
+    it.each([
+      { side: 'nonCurrentInCounts', superseded: 'support', target: 'evidence' },
+      { side: 'nonCurrentOutCounts', superseded: 'evidence', target: 'support' },
+    ] as const)(
+      'should handle a relation named constructor in $side',
+      async ({ side, superseded, target }) => {
+        const { query, ...ids } = await constructorEdge({ superseded });
+
+        const page = query({ process: 'run-1', ids: [ids[target]], relations: 'counts' });
+
+        expect(at(page.records, 0)[side]).toEqual({ constructor: 1 });
+        expect(Object.hasOwn(at(page.records, 0)[side] ?? {}, 'constructor')).toBe(true);
+      },
+    );
   });
 });
 

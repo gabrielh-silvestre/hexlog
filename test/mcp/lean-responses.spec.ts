@@ -374,7 +374,14 @@ describe('query', () => {
 
     for (const record of records) {
       expect(Object.keys(record)).toEqual(
-        expect.not.arrayContaining(['in', 'out', 'inCounts', 'outCounts']),
+        expect.not.arrayContaining([
+          'in',
+          'out',
+          'inCounts',
+          'outCounts',
+          'nonCurrentInCounts',
+          'nonCurrentOutCounts',
+        ]),
       );
     }
   });

@@ -42,14 +42,14 @@ Premissas atemporais do hexlog, em linguagem de produto: o que não pode quebrar
 - `camadas-com-direcao`: Cada camada só depende das de baixo, e consultar nunca grava; quebrar essa direção é achado urgente em review. Ver: [fronteiras.md](fronteiras.md).
 - `so-linux`: O produto só é suportado no Linux; outros sistemas não foram testados. Ver: [instalacao-e-hooks.md](instalacao-e-hooks.md).
 - `adr-aceito-so-por-emenda`: ADR aceito não é reescrito, só recebe emenda, e a pesquisa congelada não se edita; mudança de rumo vai num ADR novo. Ver: [documentacao.md](documentacao.md).
-- `camada-fina-sobre-o-omc`: As regras de uso valem por cima do OMC sem alterá-lo: skill de entrada fina, doc importado, ponteiro ao iniciar subagente e bloqueio de PR sem marcador; nada reescreve a entrada do agente. Ver: [adr-0010-camada-sobre-omc.md](adr-0010-camada-sobre-omc.md).
+- `camada-fina-sobre-o-omc`: As regras de uso valem por cima do OMC sem alterá-lo: skill de entrada fina, doc importado, ponteiro e regra curta ao iniciar subagente e bloqueio de PR sem marcador; nada reescreve a entrada do agente. Ver: [adr-0010-camada-sobre-omc.md](adr-0010-camada-sobre-omc.md).
 - `decisao-registrada-por-quem-decide`: Toda escolha entre alternativas viáveis vira registro feito por quem a tomou, inclusive subagente, e nunca delegado a outro. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 - `lacuna-fecha-por-regra-explicita`: Uma lacuna só se fecha por regra escrita ou premissa registrada, nunca por decisão refeita; PR com lacuna aberta nasce em rascunho e só sai dele com as lacunas fechadas e o marcador regravado. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 
 ## Propósito e modos de uso
 
 - `audita-decisoes-de-agentes`: O hexlog existe para auditar decisões de agentes de IA: o que foi decidido, por quê e com que evidência. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
-- `dois-modos-de-uso`: Há dois modos: acompanhado (modo `ask`), em que o humano decide e o agente explora, coleta evidência e pesquisa; e autônomo (modo `autonomous`, o padrão), em que o agente decide dentro de objetivos, diretrizes e premissas e registra. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
+- `dois-modos-de-uso`: Dois modos: acompanhado (`ask`): o humano decide e o agente explora, coleta evidência e pesquisa; autônomo (`autonomous`, padrão): o agente decide e registra dentro de objetivos, diretrizes e premissas, com cadeira simulada e aval humano no que é crítico. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 - `decisao-registrada-e-reversivel`: Toda decisão fica registrada para auditoria posterior e pode ser revertida; nada decidido some do histórico. Ver: [fluxo-hexlog.md](fluxo-hexlog.md).
 - `decisao-refutavel`: Toda decisão pode ser refutada por revisão de pares, com o porquê e as evidências rastreáveis, e o processo se ajusta ao que a refutação revela. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
 - `melhoria-continua`: O registro serve à melhoria contínua: o que a auditoria revela vira regra ou premissa melhor. Ver: [adr-0011-camada-estrategica.md](adr-0011-camada-estrategica.md).
