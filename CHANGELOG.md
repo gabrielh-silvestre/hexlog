@@ -4,6 +4,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+## [1.2.2] - 2026-10-24
+
+Aviso de versão: esta versão muda o formato padrão da `query` em `counts` (`inCounts` e `outCounts` deixam de contar a aresta não vigente) e, pela regra de [documentacao.md](docs/directives/documentacao.md), sairia como minor. Por decisão do dono saiu como patch, sem emendar a regra; a Migração abaixo diz como recuperar a soma antiga.
+
 ### Alterado
 
 - A `query` em `counts` (o padrão da tool) passa a contar em `inCounts` e `outCounts` só as arestas vigentes e traz as não vigentes em `nonCurrentInCounts` e `nonCurrentOutCounts`, no mesmo formato: o apoio de uma premissa revogada deixa de parecer apoio vivo (#261).
@@ -146,7 +150,8 @@ Esta versão quebra o contrato em três pontos e sai como minor: o formato padr�
 - Tools, erros e formato em disco mudam, e não há migração do dado: o instalador arquiva o dado 0.x num `.tar` verificado (`node scripts/install.ts --archive-0x`). Até lá, as tools respondem `LEGACY_DATA`.
 - Feche todas as sessões do Claude Code antes de instalar e reinicie depois.
 
-[Não lançado]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.1...HEAD
+[Não lançado]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.1...v1.1.2
