@@ -57,7 +57,8 @@
     ],
     "ask": [
       "Bash(node *scripts/install.ts*)",
-      "Bash(node *scripts/flow/reanchor.ts*--apply*)"
+      "Bash(node *scripts/flow/reanchor.ts*--apply*)",
+      "Bash(node *scripts/flow/sync-cli.ts*--apply*)"
     ]
   }
 }

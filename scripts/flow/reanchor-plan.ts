@@ -5,6 +5,7 @@
 import { chunk, isEqual, isUndefined, sortBy } from 'es-toolkit';
 import { fingerprint } from '../../src/domain/chain.ts';
 import { BATCH_MAX, BatchItem } from '../../src/domain/record.ts';
+import { isCurrent } from './sync.ts';
 
 const GENERATION = /^directives-(\d+)(?::|$)/;
 const ANCHOR_NAMES = new Set(['anchored-in', 'rests-on']);
@@ -224,10 +225,6 @@ export function toBatches(process: string, to: string, rewrites: readonly Rewrit
 }
 
 export const processOf = (id: string): string => id.slice(0, Math.max(id.indexOf(':'), 0));
-
-/** Vigência como o servidor a vê: sem `supersedes` nem `revokes` de entrada. */
-export const isCurrent = ({ in: incoming }: LogRow): boolean =>
-  !incoming.some(({ kind }) => kind === 'supersedes' || kind === 'revokes');
 
 const edgeKeys = (edges: readonly OutEdge[]): string[] =>
   edges.map(({ kind, as, to }) => `${kind}|${as ?? ''}|${to}`).sort();

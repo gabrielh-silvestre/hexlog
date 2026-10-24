@@ -4,18 +4,14 @@
 // `node_modules`. Sai 0 concluído, 1 recusa, lote recusado ou conferência divergente, e 2 para dado
 // 0.x ou log quebrado. Aqui `import.meta.dirname` dá a raiz do checkout que a trava de código
 // instalado compara com o commit do build.
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { isUndefined } from 'es-toolkit';
 import { dataDir } from '../../src/directory.ts';
 import { Name } from '../../src/domain/ids.ts';
-import { VERSION } from '../../src/version.ts';
 import { formatCliError, openReadOnly, parseCliArgs, reportCliError } from '../cli-error.ts';
 import {
   formatPlan,
   generationOf,
-  isCurrent,
   isLatestGeneration,
   planReanchor,
   processOf,
@@ -25,7 +21,8 @@ import {
   type LogRow,
   type Source,
 } from './reanchor-plan.ts';
-import { checkInstalled, gitDiffQuiet, openWriter } from './writer.ts';
+import { isCurrent } from './sync.ts';
+import { checkInstalled, openWriter, readInstalled } from './writer.ts';
 
 const PROJECT = Name.parse('hexlog');
 const GENERATION_NAME = /^directives-[0-9]+$/;
@@ -81,28 +78,6 @@ function sourceOf(row: Row): Source {
 
 const readSources = (reader: Reader, process: string, includeNonCurrent: boolean): Source[] =>
   readRows(reader, process, { fields: ['rule', 'statement'], includeNonCurrent }).map(sourceOf);
-
-function installedCheck() {
-  return {
-    version: VERSION,
-    // Arquivo ausente ou ilegível vira `null`, que `checkInstalled` relata como problema.
-    claudeJsonText: (() => {
-      try {
-        return fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8');
-      } catch {
-        return null;
-      }
-    })(),
-    readManifest: (versionDir: string) => {
-      try {
-        return fs.readFileSync(path.join(versionDir, 'manifest.json'), 'utf8');
-      } catch {
-        return null;
-      }
-    },
-    gitDiffQuiet: gitDiffQuiet(path.resolve(import.meta.dirname, '../..')),
-  };
-}
 
 /** Processos de trabalho com as decisões vigentes e todas as decisões (a base da conferência). */
 function readWork(reader: Reader, names: string[]) {
@@ -186,7 +161,7 @@ async function run(to: string, apply: boolean): Promise<number> {
     ]),
   );
 
-  const installed = installedCheck();
+  const installed = readInstalled(path.resolve(import.meta.dirname, '../..'));
   const problems = checkInstalled(installed);
   console.log(formatPlan(plan, { to, apply }));
   if (!apply) {

@@ -825,6 +825,24 @@ describe('.claude/settings.json', () => {
     expect(matcher.test('node scripts/flow/reanchor.ts --to directives-4')).toBe(false);
   }, 15_000);
 
+  it('should ask before sync-cli.ts --apply and keep every sync-cli.ts call out of allow', () => {
+    const pattern = 'Bash(node *scripts/flow/sync-cli.ts*--apply*)';
+    // o motor de permissões não roda no jest: o curinga vira regex só para provar o alcance
+    const inner = pattern.slice('Bash('.length, -1);
+    const matcher = new RegExp(`^${inner.replaceAll('.', '\\.').replaceAll('*', '.*')}$`);
+
+    expect(settings.permissions.ask).toContain(pattern);
+    expect(settings.permissions.allow.filter((entry) => entry.includes('sync-cli.ts'))).toEqual([]);
+    expect(matcher.test('node scripts/flow/sync-cli.ts plan --process directives-4 --apply')).toBe(
+      true,
+    );
+    expect(
+      matcher.test('node ./scripts/flow/sync-cli.ts plan --apply --process directives-4'),
+    ).toBe(true);
+    expect(matcher.test('node scripts/flow/sync-cli.ts plan --process directives-4')).toBe(false);
+    expect(matcher.test('node scripts/flow/sync-cli.ts check --process directives-4')).toBe(false);
+  }, 15_000);
+
   it('should preserve the gitnexus hook', () => {
     const gitnexus = (settings.hooks.PreToolUse ?? [])
       .flatMap((e) => e.hooks)

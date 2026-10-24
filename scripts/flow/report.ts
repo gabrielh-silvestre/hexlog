@@ -16,6 +16,7 @@ import { Name, RecordId } from '../../src/domain/ids.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { QueryInput } from '../../src/queries/query-service.ts';
 import { formatCliError, openReadOnly } from '../cli-error.ts';
+import { isCurrent } from './sync.ts';
 
 const PROJECT = Name.parse('hexlog');
 const SENTINEL = 'directives.estrategia.none';
@@ -79,10 +80,6 @@ function readRows(filter: Pick<QueryInput, 'process' | 'scope' | 'ids'>): Row[] 
 }
 
 const exportRows = (proc: string): Row[] => readRows({ process: Name.parse(proc) });
-
-/** Vigência como o servidor a vê (`src/domain/relations.ts#buildVigency`): sem `supersedes` nem `revokes` de entrada. */
-const isCurrent = (row: Row): boolean =>
-  !row.in.some((relation) => relation.kind === 'supersedes' || relation.kind === 'revokes');
 
 /** `git <args>` em `cwd`; `undefined` se o git falhar. */
 function tryGit(cwd: string, args: string[]): string | undefined {
