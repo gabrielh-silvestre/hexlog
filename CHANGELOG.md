@@ -6,16 +6,16 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ### Adicionado
 
-- O `details[]` do `kind-mismatch` do `register` ganha o campo opcional `kind`, com o `kind` do nome de relação fixado, e a mensagem diz para enviar só `as` ou esse `kind` (#299).
+- O `details[]` do `kind-mismatch` do `register` ganha o campo opcional `kind`, com o `kind` do nome de relação fixado, e a mensagem diz para enviar só `as` ou esse `kind` (#300).
 
 ### Alterado
 
-- O `register` devolve no `INVALID_RECORD` de dado todas as violações de schema de cada registro do lote até um limite de custo (schema grande contra dado grande), e uma por subschema acima dele, não só a primeira; no máximo 50 `details`, e a `message` de `max-length`, `min-length`, `maximum` e `minimum` termina com o valor medido, como `(got 312)`. O teto de 16.000 caracteres de `data` segue `INVALID_INPUT` e também traz o tamanho (#299).
-- A descrição do `register`, o `docs/tools.md` e a skill `hexlog-flow` passam a ensinar que `as` sozinho basta numa relação, e as mensagens de `kind` fora da lista e de relação sem `kind` nem `as` dizem como corrigir (#299).
+- O `register` devolve no `INVALID_RECORD` de dado todas as violações de schema de cada registro do lote até um limite de custo (schema grande contra dado grande), e uma por subschema acima dele, não só a primeira; no máximo 50 `details`, e a `message` de `max-length`, `min-length`, `maximum` e `minimum` termina com o valor medido, como `(got 312)`. O teto de 16.000 caracteres de `data` segue `INVALID_INPUT` e também traz o tamanho (#300).
+- A descrição do `register`, o `docs/tools.md` e a skill `hexlog-flow` passam a ensinar que `as` sozinho basta numa relação, e as mensagens de `kind` fora da lista e de relação sem `kind` nem `as` dizem como corrigir (#300).
 
 ### Migração
 
-- O `INVALID_RECORD` de dado lista as violações de cada registro (todas até o limite de custo), e a `message` de limite de tamanho ganha o sufixo `(got N)`: quem comparava a `message` por igualdade passa a comparar o `code` (`max-length`, `min-length`, `maximum`, `minimum`), e o laço de correção pode tratar todos os `details` de uma vez (#299).
+- O `INVALID_RECORD` de dado lista as violações de cada registro (todas até o limite de custo), e a `message` de limite de tamanho ganha o sufixo `(got N)`: quem comparava a `message` por igualdade passa a comparar o `code` (`max-length`, `min-length`, `maximum`, `minimum`), e o laço de correção pode tratar todos os `details` de uma vez (#300).
 
 ## [1.2.2] - 2026-10-24
 
