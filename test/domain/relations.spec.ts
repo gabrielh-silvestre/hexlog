@@ -190,9 +190,10 @@ describe('checkRelation', () => {
     });
   });
 
-  it('should report kind-mismatch', () => {
+  it('should report kind-mismatch with the kind of the pinned name', () => {
     expect(violationOf(checkRelation({ as: 'based-on', kind: 'contradicts' }, ctx()))).toEqual({
       code: 'kind-mismatch',
+      kind: 'supports',
     });
   });
 

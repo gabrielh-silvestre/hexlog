@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -335,6 +336,64 @@ describe('openWriter', () => {
     environment.seedLegacy();
 
     expect(() => open()).toThrow(expect.objectContaining({ code: 'LEGACY_DATA' }));
+  });
+
+  describe('when attaching a file', () => {
+    const NOTE = 'Rule text\n';
+    const NOTE_HASH = createHash('sha256').update(NOTE).digest('hex');
+
+    /** Pasta de trabalho do writer com `note.md` e `data.json`. */
+    function workDir() {
+      const dir = createTempDir('writer-attach');
+      fs.writeFileSync(path.join(dir, 'note.md'), NOTE);
+      fs.writeFileSync(path.join(dir, 'data.json'), '{}');
+      return dir;
+    }
+
+    it('should return the sha256 of the bytes of the file', () => {
+      const writer = open({ cwd: workDir() });
+
+      expect(writer.attach('note.md')).toBe(NOTE_HASH);
+    });
+
+    it('should store the blob under the attachments folder of the project', () => {
+      const writer = open({ cwd: workDir() });
+
+      writer.attach('note.md');
+
+      expect(
+        fs.readFileSync(
+          path.join(environment.dataDir, '.v1', 'hexlog', 'attachments', NOTE_HASH),
+          'utf8',
+        ),
+      ).toBe(NOTE);
+    });
+
+    it('should return the same hash for a repeated file', () => {
+      const writer = open({ cwd: workDir() });
+      const first = writer.attach('note.md');
+
+      const second = writer.attach('note.md');
+
+      expect(second).toBe(first);
+    });
+
+    it('should refuse a file that is not .md or .txt', () => {
+      const writer = open({ cwd: workDir() });
+
+      expect(() => writer.attach('data.json')).toThrow(
+        expect.objectContaining({ code: 'INVALID_INPUT' }),
+      );
+    });
+
+    it('should refuse a file outside the cwd of the writer', () => {
+      const writer = open({ cwd: workDir() });
+      const outside = path.join(workDir(), 'note.md');
+
+      expect(() => writer.attach(outside)).toThrow(
+        expect.objectContaining({ code: 'INVALID_INPUT' }),
+      );
+    });
   });
 
   it('should refuse an invalid author', () => {

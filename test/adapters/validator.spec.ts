@@ -515,12 +515,45 @@ describe('validate', () => {
     ]);
   });
 
-  it('should return one error per evaluated subschema, not one per field', () => {
-    expect(validator.validate(noteSchema, { text: 1, count: 'x' })).toHaveLength(1);
+  it('should return every violation of an object in a single call', () => {
+    const details = validator.validate(noteSchema, { text: 1, count: 'x', extra: true });
+
+    expect(details).toHaveLength(3);
+    expect(details).toEqual(
+      expect.arrayContaining([
+        { path: '/text', code: 'type', message: expect.any(String) },
+        { path: '/count', code: 'type', message: expect.any(String) },
+        { path: '/extra', code: 'additional-properties', message: expect.any(String) },
+      ]),
+    );
+  });
+
+  it.each<[string, RecordType, unknown, string, string]>([
+    ['maxLength', { type: 'string', maxLength: 300 }, 'a'.repeat(312), 'max-length', 'got 312'],
+    ['minLength', { type: 'string', minLength: 5 }, 'abc', 'min-length', 'got 3'],
+    ['maximum', { type: 'number', maximum: 10 }, 12.5, 'maximum', 'got 12.5'],
+    ['minimum', { type: 'integer', minimum: 10 }, 3, 'minimum', 'got 3'],
+  ])('should report the measured value of a %s violation', (_keyword, schema, data, code, got) => {
+    expect(validator.validate(schema, data as never)).toEqual([
+      { path: '', code, message: expect.stringContaining(`(${got})`) },
+    ]);
+  });
+
+  it('should count an emoji as a single code point in the measured length', () => {
+    const schema: RecordType = { type: 'string', maxLength: 3 };
+
+    expect(validator.validate(schema, '😀😀😀😀' as never)).toEqual([
+      { path: '', code: 'max-length', message: expect.stringContaining('(got 4)') },
+    ]);
+  });
+
+  it('should keep the ajv message of a violation without a measured value', () => {
+    const [detail] = validator.validate(noteSchema, { count: 1 });
+
+    expect(detail?.message).toBe("must have required property 'text'");
   });
 
   it('should return the error of each branch of an anyOf, plus the one of the anyOf', () => {
-    // O allErrors: false do ajv para no primeiro erro de CADA ramo, não no primeiro da chamada.
     const schema: RecordType = {
       anyOf: [
         { type: 'string', maxLength: 10 },
@@ -550,17 +583,163 @@ describe('validate', () => {
     ]);
   });
 
-  it('should return one error per call even with 7 thousand invalid items', () => {
+  it('should cut at 50 details and count the rest with 7 thousand invalid items', () => {
     const schema = {
       type: 'object',
       properties: { items: { type: 'array', items: { type: 'string' } } },
     };
+    const data = { items: Array.from({ length: 7_000 }, (_, i) => i) };
 
-    const details = validator.validate(schema, {
-      items: Array.from({ length: 7_000 }, (_, i) => i),
+    const details = validator.validate(schema, data);
+
+    expect(details).toHaveLength(51);
+    expect(details.at(-1)).toEqual({
+      path: '',
+      code: 'too-many-errors',
+      message: expect.stringContaining('6950'),
+    });
+  }, 15_000);
+
+  it('should count a lone surrogate as one code point in the measured length', () => {
+    const schema: RecordType = { type: 'string', maxLength: 1 };
+
+    expect(validator.validate(schema, '😀a\ud83d' as never)).toEqual([
+      { path: '', code: 'max-length', message: expect.stringContaining('(got 3)') },
+    ]);
+  });
+
+  it('should cut at 50 and count the rest with a long string that fails 600 maxLength limits', () => {
+    const schema: RecordType = {
+      type: 'string',
+      allOf: Array.from({ length: 600 }, (_, i) => ({ maxLength: i + 1 })),
+    };
+
+    const details = validator.validate(schema, 'a'.repeat(16_000) as never);
+
+    expect(details).toHaveLength(51);
+    expect(details[0]?.message).toContain('(got 16000)');
+    expect(details.at(-1)).toEqual({
+      path: '',
+      code: 'too-many-errors',
+      message: '550 more errors omitted',
+    });
+  }, 15_000);
+
+  describe('with a schema and data of high estimated cost', () => {
+    const compileSpy = () => jest.spyOn(Ajv2020.default.prototype, 'compile');
+    const chained = (levels: number): RecordType => {
+      const defs: RecordType = { [`d${levels}`]: { type: 'string' } };
+      for (let i = 0; i < levels; i++) {
+        defs[`d${i}`] = { allOf: [{ $ref: `#/$defs/d${i + 1}` }, { $ref: `#/$defs/d${i + 1}` }] };
+      }
+      return { type: 'object', $defs: defs, properties: { x: { $ref: '#/$defs/d0' } } };
+    };
+    const manyChecks = (checks: number, itemLimit: Record<string, unknown> = {}): RecordType => ({
+      type: 'object',
+      properties: {
+        a: {
+          type: 'array',
+          items: {
+            ...itemLimit,
+            allOf: Array.from({ length: checks }, () => ({ type: 'string' })),
+          },
+        },
+      },
     });
 
-    expect(details).toEqual([{ path: '/items/0', code: 'type', message: expect.any(String) }]);
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should finish fast with one violation for $defs that double 26 times over failing data', () => {
+      const details = validator.validate(chained(26), { x: 1 });
+
+      expect(details).toEqual([{ path: '/x', code: 'type', message: 'must be string' }]);
+    }, 15_000);
+
+    it('should finish fast with one violation for 900 checks over thousands of failing items', () => {
+      const data = { a: Array.from({ length: 8_000 }, () => 1) };
+
+      const details = validator.validate(manyChecks(900), data);
+
+      expect(details).toEqual([{ path: '/a/0', code: 'type', message: 'must be string' }]);
+    }, 15_000);
+
+    it('should keep the measured value of the violation it reports above the ceiling', () => {
+      const data = { a: Array.from({ length: 40 }, () => 'abcdef') };
+
+      const details = validator.validate(manyChecks(900, { type: 'string', maxLength: 3 }), data);
+
+      expect(details).toEqual([
+        {
+          path: '/a/0',
+          code: 'max-length',
+          message: 'must NOT have more than 3 characters (got 6)',
+        },
+      ]);
+    });
+
+    it('should return every violation below the ceiling', () => {
+      const data = { a: Array.from({ length: 40 }, () => 1) };
+
+      const details = validator.validate(manyChecks(2), data);
+
+      expect(details).toHaveLength(40);
+    });
+
+    it.each([
+      { name: 'valid data', schema: chained(3), data: { x: 's' }, compiles: 1 },
+      { name: 'invalid data below the ceiling', schema: chained(3), data: { x: 1 }, compiles: 2 },
+      { name: 'invalid data above the ceiling', schema: chained(26), data: { x: 1 }, compiles: 1 },
+    ])('should compile the schema $compiles time(s) for $name', ({ schema, data, compiles }) => {
+      const spy = compileSpy();
+
+      validator.validate(schema, data);
+
+      expect(spy).toHaveBeenCalledTimes(compiles);
+    });
+  });
+
+  describe('with a string far above maxLength', () => {
+    const hostile = 'a@'.repeat(8_000);
+
+    it.each([
+      'date-time',
+      'time',
+      'date',
+      'duration',
+      'uri',
+      'uri-reference',
+      'uri-template',
+      'url',
+      'email',
+      'hostname',
+      'ipv4',
+      'ipv6',
+      'regex',
+      'uuid',
+      'json-pointer',
+      'relative-json-pointer',
+      'git-sha',
+      'attachment',
+    ])(
+      'should finish fast and report maxLength against the format %s',
+      (format) => {
+        const schema: RecordType = {
+          type: 'object',
+          properties: { text: { type: 'string', maxLength: 10, format } },
+        };
+
+        const details = validator.validate(schema, { text: hostile });
+
+        expect(details).toContainEqual({
+          path: '/text',
+          code: 'max-length',
+          message: expect.stringContaining('(got 16000)'),
+        });
+      },
+      15_000,
+    );
   });
 
   describe('with repeated validation of a schema', () => {

@@ -19,10 +19,14 @@ const RULE_MESSAGES: Record<RuleCode, string> = {
 
 /**
  * D-10/D-26: violação de regra estrutural no `path` da relação. `not-current` é `FORK_REJECTED`; as
- * demais, `INVALID_RECORD`. `current` (versão atual da linhagem, ou `null`) só sai quando a regra o traz.
+ * demais, `INVALID_RECORD`. `current` (versão atual da linhagem, ou `null`) e `kind` (o do nome
+ * fixado, em `kind-mismatch`) só saem quando a regra os traz.
  */
-export function ruleRefusal(path: string, { code, current }: Violation): HexlogError {
-  const message = RULE_MESSAGES[code];
+export function ruleRefusal(path: string, { code, current, kind }: Violation): HexlogError {
+  const message =
+    code === 'kind-mismatch' && !isUndefined(kind)
+      ? `${RULE_MESSAGES[code]}; send as alone, or kind "${kind}"`
+      : RULE_MESSAGES[code];
   if (code === 'not-current') return domainError('FORK_REJECTED', path, code, message, { current });
-  return invalidRecord([{ path, code, message, ...omitBy({ current }, isUndefined) }]);
+  return invalidRecord([{ path, code, message, ...omitBy({ current, kind }, isUndefined) }]);
 }

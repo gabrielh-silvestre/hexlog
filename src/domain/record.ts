@@ -17,21 +17,25 @@ export const BATCH_MAX = 50;
 export const RELATIONS_MAX = 100;
 
 /**
- * Exige que o valor caiba em `max` caracteres canônicos (JCS); `what` abre a mensagem de recusa.
- * Valor que o `canonicalize` recusa (surrogate solitário) conta como fora do teto em vez de lançar,
- * para o parse devolver erro de validação.
+ * Exige que o valor caiba em `max` caracteres canônicos (JCS); `what` abre a mensagem de recusa, que
+ * traz o tamanho medido (`got N`). Valor que o `canonicalize` recusa (surrogate solitário) conta como
+ * fora do teto em vez de lançar, para o parse devolver erro de validação, e a mensagem fica sem `got`.
  */
 export function withCanonicalLimit<T extends z.ZodType>(schema: T, max: number, what: string): T {
-  return schema.refine(
-    (value) => {
-      try {
-        return (canonicalize(value) ?? '').length <= max;
-      } catch {
-        return false;
-      }
-    },
-    { message: `${what} exceeds ${max} canonical characters or is not canonicalizable` },
-  );
+  return schema.superRefine((value, ctx) => {
+    let size: number | undefined;
+    try {
+      size = (canonicalize(value) ?? '').length;
+    } catch {
+      size = undefined;
+    }
+    if (!isUndefined(size) && size <= max) return;
+    const got = isUndefined(size) ? '' : ` (got ${size})`;
+    ctx.addIssue({
+      code: 'custom',
+      message: `${what} exceeds ${max} canonical characters or is not canonicalizable${got}`,
+    });
+  });
 }
 
 // Mora aqui, e não em relations.ts, porque Relation e RelationInput precisam dele em tempo de
@@ -84,11 +88,15 @@ const AliasRef = z.string().regex(new RegExp(`^@${NAME_SRC}$`));
 export const RelationInput = z
   .strictObject({
     to: z.union([RecordId, AliasRef]),
-    kind: RelationKind.optional(),
+    kind: z
+      .enum(RelationKind.options, {
+        error: `kind must be one of ${RelationKind.options.join(', ')}; a relation name goes in as`,
+      })
+      .optional(),
     as: Name.optional(),
   })
   .refine(({ kind, as }) => !isUndefined(kind) || !isUndefined(as), {
-    message: 'relation needs kind or as',
+    message: `relation needs kind (one of ${RelationKind.options.join(', ')}) or as (a relation name pinned in the process)`,
     path: ['kind'],
   });
 

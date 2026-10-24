@@ -151,7 +151,8 @@ que ainda é vigente, é aceito e bifurca a linhagem.
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
 mesmo lote, e leva `kind` (`supersedes`, `revokes`, `supports`, `contradicts`,
 `answers`, `derivesFrom`, `complements`, `reopens`), `as` (um nome de relação fixado
-no processo, não só definido no projeto) ou os dois. Até 100 relações por registro. As regras:
+no processo, não só definido no projeto) ou os dois. `as` sozinho basta: o `kind` sai do
+nome fixado, e só vale mandar `kind` se for igual ao dele. Até 100 relações por registro. As regras:
 
 - `supersedes` e `revokes` só alcançam registros **do mesmo processo**
   (`cross-process-currency`), e só o vigente: sobre um destino que já foi superado ou
@@ -162,7 +163,8 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
 - `supports` só aceita destino vigente (`stale-destination`); pode cruzar processos.
 - Um registro não pode apoiar e contradizer, nem superar e revogar, o mesmo destino.
 - Relação para si mesmo, `as` que não existe fixado no processo, `kind` que não bate com
-  o do nome e tipo de uma ponta fora do `from`/`to` do nome de relação (`endpoint-type`)
+  o do nome (`kind-mismatch`: o `details[]` traz o campo opcional `kind` com o do nome, e a
+  `message` manda enviar só `as` ou esse `kind`) e tipo de uma ponta fora do `from`/`to` do nome de relação (`endpoint-type`)
   são `INVALID_RECORD`; ciclo é `CYCLE_REJECTED`; destino inexistente é
   `RELATION_NOT_FOUND`.
 - Só `supersedes`, `revokes` e `supports` conferem a vigência do destino. `contradicts`
@@ -172,14 +174,19 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   guardado e íntegro (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`); um hash de anexo
   guardado num campo sem a marca é recusado (`unmarked-attachment`).
 
-**`INVALID_RECORD` de dado: a primeira violação de cada registro.** Quando `data` não passa
-no schema, o `register` junta num só `INVALID_RECORD` a primeira violação de schema de **cada**
-registro inválido do lote, cada uma com `path` `/records/<i>/data/...`. Um registro com várias
-violações mostra só a primeira: o agente corrige, reenvia e vê a próxima. Continua tudo-ou-nada:
-nada é gravado. Vale para a violação de **schema**; as outras recusas (`unmarked-attachment`, as
-de relação e o resto da lista acima) continuam parando na primeira. O que o agente deve saber:
+**`INVALID_RECORD` de dado: as violações de cada registro.** Quando `data` não passa
+no schema, o `register` junta num só `INVALID_RECORD` as violações de schema de **cada**
+registro inválido do lote, cada uma com `path` `/records/<i>/data/...`: o agente corrige tudo e
+reenvia uma vez. Acima de um limite de custo (schema grande contra dado grande) o registro traz
+só uma violação por subschema; corrija e reenvie. Continua tudo-ou-nada: nada é gravado. Vale para a violação de **schema**; as
+outras recusas (`unmarked-attachment`, as de relação e o resto da lista acima) continuam
+parando na primeira. O que o agente deve saber:
 
-- O teto é de 50 `details` por resposta, com um só `too-many-errors` no fim quando corta.
+- O teto é de 50 `details` por resposta, com um só `too-many-errors` no fim quando corta; a `message` dele traz o total omitido no lote inteiro.
+- Em `max-length`, `min-length`, `maximum` e `minimum` a `message` termina com o valor medido,
+  em inglês: `must NOT have more than 300 characters (got 312)`. O comprimento conta pontos de
+  código (um emoji vale 1). O teto de 16.000 caracteres de `data` continua `INVALID_INPUT` e
+  também traz o tamanho medido (`(got N)`), exceto quando o valor não tem forma canônica.
 - Em `anyOf`, `oneOf` e `propertyNames` saem os erros dos ramos avaliados, não só um por campo.
 - O tipo fixado de **todos** os registros é conferido antes de qualquer dado: um lote com um
   registro de dado inválido e outro de tipo não fixado recebe `TYPE_NOT_PINNED`, não

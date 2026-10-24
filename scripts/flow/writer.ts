@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { compose } from '../../src/compose.ts';
@@ -6,6 +8,7 @@ import { BatchKey } from '../../src/domain/chain.ts';
 import { Name } from '../../src/domain/ids.ts';
 import { Author, type BatchItem } from '../../src/domain/record.ts';
 import { legacyDataError } from '../../src/errors.ts';
+import { VERSION } from '../../src/version.ts';
 
 const INSTALL = 'run node scripts/install.ts';
 
@@ -113,6 +116,32 @@ export function gitDiffQuiet(root: string): (commit: string) => DiffResult {
   };
 }
 
+/**
+ * Entradas reais de `checkInstalled` (`~/.claude.json`, `manifest.json` da pasta instalada, `git`),
+ * com `root` a raiz do checkout que a trava compara com o commit do build.
+ */
+export function readInstalled(root: string): InstalledCheck {
+  return {
+    version: VERSION,
+    // Arquivo ausente ou ilegível vira `null`, que `checkInstalled` relata como problema.
+    claudeJsonText: (() => {
+      try {
+        return fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8');
+      } catch {
+        return null;
+      }
+    })(),
+    readManifest: (versionDir: string) => {
+      try {
+        return fs.readFileSync(path.join(versionDir, 'manifest.json'), 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    gitDiffQuiet: gitDiffQuiet(root),
+  };
+}
+
 type WriteBatch = { process: string; key: string; records: readonly BatchItem[] };
 
 /**
@@ -144,14 +173,18 @@ export function openWriter({
   });
   if (isLegacy()) throw legacyDataError();
 
+  const project = Name.parse('hexlog');
+
   return {
     write: async ({ process, key, records }: WriteBatch) =>
       services.process.register({
-        project: Name.parse('hexlog'),
+        project,
         process: Name.parse(process),
         author: checkedAuthor,
         key: BatchKey.parse(key),
         records,
       }),
+    /** Anexa o `.md`/`.txt` de `file` (relativo ao `cwd` do writer) e devolve o hash do blob. */
+    attach: (file: string) => services.attachment.attach({ project, path: file }).hash,
   };
 }

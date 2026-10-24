@@ -12,6 +12,7 @@
 // - o `doc` do documento segue como nos demais, com `source` e `revokes` das premissas sumidas.
 // Quem consulta o vigente de `estrategia` lê `premise` e devolve `data.statement` como `rule`.
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 const BATCH_MAX = 50;
 // Um registro leva até 100 relações; o `doc` carrega um `supersedes` e um `revokes` por regra sumida.
@@ -21,7 +22,12 @@ export const STRATEGY_DOC = 'estrategia';
 const DOC_PATH = /^docs\/directives\/[a-z0-9-]+\.md$/;
 const PREMISE_LINE = /^- `([a-z0-9][a-z0-9-]{0,62})`: (.+)$/;
 const VER_SEPARATOR = ' Ver: ';
-const STATEMENT_MAX_CODE_POINTS = 255;
+// Tetos dos tipos `directive` e `premise` de `.hexlog/types/`; `test/sync.spec.ts` confere a igualdade.
+export const RULE_MAX_CODE_POINTS = 400;
+export const SECTION_MAX_CODE_POINTS = 120;
+export const STATEMENT_MAX_CODE_POINTS = 255;
+const SLUG_FORMAT = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const SLUG_MAX = 63;
 
 /** Relação de saída de um registro vigente, como o `query` a devolve. */
 type OutRelation = { as?: string; kind: string; to: string };
@@ -282,4 +288,108 @@ export function planSync(input: SyncInput): SyncPlan {
   };
   const records = [...directiveRecords(input, extracted ?? []), doc];
   return { upToDate: false, batches: batchesOf(docSlug, source, records), warnings };
+}
+
+/**
+ * Campo fora do limite: `slug` (formato do segmento do target; `max` é o comprimento máximo),
+ * `duplicate-slug` (`size` é quantas vezes repete e `max` é 1) ou o texto medido em code points.
+ */
+export type Excess = {
+  slug: string;
+  field: 'rule' | 'section' | 'statement' | 'slug' | 'duplicate-slug';
+  size: number;
+  max: number;
+};
+
+function measure(slug: string, field: Excess['field'], text: string, max: number): Excess[] {
+  const size = [...text].length;
+  return size >= 1 && size <= max ? [] : [{ slug, field, size, max }];
+}
+
+/**
+ * Confere as regras extraídas contra os tetos dos tipos antes de qualquer gravação: `rule` de 1 a
+ * 400 e `section` de 1 a 120 code points, `statement` de 1 a 255 em `estrategia` (que não tem
+ * `section`), slug no formato do target e sem repetição. Devolve o tamanho medido de cada excesso.
+ */
+export function validateExtracted(docSlug: string, rules: readonly ExtractedRule[]): Excess[] {
+  const strategy = docSlug === STRATEGY_DOC;
+  const perRule = rules.flatMap(({ slug, rule, section }): Excess[] => [
+    ...(SLUG_FORMAT.test(slug)
+      ? []
+      : [{ slug, field: 'slug' as const, size: [...slug].length, max: SLUG_MAX }]),
+    ...(strategy
+      ? measure(slug, 'statement', rule, STATEMENT_MAX_CODE_POINTS)
+      : [
+          ...measure(slug, 'rule', rule, RULE_MAX_CODE_POINTS),
+          ...measure(slug, 'section', section, SECTION_MAX_CODE_POINTS),
+        ]),
+  ]);
+  const repeated = [...Map.groupBy(rules, ({ slug }) => slug)]
+    .filter(([, group]) => group.length > 1)
+    .map(([slug, group]): Excess => ({
+      slug,
+      field: 'duplicate-slug',
+      size: group.length,
+      max: 1,
+    }));
+  return [...perRule, ...repeated];
+}
+
+/** Registro do log relido depois da gravação; de `in` só o `kind` importa, para a vigência. */
+export type LogRow = {
+  id: string;
+  target: string;
+  data: Record<string, unknown>;
+  out: OutRelation[];
+  in: { kind: string }[];
+};
+
+export type SyncProblem = {
+  target: string;
+  problem: 'missing' | 'source-differs' | 'data-differs' | 'relations-differ' | 'old-still-current';
+};
+
+const REPLACING_KINDS = ['supersedes', 'revokes'];
+
+/** Vigência como o servidor a vê: sem `supersedes` nem `revokes` de entrada. */
+export const isCurrent = ({ in: incoming }: { in: readonly { kind: string }[] }): boolean =>
+  !incoming.some(({ kind }) => REPLACING_KINDS.includes(kind));
+
+/** `as ?? kind` e o destino: a relação nomeada e a crua se comparam pelo nome que o servidor guarda. */
+const edgeKeys = (edges: readonly { kind?: string; as?: string; to: string }[]): string[] =>
+  edges.map(({ kind, as, to }) => `${as ?? kind}|${to}`).sort();
+
+/**
+ * Confere o log relido contra o plano gravado: o vigente em cada `target` planejado tem `data` e
+ * relações de saída iguais às planejadas (no `doc`, o `source` igual ao hash do plano), e nenhum
+ * registro que o plano supera ou revoga segue vigente.
+ */
+export function verifySync(plan: SyncPlan, rowsAfter: readonly LogRow[]): SyncProblem[] {
+  const current = rowsAfter.filter(isCurrent);
+  const records = plan.batches.flatMap(({ records: batch }) => batch);
+  const problems: SyncProblem[] = [];
+  for (const { type, target, data, relations } of records) {
+    const row = current.find((candidate) => candidate.target === target);
+    if (row === undefined) {
+      problems.push({ target, problem: 'missing' });
+      continue;
+    }
+    if (type === 'doc' && row.data.source !== data.source) {
+      problems.push({ target, problem: 'source-differs' });
+    } else if (!isDeepStrictEqual(row.data, data)) {
+      problems.push({ target, problem: 'data-differs' });
+    }
+    if (!isDeepStrictEqual(edgeKeys(row.out), edgeKeys(relations))) {
+      problems.push({ target, problem: 'relations-differ' });
+    }
+  }
+  const replaced = new Set(
+    records.flatMap(({ relations }) =>
+      relations.filter(({ kind }) => REPLACING_KINDS.includes(kind ?? '')).map(({ to }) => to),
+    ),
+  );
+  for (const row of current.filter(({ id }) => replaced.has(id))) {
+    problems.push({ target: row.target, problem: 'old-still-current' });
+  }
+  return problems;
 }

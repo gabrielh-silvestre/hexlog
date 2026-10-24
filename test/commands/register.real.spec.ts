@@ -60,7 +60,7 @@ describe('register', () => {
       ]);
     });
 
-    it('should refuse a batch with invalid records with the first violation of each one and write nothing', async () => {
+    it('should refuse a batch with invalid records with every violation of each one and write nothing', async () => {
       const { services, register, logOf, verified } = realSetup();
       services.process.createProcess({ project: PROJECT, process: 'run-1' });
       const sizeBefore = fs.statSync(logOf('run-1')).size;
@@ -74,9 +74,11 @@ describe('register', () => {
       );
 
       expect(error.code).toBe('INVALID_RECORD');
-      expect(error.details).toHaveLength(2);
-      expect(error.details[0]).toMatchObject({ path: '/records/1/data/text', code: 'type' });
-      expect(error.details[1]!.path).toMatch(/^\/records\/2\/data/);
+      expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual([
+        { path: '/records/1/data/text', code: 'type' },
+        { path: '/records/2/data/text', code: 'required' },
+        { path: '/records/2/data/other', code: 'additional-properties' },
+      ]);
       expect(fs.statSync(logOf('run-1')).size).toBe(sizeBefore);
       expect(verified('run-1').chain).toMatchObject({ ok: true, totalRecords: 0 });
     });

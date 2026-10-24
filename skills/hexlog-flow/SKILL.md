@@ -166,7 +166,7 @@ Cada violação é `INVALID_RECORD` com `details[].code` = a regra e `details[].
 | `supersedes` só entre registros do **mesmo target** | `target-mismatch` |
 | `supersedes` e `revokes` só valem para registro do **próprio processo** | `cross-process-currency` |
 | O mesmo registro não faz `supports` e `contradicts` ao mesmo destino, nem `supersedes` e `revokes` | `supports-and-contradicts`, `supersedes-and-revokes` |
-| `as` precisa ser um nome de relação fixado no processo; com `kind` junto, os dois precisam bater | `unknown-relation-name`, `kind-mismatch` |
+| `as` precisa ser um nome de relação fixado no processo e basta sozinho; com `kind` junto, os dois precisam bater, e o `kind-mismatch` devolve o `kind` certo em `details[].kind` | `unknown-relation-name`, `kind-mismatch` |
 | As pontas respeitam `from`/`to` do nome de relação, quando declaradas | `endpoint-type` |
 | `supports` só aponta para registro **vigente** | `stale-destination`, com `details[0].current` = o `id` da versão atual da linhagem, ou nulo |
 
@@ -316,7 +316,7 @@ depois dele; o processo que já existe segue com o gate fixado.
 | Situação | Resultado |
 |---|---|
 | `type` fora do que o processo fixou, inclusive um definido depois do `create_process` | `TYPE_NOT_PINNED`: o processo existente não recebe definição nova. Pare e avise o usuário; não repita `define_type` em loop |
-| `data` fora do schema fixado | `INVALID_RECORD` com a primeira violação de schema de cada registro inválido do lote, cada uma com seu `path` (`/records/<i>/data/...`, no máximo 50 `details`); corrija e reenvie, e a próxima violação aparece. Só a violação de schema é agregada: `unmarked-attachment` e as regras de relação continuam parando na primeira |
+| `data` fora do schema fixado | `INVALID_RECORD` com as violações de schema de cada registro inválido do lote (todas até um teto de custo; acima dele, uma por subschema), cada uma com seu `path` (`/records/<i>/data/...`, no máximo 50 `details`) e, em limite de tamanho, o valor medido no fim do texto do detalhe (`(got N)`); corrija o que veio e reenvie. Só a violação de schema é agregada: `unmarked-attachment` e as regras de relação continuam parando na primeira |
 | Gate pedido que o processo não fixou, inclusive um definido depois do `create_process` | `GATE_NOT_FOUND`: pare e avise o usuário |
 | Reenviar uma `key` com lote diferente do guardado | `IDEMPOTENCY_CONFLICT` |
 | Dado 0.x em `<D>` | `LEGACY_DATA`: só um humano resolve (ver a skill hexlog) |

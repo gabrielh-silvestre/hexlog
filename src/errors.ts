@@ -7,7 +7,7 @@ import type { Name, RecordId } from './domain/ids.ts';
  * JSON Pointer.
  * `current`, `process` e `pid` são da 1.0 (D-26): versão vigente da linhagem (`null` se revogada),
  * processo citado e pid do detentor do lock. `versions` é das definições: as versões que existem
- * quando a pedida não existe.
+ * quando a pedida não existe. `kind` é o `kind` do nome de relação fixado, em `kind-mismatch`.
  */
 export type Detail = {
   path: string;
@@ -17,6 +17,7 @@ export type Detail = {
   process?: string;
   pid?: number;
   versions?: string[];
+  kind?: string;
 };
 
 /** Catálogo de códigos de erro de domínio (ADR 0009 item 7): a união literal única. */
@@ -64,7 +65,7 @@ export class HexlogError extends Error {
 }
 
 /** Campos opcionais de um `Detail` que só alguns erros trazem. */
-type DetailExtra = Pick<Detail, 'current' | 'process' | 'pid' | 'versions'>;
+type DetailExtra = Pick<Detail, 'current' | 'process' | 'pid' | 'versions' | 'kind'>;
 
 /**
  * Erro com um único `Detail`; `message` é a do erro e a do `Detail`. As chaves `undefined` de `extra`
@@ -127,20 +128,28 @@ export function pointer(path: PropertyKey[]): string {
 /** Alinhado a `BATCH_MAX` (`docs/tetos-dominio-v1.md`); sem medição por trás. */
 const MAX_DETAILS = 50;
 
+const TOO_MANY_CODE = 'too-many-errors';
+const OMITTED_MESSAGE = /^(\d+) more errors omitted$/;
+
 /**
  * Deduplica por path+code+message (o ajv repete o mesmo erro, pois o metaschema é revisitado por
- * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora.
+ * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora. O
+ * aviso que já vem na lista (o do corte de cada registro de um lote) não conta como erro: o que ele
+ * omitiu soma ao total do aviso novo.
  */
 export function capDetails(details: Detail[]): Detail[] {
-  const unique = uniqBy(details, (d) => `${d.path}\0${d.code}\0${d.message}`);
-  if (unique.length <= MAX_DETAILS) return unique;
+  let carried = 0;
+  const errors = details.filter(({ code, message }) => {
+    const previous = code === TOO_MANY_CODE ? OMITTED_MESSAGE.exec(message) : null;
+    carried += Number(previous?.[1] ?? 0);
+    return previous === null;
+  });
+  const unique = uniqBy(errors, (d) => `${d.path}\0${d.code}\0${d.message}`);
+  const omitted = Math.max(unique.length - MAX_DETAILS, 0) + carried;
+  if (omitted === 0) return unique;
   return [
     ...unique.slice(0, MAX_DETAILS),
-    {
-      path: '',
-      code: 'too-many-errors',
-      message: `${unique.length - MAX_DETAILS} more errors omitted`,
-    },
+    { path: '', code: TOO_MANY_CODE, message: `${omitted} more errors omitted` },
   ];
 }
 
