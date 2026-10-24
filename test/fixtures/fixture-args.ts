@@ -1,7 +1,9 @@
 import type { BatchItem } from '../../src/domain/record.ts';
+import type { askQuestion, runTurn, startSession } from '../../scripts/flow/critic-run.ts';
+import type { Command, Tool } from '../../scripts/flow/critic-tools.ts';
 
-// Contrato de `argv` dos processos filhos de `lock-holder.ts`, `crash-writer.ts` e
-// `attachment-probe.ts`: cada um recebe um
+// Contrato de `argv` dos processos filhos de `lock-holder.ts`, `crash-writer.ts`,
+// `attachment-probe.ts` e `critic-driver.ts`: cada um recebe um
 // único argumento JSON com o formato abaixo. Só tipos: o pai (`adapters/lock-helpers.ts`, os specs) e
 // o filho importam o mesmo contrato, e o `import type` some na execução, então nenhum filho roda
 // dentro do jest.
@@ -47,3 +49,26 @@ export type CrashWriterArgs = { dataDir: string; project: string; process: strin
 export type AttachmentProbeArgs = { dataDir: string; cwd: string; project: string } & (
   { call: 'status'; hash: string } | { call: 'putPath'; path: string }
 );
+
+/**
+ * Argumento JSON de `critic-driver.ts`: a função do runner do critic que o filho chama (o jest não
+ * altera o `PATH` real do processo, então o runner precisa rodar num filho para achar o CLI falso).
+ * O filho imprime o retorno em JSON.
+ */
+export type CriticDriverArgs =
+  | {
+      call: 'runTurn';
+      command: Command;
+      cwd: string;
+      tool: Tool;
+      timing: Parameters<typeof runTurn>[1]['timing'];
+    }
+  | { call: 'startSession'; options: Parameters<typeof startSession>[0] }
+  | {
+      call: 'askQuestion';
+      mailbox: string;
+      timing?: NonNullable<Parameters<typeof askQuestion>[1]>['timing'];
+      /** pid para `starttime` do leitor de `/proc` injetado; pid fora do mapa não tem `starttime`. */
+      startTimes?: Record<number, number>;
+    }
+  | { call: 'closeMailbox'; mailbox: string };

@@ -17,6 +17,7 @@ import {
 import type { Defined } from '../src/commands/definition.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import { hashOfJcs, sha256hex } from '../src/domain/chain.ts';
+import { classifyTypeChange, type RecordType } from '../src/domain/definitions.ts';
 import type {
   GateEvaluation,
   ListResult,
@@ -522,6 +523,31 @@ describe('register', () => {
     { label: 'without a statement', data: {} },
   ])('should refuse a premise $label with INVALID_RECORD', async ({ data }) => {
     expectError(await writeBatch(WORK, [workRecord('premise', 'bad', data)]), 'INVALID_RECORD');
+  });
+
+  it.each(['human', 'simulated', 'simulated-approved'])(
+    'should accept a premise with answeredBy %s',
+    async (answeredBy) => {
+      const { records } = await register(WORK, [
+        workRecord('premise', 'a', { statement: 'ok', answeredBy }),
+      ]);
+
+      expect(records).toHaveLength(1);
+    },
+  );
+
+  it('should refuse a premise with an answeredBy outside the enum', async () => {
+    const result = await writeBatch(WORK, [
+      workRecord('premise', 'bad', { statement: 'ok', answeredBy: 'robot' }),
+    ]);
+
+    expectError(result, 'INVALID_RECORD');
+  });
+
+  it('should accept a premise without answeredBy', async () => {
+    const { records } = await register(WORK, [premise('a')]);
+
+    expect(records).toHaveLength(1);
   });
 
   it('should accept evidence with a summary and the source of an existing attachment', async () => {
@@ -1876,5 +1902,20 @@ describe('verify_chain', () => {
     );
 
     expect(chains.map(({ ok }) => ok)).toEqual([true, true]);
+  });
+});
+
+describe('classifyTypeChange', () => {
+  it('should classify the optional answeredBy added to premise as compatible', () => {
+    const previous: RecordType = {
+      type: 'object',
+      properties: { statement: { type: 'string', minLength: 1, maxLength: 255 } },
+      required: ['statement'],
+      additionalProperties: false,
+    };
+
+    expect(classifyTypeChange(previous, definitionOf('types', 'premise') as RecordType)).toBe(
+      'compatible',
+    );
   });
 });

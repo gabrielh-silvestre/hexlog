@@ -332,6 +332,8 @@ const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
     'inheritedOut',
     'inheritedInCounts',
     'inheritedOutCounts',
+    'nonCurrentInCounts',
+    'nonCurrentOutCounts',
   ],
 };
 
@@ -538,9 +540,7 @@ describe('skills/**/*.md, docs/**/*.md, .claude/skills/**/*.md, README.md and **
     const files = [
       ...markdownFilesUnder(path.join(repoRoot, 'skills')),
       ...markdownFilesUnder(path.join(repoRoot, 'docs')),
-      ...['friction-mining', 'flow-run', 'flow-gaps', 'flow-audit'].flatMap((name) =>
-        markdownFilesUnder(path.join(repoRoot, '.claude/skills', name)),
-      ),
+      ...markdownFilesUnder(path.join(repoRoot, '.claude/skills')),
       path.join(repoRoot, 'README.md'),
       ...agentsFilesUnder(repoRoot),
     ];

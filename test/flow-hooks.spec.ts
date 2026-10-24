@@ -453,6 +453,24 @@ describe('.claude/hooks/flow-hooks.ts subagent-start', () => {
     expect(hookSpecificOutput.additionalContext).toContain('tell whoever launched you');
   }, 15_000);
 
+  it('should put the hand-back rule with the owner-seat carve-out on line 1 for any agent', () => {
+    const result = runHook(['subagent-start'], {
+      input: JSON.stringify({ cwd: repo }),
+    });
+    const { hookSpecificOutput } = JSON.parse(result.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    const lines = hookSpecificOutput.additionalContext.split('\n');
+
+    expect(result.status).toBe(0);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain(
+      'Found a NEW gap or critical point nobody handed you? Stop and hand it back to whoever ' +
+        'launched you (docs/directives/cadeira-do-dono.md); the owner-seat critic and its ' +
+        'context actions answer instead of handing back.',
+    );
+  }, 15_000);
+
   it('should still return the context without readable input', () => {
     const result = runHook(['subagent-start'], { input: 'not json' });
 
@@ -752,7 +770,24 @@ describe('.claude/settings.json', () => {
       'Bash(node scripts/flow/mark.ts *)',
       'Bash(node scripts/flow/gate.ts *)',
       'Bash(node scripts/flow/report.ts *)',
+      'Bash(node scripts/flow/critic.ts *)',
     ]);
+  }, 15_000);
+
+  it('should allow every verb of the critic runner without asking', () => {
+    const pattern = 'Bash(node scripts/flow/critic.ts *)';
+    // o motor de permissões não roda no jest: o curinga vira regex só para provar o alcance
+    const inner = pattern.slice('Bash('.length, -1);
+    const matcher = new RegExp(`^${inner.replaceAll('.', '\\.').replaceAll('*', '.*')}$`);
+
+    expect(settings.permissions.allow).toContain(pattern);
+    expect(settings.permissions.ask).not.toContain(pattern);
+    expect(matcher.test('node scripts/flow/critic.ts start my-slug --tool agy')).toBe(true);
+    expect(matcher.test('node scripts/flow/critic.ts ask /tmp/hexlog-critic-x-AbCdEf')).toBe(true);
+    expect(matcher.test('node scripts/flow/critic.ts close /tmp/hexlog-critic-x-AbCdEf')).toBe(
+      true,
+    );
+    expect(matcher.test('node scripts/flow/mark.ts my-slug')).toBe(false);
   }, 15_000);
 
   it('should not cite flow-report in any hooks command, since it is not a hook', () => {

@@ -15,7 +15,7 @@ A pessoa que define o rumo do produto, valida as premissas atemporais e decide o
 _Avoid_: usuário, owner, humano
 
 **Modo** (`ask`, `autonomous`):
-Como o trabalho trata uma lacuna: parando para perguntar ao dono, ou decidindo e registrando a premissa sozinho.
+Como o trabalho trata uma lacuna: parando para perguntar ao dono (`ask`), ou, no `autonomous`, perguntando primeiro à cadeira do dono e decidindo sozinho só se não há ocupante ([cadeira-do-dono.md](../docs/directives/cadeira-do-dono.md)).
 _Avoid_: nível de autonomia
 
 **Pré-PR**:
@@ -25,6 +25,24 @@ _Avoid_: checklist final, fechamento
 **Marcador do pré-PR**:
 A prova, gravada por `scripts/flow/mark.ts` só quando os gates `pre-pr` e `gaps` do trabalho estão verdes, de que eles passaram num commit da branch; sem ela o PR só abre em rascunho. A árvore suja não importa.
 _Avoid_: marcador (sozinho), selo, flag
+
+### Cadeira do dono
+
+**Cadeira do dono**:
+O papel de quem responde a lacuna no lugar do dono, com o ocupante e o aval do humano nos pontos críticos ([cadeira-do-dono.md](../docs/directives/cadeira-do-dono.md)).
+_Avoid_: oráculo, aprovador
+
+**Ocupante**:
+Quem senta na cadeira: o humano no `ask`; no `autonomous`, um `critic` durável, só se o `premise` do processo fixa `answeredBy`.
+_Avoid_: respondente, revisor
+
+**Aval**:
+A confirmação do humano, no pré-PR, da premissa `simulated` de uma lacuna crítica; grava `simulated-approved`.
+_Avoid_: aprovação, ok
+
+**Classe crítica** (e **comum**):
+Classe da pergunta: crítica quando a escolha altera, remove ou contraria regra de ADR, `invariantes`, `fronteiras`, `convencoes` ou `estrategia`; o resto é comum.
+_Avoid_: prioridade, gravidade
 
 ### Regras
 

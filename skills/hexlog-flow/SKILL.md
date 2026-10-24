@@ -51,8 +51,10 @@ Registro se acha por busca e se liga por id:
 1. **Busque.** `query` com `type`, `targetPrefix`, `where` (igualdade em campo de
    primeiro nível de `data`, valor escalar) ou `text` (busca textual, até 200
    caracteres, por relevância). Cada registro volta com `id`, `type`, `target`,
-   `author`, `data`, `inCounts: {...}` e `outCounts: {...}` (arestas por nome de relação; sem
-   aresta, o mapa não vem), e `needsReview` e `attachmentStatus` quando se aplicam.
+   `author`, `data`, `inCounts: {...}` e `outCounts: {...}` (arestas vigentes por nome de
+   relação; as não vigentes vêm em `nonCurrentInCounts` e `nonCurrentOutCounts`, e a saída
+   `supersedes` ou `revokes` cai sempre nelas; sem aresta, o mapa não vem), e `needsReview`
+   e `attachmentStatus` quando se aplicam.
    Para as arestas inteiras, passe `relations: "full"` (`in` e `out`).
 2. **Pegue o `id`.** Ele é do servidor (`<processo>:<uuid v7>`): nunca monte um à
    mão. Dentro de um mesmo `register`, um item se refere a outro anterior por
@@ -107,6 +109,25 @@ carregá-las: a leitura as estende à versão atual, sem gravar nada.
   superar ou revogar o registro que o grava religa a herança.
 - No gate, a pergunta `approved` ou `no_pending` só conta o herdado com `inherit: true`;
   o que conta só por herança vem em `evidence.inherited`. Gate sem a opção avalia como antes.
+
+## Leitura enxuta
+
+Toda resposta fica no seu contexto até o fim da sessão. Peça só o que a próxima
+decisão usa:
+
+- **Achar um `id` ou conferir que o registro existe:** `fields: []`, sem `data`.
+  Precisa de um campo: `fields` com o nome dele. Sem `fields`, a página traz o
+  `data` inteiro, e uma decisão chega a milhares de caracteres.
+- **Não vai ler as arestas:** `relations: "none"`. O padrão (`counts`) já diz se há
+  apoio ou citação; `relations: "full"` só para ler `in`/`out`, regravar relações ou
+  conferir `current`.
+- **Reler o que já leu:** guarde o `marker` e releia com `changesSince` e
+  `limit: 0`. Voltam só os ids que entraram ou saíram; abra o `data` deles por `ids`.
+  Se vier `changes.omitted`, releia tudo.
+- **Alcance curto:** `targetPrefix` do alvo, `type` e `limit` pequenos. `scope:
+  "project"` só para cruzar processos, e com `targetPrefix` ou `ids`.
+- **Gate:** o padrão já é enxuto. Vários alvos vão em `targets: [...]`, numa chamada.
+  `evidence: "full"` só quando precisar de todas as listas de ids.
 
 ## `key`: onde a duplicata custa caro
 
@@ -171,7 +192,7 @@ novo não substitui nem revoga nada do antigo; ele o cita por `derivesFrom` ou
 `query` e as perguntas de gate leem **um processo** por padrão (`scope:
 "process"`). Nesse alcance:
 
-- `in` (ou `inCounts: {...}`), `needsReview` e as perguntas `approved`, `no_pending` e
+- `in` (ou `inCounts: {...}` e `nonCurrentInCounts`), `needsReview` e as perguntas `approved`, `no_pending` e
   `no_open_contradiction` só veem relações com as duas pontas no processo; relação vinda de outro processo não
   aparece, e **a resposta não avisa**;
 - com `relations: "full"`, `out` de um destino em outro processo sai sem `current`.

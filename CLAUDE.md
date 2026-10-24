@@ -9,3 +9,4 @@
 @docs/directives/qualidade-e-testes.md
 @docs/directives/documentacao.md
 @docs/directives/instalacao-e-hooks.md
+@docs/directives/cadeira-do-dono.md

@@ -3,7 +3,7 @@
 **Generated:** 2026-09-17 · **Updated:** 2026-10-17
 
 ## Purpose
-Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: registros tipados com relações e gates declarativos, sem termo de fluxo no código. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 12 tools. Não há CLI nem daemon para o agente (só scripts em `scripts/`: os relatórios read-only, o `flow/reanchor.ts`, o único que grava no log e só com `--apply`, e o `release-notes-cli.ts`, que só o `release.yml` chama, sem `src/` e sem dado): servidor MCP e hook de isolamento Bash são instalados no Claude Code como dois bundles esbuild em `~/.local/lib/hexlog/<versão>/`, junto com as skills de `skills/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/.v1/` (fallback `~/.local/share/hexlog/.v1/`); dado 0.x em `<D>` é recusado com `LEGACY_DATA` até o instalador arquivá-lo.
+Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o próprio histórico de trabalho: registros tipados com relações e gates declarativos, sem termo de fluxo no código. Cada processo tem um log JSONL append-only com cadeia de hash sha256 + JCS. O servidor expõe exatamente 12 tools. Não há CLI nem daemon para o agente (só scripts em `scripts/`: os relatórios read-only, o `flow/reanchor.ts`, o único que grava no log e só com `--apply`, o `flow/critic.ts`, que o `flow-run` chama para o critic da cadeira do dono e só escreve em `os.tmpdir()`, e o `release-notes-cli.ts`, que só o `release.yml` chama, sem `src/` e sem dado): servidor MCP e hook de isolamento Bash são instalados no Claude Code como dois bundles esbuild em `~/.local/lib/hexlog/<versão>/`, junto com as skills de `skills/`. Os dados ficam em `$XDG_DATA_HOME/hexlog/.v1/` (fallback `~/.local/share/hexlog/.v1/`); dado 0.x em `<D>` é recusado com `LEGACY_DATA` até o instalador arquivá-lo.
 
 ## Key Files
 | File | Description |
@@ -43,7 +43,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `CONTEXT.md` | Glossário do produto: o log append-only de registros que o servidor MCP grava, encadeia e consulta; termo canônico em pt-BR com o identificador do código ou da tool ao lado |
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
-| `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (só `flow-hooks.ts` e `flow-command.ts`, os hooks; `slug`, `sync-plan`, `mark`, `gate`, `report` e `reanchor` vivem em `scripts/flow/`, que o Claude Code não dispara), as skills locais em `skills/` e `workflows/` (`friction-mining-run.js`) e `CONTEXT.md`, o glossário do fluxo de desenvolvimento. Fica fora do bundle do produto |
+| `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (só `flow-hooks.ts` e `flow-command.ts`, os hooks; `slug`, `sync-plan`, `mark`, `gate`, `report`, `reanchor` e `critic` vivem em `scripts/flow/`, que o Claude Code não dispara), as skills locais em `skills/` e `workflows/` (`friction-mining-run.js`) e `CONTEXT.md`, o glossário do fluxo de desenvolvimento. Fica fora do bundle do produto |
 | `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 8 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. Não há `.hexlog/flow.md` neste repositório: o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
 
 ## Subdirectories
@@ -53,7 +53,7 @@ Servidor MCP stdio (TypeScript, Node ≥24.18.1) para agentes registrarem o pró
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
 | `scripts/` | Build esbuild, instalador e scripts read-only de insights, export e timeline; `release-notes.ts` e `release-notes-cli.ts` só usam builtins do Node e leem apenas o `CHANGELOG.md`, porque o `release.yml` os roda sem `npm ci` (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio sobre o bundle real e pacote (see `test/AGENTS.md`) |
-| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0011) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
+| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0012) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
 | `skills/` | As skills de `skills/`, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e consulta registros e gates contra esse mapa) (see `skills/AGENTS.md`) |
 
 ## Dependencies
@@ -94,3 +94,4 @@ Regras que valem para o repositório todo, importadas pelo `CLAUDE.md`:
 - [documentacao.md](docs/directives/documentacao.md): ADR e doc vivo, changelog (gate `changelog-line` e release), como citar, `pesquisa/` congelado, famílias de ID
 - [instalacao-e-hooks.md](docs/directives/instalacao-e-hooks.md): instalador, hook de isolamento e hooks do fluxo
 - [estrategia.md](docs/directives/estrategia.md): premissas atemporais do produto, validadas pelo dono; cada decisão deve se apoiar em pelo menos uma, ou declarar que nenhuma se aplica
+- [cadeira-do-dono.md](docs/directives/cadeira-do-dono.md): quem responde a lacuna no lugar do humano, com que modelo e como registra
