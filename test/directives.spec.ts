@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { EXIT } from '../scripts/flow/critic-run.ts';
 import { parsePremises, scanPremises, type ScannedPremise } from '../scripts/flow/sync.ts';
 import { at } from './helpers.ts';
 
@@ -569,24 +570,45 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
     expect(skill('flow-run')).toContain('Sem `answeredBy` fixado o ocupante simulado não senta');
   });
 
-  it('should detect the occupant by `describe_type` and the Herdr environment', () => {
+  it('should detect the occupant by `describe_type` and pick the Herdr or runner transport', () => {
     expect(skill('flow-run')).toContain('`describe_type` com `process`');
     expect(skill('flow-run')).toContain('`HERDR_ENV`');
+    expect(skill('flow-run')).toContain('critic.ts start');
   });
 
-  it('should launch the durable critic, read the neutral skill and close the tool list', () => {
+  it('should run the durable critic, read the neutral skill and close the tool list', () => {
     const run = skill('flow-run');
 
     expect(run).toContain('## 6. Cadeira do dono');
     expect(run).toContain('`Read` de `.claude/skills/flow-owner-seat/SKILL.md`');
     expect(run).toContain('`query`, `describe_type`, `register`, `attach`, `read_attachment`');
     expect(run).toContain('SendMessage');
+    expect(run).toContain('critic.ts ask');
+    expect(run).toContain('critic.ts close');
     expect(run).toContain('critic.md');
     expect(run).toContain(OWNER_SEAT_DOC);
   });
 
   it('should cite the subagent protocol', () => {
     expect(skill('flow-run')).toMatch(/protocolo do subagente/i);
+  });
+
+  describe('with the runner transport section', () => {
+    const runnerSection = (): string =>
+      /^### Transporte runner$([\s\S]*?)(?=^#{2,3} |(?![\s\S]))/m.exec(skill('flow-run'))?.[1] ??
+      '';
+
+    it.each(Object.values(EXIT))('should cite the exit code %i', (code) => {
+      expect(runnerSection()).toMatch(new RegExp(`(?<!\\d)${code}(?!\\d)`));
+    });
+
+    it.each([
+      ['the question size cap', '100000'],
+      ['the tool of critic.md on returning to start', '--tool <ferramenta do critic.md>'],
+      ['the tool variable', 'HEXLOG_CRITIC_CLI'],
+    ])('should cite %s', (_what, fragment) => {
+      expect(runnerSection()).toContain(fragment);
+    });
   });
 });
 
