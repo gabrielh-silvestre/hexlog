@@ -53,6 +53,31 @@ describe('sha256hex', () => {
   });
 });
 
+describe('hashOfJcs', () => {
+  it('should ignore the order of the keys, at any level', () => {
+    expect(hashOfJcs({ types: ['note'], where: { a: 1, b: 2 } })).toBe(
+      hashOfJcs({ where: { b: 2, a: 1 }, types: ['note'] }),
+    );
+  });
+
+  it('should be a sha256 hex of 64 characters', () => {
+    expect(hashOfJcs({})).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it.each([
+    ['a filter value', { types: ['note'] }, { types: ['decision'] }],
+    ['an extra filter', { types: ['note'] }, { types: ['note'], text: 'x' }],
+    ['the order of a list', { types: ['a', 'b'] }, { types: ['b', 'a'] }],
+    ['null against absent', { target: null }, {}],
+  ])('should give a different hash for %s', (_label, left, right) => {
+    expect(hashOfJcs(left)).not.toBe(hashOfJcs(right));
+  });
+
+  it('should treat a key with undefined as an absent key', () => {
+    expect(hashOfJcs({ text: undefined, types: ['note'] })).toBe(hashOfJcs({ types: ['note'] }));
+  });
+});
+
 describe('anchor', () => {
   it('should match the fixed vector of the on-disk format (JCS checked against an independent implementation)', () => {
     expect(anchor(manifest)).toBe(

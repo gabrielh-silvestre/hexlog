@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { note } from '../commands/register-fakes.ts';
-import { at } from '../helpers.ts';
-import { idsOf, querySetup } from './query-setup.ts';
+import { at, idsOf } from '../helpers.ts';
+import { querySetup } from './query-setup.ts';
 
 describe('QueryService.queryRecords', () => {
   it('should navigate from a term in the old text to the current version, with no pivot by target', async () => {

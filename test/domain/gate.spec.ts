@@ -143,6 +143,7 @@ describe('GateQuestion', () => {
     ['occurred with an unknown scope', { kind: 'occurred', select: {}, scope: 'global' }],
     ['approved with inherit false', { kind: 'approved', of: {}, inherit: false }],
     ['occurred with inherit', { kind: 'occurred', select: {}, inherit: true }],
+    ['no_fork', { kind: 'no_fork' }],
     ['no_open_contradiction with inherit', { kind: 'no_open_contradiction', inherit: true }],
   ])('should refuse %s', (_label, raw) => {
     expect(GateQuestion.safeParse(raw).success).toBe(false);

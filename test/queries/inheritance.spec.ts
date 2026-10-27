@@ -1,28 +1,29 @@
 import { describe, expect, it } from '@jest/globals';
-import { countBy } from 'es-toolkit';
 import type { Gate } from '../../src/domain/definitions.ts';
 import type { Marker, RecordId } from '../../src/domain/ids.ts';
+import type { BatchItem } from '../../src/domain/record.ts';
 import { NOTE, note } from '../commands/register-fakes.ts';
-import { at } from '../helpers.ts';
-import { idsOf, PROJECT, querySetup, walkPages } from './query-setup.ts';
+import { at, idsOf, walkPages } from '../helpers.ts';
+import { finding, PROJECT, querySetup } from './query-setup.ts';
 
-const UNIT_APPROVED: Gate = {
-  name: 'unit-approved',
-  questions: [
-    { kind: 'approved', of: { targetPrefix: 'run.unit' }, by: { targetPrefix: 'run.ev' } },
-  ],
-};
-const UNIT_APPROVED_INHERIT: Gate = {
-  name: 'unit-approved-inherit',
+/** `approved` das unidades `run.unit`, apoiadas por `run.ev`, com `inherit` e `scope` opcionais. */
+const unitApproved = (name: string, extra: { inherit?: true; scope?: 'project' } = {}): Gate => ({
+  name,
   questions: [
     {
       kind: 'approved',
       of: { targetPrefix: 'run.unit' },
       by: { targetPrefix: 'run.ev' },
-      inherit: true,
+      ...extra,
     },
   ],
-};
+});
+const UNIT_APPROVED = unitApproved('unit-approved');
+const UNIT_APPROVED_INHERIT = unitApproved('unit-approved-inherit', { inherit: true });
+const PROJECT_APPROVED_INHERIT = unitApproved('project-approved-inherit', {
+  scope: 'project',
+  inherit: true,
+});
 const ANSWERED_INHERIT: Gate = {
   name: 'answered-inherit',
   questions: [
@@ -30,19 +31,6 @@ const ANSWERED_INHERIT: Gate = {
       kind: 'no_pending',
       pending: { type: 'finding' },
       resolvedBy: { kind: 'answers' },
-      inherit: true,
-    },
-  ],
-};
-
-const PROJECT_APPROVED_INHERIT: Gate = {
-  name: 'project-approved-inherit',
-  questions: [
-    {
-      kind: 'approved',
-      of: { targetPrefix: 'run.unit' },
-      by: { targetPrefix: 'run.ev' },
-      scope: 'project',
       inherit: true,
     },
   ],
@@ -69,8 +57,10 @@ function setup() {
   const unit = (extra = {}) => note('unidade', { target: 'run.unit', ...extra });
   const evidence = (to: RecordId) =>
     note('evidência', { target: 'run.ev', relations: [{ to, kind: 'supports' }] });
-  const supersede = (to: RecordId, extra = {}) =>
-    unit({ relations: [{ to, kind: 'supersedes' }], ...extra });
+  const supersede = (
+    to: RecordId,
+    { relations = [], ...extra }: Partial<Pick<BatchItem, 'target' | 'relations'>> = {},
+  ) => unit({ relations: [{ to, kind: 'supersedes' }, ...relations], ...extra });
   const evaluate = (
     process: string,
     gate: string,
@@ -93,7 +83,10 @@ function setup() {
     const u2 = await base.registerOne(process, supersede(u1), 3);
     return { u1, e1, u2 };
   }
-  return { ...base, unit, evidence, supersede, evaluate, superseded };
+  /** `u3` supera `u2` e contradiz `e1`, o que corta a herança entre as duas linhagens. */
+  const cuttingSuperseder = (process: string, e1: RecordId, u2: RecordId) =>
+    base.registerOne(process, supersede(u2, { relations: [{ to: e1, kind: 'contradicts' }] }), 4);
+  return { ...base, unit, evidence, supersede, evaluate, superseded, cuttingSuperseder };
 }
 
 describe('QueryService.queryRecords', () => {
@@ -131,35 +124,55 @@ describe('QueryService.queryRecords', () => {
     ]);
   });
 
-  it('should tally in counts mode the same inherited edges that full mode lists, over five records', async () => {
-    const { createProcess, registerOne, unit, evidence, supersede, query } = setup();
-    createProcess('run-1');
-    const u1 = await registerOne('run-1', unit(), 1);
-    const e1 = await registerOne('run-1', evidence(u1), 2);
-    const e2 = await registerOne(
-      'run-1',
-      note('evidência', { target: 'run.ev', relations: [{ to: u1, as: 'approves' }] }),
-      3,
-    );
-    const u2 = await registerOne('run-1', supersede(u1), 4);
-    const u3 = await registerOne('run-1', supersede(u2), 5);
-    const everything = { process: 'run-1', ids: [u1, e1, e2, u2, u3], includeNonCurrent: true };
+  describe('with a lineage of three versions and two named supports', () => {
+    async function fiveRecords() {
+      const { createProcess, registerOne, unit, evidence, supersede, query } = setup();
+      createProcess('run-1');
+      const u1 = await registerOne('run-1', unit(), 1);
+      const e1 = await registerOne('run-1', evidence(u1), 2);
+      const e2 = await registerOne(
+        'run-1',
+        note('evidência', { target: 'run.ev', relations: [{ to: u1, as: 'approves' }] }),
+        3,
+      );
+      const u2 = await registerOne('run-1', supersede(u1), 4);
+      const u3 = await registerOne('run-1', supersede(u2), 5);
+      const counts = query({
+        process: 'run-1',
+        ids: [u1, e1, e2, u2, u3],
+        includeNonCurrent: true,
+        relations: 'counts',
+      });
+      return { counts, u1, e1, e2, u2, u3 };
+    }
 
-    const full = query({ ...everything, relations: 'full' });
-    const counts = query({ ...everything, relations: 'counts' });
+    it('should tally in counts mode the inherited edges of each record', async () => {
+      const { counts, u1, e1, e2, u2, u3 } = await fiveRecords();
 
-    const tally = (edges: readonly { kind: string; as?: string }[] = []) =>
-      edges.length === 0 ? undefined : countBy(edges, ({ as, kind }) => as ?? kind);
+      const tallies = Object.fromEntries(
+        counts.records.map(({ id, inheritedInCounts, inheritedOutCounts }) => [
+          id,
+          { inheritedInCounts, inheritedOutCounts },
+        ]),
+      );
 
-    expect(idsOf(counts)).toEqual(idsOf(full));
-
-    full.records.forEach((record, index) => {
-      expect(at(counts.records, index).inheritedInCounts).toEqual(tally(record.inheritedIn));
-      expect(at(counts.records, index).inheritedOutCounts).toEqual(tally(record.inheritedOut));
+      expect(tallies).toEqual({
+        [u1]: {},
+        [e1]: { inheritedOutCounts: { supports: 1 } },
+        [e2]: { inheritedOutCounts: { approves: 1 } },
+        [u2]: {},
+        [u3]: { inheritedInCounts: { supports: 1, approves: 1 } },
+      });
     });
-    const latest = at(counts.records, idsOf(counts).indexOf(u3));
 
-    expect(latest.inheritedInCounts).toEqual({ supports: 1, approves: 1 });
+    it('should name an inherited edge by its relation name, or by its kind when it has none', async () => {
+      const { counts, u3 } = await fiveRecords();
+
+      expect(at(counts.records, idsOf(counts).indexOf(u3)).inheritedInCounts).toEqual({
+        supports: 1,
+        approves: 1,
+      });
+    });
   });
 
   it('should follow only the stored edges with `relatedTo`, never the inherited ones', async () => {
@@ -226,9 +239,9 @@ describe('QueryService.queryRecords', () => {
     expect(at(page.records, 0).inheritedIn).toHaveLength(1);
   });
 
-  it('should answer as before for a legacy process: no inherited field and the support goes stale', async () => {
+  it('should bring no inherited field for a legacy process', async () => {
     const { superseded, createLegacyProcess, query } = setup();
-    const { e1, u1, u2 } = await superseded('run-1', createLegacyProcess);
+    const { e1, u2 } = await superseded('run-1', createLegacyProcess);
 
     const full = query({ process: 'run-1', relations: 'full', ids: [e1, u2] });
     const counts = query({ process: 'run-1', relations: 'counts', ids: [e1, u2] });
@@ -236,8 +249,15 @@ describe('QueryService.queryRecords', () => {
     for (const record of [...full.records, ...counts.records]) {
       expect(Object.keys(record).filter((key) => key.startsWith('inherited'))).toEqual([]);
     }
+  });
 
-    expect(at(full.records, 0).needsReview).toEqual({ staleIn: [], staleOut: [u1] });
+  it('should mark the support of a legacy process as stale once its target is superseded', async () => {
+    const { superseded, createLegacyProcess, query } = setup();
+    const { e1, u1, u2 } = await superseded('run-1', createLegacyProcess);
+
+    const page = query({ process: 'run-1', relations: 'full', ids: [e1, u2] });
+
+    expect(at(page.records, 0).needsReview).toEqual({ staleIn: [], staleOut: [u1] });
   });
 
   it('should not mark `needsReview` for a live inherited support', async () => {
@@ -249,24 +269,24 @@ describe('QueryService.queryRecords', () => {
     for (const record of page.records) expect(record).not.toHaveProperty('needsReview');
   });
 
-  it('should cut the inheritance with a `contradicts` between the two lineages, and the support goes stale', async () => {
-    const { superseded, supersede, registerOne, query } = setup();
-    const { e1, u1, u2 } = await superseded('run-1');
-    const u3 = await registerOne(
-      'run-1',
-      supersede(u2, {
-        relations: [
-          { to: u2, kind: 'supersedes' },
-          { to: e1, kind: 'contradicts' },
-        ],
-      }),
-      4,
-    );
+  it('should cut the inheritance with a `contradicts` between the two lineages', async () => {
+    const { superseded, cuttingSuperseder, query } = setup();
+    const { e1, u2 } = await superseded('run-1');
+    const u3 = await cuttingSuperseder('run-1', e1, u2);
 
     const page = query({ process: 'run-1', relations: 'full', ids: [e1, u3] });
 
     expect(at(page.records, 1)).not.toHaveProperty('inheritedIn');
     expect(at(page.records, 0)).not.toHaveProperty('inheritedOut');
+  });
+
+  it('should mark the support as stale when a `contradicts` cuts the inheritance', async () => {
+    const { superseded, cuttingSuperseder, query } = setup();
+    const { e1, u1, u2 } = await superseded('run-1');
+    await cuttingSuperseder('run-1', e1, u2);
+
+    const page = query({ process: 'run-1', ids: [e1] });
+
     expect(at(page.records, 0).needsReview).toEqual({ staleIn: [], staleOut: [u1] });
   });
 
@@ -289,30 +309,19 @@ describe('QueryService.queryRecords', () => {
   });
 
   it('should reconnect the inheritance when the version that holds the cutting `contradicts` is superseded', async () => {
-    const { superseded, supersede, registerOne, query } = setup();
+    const { superseded, cuttingSuperseder, supersede, registerOne, query } = setup();
     const { e1, u1, u2 } = await superseded('run-1');
-    const u3 = await registerOne(
-      'run-1',
-      supersede(u2, {
-        relations: [
-          { to: u2, kind: 'supersedes' },
-          { to: e1, kind: 'contradicts' },
-        ],
-      }),
-      4,
-    );
-    const cut = query({ process: 'run-1', relations: 'full', ids: [u3] });
+    const u3 = await cuttingSuperseder('run-1', e1, u2);
     const u4 = await registerOne('run-1', supersede(u3), 5);
 
     const reconnected = query({ process: 'run-1', relations: 'full', ids: [u4] });
 
-    expect(at(cut.records, 0)).not.toHaveProperty('inheritedIn');
     expect(at(reconnected.records, 0).inheritedIn).toEqual([
       { kind: 'supports', from: e1, origin: { from: e1, to: u1 } },
     ]);
   });
 
-  it('should keep `changesSince` coherent with the inheritance', async () => {
+  it('should bring the inheriting records and report the supersede in `changes` with `changesSince`', async () => {
     const { createProcess, registerOne, unit, evidence, supersede, query } = setup();
     createProcess('run-1');
     const u1 = await registerOne('run-1', unit(), 1);
@@ -323,15 +332,14 @@ describe('QueryService.queryRecords', () => {
     const delta = query({ process: 'run-1', relations: 'full', changesSince: before.marker });
 
     expect(delta.changes).toMatchObject({ entered: [u2], left: [{ id: u1 }] });
-    expect(delta.records.map(({ id }) => id)).toEqual([e1, u2]);
+    expect(idsOf(delta)).toEqual([e1, u2]);
   });
 
-  it('should keep `includeNonCurrent` coherent with the inheritance', async () => {
+  it('should list only the superseding version as inheriting with `includeNonCurrent`', async () => {
     const { createProcess, registerOne, unit, evidence, supersede, query } = setup();
     createProcess('run-1');
     const u1 = await registerOne('run-1', unit(), 1);
     await registerOne('run-1', evidence(u1), 2);
-    const before = query({ process: 'run-1', relations: 'full' });
     const u2 = await registerOne('run-1', supersede(u1), 3);
 
     const all = query({ process: 'run-1', relations: 'full', includeNonCurrent: true });
@@ -339,6 +347,16 @@ describe('QueryService.queryRecords', () => {
     expect(
       all.records.filter(({ inheritedIn }) => inheritedIn !== undefined).map(({ id }) => id),
     ).toEqual([u2]);
+  });
+
+  it('should list no record as inheriting before the supersede', async () => {
+    const { createProcess, registerOne, unit, evidence, query } = setup();
+    createProcess('run-1');
+    const u1 = await registerOne('run-1', unit(), 1);
+    await registerOne('run-1', evidence(u1), 2);
+
+    const before = query({ process: 'run-1', relations: 'full' });
+
     expect(before.records.filter(({ inheritedIn }) => inheritedIn !== undefined)).toEqual([]);
   });
 
@@ -384,7 +402,7 @@ describe('QueryService.queryRecords', () => {
     expect(at(project.records, 0)).not.toHaveProperty('inheritedIn');
   });
 
-  it('should count and keep the records that carry inheritance in the page cap and the cursor', async () => {
+  it('should keep the inheritance of each record across the pages cut by the character cap', async () => {
     const { createProcess, registerOne, unit, evidence, supersede, query } = setup();
     createProcess('run-1');
     const units: RecordId[] = [];
@@ -493,7 +511,7 @@ describe('QueryService.evaluateGate', () => {
       ['run.unit.a', true],
       ['run.unit.b', false],
     ]);
-    expect(at(evaluation.results, 0).questions[0]).toMatchObject({ counts: { inherited: 1 } });
+    expect(at(at(evaluation.results, 0).questions, 0)).toMatchObject({ counts: { inherited: 1 } });
   });
 
   it('should replay the evaluation without inheritance with a marker from before the supersede', async () => {
@@ -517,37 +535,34 @@ describe('QueryService.evaluateGate', () => {
     });
   });
 
-  it('should reprove the gate with a cutting `contradicts` until its version is superseded', async () => {
-    const { superseded, supersede, registerOne, evaluate } = setup();
+  it('should reprove the gate with a cutting `contradicts`', async () => {
+    const { superseded, cuttingSuperseder, evaluate } = setup();
     const { e1, u2 } = await superseded('run-1');
-    const u3 = await registerOne(
-      'run-1',
-      supersede(u2, {
-        relations: [
-          { to: u2, kind: 'supersedes' },
-          { to: e1, kind: 'contradicts' },
-        ],
-      }),
-      4,
-    );
+    await cuttingSuperseder('run-1', e1, u2);
+
     const cut = evaluate('run-1', UNIT_APPROVED_INHERIT.name);
-    await registerOne('run-1', supersede(u3), 5);
 
     expect(cut.passed).toBe(false);
-    expect(evaluate('run-1', UNIT_APPROVED_INHERIT.name).passed).toBe(true);
+  });
+
+  it('should pass the gate again once the version that holds the cutting `contradicts` is superseded', async () => {
+    const { superseded, cuttingSuperseder, supersede, registerOne, evaluate } = setup();
+    const { e1, u2 } = await superseded('run-1');
+    const u3 = await cuttingSuperseder('run-1', e1, u2);
+    await registerOne('run-1', supersede(u3), 5);
+
+    const result = evaluate('run-1', UNIT_APPROVED_INHERIT.name);
+
+    expect(result.passed).toBe(true);
   });
 
   it('should count the resolution a superseded answer carried for `no_pending`', async () => {
     const { createProcess, registerOne, evaluate } = setup();
     createProcess('run-1');
-    const finding = await registerOne(
-      'run-1',
-      { type: 'finding', target: 'run.f', data: { text: 'f' } },
-      1,
-    );
+    const open = await registerOne('run-1', finding('run.f', 'f'), 1);
     const answer = await registerOne(
       'run-1',
-      note('resposta', { target: 'run.a', relations: [{ to: finding, kind: 'answers' }] }),
+      note('resposta', { target: 'run.a', relations: [{ to: open, kind: 'answers' }] }),
       2,
     );
     const revised = await registerOne(

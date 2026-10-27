@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import { describe, expect, it } from '@jest/globals';
 import { omit } from 'es-toolkit';
 import { blobFile, processPaths } from '../../src/adapters/fs/data-format.ts';
+import { anchor } from '../../src/domain/chain.ts';
 import type { Hash } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { MAX_BREAKS } from '../../src/shared/loader.ts';
 import { note } from '../commands/register-fakes.ts';
-import { captureError } from '../helpers.ts';
+import { at, captureError, snapshot } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
 
 function verifySetup() {
@@ -43,25 +44,23 @@ describe('QueryService.verifyChain', () => {
   });
 
   it('should give ok, totalRecords 0 and the process anchor as head for a process with no records', () => {
-    const { verify } = verifySetup();
+    const { dataDir, verify } = verifySetup();
+    const file = processPaths(dataDir, { project: PROJECT, process: 'run-1' }).manifest;
+    const manifest: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
 
-    expect(verify()).toMatchObject({
-      ok: true,
-      totalRecords: 0,
-      head: expect.stringMatching(/^[0-9a-f]{64}$/),
-    });
+    expect(verify()).toMatchObject({ ok: true, totalRecords: 0, head: anchor(manifest) });
   });
 
   it('should diagnose without writing: the log stays byte for byte identical, also with a break', async () => {
-    const { registerOne, verify, logFile, tamper } = verifySetup();
+    const { dataDir, registerOne, verify, tamper } = verifySetup();
     await registerOne('run-1', note('a'));
     await registerOne('run-1', note('b'), 1);
     tamper('run-1');
-    const before = fs.readFileSync(logFile());
+    const before = snapshot(dataDir);
 
     verify();
 
-    expect(fs.readFileSync(logFile()).equals(before)).toBe(true);
+    expect(snapshot(dataDir)).toEqual(before);
   });
 
   it('should not throw on a tampered line: it becomes ok false with the break on the next line', async () => {
@@ -74,7 +73,7 @@ describe('QueryService.verifyChain', () => {
 
     expect(result.ok).toBe(false);
     expect(result.totalBreaks).toBeGreaterThan(0);
-    expect(result.breaks[0]).toMatchObject({ index: 1 });
+    expect(at(result.breaks, 0)).toMatchObject({ index: 1 });
   });
 
   it('should repair a torn line followed by a valid line: it shows up in repairedLines and does not break', async () => {
@@ -109,7 +108,6 @@ describe('QueryService.verifyChain', () => {
     it('should break the chain when the flag is removed from a new process manifest', async () => {
       const { dataDir, registerOne, verify } = verifySetup();
       await registerOne('run-1', note('a'));
-      verify();
       withoutFlag(dataDir);
 
       expect(verify().ok).toBe(false);
@@ -161,14 +159,22 @@ describe('QueryService.verifyChain', () => {
       });
     });
 
-    it('should turn the earlier head into head-not-found when the tail is deleted, while it stays ok without expectedHead', async () => {
+    it('should stay ok without expectedHead when the tail is deleted', async () => {
+      const { registerOne, verify, logFile } = verifySetup();
+      await registerOne('run-1', note('a'));
+      await registerOne('run-1', note('b'), 1);
+      dropLastLines(logFile(), 1);
+
+      expect(verify()).toMatchObject({ ok: true, totalRecords: 1 });
+    });
+
+    it('should turn the earlier head into head-not-found when the tail is deleted', async () => {
       const { registerOne, verify, verifyAgainst, logFile } = verifySetup();
       await registerOne('run-1', note('a'));
       await registerOne('run-1', note('b'), 1);
       const before = verify().head;
       dropLastLines(logFile(), 1);
 
-      expect(verify()).toMatchObject({ ok: true, totalRecords: 1 });
       expect(verifyAgainst(before)).toMatchObject({
         ok: false,
         totalRecords: 1,
@@ -205,22 +211,24 @@ describe('QueryService.verifyChain', () => {
       });
     });
 
-    it('should turn a missing attachment into attachment-missing and a corrupted one into attachment-corrupted', async () => {
+    it.each([
+      ['missing', 'attachment-missing', (blob: string) => fs.rmSync(blob)],
+      [
+        'corrupted',
+        'attachment-corrupted',
+        (blob: string) => fs.writeFileSync(blob, 'outro conteúdo'),
+      ],
+    ])('should turn a %s attachment into %s', async (_state, reason, damage) => {
       const { registerOne, doc, stored, blobOf, verify } = verifySetup();
-      const gone = stored('sumiu');
-      const bad = stored('adulterado');
-      const record = await registerOne('run-1', doc({ body: gone, files: [bad] }));
-      fs.rmSync(blobOf(gone));
-      fs.writeFileSync(blobOf(bad), 'outro conteúdo');
+      const hash = stored('anexo');
+      const record = await registerOne('run-1', doc({ body: hash }));
+      damage(blobOf(hash));
 
       const result = verify();
 
       expect(result.ok).toBe(false);
-      expect(result).toMatchObject({ breaks: [], totalBreaks: 0, totalAttachmentBreaks: 2 });
-      expect(result.attachmentBreaks).toEqual([
-        { id: record, hash: gone, reason: 'attachment-missing' },
-        { id: record, hash: bad, reason: 'attachment-corrupted' },
-      ]);
+      expect(result).toMatchObject({ breaks: [], totalBreaks: 0, totalAttachmentBreaks: 1 });
+      expect(result.attachmentBreaks).toEqual([{ id: record, hash, reason }]);
     });
 
     it('should list a chain break and a missing attachment separately, each with its own total', async () => {

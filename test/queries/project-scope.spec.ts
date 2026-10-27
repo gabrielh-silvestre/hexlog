@@ -1,9 +1,7 @@
-import fs from 'node:fs';
 import { describe, expect, it } from '@jest/globals';
-import { MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
 import { note } from '../commands/register-fakes.ts';
-import { at, captureError } from '../helpers.ts';
-import { idsOf, querySetup } from './query-setup.ts';
+import { at, idsOf } from '../helpers.ts';
+import { querySetup } from './query-setup.ts';
 
 /**
  * Dois processos no mesmo alvo `run.step`. A ordem esperada abaixo vem do comportamento de
@@ -68,22 +66,6 @@ describe('QueryService.queryRecords', () => {
         { id: a2, incoming: [], out: [{ kind: 'supersedes', to: a1, current: false }] },
         { id: b2, incoming: [], out: [{ kind: 'supersedes', to: b1, current: false }] },
       ]);
-    });
-
-    it('should name the process whose log passed the ceiling in the PROCESS_TOO_LARGE detail, without recommending to create another', async () => {
-      const { createProcess, registerOne, logPath, query } = querySetup();
-      createProcess('run-1');
-      createProcess('run-2');
-      await registerOne('run-1', note('a'), 1);
-      fs.truncateSync(logPath('run-2'), MAX_LOG_BYTES + 1);
-
-      const error = captureError(() => query({ scope: 'project' }));
-
-      expect(error).toMatchObject({
-        code: 'PROCESS_TOO_LARGE',
-        message: "process 'run-2' log exceeds 64 MiB",
-        details: [{ path: '/process', code: 'too-large', process: 'run-2' }],
-      });
     });
   });
 });

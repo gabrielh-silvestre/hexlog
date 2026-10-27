@@ -6,7 +6,9 @@ import * as path from 'node:path';
 import { expect, jest } from '@jest/globals';
 import { parse as parseRawJson } from 'jsonc-parser';
 import { z } from 'zod';
+import type { RecordId } from '../src/domain/ids.ts';
 import { HexlogError } from '../src/errors.ts';
+import type { QueryInput, QueryResult } from '../src/queries/query-service.ts';
 import type { Logger, LogRecord } from '../src/shared/logger.ts';
 import { registerTempDir } from './cleanup.ts';
 
@@ -36,6 +38,28 @@ export function at<T>(items: readonly T[], index: number): T {
     throw new Error(`index ${index} is out of the array (length ${items.length})`);
   }
   return value;
+}
+
+/** Ids da página, na ordem em que saíram. */
+export const idsOf = (page: { records: readonly { id: RecordId }[] }): RecordId[] =>
+  page.records.map(({ id }) => id);
+
+/** Cursor da página, que o teste espera ter. */
+export function cursorOf(page: { cursor?: string }): string {
+  if (page.cursor === undefined) throw new Error('expected a cursor');
+  return page.cursor;
+}
+
+/** Todas as páginas de `input`, da 1ª até a que não traz cursor; o teto de 20 rodadas evita prender o jest num defeito. */
+export function walkPages(
+  query: (input: Omit<QueryInput, 'project'>) => QueryResult,
+  input: Omit<QueryInput, 'project'>,
+): QueryResult[] {
+  const pages = [query(input)];
+  while (pages.at(-1)?.cursor !== undefined && pages.length < 20) {
+    pages.push(query({ ...input, cursor: cursorOf(at(pages, pages.length - 1)) }));
+  }
+  return pages;
 }
 
 /**
@@ -78,6 +102,13 @@ export function captureError(fn: () => unknown): HexlogError {
   }
   throw new Error('expected the function to throw HexlogError');
 }
+
+/** Detalhe de erro esperado: `path` e `code` exatos, qualquer `message`. */
+export const detail = (path: string, code: string) => ({
+  path,
+  code,
+  message: expect.any(String),
+});
 
 /** Confere que nem `message` nem `details` do erro trazem `secret`; `JSON.stringify(error)` não vê o `message`. */
 export function expectNoLeak(error: HexlogError, secret: string): void {

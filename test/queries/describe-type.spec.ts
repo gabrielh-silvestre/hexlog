@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import { NOTE } from '../commands/register-fakes.ts';
-import { captureError } from '../helpers.ts';
+import { captureError, detail } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
 
 const NOTE_V2: RecordType = {
@@ -77,29 +77,21 @@ describe('QueryService.describeType', () => {
     });
 
     it('should omit both keywords of the definition read from the project, without process', () => {
-      const { readType, definitions } = legacySetup();
+      const { readType } = legacySetup();
 
       expect(readType({ type: 'legacy' })).toEqual({
         name: 'legacy',
         version: '1.0',
         schema: SHOWN,
       });
-      expect(definitions.read(PROJECT, 'types', 'legacy', '1.0')).toEqual(LEGACY);
     });
 
-    it('should omit the pattern of a contentSchema', () => {
-      const setup = describeSetup();
-      setup.definitions.write(PROJECT, 'types', 'content', '1.0', {
-        type: 'string',
-        contentMediaType: 'application/json',
-        contentSchema: { type: 'string', pattern: '^a+$' },
-      });
+    it('should leave the stored definition unchanged after the describe', () => {
+      const { readType, definitions } = legacySetup();
 
-      expect(setup.readType({ type: 'content' }).schema).toEqual({
-        type: 'string',
-        contentMediaType: 'application/json',
-        contentSchema: { type: 'string' },
-      });
+      readType({ type: 'legacy' });
+
+      expect(definitions.read(PROJECT, 'types', 'legacy', '1.0')).toEqual(LEGACY);
     });
 
     it('should keep the chain of the process intact after the describe', () => {
@@ -114,32 +106,48 @@ describe('QueryService.describeType', () => {
     });
   });
 
-  it('should refuse a type missing from the project with TYPE_NOT_FOUND at /type, with or without version', () => {
-    const { readType } = describeSetup();
+  it('should omit the pattern of a contentSchema', () => {
+    const setup = describeSetup();
+    setup.definitions.write(PROJECT, 'types', 'content', '1.0', {
+      type: 'string',
+      contentMediaType: 'application/json',
+      contentSchema: { type: 'string', pattern: '^a+$' },
+    });
 
-    for (const version of [undefined, '1.0']) {
+    expect(setup.readType({ type: 'content' }).schema).toEqual({
+      type: 'string',
+      contentMediaType: 'application/json',
+      contentSchema: { type: 'string' },
+    });
+  });
+
+  it.each([
+    ['without version', undefined],
+    ['with version', '1.0'],
+  ])(
+    'should refuse a type missing from the project with TYPE_NOT_FOUND at /type %s',
+    (_label, version) => {
+      const { readType } = describeSetup();
+
       const error = captureError(() => readType({ type: 'ghost', version }));
 
       expect(error.code).toBe('TYPE_NOT_FOUND');
-      expect(error.details).toEqual([
-        { path: '/type', code: 'unknown-name', message: expect.any(String) },
-      ]);
-    }
-  });
+      expect(error.details).toEqual([detail('/type', 'unknown-name')]);
+    },
+  );
 
-  it('should refuse a missing project with PROJECT_NOT_FOUND at /project, with or without version', () => {
+  it.each([
+    ['without version', undefined],
+    ['with version', '1.0'],
+  ])('should refuse a missing project with PROJECT_NOT_FOUND at /project %s', (_label, version) => {
     const { queries } = describeSetup();
 
-    for (const version of [undefined, '1.0']) {
-      const error = captureError(() =>
-        queries.describeType({ project: 'ghost-project', type: 'note', version }),
-      );
+    const error = captureError(() =>
+      queries.describeType({ project: 'ghost-project', type: 'note', version }),
+    );
 
-      expect(error.code).toBe('PROJECT_NOT_FOUND');
-      expect(error.details).toEqual([
-        { path: '/project', code: 'unknown-project', message: expect.any(String) },
-      ]);
-    }
+    expect(error.code).toBe('PROJECT_NOT_FOUND');
+    expect(error.details).toEqual([detail('/project', 'unknown-project')]);
   });
 
   it('should keep PROCESS_NOT_FOUND for a missing project with process', () => {
@@ -159,12 +167,7 @@ describe('QueryService.describeType', () => {
 
     expect(error.code).toBe('TYPE_NOT_FOUND');
     expect(error.details).toEqual([
-      {
-        path: '/version',
-        code: 'unknown-version',
-        message: expect.any(String),
-        versions: ['1.0', '1.1'],
-      },
+      { ...detail('/version', 'unknown-version'), versions: ['1.0', '1.1'] },
     ]);
   });
 
@@ -175,9 +178,7 @@ describe('QueryService.describeType', () => {
     const error = captureError(() => readType({ type: 'later', process: 'run-1' }));
 
     expect(error.code).toBe('TYPE_NOT_PINNED');
-    expect(error.details).toEqual([
-      { path: '/type', code: 'not-pinned', message: expect.any(String) },
-    ]);
+    expect(error.details).toEqual([detail('/type', 'not-pinned')]);
   });
 
   it('should refuse an unknown process with PROCESS_NOT_FOUND', () => {
@@ -194,8 +195,6 @@ describe('QueryService.describeType', () => {
     const error = captureError(() => readType({ type: 'ghost', process: 'ghost', version: '1.0' }));
 
     expect(error.code).toBe('INVALID_INPUT');
-    expect(error.details).toEqual([
-      { path: '/version', code: 'process-with-version', message: expect.any(String) },
-    ]);
+    expect(error.details).toEqual([detail('/version', 'process-with-version')]);
   });
 });

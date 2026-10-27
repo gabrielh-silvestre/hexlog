@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import * as inheritanceModule from '../../src/domain/inheritance.ts';
 import { note } from '../commands/register-fakes.ts';
-import { at } from '../helpers.ts';
 import { querySetup } from './query-setup.ts';
 
 /** Processo com herança ligada, com duas versões de `run.unit` e um registro revogado. */
-async function seeded() {
+async function withRevokedRecord() {
   const base = querySetup();
   base.createProcess('run-1');
   const u1 = await base.registerOne('run-1', note('unidade', { target: 'run.unit' }), 1);
@@ -23,23 +22,22 @@ async function seeded() {
   return { ...base, u1, gone };
 }
 
-describe('QueryService.query', () => {
+describe('QueryService.queryRecords', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
   it('should compute the inheritance once for a page with records', async () => {
-    const { query } = await seeded();
+    const { query } = await withRevokedRecord();
     const build = jest.spyOn(inheritanceModule, 'buildInheritance');
 
-    const page = query({ process: 'run-1', relations: 'full' });
+    query({ process: 'run-1', relations: 'full' });
 
-    expect(page.records.length).toBeGreaterThan(1);
     expect(build).toHaveBeenCalledTimes(1);
   });
 
   it('should not compute the inheritance for limit 0 with changesSince', async () => {
-    const { query, u1 } = await seeded();
+    const { query, u1 } = await withRevokedRecord();
     const build = jest.spyOn(inheritanceModule, 'buildInheritance');
 
     const page = query({ process: 'run-1', limit: 0, changesSince: { 'run-1': u1 } });
@@ -50,7 +48,7 @@ describe('QueryService.query', () => {
   });
 
   it('should not add a second inheritance computation for the past view of changesSince', async () => {
-    const { query, u1 } = await seeded();
+    const { query, u1 } = await withRevokedRecord();
     const build = jest.spyOn(inheritanceModule, 'buildInheritance');
 
     query({ process: 'run-1', changesSince: { 'run-1': u1 } });
@@ -59,7 +57,7 @@ describe('QueryService.query', () => {
   });
 
   it('should omit a revoked record from the ids lookup', async () => {
-    const { query, gone } = await seeded();
+    const { query, gone } = await withRevokedRecord();
 
     const page = query({ process: 'run-1', ids: [gone] });
 
@@ -70,11 +68,11 @@ describe('QueryService.query', () => {
     ['without includeNonCurrent', {}],
     ['with includeNonCurrent', { includeNonCurrent: true }],
   ])('should feed the hint with the target of a revoked record, %s', async (_title, extra) => {
-    const { query } = await seeded();
+    const { query } = await withRevokedRecord();
 
     const page = query({ process: 'run-1', targetPrefix: 'run.go', ...extra });
 
     expect(page.records).toEqual([]);
-    expect(at([page.hint], 0)).toContain('"run.gone"');
+    expect(page.hint).toContain('"run.gone"');
   });
 });

@@ -1,9 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
-import { note } from './commands/register-fakes.ts';
+import type { Gate } from '../src/domain/definitions.ts';
+import { note, refusal } from './commands/register-fakes.ts';
 import * as omc from './fixtures/domains/omc.ts';
 import * as rdsc from './fixtures/domains/rdsc.ts';
-import { at } from './helpers.ts';
-import { idsOf, PROJECT, querySetup, defineDomain, type Domain } from './queries/query-setup.ts';
+import { at, idsOf } from './helpers.ts';
+import { PROJECT, querySetup, defineDomain, type Domain } from './queries/query-setup.ts';
 
 /**
  * Projeto só com o fluxo `domain`, definido pelo serviço de definições e com o processo `run-1`
@@ -19,6 +20,15 @@ function flowSetup(domain: Domain, { legacy = false } = {}) {
   return { ...setup, gate };
 }
 
+/** Cópia do gate plano-pronto com as perguntas em alcance projeto. */
+const READY_PROJECT: Gate = {
+  name: 'plan-ready-project',
+  questions: at(omc.gates, 0).questions.map((question) => ({
+    ...question,
+    scope: 'project' as const,
+  })),
+};
+
 describe('test/fixtures/domains/*.ts', () => {
   it('should export only data: types, relations and gates for each flow', () => {
     expect(Object.keys(omc).sort()).toEqual(['gates', 'relations', 'types']);
@@ -28,7 +38,7 @@ describe('test/fixtures/domains/*.ts', () => {
 
 /** Fluxo OMC com o plano `plan` registrado no processo `run-1`. */
 async function registeredPlan() {
-  const setup = flowSetup(omc);
+  const setup = flowSetup({ ...omc, gates: [...omc.gates, READY_PROJECT] });
   const plan = await setup.registerOne('run-1', {
     type: 'plan',
     target: 'run.plan',
@@ -143,6 +153,39 @@ describe('QueryService.evaluateGate', () => {
     expect(gate('plan-ready').passed).toBe(true);
   });
 
+  it('should pass the OMC plan-ready gate with scope project when the approval and the outcome come from another process', async () => {
+    const { createProcess, registerOne, gate, plan } = await registeredPlan();
+    createProcess('review-1');
+    const open = await registerOne(
+      'run-1',
+      { type: 'deviation', target: 'run.plan', data: { description: 'desvio' } },
+      1,
+    );
+    await registerOne(
+      'review-1',
+      {
+        type: 'review',
+        target: 'run.plan',
+        data: { summary: 'ok' },
+        relations: [{ to: plan, as: 'approves' }],
+      },
+      2,
+    );
+    await registerOne(
+      'review-1',
+      {
+        type: 'review',
+        target: 'run.plan',
+        data: { summary: 'resolvido' },
+        relations: [{ to: open, as: 'settles' }],
+      },
+      3,
+    );
+
+    expect(gate('plan-ready').passed).toBe(false);
+    expect(gate(READY_PROJECT.name).passed).toBe(true);
+  });
+
   describe('with the rdsc flow and a legacy process', () => {
     it('should pass the settled gate for a verdict that cites current evidence', async () => {
       const { gate } = await verdictOnEvidence();
@@ -201,6 +244,25 @@ describe('QueryService.queryRecords', () => {
 });
 
 describe('ProcessService.register', () => {
+  it('should refuse a plan revision without a diff at write time by the type schema', async () => {
+    const { registerOne, plan } = await registeredPlan();
+
+    const error = await refusal(
+      registerOne(
+        'run-1',
+        {
+          type: 'plan',
+          target: 'run.plan',
+          data: { isRevision: true },
+          relations: [{ to: plan, kind: 'supersedes' }],
+        },
+        1,
+      ),
+    );
+
+    expect(error.code).toBe('INVALID_RECORD');
+  });
+
   it('should refuse with TYPE_NOT_PINNED a type the flow did not define', async () => {
     const { registerOne } = flowSetup(rdsc);
 

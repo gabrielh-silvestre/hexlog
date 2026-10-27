@@ -11,7 +11,7 @@ const unused = (): never => {
 };
 
 describe('createQueryService', () => {
-  it('should see only the read side of the ports: no write, create or putText on the Readers', () => {
+  it('should see only the read side of the ports, which `npm run typecheck` checks: no write, create or putText on the Readers', () => {
     expect(key<Deps['store']>('read')).toBeDefined();
     expect(key<Deps['definitions']>('names')).toBeDefined();
     expect(key<Deps['definitions']>('read')).toBeDefined();
