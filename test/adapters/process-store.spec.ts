@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, jest } from '@jest/globals';
+import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import * as path from 'node:path';
@@ -28,8 +28,9 @@ import {
   scriptWrites,
   spyOnWriteSync,
 } from '../helpers.ts';
-import { countFsyncs } from './fsync-spy.ts';
-import { killChildren, liveForeignPid } from './lock-helpers.ts';
+import { spyOnOpen } from './fs-spies.ts';
+import { countFsyncs, countFsyncsOf, spyOnFsync } from './fsync-spy.ts';
+import { killChildren, liveForeignPid, trackChild } from './lock-helpers.ts';
 
 const CRASH_WRITER = path.join(__dirname, '..', 'fixtures', 'crash-writer.ts');
 const BOOT = 'boot-a';
@@ -40,6 +41,14 @@ const emptyRaw = (manifest: Manifest): RawProcess => ({
   text: '',
   endsWithNewline: true,
 });
+
+/** Prefixo `\n` (o log esparso termina em byte nulo) mais a linha: o lote tem `LINE.length + 1` bytes. */
+const LINE = 'x'.repeat(100);
+
+/** 50 caracteres e 100 bytes (`ç` e `ã` ocupam 2 bytes cada); com o `\n` de prefixo o lote tem 101 bytes. */
+const MULTIBYTE = 'çã'.repeat(25);
+
+const torn = (line: string): string => line.slice(0, 40);
 
 const lineOptions = {
   agent: 'process-store-spec',
@@ -91,22 +100,9 @@ function setup(budgetMs?: number) {
 const locksIn = (dir: string): string[] =>
   fs.readdirSync(dir).filter((name) => name.startsWith(LOCK_DIR));
 
-/** Conta os `fsync` dados no arquivo de log (pelo inode: o do lock e o do diretório não entram). */
-function countLogFsyncs(logFile: string): () => number {
-  const realFsync = fs.fsyncSync;
-  const ino = fs.statSync(logFile).ino;
-  let count = 0;
-  jest.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
-    if (fs.fstatSync(fd).ino === ino) count += 1;
-    realFsync(fd);
-  });
-  return () => count;
-}
-
-/** Registra, na ordem, os `write` e `fsync` dados no arquivo de log (pelo inode, como `countLogFsyncs`). */
+/** Registra, na ordem, os `write` e `fsync` dados no arquivo de log (pelo inode, como `countFsyncsOf`). */
 function recordLogCalls(logFile: string): string[] {
   const realWrite = fs.writeSync;
-  const realFsync = fs.fsyncSync;
   const ino = fs.statSync(logFile).ino;
   const calls: string[] = [];
   const onLog = (fd: number, call: string) => {
@@ -116,10 +112,7 @@ function recordLogCalls(logFile: string): string[] {
     onLog(fd, 'write');
     return realWrite(fd, buffer, offset);
   });
-  jest.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
-    onLog(fd, 'fsync');
-    realFsync(fd);
-  });
+  spyOnFsync((fd) => onLog(fd, 'fsync'));
   return calls;
 }
 
@@ -129,37 +122,54 @@ describe('createProcessStore', () => {
     killChildren();
   });
 
-  it('should write the manifest and return false without touching it on a second create', () => {
-    const { store, ref, manifest, dir, manifestFile: file } = setup();
-    const before = fs.readFileSync(file, 'utf8');
+  it('should return false on a second create', () => {
+    const { store, ref, manifest } = setup();
 
     const created = store.create(ref, { ...manifest, createdAt: '2027-01-01T00:00:00.000Z' });
 
-    expect(JSON.parse(before)).toEqual(manifest);
     expect(created).toBe(false);
-    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('should leave the manifest untouched on a second create', () => {
+    const { store, ref, manifest, dir, manifestFile } = setup();
+    const before = fs.readFileSync(manifestFile, 'utf8');
+
+    store.create(ref, { ...manifest, createdAt: '2027-01-01T00:00:00.000Z' });
+
+    expect(fs.readFileSync(manifestFile, 'utf8')).toBe(before);
     expect(fs.readdirSync(dir).sort()).toEqual([MANIFEST_FILE, LOG_FILE]);
   });
 
-  it('should open the log before the manifest and fsync the directory once on create', () => {
-    const { store } = setup();
-    const other: ProcessRef = { project: 'demo', process: 'proc-2' };
-    const realOpen = fs.openSync;
+  describe('when creating a new process', () => {
+    let created: boolean;
+    let fsyncs: ReturnType<typeof countFsyncs>;
     const opened: string[] = [];
-    const fsyncs = countFsyncs();
-    // o manifesto nasce como temporário `.process.json.*`, então a ordem vem desse prefixo
-    jest.spyOn(fs, 'openSync').mockImplementation((file, flags, mode) => {
-      opened.push(path.basename(String(file)));
-      return realOpen(file, flags, mode);
+
+    beforeAll(() => {
+      const { store } = setup();
+      const other: ProcessRef = { project: 'demo', process: 'proc-2' };
+      fsyncs = countFsyncs();
+      // o manifesto nasce como temporário `.process.json.*`, então a ordem vem desse prefixo
+      spyOnOpen((file) => {
+        opened.push(path.basename(file));
+      });
+
+      created = store.create(other, emptyManifest(other));
     });
 
-    const created = store.create(other, emptyManifest(other));
+    it('should return true', () => {
+      expect(created).toBe(true);
+    });
 
-    expect(created).toBe(true);
-    expect(fsyncs().directories).toBe(1);
-    expect(
-      opened.filter((name) => name === LOG_FILE || name.startsWith(`.${MANIFEST_FILE}.`)),
-    ).toEqual([LOG_FILE, expect.stringContaining(`.${MANIFEST_FILE}.`)]);
+    it('should open the log before the manifest', () => {
+      expect(
+        opened.filter((name) => name === LOG_FILE || name.startsWith(`.${MANIFEST_FILE}.`)),
+      ).toEqual([LOG_FILE, expect.stringContaining(`.${MANIFEST_FILE}.`)]);
+    });
+
+    it('should fsync the directory once', () => {
+      expect(fsyncs().directories).toBe(1);
+    });
   });
 
   it('should throw IO_ERROR with only the errno when create fails for a reason other than EEXIST, such as a parent that is a file', () => {
@@ -210,7 +220,7 @@ describe('createProcessStore', () => {
   it('should throw PROCESS_NOT_FOUND when reading a missing process', () => {
     const { store, ref } = setup();
 
-    expect(() => store.read({ ...ref, process: 'outro' })).toThrow(
+    expect(() => store.read({ ...ref, process: 'other' })).toThrow(
       expect.objectContaining({ code: 'PROCESS_NOT_FOUND' }),
     );
   });
@@ -231,14 +241,14 @@ describe('createProcessStore', () => {
   it('should throw PROCESS_NOT_FOUND from readManifest for a missing process', () => {
     const { store, ref } = setup();
 
-    expect(() => store.readManifest({ ...ref, process: 'outro' })).toThrow(
+    expect(() => store.readManifest({ ...ref, process: 'other' })).toThrow(
       expect.objectContaining({ code: 'PROCESS_NOT_FOUND' }),
     );
   });
 
   it('should throw PROCESS_CORRUPTED from readManifest for an unreadable manifest', () => {
     const { store, ref, manifestFile } = setup();
-    fs.writeFileSync(manifestFile, 'isto nao e json');
+    fs.writeFileSync(manifestFile, 'this is not json');
 
     expect(() => store.readManifest(ref)).toThrow(
       expect.objectContaining({
@@ -249,7 +259,7 @@ describe('createProcessStore', () => {
   });
 
   it.each([
-    ['text that is not JSON', 'isto nao e json'],
+    ['text that is not JSON', 'this is not json'],
     ['JSON of the wrong shape', '{"project":"demo"}'],
     [
       'an invalid nested field (fixed.types.x = 1)',
@@ -347,25 +357,39 @@ describe('createProcessStore', () => {
       expect(readFile).not.toHaveBeenCalledWith(logFile, expect.anything());
     });
 
-    it('should refuse a write over a log above the cap without writing and release the lock', async () => {
-      const { dataDir, store, ref, logFile, dir } = setup();
-      sparseLog(logFile, MAX_LOG_BYTES + 1);
+    /** Escrita sobre um log 1 byte acima do teto: recusada antes de chamar `decide`. */
+    async function writeOverTheCap() {
+      const env = setup();
+      sparseLog(env.logFile, MAX_LOG_BYTES + 1);
       const decide = jest.fn(() => ({ result: undefined }));
 
-      const error = await rejectionOf(store.write(ref, decide), dataDir);
+      const error = await rejectionOf(env.store.write(env.ref, decide), env.dataDir);
+
+      return { ...env, decide, error };
+    }
+
+    it('should refuse a write over a log above the cap with PROCESS_TOO_LARGE', async () => {
+      const { error } = await writeOverTheCap();
 
       expect(error).toMatchObject({
         code: 'PROCESS_TOO_LARGE',
         details: [{ code: 'too-large', process: 'proc-1' }],
       });
       expect(error.message).toContain('create a new process');
-      expect(decide).not.toHaveBeenCalled();
-      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES + 1);
-      expect(locksIn(dir)).toEqual([]);
     });
 
-    /** Prefixo `\n` (o log esparso termina em byte nulo) mais a linha: o lote tem `LINE.length + 1` bytes. */
-    const LINE = 'x'.repeat(100);
+    it('should not call decide nor change the log when refusing a write over a log above the cap', async () => {
+      const { decide, logFile } = await writeOverTheCap();
+
+      expect(decide).not.toHaveBeenCalled();
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES + 1);
+    });
+
+    it('should release the lock when refusing a write over a log above the cap', async () => {
+      const { dir } = await writeOverTheCap();
+
+      expect(locksIn(dir)).toEqual([]);
+    });
 
     it(
       'should write a batch that closes the log at exactly 64 MiB and keep the process readable',
@@ -396,37 +420,56 @@ describe('createProcessStore', () => {
       LARGE_LOG_TIMEOUT_MS,
     );
 
+    /** Lote que passaria do teto por 1 byte: recusado, e o log segue do mesmo tamanho. */
+    async function writeOverByOneByte() {
+      const env = setup();
+      sparseLog(env.logFile, MAX_LOG_BYTES - LINE.length);
+
+      const error = await rejectionOf(
+        env.store.write(env.ref, () => ({ line: LINE, result: undefined })),
+        env.dataDir,
+      );
+
+      return { ...env, error };
+    }
+
+    it('should refuse a batch that would pass the cap by 1 byte with PROCESS_TOO_LARGE', async () => {
+      const { error } = await writeOverByOneByte();
+
+      expect(error).toMatchObject({
+        code: 'PROCESS_TOO_LARGE',
+        details: [
+          {
+            path: '/process',
+            code: 'too-large',
+            message: expect.stringContaining('new process'),
+            process: 'proc-1',
+          },
+        ],
+      });
+    });
+
+    it('should keep the file size when refusing a batch that would pass the cap by 1 byte', async () => {
+      const { logFile } = await writeOverByOneByte();
+
+      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - LINE.length);
+    });
+
+    it('should release the lock when refusing a batch that would pass the cap by 1 byte', async () => {
+      const { dir } = await writeOverByOneByte();
+
+      expect(locksIn(dir)).toEqual([]);
+    });
+
     it(
-      'should refuse a batch that would pass the cap by 1 byte, keep the file size, release the lock and keep read working',
+      'should keep read working after refusing a batch that would pass the cap by 1 byte',
       async () => {
-        const { dataDir, store, ref, logFile, dir } = setup();
-        sparseLog(logFile, MAX_LOG_BYTES - LINE.length);
+        const { store, ref } = await writeOverByOneByte();
 
-        const error = await rejectionOf(
-          store.write(ref, () => ({ line: LINE, result: undefined })),
-          dataDir,
-        );
-
-        expect(error).toMatchObject({
-          code: 'PROCESS_TOO_LARGE',
-          details: [
-            {
-              path: '/process',
-              code: 'too-large',
-              message: expect.stringContaining('new process'),
-              process: 'proc-1',
-            },
-          ],
-        });
-        expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - LINE.length);
-        expect(locksIn(dir)).toEqual([]);
         expect(store.read(ref).text.length).toBe(MAX_LOG_BYTES - LINE.length);
       },
       LARGE_LOG_TIMEOUT_MS,
     );
-
-    /** 50 caracteres e 100 bytes (`ç` e `ã` ocupam 2 bytes cada); com o `\n` de prefixo o lote tem 101 bytes. */
-    const MULTIBYTE = 'çã'.repeat(25);
 
     it('should count the cap in bytes, not characters, and refuse a multibyte batch that only fits in characters', async () => {
       const { dataDir, store, ref, logFile } = setup();
@@ -454,7 +497,7 @@ describe('createProcessStore', () => {
   });
 
   it('should return an empty list from listProjects for a data directory without projects', () => {
-    const empty = createProcessStore({ dataDir: createTempDir('vazio'), log: () => undefined });
+    const empty = createProcessStore({ dataDir: createTempDir('empty'), log: () => undefined });
 
     expect(empty.listProjects()).toEqual([]);
   });
@@ -462,7 +505,7 @@ describe('createProcessStore', () => {
   it('should return an empty list from list for a project that is absent', () => {
     const { store } = setup();
 
-    expect(store.list('ausente')).toEqual([]);
+    expect(store.list('absent')).toEqual([]);
   });
 
   it('should sort the processes from list and skip folders without a manifest', () => {
@@ -601,7 +644,9 @@ describe('createProcessStore', () => {
       (_name, bad) => {
         const { dataDir, store, ref } = setup();
 
-        expect(() => store.create(bad, emptyManifest(bad))).toThrow(invalid);
+        const error = captureError(() => store.create(bad, emptyManifest(bad)));
+
+        expect(error).toEqual(invalid);
 
         expectNothingCreated(dataDir, ref);
       },
@@ -612,7 +657,9 @@ describe('createProcessStore', () => {
       (_name, bad) => {
         const { dataDir, store, ref } = setup();
 
-        expect(() => store.read(bad)).toThrow(invalid);
+        const error = captureError(() => store.read(bad));
+
+        expect(error).toEqual(invalid);
 
         expectNothingCreated(dataDir, ref);
       },
@@ -623,7 +670,9 @@ describe('createProcessStore', () => {
       async (_name, bad) => {
         const { dataDir, store, ref } = setup();
 
-        await expect(append(store, bad, 1)).rejects.toEqual(invalid);
+        const error = await rejectionOf(append(store, bad, 1), dataDir);
+
+        expect(error).toEqual(invalid);
 
         expectNothingCreated(dataDir, ref);
       },
@@ -647,44 +696,63 @@ describe('createProcessStore', () => {
       const { dataDir, store } = setup();
       const reserved: ProcessRef = { project: 'demo', process: ATTACHMENTS_DIR };
 
-      expect(() => store.create(reserved, emptyManifest(reserved))).toThrow(
-        expect.objectContaining({ code: 'RESERVED_NAME' }),
-      );
+      const error = captureError(() => store.create(reserved, emptyManifest(reserved)));
+
+      expect(error).toMatchObject({ code: 'RESERVED_NAME' });
       expect(fs.existsSync(path.join(dataRoot(dataDir), 'demo', ATTACHMENTS_DIR))).toBe(false);
     });
 
     it.each([
-      ['process', { process: 'outro' }],
-      ['project', { project: 'outro' }],
+      ['process', { process: 'other' }],
+      ['project', { project: 'other' }],
     ])(
       'should throw from create when manifest.%s differs from the ref and not create a directory',
       (_field, override) => {
         const { dataDir, store, ref } = setup();
         const other: ProcessRef = { project: ref.project, process: 'proc-2' };
 
-        expect(() => store.create(other, { ...emptyManifest(other), ...override })).toThrow(
-          expect.objectContaining({ code: 'INTERNAL' }),
+        const error = captureError(() =>
+          store.create(other, { ...emptyManifest(other), ...override }),
         );
 
+        expect(error).toMatchObject({ code: 'INTERNAL' });
         expect(fs.readdirSync(dataRoot(dataDir))).toEqual([ref.project]);
         expect(fs.readdirSync(path.join(dataRoot(dataDir), ref.project))).toEqual([ref.process]);
       },
     );
   });
 
-  it('should write the line returned by decide, return its result and hand decide the raw log', async () => {
-    const { store, ref, logFile } = setup();
-    const line = batchLine(emptyRaw(emptyManifest(ref)), 2, 'k1');
+  describe('when decide returns a line and a result', () => {
+    let env: ReturnType<typeof setup>;
+    let line: string;
+    let result: string;
     let received: RawProcess | undefined;
 
-    const result = await store.write(ref, (raw) => {
-      received = raw;
-      return { line, result: 'pronto' };
+    beforeAll(async () => {
+      env = setup();
+      line = batchLine(emptyRaw(emptyManifest(env.ref)), 2, 'k1');
+
+      result = await env.store.write(env.ref, (raw) => {
+        received = raw;
+        return { line, result: 'ready' };
+      });
     });
 
-    expect(result).toBe('pronto');
-    expect(received).toEqual({ manifest: emptyManifest(ref), text: '', endsWithNewline: true });
-    expect(fs.readFileSync(logFile, 'utf8')).toBe(line);
+    it('should write the line', () => {
+      expect(fs.readFileSync(env.logFile, 'utf8')).toBe(line);
+    });
+
+    it('should return the result of decide', () => {
+      expect(result).toBe('ready');
+    });
+
+    it('should hand decide the raw log', () => {
+      expect(received).toEqual({
+        manifest: emptyManifest(env.ref),
+        text: '',
+        endsWithNewline: true,
+      });
+    });
   });
 
   it('should prefix a newline when the log ends in a torn tail', async () => {
@@ -705,12 +773,12 @@ describe('createProcessStore', () => {
 
   it('should throw PROCESS_NOT_FOUND from write for a missing process and create nothing', async () => {
     const { dataDir, store, ref } = setup();
-    const missing = { ...ref, process: 'outro' };
+    const missing = { ...ref, process: 'other' };
 
     const error = await rejectionOf(append(store, missing, 1), dataDir);
 
     expect(error.code).toBe('PROCESS_NOT_FOUND');
-    expect(fs.existsSync(path.join(dataRoot(dataDir), ref.project, 'outro'))).toBe(false);
+    expect(fs.existsSync(path.join(dataRoot(dataDir), ref.project, 'other'))).toBe(false);
   });
 
   it('should serialize 8 concurrent writes to the same process with an intact chain and contiguous seq', async () => {
@@ -750,7 +818,7 @@ describe('createProcessStore', () => {
       store.write(ref, () => {
         fs.writeFileSync(
           path.join(lockDir, 'holder'),
-          JSON.stringify({ pid: process.pid, token: 'outro', bootId: BOOT }),
+          JSON.stringify({ pid: process.pid, token: 'other', bootId: BOOT }),
         );
         return { line, result: undefined };
       });
@@ -779,20 +847,14 @@ describe('createProcessStore', () => {
     });
 
     it('should not call decide and leave no line when a live owner holds the lock', async () => {
-      const { dataDir, ref, logFile, lockDir } = setup();
-      const store = createProcessStore({
-        dataDir,
-        log: () => undefined,
-        bootId: BOOT,
-        budgetMs: 50,
-      });
+      const { dataDir, store, ref, logFile, lockDir } = setup(50);
       const pid = await liveForeignPid();
       fs.mkdirSync(lockDir);
       fs.writeFileSync(
         path.join(lockDir, 'holder'),
-        JSON.stringify({ pid, token: 'alheio', bootId: BOOT }),
+        JSON.stringify({ pid, token: 'foreign', bootId: BOOT }),
       );
-      const decide = jest.fn(() => ({ line: 'nao deve gravar\n', result: undefined }));
+      const decide = jest.fn(() => ({ line: 'must not write\n', result: undefined }));
 
       const error = await rejectionOf(store.write(ref, decide), dataDir);
 
@@ -808,7 +870,7 @@ describe('createProcessStore', () => {
   describe('with one fsync per batch', () => {
     it('should fsync the log once for a batch of 50', async () => {
       const { store, ref, logFile } = setup();
-      const fsyncs = countLogFsyncs(logFile);
+      const fsyncs = countFsyncsOf(logFile);
 
       await append(store, ref, 50, 'k50');
 
@@ -818,20 +880,19 @@ describe('createProcessStore', () => {
 
     it('should fsync the log once for a replay without a line', async () => {
       const { store, ref, logFile } = setup();
-      const fsyncs = countLogFsyncs(logFile);
       await append(store, ref, 50, 'k50');
+      const fsyncs = countFsyncsOf(logFile);
 
       await store.write(ref, () => ({ result: undefined }));
 
-      // 1 do lote de preparo mais 1 do replay
-      expect(fsyncs()).toBe(2);
+      expect(fsyncs()).toBe(1);
     });
 
     it('should fsync the log after writing it', async () => {
       const { store, ref, logFile } = setup();
       const calls = recordLogCalls(logFile);
 
-      await append(store, ref, 3, 'lote');
+      await append(store, ref, 3, 'batch');
 
       expect(calls).toEqual(['write', 'fsync']);
     });
@@ -839,7 +900,7 @@ describe('createProcessStore', () => {
     it('should only fsync on a replay without a line', async () => {
       const { store, ref, logFile } = setup();
       const calls = recordLogCalls(logFile);
-      await append(store, ref, 3, 'lote');
+      await append(store, ref, 3, 'batch');
       calls.length = 0;
 
       await store.write(ref, () => ({ result: undefined }));
@@ -853,18 +914,13 @@ describe('createProcessStore', () => {
     const RESEND_EVERY = 4;
     // filhos carregados à frente da rodada: só um deles escreve por vez, como no mesmo log reusado
     const PREFETCH = 4;
-    const children: ChildProcess[] = [];
 
-    afterEach(() => {
-      for (const child of children.splice(0)) child.kill('SIGKILL');
-    });
+    afterAll(killChildren);
 
     /** Filho já carregado e parado à espera do `go`; um a menos por rodada é o que esconde o custo de subir. */
     function spawnWriter(dataDir: string, ref: ProcessRef, run: number): ChildProcess {
       const args: CrashWriterArgs = { dataDir, project: ref.project, process: ref.process, run };
-      const child = spawn(process.execPath, [CRASH_WRITER, JSON.stringify(args)]);
-      children.push(child);
-      return child;
+      return trackChild(spawn(process.execPath, [CRASH_WRITER, JSON.stringify(args)]));
     }
 
     /** Roubos de lock de órfão no stderr do filho; ruído e a última linha, cortada pelo SIGKILL, não são JSON e caem fora. */
@@ -914,17 +970,24 @@ describe('createProcessStore', () => {
       });
     }
 
-    it('should accept a new write over a log that 200 SIGKILL runs left with no half batch visible and every resent key once', async () => {
+    let resent: string[];
+    let sizes: Set<number>;
+    let keys: (string | undefined)[];
+    let before: ReturnType<typeof verifyProcess>;
+    let after: ReturnType<typeof verifyProcess>;
+    let steals: number;
+
+    beforeAll(async () => {
       const { store, ref, dataDir, dir, records } = setup();
-      const resent: string[] = [];
+      resent = [];
       const ahead: ChildProcess[] = [];
       let childSteals = 0;
       for (let run = 0; run < RUNS; run += 1) {
         while (ahead.length < PREFETCH && run + ahead.length < RUNS) {
           ahead.push(spawnWriter(dataDir, ref, run + ahead.length));
         }
-        const { key, steals } = await killMidBatch(ahead.shift()!, run);
-        childSteals += steals;
+        const { key, steals: runSteals } = await killMidBatch(ahead.shift()!, run);
+        childSteals += runSteals;
         // verificar o log inteiro a cada rodada custaria O(n²); o reenvio é amostrado
         if (run % RESEND_EVERY === 0) {
           await resend(store, ref, 10, key);
@@ -933,27 +996,15 @@ describe('createProcessStore', () => {
       }
       const raw = store.read(ref);
       const { lines } = parseLog(raw.text, anchor(raw.manifest));
-      const sizes = new Set(lines.map(({ links }) => links.length));
-      const keys = lines.map(({ links }) => links[0]?.batch?.key);
-      const before = verifyProcess(raw);
+      sizes = new Set(lines.map(({ links }) => links.length));
+      keys = lines.map(({ links }) => links[0]?.batch?.key);
+      before = verifyProcess(raw);
       const parentSteals = records.filter(({ event }) => event === 'lock-orphan-removed').length;
-      const steals = parentSteals + childSteals;
+      steals = parentSteals + childSteals;
 
-      await append(store, ref, 1, 'depois-da-falha');
+      await append(store, ref, 1, 'after-failure');
 
-      const after = verifyProcess(store.read(ref));
-
-      expect(resent).toHaveLength(RUNS / RESEND_EVERY);
-      expect(sizes).toEqual(new Set([10]));
-      expect(resent.filter((key) => keys.filter((seen) => seen === key).length !== 1)).toEqual([]);
-      expect(before.chain.ok).toBe(true);
-      // sem ao menos um roubo, nenhum kill pegou um filho segurando o lock e o teste não provaria a recuperação
-      expect(steals).toBeGreaterThanOrEqual(1);
-      expect(after.chain).toMatchObject({
-        ok: true,
-        totalRecords: before.chain.totalRecords + 1,
-      });
-      expect(after.records.at(-1)?.seq).toBe(before.chain.totalRecords);
+      after = verifyProcess(store.read(ref));
 
       process.stdout.write(
         `steals=${steals} (parent ${parentSteals}, children ${childSteals}) repairedLines=${before.chain.repairedLines.length}\n`,
@@ -961,30 +1012,57 @@ describe('createProcessStore', () => {
       // sem asserção: o kill pode deixar `.tmp-`, `.dead-` ou `.released-` e não há limpeza automática (`lock.ts`, `ponytail:`)
       process.stdout.write(`lock residues: ${JSON.stringify(locksIn(dir))}\n`);
     }, 240_000);
+
+    it('should leave no half batch visible', () => {
+      expect(sizes).toEqual(new Set([10]));
+    });
+
+    it('should show every resent key exactly once', () => {
+      expect(resent).toHaveLength(RUNS / RESEND_EVERY);
+      expect(resent.filter((key) => keys.filter((seen) => seen === key).length !== 1)).toEqual([]);
+    });
+
+    it('should keep the chain intact after the kills', () => {
+      expect(before.chain.ok).toBe(true);
+    });
+
+    it('should recover at least one lock left by a killed owner', () => {
+      // sem ao menos um roubo, nenhum kill pegou um filho segurando o lock e o teste não provaria a recuperação
+      expect(steals).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should accept a new write and close the chain', () => {
+      expect(after.chain).toMatchObject({
+        ok: true,
+        totalRecords: before.chain.totalRecords + 1,
+      });
+      expect(after.records.at(-1)?.seq).toBe(before.chain.totalRecords);
+    });
   });
 
   describe('with a log torn at every byte offset', () => {
-    it('should show a 3-record batch cut at each byte only when just the newline is missing and keep the chain going', async () => {
-      const { store, ref, manifest, logFile } = setup();
-      const bytes = Buffer.from(batchLine(emptyRaw(manifest), 3, 'lote'));
-      const problems: string[] = [];
+    /** Os cortes cujo resultado diverge do esperado, com o corte no texto. */
+    const mismatch = (cut: number, got: unknown, want: unknown): string[] =>
+      JSON.stringify(got) === JSON.stringify(want) ? [] : [`${cut}: ${JSON.stringify(got)}`];
 
-      expect(bytes.length).toBeGreaterThan(1300);
-      expect(bytes.length).toBeLessThan(2000);
+    it('should show a 3-record batch cut at each byte only when just the newline is missing, keeping the chain going', async () => {
+      const { store, ref, manifest, logFile } = setup();
+      const bytes = Buffer.from(batchLine(emptyRaw(manifest), 3, 'batch'));
+      const problems: string[] = [];
 
       for (let cut = 0; cut < bytes.length; cut += 1) {
         const visible = cut === bytes.length - 1;
         fs.writeFileSync(logFile, bytes.subarray(0, cut));
         const seen = verifyProcess(store.read(ref));
-        const outcome = await resend(store, ref, 3, 'lote');
+        const outcome = await resend(store, ref, 3, 'batch');
         // a gravação seguinte a um lote visível é a única que ainda não aconteceu: o reenvio só deu fsync
-        if (visible || cut % 25 === 0) await append(store, ref, 1, `depois-${cut}`);
+        if (visible || cut % 25 === 0) await append(store, ref, 1, `after-${cut}`);
         const done = verifyProcess(store.read(ref));
 
         const got = {
           okBefore: seen.chain.ok,
-          visible: seen.records.length === 3 && seen.batches.has('lote'),
-          invisible: seen.records.length === 0 && !seen.batches.has('lote'),
+          visible: seen.records.length === 3 && seen.batches.has('batch'),
+          invisible: seen.records.length === 0 && !seen.batches.has('batch'),
           outcome,
           okAfter: done.chain.ok,
           seqs: done.records.map(({ seq }) => seq),
@@ -997,8 +1075,7 @@ describe('createProcessStore', () => {
           okAfter: true,
           seqs: visible || cut % 25 === 0 ? [0, 1, 2, 3] : [0, 1, 2],
         };
-        if (JSON.stringify(got) !== JSON.stringify(want))
-          problems.push(`${cut}: ${JSON.stringify(got)}`);
+        problems.push(...mismatch(cut, got, want));
       }
 
       expect(problems).toEqual([]);
@@ -1010,7 +1087,7 @@ describe('createProcessStore', () => {
         chainLine(ref.process, verifyProcess(emptyRaw(manifest)).end, 1, {
           ...lineOptions,
           text: () => 'çã'.repeat(40),
-          key: 'lote',
+          key: 'batch',
         }),
       );
 
@@ -1024,8 +1101,7 @@ describe('createProcessStore', () => {
         const { chain, records } = verifyProcess(store.read(ref));
         const got = { ok: chain.ok, records: records.length };
         const want = { ok: true, records: cut === bytes.length - 1 ? 1 : 0 };
-        if (JSON.stringify(got) !== JSON.stringify(want))
-          problems.push(`${cut}: ${JSON.stringify(got)}`);
+        problems.push(...mismatch(cut, got, want));
       }
 
       expect(problems).toEqual([]);
@@ -1045,29 +1121,47 @@ describe('createProcessStore', () => {
       });
     });
 
-    const torn = (line: string): string => line.slice(0, 40);
-
-    const tornTails: [string, (line: string) => string, number, number[]][] = [
-      ['a tear plus a tear', (a) => `${torn(a)}\n${torn(a)}`, 0, [0, 1]],
-      ['a tear plus only a newline', (a) => `${torn(a)}\n`, 0, [0]],
-      ['a tear plus a valid tail', (a) => `${torn(a)}\n${a.slice(0, -1)}`, 3, [0]],
+    const tornTails: {
+      name: string;
+      rest: (line: string) => string;
+      visible: number;
+      repaired: number[];
+    }[] = [
+      {
+        name: 'a tear plus a tear',
+        rest: (a) => `${torn(a)}\n${torn(a)}`,
+        visible: 0,
+        repaired: [0, 1],
+      },
+      {
+        name: 'a tear plus only a newline',
+        rest: (a) => `${torn(a)}\n`,
+        visible: 0,
+        repaired: [0],
+      },
+      {
+        name: 'a tear plus a valid tail',
+        rest: (a) => `${torn(a)}\n${a.slice(0, -1)}`,
+        visible: 3,
+        repaired: [0],
+      },
     ];
 
     it.each(tornTails)(
-      'should count the records still visible in a log with %s',
-      (_name, rest, visible) => {
+      'should count the records still visible in a log with $name',
+      ({ rest, visible }) => {
         const { store, ref, manifest, logFile } = setup();
-        fs.writeFileSync(logFile, rest(batchLine(emptyRaw(manifest), 3, 'lote')));
+        fs.writeFileSync(logFile, rest(batchLine(emptyRaw(manifest), 3, 'batch')));
 
         expect(verifyProcess(store.read(ref)).chain.totalRecords).toBe(visible);
       },
     );
 
     it.each(tornTails)(
-      'should accept the next write and close the chain after %s',
-      async (_name, rest, visible, repaired) => {
+      'should accept the next write and close the chain after $name',
+      async ({ rest, visible, repaired }) => {
         const { store, ref, manifest, logFile } = setup();
-        fs.writeFileSync(logFile, rest(batchLine(emptyRaw(manifest), 3, 'lote')));
+        fs.writeFileSync(logFile, rest(batchLine(emptyRaw(manifest), 3, 'batch')));
         verifyProcess(store.read(ref));
 
         await append(store, ref, 1);
@@ -1084,19 +1178,22 @@ describe('createProcessStore', () => {
   });
 
   describe('with short writes and ENOSPC', () => {
-    it('should write on the third attempt with an intact chain after two short writes that end in ENOSPC', async () => {
-      const { dataDir, store, ref, logFile } = setup();
-      const line = batchLine(emptyRaw(emptyManifest(ref)), 3, 'lote');
-      scriptWrites([100, 'enospc', 100, 'enospc'], dataDir);
+    /** Duas gravações curtas que acabam em ENOSPC, a cadeia lida depois de cada uma e o log rasgado que sobra. */
+    async function failTwiceWithEnospc() {
+      const env = setup();
+      const line = batchLine(emptyRaw(emptyManifest(env.ref)), 3, 'batch');
+      scriptWrites([100, 'enospc', 100, 'enospc'], env.dataDir);
       const failures: { error: HexlogError; chain: ReturnType<typeof verifyProcess>['chain'] }[] =
         [];
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const error = await rejectionOf(append(store, ref, 3, 'lote'), dataDir);
-        failures.push({ error, chain: verifyProcess(store.read(ref)).chain });
+        const error = await rejectionOf(append(env.store, env.ref, 3, 'batch'), env.dataDir);
+        failures.push({ error, chain: verifyProcess(env.store.read(env.ref)).chain });
       }
-      const tornLog = fs.readFileSync(logFile, 'utf8');
+      return { ...env, line, failures, tornLog: fs.readFileSync(env.logFile, 'utf8') };
+    }
 
-      await append(store, ref, 3, 'lote');
+    it('should turn two short writes that end in ENOSPC into IO_ERROR and keep the chain intact', async () => {
+      const { line, failures, tornLog } = await failTwiceWithEnospc();
 
       for (const { error, chain } of failures) {
         expect(error).toMatchObject({
@@ -1107,6 +1204,13 @@ describe('createProcessStore', () => {
       }
 
       expect(tornLog).toBe(`${line.slice(0, 100)}\n${line.slice(0, 99)}`);
+    });
+
+    it('should write on the third attempt with an intact chain after two short writes that end in ENOSPC', async () => {
+      const { store, ref } = await failTwiceWithEnospc();
+
+      await append(store, ref, 3, 'batch');
+
       expect(verifyProcess(store.read(ref)).chain).toMatchObject({
         ok: true,
         totalRecords: 3,
@@ -1116,10 +1220,10 @@ describe('createProcessStore', () => {
 
     it('should write exactly the line from the right offset after a short write that continues successfully', async () => {
       const { dataDir, store, ref, manifest, logFile } = setup();
-      const line = batchLine(emptyRaw(manifest), 3, 'lote');
+      const line = batchLine(emptyRaw(manifest), 3, 'batch');
       scriptWrites([100], dataDir);
 
-      await append(store, ref, 3, 'lote');
+      await append(store, ref, 3, 'batch');
 
       expect(fs.readFileSync(logFile, 'utf8')).toBe(line);
       expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 3 });
@@ -1127,11 +1231,11 @@ describe('createProcessStore', () => {
 
     it('should close the chain on the next write after a short write over a torn tail', async () => {
       const { dataDir, store, ref, manifest, logFile } = setup();
-      fs.writeFileSync(logFile, batchLine(emptyRaw(manifest), 3, 'lote').slice(0, 60));
+      fs.writeFileSync(logFile, batchLine(emptyRaw(manifest), 3, 'batch').slice(0, 60));
       scriptWrites([50, 'enospc'], dataDir);
-      await rejectionOf(append(store, ref, 3, 'lote'), dataDir);
+      await rejectionOf(append(store, ref, 3, 'batch'), dataDir);
 
-      await append(store, ref, 3, 'lote');
+      await append(store, ref, 3, 'batch');
 
       expect(verifyProcess(store.read(ref)).chain).toMatchObject({
         ok: true,
@@ -1143,15 +1247,17 @@ describe('createProcessStore', () => {
     it('should return replayed with an fsync when a batch is resent after ENOSPC hit everything but the newline', async () => {
       const { dataDir, store, ref, logFile } = setup();
       scriptWrites([-1, 'enospc'], dataDir);
-      const error = await rejectionOf(append(store, ref, 3, 'lote'), dataDir);
+      const error = await rejectionOf(append(store, ref, 3, 'batch'), dataDir);
       const seen = verifyProcess(store.read(ref));
-      const fsyncs = countLogFsyncs(logFile);
-
-      const result = await resend(store, ref, 3, 'lote');
 
       expect(error.code).toBe('IO_ERROR');
       expect(seen.chain).toMatchObject({ ok: true, totalRecords: 3 });
-      expect(seen.batches.has('lote')).toBe(true);
+      expect(seen.batches.has('batch')).toBe(true);
+
+      const fsyncs = countFsyncsOf(logFile);
+
+      const result = await resend(store, ref, 3, 'batch');
+
       expect(result).toBe('replayed');
       expect(fsyncs()).toBe(1);
     });
@@ -1159,8 +1265,8 @@ describe('createProcessStore', () => {
     it('should accept a new write after the replay of a batch that was already visible', async () => {
       const { dataDir, store, ref } = setup();
       scriptWrites([-1, 'enospc'], dataDir);
-      await rejectionOf(append(store, ref, 3, 'lote'), dataDir);
-      await resend(store, ref, 3, 'lote');
+      await rejectionOf(append(store, ref, 3, 'batch'), dataDir);
+      await resend(store, ref, 3, 'batch');
 
       await append(store, ref, 1);
 

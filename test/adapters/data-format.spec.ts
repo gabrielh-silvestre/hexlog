@@ -24,7 +24,7 @@ function dataDirWith(entries: string[]): string {
 }
 
 describe('LEGACY_NAME', () => {
-  it.each(['a', '0a', 'rdsc', 'meu-projeto', 'archive', 'x'.repeat(63)])(
+  it.each(['a', '0a', 'rdsc', 'my-project', 'archive', 'x'.repeat(63)])(
     'should match %s',
     (name) => {
       expect(LEGACY_NAME.test(name)).toBe(true);
@@ -41,7 +41,7 @@ describe('LEGACY_NAME', () => {
 
 describe('dataRoot', () => {
   it('should return <D>/.v1 as the root of the 1.0 data', () => {
-    expect(dataRoot('/dados/hexlog')).toBe(path.join('/dados/hexlog', '.v1'));
+    expect(dataRoot('/data/hexlog')).toBe(path.join('/data/hexlog', '.v1'));
   });
 });
 
@@ -58,38 +58,32 @@ describe('RESERVED_PROCESS_NAMES', () => {
 
 describe('detectLegacy', () => {
   it('should return every lowercase-named entry in alphabetical order', () => {
-    const dir = dataDirWith(['zeta/', 'alfa/', 'notas']);
+    const dir = dataDirWith(['zeta/', 'alpha/', 'notes']);
 
-    expect(detectLegacy(dir)).toEqual(['alfa', 'notas', 'zeta']);
+    expect(detectLegacy(dir)).toEqual(['alpha', 'notes', 'zeta']);
   });
 
   it('should not count the archive folder of the packages as 0.x, since archive is a reserved name', () => {
-    const dir = dataDirWith(['archive/', 'projeto/']);
+    const dir = dataDirWith(['archive/', 'project/']);
 
-    expect(detectLegacy(dir)).toEqual(['projeto']);
+    expect(detectLegacy(dir)).toEqual(['project']);
   });
 
   it('should never match .v1, .omc or any dot entry', () => {
-    const dir = dataDirWith(['.v1/', '.omc/', '.oculto']);
-
-    expect(detectLegacy(dir)).toEqual([]);
-  });
-
-  it('should not treat the 1.0 data alone as 0.x', () => {
-    const dir = dataDirWith(['.v1/', 'archive/']);
+    const dir = dataDirWith(['.v1/', '.omc/', '.hidden']);
 
     expect(detectLegacy(dir)).toEqual([]);
   });
 
   it('should not let the 1.0 data hide the 0.x when they are mixed', () => {
     const dir = dataDirWith(['.v1/', 'archive/']);
-    fs.mkdirSync(path.join(dir, 'projeto'));
+    fs.mkdirSync(path.join(dir, 'project'));
 
-    expect(detectLegacy(dir)).toEqual(['projeto']);
+    expect(detectLegacy(dir)).toEqual(['project']);
   });
 
   it('should ignore a name outside the 0.x pattern (uppercase, underscore, 64 characters)', () => {
-    const dir = dataDirWith(['Projeto/', 'a_b/', `${'x'.repeat(64)}/`, `${'y'.repeat(63)}/`]);
+    const dir = dataDirWith(['Project/', 'a_b/', `${'x'.repeat(64)}/`, `${'y'.repeat(63)}/`]);
 
     expect(detectLegacy(dir)).toEqual(['y'.repeat(63)]);
   });
@@ -103,13 +97,13 @@ describe('detectLegacy', () => {
   it('should find no 0.x data in a missing <D>', () => {
     const dir = dataDirWith([]);
 
-    expect(detectLegacy(path.join(dir, 'ausente'))).toEqual([]);
+    expect(detectLegacy(path.join(dir, 'absent'))).toEqual([]);
   });
 
   it('should throw a read error other than ENOENT raw', () => {
-    const dir = dataDirWith(['arquivo']);
+    const dir = dataDirWith(['file']);
 
-    expect(() => detectLegacy(path.join(dir, 'arquivo'))).toThrow(
+    expect(() => detectLegacy(path.join(dir, 'file'))).toThrow(
       expect.objectContaining({ code: 'ENOTDIR' }),
     );
   });
