@@ -6,7 +6,7 @@ import { anchor } from '../../src/domain/chain.ts';
 import type { Hash } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { MAX_BREAKS } from '../../src/shared/loader.ts';
-import { note } from '../commands/register-fakes.ts';
+import { note } from '../commands/fakes.ts';
 import { at, captureError, snapshot } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
 

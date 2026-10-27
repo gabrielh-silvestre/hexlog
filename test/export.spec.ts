@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
-import { PROJECT, note, runScript, seedNoteProcess } from './commands/register-fakes.ts';
+import { PROJECT, note, runScript, seedNoteProcess } from './commands/fakes.ts';
 import { writeRecordsCorpus } from './fixtures/records-corpus.ts';
 import { at, copyToXdg, createTempDir, jsonLines, snapshot } from './helpers.ts';
 

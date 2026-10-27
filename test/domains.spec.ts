@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { Gate } from '../src/domain/definitions.ts';
-import { note, refusal } from './commands/register-fakes.ts';
+import { note, refusal } from './commands/fakes.ts';
 import * as omc from './fixtures/domains/omc.ts';
 import * as rdsc from './fixtures/domains/rdsc.ts';
 import { at, idsOf } from './helpers.ts';

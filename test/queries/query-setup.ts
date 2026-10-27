@@ -14,7 +14,7 @@ import type { BatchItem } from '../../src/domain/record.ts';
 import { createQueryService } from '../../src/queries/query-service.ts';
 import type { QueryInput } from '../../src/queries/query-service.ts';
 import type { DefinitionStore, ProcessStore } from '../../src/ports.ts';
-import { AUTHOR, DOC, NOTE, PROJECT, createUuids, note } from '../commands/register-fakes.ts';
+import { AUTHOR, DOC, NOTE, PROJECT, createUuids, note } from '../commands/fakes.ts';
 import { at, createTempDir } from '../helpers.ts';
 
 export { PROJECT };

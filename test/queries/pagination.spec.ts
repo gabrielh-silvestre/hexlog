@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { decodeCursor, encodeCursor } from '../../src/queries/cursor.ts';
 import { PAGE_CHARS_CAP } from '../../src/queries/query-service.ts';
-import { ghostId, note } from '../commands/register-fakes.ts';
+import { ghostId, note } from '../commands/fakes.ts';
 import { at, captureError, cursorOf, idsOf, walkPages } from '../helpers.ts';
 import { querySetup } from './query-setup.ts';
 

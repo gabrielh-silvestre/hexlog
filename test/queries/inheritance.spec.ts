@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import type { Gate } from '../../src/domain/definitions.ts';
 import type { Marker, RecordId } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
-import { NOTE, note } from '../commands/register-fakes.ts';
+import { NOTE, note } from '../commands/fakes.ts';
 import { at, idsOf, walkPages } from '../helpers.ts';
 import { finding, PROJECT, querySetup } from './query-setup.ts';
 

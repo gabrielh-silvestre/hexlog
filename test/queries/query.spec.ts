@@ -3,7 +3,7 @@ import { describe, expect, it } from '@jest/globals';
 import { omit } from 'es-toolkit';
 import { blobFile } from '../../src/adapters/fs/data-format.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
-import { ghostId, note } from '../commands/register-fakes.ts';
+import { ghostId, note } from '../commands/fakes.ts';
 import { at, captureError, idsOf } from '../helpers.ts';
 import { PROJECT, querySetup, seeded } from './query-setup.ts';
 

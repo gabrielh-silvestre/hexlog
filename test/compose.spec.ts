@@ -6,7 +6,7 @@ import { compose, composeReader } from '../src/compose.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
 import type { Logger } from '../src/shared/logger.ts';
 import { captureError, createTempDir } from './helpers.ts';
-import { AUTHOR, NOTE, NOW, PROJECT, note } from './commands/register-fakes.ts';
+import { AUTHOR, NOTE, NOW, PROJECT, note } from './commands/fakes.ts';
 
 /** `cwd` e `dataDir` distintos; o `dataDir` fica dentro do `cwd` para provar que o `attach` o recusa. */
 function composed(logger: Logger = () => undefined) {

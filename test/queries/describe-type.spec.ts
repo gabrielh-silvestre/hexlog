@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { RecordType } from '../../src/domain/definitions.ts';
-import { NOTE } from '../commands/register-fakes.ts';
+import { NOTE } from '../commands/fakes.ts';
 import { captureError, detail } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
 

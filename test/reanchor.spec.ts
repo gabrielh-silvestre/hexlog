@@ -8,7 +8,7 @@ import { createProcessService } from '../src/commands/process.ts';
 import { composeReader } from '../src/compose.ts';
 import { Name } from '../src/domain/ids.ts';
 import { VERSION } from '../src/version.ts';
-import { createUuids } from './commands/register-fakes.ts';
+import { createUuids } from './commands/fakes.ts';
 import { createFlowEnvironment, registerFlowRecord, type FlowRecord } from './flow-data.ts';
 import { copyToXdg, createTempDir, snapshot } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';

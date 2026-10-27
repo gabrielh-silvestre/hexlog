@@ -6,7 +6,7 @@ import { blobFile, processPaths } from '../src/adapters/fs/data-format.ts';
 import { sha256hex } from '../src/domain/chain.ts';
 import { compose } from '../src/compose.ts';
 import { escapeControls } from '../scripts/escape-controls.ts';
-import { AUTHOR, DOC, NOW, PROJECT } from './commands/register-fakes.ts';
+import { AUTHOR, DOC, NOW, PROJECT } from './commands/fakes.ts';
 import { at, copyToXdg, createTempDir, jsonLines, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');

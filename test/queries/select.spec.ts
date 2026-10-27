@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import * as inheritanceModule from '../../src/domain/inheritance.ts';
-import { note } from '../commands/register-fakes.ts';
+import { note } from '../commands/fakes.ts';
 import { querySetup } from './query-setup.ts';
 
 /** Processo com herança ligada, com duas versões de `run.unit` e um registro revogado. */

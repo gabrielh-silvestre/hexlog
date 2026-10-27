@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { note } from '../commands/register-fakes.ts';
+import { note } from '../commands/fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
 

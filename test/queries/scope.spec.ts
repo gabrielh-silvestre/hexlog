@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from '@jest/globals';
 import { MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
-import { note } from '../commands/register-fakes.ts';
+import { note } from '../commands/fakes.ts';
 import { at, captureError, detail, idsOf } from '../helpers.ts';
 import { querySetup } from './query-setup.ts';
 

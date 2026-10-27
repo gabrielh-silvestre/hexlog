@@ -4,7 +4,7 @@ import type { Gate } from '../../src/domain/definitions.ts';
 import type { Marker, RecordId } from '../../src/domain/ids.ts';
 import { createQueryService } from '../../src/queries/query-service.ts';
 import type { EvaluateGateInput } from '../../src/queries/query-service.ts';
-import { NOTE, note } from '../commands/register-fakes.ts';
+import { NOTE, note } from '../commands/fakes.ts';
 import { at, captureError, snapshot } from '../helpers.ts';
 import { diskStores, finding, PROJECT, querySetup } from './query-setup.ts';
 

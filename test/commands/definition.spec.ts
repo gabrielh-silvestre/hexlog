@@ -5,13 +5,11 @@ import { createValidator } from '../../src/adapters/validator.ts';
 import { createDefinitionService } from '../../src/commands/definition.ts';
 import type { DefineGateInput, DefineRelationInput } from '../../src/commands/definition.ts';
 import { hashOfJcs } from '../../src/domain/chain.ts';
-import { compareVersions } from '../../src/domain/definitions.ts';
 import type { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts';
-import type { DefinitionKind, DefinitionOf, DefinitionStore } from '../../src/ports.ts';
+import type { DefinitionStore } from '../../src/ports.ts';
 import { captureError } from '../helpers.ts';
-import { refuse } from './register-fakes.ts';
+import { PROJECT, fakeDefinitionStore } from './fakes.ts';
 
-const PROJECT = 'alpha';
 const NAME = 'note';
 
 const BASE_SCHEMA: RecordType = {
@@ -31,52 +29,8 @@ const OTHER_QUESTION: Gate['questions'][number] = {
   select: { type: 'approval' },
 };
 
-/**
- * Porta em memória com o contrato de `DefinitionStore.write`: `false` se a versão já existe.
- * `race` roda uma vez no início do próximo `write`, para plantar a versão de um escritor concorrente.
- */
-function fakeStore() {
-  const files = new Map<string, Map<string, unknown>>();
-  const writes: { kind: DefinitionKind; version: string }[] = [];
-  let race: (() => void) | undefined;
-
-  const versionsOf = (kind: DefinitionKind, name: string) => {
-    const key = `${kind}/${name}`;
-    const found = files.get(key) ?? new Map<string, unknown>();
-    files.set(key, found);
-    return found;
-  };
-  const store: DefinitionStore = {
-    names: refuse,
-    versions: (_project, kind, name) => [...versionsOf(kind, name).keys()].sort(compareVersions),
-    read: <K extends DefinitionKind>(_project: string, kind: K, name: string, version: string) =>
-      versionsOf(kind, name).get(version) as DefinitionOf[K],
-    write: (_project, kind, name, version, definition) => {
-      writes.push({ kind, version });
-      const pending = race;
-      race = undefined;
-      pending?.();
-      const stored = versionsOf(kind, name);
-      if (stored.has(version)) return false;
-      stored.set(version, structuredClone(definition));
-      return true;
-    },
-  };
-
-  return {
-    store,
-    writes,
-    seed: (kind: DefinitionKind, name: string, version: string, definition: unknown) =>
-      void versionsOf(kind, name).set(version, structuredClone(definition)),
-    versions: (kind: DefinitionKind, name: string) => store.versions(PROJECT, kind, name),
-    stored: (kind: DefinitionKind, name: string, version: string) =>
-      versionsOf(kind, name).get(version),
-    racing: (plant: () => void) => void (race = plant),
-  };
-}
-
 function setup() {
-  const fake = fakeStore();
+  const fake = fakeDefinitionStore();
   const service = createDefinitionService({ store: fake.store, validator: createValidator() });
   return { ...fake, service };
 }
@@ -97,7 +51,11 @@ const gate = (overrides: Partial<DefineGateInput> = {}): DefineGateInput => ({
   ...overrides,
 });
 
-/** Relação de exatamente `chars` caracteres canônicos: `from` de nomes distintos de 40 caracteres (43 canônicos cada) e um `name` que acerta o resto. */
+/**
+ * Relação de exatamente `chars` caracteres canônicos: `from` de nomes distintos de 40 caracteres
+ * (43 canônicos cada) e um `name` que acerta o resto. O `name` de `relation()` tem 5 caracteres e
+ * o teto é 63, então o resto vai até 58.
+ */
 function relationOfLength(chars: number): DefineRelationInput {
   for (let count = 1; ; count += 1) {
     const from = Array.from({ length: count }, (_, i) => `t${i}`.padEnd(40, 'x'));
@@ -209,8 +167,8 @@ describe('defineType', () => {
 
   describe('when another writer takes the target version', () => {
     it('should converge to 1.0 as a replay on the first version of a new name with breaking: true', () => {
-      const { service, seed, racing, versions } = setup();
-      racing(() => seed('types', NAME, '1.0', BASE_SCHEMA));
+      const { service, add, racing, versions } = setup();
+      racing(() => add('types', NAME, '1.0', BASE_SCHEMA));
 
       const defined = service.defineType({
         project: PROJECT,
@@ -229,9 +187,9 @@ describe('defineType', () => {
     });
 
     it('should turn the same definition written by another writer into a replay', () => {
-      const { service, seed, racing, versions } = setup();
+      const { service, add, racing, versions } = setup();
       service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
-      racing(() => seed('types', NAME, '1.1', WITH_OPTIONAL));
+      racing(() => add('types', NAME, '1.1', WITH_OPTIONAL));
 
       const defined = service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL });
 
@@ -245,9 +203,9 @@ describe('defineType', () => {
     });
 
     it('should refuse as a breaking change when what the other writer wrote makes the change one', () => {
-      const { service, seed, racing } = setup();
+      const { service, add, racing } = setup();
       service.defineType({ project: PROJECT, name: NAME, schema: BASE_SCHEMA });
-      racing(() => seed('types', NAME, '1.1', WITH_REQUIRED));
+      racing(() => add('types', NAME, '1.1', WITH_REQUIRED));
 
       const error = captureError(() =>
         service.defineType({ project: PROJECT, name: NAME, schema: WITH_OPTIONAL }),
@@ -286,7 +244,7 @@ describe('defineType', () => {
 
     it.each([
       ['array', { type: 'array', items: { type: 'string' } }],
-      ['without type', { description: 'sem type na raiz' }],
+      ['without type', { description: 'no type at the root' }],
     ])('should refuse a root that is %s', (_root, schema) => {
       const { service, writes } = setup();
 
@@ -308,25 +266,29 @@ describe('defineType', () => {
         'a free pattern',
         { code: { type: 'string', maxLength: 10, pattern: '^[a-z]+$' } },
         '/schema/properties/code/pattern',
+        'pattern-not-allowed',
       ],
       [
         'a free pattern that does not compile as a regex',
         { code: { type: 'string', pattern: '(' } },
         '/schema/properties/code/pattern',
+        'pattern-not-allowed',
       ],
       [
         'patternProperties',
         { code: { type: 'object', patternProperties: { '^x-': { type: 'string' } } } },
         '/schema/properties/code/patternProperties',
+        'pattern-not-allowed',
       ],
       [
         'a value that violates the metaschema',
         { code: { minLength: -1 } },
         '/schema/properties/code/minLength',
+        'minimum',
       ],
     ])(
       'should return invalid-schema for %s with the path prefixed with /schema and write nothing',
-      (_name, properties, path) => {
+      (_name, properties, path, code) => {
         const { service, writes } = setup();
         const schema = { type: 'object', properties } as RecordType;
 
@@ -334,35 +296,18 @@ describe('defineType', () => {
           service.defineType({ project: PROJECT, name: NAME, schema }),
         );
 
-        expect(error).toMatchObject({ code: 'INVALID_SCHEMA', details: [{ path }] });
+        expect(error).toMatchObject({ code: 'INVALID_SCHEMA', details: [{ path, code }] });
         expect(writes).toEqual([]);
       },
     );
 
-    it('should return the pattern-not-allowed code for a free pattern', () => {
-      const { service } = setup();
-      const schema: RecordType = {
-        type: 'object',
-        properties: { code: { type: 'string', pattern: '^[a-z]+$' } },
-      };
-
-      const error = captureError(() =>
-        service.defineType({ project: PROJECT, name: NAME, schema }),
-      );
-
-      expect(error).toMatchObject({
-        code: 'INVALID_SCHEMA',
-        details: [{ path: '/schema/properties/code/pattern', code: 'pattern-not-allowed' }],
-      });
-    });
-
     it('should refuse the resent schema of a legacy type with pattern instead of treating it as a replay', () => {
-      const { service, seed, versions, writes } = setup();
+      const { service, add, versions, writes } = setup();
       const legacy: RecordType = {
         type: 'object',
         properties: { code: { type: 'string', maxLength: 10, pattern: '^[a-z]+$' } },
       };
-      seed('types', NAME, '1.0', legacy);
+      add('types', NAME, '1.0', legacy);
 
       const error = captureError(() =>
         service.defineType({ project: PROJECT, name: NAME, schema: legacy }),
@@ -548,9 +493,9 @@ describe('defineGate', () => {
 
   describe('when another writer takes the target version', () => {
     it('should decide a different definition again and never overwrite the one of the other writer', () => {
-      const { service, seed, racing, stored } = setup();
+      const { service, add, racing, stored } = setup();
       service.defineGate(gate());
-      racing(() => seed('gates', 'ready', '1.1', { name: 'ready', questions: [OTHER_QUESTION] }));
+      racing(() => add('gates', 'ready', '1.1', { name: 'ready', questions: [OTHER_QUESTION] }));
 
       const defined = service.defineGate(gate({ questions: [QUESTION, OTHER_QUESTION] }));
 
@@ -567,8 +512,8 @@ describe('defineGate', () => {
     });
 
     it('should exhaust the attempts, without overwriting, when the target version never frees up', () => {
-      const { store, seed } = setup();
-      seed('gates', 'ready', '1.0', { name: 'ready', questions: [QUESTION] });
+      const { store, add } = setup();
+      add('gates', 'ready', '1.0', { name: 'ready', questions: [QUESTION] });
       // `write` sempre acha a versão alvo ocupada, e a leitura nunca vê o que o outro escritor gravou.
       let writes = 0;
       const stuck: DefinitionStore = {

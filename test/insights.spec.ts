@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { blobFile, processPaths } from '../src/adapters/fs/data-format.ts';
 import { compose } from '../src/compose.ts';
-import { AUTHOR, DOC, NOTE, note } from './commands/register-fakes.ts';
+import { AUTHOR, DOC, NOTE, note } from './commands/fakes.ts';
 import { writeRecordsCorpus } from './fixtures/records-corpus.ts';
 import { createTempDir, snapshot } from './helpers.ts';
 

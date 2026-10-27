@@ -3,7 +3,7 @@ import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { Marker, RecordId } from '../../src/domain/ids.ts';
 import { createQueryService } from '../../src/queries/query-service.ts';
 import type { QueryResult } from '../../src/queries/query-service.ts';
-import { ghostId, note } from '../commands/register-fakes.ts';
+import { ghostId, note } from '../commands/fakes.ts';
 import { at, captureError, cursorOf, idsOf } from '../helpers.ts';
 import { diskStores, PROJECT, querySetup } from './query-setup.ts';
 

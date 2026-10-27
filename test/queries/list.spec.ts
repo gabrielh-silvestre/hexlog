@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from '@jest/globals';
 import { omit } from 'es-toolkit';
 import { processPaths } from '../../src/adapters/fs/data-format.ts';
-import { NOTE } from '../commands/register-fakes.ts';
+import { NOTE } from '../commands/fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { instant, PROJECT, querySetup } from './query-setup.ts';
 

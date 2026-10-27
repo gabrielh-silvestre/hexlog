@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from '@jest/globals';
-import { PROJECT, note, runScript, seedNoteProcess } from './commands/register-fakes.ts';
+import { PROJECT, note, runScript, seedNoteProcess } from './commands/fakes.ts';
 import { jsonLines } from './helpers.ts';
 
 let xdgHome: string;
