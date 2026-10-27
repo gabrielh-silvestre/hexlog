@@ -1,5 +1,5 @@
 // CLI falso do critic: faz o papel de `claude` e de `agy` nos specs do runner (`critic-run.spec.ts`,
-// `critic.spec.ts`). Roda como processo filho, nunca importado pelo jest. O spec monta dois shims
+// `critic-run.ask.spec.ts`, `critic.spec.ts`). Roda como processo filho, nunca importado pelo jest. O spec monta dois shims
 // `claude` e `agy` num diretório no início do `PATH` que fazem `exec node <este arquivo> <tool> "$@"`.
 //
 // argv: `<tool> <args da CLI real...>` com `tool` em `claude | agy`. Reconhece os comandos que o

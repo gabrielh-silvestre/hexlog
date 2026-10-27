@@ -2,17 +2,17 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { omit } from 'es-toolkit';
-import { createValidator } from '../src/adapters/validator.ts';
-import { createProcessService } from '../src/commands/process.ts';
 import { composeReader } from '../src/compose.ts';
 import { Name } from '../src/domain/ids.ts';
 import { VERSION } from '../src/version.ts';
-import { createUuids } from './commands/fakes.ts';
-import { createFlowEnvironment, registerFlowRecord, type FlowRecord } from './flow-data.ts';
+import {
+  createFlowEnvironment,
+  createLegacyLineageProcess,
+  registerFlowRecord,
+  type FlowRecord,
+} from './flow-data.ts';
 import { copyToXdg, createTempDir, snapshot } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
-import { diskStores } from './queries/query-setup.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const reanchorPath = path.join(repoRoot, 'scripts/flow/reanchor.ts');
@@ -62,6 +62,68 @@ const restsOn = (to: string) => ({ kind: 'derivesFrom', as: 'rests-on', to });
 
 async function register(process: string, record: FlowRecord, name: string): Promise<void> {
   ids[name] = await registerFlowRecord(environment, process, record);
+}
+
+/** Abre os processos de `slugs`, roda `run` e fecha o ambiente mesmo se `run` lançar. */
+async function withEnvironment<T>(
+  slugs: string[],
+  run: (opened: Environment) => T | Promise<T>,
+): Promise<T> {
+  const opened = await createFlowEnvironment(slugs);
+  try {
+    return await run(opened);
+  } finally {
+    await opened.close();
+  }
+}
+
+/** Anexa o texto da regra e grava `directives.convencoes.r1` nas gerações 1 e 2; devolve o anexo e o id da geração 1. */
+async function seedRule(opened: Environment): Promise<{ source: string; g1: string }> {
+  const { hash: source } = await opened.ok<{ hash: string }>('attach', {
+    project: 'hexlog',
+    text: 'rule text',
+  });
+  const g1 = await registerFlowRecord(
+    opened,
+    'directives-1',
+    directive('directives.convencoes.r1', 'Rule one', source),
+  );
+  await registerFlowRecord(
+    opened,
+    'directives-2',
+    directive('directives.convencoes.r1', 'Rule one', source),
+  );
+  return { source, g1 };
+}
+
+/** As `key` dos lotes que a reancoragem gravou para `proc` em `xdg`, na ordem do log. */
+function batchKeys(xdg: string, proc: string): string[] {
+  const keyPattern = new RegExp(`"key":"(reanchor-directives-2-${proc}-[^"]+)"`, 'g');
+  return [
+    ...fs
+      .readFileSync(path.join(xdg, 'hexlog/.v1/hexlog', proc, 'records.jsonl'), 'utf8')
+      .matchAll(keyPattern),
+  ].map(([, key]) => key ?? '');
+}
+
+/**
+ * Descobre a `key` do lote `index` de `proc` reancorando numa cópia e grava no ambiente real um lote
+ * com a mesma `key` e outro conteúdo: o `register` do apply real devolve IDEMPOTENCY_CONFLICT.
+ */
+async function poisonBatchKey(opened: Environment, proc: string, index = 0): Promise<string> {
+  const probe = copyToXdg(opened.dataDir);
+  const probed = runReanchor(['--to', 'directives-2', '--apply'], probe);
+  if (probed.status !== 0) throw new Error(`probe apply failed: ${probed.stderr}`);
+  const key = batchKeys(probe, proc)[index];
+  if (key === undefined) throw new Error(`probe apply wrote no batch ${index} for ${proc}`);
+  await opened.ok('register', {
+    project: 'hexlog',
+    process: proc,
+    agent: 'flow-run',
+    key,
+    records: [{ type: 'premise', target: `${proc}.premise.other`, data: { statement: 'Other' } }],
+  });
+  return key;
 }
 
 /** `HOME` temporário com o servidor registrado e o manifesto de build, no commit do `HEAD` deste repositório. */
@@ -117,13 +179,13 @@ function currentDecision(xdg: string, proc: string, target: string) {
     limit: Number.MAX_SAFE_INTEGER,
   });
   const found = records.filter((record) => record.target === target);
-
-  expect(found).toHaveLength(1);
-
   const [only] = found;
+  if (only === undefined || found.length > 1) {
+    throw new Error(`expected one current decision for ${target}, found ${found.length}`);
+  }
   return {
-    id: only?.id,
-    edges: (only?.out ?? []).map(({ kind, as, to }) => `${as ?? kind}:${to}`).sort(),
+    id: only.id,
+    edges: (only.out ?? []).map(({ kind, as, to }) => `${as ?? kind}:${to}`).sort(),
   };
 }
 
@@ -249,47 +311,64 @@ describe('scripts/flow/reanchor.ts', () => {
     });
   });
 
-  it('should turn an install problem into a warning and keep going on a dry-run', () => {
-    const xdg = copyToXdg(environment.dataDir);
-    const before = snapshot(xdg);
+  describe('when run as a dry-run with an install problem', () => {
+    let xdg: string;
+    let before: ReturnType<typeof snapshot>;
+    let result: ReturnType<typeof runReanchor>;
 
-    const result = runReanchor(['--to', 'directives-2'], xdg, makeHome({ dirty: true }));
+    beforeAll(() => {
+      xdg = copyToXdg(environment.dataDir);
+      before = snapshot(xdg);
 
-    expect(result.status).toBe(0);
-    expect(result.stderr).toMatch(/^warning: installed build has a dirty tree/m);
-    expect(result.stdout).toContain('rewritable: 2');
-    expect(snapshot(xdg)).toEqual(before);
-  }, 30_000);
+      result = runReanchor(['--to', 'directives-2'], xdg, makeHome({ dirty: true }));
+    }, 30_000);
+
+    it('should turn the install problem into a warning and exit 0', () => {
+      expect(result.status).toBe(0);
+      expect(result.stderr).toMatch(/^warning: installed build has a dirty tree/m);
+    });
+
+    it('should keep going and print the plan', () => {
+      expect(result.stdout).toContain('rewritable: 2');
+    });
+
+    it('should leave the data untouched', () => {
+      expect(snapshot(xdg)).toEqual(before);
+    });
+  });
 
   it('should say there is nothing to reanchor when no decision is anchored in an older generation', async () => {
-    const empty = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-empty']);
-    try {
+    await withEnvironment(['directives-1', 'directives-2', 'feat-empty'], (empty) => {
       const result = runReanchor(['--to', 'directives-2'], copyToXdg(empty.dataDir));
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('nothing to reanchor');
-    } finally {
-      await empty.close();
-    }
+    });
   }, 30_000);
 
   describe('with --apply on the fixture data', () => {
     let xdg: string;
     let result: ReturnType<typeof runReanchor>;
+    let same: ReturnType<typeof currentDecision>;
 
     beforeAll(() => {
       xdg = copyToXdg(environment.dataDir);
 
       result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+      same = currentDecision(xdg, 'feat-a', 'feat-a.decision.same');
     }, 60_000);
 
-    it('should rewrite the decisions of identical anchors', () => {
-      const same = currentDecision(xdg, 'feat-a', 'feat-a.decision.same');
-
+    it('should report the rewrite of every decision of identical anchors', () => {
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
       expect(result.stdout).toContain('rewrote 2 of 2 decisions');
+    });
+
+    it('should give the rewritten decision a new id', () => {
       expect(same.id).not.toBe(idOf('a.same'));
+    });
+
+    it('should point the rewritten decision at the new generation and supersede the old one', () => {
       expect(same.edges).toEqual(
         [
           `anchored-in:${idOf('g2.r1')}`,
@@ -337,36 +416,9 @@ describe('scripts/flow/reanchor.ts', () => {
     }, 60_000);
 
     it('should send to the owner a decision supported by an evidence of another process', async () => {
-      const supported = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-q']);
-      try {
-        // `create_process` sempre liga a herança; o processo de antes dela nasce sem o campo.
-        const stores = diskStores(supported.dataDir);
-        createProcessService({
-          ...stores,
-          store: {
-            ...stores.store,
-            create: (ref, manifest) =>
-              stores.store.create(ref, omit(manifest, ['lineageInheritance'])),
-          },
-          validator: createValidator(),
-          clock: () => new Date(),
-          newUuid: createUuids(),
-          logger: () => undefined,
-        }).createProcess({ project: PROJECT, process: Name.parse('feat-p') });
-        const { hash: source } = await supported.ok<{ hash: string }>('attach', {
-          project: 'hexlog',
-          text: 'rule text',
-        });
-        const g1 = await registerFlowRecord(
-          supported,
-          'directives-1',
-          directive('directives.convencoes.r1', 'Rule one', source),
-        );
-        await registerFlowRecord(
-          supported,
-          'directives-2',
-          directive('directives.convencoes.r1', 'Rule one', source),
-        );
+      await withEnvironment(['directives-1', 'directives-2', 'feat-q'], async (supported) => {
+        createLegacyLineageProcess(supported, 'feat-p');
+        const { source, g1 } = await seedRule(supported);
         const target = await registerFlowRecord(
           supported,
           'feat-p',
@@ -387,9 +439,7 @@ describe('scripts/flow/reanchor.ts', () => {
         expect(result.stdout).toContain('rewritable: 0');
         expect(result.stdout).toMatch(/feat-p\tfeat-p\.decision\.supported\t.*\tsupported/);
         expect(snapshot(xdg)).toEqual(before);
-      } finally {
-        await supported.close();
-      }
+      });
     }, 60_000);
 
     it.each([
@@ -414,27 +464,14 @@ describe('scripts/flow/reanchor.ts', () => {
 
   describe('with --apply and a batch the register refuses', () => {
     let refused: Environment;
-    let key: string | undefined;
+    let key: string;
     let before: ReturnType<typeof currentDecision>;
     let xdg: string;
     let result: ReturnType<typeof runReanchor>;
 
     beforeAll(async () => {
       refused = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-c', 'feat-d']);
-      const { hash: source } = await refused.ok<{ hash: string }>('attach', {
-        project: 'hexlog',
-        text: 'rule text',
-      });
-      const g1 = await registerFlowRecord(
-        refused,
-        'directives-1',
-        directive('directives.convencoes.r1', 'Rule one', source),
-      );
-      await registerFlowRecord(
-        refused,
-        'directives-2',
-        directive('directives.convencoes.r1', 'Rule one', source),
-      );
+      const { g1 } = await seedRule(refused);
       for (const slug of ['feat-c', 'feat-d']) {
         await registerFlowRecord(
           refused,
@@ -442,27 +479,7 @@ describe('scripts/flow/reanchor.ts', () => {
           decision(`${slug}.decision.same`, [anchoredIn(g1)]),
         );
       }
-      // O 1º apply, numa cópia, revela a `key` do lote de feat-d; o lote com a mesma `key` e outro
-      // conteúdo, gravado antes, faz o `register` real devolver IDEMPOTENCY_CONFLICT.
-      const probe = copyToXdg(refused.dataDir);
-
-      const probed = runReanchor(['--to', 'directives-2', '--apply'], probe);
-      if (probed.status !== 0) throw new Error(`probe apply failed: ${probed.stderr}`);
-      const log = fs.readFileSync(
-        path.join(probe, 'hexlog/.v1/hexlog/feat-d/records.jsonl'),
-        'utf8',
-      );
-      key = /"key":"(reanchor-directives-2-feat-d-[^"]+)"/.exec(log)?.[1];
-      if (key === undefined) throw new Error('probe apply wrote no feat-d batch key');
-      await refused.ok('register', {
-        project: 'hexlog',
-        process: 'feat-d',
-        agent: 'flow-run',
-        key,
-        records: [
-          { type: 'premise', target: 'feat-d.premise.other', data: { statement: 'Other' } },
-        ],
-      });
+      key = await poisonBatchKey(refused, 'feat-d');
       xdg = copyToXdg(refused.dataDir);
       before = currentDecision(xdg, 'feat-d', 'feat-d.decision.same');
 
@@ -492,24 +509,13 @@ describe('scripts/flow/reanchor.ts', () => {
 
   describe('with --apply on a process of 51 decisions (batches of 50 and 1)', () => {
     const COUNT = 51;
-    const keyPattern = /"key":"(reanchor-directives-2-feat-e-[^"]+)"/g;
+    let many: Environment;
+    let written: { xdg: string; result: ReturnType<typeof runReanchor> };
+    let poisoned: { key: string; result: ReturnType<typeof runReanchor> };
 
-    async function openManyDecisions(): Promise<Environment> {
-      const many = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-e']);
-      const { hash: source } = await many.ok<{ hash: string }>('attach', {
-        project: 'hexlog',
-        text: 'rule text',
-      });
-      const g1 = await registerFlowRecord(
-        many,
-        'directives-1',
-        directive('directives.convencoes.r1', 'Rule one', source),
-      );
-      await registerFlowRecord(
-        many,
-        'directives-2',
-        directive('directives.convencoes.r1', 'Rule one', source),
-      );
+    beforeAll(async () => {
+      many = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-e']);
+      const { g1 } = await seedRule(many);
       for (let n = 1; n <= COUNT; n++) {
         await registerFlowRecord(
           many,
@@ -517,62 +523,33 @@ describe('scripts/flow/reanchor.ts', () => {
           decision(`feat-e.decision.d${n}`, [anchoredIn(g1)]),
         );
       }
-      return many;
-    }
-
-    const batchKeys = (xdg: string): string[] =>
-      [
-        ...fs
-          .readFileSync(path.join(xdg, 'hexlog/.v1/hexlog/feat-e/records.jsonl'), 'utf8')
-          .matchAll(keyPattern),
-      ].map(([, key]) => key ?? '');
-
-    it('should write both batches and count every decision', async () => {
-      const many = await openManyDecisions();
-      try {
-        const xdg = copyToXdg(many.dataDir);
-
-        const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
-
-        expect(result.status).toBe(0);
-        expect(result.stdout).toContain(`rewrote ${COUNT} of ${COUNT} decisions`);
-        expect(result.stderr).not.toContain('verify failed');
-        expect(batchKeys(xdg)).toHaveLength(2);
-      } finally {
-        await many.close();
-      }
+      const xdg = copyToXdg(many.dataDir);
+      written = { xdg, result: runReanchor(['--to', 'directives-2', '--apply'], xdg) };
+      // o lote conflitante só entra depois da cópia do apply limpo
+      const key = await poisonBatchKey(many, 'feat-e', 1);
+      poisoned = {
+        key,
+        result: runReanchor(['--to', 'directives-2', '--apply'], copyToXdg(many.dataDir)),
+      };
     }, 240_000);
 
-    it('should exit 1, report the refused second batch and count only the first one', async () => {
-      const many = await openManyDecisions();
-      try {
-        const probe = copyToXdg(many.dataDir);
+    afterAll(async () => {
+      await many.close();
+    });
 
-        const probed = runReanchor(['--to', 'directives-2', '--apply'], probe);
-        if (probed.status !== 0) throw new Error(`probe apply failed: ${probed.stderr}`);
-        const secondKey = batchKeys(probe)[1];
-        if (secondKey === undefined) throw new Error('probe apply wrote fewer than two batches');
-        await many.ok('register', {
-          project: 'hexlog',
-          process: 'feat-e',
-          agent: 'flow-run',
-          key: secondKey,
-          records: [
-            { type: 'premise', target: 'feat-e.premise.other', data: { statement: 'Other' } },
-          ],
-        });
-        const xdg = copyToXdg(many.dataDir);
+    it('should write both batches and count every decision', () => {
+      expect(written.result.status).toBe(0);
+      expect(written.result.stdout).toContain(`rewrote ${COUNT} of ${COUNT} decisions`);
+      expect(written.result.stderr).not.toContain('verify failed');
+      expect(batchKeys(written.xdg, 'feat-e')).toHaveLength(2);
+    });
 
-        const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
-
-        expect(result.status).toBe(1);
-        expect(result.stderr).toContain(`batch refused: feat-e ${secondKey}`);
-        expect(result.stderr).not.toContain('verify failed');
-        expect(result.stdout).toContain(`rewrote ${COUNT - 1} of ${COUNT} decisions`);
-      } finally {
-        await many.close();
-      }
-    }, 240_000);
+    it('should exit 1, report the refused second batch and count only the first one', () => {
+      expect(poisoned.result.status).toBe(1);
+      expect(poisoned.result.stderr).toContain(`batch refused: feat-e ${poisoned.key}`);
+      expect(poisoned.result.stderr).not.toContain('verify failed');
+      expect(poisoned.result.stdout).toContain(`rewrote ${COUNT - 1} of ${COUNT} decisions`);
+    });
   });
 
   describe('when the invocation is refused', () => {

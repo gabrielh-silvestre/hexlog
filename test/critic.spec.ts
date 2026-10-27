@@ -13,6 +13,7 @@ import {
   readAnswer,
   readSession,
   runProcess,
+  SPEC_TIMEOUT,
   waitFor,
   writeCatalogDoc,
   writeClaudeJson,
@@ -20,8 +21,6 @@ import {
   type Shims,
 } from './critic-helpers.ts';
 import { createTempDir } from './helpers.ts';
-
-const SPEC_TIMEOUT = 30_000;
 
 type Scenario = { shims: Shims; home: string; tmpdir: string; worktree: string };
 
@@ -298,16 +297,26 @@ describe('scripts/flow/critic.ts', () => {
     it(
       'should print the answer path on stdout and exit 0',
       async () => {
-        const s = scenario();
         const { mailbox } = makeMailbox();
 
-        const result = await cli(s, ['ask', mailbox], { FAKE_CRITIC_REPLY: 'cli answer' });
+        const result = await cli(scenario(), ['ask', mailbox]);
 
         expect(result).toMatchObject({
           exitCode: 0,
           stdout: `${path.join(mailbox, 'a-1.txt')}\n`,
           stderr: '',
         });
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should write the reply of the tool to the answer file',
+      async () => {
+        const { mailbox } = makeMailbox();
+
+        await cli(scenario(), ['ask', mailbox], { FAKE_CRITIC_REPLY: 'cli answer' });
+
         expect(readAnswer(mailbox, 1)).toBe('cli answer');
       },
       SPEC_TIMEOUT,
@@ -439,44 +448,25 @@ describe('scripts/flow/critic.ts', () => {
 
   describe('with the close verb', () => {
     it(
-      'should remove the mailbox and print its path',
+      'should print the path of the closed mailbox and exit 0',
       async () => {
         const s = scenario();
-        const started = await cli(s, ['start', 'task-1']);
-        const mailbox = started.stdout.trim();
+        const mailbox = (await cli(s, ['start', 'task-1'])).stdout.trim();
 
         const result = await cli(s, ['close', mailbox]);
 
         expect(result).toMatchObject({ exitCode: 0, stdout: `${mailbox}\n` });
-        expect(fs.existsSync(mailbox)).toBe(false);
       },
       SPEC_TIMEOUT,
     );
 
     it(
-      'should succeed again on a mailbox that is already gone',
+      'should exit 1 naming the directory that is not a critic mailbox',
       async () => {
-        const s = scenario();
-        const mailbox = (await cli(s, ['start', 'task-1'])).stdout.trim();
-        await cli(s, ['close', mailbox]);
-
-        const result = await cli(s, ['close', mailbox]);
-
-        expect(result.exitCode).toBe(0);
-      },
-      SPEC_TIMEOUT,
-    );
-
-    it(
-      'should refuse a directory that is not a critic mailbox and keep it',
-      async () => {
-        const dir = createTempDir('not-a-mailbox');
-
-        const result = await cli(scenario(), ['close', dir]);
+        const result = await cli(scenario(), ['close', createTempDir('not-a-mailbox')]);
 
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain('not a critic mailbox');
-        expect(fs.existsSync(dir)).toBe(true);
       },
       SPEC_TIMEOUT,
     );

@@ -1,10 +1,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { omit } from 'es-toolkit';
 import { z } from 'zod';
+import { createValidator } from '../src/adapters/validator.ts';
 import type { Defined } from '../src/commands/definition.ts';
-import type { RegisterResult } from '../src/commands/process.ts';
+import { createProcessService, type RegisterResult } from '../src/commands/process.ts';
+import { Name } from '../src/domain/ids.ts';
+import { createUuids } from './commands/fakes.ts';
 import { at, parseJson } from './helpers.ts';
 import { type Environment, createEnvironment } from './mcp/environment.ts';
+import { diskStores } from './queries/query-setup.ts';
 
 const hexlogDir = path.join(__dirname, '..', '.hexlog');
 
@@ -61,6 +66,25 @@ export async function createFlowEnvironment(slugs: readonly string[]): Promise<E
     await environment.ok('create_process', { project: PROJECT, process: slug });
   }
   return environment;
+}
+
+/**
+ * Abre `slug` sem `lineageInheritance`, como um processo anterior à herança: `create_process` sempre a liga,
+ * então o processo nasce pelo serviço com o campo tirado do manifesto.
+ */
+export function createLegacyLineageProcess(environment: Environment, slug: string): void {
+  const stores = diskStores(environment.dataDir);
+  createProcessService({
+    ...stores,
+    store: {
+      ...stores.store,
+      create: (ref, manifest) => stores.store.create(ref, omit(manifest, ['lineageInheritance'])),
+    },
+    validator: createValidator(),
+    clock: () => new Date(),
+    newUuid: createUuids(),
+    logger: () => undefined,
+  }).createProcess({ project: Name.parse(PROJECT), process: Name.parse(slug) });
 }
 
 export type FlowRecord = {
