@@ -217,7 +217,7 @@ o teste automatizado as marque como "passa":
 | Glob só entre aspas acima dos tetos, expandido por um re-parseador | `bash -c 'cat $0' '<glob grande>'`, `eval '…'`: o hook não casa como glob o token só entre aspas acima dos tetos, só o confere como caminho literal e pelo prefixo literal; um glob relativo cujo prefixo não alcança `<D>` passa. É a mesma lacuna de `bash -c 'cat /home/g*/…/*'`, que já passa sem enchimento |
 | Par de aspas que cruza a quebra de linha depois de um `#` | `echo a#b "a⏎b" ; cat ~/.local/share/hexlog/.v1/… "⏎"`: o hook relê o trecho depois do `#` linha a linha e lê o `cat ~/…` como texto entre aspas, sem expandir o `~`; com o caminho absoluto de `<D>`, a menção literal nega |
 | `~usuário` no lugar de `~` | `cat ~gabriel/.local/share/hexlog/.v1/…`: o hook só expande o `~` seguido de `/` (e o `$HOME`), então `~nome` fica literal e o token nunca vira o caminho de `<D>` |
-| Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full` e `node scripts/insights.ts`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
+| Os scripts de leitura do próprio hexlog | `node scripts/export.ts p/q`, `node scripts/timeline.ts p t --full`, `node scripts/insights.ts` e `node scripts/rdsc-projections.ts p q`: o script resolve `<D>` sozinho, e um agente com Bash despeja o log e os anexos por eles |
 | Grep/Glob tool do Claude Code apontando pro pai | `Grep path=~/.local/share` |
 | Variável definida no mesmo comando | `d=~/.local/share; cat $d/hexlog/x` |
 | Alternância de zsh | `cat ~/.local/share/(hexlog\|x)/p/r/records.jsonl` |
