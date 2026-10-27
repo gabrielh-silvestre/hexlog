@@ -20,7 +20,7 @@ import {
   withPath,
   type Detail,
 } from '../src/errors.ts';
-import { at } from './helpers.ts';
+import { ARCHIVE_COMMAND, at } from './helpers.ts';
 
 const makeDetails = (count: number): Detail[] =>
   Array.from({ length: count }, (_, n) => ({
@@ -230,7 +230,7 @@ describe('legacyDataError', () => {
       {
         path: '',
         code: 'run',
-        message: 'node scripts/install.ts --archive-0x (from the hexlog repository)',
+        message: ARCHIVE_COMMAND,
       },
     ]);
   });

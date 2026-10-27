@@ -6,7 +6,7 @@ import { blobFile, processPaths } from '../src/adapters/fs/data-format.ts';
 import { compose } from '../src/compose.ts';
 import { AUTHOR, DOC, NOTE, note } from './commands/fakes.ts';
 import { writeRecordsCorpus } from './fixtures/records-corpus.ts';
-import { createTempDir, snapshot } from './helpers.ts';
+import { ARCHIVE_COMMAND, createTempDir, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const legacyFixture = path.join(__dirname, 'fixtures', 'legacy-0x');
@@ -352,6 +352,6 @@ describe('scripts/insights.ts', () => {
     expect(out).toBe('');
     expect(err).toContain('LEGACY_DATA');
     expect(err).toContain('legacy 0.x data found; archive it first');
-    expect(err).toContain('node scripts/install.ts --archive-0x (from the hexlog repository)');
+    expect(err).toContain(ARCHIVE_COMMAND);
   });
 });

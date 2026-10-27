@@ -12,6 +12,9 @@ import type { QueryInput, QueryResult } from '../src/queries/query-service.ts';
 import type { Logger, LogRecord } from '../src/shared/logger.ts';
 import { registerTempDir } from './cleanup.ts';
 
+/** O comando que a recusa `LEGACY_DATA` manda rodar, com a mensagem literal do `details`. */
+export const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
+
 /**
  * Cria `hexlog-<prefix>-XXXXXX` sob `os.tmpdir()` e registra para `test/cleanup.ts` apagar no `afterAll`.
  * Só chame dentro de hook ou teste, nunca na coleta do `describe`: a criação na coleta roda até com `-t` e vaza o diretório.
