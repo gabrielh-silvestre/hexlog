@@ -1,8 +1,10 @@
 // Instalador versionado do hexlog. Entrypoint real: liga `build`
 // (esbuild), `Client`/`StdioClientTransport` (devDependency) e `claude mcp` às
 // funções puras de `src/installation.ts` e `src/guard.ts`. Os testes
-// (`test/guard.spec.ts`, describes B2/B3) chamam `installArtifact`/
-// `verifyInstallation` direto com `HOME` temporário, nunca o `HOME` real.
+// (`test/installation.spec.ts`, describes `installArtifact` e
+// `verifyInstallation`) chamam essas funções direto com `HOME` temporário, e
+// `test/install-script.spec.ts` roda este script como processo real, nunca com
+// o `HOME` real.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
