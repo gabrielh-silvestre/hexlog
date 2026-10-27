@@ -21,7 +21,7 @@ const { dataDir, project, process: processName, run } = JSON.parse(argsJson) as 
 const batchLine = (raw: RawProcess, key: string): string =>
   chainLine(processName, verifyProcess(raw).end, BATCH_SIZE, {
     agent: 'crash-writer',
-    text: (item) => `lote ${key} item ${item} ${'x'.repeat(200)}`,
+    text: (item) => `batch ${key} item ${item} ${'x'.repeat(200)}`,
     key,
   });
 

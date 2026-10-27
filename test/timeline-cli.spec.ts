@@ -7,7 +7,7 @@ import { sha256hex } from '../src/domain/chain.ts';
 import { compose } from '../src/compose.ts';
 import { escapeControls } from '../scripts/escape-controls.ts';
 import { AUTHOR, DOC, NOW, PROJECT } from './commands/register-fakes.ts';
-import { at, copyToXdg, createTempDir, snapshot } from './helpers.ts';
+import { at, copyToXdg, createTempDir, jsonLines, snapshot } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const legacyFixture = path.join(__dirname, 'fixtures', 'legacy-0x');
@@ -35,12 +35,6 @@ type JsonRecord = {
   in: { kind: string; from: string }[];
   attachmentText?: Record<string, string>;
 };
-
-const jsonRecords = (out: string): JsonRecord[] =>
-  out
-    .trim()
-    .split('\n')
-    .map((line) => JSON.parse(line) as JsonRecord);
 
 describe('scripts/timeline.ts', () => {
   let xdgHome: string;
@@ -198,7 +192,7 @@ describe('scripts/timeline.ts', () => {
 
       expect(escapeControls(out)).toBe(out);
       expect(out).toContain('\\u009b');
-      expect(at(jsonRecords(out), 0).attachmentText).toEqual({ [hash]: HOSTILE });
+      expect(at(jsonLines<JsonRecord>(out), 0).attachmentText).toEqual({ [hash]: HOSTILE });
       expect(code).toBe(0);
     });
   });
@@ -270,13 +264,13 @@ describe('scripts/timeline.ts', () => {
 
     const { code, out } = runTimeline(xdg, PROJECT, TARGET, '--json');
 
-    expect(jsonRecords(out).map(({ id }) => id)).toEqual(ids);
+    expect(jsonLines<JsonRecord>(out).map(({ id }) => id)).toEqual(ids);
     expect(code).toBe(0);
   });
 
   it('should print one record per line, ordered by (at, process, seq), with attachmentText equal to the original, with --full --json', () => {
     const { code, out } = runTimeline(xdgHome, PROJECT, TARGET, '--full', '--json');
-    const lines = jsonRecords(out);
+    const lines = jsonLines<JsonRecord>(out);
 
     expect(lines.map((line) => line.kind)).toEqual(['record', 'record', 'record', 'record']);
     expect(lines.map((line) => line.id)).toEqual([
@@ -296,7 +290,7 @@ describe('scripts/timeline.ts', () => {
 
   it('should omit attachmentText but keep the attachment status without --full, with --json', () => {
     const { out } = runTimeline(xdgHome, PROJECT, TARGET, '--json');
-    const entry = at(jsonRecords(out), 0);
+    const entry = at(jsonLines<JsonRecord>(out), 0);
 
     expect(entry).not.toHaveProperty('attachmentText');
     expect(entry).toMatchObject({ attachmentStatus: { [hashes.big]: 'ok' } });

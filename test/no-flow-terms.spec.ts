@@ -2,6 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ts from 'typescript';
+import { listFiles } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const SCANNED_DIRS = ['src', 'hook', 'scripts'];
@@ -18,12 +19,8 @@ const KNOWN_FILES = [
 
 /** Arquivos .ts de src/, hook/ e scripts/ (menos scripts/flow/), em qualquer profundidade. */
 function listScannedFiles(): string[] {
-  return SCANNED_DIRS.flatMap((dir) =>
-    fs
-      .readdirSync(path.join(repoRoot, dir), { recursive: true, encoding: 'utf8' })
-      .map((entry) => path.join(dir, entry))
-      .filter((entry) => entry.endsWith('.ts') && !entry.startsWith(FLOW_SCRIPTS_DIR))
-      .map((entry) => path.join(repoRoot, entry)),
+  return SCANNED_DIRS.flatMap((dir) => listFiles(path.join(repoRoot, dir), '.ts')).filter(
+    (file) => !file.startsWith(path.join(repoRoot, FLOW_SCRIPTS_DIR)),
   );
 }
 
@@ -99,7 +96,9 @@ describe('{src,hook,scripts}/**/*.ts', () => {
 
     expect(violations).toEqual([]);
   });
+});
 
+describe('findFlowTerms', () => {
   it.each([
     ['an identifier', 'const phase = 1;', ['phase@1']],
     ['a camelCase identifier', 'function planArchive() {}', ['plan@1']],
@@ -111,7 +110,7 @@ describe('{src,hook,scripts}/**/*.ts', () => {
     ['a template part', 'const s = `x ${y} fase`;', ['fase@1']],
     ['a Portuguese term', 'const plano = 1;', ['plano@1']],
     ['a later line, reporting its number', 'const a = 1;\nconst critic = 2;', ['critic@2']],
-  ])('should detect a flow term in %s (D1)', (_label, code, expected) => {
+  ])('should detect a flow term in %s', (_label, code, expected) => {
     expect(findFlowTerms('probe.ts', code)).toEqual(expected);
   });
 
@@ -121,7 +120,7 @@ describe('{src,hook,scripts}/**/*.ts', () => {
     ['a literal with a longer word', `const s = 'explanation';`],
     ['a digit glued to the literal', `const s = 'plan2';`],
     ['a comment', '// phase and plan\n/* verdict */ const a = 1;'],
-  ])('should not flag %s (D1)', (_label, code) => {
+  ])('should not flag %s', (_label, code) => {
     expect(findFlowTerms('probe.ts', code)).toEqual([]);
   });
 });

@@ -33,7 +33,7 @@ export function parseJson<T extends z.ZodType>(schema: T, text: string): z.infer
 export function at<T>(items: readonly T[], index: number): T {
   const value = items[index];
   if (value === undefined) {
-    throw new Error(`índice ${index} fora do array (tamanho ${items.length})`);
+    throw new Error(`index ${index} is out of the array (length ${items.length})`);
   }
   return value;
 }
@@ -44,6 +44,29 @@ export function at<T>(items: readonly T[], index: number): T {
  */
 export const recordId = (process: string, n: number): string =>
   `${process}:${String(n).padStart(8, '0')}`;
+
+/** Parseia uma saída JSONL (um objeto JSON por linha) em `T[]`; o formato de cada linha é por conta do chamador. */
+export const jsonLines = <T>(out: string): T[] =>
+  out
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as T);
+
+/** Arquivos com a extensão dada sob `dir`, em qualquer profundidade, pulando as pastas de `ignoredDirs`; `[]` se `dir` não existe. */
+export function listFiles(
+  dir: string,
+  extension: string,
+  ignoredDirs: ReadonlySet<string> = new Set(),
+): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return ignoredDirs.has(entry.name) ? [] : listFiles(full, extension, ignoredDirs);
+    }
+    return entry.name.endsWith(extension) ? [full] : [];
+  });
+}
 
 /** Executa `fn`, afirma que lançou `HexlogError` e devolve o erro para asserções específicas. */
 export function captureError(fn: () => unknown): HexlogError {
@@ -86,8 +109,8 @@ export function spyOnWriteSync(
 }
 
 /**
- * Exceção declarada ao princípio 3: roteiro de `fs.writeSync` do log. Cada chamada consome um
- * passo: `n >= 0` grava só `n` bytes (de verdade) e devolve `n`; `n < 0` grava `tamanho + n`;
+ * Roteiro de `fs.writeSync` do log, o único ponto em que um spec simula a escrita curta e o
+ * `ENOSPC` do disco, que o fs real não produz sob demanda. Cada chamada consome um passo: `n >= 0` grava só `n` bytes (de verdade) e devolve `n`; `n < 0` grava `tamanho + n`;
  * `'enospc'` lança `ENOSPC` com o caminho na mensagem, como o fs real. Sem passos, grava tudo.
  */
 export function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: string): void {

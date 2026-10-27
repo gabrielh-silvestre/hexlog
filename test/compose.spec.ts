@@ -16,6 +16,21 @@ function composed(logger: Logger = () => undefined) {
   return { cwd, dataDir, ...compose({ dataDir, cwd, clock: () => NOW, logger }) };
 }
 
+const REF = { project: PROJECT, process: 'run-1' };
+const INPUT = { ...REF, author: AUTHOR, key: 'k1', records: [note()] };
+
+/** `composed()` com o tipo `note` definido e o processo `run-1` criado. */
+function composedWithNote(logger?: Logger) {
+  const setup = composed(logger);
+  setup.services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+  setup.services.process.createProcess(REF);
+  return setup;
+}
+
+/** As linhas do log de `run-1` sob `dataDir`. */
+const logLines = (dataDir: string) =>
+  fs.readFileSync(processPaths(dataDir, REF).log, 'utf8').trimEnd().split('\n');
+
 // Cada `addAll` é uma montagem do índice de busca: o sensor de que a composição reaproveita o cache.
 const addAll = jest.spyOn(MiniSearch.prototype, 'addAll');
 
@@ -31,17 +46,9 @@ describe('compose', () => {
   });
 
   it('should build the search index once for two text queries through the composed query service', async () => {
-    const { services } = composed();
-    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
-    services.process.createProcess({ project: PROJECT, process: 'run-1' });
-    await services.process.register({
-      project: PROJECT,
-      process: 'run-1',
-      author: AUTHOR,
-      key: 'k1',
-      records: [note('webhook')],
-    });
-    const input = { project: PROJECT, process: 'run-1', text: 'webhook' };
+    const { services } = composedWithNote();
+    await services.process.register({ ...INPUT, records: [note('webhook')] });
+    const input = { ...REF, text: 'webhook' };
 
     services.query.queryRecords(input);
     services.query.queryRecords(input);
@@ -50,65 +57,34 @@ describe('compose', () => {
   });
 
   it('should write a single log line for createProcess followed by register', async () => {
-    const { services, dataDir } = composed();
-    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
-    services.process.createProcess({ project: PROJECT, process: 'run-1' });
-    const input = {
-      project: PROJECT,
-      process: 'run-1',
-      author: AUTHOR,
-      key: 'k1',
-      records: [note()],
-    };
-    const logFile = processPaths(dataDir, { project: PROJECT, process: 'run-1' }).log;
+    const { services, dataDir } = composedWithNote();
 
-    const first = await services.process.register(input);
-
-    const lines = fs.readFileSync(logFile, 'utf8').trimEnd().split('\n');
+    const first = await services.process.register(INPUT);
 
     expect(first.replayed).toBe(false);
-    expect(lines).toHaveLength(1);
+    expect(logLines(dataDir)).toHaveLength(1);
   });
 
   it('should return replayed and leave the log unchanged when register repeats the same key', async () => {
-    const { services, dataDir } = composed();
-    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
-    services.process.createProcess({ project: PROJECT, process: 'run-1' });
-    const input = {
-      project: PROJECT,
-      process: 'run-1',
-      author: AUTHOR,
-      key: 'k1',
-      records: [note()],
-    };
-    const logFile = processPaths(dataDir, { project: PROJECT, process: 'run-1' }).log;
-    const first = await services.process.register(input);
-    const lines = fs.readFileSync(logFile, 'utf8').trimEnd().split('\n');
+    const { services, dataDir } = composedWithNote();
+    const first = await services.process.register(INPUT);
+    const lines = logLines(dataDir);
 
-    const again = await services.process.register(input);
+    const again = await services.process.register(INPUT);
 
     expect(again).toMatchObject({ replayed: true, records: first.records });
-    expect(fs.readFileSync(logFile, 'utf8').trimEnd().split('\n')).toEqual(lines);
+    expect(logLines(dataDir)).toEqual(lines);
   });
 
   it('should emit batch-replayed through the composed logger on the second register with the same key', async () => {
     const logger = jest.fn<Logger>();
-    const { services } = composed(logger);
-    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
-    services.process.createProcess({ project: PROJECT, process: 'run-1' });
-    const input = {
-      project: PROJECT,
-      process: 'run-1',
-      author: AUTHOR,
-      key: 'k1',
-      records: [note()],
-    };
+    const { services } = composedWithNote(logger);
     const replayed = expect.objectContaining({ event: 'batch-replayed', key: 'k1' });
-    await services.process.register(input);
+    await services.process.register(INPUT);
 
     expect(logger).not.toHaveBeenCalledWith(replayed);
 
-    await services.process.register(input);
+    await services.process.register(INPUT);
 
     expect(logger).toHaveBeenCalledWith(replayed);
   });
@@ -121,25 +97,16 @@ describe('compose', () => {
 
   it('should report legacy data when the dataDir has a 0.x layout', () => {
     const { isLegacy, dataDir } = composed();
-    fs.mkdirSync(path.join(dataDir, 'meu-projeto'));
+    fs.mkdirSync(path.join(dataDir, 'my-project'));
 
     expect(isLegacy()).toBe(true);
   });
 });
 
 describe('composeReader', () => {
-  const REF = { project: PROJECT, process: 'run-1' };
-
   async function seeded() {
-    const { services, cwd, dataDir } = composed();
-    services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
-    services.process.createProcess(REF);
-    const { records } = await services.process.register({
-      ...REF,
-      author: AUTHOR,
-      key: 'k1',
-      records: [note()],
-    });
+    const { services, cwd, dataDir } = composedWithNote();
+    const { records } = await services.process.register(INPUT);
     return { reader: composeReader({ cwd, dataDir, logger: () => undefined }), dataDir, records };
   }
 
@@ -155,24 +122,42 @@ describe('composeReader', () => {
     ]);
   });
 
-  it('should read through each reader method what compose wrote', async () => {
+  const idsOf = (items: readonly { id: string }[]) => items.map(({ id }) => id);
+
+  it.each([
+    [
+      'listProjects',
+      (reader: ReturnType<typeof composeReader>) => reader.listProjects(),
+      () => [PROJECT],
+    ],
+    ['list', (reader: ReturnType<typeof composeReader>) => reader.list(PROJECT), () => ['run-1']],
+    [
+      'loadProcess',
+      (reader: ReturnType<typeof composeReader>) => idsOf(reader.loadProcess(REF).records),
+      idsOf,
+    ],
+    [
+      'query.queryRecords',
+      (reader: ReturnType<typeof composeReader>) => idsOf(reader.query.queryRecords(REF).records),
+      idsOf,
+    ],
+  ])('should read through %s what compose wrote', async (_name, read, expected) => {
     const { reader, records } = await seeded();
 
-    expect(reader.listProjects()).toEqual([PROJECT]);
-    expect(reader.list(PROJECT)).toEqual(['run-1']);
-    expect(reader.loadProcess(REF).records.map(({ id }) => id)).toEqual(
-      records.map(({ id }) => id),
-    );
-    expect(reader.query.queryRecords(REF).records.map(({ id }) => id)).toEqual(
-      records.map(({ id }) => id),
-    );
+    expect(read(reader)).toEqual(expected(records));
   });
 
-  it('should list a process with an unreadable process.json that the query list refuses', async () => {
+  it('should list a process with an unreadable process.json', async () => {
     const { reader, dataDir } = await seeded();
     fs.writeFileSync(processPaths(dataDir, REF).manifest, '{');
 
     expect(reader.list(PROJECT)).toEqual(['run-1']);
+  });
+
+  it('should refuse the query list with PROCESS_CORRUPTED for an unreadable process.json', async () => {
+    const { reader, dataDir } = await seeded();
+    fs.writeFileSync(processPaths(dataDir, REF).manifest, '{');
+
     expect(captureError(() => reader.query.list({ project: PROJECT }))).toMatchObject({
       code: 'PROCESS_CORRUPTED',
     });

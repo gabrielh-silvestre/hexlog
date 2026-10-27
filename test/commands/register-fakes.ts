@@ -1,4 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { jest } from '@jest/globals';
+import { compose } from '../../src/compose.ts';
 import { createValidator } from '../../src/adapters/validator.ts';
 import { createProcessService } from '../../src/commands/process.ts';
 import type { RegisterInput } from '../../src/commands/process.ts';
@@ -9,7 +13,7 @@ import type { BatchItem } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import type { Logger } from '../../src/shared/logger.ts';
-import { rejectionOf } from '../helpers.ts';
+import { at, createTempDir, rejectionOf } from '../helpers.ts';
 import type { Manifest } from '../../src/domain/manifest.ts';
 import type {
   AttachmentStatus,
@@ -280,3 +284,39 @@ export const verifiedOf = (
 
 /** Id de registro bem formado de um processo que nunca recebeu o registro. */
 export const ghostId = (process: Name, n = 999) => `${process}:00000000-0000-7000-8000-${HEX(n)}`;
+
+/**
+ * `<xdg>/hexlog` com o tipo `note` e o processo `ref` criados pelo `compose` real; `register` grava
+ * um registro com a `key` e devolve o id.
+ */
+export function seedNoteProcess(ref: ProcessRef = { project: PROJECT, process: ORIGIN }) {
+  const xdg = createTempDir('xdg');
+  const dataDir = path.join(xdg, 'hexlog');
+  fs.mkdirSync(dataDir);
+  const { services } = compose({ dataDir, cwd: xdg, clock: () => NOW, logger: () => undefined });
+  services.definition.defineType({ project: ref.project, name: 'note', schema: NOTE });
+  services.process.createProcess(ref);
+  const register = async (key: string, item: BatchItem) => {
+    const { records } = await services.process.register({
+      ...ref,
+      author: AUTHOR,
+      key,
+      records: [item],
+    });
+    return at(records, 0).id;
+  };
+  return { xdg, register };
+}
+
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
+
+/** Roda `scripts/<script>.ts` num processo filho com `XDG_DATA_HOME=xdg` e devolve o código, o stdout e o stderr. */
+export function runScript(script: string, xdg: string, ...args: string[]) {
+  const result = spawnSync(process.execPath, [`scripts/${script}.ts`, ...args], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, XDG_DATA_HOME: xdg },
+    timeout: 20_000,
+  });
+  return { code: result.status, out: result.stdout, err: result.stderr };
+}

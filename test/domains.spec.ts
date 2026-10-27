@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { note } from './commands/register-fakes.ts';
 import * as omc from './fixtures/domains/omc.ts';
 import * as rdsc from './fixtures/domains/rdsc.ts';
+import { at } from './helpers.ts';
 import { idsOf, PROJECT, querySetup, defineDomain, type Domain } from './queries/query-setup.ts';
 
 /**
@@ -51,10 +52,76 @@ async function planWithPendingDeviation() {
   );
   const deviation = await setup.registerOne(
     'run-1',
-    { type: 'deviation', target: 'run.plan', data: { description: 'fora do plano' } },
+    { type: 'deviation', target: 'run.plan', data: { description: 'outside the plan' } },
     2,
   );
   return { ...setup, review, deviation };
+}
+
+/** O plano aprovado, com o desvio resolvido por uma segunda revisão que o `settles`. */
+async function settledPlan() {
+  const setup = await planWithPendingDeviation();
+  await setup.registerOne(
+    'run-1',
+    {
+      type: 'review',
+      target: 'run.plan',
+      data: { summary: 'accepted' },
+      relations: [{ to: setup.deviation, as: 'settles' }],
+    },
+    3,
+  );
+  return setup;
+}
+
+/** Fluxo rdsc com processo legado: o veredito `verdict` cita a evidência `old`. */
+async function verdictOnEvidence() {
+  const setup = flowSetup(rdsc, { legacy: true });
+  const old = await setup.registerOne('run-1', {
+    type: 'evidence',
+    target: 'run.rdsc',
+    data: { source: 'a' },
+  });
+  const verdict = await setup.registerOne(
+    'run-1',
+    {
+      type: 'verdict',
+      target: 'run.rdsc',
+      data: { conclusion: 'upheld' },
+      relations: [{ to: old, as: 'based-on' }],
+    },
+    1,
+  );
+  return { ...setup, old, verdict };
+}
+
+/** O veredito `verdict` renovado (`renewed`) sobre a evidência nova `fresh`, que substitui `old`. */
+async function renewedVerdict() {
+  const setup = await verdictOnEvidence();
+  const fresh = await setup.registerOne(
+    'run-1',
+    {
+      type: 'evidence',
+      target: 'run.rdsc',
+      data: { source: 'b' },
+      relations: [{ to: setup.old, as: 'replaces' }],
+    },
+    2,
+  );
+  const renewed = await setup.registerOne(
+    'run-1',
+    {
+      type: 'verdict',
+      target: 'run.rdsc',
+      data: { conclusion: 'upheld, with the new evidence' },
+      relations: [
+        { to: setup.verdict, as: 'replaces' },
+        { to: fresh, as: 'based-on' },
+      ],
+    },
+    3,
+  );
+  return { ...setup, fresh, renewed };
 }
 
 describe('QueryService.evaluateGate', () => {
@@ -71,47 +138,35 @@ describe('QueryService.evaluateGate', () => {
   });
 
   it('should pass the OMC plan-ready gate with a current approval and no pending deviation', async () => {
-    const { registerOne, gate, query, plan, review, deviation } = await planWithPendingDeviation();
-    await registerOne(
-      'run-1',
-      {
-        type: 'review',
-        target: 'run.plan',
-        data: { summary: 'aceito' },
-        relations: [{ to: deviation, as: 'settles' }],
-      },
-      3,
-    );
+    const { gate } = await settledPlan();
 
     expect(gate('plan-ready').passed).toBe(true);
-    expect(query({ process: 'run-1', ids: [plan] }).records[0]?.in).toEqual([
-      { kind: 'supports', as: 'approves', from: review, current: true },
-    ]);
+  });
+
+  describe('with the rdsc flow and a legacy process', () => {
+    it('should pass the settled gate for a verdict that cites current evidence', async () => {
+      const { gate } = await verdictOnEvidence();
+
+      expect(gate('settled').passed).toBe(true);
+    });
+
+    it('should keep the settled gate passing once the verdict is renewed on new evidence', async () => {
+      const { gate } = await renewedVerdict();
+
+      expect(gate('settled').passed).toBe(true);
+    });
   });
 });
 
-/** Fluxo rdsc com processo legado: o veredito `verdict` cita a evidência `old`. */
-async function verdictOnEvidence() {
-  const setup = flowSetup(rdsc, { legacy: true });
-  const old = await setup.registerOne('run-1', {
-    type: 'evidence',
-    target: 'run.rdsc',
-    data: { source: 'a' },
-  });
-  const verdict = await setup.registerOne(
-    'run-1',
-    {
-      type: 'verdict',
-      target: 'run.rdsc',
-      data: { conclusion: 'procede' },
-      relations: [{ to: old, as: 'based-on' }],
-    },
-    1,
-  );
-  return { ...setup, old, verdict };
-}
-
 describe('QueryService.queryRecords', () => {
+  it('should link the approving review to the plan through the approves relation', async () => {
+    const { query, plan, review } = await settledPlan();
+
+    expect(query({ process: 'run-1', ids: [plan] }).records).toMatchObject([
+      { in: [{ kind: 'supports', as: 'approves', from: review, current: true }] },
+    ]);
+  });
+
   it('should flag a verdict that cites superseded evidence as needing review, in the rdsc flow with a legacy process', async () => {
     const { registerOne, query, old, verdict } = await verdictOnEvidence();
     await registerOne(
@@ -125,45 +180,23 @@ describe('QueryService.queryRecords', () => {
       2,
     );
 
-    expect(query({ process: 'run-1', ids: [verdict] }).records[0]?.needsReview).toEqual({
-      staleIn: [],
-      staleOut: [old],
-    });
+    expect(query({ process: 'run-1', ids: [verdict] }).records).toMatchObject([
+      { needsReview: { staleIn: [], staleOut: [old] } },
+    ]);
+  });
+
+  it('should list only the renewed verdict as current, in the rdsc flow with a legacy process', async () => {
+    const { query, renewed } = await renewedVerdict();
+
+    expect(idsOf(query({ process: 'run-1', type: 'verdict' }))).toEqual([renewed]);
   });
 
   it('should stop flagging a verdict once the new version cites the current evidence, in the rdsc flow with a legacy process', async () => {
-    const { registerOne, gate, query, old, verdict } = await verdictOnEvidence();
+    const { query } = await renewedVerdict();
 
-    expect(gate('settled').passed).toBe(true);
-
-    const fresh = await registerOne(
-      'run-1',
-      {
-        type: 'evidence',
-        target: 'run.rdsc',
-        data: { source: 'b' },
-        relations: [{ to: old, as: 'replaces' }],
-      },
-      2,
-    );
-    const renewed = await registerOne(
-      'run-1',
-      {
-        type: 'verdict',
-        target: 'run.rdsc',
-        data: { conclusion: 'procede, com a evidência nova' },
-        relations: [
-          { to: verdict, as: 'replaces' },
-          { to: fresh, as: 'based-on' },
-        ],
-      },
-      3,
-    );
     const current = query({ process: 'run-1', type: 'verdict' });
 
-    expect(idsOf(current)).toEqual([renewed]);
-    expect(current.records[0]?.needsReview).toBeUndefined();
-    expect(gate('settled').passed).toBe(true);
+    expect(at(current.records, 0).needsReview).toBeUndefined();
   });
 });
 

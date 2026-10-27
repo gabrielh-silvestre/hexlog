@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { RESERVED_PROCESS_NAMES } from '../src/domain/ids.ts';
-import { at } from './helpers.ts';
+import { at, listFiles } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const srcDir = path.join(repoRoot, 'src');
@@ -134,13 +134,13 @@ const EXPECTED_ERROR_CODE_COUNT = 25;
 
 const toolsDir = path.join(srcDir, 'mcp/tools');
 
-const registeredTools = tsFilesUnder(toolsDir).flatMap((file) =>
-  toolNamesFrom(fs.readFileSync(path.join(toolsDir, file), 'utf8')),
+const registeredTools = listFiles(toolsDir, '.ts').flatMap((file) =>
+  toolNamesFrom(fs.readFileSync(file, 'utf8')),
 );
 
 // Constantes exportadas do domínio e do kernel MCP: as skills citam as de `domain/` e de `mcp/kernel.ts`.
 const exportedConstantNames = [
-  ...tsFilesUnder(path.join(srcDir, 'domain')).map((file) => path.join(srcDir, 'domain', file)),
+  ...listFiles(path.join(srcDir, 'domain'), '.ts'),
   path.join(srcDir, 'mcp/kernel.ts'),
 ].flatMap((file) => exportedConstantNamesFrom(fs.readFileSync(file, 'utf8')));
 
@@ -148,15 +148,8 @@ const errorCodeCatalog = errorCodeCatalogFrom(
   fs.readFileSync(path.join(srcDir, 'errors.ts'), 'utf8'),
 );
 
-/** Caminhos `.ts` sob `dir`, relativos a ele, em qualquer profundidade. */
-function tsFilesUnder(dir: string): string[] {
-  return fs
-    .readdirSync(dir, { recursive: true, encoding: 'utf8' })
-    .filter((file) => file.endsWith('.ts'));
-}
-
-const declaredFunctionNames = tsFilesUnder(srcDir).flatMap((file) =>
-  functionNamesFrom(fs.readFileSync(path.join(srcDir, file), 'utf8')),
+const declaredFunctionNames = listFiles(srcDir, '.ts').flatMap((file) =>
+  functionNamesFrom(fs.readFileSync(file, 'utf8')),
 );
 
 const reservedNameValues: readonly string[] = RESERVED_PROCESS_NAMES;
@@ -513,15 +506,6 @@ describe.each([...skillCases, ...referenceCases])('$file', ({ file, citationExpe
 
 // ---- trava: documentação nunca cita linha de arquivo (arquivo + símbolo) ----
 
-function markdownFilesUnder(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return markdownFilesUnder(full);
-    return entry.name.endsWith('.md') ? [full] : [];
-  });
-}
-
 /** Todo `AGENTS.md` do repositório, sem entrar em node_modules nem em pastas de ponto (`.git`, `.omc`...). */
 function agentsFilesUnder(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -538,9 +522,9 @@ function agentsFilesUnder(dir: string): string[] {
 describe('skills/**/*.md, docs/**/*.md, .claude/skills/**/*.md, README.md and **/AGENTS.md', () => {
   it('should not cite line numbers as file:N or "linha N"', () => {
     const files = [
-      ...markdownFilesUnder(path.join(repoRoot, 'skills')),
-      ...markdownFilesUnder(path.join(repoRoot, 'docs')),
-      ...markdownFilesUnder(path.join(repoRoot, '.claude/skills')),
+      ...listFiles(path.join(repoRoot, 'skills'), '.md'),
+      ...listFiles(path.join(repoRoot, 'docs'), '.md'),
+      ...listFiles(path.join(repoRoot, '.claude/skills'), '.md'),
       path.join(repoRoot, 'README.md'),
       ...agentsFilesUnder(repoRoot),
     ];
