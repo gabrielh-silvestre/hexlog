@@ -31,6 +31,17 @@ const USAGE =
 
 const usage = (message: string): Reply => ({ exitCode: EXIT.usage, message });
 
+// `resolveTool` lança com valor inválido: vira uso errado da CLI, não falha do critic.
+function withTool(flag: string | undefined, env: NodeJS.ProcessEnv, use: (tool: Tool) => Reply) {
+  let tool: Tool;
+  try {
+    tool = resolveTool({ flag, env: env.HEXLOG_CRITIC_CLI });
+  } catch (error) {
+    return usage(error instanceof Error ? error.message : String(error));
+  }
+  return use(tool);
+}
+
 async function run(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<Reply> {
   let parsed;
   try {
@@ -45,24 +56,20 @@ async function run(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise
   }
   const { values, positionals } = parsed;
   const [verb, target, ...extra] = positionals;
-  const startOnly = values.tool !== undefined || values.cwd !== undefined;
-  if (verb === 'rules' ? target !== undefined : target === undefined || extra.length > 0) {
-    return usage(USAGE);
-  }
   const worktree = path.resolve(cwd, values.cwd ?? '');
-  if (verb === 'start' || verb === 'rules') {
-    let tool: Tool;
-    try {
-      tool = resolveTool({ flag: values.tool, env: env.HEXLOG_CRITIC_CLI });
-    } catch (error) {
-      return usage(error instanceof Error ? error.message : String(error));
-    }
-    if (verb === 'rules') return writeRules({ tool, catalogPath: catalogPathOf(worktree) });
-    if (target === undefined) return usage(USAGE);
-    return startSession({ tool, slug: target, cwd: worktree });
+  if (verb === 'rules') {
+    if (target !== undefined) return usage(USAGE);
+    return withTool(values.tool, env, (tool) =>
+      writeRules({ tool, catalogPath: catalogPathOf(worktree) }),
+    );
   }
-  if (target === undefined) return usage(USAGE);
-  if (startOnly) return usage(USAGE);
+  if (target === undefined || extra.length > 0) return usage(USAGE);
+  if (verb === 'start') {
+    return withTool(values.tool, env, (tool) =>
+      startSession({ tool, slug: target, cwd: worktree }),
+    );
+  }
+  if (values.tool !== undefined || values.cwd !== undefined) return usage(USAGE);
   if (verb === 'ask') return askQuestion(target);
   if (verb === 'close') return closeMailbox(target);
   return usage(USAGE);
