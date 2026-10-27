@@ -328,8 +328,8 @@ export const catalogPathOf = (cwd: string): string =>
 
 /**
  * Regras do critic geradas do doc do catálogo para a coluna (transporte), ou o motivo de o doc não
- * servir. "catálogo ilegível" é o literal que a skill `flow-run` (seção 6, saída 3) espera, por isso
- * a mensagem mistura idiomas; o erro do parser traz o cabeçalho esperado.
+ * servir. "unreadable catalog" é o literal que a skill `flow-run` (seção 6, saída 3) espera; o erro
+ * do parser traz o cabeçalho esperado.
  */
 function loadRules(column: Column, catalogPath: string): { rules: string } | { problem: string } {
   try {
@@ -337,7 +337,7 @@ function loadRules(column: Column, catalogPath: string): { rules: string } | { p
     return { rules: escapeControls(buildRules(renderActions(catalog, column))) };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    return { problem: `catálogo ilegível (${catalogPath}): ${detail}` };
+    return { problem: `unreadable catalog (${catalogPath}): ${detail}` };
   }
 }
 

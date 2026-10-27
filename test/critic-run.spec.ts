@@ -321,7 +321,7 @@ describe('startSession', () => {
       const reply = await start(s, 'claude');
 
       expect(reply.exitCode).toBe(3);
-      expect(reply.message).toContain('catálogo ilegível');
+      expect(reply.message).toContain('unreadable catalog');
       expect(fs.readdirSync(s.tmpdir)).toEqual([]);
     },
     SPEC_TIMEOUT,

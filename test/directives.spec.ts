@@ -747,7 +747,7 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
       ['the question size cap', '100000'],
       ['the tool of critic.md on returning to start', '--tool <ferramenta do critic.md>'],
       ['the tool variable', 'HEXLOG_CRITIC_CLI'],
-      ['the unreadable catalog exit', '"catálogo ilegível"'],
+      ['the unreadable catalog exit', '"unreadable catalog"'],
     ])('should cite %s', (_what, fragment) => {
       expect(runnerSection()).toContain(fragment);
     });

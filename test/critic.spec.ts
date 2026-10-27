@@ -262,7 +262,7 @@ describe('scripts/flow/critic.ts', () => {
         const result = await cli(env, ['rules', '--cwd', bare]);
 
         expect(result.exitCode).toBe(3);
-        expect(result.stderr).toContain('catálogo ilegível');
+        expect(result.stderr).toContain('unreadable catalog');
         expect(rulesDirs(env.tmpdir)).toEqual([]);
       },
       SPEC_TIMEOUT,
