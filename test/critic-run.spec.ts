@@ -3,11 +3,14 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { closeMailbox, procStartTime } from '../scripts/flow/critic-run.ts';
-import { buildCommand, CRITIC_RULES } from '../scripts/flow/critic-tools.ts';
+import { parseCatalog, renderActions } from '../scripts/flow/critic-catalog.ts';
+import { buildCommand, buildRules } from '../scripts/flow/critic-tools.ts';
 import {
+  CATALOG_DOC,
   criticEnv,
   installShims,
   isRunning,
+  MAILBOX_RULES,
   makeMailbox,
   type MailboxOptions,
   readAnswer,
@@ -16,6 +19,7 @@ import {
   runDriver,
   valueAfter,
   waitFor,
+  writeCatalogDoc,
   writeClaudeJson,
   type Shims,
 } from './critic-helpers.ts';
@@ -37,6 +41,7 @@ const NO_BINARY = '/nonexistent-critic-bin';
 const RUN_TIMING = { idleMs: 20_000, capMs: 60_000, backoffMs: [], maxTextBytes: 1_048_576 };
 const CLAUDE_TURN = {
   prompt: 'the question',
+  rules: 'the rules',
   mcpConfigPath: '/box/mcp.json',
   sessionId: 'sess-1',
   resume: false,
@@ -190,6 +195,7 @@ describe('startSession', () => {
   type Scenario = { shims: Shims; tmpdir: string; home: string; claudeJsonPath: string };
   const scenario = (): Scenario => {
     const home = createTempDir('critic-home');
+    writeCatalogDoc(home);
     return {
       shims: installShims(),
       tmpdir: createTempDir('critic-tmp'),
@@ -202,7 +208,7 @@ describe('startSession', () => {
     { shims, tmpdir, home, claudeJsonPath }: Scenario,
     tool: 'claude' | 'agy',
     env: Record<string, string | undefined> = {},
-    over: { slug?: string; cwd?: string; claudeJsonPath?: string } = {},
+    over: { slug?: string; cwd?: string; claudeJsonPath?: string; catalogPath?: string } = {},
   ) =>
     runDriver<Reply>(
       {
@@ -242,6 +248,15 @@ describe('startSession', () => {
       });
     });
 
+    it('should freeze the claude-runner rules of the catalog in rules.txt with mode 0600', () => {
+      const file = path.join(reply.message, 'rules.txt');
+
+      expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+      expect(fs.readFileSync(file, 'utf8')).toBe(
+        buildRules(renderActions(parseCatalog(CATALOG_DOC), 'claude-runner')),
+      );
+    });
+
     it('should write the initial session state with mode 0600', () => {
       const file = path.join(reply.message, 'session.json');
 
@@ -264,6 +279,63 @@ describe('startSession', () => {
 
       expect(reply.exitCode).toBe(0);
       expect(readSession(reply.message)).toMatchObject({ tool: 'agy' });
+    },
+    SPEC_TIMEOUT,
+  );
+
+  it(
+    'should freeze the agy rules without jury when the tool is agy',
+    async () => {
+      const reply = await start(scenario(), 'agy');
+
+      expect(fs.readFileSync(path.join(reply.message, 'rules.txt'), 'utf8')).toBe(
+        buildRules(renderActions(parseCatalog(CATALOG_DOC), 'agy')),
+      );
+    },
+    SPEC_TIMEOUT,
+  );
+
+  it(
+    'should read the catalog from the injected path instead of the cwd',
+    async () => {
+      const s = scenario();
+      const elsewhere = writeCatalogDoc(createTempDir('critic-catalog'));
+      fs.rmSync(path.join(s.home, 'docs'), { recursive: true });
+
+      const reply = await start(s, 'claude', {}, { catalogPath: elsewhere });
+
+      expect(reply.exitCode).toBe(0);
+    },
+    SPEC_TIMEOUT,
+  );
+
+  it.each([
+    ['missing', (file: string) => fs.rmSync(file)],
+    ['out of format', (file: string) => fs.writeFileSync(file, '# Cadeira do dono\n')],
+  ])(
+    'should exit 3 naming the unreadable catalog and create nothing when the doc is %s',
+    async (_case, breakDoc) => {
+      const s = scenario();
+      breakDoc(path.join(s.home, 'docs', 'directives', 'cadeira-do-dono.md'));
+
+      const reply = await start(s, 'claude');
+
+      expect(reply.exitCode).toBe(3);
+      expect(reply.message).toContain('unreadable catalog');
+      expect(fs.readdirSync(s.tmpdir)).toEqual([]);
+    },
+    SPEC_TIMEOUT,
+  );
+
+  it(
+    'should name the expected heading when the doc lost its catalog section',
+    async () => {
+      const s = scenario();
+      fs.writeFileSync(path.join(s.home, 'docs', 'directives', 'cadeira-do-dono.md'), '# x\n');
+
+      const reply = await start(s, 'claude');
+
+      expect(reply.message).toContain('## Catálogo de ações');
     },
     SPEC_TIMEOUT,
   );
@@ -418,7 +490,7 @@ describe('askQuestion', () => {
     });
 
     it('should send the critic rules and the first question as the prompt', () => {
-      expect(turnArgs(s).at(-1)).toBe(`${CRITIC_RULES}\n\nFIRST QUESTION`);
+      expect(turnArgs(s).at(-1)).toBe(`${MAILBOX_RULES}\n\nFIRST QUESTION`);
     });
 
     it('should open the claude session with --session-id and not --resume', () => {
@@ -466,7 +538,7 @@ describe('askQuestion', () => {
 
       await ask(s);
 
-      expect(turnArgs(s).at(-1)).toBe(`${CRITIC_RULES}\n\nFIRST QUESTION\n\nSECOND QUESTION`);
+      expect(turnArgs(s).at(-1)).toBe(`${MAILBOX_RULES}\n\nFIRST QUESTION\n\nSECOND QUESTION`);
     },
     SPEC_TIMEOUT,
   );
@@ -505,7 +577,7 @@ describe('askQuestion', () => {
     }, SPEC_TIMEOUT);
 
     it('should send the critic rules in the opening prompt', () => {
-      expect(turnArgs(s, 0).at(-1)).toBe(`${CRITIC_RULES}\n\nFIRST QUESTION`);
+      expect(turnArgs(s, 0).at(-1)).toBe(`${MAILBOX_RULES}\n\nFIRST QUESTION`);
     });
 
     it('should open without a conversation id', () => {
@@ -521,7 +593,7 @@ describe('askQuestion', () => {
     });
 
     it('should send the rules before the question on the second turn', () => {
-      expect(turnArgs(s, 1).at(-1)).toBe(`${CRITIC_RULES}\n\nSECOND QUESTION`);
+      expect(turnArgs(s, 1).at(-1)).toBe(`${MAILBOX_RULES}\n\nSECOND QUESTION`);
     });
   });
 
@@ -1029,6 +1101,23 @@ describe('askQuestion', () => {
 
       expect(reply.exitCode).toBe(2);
       expect(reply.message).toContain('mailbox not found');
+    },
+    SPEC_TIMEOUT,
+  );
+
+  it(
+    'should exit 2 and run no turn when the mailbox has no rules.txt',
+    async () => {
+      const s = scenario();
+      fs.rmSync(path.join(s.mailbox, 'rules.txt'));
+
+      const reply = await ask(s);
+
+      expect(reply).toEqual({
+        exitCode: 2,
+        message: 'mailbox without rules.txt: run start again',
+      });
+      expect(turns(s)).toEqual([]);
     },
     SPEC_TIMEOUT,
   );

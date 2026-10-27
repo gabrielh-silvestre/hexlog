@@ -550,6 +550,25 @@ describe('register', () => {
     expect(records).toHaveLength(1);
   });
 
+  it.each(['local', 'web', 'jury'])(
+    'should accept a premise with actionUsed %s',
+    async (actionUsed) => {
+      const { records } = await register(WORK, [
+        workRecord('premise', 'a', { statement: 'ok', actionUsed }),
+      ]);
+
+      expect(records).toHaveLength(1);
+    },
+  );
+
+  it('should refuse a premise with an actionUsed outside the enum', async () => {
+    const result = await writeBatch(WORK, [
+      workRecord('premise', 'bad', { statement: 'ok', actionUsed: 'robot' }),
+    ]);
+
+    expectError(result, 'INVALID_RECORD');
+  });
+
   it('should accept evidence with a summary and the source of an existing attachment', async () => {
     const source = await attachText();
 
@@ -1910,6 +1929,22 @@ describe('classifyTypeChange', () => {
     const previous: RecordType = {
       type: 'object',
       properties: { statement: { type: 'string', minLength: 1, maxLength: 255 } },
+      required: ['statement'],
+      additionalProperties: false,
+    };
+
+    expect(classifyTypeChange(previous, definitionOf('types', 'premise') as RecordType)).toBe(
+      'compatible',
+    );
+  });
+
+  it('should classify the optional actionUsed added to premise with answeredBy as compatible', () => {
+    const previous: RecordType = {
+      type: 'object',
+      properties: {
+        statement: { type: 'string', minLength: 1, maxLength: 255 },
+        answeredBy: { type: 'string', enum: ['human', 'simulated', 'simulated-approved'] },
+      },
       required: ['statement'],
       additionalProperties: false,
     };

@@ -1,7 +1,10 @@
 import { beforeAll, describe, expect, it } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { parseCatalog, renderActions } from '../scripts/flow/critic-catalog.ts';
+import { buildRules } from '../scripts/flow/critic-tools.ts';
 import {
+  CATALOG_DOC,
   criticEnv,
   CRITIC_CLI,
   installShims,
@@ -11,6 +14,7 @@ import {
   readSession,
   runProcess,
   waitFor,
+  writeCatalogDoc,
   writeClaudeJson,
   type Run,
   type Shims,
@@ -19,28 +23,37 @@ import { createTempDir } from './helpers.ts';
 
 const SPEC_TIMEOUT = 30_000;
 
-type Scenario = { shims: Shims; home: string; tmpdir: string };
+type Scenario = { shims: Shims; home: string; tmpdir: string; worktree: string };
 
-/** `HOME` com `~/.claude.json` e `TMPDIR` próprios: a CLI lê os dois pelo ambiente. */
+/**
+ * `HOME` com `~/.claude.json` e `TMPDIR` próprios (a CLI lê os dois pelo ambiente) e um `worktree`
+ * com o doc do catálogo, o `cwd` padrão da CLI.
+ */
 function scenario(): Scenario {
   const home = createTempDir('critic-home');
   writeClaudeJson(home);
-  return { shims: installShims(), home, tmpdir: createTempDir('critic-tmp') };
+  const worktree = createTempDir('critic-worktree');
+  writeCatalogDoc(worktree);
+  return { shims: installShims(), home, tmpdir: createTempDir('critic-tmp'), worktree };
 }
 
 const cli = (
-  { shims, home, tmpdir }: Scenario,
+  { shims, home, tmpdir, worktree }: Scenario,
   args: string[],
   env: Record<string, string | undefined> = {},
   cwd?: string,
 ): Promise<Run> =>
-  runProcess([CRITIC_CLI, ...args], criticEnv(shims, { HOME: home, TMPDIR: tmpdir, ...env }), cwd)
-    .done;
+  runProcess(
+    [CRITIC_CLI, ...args],
+    criticEnv(shims, { HOME: home, TMPDIR: tmpdir, ...env }),
+    cwd ?? worktree,
+  ).done;
 
 describe('scripts/flow/critic.ts', () => {
   it.each([
     ['no verb', []],
     ['start without a slug', ['start']],
+    ['a file given to rules', ['rules', 'critic-rules.txt']],
     ['an unknown verb', ['frobnicate', 'target']],
     ['a second positional', ['ask', 'one', 'two']],
     ['--tool on ask', ['ask', 'target', '--tool', 'agy']],
@@ -111,6 +124,7 @@ describe('scripts/flow/critic.ts', () => {
       async () => {
         const s = scenario();
         const worktree = createTempDir('critic-worktree');
+        writeCatalogDoc(worktree);
 
         const result = await cli(s, ['start', 'task-1', '--cwd', worktree]);
 
@@ -124,6 +138,7 @@ describe('scripts/flow/critic.ts', () => {
       async () => {
         const s = scenario();
         const here = fs.realpathSync(createTempDir('critic-here'));
+        writeCatalogDoc(here);
 
         const result = await cli(s, ['start', 'task-1'], {}, here);
 
@@ -155,6 +170,125 @@ describe('scripts/flow/critic.ts', () => {
         expect(result.exitCode).toBe(3);
         expect(result.stderr).toContain('claude is not logged in');
         expect(result.stdout).toBe('');
+      },
+      SPEC_TIMEOUT,
+    );
+  });
+
+  describe('with the rules verb', () => {
+    const rulesFor = (column: Parameters<typeof renderActions>[1]): string =>
+      buildRules(renderActions(parseCatalog(CATALOG_DOC), column));
+    const rulesDirs = (tmpdir: string): string[] =>
+      fs.readdirSync(tmpdir).filter((name) => name.startsWith('hexlog-critic-rules-'));
+
+    it(
+      'should write the claude-herdr rules to a file in the tmpdir and print its path',
+      async () => {
+        const env = scenario();
+
+        const result = await cli(env, ['rules', '--tool', 'claude']);
+        const out = result.stdout.trim();
+
+        expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+        expect(path.dirname(path.dirname(out))).toBe(env.tmpdir);
+        expect(path.basename(out)).toBe('critic-rules.txt');
+        expect(fs.readFileSync(out, 'utf8')).toBe(rulesFor('claude-herdr'));
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should create the file with mode 0600 in a folder with mode 0700 and nothing else',
+      async () => {
+        const env = scenario();
+
+        const out = (await cli(env, ['rules'])).stdout.trim();
+
+        expect(fs.statSync(out).mode & 0o777).toBe(0o600);
+        expect(fs.statSync(path.dirname(out)).mode & 0o777).toBe(0o700);
+        expect(fs.readdirSync(path.dirname(out))).toEqual(['critic-rules.txt']);
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it.each([
+      ['--tool agy', ['--tool', 'agy'], undefined],
+      ['HEXLOG_CRITIC_CLI=agy', [], 'agy'],
+    ])(
+      'should write the agy rules without jury by the precedence with %s',
+      async (_case, flags, variable) => {
+        const result = await cli(scenario(), ['rules', ...flags], {
+          HEXLOG_CRITIC_CLI: variable,
+        });
+
+        const written = fs.readFileSync(result.stdout.trim(), 'utf8');
+
+        expect(written).toBe(rulesFor('agy'));
+        expect(written).toContain('ações disponíveis para você (agy): web, local');
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should end the rules with the context line',
+      async () => {
+        const out = (await cli(scenario(), ['rules'])).stdout.trim();
+
+        expect(fs.readFileSync(out, 'utf8')).toMatch(/context: ok` or `context: tight`\.$/);
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should read the catalog from --cwd instead of the directory the command runs in',
+      async () => {
+        const bare = createTempDir('critic-bare');
+        const elsewhere = createTempDir('critic-elsewhere');
+        writeCatalogDoc(elsewhere);
+
+        const result = await cli(scenario(), ['rules', '--cwd', elsewhere], {}, bare);
+
+        expect(result.exitCode).toBe(0);
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should exit 3 naming the unreadable catalog and create no folder when --cwd has no doc',
+      async () => {
+        const env = scenario();
+        const bare = createTempDir('critic-bare');
+
+        const result = await cli(env, ['rules', '--cwd', bare]);
+
+        expect(result.exitCode).toBe(3);
+        expect(result.stderr).toContain('unreadable catalog');
+        expect(rulesDirs(env.tmpdir)).toEqual([]);
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should print the usage, exit 1 and create no folder when given a file argument',
+      async () => {
+        const env = scenario();
+
+        const result = await cli(env, ['rules', 'critic-rules.txt']);
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('usage: node scripts/flow/critic.ts');
+        expect(rulesDirs(env.tmpdir)).toEqual([]);
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should exit 1 for an unknown tool',
+      async () => {
+        const result = await cli(scenario(), ['rules', '--tool', 'codex']);
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('unknown critic tool "codex"');
       },
       SPEC_TIMEOUT,
     );

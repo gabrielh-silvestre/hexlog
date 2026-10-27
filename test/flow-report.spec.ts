@@ -431,6 +431,12 @@ describe('scripts/flow/report.ts', () => {
         'k-upper': classOf('Class: Critical', 'upper'),
         'k-longer': classOf('Class: criticality', 'longer'),
         'k-mixed': classOf('Class: common; critical', 'mixed'),
+        // a natureza da dúvida vai depois da regra: a leitura da regra não pode tropeçar nela
+        'k-nature': gapOf(
+          'feat-class',
+          'nature',
+          'Class: critical; rule: directives.fronteiras.r1; Nature: choice',
+        ),
         // ESC na regra: não chega ao stdout, a linha diz só que o doc é desconhecido
         'k-control': gapOf(
           'feat-class',
@@ -820,6 +826,10 @@ describe('scripts/flow/report.ts', () => {
         expect(rowFor(result, name)?.[2]).toBe('critical-gap: open, approval pending');
       },
     );
+
+    it('should read the rule of a critical gap whose context ends with a `Nature:` literal', () => {
+      expect(rowFor(result, 'k-nature')?.[2]).toBe('critical-gap: open, approval pending');
+    });
 
     it.each(['k-longer', 'k-mixed'])('should not read %s as a critical gap', (name) => {
       expect(rowFor(result, name)).toBeUndefined();
