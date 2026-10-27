@@ -138,4 +138,21 @@ node scripts/flow/gate.ts pre-pr <slug>   # os gates, sem gravar o marcador
 node scripts/flow/report.ts <slug>        # o relatório de decisões
 ```
 
+### Sonda das ações do critic
+
+Roteiro manual, fora do CI, que gasta Opus e a cota do `agy`: só com pedido explícito do dono. O critic tem de ser recém-lançado a partir do checkout final (as regras congelam no `start`): um critic vivo de antes é substituído sem contar nas 2 substituições do `flow-run`. Cada sonda grava `<slug>.premise.sonda-<n>` e `<slug>.evidence.sonda-<n>` no processo do trabalho, com `actionUsed` fixado, e as revoga ao fim. A degradação forçada vai como linha `Unavailable: <ações>` no cabeçalho da mensagem da pergunta, antes e fora do bloco de contexto, nunca dentro de `gap.context`. O esperado sai da tabela de [cadeira-do-dono.md](directives/cadeira-do-dono.md) com os literais que o principal escreveu; o roteiro assere sobre a resposta e o `attach` (`Action: <usada>`), e o `actionUsed` lido do log é só observação.
+
+| Caso | Transporte | Classe | Natureza | Mensagem traz | Esperado |
+|---|---|---|---|---|---|
+| a1 | `claude-herdr` | comum | `repo-fact` (leitura de código fora de docs e hexlog) | | `local` e `actionUsed=local`; prova o canal da frase de uma linha e que o `Read` do critic alcança `critic-rules.txt` fora do `cwd` |
+| a2 | `claude-herdr` | comum | `external-fact` | | `web`, ou o registro de que `document-specialist` não alcança a web nesse transporte |
+| a3 | `claude-herdr` | comum | `choice` (a evidência local não decide) | | `jury` |
+| a4 | `claude-runner` | crítica | `external-fact` | | `jury`, premissa sem `fills-gap` |
+| b | `claude-runner` | comum | `choice` | `Unavailable: jury` | `web` e `actionUsed=web` |
+| b2 | `agy` no Herdr | crítica | `choice` | | `actionUsed` em `web` ou `local`, nunca `jury`; o aval mostra a marca; confirma se o `agy` tem busca web |
+| c | `claude-runner` | comum | `choice` | `Unavailable: jury, web, local` | `sem resposta`, motivo no `attach`, nenhuma premissa `simulated` |
+| d (opcional) | qualquer | comum | `choice` | `Unavailable: jury` | só em processo sem `actionUsed` fixado: `sem resposta` |
+
+O `agy` no runner usa o mesmo código e a mesma coluna que no Herdr; o canal do Herdr é o que b2 prova. Se a sonda mostrar que o `agy` não tem busca web ou que o Herdr não alcança a web, a célula da tabela do doc muda no mesmo commit.
+
 Regras completas e o que o CI repete: [qualidade-e-testes.md](directives/qualidade-e-testes.md), [instalacao-e-hooks.md](directives/instalacao-e-hooks.md) e [fluxo-hexlog.md](directives/fluxo-hexlog.md).
