@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { xor } from 'es-toolkit';
+import { parseCatalog } from '../scripts/flow/critic-catalog.ts';
 import { EXIT } from '../scripts/flow/critic-run.ts';
+import { buildRules } from '../scripts/flow/critic-tools.ts';
 import { parsePremises, scanPremises, type ScannedPremise } from '../scripts/flow/sync.ts';
 import { at } from './helpers.ts';
 
@@ -132,6 +135,26 @@ const skillPath = (name: string): string => path.join(repoRoot, '.claude/skills'
 const flowDoc = (): string => fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8');
 const skill = (name: string): string => fs.readFileSync(skillPath(name), 'utf8');
 
+const catalog = parseCatalog(fs.readFileSync(path.join(repoRoot, OWNER_SEAT_DOC), 'utf8'));
+
+/** Nomes citados na forma "ação `x`" ou "action `x`": a única forma que a trava fraca enxerga. */
+const citedActionsIn = (text: string): string[] =>
+  [...text.matchAll(/\b(?:ação|action) `([^`]+)`/g)].map(([, name = '']) => name);
+
+/** Valores de cada literal `Nature: a|b|c` do texto. */
+const natureLiteralsIn = (text: string): string[][] =>
+  [...text.matchAll(/Nature: ((?:[a-z-]+\|)+[a-z-]+)/g)].map(([, values = '']) =>
+    values.split('|'),
+  );
+
+/** Literais cujo conjunto de valores difere das naturezas do catálogo. */
+const naturesDifferingFrom = (literals: string[][], natures: string[]): string[][] =>
+  literals.filter((values) => xor(values, natures).length > 0);
+
+/** Corpo de um `## <título>` até o próximo `## `. */
+const sectionBodyOf = (text: string, title: string): string =>
+  new RegExp(`^## ${title}$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm').exec(text)?.[1] ?? '';
+
 // Geração vigente ou futura; `directives-2` segue citado como corte de trabalhos antigos.
 const currentGeneration = /directives-[4-9]/;
 
@@ -166,6 +189,32 @@ const SENTINEL_SLUG = 'none';
 
 // O doc e a skill `flow-run` dizem a mesma frase: um caso em cada arquivo, a frase num lugar só.
 const CREATE_PROCESS_FORBIDDEN = '`create_process` de `directives-N`';
+
+describe('citedActionsIn', () => {
+  it('should read only the form "action `x`" (or its Portuguese twin)', () => {
+    const text = 'a ação `jury` e a action `web`, mas `local` solta e ações `x`';
+
+    expect(citedActionsIn(text)).toEqual(['jury', 'web']);
+  });
+});
+
+describe('naturesDifferingFrom', () => {
+  const natures = ['repo-fact', 'external-fact', 'choice'];
+
+  it('should flag a literal that drops or adds a nature', () => {
+    const literals = natureLiteralsIn(
+      'Nature: repo-fact|choice e Nature: repo-fact|external-fact|choice|guess',
+    );
+
+    expect(naturesDifferingFrom(literals, natures)).toHaveLength(2);
+  });
+
+  it('should accept a literal with the catalog natures in any order', () => {
+    const literals = natureLiteralsIn('Nature: choice|repo-fact|external-fact');
+
+    expect(naturesDifferingFrom(literals, natures)).toEqual([]);
+  });
+});
 
 describe('linksWithOffsetFrom', () => {
   it('should report positions comparable with manualMarkerOffsetFrom on the same text', () => {
@@ -529,6 +578,54 @@ describe('.claude/skills/flow-*/SKILL.md', () => {
   it('should keep the owner-seat skill unaware of who occupies the seat', () => {
     expect(skill('flow-owner-seat')).not.toMatch(OWNER_SEAT_FORBIDDEN_TERMS);
   });
+
+  it('should list in every `Nature:` literal exactly the natures of the catalog', () => {
+    const literals = FLOW_SKILLS.flatMap((name) => natureLiteralsIn(skill(name)));
+
+    expect(literals.length).toBeGreaterThan(0);
+    expect(naturesDifferingFrom(literals, Object.keys(catalog.choice))).toEqual([]);
+  });
+
+  it.each(['flow-run', 'flow-gaps'])('should leave `Unavailable:` out of %s', (name) => {
+    expect(skill(name)).not.toContain('Unavailable:');
+  });
+
+  it.each([
+    'Consultar o hexlog ou os docs diretamente não é a ação `local`',
+    'Sem `actionUsed` fixado a ação indisponível não degrada',
+    'Comum: só quando a evidência local (hexlog, docs, ADRs) não decide. Crítica: exigida.',
+  ])('should leave the contract sentence only in the owner-seat doc: %s', (sentence) => {
+    expect(FLOW_SKILLS.filter((name) => skill(name).includes(sentence))).toEqual([]);
+  });
+});
+
+describe('.claude/skills/flow-owner-seat/SKILL.md', () => {
+  it('should not carry the numbered list of the context actions', () => {
+    expect(skill('flow-owner-seat')).not.toMatch(/^\d+\. \*\*/m);
+  });
+
+  it('should point to the action catalog of the owner-seat doc', () => {
+    expect(skill('flow-owner-seat')).toContain('## Catálogo de ações');
+    expect(skill('flow-owner-seat')).toContain(OWNER_SEAT_DOC);
+  });
+
+  it('should keep the nested subagent launch with `TaskStop`', () => {
+    expect(skill('flow-owner-seat')).toContain('`TaskStop`');
+  });
+
+  it('should cite no action outside the catalog (weak guard: only the form "action `x`")', () => {
+    expect(
+      citedActionsIn(skill('flow-owner-seat')).filter((name) => !(name in catalog.actions)),
+    ).toEqual([]);
+  });
+});
+
+describe('buildRules', () => {
+  it('should cite no action outside the catalog in the base rules (weak guard: only the form "action `x`")', () => {
+    const rules = buildRules('');
+
+    expect(citedActionsIn(rules).filter((name) => !(name in catalog.actions))).toEqual([]);
+  });
 });
 
 describe('docs/directives/cadeira-do-dono.md', () => {
@@ -593,6 +690,49 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
     expect(skill('flow-run')).toMatch(/protocolo do subagente/i);
   });
 
+  it('should cite no action outside the catalog in section 6 (weak guard: only the form "action `x`")', () => {
+    const section = sectionBodyOf(skill('flow-run'), '6\\. Cadeira do dono');
+
+    expect(citedActionsIn(section).length).toBeGreaterThan(0);
+    expect(citedActionsIn(section).filter((name) => !(name in catalog.actions))).toEqual([]);
+  });
+
+  it('should write the gap literal with the class and the catalog natures', () => {
+    const [literal] = natureLiteralsIn(skill('flow-run'));
+
+    expect(skill('flow-run')).toContain('`Class: common|critical[; rule: <alvo>]; Nature: ');
+    expect(literal).toEqual(Object.keys(catalog.choice));
+  });
+
+  it('should generate the rules file for the Herdr critic and point the Claude one to it in one line', () => {
+    const run = skill('flow-run');
+
+    expect(run).toContain('node scripts/flow/critic.ts rules .ignore/flow/<slug>/critic-rules.txt');
+    expect(run).toContain(
+      '--append-system-prompt "Leia o arquivo <caminho absoluto de critic-rules.txt> antes de tudo e releia-o se o contexto for compactado."',
+    );
+  });
+
+  it('should prefix every agy prompt with the rules file instead of the old constant', () => {
+    expect(skill('flow-run')).toContain('começa pelo conteúdo de `critic-rules.txt`');
+    expect(skill('flow-run')).not.toContain('CRITIC_RULES');
+  });
+
+  it('should have the critic look up the pending simulated premise with `actionUsed`', () => {
+    expect(skill('flow-run')).toContain('`fields: ["statement","answeredBy","actionUsed"]`');
+  });
+
+  it('should show the degradation mark at the approval, with the expectation computed by the main session', () => {
+    const approval = /^5\. `evaluate_gate` de `gaps`.*$/m.exec(
+      sectionBodyOf(skill('flow-run'), '5\\. Pré-PR'),
+    )?.[0];
+
+    expect(approval).toContain('`fields: ["statement","answeredBy","actionUsed"]`');
+    expect(approval).toContain('com o `Class` e o `Nature` do literal que você mesmo escreveu');
+    expect(approval).toContain('"degradada: esperada X, usada Y"');
+    expect(approval).toContain('o esperado nunca vem do cabeçalho do `attach`');
+  });
+
   describe('with the runner transport section', () => {
     const runnerSection = (): string =>
       /^### Transporte runner$([\s\S]*?)(?=^#{2,3} |(?![\s\S]))/m.exec(skill('flow-run'))?.[1] ??
@@ -606,6 +746,7 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
       ['the question size cap', '100000'],
       ['the tool of critic.md on returning to start', '--tool <ferramenta do critic.md>'],
       ['the tool variable', 'HEXLOG_CRITIC_CLI'],
+      ['the unreadable catalog exit', '"catálogo ilegível"'],
     ])('should cite %s', (_what, fragment) => {
       expect(runnerSection()).toContain(fragment);
     });
@@ -618,6 +759,15 @@ describe('.claude/skills/flow-gaps/SKILL.md', () => {
 
     expect(gaps).toContain('O assento aqui é sempre humano');
     expect(gaps).toContain('Aprovar não vale para contradição com premissa atemporal');
+  });
+
+  it('should follow the action catalog when the owner asks for context', () => {
+    expect(skill('flow-gaps')).toContain('siga o catálogo de ações do mesmo doc');
+    expect(skill('flow-gaps')).not.toContain('ações de contexto da skill');
+  });
+
+  it('should present the `Nature:` of the gap with its context', () => {
+    expect(skill('flow-gaps')).toContain('com o `Nature:` da lacuna');
   });
 });
 
