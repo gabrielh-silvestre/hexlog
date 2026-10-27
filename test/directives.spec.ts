@@ -700,7 +700,7 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
   it('should write the gap literal with the class and the catalog natures', () => {
     const [literal] = natureLiteralsIn(skill('flow-run'));
 
-    expect(skill('flow-run')).toContain('`Class: common|critical[; rule: <alvo>]; Nature: ');
+    expect(skill('flow-run')).toContain('`Class: common|critical[; rule: <target>]; Nature: ');
     expect(literal).toEqual(Object.keys(catalog.choice));
   });
 

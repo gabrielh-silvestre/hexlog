@@ -144,7 +144,7 @@ Roteiro manual, fora do CI, que gasta Opus e a cota do `agy`: só com pedido exp
 
 | Caso | Transporte | Classe | Natureza | Mensagem traz | Esperado |
 |---|---|---|---|---|---|
-| a1 | `claude-herdr` | comum | `repo-fact` (leitura de código fora de docs e hexlog) | | `local` e `actionUsed=local`; prova o canal da frase de uma linha e que o `Read` do critic alcança o arquivo de regras em `os.tmpdir()`, fora do `cwd` |
+| a1 | `claude-herdr` | comum | `repo-fact` (leitura de código fora de docs e hexlog) | | `local` e `actionUsed=local`; repete, com o critic real, a sonda de Haiku de 2026-10-27 (o `Read` do arquivo de regras em `os.tmpdir()`, fora do `cwd`) e prova o canal da frase de uma linha no fluxo completo |
 | a2 | `claude-herdr` | comum | `external-fact` | | `web`, ou o registro de que `document-specialist` não alcança a web nesse transporte |
 | a3 | `claude-herdr` | comum | `choice` (a evidência local não decide) | | `jury` |
 | a4 | `claude-runner` | crítica | `external-fact` | | `jury`, premissa sem `fills-gap` |

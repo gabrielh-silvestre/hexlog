@@ -59,7 +59,7 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 | `choice` | jury | jury |
 
 - Ordem de custo, da mais cara à mais barata: `jury`, `web`, `local`.
-- O principal abre o `context` da `gap` com `Class: common|critical; rule: <alvo>; Nature: repo-fact|external-fact|choice` (sem `rule:` na comum). O critic confere e reclassifica no cabeçalho do `attach`: `Nature: x (reclassified from y)` e, na classe, o literal da seção anterior.
+- O principal abre o `context` da `gap` com `Class: common|critical; rule: <target>; Nature: repo-fact|external-fact|choice` (sem `rule:` na comum). O critic confere e reclassifica no cabeçalho do `attach`: `Nature: x (reclassified from y)` e, na classe, o literal da seção anterior.
 - Caminho curto na comum: se a evidência local (hexlog, docs, ADRs) já decide, o critic responde direto com ela, sem ação e sem `actionUsed`. Consultar o hexlog ou os docs diretamente não é a ação `local`.
 - Degradação, nas duas classes: ação indisponível (em `Unavailable:` ou `—` no transporte) cai para a próxima da ordem de custo que sirva à pergunta.
 - Piso: sem ação que sirva, ou nada achado, a resposta é `sem resposta`, com o motivo no `attach` e nenhuma premissa `simulated`; a pergunta vai ao humano.
