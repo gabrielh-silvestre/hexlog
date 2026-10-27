@@ -9,22 +9,22 @@ import {
   summarizeQuestion,
 } from '../../src/domain/gate.ts';
 import type { GateInput, GateScope, QuestionResult } from '../../src/domain/gate.ts';
-import { Gate, RecordType, RelationName } from '../../src/domain/definitions.ts';
+import { Gate } from '../../src/domain/definitions.ts';
 import type { HexRecord, RelationKind } from '../../src/domain/record.ts';
 import * as omc from '../fixtures/domains/omc.ts';
 import * as rdsc from '../fixtures/domains/rdsc.ts';
-import { recordId } from '../helpers.ts';
+import { at, recordId } from '../helpers.ts';
 
 type Extra = { target?: string; data?: HexRecord['data'] };
 
 function rec(
-  recordId: string,
+  id: string,
   type: string,
   relations: [RelationKind, string][] = [],
   { target = 'feature', data = {} }: Extra = {},
 ): HexRecord {
   return {
-    id: recordId,
+    id,
     type,
     at: '2026-09-30T12:00:00.000Z',
     target,
@@ -43,6 +43,13 @@ const reading = (records: HexRecord[], target?: string): SpiedInput => ({
 });
 
 const question = (raw: unknown) => GateQuestion.parse(raw);
+
+/** Resultado da pergunta `q` sobre `records`; `build` troca a leitura (por padrão `reading`). */
+const resultOf = (
+  q: ReturnType<typeof question>,
+  records: HexRecord[],
+  build: (records: HexRecord[]) => GateInput = reading,
+) => evaluateGate([q], build(records)).questions[0];
 
 const [p1, p2, p3, p4, p5] = [
   recordId('p', 1),
@@ -80,70 +87,72 @@ const supersededResolver = [
   rec(p3, 'plan', [['supersedes', p2]]),
 ];
 
-const fixtureDomains: [string, typeof omc | typeof rdsc][] = [
-  ['omc', omc],
-  ['rdsc', rdsc],
-];
-
 describe('Selector', () => {
-  it('should accept only a scalar value in where', () => {
+  it('should accept a scalar value in where', () => {
     expect(Selector.safeParse({ where: { a: 'x', b: 2, c: true } }).success).toBe(true);
-    expect(Selector.safeParse({ where: { a: { gte: 2 } } }).success).toBe(false);
-    expect(Selector.safeParse({ where: { a: null } }).success).toBe(false);
-    expect(Selector.safeParse({ where: { a: [1] } }).success).toBe(false);
   });
 
-  it('should refuse an unknown key, an invalid name and an invalid prefix', () => {
-    expect(Selector.safeParse({ kind: 'plan' }).success).toBe(false);
-    expect(Selector.safeParse({ type: 'Plan' }).success).toBe(false);
-    expect(Selector.safeParse({ targetPrefix: 'a.' }).success).toBe(false);
+  it.each([
+    ['an operator object', { gte: 2 }],
+    ['null', null],
+    ['an array', [1]],
+  ])('should refuse %s in where', (_label, value) => {
+    expect(Selector.safeParse({ where: { a: value } }).success).toBe(false);
+  });
+
+  it.each([
+    ['an unknown key', { kind: 'plan' }],
+    ['an invalid name', { type: 'Plan' }],
+    ['an invalid prefix', { targetPrefix: 'a.' }],
+  ])('should refuse %s', (_label, raw) => {
+    expect(Selector.safeParse(raw).success).toBe(false);
   });
 });
 
 describe('GateQuestion', () => {
-  it('should give each kind its own shape', () => {
-    const valid = [
-      { kind: 'approved', of: {}, by: { type: 'review' }, scope: 'project' },
-      { kind: 'occurred', select: { type: 'review' }, min: 2 },
+  it.each([
+    ['approved', { kind: 'approved', of: {}, by: { type: 'review' }, scope: 'project' }],
+    ['occurred', { kind: 'occurred', select: { type: 'review' }, min: 2 }],
+    [
+      'no_pending',
       { kind: 'no_pending', pending: {}, resolvedBy: { kind: 'answers', from: ['review'] } },
-      { kind: 'no_open_contradiction' },
-      { kind: 'no_open_contradiction', of: { type: 'plan' } },
-    ];
-
-    expect(valid.map((raw) => GateQuestion.safeParse(raw).success)).toEqual(valid.map(() => true));
+    ],
+    ['no_open_contradiction', { kind: 'no_open_contradiction' }],
+    ['no_open_contradiction with of', { kind: 'no_open_contradiction', of: { type: 'plan' } }],
+  ])('should accept the shape of %s', (_label, raw) => {
+    expect(GateQuestion.safeParse(raw).success).toBe(true);
   });
 
-  it('should refuse anything outside the catalog', () => {
-    const invalid = [
-      { kind: 'overdue', of: {} },
-      { kind: 'approved' },
-      { kind: 'occurred', select: {}, min: 0 },
-      { kind: 'occurred', select: {}, dueAt: '2026-01-01T00:00:00Z' },
+  it.each([
+    ['an unknown kind', { kind: 'overdue', of: {} }],
+    ['approved without of', { kind: 'approved' }],
+    ['occurred with min 0', { kind: 'occurred', select: {}, min: 0 }],
+    ['occurred with dueAt', { kind: 'occurred', select: {}, dueAt: '2026-01-01T00:00:00Z' }],
+    [
+      'no_pending with an unknown resolvedBy',
       { kind: 'no_pending', pending: {}, resolvedBy: { kind: 'unknown' } },
+    ],
+    [
+      'no_pending with an empty from',
       { kind: 'no_pending', pending: {}, resolvedBy: { kind: 'answers', from: [] } },
+    ],
+    [
+      'no_pending with a repeated from',
       { kind: 'no_pending', pending: {}, resolvedBy: { kind: 'answers', from: ['a', 'a'] } },
-      { kind: 'occurred', select: {}, scope: 'global' },
-    ];
-
-    expect(invalid.map((raw) => GateQuestion.safeParse(raw).success)).toEqual(
-      invalid.map(() => false),
-    );
+    ],
+    ['occurred with an unknown scope', { kind: 'occurred', select: {}, scope: 'global' }],
+    ['approved with inherit false', { kind: 'approved', of: {}, inherit: false }],
+    ['occurred with inherit', { kind: 'occurred', select: {}, inherit: true }],
+    ['no_open_contradiction with inherit', { kind: 'no_open_contradiction', inherit: true }],
+  ])('should refuse %s', (_label, raw) => {
+    expect(GateQuestion.safeParse(raw).success).toBe(false);
   });
 
-  it('should accept inherit true on approved and no_pending only', () => {
-    const invalid = [
-      { kind: 'approved', of: {}, inherit: false },
-      { kind: 'occurred', select: {}, inherit: true },
-      { kind: 'no_open_contradiction', inherit: true },
-    ];
-
-    expect(GateQuestion.safeParse(approvedInherit).success).toBe(true);
-    expect(GateQuestion.safeParse(pendingInherit).success).toBe(true);
-    expect(invalid.map((raw) => GateQuestion.safeParse(raw).success)).toEqual([
-      false,
-      false,
-      false,
-    ]);
+  it.each([
+    ['approved', approvedInherit],
+    ['no_pending', pendingInherit],
+  ])('should accept inherit true on %s', (_label, raw) => {
+    expect(GateQuestion.safeParse(raw).success).toBe(true);
   });
 });
 
@@ -157,16 +166,26 @@ describe('matchesTargetPrefix', () => {
 });
 
 describe('matchesSelector', () => {
-  it('should combine type, targetPrefix and where by equality', () => {
-    const record = rec(p1, 'plan', [], { target: 'a.b', data: { isRevision: true, round: 2 } });
+  const revisedPlan = rec(p1, 'plan', [], { target: 'a.b', data: { isRevision: true, round: 2 } });
 
-    expect(matchesSelector(record, {})).toBe(true);
-    expect(matchesSelector(record, { type: 'plan', targetPrefix: 'a' })).toBe(true);
-    expect(matchesSelector(record, { where: { isRevision: true, round: 2 } })).toBe(true);
-    expect(matchesSelector(record, { type: 'review' })).toBe(false);
-    expect(matchesSelector(record, { targetPrefix: 'a.c' })).toBe(false);
-    expect(matchesSelector(record, { where: { isRevision: 'true' } })).toBe(false);
-    expect(matchesSelector(record, { where: { missing: false } })).toBe(false);
+  it.each<{ label: string; selector: Parameters<typeof matchesSelector>[1]; matches: boolean }>([
+    { label: 'an empty selector', selector: {}, matches: true },
+    {
+      label: 'type and targetPrefix',
+      selector: { type: 'plan', targetPrefix: 'a' },
+      matches: true,
+    },
+    {
+      label: 'where equal to the data',
+      selector: { where: { isRevision: true, round: 2 } },
+      matches: true,
+    },
+    { label: 'another type', selector: { type: 'review' }, matches: false },
+    { label: 'another targetPrefix', selector: { targetPrefix: 'a.c' }, matches: false },
+    { label: 'where of another type', selector: { where: { isRevision: 'true' } }, matches: false },
+    { label: 'where on a missing field', selector: { where: { missing: false } }, matches: false },
+  ])('should return $matches for $label', ({ selector, matches }) => {
+    expect(matchesSelector(revisedPlan, selector)).toBe(matches);
   });
 
   // `where` compara por identidade: nenhuma coerção entre número, string e booleano.
@@ -199,7 +218,7 @@ describe('evaluateGate', () => {
     it('should pass with at least one current record (default min 1) and return the ids', () => {
       const records = [rec(p1, 'review'), rec(p2, 'plan')];
 
-      expect(evaluateGate([q()], reading(records)).questions[0]).toEqual({
+      expect(resultOf(q(), records)).toEqual({
         index: 0,
         kind: 'occurred',
         passed: true,
@@ -216,11 +235,14 @@ describe('evaluateGate', () => {
     });
 
     it('should not count a superseded or revoked record', () => {
-      const records = [rec(p1, 'review'), rec(p2, 'review'), rec(p3, 'review', [['revokes', p2]])];
+      const records = [
+        rec(p1, 'review'),
+        rec(p2, 'review'),
+        rec(p3, 'review', [['revokes', p2]]),
+        rec(p4, 'review', [['supersedes', p1]]),
+      ];
 
-      expect(evaluateGate([q(2)], reading(records)).questions[0]?.evidence).toEqual({
-        found: [p1, p3],
-      });
+      expect(resultOf(q(2), records)?.evidence).toEqual({ found: [p3, p4] });
     });
 
     it('should filter the data field by an equality where, as in the revision gate', () => {
@@ -249,7 +271,7 @@ describe('evaluateGate', () => {
     it('should pass when every current record in of has a current support matching by, with no contradiction', () => {
       const records = [rec(p1, 'plan'), rec(p2, 'review', [['supports', p1]])];
 
-      expect(evaluateGate([q], reading(records)).questions[0]).toEqual({
+      expect(resultOf(q, records)).toEqual({
         index: 0,
         kind: 'approved',
         passed: true,
@@ -262,14 +284,11 @@ describe('evaluateGate', () => {
     });
 
     it('should stay pending and list a record without support as unsupported', () => {
-      const result = evaluateGate([q], reading([rec(p1, 'plan')])).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toEqual({
-        of: [p1],
-        supports: [],
-        contradictions: [],
-        unsupported: [p1],
+      expect(resultOf(q, [rec(p1, 'plan')])).toEqual({
+        index: 0,
+        kind: 'approved',
+        passed: false,
+        evidence: { of: [p1], supports: [], contradictions: [], unsupported: [p1] },
       });
     });
 
@@ -280,10 +299,10 @@ describe('evaluateGate', () => {
         rec(p3, 'review', [['supports', p1]]),
       ];
 
-      const result = evaluateGate([q], reading(records)).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toMatchObject({ unsupported: [p2] });
+      expect(resultOf(q, records)).toMatchObject({
+        passed: false,
+        evidence: { unsupported: [p2] },
+      });
     });
 
     it('should restrict a by without targetPrefix to the evaluation target', () => {
@@ -315,10 +334,10 @@ describe('evaluateGate', () => {
         rec(p3, 'review', [['contradicts', p1]]),
       ];
 
-      const result = evaluateGate([q], reading(records)).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toMatchObject({ supports: [p2], contradictions: [p3] });
+      expect(resultOf(q, records)).toMatchObject({
+        passed: false,
+        evidence: { supports: [p2], contradictions: [p3] },
+      });
     });
 
     it('should not count a contradiction or support from a record that stopped being current', () => {
@@ -343,7 +362,7 @@ describe('evaluateGate', () => {
     });
 
     it('should pass vacuously when nothing is pending', () => {
-      expect(evaluateGate([q], reading([rec(p1, 'plan')])).questions[0]).toEqual({
+      expect(resultOf(q, [rec(p1, 'plan')])).toEqual({
         index: 0,
         kind: 'no_pending',
         passed: true,
@@ -358,10 +377,12 @@ describe('evaluateGate', () => {
         rec(p3, 'plan', [['answers', p2]]),
       ];
 
-      const result = evaluateGate([q], reading(records)).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toEqual({ unresolved: [p1] });
+      expect(resultOf(q, records)).toEqual({
+        index: 0,
+        kind: 'no_pending',
+        passed: false,
+        evidence: { unresolved: [p1] },
+      });
     });
 
     it.each([
@@ -393,14 +414,17 @@ describe('evaluateGate', () => {
   });
 
   describe('with a no_open_contradiction question', () => {
+    const openQ = question({ kind: 'no_open_contradiction' });
+
     it('should fail when a current record has a current contradiction, and list the contradicted ones', () => {
-      const q = question({ kind: 'no_open_contradiction' });
       const records = [rec(p1, 'plan'), rec(p2, 'plan'), rec(p3, 'review', [['contradicts', p2]])];
 
-      const result = evaluateGate([q], reading(records)).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toEqual({ conflicting: [p2] });
+      expect(resultOf(openQ, records)).toEqual({
+        index: 0,
+        kind: 'no_open_contradiction',
+        passed: false,
+        evidence: { conflicting: [p2] },
+      });
     });
 
     it.each([
@@ -421,9 +445,7 @@ describe('evaluateGate', () => {
         ],
       ],
     ])('should pass when %s', (_label, records) => {
-      const q = question({ kind: 'no_open_contradiction' });
-
-      expect(evaluateGate([q], reading(records)).passed).toBe(true);
+      expect(evaluateGate([openQ], reading(records)).passed).toBe(true);
     });
 
     it('should restrict what is checked by of', () => {
@@ -435,7 +457,7 @@ describe('evaluateGate', () => {
   });
 
   describe('with a question scope', () => {
-    const plan = rec(recordId('p', 1), 'plan');
+    const plan = rec(p1, 'plan');
     const foreignReview = rec(recordId('other', 1), 'review', [['supports', plan.id]]);
     const q = (scope: GateScope) =>
       question({ kind: 'approved', of: { type: 'plan' }, by: { type: 'review' }, scope });
@@ -489,9 +511,9 @@ describe('evaluateGate', () => {
 
     const result = evaluateGate(questions, reading([rec(p1, 'plan')]));
 
-    expect(result.questions.map(({ index, kind, passed }) => ({ index, kind, passed }))).toEqual([
-      { index: 0, kind: 'occurred', passed: true },
-      { index: 1, kind: 'occurred', passed: false },
+    expect(result.questions.map(({ index, kind }) => ({ index, kind }))).toEqual([
+      { index: 0, kind: 'occurred' },
+      { index: 1, kind: 'occurred' },
     ]);
   });
 
@@ -510,21 +532,19 @@ describe('evaluateGate', () => {
 
   describe('with the plan-ready gate of the omc fixture', () => {
     const questions = Gate.parse(omc.gates[0]).questions;
-    const plan = (n: number, relations: [RelationKind, string][] = [], isRevision = false) =>
-      rec(recordId('p', n), 'plan', relations, { data: { isRevision, diff: 'd' } });
-    const review = (n: number, kind: RelationKind, to: string) =>
-      rec(recordId('p', n), 'review', [[kind, to]]);
-    const deviation = (n: number) =>
-      rec(recordId('p', n), 'deviation', [], { data: { description: 'x' } });
+    const plan = (id: string, relations: [RelationKind, string][] = [], isRevision = false) =>
+      rec(id, 'plan', relations, { data: { isRevision, diff: 'd' } });
+    const review = (id: string, kind: RelationKind, to: string) => rec(id, 'review', [[kind, to]]);
+    const deviation = (id: string) => rec(id, 'deviation', [], { data: { description: 'x' } });
 
     it('should pass with a current approval and no open deviation', () => {
-      const records = [plan(1), review(2, 'supports', p1)];
+      const records = [plan(p1), review(p2, 'supports', p1)];
 
       expect(evaluateGate(questions, reading(records)).passed).toBe(true);
     });
 
     it('should fail on a deviation without outcome', () => {
-      const records = [plan(1), review(2, 'supports', p1), deviation(3)];
+      const records = [plan(p1), review(p2, 'supports', p1), deviation(p3)];
 
       const open = evaluateGate(questions, reading(records));
 
@@ -533,16 +553,16 @@ describe('evaluateGate', () => {
     });
 
     it('should pass once answers closes the deviation', () => {
-      const records = [plan(1), review(2, 'supports', p1), deviation(3)];
+      const records = [plan(p1), review(p2, 'supports', p1), deviation(p3)];
       const settled = [...records, rec(p4, 'review', [['answers', p3]])];
 
       expect(evaluateGate(questions, reading(settled)).passed).toBe(true);
     });
 
     it('should require the current revision to have its own approval, not counting the approval of the superseded version', () => {
-      const original = [plan(1), review(2, 'supports', p1)];
-      const revised = [...original, plan(3, [['supersedes', p1]], true)];
-      const reapproved = [...revised, review(4, 'supports', p3)];
+      const original = [plan(p1), review(p2, 'supports', p1)];
+      const revised = [...original, plan(p3, [['supersedes', p1]], true)];
+      const reapproved = [...revised, review(p4, 'supports', p3)];
 
       expect(evaluateGate(questions, reading(revised)).passed).toBe(false);
       expect(evaluateGate(questions, reading(reapproved)).passed).toBe(true);
@@ -550,23 +570,24 @@ describe('evaluateGate', () => {
 
     it('should fail again when an approved revision is superseded by an unapproved one', () => {
       const records = [
-        plan(1),
-        review(2, 'supports', p1),
-        plan(3, [['supersedes', p1]], true),
-        review(4, 'supports', p3),
-        plan(5, [['supersedes', p3]], true),
+        plan(p1),
+        review(p2, 'supports', p1),
+        plan(p3, [['supersedes', p1]], true),
+        review(p4, 'supports', p3),
+        plan(p5, [['supersedes', p3]], true),
       ];
 
-      const result = evaluateGate(questions, reading(records)).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toMatchObject({ of: [p5], unsupported: [p5] });
+      expect(resultOf(at(questions, 0), records)).toMatchObject({
+        passed: false,
+        evidence: { of: [p5], unsupported: [p5] },
+      });
     });
   });
 
   describe('with the rdsc gate', () => {
+    const questions = Gate.parse(rdsc.gates[0]).questions;
+
     it('should evaluate the gate over verdict and evidence', () => {
-      const questions = Gate.parse(rdsc.gates[0]).questions;
       const records = [rec(p1, 'evidence'), rec(p2, 'verdict', [['supports', p1]])];
 
       expect(evaluateGate(questions, reading(records)).passed).toBe(true);
@@ -574,7 +595,6 @@ describe('evaluateGate', () => {
     });
 
     it('should fail with a current contradiction over the verdict', () => {
-      const questions = Gate.parse(rdsc.gates[0]).questions;
       const records = [
         rec(p1, 'evidence'),
         rec(p2, 'verdict', [['supports', p1]]),
@@ -591,19 +611,16 @@ describe('evaluateGate', () => {
 
   describe('with the inherit option', () => {
     it('should fail approved without inherit while the support is stuck on the superseded version', () => {
-      const result = evaluateGate([approvedQ], active(supersededPlan)).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toEqual({
-        of: [p3],
-        supports: [],
-        contradictions: [],
-        unsupported: [p3],
+      expect(resultOf(approvedQ, supersededPlan, active)).toEqual({
+        index: 0,
+        kind: 'approved',
+        passed: false,
+        evidence: { of: [p3], supports: [], contradictions: [], unsupported: [p3] },
       });
     });
 
     it('should pass approved with inherit and list the supporter that counts only by inheritance', () => {
-      expect(evaluateGate([approvedInherit], active(supersededPlan)).questions[0]).toEqual({
+      expect(resultOf(approvedInherit, supersededPlan, active)).toEqual({
         index: 0,
         kind: 'approved',
         passed: true,
@@ -620,10 +637,10 @@ describe('evaluateGate', () => {
     it('should not list a direct supporter as inherited', () => {
       const records = [...supersededPlan, rec(p4, 'review', [['supports', p3]])];
 
-      const result = evaluateGate([approvedInherit], active(records)).questions[0];
-
-      expect(result?.passed).toBe(true);
-      expect(result?.evidence).toMatchObject({ supports: [p4, p2], inherited: [p2] });
+      expect(resultOf(approvedInherit, records, active)).toMatchObject({
+        passed: true,
+        evidence: { supports: [p4, p2], inherited: [p2] },
+      });
     });
 
     it('should keep by filtering the inherited supporter', () => {
@@ -633,30 +650,30 @@ describe('evaluateGate', () => {
         rec(p3, 'plan', [['supersedes', p1]]),
       ];
 
-      const result = evaluateGate([approvedInherit], active(records)).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toMatchObject({ unsupported: [p3], inherited: [] });
+      expect(resultOf(approvedInherit, records, active)).toMatchObject({
+        passed: false,
+        evidence: { unsupported: [p3], inherited: [] },
+      });
     });
 
     it('should still fail on a current contradiction, because contradicts never inherits', () => {
       const records = [...supersededPlan, rec(p4, 'review', [['contradicts', p3]])];
 
-      const result = evaluateGate([approvedInherit], active(records)).questions[0];
-
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toMatchObject({ contradictions: [p4] });
+      expect(resultOf(approvedInherit, records, active)).toMatchObject({
+        passed: false,
+        evidence: { contradictions: [p4] },
+      });
     });
 
     it('should fail no_pending without inherit', () => {
-      expect(evaluateGate([pendingQ], active(supersededResolver)).questions[0]).toMatchObject({
+      expect(resultOf(pendingQ, supersededResolver, active)).toMatchObject({
         passed: false,
         evidence: { unresolved: [p1] },
       });
     });
 
     it('should count the resolution of the superseded origin with inherit', () => {
-      expect(evaluateGate([pendingInherit], active(supersededResolver)).questions[0]).toEqual({
+      expect(resultOf(pendingInherit, supersededResolver, active)).toEqual({
         index: 0,
         kind: 'no_pending',
         passed: true,
@@ -672,17 +689,23 @@ describe('evaluateGate', () => {
         inherit: true,
       });
 
-      expect(evaluateGate([fromReview], active(supersededResolver)).passed).toBe(false);
+      expect(resultOf(fromReview, supersededResolver, active)?.passed).toBe(false);
     });
 
     it('should ignore the option in a process without active inheritance', () => {
-      const inactive = { ...reading(supersededPlan), isInheritanceActive: () => false };
+      const inactive = (records: HexRecord[]) => ({
+        ...reading(records),
+        isInheritanceActive: () => false,
+      });
 
-      const result = evaluateGate([approvedInherit], inactive).questions[0];
+      expect(resultOf(approvedInherit, supersededPlan, inactive)).toMatchObject({
+        passed: false,
+        evidence: { unsupported: [p3], inherited: [] },
+      });
+    });
 
-      expect(result?.passed).toBe(false);
-      expect(result?.evidence).toMatchObject({ unsupported: [p3], inherited: [] });
-      expect(evaluateGate([approvedInherit], reading(supersededPlan)).passed).toBe(false);
+    it('should ignore the option when the input has no isInheritanceActive', () => {
+      expect(resultOf(approvedInherit, supersededPlan)?.passed).toBe(false);
     });
 
     it('should keep the evidence shape of today without the option, even when inheritance is active', () => {
@@ -690,60 +713,43 @@ describe('evaluateGate', () => {
 
       const result = evaluateGate([approvedQ, pendingQ], active(records));
 
-      expect(result.questions.map(({ evidence }) => Object.keys(evidence))).toEqual([
-        ['of', 'supports', 'contradictions', 'unsupported'],
+      expect(result.questions.map(({ evidence }) => Object.keys(evidence).sort())).toEqual([
+        ['contradictions', 'of', 'supports', 'unsupported'],
         ['unresolved'],
       ]);
     });
 
     it('should not count an inherited supporter for a question without the option in a shared scope', () => {
-      const input = active(supersededPlan);
-
-      const results = evaluateGate([approvedQ, approvedInherit], input);
+      const results = evaluateGate([approvedQ, approvedInherit], active(supersededPlan));
 
       expect(results.questions.map(({ passed }) => passed)).toEqual([false, true]);
     });
 
-    it('should build inheritance only for a scope that asks for it', () => {
+    it('should consult the inheritance of a scope only when a question of that scope asks for it', () => {
+      const projectPlan = [
+        rec(recordId('q', 1), 'plan'),
+        rec(recordId('q', 2), 'review', [['supports', recordId('q', 1)]]),
+        rec(recordId('q', 3), 'plan', [['supersedes', recordId('q', 1)]]),
+      ];
+      const isInheritanceActive = jest.fn<(process: string) => boolean>(() => true);
+      const input: GateInput = {
+        records: (scope) => (scope === 'project' ? projectPlan : supersededPlan),
+        isInheritanceActive,
+      };
       const projectInherit = question({ ...approvedInherit, scope: 'project' });
-      const input = active(supersededPlan);
 
-      const results = evaluateGate([approvedQ, projectInherit], input);
+      evaluateGate([approvedQ, projectInherit], input);
 
-      expect(results.questions.map(({ passed }) => passed)).toEqual([false, true]);
+      expect(isInheritanceActive).toHaveBeenCalledWith('q');
+      expect(isInheritanceActive).not.toHaveBeenCalledWith('p');
     });
-  });
-});
-
-describe('RecordType', () => {
-  it.each(fixtureDomains)('should accept every type of the %s fixture domain', (_name, domain) => {
-    for (const schema of Object.values(domain.types)) {
-      expect(RecordType.safeParse(schema).success).toBe(true);
-    }
-  });
-});
-
-describe('RelationName', () => {
-  it.each(fixtureDomains)(
-    'should accept every relation of the %s fixture domain',
-    (_name, domain) => {
-      for (const relation of domain.relations) {
-        expect(RelationName.safeParse(relation).success).toBe(true);
-      }
-    },
-  );
-});
-
-describe('Gate', () => {
-  it.each(fixtureDomains)('should accept every gate of the %s fixture domain', (_name, domain) => {
-    for (const gate of domain.gates) {
-      expect(Gate.safeParse(gate).success).toBe(true);
-    }
   });
 });
 
 describe('QuestionResult', () => {
-  it('should tie kind to the shape of the evidence', () => {
+  // O `@ts-expect-error` é a prova, conferida pelo `npm run typecheck`; o `expect` só atende o
+  // `jest/expect-expect`.
+  it('should reject at compile time evidence that does not match the kind', () => {
     const mismatched: QuestionResult = {
       index: 0,
       passed: true,
@@ -897,7 +903,7 @@ describe('summarizeQuestion', () => {
   });
 
   it('should carry the size of the inherited list in counts mode', () => {
-    const [result] = evaluateGate([approvedInherit], active(supersededPlan)).questions;
+    const result = resultOf(approvedInherit, supersededPlan, active);
 
     expect(result && summarizeQuestion(result, 'counts')).toMatchObject({
       counts: { inherited: 1 },

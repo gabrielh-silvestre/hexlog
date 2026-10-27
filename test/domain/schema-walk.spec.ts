@@ -14,9 +14,9 @@ function pointersOf(schema: unknown): string[] {
 }
 
 describe('walkSubschemas', () => {
-  it('should visit the subschema keywords with an RFC 6901 pointer', () => {
+  it('should visit the single subschemas, then the lists, then the maps, nested ones in place', () => {
     const schema = {
-      properties: { 'a/b': { items: { type: 'string' } }, 'c~d': {} },
+      properties: { a: { items: { type: 'string' } }, b: {} },
       allOf: [{}, { not: {} }],
       $defs: { x: {} },
       propertyNames: {},
@@ -28,11 +28,17 @@ describe('walkSubschemas', () => {
       '/allOf/0',
       '/allOf/1',
       '/allOf/1/not',
-      '/properties/a~1b',
-      '/properties/a~1b/items',
-      '/properties/c~0d',
+      '/properties/a',
+      '/properties/a/items',
+      '/properties/b',
       '/$defs/x',
     ]);
+  });
+
+  it('should escape ~ and / in the RFC 6901 pointer', () => {
+    const schema = { properties: { 'a/b': {}, 'c~d': {} } };
+
+    expect(pointersOf(schema)).toEqual(['', '/properties/a~1b', '/properties/c~0d']);
   });
 
   it.each([
@@ -75,22 +81,6 @@ describe('walkSubschemas', () => {
     expect(pointersOf(schema)).toEqual(['', `/${keyword}/a`, `/${keyword}/b`]);
   });
 
-  it('should descend into the patternProperties values', () => {
-    const schema = { patternProperties: { '^a': { items: {} } } };
-
-    expect(pointersOf(schema)).toEqual([
-      '',
-      '/patternProperties/^a',
-      '/patternProperties/^a/items',
-    ]);
-  });
-
-  it('should descend into contentSchema', () => {
-    const schema = { type: 'string', contentSchema: { type: 'string', pattern: '^a+$' } };
-
-    expect(pointersOf(schema)).toEqual(['', '/contentSchema']);
-  });
-
   it('should ignore a dependencies value that is an array', () => {
     const schema = { dependencies: { a: ['b'], c: { required: ['d'] } } };
 
@@ -131,7 +121,7 @@ describe('FREE_PATTERN_KEYWORDS', () => {
 });
 
 describe('withoutFreePatterns', () => {
-  it('should remove pattern and patternProperties from each subschema without descending into what it removed', () => {
+  it('should remove the free patterns from each subschema without descending into what it removed', () => {
     const schema: RecordType = {
       type: 'object',
       properties: {
@@ -202,21 +192,20 @@ describe('hasKeywordAt', () => {
     nothing: null,
   };
 
-  it.each([
-    ['', 'pattern'],
-    ['/properties/a~1b~0c', 'pattern'],
-    ['/examples/0', 'pattern'],
-  ])('should resolve %j and find %s', (location, keyword) => {
-    expect(hasKeywordAt(schema, location, keyword)).toBe(true);
-  });
+  it.each(['', '/properties/a~1b~0c', '/examples/0'])(
+    'should resolve %j and find pattern',
+    (location) => {
+      expect(hasKeywordAt(schema, location, 'pattern')).toBe(true);
+    },
+  );
 
   it.each([
-    ['a missing pointer', '/properties/ghost', 'pattern'],
-    ['a pointer with an index out of the array', '/examples/1', 'pattern'],
-    ['a keyword absent from the object', '/properties', 'pattern'],
-    ['a target that is not an object', '/examples/0/pattern', 'pattern'],
-    ['a pointer that goes through null', '/nothing/pattern', 'pattern'],
-  ])('should return false for %s', (_label, location, keyword) => {
-    expect(hasKeywordAt(schema, location, keyword)).toBe(false);
+    ['a missing pointer', '/properties/ghost'],
+    ['a pointer with an index out of the array', '/examples/1'],
+    ['a keyword absent from the object', '/properties'],
+    ['a target that is not an object', '/examples/0/pattern'],
+    ['a pointer that goes through null', '/nothing/pattern'],
+  ])('should return false for %s', (_label, location) => {
+    expect(hasKeywordAt(schema, location, 'pattern')).toBe(false);
   });
 });

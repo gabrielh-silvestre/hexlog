@@ -13,11 +13,24 @@ import {
 } from '../../src/domain/ids.ts';
 
 describe('Name', () => {
-  it.each(['a', 'a-b1', '0a', 'x'.repeat(63)])('should accept %s', (value) => {
+  it.each([
+    ['a letter', 'a'],
+    ['a hyphen and a digit', 'a-b1'],
+    ['a leading digit', '0a'],
+    ['63 characters', 'x'.repeat(63)],
+  ])('should accept %s', (_label, value) => {
     expect(Name.safeParse(value).success).toBe(true);
   });
 
-  it.each(['', 'A', '-a', 'a_b', 'a.b', 'a:b', 'x'.repeat(64)])('should reject %s', (value) => {
+  it.each([
+    ['empty', ''],
+    ['an uppercase letter', 'A'],
+    ['a leading hyphen', '-a'],
+    ['an underscore', 'a_b'],
+    ['a dot', 'a.b'],
+    ['a colon', 'a:b'],
+    ['64 characters', 'x'.repeat(64)],
+  ])('should reject a name with %s', (_label, value) => {
     expect(Name.safeParse(value).success).toBe(false);
   });
 
@@ -27,11 +40,21 @@ describe('Name', () => {
 });
 
 describe('alias', () => {
-  it.each(['a', 'plan-1', 'x'.repeat(63)])('should accept %s', (value) => {
+  it.each([
+    ['a letter', 'a'],
+    ['a hyphen and a digit', 'plan-1'],
+    ['63 characters', 'x'.repeat(63)],
+  ])('should accept an alias with %s', (_label, value) => {
     expect(alias.safeParse(value).success).toBe(true);
   });
 
-  it.each(['@a', '', 'A', '-a', 'x'.repeat(64)])('should reject %s', (value) => {
+  it.each([
+    ['a leading @', '@a'],
+    ['empty', ''],
+    ['an uppercase letter', 'A'],
+    ['a leading hyphen', '-a'],
+    ['64 characters', 'x'.repeat(64)],
+  ])('should reject an alias with %s', (_label, value) => {
     expect(alias.safeParse(value).success).toBe(false);
   });
 });
@@ -42,13 +65,13 @@ describe('Hash', () => {
   });
 
   it.each([
-    'a'.repeat(63),
-    'A'.repeat(64),
-    'g'.repeat(64),
-    `${'a'.repeat(64)}g`,
-    `g${'a'.repeat(64)}`,
-    'a'.repeat(65),
-  ])('should reject %s', (value) => {
+    ['63 characters', 'a'.repeat(63)],
+    ['uppercase', 'A'.repeat(64)],
+    ['a non-hexadecimal character', 'g'.repeat(64)],
+    ['a trailing extra character', `${'a'.repeat(64)}g`],
+    ['a leading extra character', `g${'a'.repeat(64)}`],
+    ['65 characters', 'a'.repeat(65)],
+  ])('should reject a hash with %s', (_label, value) => {
     expect(Hash.safeParse(value).success).toBe(false);
   });
 });
@@ -73,19 +96,27 @@ describe('Instant', () => {
 describe('Target', () => {
   const at200 = [...Array<string>(3).fill('x'.repeat(63)), 'y'.repeat(8)].join('.');
 
-  it.each(['a', 'a.b.c', 'rdsc.card-1', `${'x'.repeat(63)}.${'y'.repeat(63)}`])(
-    'should accept %s',
-    (value) => {
-      expect(Target.safeParse(value).success).toBe(true);
-    },
-  );
+  it.each([
+    ['one segment', 'a'],
+    ['three segments', 'a.b.c'],
+    ['a hyphen and a digit', 'rdsc.card-1'],
+    ['two segments of 63 characters', `${'x'.repeat(63)}.${'y'.repeat(63)}`],
+  ])('should accept a target with %s', (_label, value) => {
+    expect(Target.safeParse(value).success).toBe(true);
+  });
 
-  it.each(['', 'a.', '.a', 'a..b', 'A.b', 'a b', 'a:b', 'hex:target:x'])(
-    'should reject %s',
-    (value) => {
-      expect(Target.safeParse(value).success).toBe(false);
-    },
-  );
+  it.each([
+    ['empty', ''],
+    ['a trailing dot', 'a.'],
+    ['a leading dot', '.a'],
+    ['an empty segment', 'a..b'],
+    ['an uppercase letter', 'A.b'],
+    ['a space', 'a b'],
+    ['a colon', 'a:b'],
+    ['colons in the form of an id', 'hex:target:x'],
+  ])('should reject a target with %s', (_label, value) => {
+    expect(Target.safeParse(value).success).toBe(false);
+  });
 
   it('should accept a target of exactly 200 characters', () => {
     expect(at200).toHaveLength(200);
@@ -106,14 +137,14 @@ describe('RecordId', () => {
   });
 
   it.each([
-    'proc-1',
-    'proc-1:',
-    `:${randomUUIDv7()}`,
-    'proc-1:123e4567-e89b-42d3-a456-426614174000',
-    'proc-1:0198F4A0-0000-7000-8000-000000000001',
-    `a:b:${randomUUIDv7()}`,
-    `Proc:${randomUUIDv7()}`,
-  ])('should reject %s', (value) => {
+    ['no uuid', 'proc-1'],
+    ['an empty uuid', 'proc-1:'],
+    ['no process', `:${randomUUIDv7()}`],
+    ['a uuid that is not v7', 'proc-1:123e4567-e89b-42d3-a456-426614174000'],
+    ['an uppercase uuid', 'proc-1:0198F4A0-0000-7000-8000-000000000001'],
+    ['two colons', `a:b:${randomUUIDv7()}`],
+    ['an uppercase process', `Proc:${randomUUIDv7()}`],
+  ])('should reject an id with %s', (_label, value) => {
     expect(RecordId.safeParse(value).success).toBe(false);
   });
 });
