@@ -1,6 +1,7 @@
 // Borda de I/O do runner do critic da cadeira do dono: mailbox em `os.tmpdir()`, lock por pergunta,
 // processo filho em stream com timeout por inatividade, retry e contadores. Uma execução da CLI do
 // critic por pergunta (`claude -p --resume`, `agy -p --conversation`), sem processo permanente.
+// Também lê o doc do catálogo de ações (`critic-catalog.ts` é puro) e congela as regras na mailbox.
 // Só builtins do Node e sem `import.meta`, para o jest carregá-lo; o `critic.ts` liga o argv.
 // Tempos, backoff, teto de texto e o leitor de `/proc` entram por parâmetro: os specs injetam
 // valores pequenos, a CLI usa `DEFAULT_TIMING`.
@@ -11,9 +12,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { escapeControls } from '../escape-controls.ts';
+import { parseCatalog, renderActions, type Column } from './critic-catalog.ts';
 import {
   buildCommand,
   buildPrompt,
+  buildRules,
   classifyFailure,
   EMPTY_TURN,
   foldTurn,
@@ -86,6 +89,8 @@ type Session = {
 };
 
 const sessionFile = (mailbox: string) => path.join(mailbox, 'session.json');
+const rulesFile = (mailbox: string) => path.join(mailbox, 'rules.txt');
+const readRules = (mailbox: string): string => fs.readFileSync(rulesFile(mailbox), 'utf8');
 
 function writeAtomic(file: string, data: string, mode: number): void {
   const staged = `${file}.${randomUUID()}.tmp`;
@@ -314,7 +319,43 @@ export type StartOptions = {
   cwd: string;
   tmpdir?: string;
   claudeJsonPath?: string;
+  /** Doc do catálogo de ações; padrão `<cwd>/docs/directives/cadeira-do-dono.md`. */
+  catalogPath?: string;
 };
+
+export const catalogPathOf = (cwd: string): string =>
+  path.join(cwd, 'docs', 'directives', 'cadeira-do-dono.md');
+
+/**
+ * Regras do critic geradas do doc do catálogo para a coluna (transporte), ou o motivo de o doc não
+ * servir. "catálogo ilegível" é o literal que a skill `flow-run` (seção 6, saída 3) espera, por isso
+ * a mensagem mistura idiomas; o erro do parser traz o cabeçalho esperado.
+ */
+function loadRules(column: Column, catalogPath: string): { rules: string } | { problem: string } {
+  try {
+    const catalog = parseCatalog(fs.readFileSync(catalogPath, 'utf8'));
+    return { rules: escapeControls(buildRules(renderActions(catalog, column))) };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { problem: `catálogo ilegível (${catalogPath}): ${detail}` };
+  }
+}
+
+/** `rules <arquivo>`: grava as regras do transporte Herdr (`0600`, atômico); sem arquivo se o doc não serve. */
+export function writeRules({
+  tool,
+  file,
+  catalogPath,
+}: {
+  tool: Tool;
+  file: string;
+  catalogPath: string;
+}): Reply {
+  const loaded = loadRules(tool === 'claude' ? 'claude-herdr' : 'agy', catalogPath);
+  if ('problem' in loaded) return reply(EXIT.unavailable, loaded.problem);
+  writeAtomic(file, loaded.rules, 0o600);
+  return reply(EXIT.ok, file);
+}
 
 /** Pré-condição que falta para o critic subir, ou `undefined` com tudo no lugar. */
 function missingPrecondition(tool: Tool, server: object | undefined): string | undefined {
@@ -337,6 +378,7 @@ export function startSession({
   cwd,
   tmpdir = os.tmpdir(),
   claudeJsonPath = path.join(os.homedir(), '.claude.json'),
+  catalogPath = catalogPathOf(cwd),
 }: StartOptions): Reply {
   if (!SLUG.test(slug)) return reply(EXIT.usage, `invalid slug "${slug}"`);
   if (!fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) {
@@ -345,6 +387,8 @@ export function startSession({
   const server = hexlogServer(claudeJsonPath);
   const problem = missingPrecondition(tool, server);
   if (problem !== undefined) return reply(EXIT.unavailable, problem);
+  const loaded = loadRules(tool === 'claude' ? 'claude-runner' : 'agy', catalogPath);
+  if ('problem' in loaded) return reply(EXIT.unavailable, loaded.problem);
 
   const mailbox = fs.mkdtempSync(path.join(tmpdir, `${MAILBOX_PREFIX}${slug}-`));
   try {
@@ -353,6 +397,7 @@ export function startSession({
       JSON.stringify({ mcpServers: { hexlog: server } }),
       0o600,
     );
+    writeAtomic(rulesFile(mailbox), loaded.rules, 0o600);
     writeSession(mailbox, {
       tool,
       cwd,
@@ -382,6 +427,7 @@ function turnFor(session: Session, mailbox: string, prompt: string): Turn {
   const known = session.sessionId;
   return {
     prompt,
+    rules: readRules(mailbox),
     mcpConfigPath: path.join(mailbox, 'mcp.json'),
     resume: known !== null,
     // o Claude precisa do id antes de falar; o `agy` só o recebe depois do primeiro evento
@@ -480,6 +526,7 @@ function pendingPrompt(
     n,
     first,
     current,
+    rules: readRules(mailbox),
   });
   if (Buffer.byteLength(prompt) > PROMPT_MAX_BYTES) {
     return {
@@ -532,6 +579,10 @@ export async function askQuestion(
   const mailbox = path.resolve(given);
   if (!fs.existsSync(sessionFile(mailbox))) {
     return reply(EXIT.missingMailbox, `mailbox not found: ${mailbox}`);
+  }
+  // mailbox de antes do catálogo: as regras nasceram no `start`, o `flow-run` sobe um substituto
+  if (!fs.existsSync(rulesFile(mailbox))) {
+    return reply(EXIT.missingMailbox, 'mailbox without rules.txt: run start again');
   }
   const controller = new AbortController();
   const handlers = (Object.keys(SIGNAL_EXIT) as (keyof typeof SIGNAL_EXIT)[]).map((name) => {

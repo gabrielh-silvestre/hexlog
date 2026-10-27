@@ -4,7 +4,7 @@
 
 const SECTION_HEADING = '## Catálogo de ações';
 const COLUMNS = ['claude-herdr', 'claude-runner', 'agy'] as const;
-type Column = (typeof COLUMNS)[number];
+export type Column = (typeof COLUMNS)[number];
 
 const ACTIONS_HEADER = '| Ação | Entrada | Saída | Quando é permitida |';
 const AVAILABILITY_HEADER = `| Ação | ${COLUMNS.join(' | ')} |`;
