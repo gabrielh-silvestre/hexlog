@@ -704,14 +704,20 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
     expect(literal).toEqual(Object.keys(catalog.choice));
   });
 
-  it('should generate the rules file for the Herdr critic and point the Claude one to it in one line', () => {
+  it('should generate the rules file for the Herdr critic and load it by `--append-system-prompt-file`', () => {
     const run = skill('flow-run');
 
     expect(run).toContain('node scripts/flow/critic.ts rules --tool <claude|agy> --cwd <worktree>');
     expect(run).not.toContain('.ignore/flow/<slug>/critic-rules.txt');
-    expect(run).toContain(
-      '--append-system-prompt "Antes de qualquer resposta, leia com Read o arquivo <caminho do arquivo de regras>, que traz suas regras e o catálogo de ações, e releia-o se o contexto for compactado."',
-    );
+    expect(run).toContain('--append-system-prompt-file <caminho do arquivo de regras>');
+  });
+
+  it('should not make the Herdr critic depend on `Read` outside the `cwd` to load the rules', () => {
+    const run = skill('flow-run');
+
+    expect(run).not.toContain('--append-system-prompt "');
+    expect(run).not.toContain('leia com Read o arquivo');
+    expect(run).not.toContain('--add-dir');
   });
 
   it('should prefix every agy prompt with the rules file instead of the old constant', () => {

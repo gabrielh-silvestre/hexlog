@@ -144,15 +144,15 @@ Roteiro manual, fora do CI, que gasta Opus e a cota do `agy`: só com pedido exp
 
 | Caso | Transporte | Classe | Natureza | Mensagem traz | Esperado |
 |---|---|---|---|---|---|
-| a1 | `claude-herdr` | comum | `repo-fact` (leitura de código fora de docs e hexlog) | | `local` e `actionUsed=local`; repete, com o critic real, a sonda de Haiku de 2026-10-27 (o `Read` do arquivo de regras em `os.tmpdir()`, fora do `cwd`) e prova o canal da frase de uma linha no fluxo completo |
-| a2 | `claude-herdr` | comum | `external-fact` | | `web`, ou o registro de que `document-specialist` não alcança a web nesse transporte |
+| a1 | `claude-herdr` | comum | `repo-fact` (leitura de código fora de docs e hexlog) | | `local` e `actionUsed=local`; prova, com o critic real e a linha de lançamento completa, que o `--append-system-prompt-file` carrega as regras no Herdr (o critic cita uma regra do arquivo antes de agir); a flag não aparece no `--help` da CLI 2.1.311, onde uma sonda em `-p` a aceitou |
+| a2 | `claude-herdr` | comum | `external-fact` | | `local` ou `jury`, nunca `web` (célula `—`), ou `sem resposta` se `local` não servir a um fato externo; se `document-specialist` alcançar a web nesse transporte, a célula troca para `document-specialist` no mesmo commit |
 | a3 | `claude-herdr` | comum | `choice` (a evidência local não decide) | | `jury` |
 | a4 | `claude-runner` | crítica | `external-fact` | | `jury`, premissa sem `fills-gap` |
 | b | `claude-runner` | comum | `choice` | `Unavailable: jury` | `web` e `actionUsed=web` |
-| b2 | `agy` no Herdr | crítica | `choice` | | `actionUsed` em `web` ou `local`, nunca `jury`; o aval mostra a marca; confirma se o `agy` tem busca web |
+| b2 | `agy` no Herdr | crítica | `choice` | | `actionUsed` em `local`, nunca `jury` nem `web` (célula `—`); o aval mostra a marca; se o `agy` tiver busca web, a célula troca para `próprio` no mesmo commit |
 | c | `claude-runner` | comum | `choice` | `Unavailable: jury, web, local` | `sem resposta`, motivo no `attach`, nenhuma premissa `simulated` |
 | d (opcional) | qualquer | comum | `choice` | `Unavailable: jury` | só em processo sem `actionUsed` fixado: `sem resposta` |
 
-O `agy` no runner usa o mesmo código e a mesma coluna que no Herdr; o canal do Herdr é o que b2 prova. Se a sonda mostrar que o `agy` não tem busca web ou que o Herdr não alcança a web, a célula da tabela do doc muda no mesmo commit.
+O `agy` no runner usa o mesmo código e a mesma coluna que no Herdr; o canal do Herdr é o que b2 prova. As células `web` de `claude-herdr` e `agy` ficam `—` até a2 e b2 provarem o canal; a prova troca a célula da tabela do doc no mesmo commit.
 
 Regras completas e o que o CI repete: [qualidade-e-testes.md](directives/qualidade-e-testes.md), [instalacao-e-hooks.md](directives/instalacao-e-hooks.md) e [fluxo-hexlog.md](directives/fluxo-hexlog.md).

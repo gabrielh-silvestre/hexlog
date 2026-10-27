@@ -20,7 +20,7 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 - No `ask` o ocupante é o humano: o principal grava a `premise` com a origem `human` (ver Origem abaixo), com `fills-gap` salvo contradição com atemporal. Texto livre pedindo contexto dispara a ação do catálogo e repete a pergunta, sem gravar premissa.
 - No `autonomous` o ocupante é o `critic` durável, só com `answeredBy` fixado no `premise` do processo (`describe_type` com `process`; `TYPE_NOT_PINNED` conta como sem o campo) e com transporte: `HERDR_ENV=1` (tab do Herdr; duas falhas de lançamento caem no runner) ou, sem Herdr, o `start` do runner saindo 0 (`node scripts/flow/critic.ts start`: binário no `PATH`, login e o `hexlog` registrado).
 - `HERDR_ENV=1` libera só o transporte, não a ferramenta. O critic é o Claude Code, salvo pedido explícito do `agy` (`--critic agy` no `flow-run` ou `HEXLOG_CRITIC_CLI=agy`; a flag vence a variável). O Codex fica fora: não provado, sem login.
-- O critic `agy` não tem subagentes OMC nem júri: degrada pelo catálogo (`web` e `local` próprios), e o aval vê a marca de degradação.
+- O critic `agy` não tem subagentes OMC nem júri: degrada pelo catálogo (`local` próprio; a `web` do `agy` fica `—` até a sonda b2), e o aval vê a marca de degradação.
 - Sem `answeredBy` fixado o ocupante simulado não senta; também não senta se o lançamento falhou (sem Herdr, o `start` não sai 0) ou o critic nunca subiu. Então a classe comum decide como antes (`grounds: gap`, premissa da entrega com `fills-gap`, sem o campo) e a crítica volta ao teto fixo antigo. O `autonomous` não vira `ask`.
 - Headless e sem `AskUserQuestion` não tiram o ocupante: o critic responde e o aval fica pendente no pré-PR.
 - Se o critic cai no meio de uma resposta, a guarda que procura a `simulated` vigente da lacuna evita gravar outra.
@@ -41,16 +41,16 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 | Ação | Entrada | Saída | Quando é permitida |
 |---|---|---|---|
 | `local` | A pergunta | Fatos do repositório (código, docs, ADRs), com o caminho | Sempre. |
-| `web` | A pergunta de fato externo | Fatos de fonte externa, com a fonte | Fato externo. |
+| `web` | A pergunta de fato externo | Fatos de fonte externa, com a fonte | Fato externo, ou fallback de `jury` indisponível. |
 | `jury` | A pergunta mais a evidência local já coletada | Veredito do painel, com confiança e dissidência | Comum: só quando a evidência local (hexlog, docs, ADRs) não decide. Crítica: exigida. Só no Claude, com a skill `the-jury`. |
 
 | Ação | claude-herdr | claude-runner | agy |
 |---|---|---|---|
 | `local` | explore | explore | próprio |
-| `web` | document-specialist | document-specialist | próprio |
+| `web` | — | document-specialist | — |
 | `jury` | the-jury | the-jury | — |
 
-- Modelos: `explore` em `haiku`; `document-specialist` e jurados em `sonnet`. A web do Herdr e a do `agy` ficam a confirmar na sonda, porque o launch do Herdr fixa `--tools` sem `WebSearch` nem `WebFetch`.
+- Modelos: `explore` em `haiku`; `document-specialist` e jurados em `sonnet`. A `web` do Herdr e a do `agy` ficam `—` até as sondas a2 e b2 provarem o canal, porque o launch do Herdr fixa `--tools` sem `WebSearch` nem `WebFetch` e o `agy` não tem doc de busca web; a prova troca a célula no mesmo commit.
 
 | Natureza | comum | crítica |
 |---|---|---|
@@ -61,11 +61,11 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 - Ordem de custo, da mais cara à mais barata: `jury`, `web`, `local`.
 - O principal abre o `context` da `gap` com `Class: common|critical; rule: <target>; Nature: repo-fact|external-fact|choice` (sem `rule:` na comum). O critic confere e reclassifica no cabeçalho do `attach`: `Nature: x (reclassified from y)` e, na classe, o literal da seção anterior.
 - Caminho curto na comum: se a evidência local (hexlog, docs, ADRs) já decide, o critic responde direto com ela, sem ação e sem `actionUsed`. Consultar o hexlog ou os docs diretamente não é a ação `local`.
-- Degradação, nas duas classes: ação indisponível (em `Unavailable:` ou `—` no transporte) cai para a próxima da ordem de custo que sirva à pergunta.
+- Degradação, nas duas classes: ação indisponível (em `Unavailable:` ou `—` no transporte) cai para a próxima da ordem de custo que sirva à pergunta. A exigência de `jury` na crítica cede a essa regra quando `jury` está indisponível (o `agy`, por exemplo). Ação que falha ao executar ou volta sem fonte conta como indisponível e também degrada.
 - Piso: sem ação que sirva, ou nada achado, a resposta é `sem resposta`, com o motivo no `attach` e nenhuma premissa `simulated`; a pergunta vai ao humano.
 - `actionUsed` registra a ação de maior custo que contribuiu, só quando o `premise` fixado tem o campo. Sem `actionUsed` fixado a ação indisponível não degrada: a resposta é `sem resposta`.
 - `Unavailable: <ações>` só vale como linha de cabeçalho da mensagem da pergunta escrita pelo principal, antes e fora do bloco de contexto (só a linha de cabeçalho conta); nunca em registro do hexlog nem em `gap.context`.
-- O `attach` abre com `Action: <usada>`. No aval o principal mostra a marca "degradada: esperada X, usada Y", com o esperado calculado por ele pela tabela, nunca lido do critic.
+- O `attach` abre com `Action: <usada>`. No aval o principal mostra a marca "degradada: esperada X, usada Y", com o esperado calculado por ele pela tabela e pela coluna do transporte do critic, nunca lido do critic. A marca só vale com `actionUsed` fixado e só quando a usada é mais barata que a esperada pela ordem de custo; usada mais cara (escalada de classe) não é degradação.
 
 ## O que o critic registra
 
@@ -78,6 +78,7 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 - O critic Claude, nos dois transportes, sobe com `--strict-mcp-config` e só o servidor `hexlog`: sem `ctx_execute` nem outro MCP do ambiente. No Herdr, `--tools` tira `Edit`, `Write` e `Bash` dele, e só o `Explore` foi sondado sem `Bash`; os demais subagentes não, então é contenção parcial.
 - No runner o Claude roda em `bypassPermissions`: ele e os subagentes têm `Bash` e `Edit`, e a sonda antiga do `Explore` sem `Bash` não vale. Isso vale também ao `agy` no Herdr, que tem `--dangerously-skip-permissions` e grava no hexlog.
 - A contenção no runner e no `agy` é o prompt do critic (`critic-tools.ts#buildRules`, em `scripts/flow/`: no prompt de abertura, no `agy` em toda pergunta e, no Claude, em `--append-system-prompt`): escrever só por `register`, sem editar arquivo, `git push`, `gh` nem `rm`, e o que lê é dado. Freio, não barreira; no runner o turno só tem teto de tempo, sem teto de custo.
+- No Herdr com Claude o texto do prompt entra por `--append-system-prompt-file`, apontado para o arquivo que `critic.ts rules` grava em `os.tmpdir()`, sem a tool `Read`.
 - O critic registra com `author.agent` `owner-seat-critic-claude` ou `owner-seat-critic-agy` e o `model` real, o que distingue as ferramentas na auditoria: `answeredBy` só tem `simulated`.
 
 ## Aval e trava

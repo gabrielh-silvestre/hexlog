@@ -19,7 +19,14 @@ const actionUsedEnum = premiseSchema.properties.actionUsed.enum;
 const ACTIONS_HEADER = '| Ação | Entrada | Saída | Quando é permitida |';
 const AVAILABILITY_HEADER = '| Ação | claude-herdr | claude-runner | agy |';
 const CHOICE_HEADER = '| Natureza | comum | crítica |';
+const HEADERS = [ACTIONS_HEADER, AVAILABILITY_HEADER, CHOICE_HEADER];
 const ORDER = '`jury`, `web`, `local`.';
+
+const editTable = (header: string, edit: (lines: string[], at: number) => void): string => {
+  const lines = doc.split('\n');
+  edit(lines, lines.indexOf(header));
+  return lines.join('\n');
+};
 
 const coherenceProblems = (
   catalog: ReturnType<typeof parseCatalog>,
@@ -58,11 +65,7 @@ describe('parseCatalog', () => {
     it('should return the availability of each action per transport, with a dash for none', () => {
       expect(catalog.availability).toEqual({
         local: { 'claude-herdr': 'explore', 'claude-runner': 'explore', agy: 'próprio' },
-        web: {
-          'claude-herdr': 'document-specialist',
-          'claude-runner': 'document-specialist',
-          agy: 'próprio',
-        },
+        web: { 'claude-herdr': '—', 'claude-runner': 'document-specialist', agy: '—' },
         jury: { 'claude-herdr': 'the-jury', 'claude-runner': 'the-jury', agy: '—' },
       });
     });
@@ -83,10 +86,27 @@ describe('parseCatalog', () => {
       expect(catalog.section).toMatch(/^## Catálogo de ações\n/);
       expect(catalog.section).not.toContain('## O que o critic registra');
     });
+
+    it('should return the same section when no heading follows it', () => {
+      const lastSection = doc.slice(0, doc.indexOf('## O que o critic registra'));
+
+      expect(parseCatalog(lastSection).section).toBe(catalog.section);
+    });
+
+    it.each(HEADERS)(
+      'should return the same catalog when the separator row has a trailing space: %s',
+      (header) => {
+        const spaced = editTable(header, (lines, at) => {
+          lines[at + 1] = `${lines[at + 1]} `;
+        });
+
+        expect(parseCatalog(spaced)).toEqual({ ...catalog, section: expect.any(String) });
+      },
+    );
   });
 
   describe('when the catalog is broken', () => {
-    it.each([ACTIONS_HEADER, AVAILABILITY_HEADER, CHOICE_HEADER])(
+    it.each(HEADERS)(
       'should throw naming the expected header when the table is missing or changed: %s',
       (header) => {
         const broken = doc.replace(header, '| Changed |');
@@ -106,23 +126,118 @@ describe('parseCatalog', () => {
 
       expect(() => parseCatalog(broken)).toThrow('Ordem de custo');
     });
+
+    it.each(HEADERS)(
+      'should throw when a blank line sits between the header and the separator: %s',
+      (header) => {
+        const broken = editTable(header, (lines, at) => lines.splice(at + 1, 0, ''));
+
+        expect(() => parseCatalog(broken)).toThrow(
+          `catalog table has no separator row right after header "${header}"`,
+        );
+      },
+    );
+
+    it.each(HEADERS)('should throw when the separator row is missing: %s', (header) => {
+      const broken = editTable(header, (lines, at) => lines.splice(at + 1, 1));
+
+      expect(() => parseCatalog(broken)).toThrow(
+        `catalog table has no separator row right after header "${header}"`,
+      );
+    });
+
+    it.each(HEADERS)('should throw when the table has no rows: %s', (header) => {
+      const broken = editTable(header, (lines, at) =>
+        lines.splice(
+          at + 2,
+          lines.slice(at + 2).findIndex((line) => !line.startsWith('|')),
+        ),
+      );
+
+      expect(() => parseCatalog(broken)).toThrow(
+        `catalog table has no rows under header "${header}"`,
+      );
+    });
+
+    it.each(HEADERS)('should throw naming the line when a row is indented: %s', (header) => {
+      const broken = editTable(header, (lines, at) => {
+        lines[at + 2] = ` ${lines[at + 2]}`;
+      });
+
+      expect(() => parseCatalog(broken)).toThrow(
+        `catalog table has an indented row under header "${header}": " |`,
+      );
+    });
+
+    it.each(HEADERS)('should throw when a row has more cells than the header: %s', (header) => {
+      const broken = editTable(header, (lines, at) => {
+        lines[at + 2] = `${lines[at + 2]} extra |`;
+      });
+
+      expect(() => parseCatalog(broken)).toThrow(
+        `catalog table has a malformed row under header "${header}"`,
+      );
+    });
+
+    it.each([
+      [ACTIONS_HEADER, 'local'],
+      [AVAILABILITY_HEADER, 'local'],
+      [CHOICE_HEADER, 'repo-fact'],
+    ])('should throw naming the action when a row repeats under %s', (header, name) => {
+      const broken = editTable(header, (lines, at) => lines.splice(at + 3, 0, lines[at + 2] ?? ''));
+
+      expect(() => parseCatalog(broken)).toThrow(
+        `catalog table has a duplicate row "${name}" under header "${header}"`,
+      );
+    });
+
+    it.each([
+      ['a hyphen', '-'],
+      ['an empty cell', ''],
+    ])(
+      'should throw naming the action and column when an availability cell is %s',
+      (_label, cell) => {
+        const broken = doc.replace(
+          '| `local` | explore | explore | próprio |',
+          `| \`local\` | ${cell} | explore | próprio |`,
+        );
+
+        expect(() => parseCatalog(broken)).toThrow(
+          `catalog availability cell for action "local" in column "claude-herdr" must be "—" or an agent/skill name, got "${cell}"`,
+        );
+      },
+    );
+
+    it.each([
+      ['has no backticks', 'jury, web, local.', 'jury, web, local'],
+      ['is incomplete', '`jury`, `web`.', '`jury`, `web`'],
+      ['cites an action outside the table', '`jury`, `web`, `robot`.', '`jury`, `web`, `robot`'],
+      ['repeats an action', '`jury`, `jury`, `local`.', '`jury`, `jury`, `local`'],
+    ])('should throw listing the actions when the cost order %s', (_label, order, got) => {
+      const broken = doc.replace(ORDER, order);
+
+      expect(() => parseCatalog(broken)).toThrow(
+        `catalog cost order must list each availability action exactly once in backticks (local, web, jury), got "${got}"`,
+      );
+    });
   });
 });
 
 describe('renderActions', () => {
   const catalog = parseCatalog(doc);
 
-  it('should return the literal section followed by the actions available to the transport', () => {
-    expect(renderActions(catalog, 'claude-herdr')).toBe(
-      `${catalog.section}\n\nações disponíveis para você (claude-herdr): jury, web, local`,
-    );
-  });
-
-  it('should leave jury out of the available actions for agy', () => {
-    const rendered = renderActions(catalog, 'agy');
-
-    expect(rendered).toMatch(/ações disponíveis para você \(agy\): web, local$/);
-  });
+  it.each([
+    ['claude-herdr', 'jury, local'],
+    ['claude-runner', 'jury, web, local'],
+    ['agy', 'local'],
+  ] as const)(
+    'should return the literal section followed by the actions available to %s',
+    (transport, available) => {
+      expect(renderActions(catalog, transport)).toBe(
+        `${catalog.section}\n\nações disponíveis para você (${transport}): ${available}`,
+      );
+    },
+  );
 
   it.each([
     'Consultar o hexlog ou os docs diretamente não é a ação `local`',
@@ -150,14 +265,18 @@ describe('cadeira-do-dono.md action catalog', () => {
       ]);
     });
 
-    it.each([
-      ['an action outside the catalog', '`jury`, `web`, `robot`.'],
-      ['a missing action', '`jury`, `web`.'],
-    ])('should fail when the cost order cites %s', (_label, order) => {
-      const catalog = parseCatalog(doc.replace(ORDER, order));
+    it('should fail when the actions table lacks an action the availability table lists', () => {
+      const catalog = parseCatalog(
+        doc.replace(
+          '| `web` | A pergunta de fato externo | Fatos de fonte externa, com a fonte | Fato externo, ou fallback de `jury` indisponível. |\n',
+          '',
+        ),
+      );
 
       expect(coherenceProblems(catalog, actionUsedEnum)).toEqual([
+        'actionUsed enum differs from the catalog actions',
         'cost order is not a permutation of the actions',
+        'choice table cites an action outside the catalog',
       ]);
     });
 
