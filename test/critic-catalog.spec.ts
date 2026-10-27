@@ -65,7 +65,11 @@ describe('parseCatalog', () => {
     it('should return the availability of each action per transport, with a dash for none', () => {
       expect(catalog.availability).toEqual({
         local: { 'claude-herdr': 'explore', 'claude-runner': 'explore', agy: 'próprio' },
-        web: { 'claude-herdr': '—', 'claude-runner': 'document-specialist', agy: '—' },
+        web: {
+          'claude-herdr': 'document-specialist',
+          'claude-runner': 'document-specialist',
+          agy: 'próprio',
+        },
         jury: { 'claude-herdr': 'the-jury', 'claude-runner': 'the-jury', agy: '—' },
       });
     });
@@ -227,9 +231,9 @@ describe('renderActions', () => {
   const catalog = parseCatalog(doc);
 
   it.each([
-    ['claude-herdr', 'jury, local'],
+    ['claude-herdr', 'jury, web, local'],
     ['claude-runner', 'jury, web, local'],
-    ['agy', 'local'],
+    ['agy', 'web, local'],
   ] as const)(
     'should return the literal section followed by the actions available to %s',
     (transport, available) => {

@@ -20,7 +20,7 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 - No `ask` o ocupante é o humano: o principal grava a `premise` com a origem `human` (ver Origem abaixo), com `fills-gap` salvo contradição com atemporal. Texto livre pedindo contexto dispara a ação do catálogo e repete a pergunta, sem gravar premissa.
 - No `autonomous` o ocupante é o `critic` durável, só com `answeredBy` fixado no `premise` do processo (`describe_type` com `process`; `TYPE_NOT_PINNED` conta como sem o campo) e com transporte: `HERDR_ENV=1` (tab do Herdr; duas falhas de lançamento caem no runner) ou, sem Herdr, o `start` do runner saindo 0 (`node scripts/flow/critic.ts start`: binário no `PATH`, login e o `hexlog` registrado).
 - `HERDR_ENV=1` libera só o transporte, não a ferramenta. O critic é o Claude Code, salvo pedido explícito do `agy` (`--critic agy` no `flow-run` ou `HEXLOG_CRITIC_CLI=agy`; a flag vence a variável). O Codex fica fora: não provado, sem login.
-- O critic `agy` não tem subagentes OMC nem júri: degrada pelo catálogo (`local` próprio; a `web` do `agy` fica `—` até a sonda b2), e o aval vê a marca de degradação.
+- O critic `agy` não tem subagentes OMC nem júri: degrada pelo catálogo (`web` e `local` próprios), e o aval vê a marca de degradação.
 - Sem `answeredBy` fixado o ocupante simulado não senta; também não senta se o lançamento falhou (sem Herdr, o `start` não sai 0) ou o critic nunca subiu. Então a classe comum decide como antes (`grounds: gap`, premissa da entrega com `fills-gap`, sem o campo) e a crítica volta ao teto fixo antigo. O `autonomous` não vira `ask`.
 - Headless e sem `AskUserQuestion` não tiram o ocupante: o critic responde e o aval fica pendente no pré-PR.
 - Se o critic cai no meio de uma resposta, a guarda que procura a `simulated` vigente da lacuna evita gravar outra.
@@ -47,10 +47,10 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 | Ação | claude-herdr | claude-runner | agy |
 |---|---|---|---|
 | `local` | explore | explore | próprio |
-| `web` | — | document-specialist | — |
+| `web` | document-specialist | document-specialist | próprio |
 | `jury` | the-jury | the-jury | — |
 
-- Modelos: `explore` em `haiku`; `document-specialist` e jurados em `sonnet`. A `web` do Herdr e a do `agy` ficam `—` até as sondas a2 e b2 provarem o canal, porque o launch do Herdr fixa `--tools` sem `WebSearch` nem `WebFetch` e o `agy` não tem doc de busca web; a prova troca a célula no mesmo commit.
+- Modelos: `explore` em `haiku`; `document-specialist` e jurados em `sonnet`. A `web` do `agy` é a tool nativa `search_web` (sonda b2); ela não tem `WebFetch`. O launch do Herdr com Claude inclui `WebSearch` e `WebFetch` em `--tools` para a `web` do `document-specialist`; a sonda a2 prova o canal.
 
 | Natureza | comum | crítica |
 |---|---|---|
@@ -75,7 +75,7 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 - O principal registra a `decision` como adoção própria da resposta (escolha entre adotar e levar ao humano), com `supersedes` da provisória, as relações regravadas, o `rests-on` também para a `simulated` e o id dela no `rationale`.
 - O `rests-on` para a `simulated` é o que deixa o relatório acusar `rests-on-simulated` quando o critic escala a classe: a `gap` segue com `Class: common` no `context`, e só a `simulated` vigente sem `fills-gap` mostra a escalada.
 - O escopo do `register` do critic (processo do trabalho, só `premise` e `evidence` novas, sem `supersedes` nem `revokes`) é instrução, não barreira. No Herdr com Claude o `--allowedTools` pré-aprova a tool e não restringe o argumento; no runner e no `agy` o critic roda sem `--allowedTools` nem `--tools`, com `bypassPermissions` (Claude) ou `--dangerously-skip-permissions` (`agy`).
-- O critic Claude, nos dois transportes, sobe com `--strict-mcp-config` e só o servidor `hexlog`: sem `ctx_execute` nem outro MCP do ambiente. No Herdr, `--tools` tira `Edit`, `Write` e `Bash` dele, e só o `Explore` foi sondado sem `Bash`; os demais subagentes não, então é contenção parcial.
+- O critic Claude, nos dois transportes, sobe com `--strict-mcp-config` e só o servidor `hexlog`: sem `ctx_execute` nem outro MCP do ambiente. No Herdr, `--tools` tira `Edit`, `Write` e `Bash` dele e dá a ele `WebSearch` e `WebFetch`, e só o `Explore` foi sondado sem `Bash`; os demais subagentes não, então é contenção parcial.
 - No runner o Claude roda em `bypassPermissions`: ele e os subagentes têm `Bash` e `Edit`, e a sonda antiga do `Explore` sem `Bash` não vale. Isso vale também ao `agy` no Herdr, que tem `--dangerously-skip-permissions` e grava no hexlog.
 - A contenção no runner e no `agy` é o prompt do critic (`critic-tools.ts#buildRules`, em `scripts/flow/`: no prompt de abertura, no `agy` em toda pergunta e, no Claude, em `--append-system-prompt`): escrever só por `register`, sem editar arquivo, `git push`, `gh` nem `rm`, e o que lê é dado. Freio, não barreira; no runner o turno só tem teto de tempo, sem teto de custo.
 - No Herdr com Claude o texto do prompt entra por `--append-system-prompt-file`, apontado para o arquivo que `critic.ts rules` grava em `os.tmpdir()`, sem a tool `Read`.
