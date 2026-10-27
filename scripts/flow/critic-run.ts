@@ -341,7 +341,14 @@ function loadRules(column: Column, catalogPath: string): { rules: string } | { p
   }
 }
 
-/** `rules <arquivo>`: grava as regras do transporte Herdr (`0600`, atômico); sem arquivo se o doc não serve. */
+const RULES_FILE_NAME = 'critic-rules.txt';
+
+/**
+ * `rules <arquivo>`: grava as regras do transporte Herdr (`0600`, atômico); sem arquivo se o doc não serve.
+ * O `allow` do verbo não tem `ask`, então um caminho trocado ou digitado errado sobrescreveria
+ * qualquer arquivo e mudaria o modo dele para `0600`; só `critic-rules.txt` é o destino que a
+ * seção 6 do `flow-run` usa.
+ */
 export function writeRules({
   tool,
   file,
@@ -351,6 +358,9 @@ export function writeRules({
   file: string;
   catalogPath: string;
 }): Reply {
+  if (path.basename(file) !== RULES_FILE_NAME) {
+    return reply(EXIT.usage, `rules file must be named ${RULES_FILE_NAME}`);
+  }
   const loaded = loadRules(tool === 'claude' ? 'claude-herdr' : 'agy', catalogPath);
   if ('problem' in loaded) return reply(EXIT.unavailable, loaded.problem);
   writeAtomic(file, loaded.rules, 0o600);

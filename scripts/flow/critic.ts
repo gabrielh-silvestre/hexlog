@@ -2,7 +2,8 @@
 // Quem chama é a skill `flow-run`.
 //
 //   start <slug> [--cwd <dir>] [--tool claude|agy]   cria a mailbox e imprime o caminho
-//   rules <arquivo> [--cwd <dir>] [--tool claude|agy] grava as regras do critic no Herdr (`0600`)
+//   rules <dir>/critic-rules.txt [--cwd <dir>] [--tool claude|agy] grava as regras do critic no Herdr
+//                                                    (`0600`); outro nome de arquivo é recusado
 //   ask <mailbox>                                    responde a `q-<n>.txt` e imprime `a-<n>.txt`
 //   close <mailbox>                                  remove a mailbox (idempotente)
 //
@@ -26,7 +27,7 @@ import {
 import { resolveTool, type Tool } from './critic-tools.ts';
 
 const USAGE =
-  'usage: node scripts/flow/critic.ts start <slug> [--cwd <dir>] [--tool claude|agy] | rules <file> [--cwd <dir>] [--tool claude|agy] | ask <mailbox> | close <mailbox>';
+  'usage: node scripts/flow/critic.ts start <slug> [--cwd <dir>] [--tool claude|agy] | rules <dir>/critic-rules.txt [--cwd <dir>] [--tool claude|agy] | ask <mailbox> | close <mailbox>';
 
 const usage = (message: string): Reply => ({ exitCode: EXIT.usage, message });
 
