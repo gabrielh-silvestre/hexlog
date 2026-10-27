@@ -2,8 +2,8 @@
 // Quem chama é a skill `flow-run`.
 //
 //   start <slug> [--cwd <dir>] [--tool claude|agy]   cria a mailbox e imprime o caminho
-//   rules <dir>/critic-rules.txt [--cwd <dir>] [--tool claude|agy] grava as regras do critic no Herdr
-//                                                    (`0600`); outro nome de arquivo é recusado
+//   rules [--cwd <dir>] [--tool claude|agy]          grava as regras do critic no Herdr em os.tmpdir()
+//                                                    (`0600`) e imprime o caminho do arquivo
 //   ask <mailbox>                                    responde a `q-<n>.txt` e imprime `a-<n>.txt`
 //   close <mailbox>                                  remove a mailbox (idempotente)
 //
@@ -27,7 +27,7 @@ import {
 import { resolveTool, type Tool } from './critic-tools.ts';
 
 const USAGE =
-  'usage: node scripts/flow/critic.ts start <slug> [--cwd <dir>] [--tool claude|agy] | rules <dir>/critic-rules.txt [--cwd <dir>] [--tool claude|agy] | ask <mailbox> | close <mailbox>';
+  'usage: node scripts/flow/critic.ts start <slug> [--cwd <dir>] [--tool claude|agy] | rules [--cwd <dir>] [--tool claude|agy] | ask <mailbox> | close <mailbox>';
 
 const usage = (message: string): Reply => ({ exitCode: EXIT.usage, message });
 
@@ -46,7 +46,9 @@ async function run(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise
   const { values, positionals } = parsed;
   const [verb, target, ...extra] = positionals;
   const startOnly = values.tool !== undefined || values.cwd !== undefined;
-  if (target === undefined || extra.length > 0) return usage(USAGE);
+  if (verb === 'rules' ? target !== undefined : target === undefined || extra.length > 0) {
+    return usage(USAGE);
+  }
   const worktree = path.resolve(cwd, values.cwd ?? '');
   if (verb === 'start' || verb === 'rules') {
     let tool: Tool;
@@ -55,10 +57,11 @@ async function run(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise
     } catch (error) {
       return usage(error instanceof Error ? error.message : String(error));
     }
-    return verb === 'start'
-      ? startSession({ tool, slug: target, cwd: worktree })
-      : writeRules({ tool, file: path.resolve(cwd, target), catalogPath: catalogPathOf(worktree) });
+    if (verb === 'rules') return writeRules({ tool, catalogPath: catalogPathOf(worktree) });
+    if (target === undefined) return usage(USAGE);
+    return startSession({ tool, slug: target, cwd: worktree });
   }
+  if (target === undefined) return usage(USAGE);
   if (startOnly) return usage(USAGE);
   if (verb === 'ask') return askQuestion(target);
   if (verb === 'close') return closeMailbox(target);

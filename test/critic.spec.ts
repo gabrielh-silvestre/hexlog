@@ -53,7 +53,7 @@ describe('scripts/flow/critic.ts', () => {
   it.each([
     ['no verb', []],
     ['start without a slug', ['start']],
-    ['rules without a file', ['rules']],
+    ['a file given to rules', ['rules', 'critic-rules.txt']],
     ['an unknown verb', ['frobnicate', 'target']],
     ['a second positional', ['ask', 'one', 'two']],
     ['--tool on ask', ['ask', 'target', '--tool', 'agy']],
@@ -178,17 +178,35 @@ describe('scripts/flow/critic.ts', () => {
   describe('with the rules verb', () => {
     const rulesFor = (column: Parameters<typeof renderActions>[1]): string =>
       buildRules(renderActions(parseCatalog(CATALOG_DOC), column));
+    const rulesDirs = (tmpdir: string): string[] =>
+      fs.readdirSync(tmpdir).filter((name) => name.startsWith('hexlog-critic-rules-'));
 
     it(
-      'should write the claude-herdr rules to the file with mode 0600 and print its path',
+      'should write the claude-herdr rules to a file in the tmpdir and print its path',
       async () => {
-        const out = path.join(createTempDir('critic-rules'), 'critic-rules.txt');
+        const env = scenario();
 
-        const result = await cli(scenario(), ['rules', out, '--tool', 'claude']);
+        const result = await cli(env, ['rules', '--tool', 'claude']);
+        const out = result.stdout.trim();
 
-        expect(result).toMatchObject({ exitCode: 0, stdout: `${out}\n`, stderr: '' });
+        expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+        expect(path.dirname(path.dirname(out))).toBe(env.tmpdir);
+        expect(path.basename(out)).toBe('critic-rules.txt');
         expect(fs.readFileSync(out, 'utf8')).toBe(rulesFor('claude-herdr'));
+      },
+      SPEC_TIMEOUT,
+    );
+
+    it(
+      'should create the file with mode 0600 in a folder with mode 0700 and nothing else',
+      async () => {
+        const env = scenario();
+
+        const out = (await cli(env, ['rules'])).stdout.trim();
+
         expect(fs.statSync(out).mode & 0o777).toBe(0o600);
+        expect(fs.statSync(path.dirname(out)).mode & 0o777).toBe(0o700);
+        expect(fs.readdirSync(path.dirname(out))).toEqual(['critic-rules.txt']);
       },
       SPEC_TIMEOUT,
     );
@@ -199,11 +217,11 @@ describe('scripts/flow/critic.ts', () => {
     ])(
       'should write the agy rules without jury by the precedence with %s',
       async (_case, flags, variable) => {
-        const out = path.join(createTempDir('critic-rules'), 'critic-rules.txt');
+        const result = await cli(scenario(), ['rules', ...flags], {
+          HEXLOG_CRITIC_CLI: variable,
+        });
 
-        await cli(scenario(), ['rules', out, ...flags], { HEXLOG_CRITIC_CLI: variable });
-
-        const written = fs.readFileSync(out, 'utf8');
+        const written = fs.readFileSync(result.stdout.trim(), 'utf8');
 
         expect(written).toBe(rulesFor('agy'));
         expect(written).toContain('ações disponíveis para você (agy): web, local');
@@ -214,9 +232,7 @@ describe('scripts/flow/critic.ts', () => {
     it(
       'should end the rules with the context line',
       async () => {
-        const out = path.join(createTempDir('critic-rules'), 'critic-rules.txt');
-
-        await cli(scenario(), ['rules', out]);
+        const out = (await cli(scenario(), ['rules'])).stdout.trim();
 
         expect(fs.readFileSync(out, 'utf8')).toMatch(/context: ok` or `context: tight`\.$/);
       },
@@ -226,12 +242,11 @@ describe('scripts/flow/critic.ts', () => {
     it(
       'should read the catalog from --cwd instead of the directory the command runs in',
       async () => {
-        const out = path.join(createTempDir('critic-rules'), 'critic-rules.txt');
         const bare = createTempDir('critic-bare');
         const elsewhere = createTempDir('critic-elsewhere');
         writeCatalogDoc(elsewhere);
 
-        const result = await cli(scenario(), ['rules', out, '--cwd', elsewhere], {}, bare);
+        const result = await cli(scenario(), ['rules', '--cwd', elsewhere], {}, bare);
 
         expect(result.exitCode).toBe(0);
       },
@@ -239,47 +254,30 @@ describe('scripts/flow/critic.ts', () => {
     );
 
     it(
-      'should leave only the rules file in the directory (atomic write)',
+      'should exit 3 naming the unreadable catalog and create no folder when --cwd has no doc',
       async () => {
-        const dir = createTempDir('critic-rules');
+        const env = scenario();
+        const bare = createTempDir('critic-bare');
 
-        await cli(scenario(), ['rules', path.join(dir, 'critic-rules.txt')]);
+        const result = await cli(env, ['rules', '--cwd', bare]);
 
-        expect(fs.readdirSync(dir)).toEqual(['critic-rules.txt']);
+        expect(result.exitCode).toBe(3);
+        expect(result.stderr).toContain('catálogo ilegível');
+        expect(rulesDirs(env.tmpdir)).toEqual([]);
       },
       SPEC_TIMEOUT,
     );
 
     it(
-      'should exit 3 naming the unreadable catalog and create no file when --cwd has no doc',
+      'should print the usage, exit 1 and create no folder when given a file argument',
       async () => {
-        const dir = createTempDir('critic-rules');
-        const bare = createTempDir('critic-bare');
+        const env = scenario();
 
-        const result = await cli(scenario(), [
-          'rules',
-          path.join(dir, 'critic-rules.txt'),
-          '--cwd',
-          bare,
-        ]);
-
-        expect(result.exitCode).toBe(3);
-        expect(result.stderr).toContain('catálogo ilegível');
-        expect(fs.readdirSync(dir)).toEqual([]);
-      },
-      SPEC_TIMEOUT,
-    );
-
-    it.each(['rules.txt', 'critic-rules.txt.bak', 'critic-rules'])(
-      'should exit 1 and create no file when the file is named %s',
-      async (name) => {
-        const dir = createTempDir('critic-rules');
-
-        const result = await cli(scenario(), ['rules', path.join(dir, name)]);
+        const result = await cli(env, ['rules', 'critic-rules.txt']);
 
         expect(result.exitCode).toBe(1);
-        expect(result.stderr).toContain('rules file must be named critic-rules.txt');
-        expect(fs.readdirSync(dir)).toEqual([]);
+        expect(result.stderr).toContain('usage: node scripts/flow/critic.ts');
+        expect(rulesDirs(env.tmpdir)).toEqual([]);
       },
       SPEC_TIMEOUT,
     );
@@ -287,7 +285,7 @@ describe('scripts/flow/critic.ts', () => {
     it(
       'should exit 1 for an unknown tool',
       async () => {
-        const result = await cli(scenario(), ['rules', 'critic-rules.txt', '--tool', 'codex']);
+        const result = await cli(scenario(), ['rules', '--tool', 'codex']);
 
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain('unknown critic tool "codex"');

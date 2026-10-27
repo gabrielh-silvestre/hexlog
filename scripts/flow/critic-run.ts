@@ -341,28 +341,17 @@ function loadRules(column: Column, catalogPath: string): { rules: string } | { p
   }
 }
 
-const RULES_FILE_NAME = 'critic-rules.txt';
-
 /**
- * `rules <arquivo>`: grava as regras do transporte Herdr (`0600`, atômico); sem arquivo se o doc não serve.
- * O `allow` do verbo não tem `ask`, então um caminho trocado ou digitado errado sobrescreveria
- * qualquer arquivo e mudaria o modo dele para `0600`; só `critic-rules.txt` é o destino que a
- * seção 6 do `flow-run` usa.
+ * `rules`: grava as regras do transporte Herdr (`critic-rules.txt`, `0600`, atômico) numa pasta
+ * `hexlog-critic-rules-XXXXXX` (`0700`) e imprime o caminho do arquivo. Como a mailbox, o arquivo
+ * vive em `os.tmpdir()` e não há argumento de caminho, então nada sobrescreve arquivo alheio; a
+ * pasta fica até o reboot ou a limpeza do `/tmp` (sem segredo). Sem pasta se o doc não serve.
  */
-export function writeRules({
-  tool,
-  file,
-  catalogPath,
-}: {
-  tool: Tool;
-  file: string;
-  catalogPath: string;
-}): Reply {
-  if (path.basename(file) !== RULES_FILE_NAME) {
-    return reply(EXIT.usage, `rules file must be named ${RULES_FILE_NAME}`);
-  }
+export function writeRules({ tool, catalogPath }: { tool: Tool; catalogPath: string }): Reply {
   const loaded = loadRules(tool === 'claude' ? 'claude-herdr' : 'agy', catalogPath);
   if ('problem' in loaded) return reply(EXIT.unavailable, loaded.problem);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-critic-rules-'));
+  const file = path.join(dir, 'critic-rules.txt');
   writeAtomic(file, loaded.rules, 0o600);
   return reply(EXIT.ok, file);
 }
