@@ -33,7 +33,6 @@ let dataDir: string;
 let project: string;
 let first: string;
 
-// Os dois `describe` leem o mesmo corpus; `require-top-level-describe` não deixa o hook fora deles.
 function writeCorpus() {
   dataDir = createTempDir('project-budget');
   const processes = Array.from({ length: PROCESSES }, (_, index) => `proc-${index + 1}`);

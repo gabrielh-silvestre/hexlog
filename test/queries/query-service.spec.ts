@@ -262,6 +262,7 @@ describe('QueryService.queryRecords', () => {
   });
 
   describe('with text', () => {
+    // A recusa `no-terms` repete `query.spec.ts` de propósito: aqui o serviço roda sobre portas em memória, sem disco.
     it.each(['', '  ', '!!!'])('should refuse text %j that has no searchable terms', (text) => {
       const service = mainService(notes(1));
 
