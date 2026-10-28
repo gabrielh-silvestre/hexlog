@@ -172,7 +172,7 @@ function readFileWithin(options: AttachmentStoreOptions, candidate: string): Buf
     if (stat.size > ATTACHMENT_MAX_BYTES) throw tooBigFile(ATTACHMENT_MAX_BYTES);
 
     const bytes = readBounded(fd, stat.size);
-    if (bytes.length > stat.size) throw tooBigFile(ATTACHMENT_MAX_BYTES, true);
+    if (bytes.length > stat.size) throw tooBigFile();
     return bytes;
   } finally {
     fs.closeSync(fd);

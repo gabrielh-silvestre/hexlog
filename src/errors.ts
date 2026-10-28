@@ -270,11 +270,10 @@ export function outsideAllowedRoot(): HexlogError {
   return invalidInput('/path', 'outside-allowed-root', 'path is outside the allowed root');
 }
 
-/** `grewWhileReading`: o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
-export function tooBigFile(maxBytes: number, grewWhileReading = false): HexlogError {
-  const message = grewWhileReading
-    ? 'file changed while being read'
-    : `file exceeds ${maxBytes} bytes`;
+/** Sem `maxBytes`, o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
+export function tooBigFile(maxBytes?: number): HexlogError {
+  const message =
+    maxBytes === undefined ? 'file changed while being read' : `file exceeds ${maxBytes} bytes`;
   return invalidInput('/path', 'too-big', message);
 }
 
@@ -308,7 +307,10 @@ export function processTooLarge(process: Name, limitBytes: number, advice = fals
  * ou vazia: `unknown-name`); com versões, o nome existe e a pedida não (`unknown-version`,
  * listando as que existem, nunca vazia). `code` é o `*_NOT_FOUND` do tipo de definição.
  */
-export function definitionNotFound(code: ErrorCode, existing: string[]): HexlogError {
+export function definitionNotFound(
+  code: Extract<ErrorCode, 'TYPE_NOT_FOUND' | 'RELATION_NOT_FOUND' | 'GATE_NOT_FOUND'>,
+  existing: string[],
+): HexlogError {
   if (existing.length === 0) {
     return domainError(code, '/name', 'unknown-name', 'definition name not found');
   }
