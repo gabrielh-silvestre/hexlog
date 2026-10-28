@@ -64,6 +64,12 @@ vale para processos criados depois dele.
 ## Formato do modelo e da skill gerada
 
 - O campo `unit` entra em **todo** tipo de fase, obrigatório, desde a primeira versão.
+- O gate proposto cobre sempre dois eixos: **cobertura** (um `occurred` por tipo de fase) e
+  **encadeamento** (um `no_pending` para cada fase que tem sucessora, resolvido pela espécie
+  de relação `derivesFrom` a partir do tipo da sucessora: a fase fica pendente até a sucessora
+  derivar dela; o exemplo completo está em `references/speckit-model.example.json`). Um
+  registro de fase sem sucessora ligada reprova o gate. O dev pode recusar o encadeamento, mas
+  a proposta nasce com ele.
 - Padrão de target opcional: `targetPattern` no modelo (ver `references/model-schema.md`).
 - Se uma chamada voltar com `INVALID_INPUT`, corrija o campo de `details[].path` e
   reenvie. Nome de processo reservado (`RESERVED_PROCESS_NAMES`) é tratado pela
