@@ -12,7 +12,7 @@ import { isUndefined, omitBy } from 'es-toolkit';
 import type { QueryResult } from '../src/queries/query-service.ts';
 import { TOOLS_COUNT } from '../src/installation.ts';
 import { VERSION } from '../src/version.ts';
-import { at, createTempDir } from './helpers.ts';
+import { at, copyToXdg, createTempDir } from './helpers.ts';
 import { errorBodyOf } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -26,10 +26,12 @@ type CallResult = {
   content?: { type: string; text?: string }[];
 };
 
+type ConnectOptions = { xdg?: string; clientName?: string; noEnvelope?: boolean };
+
 let bundleDir: string;
 
 /** Cliente stdio sobre o bundle; `HOME` e `XDG_DATA_HOME` temporários, o `<D>` real nunca é tocado. */
-async function connect(options: { xdg?: string; clientName?: string; noEnvelope?: boolean } = {}) {
+async function connect(options: ConnectOptions = {}) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [path.join(bundleDir, 'server.mjs')],
@@ -59,8 +61,35 @@ async function connect(options: { xdg?: string; clientName?: string; noEnvelope?
   return { client, call, stderr: () => stderr, transportErrors };
 }
 
+type Session = Awaited<ReturnType<typeof connect>>;
+
+/**
+ * Conecta, roda `run` e fecha o cliente mesmo se ele lançar. O stderr e os erros de transporte só
+ * valem depois do `client.close()`, por isso saem aqui, junto do resultado.
+ */
+async function withClient<T>(
+  options: ConnectOptions,
+  run: (session: Session) => Promise<T>,
+): Promise<{ result: T; stderr: string; transportErrors: Error[] }> {
+  const session = await connect(options);
+  let result: T;
+  try {
+    result = await run(session);
+  } finally {
+    await session.client.close();
+  }
+  return { result, stderr: session.stderr(), transportErrors: session.transportErrors };
+}
+
+/** Página de `query` do `PROCESS`, com `args` por cima. */
+async function queryPage(call: Session['call'], args: Record<string, unknown> = {}) {
+  const result = await call('query', { project: PROJECT, process: PROCESS, ...args });
+
+  return result.structuredContent as QueryResult;
+}
+
 /** Define o tipo `note`, cria o processo e grava `count` notas pelo `call` do cliente. */
-async function seedNotes(call: Awaited<ReturnType<typeof connect>>['call'], count: number) {
+async function seedNotes(call: Session['call'], count: number) {
   await call('define_type', {
     project: PROJECT,
     name: 'note',
@@ -127,101 +156,74 @@ describe('dist/server.mjs over stdio', () => {
   });
 
   it('should advertise TOOLS_COUNT tools with describe_type among them', async () => {
-    const { client } = await connect();
+    const { result: tools } = await withClient({}, async ({ client }) => {
+      return (await client.listTools()).tools;
+    });
 
-    try {
-      const { tools } = await client.listTools();
-
-      expect(tools).toHaveLength(TOOLS_COUNT);
-      expect(tools.map(({ name }) => name)).toContain('describe_type');
-    } finally {
-      await client.close();
-    }
+    expect(tools).toHaveLength(TOOLS_COUNT);
+    expect(tools.map(({ name }) => name)).toContain('describe_type');
   }, 20_000);
 
   it('should answer LEGACY_DATA with the command in details when <D> holds the 0.x fixture data', async () => {
-    const xdg = createTempDir('e2e-xdg');
-    fs.cpSync(LEGACY_FIXTURE, path.join(xdg, 'hexlog'), { recursive: true });
-    const { client, call } = await connect({ xdg });
+    const xdg = copyToXdg(LEGACY_FIXTURE);
 
-    try {
-      const body = errorBodyOf(await call('list'));
+    const { result: body } = await withClient({ xdg }, async ({ call }) =>
+      errorBodyOf(await call('list')),
+    );
 
-      expect(body.code).toBe('LEGACY_DATA');
-      expect(body.details).toEqual([expect.objectContaining({ code: 'run' })]);
-    } finally {
-      await client.close();
-    }
+    expect(body.code).toBe('LEGACY_DATA');
+    expect(body.details).toEqual([expect.objectContaining({ code: 'run' })]);
   }, 20_000);
 
   it('should answer a structured INVALID_INPUT without INTERNAL on stderr for input outside the schema', async () => {
-    const { client, call, stderr } = await connect();
+    const { result: body, stderr } = await withClient({}, async ({ call }) =>
+      errorBodyOf(await call('query', { project: PROJECT, process: PROCESS, limit: 201 })),
+    );
 
-    try {
-      const body = errorBodyOf(
-        await call('query', { project: PROJECT, process: PROCESS, limit: 201 }),
-      );
-
-      expect(body.code).toBe('INVALID_INPUT');
-      expect(body.details).toEqual([expect.objectContaining({ path: '/limit' })]);
-    } finally {
-      await client.close();
-    }
-
-    expect(stderr()).not.toContain('"code":"INTERNAL"');
+    expect(body.code).toBe('INVALID_INPUT');
+    expect(body.details).toEqual([expect.objectContaining({ path: '/limit' })]);
+    expect(stderr).not.toContain('"code":"INTERNAL"');
   }, 20_000);
 
-  it('should record the author client from the clientInfo of the envelope', async () => {
-    const { client, call } = await connect({ clientName: 'claude-code' });
+  it.each([
+    {
+      name: 'from the clientInfo of the envelope',
+      options: { clientName: 'claude-code' },
+      client: 'claude-code',
+    },
+    {
+      name: 'as unknown without the clientInfo envelope',
+      options: { noEnvelope: true },
+      client: 'unknown',
+    },
+  ])(
+    'should record the author client $name',
+    async ({ options, client }) => {
+      const { result: page } = await withClient(options, async ({ call }) => {
+        await seedNotes(call, 1);
 
-    try {
-      await seedNotes(call, 1);
+        return queryPage(call);
+      });
 
-      const page = (await call('query', { project: PROJECT, process: PROCESS }))
-        .structuredContent as QueryResult;
-
-      expect(at(page.records, 0).author).toEqual({ agent: 'e2e-agent', client: 'claude-code' });
-    } finally {
-      await client.close();
-    }
-  }, 20_000);
-
-  it('should record the author client as unknown without the clientInfo envelope', async () => {
-    const { client, call } = await connect({ noEnvelope: true });
-
-    try {
-      await seedNotes(call, 1);
-
-      const page = (await call('query', { project: PROJECT, process: PROCESS }))
-        .structuredContent as QueryResult;
-
-      expect(at(page.records, 0).author).toEqual({ agent: 'e2e-agent', client: 'unknown' });
-    } finally {
-      await client.close();
-    }
-  }, 20_000);
+      expect(at(page.records, 0).author).toEqual({ agent: 'e2e-agent', client });
+    },
+    20_000,
+  );
 
   it('should return the records without data for a query with empty fields', async () => {
-    const { client, call } = await connect();
-
-    try {
+    const { result: page } = await withClient({}, async ({ call }) => {
       await seedNotes(call, 2);
 
-      const page = (await call('query', { project: PROJECT, process: PROCESS, fields: [] }))
-        .structuredContent as QueryResult;
+      return queryPage(call, { fields: [] });
+    });
 
-      expect(page.records).toHaveLength(2);
-      expect(page.records.every((record) => !('data' in record))).toBe(true);
-    } finally {
-      await client.close();
-    }
+    expect(page.records).toHaveLength(2);
+    expect(page.records.every((record) => !('data' in record))).toBe(true);
   }, 20_000);
 
   it('should refuse define_type with a pattern, with pattern-not-allowed', async () => {
-    const { client, call } = await connect();
-
-    try {
-      const refused = errorBodyOf(
+    const { result: refused } = await withClient({}, async ({ call }) =>
+      errorBodyOf(
         await call('define_type', {
           project: PROJECT,
           name: 'note',
@@ -230,34 +232,28 @@ describe('dist/server.mjs over stdio', () => {
             properties: { text: { type: 'string', maxLength: 256, pattern: '^(a|aa)+$' } },
           },
         }),
-      );
+      ),
+    );
 
-      expect(refused.code).toBe('INVALID_SCHEMA');
-      expect(refused.details).toContainEqual(
-        expect.objectContaining({
-          path: '/schema/properties/text/pattern',
-          code: 'pattern-not-allowed',
-        }),
-      );
-    } finally {
-      await client.close();
-    }
+    expect(refused.code).toBe('INVALID_SCHEMA');
+    expect(refused.details).toContainEqual(
+      expect.objectContaining({
+        path: '/schema/properties/text/pattern',
+        code: 'pattern-not-allowed',
+      }),
+    );
   }, 15_000);
 
   it('should accept define_type with the git-sha format of the catalog', async () => {
-    const { client, call } = await connect();
-
-    try {
-      const accepted = await call('define_type', {
+    const { result: accepted } = await withClient({}, ({ call }) =>
+      call('define_type', {
         project: PROJECT,
         name: 'commit',
         schema: { type: 'object', properties: { sha: { type: 'string', format: 'git-sha' } } },
-      });
+      }),
+    );
 
-      expect(accepted.isError).not.toBe(true);
-    } finally {
-      await client.close();
-    }
+    expect(accepted.isError).not.toBe(true);
   }, 15_000);
 
   describe('with a legacy type that carries a pattern stored before the refusal', () => {
@@ -281,9 +277,10 @@ describe('dist/server.mjs over stdio', () => {
             properties: { text: { type: 'string', pattern } },
           }),
         );
-        const { client, call } = await connect({ xdg });
 
-        try {
+        const {
+          result: { registered, elapsed },
+        } = await withClient({ xdg }, async ({ call }) => {
           await call('create_process', { project: PROJECT, process: PROCESS });
           const start = performance.now();
 
@@ -294,64 +291,88 @@ describe('dist/server.mjs over stdio', () => {
             records: [{ type: 'note', target: 'run.step', data: { text } }],
           });
 
-          expect(registered.isError).not.toBe(true);
-          expect(performance.now() - start).toBeLessThan(5_000);
-        } finally {
-          await client.close();
-        }
+          return { registered, elapsed: performance.now() - start };
+        });
+
+        expect(registered.isError).not.toBe(true);
+        expect(elapsed).toBeLessThan(5_000);
       },
       15_000,
     );
   });
 
-  it('should keep stdout as JSON-RPC only and stderr as structured JSON after one call of each tool in the bundle', async () => {
-    const xdg = createTempDir('e2e-xdg');
-    const { client, call, stderr, transportErrors } = await connect({ xdg });
+  describe('with one call of each tool', () => {
+    let results: CallResult[];
+    let stderr: string;
+    let transportErrors: Error[];
+    let xdg: string;
 
-    try {
-      // `create_process` fixa os gates do projeto: o gate vem antes dele
-      const gate = await call('define_gate', {
-        project: PROJECT,
-        name: 'has-note',
-        questions: [{ kind: 'occurred', select: { type: 'note' } }],
-      });
-      await seedNotes(call, 1);
-      const attached = await call('attach', { project: PROJECT, text: 'relatório do e2e' });
-      const { hash } = attached.structuredContent as { hash: string };
-      const results = [
-        gate,
-        attached,
-        await call('read_attachment', { project: PROJECT, hash }),
-        await call('define_relation', { project: PROJECT, name: 'rel', kind: 'supports' }),
-        await call('evaluate_gate', { project: PROJECT, process: PROCESS, gate: 'has-note' }),
-        await call('verify_chain', { project: PROJECT, process: PROCESS }),
-        await call('describe_type', { project: PROJECT, type: 'note', process: PROCESS }),
-      ];
+    beforeAll(async () => {
+      xdg = createTempDir('e2e-xdg');
+      ({
+        result: results,
+        stderr,
+        transportErrors,
+      } = await withClient({ xdg }, async ({ call }) => {
+        // `create_process` fixa os gates do projeto: o gate vem antes dele
+        const gate = await call('define_gate', {
+          project: PROJECT,
+          name: 'has-note',
+          questions: [{ kind: 'occurred', select: { type: 'note' } }],
+        });
+        await seedNotes(call, 1);
+        const attached = await call('attach', { project: PROJECT, text: 'relatório do e2e' });
+        const { hash } = attached.structuredContent as { hash: string };
 
+        return [
+          gate,
+          attached,
+          await call('read_attachment', { project: PROJECT, hash }),
+          await call('define_relation', { project: PROJECT, name: 'rel', kind: 'supports' }),
+          await call('evaluate_gate', { project: PROJECT, process: PROCESS, gate: 'has-note' }),
+          await call('verify_chain', { project: PROJECT, process: PROCESS }),
+          await call('describe_type', { project: PROJECT, type: 'note', process: PROCESS }),
+          await call('query', { project: PROJECT, process: PROCESS }),
+          await call('list', { project: PROJECT }),
+        ];
+      }));
+    }, 30_000);
+
+    it('should answer every call without an error', () => {
       expect(results.filter((result) => result.isError === true)).toEqual([]);
-    } finally {
-      await client.close();
-    }
+    });
 
-    const records = stderrRecords(stderr());
+    it('should keep stdout as JSON-RPC only', () => {
+      expect(transportErrors).toEqual([]);
+    });
 
-    expect(transportErrors).toEqual([]);
-    expect(stderr()).not.toContain('"code":"INTERNAL"');
+    it('should not log INTERNAL on stderr', () => {
+      expect(stderr).not.toContain('"code":"INTERNAL"');
+    });
 
-    for (const record of records) {
-      expect(['debug', 'info', 'warn', 'error']).toContain(record.level);
-      expect(typeof record.event).toBe('string');
-    }
+    it('should write only structured JSON records on stderr', () => {
+      for (const record of stderrRecords(stderr)) {
+        expect(['debug', 'info', 'warn', 'error']).toContain(record.level);
+        expect(typeof record.event).toBe('string');
+      }
+    });
 
-    expect(records).toContainEqual(
-      expect.objectContaining({
-        event: 'start',
-        dataDir: path.join(xdg, 'hexlog'),
-        version: VERSION,
-      }),
-    );
-    expect(records.filter(({ event }) => event === 'tool').length).toBeGreaterThanOrEqual(9);
-  }, 20_000);
+    it('should log the start of the server with the data dir and the version', () => {
+      expect(stderrRecords(stderr)).toContainEqual(
+        expect.objectContaining({
+          event: 'start',
+          dataDir: path.join(xdg, 'hexlog'),
+          version: VERSION,
+        }),
+      );
+    });
+
+    it('should log exactly one tool record per tool of the server', () => {
+      expect(stderrRecords(stderr).filter(({ event }) => event === 'tool')).toHaveLength(
+        TOOLS_COUNT,
+      );
+    });
+  });
 
   it('should log transport-error for a stdin line over the 10 MiB buffer cap before the server exits', () => {
     const result = runBundleWithStdin(Buffer.alloc(10 * 1024 * 1024 + 1, 'x'));

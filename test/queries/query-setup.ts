@@ -12,9 +12,9 @@ import type { Gate, RecordType, RelationName } from '../../src/domain/definition
 import type { Name, RecordId } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { createQueryService } from '../../src/queries/query-service.ts';
-import type { QueryInput, QueryResult } from '../../src/queries/query-service.ts';
+import type { QueryInput } from '../../src/queries/query-service.ts';
 import type { DefinitionStore, ProcessStore } from '../../src/ports.ts';
-import { AUTHOR, DOC, NOTE, PROJECT, createUuids, note } from '../commands/register-fakes.ts';
+import { AUTHOR, DOC, NOTE, PROJECT, createUuids, note } from '../commands/fakes.ts';
 import { at, createTempDir } from '../helpers.ts';
 
 export { PROJECT };
@@ -126,27 +126,12 @@ export function defineDomain(definitions: DefinitionStore, domain: Domain): void
   for (const gate of domain.gates) service.defineGate({ project: PROJECT, ...gate });
 }
 
-/** Ids da página, na ordem em que saíram. */
-export const idsOf = (page: { records: readonly { id: RecordId }[] }): RecordId[] =>
-  page.records.map(({ id }) => id);
-
-/** Cursor da página, que o teste espera ter. */
-export function cursorOf(page: { cursor?: string }): string {
-  if (page.cursor === undefined) throw new Error('a página deveria ter cursor');
-  return page.cursor;
-}
-
-/** Todas as páginas de `input`, da 1ª até a que não traz cursor. */
-export function walkPages(
-  query: (input: Omit<QueryInput, 'project'>) => QueryResult,
-  input: Omit<QueryInput, 'project'>,
-): QueryResult[] {
-  const pages = [query(input)];
-  while (pages.at(-1)?.cursor !== undefined) {
-    pages.push(query({ ...input, cursor: cursorOf(at(pages, pages.length - 1)) }));
-  }
-  return pages;
-}
+/** Registro `finding` de `target`, com `text` como único dado. */
+export const finding = (target: string, text: string): BatchItem => ({
+  type: 'finding',
+  target,
+  data: { text },
+});
 
 /**
  * Um processo `run-1` com três registros no alvo `run.step`/`run.step.sub`/`run.stepper` e uma

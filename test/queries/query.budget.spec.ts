@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from '@jest/globals';
 import { median } from 'es-toolkit';
 import type { QueryInput } from '../../src/queries/query-service.ts';
 import { writeRecordsCorpus } from '../fixtures/records-corpus.ts';
-import { createTempDir } from '../helpers.ts';
+import { at, createTempDir } from '../helpers.ts';
 import { diskQueryService } from './query-setup.ts';
 
 const SIZE = 5_000;
@@ -27,7 +27,7 @@ describe('QueryService.queryRecords', () => {
   beforeAll(() => {
     dataDir = createTempDir('query-budget');
     const { refs } = writeRecordsCorpus(dataDir, { recordsPerProcess: SIZE });
-    input = { project: refs[0]!.project, process: refs[0]!.process };
+    input = { project: at(refs, 0).project, process: at(refs, 0).process };
   });
 
   // Índice novo por chamada: o cache de `search` não pode esconder o custo de montar o índice.
@@ -43,75 +43,65 @@ describe('QueryService.queryRecords', () => {
     return elapsed;
   }
 
-  it(`should return the first page without text within ${PLAIN_MEDIAN_CEILING_MS} ms (median of ${ROUNDS}, ${SIZE} records)`, () => {
-    const times = Array.from({ length: ROUNDS }, () => timeFirstPage({}));
-
-    process.stdout.write(`median first page: ${median(times).toFixed(2)} ms\n`);
-
-    expect(median(times)).toBeLessThanOrEqual(PLAIN_MEDIAN_CEILING_MS);
-    expect(Math.max(...times)).toBeLessThanOrEqual(PLAIN_MEDIAN_CEILING_MS * MAX_FACTOR);
-  }, 120_000);
-
-  it(`should return the first page with text within ${TEXT_MEDIAN_CEILING_MS} ms with the index already cached (median of ${ROUNDS})`, () => {
-    const queries = service();
-    timeFirstPage({ text: 'webhook' }, queries);
-
-    const times = Array.from({ length: ROUNDS }, () => timeFirstPage({ text: 'webhook' }, queries));
-
-    process.stdout.write(`median first page with text, warm: ${median(times).toFixed(2)} ms\n`);
-
-    expect(median(times)).toBeLessThanOrEqual(TEXT_MEDIAN_CEILING_MS);
-    expect(Math.max(...times)).toBeLessThanOrEqual(TEXT_MEDIAN_CEILING_MS * MAX_FACTOR);
-  }, 120_000);
-
-  it(`should return the first page with text and a cold index within ${COLD_TEXT_MEDIAN_CEILING_MS} ms (median of ${ROUNDS}, a new index on each call)`, () => {
-    const times = Array.from({ length: ROUNDS }, () => timeFirstPage({ text: 'webhook' }));
-
-    process.stdout.write(`median first page with text, cold: ${median(times).toFixed(2)} ms\n`);
-
-    expect(median(times)).toBeLessThanOrEqual(COLD_TEXT_MEDIAN_CEILING_MS);
-    expect(Math.max(...times)).toBeLessThanOrEqual(COLD_TEXT_MEDIAN_CEILING_MS * MAX_FACTOR);
-  }, 120_000);
-});
-
-describe('QueryService.queryRecords with lineage inheritance', () => {
-  // Mínimo das rodadas, como em `adapters/load.budget.spec.ts`: o teto vale para a melhor medição e
-  // não para o pior ruído do runner. Mesmo teto da página sem `text`: a herança liga o cálculo,
-  // não o custo.
-  const MIN_CEILING_MS = PLAIN_MEDIAN_CEILING_MS;
-
-  // Os dois corpora têm os mesmos registros, com `supersedes` nos dois; só o manifesto liga a
-  // herança.
-  function minFirstPage(lineageInheritance: boolean) {
-    const dataDir = createTempDir('query-budget-inheritance');
-    const { refs } = writeRecordsCorpus(dataDir, {
-      recordsPerProcess: SIZE,
-      supersedes: true,
-      lineageInheritance,
-    });
-    const input = { project: refs[0]!.project, process: refs[0]!.process };
-    const runs = Array.from({ length: ROUNDS }, () => {
-      const start = performance.now();
-      const page = diskQueryService(dataDir).queryRecords(input);
-      return { ms: performance.now() - start, page };
-    });
-    return { min: Math.min(...runs.map(({ ms }) => ms)), page: runs[0]!.page };
-  }
-
   it.each([
-    ['on', true],
-    ['off', false],
+    ['without text', {}, PLAIN_MEDIAN_CEILING_MS, false],
+    ['with text and the index already cached', { text: 'webhook' }, TEXT_MEDIAN_CEILING_MS, true],
+    ['with text and a cold index', { text: 'webhook' }, COLD_TEXT_MEDIAN_CEILING_MS, false],
   ])(
-    `should serve the first page with the inheritance %s in ≤ ${MIN_CEILING_MS} ms (minimum of ${ROUNDS}, ${SIZE} records)`,
-    (label, lineageInheritance) => {
-      const { min, page } = minFirstPage(lineageInheritance);
+    `should return the first page %s within %i ms (median of ${ROUNDS}, ${SIZE} records)`,
+    (label, extra, ceiling, cached) => {
+      // Índice em cache: um só serviço, aquecido por uma chamada; senão, índice novo a cada chamada.
+      const shared = cached ? service() : undefined;
+      if (shared) timeFirstPage(extra, shared);
+      const times = Array.from({ length: ROUNDS }, () => timeFirstPage(extra, shared));
 
-      process.stdout.write(`min first page, inheritance ${label}: ${min.toFixed(2)} ms\n`);
+      process.stdout.write(`median first page ${label}: ${median(times).toFixed(2)} ms\n`);
 
-      // Prova que o corpus exercita a herança: sem ela ligada nenhum registro traz relação herdada.
-      expect(page.records.some((record) => 'inheritedIn' in record)).toBe(lineageInheritance);
-      expect(min).toBeLessThanOrEqual(MIN_CEILING_MS);
+      expect(median(times)).toBeLessThanOrEqual(ceiling);
+      expect(Math.max(...times)).toBeLessThanOrEqual(ceiling * MAX_FACTOR);
     },
     120_000,
   );
+
+  describe('with lineage inheritance', () => {
+    // Mínimo das rodadas, como em `adapters/load.budget.spec.ts`: o teto vale para a melhor medição e
+    // não para o pior ruído do runner. Mesmo teto da página sem `text`: a herança liga o cálculo,
+    // não o custo.
+    const MIN_CEILING_MS = PLAIN_MEDIAN_CEILING_MS;
+
+    // Os dois corpora têm os mesmos registros, com `supersedes` nos dois; só o manifesto liga a
+    // herança.
+    function minFirstPage(lineageInheritance: boolean) {
+      const dataDir = createTempDir('query-budget-inheritance');
+      const { refs } = writeRecordsCorpus(dataDir, {
+        recordsPerProcess: SIZE,
+        supersedes: true,
+        lineageInheritance,
+      });
+      const input = { project: at(refs, 0).project, process: at(refs, 0).process };
+      const runs = Array.from({ length: ROUNDS }, () => {
+        const start = performance.now();
+        const page = diskQueryService(dataDir).queryRecords(input);
+        return { ms: performance.now() - start, page };
+      });
+      return { min: Math.min(...runs.map(({ ms }) => ms)), page: at(runs, 0).page };
+    }
+
+    it.each([
+      ['on', true],
+      ['off', false],
+    ])(
+      `should serve the first page with the inheritance %s in ≤ ${MIN_CEILING_MS} ms (minimum of ${ROUNDS}, ${SIZE} records)`,
+      (label, lineageInheritance) => {
+        const { min, page } = minFirstPage(lineageInheritance);
+
+        process.stdout.write(`min first page, inheritance ${label}: ${min.toFixed(2)} ms\n`);
+
+        // Prova que o corpus exercita a herança: sem ela ligada nenhum registro traz relação herdada.
+        expect(page.records.some((record) => 'inheritedIn' in record)).toBe(lineageInheritance);
+        expect(min).toBeLessThanOrEqual(MIN_CEILING_MS);
+      },
+      120_000,
+    );
+  });
 });

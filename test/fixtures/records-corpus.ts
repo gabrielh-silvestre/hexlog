@@ -166,7 +166,7 @@ function buildProcess(
   return { records, text: lines.join('') };
 }
 
-export type RecordsCorpusOptions = {
+type RecordsCorpusOptions = {
   project?: string;
   processes?: string[];
   recordsPerProcess: number;
@@ -183,7 +183,7 @@ export type RecordsCorpusOptions = {
   lineageInheritance?: boolean;
 };
 
-export type RecordsCorpus = {
+type RecordsCorpus = {
   refs: ProcessRef[];
   /** Os elos gravados, processo a processo, na ordem do log: dá para medir sem ler o disco. */
   records: Link[];

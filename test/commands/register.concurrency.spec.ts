@@ -8,7 +8,7 @@ import type { BatchItem } from '../../src/domain/record.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import { killChildren, runFixture, startChild } from '../adapters/lock-helpers.ts';
 import { createTempDir } from '../helpers.ts';
-import { AUTHOR, NOTE, PROJECT, note } from './register-fakes.ts';
+import { AUTHOR, NOTE, PROJECT, note } from './fakes.ts';
 
 const ROUNDS = 5;
 const TIMEOUT_MS = 60_000;
@@ -77,7 +77,7 @@ describe('register', () => {
             project: PROJECT,
             process,
             author: AUTHOR,
-            records: [note('destino')],
+            records: [note('target')],
           });
           const supersede = (text: string) => ({
             records: [
@@ -109,7 +109,7 @@ describe('register', () => {
         for (let round = 0; round < ROUNDS; round += 1) {
           const process = `run-${round}`;
           services.process.createProcess({ project: PROJECT, process });
-          const input = { key: 'k1', records: [note('mesmo lote')] };
+          const input = { key: 'k1', records: [note('same batch')] };
 
           const outcomes = await registerTwice(process, [input, input]);
 
@@ -144,7 +144,7 @@ describe('register', () => {
           process: 'run-1',
           barrierDir: createTempDir('register-barrier'),
           total: 1,
-          input: { records: [note('depois')] },
+          input: { records: [note('after')] },
         });
         const closed = once(child, 'close');
 
@@ -155,7 +155,7 @@ describe('register', () => {
         expect(await closed).toEqual([0, null]);
         expect(verified('run-1').records.map(({ data }) => data.text)).toEqual([
           `gated-${holder.pid}`,
-          'depois',
+          'after',
         ]);
       },
       TIMEOUT_MS,
@@ -171,7 +171,7 @@ describe('register', () => {
           project: PROJECT,
           process: 'run-b',
           author: AUTHOR,
-          records: [note('destino')],
+          records: [note('target')],
         });
         const goFile = path.join(createTempDir('register-go'), 'go');
         const holder = await startChild('write-gated', {
@@ -188,16 +188,16 @@ describe('register', () => {
           process: 'run-a',
           author: AUTHOR,
           records: [
-            note('apoio', { relations: [{ to: target.records[0]!.id, kind: 'supports' }] }),
+            note('support', { relations: [{ to: target.records[0]!.id, kind: 'supports' }] }),
           ],
         });
         fs.writeFileSync(goFile, '');
 
         expect(result.replayed).toBe(false);
-        expect(verified('run-a').records.map(({ data }) => data.text)).toEqual(['apoio']);
+        expect(verified('run-a').records.map(({ data }) => data.text)).toEqual(['support']);
         expect(await exited).toEqual([0, null]);
         expect(verified('run-b').records.map(({ data }) => data.text)).toEqual([
-          'destino',
+          'target',
           `gated-${holder.pid}`,
         ]);
       },

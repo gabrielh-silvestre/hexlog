@@ -1,10 +1,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { omit } from 'es-toolkit';
 import { z } from 'zod';
+import { createValidator } from '../src/adapters/validator.ts';
 import type { Defined } from '../src/commands/definition.ts';
-import type { RegisterResult } from '../src/commands/process.ts';
+import { createProcessService, type RegisterResult } from '../src/commands/process.ts';
+import { Name } from '../src/domain/ids.ts';
+import { createUuids } from './commands/fakes.ts';
 import { at, parseJson } from './helpers.ts';
 import { type Environment, createEnvironment } from './mcp/environment.ts';
+import { diskStores } from './queries/query-setup.ts';
 
 const hexlogDir = path.join(__dirname, '..', '.hexlog');
 
@@ -35,15 +40,19 @@ const fileBody = (kind: Kind, name: string): Record<string, unknown> =>
 export const definitionOf = (kind: Kind, name: string): Record<string, unknown> =>
   kind === 'types' ? fileBody(kind, name) : { name, ...fileBody(kind, name) };
 
-/** Define em `environment` todo tipo, relação e gate de `.hexlog/`, na chave `<kind>/<name>`. */
+/**
+ * Define em `environment` todo tipo, relação e gate de `.hexlog/`, na chave `<kind>/<name>`.
+ * `schemas` troca o schema de um tipo pelo nome, para o caso que fixa uma versão antiga dele.
+ */
 export async function defineFlowDefinitions(
   environment: Environment,
+  schemas: Record<string, Record<string, unknown>> = {},
 ): Promise<Record<string, Defined>> {
   const defined: Record<string, Defined> = {};
   for (const kind of KINDS) {
     for (const name of namesIn(kind)) {
       const body = definitionOf(kind, name);
-      const input = kind === 'types' ? { name, schema: body } : body;
+      const input = kind === 'types' ? { name, schema: schemas[name] ?? body } : body;
       defined[`${kind}/${name}`] = await environment.ok<Defined>(DEFINE_TOOL[kind], {
         project: PROJECT,
         ...input,
@@ -61,6 +70,25 @@ export async function createFlowEnvironment(slugs: readonly string[]): Promise<E
     await environment.ok('create_process', { project: PROJECT, process: slug });
   }
   return environment;
+}
+
+/**
+ * Abre `slug` sem `lineageInheritance`, como um processo anterior à herança: `create_process` sempre a liga,
+ * então o processo nasce pelo serviço com o campo tirado do manifesto.
+ */
+export function createLegacyLineageProcess(environment: Environment, slug: string): void {
+  const stores = diskStores(environment.dataDir);
+  createProcessService({
+    ...stores,
+    store: {
+      ...stores.store,
+      create: (ref, manifest) => stores.store.create(ref, omit(manifest, ['lineageInheritance'])),
+    },
+    validator: createValidator(),
+    clock: () => new Date(),
+    newUuid: createUuids(),
+    logger: () => undefined,
+  }).createProcess({ project: Name.parse(PROJECT), process: Name.parse(slug) });
 }
 
 export type FlowRecord = {

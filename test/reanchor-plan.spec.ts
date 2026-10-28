@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
+import { ZodError } from 'zod';
 import {
   type DecisionRow,
   type LogRow,
@@ -57,6 +58,12 @@ function plan(
   { older = [OLD_DIRECTIVE, OLD_PREMISE], current = [NEW_DIRECTIVE, NEW_PREMISE] } = {},
 ) {
   return planReanchor({ to: 'directives-4', decisions, older: { 'directives-3': older }, current });
+}
+
+function firstRewrite(decisions: DecisionRow[]) {
+  const [first] = plan(decisions).rewrites;
+  if (first === undefined) throw new Error('expected a rewrite');
+  return first;
 }
 
 describe('generationOf', () => {
@@ -158,11 +165,9 @@ describe('planReanchor', () => {
   });
 
   it('should drop the stored current flag from the copied relations', () => {
-    const result = plan([
-      decision({
-        out: [{ ...anchoredIn(OLD_DIRECTIVE.id), current: true } as never],
-      }),
-    ]);
+    const stored = { ...anchoredIn(OLD_DIRECTIVE.id), current: true };
+
+    const result = plan([decision({ out: [stored] })]);
 
     expect(result.rewrites[0]?.item.relations[1]).toEqual(anchoredIn(NEW_DIRECTIVE.id));
   });
@@ -297,23 +302,17 @@ describe('planReanchor', () => {
     ]);
   });
 
-  it('should send a decision with a current incoming supports to the owner without lineage', () => {
-    const supports = { kind: 'supports', from: own('work-a', 80), current: true };
+  it.each(['work-a', 'work-b'])(
+    'should send a decision with a current incoming supports from %s to the owner without lineage',
+    (origin) => {
+      const supports = { kind: 'supports', from: own(origin, 80), current: true };
 
-    const result = plan([decision({ in: [supports] })]);
+      const result = plan([decision({ in: [supports] })]);
 
-    expect(result.rewrites).toEqual([]);
-    expect(result.owner[0]?.reasons).toEqual([{ code: 'supported' }]);
-  });
-
-  it('should send a decision supported by a current evidence of another process to the owner', () => {
-    const supports = { kind: 'supports', from: own('work-b', 80), current: true };
-
-    const result = plan([decision({ in: [supports] })]);
-
-    expect(result.rewrites).toEqual([]);
-    expect(result.owner[0]?.reasons).toEqual([{ code: 'supported' }]);
-  });
+      expect(result.rewrites).toEqual([]);
+      expect(result.owner[0]?.reasons).toEqual([{ code: 'supported' }]);
+    },
+  );
 
   it('should rewrite a supported decision when the process has lineage inheritance', () => {
     const supports = { kind: 'supports', from: own('work-a', 80), current: true };
@@ -338,11 +337,9 @@ describe('planReanchor', () => {
   });
 
   it('should plan nothing over a decision that was already rewritten', () => {
-    const [first] = plan([decision()]).rewrites;
-    if (first === undefined) throw new Error('expected a rewrite');
     const rewritten = decision({
       id: own('work-a', 2),
-      out: first.item.relations.map((relation) => ({ ...relation })),
+      out: firstRewrite([decision()]).item.relations.map((relation) => ({ ...relation })),
     });
 
     expect(plan([rewritten])).toEqual({ rewrites: [], owner: [] });
@@ -386,7 +383,6 @@ describe('toBatches', () => {
     const batches = toBatches('work-a', 'directives-4', all);
 
     expect(batches.flatMap((batch) => batch.rewrites)).toEqual(all);
-
     expect(batches.map((batch) => batch.rewrites.map(({ item: { target } }) => target))).toEqual(
       batches.map((batch) => batch.records.map(({ target }) => target)),
     );
@@ -411,7 +407,7 @@ describe('toBatches', () => {
   it('should reject an item that BatchItem refuses before returning any batch', () => {
     const bad = { ...rewrite(1), item: { ...item(1), target: 'Not A Target' } };
 
-    expect(() => toBatches('work-a', 'directives-4', [rewrite(2), bad])).toThrow();
+    expect(() => toBatches('work-a', 'directives-4', [rewrite(2), bad])).toThrow(ZodError);
   });
 });
 
@@ -460,21 +456,21 @@ describe('verifyReanchor', () => {
     ).toEqual([{ id: OLD, problem: 'data-differs' }]);
   });
 
-  it('should report an old record that is still current', () => {
+  it('should report an old record that is still current, with the count of current records changed', () => {
     expect(verifyReanchor(planned(), [oldRow()], [oldRow(), newRow()])).toEqual([
       { id: OLD, problem: 'old-still-current' },
       { id: OLD, problem: 'current-count-changed' },
     ]);
   });
 
-  it('should report a missing replacement', () => {
+  it('should report a missing replacement, with the old record still current', () => {
     expect(verifyReanchor(planned(), [oldRow()], [oldRow()])).toEqual([
       { id: OLD, problem: 'new-missing' },
       { id: OLD, problem: 'old-still-current' },
     ]);
   });
 
-  it('should report a replacement that is not current', () => {
+  it('should report a replacement that is not current, with the count of current records changed', () => {
     const replaced = newRow({
       in: [{ kind: 'supersedes', from: own('work-a', 3), current: true }],
     });
