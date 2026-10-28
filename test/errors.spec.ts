@@ -5,6 +5,7 @@ import {
   HexlogError,
   brokenChain,
   capDetails,
+  cycleRejected,
   domainError,
   fromDetails,
   fromIssues,
@@ -15,6 +16,8 @@ import {
   issueDetails,
   legacyDataError,
   mapDetails,
+  markerProcessNotFound,
+  noDefinitions,
   pointer,
   reservedName,
   violationsCapped,
@@ -38,12 +41,13 @@ const makeIssue = (path: PropertyKey[], message = 'invalid value'): z.core.$ZodI
 
 describe('HexlogError', () => {
   it('should keep the code, the message and the details it was built with', () => {
+    const message = 'a message';
     const details = [{ path: '/field', code: 'bad', message: 'bad field' }];
 
-    const error = new HexlogError('INVALID_INPUT', 'invalid input', details);
+    const error = new HexlogError('INVALID_INPUT', message, details);
 
     expect(error.code).toBe('INVALID_INPUT');
-    expect(error.message).toBe('invalid input');
+    expect(error.message).toBe(message);
     expect(error.details).toEqual(details);
   });
 
@@ -62,11 +66,13 @@ describe('HexlogError', () => {
 
 describe('domainError', () => {
   it('should return a HexlogError with the given code and message', () => {
-    const error = domainError('TYPE_NOT_FOUND', '/type', 'unknown-type', 'type not found');
+    const message = 'a message';
+
+    const error = domainError('TYPE_NOT_FOUND', '/type', 'unknown-type', message);
 
     expect(error).toBeInstanceOf(HexlogError);
     expect(error.code).toBe('TYPE_NOT_FOUND');
-    expect(error.message).toBe('type not found');
+    expect(error.message).toBe(message);
   });
 
   it('should describe the refusal in a single detail that repeats the message', () => {
@@ -184,6 +190,54 @@ describe('fixed-code error factories', () => {
       code: 'LEGACY_DATA',
       message: 'legacy 0.x data found; archive it first',
       details: [{ path: '', code: 'run', message: ARCHIVE_COMMAND }],
+    },
+    {
+      name: 'markerProcessNotFound',
+      build: () => markerProcessNotFound('alpha'),
+      code: 'MARKER_NOT_FOUND',
+      message: 'marker names a process that does not exist',
+      details: [
+        {
+          path: '/marker',
+          code: 'process-not-found',
+          message: 'marker names a process that does not exist',
+          process: 'alpha',
+        },
+      ],
+    },
+    {
+      name: 'markerProcessNotFound with a message',
+      build: () => markerProcessNotFound('alpha', 'process alpha was moved out'),
+      code: 'MARKER_NOT_FOUND',
+      message: 'process alpha was moved out',
+      details: [
+        {
+          path: '/marker',
+          code: 'process-not-found',
+          message: 'process alpha was moved out',
+          process: 'alpha',
+        },
+      ],
+    },
+    {
+      name: 'cycleRejected',
+      build: () => cycleRejected(),
+      code: 'CYCLE_REJECTED',
+      message: 'batch would create a supersedes cycle',
+      details: [{ path: '', code: 'cycle', message: 'batch would create a supersedes cycle' }],
+    },
+    {
+      name: 'noDefinitions',
+      build: () => noDefinitions('alpha'),
+      code: 'TYPE_NOT_FOUND',
+      message: "project 'alpha' has no definitions; call define_type first",
+      details: [
+        {
+          path: '/project',
+          code: 'unknown-name',
+          message: "project 'alpha' has no definitions; call define_type first",
+        },
+      ],
     },
     {
       name: 'invalidArgs',
@@ -425,23 +479,21 @@ describe('issueDetails', () => {
 
 describe('fromIssues', () => {
   it('should use the given code and message with the issueDetails of the issues under the prefix', () => {
-    const error = fromIssues(
-      'INVALID_SCHEMA',
-      'schema is wrong',
-      [makeIssue(['type'], 'bad')],
-      '/schema',
-    );
+    const message = 'a message';
+
+    const error = fromIssues('INVALID_SCHEMA', message, [makeIssue(['type'], 'bad')], '/schema');
 
     expect(error.code).toBe('INVALID_SCHEMA');
-    expect(error.message).toBe('schema is wrong');
+    expect(error.message).toBe(message);
     expect(error.details).toStrictEqual([{ path: '/schema/type', code: 'custom', message: 'bad' }]);
   });
 });
 
 describe('mapDetails', () => {
+  const SOURCE_MESSAGE = 'a message';
   const source = (): HexlogError =>
-    new HexlogError('PROCESS_NOT_FOUND', 'process not found', [
-      { path: '/process', code: 'missing', message: 'process not found' },
+    new HexlogError('PROCESS_NOT_FOUND', SOURCE_MESSAGE, [
+      { path: '/process', code: 'missing', message: SOURCE_MESSAGE },
       { path: '/project', code: 'gone', message: 'project gone' },
     ]);
   const remap = (detail: Detail): Detail => ({ ...detail, path: `/mapped${detail.path}` });
@@ -453,12 +505,12 @@ describe('mapDetails', () => {
 
     expect(mapped).not.toBe(original);
     expect(mapped.code).toBe('PROCESS_NOT_FOUND');
-    expect(mapped.message).toBe('process not found');
+    expect(mapped.message).toBe(SOURCE_MESSAGE);
   });
 
   it('should map every detail', () => {
     expect(mapDetails(source(), remap).details).toStrictEqual([
-      { path: '/mapped/process', code: 'missing', message: 'process not found' },
+      { path: '/mapped/process', code: 'missing', message: SOURCE_MESSAGE },
       { path: '/mapped/project', code: 'gone', message: 'project gone' },
     ]);
   });
@@ -479,10 +531,12 @@ describe('fromDetails', () => {
   ];
 
   it('should use the given code and message', () => {
-    const error = fromDetails('INVALID_SCHEMA', 'schema is not valid', details, '/schema');
+    const message = 'a message';
+
+    const error = fromDetails('INVALID_SCHEMA', message, details, '/schema');
 
     expect(error.code).toBe('INVALID_SCHEMA');
-    expect(error.message).toBe('schema is not valid');
+    expect(error.message).toBe(message);
   });
 
   it('should prefix the path of each detail and keep the other keys', () => {
@@ -504,9 +558,10 @@ describe('fromDetails', () => {
 });
 
 describe('withPath', () => {
+  const SOURCE_MESSAGE = 'a message';
   const source = (): HexlogError =>
-    new HexlogError('ATTACHMENT_NOT_FOUND', 'attachment not found', [
-      { path: '/hash', code: 'missing', message: 'attachment not found' },
+    new HexlogError('ATTACHMENT_NOT_FOUND', SOURCE_MESSAGE, [
+      { path: '/hash', code: 'missing', message: SOURCE_MESSAGE },
       { path: '/other', code: 'gone', message: 'other gone' },
     ]);
   const rewritten = (path: string, process?: string): HexlogError =>
@@ -524,12 +579,12 @@ describe('withPath', () => {
 
     expect(error).toBeInstanceOf(HexlogError);
     expect(error.code).toBe('ATTACHMENT_NOT_FOUND');
-    expect(error.message).toBe('attachment not found');
+    expect(error.message).toBe(SOURCE_MESSAGE);
   });
 
   it('should rewrite the path of every detail and add no process key when none is given', () => {
     expect(rewritten('/records/2/data/doc').details).toStrictEqual([
-      { path: '/records/2/data/doc', code: 'missing', message: 'attachment not found' },
+      { path: '/records/2/data/doc', code: 'missing', message: SOURCE_MESSAGE },
       { path: '/records/2/data/doc', code: 'gone', message: 'other gone' },
     ]);
   });

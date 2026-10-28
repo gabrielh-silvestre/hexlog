@@ -236,6 +236,12 @@ describe('buildInheritance', () => {
       ).toEqual([]);
       expect(inheritance.has('supports', e1, u2)).toBe(false);
     });
+
+    it('should inherit nothing when no activation is given', () => {
+      const records = [rec(e1, ['supports', u1]), rec(u2, ['supersedes', u1])];
+
+      expect(buildInheritance(records, buildVigency(records))).toBe(NO_INHERITANCE);
+    });
   });
 
   describe('with a contradicts as explicit cut', () => {

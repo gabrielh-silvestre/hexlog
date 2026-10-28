@@ -88,7 +88,7 @@ describe('Instant', () => {
     '2026-09-30T10:00:00.123456789Z',
     '2026-09-30T10:00:00.123+02:00',
     'ontem',
-  ])('should reject %s', (value) => {
+  ])('should reject %s as an instant that is not ISO 8601 in UTC with milliseconds', (value) => {
     expect(Instant.safeParse(value).success).toBe(false);
   });
 });

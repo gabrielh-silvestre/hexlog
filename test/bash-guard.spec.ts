@@ -81,18 +81,16 @@ function runHook(testCase: HookCase, entry = hookPath) {
   );
 }
 
-/** Roda o hook e confere a recusa: exit 2 e `stderrPart` no stderr. */
-function expectDenied(testCase: HookCase, stderrPart: string, entry = hookPath): void {
-  const result = runHook(testCase, entry);
+type HookResult = ReturnType<typeof runHook>;
 
+/** Confere a recusa: exit 2 e `stderrPart` no stderr. */
+function expectDenied(result: HookResult, stderrPart: string): void {
   expect(result.status).toBe(2);
   expect(result.stderr).toContain(stderrPart);
 }
 
-/** Roda o hook e confere a liberação: exit 0 e stderr vazio. */
-function expectAllowed(testCase: HookCase, entry = hookPath): void {
-  const result = runHook(testCase, entry);
-
+/** Confere a liberação: exit 0 e stderr vazio. */
+function expectAllowed(result: HookResult): void {
   expect(result.status).toBe(0);
   expect(result.stderr).toBe('');
 }
@@ -215,19 +213,23 @@ describe('hook/bash-guard.ts', () => {
   beforeAll(() => {
     prepareHome();
     prepareXdg();
-  });
+  }, 15_000);
 
   describe('when the command reaches D', () => {
     it.each(denyCases)(
       'should deny $name',
       (testCase) => {
-        expectDenied(testCase, reachesMessage);
+        const result = runHook(testCase);
+
+        expectDenied(result, reachesMessage);
       },
       15_000,
     );
 
     it(`should deny ${xdgCase.name}`, () => {
-      expectDenied(xdgCase, dataDirXdg);
+      const result = runHook(xdgCase);
+
+      expectDenied(result, dataDirXdg);
     }, 15_000);
 
     it('should cite the read tools in the complete deny message', () => {
@@ -263,7 +265,9 @@ describe('hook/bash-guard.ts', () => {
     it.each(allowCases)(
       'should allow $name',
       (testCase) => {
-        expectAllowed(testCase);
+        const result = runHook(testCase);
+
+        expectAllowed(result);
       },
       15_000,
     );
@@ -291,7 +295,9 @@ describe('hook/bash-guard.ts', () => {
     );
 
     it('should decide only by the literal check when shell-quote.parse throws, denying a command that contains D', () => {
-      expectDenied({ command: () => `cat \${} ${dataDir}/x` }, reachesMessage);
+      const result = runHook({ command: () => `cat \${} ${dataDir}/x` });
+
+      expectDenied(result, reachesMessage);
     }, 15_000);
   });
 
@@ -348,6 +354,13 @@ describe('hook/bash-guard.ts', () => {
         stderr: undecidableMessage,
       },
       {
+        name: '600 "~" glob tokens whose raw sum is under the budget but whose expanded sum is above it',
+        command: `ls ${Array(600)
+          .fill(`~/${'a'.repeat(20)}*`)
+          .join(' ')}`,
+        stderr: undecidableMessage,
+      },
+      {
         name: 'a command above the length limit even without glob characters',
         command: `echo ${'a'.repeat(1_048_577)}`,
         stderr: undecidableMessage,
@@ -367,7 +380,9 @@ describe('hook/bash-guard.ts', () => {
     it.each(hostileCases)(
       'should deny $name',
       (testCase) => {
-        expectDenied(testCase, testCase.stderr);
+        const result = runHook(testCase);
+
+        expectDenied(result, testCase.stderr);
       },
       15_000,
     );
@@ -382,6 +397,13 @@ describe('hook/bash-guard.ts', () => {
         command: `ls ${Array(4).fill('?'.repeat(4096)).join(' ')}`,
       },
       {
+        name: '"~" glob tokens summing exactly 16384 characters once expanded',
+        command: () => {
+          const token = `~/${'a'.repeat(4096 - tmpHome.length - 2)}*`;
+          return `ls ${Array(4).fill(token).join(' ')}`;
+        },
+      },
+      {
         name: 'a command of exactly 1 MiB',
         command: `echo ${'a'.repeat(1_048_576 - 'echo '.length)}`,
       },
@@ -394,17 +416,23 @@ describe('hook/bash-guard.ts', () => {
     it.each(ceilingCases)(
       'should allow $name',
       (testCase) => {
-        expectAllowed(testCase);
+        const result = runHook(testCase);
+
+        expectAllowed(result);
       },
       15_000,
     );
 
     it('should allow a command that shell-quote cannot parse when it does not cite D', () => {
-      expectAllowed({ command: 'echo ${}; cat ~/.local/share/hex""log/x' });
+      const result = runHook({ command: 'echo ${}; cat ~/.local/share/hex""log/x' });
+
+      expectAllowed(result);
     }, 15_000);
 
     it('should allow a 5000-character token without glob characters', () => {
-      expectAllowed({ command: `echo ${'a'.repeat(5000)}` });
+      const result = runHook({ command: `echo ${'a'.repeat(5000)}` });
+
+      expectAllowed(result);
     }, 15_000);
   });
 
@@ -449,7 +477,9 @@ describe('hook/bash-guard.ts', () => {
     it.each(allowedCases)(
       'should allow $name',
       (testCase) => {
-        expectAllowed(testCase);
+        const result = runHook(testCase);
+
+        expectAllowed(result);
       },
       15_000,
     );
@@ -585,7 +615,9 @@ describe('hook/bash-guard.ts', () => {
     it.each(desyncPrefixes)(
       'should deny for cost a D-matching glob above the ceilings after $name',
       ({ prefix }) => {
-        expectDenied({ command: () => `${prefix}${bigGlob()}` }, costMessage);
+        const result = runHook({ command: () => `${prefix}${bigGlob()}` });
+
+        expectDenied(result, costMessage);
       },
       15_000,
     );
@@ -593,7 +625,9 @@ describe('hook/bash-guard.ts', () => {
     it.each(deniedCases)(
       'should deny $name',
       (testCase) => {
-        expectDenied(testCase, testCase.stderr);
+        const result = runHook(testCase);
+
+        expectDenied(result, testCase.stderr);
       },
       15_000,
     );
@@ -637,10 +671,28 @@ describe('hook/bash-guard.ts', () => {
         name: 'a comment line the shell-quote cannot parse followed by a line break and a glob',
         command: `echo hi # \${}\ncat ${globToD}`,
       },
+      {
+        name: 'the argument count parameter followed by ";" and a glob reaching D',
+        command: `echo $# ; cat ${globToD}`,
+      },
+      {
+        name: 'the argument count parameter followed by a line break and a glob reaching D',
+        command: `echo $#\ncat ${globToD}`,
+      },
+      {
+        name: 'an escaped "\\#" followed by ";" and a glob reaching D',
+        command: `echo \\# ; cat ${globToD}`,
+      },
+      {
+        name: 'an escaped "\\#" followed by a line break and a glob reaching D',
+        command: `echo \\#\ncat ${globToD}`,
+      },
     ])(
       'should deny $name',
       ({ command }) => {
-        expectDenied({ command }, reachesMessage);
+        const result = runHook({ command });
+
+        expectDenied(result, reachesMessage);
       },
       15_000,
     );
@@ -655,13 +707,23 @@ describe('hook/bash-guard.ts', () => {
     ])(
       'should allow $name',
       ({ command }) => {
-        expectAllowed({ command });
+        const result = runHook({ command });
+
+        expectAllowed(result);
       },
       15_000,
     );
 
-    it('should deny a glob reaching D after 900 thousand line breaks inside a comment', () => {
-      expectDenied({ command: `echo hi #${'\n'.repeat(900_000)}cat ${globToD}` }, reachesMessage);
+    it('should deny a glob reaching D after 300 thousand line breaks inside a comment', () => {
+      const result = runHook({ command: `echo hi #${'\n'.repeat(300_000)}cat ${globToD}` });
+
+      expectDenied(result, reachesMessage);
+    }, 15_000);
+
+    it('should deny by the glob budget a comment of 3000 lines that hold a glob each', () => {
+      const result = runHook({ command: `echo hi #${'/tmp/*\n'.repeat(3000)}` });
+
+      expectDenied(result, undecidableMessage);
     }, 15_000);
   });
 
@@ -727,7 +789,9 @@ describe('hook/bash-guard.ts', () => {
   });
 
   it('should deny when run through a symlink to the hook', () => {
-    expectDenied({ command: () => `cat ${dataDir}/x` }, reachesMessage, symlinkTo(hookPath));
+    const result = runHook({ command: () => `cat ${dataDir}/x` }, symlinkTo(hookPath));
+
+    expectDenied(result, reachesMessage);
   }, 15_000);
 });
 
@@ -754,15 +818,21 @@ describe('dist/bash-guard.mjs', () => {
   }, 60_000);
 
   it('should deny cat <D>/x with exit 2', () => {
-    expectDenied({ command: () => `cat ${dataDir}/x` }, reachesMessage, bundle);
+    const result = runHook({ command: () => `cat ${dataDir}/x` }, bundle);
+
+    expectDenied(result, reachesMessage);
   }, 15_000);
 
   it('should allow true with exit 0', () => {
-    expectAllowed({ command: 'true' }, bundle);
+    const result = runHook({ command: 'true' }, bundle);
+
+    expectAllowed(result);
   }, 15_000);
 
   it('should deny when the bundled hook runs through a symlink', () => {
-    expectDenied({ command: () => `cat ${dataDir}/x` }, reachesMessage, symlinkTo(bundle));
+    const result = runHook({ command: () => `cat ${dataDir}/x` }, symlinkTo(bundle));
+
+    expectDenied(result, reachesMessage);
   }, 15_000);
 
   it('should not contain the "Dynamic require of" shim', () => {

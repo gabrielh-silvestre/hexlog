@@ -224,6 +224,16 @@ describe('scripts/flow/report.ts', () => {
         name: 'd-rests-revoked',
         reason: notApproved('rv-sim'),
       },
+      {
+        label: 'a decision resting on a simulated premise that only another simulated derives',
+        name: 'd-rests-ss',
+        reason: notApproved('ss-sim'),
+      },
+      {
+        label: 'a decision resting on a simulated premise that only a human premise derives',
+        name: 'd-rests-sh',
+        reason: notApproved('sh-sim'),
+      },
     ])('should flag $label', ({ name, reason }) => {
       expect(rowFor(result, name)).toEqual(rowOf(name, reason));
     });

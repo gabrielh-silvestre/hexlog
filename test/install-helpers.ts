@@ -83,6 +83,15 @@ export function installBaseline(): { home: string; D: string; version: string } 
   return { home, D, version: packageVersion() };
 }
 
+// Atribuir `undefined` a `process.env.X` grava a string "undefined": a variável ausente precisa de `delete`.
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
 /**
  * Aponta `HOME` (e tira `XDG_DATA_HOME`) para `home` no processo de teste e devolve o restore.
  * `runRealHook` roda o hook num processo filho que herda `process.env` (o mesmo contrato de
@@ -95,11 +104,7 @@ export function useHome(home: string): () => void {
   process.env.HOME = home;
   delete process.env.XDG_DATA_HOME;
   return () => {
-    process.env.HOME = originalHome;
-    if (originalXdg === undefined) {
-      delete process.env.XDG_DATA_HOME;
-    } else {
-      process.env.XDG_DATA_HOME = originalXdg;
-    }
+    restoreEnv('HOME', originalHome);
+    restoreEnv('XDG_DATA_HOME', originalXdg);
   };
 }

@@ -29,7 +29,6 @@ const seedProcess = async () => {
 };
 
 describe('scripts/export.ts', () => {
-  // `jest/require-top-level-describe` barra hook fora de describe.
   beforeAll(seedProcess);
 
   it('should print one JSON line per record in log order, including the non-current one', () => {

@@ -137,6 +137,16 @@ describe('.claude/settings.json', () => {
     expect(matcher.test('node scripts/flow/reanchor.ts --to directives-4')).toBe(false);
   });
 
+  // limite aceito: o padrão pega o descuido, não a burla (aspas que partem o literal, outro launcher)
+  it.each(["node scripts/flow/reanchor.ts --ap''ply", 'bun scripts/flow/reanchor.ts --apply'])(
+    'should not ask before a spelling that evades the reanchor.ts --apply pattern: %s',
+    (command) => {
+      const matcher = permissionMatcher('Bash(node *scripts/flow/reanchor.ts*--apply*)');
+
+      expect(matcher.test(command)).toBe(false);
+    },
+  );
+
   it('should ask before sync-cli.ts --apply and allow no sync-cli.ts call but check', () => {
     const pattern = 'Bash(node *scripts/flow/sync-cli.ts*--apply*)';
     const matcher = permissionMatcher(pattern);

@@ -9,9 +9,10 @@
 // O `git` roda em `process.cwd()`, não na raiz do script, e o log vem de `openReadOnly`, também por
 // cwd e `XDG_DATA_HOME`: o spec aponta os dois para um repositório e um diretório de dados
 // temporários, e trocar o cwd quebraria o spec.
-// As regex `SLUG` e `BASE` só validam o argv, que o shell já expandiu: protegem o script e nada
-// executa o argv; o que sobra cai em `hooks-sao-freios` (`docs/directives/estrategia.md`).
+// As regex `SLUG` e `BASE` e a recusa de `base` iniciada por `-` só validam o argv, que o shell já
+// expandiu: protegem o script e nada executa o argv; o que sobra cai em `hooks-sao-freios` (`docs/directives/estrategia.md`).
 import { spawnSync } from 'node:child_process';
+import { isUndefined } from 'es-toolkit';
 import { Name, RecordId } from '../../src/domain/ids.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { QueryInput } from '../../src/queries/query-service.ts';
@@ -110,7 +111,7 @@ function createTargetOf(slug: string, own: Row[]): (id: string) => string | unde
 /** Relações gravadas e herdadas pela linhagem de `supersedes` (`inheritedOut`, só derivado na leitura). */
 const relationsOf = (row: Row, alias: string): LinkedRelation[] =>
   [...row.out, ...row.inheritedOut].filter(
-    (relation): relation is LinkedRelation => relation.as === alias && relation.to !== undefined,
+    (relation): relation is LinkedRelation => relation.as === alias && !isUndefined(relation.to),
   );
 
 /**
@@ -138,12 +139,16 @@ function uncitedReason(
   return `only-${label.join('+')}: uncited=${shown}${rest}`;
 }
 
-/** Alterações em `docs/directives/` contra o merge-base com `base`; `undefined` se o git falhar. */
+/**
+ * Arquivos alterados contra o merge-base com `base` (de qualquer pasta; o filtro de
+ * `docs/directives/` está em `docOf` e `amendedReasons`) e a data do último commit de cada um;
+ * `undefined` se o git falhar.
+ */
 function amendments(base: string): Amendments | undefined {
   const mergeBase = tryGit(process.cwd(), ['merge-base', 'HEAD', base]);
   // Saída vazia do merge-base é falha, nunca "diff vazio".
   const diff = mergeBase ? tryGit(process.cwd(), ['diff', '--name-only', mergeBase]) : undefined;
-  if (!mergeBase || diff === undefined) {
+  if (!mergeBase || isUndefined(diff)) {
     // O prefixo `git:` fica: a skill `flow-audit` filtra o aviso por ele.
     warn(`git: cannot diff HEAD against "${base}", doc-amended skipped`);
     return undefined;
@@ -170,7 +175,7 @@ function amendments(base: string): Amendments | undefined {
 /** `docs/directives/<doc>.md` de um target `directives.<doc>.<regra>`. */
 function docOf(target: string): string | undefined {
   const doc = /^directives\.([a-z0-9-]+)\./.exec(target)?.[1];
-  return doc === undefined ? undefined : `docs/directives/${doc}.md`;
+  return isUndefined(doc) ? undefined : `docs/directives/${doc}.md`;
 }
 
 function amendedReasons(
@@ -180,8 +185,8 @@ function amendedReasons(
 ): string[] {
   const reasons = relationsOf(row, 'anchored-in').flatMap((relation) => {
     const target = targetOf(relation.to);
-    const file = target === undefined ? undefined : docOf(target);
-    return target !== undefined && file !== undefined && docs?.has(file) === true
+    const file = isUndefined(target) ? undefined : docOf(target);
+    return !isUndefined(target) && !isUndefined(file) && docs?.has(file) === true
       ? [`doc-amended: ${file} (${target})`]
       : [];
   });
@@ -218,7 +223,7 @@ function criticalGapReasons(
   const reasons = closers.flatMap(({ from = '' }) => {
     const answeredBy = answeredByOf(byId.get(from));
     const by = `closed by ${targetOf(from) ?? from}`;
-    if (answeredBy === undefined) {
+    if (isUndefined(answeredBy)) {
       // fechador `directive` não tem o campo; premissa sem ele, num processo que o fixa, é omissão
       return byId.get(from)?.type === 'premise' && answeredByPinned
         ? [`critical-gap: ${by} (answeredBy=none, field pinned)`]
@@ -230,10 +235,10 @@ function criticalGapReasons(
   });
 
   const rule = CRITICAL_RULE.exec(context)?.[1];
-  const file = rule === undefined ? undefined : docOf(rule);
-  if (file === undefined) {
+  const file = isUndefined(rule) ? undefined : docOf(rule);
+  if (isUndefined(file)) {
     reasons.push('critical-gap: rule doc unknown');
-  } else if (amended !== undefined) {
+  } else if (!isUndefined(amended)) {
     // `human` decidiu outra coisa e não emenda o doc; só a emenda posterior ao aval o alcança
     const needsDiff = closers.some(({ from = '' }) => answeredByOf(byId.get(from)) !== 'human');
     if (needsDiff && !amended.docs.has(file)) {
@@ -244,7 +249,7 @@ function criticalGapReasons(
       const amendedAfterApproval = closers.some(({ from = '' }) => {
         const closer = byId.get(from);
         return (
-          committedAt !== undefined &&
+          !isUndefined(committedAt) &&
           isApproved(closer) &&
           Date.parse(closer?.at ?? '') < committedAt
         );
@@ -264,7 +269,7 @@ function touchedLines(gaps: Row[], amended: Amendments | undefined): string[] {
       const rule = CRITICAL_CLASS.test(contextOf(gap))
         ? CRITICAL_RULE.exec(contextOf(gap))?.[1]
         : undefined;
-      return rule === undefined ? [] : [docOf(rule)];
+      return isUndefined(rule) ? [] : [docOf(rule)];
     }),
   );
   return [...(amended?.docs ?? [])]
@@ -277,7 +282,7 @@ function touchedLines(gaps: Row[], amended: Amendments | undefined): string[] {
 function simulatedReasons(row: Row, byId: Map<string, Row>): string[] {
   return relationsOf(row, 'rests-on').flatMap(({ to }) => {
     const premise = byId.get(to);
-    if (premise === undefined || answeredByOf(premise) !== 'simulated') return [];
+    if (isUndefined(premise) || answeredByOf(premise) !== 'simulated') return [];
     if (relationsOf(premise, 'fills-gap').length > 0) return [];
     const approved = premise.in.some(
       (relation) =>
@@ -355,7 +360,7 @@ function report(slug: string, base: string): string[] {
         uncitedReason(citedTargets(row, targetOf), slug, deliveryPremises),
         ...amendedReasons(row, amended?.docs, targetOf),
         ...simulatedReasons(row, byId),
-      ].filter((reason) => reason !== undefined),
+      ].filter((reason) => !isUndefined(reason)),
     ),
   );
   const gapLines = withProjectRelations(gaps).flatMap((gap) =>
@@ -371,7 +376,7 @@ function report(slug: string, base: string): string[] {
 function main(): void {
   const [, , slug, base = DEFAULT_BASE] = process.argv;
   try {
-    if (slug === undefined || !SLUG.test(slug) || !BASE.test(base) || base.startsWith('-')) {
+    if (isUndefined(slug) || !SLUG.test(slug) || !BASE.test(base) || base.startsWith('-')) {
       throw new Error(USAGE);
     }
     process.stdout.write(`${report(slug, base).join('\n')}\n`);

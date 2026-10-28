@@ -174,6 +174,22 @@ describe('releaseNotes', () => {
       expect(releaseNotes(changelog, '6.0.0')).toContain('\n## Added\n');
     });
 
+    it('should keep the rest of the changelog in the section when a fence is never closed', () => {
+      const changelog = [
+        '## [6.0.0] - 2027-03-01',
+        '',
+        'Summary.',
+        '',
+        '```sh',
+        '## [5.0.0] - 2027-02-01',
+        '- Older thing.',
+      ].join('\n');
+
+      const notes = releaseNotes(changelog, '6.0.0');
+
+      expect(notes).toContain('## [5.0.0] - 2027-02-01\n- Older thing.');
+    });
+
     it('should take a fence indented by four spaces as indented code, not a fence', () => {
       const changelog = [
         '## [6.0.0] - 2027-03-01',

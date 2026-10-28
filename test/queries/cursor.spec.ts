@@ -6,10 +6,11 @@ import {
   decodeCursor,
   encodeCursor,
 } from '../../src/queries/cursor.ts';
+import { idAt } from '../fixtures/chain-line.ts';
 import { captureError, detail } from '../helpers.ts';
 
-const ID_A = 'alpha:0198f4a0-0000-7000-8000-000000000001';
-const ID_B = 'beta:0198f4a0-0000-7000-8000-000000000002';
+const ID_A = idAt('alpha', 1);
+const ID_B = idAt('beta', 2);
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
 

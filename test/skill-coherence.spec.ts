@@ -403,7 +403,7 @@ const referenceCases: SkillCase[] = [
   },
 ];
 
-/** Tokens citados numa skill, já classificados por formato — recalculado em cada `describe.each` que o usa (duas vezes por skill, uma por referência). */
+/** Tokens citados numa skill ou referência, já classificados por formato. */
 function tokensCitedBy(skillPath: string) {
   const skillContent = fs.readFileSync(skillPath, 'utf8');
   const backtickTokens = extractInlineBackticks(skillContent);
@@ -416,44 +416,6 @@ function tokensCitedBy(skillPath: string) {
     citedCamelCaseTokens: [...new Set(backtickTokens.filter((t) => CAMEL_CASE_IDENTIFIER.test(t)))],
   };
 }
-
-describe.each(skillCases)('$file', ({ file }) => {
-  const fieldNames = new Set([...FIELD_NAME_ALLOWLIST, ...(SKILL_FIELD_ALLOWLIST[file] ?? [])]);
-  const { citedScreamingSnakeTokens, citedLowerIdentifiers, citedCamelCaseTokens } = tokensCitedBy(
-    path.join(repoRoot, file),
-  );
-
-  // Sanidade: se a skill mudar de forma, este quebra antes das checagens abaixo. Os catálogos do
-  // código já têm a contagem exata nos `describe` de `src/mcp/tools/*.ts` e de `src/errors.ts`.
-  it.each([
-    ['SCREAMING_SNAKE_CASE', citedScreamingSnakeTokens],
-    ['lower-case identifier', citedLowerIdentifiers],
-    ['camelCase', citedCamelCaseTokens],
-  ])('should extract at least one %s token', (_format, tokens) => {
-    expect(tokens.length).toBeGreaterThan(0);
-  });
-
-  it('should cite only tools that are actually registered (src/mcp/tools/)', () => {
-    const known = new Set([...registeredTools, ...reservedNameValues, ...fieldNames]);
-    const unknown = citedLowerIdentifiers.filter((token) => !known.has(token));
-
-    expect(unknown).toEqual([]);
-  });
-
-  it('should cite only SCREAMING_SNAKE_CASE codes that exist in the error catalog or are constants exported from src/domain/ or mcp/kernel.ts', () => {
-    const known = new Set([...errorCodeCatalog, ...exportedConstantNames]);
-    const unknown = citedScreamingSnakeTokens.filter((token) => !known.has(token));
-
-    expect(unknown).toEqual([]);
-  });
-
-  it('should cite only camelCase names that are functions declared in src/ or known schema fields', () => {
-    const known = new Set([...declaredFunctionNames, ...fieldNames]);
-    const unknown = citedCamelCaseTokens.filter((token) => !known.has(token));
-
-    expect(unknown).toEqual([]);
-  });
-});
 
 describe('src/mcp/tools/*.ts', () => {
   it(`should register exactly ${EXPECTED_TOOL_COUNT} tools, with no repetition`, () => {
@@ -469,32 +431,80 @@ describe('src/errors.ts', () => {
   });
 });
 
-describe.each([...skillCases, ...referenceCases])('$file', ({ file, citationExpectations }) => {
-  const { citedFileCitations } = tokensCitedBy(path.join(repoRoot, file));
+describe.each([...skillCases, ...referenceCases])('$file', (testCase) => {
+  const { file, citationExpectations } = testCase;
+  const {
+    citedFileCitations,
+    citedScreamingSnakeTokens,
+    citedLowerIdentifiers,
+    citedCamelCaseTokens,
+  } = tokensCitedBy(path.join(repoRoot, file));
 
-  // Sanidade: sem citação, as checagens abaixo passariam vazias.
-  it('should extract at least one file.ts#symbol citation', () => {
-    expect(citedFileCitations.length).toBeGreaterThan(0);
+  // `references/*.md` ficam só na checagem de citação: ver `referenceCases`.
+  if (skillCases.includes(testCase)) {
+    describe('with the identifiers it cites', () => {
+      const fieldNames = new Set([...FIELD_NAME_ALLOWLIST, ...(SKILL_FIELD_ALLOWLIST[file] ?? [])]);
+
+      // Sanidade: se a skill mudar de forma, este quebra antes das checagens abaixo. Os catálogos do
+      // código já têm a contagem exata nos `describe` de `src/mcp/tools/*.ts` e de `src/errors.ts`.
+      it.each([
+        ['SCREAMING_SNAKE_CASE', citedScreamingSnakeTokens],
+        ['lower-case identifier', citedLowerIdentifiers],
+        ['camelCase', citedCamelCaseTokens],
+      ])('should extract at least one %s token', (_format, tokens) => {
+        expect(tokens.length).toBeGreaterThan(0);
+      });
+
+      it('should cite only tools that are actually registered (src/mcp/tools/)', () => {
+        const known = new Set([...registeredTools, ...reservedNameValues, ...fieldNames]);
+        const unknown = citedLowerIdentifiers.filter((token) => !known.has(token));
+
+        expect(unknown).toEqual([]);
+      });
+
+      it('should cite only SCREAMING_SNAKE_CASE codes that exist in the error catalog or are constants exported from src/domain/ or mcp/kernel.ts', () => {
+        const known = new Set([...errorCodeCatalog, ...exportedConstantNames]);
+        const unknown = citedScreamingSnakeTokens.filter((token) => !known.has(token));
+
+        expect(unknown).toEqual([]);
+      });
+
+      it('should cite only camelCase names that are functions declared in src/ or known schema fields', () => {
+        const known = new Set([...declaredFunctionNames, ...fieldNames]);
+        const unknown = citedCamelCaseTokens.filter((token) => !known.has(token));
+
+        expect(unknown).toEqual([]);
+      });
+    });
+  }
+
+  describe('with the file.ts#symbol citations', () => {
+    // Sanidade: sem citação, as checagens abaixo passariam vazias.
+    it('should extract at least one file.ts#symbol citation', () => {
+      expect(citedFileCitations.length).toBeGreaterThan(0);
+    });
+
+    it('should cite exactly the mapped citations, so no new or removed citation goes unnoticed', () => {
+      expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(citationExpectations)));
+    });
+
+    it.each(citedFileCitations)(
+      'should point %s to a src/ file whose symbol declaration contains the expected substrings',
+      (citation) => {
+        const [citedFile = '', symbol = ''] = citation.split('#');
+        const filePath = path.join(srcDir, citedFile);
+
+        expect(fs.existsSync(filePath)).toBe(true);
+
+        const body = declarationBodyFrom(fs.readFileSync(filePath, 'utf8'), symbol);
+
+        expect(body).toBeDefined();
+        expect((citationExpectations[citation] ?? []).filter((s) => !body?.includes(s))).toEqual(
+          [],
+        );
+      },
+    );
   });
-
-  it('should cite exactly the mapped citations, so no new or removed citation goes unnoticed', () => {
-    expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(citationExpectations)));
-  });
-
-  it.each(citedFileCitations)(
-    'should point %s to a src/ file whose symbol declaration contains the expected substrings',
-    (citation) => {
-      const [citedFile = '', symbol = ''] = citation.split('#');
-      const filePath = path.join(srcDir, citedFile);
-
-      expect(fs.existsSync(filePath)).toBe(true);
-
-      const body = declarationBodyFrom(fs.readFileSync(filePath, 'utf8'), symbol);
-
-      expect(body).toBeDefined();
-      expect((citationExpectations[citation] ?? []).filter((s) => !body?.includes(s))).toEqual([]);
-    },
-  );
 });
 
 // ---- trava: documentação nunca cita linha de arquivo (arquivo + símbolo) ----

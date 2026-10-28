@@ -498,9 +498,9 @@ describe('checkRelation', () => {
     },
   );
 
-  // O `@ts-expect-error` é a prova, conferida pelo `npm run typecheck`; o `expect` só atende o
-  // `jest/expect-expect`.
-  it('should reject at compile time a relation with neither kind nor as', () => {
+  it('should require kind or as in the type of the relation input', () => {
+    // Só o `tsc` (`npm run typecheck`) confere o `@ts-expect-error`: o ts-jest roda com
+    // `isolatedModules`. O `expect` só atende o `jest/expect-expect`.
     // @ts-expect-error nem kind nem as
     const withoutBoth = () => checkRelation({}, ctx());
 

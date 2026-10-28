@@ -4,13 +4,15 @@
 // o log é a borda, e o dado regravado vem do log, nunca de transcrição.
 import { chunk, isEqual, isUndefined, sortBy } from 'es-toolkit';
 import { fingerprint } from '../../src/domain/chain.ts';
+import { processOf } from '../../src/domain/ids.ts';
 import { BATCH_MAX, BatchItem } from '../../src/domain/record.ts';
 import { isCurrent } from './sync.ts';
 
 const GENERATION = /^directives-(\d+)(?::|$)/;
 const ANCHOR_NAMES = new Set(['anchored-in', 'rests-on']);
-// Lista de `directives.fluxo-hexlog.rewrite-divergent-decision`: o resto manda a decisão ao dono.
-const COPIED_NAMES = new Set([
+// Relações que a regravação copia, a lista de `directives.fluxo-hexlog.rewrite-divergent-decision`;
+// `ownerReasons` manda ao dono a decisão com qualquer outra (menos `supersedes`).
+export const COPIED_NAMES = new Set([
   'anchored-in',
   'about-gap',
   'rests-on',
@@ -224,8 +226,6 @@ export function toBatches(process: string, to: string, rewrites: readonly Rewrit
   });
 }
 
-export const processOf = (id: string): string => id.slice(0, Math.max(id.indexOf(':'), 0));
-
 const edgeKeys = (edges: readonly OutEdge[]): string[] =>
   edges.map(({ kind, as, to }) => `${kind}|${as ?? ''}|${to}`).sort();
 
@@ -275,6 +275,31 @@ export function verifyReanchor(
     }
   }
   return divergences;
+}
+
+/**
+ * Resumo do `--apply`: as linhas de stdout e de stderr e o exit code. Sai 1 com lote recusado
+ * (`refused`) ou com divergência do log relido (`after`) contra o gravado (`written`).
+ */
+export function summarizeApply({
+  written,
+  planned,
+  refused,
+  before,
+  after,
+}: {
+  written: readonly Rewrite[];
+  planned: number;
+  refused: boolean;
+  before: readonly LogRow[];
+  after: readonly LogRow[];
+}): { out: string[]; err: string[]; code: 0 | 1 } {
+  const divergences = verifyReanchor(written, before, after);
+  return {
+    out: [`rewrote ${written.length} of ${planned} decisions`],
+    err: divergences.map(({ id, problem }) => `verify failed: ${id}: ${problem}`),
+    code: refused || divergences.length > 0 ? 1 : 0,
+  };
 }
 
 function describeReason(reason: OwnerReason): string {

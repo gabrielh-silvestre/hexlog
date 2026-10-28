@@ -111,10 +111,15 @@ describe('scripts/insights.ts', () => {
       ({ out } = runInsightsOk(xdgHome));
     }, CLI_TIMEOUT);
 
-    it('should report the chain, the attachments and the total duration of an intact process', () => {
-      expect(out).toContain('## alpha/run-1');
-      expect(out).toContain('- chain: ok, 5 records, repaired lines: 0');
+    it('should report the chain of an intact process', () => {
+      expect(out).toContain('## alpha/run-1\n- chain: ok, 5 records, repaired lines: 0');
+    });
+
+    it('should report the attachments of an intact process', () => {
       expect(out).toContain('- attachments: ok');
+    });
+
+    it('should report the total duration of an intact process', () => {
       expect(out).toContain('- total duration: 4.0 min');
     });
 

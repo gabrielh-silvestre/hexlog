@@ -6,7 +6,6 @@ let xdgHome: string;
 let ids: { unit: string; evidence: string; revised: string };
 
 // run-1: a evidência apoia a unidade, que é superada por uma versão sem relações.
-// Cada describe de topo liga esta função ao hook: `jest/require-top-level-describe` barra hook fora de describe.
 const seedInheritance = async () => {
   const { xdg, register } = seedNoteProcess();
   const unit = await register('k1', note('unit', { target: 'run.unit' }));

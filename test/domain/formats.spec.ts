@@ -3,7 +3,7 @@ import { FORMAT_CATALOG, catalogNames, isGitSha } from '../../src/domain/formats
 
 describe('isGitSha', () => {
   it.each(['abcdef1', '0123456789abcdef0123456789abcdef01234567', 'a'.repeat(40)])(
-    'should accept %s',
+    'should accept %s as a git sha of 7 to 40 lowercase hexadecimal characters',
     (value) => {
       expect(isGitSha(value)).toBe(true);
     },

@@ -54,8 +54,8 @@ function versionSection(changelog: string, version: string): string {
  * Monta o corpo do Release: parágrafo de abertura da seção (texto antes do 1º `###`), a linha do PR
  * da release (se houver) e as subseções, com os `###` fora de cerca rebaixados a `##`; o bloco de
  * instalação fecha.
- * ponytail: `####` não é rebaixado e um rodapé de links `[x.y.z]: url` cairia na última seção; a
- * CHANGELOG não tem nenhum dos dois.
+ * ponytail: `####` não é rebaixado, e o CHANGELOG não tem nenhum; o rodapé de links `[x.y.z]: url`
+ * do CHANGELOG cairia no corpo da última seção (`## [1.0.0]`) e só importa se ela for pedida.
  */
 export function releaseNotes(changelog: string, version: string, pr?: ReleasePr): string {
   const lines = versionSection(changelog, version).split('\n');

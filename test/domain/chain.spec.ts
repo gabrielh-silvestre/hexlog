@@ -14,10 +14,11 @@ import {
 } from '../../src/domain/chain.ts';
 import { RELATIONS_MAX } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
+import { idAt } from '../fixtures/chain-line.ts';
 
 const manifest = { project: 'demo', process: 'proc-1', createdAt: '2026-09-30T12:00:00.000Z' };
 
-const FIRST_ID = 'proc-1:0198f4a0-0000-7000-8000-000000000001';
+const FIRST_ID = idAt('proc-1', 1);
 
 function link(overrides: Partial<Link> = {}): Link {
   return {
@@ -109,7 +110,7 @@ describe('anchor', () => {
 
 describe('hashLink', () => {
   const golden = link({
-    id: 'p:0198f4a0-0000-7000-8000-000000000001',
+    id: idAt('p', 1),
     prevHash: '0'.repeat(64),
   });
 
@@ -208,7 +209,7 @@ describe('isValidLink', () => {
       batch: {
         fingerprint: sha256hex('x'),
         key: 'k1',
-        aliases: { first: 'proc-1:0198f4a0-0000-7000-8000-000000000001' },
+        aliases: { first: FIRST_ID },
       },
     });
 

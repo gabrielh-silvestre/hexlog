@@ -250,13 +250,12 @@ describe('createSearchIndex', () => {
     expect(indexedBatches()).toEqual([3, 3]);
   });
 
-  it('should take a ref whose process is "*" as the project scope, never stored', () => {
+  it('should take a ref whose process is PROJECT_INDEX as the project scope, never stored', () => {
     const index = createSearchIndex();
     const records = makeRecords(3);
-    const project: ProcessRef = { project: 'proj', process: '*' };
-    index.search(project, records, 'webhook');
+    index.search(PROJECT, records, 'webhook');
 
-    index.search(project, records, 'webhook');
+    index.search(PROJECT, records, 'webhook');
 
     expect(indexedBatches()).toEqual([3, 3]);
   });

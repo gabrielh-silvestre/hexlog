@@ -30,7 +30,7 @@ export type ProcessStoreOptions = LockOptions & {
 };
 
 /**
- * Teto do `records.jsonl` de um processo (N8, `docs/tetos-dominio-v1.md`): 64 MiB. O lote que
+ * Teto do `records.jsonl` de um processo (`docs/tetos-dominio-v1.md`): 64 MiB. O lote que
  * faria o arquivo passar disso é recusado na escrita com `PROCESS_TOO_LARGE`; exatamente 64 MiB
  * ainda grava e lê.
  */

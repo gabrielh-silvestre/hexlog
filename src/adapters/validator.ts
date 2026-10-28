@@ -229,8 +229,8 @@ function messageOf(error: unknown): string {
  * ramos); acima do teto sai o que o primeiro achou mais um `violations-capped` (`path` vazio), que
  * avisa que a lista está incompleta. Dado válido nunca roda o segundo passe.
  * `checker` e `validate` são neutros: ignoram `pattern` e `patternProperties` e nunca constroem
- * regex do schema (`createCompiler`). O `meta` também não constrói: `validateSchema` do ajv não
- * executa o regex do schema.
+ * regex do schema (`createCompiler`). O `meta` não vê regex do schema porque `ruleDetails` recusa
+ * `pattern` e `patternProperties` antes de `validateSchema`.
  *
  * O `path` de `checkSchema` é sempre relativo ao documento do schema (raiz = `''`), inclusive nos
  * erros de compilação, que saem com `path` vazio; quem expõe o erro (o serviço de definição)

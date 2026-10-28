@@ -583,7 +583,7 @@ describe('writeSkillFolder', () => {
     );
   });
 
-  it('should run the legacy sweep after the swap and ignore an rmSync failure', () => {
+  it('should finish the install and keep sweeping the legacy residue when removing one entry fails', () => {
     const home = createTempDir('skill-sweep-eacces');
     const srcDir = buildSrcDir('# hexlog skill v2\n');
     const originalRmSync = fs.rmSync;
@@ -652,6 +652,18 @@ describe('writeSkillFolder', () => {
       .filter((entry) => entry.startsWith('.hexlog-skill-'));
 
     expect(remaining.sort()).toEqual([...kept].sort());
+  }, 15_000);
+
+  it('should keep, in the orphan sweep, a temporary whose pid is above the int32 range', () => {
+    const home = createTempDir('skill-orphans-big-pid');
+    const srcDir = buildSrcDir('# hexlog skill\n');
+    const claudeDir = path.join(home, '.claude');
+    const huge = `.hexlog-skill-hexlog.tmp-${2 ** 31}`;
+    fs.mkdirSync(path.join(claudeDir, huge), { recursive: true });
+
+    writeSkillFolder(home, 'hexlog', srcDir);
+
+    expect(fs.readdirSync(claudeDir)).toContain(huge);
   }, 15_000);
 
   it('should keep the temporaries beside the target and avoid EXDEV when skills/ is a link to another filesystem', () => {

@@ -1,4 +1,3 @@
-import { expect } from '@jest/globals';
 import { z } from 'zod';
 import {
   planSync,
@@ -205,7 +204,7 @@ export async function inputFor(
   const prefix = `directives.${docSlug}`;
   const docs = await queryAll({ process, type: 'doc', targetPrefix: prefix });
 
-  expect(docs.records.length).toBeLessThanOrEqual(1);
+  if (docs.records.length > 1) throw new Error(`more than one doc record under ${prefix}`);
 
   const doc = docs.records[0];
   const strategy = docSlug === STRATEGY;

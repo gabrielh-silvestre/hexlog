@@ -68,8 +68,8 @@ async function failSecondBatch() {
   const refused = second.records.map((record) =>
     record.type === 'doc' ? { ...record, data: { ...record.data, removed: 'x' } } : record,
   );
-  expectError(await writeBatch(DIRECTIVES, refused, second.key), 'INVALID_RECORD');
-  return { rules, first, second, firstResult };
+  const refusal = await writeBatch(DIRECTIVES, refused, second.key);
+  return { rules, first, second, firstResult, refusal };
 }
 
 describe('planSync', () => {
@@ -573,6 +573,12 @@ describe('planSync', () => {
 
     it('should yield no batch for a document that never had a sync and was deleted', async () => {
       expect(await runSync(DIRECTIVES, 'fantasma', null, null)).toEqual(UP_TO_DATE);
+    });
+
+    it('should refuse the second batch with INVALID_RECORD when its doc record is invalid', async () => {
+      const { refusal } = await failSecondBatch();
+
+      expectError(refusal, 'INVALID_RECORD');
     });
 
     it('should plan only the missing batch of 11 records after the second batch failed', async () => {

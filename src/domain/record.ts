@@ -38,8 +38,8 @@ export function withCanonicalLimit<T extends z.ZodType>(schema: T, max: number, 
   });
 }
 
-// Mora aqui, e não em relations.ts, porque Relation e RelationInput precisam dele em tempo de
-// execução e relations.ts importa este arquivo.
+// Mora aqui porque Relation e RelationInput o usam em tempo de execução; os demais módulos de
+// `domain/` o importam daqui.
 export const RelationKind = z.enum([
   'supersedes',
   'revokes',
@@ -52,7 +52,7 @@ export const RelationKind = z.enum([
 ]);
 export type RelationKind = z.infer<typeof RelationKind>;
 
-/** Surrogate solitário não vira UTF-8: o JCS do hash lançaria e a tool devolveria INTERNAL (TM3). */
+/** Surrogate solitário não vira UTF-8: o JCS do hash lançaria e a tool devolveria INTERNAL. */
 export const WELL_FORMED = 'must not contain a lone surrogate';
 
 const AuthorField = z

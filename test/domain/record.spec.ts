@@ -139,12 +139,15 @@ describe('Relation', () => {
 });
 
 describe('RelationInput', () => {
-  it.each(['@a', '@plan-1', `@${'x'.repeat(63)}`])('should accept the alias %s in to', (value) => {
-    expect(RelationInput.safeParse({ to: value, kind: 'supports' }).success).toBe(true);
-  });
+  it.each(['@a', '@plan-1', `@${'x'.repeat(63)}`])(
+    'should accept %s as an @alias in to',
+    (value) => {
+      expect(RelationInput.safeParse({ to: value, kind: 'supports' }).success).toBe(true);
+    },
+  );
 
   it.each(['plan-1', '', '@', '@A', '@-a', `@${'x'.repeat(64)}`])(
-    'should reject %s in to',
+    'should reject %s in to, as neither a record id nor an @alias',
     (value) => {
       expect(RelationInput.safeParse({ to: value, kind: 'supports' }).success).toBe(false);
     },

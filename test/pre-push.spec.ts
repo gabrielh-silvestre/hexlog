@@ -42,7 +42,7 @@ describe('.husky/pre-push', () => {
       const result = push(`refs/heads/feat ${SHA} refs/heads/feat ${ZERO}`);
 
       expect(result.status).toBe(0);
-      expect(result.calls).toContain('run test:coverage');
+      expect(result.calls).toEqual(['run test:coverage']);
     },
     PUSH_TIMEOUT,
   );
@@ -99,7 +99,7 @@ describe('.husky/pre-push', () => {
     () => {
       const result = push(`refs/heads/feat ${'a'.repeat(64)} refs/heads/feat ${'0'.repeat(64)}`);
 
-      expect(result.calls).toContain('run test:coverage');
+      expect(result.calls).toEqual(['run test:coverage']);
     },
     PUSH_TIMEOUT,
   );

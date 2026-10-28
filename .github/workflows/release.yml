@@ -19,10 +19,12 @@ on:
 
 permissions: {}
 
-# O grupo guarda uma execução pendente: dois pushes seguidos em `main` descartam a do meio. Cada passo é
-# idempotente e a última execução vê o estado final, então o dano é pequeno.
+# Um grupo por evento: o ensaio (`workflow_dispatch`) roda em paralelo à release real e só toca as refs
+# `v0.0.0-dry-run` e `chore/back-merge-dry-run`. Cada grupo guarda uma execução pendente: dois pushes
+# seguidos em `main` descartam a do meio, mas cada passo é idempotente e a última vê o estado final.
+# Num grupo só, um ensaio pendente tomaria o lugar da release do merge e a última execução seria o ensaio.
 concurrency:
-  group: release
+  group: release-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
@@ -54,7 +56,9 @@ jobs:
             echo "branch=chore/back-merge-v${version//./-}"
           } >> "$GITHUB_OUTPUT"
       # O PR da release é o que contém o merge commit; sem PR (push direto), a linha some do corpo.
-      # Logo após o merge a consulta pode voltar vazia: repete até 3 vezes e avisa se continuar vazia.
+      # Logo após o merge a consulta pode voltar vazia: repete até 3 vezes, com 5 s entre elas, e avisa
+      # se continuar vazia. O laço só cobre a resposta vazia; erro de `gh api` derruba o passo pelo `-e`
+      # de propósito, e um `|| true` o trocaria pelo aviso de PR ausente.
       - id: notes
         env:
           GH_TOKEN: ${{ github.token }}

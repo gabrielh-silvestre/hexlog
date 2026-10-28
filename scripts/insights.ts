@@ -81,9 +81,9 @@ function listed(label: string, entries: string[]): string[] {
 }
 
 /**
- * SE8: sinais para calibrar onde a `key` vale. A impressão (`fingerprint`) de todo lote está na
+ * Sinais para calibrar onde a `key` vale. A impressão (`fingerprint`) de todo lote está na
  * cadeia, com ou sem `key`. Possível duplicata sem chave: lote sem `key` com a impressão de um lote
- * anterior do processo. Chave em excesso (G4): lote de 1 registro com `key` cuja impressão nenhum
+ * anterior do processo. Chave em excesso: lote de 1 registro com `key` cuja impressão nenhum
  * outro lote do processo repete. É um proxy: o reenvio com a mesma `key` devolve `replayed` sem
  * gravar, então "nunca teve reenvio" não é observável no log.
  */

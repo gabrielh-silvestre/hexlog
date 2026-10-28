@@ -15,7 +15,6 @@ import type { Environment } from './environment.ts';
 
 let environment: Environment;
 
-// Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
 const openEnvironment = async () => {
   environment = await createEnvironment();
   await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });

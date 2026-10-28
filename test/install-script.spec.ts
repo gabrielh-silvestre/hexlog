@@ -133,7 +133,7 @@ describe('scripts/install.ts', () => {
     }, 15_000);
 
     it('should still verify without aborting raw when <D> is unreadable with ENOTDIR', () => {
-      const blocker = path.join(home, 'not-a-dir');
+      const blocker = path.join(createInstallHome('check-enotdir').home, 'not-a-dir');
       fs.writeFileSync(blocker, '');
 
       const result = runInstaller(home, path.join(blocker, 'hexlog'), ['--check']);

@@ -44,7 +44,8 @@ export type Vigency = {
 
 /**
  * Só enxerga as relações dos registros recebidos, e o resultado não depende da ordem deles.
- * `currentOf` com bifurcação (que a escrita recusa) escolhe o menor id, para seguir determinista.
+ * `currentOf` com bifurcação (que a escrita recusa) segue o menor id de cada ramo e devolve o
+ * primeiro vigente que achar, para seguir determinista.
  */
 export function buildVigency(records: readonly Linked[]): Vigency {
   const successors = new Map<RecordId, RecordId[]>();

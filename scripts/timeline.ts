@@ -17,7 +17,7 @@ type Section = { target: string; entries: Entry[] };
 
 function recordsOf(query: QueryService, project: string, target: string): QueryRecord[] {
   // chamada única: cada página refaria a leitura e a verificação do log inteiro (custo quadrático).
-  // O teto de 64 MiB vale por processo e o alcance projeto soma todos eles (limite listado para a F8)
+  // O teto de 64 MiB vale por processo e o alcance projeto soma todos eles (limite listado em `docs/directives/fronteiras.md`, checklist de review)
   return query.queryRecords({
     project,
     scope: 'project',

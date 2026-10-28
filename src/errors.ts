@@ -111,7 +111,7 @@ export function reservedName(): HexlogError {
 /** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */
 const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
 
-/** Recusa de dado 0.x em `<D>` (D-13): a mesma para o kernel MCP e para os scripts de leitura (P11). */
+/** Recusa de dado 0.x em `<D>` (D-13): a mesma para o kernel MCP e para os scripts de leitura. */
 export function legacyDataError(): HexlogError {
   return new HexlogError('LEGACY_DATA', 'legacy 0.x data found; archive it first', [
     { path: '', code: 'run', message: ARCHIVE_COMMAND },
@@ -255,6 +255,7 @@ export function attachmentNotFound(path: string, hash: string): HexlogError {
   return domainError('ATTACHMENT_NOT_FOUND', path, 'not-found', `attachment '${hash}' not found`);
 }
 
+/** `ATTACHMENT_CORRUPTED`: o blob em disco não bate com o hash que o endereça; `path` como em `attachmentNotFound`. */
 export function attachmentCorrupted(path: string, hash: string): HexlogError {
   return domainError(
     'ATTACHMENT_CORRUPTED',
@@ -264,24 +265,26 @@ export function attachmentCorrupted(path: string, hash: string): HexlogError {
   );
 }
 
+/** `INVALID_INPUT` em `/path`: o arquivo a anexar resolve para fora da raiz permitida ou dentro do diretório de dados. */
 export function outsideAllowedRoot(): HexlogError {
   return invalidInput('/path', 'outside-allowed-root', 'path is outside the allowed root');
 }
 
-/** `grewWhileReading`: o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
-export function tooBigFile(maxBytes: number, grewWhileReading = false): HexlogError {
-  const message = grewWhileReading
-    ? 'file changed while being read'
-    : `file exceeds ${maxBytes} bytes`;
+/** Sem `maxBytes`, o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
+export function tooBigFile(maxBytes?: number): HexlogError {
+  const message =
+    maxBytes === undefined ? 'file changed while being read' : `file exceeds ${maxBytes} bytes`;
   return invalidInput('/path', 'too-big', message);
 }
 
+/** `PROCESS_NOT_FOUND` em `/process`, com o nome do processo ausente em `process`. */
 export function processNotFound(process: Name): HexlogError {
   return domainError('PROCESS_NOT_FOUND', '/process', 'not-found', 'process not found', {
     process,
   });
 }
 
+/** `PROCESS_CORRUPTED` em `/process`: o manifesto do processo não pôde ser lido. */
 export function unreadableManifest(process: Name): HexlogError {
   return domainError(
     'PROCESS_CORRUPTED',
@@ -304,7 +307,10 @@ export function processTooLarge(process: Name, limitBytes: number, advice = fals
  * ou vazia: `unknown-name`); com versões, o nome existe e a pedida não (`unknown-version`,
  * listando as que existem, nunca vazia). `code` é o `*_NOT_FOUND` do tipo de definição.
  */
-export function definitionNotFound(code: ErrorCode, existing: string[]): HexlogError {
+export function definitionNotFound(
+  code: Extract<ErrorCode, 'TYPE_NOT_FOUND' | 'RELATION_NOT_FOUND' | 'GATE_NOT_FOUND'>,
+  existing: string[],
+): HexlogError {
   if (existing.length === 0) {
     return domainError(code, '/name', 'unknown-name', 'definition name not found');
   }
@@ -313,6 +319,7 @@ export function definitionNotFound(code: ErrorCode, existing: string[]): HexlogE
   });
 }
 
+/** `INTERNAL` em `/version`: o arquivo de uma versão de definição existe e não pôde ser lido. */
 export function unreadableDefinition(): HexlogError {
   return domainError(
     'INTERNAL',
@@ -332,6 +339,7 @@ export function invalidDefinition(): HexlogError {
   );
 }
 
+/** `PROJECT_NOT_FOUND` em `/project`: o projeto citado não existe. */
 export function projectNotFound(): HexlogError {
   return domainError('PROJECT_NOT_FOUND', '/project', 'unknown-project', 'project not found');
 }
@@ -341,6 +349,7 @@ export function typeNotFound(): HexlogError {
   return domainError('TYPE_NOT_FOUND', '/type', 'unknown-name', 'type not found in the project');
 }
 
+/** `GATE_NOT_FOUND` em `/gate`: o gate pedido não está fixado no manifesto do processo. */
 export function gateNotFound(): HexlogError {
   return domainError(
     'GATE_NOT_FOUND',
@@ -365,6 +374,7 @@ export function typeNotPinned(type: string, path = '/type'): HexlogError {
   );
 }
 
+/** `MARKER_NOT_FOUND` em `/marker`: o registro marcador citado não existe no processo. */
 export function markerNotFound(): HexlogError {
   return domainError(
     'MARKER_NOT_FOUND',
@@ -374,6 +384,7 @@ export function markerNotFound(): HexlogError {
   );
 }
 
+/** `MARKER_NOT_FOUND` em `/marker`: o marcador cita um processo que não existe; `message` troca a frase padrão. */
 export function markerProcessNotFound(
   process: Name,
   message = 'marker names a process that does not exist',
@@ -402,6 +413,7 @@ export function invalidCursorPayload(issues: z.core.$ZodIssue[]): HexlogError {
   );
 }
 
+/** `RELATION_NOT_FOUND` em `path`: `missing` quando o destino não existe, `destination-corrupted` quando existe e está corrompido. */
 export function relationNotFound(
   path: string,
   code: 'missing' | 'destination-corrupted',
@@ -412,6 +424,7 @@ export function relationNotFound(
   return domainError('RELATION_NOT_FOUND', path, code, message, { process });
 }
 
+/** `CYCLE_REJECTED` na raiz: o lote fecharia um ciclo de `supersedes`. */
 export function cycleRejected(): HexlogError {
   return domainError('CYCLE_REJECTED', '', 'cycle', 'batch would create a supersedes cycle');
 }

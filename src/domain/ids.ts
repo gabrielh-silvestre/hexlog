@@ -26,8 +26,8 @@ export type RecordId = z.infer<typeof RecordId>;
 
 /**
  * D-24: uma entrada por processo lido; `null` para processo vazio. O marcador cobre exatamente os
- * processos que nomeia: no alcance projeto, o que ele não nomeia é lido como vazio. Só tipo: nenhum
- * consumidor valida.
+ * processos que nomeia: no alcance projeto, o que ele não nomeia é lido como vazio. Só tipo: a forma
+ * é validada na borda (`mcp/kernel.ts#MarkerRecord`) e cada id, pelo serviço (`MARKER_NOT_FOUND`).
  */
 export type Marker = Record<Name, RecordId | null>;
 
@@ -43,12 +43,16 @@ export const TypeNames = z
 /** D-01: apelido de um item do lote, citado pelos itens seguintes como `@<alias>`. */
 export const alias = Name;
 
-/** Processo dono do registro: o trecho do id antes do `:`, sem leitura de disco (Q1). */
+/** Processo dono do registro: o trecho do id antes do `:`, sem leitura de disco. */
 export function processOf(id: RecordId): Name {
   return id.slice(0, id.indexOf(':'));
 }
 
-/** D-02/TI5: nomes de processo que colidem com pastas do projeto. */
+/**
+ * Nomes que não valem como processo. `types`, `relations`, `gates` e `attachments` colidem com pastas
+ * do projeto; `archive` não colide (o `<D>/archive/` fica fora de `.v1`) e a reserva vem do desenho
+ * da 1.0 (ADR 0009, item 13, emenda de 2026-10-04).
+ */
 export const RESERVED_PROCESS_NAMES = [
   'types',
   'relations',
