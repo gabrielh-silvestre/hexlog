@@ -1,5 +1,4 @@
 import { spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { jest } from '@jest/globals';
 import { compose } from '../../src/compose.ts';
@@ -14,7 +13,7 @@ import type { BatchItem } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import type { Logger } from '../../src/shared/logger.ts';
-import { at, createTempDir, rejectionOf } from '../helpers.ts';
+import { at, createDataHome, rejectionOf } from '../helpers.ts';
 import type { Manifest } from '../../src/domain/manifest.ts';
 import type {
   AttachmentStatus,
@@ -353,15 +352,21 @@ export const verifiedOf = (
 /** Id de registro bem formado de um processo que nunca recebeu o registro. */
 export const ghostId = (process: Name, n = 999) => `${process}:00000000-0000-7000-8000-${HEX(n)}`;
 
+/** `compose` real sobre `home`, sem log; o relógio padrão é fixo em `NOW`. */
+export function composeIn(
+  { xdg, dataDir }: { xdg: string; dataDir: string },
+  clock: () => Date = () => NOW,
+) {
+  return compose({ dataDir, cwd: xdg, clock, logger: () => undefined }).services;
+}
+
 /**
  * `<xdg>/hexlog` com o tipo `note` e o processo `ref` criados pelo `compose` real; `register` grava
  * um registro com a `key` e devolve o id.
  */
 export function seedNoteProcess(ref: ProcessRef = { project: PROJECT, process: ORIGIN }) {
-  const xdg = createTempDir('xdg');
-  const dataDir = path.join(xdg, 'hexlog');
-  fs.mkdirSync(dataDir);
-  const { services } = compose({ dataDir, cwd: xdg, clock: () => NOW, logger: () => undefined });
+  const home = createDataHome();
+  const services = composeIn(home);
   services.definition.defineType({ project: ref.project, name: 'note', schema: NOTE });
   services.process.createProcess(ref);
   const register = async (key: string, item: BatchItem) => {
@@ -373,7 +378,7 @@ export function seedNoteProcess(ref: ProcessRef = { project: PROJECT, process: O
     });
     return at(records, 0).id;
   };
-  return { xdg, register };
+  return { xdg: home.xdg, register };
 }
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');

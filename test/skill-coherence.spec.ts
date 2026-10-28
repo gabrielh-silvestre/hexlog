@@ -89,39 +89,40 @@ const LINE_PROSE_CITATION = /\blinhas?\s+~?\d+/i;
 
 describe('LINE_NUMBER_CITATION', () => {
   // literais montados por concatenação: o grep de aceite não pode achar citação neste arquivo
-  it('should match file:N and file:N-M in any cited extension', () => {
-    for (const citation of [
-      'a.ts' + ':12',
-      'a.ts' + ':1-3',
-      'package.json' + ':7',
-      'eslint.config.js' + ':12',
-      'ci.yml' + ':3',
-      'AGENTS.md' + ':39',
-      'server.py' + ':87-98',
-    ]) {
-      expect(LINE_NUMBER_CITATION.test(`veja \`${citation}\` aqui`)).toBe(true);
-    }
+  it.each([
+    'a.ts' + ':12',
+    'a.ts' + ':1-3',
+    'package.json' + ':7',
+    'eslint.config.js' + ':12',
+    'ci.yml' + ':3',
+    'AGENTS.md' + ':39',
+    'server.py' + ':87-98',
+  ])('should match the citation %s', (citation) => {
+    expect(LINE_NUMBER_CITATION.test(`veja \`${citation}\` aqui`)).toBe(true);
   });
 
-  it('should not match a hexlog target, file#symbol or a product name with .js', () => {
-    for (const text of ['hex:target:x', 'a.ts#sym', 'Node.js' + ':24', 'Next.js' + ':3000']) {
+  it.each(['hex:target:x', 'a.ts#sym', 'Node.js' + ':24', 'Next.js' + ':3000'])(
+    'should not match %s',
+    (text) => {
       expect(LINE_NUMBER_CITATION.test(text)).toBe(false);
-    }
-  });
+    },
+  );
 });
 
 describe('LINE_PROSE_CITATION', () => {
-  it('should match "linha N" and "linhas ~N"', () => {
-    for (const text of ['linhas 141–192 de x', 'na linha 12', 'Linhas ~40']) {
+  it.each(['linhas 141–192 de x', 'na linha 12', 'Linhas ~40'])(
+    'should match "linha N" in %j',
+    (text) => {
       expect(LINE_PROSE_CITATION.test(text)).toBe(true);
-    }
-  });
+    },
+  );
 
-  it('should ignore "linha" without a number', () => {
-    for (const text of ['da linha da declaração', 'uma linha só', 'linhagem 3']) {
+  it.each(['da linha da declaração', 'uma linha só', 'linhagem 3'])(
+    'should ignore "linha" without a number in %j',
+    (text) => {
       expect(LINE_PROSE_CITATION.test(text)).toBe(false);
-    }
-  });
+    },
+  );
 });
 
 // ---- catálogo real, extraído do código (nunca copiado à mão) — global ao projeto, não por skill ----
@@ -157,8 +158,9 @@ const reservedNameValues: readonly string[] = RESERVED_PROCESS_NAMES;
 /**
  * Campos de entrada/saída, relações, valores de enum e exemplos citados em crase nas skills que coincidem em
  * forma com nome de tool ou de valor reservado, mas não são nenhum dos dois — allowlist explícita em vez de
- * afrouxar o regex de identificador. Vale para toda skill; o que só uma skill cita fica em
- * `SKILL_FIELD_ALLOWLIST`, para não afrouxar a checagem das outras.
+ * afrouxar o regex de identificador. É uma lista plana, compartilhada por toda skill: a maioria das
+ * entradas serve a um arquivo só, e o dono decidiu não separá-las por arquivo. `SKILL_FIELD_ALLOWLIST`
+ * guarda só os campos de saída da `query` que apenas o `hexlog-flow` cita.
  */
 const FIELD_NAME_ALLOWLIST = new Set([
   'type',
@@ -303,7 +305,6 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'patternProperties',
   'maxLength',
   'minLength',
-  'git-sha',
   'pattern-not-allowed',
   'lone-surrogate',
   'omitted',
@@ -330,69 +331,57 @@ const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
   ],
 };
 
+type SkillCase = {
+  file: string;
+  citationExpectations: Record<string, string[]>;
+};
+
 /**
  * Substrings esperadas no corpo da declaração de cada `arquivo.ts#símbolo` citado — mapa explícito em vez
  * de inferir a partir de outras crases da mesma linha. A substring prova o vínculo símbolo ↔ código de erro
  * ou mensagem: mover o `throw` para outra função quebra o teste, de propósito. `installation.ts#installArtifact`
  * espera a chamada de `verifyPreparedArtifact` para provar que a checagem ocorre dentro da instalação.
  */
-const HEXLOG_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
-  'domain/ids.ts#Name': ['Name'],
-  'errors.ts#breakingChange': ['BREAKING_CHANGE'],
-  'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
-  'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-  'errors.ts#typeNotPinned': ['TYPE_NOT_PINNED'],
-  'commands/register/static.ts#checkData': ['checkData'],
-  'errors.ts#gateNotFound': ['GATE_NOT_FOUND'],
-  'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
-  'installation.ts#installArtifact': ['verifyPreparedArtifact'],
-};
-
-const HEXLOG_SETUP_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
-  'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
-  'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-  'errors.ts#breakingChange': ['BREAKING_CHANGE'],
-};
-
-const HEXLOG_FLOW_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'errors.ts#keyConflict': ['IDEMPOTENCY_CONFLICT'],
-  'commands/register/errors.ts#ruleRefusal': ['FORK_REJECTED'],
-  'errors.ts#lockTimeout': ['LOCK_TIMEOUT'],
-  'commands/register/attachments.ts#checkAttachments': ['unmarked-attachment'],
-};
-
-const FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'domain/ids.ts#Name': ['Name'],
-  'domain/ids.ts#Target': ['Target'],
-};
-
-const TARGET_FORMAT_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'domain/ids.ts#Target': ['Target'],
-  'domain/gate.ts#matchesTargetPrefix': ['target'],
-};
-
-const AUDIT_TYPES_CITATION_EXPECTATIONS: Record<string, string[]> = {
-  'domain/definitions.ts#attachmentFields': ['attachmentFields'],
-  'domain/gate.ts#evaluateGate': ['evaluateGate'],
-};
-
-type SkillCase = {
-  file: string;
-  citationExpectations: Record<string, string[]>;
-};
-
 const skillCases: SkillCase[] = [
-  { file: 'skills/hexlog/SKILL.md', citationExpectations: HEXLOG_CITATION_EXPECTATIONS },
+  {
+    file: 'skills/hexlog/SKILL.md',
+    citationExpectations: {
+      'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
+      'domain/ids.ts#Name': ['Name'],
+      'errors.ts#breakingChange': ['BREAKING_CHANGE'],
+      'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
+      'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
+      'errors.ts#typeNotPinned': ['TYPE_NOT_PINNED'],
+      'commands/register/static.ts#checkData': ['checkData'],
+      'errors.ts#gateNotFound': ['GATE_NOT_FOUND'],
+      'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
+      'installation.ts#installArtifact': ['verifyPreparedArtifact'],
+    },
+  },
   {
     file: 'skills/hexlog-setup/SKILL.md',
-    citationExpectations: HEXLOG_SETUP_CITATION_EXPECTATIONS,
+    citationExpectations: {
+      'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
+      'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
+      'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
+      'errors.ts#breakingChange': ['BREAKING_CHANGE'],
+    },
   },
-  { file: 'skills/hexlog-flow/SKILL.md', citationExpectations: HEXLOG_FLOW_CITATION_EXPECTATIONS },
+  {
+    file: 'skills/hexlog-flow/SKILL.md',
+    citationExpectations: {
+      'errors.ts#keyConflict': ['IDEMPOTENCY_CONFLICT'],
+      'commands/register/errors.ts#ruleRefusal': ['FORK_REJECTED'],
+      'errors.ts#lockTimeout': ['LOCK_TIMEOUT'],
+      'commands/register/attachments.ts#checkAttachments': ['unmarked-attachment'],
+    },
+  },
   {
     file: 'skills/hexlog-flow/references/audit-types.md',
-    citationExpectations: AUDIT_TYPES_CITATION_EXPECTATIONS,
+    citationExpectations: {
+      'domain/definitions.ts#attachmentFields': ['attachmentFields'],
+      'domain/gate.ts#evaluateGate': ['evaluateGate'],
+    },
   },
 ];
 
@@ -401,15 +390,21 @@ const skillCases: SkillCase[] = [
 const referenceCases: SkillCase[] = [
   {
     file: 'skills/hexlog-setup/references/flow-map-schema.md',
-    citationExpectations: FLOW_MAP_SCHEMA_CITATION_EXPECTATIONS,
+    citationExpectations: {
+      'domain/ids.ts#Name': ['Name'],
+      'domain/ids.ts#Target': ['Target'],
+    },
   },
   {
     file: 'skills/hexlog-flow/references/target-format.md',
-    citationExpectations: TARGET_FORMAT_CITATION_EXPECTATIONS,
+    citationExpectations: {
+      'domain/ids.ts#Target': ['Target'],
+      'domain/gate.ts#matchesTargetPrefix': ['target'],
+    },
   },
 ];
 
-/** Tokens citados numa skill, já classificados por formato — computado uma vez por caso. */
+/** Tokens citados numa skill, já classificados por formato — recalculado em cada `describe.each` que o usa (duas vezes por skill, uma por referência). */
 function tokensCitedBy(skillPath: string) {
   const skillContent = fs.readFileSync(skillPath, 'utf8');
   const backtickTokens = extractInlineBackticks(skillContent);
@@ -429,13 +424,14 @@ describe.each(skillCases)('$file', ({ file }) => {
     path.join(repoRoot, file),
   );
 
-  // Sanidade: se a skill mudar de forma, este quebra antes das checagens abaixo.
-  it('should extract non-empty catalogs and tokens', () => {
-    expect(registeredTools.length).toBeGreaterThan(0);
-    expect(citedScreamingSnakeTokens.length).toBeGreaterThan(0);
-    expect(citedLowerIdentifiers.length).toBeGreaterThan(0);
-    expect(errorCodeCatalog.length).toBeGreaterThan(0);
-    expect(citedCamelCaseTokens.length).toBeGreaterThan(0);
+  // Sanidade: se a skill mudar de forma, este quebra antes das checagens abaixo. Os catálogos do
+  // código já têm a contagem exata nos `describe` de `src/mcp/tools/*.ts` e de `src/errors.ts`.
+  it.each([
+    ['SCREAMING_SNAKE_CASE', citedScreamingSnakeTokens],
+    ['lower-case identifier', citedLowerIdentifiers],
+    ['camelCase', citedCamelCaseTokens],
+  ])('should extract at least one %s token', (_format, tokens) => {
+    expect(tokens.length).toBeGreaterThan(0);
   });
 
   it('should cite only tools that are actually registered (src/mcp/tools/)', () => {
@@ -486,8 +482,9 @@ describe.each([...skillCases, ...referenceCases])('$file', ({ file, citationExpe
     expect(new Set(citedFileCitations)).toEqual(new Set(Object.keys(citationExpectations)));
   });
 
-  it('should point each citation to a src/ file whose symbol declaration contains the expected substrings', () => {
-    for (const citation of citedFileCitations) {
+  it.each(citedFileCitations)(
+    'should point %s to a src/ file whose symbol declaration contains the expected substrings',
+    (citation) => {
       const [citedFile = '', symbol = ''] = citation.split('#');
       const filePath = path.join(srcDir, citedFile);
 
@@ -496,12 +493,9 @@ describe.each([...skillCases, ...referenceCases])('$file', ({ file, citationExpe
       const body = declarationBodyFrom(fs.readFileSync(filePath, 'utf8'), symbol);
 
       expect(body).toBeDefined();
-
-      for (const substring of citationExpectations[citation] ?? []) {
-        expect(body).toContain(substring);
-      }
-    }
-  });
+      expect((citationExpectations[citation] ?? []).filter((s) => !body?.includes(s))).toEqual([]);
+    },
+  );
 });
 
 // ---- trava: documentação nunca cita linha de arquivo (arquivo + símbolo) ----

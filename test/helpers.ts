@@ -167,6 +167,14 @@ export function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: str
 export const errno = (code: string): Error =>
   Object.assign(new Error(`${code}: /abs/secret/path`), { code });
 
+/** Cria um `XDG_DATA_HOME` temporário com o `<D>` (`<xdg>/hexlog`) vazio; devolve os dois. */
+export function createDataHome(): { xdg: string; dataDir: string } {
+  const xdg = createTempDir('xdg');
+  const dataDir = path.join(xdg, 'hexlog');
+  fs.mkdirSync(dataDir);
+  return { xdg, dataDir };
+}
+
 /** `<xdg>/hexlog` é o `<D>` que o script resolve; `source` vira o conteúdo dele. */
 export function copyToXdg(source: string): string {
   const xdg = createTempDir('xdg');
