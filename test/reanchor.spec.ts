@@ -11,7 +11,7 @@ import {
   registerFlowRecord,
   type FlowRecord,
 } from './flow-data.ts';
-import { copyToXdg, createTempDir, snapshot } from './helpers.ts';
+import { anchoredIn, copyToXdg, createTempDir, restsOn, snapshot } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -56,9 +56,6 @@ const decision = (target: string, relations: Record<string, unknown>[]): FlowRec
   },
   relations,
 });
-
-const anchoredIn = (to: string) => ({ kind: 'derivesFrom', as: 'anchored-in', to });
-const restsOn = (to: string) => ({ kind: 'derivesFrom', as: 'rests-on', to });
 
 async function register(process: string, record: FlowRecord, name: string): Promise<void> {
   ids[name] = await registerFlowRecord(environment, process, record);

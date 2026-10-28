@@ -72,6 +72,10 @@ export function walkPages(
 export const recordId = (process: string, n: number): string =>
   `${process}:${String(n).padStart(8, '0')}`;
 
+/** Relações cruas do fluxo: a decisão cita a diretriz (`anchored-in`) ou a premissa (`rests-on`). */
+export const anchoredIn = (to: string) => ({ kind: 'derivesFrom', as: 'anchored-in', to });
+export const restsOn = (to: string) => ({ kind: 'derivesFrom', as: 'rests-on', to });
+
 /** Parseia uma saída JSONL (um objeto JSON por linha) em `T[]`; o formato de cada linha é por conta do chamador. */
 export const jsonLines = <T>(out: string): T[] =>
   out

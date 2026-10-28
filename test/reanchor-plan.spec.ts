@@ -12,6 +12,7 @@ import {
   toBatches,
   verifyReanchor,
 } from '../scripts/flow/reanchor-plan.ts';
+import { anchoredIn, restsOn } from './helpers.ts';
 
 const uuid = (n: number): string => `01a15a00-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const id = (generation: number, n: number): string => `directives-${generation}:${uuid(n)}`;
@@ -36,9 +37,6 @@ const OLD_DIRECTIVE = directive(3, 1, 'directives.a.rule', 'Rule text');
 const NEW_DIRECTIVE = directive(4, 1, 'directives.a.rule', 'Rule text');
 const OLD_PREMISE = premise(3, 2, 'directives.estrategia.p', 'Premise text');
 const NEW_PREMISE = premise(4, 2, 'directives.estrategia.p', 'Premise text');
-
-const anchoredIn = (to: string) => ({ kind: 'derivesFrom', as: 'anchored-in', to });
-const restsOn = (to: string) => ({ kind: 'derivesFrom', as: 'rests-on', to });
 
 function decision(overrides: Partial<DecisionRow> = {}): DecisionRow {
   return {

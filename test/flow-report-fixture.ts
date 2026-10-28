@@ -8,7 +8,7 @@ import { BATCH_MAX } from '../src/domain/record.ts';
 import type { QueryResult } from '../src/queries/query-service.ts';
 import { defineFlowDefinitions, definitionOf, type FlowRecord } from './flow-data.ts';
 import { git } from './flow-repo.ts';
-import { at, copyToXdg, createTempDir } from './helpers.ts';
+import { anchoredIn, at, copyToXdg, createTempDir, restsOn } from './helpers.ts';
 import { type Environment, createEnvironment } from './mcp/environment.ts';
 
 const PROJECT = 'hexlog';
@@ -25,8 +25,6 @@ const lookup =
     return value;
   };
 
-const rests = (to: string) => ({ kind: 'derivesFrom', as: 'rests-on', to });
-const anchoredIn = (to: string) => ({ kind: 'derivesFrom', as: 'anchored-in', to });
 const fillsGap = (to: string) => ({ kind: 'answers', as: 'fills-gap', to });
 
 const premise = (
@@ -135,7 +133,7 @@ async function registerObjectiveFixture(
     environment,
     proc,
     Array.from({ length: decisions }, (_, index) =>
-      decision(proc, `d${index}`, [rests(objective)]),
+      decision(proc, `d${index}`, [restsOn(objective)]),
     ),
   );
 }
@@ -276,28 +274,36 @@ export async function createReportFixture(): Promise<ReportFixture> {
     alpha: premise('feat-r', 'alpha'),
     beta: premise('feat-r', 'beta'),
     gamma: premise('feat-r', 'gamma'),
-    'd-obj': decision('feat-r', 'd-obj', [rests('@objective')]),
-    'd-none': decision('feat-r', 'd-none', [rests(directive('none'))]),
+    'd-obj': decision('feat-r', 'd-obj', [restsOn('@objective')]),
+    'd-none': decision('feat-r', 'd-none', [restsOn(directive('none'))]),
     'd-both-none': decision('feat-r', 'd-both-none', [
-      rests('@objective'),
-      rests(directive('none')),
+      restsOn('@objective'),
+      restsOn(directive('none')),
     ]),
-    'd-revoked-prem': decision('feat-r', 'd-revoked-prem', [rests('@objective'), rests('@gamma')]),
-    'd-ok': decision('feat-r', 'd-ok', [rests('@alpha')]),
-    'd-doc': decision('feat-r', 'd-doc', [anchoredIn(directive('r1')), rests('@alpha')]),
-    'd-far': decision('feat-r', 'd-far', [anchoredIn(directive('r2')), rests('@beta')]),
-    'd-both': decision('feat-r', 'd-both', [anchoredIn(directive('r1')), rests('@objective')]),
+    'd-revoked-prem': decision('feat-r', 'd-revoked-prem', [
+      restsOn('@objective'),
+      restsOn('@gamma'),
+    ]),
+    'd-ok': decision('feat-r', 'd-ok', [restsOn('@alpha')]),
+    'd-doc': decision('feat-r', 'd-doc', [anchoredIn(directive('r1')), restsOn('@alpha')]),
+    'd-far': decision('feat-r', 'd-far', [anchoredIn(directive('r2')), restsOn('@beta')]),
+    'd-both': decision('feat-r', 'd-both', [anchoredIn(directive('r1')), restsOn('@objective')]),
     'd-no-rest': decision('feat-r', 'd-no-rest', []),
-    'd-old': decision('feat-r', 'd-old', [rests('@objective')]),
+    'd-old': decision('feat-r', 'd-old', [restsOn('@objective')]),
     'd-new': decision(
       'feat-r',
       'd-new',
-      [{ kind: 'supersedes', to: '@d-old' }, rests('@alpha')],
+      [{ kind: 'supersedes', to: '@d-old' }, restsOn('@alpha')],
       'd-old',
     ),
-    'd-rev': decision('feat-r', 'd-rev', [rests('@objective')]),
-    'd-a': decision('feat-r', 'd-a', [rests('@objective')]),
-    'd-b': decision('feat-r', 'd-b', [{ kind: 'supersedes', to: '@d-a' }, rests('@alpha')], 'd-a'),
+    'd-rev': decision('feat-r', 'd-rev', [restsOn('@objective')]),
+    'd-a': decision('feat-r', 'd-a', [restsOn('@objective')]),
+    'd-b': decision(
+      'feat-r',
+      'd-b',
+      [{ kind: 'supersedes', to: '@d-a' }, restsOn('@alpha')],
+      'd-a',
+    ),
     // revoga `d-rev` e o superseder `d-b`: nem `d-a` nem `d-b` voltam a valer
     revoker: gapOf('feat-r', 'revoker', 'Fixture', [
       { kind: 'revokes', to: '@d-rev' },
@@ -312,14 +318,14 @@ export async function createReportFixture(): Promise<ReportFixture> {
     alpha: premise('feat-clean', 'alpha'),
   });
   await registerItems(environment, 'feat-clean', [
-    decision('feat-clean', 'd-ok', [rests(lookup(clean, 'clean id')('alpha'))]),
+    decision('feat-clean', 'd-ok', [restsOn(lookup(clean, 'clean id')('alpha'))]),
   ]);
 
   // `d-new` não regrava o `rests-on` de `d-old`: o apoio só chega pela herança da linhagem
   const inheritedIds = await registerNamed(environment, 'feat-inherit', {
     objective: premise('feat-inherit', 'objective'),
     alpha: premise('feat-inherit', 'alpha'),
-    'd-old': decision('feat-inherit', 'd-old', [rests('@objective')]),
+    'd-old': decision('feat-inherit', 'd-old', [restsOn('@objective')]),
     'd-new': decision('feat-inherit', 'd-new', [{ kind: 'supersedes', to: '@d-old' }], 'd-old'),
   });
 
@@ -426,10 +432,10 @@ export async function createReportFixture(): Promise<ReportFixture> {
     'rv-revoker': gapOf('feat-c', 'rv-revoker', 'Fixture', [
       { kind: 'revokes', to: '@p-rv-approved' },
     ]),
-    'd-rests-revoked': decision('feat-c', 'rests-revoked', [rests('@p-rv-sim')]),
-    'd-rests-sim': decision('feat-c', 'rests-sim', [rests('@p-open-sim')]),
-    'd-rests-approved': decision('feat-c', 'rests-approved', [rests('@p-ok-sim')]),
-    'd-rests-common': decision('feat-c', 'rests-common', [rests('@p-common')]),
+    'd-rests-revoked': decision('feat-c', 'rests-revoked', [restsOn('@p-rv-sim')]),
+    'd-rests-sim': decision('feat-c', 'rests-sim', [restsOn('@p-open-sim')]),
+    'd-rests-approved': decision('feat-c', 'rests-approved', [restsOn('@p-ok-sim')]),
+    'd-rests-common': decision('feat-c', 'rests-common', [restsOn('@p-common')]),
   });
   const idOf = lookup(ids, 'fixture id');
   // a diretriz que fecha a lacuna vive em `directives-9`, outro processo, como no dado real
