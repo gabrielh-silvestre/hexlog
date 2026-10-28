@@ -21,22 +21,21 @@ Repeat the row once per phase of the model, in order. The Links column reads `<r
 
 ## What to do
 
-1. Open or continue the unit: follow `references/unit-lifecycle.md` in the
-   `hexlog-flow` skill (find the process by the unit path, or create it).
-2. After each command in the table, register one record of the phase type with the
-   target `<process>.<suffix>`, the unit path in `unit` and the other fields that the
-   phase type declares in `hexlog-model.json` (for example a short `summary`, and the
-   attachment hash in the attachment field when the artifact is long). For each link in
-   the table, query the process for the current record of the target type and add the
-   named relation pointing to that record id.
-3. When the last phase is done, close the unit: evaluate the gate `{{gate}}`, then query
-   one record per phase. If a phase has no record, tell the developer, list the missing
-   phases and offer a retroactive record built from the phase artifact. Never edit
-   `hexlog-model.json` while using the unit.
+All mechanics live in `references/unit-lifecycle.md` of the `hexlog-flow` skill (open
+the `hexlog-flow` skill and read that file); this skill only points to it.
+
+1. Open or continue the unit: sections "Resolver o processo da unidade" and "Sem acerto".
+2. After each command in the table, register the phase: section "Registrar uma fase"
+   (target `<process>.<target suffix>`, links, `key`, a phase that already has a record).
+3. When the last phase is done, close the unit with the gate `{{gate}}`: section
+   "Fechar a unidade". Never edit `hexlog-model.json` while using the unit.
 
 ## If something fails
 
 - The process or project is not found: the model may be out of date or never applied to
   this hexlog. Ask the developer to run the `hexlog-setup` skill again.
+- The hexlog tools are unavailable (not listed, or the server is not running): continue
+  the developer's task without recording, and tell the developer once. Do not retry on
+  every phase.
 - Anything the developer did not ask for stays unchanged: read files only to fill the
   records.

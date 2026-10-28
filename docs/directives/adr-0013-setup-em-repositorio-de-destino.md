@@ -65,3 +65,13 @@ Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferra
 ## Follow-ups
 
 Sonda e camadas B e A (segundo PR, com emenda datada); script automatizado de aceite; instalação sem checkout; hooks do Claude Code no destino; kit portátil de diretrizes, premissa e lacuna; validador de `hexlog-model.json` como script de leitura.
+
+## Emenda 2026-10-28
+
+Emenda datada aos achados da review do PR #321, aplicada por decisão do dono, Gabriel Baldino. Decision e Consequences acima não mudam.
+
+- **Limite aceito do item 3.** Resolver a unidade por `query` com `scope: "project"` herda o `PROCESS_CORRUPTED` do alcance projeto (ver a seção `query` de [tools.md](../tools.md)): uma cadeia quebrada em qualquer processo do projeto falha a consulta em todas as outras unidades, e o custo cresce com o número de unidades. O limite é aceito. Alternativa não adotada: calcular o nome, consultar com `process` e `where` por `unit`, e usar `scope: "project"` só na colisão.
+- **Evidência do aceite.** "Medido" e "observado no aceite" (Context, Why chosen) apoiam-se nas `evidence` do processo `feat-hexlog-setup-new-project`, registradas no hexlog do dono: `evidence.setup-acceptance` e `evidence.setup-acceptance-after-review`. Elas vivem no log, não em arquivo versionado.
+- **Correção do Context sobre `specify integration upgrade`.** A documentação oficial (`docs/integrations/cli.md` do Spec Kit, versão 1.2.4) diz que o upgrade bloqueia quando há arquivo gerado modificado e que `--force` sobrescreve; a preservação por padrão é do `uninstall` e do `switch`. A alternativa 2 segue rejeitada, porque o `--force` desfaz a camada A nos dois casos.
+- **Leitura do `AGENTS.md` pelo Claude Code.** Sem `CLAUDE.md`, o Claude Code lê o `AGENTS.md` direto (v2.1.277 ou mais nova). O que deixa o bloco da camada C inerte é um `CLAUDE.md` sem o import `@AGENTS.md`, ou um Claude Code mais antigo. A adesão medida no aceite foi com o import presente, não no caminho padrão sem opt-in. O item 7 vale como está.
+- **Exceção do item 7 mantida.** O dono manteve, em 2026-10-28, a escrita do bloco no `AGENTS.md` sem opt-in. A premissa que registra essa exceção substitui `no-third-party-edit`.

@@ -1,12 +1,9 @@
 {
   "schema": 1,
-  "modelVersion": 1,
   "project": "photo-app",
-  "language": "en",
   "unit": {
     "kind": "feature directory",
     "location": "specs/<NNN-name>",
-    "processName": "unit path in lowercase; every run of characters outside [a-z0-9] becomes a hyphen; at most 63 characters",
     "examples": [
       { "path": "specs/001-photo-albums", "process": "specs-001-photo-albums" },
       { "path": "specs/002-user-login", "process": "specs-002-user-login" }
@@ -101,5 +98,5 @@
       }
     ]
   },
-  "plug": { "flow": "spec-kit", "flowVersion": "1.2.4", "layer": "C" }
+  "plug": { "layer": "C" }
 }

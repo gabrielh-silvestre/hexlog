@@ -74,7 +74,9 @@ Marque cada item com a evidência (saída do comando, trecho do `git diff` ou o 
   `hexlog-model.json` sem edição de arquivo à mão.
 - [ ] A entrevista direta, no diretório sem fluxo reconhecível, gera os mesmos artefatos.
 - [ ] O que o `specify init` gerou foi anotado (layout observado, `CLAUDE.md`, `AGENTS.md` e regiões
-  gerenciadas).
+  gerenciadas), com a nota de se a extensão `agent-context` está instalada
+  (`.specify/extensions/agent-context/`) e, estando, dos marcadores lidos de
+  `agent-context-config.yml`.
 - [ ] O `.claude/settings.json` do destino não ganhou hook.
 - [ ] O `git diff` de `.claude/skills/speckit-*` e o de `CLAUDE.md` estão vazios sem opt-in do dev.
 

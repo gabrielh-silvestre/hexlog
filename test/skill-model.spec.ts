@@ -35,9 +35,7 @@ type Model = {
 // Chaves de topo documentadas em `model-schema.md`: as obrigatórias e a única opcional.
 const REQUIRED_MODEL_KEYS = [
   'schema',
-  'modelVersion',
   'project',
-  'language',
   'unit',
   'phases',
   'types',
@@ -48,12 +46,12 @@ const REQUIRED_MODEL_KEYS = [
 const OPTIONAL_MODEL_KEYS = ['targetPattern'];
 
 // Chaves exatas dos objetos aninhados, como `model-schema.md` as documenta (sem opcionais).
-const UNIT_KEYS = ['kind', 'location', 'processName', 'examples'];
+const UNIT_KEYS = ['kind', 'location', 'examples'];
 const PHASE_KEYS = ['name', 'command', 'type', 'target', 'artifact', 'links'];
-const PLUG_KEYS = ['flow', 'flowVersion', 'layer'];
+const PLUG_KEYS = ['layer'];
 const LINK_KEYS = ['relation', 'to'];
 // Camadas do plug documentadas em `model-schema.md`.
-const PLUG_LAYERS = ['C', 'B', 'A'];
+const PLUG_LAYERS = ['C'];
 
 const sortedKeys = (value: object) => Object.keys(value).sort();
 
@@ -127,7 +125,7 @@ function registerPhases(model: Model, skipLinksOf?: string) {
     records: model.phases.map(({ name, type, target, links }) => ({
       alias: name,
       type,
-      target,
+      target: `${processOf(model)}.${target}`,
       data: { unit: at(model.unit.examples, 0).path, summary: `the ${name} phase` },
       relations:
         name === skipLinksOf

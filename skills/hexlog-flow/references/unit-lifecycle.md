@@ -30,7 +30,9 @@ diferentes. Agrupe os acertos pelo prefixo do `id` antes de `:`
 (`domain/ids.ts#RecordId`, que é o nome do processo):
 
 - um processo: é ele, siga;
-- mais de um: pare e pergunte ao desenvolvedor qual vale;
+- mais de um (a unidade foi reaberta, passo 4): vale o de maior sufixo numérico no nome,
+  sendo o nome sem sufixo o de número 1; os anteriores estão aposentados e não recebem
+  registro novo. Se os nomes não se ordenam assim, pare e pergunte ao desenvolvedor qual vale;
 - nenhum acerto: passo 3.
 
 `PROJECT_NOT_FOUND` ou `TYPE_NOT_FOUND` na consulta ou no `create_process` significam que o
@@ -43,9 +45,9 @@ no nome calculado**: ele poderia colidir com o processo quebrado.
 Calcule o nome do processo a partir da unidade, no formato de `domain/ids.ts#Name`:
 
 1. minúsculas;
-2. cada trecho fora de `[a-z0-9]` vira `-`;
-3. tire `-` das pontas;
-4. trunque em 63 caracteres.
+2. cada sequência de caracteres fora de `[a-z0-9]` vira um único `-`;
+3. trunque em 63 caracteres;
+4. tire `-` das pontas (depois de truncar, para o nome não terminar em `-`).
 
 Nome vazio ou igual a um valor de `RESERVED_PROCESS_NAMES`: acrescente um sufixo e
 confirme com o desenvolvedor. Chame `create_process`:
@@ -56,8 +58,11 @@ confirme com o desenvolvedor. Chame `create_process`:
   outra `unit` é colisão de nomes de unidades diferentes: peça ao desenvolvedor um
   sufixo e repita.
 
-O sufixo escolhido fica persistido pelos próprios registros (campo `unit`), então as
-fases seguintes acham o processo pelo passo 2.
+O sufixo vive só no **nome do processo**: o campo `unit` guarda sempre o caminho
+canônico, nunca o sufixo. As fases seguintes acham o processo pelo `unit` (passo 2), e o
+nome com sufixo vem do id dos acertos. Ao reabrir uma unidade (passo 4), o processo novo
+leva o próximo sufixo numérico (`-2`, `-3`, ...), truncando a base para o nome caber em 63
+caracteres; o anterior fica aposentado, e o passo 2 elege o novo pelo maior sufixo.
 
 ## 4. `stale` e `TYPE_NOT_PINNED`
 
@@ -66,14 +71,32 @@ as versões do projeto quando nasceu: definição criada depois não vale para e
 `stale` compara o projeto inteiro (`commands/process.ts#staleOf`) e dá falso alarme
 para um tipo que esta unidade nem usa. Por isso avise o desenvolvedor **só se o
 tipo exigido pela próxima fase está em `stale` ou ausente do que o processo
-fixou**. Então proponha fechar a unidade ou abrir outra, nunca fixar de novo. Registrar
+fixou**. Então proponha fechar a unidade (passo 6) ou reabri-la em processo novo, com o
+próximo sufixo do passo 3 (o anterior fica aposentado), nunca fixar de novo. Registrar
 num tipo não fixado dá `TYPE_NOT_PINNED`: pare e avise.
 
 ## 5. Registrar uma fase
 
-Use `target` no formato `<processo>.<fase>`, o `unit` em `data`, as relações que a
-tabela de fases do modelo declara e uma `key` estável, conforme a árvore de decisão
-do `SKILL.md`. Campo de anexo exige `attach` antes (ver "Anexos" no `SKILL.md`).
+Use `target` no formato `<processo>.<target da tabela de fases>` (a coluna de target da
+fase no modelo, que pode diferir do nome da fase), o `unit` em `data`, as relações que a
+tabela de fases do modelo declara e uma `key`, conforme a árvore de decisão do
+`SKILL.md`. Campo de anexo exige `attach` antes (ver "Anexos" no `SKILL.md`).
+
+**Relações da fase.** Para cada `links` da fase, faça `query` do processo pelo registro
+vigente do tipo de destino e grave a relação nomeada apontando para o id dele.
+
+**Fase com registro vigente** (a fase foi reexecutada, por exemplo um segundo
+`/speckit-plan`). Antes de gravar, faça `query` do processo pelo target da fase. Se há
+registro vigente, grave o novo no mesmo target com `supersedes` do id vigente e regrave as
+relações do antigo. Cada registro vigente de fase sucessora que tinha `derivesFrom` (ou a
+relação da tabela) apontando para o antigo é regravado do mesmo modo: `supersedes` dele,
+mesmos dados e a relação apontando para o novo. Sem isso o `no_pending` do gate reprova a
+unidade, porque a sucessora aponta para um registro superado.
+
+**`key`.** Ela identifica a intenção do lote, não a fase. O reenvio do mesmo lote (erro
+incerto) repete a `key`; a reexecução da fase é lote diferente e leva `key` nova (por
+exemplo `<target>:abertura` na primeira vez e `<target>:reexecucao-2` na seguinte), porque
+a mesma `key` com lote diferente é `IDEMPOTENCY_CONFLICT`.
 
 ## 6. Fechar a unidade
 
