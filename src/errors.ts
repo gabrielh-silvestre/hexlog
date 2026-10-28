@@ -111,7 +111,7 @@ export function reservedName(): HexlogError {
 /** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */
 const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
 
-/** Recusa de dado 0.x em `<D>` (D-13): a mesma para o kernel MCP e para os scripts de leitura (P11). */
+/** Recusa de dado 0.x em `<D>` (D-13): a mesma para o kernel MCP e para os scripts de leitura. */
 export function legacyDataError(): HexlogError {
   return new HexlogError('LEGACY_DATA', 'legacy 0.x data found; archive it first', [
     { path: '', code: 'run', message: ARCHIVE_COMMAND },

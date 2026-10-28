@@ -30,7 +30,7 @@ import { defineTool, MarkerRecord, READ_ANNOTATIONS, type ToolDeps } from '../ke
  */
 const LIMIT_MAX = 200;
 
-/** Itens de `changes.entered` e de `changes.left` que cabem no envelope da tool (M4 da herança do PR-5). */
+/** Itens de `changes.entered` e de `changes.left` que cabem no envelope da tool. */
 export const CHANGES_ITEMS_CAP = 100;
 
 /** Ids por lista de `evidence` de uma pergunta de `evaluate_gate`; corte igual ao de `changes`, também palpite. */
@@ -125,7 +125,7 @@ const DescribeTypeInput = z.strictObject({
   version: z.string().optional(),
 });
 
-// Saídas enxutas (TM7): só a forma que o cliente precisa checar; o miolo variável fica solto.
+// Saídas enxutas: só a forma que o cliente precisa checar; o miolo variável fica solto.
 const QueryOutput = z.object({
   records: z.array(
     z.looseObject({
@@ -183,7 +183,7 @@ const EvaluateGateOutput = z.object({
   marker: MarkerRecord,
 });
 
-// N10: schema congelado; `ok` exige `breaks` e `attachmentBreaks` vazias.
+// Schema congelado; `ok` exige `breaks` e `attachmentBreaks` vazias.
 const VerifyChainOutput = z.object({
   ok: z.boolean(),
   totalRecords: z.number(),
@@ -281,7 +281,7 @@ const DESCRIBE_TYPE_DESCRIPTION =
 
 type PagedChanges = Changes & { omitted?: { entered: number; left: number } };
 
-/** M4: corta `entered` e `left` em `CHANGES_ITEMS_CAP` e conta o que ficou de fora em `omitted`. */
+/** Corta `entered` e `left` em `CHANGES_ITEMS_CAP` e conta o que ficou de fora em `omitted`. */
 function capChanges(changes: Changes): PagedChanges {
   const entered = changes.entered.length - CHANGES_ITEMS_CAP;
   const left = changes.left.length - CHANGES_ITEMS_CAP;

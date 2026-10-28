@@ -53,7 +53,7 @@ type Services = {
  * `register<X>Tools(server: McpServer, deps: ToolDeps): void`, que chama `defineTool` uma vez por tool,
  * com o nome e o schema de entrada declarados uma só vez, e um `run` que repassa a entrada validada ao
  * serviço. Nenhuma regra de negócio na tool; a exceção é a montagem de página e o corte do envelope
- * (decisão 12), que moram na própria tool (`tools/query.ts#queryPage`, `gatePage`, `capChanges` e
+ * (ADR 0009, item 1, emenda de 2026-10-16), que moram na própria tool (`tools/query.ts#queryPage`, `gatePage`, `capChanges` e
  * `capEvidence`).
  */
 export type ToolDeps = {
@@ -91,7 +91,7 @@ export type ToolResult<Output> =
  * Ponte zod → SDK: anuncia o JSON Schema do próprio zod (`~standard.jsonSchema`), mas troca o
  * `validate` por um que deixa a entrada crua passar. Quem valida de verdade é `execute`, para o erro
  * sair como `INVALID_INPUT` com `details[]` (D-26) e não como "Input validation error" do SDK.
- * Depende de `schema['~standard']` trazer `jsonSchema` (zod 4.6.5) e de o SDK 2.x (conferido na
+ * Depende de `schema['~standard']` trazer `jsonSchema` (zod 4) e de o SDK 2.x (conferido na
  * 2.3.1) exigir `StandardSchemaWithJSON`: bump de zod ou do SDK exige rodar
  * `test/mcp/kernel.spec.ts`.
  */

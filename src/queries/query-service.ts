@@ -64,8 +64,7 @@ export type { AttachmentPage, DescribeTypeResult, ListResult };
 const DEFAULT_LIMIT = 50;
 /**
  * Teto de `text` em caracteres: o custo da busca cresce com os termos distintos (AND mais o
- * fallback OR; 183 KB deram 2,4 s sobre 5.000 registros). Mesmo número do 0.x
- * (`SEARCH_MAX_CHARS`); a F5 reusa a constante no `.max()` do zod.
+ * fallback OR; 183 KB deram 2,4 s sobre 5.000 registros). A tool `query` usa a constante no `.max()` do zod.
  */
 export const QUERY_TEXT_MAX_CHARS = 200;
 export type QueryInput = Filters & {
@@ -148,7 +147,7 @@ export type EvaluateGateInput = {
    * incompatível com `evidence: "full"` (o padrão do serviço): o lote pede `counts` ou `failing`.
    */
   targets?: readonly Target[];
-  /** Marcador de uma leitura anterior: a avaliação se reproduz sobre o que existia então (SG3). */
+  /** Marcador de uma leitura anterior: a avaliação se reproduz sobre o que existia então. */
   marker?: Marker;
   /** O quanto de `evidence` cada pergunta traz; o serviço assume `full`, a forma completa. */
   evidence?: EvidenceMode;
@@ -189,8 +188,8 @@ export type VerifyChainResult = Chain & {
 export type QueryService = {
   /**
    * D-24: lê o alcance pedido pelo carregador único e devolve os registros vigentes que passam nos
-   * filtros (todos, com `includeNonCurrent`), com relações de entrada e saída, `needsReview` e
-   * `attachmentStatus`. Ordem de saída: alcance processo por `seq`, alcance projeto por (`at`,
+   * filtros (todos, com `includeNonCurrent`), com as relações de entrada e saída no modo de
+   * `relations`, `needsReview` e `attachmentStatus`. Ordem de saída: alcance processo por `seq`, alcance projeto por (`at`,
    * processo, `seq`), com `text` por relevância e o mesmo desempate. Página com resultado leva ao
    * menos um registro (o 1º sai inteiro mesmo acima de `maxChars`); consulta sem resultado devolve
    * `records: []`, com `hint` quando o `targetPrefix` quase casou. Exceção a "ao menos um
@@ -246,7 +245,7 @@ export type QueryService = {
   list(input: ListInput): ListResult;
   /**
    * Uma página do texto do anexo, já conferido contra o sha256 dos bytes pela porta.
-   * `ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`, `INVALID_INPUT` (`/offset` além do fim) e
+   * `ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`, `INVALID_INPUT` (`/offset` além do fim ou no meio de um par surrogate) e
    * `IO_ERROR`.
    */
   readAttachment(input: ReadAttachmentInput): AttachmentPage;
@@ -405,7 +404,7 @@ export function createQueryService(deps: {
     );
   }
 
-  /** D-26: o que mudou no resultado entre o marcador de `changesSince` e a leitura de agora. */
+  /** O que mudou no resultado entre o marcador de `changesSince` e a leitura de agora. */
   function changesOf(
     input: QueryInput,
     target: ReadTarget,

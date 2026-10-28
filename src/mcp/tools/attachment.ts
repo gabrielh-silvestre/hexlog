@@ -16,7 +16,7 @@ const Attach = z.strictObject({
 
 const Attached = z.object({ hash: Hash, bytes: z.number(), deduplicated: z.boolean() });
 
-// N11: `.int()` e os pisos recusam a entrada na borda, com `INVALID_INPUT` e `details[].path`.
+// `.int()` e os pisos recusam a entrada na borda, com `INVALID_INPUT` e `details[].path`.
 const ReadAttachment = z.strictObject({
   project: Name,
   hash: Hash,

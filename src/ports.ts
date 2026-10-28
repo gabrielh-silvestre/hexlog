@@ -27,7 +27,7 @@ export type Decision<T> = { line?: string; result: T };
  * lock dorme com `setTimeout`. Toda regra de negócio fica em `decide`; o adaptador só sabe de bytes, lock e
  * prefixo `\n`.
  *
- * Erros comuns às quatro portas de armazenamento: falha de disco sai como `IO_ERROR`
+ * Erros comuns às três portas de armazenamento: falha de disco sai como `IO_ERROR`
  * (`adapters/fs/io.ts#toHexlogError`), com o errno em minúsculas em `details[0].code`; nome inválido
  * (projeto, processo, definição) sai como `INVALID_INPUT` com `invalid-name`. Os `details[].path`
  * (`/project`, `/process`, `/name`, `/version`, `/hash`, `/path`, `/text`) apontam o campo da tool
@@ -146,7 +146,7 @@ export type AttachmentReader = {
  * Lado de escrita de `AttachmentReader`: grava blobs, nunca sobrescreve.
  * D-15: `putPath` só lê arquivo dentro da raiz configurada na construção do adaptador e fora do
  * `dataDir`; as regras de extensão e de "exatamente um de `text`/`path`", além de texto vazio e
- * surrogate solto em `putText`, são do serviço (`commands/attachment.ts`, F4).
+ * surrogate solto em `putText`, são do serviço (`commands/attachment.ts`).
  * D-25: operação síncrona, como as demais portas (só `ProcessStore.write` é `async`).
  * `invalid-name` (`INVALID_INPUT`) vale para as quatro operações; `invalid-hash`, só para `status` e
  * `read`.

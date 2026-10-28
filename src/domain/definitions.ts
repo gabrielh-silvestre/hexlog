@@ -8,7 +8,7 @@ import { RelationKind, withCanonicalLimit } from './record.ts';
 /** Teto do schema de um tipo em caracteres canônicos (JCS), igual ao do 0.x; docs/tetos-dominio-v1.md. */
 export const RECORD_TYPE_MAX_CHARS = 16_000;
 
-/** Teto de uma relação (`from`/`to`) e de um gate (`where`) em caracteres canônicos (JCS); docs/tetos-dominio-v1.md. */
+/** Teto do objeto inteiro de uma relação e de um gate em caracteres canônicos (JCS); docs/tetos-dominio-v1.md. */
 const RELATION_GATE_MAX_CHARS = 16_000;
 
 /** Teto de perguntas por gate; docs/tetos-dominio-v1.md. */

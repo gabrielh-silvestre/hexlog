@@ -62,7 +62,7 @@ type Rule<K extends DefinitionKind> = {
 
 const FIRST_VERSION = '1.0';
 
-// Mesmo teto de tentativas do 0.x (`writeVersionExclusive`): cada volta relê o estado, então só
+// Teto de tentativas da escrita exclusiva: cada volta relê o estado, então só
 // repete enquanto outro escritor ocupa a versão alvo.
 const MAX_ATTEMPTS = 10;
 

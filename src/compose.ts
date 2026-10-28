@@ -17,7 +17,7 @@ import type { ProcessRef } from './ports.ts';
 export type ComposeOptions = {
   /** `<D>`: a área de dados, que o `path` do `attach` nunca alcança (D-15). */
   dataDir: string;
-  /** Raiz do `path` do `attach` (D-15): o `server.ts` e a prévia passam `process.cwd()`. */
+  /** Raiz do `path` do `attach` (D-15): o `server.ts` passa `process.cwd()`. */
   cwd: string;
   clock: () => Date;
   logger: Logger;
@@ -38,7 +38,7 @@ function wire({ dataDir, cwd, logger }: ComposeReaderOptions) {
       attachments,
       search: createSearchIndex(),
     }),
-    /** Processo lido e verificado pelo carregador único (SL2), para os scripts que precisam dos elos crus. */
+    /** Processo lido e verificado pelo carregador único, para os scripts que precisam dos elos crus. */
     loadProcess: (ref: ProcessRef) => loadVerified(processes, ref),
     /** D-13: um `readdirSync` por chamada, para pegar dado 0.x que apareça com o servidor de pé. */
     isLegacy: (): boolean => detectLegacy(dataDir).length > 0,
