@@ -90,5 +90,5 @@ async function main(): Promise<void> {
   process.exitCode = result.exitCode;
 }
 
-// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine >=24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
+// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine ^24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
 if (import.meta.main) void main();
