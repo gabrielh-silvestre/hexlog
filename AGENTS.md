@@ -53,7 +53,7 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
 | `scripts/` | Build esbuild, instalador e scripts read-only de insights, export e timeline; `release-notes.ts` e `release-notes-cli.ts` só usam builtins do Node e leem apenas o `CHANGELOG.md`, porque o `release.yml` os roda sem `npm ci` (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio sobre o bundle real e pacote (see `test/AGENTS.md`) |
-| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0012) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
+| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0013) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
 | `skills/` | As skills de `skills/`, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (configura um repositório de destino: gera a skill do projeto e o modelo declarativo) e `hexlog-flow` (mecânica de registro, consulta e ciclo de vida da unidade, com projeto, processo e gate vindos da skill do projeto) (see `skills/AGENTS.md`) |
 
 ## Dependencies
