@@ -209,12 +209,12 @@ const DescribeTypeOutput = z.object({
 
 const QUERY_DESCRIPTION =
   'Read the current records of a process (scope "process", default, needs process) or of the ' +
-  'project (scope "project"). Filters: type, targetPrefix, where (scalar equality), ' +
-  'text (full-text, at most 200 characters, by relevance), ids, relatedTo ' +
-  '(records linked to an id) and includeNonCurrent (also superseded or revoked). ' +
+  'project (scope "project"). Filters: type, targetPrefix, where (equality on top-level scalar data fields), ' +
+  'text (by relevance, at most 200 characters), ids, relatedTo ' +
+  '(linked to an id) and includeNonCurrent (also superseded or revoked). ' +
   'targetPrefix matches whole "."-separated segments (unit-1 does not match unit-10); a near miss ' +
   'in an empty answer carries a hint. ' +
-  'Records carry needsReview and attachmentStatus. ' +
+  'Records carry needsReview (dead support) and attachmentStatus. ' +
   'relations: counts (default) gives inCounts and outCounts ({name: n} per edge whose other end ' +
   'is current) and nonCurrentInCounts and nonCurrentOutCounts (the rest); empty maps omitted; ' +
   'full gives in and out; none gives neither. With lineage inheritance, relations ' +
@@ -223,11 +223,11 @@ const QUERY_DESCRIPTION =
   'contradicts between lineages cuts it. Process scope sees only its own relations; use ' +
   'project for cross-process ones. fields (at most ' +
   `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
-  'annotations stay, filters see the whole data and the size cap counts the projected page. ' +
+  'annotations stay, filters see the whole data and the size cap counts the projection. ' +
   'A page holds at most limit records (default 50, max 200) and stops at a size cap, ' +
   'keeping at least one record; the cursor continues. marker is the head of every ' +
   'process read, and any record id of the process works as its entry: pass it back as changesSince ' +
-  'to get changes (entered, left with reason) since then, on the first page only; add limit 0 ' +
+  'to get changes (entered, left with reason), on the first page only; add limit 0 ' +
   'for changes only. Resend it with the cursor. ' +
   `changes lists at most ${CHANGES_ITEMS_CAP} ids in entered and left; changes.omitted means they ` +
   'are partial, omitted ids never reappear and that marker must not be reused as changesSince: ' +
