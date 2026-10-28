@@ -4,6 +4,7 @@
 // o log é a borda, e o dado regravado vem do log, nunca de transcrição.
 import { chunk, isEqual, isUndefined, sortBy } from 'es-toolkit';
 import { fingerprint } from '../../src/domain/chain.ts';
+import { processOf } from '../../src/domain/ids.ts';
 import { BATCH_MAX, BatchItem } from '../../src/domain/record.ts';
 import { isCurrent } from './sync.ts';
 
@@ -224,8 +225,6 @@ export function toBatches(process: string, to: string, rewrites: readonly Rewrit
     };
   });
 }
-
-export const processOf = (id: string): string => id.slice(0, Math.max(id.indexOf(':'), 0));
 
 const edgeKeys = (edges: readonly OutEdge[]): string[] =>
   edges.map(({ kind, as, to }) => `${kind}|${as ?? ''}|${to}`).sort();

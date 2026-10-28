@@ -23,7 +23,7 @@ const ClaudeJson = z.object({
   mcpServers: z.object({ hexlog: z.object({ args: z.tuple([z.string()], z.unknown()) }) }),
 });
 
-export type DiffResult = 'same' | 'differs' | 'error';
+type DiffResult = 'same' | 'differs' | 'error';
 
 type InstalledCheck = {
   /** `VERSION` de `src/version.ts`: a versão do repositório em que o script roda. */
@@ -116,6 +116,15 @@ export function gitDiffQuiet(root: string): (commit: string) => DiffResult {
   };
 }
 
+// Arquivo ausente ou ilegível vira `null`, que `checkInstalled` relata como problema.
+function readOrNull(file: string): string | null {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Entradas reais de `checkInstalled` (`~/.claude.json`, `manifest.json` da pasta instalada, `git`),
  * com `root` a raiz do checkout que a trava compara com o commit do build.
@@ -123,21 +132,8 @@ export function gitDiffQuiet(root: string): (commit: string) => DiffResult {
 export function readInstalled(root: string): InstalledCheck {
   return {
     version: VERSION,
-    // Arquivo ausente ou ilegível vira `null`, que `checkInstalled` relata como problema.
-    claudeJsonText: (() => {
-      try {
-        return fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8');
-      } catch {
-        return null;
-      }
-    })(),
-    readManifest: (versionDir: string) => {
-      try {
-        return fs.readFileSync(path.join(versionDir, 'manifest.json'), 'utf8');
-      } catch {
-        return null;
-      }
-    },
+    claudeJsonText: readOrNull(path.join(os.homedir(), '.claude.json')),
+    readManifest: (versionDir: string) => readOrNull(path.join(versionDir, 'manifest.json')),
     gitDiffQuiet: gitDiffQuiet(root),
   };
 }

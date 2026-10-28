@@ -7,14 +7,13 @@
 import * as path from 'node:path';
 import { isUndefined } from 'es-toolkit';
 import { dataDir } from '../../src/directory.ts';
-import { Name } from '../../src/domain/ids.ts';
+import { Name, processOf } from '../../src/domain/ids.ts';
 import { formatCliError, openReadOnly, parseCliArgs, reportCliError } from '../cli-error.ts';
 import {
   formatPlan,
   generationOf,
   isLatestGeneration,
   planReanchor,
-  processOf,
   toBatches,
   verifyReanchor,
   type DecisionRow,
@@ -93,17 +92,7 @@ function readWork(reader: Reader, names: string[]) {
     const lineage =
       reader.query.list({ project: PROJECT, process: Name.parse(process) }).process
         ?.lineageInheritance === true;
-    decisions.push(
-      ...rows.filter(isCurrent).map(({ id, target, data, out, in: incoming }) => ({
-        process,
-        id,
-        target,
-        data,
-        out,
-        in: incoming,
-        lineage,
-      })),
-    );
+    decisions.push(...rows.filter(isCurrent).map((row) => ({ ...row, process, lineage })));
   }
   return { decisions, before };
 }
@@ -137,20 +126,21 @@ async function run(to: string, apply: boolean): Promise<number> {
   const names = (reader.query.list({ project: PROJECT }).project?.processes ?? []).map(
     ({ name }) => name,
   );
-  if (!isLatestGeneration(to, names)) {
+  const latest = generationOf(to);
+  if (isUndefined(latest) || !isLatestGeneration(to, names)) {
     console.error(`flow reanchor failed: ${to} is not the latest directives generation listed`);
     return 1;
   }
-  const latest = generationOf(to) ?? 0;
-  const generations = names.filter((name) => GENERATION_NAME.test(name));
   const { decisions, before } = readWork(
     reader,
-    names.filter((name) => !GENERATION_NAME.test(name)).sort(),
+    names.filter((name) => isUndefined(generationOf(name))).sort(),
   );
+  const isOlder = (name: string) => {
+    const generation = generationOf(name);
+    return !isUndefined(generation) && generation < latest;
+  };
   const older = Object.fromEntries(
-    generations
-      .filter((name) => (generationOf(name) ?? latest) < latest)
-      .map((name) => [name, readSources(reader, name, true)]),
+    names.filter(isOlder).map((name) => [name, readSources(reader, name, true)]),
   );
   const plan = planReanchor({ to, decisions, older, current: readSources(reader, to, false) });
   const rewritesByProcess = Map.groupBy(plan.rewrites, ({ process }) => process);
@@ -185,8 +175,9 @@ async function run(to: string, apply: boolean): Promise<number> {
   });
   const { written, refused } = await applyBatches(batchesByProcess, writer.write);
 
+  const freshReader = openReadOnly();
   const after = [...new Set(written.map(({ process }) => process))].flatMap((process) =>
-    readRows(openReadOnly(), process, { type: 'decision', includeNonCurrent: true }),
+    readRows(freshReader, process, { type: 'decision', includeNonCurrent: true }),
   );
   const divergences = verifyReanchor(written, before, after);
   console.log(`rewrote ${written.length} of ${plan.rewrites.length} decisions`);
