@@ -9,7 +9,7 @@ Servidor MCP para agentes registrarem o próprio histórico de trabalho.
 Precisamos de:
 
 - Linux (o lock por pid e o arquivador dependem de `/proc`, de hard link e de `fsync` de diretório);
-- Node `>= 24.18.1`;
+- Node `^24.18.1`;
 - Claude Code, com `~/.claude/settings.json` já existente.
 
 ```sh

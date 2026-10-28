@@ -4,6 +4,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+### Alterado
+
+- `engines.node` passa de `>=24.18.1` para `^24.18.1`: o Node 25 e o 26 deixam de ser suportados, porque o `randomUUIDv7` só é estável a partir do 26.1.0 e o `eslint-plugin-n` 18.5.0 passou a recusá-lo na faixa aberta (#311).
+
 ## [1.2.2] - 2026-10-24
 
 Aviso de versão: esta versão muda o formato padrão da `query` em `counts` (`inCounts` e `outCounts` deixam de contar a aresta não vigente) e, pela regra de [documentacao.md](docs/directives/documentacao.md), sairia como minor. Por decisão do dono saiu como patch, sem emendar a regra; a Migração abaixo diz como recuperar a soma antiga.
