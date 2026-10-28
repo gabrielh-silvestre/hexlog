@@ -732,6 +732,16 @@ describe('validate', () => {
 
       expect(spy).toHaveBeenCalledTimes(compiles);
     });
+
+    it('should compile the full pass once for several invalid records of the same schema', () => {
+      const schema = chained(3);
+      const spy = compileSpy();
+
+      validator.validate(schema, { x: 1 });
+      validator.validate(schema, { x: 2 });
+
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('with a string far above maxLength', () => {
