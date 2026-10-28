@@ -23,13 +23,13 @@ describe('isGitSha', () => {
 });
 
 describe('FORMAT_CATALOG', () => {
-  it('should be closed on git-sha', () => {
+  it('should hold only the git-sha format', () => {
     expect(Object.keys(FORMAT_CATALOG)).toEqual(['git-sha']);
   });
 });
 
 describe('catalogNames', () => {
   it('should list the names of the catalog', () => {
-    expect(catalogNames()).toEqual(['git-sha']);
+    expect(catalogNames()).toEqual(Object.keys(FORMAT_CATALOG));
   });
 });

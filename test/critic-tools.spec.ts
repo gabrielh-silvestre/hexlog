@@ -10,11 +10,10 @@ import {
   parseTurn,
   resolveTool,
   truncateText,
-  type Command,
   type TurnOutcome,
   type TurnState,
 } from '../scripts/flow/critic-tools.ts';
-import { CATALOG_DOC } from './critic-helpers.ts';
+import { CATALOG_DOC, valueAfter } from './critic-helpers.ts';
 
 // Trechos reais das sondas de formato, com o ruído dos hooks cortado a um evento.
 const CLAUDE_ID = '0f571ef5-edcc-444a-9a63-af6df1e194dd';
@@ -81,8 +80,6 @@ describe('buildCommand', () => {
     sessionId: 'sess-1',
     resume: false,
   };
-  const after = (command: Command, flag: string): string | undefined =>
-    command.args[command.args.indexOf(flag) + 1];
 
   describe('with claude', () => {
     it('should run the claude binary', () => {
@@ -92,14 +89,14 @@ describe('buildCommand', () => {
     it('should open the session with --session-id when no turn was confirmed', () => {
       const command = buildCommand('claude', { ...turn, resume: false });
 
-      expect(after(command, '--session-id')).toBe('sess-1');
+      expect(valueAfter(command, '--session-id')).toBe('sess-1');
       expect(command.args).not.toContain('--resume');
     });
 
     it('should retake the session with --resume when it already exists', () => {
       const command = buildCommand('claude', { ...turn, resume: true });
 
-      expect(after(command, '--resume')).toBe('sess-1');
+      expect(valueAfter(command, '--resume')).toBe('sess-1');
       expect(command.args).not.toContain('--session-id');
     });
 
@@ -123,11 +120,11 @@ describe('buildCommand', () => {
     });
 
     it('should pin the opus model', () => {
-      expect(after(buildCommand('claude', turn), '--model')).toBe('opus');
+      expect(valueAfter(buildCommand('claude', turn), '--model')).toBe('opus');
     });
 
     it('should append the rules of the turn to the system prompt', () => {
-      expect(after(buildCommand('claude', turn), '--append-system-prompt')).toBe(
+      expect(valueAfter(buildCommand('claude', turn), '--append-system-prompt')).toBe(
         'the frozen rules',
       );
     });
@@ -135,7 +132,7 @@ describe('buildCommand', () => {
     it('should bypass permissions and use only the given mcp config', () => {
       const command = buildCommand('claude', turn);
 
-      expect(after(command, '--permission-mode')).toBe('bypassPermissions');
+      expect(valueAfter(command, '--permission-mode')).toBe('bypassPermissions');
       expect(command.args).toContain('--strict-mcp-config');
     });
 
@@ -143,7 +140,7 @@ describe('buildCommand', () => {
       const command = buildCommand('claude', turn);
 
       expect(command.args).toEqual(expect.arrayContaining(['-p', '--verbose']));
-      expect(after(command, '--output-format')).toBe('stream-json');
+      expect(valueAfter(command, '--output-format')).toBe('stream-json');
     });
 
     it('should fail without an explicit session id', () => {
@@ -159,7 +156,7 @@ describe('buildCommand', () => {
     });
 
     it('should pin the argon high model', () => {
-      expect(after(buildCommand('agy', turn), '--model')).toBe('gemini-4-argon-high');
+      expect(valueAfter(buildCommand('agy', turn), '--model')).toBe('gemini-4-argon-high');
     });
 
     it('should pass the prompt as the value of -p, last', () => {
@@ -177,14 +174,14 @@ describe('buildCommand', () => {
     it('should resume the given conversation by id', () => {
       const command = buildCommand('agy', { ...turn, sessionId: 'conv-1', resume: true });
 
-      expect(after(command, '--conversation')).toBe('conv-1');
+      expect(valueAfter(command, '--conversation')).toBe('conv-1');
     });
 
     it('should approve permissions and stream json events', () => {
       const command = buildCommand('agy', turn);
 
       expect(command.args).toContain('--dangerously-skip-permissions');
-      expect(after(command, '--output-format')).toBe('stream-json');
+      expect(valueAfter(command, '--output-format')).toBe('stream-json');
     });
 
     it.each(['--session-id', '--resume'])('should not use the claude flag %s', (flag) => {
@@ -348,10 +345,15 @@ describe('foldTurn', () => {
     },
   );
 
-  it('should fold one line into a new state without changing the old one', () => {
+  it('should fold one line into a new state', () => {
     const next = foldTurn('claude', EMPTY_TURN, claudeInit);
 
     expect(next).toEqual({ sessionId: CLAUDE_ID, established: true, final: undefined });
+  });
+
+  it('should not change the state it folds a line into', () => {
+    foldTurn('claude', EMPTY_TURN, claudeInit);
+
     expect(EMPTY_TURN).toEqual({ sessionId: undefined, established: false, final: undefined });
   });
 });
@@ -410,14 +412,14 @@ describe('classifyFailure', () => {
     'invalid api key',
     'api error: 401',
     'invalid auth',
-  ])('should classify the claude error text "%s" as credential', (literal) => {
+  ])('should classify the claude error text "%s" as credential regardless of case', (literal) => {
     const turn = errored(`Error: ${literal.toUpperCase()} (retry later)`);
 
     expect(classifyFailure('claude', outcome({ exitCode: 1, turn }))).toBe('credential');
   });
 
   it.each(['authentication failed', 'authentication required', 'sign in'])(
-    'should classify the agy error text "%s" as credential',
+    'should classify the agy error text "%s" as credential regardless of case',
     (literal) => {
       const turn = errored(`Error: ${literal.toUpperCase()} (retry later)`, { sessionId: AGY_ID });
 
@@ -465,11 +467,12 @@ describe('classifyFailure', () => {
     expect(classifyFailure('claude', outcome({ exitCode: 1 }))).toBeUndefined();
   });
 
-  it('should classify a spawn error as transient even when a final text arrived', () => {
-    expect(classifyFailure('claude', outcome({ exitCode: null, spawnError: 'EACCES' }))).toBe(
-      'transient',
-    );
-  });
+  it.each(['EACCES', 'ENOENT'])(
+    'should classify the spawn error %s as transient even when a final text arrived',
+    (spawnError) => {
+      expect(classifyFailure('claude', outcome({ exitCode: null, spawnError }))).toBe('transient');
+    },
+  );
 
   it('should classify a claude init that lists the hexlog server as failed as mcp', () => {
     const turn = parseTurn('claude', stream(claudeInitWithMcp('failed'), claudeResult));
@@ -502,12 +505,6 @@ describe('classifyFailure', () => {
     };
 
     expect(classifyFailure('agy', outcome({ turn }))).toBeUndefined();
-  });
-
-  it('should classify a spawn error as transient', () => {
-    const result = outcome({ exitCode: null, spawnError: 'ENOENT' });
-
-    expect(classifyFailure('claude', result)).toBe('transient');
   });
 
   it('should classify a result without text as transient', () => {

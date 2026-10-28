@@ -1,7 +1,9 @@
+import fs from 'node:fs';
 import { describe, expect, it } from '@jest/globals';
-import { note } from '../commands/register-fakes.ts';
-import { at, captureError } from '../helpers.ts';
-import { idsOf, querySetup } from './query-setup.ts';
+import { MAX_LOG_BYTES } from '../../src/adapters/fs/process-store.ts';
+import { note } from '../commands/fakes.ts';
+import { at, captureError, detail, idsOf } from '../helpers.ts';
+import { querySetup } from './query-setup.ts';
 
 describe('QueryService.queryRecords', () => {
   it('should read only the requested process in the process scope, with a marker of one entry', async () => {
@@ -84,9 +86,23 @@ describe('QueryService.queryRecords', () => {
     const error = captureError(() => queries.queryRecords({ project: 'ghost', scope: 'project' }));
 
     expect(error.code).toBe('PROJECT_NOT_FOUND');
-    expect(error.details).toEqual([
-      { path: '/project', code: 'unknown-project', message: expect.any(String) },
-    ]);
+    expect(error.details).toEqual([detail('/project', 'unknown-project')]);
+  });
+
+  it('should name the process whose log passed the ceiling in the PROCESS_TOO_LARGE detail, without recommending to create another', async () => {
+    const { createProcess, registerOne, logPath, query } = querySetup();
+    createProcess('run-1');
+    createProcess('run-2');
+    await registerOne('run-1', note('a'), 1);
+    fs.truncateSync(logPath('run-2'), MAX_LOG_BYTES + 1);
+
+    const error = captureError(() => query({ scope: 'project' }));
+
+    expect(error).toMatchObject({
+      code: 'PROCESS_TOO_LARGE',
+      message: "process 'run-2' log exceeds 64 MiB",
+      details: [{ path: '/process', code: 'too-large', process: 'run-2' }],
+    });
   });
 
   it('should return an empty page, not PROJECT_NOT_FOUND, for an existing project without processes', () => {

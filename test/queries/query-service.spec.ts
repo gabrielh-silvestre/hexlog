@@ -23,6 +23,7 @@ import {
 } from '../../src/queries/query-service.ts';
 import { formatLine, MAX_BREAKS } from '../../src/shared/loader.ts';
 import { emptyManifest, linkAt } from '../fixtures/chain-line.ts';
+import { cursorOf, idsOf, walkPages } from '../helpers.ts';
 
 const PROJECT = 'alpha';
 const HASH_A = 'a'.repeat(64);
@@ -39,9 +40,8 @@ const DOC = {
   },
 };
 
-const MAIN_QUERY: QueryInput = { project: PROJECT, process: 'main' };
+const MAIN_QUERY = { project: PROJECT, process: 'main' } satisfies QueryInput;
 const GATE_QUERY = { project: PROJECT, process: 'main', gate: 'gate' };
-const VERIFY_QUERY = { project: PROJECT, process: 'main' };
 
 const LIMIT_REFUSAL = {
   code: 'INVALID_FILTER',
@@ -65,8 +65,6 @@ const idOf = (process: Name, seq: number): RecordId =>
   `${process}:0198f4a0-0000-7000-8000-${seq.toString(16).padStart(12, '0')}`;
 
 const idsAt = (...seqs: number[]): RecordId[] => seqs.map((seq) => idOf('main', seq));
-
-const idsOf = (page: QueryResult): RecordId[] => page.records.map(({ id }) => id);
 
 const notes = (count: number, label = 'note'): Entry[] =>
   Array.from({ length: count }, (_, at) => ({ data: { text: `${label} ${at}` } }));
@@ -139,6 +137,13 @@ function serviceOf(
   });
 }
 
+/** Serviço sobre o único processo `main`, com os elos de `entries`. */
+const mainService = (
+  entries: readonly Entry[],
+  fixed?: Partial<Manifest['fixed']>,
+  attachments?: AttachmentReader,
+): QueryService => serviceOf({ main: rawProcess('main', entries, fixed) }, attachments);
+
 function refusalOf(run: () => unknown) {
   try {
     run();
@@ -149,30 +154,17 @@ function refusalOf(run: () => unknown) {
   throw new Error('expected a HexlogError');
 }
 
-function cursorOf(page: QueryResult): string {
-  if (isUndefined(page.cursor)) throw new Error('expected a cursor');
-  return page.cursor;
-}
-
 /** Soma dos caracteres do JSON dos `count` primeiros registros: a conta de `maxChars`. */
 const sizeOf = (page: QueryResult, count: number): number =>
   page.records.slice(0, count).reduce((sum, record) => sum + JSON.stringify(record).length, 0);
 
-/** Todas as páginas de uma consulta, pelo cursor; o teto de rodadas evita prender o jest num defeito. */
-function walk(service: QueryService, input: QueryInput): QueryResult[] {
-  const pages: QueryResult[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = service.queryRecords({ ...input, ...(isUndefined(cursor) ? {} : { cursor }) });
-    pages.push(page);
-    cursor = page.cursor;
-  } while (!isUndefined(cursor) && pages.length < 20);
-  return pages;
-}
+/** Todas as páginas de `input` no projeto de `service`, pelo cursor. */
+const walk = (service: QueryService, input: Omit<QueryInput, 'project'>): QueryResult[] =>
+  walkPages((page) => service.queryRecords({ project: PROJECT, ...page }), input);
 
 describe('QueryService.queryRecords', () => {
   it('should return the current records with envelope, data and relations', () => {
-    const service = serviceOf({ main: rawProcess('main', [{ data: { text: 'first' } }]) });
+    const service = mainService([{ data: { text: 'first' } }]);
 
     const page = service.queryRecords(MAIN_QUERY);
 
@@ -206,13 +198,11 @@ describe('QueryService.queryRecords', () => {
   });
 
   it('should flag a current record whose support was revoked as needing review', () => {
-    const service = serviceOf({
-      main: rawProcess('main', [
-        { target: 'doc.a' },
-        { target: 'doc.b', relations: [{ kind: 'supports', to: idOf('main', 0) }] },
-        { target: 'doc.c', relations: [{ kind: 'revokes', to: idOf('main', 1) }] },
-      ]),
-    });
+    const service = mainService([
+      { target: 'doc.a' },
+      { target: 'doc.b', relations: [{ kind: 'supports', to: idOf('main', 0) }] },
+      { target: 'doc.c', relations: [{ kind: 'revokes', to: idOf('main', 1) }] },
+    ]);
 
     const page = service.queryRecords(MAIN_QUERY);
 
@@ -220,7 +210,7 @@ describe('QueryService.queryRecords', () => {
   });
 
   it('should hint at a near target when targetPrefix matches no whole segment', () => {
-    const service = serviceOf({ main: rawProcess('main', [{ target: 'plan.step-2' }]) });
+    const service = mainService([{ target: 'plan.step-2' }]);
 
     const page = service.queryRecords({ ...MAIN_QUERY, targetPrefix: 'plan.step' });
 
@@ -235,7 +225,7 @@ describe('QueryService.queryRecords', () => {
     it.each([-1, 1.5, Number.NaN, Infinity, 0])(
       'should refuse limit %s when there is no changesSince',
       (limit) => {
-        const service = serviceOf({ main: rawProcess('main', notes(1)) });
+        const service = mainService(notes(1));
 
         expect(refusalOf(() => service.queryRecords({ ...MAIN_QUERY, limit }))).toEqual(
           LIMIT_REFUSAL,
@@ -244,7 +234,7 @@ describe('QueryService.queryRecords', () => {
     );
 
     it('should refuse limit 0 when a cursor comes with changesSince', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(2)) });
+      const service = mainService(notes(2));
       const input = {
         ...MAIN_QUERY,
         limit: 0,
@@ -256,7 +246,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should accept the smallest limit, 1', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(3)) });
+      const service = mainService(notes(3));
 
       const page = service.queryRecords({ ...MAIN_QUERY, limit: 1 });
 
@@ -264,7 +254,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should accept limit 0 with changesSince and no cursor, giving only the changes', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(2)) });
+      const service = mainService(notes(2));
 
       const page = service.queryRecords({
         ...MAIN_QUERY,
@@ -282,7 +272,7 @@ describe('QueryService.queryRecords', () => {
 
   describe('with text', () => {
     it.each(['', '  ', '!!!'])('should refuse text %j that has no searchable terms', (text) => {
-      const service = serviceOf({ main: rawProcess('main', notes(1)) });
+      const service = mainService(notes(1));
 
       expect(refusalOf(() => service.queryRecords({ ...MAIN_QUERY, text }))).toEqual({
         code: 'INVALID_FILTER',
@@ -292,7 +282,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should refuse text above QUERY_TEXT_MAX_CHARS as too long before looking for terms', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(1)) });
+      const service = mainService(notes(1));
       const text = '!'.repeat(QUERY_TEXT_MAX_CHARS + 1);
 
       expect(refusalOf(() => service.queryRecords({ ...MAIN_QUERY, text }))).toEqual({
@@ -309,7 +299,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should accept text of exactly QUERY_TEXT_MAX_CHARS', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(1)) });
+      const service = mainService(notes(1));
       const text = 'a'.repeat(QUERY_TEXT_MAX_CHARS);
 
       const page = service.queryRecords({ ...MAIN_QUERY, text });
@@ -322,7 +312,7 @@ describe('QueryService.queryRecords', () => {
     const entries = [{ data: { text: 'a', extra: 1 } }];
 
     it('should keep only the requested top-level fields of data', () => {
-      const service = serviceOf({ main: rawProcess('main', entries) });
+      const service = mainService(entries);
 
       const page = service.queryRecords({ ...MAIN_QUERY, fields: ['text'] });
 
@@ -330,7 +320,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should omit data with an empty list of fields', () => {
-      const service = serviceOf({ main: rawProcess('main', entries) });
+      const service = mainService(entries);
 
       const page = service.queryRecords({ ...MAIN_QUERY, fields: [] });
 
@@ -338,7 +328,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should skip the fields the record does not own, inherited ones included', () => {
-      const service = serviceOf({ main: rawProcess('main', entries) });
+      const service = mainService(entries);
 
       const page = service.queryRecords({
         ...MAIN_QUERY,
@@ -354,8 +344,9 @@ describe('QueryService.queryRecords', () => {
 
     it('should give the status of each attachment cited in the marked fields', () => {
       const entry = { type: 'doc', data: { body: HASH_A, files: [HASH_B, HASH_A], note: HASH_C } };
-      const service = serviceOf(
-        { main: rawProcess('main', [entry], fixed) },
+      const service = mainService(
+        [entry],
+        fixed,
         attachmentsOf({ [HASH_A]: 'ok', [HASH_B]: 'missing' }),
       );
 
@@ -365,9 +356,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should leave attachmentStatus out when the record cites no attachment', () => {
-      const service = serviceOf({
-        main: rawProcess('main', [{ type: 'doc', data: { note: 'plain' } }], fixed),
-      });
+      const service = mainService([{ type: 'doc', data: { note: 'plain' } }], fixed);
 
       const page = service.queryRecords(MAIN_QUERY);
 
@@ -377,15 +366,15 @@ describe('QueryService.queryRecords', () => {
 
   describe('with a cursor', () => {
     it('should walk the whole result in pages without repeating or skipping a record', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(7)) });
+      const service = mainService(notes(7));
 
-      const pages = walk(service, { ...MAIN_QUERY, limit: 3 });
+      const pages = walk(service, { process: 'main', limit: 3 });
 
       expect(pages.map(idsOf)).toEqual([idsAt(0, 1, 2), idsAt(3, 4, 5), idsAt(6)]);
     });
 
     it('should give no cursor on a last page that ends exactly at the result', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(6)) });
+      const service = mainService(notes(6));
       const cursor = cursorOf(service.queryRecords({ ...MAIN_QUERY, limit: 3 }));
 
       const last = service.queryRecords({ ...MAIN_QUERY, limit: 3, cursor });
@@ -405,7 +394,7 @@ describe('QueryService.queryRecords', () => {
         ]),
       });
 
-      const pages = walk(service, { project: PROJECT, scope: 'project', limit: 3 });
+      const pages = walk(service, { scope: 'project', limit: 3 });
 
       expect(pages.map(idsOf)).toEqual([
         [idOf('a', 0), idOf('b', 0), idOf('a', 1)],
@@ -414,7 +403,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should keep a record that brings the page exactly to maxChars', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(4)) });
+      const service = mainService(notes(4));
       const maxChars = sizeOf(service.queryRecords(MAIN_QUERY), 2);
 
       const page = service.queryRecords({ ...MAIN_QUERY, maxChars });
@@ -423,7 +412,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should leave out the record that goes one character past maxChars', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(4)) });
+      const service = mainService(notes(4));
       const maxChars = sizeOf(service.queryRecords(MAIN_QUERY), 2) - 1;
 
       const page = service.queryRecords({ ...MAIN_QUERY, maxChars });
@@ -432,7 +421,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should give the first record whole even when it alone is above maxChars', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(3)) });
+      const service = mainService(notes(3));
 
       const page = service.queryRecords({ ...MAIN_QUERY, maxChars: 1 });
 
@@ -440,7 +429,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should accept the cursor when includeNonCurrent is spelled out as false', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(7)) });
+      const service = mainService(notes(7));
       const cursor = cursorOf(service.queryRecords({ ...MAIN_QUERY, limit: 3 }));
 
       const page = service.queryRecords({ ...MAIN_QUERY, includeNonCurrent: false, cursor });
@@ -460,7 +449,7 @@ describe('QueryService.queryRecords', () => {
         code: 'filters-mismatch',
       },
     ])('should refuse a cursor reused with another $name', ({ change, code }) => {
-      const service = serviceOf({ main: rawProcess('main', notes(5)) });
+      const service = mainService(notes(5));
       const cursor = cursorOf(service.queryRecords({ ...MAIN_QUERY, limit: 2 }));
 
       expect(refusalOf(() => service.queryRecords({ ...MAIN_QUERY, cursor, ...change }))).toEqual({
@@ -471,8 +460,8 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should refuse a cursor when the log it saw now has other content', () => {
-      const original = serviceOf({ main: rawProcess('main', notes(5)) });
-      const rewritten = serviceOf({ main: rawProcess('main', notes(5, 'rewritten')) });
+      const original = mainService(notes(5));
+      const rewritten = mainService(notes(5, 'rewritten'));
       const cursor = cursorOf(original.queryRecords({ ...MAIN_QUERY, limit: 2 }));
 
       expect(refusalOf(() => rewritten.queryRecords({ ...MAIN_QUERY, cursor }))).toEqual({
@@ -489,7 +478,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should refuse a cursor whose last record is not in the result', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(5)) });
+      const service = mainService(notes(5));
       const cursor = cursorOf(service.queryRecords({ ...MAIN_QUERY, limit: 2 }));
       const forged = encodeCursor({ ...decodeCursor(cursor), lastId: idOf('main', 99) });
 
@@ -507,7 +496,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should name /cursor when the marker of the cursor is not in the log', () => {
-      const service = serviceOf({ main: rawProcess('main', notes(5)) });
+      const service = mainService(notes(5));
       const cursor = cursorOf(service.queryRecords({ ...MAIN_QUERY, limit: 2 }));
       const forged = encodeCursor({ ...decodeCursor(cursor), marker: { main: idOf('main', 99) } });
 
@@ -529,7 +518,7 @@ describe('QueryService.queryRecords', () => {
     const changesSince = { main: idOf('main', 0) };
 
     it('should report what entered and left the result since the marker', () => {
-      const service = serviceOf({ main: rawProcess('main', entries) });
+      const service = mainService(entries);
 
       const page = service.queryRecords({ ...MAIN_QUERY, changesSince });
 
@@ -541,7 +530,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should leave changes out when there is no changesSince', () => {
-      const service = serviceOf({ main: rawProcess('main', entries) });
+      const service = mainService(entries);
 
       const page = service.queryRecords(MAIN_QUERY);
 
@@ -549,7 +538,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should give changes only on the first page', () => {
-      const service = serviceOf({ main: rawProcess('main', entries) });
+      const service = mainService(entries);
       const cursor = cursorOf(service.queryRecords({ ...MAIN_QUERY, limit: 1, changesSince }));
 
       const second = service.queryRecords({ ...MAIN_QUERY, changesSince, cursor });
@@ -558,7 +547,7 @@ describe('QueryService.queryRecords', () => {
     });
 
     it('should name /changesSince when the marker record is not in the log', () => {
-      const service = serviceOf({ main: rawProcess('main', entries) });
+      const service = mainService(entries);
       const unknown = { main: idOf('main', 99) };
 
       expect(
@@ -611,7 +600,7 @@ describe('QueryService.evaluateGate', () => {
   it.each(['missing', 'constructor'])(
     'should refuse the gate name %s that is not pinned in the process',
     (gate) => {
-      const service = serviceOf({ main: rawProcess('main', notes(1)) });
+      const service = mainService(notes(1));
 
       expect(refusalOf(() => service.evaluateGate({ ...GATE_QUERY, gate }))).toEqual({
         code: 'GATE_NOT_FOUND',
@@ -624,7 +613,7 @@ describe('QueryService.evaluateGate', () => {
   );
 
   it('should evaluate the gate for the target and give the marker it read', () => {
-    const service = serviceOf({ main: rawProcess('main', planned, fixedGate(occurred)) });
+    const service = mainService(planned, fixedGate(occurred));
 
     const result = service.evaluateGate({ ...GATE_QUERY, target: 'plan.a' });
 
@@ -636,7 +625,7 @@ describe('QueryService.evaluateGate', () => {
   });
 
   it('should reduce each question to its counts with evidence counts', () => {
-    const service = serviceOf({ main: rawProcess('main', planned, fixedGate(occurred)) });
+    const service = mainService(planned, fixedGate(occurred));
 
     const result = service.evaluateGate({ ...GATE_QUERY, evidence: 'counts' });
 
@@ -646,7 +635,7 @@ describe('QueryService.evaluateGate', () => {
   });
 
   it('should evaluate over the log as it was at the marker', () => {
-    const service = serviceOf({ main: rawProcess('main', notes(3), fixedGate(occurred)) });
+    const service = mainService(notes(3), fixedGate(occurred));
 
     const result = service.evaluateGate({ ...GATE_QUERY, marker: { main: idOf('main', 1) } });
 
@@ -697,7 +686,7 @@ describe('QueryService.evaluateGate', () => {
 
   describe('with targets', () => {
     it('should give one result per target in the order received, with a single marker', () => {
-      const service = serviceOf({ main: rawProcess('main', planned, fixedGate(occurred)) });
+      const service = mainService(planned, fixedGate(occurred));
 
       const result = service.evaluateGate({
         ...GATE_QUERY,
@@ -724,7 +713,7 @@ describe('QueryService.evaluateGate', () => {
     });
 
     it('should fail the batch when any target fails, keeping the others as they are', () => {
-      const service = serviceOf({ main: rawProcess('main', planned, fixedGate(occurred)) });
+      const service = mainService(planned, fixedGate(occurred));
 
       const result = service.evaluateGate({
         ...GATE_QUERY,
@@ -746,12 +735,9 @@ describe('QueryService.verifyChain', () => {
       { type: 'doc', data: { body: HASH_A } },
       { type: 'doc', data: { files: [HASH_A, HASH_B] } },
     ];
-    const service = serviceOf(
-      { main: rawProcess('main', entries, fixed) },
-      attachmentsOf({ [HASH_A]: 'ok', [HASH_B]: 'ok' }),
-    );
+    const service = mainService(entries, fixed, attachmentsOf({ [HASH_A]: 'ok', [HASH_B]: 'ok' }));
 
-    const result = service.verifyChain(VERIFY_QUERY);
+    const result = service.verifyChain(MAIN_QUERY);
 
     expect(result).toMatchObject({
       ok: true,
@@ -768,12 +754,13 @@ describe('QueryService.verifyChain', () => {
       { type: 'doc', data: { body: HASH_B } },
       { type: 'doc', data: { body: HASH_C } },
     ];
-    const service = serviceOf(
-      { main: rawProcess('main', entries, fixed) },
+    const service = mainService(
+      entries,
+      fixed,
       attachmentsOf({ [HASH_A]: 'ok', [HASH_B]: 'missing', [HASH_C]: 'corrupted' }),
     );
 
-    const result = service.verifyChain(VERIFY_QUERY);
+    const result = service.verifyChain(MAIN_QUERY);
 
     expect(result).toMatchObject({
       ok: false,
@@ -790,15 +777,15 @@ describe('QueryService.verifyChain', () => {
     const raw = rawProcess('main', notes(2));
     const service = serviceOf({ main: { ...raw, text: `${raw.text}{"links":[{}]}\n` } });
 
-    const result = service.verifyChain(VERIFY_QUERY);
+    const result = service.verifyChain(MAIN_QUERY);
 
     expect(result).toMatchObject({ ok: false, attachmentBreaks: [], totalAttachmentBreaks: 0 });
   });
 
   it('should add head-not-found when expectedHead is no link of the chain', () => {
-    const service = serviceOf({ main: rawProcess('main', notes(2)) });
+    const service = mainService(notes(2));
 
-    const result = service.verifyChain({ ...VERIFY_QUERY, expectedHead: 'f'.repeat(64) });
+    const result = service.verifyChain({ ...MAIN_QUERY, expectedHead: 'f'.repeat(64) });
 
     expect(result).toMatchObject({
       ok: false,
@@ -811,16 +798,11 @@ describe('QueryService.verifyChain', () => {
       type: 'doc',
       data: { body: HASH_A },
     }));
-    const service = serviceOf(
-      { main: rawProcess('main', entries, fixed) },
-      attachmentsOf({ [HASH_A]: 'missing' }),
-    );
+    const service = mainService(entries, fixed, attachmentsOf({ [HASH_A]: 'missing' }));
 
-    const result = service.verifyChain(VERIFY_QUERY);
+    const result = service.verifyChain(MAIN_QUERY);
 
-    expect({
-      shown: result.attachmentBreaks.length,
-      total: result.totalAttachmentBreaks,
-    }).toEqual({ shown: MAX_BREAKS, total: MAX_BREAKS + 1 });
+    expect(result.attachmentBreaks).toHaveLength(MAX_BREAKS);
+    expect(result.totalAttachmentBreaks).toBe(MAX_BREAKS + 1);
   });
 });

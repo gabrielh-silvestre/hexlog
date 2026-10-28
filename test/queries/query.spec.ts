@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 import { omit } from 'es-toolkit';
+import { blobFile } from '../../src/adapters/fs/data-format.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
-import { QUERY_TEXT_MAX_CHARS } from '../../src/queries/query-service.ts';
-import { ghostId, note } from '../commands/register-fakes.ts';
-import { at, captureError } from '../helpers.ts';
-import { cursorOf, idsOf, PROJECT, querySetup, seeded } from './query-setup.ts';
+import { ghostId, note } from '../commands/fakes.ts';
+import { at, captureError, idsOf } from '../helpers.ts';
+import { PROJECT, querySetup, seeded } from './query-setup.ts';
 
 const doc = (data: BatchItem['data'], extra: Partial<BatchItem> = {}): BatchItem => ({
   type: 'doc',
@@ -27,13 +26,31 @@ async function wired() {
   const approve = (text: string) => note(text, { relations: [{ to: evidence, as: 'approves' }] });
   await registerOne('run-1', approve('a'), 2);
   await registerOne('run-1', approve('b'), 3);
-  await registerOne('run-1', note('c', { relations: [{ to: evidence, kind: 'supports' }] }), 4);
+  await registerOne('run-1', note('c', { relations: [supports(evidence)] }), 4);
   const newer = await registerOne(
     'run-1',
-    note('evidence 2', { relations: [{ to: evidence, kind: 'supersedes' }] }),
+    note('evidence 2', { relations: [supersedes(evidence)] }),
     5,
   );
   return { ...setup, evidence, newer };
+}
+
+/** `run-2` tem um veredito que apoia a evidência de `run-1`, que `supersedeEvidence` pode superar. */
+async function verdictSupportingEvidenceOfRun1(supersedeEvidence: boolean) {
+  const setup = querySetup();
+  setup.createLegacyProcess('run-1');
+  setup.createLegacyProcess('run-2');
+  const { registerOne } = setup;
+  const evidence = await registerOne('run-1', note('evidence'), 1);
+  const verdict = await registerOne(
+    'run-2',
+    note('verdict', { relations: [supports(evidence)] }),
+    2,
+  );
+  if (supersedeEvidence) {
+    await registerOne('run-1', note('evidence 2', { relations: [supersedes(evidence)] }), 3);
+  }
+  return { ...setup, evidence, verdict };
 }
 
 describe('QueryService.queryRecords', () => {
@@ -98,11 +115,7 @@ describe('QueryService.queryRecords', () => {
     const old = await registerOne('run-1', note('banana uva'), 1);
     const banana = await registerOne('run-1', note('banana'), 2);
     const uva = await registerOne('run-1', note('uva'), 3);
-    await registerOne(
-      'run-1',
-      note('laranja', { relations: [{ to: old, kind: 'supersedes' }] }),
-      4,
-    );
+    await registerOne('run-1', note('laranja', { relations: [supersedes(old)] }), 4);
 
     expect(idsOf(query({ process: 'run-1', text: 'banana uva' }))).toEqual([banana, uva]);
     expect(idsOf(query({ process: 'run-1', text: 'banana uva', includeNonCurrent: true }))).toEqual(
@@ -110,41 +123,18 @@ describe('QueryService.queryRecords', () => {
     );
   });
 
-  it('should refuse `text` above the cap with INVALID_FILTER `too-long`', () => {
-    const { createProcess, query } = querySetup();
-    createProcess('run-1');
-
-    const error = captureError(() =>
-      query({ process: 'run-1', text: 'a'.repeat(QUERY_TEXT_MAX_CHARS + 1) }),
-    );
-
-    expect(error.code).toBe('INVALID_FILTER');
-    expect(error.details).toEqual([expect.objectContaining({ path: '/text', code: 'too-long' })]);
-  });
-
-  it('should accept `text` at the cap', () => {
-    const { createProcess, query } = querySetup();
-    createProcess('run-1');
-
-    expect(query({ process: 'run-1', text: 'a'.repeat(QUERY_TEXT_MAX_CHARS) }).records).toEqual([]);
-  });
-
-  it.each([0, -1, 1.5, NaN, Infinity])(
-    'should refuse `limit` %p with INVALID_FILTER at /limit',
-    (limit) => {
-      const { createProcess, query } = querySetup();
-      createProcess('run-1');
-
-      const error = captureError(() => query({ process: 'run-1', limit }));
-
-      expect(error.code).toBe('INVALID_FILTER');
-      expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
-    },
-  );
-
-  it.each(['', '  ', '!!!', '&&', '::', '§', '́', ' '])(
-    'should refuse `text` %j without a searchable term with INVALID_FILTER `no-terms` at /text',
-    (text) => {
+  it.each([
+    ['empty', ''],
+    ['spaces', '  '],
+    ['exclamation marks', '!!!'],
+    ['ampersands', '&&'],
+    ['colons', '::'],
+    ['section sign', '§'],
+    ['combining acute accent', '\u0301'],
+    ['no-break space', '\u00a0'],
+  ])(
+    'should refuse `text` of %s without a searchable term with INVALID_FILTER `no-terms` at /text',
+    (_name, text) => {
       const { createProcess, query } = querySetup();
       createProcess('run-1');
 
@@ -179,11 +169,7 @@ describe('QueryService.queryRecords', () => {
     createProcess('run-1');
     createProcess('run-2');
     const anchor = await registerOne('run-2', note('âncora'), 1);
-    const citing = await registerOne(
-      'run-1',
-      note('cita', { relations: [{ to: anchor, kind: 'supports' }] }),
-      2,
-    );
+    const citing = await registerOne('run-1', note('cita', { relations: [supports(anchor)] }), 2);
 
     expect(idsOf(query({ process: 'run-1', relatedTo: anchor }))).toEqual([citing]);
   });
@@ -193,7 +179,7 @@ describe('QueryService.queryRecords', () => {
     createProcess('run-1');
     createProcess('run-2');
     const anchor = await registerOne('run-2', note('âncora'), 1);
-    await registerOne('run-1', note('cita', { relations: [{ to: anchor, kind: 'supports' }] }), 2);
+    await registerOne('run-1', note('cita', { relations: [supports(anchor)] }), 2);
 
     expect(idsOf(query({ process: 'run-1', relatedTo: ghostId('run-1') }))).toEqual([]);
   });
@@ -206,9 +192,8 @@ describe('QueryService.queryRecords', () => {
     const broken = attachments.putText(PROJECT, 'adulterado').hash;
     await registerOne('run-1', doc({ body: kept, files: [gone, broken] }));
     await registerOne('run-1', note('sem anexo'));
-    const blob = (hash: string) => path.join(dataDir, '.v1', PROJECT, 'attachments', hash);
-    fs.rmSync(blob(gone));
-    fs.writeFileSync(blob(broken), 'outro conteúdo');
+    fs.rmSync(blobFile(dataDir, PROJECT, gone));
+    fs.writeFileSync(blobFile(dataDir, PROJECT, broken), 'outro conteúdo');
 
     const page = query({ process: 'run-1' });
 
@@ -220,14 +205,20 @@ describe('QueryService.queryRecords', () => {
     expect(at(page.records, 1)).not.toHaveProperty('attachmentStatus');
   });
 
-  it('should leave the page unchanged without `fields`, with `data` right after the envelope', async () => {
+  it('should leave the page unchanged with `fields` undefined', async () => {
+    const { query } = await seeded();
+    const byDefault = query({ process: 'run-1' });
+
+    const page = query({ process: 'run-1', fields: undefined });
+
+    expect(JSON.stringify(page)).toBe(JSON.stringify(byDefault));
+  });
+
+  it('should put `data` right after the envelope without `fields`', async () => {
     const { query } = await seeded();
 
     const page = query({ process: 'run-1' });
 
-    expect(JSON.stringify(query({ process: 'run-1', fields: undefined }))).toBe(
-      JSON.stringify(page),
-    );
     expect(Object.keys(at(page.records, 0)).slice(0, 6)).toEqual([
       'id',
       'type',
@@ -243,7 +234,7 @@ describe('QueryService.queryRecords', () => {
     createProcess('run-1');
     const kept = attachments.putText(PROJECT, 'guardado').hash;
     const first = await registerOne('run-1', doc({ body: kept, note: 'anotação' }), 1);
-    await registerOne('run-1', note('apoio', { relations: [{ to: first, kind: 'supports' }] }), 2);
+    await registerOne('run-1', note('apoio', { relations: [supports(first)] }), 2);
     const full = query({ process: 'run-1' });
 
     const page = query({ process: 'run-1', fields: ['note'] });
@@ -258,20 +249,7 @@ describe('QueryService.queryRecords', () => {
   });
 
   it('should bring `needsReview` whole even with trimmed `data`', async () => {
-    const { createLegacyProcess, registerOne, query } = querySetup();
-    createLegacyProcess('run-1');
-    createLegacyProcess('run-2');
-    const evidence = await registerOne('run-1', note('evidência'), 1);
-    const verdict = await registerOne(
-      'run-2',
-      note('veredito', { relations: [{ to: evidence, kind: 'supports' }] }),
-      2,
-    );
-    await registerOne(
-      'run-1',
-      note('evidência 2', { relations: [{ to: evidence, kind: 'supersedes' }] }),
-      3,
-    );
+    const { query, evidence, verdict } = await verdictSupportingEvidenceOfRun1(true);
 
     const page = query({ scope: 'project', ids: [verdict], fields: [] });
 
@@ -321,12 +299,7 @@ describe('QueryService.queryRecords', () => {
   );
 
   it('should not see the dead support from another process in process scope', async () => {
-    const { createLegacyProcess, registerOne, query } = querySetup();
-    createLegacyProcess('run-1');
-    createLegacyProcess('run-2');
-    const evidence = await registerOne('run-1', note('evidência'), 1);
-    await registerOne('run-2', note('veredito', { relations: [supports(evidence)] }), 2);
-    await registerOne('run-1', note('evidência 2', { relations: [supersedes(evidence)] }), 3);
+    const { query } = await verdictSupportingEvidenceOfRun1(true);
 
     const own = query({ process: 'run-2' });
 
@@ -334,16 +307,7 @@ describe('QueryService.queryRecords', () => {
   });
 
   it('should see the dead support from another process in project scope', async () => {
-    const { createLegacyProcess, registerOne, query } = querySetup();
-    createLegacyProcess('run-1');
-    createLegacyProcess('run-2');
-    const evidence = await registerOne('run-1', note('evidência'), 1);
-    const verdict = await registerOne(
-      'run-2',
-      note('veredito', { relations: [supports(evidence)] }),
-      2,
-    );
-    await registerOne('run-1', note('evidência 2', { relations: [supersedes(evidence)] }), 3);
+    const { query, evidence, verdict } = await verdictSupportingEvidenceOfRun1(true);
 
     const project = query({ scope: 'project', ids: [verdict] });
 
@@ -351,23 +315,6 @@ describe('QueryService.queryRecords', () => {
   });
 
   describe('with an edge to a record of another process', () => {
-    async function verdictSupportingEvidenceOfRun1(supersedeEvidence: boolean) {
-      const setup = querySetup();
-      setup.createLegacyProcess('run-1');
-      setup.createLegacyProcess('run-2');
-      const { registerOne } = setup;
-      const evidence = await registerOne('run-1', note('evidence'), 1);
-      const verdict = await registerOne(
-        'run-2',
-        note('verdict', { relations: [supports(evidence)] }),
-        2,
-      );
-      if (supersedeEvidence) {
-        await registerOne('run-1', note('evidence 2', { relations: [supersedes(evidence)] }), 3);
-      }
-      return { ...setup, verdict };
-    }
-
     it('should count the edge in `outCounts` and not in `nonCurrentOutCounts` in process scope', async () => {
       const { query, verdict } = await verdictSupportingEvidenceOfRun1(true);
 
@@ -377,23 +324,20 @@ describe('QueryService.queryRecords', () => {
       expect(at(page.records, 0)).not.toHaveProperty('nonCurrentOutCounts');
     });
 
-    it('should move the edge to `nonCurrentOutCounts` in project scope when the target is superseded', async () => {
-      const { query, verdict } = await verdictSupportingEvidenceOfRun1(true);
+    it.each([
+      ['nonCurrentOutCounts', 'outCounts', 'superseded', true],
+      ['outCounts', 'nonCurrentOutCounts', 'current', false],
+    ] as const)(
+      'should count the edge in `%s` and not in `%s` in project scope when the target is %s',
+      async (counted, absent, _state, supersedeEvidence) => {
+        const { query, verdict } = await verdictSupportingEvidenceOfRun1(supersedeEvidence);
 
-      const page = query({ scope: 'project', ids: [verdict], relations: 'counts' });
+        const page = query({ scope: 'project', ids: [verdict], relations: 'counts' });
 
-      expect(at(page.records, 0).nonCurrentOutCounts).toEqual({ supports: 1 });
-      expect(at(page.records, 0)).not.toHaveProperty('outCounts');
-    });
-
-    it('should count the edge in `outCounts` in project scope when the target is current', async () => {
-      const { query, verdict } = await verdictSupportingEvidenceOfRun1(false);
-
-      const page = query({ scope: 'project', ids: [verdict], relations: 'counts' });
-
-      expect(at(page.records, 0).outCounts).toEqual({ supports: 1 });
-      expect(at(page.records, 0)).not.toHaveProperty('nonCurrentOutCounts');
-    });
+        expect(at(page.records, 0)[counted]).toEqual({ supports: 1 });
+        expect(at(page.records, 0)).not.toHaveProperty(absent);
+      },
+    );
   });
 
   it('should carry the hint for an empty selection with a prefix that only matches without the dot boundary', async () => {
@@ -420,55 +364,6 @@ describe('QueryService.queryRecords', () => {
     expect(query({ process: 'run-1', ...filters })).not.toHaveProperty('hint');
   });
 
-  it('should still return no records for a prefix without the dot boundary', async () => {
-    const { query } = await seeded();
-
-    expect(idsOf(query({ process: 'run-1', targetPrefix: 'run.ste' }))).toEqual([]);
-  });
-
-  it('should return only the changes, with no records or cursor, for `limit: 0` with `changesSince`', async () => {
-    const { createProcess, registerOne, query } = querySetup();
-    createProcess('run-1');
-    await registerOne('run-1', note('a'), 1);
-    const { marker } = query({ process: 'run-1' });
-    const added = await registerOne('run-1', note('b'), 2);
-
-    const page = query({ process: 'run-1', changesSince: marker, limit: 0 });
-
-    expect(page.records).toEqual([]);
-    expect(page).not.toHaveProperty('cursor');
-    expect(page.changes).toEqual({ entered: [added], left: [], marker: page.marker });
-  });
-
-  it('should refuse `limit: 0` without `changesSince` with INVALID_FILTER at /limit', () => {
-    const { createProcess, query } = querySetup();
-    createProcess('run-1');
-
-    const error = captureError(() => query({ process: 'run-1', limit: 0 }));
-
-    expect(error.code).toBe('INVALID_FILTER');
-    expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
-  });
-
-  it('should refuse `limit: 0` with a cursor, even with `changesSince`, with INVALID_FILTER at /limit', async () => {
-    const { createProcess, register, query } = querySetup();
-    createProcess('run-1');
-    await register('run-1', [note('a'), note('b')], 1);
-    const first = query({ process: 'run-1', limit: 1 });
-
-    const error = captureError(() =>
-      query({
-        process: 'run-1',
-        limit: 0,
-        changesSince: first.marker,
-        cursor: cursorOf(first),
-      }),
-    );
-
-    expect(error.code).toBe('INVALID_FILTER');
-    expect(at(error.details, 0)).toMatchObject({ path: '/limit', code: 'out-of-range' });
-  });
-
   it('should replace `in` and `out` with `inCounts` and `outCounts` keyed by relation name in counts mode', async () => {
     const { query, evidence, newer } = await wired();
 
@@ -485,7 +380,7 @@ describe('QueryService.queryRecords', () => {
     expect(at(page.records, 1).nonCurrentOutCounts).toEqual({ supersedes: 1 });
   });
 
-  it('should omit empty maps and zero kinds in counts mode', async () => {
+  it('should omit empty count maps in counts mode', async () => {
     const { query, evidence, newer } = await wired();
 
     const page = query({
@@ -497,6 +392,18 @@ describe('QueryService.queryRecords', () => {
 
     expect(at(page.records, 0)).not.toHaveProperty('outCounts');
     expect(at(page.records, 1)).not.toHaveProperty('inCounts');
+  });
+
+  it('should list in `inCounts` only the kinds that have edges', async () => {
+    const { query, evidence } = await wired();
+
+    const page = query({
+      process: 'run-1',
+      ids: [evidence],
+      includeNonCurrent: true,
+      relations: 'counts',
+    });
+
     expect(Object.keys(at(page.records, 0).inCounts ?? {})).toEqual([
       'approves',
       'supports',
@@ -545,14 +452,10 @@ describe('QueryService.queryRecords', () => {
       const evidence = await registerOne('run-1', note('evidência'), 1);
       const verdict = await registerOne(
         'run-1',
-        doc({ body: kept }, { relations: [{ to: evidence, kind: 'supports' }] }),
+        doc({ body: kept }, { relations: [supports(evidence)] }),
         2,
       );
-      await registerOne(
-        'run-1',
-        note('evidência 2', { relations: [{ to: evidence, kind: 'supersedes' }] }),
-        3,
-      );
+      await registerOne('run-1', note('evidência 2', { relations: [supersedes(evidence)] }), 3);
 
       const page = query({ process: 'run-1', ids: [verdict], relations });
 
@@ -567,14 +470,10 @@ describe('QueryService.queryRecords', () => {
     const evidence = await registerOne('run-1', note('evidence'), 1);
     const support = await registerOne(
       'run-1',
-      note('support', { relations: [{ to: evidence, kind: 'supports' }] }),
+      note('support', { relations: [supports(evidence)] }),
       2,
     );
-    await registerOne(
-      'run-1',
-      note('support 2', { relations: [{ to: support, kind: 'supersedes' }] }),
-      3,
-    );
+    await registerOne('run-1', note('support 2', { relations: [supersedes(support)] }), 3);
 
     const full = query({ process: 'run-1', ids: [evidence], relations: 'full' });
     const counts = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
@@ -592,14 +491,10 @@ describe('QueryService.queryRecords', () => {
       const decision = await registerOne('run-1', note('decision'), 1);
       const premise = await registerOne(
         'run-1',
-        note('premise', { relations: [{ to: decision, kind: 'supports' }] }),
+        note('premise', { relations: [supports(decision)] }),
         2,
       );
-      await registerOne(
-        'run-1',
-        note('current support', { relations: [{ to: decision, kind: 'supports' }] }),
-        3,
-      );
+      await registerOne('run-1', note('current support', { relations: [supports(decision)] }), 3);
       await registerOne(
         'run-1',
         note('revoker', { relations: [{ to: premise, kind: 'revokes' }] }),

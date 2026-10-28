@@ -1,9 +1,15 @@
 import { describe, expect, it } from '@jest/globals';
-import { note } from '../commands/register-fakes.ts';
+import { note } from '../commands/fakes.ts';
 import { at, captureError } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
 
 const HOSTILE_NAMES = ['..', 'a/b'];
+
+/** O erro de um nome com `..` ou `/`: `INVALID_INPUT` `invalid-name` em `path`. */
+const invalidName = (path: string) => ({
+  code: 'INVALID_INPUT',
+  details: [expect.objectContaining({ path, code: 'invalid-name' })],
+});
 
 // O serviço confia nos tipos; a barreira anti-traversal é dos adaptadores (`process-store.ts#pathsOf`,
 // `attachment-store.ts#checkedSegments`). Estes casos travam o contrato visível no serviço, para
@@ -14,10 +20,9 @@ describe('QueryService.queryRecords', () => {
     (name) => {
       const { queries } = querySetup();
 
-      const error = captureError(() => queries.queryRecords({ project: PROJECT, process: name }));
-
-      expect(error.code).toBe('INVALID_INPUT');
-      expect(at(error.details, 0)).toMatchObject({ path: '/process', code: 'invalid-name' });
+      expect(
+        captureError(() => queries.queryRecords({ project: PROJECT, process: name })),
+      ).toMatchObject(invalidName('/process'));
     },
   );
 
@@ -26,24 +31,24 @@ describe('QueryService.queryRecords', () => {
     (name) => {
       const { queries } = querySetup();
 
-      const error = captureError(() => queries.queryRecords({ project: name, process: 'run-1' }));
-
-      expect(error.code).toBe('INVALID_INPUT');
-      expect(at(error.details, 0)).toMatchObject({ path: '/project', code: 'invalid-name' });
+      expect(
+        captureError(() => queries.queryRecords({ project: name, process: 'run-1' })),
+      ).toMatchObject(invalidName('/project'));
     },
   );
 
-  it('should treat attachments and constructor as valid process names that do not exist', () => {
-    const { queries, attachments } = querySetup();
-    // Cria a pasta `<projeto>/attachments`, que não tem manifesto e nunca é um processo.
-    attachments.putText(PROJECT, 'qualquer anexo');
+  it.each(['attachments', 'constructor'])(
+    'should treat %s as a valid process name that does not exist',
+    (name) => {
+      const { queries, attachments } = querySetup();
+      // Cria a pasta `<projeto>/attachments`, que não tem manifesto e nunca é um processo.
+      attachments.putText(PROJECT, 'qualquer anexo');
 
-    for (const process of ['attachments', 'constructor']) {
-      const error = captureError(() => queries.queryRecords({ project: PROJECT, process }));
+      const error = captureError(() => queries.queryRecords({ project: PROJECT, process: name }));
 
       expect(error.code).toBe('PROCESS_NOT_FOUND');
-    }
-  });
+    },
+  );
 
   describe('with relation names that clash with Object.prototype', () => {
     /** `support` aponta para `evidence` pela relação `constructor`; `superseded` troca um dos dois. */
@@ -72,20 +77,12 @@ describe('QueryService.queryRecords', () => {
       return { query, evidence, support };
     }
 
-    it('should handle a relation named constructor in relations counts', async () => {
-      const { query, evidence } = await constructorEdge({});
-
-      const page = query({ process: 'run-1', ids: [evidence], relations: 'counts' });
-
-      expect(at(page.records, 0).inCounts).toEqual({ constructor: 1 });
-      expect(Object.hasOwn(at(page.records, 0).inCounts ?? {}, 'constructor')).toBe(true);
-    });
-
     it.each([
+      { side: 'inCounts', superseded: undefined, target: 'evidence' },
       { side: 'nonCurrentInCounts', superseded: 'support', target: 'evidence' },
       { side: 'nonCurrentOutCounts', superseded: 'evidence', target: 'support' },
     ] as const)(
-      'should handle a relation named constructor in $side',
+      'should count a relation named constructor as an own key of $side',
       async ({ side, superseded, target }) => {
         const { query, ...ids } = await constructorEdge({ superseded });
 
@@ -104,12 +101,9 @@ describe('QueryService.evaluateGate', () => {
     (name) => {
       const { queries } = querySetup();
 
-      const error = captureError(() =>
-        queries.evaluateGate({ project: PROJECT, process: name, gate: 'g' }),
-      );
-
-      expect(error.code).toBe('INVALID_INPUT');
-      expect(at(error.details, 0)).toMatchObject({ path: '/process', code: 'invalid-name' });
+      expect(
+        captureError(() => queries.evaluateGate({ project: PROJECT, process: name, gate: 'g' })),
+      ).toMatchObject(invalidName('/process'));
     },
   );
 });
@@ -120,10 +114,9 @@ describe('QueryService.verifyChain', () => {
     (name) => {
       const { queries } = querySetup();
 
-      const error = captureError(() => queries.verifyChain({ project: PROJECT, process: name }));
-
-      expect(error.code).toBe('INVALID_INPUT');
-      expect(at(error.details, 0)).toMatchObject({ path: '/process', code: 'invalid-name' });
+      expect(
+        captureError(() => queries.verifyChain({ project: PROJECT, process: name })),
+      ).toMatchObject(invalidName('/process'));
     },
   );
 
@@ -132,10 +125,9 @@ describe('QueryService.verifyChain', () => {
     (name) => {
       const { queries } = querySetup();
 
-      const error = captureError(() => queries.verifyChain({ project: name, process: 'run-1' }));
-
-      expect(error.code).toBe('INVALID_INPUT');
-      expect(at(error.details, 0)).toMatchObject({ path: '/project', code: 'invalid-name' });
+      expect(
+        captureError(() => queries.verifyChain({ project: name, process: 'run-1' })),
+      ).toMatchObject(invalidName('/project'));
     },
   );
 });
@@ -146,10 +138,9 @@ describe('QueryService.list', () => {
     (name) => {
       const { queries } = querySetup();
 
-      const error = captureError(() => queries.list({ project: PROJECT, process: name }));
-
-      expect(error.code).toBe('INVALID_INPUT');
-      expect(at(error.details, 0)).toMatchObject({ path: '/process', code: 'invalid-name' });
+      expect(captureError(() => queries.list({ project: PROJECT, process: name }))).toMatchObject(
+        invalidName('/process'),
+      );
     },
   );
 });
@@ -160,12 +151,9 @@ describe('QueryService.readAttachment', () => {
     (name) => {
       const { queries } = querySetup();
 
-      const error = captureError(() =>
-        queries.readAttachment({ project: name, hash: 'a'.repeat(64) }),
-      );
-
-      expect(error.code).toBe('INVALID_INPUT');
-      expect(at(error.details, 0)).toMatchObject({ path: '/project', code: 'invalid-name' });
+      expect(
+        captureError(() => queries.readAttachment({ project: name, hash: 'a'.repeat(64) })),
+      ).toMatchObject(invalidName('/project'));
     },
   );
 });

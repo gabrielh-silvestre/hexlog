@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import * as path from 'node:path';
 import { writeFileAtomic } from '../../src/adapters/fs/atomic.ts';
 import { createTempDir } from '../helpers.ts';
+import { spyOnOpen } from './fs-spies.ts';
+import { countFsyncs } from './fsync-spy.ts';
 
 describe('writeFileAtomic', () => {
   afterEach(() => {
@@ -33,11 +35,11 @@ describe('writeFileAtomic', () => {
   it('should replace the existing file without exclusive', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
-    fs.writeFileSync(file, 'velho');
+    fs.writeFileSync(file, 'old');
 
-    writeFileAtomic(file, 'novo');
+    writeFileAtomic(file, 'new');
 
-    expect(fs.readFileSync(file, 'utf8')).toBe('novo');
+    expect(fs.readFileSync(file, 'utf8')).toBe('new');
     expect(fs.readdirSync(dir)).toEqual(['f.txt']);
   });
 
@@ -59,34 +61,34 @@ describe('writeFileAtomic', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
 
-    writeFileAtomic(file, 'primeiro', { exclusive: true });
+    writeFileAtomic(file, 'first', { exclusive: true });
 
-    expect(fs.readFileSync(file, 'utf8')).toBe('primeiro');
+    expect(fs.readFileSync(file, 'utf8')).toBe('first');
     expect(fs.readdirSync(dir)).toEqual(['f.txt']);
   });
 
   it('should throw a raw EEXIST with exclusive, keep the content and remove the temporary', () => {
     const dir = createTempDir('atomic');
     const file = path.join(dir, 'f.txt');
-    writeFileAtomic(file, 'primeiro', { exclusive: true });
+    writeFileAtomic(file, 'first', { exclusive: true });
 
-    expect(() => writeFileAtomic(file, 'segundo', { exclusive: true })).toThrow(
+    expect(() => writeFileAtomic(file, 'second', { exclusive: true })).toThrow(
       expect.objectContaining({ code: 'EEXIST' }),
     );
 
-    expect(fs.readFileSync(file, 'utf8')).toBe('primeiro');
+    expect(fs.readFileSync(file, 'utf8')).toBe('first');
     expect(fs.readdirSync(dir)).toEqual(['f.txt']);
   });
 
   it('should throw an I/O error other than EEXIST raw and leave no temporary', () => {
     const dir = createTempDir('atomic');
-    const target = path.join(dir, 'pasta');
+    const target = path.join(dir, 'folder');
     fs.mkdirSync(target);
 
     // renomear arquivo por cima de diretório falha (EISDIR)
     expect(() => writeFileAtomic(target, 'v')).toThrow(expect.objectContaining({ code: 'EISDIR' }));
 
-    expect(fs.readdirSync(dir)).toEqual(['pasta']);
+    expect(fs.readdirSync(dir)).toEqual(['folder']);
   });
 
   it('should throw a raw file fsync failure, not publish the file and leave no temporary', () => {
@@ -117,12 +119,8 @@ describe('writeFileAtomic', () => {
 
   it('should name the temporary with the pid and 8 random bytes (16 hex), so two writers do not collide', () => {
     const dir = createTempDir('atomic');
-    const realOpen = fs.openSync;
     const opened: string[] = [];
-    jest.spyOn(fs, 'openSync').mockImplementation((file, flags, mode) => {
-      opened.push(path.basename(String(file)));
-      return realOpen(file, flags, mode);
-    });
+    spyOnOpen((file) => opened.push(path.basename(file)));
 
     writeFileAtomic(path.join(dir, 'f.txt'), 'v');
 
@@ -147,18 +145,11 @@ describe('writeFileAtomic', () => {
     'should fsync the directory $directoryFsyncs times with fsyncDir $fsyncDir',
     ({ fsyncDir, directoryFsyncs }) => {
       const dir = createTempDir('atomic');
-      const realFsync = fs.fsyncSync;
-      const onDirectory: boolean[] = [];
-      // passa direto para o fsync real; só registra se o descritor é um diretório
-      jest.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
-        onDirectory.push(fs.fstatSync(fd).isDirectory());
-        realFsync(fd);
-      });
+      const fsyncs = countFsyncs();
 
       writeFileAtomic(path.join(dir, 'f.txt'), 'v', { fsyncDir });
 
-      expect(onDirectory.filter(Boolean)).toHaveLength(directoryFsyncs);
-      expect(onDirectory.filter((isDirectory) => !isDirectory)).toHaveLength(1);
+      expect(fsyncs()).toEqual({ files: 1, directories: directoryFsyncs });
     },
   );
 });

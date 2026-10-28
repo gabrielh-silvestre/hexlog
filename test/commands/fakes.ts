@@ -1,20 +1,26 @@
+import { spawnSync } from 'node:child_process';
+import * as path from 'node:path';
 import { jest } from '@jest/globals';
+import { compose } from '../../src/compose.ts';
 import { createValidator } from '../../src/adapters/validator.ts';
 import { createProcessService } from '../../src/commands/process.ts';
 import type { RegisterInput } from '../../src/commands/process.ts';
 import { hashOfJcs } from '../../src/domain/chain.ts';
+import { compareVersions } from '../../src/domain/definitions.ts';
 import type { RecordType, RelationName } from '../../src/domain/definitions.ts';
 import type { Hash, Name } from '../../src/domain/ids.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import { HexlogError } from '../../src/errors.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import type { Logger } from '../../src/shared/logger.ts';
-import { rejectionOf } from '../helpers.ts';
+import { at, createDataHome, rejectionOf } from '../helpers.ts';
 import type { Manifest } from '../../src/domain/manifest.ts';
 import type {
   AttachmentStatus,
   AttachmentStore,
   Decision,
+  DefinitionKind,
+  DefinitionOf,
   DefinitionStore,
   ProcessRef,
   ProcessStore,
@@ -51,16 +57,10 @@ const DEFAULT_RELATIONS: RelationName[] = [
   { name: 'only-tasks', kind: 'supports', from: ['task'] },
 ];
 
-export type Types = Record<Name, RecordType>;
-
-export function manifestOf(
-  process: Name,
-  types: Types = { note: NOTE, task: NOTE, doc: DOC },
-  relations: RelationName[] = DEFAULT_RELATIONS,
-): Manifest {
+export function manifestOf(process: Name): Manifest {
   const fixed = {
-    types,
-    relations: Object.fromEntries(relations.map((relation) => [relation.name, relation])),
+    types: { note: NOTE, task: NOTE, doc: DOC },
+    relations: Object.fromEntries(DEFAULT_RELATIONS.map((relation) => [relation.name, relation])),
     gates: {},
   };
   return {
@@ -86,7 +86,7 @@ export function createUuids(): () => string {
 
 /** Operação de porta que o spec não deve exercitar: falha alto se alguém a chamar. */
 export const refuse = (): never => {
-  throw new Error('operação fora do escopo deste spec');
+  throw new Error('operation outside the scope of this spec');
 };
 
 function notFound(process: Name): HexlogError {
@@ -121,7 +121,14 @@ export function fakeProcessStore() {
     /** Grava a linha e falha depois (`write` completo e `fsync` que falhou): resultado incerto. */
     ioErrorAfterAppend: false,
   };
-  const counters = { reads: [] as Name[], writes: 0, appends: 0, syncsWithoutLine: 0 };
+  const counters = {
+    reads: [] as Name[],
+    /** Manifestos recebidos por `create`, inclusive de processo que já existia. */
+    creates: [] as Manifest[],
+    writes: 0,
+    appends: 0,
+    syncsWithoutLine: 0,
+  };
 
   /** Como `readManifest` do adaptador: só o manifesto, sem o teto do log nem a contagem de leitura do log. */
   const manifestEntryOf = (process: Name) => {
@@ -152,7 +159,12 @@ export function fakeProcessStore() {
     readManifest: (ref) => structuredClone(manifestEntryOf(ref.process).manifest),
     list: refuse,
     listProjects: refuse,
-    create: refuse,
+    create: (ref, manifest) => {
+      counters.creates.push(manifest);
+      if (entries.has(ref.process)) return false;
+      entries.set(ref.process, { manifest, text: '' });
+      return true;
+    },
     // `Promise` com executor síncrono: o `throw` de `decide` ou do veto vira rejeição, como no adaptador.
     write: (ref, decide) =>
       new Promise((resolve) => {
@@ -187,8 +199,15 @@ export function fakeProcessStore() {
     store,
     flags,
     counters,
-    add: (process: Name, manifest = manifestOf(process)) => {
-      entries.set(process, { manifest, text: '' });
+    add: (process: Name) => {
+      entries.set(process, { manifest: manifestOf(process), text: '' });
+    },
+    readsOf: (process: Name) => counters.reads.filter((read) => read === process).length,
+    /** O manifesto guardado, sem cópia, para provar que `create` não o reescreveu. */
+    manifestStored: (process: Name) => entries.get(process)?.manifest,
+    setManifest: (process: Name, manifest: Manifest) => {
+      const entry = entries.get(process);
+      if (entry !== undefined) entry.manifest = manifest;
     },
     textOf: (process: Name) => entries.get(process)?.text ?? '',
     /** Substitui o log cru, para montar cadeia quebrada ou cauda rasgada. */
@@ -219,12 +238,64 @@ function fakeAttachments() {
   };
 }
 
-const REFUSING_DEFINITIONS: DefinitionStore = {
-  names: () => [],
-  versions: () => [],
-  read: refuse,
-  write: refuse,
-};
+/**
+ * `DefinitionStore` em memória com o contrato da porta: `write` devolve `false` se a versão já
+ * existe. `racing` roda uma vez no início do próximo `write`, para plantar a versão de um escritor
+ * concorrente; `reads` e `writes` registram as chamadas.
+ */
+export function fakeDefinitionStore() {
+  const data: Record<DefinitionKind, Map<Name, Map<string, unknown>>> = {
+    types: new Map(),
+    relations: new Map(),
+    gates: new Map(),
+  };
+  const reads: string[] = [];
+  const writes: { kind: DefinitionKind; version: string }[] = [];
+  let pending: (() => void) | undefined;
+
+  /** Nome com a lista de versões vazia é a pasta que sobra de uma falha. */
+  const slot = (kind: DefinitionKind, name: Name) => {
+    const versions = data[kind].get(name) ?? new Map<string, unknown>();
+    data[kind].set(name, versions);
+    return versions;
+  };
+  const store: DefinitionStore = {
+    names: (_project, kind) => [...data[kind].keys()],
+    versions: (_project, kind, name) =>
+      [...(data[kind].get(name)?.keys() ?? [])].sort(compareVersions),
+    read: <K extends DefinitionKind>(_project: Name, kind: K, name: Name, version: string) => {
+      reads.push(`${kind}/${name}@${version}`);
+      return data[kind].get(name)?.get(version) as DefinitionOf[K];
+    },
+    write: (_project, kind, name, version, definition) => {
+      writes.push({ kind, version });
+      const plant = pending;
+      pending = undefined;
+      plant?.();
+      const stored = slot(kind, name);
+      if (stored.has(version)) return false;
+      stored.set(version, structuredClone(definition));
+      return true;
+    },
+  };
+
+  return {
+    store,
+    reads,
+    writes,
+    add: <K extends DefinitionKind>(
+      kind: K,
+      name: Name,
+      version: string,
+      definition: DefinitionOf[K],
+    ) => void slot(kind, name).set(version, structuredClone(definition)),
+    addEmptyName: (kind: DefinitionKind, name: Name) => void slot(kind, name),
+    stored: (kind: DefinitionKind, name: Name, version: string) =>
+      data[kind].get(name)?.get(version),
+    versions: (kind: DefinitionKind, name: Name) => store.versions(PROJECT, kind, name),
+    racing: (plant: () => void) => void (pending = plant),
+  };
+}
 
 /** Portas de `register` que um spec de `createProcess` não usa, só para completar as dependências. */
 export const UNUSED_REGISTER_PORTS = {
@@ -243,7 +314,7 @@ export function setup(newUuid: () => string = createUuids()) {
   let now = NOW;
   const service = createProcessService({
     store: processes.store,
-    definitions: REFUSING_DEFINITIONS,
+    definitions: fakeDefinitionStore().store,
     attachments: attachments.store,
     validator,
     clock: () => now,
@@ -280,3 +351,45 @@ export const verifiedOf = (
 
 /** Id de registro bem formado de um processo que nunca recebeu o registro. */
 export const ghostId = (process: Name, n = 999) => `${process}:00000000-0000-7000-8000-${HEX(n)}`;
+
+/** `compose` real sobre `home`, sem log; o relógio padrão é fixo em `NOW`. */
+export function composeIn(
+  { xdg, dataDir }: { xdg: string; dataDir: string },
+  clock: () => Date = () => NOW,
+) {
+  return compose({ dataDir, cwd: xdg, clock, logger: () => undefined }).services;
+}
+
+/**
+ * `<xdg>/hexlog` com o tipo `note` e o processo `ref` criados pelo `compose` real; `register` grava
+ * um registro com a `key` e devolve o id.
+ */
+export function seedNoteProcess(ref: ProcessRef = { project: PROJECT, process: ORIGIN }) {
+  const home = createDataHome();
+  const services = composeIn(home);
+  services.definition.defineType({ project: ref.project, name: 'note', schema: NOTE });
+  services.process.createProcess(ref);
+  const register = async (key: string, item: BatchItem) => {
+    const { records } = await services.process.register({
+      ...ref,
+      author: AUTHOR,
+      key,
+      records: [item],
+    });
+    return at(records, 0).id;
+  };
+  return { xdg: home.xdg, register };
+}
+
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
+
+/** Roda `scripts/<script>.ts` num processo filho com `XDG_DATA_HOME=xdg` e devolve o código, o stdout e o stderr. */
+export function runScript(script: string, xdg: string, ...args: string[]) {
+  const result = spawnSync(process.execPath, [`scripts/${script}.ts`, ...args], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, XDG_DATA_HOME: xdg },
+    timeout: 20_000,
+  });
+  return { code: result.status, out: result.stdout, err: result.stderr };
+}

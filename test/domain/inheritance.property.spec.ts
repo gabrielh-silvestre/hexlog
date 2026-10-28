@@ -5,14 +5,15 @@ import type { Inheritance, InheritedEdge } from '../../src/domain/inheritance.ts
 import { buildVigency } from '../../src/domain/relations.ts';
 import type { Linked } from '../../src/domain/relations.ts';
 import type { RelationKind } from '../../src/domain/record.ts';
+import { rootOf, withRelation, withShuffle } from './relation-graph.ts';
 
-type Pick = { kind: RelationKind; pick: number; as: boolean };
-type Op = { process: 'a' | 'b'; relations: Pick[] };
+type Edge = { kind: RelationKind; pick: number; as: boolean };
+type Op = { process: 'a' | 'b'; relations: Edge[] };
 type Active = { a: boolean; b: boolean };
 
 // Viés para `supersedes` e para as espécies que herdam, senão a linhagem e a herança quase nunca
 // aparecem. O destino é `pick` módulo o número de registros já gravados.
-const relation = fc.record<Pick>({
+const relation = fc.record<Edge>({
   kind: fc.constantFrom(
     'supersedes',
     'supersedes',
@@ -61,24 +62,17 @@ function resolve(records: Linked[], flags: Active) {
 const edgesOf = (inheritance: Inheritance, records: Linked[]): InheritedEdge[] =>
   records.flatMap(({ id }) => [...inheritance.outOf(id)]);
 
+/** Uma aresta herdada, escolhida por `index` entre as que o grafo dá; descarta a rodada se não há. */
+function pickInheritedEdge(ops: Op[], flags: Active, index: number) {
+  const records = recordsOf(ops);
+  const before = edgesOf(resolve(records, flags), records);
+  fc.pre(before.length > 0);
+  return { records, before, edge: before[index % before.length]! };
+}
+
 const ORIGIN_KINDS: RelationKind[] = ['answers', 'derivesFrom', 'complements', 'reopens'];
 const sameEdge = (x: InheritedEdge, y: InheritedEdge) =>
   x.kind === y.kind && x.as === y.as && x.from === y.from && x.to === y.to;
-
-/** Oráculo do corte: a raiz de cada linhagem, unida pelas arestas `supersedes`. */
-function rootOf(records: Linked[]): (id: string) => string {
-  const parent = new Map<string, string>();
-  const find = (id: string): string => {
-    const next = parent.get(id);
-    return next === undefined ? id : find(next);
-  };
-  for (const { id, relations } of records) {
-    for (const { kind, to } of relations) {
-      if (kind === 'supersedes' && find(id) !== find(to)) parent.set(find(id), find(to));
-    }
-  }
-  return find;
-}
 
 describe('buildInheritance', () => {
   it('should inherit nothing with every process inactive', () => {
@@ -95,41 +89,48 @@ describe('buildInheritance', () => {
     );
   });
 
-  it('should give only edges that follow the kind table and raise only current ends', () => {
+  it('should raise a supports only between current ends of its origin lineage', () => {
     fc.assert(
       fc.property(graph, active, (ops, flags) => {
         const records = recordsOf(ops);
         const vigency = buildVigency(records);
         const isValid = (edge: InheritedEdge) =>
-          edge.kind === 'supports'
-            ? vigency.isCurrent(edge.from) &&
-              vigency.isCurrent(edge.to) &&
-              edge.origin.from === edge.from &&
-              vigency.currentOf(edge.origin.to) === edge.to
-            : ORIGIN_KINDS.includes(edge.kind) &&
-              vigency.isCurrent(edge.from) &&
-              !vigency.isCurrent(edge.origin.from) &&
-              vigency.currentOf(edge.origin.from) === edge.from &&
-              edge.origin.to === edge.to;
-
-        expect(edgesOf(resolve(records, flags), records).filter((edge) => !isValid(edge))).toEqual(
-          [],
+          vigency.isCurrent(edge.from) &&
+          vigency.isCurrent(edge.to) &&
+          edge.origin.from === edge.from &&
+          vigency.currentOf(edge.origin.to) === edge.to;
+        const supports = edgesOf(resolve(records, flags), records).filter(
+          ({ kind }) => kind === 'supports',
         );
+
+        expect(supports.filter((edge) => !isValid(edge))).toEqual([]);
+      }),
+    );
+  });
+
+  it('should raise an origin-kind edge only from the current version of a superseded source', () => {
+    fc.assert(
+      fc.property(graph, active, (ops, flags) => {
+        const records = recordsOf(ops);
+        const vigency = buildVigency(records);
+        const isValid = (edge: InheritedEdge) =>
+          ORIGIN_KINDS.includes(edge.kind) &&
+          vigency.isCurrent(edge.from) &&
+          !vigency.isCurrent(edge.origin.from) &&
+          vigency.currentOf(edge.origin.from) === edge.from &&
+          edge.origin.to === edge.to;
+        const others = edgesOf(resolve(records, flags), records).filter(
+          ({ kind }) => kind !== 'supports',
+        );
+
+        expect(others.filter((edge) => !isValid(edge))).toEqual([]);
       }),
     );
   });
 
   it('should not depend on the order of the records', () => {
-    const shuffled = graph.chain((ops) => {
-      const records = recordsOf(ops);
-      return fc.tuple(
-        fc.constant(records),
-        fc.shuffledSubarray(records, { minLength: records.length }),
-      );
-    });
-
     fc.assert(
-      fc.property(shuffled, active, ([records, reordered], flags) => {
+      fc.property(withShuffle(graph.map(recordsOf)), active, ([records, reordered], flags) => {
         const [first, second] = [resolve(records, flags), resolve(reordered, flags)];
 
         for (const { id } of records) {
@@ -141,25 +142,14 @@ describe('buildInheritance', () => {
   });
 
   it('should remove the inherited edge and leave the others when the identical direct edge is added', () => {
-    const picked = fc.tuple(graph, active, fc.nat());
-
     fc.assert(
-      fc.property(picked, ([ops, flags, index]) => {
-        const records = recordsOf(ops);
-        const before = edgesOf(resolve(records, flags), records);
-        fc.pre(before.length > 0);
-        const edge = before[index % before.length]!;
-        const withDirect = records.map((record) =>
-          record.id === edge.from
-            ? {
-                ...record,
-                relations: [
-                  ...record.relations,
-                  { kind: edge.kind, to: edge.to, ...(edge.as ? { as: edge.as } : {}) },
-                ],
-              }
-            : record,
-        );
+      fc.property(graph, active, fc.nat(), (ops, flags, index) => {
+        const { records, before, edge } = pickInheritedEdge(ops, flags, index);
+        const withDirect = withRelation(records, edge.from, {
+          kind: edge.kind,
+          to: edge.to,
+          ...(edge.as ? { as: edge.as } : {}),
+        });
 
         const after = edgesOf(resolve(withDirect, flags), withDirect);
 
@@ -169,22 +159,10 @@ describe('buildInheritance', () => {
   });
 
   it('should remove the pair and leave the others with a current contradicts between the two lineages', () => {
-    const picked = fc.tuple(graph, active, fc.nat());
-
     fc.assert(
-      fc.property(picked, ([ops, flags, index]) => {
-        const records = recordsOf(ops);
-        const before = edgesOf(resolve(records, flags), records);
-        fc.pre(before.length > 0);
-        const edge = before[index % before.length]!;
-        const cut = records.map((record) =>
-          record.id === edge.from
-            ? {
-                ...record,
-                relations: [...record.relations, { kind: 'contradicts' as const, to: edge.to }],
-              }
-            : record,
-        );
+      fc.property(graph, active, fc.nat(), (ops, flags, index) => {
+        const { records, before, edge } = pickInheritedEdge(ops, flags, index);
+        const cut = withRelation(records, edge.from, { kind: 'contradicts', to: edge.to });
         const root = rootOf(records);
         const pairOf = ({ from, to }: InheritedEdge) => [root(from), root(to)].sort().join('|');
         const samePair = (other: InheritedEdge) => pairOf(other) === pairOf(edge);
@@ -197,24 +175,18 @@ describe('buildInheritance', () => {
   });
 
   it('should cut nothing with a contradicts recorded by a non-current record', () => {
-    const picked = fc.tuple(graph, active, fc.nat(), fc.nat());
-
     fc.assert(
-      fc.property(picked, ([ops, flags, holderIndex, targetIndex]) => {
+      fc.property(graph, active, fc.nat(), fc.nat(), (ops, flags, holderIndex, targetIndex) => {
         const records = recordsOf(ops);
         const vigency = buildVigency(records);
         const holders = records.filter(({ id }) => !vigency.isCurrent(id));
         fc.pre(holders.length > 0);
         const holder = holders[holderIndex % holders.length]!;
         const target = records[targetIndex % records.length]!;
-        const withContradicts = records.map((record) =>
-          record.id === holder.id
-            ? {
-                ...record,
-                relations: [...record.relations, { kind: 'contradicts' as const, to: target.id }],
-              }
-            : record,
-        );
+        const withContradicts = withRelation(records, holder.id, {
+          kind: 'contradicts',
+          to: target.id,
+        });
 
         expect(edgesOf(resolve(withContradicts, flags), withContradicts)).toEqual(
           edgesOf(resolve(records, flags), records),

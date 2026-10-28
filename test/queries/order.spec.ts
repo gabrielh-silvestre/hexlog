@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
-import { note } from '../commands/register-fakes.ts';
-import { idsOf, querySetup, walkPages } from './query-setup.ts';
+import { note } from '../commands/fakes.ts';
+import { idsOf, walkPages } from '../helpers.ts';
+import { querySetup } from './query-setup.ts';
 
 describe('QueryService.queryRecords', () => {
   it('should order the process scope by seq, even with the clock going backwards', async () => {
@@ -44,11 +45,11 @@ describe('QueryService.queryRecords', () => {
     const tieMiddle = await registerOne('run-b', note('webhook um dois tres'), 3);
     const tieEarly = await registerOne('run-a', note('webhook um dois tres'), 1);
 
-    const project = query({ scope: 'project', text: 'webhook' });
-    const process = query({ process: 'run-a', text: 'webhook' });
+    const projectPage = query({ scope: 'project', text: 'webhook' });
+    const processPage = query({ process: 'run-a', text: 'webhook' });
 
-    expect(idsOf(project)).toEqual([heavy, tieEarly, tieMiddle, tieLate]);
-    expect(idsOf(process)).toEqual([tieLate, tieEarly]);
+    expect(idsOf(projectPage)).toEqual([heavy, tieEarly, tieMiddle, tieLate]);
+    expect(idsOf(processPage)).toEqual([tieLate, tieEarly]);
   });
 
   it('should restart page 2 after the lastId in the same order, with or without text', async () => {

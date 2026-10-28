@@ -4,8 +4,13 @@ import * as path from 'node:path';
 import type { CriticDriverArgs } from './fixtures/fixture-args.ts';
 import { createTempDir } from './helpers.ts';
 
-// Apoio dos specs do runner do critic (`critic-run.spec.ts`, `critic.spec.ts`): shims do CLI falso
+// Apoio dos specs do runner do critic (`critic-run.spec.ts`, `critic-run.ask.spec.ts`, `critic.spec.ts`): shims do CLI falso
 // no `PATH`, o driver que chama o runner num filho e a mailbox pronta para o `ask`.
+
+/** Teto de um caso que sobe o CLI falso ou o driver num processo filho. */
+export const SPEC_TIMEOUT = 30_000;
+/** `PATH` sem nenhum binário: o `claude` e o `agy` ficam ausentes. */
+export const NO_BINARY = '/nonexistent-critic-bin';
 
 const FIXTURE = path.join(__dirname, 'fixtures/fake-critic-cli.ts');
 const DRIVER = path.join(__dirname, 'fixtures/critic-driver.ts');
@@ -58,7 +63,7 @@ export function writeCatalogDoc(dir: string): string {
 }
 
 export type Shims = { dir: string; log: string; pidFile: string };
-export type FakeCall = { tool: string; args: string[]; cwd: string };
+type FakeCall = { tool: string; args: string[]; cwd: string };
 
 /** Shims `claude` e `agy` que rodam o CLI falso. Só dentro de hook ou teste (`createTempDir`). */
 export function installShims(): Shims {
@@ -105,23 +110,11 @@ export const readTurns = (shims: Shims): FakeCall[] =>
   readCalls(shims).filter((call) => call.args.includes('-p'));
 
 /** Valor que segue `flag` no argv da chamada. */
-export const valueAfter = (call: FakeCall, flag: string): string | undefined =>
+export const valueAfter = (call: { args: string[] }, flag: string): string | undefined =>
   call.args.includes(flag) ? call.args[call.args.indexOf(flag) + 1] : undefined;
 
-/** Chama o runner no processo filho do driver e devolve o retorno da função. */
-export function runDriver<T>(args: CriticDriverArgs, env: NodeJS.ProcessEnv): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [DRIVER, JSON.stringify(args)], { env });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => void (stdout += chunk.toString()));
-    child.stderr.on('data', (chunk: Buffer) => void (stderr += chunk.toString()));
-    child.on('close', (code) => {
-      if (code === 0) resolve(JSON.parse(stdout) as T);
-      else reject(new Error(`driver exited ${code}: ${stderr}`));
-    });
-  });
-}
+/** O que o runner devolve: o código de saída do CLI e a mensagem para o stdout ou o stderr. */
+export type Reply = { exitCode: number; message: string };
 
 export type Run = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -140,6 +133,13 @@ export function runProcess(
     child.on('close', (exitCode) => resolve({ exitCode, stdout, stderr }));
   });
   return { child, done };
+}
+
+/** Chama o runner no processo filho do driver e devolve o retorno da função. */
+export async function runDriver<T>(args: CriticDriverArgs, env: NodeJS.ProcessEnv): Promise<T> {
+  const { exitCode, stdout, stderr } = await runProcess([DRIVER, JSON.stringify(args)], env).done;
+  if (exitCode !== 0) throw new Error(`driver exited ${exitCode}: ${stderr}`);
+  return JSON.parse(stdout) as T;
 }
 
 /** Espera `condition` ficar verdadeira; falha com `what` se passar de `timeoutMs`. */

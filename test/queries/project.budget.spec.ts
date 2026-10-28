@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from '@jest/globals';
 import { median } from 'es-toolkit';
 import type { Gate } from '../../src/domain/definitions.ts';
 import { writeRecordsCorpus } from '../fixtures/records-corpus.ts';
-import { createTempDir } from '../helpers.ts';
+import { at, createTempDir } from '../helpers.ts';
 import { diskQueryService } from './query-setup.ts';
 
 const PROCESSES = 10;
@@ -42,17 +42,18 @@ function writeCorpus() {
     recordsPerProcess: PER_PROCESS,
     gates: [WIDE_GATE],
   });
-  project = refs[0]!.project;
-  first = refs[0]!.process;
+  project = at(refs, 0).project;
+  first = at(refs, 0).process;
 }
 
 const service = () => diskQueryService(dataDir);
 
-function time(call: (queries: ReturnType<typeof service>) => void): number {
+/** Mede `call` sobre um serviço novo; as asserções sobre o retorno ficam fora do trecho cronometrado. */
+function time<T>(call: (queries: ReturnType<typeof service>) => T): { ms: number; result: T } {
   const queries = service();
   const start = performance.now();
-  call(queries);
-  return performance.now() - start;
+  const result = call(queries);
+  return { ms: performance.now() - start, result };
 }
 
 function expectWithinCeiling(label: string, times: number[]): void {
@@ -66,16 +67,18 @@ describe('QueryService.queryRecords', () => {
   beforeAll(writeCorpus);
 
   it(`should query the project scope without text within ${CEILING_MS} ms (median of ${ROUNDS}, ${PROCESSES} processes, ${PROCESSES * PER_PROCESS} records)`, () => {
-    const times = Array.from({ length: ROUNDS }, () =>
-      time((queries) => {
-        const page = queries.queryRecords({ project, scope: 'project' });
-
-        expect(page.records.length).toBeGreaterThan(0);
-        expect(Object.keys(page.marker)).toHaveLength(PROCESSES);
-      }),
+    const runs = Array.from({ length: ROUNDS }, () =>
+      time((queries) => queries.queryRecords({ project, scope: 'project' })),
     );
 
-    expectWithinCeiling('query', times);
+    for (const { result } of runs) {
+      expect(result.records.length).toBeGreaterThan(0);
+      expect(Object.keys(result.marker)).toHaveLength(PROCESSES);
+    }
+    expectWithinCeiling(
+      'query',
+      runs.map(({ ms }) => ms),
+    );
   }, 120_000);
 });
 
@@ -83,15 +86,17 @@ describe('QueryService.evaluateGate', () => {
   beforeAll(writeCorpus);
 
   it(`should evaluate a gate with a project-scope question within ${CEILING_MS} ms (median of ${ROUNDS})`, () => {
-    const times = Array.from({ length: ROUNDS }, () =>
-      time((queries) => {
-        const result = queries.evaluateGate({ project, process: first, gate: WIDE_GATE.name });
-
-        expect(result.questions).toHaveLength(WIDE_GATE.questions.length);
-        expect(Object.keys(result.marker)).toHaveLength(PROCESSES);
-      }),
+    const runs = Array.from({ length: ROUNDS }, () =>
+      time((queries) => queries.evaluateGate({ project, process: first, gate: WIDE_GATE.name })),
     );
 
-    expectWithinCeiling('evaluateGate', times);
+    for (const { result } of runs) {
+      expect(result.questions).toHaveLength(WIDE_GATE.questions.length);
+      expect(Object.keys(result.marker)).toHaveLength(PROCESSES);
+    }
+    expectWithinCeiling(
+      'evaluateGate',
+      runs.map(({ ms }) => ms),
+    );
   }, 120_000);
 });

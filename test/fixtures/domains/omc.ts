@@ -1,7 +1,7 @@
 import type { Gate, RecordType, RelationName } from '../../../src/domain/definitions.ts';
 
 /**
- * Fluxo OMC (4.1, gate plano-pronto): tipo único `plan`, em que a revisão N `supersedes` a N-1.
+ * Fluxo OMC com o gate plano-pronto: tipo único `plan`, em que a revisão N `supersedes` a N-1.
  * O schema exige `diff` quando `isRevision` é `true`; o gate cobra só a revisão vigente.
  */
 export const types = {

@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from '@jest/globals';
 import { blobFile } from '../../src/adapters/fs/data-format.ts';
 import { sha256hex } from '../../src/domain/chain.ts';
-import type { AttachmentPage } from '../../src/queries/query-service.ts';
-import { captureError } from '../helpers.ts';
+import { at, captureError } from '../helpers.ts';
 import { PROJECT, querySetup } from './query-setup.ts';
 
 function attachmentSetup() {
@@ -24,15 +23,11 @@ describe('QueryService.readAttachment', () => {
   it('should paginate by offset: the next of a page is the offset of the following one and the last has no next', () => {
     const { stored, read } = attachmentSetup();
     const hash = stored('abcdefghij');
-    const pages: AttachmentPage[] = [];
-
-    for (
-      let page = read(hash, { maxChars: 4 });
-      ;
-      page = read(hash, { maxChars: 4, offset: page.next })
-    ) {
+    let page = read(hash, { maxChars: 4 });
+    const pages = [page];
+    while (page.next !== undefined) {
+      page = read(hash, { maxChars: 4, offset: page.next });
       pages.push(page);
-      if (page.next === undefined) break;
     }
 
     expect(pages.map(({ text }) => text)).toEqual(['abcd', 'efgh', 'ij']);
@@ -61,21 +56,33 @@ describe('QueryService.readAttachment', () => {
     const error = captureError(() => read(hash, { offset: 4 }));
 
     expect(error.code).toBe('INVALID_INPUT');
-    expect(error.details[0]).toMatchObject({ path: '/offset', code: 'out-of-range' });
+    expect(at(error.details, 0)).toMatchObject({ path: '/offset', code: 'out-of-range' });
   });
 
-  it('should refuse an offset in the middle of a surrogate pair with INVALID_INPUT at /offset, accepting the ones around it', () => {
+  it('should refuse an offset in the middle of a surrogate pair with INVALID_INPUT at /offset', () => {
     const { stored, read } = attachmentSetup();
     const hash = stored('a😀b');
 
     const error = captureError(() => read(hash, { offset: 2 }));
 
     expect(error.code).toBe('INVALID_INPUT');
-    expect(error.details[0]).toMatchObject({ path: '/offset', code: 'mid-surrogate-pair' });
+    expect(at(error.details, 0)).toMatchObject({ path: '/offset', code: 'mid-surrogate-pair' });
+  });
+
+  it('should accept the offsets on both sides of a surrogate pair', () => {
+    const { stored, read } = attachmentSetup();
+    const hash = stored('a😀b');
+
     expect(read(hash, { offset: 1 })).toMatchObject({ text: '😀b' });
     expect(read(hash, { offset: 3 })).toMatchObject({ text: 'b' });
-    // Texto que termina em par: o offset no fim fica fora do texto e não é recusado.
-    expect(read(stored('a😀'), { offset: 3 })).toMatchObject({ text: '' });
+  });
+
+  // Texto que termina em par: o offset no fim fica fora do texto e não é recusado.
+  it('should accept the offset at the end of a text that ends in a surrogate pair', () => {
+    const { stored, read } = attachmentSetup();
+    const hash = stored('a😀');
+
+    expect(read(hash, { offset: 3 })).toMatchObject({ text: '' });
   });
 
   it('should refuse a hash that nobody stored with ATTACHMENT_NOT_FOUND', () => {

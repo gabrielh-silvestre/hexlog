@@ -9,22 +9,22 @@ describe('escapeControls', () => {
     ['DEL', '\u007f', '\\u007f'],
     ['CSI (C1)', '\u009b', '\\u009b'],
     ['OSC (C1)', '\u009d', '\\u009d'],
-    ['RLO (bidi)', '‮', '\\u202e'],
-    ['LRI (bidi)', '⁦', '\\u2066'],
-    ['LRM (bidi)', '‎', '\\u200e'],
-    ['ALM (bidi)', '؜', '\\u061c'],
+    ['RLO (bidi)', '\u202e', '\\u202e'],
+    ['LRI (bidi)', '\u2066', '\\u2066'],
+    ['LRM (bidi)', '\u200e', '\\u200e'],
+    ['ALM (bidi)', '\u061c', '\\u061c'],
   ])('should replace %s with its visible escape', (_name, control, escaped) => {
     expect(escapeControls(`a${control}b`)).toBe(`a${escaped}b`);
   });
 
   it('should leave LF, TAB, accents, emoji and BOM intact', () => {
-    const text = 'linha\n\tDecisão — ação 😀 ﻿';
+    const text = 'linha\n\tDecisão — ação 😀 \ufeff';
 
     expect(escapeControls(text)).toBe(text);
   });
 
   it('should keep already escaped text unchanged', () => {
-    const once = escapeControls('x\u001b[31m\u009b‮y');
+    const once = escapeControls('x\u001b[31m\u009b\u202ey');
 
     expect(escapeControls(once)).toBe(once);
   });

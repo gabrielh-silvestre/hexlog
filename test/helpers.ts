@@ -6,9 +6,14 @@ import * as path from 'node:path';
 import { expect, jest } from '@jest/globals';
 import { parse as parseRawJson } from 'jsonc-parser';
 import { z } from 'zod';
+import type { RecordId } from '../src/domain/ids.ts';
 import { HexlogError } from '../src/errors.ts';
+import type { QueryInput, QueryResult } from '../src/queries/query-service.ts';
 import type { Logger, LogRecord } from '../src/shared/logger.ts';
 import { registerTempDir } from './cleanup.ts';
+
+/** O comando que a recusa `LEGACY_DATA` manda rodar, com a mensagem literal do `details`. */
+export const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
 
 /**
  * Cria `hexlog-<prefix>-XXXXXX` sob `os.tmpdir()` e registra para `test/cleanup.ts` apagar no `afterAll`.
@@ -33,9 +38,31 @@ export function parseJson<T extends z.ZodType>(schema: T, text: string): z.infer
 export function at<T>(items: readonly T[], index: number): T {
   const value = items[index];
   if (value === undefined) {
-    throw new Error(`índice ${index} fora do array (tamanho ${items.length})`);
+    throw new Error(`index ${index} is out of the array (length ${items.length})`);
   }
   return value;
+}
+
+/** Ids da página, na ordem em que saíram. */
+export const idsOf = (page: { records: readonly { id: RecordId }[] }): RecordId[] =>
+  page.records.map(({ id }) => id);
+
+/** Cursor da página, que o teste espera ter. */
+export function cursorOf(page: { cursor?: string }): string {
+  if (page.cursor === undefined) throw new Error('expected a cursor');
+  return page.cursor;
+}
+
+/** Todas as páginas de `input`, da 1ª até a que não traz cursor; o teto de 20 rodadas evita prender o jest num defeito. */
+export function walkPages(
+  query: (input: Omit<QueryInput, 'project'>) => QueryResult,
+  input: Omit<QueryInput, 'project'>,
+): QueryResult[] {
+  const pages = [query(input)];
+  while (pages.at(-1)?.cursor !== undefined && pages.length < 20) {
+    pages.push(query({ ...input, cursor: cursorOf(at(pages, pages.length - 1)) }));
+  }
+  return pages;
 }
 
 /**
@@ -44,6 +71,29 @@ export function at<T>(items: readonly T[], index: number): T {
  */
 export const recordId = (process: string, n: number): string =>
   `${process}:${String(n).padStart(8, '0')}`;
+
+/** Parseia uma saída JSONL (um objeto JSON por linha) em `T[]`; o formato de cada linha é por conta do chamador. */
+export const jsonLines = <T>(out: string): T[] =>
+  out
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as T);
+
+/** Arquivos com a extensão dada sob `dir`, em qualquer profundidade, pulando as pastas de `ignoredDirs`; `[]` se `dir` não existe. */
+export function listFiles(
+  dir: string,
+  extension: string,
+  ignoredDirs: ReadonlySet<string> = new Set(),
+): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return ignoredDirs.has(entry.name) ? [] : listFiles(full, extension, ignoredDirs);
+    }
+    return entry.name.endsWith(extension) ? [full] : [];
+  });
+}
 
 /** Executa `fn`, afirma que lançou `HexlogError` e devolve o erro para asserções específicas. */
 export function captureError(fn: () => unknown): HexlogError {
@@ -55,6 +105,13 @@ export function captureError(fn: () => unknown): HexlogError {
   }
   throw new Error('expected the function to throw HexlogError');
 }
+
+/** Detalhe de erro esperado: `path` e `code` exatos, qualquer `message`. */
+export const detail = (path: string, code: string) => ({
+  path,
+  code,
+  message: expect.any(String),
+});
 
 /** Confere que nem `message` nem `details` do erro trazem `secret`; `JSON.stringify(error)` não vê o `message`. */
 export function expectNoLeak(error: HexlogError, secret: string): void {
@@ -86,8 +143,8 @@ export function spyOnWriteSync(
 }
 
 /**
- * Exceção declarada ao princípio 3: roteiro de `fs.writeSync` do log. Cada chamada consome um
- * passo: `n >= 0` grava só `n` bytes (de verdade) e devolve `n`; `n < 0` grava `tamanho + n`;
+ * Roteiro de `fs.writeSync` do log, o único ponto em que um spec simula a escrita curta e o
+ * `ENOSPC` do disco, que o fs real não produz sob demanda. Cada chamada consome um passo: `n >= 0` grava só `n` bytes (de verdade) e devolve `n`; `n < 0` grava `tamanho + n`;
  * `'enospc'` lança `ENOSPC` com o caminho na mensagem, como o fs real. Sem passos, grava tudo.
  */
 export function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: string): void {
@@ -109,6 +166,14 @@ export function scriptWrites(steps: readonly (number | 'enospc')[], dataDir: str
 /** Erro cru do fs, como o `fs` o lança (`code` em maiúsculas, caminho absoluto na mensagem). */
 export const errno = (code: string): Error =>
   Object.assign(new Error(`${code}: /abs/secret/path`), { code });
+
+/** Cria um `XDG_DATA_HOME` temporário com o `<D>` (`<xdg>/hexlog`) vazio; devolve os dois. */
+export function createDataHome(): { xdg: string; dataDir: string } {
+  const xdg = createTempDir('xdg');
+  const dataDir = path.join(xdg, 'hexlog');
+  fs.mkdirSync(dataDir);
+  return { xdg, dataDir };
+}
 
 /** `<xdg>/hexlog` é o `<D>` que o script resolve; `source` vira o conteúdo dele. */
 export function copyToXdg(source: string): string {
