@@ -1,7 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { planSync, type SyncInput } from '../scripts/flow/sync.ts';
 import { RESERVED_PROCESS_NAMES } from '../src/domain/ids.ts';
 import { createFlowEnvironment, registerFlowRecord } from './flow-data.ts';
 import {
@@ -18,7 +17,7 @@ import {
   runNode,
   type RunResult,
 } from './flow-repo.ts';
-import { copyToXdg, createTempDir } from './helpers.ts';
+import { copyToXdg } from './helpers.ts';
 
 const runFlow = (args: string[], input = ''): RunResult => runNode(flowPath, args, { input });
 
@@ -58,55 +57,6 @@ describe('scripts/flow/flow.ts slug', () => {
 
       expect(result.status).toBe(1);
       expect(result.stdout).toBe('');
-    },
-    15_000,
-  );
-});
-
-describe('scripts/flow/flow.ts sync-plan', () => {
-  it('should return the same plan as planSync called directly', () => {
-    const input: SyncInput = {
-      docSlug: 'convencoes',
-      path: 'docs/directives/convencoes.md',
-      hash: 'a'.repeat(64),
-      current: null,
-      vigent: [],
-      extracted: [{ slug: 'idioma', rule: 'Código em inglês.', section: 'Idioma' }],
-    };
-
-    const result = runFlow(['sync-plan'], JSON.stringify(input));
-
-    expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual(JSON.parse(JSON.stringify(planSync(input))));
-  }, 15_000);
-
-  // sem o pré-check o hook leria o arquivo malformado e sairia com 2 e o motivo no stderr
-  it.each([
-    ['a malformed file', 'estrategia.md', '## Tema\n- sem crase: linha ruim'],
-    ['a missing file', 'faltando.md', undefined],
-  ])(
-    'should not read estrategia given an absolute path to %s',
-    (_name, fileName, content) => {
-      const file = path.join(createTempDir('strategy'), fileName);
-      if (content !== undefined) fs.writeFileSync(file, content);
-
-      const result = runFlow(
-        ['sync-plan'],
-        JSON.stringify({
-          docSlug: 'estrategia',
-          path: file,
-          hash: '',
-          current: null,
-          vigent: [],
-          extracted: [],
-        }),
-      );
-
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe('');
-      expect(JSON.parse(result.stdout)).toEqual(
-        expect.objectContaining({ batches: [], error: 'invalid-path' }),
-      );
     },
     15_000,
   );

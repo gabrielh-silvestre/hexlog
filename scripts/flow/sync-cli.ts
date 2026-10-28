@@ -2,7 +2,7 @@
 // --process directives-<N>` lista o estado de cada documento sem gravar; `plan --process
 // directives-<N> [--apply]` recebe no stdin só as regras extraídas, valida os tetos, planeja por
 // `sync.ts#planSync` e, com `--apply`, anexa os `.md`, grava os lotes por `writer.ts#openWriter` e
-// confere o log relido. Precisa de `node_modules` (o `flow.ts` fica como fallback sem elas). Lê os
+// confere o log relido. Precisa de `node_modules`. Lê os
 // documentos a partir do cwd, que tem de ser a raiz do checkout deste script (senão recusa). Sai 0
 // concluído, 1 recusa, lote recusado ou conferência divergente, e 2 para dado 0.x ou log quebrado.
 // Aqui `import.meta.dirname` dá a raiz do checkout que a trava de código instalado compara com o

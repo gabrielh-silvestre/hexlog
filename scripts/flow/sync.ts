@@ -157,7 +157,7 @@ export function parsePremises(text: string): { rules: ExtractedRule[]; malformed
 }
 
 /** O `path` do `doc` é sempre `docs/directives/<docSlug>.md`: vazio, absoluto e outro destino são inválidos. */
-export const invalidDocPath = ({ docSlug, path }: Pick<SyncInput, 'docSlug' | 'path'>): boolean =>
+const invalidDocPath = ({ docSlug, path }: Pick<SyncInput, 'docSlug' | 'path'>): boolean =>
   !DOC_PATH.test(path) || path !== `docs/directives/${docSlug}.md`;
 
 function isUpToDate({ current, vigent, extracted, hash }: SyncInput): boolean {

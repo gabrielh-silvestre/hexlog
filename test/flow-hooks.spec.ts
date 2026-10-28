@@ -409,7 +409,7 @@ describe('.claude/hooks/flow-hooks.ts', () => {
     expectDenied(runNode(hookPath, ['nope']), /unknown mode/);
   }, 15_000);
 
-  it.each(['slug', 'mark', 'sync-plan'])(
+  it.each(['slug', 'mark'])(
     'should exit with 2 for %s, which is not a hook mode',
     (mode) => {
       expectDenied(runNode(hookPath, [mode, 'feat-x']), /unknown mode/);
