@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { processPaths } from '../src/adapters/fs/data-format.ts';
 import { composeReader } from '../src/compose.ts';
 import { Name } from '../src/domain/ids.ts';
 import { VERSION } from '../src/version.ts';
@@ -99,6 +100,17 @@ function runSync(
   });
 }
 
+/** Roda `act` com `docs/directives/<slug>.md` no checkout compartilhado e o remove ao fim. */
+function withDocument<T>(slug: string, text: string, act: () => T): T {
+  const file = path.join(checkout, `docs/directives/${slug}.md`);
+  fs.writeFileSync(file, text);
+  try {
+    return act();
+  } finally {
+    fs.rmSync(file);
+  }
+}
+
 const rule = (slug: string, text: string, closes?: string[]) => ({
   slug,
   rule: text,
@@ -130,20 +142,27 @@ function currentRules(xdg: string): Record<string, unknown> {
   return Object.fromEntries(records.map(({ target, data }) => [target, data?.rule]));
 }
 
-async function seedDocument(slug: string, text: string, rules: Record<string, string>) {
-  const { hash } = await environment.ok<{ hash: string }>('attach', { project: 'hexlog', text });
-  await registerFlowRecord(environment, PROCESS, {
+/** Registra o `doc` e as regras vigentes de `slug` em `target` (o ambiente compartilhado por padrão); devolve o hash do anexo. */
+async function seedDocument(
+  slug: string,
+  text: string,
+  rules: Record<string, string>,
+  target: Environment = environment,
+): Promise<string> {
+  const { hash } = await target.ok<{ hash: string }>('attach', { project: 'hexlog', text });
+  await registerFlowRecord(target, PROCESS, {
     type: 'doc',
     target: `directives.${slug}`,
     data: { path: `docs/directives/${slug}.md`, source: hash },
   });
   for (const [ruleSlug, ruleText] of Object.entries(rules)) {
-    await registerFlowRecord(environment, PROCESS, {
+    await registerFlowRecord(target, PROCESS, {
       type: 'directive',
       target: `directives.${slug}.${ruleSlug}`,
       data: { rule: ruleText, section: SECTION, source: hash },
     });
   }
+  return hash;
 }
 
 describe('scripts/flow/sync-cli.ts', () => {
@@ -280,19 +299,13 @@ describe('scripts/flow/sync-cli.ts', () => {
 
     it('should not read the prototype chain for a document named constructor', () => {
       const xdg = copyToXdg(environment.dataDir);
-      const file = path.join(checkout, 'docs/directives/constructor.md');
-      fs.writeFileSync(file, 'constructor document');
 
-      try {
-        const result = runSync(['plan', '--process', PROCESS], xdg, EXTRACTED);
+      const result = withDocument('constructor', 'constructor document', () =>
+        runSync(['plan', '--process', PROCESS], xdg, EXTRACTED),
+      );
 
-        expect(result.status).toBe(1);
-        expect(result.stderr).toContain(
-          'constructor: new document without extracted rules on stdin',
-        );
-      } finally {
-        fs.rmSync(file);
-      }
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('constructor: new document without extracted rules on stdin');
     }, 30_000);
 
     it('should escape control characters of a stdin key before printing it', () => {
@@ -311,12 +324,136 @@ describe('scripts/flow/sync-cli.ts', () => {
     it('should escape control characters of a JSON syntax error before printing it', () => {
       const xdg = copyToXdg(environment.dataDir);
 
-      const result = runSync(['plan', '--process', PROCESS], xdg, '{"bad\u001b[31m": nope');
+      // O ESC fora de string: dentro dela o V8 não ecoa a entrada na mensagem e o caso passaria vazio
+      const result = runSync(['plan', '--process', PROCESS], xdg, '\u001b[31m');
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('stdin is not valid JSON');
       expect(result.stderr).not.toContain('\u001b');
     }, 30_000);
+  });
+
+  describe('with plan and a stdin that is empty', () => {
+    it.each([
+      ['an empty', ''],
+      ['a blank', ' \n\t\n'],
+    ])(
+      'should read %s stdin as no extracted rules',
+      (_name, stdin) => {
+        const xdg = copyToXdg(environment.dataDir);
+
+        const result = runSync(['plan', '--process', PROCESS], xdg, stdin);
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('beta: new document without extracted rules on stdin');
+        expect(result.stderr).not.toContain('stdin is not valid JSON');
+      },
+      30_000,
+    );
+  });
+
+  describe('with plan and a stdin of the wrong shape', () => {
+    it.each([
+      ['a top-level array', [], 'expected record'],
+      ['a rule without section', { alpha: [{ slug: 'r1', rule: 'Some rule' }] }, 'section'],
+      [
+        'a rule with a field of its own',
+        { alpha: [{ ...rule('r1', 'Some rule'), extra: 1 }] },
+        'Unrecognized key: "extra"',
+      ],
+      ['an extraction that is not a list', { alpha: 'r1' }, 'alpha'],
+    ])(
+      'should refuse %s as an invalid stdin, writing nothing',
+      (_name, stdin, detail) => {
+        const xdg = copyToXdg(environment.dataDir);
+        const before = snapshot(xdg);
+
+        const result = runSync(['plan', '--process', PROCESS], xdg, stdin);
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('invalid stdin:');
+        expect(result.stderr).toContain(detail);
+        expect(snapshot(xdg)).toEqual(before);
+      },
+      30_000,
+    );
+
+    it('should refuse a null extraction for a document whose file exists', () => {
+      const xdg = copyToXdg(environment.dataDir);
+
+      const result = runSync(['plan', '--process', PROCESS], xdg, { ...EXTRACTED, alpha: null });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('alpha: null extraction but the file exists');
+    }, 30_000);
+  });
+
+  describe('with plan and an estrategia document', () => {
+    const PREMISES = [
+      '# Strategy',
+      '',
+      '## Stack',
+      '',
+      '- `first-premise`: First premise statement. Ver: [doc](doc.md).',
+    ].join('\n');
+
+    it('should refuse the malformed premises of the file, naming them', () => {
+      const xdg = copyToXdg(environment.dataDir);
+
+      const result = withDocument('estrategia', '## Stack\n\n- not a premise line\n', () =>
+        runSync(['plan', '--process', PROCESS], xdg, EXTRACTED),
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('estrategia: invalid premises:');
+      expect(result.stderr).toContain('- not a premise line');
+    }, 30_000);
+
+    it('should plan the premises of the file together with the document record', () => {
+      const xdg = copyToXdg(environment.dataDir);
+
+      const result = withDocument('estrategia', PREMISES, () =>
+        runSync(['plan', '--process', PROCESS], xdg, EXTRACTED),
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('estrategia\t2 records in 1 batches');
+    }, 30_000);
+
+    it('should ignore the rules that stdin brings under the estrategia key', () => {
+      const xdg = copyToXdg(environment.dataDir);
+      const stdin = { ...EXTRACTED, estrategia: [rule('p1', 'From stdin'), rule('p2', 'Also')] };
+
+      const result = withDocument('estrategia', PREMISES, () =>
+        runSync(['plan', '--process', PROCESS], xdg, stdin),
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('estrategia\t2 records in 1 batches');
+    }, 30_000);
+  });
+
+  describe('with arguments that do not fit the usage', () => {
+    it.each([
+      ['no mode', ['--process', PROCESS]],
+      ['no --process', ['check']],
+      ['a generation outside directives-<N>', ['check', '--process', 'directives-x']],
+      ['a leftover positional', ['check', '--process', PROCESS, 'extra']],
+      ['an unknown mode', ['frobnicate', '--process', PROCESS]],
+      ['an unknown option', ['check', '--process', PROCESS, '--nope']],
+      ['check with --apply', ['check', '--process', PROCESS, '--apply']],
+    ])(
+      'should exit 1 with the usage for %s',
+      (_name, args) => {
+        const result = runSync(args, copyToXdg(environment.dataDir));
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(
+          'usage: node scripts/flow/sync-cli.ts check --process directives-<N>',
+        );
+      },
+      30_000,
+    );
   });
 
   describe('with a cwd that is not the repository root', () => {
@@ -429,6 +566,110 @@ describe('scripts/flow/sync-cli.ts', () => {
         'directives.uptodate.u1': 'Up to date rule',
       });
     });
+
+    it('should count only the batches written before the refusal', () => {
+      expect(result.stdout).toContain('wrote 1 of 3 batches');
+    });
+
+    it('should leave the attached document of the refused batch on disk', () => {
+      const folder = attachments(xdg);
+
+      const blobs = fs
+        .readdirSync(folder)
+        .map((hash) => fs.readFileSync(path.join(folder, hash), 'utf8'));
+
+      expect(blobs).toContain(BETA);
+    });
+  });
+
+  describe('with plan --apply resumed after a refused batch', () => {
+    let xdg: string;
+    let resumed: ReturnType<typeof runSync>;
+
+    beforeAll(() => {
+      xdg = copyToXdg(environment.dataDir);
+      runSync(['plan', '--process', PROCESS, '--apply'], xdg, {
+        alpha: EXTRACTED.alpha,
+        beta: [rule('b1', 'Beta rule', [UNKNOWN_GAP])],
+      });
+
+      resumed = runSync(['plan', '--process', PROCESS, '--apply'], xdg, EXTRACTED);
+    }, 120_000);
+
+    it('should write only the batches that were missing, without repeating the first one', () => {
+      expect(resumed.status).toBe(0);
+      expect(resumed.stderr).toBe('');
+      expect(resumed.stdout).toContain('alpha\tup-to-date');
+      expect(resumed.stdout).toContain('wrote 2 of 2 batches');
+    });
+
+    it('should end with the same rules as an apply that was never refused', () => {
+      expect(currentRules(xdg)).toEqual({
+        'directives.alpha.r1': 'New alpha rule',
+        'directives.beta.b1': 'Beta rule',
+        'directives.uptodate.u1': 'Up to date rule',
+      });
+    });
+  });
+
+  describe('with plan --apply over a rule that already has two vigent records', () => {
+    let forked: Environment;
+    let result: ReturnType<typeof runSync>;
+
+    beforeAll(async () => {
+      forked = await createFlowEnvironment([PROCESS]);
+      const source = await seedDocument('alpha', OLD_ALPHA, { r1: 'Old alpha rule' }, forked);
+      await seedDocument('uptodate', UPTODATE, { u1: 'Up to date rule' }, forked);
+      await registerFlowRecord(forked, PROCESS, {
+        type: 'directive',
+        target: 'directives.alpha.r1',
+        data: { rule: 'Forked alpha rule', section: SECTION, source },
+      });
+
+      result = runSync(['plan', '--process', PROCESS, '--apply'], copyToXdg(forked.dataDir), {
+        alpha: EXTRACTED.alpha,
+        beta: EXTRACTED.beta,
+      });
+    }, 120_000);
+
+    afterAll(async () => {
+      await forked.close();
+    });
+
+    it('should report the rule the reread log does not match and exit 1', () => {
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/^verify failed: directives\.alpha\.r1: /m);
+    });
+
+    it('should still count every batch as written', () => {
+      expect(result.stdout).toContain('wrote 2 of 2 batches');
+    });
+  });
+
+  describe('with a data directory that cannot be read', () => {
+    it('should exit 2 over 0.x data', () => {
+      const xdg = copyToXdg(environment.dataDir);
+      fs.mkdirSync(path.join(xdg, 'hexlog', 'legacy-project'));
+
+      const result = runSync(['check', '--process', PROCESS], xdg);
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('LEGACY_DATA');
+    }, 30_000);
+
+    it('should exit 2 when the manifest of the process is truncated', () => {
+      const xdg = copyToXdg(environment.dataDir);
+      const { manifest } = processPaths(path.join(xdg, 'hexlog'), {
+        project: PROJECT,
+        process: Name.parse(PROCESS),
+      });
+      fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').slice(0, 20));
+
+      const result = runSync(['check', '--process', PROCESS], xdg);
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('PROCESS_CORRUPTED');
+    }, 30_000);
   });
 
   it('should refuse an apply when the installed code differs and write nothing', () => {
