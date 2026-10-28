@@ -8,8 +8,9 @@ import { boundaryBlocks } from './eslint.boundaries.js';
 
 // Padrão de escrita dos specs (docs/directives/convencoes.md, "Escrita dos testes").
 const ACCENT = '[À-ÖØ-öø-ÿ]';
+// Lista canônica dos rótulos de ID de decisão (famílias de `documentacao.md`) que um título não carrega.
 const ID_LABEL =
-  '\\b(?:M|N|S|B|I|C|Q|QN|P|TF|TM|TB|TI|SL|SE|SF|SG|E|F|G|L|f)\\d+\\b|\\b(?:R|U)-\\d+\\b|\\bD-\\d{2}\\b|\\bDE-\\d{2}\\b';
+  '\\b(?:M|N|S|B|I|C|Q|QN|P|TF|TM|TB|TI|SL|SE|SF|SG|E|F|G|L|f)\\d+\\b|\\b(?:R|U)-\\d+\\b|\\bDE?-\\d{2}\\b';
 
 export default defineConfig(
   {
@@ -56,18 +57,18 @@ export default defineConfig(
     // Só specs: test/cleanup.ts tem afterAll no topo.
     files: ['test/**/*.spec.ts'],
     rules: {
-      'jest/consistent-test-it': ['error', { fn: 'it', withinDescribe: 'it' }],
+      'jest/consistent-test-it': ['error', { fn: 'it' }],
+      // Limites aceitos: título em pt-BR sem acento, título de `describe.each` e título montado
+      // por template ou concatenação passam (o `valid-title` só confere literal); `itNotRoot`
+      // (test/guard.spec.ts) também escapa do `valid-title`. São convenção, conferida em review.
       'jest/valid-title': [
         'error',
         {
           mustMatch: { it: ['^should ', 'it titles start with "should "'] },
-          mustNotMatch: {
-            describe: [
-              `${ID_LABEL}|${ACCENT}`,
-              'describe titles carry no ID label and no accented letter',
-            ],
-            it: [`${ID_LABEL}|${ACCENT}`, 'it titles carry no ID label and are in English'],
-          },
+          mustNotMatch: [
+            `${ID_LABEL}|${ACCENT}`,
+            'titles carry no ID label and no accented letter',
+          ],
         },
       ],
       'jest/max-nested-describe': ['error', { max: 2 }],
