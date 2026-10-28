@@ -33,7 +33,6 @@ const UNIT_GATE = {
 
 let environment: Environment;
 
-// Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
 const openEnvironment = async () => {
   environment = await createEnvironment();
   await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });
@@ -63,9 +62,11 @@ const registerNotes = (texts: string[], target = 'run.step') =>
     records: texts.map((text) => ({ type: 'note', target, data: { text } })),
   });
 
+const PROPOSED_TOTAL = BATCH_MAX * 3;
+
 /** Três lotes cheios de notas `proposta`, o bastante para estourar `EVIDENCE_ITEMS_CAP`. */
 const registerProposed = () =>
-  registerBulk(environment, BATCH_MAX * 3, { process: PROCESS, text: 'proposta' });
+  registerBulk(environment, PROPOSED_TOTAL, { process: PROCESS, text: 'proposta' });
 
 const evaluate = <T = GateEvaluation>(args: Record<string, unknown>) =>
   environment.ok<T>('evaluate_gate', { project: PROJECT, process: PROCESS, ...args });
@@ -267,7 +268,6 @@ describe('evaluate_gate', () => {
   });
 
   it('should cap a failing evidence list at EVIDENCE_ITEMS_CAP and report omitted', async () => {
-    const total = BATCH_MAX * 3;
     await registerProposed();
 
     const result = await evaluate<GateEvaluation & { questions: { omitted?: unknown }[] }>({
@@ -278,14 +278,13 @@ describe('evaluate_gate', () => {
 
     expect(question).toMatchObject({
       passed: false,
-      counts: { of: total, unsupported: total },
-      omitted: { unsupported: total - EVIDENCE_ITEMS_CAP },
+      counts: { of: PROPOSED_TOTAL, unsupported: PROPOSED_TOTAL },
+      omitted: { unsupported: PROPOSED_TOTAL - EVIDENCE_ITEMS_CAP },
     });
     expect(question?.evidence).toHaveProperty('unsupported.length', EVIDENCE_ITEMS_CAP);
   });
 
   it('should cap every list of a full evidence at EVIDENCE_ITEMS_CAP and report omitted', async () => {
-    const total = BATCH_MAX * 3;
     await registerProposed();
 
     const result = await evaluate<GateEvaluation & { questions: { omitted?: unknown }[] }>({
@@ -297,7 +296,10 @@ describe('evaluate_gate', () => {
 
     expect(question).toMatchObject({
       passed: false,
-      omitted: { of: total - EVIDENCE_ITEMS_CAP, unsupported: total - EVIDENCE_ITEMS_CAP },
+      omitted: {
+        of: PROPOSED_TOTAL - EVIDENCE_ITEMS_CAP,
+        unsupported: PROPOSED_TOTAL - EVIDENCE_ITEMS_CAP,
+      },
     });
     expect(question?.evidence).toMatchObject({
       of: { length: EVIDENCE_ITEMS_CAP },
@@ -308,7 +310,6 @@ describe('evaluate_gate', () => {
   });
 
   it('should cap each batch target evidence list at EVIDENCE_ITEMS_CAP and report omitted', async () => {
-    const total = BATCH_MAX * 3;
     await registerProposed();
 
     const result = await evaluate<GateBatchEvaluation>({
@@ -322,7 +323,9 @@ describe('evaluate_gate', () => {
       evidence?: { unsupported: unknown[] };
     }[];
 
-    expect(question).toMatchObject({ omitted: { unsupported: total - EVIDENCE_ITEMS_CAP } });
+    expect(question).toMatchObject({
+      omitted: { unsupported: PROPOSED_TOTAL - EVIDENCE_ITEMS_CAP },
+    });
     expect(question?.evidence?.unsupported).toHaveLength(EVIDENCE_ITEMS_CAP);
   });
 

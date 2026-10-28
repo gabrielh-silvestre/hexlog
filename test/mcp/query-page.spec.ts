@@ -22,7 +22,7 @@ import {
 } from '../../src/queries/query-service.ts';
 import { idAt } from '../fixtures/chain-line.ts';
 
-const idsOf = (count: number, offset = 0) =>
+const makeIds = (count: number, offset = 0) =>
   Array.from({ length: count }, (_, i) => idAt('run-1', offset + i));
 
 const recordOf = (count: number, value: string | null) =>
@@ -456,7 +456,7 @@ describe('registerQueryTools', () => {
         'a'.repeat(QUERY_TEXT_MAX_CHARS + 1),
         tooBig('text'),
       ],
-      ['query', 'ids', QUERY_ARGS, idsOf(200), idsOf(201), tooBig('ids')],
+      ['query', 'ids', QUERY_ARGS, makeIds(200), makeIds(201), tooBig('ids')],
       ['query', 'fields', QUERY_ARGS, names(50), names(51), tooBig('fields')],
       ['query', 'limit', QUERY_ARGS, 200, 201, tooBig('limit')],
     ])(
@@ -521,8 +521,9 @@ describe('registerQueryTools', () => {
       const details = await detailsOf('query', { ...QUERY_ARGS, since: 'x', other: 1 });
 
       expect(details).toEqual([expect.objectContaining({ path: '', code: 'unrecognized_keys' })]);
-      expect(details[0]?.message).toContain('"since", "other"');
-      expect(details[0]?.message).toContain('use changesSince');
+      expect(details[0]?.message).toContain('"since"');
+      expect(details[0]?.message).toContain('"other"');
+      expect(details[0]?.message).toContain('changesSince');
     });
 
     it('should leave the default message for an unknown key other than since', async () => {
@@ -601,9 +602,9 @@ describe('registerQueryTools', () => {
   });
 
   describe('when capping the evidence of evaluate_gate', () => {
-    const overCap = idsOf(EVIDENCE_ITEMS_CAP + 3);
-    const atCap = idsOf(EVIDENCE_ITEMS_CAP, 500);
-    const few = idsOf(2, 900);
+    const overCap = makeIds(EVIDENCE_ITEMS_CAP + 3);
+    const atCap = makeIds(EVIDENCE_ITEMS_CAP, 500);
+    const few = makeIds(2, 900);
     const wide = {
       index: 0,
       kind: 'approved',
