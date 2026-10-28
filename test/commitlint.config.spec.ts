@@ -89,7 +89,10 @@ describe('commitlint.config.js', () => {
     () => {
       const message = 'fix: a change\n\nwhy it changed\n\nSigned-off-by: someone <a@b.c>';
 
-      expect(lint(message).status).not.toBe(0);
+      const result = lint(message);
+
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain('body-empty');
     },
     CLI_TIMEOUT,
   );

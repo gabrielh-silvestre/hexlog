@@ -10,14 +10,18 @@ import {
   toHexlogError,
   type ToolDeps,
 } from '../../src/mcp/kernel.ts';
-import { errorBodyOf } from './environment.ts';
+import { ARCHIVE_COMMAND } from '../helpers.ts';
+import { errorBodyOf, nest } from './environment.ts';
 
 const Input = z.strictObject({ project: z.string().min(1), count: z.number().int() });
 
-const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
-
-function makeDeps(isLegacy = false) {
+function makeDeps({ isLegacy = false, throwingLogger = false } = {}) {
   const logger = jest.fn<ToolDeps['logger']>();
+  if (throwingLogger) {
+    logger.mockImplementation(() => {
+      throw new Error('stderr closed');
+    });
+  }
   const deps: ToolDeps = {
     services: {} as ToolDeps['services'],
     isLegacy: () => isLegacy,
@@ -29,6 +33,8 @@ function makeDeps(isLegacy = false) {
 const ctxOf = (envelope?: Record<string, unknown>): CallContext => ({ mcpReq: { envelope } });
 
 const callOf = (args: unknown, ctx = ctxOf()) => ({ name: 'demo', schema: Input, args, ctx });
+
+const validCall = (ctx?: CallContext) => callOf({ project: 'p', count: 1 }, ctx);
 
 describe('execute', () => {
   it('should return the result as structuredContent and as JSON text', async () => {
@@ -44,10 +50,10 @@ describe('execute', () => {
     });
   });
 
-  it('should log a tool record with name and ms, without the input content', async () => {
+  it('should log a tool record with name and ms', async () => {
     const { deps, logger } = makeDeps();
 
-    await execute(deps, callOf({ project: 'segredo', count: 1 }), () => ({}));
+    await execute(deps, validCall(), () => ({}));
 
     expect(logger).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -57,6 +63,13 @@ describe('execute', () => {
         ms: expect.any(Number),
       }),
     );
+  });
+
+  it('should keep the input content out of the tool record', async () => {
+    const { deps, logger } = makeDeps();
+
+    await execute(deps, callOf({ project: 'segredo', count: 1 }), () => ({}));
+
     expect(JSON.stringify(logger.mock.calls)).not.toContain('segredo');
   });
 
@@ -93,12 +106,6 @@ describe('execute', () => {
 
   describe('with deeply nested raw args', () => {
     const Anything = z.looseObject({});
-    // `nest(n)` tem n objetos aninhados, contando a raiz dos args como o nível 1.
-    const nest = (levels: number): Record<string, unknown> =>
-      Array.from({ length: levels - 1 }).reduce<Record<string, unknown>>(
-        (inner) => ({ a: inner }),
-        {},
-      );
     const callWith = (args: unknown) => ({ name: 'demo', schema: Anything, args, ctx: ctxOf() });
 
     it('should let 64 levels through to run', async () => {
@@ -169,7 +176,7 @@ describe('execute', () => {
       const { deps } = makeDeps();
       const full = resultOf(OVER_CAP + 1);
 
-      const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => full);
+      const result = await execute(deps, validCall(), () => full);
 
       expect(result).toEqual({
         structuredContent: full,
@@ -184,7 +191,7 @@ describe('execute', () => {
       });
       const full = resultOf(OVER_CAP + 1);
 
-      const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => full);
+      const result = await execute(deps, validCall(), () => full);
 
       expect(logger).toHaveBeenCalledWith(expect.objectContaining({ event: 'tool-over-cap' }));
       expect(result).toEqual({
@@ -196,7 +203,7 @@ describe('execute', () => {
     it('should not emit the warn when the response is exactly at the cap', async () => {
       const { deps, logger } = makeDeps();
 
-      await execute(deps, callOf({ project: 'p', count: 1 }), () => resultOf(OVER_CAP));
+      await execute(deps, validCall(), () => resultOf(OVER_CAP));
 
       expect(logger).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'tool-over-cap' }));
     });
@@ -214,7 +221,7 @@ describe('execute', () => {
     const { deps } = makeDeps();
     const details = [{ path: '/project', code: 'unknown-name', message: 'no such project' }];
 
-    const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => {
+    const result = await execute(deps, validCall(), () => {
       throw new HexlogError('PROJECT_NOT_FOUND', 'project not found', details);
     });
 
@@ -228,7 +235,7 @@ describe('execute', () => {
   it('should log a HexlogError thrown by the operation at error level with its code', async () => {
     const { deps, logger } = makeDeps();
 
-    await execute(deps, callOf({ project: 'p', count: 1 }), () => {
+    await execute(deps, validCall(), () => {
       throw new HexlogError('PROJECT_NOT_FOUND', 'project not found');
     });
 
@@ -238,10 +245,7 @@ describe('execute', () => {
   });
 
   it('should keep the result already produced when the logger throws on success', async () => {
-    const { deps, logger } = makeDeps();
-    logger.mockImplementation(() => {
-      throw new Error('stderr closed');
-    });
+    const { deps } = makeDeps({ throwingLogger: true });
 
     const result = await execute(deps, callOf({ project: 'p', count: 2 }), (input) => ({
       doubled: input.count * 2,
@@ -254,12 +258,9 @@ describe('execute', () => {
   });
 
   it('should not let a throwing logger escape execute on an error', async () => {
-    const { deps, logger } = makeDeps();
-    logger.mockImplementation(() => {
-      throw new Error('stderr closed');
-    });
+    const { deps } = makeDeps({ throwingLogger: true });
 
-    const result = await execute(deps, callOf({ project: 'p', count: 1 }), () => {
+    const result = await execute(deps, validCall(), () => {
       throw new HexlogError('PROJECT_NOT_FOUND', 'project not found');
     });
 
@@ -267,24 +268,17 @@ describe('execute', () => {
   });
 
   it('should still return INTERNAL when the logger throws while recording the exception', async () => {
-    const { deps, logger } = makeDeps();
-    logger.mockImplementation(() => {
-      throw new Error('stderr closed');
-    });
+    const { deps } = makeDeps({ throwingLogger: true });
 
-    const result = await execute(deps, callOf({ project: 'p', count: 1 }), () =>
-      Promise.reject(new TypeError('boom')),
-    );
+    const result = await execute(deps, validCall(), () => Promise.reject(new TypeError('boom')));
 
     expect(errorBodyOf(result)).toMatchObject({ code: 'INTERNAL' });
   });
 
-  it('should turn any exception into INTERNAL, keeping the stack only in the log', async () => {
-    const { deps, logger } = makeDeps();
+  it('should turn any exception into INTERNAL without the stack in the response', async () => {
+    const { deps } = makeDeps();
 
-    const result = await execute(deps, callOf({ project: 'p', count: 1 }), () =>
-      Promise.reject(new TypeError('boom')),
-    );
+    const result = await execute(deps, validCall(), () => Promise.reject(new TypeError('boom')));
 
     expect(errorBodyOf(result)).toEqual({
       code: 'INTERNAL',
@@ -292,6 +286,13 @@ describe('execute', () => {
       details: [],
     });
     expect(JSON.stringify(result)).not.toMatch(/boom|at .*kernel/);
+  });
+
+  it('should keep the stack of an exception in the log', async () => {
+    const { deps, logger } = makeDeps();
+
+    await execute(deps, validCall(), () => Promise.reject(new TypeError('boom')));
+
     expect(logger).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'internal-error',
@@ -301,7 +302,7 @@ describe('execute', () => {
   });
 
   it('should answer LEGACY_DATA before validating the input or reaching any service', async () => {
-    const { deps } = makeDeps(true);
+    const { deps } = makeDeps({ isLegacy: true });
     const run = jest.fn(() => ({}));
 
     const result = await execute(deps, callOf({ lixo: true }), run);
@@ -322,7 +323,7 @@ describe('execute', () => {
       },
     };
 
-    const result = await execute(broken, callOf({ project: 'p', count: 1 }), () => ({}));
+    const result = await execute(broken, validCall(), () => ({}));
 
     expect(errorBodyOf(result)).toMatchObject({ code: 'INTERNAL' });
   });
@@ -330,7 +331,7 @@ describe('execute', () => {
   describe('with the client info in the envelope', () => {
     const envelopeOf = (clientInfo: unknown) => ctxOf({ [CLIENT_INFO_META_KEY]: clientInfo });
     const clientOf = (ctx: CallContext) =>
-      execute(makeDeps().deps, callOf({ project: 'p', count: 1 }, ctx), (_input, client) => ({
+      execute(makeDeps().deps, validCall(ctx), (_input, client) => ({
         client,
       }));
 
@@ -383,10 +384,7 @@ describe('toHexlogError', () => {
   });
 
   it('should still return INTERNAL when the logger throws', () => {
-    const { logger } = makeDeps();
-    logger.mockImplementation(() => {
-      throw new Error('stderr closed');
-    });
+    const { logger } = makeDeps({ throwingLogger: true });
 
     expect(toHexlogError('algo', logger)).toMatchObject({ code: 'INTERNAL' });
   });

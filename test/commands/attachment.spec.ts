@@ -1,21 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { createAttachmentStore } from '../../src/adapters/fs/attachment-store.ts';
 import { createAttachmentService, type AttachInput } from '../../src/commands/attachment.ts';
+import { sha256hex } from '../../src/domain/chain.ts';
 import type { AttachmentPut, AttachmentStore } from '../../src/ports.ts';
 import { captureError, createTempDir } from '../helpers.ts';
-import { refuse } from './register-fakes.ts';
+import { PROJECT, refuse } from './fakes.ts';
 
-const PROJECT = 'alpha';
 const PUT: AttachmentPut = { hash: 'a'.repeat(64), bytes: 3, deduplicated: false };
 
 /** Porta falsa: só conta as chamadas de gravação, que o serviço nunca deve fazer ao recusar. */
 function fakeStore(): { store: AttachmentStore; puts: string[] } {
   const puts: string[] = [];
   const store: AttachmentStore = {
-    putText: (_project, text) => (puts.push(`text:${text}`), PUT),
-    putPath: (_project, file) => (puts.push(`path:${file}`), PUT),
+    putText: (_project, text) => {
+      puts.push(`text:${text}`);
+      return PUT;
+    },
+    putPath: (_project, file) => {
+      puts.push(`path:${file}`);
+      return PUT;
+    },
     status: refuse,
     read: refuse,
   };
@@ -30,11 +36,24 @@ function refusalOf(input: Omit<AttachInput, 'project'>) {
   return { error, puts };
 }
 
+/** Segmentos de exatamente 255 bytes UTF-8, o teto que a porta aceita. */
+const AT_255: [string, string][] = [
+  ['an ASCII segment at the cap', `${'a'.repeat(252)}.md`],
+  ['a multibyte segment at the cap (126 × 2 bytes)', `${'é'.repeat(126)}.md`],
+  ['a directory segment at the cap', `${'d'.repeat(255)}/x.md`],
+];
+
+const ACCEPTED_PATHS: [string, string][] = [
+  ...['a.md', 'a.txt', '.omc/plans/x.md', '/abs/dir/notes.txt', 'a.b.md', '..md'].map(
+    (candidate): [string, string] => [`the path ${candidate}`, candidate],
+  ),
+  ...AT_255,
+];
+
 describe('attach', () => {
   describe('when the service refuses before any port', () => {
     it.each([
       ['neither text nor path', {}, ''],
-      ['text and path together', { text: 'x', path: 'a.md' }, ''],
       ['empty text together with path', { text: '', path: 'a.md' }, ''],
       ['a path with NUL', { path: 'a\0b.md' }, '/path'],
       ['empty text', { text: '' }, '/text'],
@@ -50,7 +69,7 @@ describe('attach', () => {
 
     it.each([
       '.env',
-      'dados.json',
+      'data.json',
       'app.log',
       'x.MD',
       'x.Txt',
@@ -85,22 +104,30 @@ describe('attach', () => {
   });
 
   describe('when more than one refusal applies', () => {
-    it('should let neither or both of text and path win over the path extension', () => {
-      const { error } = refusalOf({ text: 'x', path: '.env' });
+    it.each([
+      [
+        'text and path together with a wrong extension',
+        { text: 'x', path: '.env' },
+        '',
+        'bad-args',
+      ],
+      ['a NUL in a path with a wrong extension', { path: 'a\0.json' }, '/path', 'bad-args'],
+      [
+        'a segment that is too long in a path with a wrong extension',
+        { path: `${'a'.repeat(300)}.json` },
+        '/path',
+        'bad-args',
+      ],
+      [
+        'a wrong extension on a path outside the cwd',
+        { path: '../../etc/passwd' },
+        '/path',
+        'bad-extension',
+      ],
+    ] as const)('should report only the first refusal for %s', (_name, input, pointer, code) => {
+      const { error } = refusalOf(input);
 
-      expect(error.details).toMatchObject([{ path: '', code: 'bad-args' }]);
-    });
-
-    it('should let a NUL in the path win over the extension', () => {
-      const { error } = refusalOf({ path: 'a\0.json' });
-
-      expect(error.details).toMatchObject([{ path: '/path', code: 'bad-args' }]);
-    });
-
-    it('should let a segment that is too long win over the extension', () => {
-      const { error } = refusalOf({ path: `${'a'.repeat(300)}.json` });
-
-      expect(error.details).toMatchObject([{ path: '/path', code: 'bad-args' }]);
+      expect(error.details).toMatchObject([{ path: pointer, code }]);
     });
 
     it('should check the NUL before the long segment, with the same code and the NUL message', () => {
@@ -108,21 +135,10 @@ describe('attach', () => {
 
       expect(error.message).toBe('path contains NUL');
     });
-
-    it('should report only the first refusal: a wrong extension on a path outside the cwd is bad-extension', () => {
-      const { error } = refusalOf({ path: '../../etc/passwd' });
-
-      expect(error.details).toMatchObject([{ path: '/path', code: 'bad-extension' }]);
-    });
   });
 
   describe('with the 255-byte UTF-8 cap per path segment', () => {
-    const at255 = [
-      ['an ASCII segment at the cap', `${'a'.repeat(252)}.md`],
-      ['a multibyte segment at the cap (126 × 2 bytes)', `${'é'.repeat(126)}.md`],
-      ['a directory segment at the cap', `${'d'.repeat(255)}/x.md`],
-    ] as const;
-    const above255 = [
+    it.each([
       ['an ASCII segment above the cap', `${'a'.repeat(253)}.md`],
       [
         'a multibyte segment above the cap (127 × 2 bytes, only 130 characters)',
@@ -130,47 +146,31 @@ describe('attach', () => {
       ],
       ['a directory segment above the cap', `${'d'.repeat(256)}/x.md`],
       ['a long segment in the middle of an absolute path', `/a/${'d'.repeat(300)}/b/x.md`],
-    ] as const;
+    ])('should reject %s with bad-args without calling the port', (_name, candidate) => {
+      const { error, puts } = refusalOf({ path: candidate });
 
-    it.each(at255)('should accept %s', (_name, candidate) => {
-      const { store, puts } = fakeStore();
-
-      createAttachmentService({ store }).attach({ project: PROJECT, path: candidate });
-
-      expect(puts).toEqual([`path:${candidate}`]);
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        details: [{ path: '/path', code: 'bad-args' }],
+      });
+      expect(puts).toEqual([]);
     });
-
-    it.each(above255)(
-      'should reject %s with bad-args without calling the port',
-      (_name, candidate) => {
-        const { error, puts } = refusalOf({ path: candidate });
-
-        expect(error).toMatchObject({
-          code: 'INVALID_INPUT',
-          details: [{ path: '/path', code: 'bad-args' }],
-        });
-        expect(puts).toEqual([]);
-      },
-    );
   });
 
   describe('when the input is accepted', () => {
-    it.each(['a.md', 'a.txt', '.omc/plans/x.md', '/abs/dir/notas.txt', 'a.b.md', '..md'])(
-      'should pass the path %j to the port as it came',
-      (candidate) => {
-        const { store, puts } = fakeStore();
+    it.each(ACCEPTED_PATHS)('should pass %s to the port as it came', (_name, candidate) => {
+      const { store, puts } = fakeStore();
 
-        const result = createAttachmentService({ store }).attach({
-          project: PROJECT,
-          path: candidate,
-        });
+      const result = createAttachmentService({ store }).attach({
+        project: PROJECT,
+        path: candidate,
+      });
 
-        expect(result).toEqual(PUT);
-        expect(puts).toEqual([`path:${candidate}`]);
-      },
-    );
+      expect(result).toEqual(PUT);
+      expect(puts).toEqual([`path:${candidate}`]);
+    });
 
-    it.each(['x', 'Decisão — ação\n', '😀 par válido', '😀'])(
+    it.each(['x', 'Decisão — ação\n', '😀 valid pair', '😀'])(
       'should pass the text %j to the port as it came',
       (text) => {
         const { store, puts } = fakeStore();
@@ -195,52 +195,39 @@ describe('attach', () => {
       fs.mkdirSync(path.join(cwd, '.omc', 'plans'), { recursive: true });
     });
 
-    afterEach(() => {
-      fs.rmSync(base, { recursive: true, force: true });
-    });
-
     function service() {
       return createAttachmentService({ store: createAttachmentStore({ dataDir, cwd }) });
     }
 
-    it('should store the exact bytes of a .md and a .txt path in the cwd', () => {
-      fs.writeFileSync(path.join(cwd, '.omc', 'plans', 'x.md'), 'plano\r\n');
-      fs.writeFileSync(path.join(cwd, 'notas.txt'), 'notas');
+    it.each([
+      ['.omc/plans/x.md', 'plan\r\n'],
+      ['notes.txt', 'notes'],
+    ])('should store the exact bytes of the path %s in the cwd', (file, content) => {
+      fs.writeFileSync(path.join(cwd, file), content);
 
-      const plan = service().attach({ project: PROJECT, path: '.omc/plans/x.md' });
-      const notes = service().attach({ project: PROJECT, path: 'notas.txt' });
+      const result = service().attach({ project: PROJECT, path: file });
 
-      expect(plan.bytes).toBe(7);
-      expect(notes.bytes).toBe(5);
-      expect(plan.hash).not.toBe(notes.hash);
+      expect(result).toEqual({
+        hash: sha256hex(content),
+        bytes: Buffer.byteLength(content),
+        deduplicated: false,
+      });
     });
 
-    it('should reject a .json inside <D> with bad-extension', () => {
-      const inside = path.join(dataDir, 'x');
+    it.each([
+      ['.json', 'bad-extension'],
+      ['.md', 'inside-data-dir'],
+    ])('should reject a %s file inside <D> with %s', (extension, code) => {
+      const inside = `${path.join(dataDir, 'x')}${extension}`;
       fs.mkdirSync(dataDir, { recursive: true });
-      fs.writeFileSync(`${inside}.json`, '{}');
+      fs.writeFileSync(inside, 'x');
       const insideCwd = createAttachmentService({
         store: createAttachmentStore({ dataDir, cwd: base }),
       });
 
-      const json = captureError(() =>
-        insideCwd.attach({ project: PROJECT, path: `${inside}.json` }),
-      );
+      const error = captureError(() => insideCwd.attach({ project: PROJECT, path: inside }));
 
-      expect(json.details).toMatchObject([{ path: '/path', code: 'bad-extension' }]);
-    });
-
-    it('should reject a .md inside <D> with inside-data-dir', () => {
-      const inside = path.join(dataDir, 'x');
-      fs.mkdirSync(dataDir, { recursive: true });
-      fs.writeFileSync(`${inside}.md`, 'x');
-      const insideCwd = createAttachmentService({
-        store: createAttachmentStore({ dataDir, cwd: base }),
-      });
-
-      const md = captureError(() => insideCwd.attach({ project: PROJECT, path: `${inside}.md` }));
-
-      expect(md.details).toMatchObject([{ path: '/path', code: 'inside-data-dir' }]);
+      expect(error.details).toMatchObject([{ path: '/path', code }]);
     });
 
     it('should create nothing in <D> when the service refuses', () => {

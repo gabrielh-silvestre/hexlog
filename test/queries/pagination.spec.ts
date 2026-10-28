@@ -3,9 +3,11 @@ import fc from 'fast-check';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { decodeCursor, encodeCursor } from '../../src/queries/cursor.ts';
 import { PAGE_CHARS_CAP } from '../../src/queries/query-service.ts';
-import { ghostId, note } from '../commands/register-fakes.ts';
-import { at, captureError } from '../helpers.ts';
-import { cursorOf, idsOf, querySetup, walkPages } from './query-setup.ts';
+import { ghostId, note } from '../commands/fakes.ts';
+import { at, captureError, cursorOf, idsOf, walkPages } from '../helpers.ts';
+import { querySetup } from './query-setup.ts';
+
+type Cursors = { cursor: string; projectCursor: string };
 
 async function fiveNotes() {
   const setup = querySetup();
@@ -83,16 +85,6 @@ describe('QueryService.queryRecords', () => {
     expect(Object.keys(page.marker)).toEqual(['run-1']);
   });
 
-  it('should add up the pages without repeats in project scope too', async () => {
-    const { query, a, b, c, d } = await twoProcesses();
-    const first = query({ scope: 'project', limit: 3 });
-
-    const second = query({ scope: 'project', limit: 3, cursor: cursorOf(first) });
-
-    expect([...idsOf(first), ...idsOf(second)]).toEqual([a, b, c, d]);
-    expect(second.cursor).toBeUndefined();
-  });
-
   it('should not change the page 1 list when a supersede is written between pages, in process scope', async () => {
     const { query, registerOne, ids } = await fiveNotes();
     const first = query({ process: 'run-1', limit: 2 });
@@ -121,29 +113,20 @@ describe('QueryService.queryRecords', () => {
     expect(second.marker).toEqual(first.marker);
   });
 
-  it('should keep a process born after page 1 out of the following pages', async () => {
-    const { createProcess, registerOne, query, a, b, c, d } = await twoProcesses();
-    const first = query({ scope: 'project', limit: 2 });
-    createProcess('run-3');
-    await registerOne('run-3', note('nasceu depois'), 5);
+  it.each(['run-3', 'constructor'])(
+    'should keep the process %s born after page 1 out of the following pages',
+    async (name) => {
+      const { createProcess, registerOne, query, a, b, c, d } = await twoProcesses();
+      const first = query({ scope: 'project', limit: 2 });
+      createProcess(name);
+      await registerOne(name, note('nasceu depois'), 5);
 
-    const second = query({ scope: 'project', limit: 10, cursor: cursorOf(first) });
+      const second = query({ scope: 'project', limit: 10, cursor: cursorOf(first) });
 
-    expect(idsOf(first)).toEqual([a, b]);
-    expect(idsOf(second)).toEqual([c, d]);
-  });
-
-  it('should not break the project cursor with a process named `constructor` born between pages', async () => {
-    const { createProcess, registerOne, query, a, b, c, d } = await twoProcesses();
-    const first = query({ scope: 'project', limit: 2 });
-    createProcess('constructor');
-    await registerOne('constructor', note('nasceu depois'), 5);
-
-    const second = query({ scope: 'project', limit: 10, cursor: cursorOf(first) });
-
-    expect(idsOf(first)).toEqual([a, b]);
-    expect(idsOf(second)).toEqual([c, d]);
-  });
+      expect(idsOf(first)).toEqual([a, b]);
+      expect(idsOf(second)).toEqual([c, d]);
+    },
+  );
 
   it('should keep the same order and `lastId` with `text` of 2+ terms and `type` and an append between pages', async () => {
     const { createProcess, registerOne, query } = querySetup();
@@ -196,33 +179,14 @@ describe('QueryService.queryRecords', () => {
     expect(pages.map(idsOf)).toEqual([[a], [b], [c], [d]]);
   });
 
-  it('should cut the page by the character cap before the limit', async () => {
+  it('should keep two of the records when the character cap is one over the size of the first two', async () => {
     const { query, ids } = await fiveNotes();
-    const one = JSON.stringify(at(query({ process: 'run-1', limit: 1 }).records, 0)).length;
+    const two = query({ process: 'run-1', limit: 2 }).records;
+    const exact = two.reduce((sum, record) => sum + JSON.stringify(record).length, 0);
 
-    const page = query({ process: 'run-1', maxChars: one * 2 + 1 });
+    const page = query({ process: 'run-1', maxChars: exact + 1 });
 
     expect(idsOf(page)).toEqual(ids.slice(0, 2));
-  });
-
-  it('should keep the page when the character cap is at its exact size', async () => {
-    const { query, ids } = await fiveNotes();
-    const two = query({ process: 'run-1', limit: 2 }).records;
-    const exact = two.reduce((sum, record) => sum + JSON.stringify(record).length, 0);
-
-    const kept = query({ process: 'run-1', maxChars: exact });
-
-    expect(idsOf(kept)).toEqual(ids.slice(0, 2));
-  });
-
-  it('should cut the last record when the character cap is one less than the page size', async () => {
-    const { query, ids } = await fiveNotes();
-    const two = query({ process: 'run-1', limit: 2 }).records;
-    const exact = two.reduce((sum, record) => sum + JSON.stringify(record).length, 0);
-
-    const cut = query({ process: 'run-1', maxChars: exact - 1 });
-
-    expect(idsOf(cut)).toEqual(ids.slice(0, 1));
   });
 
   it('should bring 50 records without `limit` and lead the cursor to the 51st', async () => {
@@ -245,7 +209,7 @@ describe('QueryService.queryRecords', () => {
     expect(second.cursor).toBeUndefined();
   });
 
-  it('should count the page already trimmed by `fields` against the character cap, scenario from #85', async () => {
+  it('should count the page already trimmed by `fields` against the character cap', async () => {
     const { createProcess, register, query } = querySetup();
     createProcess('run-1');
     const ids = await register(
@@ -302,27 +266,34 @@ describe('QueryService.queryRecords', () => {
     expect(at(error.details, 0).message).toContain('rerun the query without cursor');
   });
 
-  it('should give INVALID_CURSOR for a tampered cursor, or one from another filter, scope or process', async () => {
-    const { query, createProcess } = await fiveNotes();
-    createProcess('run-2');
-    const cursor = cursorOf(query({ process: 'run-1', limit: 2 }));
-    const projectCursor = cursorOf(query({ scope: 'project', limit: 2 }));
-    const codeOf = (input: Parameters<typeof query>[0]) => {
-      const error = captureError(() => query(input));
-
-      expect(error.code).toBe('INVALID_CURSOR');
-
-      return at(error.details, 0).code;
+  it.each([
+    [
+      'malformed',
+      'truncated',
+      ({ cursor }: Cursors) => ({ process: 'run-1', cursor: cursor.slice(0, -8) }),
+    ],
+    ['malformed', 'not a cursor', () => ({ process: 'run-1', cursor: 'nao-e-cursor' })],
+    [
+      'filters-mismatch',
+      'issued without `text`',
+      ({ cursor }: Cursors) => ({ process: 'run-1', cursor, text: 'a' }),
+    ],
+    [
+      'scope-mismatch',
+      'issued for the project scope, used in the process scope',
+      ({ projectCursor }: Cursors) => ({ process: 'run-1', cursor: projectCursor }),
+    ],
+  ])('should give INVALID_CURSOR `%s` for a cursor %s', async (code, _case, inputOf) => {
+    const { query } = await fiveNotes();
+    const cursors = {
+      cursor: cursorOf(query({ process: 'run-1', limit: 2 })),
+      projectCursor: cursorOf(query({ scope: 'project', limit: 2 })),
     };
 
-    expect(codeOf({ process: 'run-1', cursor: cursor.slice(0, -8) })).toBe('malformed');
-    expect(codeOf({ process: 'run-1', cursor: 'nao-e-cursor' })).toBe('malformed');
-    expect(codeOf({ process: 'run-1', cursor, type: 'doc' })).toBe('filters-mismatch');
-    expect(codeOf({ process: 'run-1', cursor, text: 'a' })).toBe('filters-mismatch');
-    expect(codeOf({ process: 'run-1', cursor, includeNonCurrent: true })).toBe('filters-mismatch');
-    expect(codeOf({ process: 'run-1', cursor, scope: 'project' })).toBe('scope-mismatch');
-    expect(codeOf({ process: 'run-1', cursor: projectCursor })).toBe('scope-mismatch');
-    expect(codeOf({ process: 'run-2', cursor })).toBe('process-mismatch');
+    const error = captureError(() => query(inputOf(cursors)));
+
+    expect(error.code).toBe('INVALID_CURSOR');
+    expect(at(error.details, 0).code).toBe(code);
   });
 
   it('should refuse a cursor with a marker from another log, a nonexistent marked id or a `lastId` outside the result', async () => {

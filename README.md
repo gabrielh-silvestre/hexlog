@@ -22,32 +22,59 @@ O instalador constrói o servidor e o hook, copia os bundles para `~/.local/lib/
 
 Obs: _com dado 0.x em `<D>` o instalador só lista o que arquivaria e sai com código 2, o passo a passo está em [docs/migracao.md](docs/migracao.md)._
 
-## Uso
+## Início rápido
 
-O agente chama as 12 tools. Num projeto novo, o caminho mínimo é definir um tipo, criar um processo, registrar e consultar:
+Com o hexlog instalado e o Claude Code reiniciado:
 
-```json
-// define_type
-{ "project": "alpha", "name": "note",
-  "schema": { "type": "object", "properties": { "text": { "type": "string" } },
-              "required": ["text"], "additionalProperties": false } }
+1. `node scripts/install.ts --check` confirma que o servidor, o hook e as skills estão no lugar, sem escrever nada;
+2. perguntamos ao agente "o hexlog está funcionando?", e a skill `hexlog` diagnostica o servidor instalado;
+3. num projeto novo, o agente define um tipo, cria um processo, registra e consulta.
 
-// create_process
-{ "project": "alpha", "process": "run-1" }
+O passo a passo com as chamadas de cada tool, incluindo `define_gate` e `evaluate_gate`, está em [docs/uso.md](docs/uso.md).
 
-// register
-{ "project": "alpha", "process": "run-1", "agent": "executor",
-  "records": [{ "type": "note", "target": "run.step", "data": { "text": "primeira nota" } }] }
+## Tools MCP
 
-// query
-{ "project": "alpha", "process": "run-1" }
-```
+O servidor expõe exatamente 12 tools. A entrada, a saída e os erros de cada uma estão em [docs/tools.md](docs/tools.md).
 
-As skills instaladas guiam o resto: `hexlog` (instalação e diagnóstico), `hexlog-setup` (mapeia o fluxo de um repositório em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra marcos e vereditos contra esse mapa). O exemplo completo e a tabela das tools estão em [docs/uso.md](docs/uso.md).
+| Tool | O que faz | Escreve |
+|---|---|---|
+| `list` | Descobre projetos, ou um projeto com processos e definições, ou o que um processo fixou | nada |
+| `describe_type` | Lê o schema de um tipo: o fixado no processo ou a versão vigente do projeto | nada |
+| `define_type` | Define um tipo de registro (JSON Schema) como versão imutável | definição do projeto |
+| `define_relation` | Define um nome de relação, com os tipos permitidos nas pontas | definição do projeto |
+| `define_gate` | Define um gate: uma lista de perguntas sobre os registros | definição do projeto |
+| `create_process` | Cria um processo e fixa a versão vigente de cada definição | `process.json` |
+| `register` | Grava um lote atômico de registros, com relações e `key` de idempotência | `records.jsonl` |
+| `query` | Lê registros vigentes, com filtros, relações, projeção de `data` e mudanças desde um marcador | nada |
+| `evaluate_gate` | Calcula um gate fixado no processo e devolve a evidência | nada |
+| `verify_chain` | Verifica a cadeia de hash do log e os anexos citados | nada |
+| `attach` | Guarda um texto como anexo imutável | anexo do projeto |
+| `read_attachment` | Lê uma página de um anexo por hash | nada |
+
+## Skills
+
+O instalador copia as skills de `skills/` para `~/.claude/skills/`. Elas guiam o uso das tools:
+
+| Skill | Quando usar |
+|---|---|
+| `hexlog` | Subir um projeto novo (tipos, relações, gates e processo) ou diagnosticar se o servidor instalado está saudável |
+| `hexlog-setup` | Primeira vez num repositório: entrevista o fluxo, propõe as chamadas, espera aprovação e grava o mapa em `.hexlog/flow.md`. Roda uma vez |
+| `hexlog-flow` | Dia a dia, num repositório que já tem `.hexlog/flow.md`: registra, consulta, avalia gates, anexa texto e audita um target |
 
 ## Como funciona
 
 Os dados ficam em `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog`), com um diretório por projeto e um log JSONL por processo. O log é append-only e cada linha carrega o hash da anterior, ou seja, nenhuma alteração passa despercebida pela `verify_chain`, exceto apagar as últimas linhas, que só aparece contra um head guardado antes (`expectedHead`). Só o servidor escreve nesse diretório, pois o hook PreToolUse bloqueia o acesso do agente via Bash, e o isolamento tem lacunas conhecidas, descritas em [docs/dados.md](docs/dados.md). As sessões executam sempre a cópia instalada em `~/.local/lib/hexlog/<versão>/`, nunca a working tree, logo mudar o código só tem efeito depois de rodar o instalador de novo.
+
+## Fluxo guiado por diretrizes
+
+O servidor não conhece nenhum fluxo de trabalho: o fluxo mora em definições (`.hexlog/`) e em docs. Neste repositório usamos o próprio hexlog para desenvolver o hexlog, e as regras estão em [docs/directives/fluxo-hexlog.md](docs/directives/fluxo-hexlog.md):
+
+- cada trabalho é um processo, nomeado pelo slug da branch, com premissas, decisões, lacunas, evidências e achados como registros tipados;
+- os gates `pre-pr` e `gaps` precisam estar verdes antes de o PR sair de rascunho; lacuna aberta mantém o PR em rascunho;
+- no modo `ask` o humano decide e o agente explora; no `autonomous` (padrão) o agente decide dentro das diretrizes e das premissas de [docs/directives/estrategia.md](docs/directives/estrategia.md);
+- no `autonomous`, a lacuna vai à cadeira do dono, um `critic` durável que responde no lugar do humano, e o humano avaliza as respostas críticas no pré-PR ([docs/directives/cadeira-do-dono.md](docs/directives/cadeira-do-dono.md)).
+
+As skills do fluxo ficam em `.claude/skills/` e valem só neste repositório, o instalador não as copia: `flow-run` (abre o trabalho e conduz até o pré-PR), `flow-gaps` (fecha as lacunas de um PR em rascunho), `flow-audit` (audita por amostragem as decisões registradas) e `flow-owner-seat` (papel de quem ocupa a cadeira do dono).
 
 ## Documentação
 
@@ -58,7 +85,8 @@ Os dados ficam em `$XDG_DATA_HOME/hexlog/` (ou `~/.local/share/hexlog`), com um 
 - [docs/dados.md](docs/dados.md): layout em disco, erros, lock e lacunas de isolamento;
 - [docs/desenvolvimento.md](docs/desenvolvimento.md): scripts de leitura e testes;
 - [docs/feedback-loops.md](docs/feedback-loops.md): o que o commit e o pré-PR conferem;
-- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md) e [0009 ferramental](docs/directives/adr-0009-ferramental.md).
+- [docs/directives/](docs/directives/AGENTS.md): regras vivas do repositório, do fluxo às convenções;
+- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md) e [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md).
 
 ## Desenvolvimento
 

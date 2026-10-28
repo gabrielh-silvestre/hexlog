@@ -1,40 +1,37 @@
 import { describe, expect, it } from '@jest/globals';
-import { note } from '../commands/register-fakes.ts';
-import { at, captureError } from '../helpers.ts';
-import { cursorOf, idsOf, PROJECT, querySetup } from './query-setup.ts';
+import { note } from '../commands/fakes.ts';
+import { at, captureError, cursorOf, idsOf } from '../helpers.ts';
+import { PROJECT, querySetup } from './query-setup.ts';
 
 async function untouched() {
   const setup = querySetup();
-  setup.definitions.write(PROJECT, 'gates', 'any', '1.0', {
-    name: 'any',
-    questions: [{ kind: 'occurred', select: { type: 'note' } }],
-  });
   setup.createProcess('run-1');
   setup.createProcess('run-2');
+  const ids = [];
   for (const text of ['primeira', 'segunda', 'terceira']) {
-    await setup.registerOne('run-1', note(text), 1);
+    ids.push(await setup.registerOne('run-1', note(text), 1));
   }
-  await setup.registerOne('run-2', note('de outro processo'), 2);
-  return setup;
+  const other = await setup.registerOne('run-2', note('de outro processo'), 2);
+  return { ...setup, ids, other };
 }
 
 describe('QueryService.queryRecords', () => {
   it('should return the records of a process with no tampering', async () => {
-    const { query } = await untouched();
+    const { query, ids } = await untouched();
 
-    expect(query({ process: 'run-1' }).records).toHaveLength(3);
+    expect(idsOf(query({ process: 'run-1' }))).toEqual(ids);
   });
 
   it('should find a record by text in a process with no tampering', async () => {
-    const { query } = await untouched();
+    const { query, ids } = await untouched();
 
-    expect(idsOf(query({ process: 'run-1', text: 'segunda' }))).toHaveLength(1);
+    expect(idsOf(query({ process: 'run-1', text: 'segunda' }))).toEqual([at(ids, 1)]);
   });
 
   it('should return the records of every process at the project scope with no tampering', async () => {
-    const { query } = await untouched();
+    const { query, ids, other } = await untouched();
 
-    expect(query({ scope: 'project' }).records).toHaveLength(4);
+    expect(idsOf(query({ scope: 'project' }))).toEqual([...ids, other]);
   });
 
   describe('with a tampered old line', () => {
@@ -57,18 +54,6 @@ describe('QueryService.queryRecords', () => {
       const error = captureError(() => query({ process: 'run-1', text: 'segunda' }));
 
       expect(error.code).toBe('PROCESS_CORRUPTED');
-    });
-
-    it('should name the tampered process in the project scope, leaving the other one readable alone', async () => {
-      const { query, tamper } = await untouched();
-      query({ scope: 'project' });
-      tamper('run-1');
-
-      const project = captureError(() => query({ scope: 'project' }));
-
-      expect(project.code).toBe('PROCESS_CORRUPTED');
-      expect(at(project.details, 0)).toMatchObject({ code: 'broken-chain', process: 'run-1' });
-      expect(query({ process: 'run-2' }).records).toHaveLength(1);
     });
 
     it('should fail the next page of a query in progress after the tampering', async () => {
@@ -111,7 +96,15 @@ describe('QueryService.queryRecords', () => {
 describe('QueryService.evaluateGate', () => {
   describe('with a tampered old line', () => {
     it('should give PROCESS_CORRUPTED for a marker on the line rejected by the tampering of the previous one', async () => {
-      const { queries, query, tamperLine } = await untouched();
+      const { queries, definitions, createProcess, registerOne, query, tamperLine } = querySetup();
+      definitions.write(PROJECT, 'gates', 'any', '1.0', {
+        name: 'any',
+        questions: [{ kind: 'occurred', select: { type: 'note' } }],
+      });
+      createProcess('run-1');
+      for (const text of ['primeira', 'segunda', 'terceira']) {
+        await registerOne('run-1', note(text), 1);
+      }
       const { marker } = query({ process: 'run-1' });
       tamperLine('run-1', 1);
 

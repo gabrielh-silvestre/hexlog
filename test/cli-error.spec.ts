@@ -3,18 +3,11 @@ import { HexlogError } from '../src/errors.ts';
 import { formatCliError } from '../scripts/cli-error.ts';
 
 describe('formatCliError', () => {
-  it('should wrap a plain Error as INTERNAL with exit code 1', () => {
-    expect(formatCliError('x', new Error('boom'))).toEqual({
-      text: 'x failed: INTERNAL: Error: boom',
-      exitCode: 1,
-    });
-  });
-
-  it('should wrap a thrown string as INTERNAL with exit code 1', () => {
-    expect(formatCliError('x', 'oops')).toEqual({
-      text: 'x failed: INTERNAL: oops',
-      exitCode: 1,
-    });
+  it.each([
+    ['a plain Error', new Error('boom'), 'x failed: INTERNAL: Error: boom'],
+    ['a thrown string', 'oops', 'x failed: INTERNAL: oops'],
+  ])('should wrap %s as INTERNAL with exit code 1', (_name, thrown, text) => {
+    expect(formatCliError('x', thrown)).toEqual({ text, exitCode: 1 });
   });
 
   it('should exit with 2 for a data error', () => {

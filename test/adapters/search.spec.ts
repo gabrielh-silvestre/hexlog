@@ -67,28 +67,22 @@ describe('createSearchIndex', () => {
     expect(search([weak, none, strong], 'webhook')).toEqual([strong.id, weak.id]);
   });
 
-  it('should keep the record order on a relevance tie', () => {
-    const records = [1, 2, 3].map(() => makeRecord({ data: { text: 'webhook' } }));
+  it.each([
+    { order: 'the record order', arrange: (records: HexRecord[]) => records },
+    { order: 'the reversed record order', arrange: (records: HexRecord[]) => records.toReversed() },
+  ])('should keep $order on a relevance tie', ({ arrange }) => {
+    const records = arrange([1, 2, 3].map(() => makeRecord({ data: { text: 'webhook' } })));
 
     expect(search(records, 'webhook')).toEqual(idsOf(records));
   });
 
-  it('should keep the reversed record order on a relevance tie', () => {
-    const records = [1, 2, 3].map(() => makeRecord({ data: { text: 'webhook' } }));
+  it.each([
+    { where: 'text', text: 'Configuração Crítica', query: 'configuracao critica' },
+    { where: 'query', text: 'configuracao', query: 'CONFIGURAÇÃO' },
+  ])('should ignore accents and case in the $where', ({ text, query }) => {
+    const record = makeRecord({ data: { text } });
 
-    expect(search([...records].reverse(), 'webhook')).toEqual(idsOf(records).reverse());
-  });
-
-  it('should ignore accents and case in the text', () => {
-    const record = makeRecord({ data: { text: 'Configuração Crítica' } });
-
-    expect(search([record], 'configuracao critica')).toEqual([record.id]);
-  });
-
-  it('should ignore accents and case in the query', () => {
-    const record = makeRecord({ data: { text: 'configuracao' } });
-
-    expect(search([record], 'CONFIGURAÇÃO')).toHaveLength(1);
+    expect(search([record], query)).toEqual([record.id]);
   });
 
   it('should not index a term that is empty after stripping the accent', () => {
@@ -139,7 +133,7 @@ describe('createSearchIndex', () => {
     ]);
   });
 
-  it('should let the unfiltered AND match both terms in the doc without allowed (parity with 0.x)', () => {
+  it('should let the unfiltered AND match both terms in the doc without allowed', () => {
     const doc = makeRecord({ type: 'doc', data: { text: 'banana uva' } });
     const banana = makeRecord({ data: { text: 'banana' } });
     const uva = makeRecord({ data: { text: 'uva' } });
@@ -148,7 +142,7 @@ describe('createSearchIndex', () => {
     expect(search([doc, banana, uva], 'banana uva')).toEqual([doc.id]);
   });
 
-  it('should decide the AND and the OR floor over the allowed records (parity with 0.x)', () => {
+  it('should decide the AND and the OR floor over the allowed records', () => {
     const doc = makeRecord({ type: 'doc', data: { text: 'banana uva' } });
     const banana = makeRecord({ data: { text: 'banana' } });
     const uva = makeRecord({ data: { text: 'uva' } });
@@ -229,7 +223,8 @@ describe('createSearchIndex', () => {
     const elapsed = performance.now() - start;
 
     expect(ids).toHaveLength(records.length);
-    // Sem o dedupe passa de 12 s; com ele o custo é o do índice (~100 ms).
+    // Guarda de complexidade, não orçamento: com o dedupe custa ~100 ms contra o teto de 2 s, e sem
+    // ele passa de 12 s; a margem larga evita falso vermelho em máquina lenta.
     expect(elapsed).toBeLessThanOrEqual(2_000);
   });
 
@@ -274,9 +269,10 @@ describe('createSearchIndex', () => {
     it('should find every record of "authentication" with one typo, a recall of 1.0', () => {
       const expected = idsOf(withWord('authentication'));
 
+      expect(expected).not.toHaveLength(0);
+
       const found = search(corpus, 'authentcation');
 
-      expect(expected.length).toBeGreaterThan(0);
       expect(found).toEqual(expect.arrayContaining(expected));
     });
 
@@ -292,9 +288,10 @@ describe('createSearchIndex', () => {
       const retry = new Set(idsOf(withWord('retry')));
       const expected = idsOf(withWord('webhook')).filter((id) => retry.has(id));
 
+      expect(expected).not.toHaveLength(0);
+
       const found = search(corpus, 'webhook retry');
 
-      expect(expected.length).toBeGreaterThan(0);
       expect([...found].sort()).toEqual([...expected].sort());
     });
 
@@ -302,18 +299,18 @@ describe('createSearchIndex', () => {
       expect(search(corpus, 'zzqxwv')).toEqual([]);
     });
 
-    it('should return the same result from the cold index, the cached one and a fresh one', () => {
+    it('should return the same result from the cached index and a fresh one as from the cold index', () => {
       const index = createSearchIndex();
+      const cold = index.search(PROCESS, corpus, 'webhook retry', undefined);
 
-      const calls = [
-        index.search(PROCESS, corpus, 'webhook retry', undefined),
+      expect(cold).not.toHaveLength(0);
+
+      const repeated = [
         index.search(PROCESS, corpus, 'webhook retry', undefined),
         ...Array.from({ length: 3 }, () => search(corpus, 'webhook retry')),
       ];
 
-      expect(calls[0]).not.toHaveLength(0);
-
-      for (const call of calls) expect(call).toEqual(calls[0]);
+      expect(repeated).toEqual(repeated.map(() => cold));
     });
   });
 });

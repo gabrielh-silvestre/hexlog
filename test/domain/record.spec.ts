@@ -90,9 +90,11 @@ describe('RelationKind', () => {
 });
 
 describe('Author', () => {
-  it('should accept an author with or without model', () => {
-    expect(Author.safeParse(author).success).toBe(true);
-    expect(Author.safeParse({ ...author, model: 'opus' }).success).toBe(true);
+  it.each([
+    ['without model', author],
+    ['with model', { ...author, model: 'opus' }],
+  ])('should accept an author %s', (_label, value) => {
+    expect(Author.safeParse(value).success).toBe(true);
   });
 
   it.each([{ client: 'c' }, { agent: 'a' }, { ...author, agent: '' }, { ...author, extra: 1 }])(
@@ -127,16 +129,12 @@ describe('Relation', () => {
     expect(Relation.safeParse({ kind: 'supports', to: id(), as: 'approves' }).success).toBe(true);
   });
 
-  it('should reject a relation without kind', () => {
-    expect(Relation.safeParse({ to: id() }).success).toBe(false);
-  });
-
-  it('should reject an unknown key', () => {
-    expect(Relation.safeParse({ kind: 'supports', to: id(), extra: 1 }).success).toBe(false);
-  });
-
-  it('should reject an alias in the stored to', () => {
-    expect(Relation.safeParse({ kind: 'supports', to: '@a' }).success).toBe(false);
+  it.each([
+    ['a relation without kind', { to: id() }],
+    ['an unknown key', { kind: 'supports', to: id(), extra: 1 }],
+    ['an alias in the stored to', { kind: 'supports', to: '@a' }],
+  ])('should reject %s', (_label, value) => {
+    expect(Relation.safeParse(value).success).toBe(false);
   });
 });
 
@@ -152,13 +150,13 @@ describe('RelationInput', () => {
     },
   );
 
-  it('should accept an id or @alias in to, with kind or as', () => {
-    expect(RelationInput.safeParse({ to: id(), kind: 'supports' }).success).toBe(true);
-    expect(RelationInput.safeParse({ to: '@plan-1', kind: 'supports' }).success).toBe(true);
-    expect(RelationInput.safeParse({ to: '@plan-1', as: 'approves' }).success).toBe(true);
-    expect(
-      RelationInput.safeParse({ to: '@plan-1', kind: 'supports', as: 'approves' }).success,
-    ).toBe(true);
+  it.each([
+    ['an id with kind', { to: id(), kind: 'supports' }],
+    ['an @alias with kind', { to: '@plan-1', kind: 'supports' }],
+    ['an @alias with as', { to: '@plan-1', as: 'approves' }],
+    ['an @alias with kind and as', { to: '@plan-1', kind: 'supports', as: 'approves' }],
+  ])('should accept %s', (_label, value) => {
+    expect(RelationInput.safeParse(value).success).toBe(true);
   });
 
   it('should reject a relation without kind and without as', () => {
@@ -185,12 +183,9 @@ describe('RelationInput', () => {
     ]);
   });
 
-  it.each([{}, { to: 'plan-1' }, { to: '@' }, { to: '@A' }, { to: id(), kind: 'likes' }])(
-    'should reject %j',
-    (value) => {
-      expect(RelationInput.safeParse(value).success).toBe(false);
-    },
-  );
+  it.each([{}, { to: id(), kind: 'likes' }])('should reject %j', (value) => {
+    expect(RelationInput.safeParse(value).success).toBe(false);
+  });
 });
 
 describe('BatchItem', () => {
@@ -242,12 +237,6 @@ describe('BatchItem', () => {
     expect(BatchItem.safeParse({ ...item, data: atCap }).success).toBe(true);
   });
 
-  it('should reject data one character over the canonical ceiling', () => {
-    expect(
-      BatchItem.safeParse({ ...item, data: dataWithCanonicalLength(DATA_MAX_CHARS + 1) }).success,
-    ).toBe(false);
-  });
-
   it('should accept 7996 emoji, since the data ceiling counts UTF-16 units of the JCS', () => {
     expect((canonicalize(emojis(7996)) ?? '').length).toBe(DATA_MAX_CHARS);
 
@@ -262,21 +251,18 @@ describe('BatchItem', () => {
     expect(BatchItem.safeParse({ ...item, data: { text: '\ud800' } }).success).toBe(false);
   });
 
-  it('should accept relations at the ceiling', () => {
-    expect(BatchItem.safeParse({ ...item, relations: relations(RELATIONS_MAX) }).success).toBe(
-      true,
-    );
+  it.each([
+    { count: RELATIONS_MAX, accepted: true },
+    { count: RELATIONS_MAX + 1, accepted: false },
+  ])('should return success $accepted for $count relations', ({ count, accepted }) => {
+    expect(BatchItem.safeParse({ ...item, relations: relations(count) }).success).toBe(accepted);
   });
 
-  it('should reject one relation over the ceiling', () => {
-    expect(BatchItem.safeParse({ ...item, relations: relations(RELATIONS_MAX + 1) }).success).toBe(
-      false,
-    );
-  });
-
-  it('should reject data that is not JSON', () => {
-    expect(BatchItem.safeParse({ ...item, data: { fn: () => 1 } }).success).toBe(false);
-    expect(BatchItem.safeParse({ ...item, data: { missing: undefined } }).success).toBe(false);
+  it.each([
+    ['a function', { fn: () => 1 }],
+    ['undefined', { missing: undefined }],
+  ])('should reject data holding %s, which is not JSON', (_label, data) => {
+    expect(BatchItem.safeParse({ ...item, data }).success).toBe(false);
   });
 });
 
@@ -297,16 +283,11 @@ describe('HexRecord', () => {
     expect(HexRecord.safeParse(record).success).toBe(true);
   });
 
-  it('should accept relations at the ceiling', () => {
-    expect(HexRecord.safeParse({ ...record, relations: relations(RELATIONS_MAX) }).success).toBe(
-      true,
-    );
-  });
-
-  it('should reject one relation over the ceiling', () => {
-    expect(
-      HexRecord.safeParse({ ...record, relations: relations(RELATIONS_MAX + 1) }).success,
-    ).toBe(false);
+  it.each([
+    { count: RELATIONS_MAX, accepted: true },
+    { count: RELATIONS_MAX + 1, accepted: false },
+  ])('should return success $accepted for $count relations', ({ count, accepted }) => {
+    expect(HexRecord.safeParse({ ...record, relations: relations(count) }).success).toBe(accepted);
   });
 
   it.each([

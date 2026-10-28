@@ -109,7 +109,6 @@ describe('createSearchIndex', () => {
     const index = createSearchIndex();
     const records = makeRecords(3);
     index.search(PROC_A, records, 'webhook');
-    addAll.mockClear();
 
     expect(index.search(PROC_A, [], 'webhook')).toEqual([]);
   });
@@ -183,7 +182,6 @@ describe('createSearchIndex', () => {
     const small = makeRecords(2);
     const huge = makeRecords(4);
     index.search(PROC_A, small, 'webhook');
-    addAll.mockClear();
 
     expect(index.search(PROC_B, huge, 'webhook')).toEqual(huge.map((record) => record.id));
   });
@@ -313,6 +311,9 @@ describe('createSearchIndex', () => {
     expect(indexedBatches()).toEqual([2]);
   });
 
+  // Os casos de relevância abaixo repetem os de search.spec.ts de propósito: este é o único spec de
+  // search.ts no testMatch do Stryker, e search.spec.ts grava corpus em disco; sem as cópias os
+  // mutantes de relevância sobreviveriam.
   it('should give the distinct terms of the text in lower case and without accent', () => {
     const index = createSearchIndex();
 

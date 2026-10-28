@@ -54,6 +54,11 @@ function plantLegacyFiles(dataDir: string): string[] {
   return legacyFiles;
 }
 
+/** Pasta de nome sem nenhuma versão, como uma escrita que falhou a deixa. */
+function plantEmptyNameFolder(dataDir: string): void {
+  fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
+}
+
 const MALFORMED_VERSIONS = [
   '',
   '1',
@@ -69,6 +74,46 @@ const MALFORMED_VERSIONS = [
 ];
 
 const ESCAPING_NAMES = ['..', 'a/b', 'A', '', '.hidden'];
+
+type Store = ReturnType<typeof createDefinitionStore>;
+
+/** Cada operação recusada antes de qualquer I/O, por entrada que sai do layout ou do formato. */
+const REFUSALS: { operation: string; input: string; call: (store: Store) => unknown }[] = [
+  ...MALFORMED_VERSIONS.flatMap((version) => [
+    {
+      operation: 'write',
+      input: `the malformed version ${JSON.stringify(version)}`,
+      call: (store: Store) => store.write(PROJECT, 'types', 'plan', version, plan),
+    },
+    {
+      operation: 'read',
+      input: `the malformed version ${JSON.stringify(version)}`,
+      call: (store: Store) => store.read(PROJECT, 'types', 'plan', version),
+    },
+  ]),
+  ...ESCAPING_NAMES.flatMap((name) => [
+    {
+      operation: 'write',
+      input: `the project ${JSON.stringify(name)}, which escapes the layout`,
+      call: (store: Store) => store.write(name, 'types', 'plan', '1.0', plan),
+    },
+    {
+      operation: 'write',
+      input: `the name ${JSON.stringify(name)}, which escapes the layout`,
+      call: (store: Store) => store.write(PROJECT, 'types', name, '1.0', plan),
+    },
+    {
+      operation: 'versions',
+      input: `the name ${JSON.stringify(name)}, which escapes the layout`,
+      call: (store: Store) => store.versions(PROJECT, 'types', name),
+    },
+    {
+      operation: 'names',
+      input: `the project ${JSON.stringify(name)}, which escapes the layout`,
+      call: (store: Store) => store.names(name, 'types'),
+    },
+  ]),
+];
 
 describe('createDefinitionStore', () => {
   afterEach(() => {
@@ -115,33 +160,36 @@ describe('createDefinitionStore', () => {
     store.write(PROJECT, 'types', 'review', '1.0', plan);
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
     store.write(PROJECT, 'gates', 'plan-ready', '1.0', gate);
-    fs.writeFileSync(path.join(dataRoot(dataDir), PROJECT, 'types', 'solto.json'), '{}');
+    fs.writeFileSync(path.join(dataRoot(dataDir), PROJECT, 'types', 'stray.json'), '{}');
 
     expect(store.names(PROJECT, 'types')).toEqual(['plan', 'review']);
     expect(store.names(PROJECT, 'gates')).toEqual(['plan-ready']);
   });
 
-  it('should list no names for a kind with nothing written nor for an unknown project', () => {
-    const { dataDir, store } = setup();
-    store.write(PROJECT, 'types', 'review', '1.0', plan);
+  it('should list no names for a kind with nothing written', () => {
+    const { store } = setup();
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
-    store.write(PROJECT, 'gates', 'plan-ready', '1.0', gate);
-    fs.writeFileSync(path.join(dataRoot(dataDir), PROJECT, 'types', 'solto.json'), '{}');
 
     expect(store.names(PROJECT, 'relations')).toEqual([]);
-    expect(store.names('outro', 'types')).toEqual([]);
+  });
+
+  it('should list no names for an unknown project', () => {
+    const { store } = setup();
+    store.write(PROJECT, 'types', 'plan', '1.0', plan);
+
+    expect(store.names('other', 'types')).toEqual([]);
   });
 
   it('should list a name folder left without any version by a failed write', () => {
     const { dataDir, store } = setup();
-    fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
+    plantEmptyNameFolder(dataDir);
 
     expect(store.names(PROJECT, 'types')).toEqual(['empty']);
   });
 
   it('should list no versions for a name folder left without any version by a failed write', () => {
     const { dataDir, store } = setup();
-    fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
+    plantEmptyNameFolder(dataDir);
 
     expect(store.versions(PROJECT, 'types', 'empty')).toEqual([]);
   });
@@ -180,17 +228,24 @@ describe('createDefinitionStore', () => {
     expect(store.versions(PROJECT, 'types', 'plan')).toEqual(['1.0']);
   });
 
-  it('should return false and keep the bytes when the same version is written a second time', () => {
+  it('should return false when the same version is written a second time', () => {
+    const { store } = setup();
+    store.write(PROJECT, 'types', 'plan', '1.0', plan);
+
+    const rewritten = store.write(PROJECT, 'types', 'plan', '1.0', planV2);
+
+    expect(rewritten).toBe(false);
+  });
+
+  it('should keep the bytes when the same version is written a second time', () => {
     const { dataDir, store } = setup();
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
     const file = definitionFile(dataDir, PROJECT, 'types', 'plan', '1.0');
     const before = fs.readFileSync(file);
 
-    const rewritten = store.write(PROJECT, 'types', 'plan', '1.0', planV2);
+    store.write(PROJECT, 'types', 'plan', '1.0', planV2);
 
-    expect(rewritten).toBe(false);
     expect(fs.readFileSync(file).equals(before)).toBe(true);
-    expect(store.read(PROJECT, 'types', 'plan', '1.0')).toEqual(plan);
     expect(fs.readdirSync(versionsDir(dataDir, 'types', 'plan'))).toEqual([FIRST_VERSION_FILE]);
   });
 
@@ -216,13 +271,12 @@ describe('createDefinitionStore', () => {
 
   it('should not fsync the directory on a repeated write (EEXIST)', () => {
     const { store } = setup();
-    const fsyncs = countFsyncs();
     store.write(PROJECT, 'types', 'plan', '1.0', plan);
+    const fsyncs = countFsyncs();
 
-    const rewritten = store.write(PROJECT, 'types', 'plan', '1.0', planV2);
+    store.write(PROJECT, 'types', 'plan', '1.0', planV2);
 
-    expect(rewritten).toBe(false);
-    expect(fsyncs().directories).toBe(1);
+    expect(fsyncs().directories).toBe(0);
   });
 
   it('should let only one writer win when a rival publishes between the temporary file and the link', () => {
@@ -328,71 +382,23 @@ describe('createDefinitionStore', () => {
 
   it('should throw unknown-name, without a list of versions, for a name folder without any version', () => {
     const { dataDir, store } = setup();
-    fs.mkdirSync(versionsDir(dataDir, 'types', 'empty'), { recursive: true });
+    plantEmptyNameFolder(dataDir);
 
-    expect(captureError(() => store.read(PROJECT, 'types', 'empty', '1.0')).details).toEqual([
+    const error = captureError(() => store.read(PROJECT, 'types', 'empty', '1.0'));
+
+    expect(error.details).toEqual([
       { path: '/name', code: 'unknown-name', message: 'definition name not found' },
     ]);
   });
 
-  it.each(MALFORMED_VERSIONS)(
-    'should refuse write of the malformed version %j before any I/O',
-    (version) => {
-      const { dataDir, store } = setup();
+  it.each(REFUSALS)('should refuse $operation with $input before any I/O', ({ call }) => {
+    const { dataDir, store } = setup();
 
-      expect(captureError(() => store.write(PROJECT, 'types', 'plan', version, plan)).code).toBe(
-        'INVALID_INPUT',
-      );
-      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
-    },
-  );
+    const error = captureError(() => call(store));
 
-  it.each(MALFORMED_VERSIONS)(
-    'should refuse read of the malformed version %j before any I/O',
-    (version) => {
-      const { dataDir, store } = setup();
-
-      expect(captureError(() => store.read(PROJECT, 'types', 'plan', version)).code).toBe(
-        'INVALID_INPUT',
-      );
-      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
-    },
-  );
-
-  it.each(ESCAPING_NAMES)(
-    'should refuse write when the project or the name is %j, which escapes the layout',
-    (name) => {
-      const { dataDir, store } = setup();
-
-      expect(captureError(() => store.write(name, 'types', 'plan', '1.0', plan)).code).toBe(
-        'INVALID_INPUT',
-      );
-      expect(captureError(() => store.write(PROJECT, 'types', name, '1.0', plan)).code).toBe(
-        'INVALID_INPUT',
-      );
-      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
-    },
-  );
-
-  it.each(ESCAPING_NAMES)(
-    'should refuse versions with the name %j that escapes the layout',
-    (name) => {
-      const { dataDir, store } = setup();
-
-      expect(captureError(() => store.versions(PROJECT, 'types', name)).code).toBe('INVALID_INPUT');
-      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
-    },
-  );
-
-  it.each(ESCAPING_NAMES)(
-    'should refuse names with the project %j that escapes the layout',
-    (name) => {
-      const { dataDir, store } = setup();
-
-      expect(captureError(() => store.names(name, 'types')).code).toBe('INVALID_INPUT');
-      expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
-    },
-  );
+    expect(error.code).toBe('INVALID_INPUT');
+    expect(fs.existsSync(dataRoot(dataDir))).toBe(false);
+  });
 
   it.each([
     ['invalid JSON', '{nope'],

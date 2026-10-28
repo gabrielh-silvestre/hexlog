@@ -1,14 +1,9 @@
 import { describe, it, expect } from '@jest/globals';
 import fc from 'fast-check';
-import {
-  buildVigency,
-  checkRelation,
-  hasCycle,
-  needsReview,
-  pushTo,
-} from '../../src/domain/relations.ts';
+import { buildVigency, checkRelation, hasCycle, needsReview } from '../../src/domain/relations.ts';
 import type { Linked } from '../../src/domain/relations.ts';
 import type { RelationKind } from '../../src/domain/record.ts';
+import { lineages, withShuffle } from './relation-graph.ts';
 
 type Rel = { kind: RelationKind; pick: number };
 type Op = { process: 'a' | 'b'; type: 'x' | 'y'; relations: Rel[] };
@@ -24,24 +19,6 @@ const op = fc.record<Op>({
   type: fc.constantFrom('x', 'x', 'x', 'y'),
   relations: fc.array(rel, { maxLength: 2 }),
 });
-
-/** Oráculo das propriedades: as linhagens, isto é, os conjuntos de registros ligados por `supersedes`. */
-function lineages(records: readonly Linked[]): string[][] {
-  const parent = new Map<string, string>(records.map(({ id }) => [id, id]));
-  const rootOf = (id: string): string => {
-    let root = id;
-    while (parent.get(root) !== root) root = parent.get(root)!;
-    return root;
-  };
-  for (const { id, relations } of records) {
-    for (const { kind, to } of relations) {
-      if (kind === 'supersedes' && parent.has(to)) parent.set(rootOf(id), rootOf(to));
-    }
-  }
-  const groups = new Map<string, string[]>();
-  for (const { id } of records) pushTo(groups, rootOf(id), id);
-  return [...groups.values()];
-}
 
 type Written = Linked & { type: string };
 
@@ -87,13 +64,7 @@ function simulate(ops: Op[]): Written[] {
 }
 
 const ops = fc.array(op, { maxLength: 15 });
-const writtenAndShuffled = ops.chain((sequence) => {
-  const written = simulate(sequence);
-  return fc.tuple(
-    fc.constant(written),
-    fc.shuffledSubarray(written, { minLength: written.length }),
-  );
-});
+const writtenAndShuffled = withShuffle(ops.map(simulate));
 
 describe('buildVigency', () => {
   it('should leave at most one current record in every lineage', () => {
@@ -118,9 +89,24 @@ describe('buildVigency', () => {
 
         for (const { id } of written) {
           const group = groups.find((members) => members.includes(id)) ?? [];
+
+          expect(vigency.currentOf(id) === null).toBe(
+            !group.some((member) => vigency.isCurrent(member)),
+          );
+        }
+      }),
+    );
+  });
+
+  it('should give a current version that is itself current', () => {
+    fc.assert(
+      fc.property(ops, (sequence) => {
+        const written = simulate(sequence);
+        const vigency = buildVigency(written);
+
+        for (const { id } of written) {
           const current = vigency.currentOf(id);
 
-          expect(current === null).toBe(!group.some((member) => vigency.isCurrent(member)));
           expect(current === null || vigency.isCurrent(current)).toBe(true);
         }
       }),
@@ -150,7 +136,6 @@ describe('buildVigency', () => {
 
     expect(chain.filter(({ id }) => vigency.isCurrent(id)).map(({ id }) => id)).toEqual(['p:7']);
     expect(chain.map(({ id }) => vigency.currentOf(id))).toEqual(chain.map(() => 'p:7'));
-    expect(lineages(chain)).toHaveLength(1);
   });
 
   it('should return the same current version when queried again, in any order', () => {

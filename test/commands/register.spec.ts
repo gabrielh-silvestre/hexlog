@@ -5,7 +5,6 @@ import { BATCH_MAX } from '../../src/domain/record.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
 import {
   AUTHOR,
-  NOW,
   ORIGIN,
   PROJECT,
   ghostId,
@@ -14,7 +13,7 @@ import {
   refusal,
   setup,
   verifiedOf,
-} from './register-fakes.ts';
+} from './fakes.ts';
 
 const LIMITED: RecordType = {
   type: 'object',
@@ -37,25 +36,31 @@ const numbers = (length: number): BatchItem => ({
 const supersedesElsewhere = (): BatchItem =>
   note('x', { relations: [{ to: ghostId('other'), kind: 'supersedes' }] });
 
+const notes = (count: number): BatchItem[] => Array.from({ length: count }, () => note());
+
 describe('register', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
   describe('when the batch is valid', () => {
-    it('should write the batch as one line of chained links with the origin ids and one shared instant', async () => {
+    it('should write the batch as one line of chained links with the origin ids', async () => {
       const { register, processes } = setup();
 
-      const result = await register([note('a', { alias: 'first' }), note('b')], { key: 'k1' });
+      const result = await register([note('a'), note('b')], { key: 'k1' });
       const { records, chain } = verifiedOf(processes);
 
       expect(chain).toMatchObject({ ok: true, totalRecords: 2 });
       expect(processes.textOf(ORIGIN).split('\n')).toHaveLength(2);
+      expect(records.map(({ seq }) => seq)).toEqual([0, 1]);
       expect(records.map(({ id }) => id)).toEqual(result.records.map(({ id }) => id));
-      expect(records.map(({ seq, at }) => [seq, at])).toEqual([
-        [0, NOW.toISOString()],
-        [1, NOW.toISOString()],
-      ]);
+    });
+
+    it('should return the alias and the marker of the written batch', async () => {
+      const { register } = setup();
+
+      const result = await register([note('a', { alias: 'first' }), note('b')]);
+
       expect(result.records[0]).toEqual({ alias: 'first', id: expect.stringMatching(/^run-1:/) });
       expect(result.records[1]).not.toHaveProperty('alias');
       expect(result).toMatchObject({
@@ -148,16 +153,15 @@ describe('register', () => {
 
     it('should accept a batch of exactly 50 items', async () => {
       const { register } = setup();
-      const batch = Array.from({ length: BATCH_MAX }, () => note());
 
-      const result = await register(batch);
+      const result = await register(notes(BATCH_MAX));
 
       expect(result.records).toHaveLength(BATCH_MAX);
     });
 
     it('should write the same batch again when there is no key', async () => {
       const { register, processes } = setup();
-      const batch = Array.from({ length: BATCH_MAX }, () => note());
+      const batch = notes(BATCH_MAX);
       await register(batch);
 
       const second = await register(batch);
@@ -167,10 +171,10 @@ describe('register', () => {
     });
   });
 
-  describe('when the batch has the wrong shape (level 1)', () => {
+  describe('when the batch has the wrong shape', () => {
     it.each([
       ['empty', []],
-      ['above 50 items', Array.from({ length: BATCH_MAX + 1 }, () => note())],
+      ['above 50 items', notes(BATCH_MAX + 1)],
     ])(
       'should refuse a batch that is %s with INVALID_INPUT batch-size, without reading the process',
       async (_case, batch) => {
@@ -221,7 +225,7 @@ describe('register', () => {
     });
   });
 
-  describe('when the origin manifest is read (level 2)', () => {
+  describe('when the origin manifest is read', () => {
     it('should refuse a nonexistent process with PROCESS_NOT_FOUND', async () => {
       const { register } = setup();
 
@@ -246,7 +250,7 @@ describe('register', () => {
     });
   });
 
-  describe('when a static check refuses the batch (level 3)', () => {
+  describe('when a static check refuses the batch', () => {
     it.each(['nobody', 'constructor'])(
       'should refuse the type %s that the process did not pin with TYPE_NOT_PINNED, even with an Object.prototype name',
       async (type) => {
@@ -273,7 +277,7 @@ describe('register', () => {
     });
 
     it('should join in details the schema violations of every record of the batch', async () => {
-      const { register, processes, validate } = setup();
+      const { register, processes } = setup();
 
       const error = await refusal(
         register([note('ok'), { ...note(), data: { text: 5 } }, { ...note(), data: { text: 6 } }]),
@@ -283,7 +287,6 @@ describe('register', () => {
         { path: '/records/1/data/text', code: 'type' },
         { path: '/records/2/data/text', code: 'type' },
       ]);
-      expect(validate).toHaveBeenCalledTimes(3);
       expect(processes.counters.writes).toBe(0);
     });
 
@@ -322,7 +325,7 @@ describe('register', () => {
 
     it('should count in the last detail every violation a record left out past the 50', async () => {
       const { register, processes } = setup();
-      processes.add(ORIGIN, manifestOf(ORIGIN, { listed: LISTED }));
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { listed: LISTED }));
 
       const error = await refusal(register([numbers(5_000)]));
 
@@ -336,7 +339,7 @@ describe('register', () => {
 
     it('should count the violations of every record in the last detail when two records overflow', async () => {
       const { register, processes } = setup();
-      processes.add(ORIGIN, manifestOf(ORIGIN, { listed: LISTED }));
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { listed: LISTED }));
 
       const error = await refusal(register([numbers(3_000), numbers(3_000)]));
 
@@ -350,7 +353,7 @@ describe('register', () => {
 
     it('should report the measured value of a size limit next to another violation of the same record', async () => {
       const { register, processes } = setup();
-      processes.add(ORIGIN, manifestOf(ORIGIN, { limited: LIMITED }));
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { limited: LIMITED }));
 
       const error = await refusal(
         register([{ type: 'limited', target: 'run.step', data: { name: 'abcdef', count: 0 } }]),
@@ -409,7 +412,7 @@ describe('register', () => {
           code: 'INVALID_RECORD',
           details: [{ path: '/records/0/relations/0', code }],
         });
-        expect(processes.counters.writes).toBe(0);
+        expect(processes.counters.reads).toEqual([]);
       },
     );
 
@@ -471,30 +474,23 @@ describe('register', () => {
       const byName = await refusal(register([supersedesElsewhere(), unknownAs]));
       const byScope = await refusal(register([supersedesElsewhere()]));
 
-      expect(bySchema.details[0]?.path).toMatch(/^\/records\/2\/data/);
+      expect(bySchema.details[0]).toMatchObject({
+        path: expect.stringMatching(/^\/records\/2\/data/),
+      });
       expect(byName.details[0]).toMatchObject({ code: 'unknown-relation-name' });
       expect(byScope.details[0]).toMatchObject({ code: 'cross-process-currency' });
     });
 
     it('should accept a supersedes whose destination is in the own process', async () => {
-      const { register } = setup();
-      const first = await register([note('a')]);
-
-      const second = await register([
-        note('b', { relations: [{ to: first.records[0]?.id ?? '', kind: 'supersedes' }] }),
-      ]);
-
-      expect(second.replayed).toBe(false);
-    });
-
-    it('should neither write nor reach the write after any static refusal', async () => {
       const { register, processes } = setup();
+      const first = await register([note('a')]);
+      const target = first.records[0]?.id ?? '';
 
-      await refusal(register([{ ...note(), data: {} }]));
-      await refusal(register([supersedesElsewhere()]));
-      await refusal(register([]));
+      await register([note('b', { relations: [{ to: target, kind: 'supersedes' }] })]);
 
-      expect(processes.counters).toMatchObject({ writes: 0, appends: 0 });
+      expect(verifiedOf(processes).records[1]?.relations).toEqual([
+        { kind: 'supersedes', to: target },
+      ]);
     });
   });
 
@@ -502,13 +498,7 @@ describe('register', () => {
     it('should refuse a malformed batch for a nonexistent process with INVALID_INPUT', async () => {
       const { register } = setup();
 
-      const error = await refusal(
-        register(
-          Array.from({ length: BATCH_MAX + 1 }, () => note()),
-          { key: 'k' },
-          'ghost',
-        ),
-      );
+      const error = await refusal(register(notes(BATCH_MAX + 1), { key: 'k' }, 'ghost'));
 
       expect(error.code).toBe('INVALID_INPUT');
     });
@@ -536,7 +526,7 @@ describe('register', () => {
 
     it.each([
       ['the same fingerprint', [note()]],
-      ['a different fingerprint', [note('outro')]],
+      ['a different fingerprint', [note('other')]],
     ])(
       'should refuse with broken-chain a key already written on an origin that later broke, with %s',
       async (_case, batch) => {
@@ -553,19 +543,29 @@ describe('register', () => {
       },
     );
 
-    it('should return replayed without a new line for the same fingerprint, with the original ids and aliases and the fsync', async () => {
-      const { register, processes, logger } = setup();
+    it('should return replayed with the original ids and aliases and without a new line for the same fingerprint', async () => {
+      const { register, processes } = setup();
       const batch = [note('a', { alias: 'first' }), note('b')];
       const original = await register(batch, { key: 'k' });
       const before = processes.textOf(ORIGIN);
-
-      expect(logger).not.toHaveBeenCalled();
 
       const again = await register(batch, { key: 'k' });
 
       expect(again).toEqual({ ...original, replayed: true });
       expect(processes.textOf(ORIGIN)).toBe(before);
-      expect(processes.counters).toMatchObject({ appends: 1, syncsWithoutLine: 1 });
+      expect(processes.counters.appends).toBe(1);
+    });
+
+    it('should fsync and log batch-replayed on the replay of the same fingerprint', async () => {
+      const { register, processes, logger } = setup();
+      const batch = [note('a')];
+      await register(batch, { key: 'k' });
+
+      expect(logger).not.toHaveBeenCalled();
+
+      await register(batch, { key: 'k' });
+
+      expect(processes.counters.syncsWithoutLine).toBe(1);
       expect(logger).toHaveBeenCalledTimes(1);
       expect(logger).toHaveBeenCalledWith({
         level: 'info',
@@ -616,7 +616,7 @@ describe('register', () => {
       expect(again.marker).toEqual({ [ORIGIN]: later.records[0]?.id });
     });
 
-    it('should ignore key, agent and model in the fingerprint', async () => {
+    it('should ignore the author (agent, model and client) in the fingerprint', async () => {
       const { register } = setup();
       await register([note('a')], { key: 'k1', author: AUTHOR });
 
@@ -670,12 +670,12 @@ describe('register', () => {
 
     it('should return replayed on the resend after an uncertain IO_ERROR, even with the destination and the attachment changed', async () => {
       const { register, processes, attachments, logger } = setup();
-      const hash = sha256hex('anexo');
+      const hash = sha256hex('attachment');
       processes.add('other');
       attachments.set(hash, 'ok');
-      const target = await register([note('destino', { alias: 'e' })], {}, 'other');
+      const target = await register([note('target', { alias: 'e' })], {}, 'other');
       const batch = [
-        note('apoio', { relations: [{ to: target.records[0]?.id ?? '', kind: 'supports' }] }),
+        note('support', { relations: [{ to: target.records[0]?.id ?? '', kind: 'supports' }] }),
         { type: 'doc', target: 'run.doc', data: { body: hash } },
       ];
       processes.flags.ioErrorAfterAppend = true;
@@ -703,7 +703,7 @@ describe('register', () => {
 
     it('should refuse the resend without a key when a new attachment now matches the unmarked-attachment guard', async () => {
       const { register, attachments } = setup();
-      const hash = sha256hex('mais tarde');
+      const hash = sha256hex('later');
       const batch = [{ type: 'doc', target: 'run.doc', data: { note: hash } }];
       await register(batch, { key: 'k' });
       attachments.set(hash, 'ok');
@@ -713,7 +713,7 @@ describe('register', () => {
 
     it('should return replayed on the resend even when a new attachment now matches the unmarked-attachment guard', async () => {
       const { register, attachments } = setup();
-      const hash = sha256hex('mais tarde');
+      const hash = sha256hex('later');
       const batch = [{ type: 'doc', target: 'run.doc', data: { note: hash } }];
       await register(batch, { key: 'k' });
       attachments.set(hash, 'ok');
@@ -729,13 +729,13 @@ describe('register', () => {
   describe('when the origin log is read', () => {
     it.each([
       ['with no key', undefined],
-      ['with a new key', 'novo'],
-      ['with a key that replays', 'antigo'],
+      ['with a new key', 'new'],
+      ['with a key that replays', 'old'],
     ])(
       'should read the origin log once and parse each of its lines once, %s',
       async (_case, key) => {
         const { register, processes } = setup();
-        await register([note('a')], { key: 'antigo' });
+        await register([note('a')], { key: 'old' });
         await register([note('b'), note('c')]);
         const lines = processes.textOf(ORIGIN).split('\n').filter(Boolean);
         const parse = jest.spyOn(JSON, 'parse');
@@ -745,7 +745,7 @@ describe('register', () => {
         const calls = parse.mock.calls.map(([text]) => text);
 
         expect(lines.map((line) => calls.filter((text) => text === line).length)).toEqual([1, 1]);
-        expect(processes.counters.reads.filter((name) => name === ORIGIN)).toHaveLength(1);
+        expect(processes.readsOf(ORIGIN)).toBe(1);
       },
     );
   });

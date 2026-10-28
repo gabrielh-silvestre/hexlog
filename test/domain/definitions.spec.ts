@@ -15,6 +15,21 @@ import {
   parseVersion,
 } from '../../src/domain/definitions.ts';
 import * as omc from '../fixtures/domains/omc.ts';
+import * as rdsc from '../fixtures/domains/rdsc.ts';
+
+/** Mesmo teto de `RelationName` e `Gate` em `domain/definitions.ts`, que não o exporta. */
+const RELATION_GATE_MAX_CHARS = 16_000;
+
+const fixtureDomains = { omc, rdsc };
+const fixtureTypes = Object.entries(fixtureDomains).flatMap(([domain, { types }]) =>
+  Object.entries(types).map(([name, schema]): [string, unknown] => [`${domain}.${name}`, schema]),
+);
+const fixtureRelations = Object.entries(fixtureDomains).flatMap(([domain, { relations }]) =>
+  relations.map((relation): [string, unknown] => [`${domain}.${relation.name}`, relation]),
+);
+const fixtureGates = Object.entries(fixtureDomains).flatMap(([domain, { gates }]) =>
+  gates.map((gate): [string, unknown] => [`${domain}.${gate.name}`, gate]),
+);
 
 describe('parseVersion', () => {
   it('should read major and minor as numbers', () => {
@@ -37,10 +52,12 @@ describe('parseVersion', () => {
 });
 
 describe('compareVersions', () => {
-  it('should compare by number and not by string', () => {
-    expect(compareVersions('1.10', '1.9')).toBeGreaterThan(0);
-    expect(compareVersions('1.9', '2.0')).toBeLessThan(0);
-    expect(compareVersions('2.3', '2.3')).toBe(0);
+  it.each([
+    ['1.10', '1.9', 1],
+    ['1.9', '2.0', -1],
+    ['2.3', '2.3', 0],
+  ])('should compare %s against %s by number and not by string as %i', (left, right, sign) => {
+    expect(Math.sign(compareVersions(left, right))).toBe(sign);
   });
 });
 
@@ -49,7 +66,7 @@ describe('bumpVersion', () => {
     expect(bumpVersion('1.9', 'minor')).toBe('1.10');
   });
 
-  it('should return the ready version, with a two-digit major', () => {
+  it('should carry the major to two digits when bumping 9.9', () => {
     expect(bumpVersion('9.9', 'major')).toBe('10.0');
   });
 
@@ -67,186 +84,104 @@ describe('classifyTypeChange', () => {
     },
     required: ['title'],
   };
+  const title = { type: 'string' };
+  const level = { type: 'string', enum: ['low', 'high'] };
+  const withProps = (properties: Record<string, RecordType>): RecordType => ({
+    ...base,
+    properties,
+  });
+
+  const conditional: RecordType = {
+    if: { properties: { a: { const: 1 } } },
+    then: { properties: { t: { type: 'string' } } },
+    else: { properties: { e: { type: 'string' } } },
+  };
+  const plan = omc.types.plan;
 
   it('should classify an identical schema as unchanged', () => {
     expect(classifyTypeChange(base, structuredClone(base))).toBe('unchanged');
   });
 
-  it('should classify a new optional property as compatible', () => {
-    const next = {
-      ...base,
-      properties: { ...(base.properties as object), note: { type: 'string' } },
-    };
-
-    expect(classifyTypeChange(base, next)).toBe('compatible');
-  });
-
-  it('should classify a new enum value as compatible', () => {
-    const next = {
-      ...base,
-      properties: {
-        title: { type: 'string' },
-        level: { type: 'string', enum: ['low', 'high', 'mid'] },
-      },
-    };
-
-    expect(classifyTypeChange(base, next)).toBe('compatible');
-  });
-
-  it('should classify a new property that enters required as breaking', () => {
-    const next = {
-      ...base,
-      properties: { ...(base.properties as object), note: { type: 'string' } },
-      required: ['title', 'note'],
-    };
-
-    expect(classifyTypeChange(base, next)).toBe('breaking');
-  });
-
-  it('should classify a removed required as breaking', () => {
-    expect(classifyTypeChange(base, { ...base, required: [] })).toBe('breaking');
-  });
-
-  it('should classify a removed property as breaking', () => {
-    const next = { ...base, properties: { title: { type: 'string' } } };
-
-    expect(classifyTypeChange(base, next)).toBe('breaking');
-  });
-
-  it('should classify a removed enum value as breaking', () => {
-    const next = {
-      ...base,
-      properties: { title: { type: 'string' }, level: { type: 'string', enum: ['low'] } },
-    };
-
-    expect(classifyTypeChange(base, next)).toBe('breaking');
-  });
-
-  it('should classify a changed type as breaking', () => {
-    const next = {
-      ...base,
-      properties: { title: { type: 'number' }, level: { type: 'string', enum: ['low', 'high'] } },
-    };
-
-    expect(classifyTypeChange(base, next)).toBe('breaking');
-  });
-
-  it('should classify an added format as breaking', () => {
-    const next = {
-      ...base,
-      properties: {
-        title: { type: 'string', format: 'attachment' },
-        level: { type: 'string', enum: ['low', 'high'] },
-      },
-    };
-
-    expect(classifyTypeChange(base, next)).toBe('breaking');
-  });
-
-  it.each([
-    ['at the root', { ...base, additionalProperties: false }],
+  // Provado com ajv: nova propriedade em then ou em else recusa o mesmo dado novo que a raiz
+  // recusaria, e a raiz já é aceita. Por isso o flag `additive` só cai em if, not e nos arrays.
+  it.each<[string, RecordType, RecordType]>([
+    ['a new optional property', base, withProps({ title, level, note: title })],
     [
-      'inside a property',
-      {
-        ...base,
-        properties: {
-          title: { type: 'string', minLength: 1 },
-          level: { type: 'string', enum: ['low', 'high'] },
-        },
-      },
+      'a new enum value',
+      base,
+      withProps({ title, level: { ...level, enum: ['low', 'high', 'mid'] } }),
     ],
-  ])('should classify a new keyword %s as breaking', (_where, next) => {
-    expect(classifyTypeChange(base, next)).toBe('breaking');
-  });
-
-  it('should not let a property named properties or enum open a keyword exception', () => {
-    const before: RecordType = { properties: { properties: { type: 'string' } } };
-    const after = { properties: { properties: { type: 'string', minLength: 1 } } };
-
-    expect(classifyTypeChange(before, after)).toBe('breaking');
+    [
+      'a new property in then',
+      conditional,
+      { ...conditional, then: { properties: { t: title, n: title } } },
+    ],
+    [
+      'a new property in else',
+      conditional,
+      { ...conditional, else: { properties: { e: title, n: title } } },
+    ],
+    [
+      'a widened enum in properties inside then',
+      { if: { required: ['a'] }, then: { properties: { l: { enum: ['x'] } } } },
+      { if: { required: ['a'] }, then: { properties: { l: { enum: ['x', 'y'] } } } },
+    ],
+    [
+      'a new property in then of the omc fixture plan',
+      plan,
+      { ...plan, then: { ...plan.then, properties: { diff: title, note: title } } },
+    ],
+  ])('should classify %s as compatible', (_change, before, after) => {
+    expect(classifyTypeChange(before, after)).toBe('compatible');
   });
 
   // Em `not` e `if` o sentido se inverte: mudança que alarga ali estreita o schema como um todo.
-  describe('with positions that narrow the schema', () => {
-    it('should classify a widened enum inside not as breaking', () => {
-      const before: RecordType = { not: { enum: [1] } };
-
-      expect(classifyTypeChange(before, { not: { enum: [1, 2] } })).toBe('breaking');
-    });
-
-    it('should classify a new property in if.properties, with else, as breaking', () => {
-      const before: RecordType = {
+  it.each<[string, RecordType, RecordType]>([
+    [
+      'a new property that enters required',
+      base,
+      { ...withProps({ title, level, note: title }), required: ['title', 'note'] },
+    ],
+    ['a removed required', base, { ...base, required: [] }],
+    ['a removed property', base, withProps({ title })],
+    ['a removed enum value', base, withProps({ title, level: { ...level, enum: ['low'] } })],
+    ['a changed type', base, withProps({ title: { type: 'number' }, level })],
+    ['an added format', base, withProps({ title: { ...title, format: 'attachment' }, level })],
+    ['a new keyword at the root', base, { ...base, additionalProperties: false }],
+    [
+      'a new keyword inside a property',
+      base,
+      withProps({ title: { ...title, minLength: 1 }, level }),
+    ],
+    [
+      'a new keyword in a property named properties',
+      { properties: { properties: title } },
+      { properties: { properties: { ...title, minLength: 1 } } },
+    ],
+    ['a widened enum inside not', { not: { enum: [1] } }, { not: { enum: [1, 2] } }],
+    [
+      'a new property in if.properties, with else',
+      {
         if: { properties: { a: { const: 1 } } },
         then: { required: ['t'] },
         else: { required: ['x'] },
-      };
-      const after = { ...before, if: { properties: { a: { const: 1 }, b: { const: 1 } } } };
-
-      expect(classifyTypeChange(before, after)).toBe('breaking');
-    });
-
-    it('should classify a widened enum inside if as breaking', () => {
-      const before: RecordType = {
-        if: { properties: { a: { enum: [1] } } },
-        then: { required: ['t'] },
-      };
-      const after = { ...before, if: { properties: { a: { enum: [1, 2] } } } };
-
-      expect(classifyTypeChange(before, after)).toBe('breaking');
-    });
-
-    it.each(['anyOf', 'allOf', 'oneOf'])(
-      'should classify a widened enum inside %s as breaking',
-      (keyword) => {
-        const before: RecordType = { [keyword]: [{ enum: [1] }] };
-
-        expect(classifyTypeChange(before, { [keyword]: [{ enum: [1, 2] }] })).toBe('breaking');
       },
-    );
-
-    const conditional: RecordType = {
-      if: { properties: { a: { const: 1 } } },
-      then: { properties: { t: { type: 'string' } } },
-      else: { properties: { e: { type: 'string' } } },
-    };
-
-    // Provado com ajv: nova propriedade em then ou em else recusa o mesmo dado novo que a raiz
-    // recusaria, e a raiz já é aceita. Por isso o flag `additive` só cai em if, not e nos arrays.
-    it.each([
-      [
-        'then',
-        { ...conditional, then: { properties: { t: { type: 'string' }, n: { type: 'string' } } } },
-      ],
-      [
-        'else',
-        { ...conditional, else: { properties: { e: { type: 'string' }, n: { type: 'string' } } } },
-      ],
-    ])('should classify a new property in %s as compatible, as at the root', (_branch, after) => {
-      expect(classifyTypeChange(conditional, after)).toBe('compatible');
-    });
-
-    it('should classify a widened enum in properties inside then as compatible', () => {
-      const before: RecordType = {
-        if: { required: ['a'] },
-        then: { properties: { l: { enum: ['x'] } } },
-      };
-      const after = { ...before, then: { properties: { l: { enum: ['x', 'y'] } } } };
-
-      expect(classifyTypeChange(before, after)).toBe('compatible');
-    });
-
-    it('should classify the omc fixture plan with a new property in then as compatible', () => {
-      const plan: RecordType = omc.types.plan;
-      const next = {
-        ...plan,
-        then: {
-          ...omc.types.plan.then,
-          properties: { diff: { type: 'string' }, note: { type: 'string' } },
-        },
-      };
-
-      expect(classifyTypeChange(plan, next)).toBe('compatible');
-    });
+      {
+        if: { properties: { a: { const: 1 }, b: { const: 1 } } },
+        then: { required: ['t'] },
+        else: { required: ['x'] },
+      },
+    ],
+    [
+      'a widened enum inside if',
+      { if: { properties: { a: { enum: [1] } } }, then: { required: ['t'] } },
+      { if: { properties: { a: { enum: [1, 2] } } }, then: { required: ['t'] } },
+    ],
+    ['a widened enum inside anyOf', { anyOf: [{ enum: [1] }] }, { anyOf: [{ enum: [1, 2] }] }],
+    ['a widened enum inside allOf', { allOf: [{ enum: [1] }] }, { allOf: [{ enum: [1, 2] }] }],
+    ['a widened enum inside oneOf', { oneOf: [{ enum: [1] }] }, { oneOf: [{ enum: [1, 2] }] }],
+  ])('should classify %s as breaking', (_change, before, after) => {
+    expect(classifyTypeChange(before, after)).toBe('breaking');
   });
 });
 
@@ -315,9 +250,11 @@ describe('attachmentFields', () => {
     expect(attachmentFields(schema)).toEqual([]);
   });
 
-  it('should find no attachment field in a schema without properties', () => {
-    expect(attachmentFields({ type: 'object' })).toEqual([]);
-    expect(attachmentFields({ properties: 'x' })).toEqual([]);
+  it.each([
+    ['no properties', { type: 'object' }],
+    ['properties that is not an object', { properties: 'x' }],
+  ])('should find no attachment field in a schema with %s', (_label, schema) => {
+    expect(attachmentFields(schema)).toEqual([]);
   });
 
   it('should look only at the first level of properties', () => {
@@ -331,6 +268,18 @@ describe('attachmentFields', () => {
   });
 });
 
+describe('RECORD_TYPE_MAX_CHARS', () => {
+  it('should be 16,000', () => {
+    expect(RECORD_TYPE_MAX_CHARS).toBe(16_000);
+  });
+});
+
+describe('GATE_QUESTIONS_MAX', () => {
+  it('should be 50', () => {
+    expect(GATE_QUESTIONS_MAX).toBe(50);
+  });
+});
+
 describe('RecordType', () => {
   /** Objeto cujo JCS tem exatamente `chars` caracteres. */
   function withCanonicalLength(chars: number) {
@@ -338,36 +287,48 @@ describe('RecordType', () => {
     return { k: 'x'.repeat(chars - overhead) };
   }
 
-  it('should accept only a JSON object', () => {
+  it('should accept a JSON object', () => {
     expect(RecordType.safeParse({ type: 'object' }).success).toBe(true);
+  });
+
+  it('should refuse a value that is not a JSON object', () => {
     expect(RecordType.safeParse('x').success).toBe(false);
   });
 
-  it('should accept a type only up to the canonical cap', () => {
-    const atCap = withCanonicalLength(RECORD_TYPE_MAX_CHARS);
+  it.each([
+    { chars: RECORD_TYPE_MAX_CHARS, accepted: true },
+    { chars: RECORD_TYPE_MAX_CHARS + 1, accepted: false },
+  ])(
+    'should return success $accepted for a type of $chars canonical characters',
+    ({ chars, accepted }) => {
+      const value = withCanonicalLength(chars);
 
-    expect(RECORD_TYPE_MAX_CHARS).toBe(16_000);
-    expect((canonicalize(atCap) ?? '').length).toBe(RECORD_TYPE_MAX_CHARS);
-    expect(RecordType.safeParse(atCap).success).toBe(true);
-    expect(RecordType.safeParse(withCanonicalLength(RECORD_TYPE_MAX_CHARS + 1)).success).toBe(
-      false,
-    );
-  });
+      expect((canonicalize(value) ?? '').length).toBe(chars);
+
+      expect(RecordType.safeParse(value).success).toBe(accepted);
+    },
+  );
 
   it('should refuse a lone surrogate without throwing', () => {
     expect(RecordType.safeParse({ description: '\ud800' }).success).toBe(false);
   });
+
+  it.each(fixtureTypes)('should accept the type %s of the fixture domains', (_name, schema) => {
+    expect(RecordType.safeParse(schema).success).toBe(true);
+  });
 });
 
 describe('RelationName', () => {
-  it('should require a valid name and kind', () => {
+  it('should accept a valid name and kind', () => {
     expect(RelationName.safeParse({ name: 'approves', kind: 'supports' }).success).toBe(true);
-    expect(RelationName.safeParse({ name: 'approves', kind: 'nope' }).success).toBe(false);
-    expect(RelationName.safeParse({ name: 'Approves', kind: 'supports' }).success).toBe(false);
   });
 
-  it('should refuse an unknown field', () => {
-    expect(RelationName.safeParse({ name: 'a', kind: 'supports', extra: 1 }).success).toBe(false);
+  it.each([
+    ['an unknown kind', { name: 'approves', kind: 'nope' }],
+    ['a name with an uppercase letter', { name: 'Approves', kind: 'supports' }],
+    ['an unknown field', { name: 'a', kind: 'supports', extra: 1 }],
+  ])('should refuse %s', (_label, raw) => {
+    expect(RelationName.safeParse(raw).success).toBe(false);
   });
 
   // Omitida a ponta aceita qualquer tipo; lista vazia nunca quer dizer "nenhum tipo".
@@ -382,22 +343,14 @@ describe('RelationName', () => {
     );
   });
 
-  it('should accept from and to omitted or with distinct names', () => {
-    expect(RelationName.safeParse({ name: 'a', kind: 'supports', from: ['x', 'y'] }).success).toBe(
-      true,
-    );
-    expect(RelationName.safeParse({ name: 'a', kind: 'supports', to: ['x'] }).success).toBe(true);
+  it.each([
+    ['from with distinct names', { from: ['x', 'y'] }],
+    ['to with one name', { to: ['x'] }],
+  ])('should accept %s', (_label, ends) => {
+    expect(RelationName.safeParse({ name: 'a', kind: 'supports', ...ends }).success).toBe(true);
   });
 
   // Definição é imutável: sem teto, `from`/`to`/`where` gigantes incham o process.json de todo processo novo.
-  it('should refuse 100,000 names in from', () => {
-    const from = Array.from({ length: 100_000 }, (_, i) => `t${i}`);
-
-    expect(RelationName.safeParse({ name: 'approves', kind: 'supports', from }).success).toBe(
-      false,
-    );
-  });
-
   // Name tem no máximo 63 caracteres: 200 nomes cabem nos 16.000 canônicos e 260 não.
   it.each([
     { count: 200, accepted: true },
@@ -412,10 +365,27 @@ describe('RelationName', () => {
       );
     },
   );
+
+  it.each(fixtureRelations)(
+    'should accept the relation %s of the fixture domains',
+    (_name, relation) => {
+      expect(RelationName.safeParse(relation).success).toBe(true);
+    },
+  );
 });
 
 describe('Gate', () => {
   const question = { kind: 'occurred', select: { type: 'review' } };
+
+  /** Gate cujo JCS tem exatamente `chars` caracteres, com o excesso no valor de um `where`. */
+  function gateWithCanonicalLength(chars: number) {
+    const gate = (padding: string) => ({
+      name: 'ready',
+      questions: [{ kind: 'occurred', select: { type: 'review', where: { k: padding } } }],
+    });
+    const overhead = (canonicalize(gate('')) ?? '').length;
+    return gate('x'.repeat(chars - overhead));
+  }
 
   it('should refuse a where with 100,000 keys', () => {
     const where = Object.fromEntries(Array.from({ length: 100_000 }, (_, i) => [`k${i}`, i]));
@@ -430,26 +400,43 @@ describe('Gate', () => {
     expect(Gate.safeParse({ name: 'ready', questions: [light] }).success).toBe(true);
   });
 
-  it('should require a name and questions with a kind', () => {
+  it.each([
+    { chars: RELATION_GATE_MAX_CHARS, accepted: true },
+    { chars: RELATION_GATE_MAX_CHARS + 1, accepted: false },
+  ])(
+    'should return success $accepted for a gate of $chars canonical characters',
+    ({ chars, accepted }) => {
+      const gate = gateWithCanonicalLength(chars);
+
+      expect((canonicalize(gate) ?? '').length).toBe(chars);
+
+      expect(Gate.safeParse(gate).success).toBe(accepted);
+    },
+  );
+
+  it('should accept a name and questions with a kind', () => {
     expect(Gate.safeParse({ name: 'ready', questions: [question] }).success).toBe(true);
-    expect(Gate.safeParse({ name: 'ready', questions: [{}] }).success).toBe(false);
-    expect(Gate.safeParse({ name: 'ready' }).success).toBe(false);
   });
 
-  // Gate vazio nunca barra, e toda mudança de gate é minor: a definição não o admite.
-  it('should refuse empty questions', () => {
-    expect(Gate.safeParse({ name: 'ready', questions: [] }).success).toBe(false);
+  it.each([
+    ['a question without kind', { name: 'ready', questions: [{}] }],
+    ['no questions field', { name: 'ready' }],
+    // Gate vazio nunca barra, e toda mudança de gate é minor: a definição não o admite.
+    ['empty questions', { name: 'ready', questions: [] }],
+  ])('should refuse %s', (_label, raw) => {
+    expect(Gate.safeParse(raw).success).toBe(false);
   });
 
-  it('should accept questions only up to the cap', () => {
-    const questions = (count: number) => Array.from({ length: count }, () => question);
+  it.each([
+    { count: GATE_QUESTIONS_MAX, accepted: true },
+    { count: GATE_QUESTIONS_MAX + 1, accepted: false },
+  ])('should return success $accepted for a gate of $count questions', ({ count, accepted }) => {
+    const questions = Array.from({ length: count }, () => question);
 
-    expect(GATE_QUESTIONS_MAX).toBe(50);
-    expect(
-      Gate.safeParse({ name: 'ready', questions: questions(GATE_QUESTIONS_MAX) }).success,
-    ).toBe(true);
-    expect(
-      Gate.safeParse({ name: 'ready', questions: questions(GATE_QUESTIONS_MAX + 1) }).success,
-    ).toBe(false);
+    expect(Gate.safeParse({ name: 'ready', questions }).success).toBe(accepted);
+  });
+
+  it.each(fixtureGates)('should accept the gate %s of the fixture domains', (_name, gate) => {
+    expect(Gate.safeParse(gate).success).toBe(true);
   });
 });

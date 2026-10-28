@@ -77,7 +77,7 @@ Código-fonte TypeScript do servidor MCP stdio `hexlog`: expõe exatamente 12 to
 | `mcp/tools/` | As 12 tools, registradas em quatro famílias (see `mcp/tools/AGENTS.md`) |
 
 ## Navigation Notes
-- Specs em `test/` espelham os módulos: `test/domain/`, `test/adapters/`, `test/commands/`, `test/queries/`, `test/mcp/` e `test/shared/` cobrem a árvore de `src/`; na raiz de `test/` ficam `directory.spec.ts`, `compose.spec.ts`, `guard.spec.ts` (cobre também `installation.ts`), `bash-guard.spec.ts`, `archive.spec.ts`, `stdio.e2e.spec.ts` (bundle real de `server.ts`), os specs dos scripts e `package.spec.ts`.
+- Specs em `test/` espelham os módulos: `test/domain/`, `test/adapters/`, `test/commands/`, `test/queries/`, `test/mcp/` e `test/shared/` cobrem a árvore de `src/`; na raiz de `test/` ficam `directory.spec.ts`, `compose.spec.ts`, `guard.spec.ts`, `installation.spec.ts` (cobre `installation.ts`), `bash-guard.spec.ts`, `archive.spec.ts`, `stdio.e2e.spec.ts` (bundle real de `server.ts`), os specs dos scripts e `package.spec.ts`.
 
 ## Dependencies
 ### Internal

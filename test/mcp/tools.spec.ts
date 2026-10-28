@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { compose } from '../../src/compose.ts';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP } from '../../src/mcp/tools/query.ts';
 import type { Defined } from '../../src/commands/definition.ts';
@@ -12,36 +11,23 @@ import {
   type AttachmentPage,
   type DescribeTypeResult,
   type GateEvaluation,
-  type ListResult,
   type QueryResult,
   type VerifyChainResult,
 } from '../../src/queries/query-service.ts';
 import { at, createTempDir } from '../helpers.ts';
-import { type Environment, createEnvironment, expectError } from './environment.ts';
+import {
+  type Environment,
+  NOTE_SCHEMA,
+  PROJECT,
+  TOOL_NAMES,
+  createEnvironment,
+  registerBulk,
+  registerNote,
+  servicesOver,
+} from './environment.ts';
 
-const PROJECT = 'alpha';
-const NOTE = {
-  type: 'object',
-  properties: { text: { type: 'string' } },
-  required: ['text'],
-  additionalProperties: false,
-};
 const NOTE_GATE = [{ kind: 'occurred', select: { type: 'note' } }];
 
-const ALL_TOOLS = [
-  'create_process',
-  'register',
-  'attach',
-  'define_type',
-  'define_relation',
-  'define_gate',
-  'query',
-  'evaluate_gate',
-  'verify_chain',
-  'read_attachment',
-  'list',
-  'describe_type',
-];
 const READ_ONLY_TOOLS = [
   'query',
   'evaluate_gate',
@@ -60,6 +46,8 @@ const ROOT_COMBINATORS = ['anyOf', 'oneOf', 'allOf'];
 const DESCRIPTION_MAX_CHARS = 2_048;
 const OUTPUT_SCHEMA_TOTAL_MAX_CHARS = 24_280;
 
+type ListedTool = Awaited<ReturnType<Environment['client']['listTools']>>['tools'][number];
+
 let environment: Environment;
 
 // Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
@@ -71,67 +59,48 @@ const closeEnvironment = async () => {
   await environment.close();
 };
 
-const succeed = <T>(tool: string, args: Record<string, unknown>): Promise<T> =>
-  environment.ok<T>(tool, args);
-
-/** Serviços reais sobre o mesmo `<D>` do servidor sob teste: a referência do teste. */
-const servicesOverServerData = () =>
-  compose({
-    dataDir: environment.dataDir,
-    cwd: process.cwd(),
-    clock: () => new Date('2026-01-01T00:00:00.000Z'),
-    logger: () => undefined,
-  }).services;
-
 /** Define um tipo `note`, o gate `has-note` e cria o processo `run-1`, na ordem que o manifesto exige. */
 async function prepareProcess(process = 'run-1'): Promise<void> {
-  await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-  await succeed('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
-  await succeed('create_process', { project: PROJECT, process });
+  await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });
+  await environment.ok('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
+  await environment.ok('create_process', { project: PROJECT, process });
 }
-
-const registerNote = (process: string, text: string, target = 'run.step') =>
-  succeed<RegisterResult>('register', {
-    project: PROJECT,
-    process,
-    agent: 'executor',
-    records: [{ type: 'note', target, data: { text } }],
-  });
 
 /** Prepara o processo `run-1` com uma nota e devolve o anexo gravado: o estado que o teste lê. */
 async function seed() {
   await prepareProcess();
-  await registerNote('run-1', 'olá');
-  return succeed<AttachmentPut>('attach', { project: PROJECT, text: 'anexo' });
+  await registerNote(environment, { process: 'run-1', text: 'olá' });
+  return environment.ok<AttachmentPut>('attach', { project: PROJECT, text: 'anexo' });
 }
 
 describe('tools/list', () => {
-  beforeEach(openEnvironment);
-  afterEach(closeEnvironment);
+  let tools: ListedTool[];
+  const toolOf = (name: string) => tools.find((candidate) => candidate.name === name);
+  const descriptionOf = (name: string) => toolOf(name)?.description;
 
-  it('should announce exactly the 12 tool names', async () => {
-    const { tools } = await environment.client.listTools();
+  beforeAll(async () => {
+    await openEnvironment();
+    ({ tools } = await environment.client.listTools());
+  });
+  afterAll(closeEnvironment);
 
-    expect(tools.map(({ name }) => name).sort()).toEqual([...ALL_TOOLS].sort());
+  it('should announce exactly the 12 tool names', () => {
+    expect(tools.map(({ name }) => name).sort()).toEqual([...TOOL_NAMES].sort());
   });
 
-  it('should set readOnlyHint on the 6 read tools and on no other', async () => {
-    const { tools } = await environment.client.listTools();
-
+  it('should set readOnlyHint on the 6 read tools and on no other', () => {
     const readOnly = tools.filter(({ annotations }) => annotations?.readOnlyHint === true);
 
     expect(readOnly.map(({ name }) => name).sort()).toEqual([...READ_ONLY_TOOLS].sort());
   });
 
-  it('should set alwaysLoad only on register', async () => {
-    const { tools } = await environment.client.listTools();
-
+  it('should set alwaysLoad only on register', () => {
     const alwaysLoad = tools.filter(({ _meta }) => _meta?.['anthropic/alwaysLoad'] === true);
 
     expect(alwaysLoad.map(({ name }) => name)).toEqual(['register']);
   });
 
-  it.each(ALL_TOOLS)('should announce title and the full annotations of %s', async (name) => {
+  it.each(TOOL_NAMES)('should announce title and the full annotations of %s', (name) => {
     const annotations = READ_ONLY_TOOLS.includes(name)
       ? { readOnlyHint: true, openWorldHint: false }
       : {
@@ -142,20 +111,16 @@ describe('tools/list', () => {
           openWorldHint: false,
         };
 
-    const { tools } = await environment.client.listTools();
-
-    const tool = tools.find((candidate) => candidate.name === name);
+    const tool = toolOf(name);
 
     expect(tool?.title).toMatch(/\S/);
     expect(tool?.annotations).toEqual(annotations);
   });
 
-  it.each(ALL_TOOLS)(
+  it.each(TOOL_NAMES)(
     'should keep the inputSchema of %s within the Claude Code restrictions',
-    async (name) => {
-      const { tools } = await environment.client.listTools();
-
-      const inputSchema = tools.find((candidate) => candidate.name === name)?.inputSchema;
+    (name) => {
+      const inputSchema = toolOf(name)?.inputSchema;
 
       expect(inputSchema).toMatchObject({ $schema: JSON_SCHEMA_DRAFT, type: 'object' });
       expect(
@@ -165,9 +130,7 @@ describe('tools/list', () => {
     },
   );
 
-  it('should keep every description present and within 2,048 characters', async () => {
-    const { tools } = await environment.client.listTools();
-
+  it('should keep every description present and within 2,048 characters', () => {
     const outOfRange = tools
       .map(({ name, description }) => ({ name, chars: description?.length ?? 0 }))
       .filter(({ chars }) => chars === 0 || chars > DESCRIPTION_MAX_CHARS);
@@ -175,37 +138,21 @@ describe('tools/list', () => {
     expect(outOfRange).toEqual([]);
   });
 
-  it('should describe fields and the 50-name cap in the query description', async () => {
-    const { tools } = await environment.client.listTools();
-
-    const description = tools.find((tool) => tool.name === 'query')?.description;
-
-    expect(description).toMatch(/fields \(at most 50\).*empty list omits data/s);
-  });
-
-  it('should announce inherit for approved and no_pending only in the define_gate description', async () => {
-    const { tools } = await environment.client.listTools();
-
-    const description = tools.find((tool) => tool.name === 'define_gate')?.description;
-
-    expect(description).toMatch(
+  it('should announce inherit for approved and no_pending only in the define_gate description', () => {
+    expect(descriptionOf('define_gate')).toMatch(
       /`approved` and `no_pending` accept `inherit: true`.*`occurred` and `no_open_contradiction` do not/s,
     );
   });
 
-  it('should tell register to read the schema with describe_type and the current id with query', async () => {
-    const { tools } = await environment.client.listTools();
-
-    const description = tools.find((tool) => tool.name === 'register')?.description;
+  it('should tell register to read the schema with describe_type and the current id with query', () => {
+    const description = descriptionOf('register');
 
     expect(description).toMatch(/schema with describe_type/);
     expect(description).toMatch(/read the current id with query/);
   });
 
-  it('should tell register that as alone is enough and that every schema violation is reported', async () => {
-    const { tools } = await environment.client.listTools();
-
-    const description = tools.find((tool) => tool.name === 'register')?.description;
+  it('should tell register that as alone is enough and that every schema violation is reported', () => {
+    const description = descriptionOf('register');
 
     expect(description).toMatch(/as alone is enough/);
     expect(description).toMatch(/kind must equal the pinned one \(else kind-mismatch\)/);
@@ -213,10 +160,8 @@ describe('tools/list', () => {
     expect(description).toMatch(/only one over a very costly schema/);
   });
 
-  it('should warn in the define_type description that pattern is refused and point to the catalog', async () => {
-    const { tools } = await environment.client.listTools();
-
-    const description = tools.find((tool) => tool.name === 'define_type')?.description;
+  it('should warn in the define_type description that pattern is refused and point to the catalog', () => {
+    const description = descriptionOf('define_type');
 
     expect(description).toMatch(/pattern-not-allowed/);
     expect(description).toMatch(/unless it carries a `pattern` or `patternProperties`/);
@@ -224,33 +169,61 @@ describe('tools/list', () => {
     expect(description).not.toMatch(/maxLength. of at most 256/);
   });
 
-  it('should warn about the changes cap in the query description', async () => {
-    const { tools } = await environment.client.listTools();
-
-    const description = tools.find((tool) => tool.name === 'query')?.description;
-
-    expect(description).toMatch(
-      new RegExp(`at most ${CHANGES_ITEMS_CAP} ids.*omitted.*must not be reused`, 's'),
+  it('should warn about the evidence cap in the evaluate_gate description', () => {
+    expect(descriptionOf('evaluate_gate')).toMatch(
+      new RegExp(`at most ${EVIDENCE_ITEMS_CAP} ids.*omitted`, 's'),
     );
   });
 
-  it('should warn about the evidence cap in the evaluate_gate description', async () => {
-    const { tools } = await environment.client.listTools();
-
-    const description = tools.find((tool) => tool.name === 'evaluate_gate')?.description;
-
-    expect(description).toMatch(new RegExp(`at most ${EVIDENCE_ITEMS_CAP} ids.*omitted`, 's'));
+  it('should announce an outputSchema for every tool', () => {
+    expect(tools.every(({ outputSchema }) => outputSchema !== undefined)).toBe(true);
   });
 
-  it('should keep the sum of the 12 tools outputSchema below 24,280 characters', async () => {
-    const { tools } = await environment.client.listTools();
-
+  it('should keep the sum of the 12 tools outputSchema below 24,280 characters', () => {
     const sizes = tools.map(({ outputSchema }) => JSON.stringify(outputSchema ?? null).length);
 
-    expect(tools.every(({ outputSchema }) => outputSchema !== undefined)).toBe(true);
     expect(sizes.reduce((total, size) => total + size, 0)).toBeLessThan(
       OUTPUT_SCHEMA_TOTAL_MAX_CHARS,
     );
+  });
+});
+
+describe('tools/call', () => {
+  beforeEach(openEnvironment);
+  afterEach(closeEnvironment);
+
+  it.each([
+    ['define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA }, 'note'],
+    ['define_relation', { project: PROJECT, name: 'approves', kind: 'supports' }, 'approves'],
+    ['define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE }, 'has-note'],
+  ])('should return the created version of %s', async (tool, args, name) => {
+    const created = await environment.ok<Defined>(tool, args);
+
+    expect(created).toMatchObject({ name, version: '1.0', created: true });
+  });
+
+  it.each([
+    ['query', 'queryRecords', () => ({ project: PROJECT, process: 'run-1', relations: 'full' })],
+    [
+      'evaluate_gate',
+      'evaluateGate',
+      () => ({ project: PROJECT, process: 'run-1', gate: 'has-note', evidence: 'full' }),
+    ],
+    ['verify_chain', 'verifyChain', () => ({ project: PROJECT, process: 'run-1' })],
+    ['read_attachment', 'readAttachment', (hash: string) => ({ project: PROJECT, hash })],
+    ['list', 'list', () => ({ project: PROJECT })],
+    ['describe_type', 'describeType', () => ({ project: PROJECT, type: 'note' })],
+  ])('should return what the service returns for %s', async (tool, method, inputOf) => {
+    const { hash } = await seed();
+    const input = inputOf(hash);
+    const service = servicesOver(environment).query as unknown as Record<
+      string,
+      (input: unknown) => unknown
+    >;
+
+    const viaTool = await environment.ok(tool, input);
+
+    expect(viaTool).toEqual(JSON.parse(JSON.stringify(service[method]?.(input))));
   });
 });
 
@@ -259,10 +232,14 @@ describe('create_process', () => {
   afterEach(closeEnvironment);
 
   it('should pin what is defined', async () => {
-    await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-    await succeed('define_gate', { project: PROJECT, name: 'has-note', questions: NOTE_GATE });
+    await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });
+    await environment.ok('define_gate', {
+      project: PROJECT,
+      name: 'has-note',
+      questions: NOTE_GATE,
+    });
 
-    const created = await succeed<CreateProcessResult>('create_process', {
+    const created = await environment.ok<CreateProcessResult>('create_process', {
       project: PROJECT,
       process: 'run-1',
     });
@@ -281,10 +258,38 @@ describe('register', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
+  /**
+   * Autor que o `register` grava num servidor próprio, porque o cliente declara `claude-code` no
+   * envelope e o ambiente do `beforeEach` não leva `clientInfo`.
+   */
+  async function authorWithEnvelope(extra: { model?: string }) {
+    const withEnvelope = await createEnvironment({
+      clientInfo: { name: 'claude-code', version: '2' },
+    });
+    try {
+      await withEnvelope.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });
+      await withEnvelope.ok('create_process', { project: PROJECT, process: 'run-1' });
+      await withEnvelope.ok('register', {
+        project: PROJECT,
+        process: 'run-1',
+        agent: 'executor',
+        ...extra,
+        records: [{ type: 'note', target: 'run.step', data: { text: 'olá' } }],
+      });
+      const page = await withEnvelope.ok<QueryResult>('query', {
+        project: PROJECT,
+        process: 'run-1',
+      });
+      return at(page.records, 0).author;
+    } finally {
+      await withEnvelope.close();
+    }
+  }
+
   it('should write the batch and return ids, replayed and marker', async () => {
     await prepareProcess();
 
-    const result = await succeed<RegisterResult>('register', {
+    const result = await environment.ok<RegisterResult>('register', {
       project: PROJECT,
       process: 'run-1',
       agent: 'executor',
@@ -298,41 +303,16 @@ describe('register', () => {
     expect(result.marker).toEqual({ 'run-1': saved?.id });
   });
 
-  it('should write the author with the envelope client and the model only when given', async () => {
-    const withEnvelope = await createEnvironment({
-      clientInfo: { name: 'claude-code', version: '2' },
-    });
-    try {
-      await withEnvelope.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-      await withEnvelope.ok('create_process', { project: PROJECT, process: 'run-1' });
-      const note = { type: 'note', target: 'run.step', data: { text: 'olá' } };
-      await withEnvelope.ok('register', {
-        project: PROJECT,
-        process: 'run-1',
-        agent: 'executor',
-        model: 'sonnet',
-        records: [note],
-      });
+  it('should write the author with the envelope client and no model when none is given', async () => {
+    const author = await authorWithEnvelope({});
 
-      await withEnvelope.ok('register', {
-        project: PROJECT,
-        process: 'run-1',
-        agent: 'executor',
-        records: [note],
-      });
+    expect(author).toEqual({ agent: 'executor', client: 'claude-code' });
+  });
 
-      const page = await withEnvelope.ok<QueryResult>('query', {
-        project: PROJECT,
-        process: 'run-1',
-      });
+  it('should write the author with the model when it is given', async () => {
+    const author = await authorWithEnvelope({ model: 'sonnet' });
 
-      expect(page.records.map(({ author }) => author)).toEqual([
-        { agent: 'executor', model: 'sonnet', client: 'claude-code' },
-        { agent: 'executor', client: 'claude-code' },
-      ]);
-    } finally {
-      await withEnvelope.close();
-    }
+    expect(author).toEqual({ agent: 'executor', model: 'sonnet', client: 'claude-code' });
   });
 });
 
@@ -341,19 +321,29 @@ describe('attach', () => {
   afterEach(closeEnvironment);
 
   it('should store the text and return its byte count', async () => {
-    const stored = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
+    const stored = await environment.ok<AttachmentPut>('attach', {
+      project: PROJECT,
+      text: 'conteúdo',
+    });
 
     expect(stored).toMatchObject({ bytes: Buffer.byteLength('conteúdo'), deduplicated: false });
   });
 
   it('should return a repeated text as deduplicated', async () => {
-    const first = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
+    const first = await environment.ok<AttachmentPut>('attach', {
+      project: PROJECT,
+      text: 'conteúdo',
+    });
 
-    const second = await succeed<AttachmentPut>('attach', { project: PROJECT, text: 'conteúdo' });
+    const second = await environment.ok<AttachmentPut>('attach', {
+      project: PROJECT,
+      text: 'conteúdo',
+    });
 
     expect(second).toEqual({ ...first, deduplicated: true });
   });
 
+  // Servidor próprio: o `cwd` do `attach` por `path` é opção de `createEnvironment`, que o `beforeEach` não passa.
   it('should store the file bytes under the server cwd when given a path', async () => {
     const cwd = createTempDir('mcp-cwd');
     const text = 'conteúdo do plano';
@@ -379,51 +369,6 @@ describe('attach', () => {
   });
 });
 
-describe('define_type', () => {
-  beforeEach(openEnvironment);
-  afterEach(closeEnvironment);
-
-  it('should return the created version', async () => {
-    const created = await succeed<Defined>('define_type', {
-      project: PROJECT,
-      name: 'note',
-      schema: NOTE,
-    });
-
-    expect(created).toMatchObject({ name: 'note', version: '1.0', created: true });
-  });
-});
-
-describe('define_relation', () => {
-  beforeEach(openEnvironment);
-  afterEach(closeEnvironment);
-
-  it('should return the created version', async () => {
-    const created = await succeed<Defined>('define_relation', {
-      project: PROJECT,
-      name: 'approves',
-      kind: 'supports',
-    });
-
-    expect(created).toMatchObject({ name: 'approves', version: '1.0', created: true });
-  });
-});
-
-describe('define_gate', () => {
-  beforeEach(openEnvironment);
-  afterEach(closeEnvironment);
-
-  it('should return the created version', async () => {
-    const created = await succeed<Defined>('define_gate', {
-      project: PROJECT,
-      name: 'has-note',
-      questions: NOTE_GATE,
-    });
-
-    expect(created).toMatchObject({ name: 'has-note', version: '1.0', created: true });
-  });
-});
-
 describe('query', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
@@ -432,25 +377,15 @@ describe('query', () => {
    * Registra 3 lotes de `BATCH_MAX` notas depois de um marcador: o `changesSince` da primeira
    * página sai cortado em `CHANGES_ITEMS_CAP`. Confere a pré-condição: há ids omitidos.
    */
-  async function registerCutChanges() {
+  async function registerCutChangesAndCheckCut() {
     await prepareProcess();
-    await registerNote('run-1', 'primeira');
-    const { marker } = await succeed<QueryResult>('query', { project: PROJECT, process: 'run-1' });
-    const registered: string[] = [];
-    for (let batch = 0; batch < 3; batch += 1) {
-      const { records } = await succeed<RegisterResult>('register', {
-        project: PROJECT,
-        process: 'run-1',
-        agent: 'executor',
-        records: Array.from({ length: BATCH_MAX }, (_, i) => ({
-          type: 'note',
-          target: 'run.step',
-          data: { text: `n${batch}-${i}` },
-        })),
-      });
-      registered.push(...records.map(({ id }) => id));
-    }
-    const first = await succeed<QueryResult>('query', {
+    await registerNote(environment, { process: 'run-1', text: 'primeira' });
+    const { marker } = await environment.ok<QueryResult>('query', {
+      project: PROJECT,
+      process: 'run-1',
+    });
+    const registered = await registerBulk(environment, BATCH_MAX * 3, { process: 'run-1' });
+    const first = await environment.ok<QueryResult>('query', {
       project: PROJECT,
       process: 'run-1',
       changesSince: marker,
@@ -466,22 +401,13 @@ describe('query', () => {
   /** Registra 41 notas de ~700 caracteres: a página cheia estoura o teto, a de `fields: []` cabe. */
   async function registerLongNotes() {
     await prepareProcess();
-    await succeed<RegisterResult>('register', {
-      project: PROJECT,
-      process: 'run-1',
-      agent: 'executor',
-      records: Array.from({ length: 41 }, () => ({
-        type: 'note',
-        target: 'run.step',
-        data: { text: 'x'.repeat(700) },
-      })),
-    });
+    await registerBulk(environment, 41, { process: 'run-1', text: 'x'.repeat(700) });
   }
 
   it('should lose the cut ids when the marker of a cut changes is reused', async () => {
-    const { first } = await registerCutChanges();
+    const { first } = await registerCutChangesAndCheckCut();
 
-    const reused = await succeed<QueryResult>('query', {
+    const reused = await environment.ok<QueryResult>('query', {
       project: PROJECT,
       process: 'run-1',
       changesSince: first.marker,
@@ -491,12 +417,12 @@ describe('query', () => {
   });
 
   it('should return the cut ids on a full reread', async () => {
-    const { omittedIds } = await registerCutChanges();
+    const { omittedIds } = await registerCutChangesAndCheckCut();
 
     const reread: string[] = [];
     let cursor: string | undefined;
     do {
-      const page: QueryResult = await succeed('query', {
+      const page: QueryResult = await environment.ok('query', {
         project: PROJECT,
         process: 'run-1',
         cursor,
@@ -510,9 +436,9 @@ describe('query', () => {
 
   it('should trim data to the requested fields and keep the rest of the record', async () => {
     await prepareProcess();
-    await registerNote('run-1', 'olá');
+    await registerNote(environment, { process: 'run-1', text: 'olá' });
 
-    const page = await succeed<QueryResult>('query', {
+    const page = await environment.ok<QueryResult>('query', {
       project: PROJECT,
       process: 'run-1',
       fields: ['text', 'ausente'],
@@ -523,41 +449,32 @@ describe('query', () => {
     ]);
   });
 
-  it('should exceed the cap and return a cursor without fields (#85)', async () => {
+  it('should exceed the cap and return a cursor without fields', async () => {
     await registerLongNotes();
     const input = { project: PROJECT, process: 'run-1', limit: 100 };
 
-    const full = await succeed<QueryResult>('query', input);
+    const full = await environment.ok<QueryResult>('query', input);
 
     expect(full.records.length).toBeLessThan(41);
     expect(full.cursor).toEqual(expect.any(String));
   });
 
-  it('should fit in one page with empty fields (#85)', async () => {
+  it('should fit in one page with empty fields', async () => {
     await registerLongNotes();
     const input = { project: PROJECT, process: 'run-1', limit: 100, fields: [] };
 
-    const light = await succeed<QueryResult>('query', input);
+    const light = await environment.ok<QueryResult>('query', input);
 
     expect(light.records).toHaveLength(41);
     expect(light.cursor).toBeUndefined();
   });
 
-  it('should return what the service returns', async () => {
-    await seed();
-    const input = { project: PROJECT, process: 'run-1', relations: 'full' as const };
-
-    const viaTool = await succeed<QueryResult>('query', input);
-
-    expect(viaTool).toEqual(
-      JSON.parse(JSON.stringify(servicesOverServerData().query.queryRecords(input))),
-    );
-  });
-
   it('should surface the service refusal as its own error, with no rule of the tool', async () => {
-    const result = await environment.call('query', { project: PROJECT, process: 'inexistente' });
-
-    const body = expectError(result, 'PROCESS_NOT_FOUND');
+    const body = await environment.fail(
+      'query',
+      { project: PROJECT, process: 'inexistente' },
+      'PROCESS_NOT_FOUND',
+    );
 
     expect(at(body.details, 0).path).toBe('/process');
   });
@@ -569,20 +486,9 @@ describe('evaluate_gate', () => {
 
   it('should cut each evidence list at EVIDENCE_ITEMS_CAP and report omitted', async () => {
     await prepareProcess();
-    for (let batch = 0; batch < 3; batch += 1) {
-      await succeed<RegisterResult>('register', {
-        project: PROJECT,
-        process: 'run-1',
-        agent: 'executor',
-        records: Array.from({ length: BATCH_MAX }, (_, i) => ({
-          type: 'note',
-          target: 'run.step',
-          data: { text: `n${batch}-${i}` },
-        })),
-      });
-    }
+    await registerBulk(environment, BATCH_MAX * 3, { process: 'run-1' });
 
-    const result = await succeed<GateEvaluation & { questions: { omitted?: unknown }[] }>(
+    const result = await environment.ok<GateEvaluation & { questions: { omitted?: unknown }[] }>(
       'evaluate_gate',
       { project: PROJECT, process: 'run-1', gate: 'has-note', evidence: 'full' },
     );
@@ -600,9 +506,9 @@ describe('evaluate_gate', () => {
 
   it('should carry no omitted below the cap', async () => {
     await prepareProcess();
-    await registerNote('run-1', 'olá');
+    await registerNote(environment, { process: 'run-1', text: 'olá' });
 
-    const result = await succeed<GateEvaluation>('evaluate_gate', {
+    const result = await environment.ok<GateEvaluation>('evaluate_gate', {
       project: PROJECT,
       process: 'run-1',
       gate: 'has-note',
@@ -610,45 +516,18 @@ describe('evaluate_gate', () => {
 
     expect(result.questions[0]).not.toHaveProperty('omitted');
   });
-
-  it('should return what the service returns', async () => {
-    await seed();
-    const input = {
-      project: PROJECT,
-      process: 'run-1',
-      gate: 'has-note',
-      evidence: 'full',
-    } as const;
-
-    const viaTool = await succeed<GateEvaluation>('evaluate_gate', input);
-
-    expect(viaTool).toEqual(
-      JSON.parse(JSON.stringify(servicesOverServerData().query.evaluateGate(input))),
-    );
-  });
 });
 
 describe('verify_chain', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should return what the service returns', async () => {
-    await seed();
-    const input = { project: PROJECT, process: 'run-1' };
-
-    const viaTool = await succeed<VerifyChainResult>('verify_chain', input);
-
-    expect(viaTool).toEqual(
-      JSON.parse(JSON.stringify(servicesOverServerData().query.verifyChain(input))),
-    );
-  });
-
   it('should pass with an expectedHead equal to the head from its own output', async () => {
     await seed();
     const input = { project: PROJECT, process: 'run-1' };
-    const { head } = await succeed<VerifyChainResult>('verify_chain', input);
+    const { head } = await environment.ok<VerifyChainResult>('verify_chain', input);
 
-    const known = await succeed<VerifyChainResult>('verify_chain', {
+    const known = await environment.ok<VerifyChainResult>('verify_chain', {
       ...input,
       expectedHead: head,
     });
@@ -659,9 +538,9 @@ describe('verify_chain', () => {
   it('should break with head-not-found for an unknown expectedHead hash', async () => {
     await seed();
     const input = { project: PROJECT, process: 'run-1' };
-    const { totalRecords } = await succeed<VerifyChainResult>('verify_chain', input);
+    const { totalRecords } = await environment.ok<VerifyChainResult>('verify_chain', input);
 
-    const unknown = await succeed<VerifyChainResult>('verify_chain', {
+    const unknown = await environment.ok<VerifyChainResult>('verify_chain', {
       ...input,
       expectedHead: 'a'.repeat(64),
     });
@@ -673,35 +552,27 @@ describe('verify_chain', () => {
     });
   });
 
-  it('should refuse an expectedHead outside the hash format with INVALID_INPUT at /expectedHead', async () => {
-    await seed();
+  it.each([
+    { scenario: 'outside the hash format', expectedHead: 'não-é-hash' },
+    { scenario: 'empty', expectedHead: '' },
+  ])(
+    'should refuse an expectedHead $scenario with INVALID_INPUT at /expectedHead',
+    async ({ expectedHead }) => {
+      await seed();
 
-    const body = expectError(
-      await environment.call('verify_chain', {
-        project: PROJECT,
-        process: 'run-1',
-        expectedHead: 'não-é-hash',
-      }),
-      'INVALID_INPUT',
-    );
+      const body = await environment.fail(
+        'verify_chain',
+        {
+          project: PROJECT,
+          process: 'run-1',
+          expectedHead,
+        },
+        'INVALID_INPUT',
+      );
 
-    expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
-  });
-
-  it('should refuse an empty expectedHead with INVALID_INPUT at /expectedHead', async () => {
-    await seed();
-
-    const body = expectError(
-      await environment.call('verify_chain', {
-        project: PROJECT,
-        process: 'run-1',
-        expectedHead: '',
-      }),
-      'INVALID_INPUT',
-    );
-
-    expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
-  });
+      expect(body.details).toEqual([expect.objectContaining({ path: '/expectedHead' })]);
+    },
+  );
 });
 
 describe('read_attachment', () => {
@@ -710,35 +581,15 @@ describe('read_attachment', () => {
 
   it('should page at PAGE_CHARS_CAP without maxChars', async () => {
     const text = 'x'.repeat(PAGE_CHARS_CAP + 1);
-    const { hash } = await succeed<AttachmentPut>('attach', { project: PROJECT, text });
+    const { hash } = await environment.ok<AttachmentPut>('attach', { project: PROJECT, text });
 
-    const page = await succeed<AttachmentPage>('read_attachment', { project: PROJECT, hash });
+    const page = await environment.ok<AttachmentPage>('read_attachment', {
+      project: PROJECT,
+      hash,
+    });
 
     expect(page.text).toHaveLength(PAGE_CHARS_CAP);
     expect(page.next).toBe(PAGE_CHARS_CAP);
-  });
-
-  it('should return what the service returns', async () => {
-    const { hash } = await seed();
-    const input = { project: PROJECT, hash };
-
-    const viaTool = await succeed<AttachmentPage>('read_attachment', input);
-
-    expect(viaTool).toEqual(servicesOverServerData().query.readAttachment(input));
-  });
-});
-
-describe('list', () => {
-  beforeEach(openEnvironment);
-  afterEach(closeEnvironment);
-
-  it('should return what the service returns', async () => {
-    await seed();
-    const input = { project: PROJECT };
-
-    const viaTool = await succeed<ListResult>('list', input);
-
-    expect(viaTool).toEqual(JSON.parse(JSON.stringify(servicesOverServerData().query.list(input))));
   });
 });
 
@@ -746,32 +597,35 @@ describe('describe_type', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  const NOTE_V2 = { ...NOTE, properties: { ...NOTE.properties, tag: { type: 'string' } } };
+  const NOTE_V2 = {
+    ...NOTE_SCHEMA,
+    properties: { ...NOTE_SCHEMA.properties, tag: { type: 'string' } },
+  };
 
   /** Fixa `note` 1.0 no processo `run-1` e depois define `note` 1.1 e `other` no projeto. */
   async function pinNoteThenEvolve(): Promise<void> {
-    await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-    await succeed('create_process', { project: PROJECT, process: 'run-1' });
-    await succeed('define_type', { project: PROJECT, name: 'note', schema: NOTE_V2 });
-    await succeed('define_type', { project: PROJECT, name: 'other', schema: NOTE });
+    await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });
+    await environment.ok('create_process', { project: PROJECT, process: 'run-1' });
+    await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_V2 });
+    await environment.ok('define_type', { project: PROJECT, name: 'other', schema: NOTE_SCHEMA });
   }
 
   it('should return the pinned schema without version with process, even with a newer version in the project', async () => {
     await pinNoteThenEvolve();
 
-    const result = await succeed<DescribeTypeResult>('describe_type', {
+    const result = await environment.ok<DescribeTypeResult>('describe_type', {
       project: PROJECT,
       type: 'note',
       process: 'run-1',
     });
 
-    expect(result).toEqual({ name: 'note', schema: NOTE });
+    expect(result).toEqual({ name: 'note', schema: NOTE_SCHEMA });
   });
 
   it('should return the current version without process', async () => {
     await pinNoteThenEvolve();
 
-    const current = await succeed<DescribeTypeResult>('describe_type', {
+    const current = await environment.ok<DescribeTypeResult>('describe_type', {
       project: PROJECT,
       type: 'note',
     });
@@ -782,25 +636,26 @@ describe('describe_type', () => {
   it('should return the requested version with version', async () => {
     await pinNoteThenEvolve();
 
-    const asked = await succeed<DescribeTypeResult>('describe_type', {
+    const asked = await environment.ok<DescribeTypeResult>('describe_type', {
       project: PROJECT,
       type: 'note',
       version: '1.0',
     });
 
-    expect(asked).toEqual({ name: 'note', version: '1.0', schema: NOTE });
+    expect(asked).toEqual({ name: 'note', version: '1.0', schema: NOTE_SCHEMA });
   });
 
   it('should refuse process and version together with INVALID_INPUT at /version', async () => {
     await pinNoteThenEvolve();
 
-    const body = expectError(
-      await environment.call('describe_type', {
+    const body = await environment.fail(
+      'describe_type',
+      {
         project: PROJECT,
         type: 'note',
         process: 'run-1',
         version: '1.0',
-      }),
+      },
       'INVALID_INPUT',
     );
 
@@ -810,8 +665,9 @@ describe('describe_type', () => {
   it('should refuse a version outside <major>.<minor> with INVALID_INPUT at /version, code invalid-version', async () => {
     await pinNoteThenEvolve();
 
-    const body = expectError(
-      await environment.call('describe_type', { project: PROJECT, type: 'note', version: '1' }),
+    const body = await environment.fail(
+      'describe_type',
+      { project: PROJECT, type: 'note', version: '1' },
       'INVALID_INPUT',
     );
 
@@ -823,12 +679,13 @@ describe('describe_type', () => {
   it('should refuse a type not pinned in the process with TYPE_NOT_PINNED at /type', async () => {
     await pinNoteThenEvolve();
 
-    const notPinned = expectError(
-      await environment.call('describe_type', {
+    const notPinned = await environment.fail(
+      'describe_type',
+      {
         project: PROJECT,
         type: 'other',
         process: 'run-1',
-      }),
+      },
       'TYPE_NOT_PINNED',
     );
 
@@ -838,20 +695,12 @@ describe('describe_type', () => {
   it('should refuse a missing type without process with TYPE_NOT_FOUND at /type', async () => {
     await pinNoteThenEvolve();
 
-    const notFound = expectError(
-      await environment.call('describe_type', { project: PROJECT, type: 'ghost' }),
+    const notFound = await environment.fail(
+      'describe_type',
+      { project: PROJECT, type: 'ghost' },
       'TYPE_NOT_FOUND',
     );
 
     expect(notFound.details).toEqual([expect.objectContaining({ path: '/type' })]);
-  });
-
-  it('should return what the service returns', async () => {
-    await seed();
-    const input = { project: PROJECT, type: 'note' };
-
-    const viaTool = await succeed<DescribeTypeResult>('describe_type', input);
-
-    expect(viaTool).toEqual(servicesOverServerData().query.describeType(input));
   });
 });

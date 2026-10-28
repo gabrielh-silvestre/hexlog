@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { xor } from 'es-toolkit';
+import { parseCatalog } from '../scripts/flow/critic-catalog.ts';
 import { EXIT } from '../scripts/flow/critic-run.ts';
+import { buildRules } from '../scripts/flow/critic-tools.ts';
 import { parsePremises, scanPremises, type ScannedPremise } from '../scripts/flow/sync.ts';
 import { at } from './helpers.ts';
 
@@ -129,8 +132,33 @@ const DIRECTIVES_DOC_CITATION = /docs\/directives\/[\w.-]+\.md/g;
 
 const skillPath = (name: string): string => path.join(repoRoot, '.claude/skills', name, 'SKILL.md');
 
-const flowDoc = (): string => fs.readFileSync(path.join(repoRoot, FLOW_DOC), 'utf8');
+/** Texto de um doc de `docs/directives/`. */
+const directive = (name: string): string => fs.readFileSync(path.join(directivesDir, name), 'utf8');
+
+const flowDoc = (): string => directive('fluxo-hexlog.md');
+const NO_ANSWERED_BY = 'Sem `answeredBy` fixado o ocupante simulado não senta';
+const SUBAGENT_PROTOCOL = /protocolo do subagente/i;
 const skill = (name: string): string => fs.readFileSync(skillPath(name), 'utf8');
+
+const catalog = parseCatalog(fs.readFileSync(path.join(repoRoot, OWNER_SEAT_DOC), 'utf8'));
+
+/** Nomes citados na forma "ação `x`" ou "action `x`": a única forma que a trava fraca enxerga. */
+const citedActionsIn = (text: string): string[] =>
+  [...text.matchAll(/\b(?:ação|action) `([^`]+)`/g)].map(([, name = '']) => name);
+
+/** Valores de cada literal `Nature: a|b|c` do texto. */
+const natureLiteralsIn = (text: string): string[][] =>
+  [...text.matchAll(/Nature: ((?:[a-z-]+\|)+[a-z-]+)/g)].map(([, values = '']) =>
+    values.split('|'),
+  );
+
+/** Literais cujo conjunto de valores difere das naturezas do catálogo. */
+const naturesDifferingFrom = (literals: string[][], natures: string[]): string[][] =>
+  literals.filter((values) => xor(values, natures).length > 0);
+
+/** Corpo de um `## <título>` até o próximo `## `. */
+const sectionBodyOf = (text: string, title: string): string =>
+  new RegExp(`^## ${title}$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm').exec(text)?.[1] ?? '';
 
 // Geração vigente ou futura; `directives-2` segue citado como corte de trabalhos antigos.
 const currentGeneration = /directives-[4-9]/;
@@ -166,6 +194,32 @@ const SENTINEL_SLUG = 'none';
 
 // O doc e a skill `flow-run` dizem a mesma frase: um caso em cada arquivo, a frase num lugar só.
 const CREATE_PROCESS_FORBIDDEN = '`create_process` de `directives-N`';
+
+describe('citedActionsIn', () => {
+  it('should read only the form "action `x`" (or its Portuguese twin)', () => {
+    const text = 'a ação `jury` e a action `web`, mas `local` solta e ações `x`';
+
+    expect(citedActionsIn(text)).toEqual(['jury', 'web']);
+  });
+});
+
+describe('naturesDifferingFrom', () => {
+  const natures = ['repo-fact', 'external-fact', 'choice'];
+
+  it('should flag a literal that drops or adds a nature', () => {
+    const literals = natureLiteralsIn(
+      'Nature: repo-fact|choice e Nature: repo-fact|external-fact|choice|guess',
+    );
+
+    expect(naturesDifferingFrom(literals, natures)).toHaveLength(2);
+  });
+
+  it('should accept a literal with the catalog natures in any order', () => {
+    const literals = natureLiteralsIn('Nature: choice|repo-fact|external-fact');
+
+    expect(naturesDifferingFrom(literals, natures)).toEqual([]);
+  });
+});
 
 describe('linksWithOffsetFrom', () => {
   it('should report positions comparable with manualMarkerOffsetFrom on the same text', () => {
@@ -243,24 +297,15 @@ describe('scanPremises', () => {
 });
 
 describe('SELECTION_TERMS', () => {
-  it('should match the selection terms in Portuguese and English', () => {
-    for (const text of [
-      'amostragem',
-      'Estrato alto',
-      'sorteio',
-      'SPRT',
-      'semente',
-      'seed',
-      'strata',
-    ]) {
+  it.each(['amostragem', 'Estrato alto', 'sorteio', 'SPRT', 'semente', 'seed', 'strata'])(
+    'should match the selection term %j',
+    (text) => {
       expect(SELECTION_TERMS.test(text)).toBe(true);
-    }
-  });
+    },
+  );
 
-  it('should ignore common prose', () => {
-    for (const text of ['estratégia', 'demonstrar', 'needs']) {
-      expect(SELECTION_TERMS.test(text)).toBe(false);
-    }
+  it.each(['estratégia', 'demonstrar', 'needs'])('should ignore the common prose %j', (text) => {
+    expect(SELECTION_TERMS.test(text)).toBe(false);
   });
 });
 
@@ -309,18 +354,21 @@ describe('CLAUDE.md', () => {
     const imports = claudeMdImports();
 
     expect(imports.length).toBeGreaterThan(0);
+
     expect(imports.filter((target) => !fs.existsSync(path.resolve(repoRoot, target)))).toEqual([]);
   });
 
-  it('should import every living doc, with fluxo-hexlog.md first and convencoes.md next', () => {
-    const importedLivingDocs = claudeMdImports().filter((target) =>
-      livingDocs.includes(path.basename(target)),
-    );
+  const importedLivingDocs = (): string[] =>
+    claudeMdImports().filter((target) => livingDocs.includes(path.basename(target)));
 
-    expect(importedLivingDocs).toEqual(
+  it('should import every living doc', () => {
+    expect(importedLivingDocs()).toEqual(
       expect.arrayContaining(livingDocs.map((name) => `docs/directives/${name}`)),
     );
-    expect(importedLivingDocs.slice(0, 2)).toEqual([
+  });
+
+  it('should import fluxo-hexlog.md first and convencoes.md next among the living docs', () => {
+    expect(importedLivingDocs().slice(0, 2)).toEqual([
       'docs/directives/fluxo-hexlog.md',
       'docs/directives/convencoes.md',
     ]);
@@ -335,23 +383,24 @@ describe('CLAUDE.md', () => {
     expect(total).toBeLessThanOrEqual(IMPORTED_MAX_LINES);
   });
 
-  it('should import estrategia.md after fluxo-hexlog.md and convencoes.md', () => {
+  it('should import estrategia.md after convencoes.md', () => {
     const imports = claudeMdImports();
-    const position = (target: string): number => imports.indexOf(target);
 
-    expect(position(STRATEGY_DOC)).toBeGreaterThan(position('docs/directives/convencoes.md'));
-    expect(position('docs/directives/convencoes.md')).toBeGreaterThan(position(FLOW_DOC));
-    expect(position(FLOW_DOC)).toBeGreaterThanOrEqual(0);
+    expect(imports.indexOf(STRATEGY_DOC)).toBeGreaterThan(
+      imports.indexOf('docs/directives/convencoes.md'),
+    );
   });
 
   it('should import no doc that matches the selection terms', () => {
     const imported = claudeMdImports();
-    const hits = imported.filter((target) =>
-      SELECTION_TERMS.test(fs.readFileSync(path.join(repoRoot, target), 'utf8')),
-    );
 
     expect(imported).toContain(FLOW_DOC);
-    expect(hits).toEqual([]);
+
+    expect(
+      imported.filter((target) =>
+        SELECTION_TERMS.test(fs.readFileSync(path.join(repoRoot, target), 'utf8')),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -411,19 +460,14 @@ describe('**/AGENTS.md', () => {
 });
 
 describe('docs/directives/fluxo-hexlog.md', () => {
-  // `directives-4` só prova que o token existe: `directives-2` segue citado como corte de trabalhos
-  // antigos, então a prova do processo vigente está em "processo vigente de diretrizes escrito num lugar só".
-  it.each([
-    'rests-on',
-    'fills-gap',
-    'directives-4',
-    'premise.objective',
-    'directives.estrategia.none',
-  ])('should cite `%s`', (token) => {
-    expect(flowDoc()).toContain(token);
-  });
+  it.each(['rests-on', 'fills-gap', 'premise.objective', 'directives.estrategia.none'])(
+    'should cite `%s`',
+    (token) => {
+      expect(flowDoc()).toContain(token);
+    },
+  );
 
-  it('should not mention the audit check either', () => {
+  it('should not mention the audit terms in fluxo-hexlog.md', () => {
     expect(AUDIT_TERMS.test(flowDoc())).toBe(false);
   });
 
@@ -432,19 +476,23 @@ describe('docs/directives/fluxo-hexlog.md', () => {
       .split('\n')
       .filter((line) => currentGeneration.test(line));
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain('Processo das diretrizes vigente:');
+    expect(lines).toEqual([expect.stringContaining('Processo das diretrizes vigente:')]);
+  });
+
+  it('should not pin a generation in a `process: directives-N` example', () => {
     expect(flowDoc()).not.toMatch(/process: directives-\d/);
   });
 
-  it('should name `directives-4` as the current process and `directives-5` as the next generation', () => {
-    const line = flowDoc()
-      .split('\n')
-      .find((candidate) => candidate.includes('Processo das diretrizes vigente:'));
+  it.each(['vigente: `directives-4`', 'vira `directives-5`'])(
+    'should name %s on the "Processo das diretrizes vigente" line',
+    (fragment) => {
+      const line = flowDoc()
+        .split('\n')
+        .find((candidate) => candidate.includes('Processo das diretrizes vigente:'));
 
-    expect(line).toContain('vigente: `directives-4`');
-    expect(line).toContain('vira `directives-5`');
-  });
+      expect(line).toContain(fragment);
+    },
+  );
 
   it('should forbid the agent from `create_process` of `directives-N`', () => {
     expect(flowDoc()).toContain(CREATE_PROCESS_FORBIDDEN);
@@ -463,10 +511,6 @@ describe('docs/directives/estrategia.md', () => {
   beforeAll(() => {
     content = fs.readFileSync(strategyPath, 'utf8');
     ({ premises } = scanPremises(content));
-  });
-
-  it('should fit in 150 lines', () => {
-    expect(lineCount(strategyPath)).toBeLessThanOrEqual(LIVING_DOC_MAX_LINES);
   });
 
   it('should have the 6 theme sections and the sentinel one, in that order', () => {
@@ -512,14 +556,19 @@ describe('.claude/skills/flow-*/SKILL.md', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('should cite only existing docs/directives/ paths, fluxo-hexlog.md among them', () => {
-    const cited = FLOW_SKILLS.flatMap((name) => {
-      const content = skill(name);
-      return [...content.matchAll(DIRECTIVES_DOC_CITATION)].map(([citation]) => citation);
-    });
+  const citedDirectivesDocs = (): string[] =>
+    FLOW_SKILLS.flatMap((name) =>
+      [...skill(name).matchAll(DIRECTIVES_DOC_CITATION)].map(([citation]) => citation),
+    );
 
-    expect(cited).toContain(FLOW_DOC);
-    expect(cited.filter((citation) => !fs.existsSync(path.join(repoRoot, citation)))).toEqual([]);
+  it('should cite only existing docs/directives/ paths', () => {
+    expect(
+      citedDirectivesDocs().filter((citation) => !fs.existsSync(path.join(repoRoot, citation))),
+    ).toEqual([]);
+  });
+
+  it('should cite fluxo-hexlog.md', () => {
+    expect(citedDirectivesDocs()).toContain(FLOW_DOC);
   });
 
   it.each(FLOW_SKILLS)('should cite docs/directives/estrategia.md in %s', (name) => {
@@ -529,74 +578,204 @@ describe('.claude/skills/flow-*/SKILL.md', () => {
   it('should keep the owner-seat skill unaware of who occupies the seat', () => {
     expect(skill('flow-owner-seat')).not.toMatch(OWNER_SEAT_FORBIDDEN_TERMS);
   });
+
+  it('should list in every `Nature:` literal exactly the natures of the catalog', () => {
+    const literals = FLOW_SKILLS.flatMap((name) => natureLiteralsIn(skill(name)));
+
+    expect(literals.length).toBeGreaterThan(0);
+
+    expect(naturesDifferingFrom(literals, Object.keys(catalog.choice))).toEqual([]);
+  });
+
+  it.each(['flow-run', 'flow-gaps'])('should leave `Unavailable:` out of %s', (name) => {
+    expect(skill(name)).not.toContain('Unavailable:');
+  });
+
+  it.each([
+    'Consultar o hexlog ou os docs diretamente não é a ação `local`',
+    'Sem `actionUsed` fixado a ação indisponível não degrada',
+    'Comum: só quando a evidência local (hexlog, docs, ADRs) não decide. Crítica: exigida.',
+  ])('should leave the contract sentence only in the owner-seat doc: %s', (sentence) => {
+    expect(FLOW_SKILLS.filter((name) => skill(name).includes(sentence))).toEqual([]);
+  });
+});
+
+describe('.claude/skills/flow-owner-seat/SKILL.md', () => {
+  it('should not carry the numbered list of the context actions', () => {
+    expect(skill('flow-owner-seat')).not.toMatch(/^\d+\. \*\*/m);
+  });
+
+  it.each(['## Catálogo de ações', OWNER_SEAT_DOC])(
+    'should point to the action catalog of the owner-seat doc through %s',
+    (fragment) => {
+      expect(skill('flow-owner-seat')).toContain(fragment);
+    },
+  );
+
+  it('should keep the nested subagent launch with `TaskStop`', () => {
+    expect(skill('flow-owner-seat')).toContain('`TaskStop`');
+  });
+
+  it('should cite no action outside the catalog (weak guard: only the form "action `x`")', () => {
+    expect(
+      citedActionsIn(skill('flow-owner-seat')).filter((name) => !(name in catalog.actions)),
+    ).toEqual([]);
+  });
+});
+
+describe('buildRules', () => {
+  it('should cite no action outside the catalog in the base rules (weak guard: only the form "action `x`")', () => {
+    const rules = buildRules('');
+
+    expect(citedActionsIn(rules).filter((name) => !(name in catalog.actions))).toEqual([]);
+  });
 });
 
 describe('docs/directives/cadeira-do-dono.md', () => {
-  const ownerSeatDoc = (): string => fs.readFileSync(path.join(repoRoot, OWNER_SEAT_DOC), 'utf8');
-
   it('should keep every bullet within 400 characters', () => {
-    const tooLong = ownerSeatDoc()
+    const tooLong = directive('cadeira-do-dono.md')
       .split('\n')
       .filter((line) => line.startsWith('- ') && line.length > OWNER_SEAT_BULLET_MAX_CHARS);
 
     expect(tooLong).toEqual([]);
   });
 
-  it('should end the critic only at the end of the work, with no `TaskStop`', () => {
-    expect(ownerSeatDoc()).toContain('O `critic` é encerrado só no fim do trabalho');
-    expect(ownerSeatDoc()).not.toContain('TaskStop');
+  it('should end the critic only at the end of the work', () => {
+    expect(directive('cadeira-do-dono.md')).toContain(
+      'O `critic` é encerrado só no fim do trabalho',
+    );
+  });
+
+  it('should not mention `TaskStop`', () => {
+    expect(directive('cadeira-do-dono.md')).not.toContain('TaskStop');
   });
 
   it('should say the simulated occupant does not sit without a pinned `answeredBy`', () => {
-    expect(ownerSeatDoc()).toContain('Sem `answeredBy` fixado o ocupante simulado não senta');
+    expect(directive('cadeira-do-dono.md')).toContain(NO_ANSWERED_BY);
   });
 
   it('should cite the subagent protocol', () => {
-    expect(ownerSeatDoc()).toMatch(/protocolo do subagente/i);
+    expect(directive('cadeira-do-dono.md')).toMatch(SUBAGENT_PROTOCOL);
   });
 });
 
 describe('.claude/skills/flow-run/SKILL.md', () => {
-  it('should neither pin the current generation nor point to the process without a generation', () => {
-    expect(skill('flow-run')).not.toMatch(currentGeneration);
-    expect(skill('flow-run')).not.toMatch(/process: directives\b(?!-)/);
+  const run = skill('flow-run');
+
+  it('should not pin the current generation', () => {
+    expect(run).not.toMatch(currentGeneration);
+  });
+
+  it('should not point to the process without a generation', () => {
+    expect(run).not.toMatch(/process: directives\b(?!-)/);
   });
 
   it('should forbid the agent from `create_process` of `directives-N`', () => {
-    expect(skill('flow-run')).toContain(CREATE_PROCESS_FORBIDDEN);
+    expect(run).toContain(CREATE_PROCESS_FORBIDDEN);
   });
 
   it('should say the simulated occupant does not sit without a pinned `answeredBy`', () => {
-    expect(skill('flow-run')).toContain('Sem `answeredBy` fixado o ocupante simulado não senta');
+    expect(run).toContain(NO_ANSWERED_BY);
   });
 
-  it('should detect the occupant by `describe_type` and pick the Herdr or runner transport', () => {
-    expect(skill('flow-run')).toContain('`describe_type` com `process`');
-    expect(skill('flow-run')).toContain('`HERDR_ENV`');
-    expect(skill('flow-run')).toContain('critic.ts start');
+  it.each([
+    ['detect the occupant by `describe_type`', '`describe_type` com `process`'],
+    ['pick the Herdr transport', '`HERDR_ENV`'],
+    ['pick the runner transport', 'critic.ts start'],
+  ])('should %s', (_what, fragment) => {
+    expect(run).toContain(fragment);
   });
 
-  it('should run the durable critic, read the neutral skill and close the tool list', () => {
-    const run = skill('flow-run');
-
-    expect(run).toContain('## 6. Cadeira do dono');
-    expect(run).toContain('`Read` de `.claude/skills/flow-owner-seat/SKILL.md`');
-    expect(run).toContain('`query`, `describe_type`, `register`, `attach`, `read_attachment`');
-    expect(run).toContain('SendMessage');
-    expect(run).toContain('critic.ts ask');
-    expect(run).toContain('critic.ts close');
-    expect(run).toContain('critic.md');
-    expect(run).toContain(OWNER_SEAT_DOC);
+  it.each([
+    ['open the owner-seat section', '## 6. Cadeira do dono'],
+    ['read the neutral skill', '`Read` de `.claude/skills/flow-owner-seat/SKILL.md`'],
+    ['close the tool list', '`query`, `describe_type`, `register`, `attach`, `read_attachment`'],
+    ['continue the critic by SendMessage', 'SendMessage'],
+    ['ask the durable critic by critic.ts ask', 'critic.ts ask'],
+    ['close the durable critic by critic.ts close', 'critic.ts close'],
+    ['name the critic.md file', 'critic.md'],
+    ['point to the owner-seat doc', OWNER_SEAT_DOC],
+  ])('should %s', (_what, fragment) => {
+    expect(run).toContain(fragment);
   });
 
   it('should cite the subagent protocol', () => {
-    expect(skill('flow-run')).toMatch(/protocolo do subagente/i);
+    expect(run).toMatch(SUBAGENT_PROTOCOL);
+  });
+
+  it('should cite no action outside the catalog in section 6 (weak guard: only the form "action `x`")', () => {
+    const section = sectionBodyOf(run, '6\\. Cadeira do dono');
+
+    expect(citedActionsIn(section).length).toBeGreaterThan(0);
+
+    expect(citedActionsIn(section).filter((name) => !(name in catalog.actions))).toEqual([]);
+  });
+
+  it('should write the gap literal with the class', () => {
+    expect(run).toContain('`Class: common|critical[; rule: <target>]; Nature: ');
+  });
+
+  it('should write the gap literal with the catalog natures', () => {
+    const [literal] = natureLiteralsIn(run);
+
+    expect(literal).toEqual(Object.keys(catalog.choice));
+  });
+
+  it('should generate the rules file for the Herdr critic by `critic.ts rules`', () => {
+    expect(run).toContain('node scripts/flow/critic.ts rules --tool <claude|agy> --cwd <worktree>');
+  });
+
+  it('should load the rules file of the Herdr critic by `--append-system-prompt-file`', () => {
+    expect(run).toContain('--append-system-prompt-file <caminho do arquivo de regras>');
+  });
+
+  it('should not keep the old rules path under .ignore/flow', () => {
+    expect(run).not.toContain('.ignore/flow/<slug>/critic-rules.txt');
+  });
+
+  it.each(['--append-system-prompt "', 'leia com Read o arquivo', '--add-dir'])(
+    'should not make the Herdr critic depend on %j to load the rules',
+    (fragment) => {
+      expect(run).not.toContain(fragment);
+    },
+  );
+
+  it('should prefix every agy prompt with the rules file', () => {
+    expect(run).toContain('começa pelo conteúdo do arquivo de regras');
+  });
+
+  it('should not name the old constant of the agy rules', () => {
+    expect(run).not.toContain('CRITIC_RULES');
+  });
+
+  it('should have the critic look up the pending simulated premise with `actionUsed`', () => {
+    expect(run).toContain('`fields: ["statement","answeredBy","actionUsed"]`');
+  });
+
+  describe('with the approval step of the pre-PR', () => {
+    const approval = /^5\. `evaluate_gate` de `gaps`.*$/m.exec(
+      sectionBodyOf(run, '5\\. Pré-PR'),
+    )?.[0];
+
+    it.each([
+      ['read the premises with `actionUsed`', '`fields: ["statement","answeredBy","actionUsed"]`'],
+      [
+        'compute the expectation with the class and nature written by the main session',
+        'com o `Class` e o `Nature` do literal que você mesmo escreveu',
+      ],
+      ['show the degradation mark', '"degradada: esperada X, usada Y"'],
+      [
+        'never read the expectation from the attach header',
+        'o esperado nunca vem do cabeçalho do `attach`',
+      ],
+    ])('should %s', (_what, fragment) => {
+      expect(approval).toContain(fragment);
+    });
   });
 
   describe('with the runner transport section', () => {
     const runnerSection = (): string =>
-      /^### Transporte runner$([\s\S]*?)(?=^#{2,3} |(?![\s\S]))/m.exec(skill('flow-run'))?.[1] ??
-      '';
+      /^### Transporte runner$([\s\S]*?)(?=^#{2,3} |(?![\s\S]))/m.exec(run)?.[1] ?? '';
 
     it.each(Object.values(EXIT))('should cite the exit code %i', (code) => {
       expect(runnerSection()).toMatch(new RegExp(`(?<!\\d)${code}(?!\\d)`));
@@ -606,6 +785,7 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
       ['the question size cap', '100000'],
       ['the tool of critic.md on returning to start', '--tool <ferramenta do critic.md>'],
       ['the tool variable', 'HEXLOG_CRITIC_CLI'],
+      ['the unreadable catalog exit', '"unreadable catalog"'],
     ])('should cite %s', (_what, fragment) => {
       expect(runnerSection()).toContain(fragment);
     });
@@ -613,56 +793,73 @@ describe('.claude/skills/flow-run/SKILL.md', () => {
 });
 
 describe('.claude/skills/flow-gaps/SKILL.md', () => {
-  it('should keep the human seat and say approval does not hold against a timeless premise', () => {
-    const gaps = skill('flow-gaps');
+  const gaps = skill('flow-gaps');
 
-    expect(gaps).toContain('O assento aqui é sempre humano');
-    expect(gaps).toContain('Aprovar não vale para contradição com premissa atemporal');
+  it.each([
+    'O assento aqui é sempre humano',
+    'Aprovar não vale para contradição com premissa atemporal',
+  ])('should keep the sentence %j', (sentence) => {
+    expect(gaps).toContain(sentence);
+  });
+
+  it('should follow the action catalog when the owner asks for context', () => {
+    expect(gaps).toContain('siga o catálogo de ações do mesmo doc');
+  });
+
+  it('should not name the old context actions of the skill', () => {
+    expect(gaps).not.toContain('ações de contexto da skill');
+  });
+
+  it('should present the `Nature:` of the gap with its context', () => {
+    expect(gaps).toContain('com o `Nature:` da lacuna');
   });
 });
 
 describe('.claude/skills/flow-audit/SKILL.md', () => {
-  it('should cover the current generation and the earlier ones without pinning the number', () => {
-    expect(skill('flow-audit')).toContain('o processo de diretrizes vigente');
-    expect(skill('flow-audit')).toContain('as gerações anteriores');
-    expect(skill('flow-audit')).not.toMatch(/directives-\d/);
+  const audit = skill('flow-audit');
+
+  it.each(['o processo de diretrizes vigente', 'as gerações anteriores'])(
+    'should cover %j',
+    (fragment) => {
+      expect(audit).toContain(fragment);
+    },
+  );
+
+  it('should not pin the generation number', () => {
+    expect(audit).not.toMatch(/directives-\d/);
   });
 });
 
 describe('docs/directives/adr-0010-camada-sobre-omc.md', () => {
-  it('should end with the block of amendments that starts at 2026-10-06', () => {
-    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0010-camada-sobre-omc.md'), 'utf8');
+  const adr = directive('adr-0010-camada-sobre-omc.md');
 
+  it('should end with the block of amendments that starts at 2026-10-06', () => {
     expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-06/);
   });
 
   it('should keep the 2026-10-16 amendment in the last block', () => {
-    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0010-camada-sobre-omc.md'), 'utf8');
-
     expect(lastBlockOf(adr)).toContain('\n- **2026-10-16');
   });
 });
 
 describe('docs/directives/adr-0011-camada-estrategica.md', () => {
-  it.each(['Context', 'Decision', 'Consequences'])('should have the "%s" section', (title) => {
-    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0011-camada-estrategica.md'), 'utf8');
+  const adr = directive('adr-0011-camada-estrategica.md');
 
+  it.each(['Context', 'Decision', 'Consequences'])('should have the "%s" section', (title) => {
     expect(headingTitlesFrom(adr)).toContain(title);
   });
 
   it('should end with the 2026-10-16 amendment', () => {
-    const adr = fs.readFileSync(path.join(directivesDir, 'adr-0011-camada-estrategica.md'), 'utf8');
-
     expect(lastBlockOf(adr)).toMatch(/^- \*\*2026-10-16/);
   });
 });
 
 describe('docs/directives/adr-0012-cadeira-do-dono.md', () => {
+  const adr = directive('adr-0012-cadeira-do-dono.md');
+
   it.each(['Context', 'Decision', 'Emendas aos ADRs 0010 e 0011', 'Consequences'])(
     'should have the "%s" section',
     (title) => {
-      const adr = fs.readFileSync(path.join(directivesDir, 'adr-0012-cadeira-do-dono.md'), 'utf8');
-
       expect(headingTitlesFrom(adr)).toContain(title);
     },
   );
