@@ -4,6 +4,7 @@ import { createSearchIndex } from '../../src/adapters/search.ts';
 import type { RecordId } from '../../src/domain/ids.ts';
 import type { HexRecord } from '../../src/domain/record.ts';
 import type { ProcessRef } from '../../src/ports.ts';
+import { idAt } from '../fixtures/chain-line.ts';
 import { writeRecordsCorpus } from '../fixtures/records-corpus.ts';
 import { createTempDir } from '../helpers.ts';
 import { makeRecord } from './search-helpers.ts';
@@ -52,7 +53,7 @@ describe('createSearchIndex', () => {
   ])('should not index the $field', ({ term }) => {
     const record = makeRecord({
       data: { secretkey: 1, flag: true, none: null },
-      relations: [{ kind: 'supports', to: 'other:0198f4a0-0000-7000-8000-000000000001' }],
+      relations: [{ kind: 'supports', to: idAt('other', 1) }],
       author: { agent: 'zebra', client: 'quokka' },
     });
 

@@ -37,9 +37,12 @@ describe('checkSchema', () => {
       'a schema with the attachment format',
       { type: 'object', properties: { file: { type: 'string', format: 'attachment' } } },
     ],
-  ])('should accept %s', (_name, schema) => {
-    expect(validator.checkSchema(schema)).toEqual([]);
-  });
+  ])(
+    'should find no problem in %s, which the metaschema and the format catalog allow',
+    (_name, schema) => {
+      expect(validator.checkSchema(schema)).toEqual([]);
+    },
+  );
 
   it('should refuse a keyword value that violates the metaschema, with the path of the point', () => {
     const details = validator.checkSchema({ type: 'object', properties: { a: { type: 5 } } });
@@ -988,12 +991,15 @@ describe('validate', () => {
   });
 
   describe('with the git-sha format', () => {
-    it.each(['abcdef1', 'a'.repeat(40)])('should accept %s', (commit) => {
-      expect(validator.validate(gitShaSchema, { commit })).toEqual([]);
-    });
+    it.each(['abcdef1', 'a'.repeat(40)])(
+      'should accept %s as a git sha of 7 to 40 characters',
+      (commit) => {
+        expect(validator.validate(gitShaSchema, { commit })).toEqual([]);
+      },
+    );
 
     it.each(['HEAD', 'abcdef', 'a'.repeat(41), 'ABCDEF1', 'abcdef1\n', 'free text'])(
-      'should refuse %j with code format',
+      'should refuse %j as a git sha with code format',
       (commit) => {
         expect(validator.validate(gitShaSchema, { commit })).toEqual([
           { path: '/commit', code: 'format', message: expect.any(String) },

@@ -1256,21 +1256,43 @@ describe('createProcessStore', () => {
       });
     });
 
-    it('should return replayed with an fsync when a batch is resent after ENOSPC hit everything but the newline', async () => {
-      const { dataDir, store, ref, logFile } = setup();
-      scriptWrites([-1, 'enospc'], dataDir);
-      const error = await rejectionOf(append(store, ref, 3, 'batch'), dataDir);
-      const seen = verifyProcess(store.read(ref));
+    /** Lote que o ENOSPC deixou inteiro em disco, só sem o `\n`: a gravação falha, mas o lote já é visível. */
+    async function failBeforeNewline() {
+      const env = setup();
+      scriptWrites([-1, 'enospc'], env.dataDir);
+      const error = await rejectionOf(append(env.store, env.ref, 3, 'batch'), env.dataDir);
+      return { ...env, error };
+    }
+
+    it('should refuse with IO_ERROR a write that ENOSPC cut right before the newline', async () => {
+      const { error } = await failBeforeNewline();
 
       expect(error.code).toBe('IO_ERROR');
+    });
+
+    it('should leave the whole batch visible with an intact chain after ENOSPC hit everything but the newline', async () => {
+      const { store, ref } = await failBeforeNewline();
+
+      const seen = verifyProcess(store.read(ref));
+
       expect(seen.chain).toMatchObject({ ok: true, totalRecords: 3 });
       expect(seen.batches.has('batch')).toBe(true);
+    });
 
-      const fsyncs = countFsyncsOf(logFile);
+    it('should return replayed when a batch is resent after ENOSPC hit everything but the newline', async () => {
+      const { store, ref } = await failBeforeNewline();
 
       const result = await resend(store, ref, 3, 'batch');
 
       expect(result).toBe('replayed');
+    });
+
+    it('should fsync the log once when a batch is resent after ENOSPC hit everything but the newline', async () => {
+      const { store, ref, logFile } = await failBeforeNewline();
+      const fsyncs = countFsyncsOf(logFile);
+
+      await resend(store, ref, 3, 'batch');
+
       expect(fsyncs()).toBe(1);
     });
 
