@@ -40,6 +40,16 @@ const fileBody = (kind: Kind, name: string): Record<string, unknown> =>
 export const definitionOf = (kind: Kind, name: string): Record<string, unknown> =>
   kind === 'types' ? fileBody(kind, name) : { name, ...fileBody(kind, name) };
 
+/** Entrada da tool `define_*` para o arquivo: o tipo leva o schema (`schema` o troca); as demais, o corpo com o nome. */
+export const defineArgs = (
+  kind: Kind,
+  name: string,
+  schema?: Record<string, unknown>,
+): Record<string, unknown> =>
+  kind === 'types'
+    ? { name, schema: schema ?? definitionOf(kind, name) }
+    : definitionOf(kind, name);
+
 /**
  * Define em `environment` todo tipo, relação e gate de `.hexlog/`, na chave `<kind>/<name>`.
  * `schemas` troca o schema de um tipo pelo nome, para o caso que fixa uma versão antiga dele.
@@ -51,11 +61,9 @@ export async function defineFlowDefinitions(
   const defined: Record<string, Defined> = {};
   for (const kind of KINDS) {
     for (const name of namesIn(kind)) {
-      const body = definitionOf(kind, name);
-      const input = kind === 'types' ? { name, schema: schemas[name] ?? body } : body;
       defined[`${kind}/${name}`] = await environment.ok<Defined>(DEFINE_TOOL[kind], {
         project: PROJECT,
-        ...input,
+        ...defineArgs(kind, name, schemas[name]),
       });
     }
   }

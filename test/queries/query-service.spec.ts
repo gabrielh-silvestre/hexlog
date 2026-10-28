@@ -22,7 +22,7 @@ import {
   type QueryService,
 } from '../../src/queries/query-service.ts';
 import { formatLine, MAX_BREAKS } from '../../src/shared/loader.ts';
-import { emptyManifest, linkAt } from '../fixtures/chain-line.ts';
+import { emptyManifest, idAt, linkAt } from '../fixtures/chain-line.ts';
 import { cursorOf, idsOf, walkPages } from '../helpers.ts';
 
 const PROJECT = 'alpha';
@@ -60,11 +60,7 @@ const search: SearchIndex = {
 
 type Entry = Partial<Pick<Link, 'type' | 'target' | 'at' | 'data' | 'relations'>>;
 
-/** Id do `seq`-ésimo elo de `process`, na mesma convenção de `fixtures/chain-line.ts#chainLine`. */
-const idOf = (process: Name, seq: number): RecordId =>
-  `${process}:0198f4a0-0000-7000-8000-${seq.toString(16).padStart(12, '0')}`;
-
-const idsAt = (...seqs: number[]): RecordId[] => seqs.map((seq) => idOf('main', seq));
+const idsAt = (...seqs: number[]): RecordId[] => seqs.map((seq) => idAt('main', seq));
 
 const notes = (count: number, label = 'note'): Entry[] =>
   Array.from({ length: count }, (_, at) => ({ data: { text: `${label} ${at}` } }));
@@ -82,7 +78,7 @@ function rawProcess(
   let expected: Expected = { seq: 0, prevHash: anchor(manifest) };
   const text = entries
     .map((entry) => {
-      const link = linkAt(expected, { id: idOf(name, expected.seq), ...entry });
+      const link = linkAt(expected, { id: idAt(name, expected.seq), ...entry });
       expected = { seq: link.seq + 1, prevHash: hashLink(link) };
       return formatLine([link]);
     })
@@ -171,7 +167,7 @@ describe('QueryService.queryRecords', () => {
     expect(page).toEqual({
       records: [
         {
-          id: idOf('main', 0),
+          id: idAt('main', 0),
           type: 'note',
           at: '2026-09-30T12:00:00.000Z',
           target: 'repo.feature',
@@ -181,7 +177,7 @@ describe('QueryService.queryRecords', () => {
           out: [],
         },
       ],
-      marker: { main: idOf('main', 0) },
+      marker: { main: idAt('main', 0) },
     });
   });
 
@@ -200,8 +196,8 @@ describe('QueryService.queryRecords', () => {
   it('should flag a current record whose support was revoked as needing review', () => {
     const service = mainService([
       { target: 'doc.a' },
-      { target: 'doc.b', relations: [{ kind: 'supports', to: idOf('main', 0) }] },
-      { target: 'doc.c', relations: [{ kind: 'revokes', to: idOf('main', 1) }] },
+      { target: 'doc.b', relations: [{ kind: 'supports', to: idAt('main', 0) }] },
+      { target: 'doc.c', relations: [{ kind: 'revokes', to: idAt('main', 1) }] },
     ]);
 
     const page = service.queryRecords(MAIN_QUERY);
@@ -216,7 +212,7 @@ describe('QueryService.queryRecords', () => {
 
     expect(page).toEqual({
       records: [],
-      marker: { main: idOf('main', 0) },
+      marker: { main: idAt('main', 0) },
       hint: expect.stringContaining('plan.step-2'),
     });
   });
@@ -238,7 +234,7 @@ describe('QueryService.queryRecords', () => {
       const input = {
         ...MAIN_QUERY,
         limit: 0,
-        changesSince: { main: idOf('main', 0) },
+        changesSince: { main: idAt('main', 0) },
         cursor: 'any-cursor',
       };
 
@@ -259,13 +255,13 @@ describe('QueryService.queryRecords', () => {
       const page = service.queryRecords({
         ...MAIN_QUERY,
         limit: 0,
-        changesSince: { main: idOf('main', 0) },
+        changesSince: { main: idAt('main', 0) },
       });
 
       expect(page).toEqual({
         records: [],
-        marker: { main: idOf('main', 1) },
-        changes: { entered: idsAt(1), left: [], marker: { main: idOf('main', 1) } },
+        marker: { main: idAt('main', 1) },
+        changes: { entered: idsAt(1), left: [], marker: { main: idAt('main', 1) } },
       });
     });
   });
@@ -397,8 +393,8 @@ describe('QueryService.queryRecords', () => {
       const pages = walk(service, { scope: 'project', limit: 3 });
 
       expect(pages.map(idsOf)).toEqual([
-        [idOf('a', 0), idOf('b', 0), idOf('a', 1)],
-        [idOf('b', 1)],
+        [idAt('a', 0), idAt('b', 0), idAt('a', 1)],
+        [idAt('b', 1)],
       ]);
     });
 
@@ -445,7 +441,7 @@ describe('QueryService.queryRecords', () => {
       { name: 'includeNonCurrent', change: { includeNonCurrent: true }, code: 'filters-mismatch' },
       {
         name: 'changesSince',
-        change: { changesSince: { main: idOf('main', 0) } },
+        change: { changesSince: { main: idAt('main', 0) } },
         code: 'filters-mismatch',
       },
     ])('should refuse a cursor reused with another $name', ({ change, code }) => {
@@ -480,7 +476,7 @@ describe('QueryService.queryRecords', () => {
     it('should refuse a cursor whose last record is not in the result', () => {
       const service = mainService(notes(5));
       const cursor = cursorOf(service.queryRecords({ ...MAIN_QUERY, limit: 2 }));
-      const forged = encodeCursor({ ...decodeCursor(cursor), lastId: idOf('main', 99) });
+      const forged = encodeCursor({ ...decodeCursor(cursor), lastId: idAt('main', 99) });
 
       expect(refusalOf(() => service.queryRecords({ ...MAIN_QUERY, cursor: forged }))).toEqual({
         code: 'INVALID_CURSOR',
@@ -498,7 +494,7 @@ describe('QueryService.queryRecords', () => {
     it('should name /cursor when the marker of the cursor is not in the log', () => {
       const service = mainService(notes(5));
       const cursor = cursorOf(service.queryRecords({ ...MAIN_QUERY, limit: 2 }));
-      const forged = encodeCursor({ ...decodeCursor(cursor), marker: { main: idOf('main', 99) } });
+      const forged = encodeCursor({ ...decodeCursor(cursor), marker: { main: idAt('main', 99) } });
 
       expect(
         refusalOf(() => service.queryRecords({ ...MAIN_QUERY, cursor: forged })),
@@ -513,9 +509,9 @@ describe('QueryService.queryRecords', () => {
     const entries: Entry[] = [
       { target: 'plan.a' },
       { target: 'plan.b' },
-      { target: 'plan.c', relations: [{ kind: 'supersedes', to: idOf('main', 0) }] },
+      { target: 'plan.c', relations: [{ kind: 'supersedes', to: idAt('main', 0) }] },
     ];
-    const changesSince = { main: idOf('main', 0) };
+    const changesSince = { main: idAt('main', 0) };
 
     it('should report what entered and left the result since the marker', () => {
       const service = mainService(entries);
@@ -524,8 +520,8 @@ describe('QueryService.queryRecords', () => {
 
       expect(page.changes).toEqual({
         entered: idsAt(1, 2),
-        left: [{ id: idOf('main', 0), reason: 'superseded' }],
-        marker: { main: idOf('main', 2) },
+        left: [{ id: idAt('main', 0), reason: 'superseded' }],
+        marker: { main: idAt('main', 2) },
       });
     });
 
@@ -548,7 +544,7 @@ describe('QueryService.queryRecords', () => {
 
     it('should name /changesSince when the marker record is not in the log', () => {
       const service = mainService(entries);
-      const unknown = { main: idOf('main', 99) };
+      const unknown = { main: idAt('main', 99) };
 
       expect(
         refusalOf(() => service.queryRecords({ ...MAIN_QUERY, changesSince: unknown })),
@@ -620,7 +616,7 @@ describe('QueryService.evaluateGate', () => {
     expect(result).toEqual({
       passed: true,
       questions: [{ index: 0, kind: 'occurred', passed: true, evidence: { found: idsAt(0) } }],
-      marker: { main: idOf('main', 1) },
+      marker: { main: idAt('main', 1) },
     });
   });
 
@@ -637,12 +633,12 @@ describe('QueryService.evaluateGate', () => {
   it('should evaluate over the log as it was at the marker', () => {
     const service = mainService(notes(3), fixedGate(occurred));
 
-    const result = service.evaluateGate({ ...GATE_QUERY, marker: { main: idOf('main', 1) } });
+    const result = service.evaluateGate({ ...GATE_QUERY, marker: { main: idAt('main', 1) } });
 
     expect(result).toEqual({
       passed: true,
       questions: [{ index: 0, kind: 'occurred', passed: true, evidence: { found: idsAt(0, 1) } }],
-      marker: { main: idOf('main', 1) },
+      marker: { main: idAt('main', 1) },
     });
   });
 
@@ -654,7 +650,7 @@ describe('QueryService.evaluateGate', () => {
 
     const result = service.evaluateGate(GATE_QUERY);
 
-    expect(result.marker).toEqual({ main: idOf('main', 0) });
+    expect(result.marker).toEqual({ main: idAt('main', 0) });
   });
 
   it('should give each question the records of its own scope when the gate mixes scopes', () => {
@@ -672,15 +668,15 @@ describe('QueryService.evaluateGate', () => {
     expect(result).toEqual({
       passed: true,
       questions: [
-        { index: 0, kind: 'occurred', passed: true, evidence: { found: [idOf('main', 0)] } },
+        { index: 0, kind: 'occurred', passed: true, evidence: { found: [idAt('main', 0)] } },
         {
           index: 1,
           kind: 'occurred',
           passed: true,
-          evidence: { found: [idOf('main', 0), idOf('other', 0)] },
+          evidence: { found: [idAt('main', 0), idAt('other', 0)] },
         },
       ],
-      marker: { main: idOf('main', 0), other: idOf('other', 0) },
+      marker: { main: idAt('main', 0), other: idAt('other', 0) },
     });
   });
 
@@ -708,7 +704,7 @@ describe('QueryService.evaluateGate', () => {
             questions: [{ index: 0, kind: 'occurred', passed: true, counts: { found: 1 } }],
           },
         ],
-        marker: { main: idOf('main', 1) },
+        marker: { main: idAt('main', 1) },
       });
     });
 
@@ -766,8 +762,8 @@ describe('QueryService.verifyChain', () => {
       ok: false,
       breaks: [],
       attachmentBreaks: [
-        { id: idOf('main', 1), hash: HASH_B, reason: 'attachment-missing' },
-        { id: idOf('main', 2), hash: HASH_C, reason: 'attachment-corrupted' },
+        { id: idAt('main', 1), hash: HASH_B, reason: 'attachment-missing' },
+        { id: idAt('main', 2), hash: HASH_C, reason: 'attachment-corrupted' },
       ],
       totalAttachmentBreaks: 2,
     });

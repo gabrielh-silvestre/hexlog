@@ -20,11 +20,10 @@ import {
   type QueryResult,
   type QueryService,
 } from '../../src/queries/query-service.ts';
-
-const idOf = (n: number) => `run-1:00000000-0000-7000-8000-${n.toString(16).padStart(12, '0')}`;
+import { idAt } from '../fixtures/chain-line.ts';
 
 const idsOf = (count: number, offset = 0) =>
-  Array.from({ length: count }, (_, i) => idOf(offset + i));
+  Array.from({ length: count }, (_, i) => idAt('run-1', offset + i));
 
 const recordOf = (count: number, value: string | null) =>
   Object.fromEntries(Array.from({ length: count }, (_, i) => [`k${i}`, value]));
@@ -105,7 +104,7 @@ const QUERY_ARGS = { project: 'p', process: 'run-1' };
 const GATE_ARGS = { project: 'p', process: 'run-1', gate: 'pre-pr' };
 
 const record = {
-  id: idOf(1),
+  id: idAt('run-1', 1),
   type: 'note',
   at: '2026-10-17T00:00:00.000Z',
   target: 'unit-1',
@@ -119,16 +118,16 @@ const record = {
 };
 
 const changes = {
-  entered: [idOf(1)],
-  left: [{ id: idOf(2), reason: 'superseded' }],
-  marker: { 'run-1': idOf(2) },
+  entered: [idAt('run-1', 1)],
+  left: [{ id: idAt('run-1', 2), reason: 'superseded' }],
+  marker: { 'run-1': idAt('run-1', 2) },
   omitted: { entered: 1, left: 2 },
 };
 
 const queryOutput = {
   records: [record],
   cursor: 'next',
-  marker: { 'run-1': idOf(1) },
+  marker: { 'run-1': idAt('run-1', 1) },
   hint: 'a near miss',
   changes,
 };
@@ -138,7 +137,7 @@ const gateQuestion = {
   kind: 'approved',
   passed: false,
   counts: { of: 1 },
-  evidence: { of: [idOf(1)] },
+  evidence: { of: [idAt('run-1', 1)] },
   omitted: { of: 2 },
 };
 
@@ -148,7 +147,7 @@ const evaluateGateOutput = {
   passed: false,
   questions: [gateQuestion],
   results: [gateResult],
-  marker: { 'run-1': idOf(1) },
+  marker: { 'run-1': idAt('run-1', 1) },
 };
 
 const verifyChainOutput = {
@@ -157,7 +156,7 @@ const verifyChainOutput = {
   head: 'a'.repeat(64),
   breaks: [{ index: 1, reason: 'hash-mismatch' }],
   totalBreaks: 1,
-  attachmentBreaks: [{ id: idOf(1), hash: 'b'.repeat(64), reason: 'attachment-missing' }],
+  attachmentBreaks: [{ id: idAt('run-1', 1), hash: 'b'.repeat(64), reason: 'attachment-missing' }],
   totalAttachmentBreaks: 1,
   repairedLines: [2],
 };
@@ -223,9 +222,9 @@ describe('queryPage', () => {
   ])(
     'should cap each changes list and report omitted when %s',
     (_title, enteredCount, leftCount, omitted) => {
-      const entered = Array.from({ length: enteredCount }, (_, i) => idOf(i));
+      const entered = Array.from({ length: enteredCount }, (_, i) => idAt('run-1', i));
       const left = Array.from({ length: leftCount }, (_, i) => ({
-        id: idOf(1_000 + i),
+        id: idAt('run-1', 1_000 + i),
         reason: 'superseded' as const,
       }));
       const { query } = queryWith({ ...emptyPage, changes: { entered, left, marker: {} } });
@@ -570,7 +569,7 @@ describe('registerQueryTools', () => {
       [
         'query',
         'the reason of a left entry',
-        { ...queryOutput, changes: { ...changes, left: [{ id: idOf(2), reason: 1 }] } },
+        { ...queryOutput, changes: { ...changes, left: [{ id: idAt('run-1', 2), reason: 1 }] } },
       ],
       [
         'evaluate_gate',

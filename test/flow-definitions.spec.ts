@@ -5,7 +5,7 @@ import type { Defined } from '../src/commands/definition.ts';
 import { hashOfJcs } from '../src/domain/chain.ts';
 import { classifyTypeChange, type RecordType } from '../src/domain/definitions.ts';
 import type { ListResult, VerifyChainResult } from '../src/queries/query-service.ts';
-import { KINDS, definitionOf, namesIn } from './flow-data.ts';
+import { KINDS, defineArgs, definitionOf, namesIn } from './flow-data.ts';
 import {
   DIRECTIVES,
   PROJECT,
@@ -45,10 +45,6 @@ import {
 } from './flow-helpers.ts';
 import { at } from './helpers.ts';
 import { expectError } from './mcp/environment.ts';
-
-/** Entrada da tool `define_*` para o arquivo: o tipo leva o schema; as demais, o corpo com o nome. */
-const defineArgs = (kind: (typeof KINDS)[number], name: string): Record<string, unknown> =>
-  kind === 'types' ? { name, schema: definitionOf(kind, name) } : definitionOf(kind, name);
 
 /** Alvos de `directive` que aparecem mais de uma vez no vigente: o que a consulta de auditoria lista. */
 async function duplicatedTargets(): Promise<string[]> {
