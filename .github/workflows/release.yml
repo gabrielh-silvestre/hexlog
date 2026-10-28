@@ -56,7 +56,9 @@ jobs:
             echo "branch=chore/back-merge-v${version//./-}"
           } >> "$GITHUB_OUTPUT"
       # O PR da release é o que contém o merge commit; sem PR (push direto), a linha some do corpo.
-      # Logo após o merge a consulta pode voltar vazia: repete até 3 vezes e avisa se continuar vazia.
+      # Logo após o merge a consulta pode voltar vazia: repete até 3 vezes, com 5 s entre elas, e avisa
+      # se continuar vazia. O laço só cobre a resposta vazia; erro de `gh api` derruba o passo pelo `-e`
+      # de propósito, e um `|| true` o trocaria pelo aviso de PR ausente.
       - id: notes
         env:
           GH_TOKEN: ${{ github.token }}
