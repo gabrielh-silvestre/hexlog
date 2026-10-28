@@ -50,7 +50,6 @@ type ListedTool = Awaited<ReturnType<Environment['client']['listTools']>>['tools
 
 let environment: Environment;
 
-// Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
 const openEnvironment = async () => {
   environment = await createEnvironment();
 };
@@ -162,6 +161,12 @@ describe('tools/list', () => {
     );
   });
 
+  it('should tell register that supersedes needs the same type and target and how to move a fact', () => {
+    expect(descriptionOf('register')).toMatch(
+      /supersedes also needs the same type and target, else INVALID_RECORD \(target-mismatch\); to move a fact to another target, register one record there with revokes and derivesFrom to the old one/,
+    );
+  });
+
   it('should warn in the define_type description that pattern is refused and point to the catalog', () => {
     const description = descriptionOf('define_type');
 
@@ -180,6 +185,15 @@ describe('tools/list', () => {
   it('should announce an outputSchema for every tool', () => {
     expect(tools.every(({ outputSchema }) => outputSchema !== undefined)).toBe(true);
   });
+
+  it.each(['inheritedIn', 'inheritedOut', 'inheritedInCounts', 'inheritedOutCounts'])(
+    'should announce %s in the query outputSchema',
+    (key) => {
+      const outputSchema = JSON.stringify(toolOf('query')?.outputSchema);
+
+      expect(outputSchema).toContain(`"${key}":`);
+    },
+  );
 
   it('should keep the sum of the 12 tools outputSchema below 24,280 characters', () => {
     const sizes = tools.map(({ outputSchema }) => JSON.stringify(outputSchema ?? null).length);
