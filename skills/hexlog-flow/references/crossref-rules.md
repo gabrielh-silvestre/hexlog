@@ -2,7 +2,7 @@
 
 Três regras de cruzamento. Nenhuma delas precisa de tool
 nova — todas são combinações de `register`, `query`, `evaluate_gate` e
-`verify_chain`, guiadas pela leitura do `.hexlog/flow.md`.
+`verify_chain`, guiadas pelo modelo do projeto (fases, processos e gate), que vem da skill do projeto.
 
 ## 1. Mesma fase — conflito ou superado
 
@@ -37,7 +37,7 @@ antigo.
 Cruzar informação entre fases diferentes não é uma tool especial: é uma leitura
 que enxerga mais de um processo.
 
-- Para ler **uma** fase, `query` com o `process` dela (o flow map traduz "fase X"
+- Para ler **uma** fase, `query` com o `process` dela (o modelo do projeto traduz "fase X"
   para o nome do processo) — nunca o `process` da fase corrente por padrão.
 - Para ler **várias** de uma vez, `query` com `scope: "project"`: lê e verifica todos
   os processos do projeto, e `in` (ou `inCounts` e `nonCurrentInCounts`), `out.current` e `needsReview` passam a ver as
@@ -57,8 +57,8 @@ evidência vem de outra fase declara `scope: "project"` na pergunta.
 ## 3. Lacunas — gate por fase
 
 Uma lacuna é um critério que o processo não prova sozinho: sem gate, nada barra um
-plano sem aprovação ou um desvio sem resposta. Se uma fase do flow map declara um
-gate (`gate` no frontmatter), essa é a forma combinada de fechar a lacuna: o gate é
+plano sem aprovação ou um desvio sem resposta. Se uma fase do modelo do projeto declara um
+gate, essa é a forma combinada de fechar a lacuna: o gate é
 definido por `define_gate` (feito pela `hexlog-setup`, não por esta skill) como uma
 lista de perguntas sobre os registros **vigentes**, e se avalia com `evaluate_gate`
 informando o nome em `gate`. A evidência vem do servidor, nunca do agente.

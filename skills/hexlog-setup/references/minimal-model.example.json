@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "modelVersion": 1,
+  "project": "notes-app",
+  "language": "en",
+  "unit": {
+    "kind": "change request",
+    "location": "changes/<id>",
+    "processName": "unit path in lowercase; every run of characters outside [a-z0-9] becomes a hyphen; at most 63 characters",
+    "examples": [
+      { "path": "changes/cr-101", "process": "changes-cr-101" },
+      { "path": "changes/cr-102", "process": "changes-cr-102" }
+    ]
+  },
+  "phases": [
+    {
+      "name": "review",
+      "command": "run the review checklist",
+      "type": "review",
+      "target": "review",
+      "artifact": "review.md",
+      "links": []
+    }
+  ],
+  "types": [
+    {
+      "name": "review",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "unit": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 600 },
+          "document": { "type": "string", "format": "attachment" }
+        },
+        "required": ["unit", "summary"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "relations": [],
+  "gate": {
+    "name": "unit-complete",
+    "questions": [{ "kind": "occurred", "select": { "type": "review" } }]
+  },
+  "plug": { "flow": "none", "flowVersion": "none", "layer": "C" }
+}

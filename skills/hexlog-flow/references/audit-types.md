@@ -106,7 +106,7 @@ subárvore dele (`<alvo>.revisao`): o `evaluate_gate` herda o `target` nos selet
 sem `targetPrefix`, e um `review` fora dessa subárvore não conta como aprovador
 (`domain/gate.ts#evaluateGate`), então o gate volta `passed: false`.
 
-Se o flow map usa um processo por fase, o `deviation` tem dois casos. O de
+Se o modelo do projeto usa um processo por fase, o `deviation` tem dois casos. O de
 planejamento (o loop que desistiu, `escalated`) fica no processo de planejamento, e
 o gate o vê sem `scope`. O de execução vive no processo da fase de execução, e só
 entra num gate de outro processo se a pergunta `no_pending` declara `scope:

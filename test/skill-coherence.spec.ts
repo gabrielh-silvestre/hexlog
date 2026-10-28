@@ -291,7 +291,6 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'includeNonCurrent',
   'readOnlyHint',
   'targetPrefix',
-  'targetIdPattern',
   'changesSince',
   'attachmentStatus',
   'staleOut',
@@ -300,7 +299,6 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'attachmentBreaks',
   'isRevision',
   'decidedBy',
-  'editedSkills',
   'pattern',
   'patternProperties',
   'maxLength',
@@ -315,11 +313,13 @@ const FIELD_NAME_ALLOWLIST = new Set([
 ]);
 
 /**
- * Campos citados em crase por uma só skill (campo `file` do `skillCases`), além da
+ * Campos e nomes de skill citados em crase por uma só skill (campo `file` do `skillCases`), além da
  * `FIELD_NAME_ALLOWLIST`.
  */
 const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
+  'skills/hexlog-setup/SKILL.md': ['hexlog', 'hexlog-flow', 'unit', 'targetPattern'],
   'skills/hexlog-flow/SKILL.md': [
+    'targetPattern',
     'counts',
     'origin',
     'inheritedIn',
@@ -361,10 +361,7 @@ const skillCases: SkillCase[] = [
   {
     file: 'skills/hexlog-setup/SKILL.md',
     citationExpectations: {
-      'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
-      'domain/ids.ts#RESERVED_PROCESS_NAMES': ['RESERVED_PROCESS_NAMES'],
-      'commands/definition.ts#typeRule': ['INVALID_SCHEMA'],
-      'errors.ts#breakingChange': ['BREAKING_CHANGE'],
+      'domain/ids.ts#Name': ['Name'],
     },
   },
   {
@@ -389,10 +386,12 @@ const skillCases: SkillCase[] = [
 // (`phases`, `process`) em crases, que a checagem de identificadores leria como tool inexistente.
 const referenceCases: SkillCase[] = [
   {
-    file: 'skills/hexlog-setup/references/flow-map-schema.md',
+    file: 'skills/hexlog-flow/references/unit-lifecycle.md',
     citationExpectations: {
       'domain/ids.ts#Name': ['Name'],
-      'domain/ids.ts#Target': ['Target'],
+      'domain/ids.ts#RecordId': ['RecordId'],
+      'commands/process.ts#staleOf': ['stale'],
+      'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
     },
   },
   {

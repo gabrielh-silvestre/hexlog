@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "modelVersion": 1,
+  "project": "photo-app",
+  "language": "en",
+  "unit": {
+    "kind": "feature directory",
+    "location": "specs/<NNN-name>",
+    "processName": "unit path in lowercase; every run of characters outside [a-z0-9] becomes a hyphen; at most 63 characters",
+    "examples": [
+      { "path": "specs/001-photo-albums", "process": "specs-001-photo-albums" },
+      { "path": "specs/002-user-login", "process": "specs-002-user-login" }
+    ]
+  },
+  "phases": [
+    {
+      "name": "specify",
+      "command": "/speckit.specify",
+      "type": "spec",
+      "target": "spec",
+      "artifact": "spec.md",
+      "links": []
+    },
+    {
+      "name": "plan",
+      "command": "/speckit.plan",
+      "type": "plan",
+      "target": "plan",
+      "artifact": "plan.md",
+      "links": [{ "relation": "plan-derives-from-spec", "to": "spec" }]
+    },
+    {
+      "name": "tasks",
+      "command": "/speckit.tasks",
+      "type": "tasks",
+      "target": "tasks",
+      "artifact": "tasks.md",
+      "links": [{ "relation": "tasks-derive-from-plan", "to": "plan" }]
+    }
+  ],
+  "types": [
+    {
+      "name": "spec",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "unit": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 600 },
+          "document": { "type": "string", "format": "attachment" }
+        },
+        "required": ["unit", "summary"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "plan",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "unit": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 600 },
+          "document": { "type": "string", "format": "attachment" }
+        },
+        "required": ["unit", "summary"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "unit": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 600 },
+          "document": { "type": "string", "format": "attachment" }
+        },
+        "required": ["unit", "summary"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "relations": [
+    { "name": "plan-derives-from-spec", "kind": "derivesFrom", "from": ["plan"], "to": ["spec"] },
+    { "name": "tasks-derive-from-plan", "kind": "derivesFrom", "from": ["tasks"], "to": ["plan"] }
+  ],
+  "gate": {
+    "name": "unit-complete",
+    "questions": [
+      { "kind": "occurred", "select": { "type": "spec" } },
+      { "kind": "occurred", "select": { "type": "plan" } },
+      { "kind": "occurred", "select": { "type": "tasks" } },
+      {
+        "kind": "no_pending",
+        "pending": { "type": "spec" },
+        "resolvedBy": { "kind": "derivesFrom", "from": ["plan"] }
+      },
+      {
+        "kind": "no_pending",
+        "pending": { "type": "plan" },
+        "resolvedBy": { "kind": "derivesFrom", "from": ["tasks"] }
+      }
+    ]
+  },
+  "plug": { "flow": "spec-kit", "flowVersion": "1.2.4", "layer": "C" }
+}

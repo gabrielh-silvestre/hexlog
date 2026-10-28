@@ -17,17 +17,17 @@ da spec, do team), e as partes dele ficam abaixo (`<slug>.revisao`). Assim uma
 consulta por `targetPrefix` = o slug traz o item inteiro, e o `target` do
 `evaluate_gate` é herdado pelos seletores que não trazem `targetPrefix`.
 
-## `targetIdPattern` customizado por projeto
+## `targetPattern` customizado por projeto
 
-O `.hexlog/flow.md` pode restringir o formato do target via `targetIdPattern` no
-frontmatter (ver [`../../hexlog-setup/references/flow-map-schema.md`](../../hexlog-setup/references/flow-map-schema.md)): uma regex
-sobre o **rótulo inteiro**, mais estreita que a sintaxe acima — por exemplo, um
-projeto que numera tarefas como `proj-123` e as divide em partes declara
-`targetIdPattern: 'proj-[0-9]+(\.[a-z0-9-]+)*'`. Quando o campo está ausente, vale só a
+O modelo do projeto pode restringir o formato do target via `targetPattern` (ver
+[`../../hexlog-setup/references/model-schema.md`](../../hexlog-setup/references/model-schema.md)):
+uma regex sobre o **rótulo inteiro**, mais estreita que a sintaxe acima — por
+exemplo, um projeto que numera tarefas como `proj-123` e as divide em partes declara
+`targetPattern: 'proj-[0-9]+(\.[a-z0-9-]+)*'`. Quando o campo está ausente, vale só a
 sintaxe do `Target`.
 
 Antes de montar um `target` novo (ao registrar o primeiro registro sobre um item de
-trabalho), confira o `targetIdPattern` do flow map. O servidor só valida a sintaxe
+trabalho), confira o `targetPattern` do modelo do projeto. O servidor só valida a sintaxe
 do `Target`: um rótulo fora do padrão do projeto é aceito, mas quebra a convenção
 combinada e deixa de bater com o que outras fases esperam achar ao consultar esse
 mesmo alvo.

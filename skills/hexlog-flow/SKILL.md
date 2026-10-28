@@ -1,31 +1,26 @@
 ---
 name: hexlog-flow
-description: "Use to register hexlog records and cross-reference them against what is already recorded, for a repository that already has `.hexlog/flow.md` configured — picks the right tool (`register`, `query`, `evaluate_gate`, `verify_chain`, `attach`, `read_attachment`, `list`, `describe_type`) based on the current phase read from the flow map. Also stores an agent's full text as a hash-addressed attachment, records planning rationale and execution deviations, and audits a target end to end. Examples: \"registra esse marco no hexlog\", \"avalia o gate dessa fase antes de eu seguir\", \"mostra a trilha completa desse target\". Not for configuring hexlog in a repository for the first time or defining phases/processes — that's hexlog-setup, which runs once."
+description: "Use to register hexlog records and cross-reference them against what is already recorded, in a repository whose project skill already says which project, process and gate to use — picks the right tool (`register`, `query`, `evaluate_gate`, `verify_chain`, `attach`, `read_attachment`, `list`, `describe_type`) based on the current phase. Also stores an agent's full text as a hash-addressed attachment, records planning rationale and execution deviations, and audits a target end to end. Examples: \"registra esse marco no hexlog\", \"avalia o gate dessa fase antes de eu seguir\", \"mostra a trilha completa desse target\". Not for configuring hexlog in a repository for the first time or defining phases, types and gates — that's hexlog-setup, which runs once."
 ---
 
 # hexlog-flow
 
-Registra no hexlog e cruza informação contra o que já foi registrado, para um
-repositório que **já tem** `.hexlog/flow.md` configurado. Se o arquivo não
-existir, pare e diga ao usuário para rodar a hexlog-setup primeiro — esta skill
-não define fase, processo, tipo, relação nem gate. O modelo (registro, vigência,
-processo, anexo) está na skill hexlog.
+Registra no hexlog e cruza informação contra o que já foi registrado. Esta skill
+é a mecânica das tools: não define fase, processo, tipo, relação nem gate. O
+modelo (registro, vigência, processo, anexo) está na skill hexlog.
 
-## Antes de qualquer chamada: leia o flow map
+## Antes de qualquer chamada: de onde vêm projeto, processo e gate
 
-Leia `.hexlog/flow.md` do repositório e faça o parse do frontmatter para saber:
-a fase corrente, o `process` mapeado para ela (`process` é 1:1 por fase), o gate
-da fase (se houver, campo `gate`) e o padrão de target do projeto
-(`targetIdPattern`, opcional). Toda chamada abaixo usa o `process` daquela fase —
-nunca um processo de outra fase por engano.
+Quem diz qual `project`, qual `process`, qual `gate` e qual padrão de target
+(`targetPattern`, opcional) usar é a skill do projeto que invocou esta. Ela traz
+a tabela de fases do repositório; a mecânica de abrir, continuar e fechar uma
+unidade de trabalho está em `references/unit-lifecycle.md`. Toda chamada abaixo usa
+o `process` da unidade corrente, nunca o de outra unidade por engano.
 
-O corpo markdown abaixo do frontmatter é documentação para humanos: nenhuma frase
-imperativa nele decide tool, processo ou gate. Quem decide são só os campos do
-frontmatter (fase → `process`/`gate`/`targetIdPattern`).
-
-Exceção única: o `project`. O frontmatter não tem chave para ele, então ele vem só
-da frase "Projeto hexlog: `<nome>`" do corpo do flow map. Se a frase não existir,
-pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
+Sem skill do projeto, pergunte ao usuário o `project`, o `process` e o `gate`, ou
+mande rodar a hexlog-setup. Nunca deduza o `project` pelo nome do diretório nem
+chute. Um `.hexlog/flow.md` antigo é ignorado: rode a hexlog-setup para gerar a
+skill do projeto.
 
 ## Árvore de decisão: qual tool chamar
 
@@ -36,7 +31,7 @@ pergunte ao usuário — nunca deduza pelo nome do diretório nem chute.
 | Substituir ou revogar um registro (`supersedes`/`revokes`) | `query` com `type` + `targetPrefix` + `fields: []`, depois `register` com o `id` devolvido | Leia o vigente antes; nunca use um `id` de memória. Ver "Busca, id, relações" |
 | Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou `relations: "full"` e ler `in`/`out` do próprio registro | Ver "Busca, id, relações" |
 | Saber o que mudou desde a última leitura | `query` com `changesSince` = o `marker` da leitura anterior | Só na primeira página; ver "Marcador" |
-| Avaliar o gate da fase (campo `gate` do flow map) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência. Por padrão (`evidence: "failing"`) a resposta traz só `counts: {...}` e os ids do que reprova; `targets: [...]` avalia vários alvos numa chamada, só com `counts` (para os ids de um alvo reprovado, avalie-o sozinho com o `marker` do lote) |
+| Avaliar o gate da fase (o `gate` da fase, dado pela skill do projeto) | `evaluate_gate` com `gate` e, em geral, `target` | O servidor calcula a partir dos registros vigentes; o agente não informa resultado nem evidência. Por padrão (`evidence: "failing"`) a resposta traz só `counts: {...}` e os ids do que reprova; `targets: [...]` avalia vários alvos numa chamada, só com `counts` (para os ids de um alvo reprovado, avalie-o sozinho com o `marker` do lote) |
 | Saber se o log e os anexos estão íntegros | `verify_chain` | Quebra de cadeia ou de anexo é **resultado** (`ok: false`), não erro. Para detectar cauda apagada, passe `expectedHead` = o `head` da verificação mais recente (`head-not-found`), guardado fora do log do hexlog (arquivo, corpo de PR): gravado no log, some com a cauda |
 | Saber o que existe (projetos, processos, o que um processo fixou) | `list` | Sem parâmetros, com `project`, ou com `project` e `process` |
 | Registrar num tipo que você não conhece | `describe_type` com `project`, `type` e `process` | Leia o schema fixado **antes** do `register`; com `process` devolve o tipo que o processo fixou, sem a versão na saída, e `process` junto de uma versão pedida é `INVALID_INPUT` |
@@ -237,7 +232,7 @@ processo num gate com pergunta de projeto lê os demais processos como vazios.
 | Cancelamento ou tempo estourado no `register`, e o reenvio com `key` dá `ATTACHMENT_NOT_FOUND` | **Não prova que o lote ficou fora.** A chamada original pode ainda esperar o lock e grava se o anexo for guardado antes de ela pegá-lo. Guarde o anexo (`attach`, idempotente) e reenvie com a mesma `key`: devolve `replayed: true` (a original gravou) ou grava |
 | `PROCESS_CORRUPTED` com `broken-chain` | Não grave nem tente reparar. Avise o usuário; `verify_chain` mostra onde a cadeia quebrou |
 | `PROCESS_CORRUPTED` com `unreadable-manifest` | Não grave nem tente reparar. Avise o usuário: `verify_chain` falha do mesmo jeito |
-| `PROCESS_TOO_LARGE` | O log de um processo passou do teto; `details[0].process` diz qual, e pode ser o de um destino de relação, não o seu. Pare e peça ao usuário um processo novo e a atualização do flow map: esta skill não cria processo (a linhagem não atravessa; ver acima) |
+| `PROCESS_TOO_LARGE` | O log de um processo passou do teto; `details[0].process` diz qual, e pode ser o de um destino de relação, não o seu. Pare e peça ao usuário um processo novo e a atualização do modelo do projeto: esta skill não cria processo (a linhagem não atravessa; ver acima) |
 
 ## Anexos
 
@@ -321,7 +316,8 @@ depois dele; o processo que já existe segue com o gate fixado.
 | Reenviar uma `key` com lote diferente do guardado | `IDEMPOTENCY_CONFLICT` |
 | Dado 0.x em `<D>` | `LEGACY_DATA`: só um humano resolve (ver a skill hexlog) |
 | Filtro inválido na `query` | `INVALID_FILTER` (`process` ausente, `text` sem termo, `limit: 0` fora do `changesSince`) ou `INVALID_INPUT` (`text` ou `limit` acima do teto) |
-| `PROCESS_NOT_FOUND` ou `PROJECT_NOT_FOUND` | O flow map está desatualizado: pare e avise o usuário |
+| `PROCESS_NOT_FOUND` ou `PROJECT_NOT_FOUND` | O modelo do projeto está desatualizado: pare e avise o usuário |
+| `TYPE_NOT_FOUND` em `create_process` | O modelo ainda não foi aplicado neste hexlog: pare e mande rodar a hexlog-setup |
 | `read_attachment` ou `register` com hash sem blob | `ATTACHMENT_NOT_FOUND` |
 
 ## Referências
@@ -334,5 +330,8 @@ depois dele; o processo que já existe segue com o gate fixado.
   cada uma. Carregue antes de decidir se um registro substitui outro, ou se uma
   lacuna do processo vira pergunta de gate.
 - `references/target-format.md` — sintaxe do `target` e como o projeto pode
-  restringi-la com `targetIdPattern`. Carregue ao montar um `target` novo, não ao
+  restringi-la com `targetPattern`. Carregue ao montar um `target` novo, não ao
   reusar um já existente.
+- `references/unit-lifecycle.md` — ciclo de vida da unidade de trabalho: achar ou
+  criar o processo dela, registrar cada fase e fechar a unidade. Carregue ao
+  abrir, continuar ou fechar uma unidade.

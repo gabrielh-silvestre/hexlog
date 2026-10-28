@@ -1,6 +1,6 @@
 ---
 name: hexlog
-description: "Use when the agent needs to bootstrap a new project in hexlog (define types, relation names and gates, create a process, register records, evaluate gates) or diagnose whether an already-installed hexlog server is healthy. Examples: \"configura o hexlog nesse projeto\", \"o hexlog está funcionando?\". Not for day-to-day registering or gate evaluation in a repository that already has `.hexlog/flow.md` — that's hexlog-flow."
+description: "Use when the agent needs to bootstrap a new project in hexlog (define types, relation names and gates, create a process, register records, evaluate gates) or diagnose whether an already-installed hexlog server is healthy. Examples: \"como funciona o modelo do hexlog?\", \"o hexlog está funcionando?\". Not for day-to-day registering or gate evaluation — that's hexlog-flow — nor for configuring the hexlog flow of a new repository — that's hexlog-setup."
 ---
 
 # hexlog
@@ -10,7 +10,8 @@ ligados por relações, num log append-only com cadeia de hash, e gates que
 respondem perguntas sobre esses registros. Esta skill cobre o modelo, o
 bootstrap de um projeto e o diagnóstico de saúde — não a instalação; isso é do
 `README.md` do repositório hexlog. O uso do dia a dia (registrar, buscar,
-avaliar) é da skill hexlog-flow.
+avaliar) é da skill hexlog-flow. Para configurar o hexlog em um repositório
+novo (fases, tipos, gate e skill do projeto), use a skill hexlog-setup.
 
 ## O modelo em uma tela
 
