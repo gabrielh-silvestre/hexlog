@@ -149,3 +149,25 @@ _Avoid_: regra, critério
 **Evidência do gate** (`evidence`):
 Os registros que sustentam a resposta de cada pergunta de um gate.
 _Avoid_: evidência (sozinha), prova
+
+### Setup em repositório de destino
+
+**Repositório de destino**:
+O repositório de código de um projeto externo onde o setup gera os artefatos do hexlog; o **Projeto** hexlog que o acompanha é o espaço do log, outra coisa.
+_Avoid_: projeto alvo, alvo (colide com **Target**), projeto (é o espaço do log)
+
+**Skill do projeto**:
+A skill curta que o setup gera no repositório de destino, com a tabela de fases e ponteiros para a mecânica da `hexlog-flow`.
+_Avoid_: skill gerada (sozinha), mapa do fluxo
+
+**Modelo declarativo** (`hexlog-model.json`):
+O arquivo, ao lado da skill do projeto, com a unidade, as fases, os tipos, as relações e o gate que o setup registrou; regenerado, nunca editado em uso.
+_Avoid_: mapa, configuração
+
+**Unidade de trabalho** (`unit`):
+O que recebe um **Processo** no repositório de destino, como uma pasta de feature; identificada pelo caminho canônico.
+_Avoid_: trabalho (o **Processo** já evita e o glossário do fluxo usa para as entregas daqui), tarefa
+
+**Camada de plug** (`layer`):
+O grau em que o hexlog se liga a um fluxo externo: C só escreve arquivos do próprio hexlog; B e A dependem de prova e de consentimento.
+_Avoid_: nível, integração

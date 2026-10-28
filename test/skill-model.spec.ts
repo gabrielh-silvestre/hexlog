@@ -142,7 +142,20 @@ const evaluate = (model: Model, evidence: 'full' | 'counts' = 'counts') =>
     evidence,
   });
 
-const relativeToRepo = (file: string) => path.relative(repoRoot, file);
+const readDocuments = (files: string[]) =>
+  files.map((file) => ({
+    file: path.relative(repoRoot, file),
+    content: fs.readFileSync(file, 'utf8'),
+  }));
+
+/** Arquivos de `documents` sob o prefixo `scope` cujo conteúdo casa `pattern`, com a contagem de cada um. */
+const occurrencesIn = (documents: ReturnType<typeof readDocuments>, pattern: RegExp, scope = '') =>
+  Object.fromEntries(
+    documents
+      .filter(({ file }) => file.startsWith(scope))
+      .map(({ file, content }) => [file, content.match(pattern)?.length ?? 0] as const)
+      .filter(([, count]) => count > 0),
+  );
 
 describe('skills/hexlog-setup/references/*.example.json', () => {
   it.each(EXAMPLES)('should carry the documented top-level keys in $file', ({ model }) => {
@@ -287,19 +300,10 @@ describe('evaluate_gate', () => {
 });
 
 describe('skills/**/*.md', () => {
-  const documents = listFiles(skillsDir, '.md').map((file) => ({
-    file: relativeToRepo(file),
-    content: fs.readFileSync(file, 'utf8'),
-  }));
+  const documents = readDocuments(listFiles(skillsDir, '.md'));
 
-  /** Arquivos cujo conteúdo casa `pattern`, com a contagem de ocorrências de cada um. */
   const occurrences = (pattern: RegExp, scope = '') =>
-    Object.fromEntries(
-      documents
-        .filter(({ file }) => file.startsWith(`skills/${scope}`))
-        .map(({ file, content }) => [file, content.match(pattern)?.length ?? 0] as const)
-        .filter(([, count]) => count > 0),
-    );
+    occurrencesIn(documents, pattern, `skills/${scope}`);
 
   const body = (skill: string) => {
     const content = at(
@@ -368,5 +372,51 @@ describe('skills/hexlog-setup/references/plug-speckit.md', () => {
     expect(section).toBeDefined();
     expect(header).toBe(PROVEN_VERSIONS_HEADER);
     expect(rows.every((row) => (evidenceOf(row) ?? '') !== '')).toBe(true);
+  });
+});
+
+describe('docs/setup-aceitacao.md', () => {
+  const content = fs.readFileSync(path.join(repoRoot, 'docs', 'setup-aceitacao.md'), 'utf8');
+  // Conservadora: decisões D1 a D6 (com sufixo opcional), A1, AC e PR-1/PR-2.
+  const PLAN_LABEL = /\b(?:D[1-6](?:-\d+)?|A1|AC\d*|PR-[12])\b/;
+  const checklist = content.split(/^## /m).find((part) => part.startsWith('Checklist')) ?? '';
+  const sections = checklist.split(/^### /m).slice(1);
+
+  it('should have at least one checklist item in every checklist section', () => {
+    expect(sections.length).toBeGreaterThan(0);
+    expect(sections.filter((section) => !/^- \[ \]/m.test(section))).toEqual([]);
+  });
+
+  it('should not carry plan labels', () => {
+    expect(content).not.toMatch(PLAN_LABEL);
+  });
+});
+
+describe('docs/instalacao.md', () => {
+  const content = fs.readFileSync(path.join(repoRoot, 'docs', 'instalacao.md'), 'utf8');
+  const requirements = content.split(/^## /m).find((part) => part.startsWith('Requisitos')) ?? '';
+
+  it('should state the checkout requirement in the requirements section', () => {
+    expect(requirements).toContain('checkout');
+    expect(requirements).toContain('npm ci');
+  });
+});
+
+describe('README.md, docs/**/*.md and AGENTS.md', () => {
+  const files = [
+    path.join(repoRoot, 'README.md'),
+    path.join(repoRoot, 'AGENTS.md'),
+    ...listFiles(path.join(repoRoot, 'docs'), '.md'),
+  ];
+  // `pesquisa/` é congelada e o ADR 0013 documenta a aposentadoria dos termos.
+  const documents = readDocuments(files).filter(
+    ({ file }) =>
+      !file.startsWith('docs/pesquisa/') && !file.startsWith('docs/directives/adr-0013-'),
+  );
+
+  it('should not mention the retired setup terms', () => {
+    expect(occurrencesIn(documents, /flow\.md|flow map|editedSkills|targetIdPattern/gi)).toEqual(
+      {},
+    );
   });
 });
