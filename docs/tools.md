@@ -327,7 +327,7 @@ até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estrei
 o resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
 
 - **Detalhe da evidência:** `evidence` escolhe o quanto cada pergunta traz.
-  - `failing` (o padrão da tool com `target`) devolve `counts`, o tamanho de cada lista da pergunta
+  - `failing` (o padrão da tool sempre que `targets` não vem) devolve `counts`, o tamanho de cada lista da pergunta
     (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
     reprovação e não estão vazias: `unsupported` e `contradictions` em `approved`, `found`
     em `occurred`, `unresolved` em `no_pending`, `conflicting` em `no_open_contradiction`.
