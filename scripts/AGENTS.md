@@ -72,7 +72,7 @@ Regra única dos três: 2 é dado quebrado (o operador resolve no dado, não no 
 - `npm test` (jest) roda tudo, incluindo:
   - `test/package.spec.ts`: `dependencies`/`devDependencies` do
     `package.json` têm exatamente os pacotes esperados, todos em faixa
-    `^X.Y.Z` (a versão resolvida fica no lock), `engines.node` é `>=24.18.1`.
+    `^X.Y.Z` (a versão resolvida fica no lock), `engines.node` é `^24.18.1`.
   - `test/installation.spec.ts` e `test/guard.spec.ts`: os describes
     `installArtifact` e `registerGuard` chamam as funções direto;
     `test/install-script.spec.ts`: o describe `scripts/install.ts` (com

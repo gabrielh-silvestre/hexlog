@@ -68,5 +68,5 @@ function main(argv: string[]): number {
   }
 }
 
-// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine >=24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
+// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine ^24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
 if (import.meta.main) process.exitCode = main(process.argv.slice(2));

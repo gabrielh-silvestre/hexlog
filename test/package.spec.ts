@@ -150,8 +150,8 @@ describe('package.json', () => {
     expect(outsideCaret(declared)).toEqual([]);
   });
 
-  it('should require node >=24.18.1 in engines', () => {
-    expect(pkg.engines).toEqual({ node: '>=24.18.1' });
+  it('should require node ^24.18.1 in engines', () => {
+    expect(pkg.engines).toEqual({ node: '^24.18.1' });
   });
 
   it('should declare the same version as VERSION in src/version.ts', () => {
