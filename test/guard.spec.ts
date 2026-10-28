@@ -837,6 +837,19 @@ describe('registerGuard', () => {
     },
   );
 
+  it('should rethrow an EACCES from the backup hard link unchanged and keep settings.json', () => {
+    const { dir, settingsPath, before } = plantSettings('register-hardlink-eacces');
+    const denied = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    jest.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw denied;
+    });
+
+    expect(() => registerGuard({ settingsPath, expected: fakeExpected })).toThrow(denied);
+
+    expect(fs.readFileSync(settingsPath, 'utf8')).toBe(before);
+    expect(fs.readdirSync(dir)).toEqual(['settings.json']);
+  });
+
   it('should write to the symlink target and keep the link and the mode', () => {
     const dir = createTempDir('register-symlink');
     const realFile = path.join(dir, 'dotfiles', 'settings.json');
