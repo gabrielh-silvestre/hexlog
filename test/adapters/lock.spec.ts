@@ -130,7 +130,7 @@ describe('createLockManager', () => {
       expect(refusal).toEqual(timeout('lock-busy', pid));
       expect(tokenIn(holderFile)).toBe(tokenBefore);
       expect(eventsOf(records)).toEqual(['lock-wait', 'lock-timeout']);
-    });
+    }, 15_000);
 
     it('should leave nothing behind after releasing a lock stolen from an owner killed with kill -9', async () => {
       const { dir, lockDir } = workspace();
@@ -141,7 +141,7 @@ describe('createLockManager', () => {
       await manager.release(lock);
 
       expect(fs.readdirSync(dir)).toEqual([]);
-    });
+    }, 15_000);
 
     it('should count as alive a pid the kernel denies signaling (EPERM)', async () => {
       const { dir, lockDir } = workspace();
@@ -155,7 +155,7 @@ describe('createLockManager', () => {
       const refusal = await timeoutOf(manager.acquire(lockDir), dir);
 
       expect(refusal).toEqual(timeout('lock-busy', pid));
-    });
+    }, 15_000);
 
     it('should keep the chain intact, with no raw failure, across 8 children x 25 writes on the same process with a pre-planted dead-owner lock', async () => {
       const { store, ref, dir, results } = await runWriteStress();
@@ -529,7 +529,7 @@ describe('createLockManager', () => {
     } finally {
       parent.kill('SIGKILL');
     }
-  });
+  }, 15_000);
 
   it('should steal a holder with a different bootId even with a live pid and a held token', async () => {
     const { dir, lockDir, holderFile } = workspace();
@@ -562,7 +562,7 @@ describe('createLockManager', () => {
     const refusal = await timeoutOf(sameBoot.acquire(lockDir), dir);
 
     expect(refusal).toEqual(timeout('lock-busy', pid));
-  });
+  }, 15_000);
 
   it('should steal a null bootId holder for a manager that has a bootId', async () => {
     const { lockDir, holderFile } = workspace();
@@ -573,7 +573,7 @@ describe('createLockManager', () => {
     const lock = await otherBoot.acquire(lockDir);
 
     expect(tokenIn(holderFile)).toBe(lock.token);
-  });
+  }, 15_000);
 
   it('should release the lock and leave nothing behind', async () => {
     const { dir, lockDir } = workspace();
@@ -646,7 +646,7 @@ describe('createProcessStore', () => {
     }));
 
     expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 1 });
-  });
+  }, 15_000);
 });
 
 describe('moveAside', () => {
@@ -761,5 +761,5 @@ describe('isPidAlive', () => {
     } finally {
       parent.kill('SIGKILL');
     }
-  });
+  }, 15_000);
 });

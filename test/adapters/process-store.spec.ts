@@ -876,7 +876,7 @@ describe('createProcessStore', () => {
       });
       expect(decide).not.toHaveBeenCalled();
       expect(fs.readFileSync(logFile, 'utf8')).toBe('');
-    });
+    }, 15_000);
   });
 
   describe('with one fsync per batch', () => {

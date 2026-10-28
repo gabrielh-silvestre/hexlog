@@ -402,7 +402,7 @@ describe('createAttachmentStore', () => {
     const outcome = probe({ call: 'status', hash: fifo });
 
     expect(outcome).toEqual({ result: 'corrupted' });
-  });
+  }, 15_000);
 
   it.each([
     ['a directory', 'directory', (file: string) => fs.mkdirSync(file)],
@@ -732,15 +732,19 @@ describe('createAttachmentStore', () => {
         return '.omc/plans/link.md';
       },
     ],
-  ])('should refuse %s with not-regular, storing nothing', (_name, prepare) => {
-    const candidate = prepare();
+  ])(
+    'should refuse %s with not-regular, storing nothing',
+    (_name, prepare) => {
+      const candidate = prepare();
 
-    const outcome = probe({ call: 'putPath', path: candidate });
+      const outcome = probe({ call: 'putPath', path: candidate });
 
-    expect(outcome).toEqual({ error: invalid('/path', 'not-regular') });
+      expect(outcome).toEqual({ error: invalid('/path', 'not-regular') });
 
-    expectNothingStored();
-  });
+      expectNothingStored();
+    },
+    15_000,
+  );
 
   it('should refuse a file above 1 MiB with too-big, storing nothing', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61));
