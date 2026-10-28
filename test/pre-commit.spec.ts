@@ -8,6 +8,6 @@ describe('.husky/pre-commit', () => {
   it('should run lint-staged with one task group at a time', () => {
     const hook = fs.readFileSync(HOOK, 'utf8');
 
-    expect(hook).toContain('lint-staged --concurrent false');
+    expect(hook).toMatch(/^[^#\n]*lint-staged --concurrent false/m);
   });
 });

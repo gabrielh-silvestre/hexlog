@@ -540,11 +540,14 @@ describe('scripts/flow/reanchor.ts', () => {
     });
 
     it('should exit 1 on a second --apply, refusing the same batch and rewriting nothing more', () => {
+      const before = snapshot(xdg);
+
       const again = runReanchor(['--to', 'directives-2', '--apply'], xdg);
 
       expect(again.status).toBe(1);
       expect(again.stderr).toContain(`batch refused: feat-d ${key}`);
       expect(again.stdout).toContain('rewrote 0 of 1 decisions');
+      expect(snapshot(xdg)).toEqual(before);
     }, 30_000);
   });
 

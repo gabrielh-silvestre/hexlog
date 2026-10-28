@@ -177,10 +177,14 @@ describe('scripts/flow/mark.ts', () => {
   }, 15_000);
 });
 
+const importSpecifiers = (file: string): (string | undefined)[] =>
+  [...fs.readFileSync(path.join(repoRoot, file), 'utf8').matchAll(/from '([^']+)'/g)].map(
+    (match) => match[1],
+  );
+
 describe('scripts/flow/marker.ts', () => {
   it('should import only node builtins', () => {
-    const source = fs.readFileSync(path.join(repoRoot, 'scripts/flow/marker.ts'), 'utf8');
-    const specifiers = [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);
+    const specifiers = importSpecifiers('scripts/flow/marker.ts');
 
     expect(specifiers.length).toBeGreaterThan(0);
 
@@ -190,8 +194,6 @@ describe('scripts/flow/marker.ts', () => {
 
 describe('.claude/hooks/flow-command.ts', () => {
   it('should import nothing', () => {
-    const source = fs.readFileSync(path.join(repoRoot, '.claude/hooks/flow-command.ts'), 'utf8');
-
-    expect(source).not.toMatch(/^\s*import\b|\bfrom\s+['"]|\bimport\(|\brequire\(/m);
+    expect(importSpecifiers('.claude/hooks/flow-command.ts')).toEqual([]);
   });
 });

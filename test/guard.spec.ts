@@ -844,8 +844,14 @@ describe('registerGuard', () => {
       throw denied;
     });
 
-    expect(() => registerGuard({ settingsPath, expected: fakeExpected })).toThrow(denied);
+    let thrown: unknown;
+    try {
+      registerGuard({ settingsPath, expected: fakeExpected });
+    } catch (error) {
+      thrown = error;
+    }
 
+    expect(thrown).toBe(denied);
     expect(fs.readFileSync(settingsPath, 'utf8')).toBe(before);
     expect(fs.readdirSync(dir)).toEqual(['settings.json']);
   });
