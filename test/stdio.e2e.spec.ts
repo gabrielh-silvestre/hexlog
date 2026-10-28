@@ -131,6 +131,7 @@ function runBundleWithStdin(input: string | Buffer): SpawnSyncReturns<string> {
       XDG_DATA_HOME: createTempDir('e2e-xdg'),
     },
     cwd: bundleDir,
+    timeout: 25_000,
   });
 }
 
@@ -378,6 +379,7 @@ describe('dist/server.mjs over stdio', () => {
     const result = runBundleWithStdin(Buffer.alloc(10 * 1024 * 1024 + 1, 'x'));
 
     expect(result.status).toBe(0);
+    expect(result.stdout).toBe('');
     expect(stderrRecords(result.stderr)).toContainEqual(
       expect.objectContaining({
         level: 'error',
@@ -395,6 +397,7 @@ describe('dist/server.mjs over stdio', () => {
 
     const line = result.stderr.split('\n').find((l) => l.includes('"transport-error"')) ?? '';
 
+    expect(result.stdout).toBe('');
     expect(line.length).toBeGreaterThan(0);
     expect(line.length).toBeLessThan(1024);
     expect(JSON.parse(line)).toEqual(
