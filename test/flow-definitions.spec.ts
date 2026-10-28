@@ -301,7 +301,6 @@ describe('register', () => {
   });
 
   it('should store rests-on from a decision to the premise of generation 2', async () => {
-    await runSync(DIRECTIVES, STRATEGY, 'v1', premisesOf(1));
     const premiseId = await seedPremise();
 
     const decisionId = await registerOne(

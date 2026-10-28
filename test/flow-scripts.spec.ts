@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { RESERVED_PROCESS_NAMES } from '../src/domain/ids.ts';
 import { createFlowEnvironment, registerFlowRecord } from './flow-data.ts';
 import {
+  NO_MARKER,
   bash,
   createRepo,
   expectAllowed,
@@ -90,8 +91,14 @@ describe('scripts/flow/mark.ts', () => {
     expect(fs.readFileSync(markerFile('feat-x'), 'utf8')).toBe(`feat/x\n${repoState.tipSha}\n`);
   }, 15_000);
 
-  it('should make the pre-pr hook accept the PR and gh pr ready', () => {
-    runMark('feat-x');
+  it('should make the pre-pr hook accept the PR and gh pr ready only after the mark', () => {
+    expectDenied(mcpCreate('feat/x'), NO_MARKER);
+    expectDenied(bash('gh pr create --title t'), NO_MARKER);
+    expectDenied(bash('gh pr ready'), NO_MARKER);
+
+    const result = runMark('feat-x');
+
+    expect(result.status).toBe(0);
 
     expectAllowed(mcpCreate('feat/x'));
     expectAllowed(bash('gh pr create --title t'));
@@ -158,6 +165,16 @@ describe('scripts/flow/mark.ts', () => {
     expect(result.stderr).toMatch(/does not yield slug/);
     expect(fs.existsSync(repoState.markerDir)).toBe(false);
   }, 15_000);
+
+  it('should exit with 2 and write nothing over legacy 0.x data', () => {
+    const legacyXdg = copyToXdg(path.join(__dirname, 'fixtures', 'legacy-0x'));
+
+    const result = runMark('feat-x', repoState.repo, legacyXdg);
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/^hexlog flow mark failed: LEGACY_DATA/);
+    expect(fs.existsSync(repoState.markerDir)).toBe(false);
+  }, 15_000);
 });
 
 describe('scripts/flow/marker.ts', () => {
@@ -168,5 +185,13 @@ describe('scripts/flow/marker.ts', () => {
     expect(specifiers.length).toBeGreaterThan(0);
 
     expect(specifiers.filter((specifier) => !specifier?.startsWith('node:'))).toEqual([]);
+  });
+});
+
+describe('.claude/hooks/flow-command.ts', () => {
+  it('should import nothing', () => {
+    const source = fs.readFileSync(path.join(repoRoot, '.claude/hooks/flow-command.ts'), 'utf8');
+
+    expect(source).not.toMatch(/^\s*import\b|\bfrom\s+['"]|\bimport\(|\brequire\(/m);
   });
 });

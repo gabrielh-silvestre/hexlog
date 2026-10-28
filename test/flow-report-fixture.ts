@@ -437,6 +437,22 @@ export async function createReportFixture(): Promise<ReportFixture> {
     'd-rests-approved': decision('feat-c', 'rests-approved', [restsOn('@p-ok-sim')]),
     'd-rests-common': decision('feat-c', 'rests-common', [restsOn('@p-common')]),
   });
+  await registerFixture('feat-c', {
+    // lote à parte: com estes itens o de cima passaria de `BATCH_MAX`, e o alias só vale dentro do lote.
+    // Só a origem `simulated-approved` aprova: outra premissa `simulated` ou `human` derivada não basta
+    'p-ss-sim': premise('feat-c', 'ss-sim', { answeredBy: 'simulated' }),
+    'p-ss-derived': premise('feat-c', 'ss-derived', {
+      answeredBy: 'simulated',
+      relations: [{ kind: 'derivesFrom', to: '@p-ss-sim' }],
+    }),
+    'p-sh-sim': premise('feat-c', 'sh-sim', { answeredBy: 'simulated' }),
+    'p-sh-derived': premise('feat-c', 'sh-derived', {
+      answeredBy: 'human',
+      relations: [{ kind: 'derivesFrom', to: '@p-sh-sim' }],
+    }),
+    'd-rests-ss': decision('feat-c', 'rests-ss', [restsOn('@p-ss-sim')]),
+    'd-rests-sh': decision('feat-c', 'rests-sh', [restsOn('@p-sh-sim')]),
+  });
   const idOf = lookup(ids, 'fixture id');
   // a diretriz que fecha a lacuna vive em `directives-9`, outro processo, como no dado real
   await registerItems(environment, 'directives-9', [

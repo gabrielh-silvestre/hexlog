@@ -208,7 +208,7 @@ describe('.claude/hooks/flow-hooks.ts pre-pr', () => {
     );
 
     it.each(['gh pr create --title "x', "echo 'gh pr create", 'echo $(gh pr create'])(
-      'should deny an unpaired quote that matches the loose regex: %s',
+      'should deny a command with an unpaired quote that mentions gh pr create: %s',
       (command) => {
         expectDenied(bash(command), UNPARSABLE);
       },
