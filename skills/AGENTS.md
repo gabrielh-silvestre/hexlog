@@ -12,7 +12,8 @@ As três skills do Claude Code que acompanham o hexlog. Cada pasta tem um `SKILL
 | File | Description |
 |------|-------------|
 | `hexlog-flow/references/audit-types.md` | Exemplo trabalhado do fluxo OMC (plano, revisões do architect e do Critic, desvios, anexos) como tipos, nomes de relação e gate, com a ordem das chamadas |
-| `hexlog-flow/references/crossref-rules.md` | As três regras de cruzamento (conflito ou superado na mesma unidade, entre fases e unidades, lacuna que vira pergunta de gate), com um exemplo de cada |
+| `hexlog-flow/references/attachments.md` | Regras de `path` e recusas do `attach`, e as saídas do `unmarked-attachment` |
+| `hexlog-flow/references/crossref-rules.md` | As três regras de cruzamento (conflito ou superado na mesma unidade, entre fases e unidades, lacuna que vira pergunta de gate) e a herança de relações pela linhagem, com um exemplo de cada |
 | `hexlog-flow/references/target-format.md` | Sintaxe do `target` e como o projeto a restringe com `targetPattern` do modelo |
 | `hexlog-flow/references/unit-lifecycle.md` | Ciclo de vida da unidade de trabalho: achar ou criar o processo, registrar cada fase e fechar a unidade |
 | `hexlog-setup/references/interview-guide.md` | Roteiro de perguntas-modelo da entrevista, com os caminhos de descoberta e de entrevista direta |

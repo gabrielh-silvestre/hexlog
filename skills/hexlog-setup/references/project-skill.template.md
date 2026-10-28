@@ -21,21 +21,21 @@ Repeat the row once per phase of the model, in order. The Links column reads `<r
 
 ## What to do
 
-All mechanics live in `references/unit-lifecycle.md` of the `hexlog-flow` skill (open
-the `hexlog-flow` skill and read that file); this skill only points to it.
+All mechanics live in `references/unit-lifecycle.md` of the `hexlog-flow` skill; open that
+skill and read the file when you open a unit, register a phase or close the unit.
 
 1. Open or continue the unit: sections "Resolver o processo da unidade" and "Sem acerto".
 2. After each command in the table, register the phase: section "Registrar uma fase"
    (target `<process>.<target suffix>`, links, `key`, a phase that already has a record).
 3. When the last phase is done, close the unit with the gate `{{gate}}`: section
-   "Fechar a unidade". Never edit `hexlog-model.json` while using the unit.
+   "Fechar a unidade". Treat `hexlog-model.json` as read-only data; change it by running
+   the `hexlog-setup` skill again.
 
 ## If something fails
 
-- The process or project is not found: the model may be out of date or never applied to
-  this hexlog. Ask the developer to run the `hexlog-setup` skill again.
-- The hexlog tools are unavailable (not listed, or the server is not running): continue
-  the developer's task without recording, and tell the developer once. Do not retry on
-  every phase.
-- Anything the developer did not ask for stays unchanged: read files only to fill the
-  records.
+- The process or project is missing in hexlog (the model may be out of date or applied to
+  another hexlog): ask the developer to run the `hexlog-setup` skill again.
+- The hexlog tools are unavailable (absent from the tool list, or the server is down):
+  continue the developer's task without recording and tell the developer once; that single
+  report covers every later phase.
+- Change only what the developer asked for: read files only to fill the records.
