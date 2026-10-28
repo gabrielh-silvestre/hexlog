@@ -17,7 +17,7 @@ import type { ProcessRef } from './ports.ts';
 export type ComposeOptions = {
   /** `<D>`: a área de dados, que o `path` do `attach` nunca alcança (D-15). */
   dataDir: string;
-  /** Raiz do `path` do `attach` (D-15): o `server.ts` passa `process.cwd()`. */
+  /** Raiz do `path` do `attach` (D-15): o `server.ts` e `scripts/flow/writer.ts#openWriter` passam o `cwd`. */
   cwd: string;
   clock: () => Date;
   logger: Logger;

@@ -196,7 +196,7 @@ function tryParseCommand(command: string): [string, string] | undefined {
   } catch {
     return undefined;
   }
-  // Exatamente 2 strings (Critic iter3-7): nada de `command.split(' ')`.
+  // Exatamente 2 strings: nada de `command.split(' ')`.
   if (tokens.length !== 2 || !tokens.every(isString)) return undefined;
   return [tokens[0], tokens[1]] as [string, string];
 }

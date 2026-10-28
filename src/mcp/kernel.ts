@@ -53,8 +53,9 @@ type Services = {
  * `register<X>Tools(server: McpServer, deps: ToolDeps): void`, que chama `defineTool` uma vez por tool,
  * com o nome e o schema de entrada declarados uma só vez, e um `run` que repassa a entrada validada ao
  * serviço. Nenhuma regra de negócio na tool; a exceção é a montagem de página e o corte do envelope
- * (ADR 0009, item 1, emenda de 2026-10-16), que moram na própria tool (`tools/query.ts#queryPage`, `gatePage`, `capChanges` e
- * `capEvidence`).
+ * (ADR 0009, item 1, emenda de 2026-10-16, e os tetos CHANGES_ITEMS_CAP e EVIDENCE_ITEMS_CAP de
+ * docs/tetos-dominio-v1.md), que moram na própria tool (`tools/query.ts#queryPage`, `gatePage`,
+ * `capChanges` e `capEvidence`).
  */
 export type ToolDeps = {
   services: Services;
