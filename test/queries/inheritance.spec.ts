@@ -221,6 +221,8 @@ describe('QueryService.queryRecords', () => {
 
     const none = query({ process: 'run-1', relations: 'none', ids: [e1, u2] });
 
+    expect(none.records).toHaveLength(2);
+
     for (const record of none.records) {
       expect(record).not.toHaveProperty('inheritedIn');
       expect(record).not.toHaveProperty('inheritedOut');
@@ -246,6 +248,8 @@ describe('QueryService.queryRecords', () => {
     const full = query({ process: 'run-1', relations: 'full', ids: [e1, u2] });
     const counts = query({ process: 'run-1', relations: 'counts', ids: [e1, u2] });
 
+    expect([...full.records, ...counts.records]).toHaveLength(4);
+
     for (const record of [...full.records, ...counts.records]) {
       expect(Object.keys(record).filter((key) => key.startsWith('inherited'))).toEqual([]);
     }
@@ -265,6 +269,8 @@ describe('QueryService.queryRecords', () => {
     const { e1, u2 } = await superseded('run-1');
 
     const page = query({ process: 'run-1', ids: [e1, u2] });
+
+    expect(page.records).toHaveLength(2);
 
     for (const record of page.records) expect(record).not.toHaveProperty('needsReview');
   });

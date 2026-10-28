@@ -23,7 +23,7 @@ import {
 } from '../../src/queries/query-service.ts';
 import { formatLine, MAX_BREAKS } from '../../src/shared/loader.ts';
 import { emptyManifest, idAt, linkAt } from '../fixtures/chain-line.ts';
-import { cursorOf, idsOf, walkPages } from '../helpers.ts';
+import { captureError, cursorOf, idsOf, walkPages } from '../helpers.ts';
 
 const PROJECT = 'alpha';
 const HASH_A = 'a'.repeat(64);
@@ -141,13 +141,8 @@ const mainService = (
 ): QueryService => serviceOf({ main: rawProcess('main', entries, fixed) }, attachments);
 
 function refusalOf(run: () => unknown) {
-  try {
-    run();
-  } catch (error) {
-    if (!(error instanceof HexlogError)) throw error;
-    return { code: error.code, message: error.message, details: error.details };
-  }
-  throw new Error('expected a HexlogError');
+  const { code, message, details } = captureError(run);
+  return { code, message, details };
 }
 
 /** Soma dos caracteres do JSON dos `count` primeiros registros: a conta de `maxChars`. */
