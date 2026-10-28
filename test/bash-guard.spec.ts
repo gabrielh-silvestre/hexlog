@@ -672,11 +672,11 @@ describe('hook/bash-guard.ts', () => {
         command: `echo hi # \${}\ncat ${globToD}`,
       },
       {
-        name: 'a "$#" parameter followed by ";" and a glob reaching D',
+        name: 'the argument count parameter followed by ";" and a glob reaching D',
         command: `echo $# ; cat ${globToD}`,
       },
       {
-        name: 'a "$#" parameter followed by a line break and a glob reaching D',
+        name: 'the argument count parameter followed by a line break and a glob reaching D',
         command: `echo $#\ncat ${globToD}`,
       },
       {
