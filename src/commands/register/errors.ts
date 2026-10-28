@@ -1,6 +1,6 @@
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { RuleCode, Violation } from '../../domain/relations.ts';
-import { domainError, type HexlogError, invalidRecord } from '../../errors.ts';
+import { domainError, type Detail, type HexlogError, invalidRecord } from '../../errors.ts';
 
 const RULE_MESSAGES: Record<RuleCode, string> = {
   'self-relation': 'a record cannot relate to itself',
@@ -18,15 +18,25 @@ const RULE_MESSAGES: Record<RuleCode, string> = {
 };
 
 /**
- * D-10/D-26: violação de regra estrutural no `path` da relação. `not-current` é `FORK_REJECTED`; as
- * demais, `INVALID_RECORD`. `current` (versão atual da linhagem, ou `null`) e `kind` (o do nome
- * fixado, em `kind-mismatch`) só saem quando a regra os traz.
+ * D-10/D-26: o `Detail` de uma violação de regra estrutural no `path` da relação. `current` (versão
+ * atual da linhagem, ou `null`) e `kind` (o do nome fixado, em `kind-mismatch`) só saem quando a
+ * regra os traz.
  */
-export function ruleRefusal(path: string, { code, current, kind }: Violation): HexlogError {
+export function ruleDetail(path: string, { code, current, kind }: Violation): Detail {
   const message =
     code === 'kind-mismatch' && !isUndefined(kind)
       ? `${RULE_MESSAGES[code]}; send as alone, or kind "${kind}"`
       : RULE_MESSAGES[code];
-  if (code === 'not-current') return domainError('FORK_REJECTED', path, code, message, { current });
-  return invalidRecord([{ path, code, message, ...omitBy({ current, kind }, isUndefined) }]);
+  return { path, code, message, ...omitBy({ current, kind }, isUndefined) };
+}
+
+/** A recusa de uma violação de regra: `not-current` é `FORK_REJECTED`; as demais, `INVALID_RECORD`. */
+export function ruleRefusal(path: string, violation: Violation): HexlogError {
+  const detail = ruleDetail(path, violation);
+  if (violation.code === 'not-current') {
+    return domainError('FORK_REJECTED', path, detail.code, detail.message, {
+      current: violation.current,
+    });
+  }
+  return invalidRecord([detail]);
 }

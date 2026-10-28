@@ -11,11 +11,12 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 ### Alterado
 
 - O `register` devolve no `INVALID_RECORD` de dado todas as violações de schema de cada registro do lote até um limite de custo (schema grande contra dado grande), e uma por subschema acima dele, não só a primeira, com um `detail` `violations-capped` (`path` `/records/<i>/data`) que avisa que a lista está incompleta e manda ler o tipo com `describe_type`; no máximo 50 `details`, e a `message` de `max-length`, `min-length`, `maximum` e `minimum` termina com o valor medido, como `(got 312)`. O teto de 16.000 caracteres de `data` segue `INVALID_INPUT` e também traz o tamanho (#300).
+- O `register` junta no mesmo `INVALID_RECORD` as recusas de relação que só dependem da entrada (`unknown-relation-name`, `kind-mismatch` e `cross-process-currency`, com `path` `/records/<i>/relations/<n>`), depois das violações de schema e sob o mesmo teto de 50 `details`: um `max-length` não esconde mais um `kind-mismatch` do mesmo registro (#300).
 - A descrição do `register`, o `docs/tools.md` e a skill `hexlog-flow` passam a ensinar que `as` sozinho basta numa relação, e as mensagens de `kind` fora da lista e de relação sem `kind` nem `as` dizem como corrigir (#300).
 
 ### Migração
 
-- O `INVALID_RECORD` de dado lista as violações de cada registro (todas até o limite de custo), e a `message` de limite de tamanho ganha o sufixo `(got N)`: quem comparava a `message` por igualdade passa a comparar o `code` (`max-length`, `min-length`, `maximum`, `minimum`), e o laço de correção pode tratar todos os `details` de uma vez (#300).
+- O `INVALID_RECORD` de dado lista as violações de cada registro (todas até o limite de custo), e a `message` de limite de tamanho ganha o sufixo `(got N)`: quem comparava a `message` por igualdade passa a comparar o `code` (`max-length`, `min-length`, `maximum`, `minimum`), e o laço de correção pode tratar todos os `details` de uma vez, inclusive os de relação estática, que antes vinham sozinhos numa segunda rodada. As mensagens do `custom` de `data` (teto de 16.000 caracteres), de `kind` fora da lista e de relação sem `kind` nem `as` também mudaram: confira pelo `code`, não pelo texto (#300).
 
 ## [1.2.2] - 2026-10-24
 

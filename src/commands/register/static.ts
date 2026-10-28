@@ -19,7 +19,7 @@ import {
   type Detail,
 } from '../../errors.ts';
 import type { Validator } from '../../ports.ts';
-import { ruleRefusal } from './errors.ts';
+import { ruleDetail } from './errors.ts';
 
 /** Relação com o `kind` já resolvido; `input` é como o agente a enviou (`to` ainda pode ser `@alias`). */
 type PreparedRelation = { input: RelationInput; kind: RelationKind };
@@ -96,44 +96,46 @@ function checkData(
     );
 }
 
-function resolveRelations(
+/**
+ * Relações de UM registro com o `kind` resolvido, mais a violação de cada relação que não resolve
+ * (`as` desconhecido, `kind` divergente) ou que cruza processo com `supersedes`/`revokes` (item do
+ * lote, `@alias`, já é do processo de origem): no máximo um `Detail` por relação.
+ */
+function prepareRelations(
   item: BatchItem,
   index: number,
   names: ReadonlyMap<Name, NamedRelation>,
-): PreparedRelation[] {
-  return (item.relations ?? []).map((relation, at) => {
+  origin: Name,
+): { relations: PreparedRelation[]; violations: Detail[] } {
+  const relations: PreparedRelation[] = [];
+  const violations: Detail[] = [];
+  for (const [at, relation] of (item.relations ?? []).entries()) {
     // O refine de `RelationInput` garante `kind` ou `as`; o tipo inferido de `BatchItem` não o carrega.
     const input = relation as RelationInput;
+    const path = `/records/${index}/relations/${at}`;
     const check = resolveKind(input, names);
     if ('violation' in check) {
-      throw ruleRefusal(`/records/${index}/relations/${at}`, check.violation);
-    }
-    return { input, kind: check.kind };
-  });
-}
-
-/** `supersedes` e `revokes` só valem no processo de origem; item do lote (`@alias`) já é dele. */
-function checkCurrencyScope(prepared: readonly PreparedItem[], origin: Name): void {
-  for (const [index, { relations }] of prepared.entries()) {
-    for (const [at, { input, kind }] of relations.entries()) {
-      const crosses = !isAliasRef(input.to) && processOf(input.to) !== origin;
-      if (crosses && endsVigency(kind)) {
-        throw ruleRefusal(`/records/${index}/relations/${at}`, { code: 'cross-process-currency' });
-      }
+      violations.push(ruleDetail(path, check.violation));
+    } else if (!isAliasRef(input.to) && processOf(input.to) !== origin && endsVigency(check.kind)) {
+      violations.push(ruleDetail(path, { code: 'cross-process-currency' }));
+    } else {
+      relations.push({ input, kind: check.kind });
     }
   }
+  return { relations, violations };
 }
 
 /**
  * D-06 nível 3: recusas que só dependem da entrada e do manifesto (imutável), então a chamada
- * original e o reenvio de mesma impressão recebem a mesma resposta. Uma passada por regra, na ordem
- * de D-06: tipo fixado de todos os registros, schema de todos, `as`→`kind`, `cross-process-currency`.
+ * original e o reenvio de mesma impressão recebem a mesma resposta. O tipo fixado de todos os
+ * registros vem primeiro e recusa no primeiro erro (`TYPE_NOT_PINNED` vence o `INVALID_RECORD`);
+ * depois as violações estáticas saem juntas num só `INVALID_RECORD`, nesta ordem: o schema de todos
+ * os registros e, por (registro, relação), `as`→`kind` e `cross-process-currency`, sob o teto de
+ * `capDetails`. O que depende do estado do log (`not-current` e as regras de `state.ts`) segue
+ * recusando no primeiro erro, sob o lock.
  *
  * Roda antes do lock (`commands/process.ts#register` a chama antes de `store.write`; só o `decide`
- * roda sob o lock, síncrono), então a compilação do schema não alonga a seção crítica. O tipo
- * fixado vem antes do dado: `TYPE_NOT_PINNED` de qualquer registro vence o `INVALID_RECORD` de dado
- * de um anterior. A agregação cobre só a violação de schema (todas as de cada registro do lote,
- * com o teto de `capDetails`); as demais regras seguem recusando no primeiro erro. Tudo-ou-nada.
+ * roda sob o lock, síncrono), então a compilação do schema não alonga a seção crítica. Tudo-ou-nada.
  */
 export function prepareBatch(
   manifest: Manifest,
@@ -142,15 +144,17 @@ export function prepareBatch(
   validator: Validator,
 ): PreparedItem[] {
   const schemas = records.map((item, index) => pinnedSchema(manifest, item, index));
-  const violations = records.flatMap((item, index) =>
+  const dataViolations = records.flatMap((item, index) =>
     checkData(validator, schemas[index]!, item, index),
   );
+  const resolved = records.map((item, index) =>
+    prepareRelations(item, index, names, manifest.process),
+  );
+  const violations = [...dataViolations, ...resolved.flatMap(({ violations }) => violations)];
   if (violations.length > 0) throw invalidRecord(capDetails(violations));
-  const prepared = records.map((item, index) => ({
+  return records.map((item, index) => ({
     item,
     schema: schemas[index]!,
-    relations: resolveRelations(item, index, names),
+    relations: resolved[index]!.relations,
   }));
-  checkCurrencyScope(prepared, manifest.process);
-  return prepared;
 }

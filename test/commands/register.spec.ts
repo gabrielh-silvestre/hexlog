@@ -526,21 +526,52 @@ describe('register', () => {
       },
     );
 
-    it('should check the passes in the order schema, as to kind and cross-process-currency, not in the order of the items', async () => {
+    it('should list the schema violations first and then the relation violations by record and relation', async () => {
       const { register } = setup();
       const unknownAs = note('a', { relations: [{ to: ghostId(ORIGIN), as: 'nope' }] });
 
-      const bySchema = await refusal(
-        register([supersedesElsewhere(), unknownAs, { ...note(), data: {} }]),
+      const error = await refusal(
+        register([supersedesElsewhere(), unknownAs, { ...note(), data: { text: 5 } }]),
       );
-      const byName = await refusal(register([supersedesElsewhere(), unknownAs]));
-      const byScope = await refusal(register([supersedesElsewhere()]));
 
-      expect(bySchema.details[0]).toMatchObject({
-        path: expect.stringMatching(/^\/records\/2\/data/),
+      expect(error.details.map(({ path, code }) => [path, code])).toEqual([
+        ['/records/2/data/text', expect.any(String)],
+        ['/records/0/relations/0', 'cross-process-currency'],
+        ['/records/1/relations/0', 'unknown-relation-name'],
+      ]);
+    });
+
+    it('should join a kind-mismatch with the schema violation of the same record', async () => {
+      const { register, processes } = setup();
+      const relation = { to: ghostId(ORIGIN), as: 'approves', kind: 'answers' } as const;
+
+      const error = await refusal(
+        register([{ ...note('a', { relations: [relation] }), data: { text: 5 } }]),
+      );
+
+      expect(error.details.map(({ path, code }) => [path, code])).toEqual([
+        ['/records/0/data/text', expect.any(String)],
+        ['/records/0/relations/0', 'kind-mismatch'],
+      ]);
+      expect(processes.counters.reads).toEqual([]);
+    });
+
+    it('should count the relation violations in the cap of the details', async () => {
+      const { register } = setup();
+      const relation = { to: ghostId(ORIGIN), as: 'nope' } as const;
+
+      const error = await refusal(
+        register(
+          Array.from({ length: BATCH_MAX }, () => note('a', { relations: [relation, relation] })),
+        ),
+      );
+
+      expect(error.details).toHaveLength(51);
+      expect(error.details.at(-1)).toEqual({
+        path: '',
+        code: 'too-many-errors',
+        message: `${BATCH_MAX * 2 - 50} more errors omitted`,
       });
-      expect(byName.details[0]).toMatchObject({ code: 'unknown-relation-name' });
-      expect(byScope.details[0]).toMatchObject({ code: 'cross-process-currency' });
     });
 
     it('should accept a supersedes whose destination is in the own process', async () => {
