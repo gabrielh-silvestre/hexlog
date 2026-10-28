@@ -159,8 +159,8 @@ nome fixado, e só vale mandar `kind` se for igual ao dele. Até 100 relações 
   revogado, é `FORK_REJECTED`, com `current` apontando a versão atual da linhagem.
 - `supersedes` exige o mesmo tipo (`type-mismatch`) e o mesmo target (`target-mismatch`).
   Para mudar um fato de target, grave um registro só no target certo, com `revokes` e
-  `derivesFrom` para o antigo; `revokes` entre targets é aceito. Exemplo, com `<id>` o
-  id vigente do registro antigo:
+  `derivesFrom` para o antigo; `revokes` entre targets é aceito. Exemplo de item de
+  `records`, com `<id>` o id vigente do registro antigo:
 
   ```json
   {
@@ -341,8 +341,8 @@ até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estrei
 o resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
 
 - **Detalhe da evidência:** `evidence` escolhe o quanto cada pergunta traz.
-  - `failing` (o padrão da tool sempre que `targets` não vem) devolve `counts`, o tamanho de cada lista da pergunta
-    (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
+  - `failing` (o padrão da tool sempre que `targets` não vem) devolve `counts`, o tamanho de cada
+    lista da pergunta (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
     reprovação e não estão vazias: `unsupported` e `contradictions` em `approved`, `found`
     em `occurred`, `unresolved` em `no_pending`, `conflicting` em `no_open_contradiction`.
     Pergunta aprovada, ou reprovada sem lista de diagnóstico (um `approved` sem nenhum
