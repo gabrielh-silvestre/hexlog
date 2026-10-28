@@ -44,7 +44,7 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
 | `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (só `flow-hooks.ts` e `flow-command.ts`, os hooks; `slug`, `sync-cli`, `mark`, `gate`, `report`, `reanchor` e `critic` vivem em `scripts/flow/`, que o Claude Code não dispara), as skills locais em `skills/` e `workflows/` (`friction-mining-run.js`) e `CONTEXT.md`, o glossário do fluxo de desenvolvimento. Fica fora do bundle do produto |
-| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 8 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. Não há `.hexlog/flow.md` neste repositório: o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
+| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 8 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. O fluxo deste repositório não mora num mapa: o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
 
 ## Subdirectories
 | Directory | Purpose |
@@ -53,8 +53,8 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
 | `scripts/` | Build esbuild, instalador e scripts read-only de insights, export e timeline; `release-notes.ts` e `release-notes-cli.ts` só usam builtins do Node e leem apenas o `CHANGELOG.md`, porque o `release.yml` os roda sem `npm ci` (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio sobre o bundle real e pacote (see `test/AGENTS.md`) |
-| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0012) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
-| `skills/` | As skills de `skills/`, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (mapeia o fluxo de um repositório alvo em `.hexlog/flow.md`, roda uma vez) e `hexlog-flow` (registra e consulta registros e gates contra esse mapa) (see `skills/AGENTS.md`) |
+| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0013) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
+| `skills/` | As skills de `skills/`, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (configura um repositório de destino: gera a skill do projeto e o modelo declarativo) e `hexlog-flow` (mecânica de registro, consulta e ciclo de vida da unidade, com projeto, processo e gate vindos da skill do projeto) (see `skills/AGENTS.md`) |
 
 ## Dependencies
 

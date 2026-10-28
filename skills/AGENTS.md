@@ -12,18 +12,24 @@ As três skills do Claude Code que acompanham o hexlog. Cada pasta tem um `SKILL
 | File | Description |
 |------|-------------|
 | `hexlog-flow/references/audit-types.md` | Exemplo trabalhado do fluxo OMC (plano, revisões do architect e do Critic, desvios, anexos) como tipos, nomes de relação e gate, com a ordem das chamadas |
-| `hexlog-flow/references/crossref-rules.md` | As três regras de cruzamento (conflito ou superado na mesma fase, entre fases, lacuna que vira pergunta de gate), com um exemplo de cada |
-| `hexlog-flow/references/target-format.md` | Sintaxe do `target` e como o projeto a restringe com `targetIdPattern` |
-| `hexlog-setup/references/flow-map-schema.md` | Schema do frontmatter YAML do `.hexlog/flow.md` (`FlowMap`), campo a campo |
-| `hexlog-setup/references/interview-guide.md` | Roteiro de perguntas-modelo da entrevista de configuração, uma por turno |
+| `hexlog-flow/references/attachments.md` | Regras de `path` e recusas do `attach`, e as saídas do `unmarked-attachment` |
+| `hexlog-flow/references/crossref-rules.md` | As três regras de cruzamento (conflito ou superado na mesma unidade, entre fases e unidades, lacuna que vira pergunta de gate) e a herança de relações pela linhagem, com um exemplo de cada |
+| `hexlog-flow/references/target-format.md` | Sintaxe do `target` e como o projeto a restringe com `targetPattern` do modelo |
+| `hexlog-flow/references/unit-lifecycle.md` | Ciclo de vida da unidade de trabalho: achar ou criar o processo, registrar cada fase e fechar a unidade |
+| `hexlog-setup/references/interview-guide.md` | Roteiro de perguntas-modelo da entrevista, com os caminhos de descoberta e de entrevista direta |
+| `hexlog-setup/references/model-schema.md` | Campos do `hexlog-model.json` gerado no destino |
+| `hexlog-setup/references/project-skill.template.md` | Template da skill do projeto gerada no destino |
+| `hexlog-setup/references/three-phase-model.example.json` | Modelo de exemplo de um fluxo de três fases encadeadas |
+| `hexlog-setup/references/minimal-model.example.json` | Modelo de exemplo para um projeto sem fluxo reconhecível |
+| `hexlog-setup/references/agents-block.template.md` | Texto literal do bloco do hexlog no `AGENTS.md` do destino, com o título fixo |
 
 ## Subdirectories
 
 | Directory | Purpose |
 |-----------|---------|
 | `hexlog/` | Bootstrap de um projeto no hexlog e diagnóstico de saúde do servidor (see `hexlog/AGENTS.md`) |
-| `hexlog-flow/` | Registro e consulta do dia a dia contra o `.hexlog/flow.md` (see `hexlog-flow/AGENTS.md`) |
-| `hexlog-setup/` | Mapeamento único do fluxo de um repositório alvo em `.hexlog/flow.md` (see `hexlog-setup/AGENTS.md`) |
+| `hexlog-flow/` | Mecânica do registro e da consulta, com projeto, processo e gate vindos da skill do projeto (see `hexlog-flow/AGENTS.md`) |
+| `hexlog-setup/` | Configuração do hexlog em um repositório de destino, que pode rodar de novo: gera a skill do projeto e o modelo (see `hexlog-setup/AGENTS.md`) |
 
 ## Dependencies
 

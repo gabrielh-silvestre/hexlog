@@ -4,7 +4,7 @@
 **Generated:** 2026-09-17 · **Updated:** 2026-10-17
 
 ## Purpose
-Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0012, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
+Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0013, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
 
 ## Key Files
 | File | Description |
@@ -13,6 +13,7 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 | `uso.md` | Caminho de um projeto novo em 5 passos, exemplo completo das chamadas e tabela das 12 tools, com as convenções de nomes e `target`. |
 | `tools.md` | Referência de entrada, saída e erros de cada uma das 12 tools; o mapa geral está em `uso.md`. |
 | `instalacao.md` | Requisitos, instalação e atualização, instalação concorrente, versões antigas, verificação (`--check`) e como reverter. |
+| `setup-aceitacao.md` | Roteiro manual de aceite do `hexlog-setup` num repositório de destino: pré-condições, passos com aprovação do dono, checklist por critério e como anexar a evidência. |
 | `migracao.md` | Arquivamento do dado 0.x (`--archive-0x`), releitura da trilha arquivada, volta ao 0.x e migração 0.x para 1.0. |
 | `dados.md` | Layout de dados em `<D>`, erros e avisos, tetos do lock, destravamento manual, recuperação de `PROCESS_CORRUPTED` e lacunas de isolamento. |
 | `desenvolvimento.md` | Comandos de desenvolvimento, scripts de leitura (`insights`, `export`, `timeline`) e como os testes se organizam. |
@@ -26,7 +27,7 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 ## Subdirectories
 | Directory | Purpose |
 |---|---|
-| `directives/` | Docs vivos de regras (convenções, fronteiras, invariantes, qualidade e testes, documentação, instalação e hooks, fluxo, estratégia e cadeira do dono) e ADRs 0007 a 0012 (see `directives/AGENTS.md`) |
+| `directives/` | Docs vivos de regras (convenções, fronteiras, invariantes, qualidade e testes, documentação, instalação e hooks, fluxo, estratégia e cadeira do dono) e ADRs 0007 a 0013 (see `directives/AGENTS.md`) |
 | `pesquisa/` | Pesquisa de libs e padrões (17 frentes) que embasou as decisões do 0.x (see `pesquisa/AGENTS.md`) |
 
 ## Dependencies

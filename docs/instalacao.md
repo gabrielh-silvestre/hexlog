@@ -14,6 +14,9 @@ Requisitos, instalação, verificação e como reverter. O resumo está no [READ
 - Node `^24.18.1`.
 - Claude Code, com `~/.claude/settings.json` já existente (o instalador grava
   nele; harness não instalado = instalação falha com uma mensagem explícita).
+- Um `checkout` deste repositório com `npm ci` feito: o instalador roda do checkout, e a instalação
+  copia os bundles e as skills dele. O setup de um repositório de destino vem depois de instalar
+  (ver [Uso](uso.md#configurar-um-repositório-novo)).
 
 ## Instalação e atualização
 

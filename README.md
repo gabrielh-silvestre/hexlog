@@ -32,6 +32,8 @@ Com o hexlog instalado e o Claude Code reiniciado:
 
 O passo a passo com as chamadas de cada tool, incluindo `define_gate` e `evaluate_gate`, está em [docs/uso.md](docs/uso.md).
 
+Próximo passo depois de instalar: para configurar um repositório seu, pedimos ao agente "configura o hexlog nesse repositório" e a skill `hexlog-setup` conduz o resto ([Configurar um repositório novo](docs/uso.md#configurar-um-repositório-novo)).
+
 ## Tools MCP
 
 O servidor expõe exatamente 12 tools. A entrada, a saída e os erros de cada uma estão em [docs/tools.md](docs/tools.md).
@@ -58,8 +60,8 @@ O instalador copia as skills de `skills/` para `~/.claude/skills/`. Elas guiam o
 | Skill | Quando usar |
 |---|---|
 | `hexlog` | Subir um projeto novo (tipos, relações, gates e processo) ou diagnosticar se o servidor instalado está saudável |
-| `hexlog-setup` | Primeira vez num repositório: entrevista o fluxo, propõe as chamadas, espera aprovação e grava o mapa em `.hexlog/flow.md`. Roda uma vez |
-| `hexlog-flow` | Dia a dia, num repositório que já tem `.hexlog/flow.md`: registra, consulta, avalia gates, anexa texto e audita um target |
+| `hexlog-setup` | Configurar um repositório de destino: aprende o fluxo do projeto (descoberta ou entrevista), registra tipos, relações e gate e gera a skill do projeto com o modelo declarativo. Pode rodar de novo |
+| `hexlog-flow` | Dia a dia: registra, consulta, avalia gates, anexa texto, audita um target e conduz o ciclo de vida da unidade de trabalho, com projeto, processo e gate vindos da skill do projeto |
 
 ## Como funciona
 
@@ -81,12 +83,13 @@ As skills do fluxo ficam em `.claude/skills/` e valem só neste repositório, o 
 - [docs/uso.md](docs/uso.md): 5 passos, exemplo completo e tabela das tools;
 - [docs/tools.md](docs/tools.md): entrada, saída e erros de cada tool;
 - [docs/instalacao.md](docs/instalacao.md): instalação concorrente, `--check` e como reverter;
+- [docs/setup-aceitacao.md](docs/setup-aceitacao.md): roteiro manual de aceite do `hexlog-setup` num repositório de destino;
 - [docs/migracao.md](docs/migracao.md): arquivamento do dado 0.x e migração para a 1.0;
 - [docs/dados.md](docs/dados.md): layout em disco, erros, lock e lacunas de isolamento;
 - [docs/desenvolvimento.md](docs/desenvolvimento.md): scripts de leitura e testes;
 - [docs/feedback-loops.md](docs/feedback-loops.md): o que o commit e o pré-PR conferem;
 - [docs/directives/](docs/directives/AGENTS.md): regras vivas do repositório, do fluxo às convenções;
-- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md) e [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md).
+- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md), [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md) e [0013 setup em repositório de destino](docs/directives/adr-0013-setup-em-repositorio-de-destino.md).
 
 ## Desenvolvimento
 
