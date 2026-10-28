@@ -7,6 +7,7 @@ import type { RegisterResult } from '../src/commands/process.ts';
 import { BATCH_MAX } from '../src/domain/record.ts';
 import type { QueryResult } from '../src/queries/query-service.ts';
 import { defineFlowDefinitions, definitionOf, type FlowRecord } from './flow-data.ts';
+import { git } from './flow-repo.ts';
 import { at, copyToXdg, createTempDir } from './helpers.ts';
 import { type Environment, createEnvironment } from './mcp/environment.ts';
 
@@ -144,8 +145,6 @@ function gitWithEnv(cwd: string, env: NodeJS.ProcessEnv, ...args: string[]): str
   if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
   return result.stdout.trim();
 }
-
-const git = (cwd: string, ...args: string[]): string => gitWithEnv(cwd, {}, ...args);
 
 /**
  * main com dois docs; `feat/r` altera só `convencoes.md` (commit em 2099) e `invariantes.md` (em 2000);

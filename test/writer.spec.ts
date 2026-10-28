@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -6,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@j
 import { ZodError } from 'zod';
 import { checkInstalled, gitDiffQuiet, openWriter } from '../scripts/flow/writer.ts';
 import { createFlowEnvironment } from './flow-data.ts';
+import { git } from './flow-repo.ts';
 import { createTempDir, snapshot } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
 
@@ -147,21 +147,13 @@ describe('checkInstalled', () => {
 });
 
 describe('gitDiffQuiet', () => {
-  const GIT_IDENTITY = ['-c', 'user.name=Test', '-c', 'user.email=test@example.com'];
-
-  function git(cwd: string, ...args: string[]): string {
-    const result = spawnSync('git', [...GIT_IDENTITY, '-c', 'commit.gpgsign=false', ...args], {
-      cwd,
-      encoding: 'utf8',
-    });
-    if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
-    return result.stdout.trim();
-  }
-
   /** Repositório com `src/a.ts` e `scripts/b.ts` no commit `first`; `second` só muda `src/a.ts`. */
   function repoWithTwoCommits() {
     const root = createTempDir('writer-git');
     git(root, 'init', '-q', '-b', 'main');
+    git(root, 'config', 'user.name', 'Test');
+    git(root, 'config', 'user.email', 'test@example.com');
+    git(root, 'config', 'commit.gpgsign', 'false');
     fs.mkdirSync(path.join(root, 'src'));
     fs.mkdirSync(path.join(root, 'scripts'));
     fs.writeFileSync(path.join(root, 'src', 'a.ts'), 'export const a = 1;\n');
