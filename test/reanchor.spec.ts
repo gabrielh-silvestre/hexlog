@@ -19,7 +19,10 @@ const reanchorPath = path.join(repoRoot, 'scripts/flow/reanchor.ts');
 const gatePath = path.join(repoRoot, 'scripts/flow/gate.ts');
 const PROJECT = Name.parse('hexlog');
 
-type HomeOptions = { dirty?: boolean; folder?: string; claudeJson?: boolean };
+type HomeOptions = { dirty?: boolean; folder?: string; claudeJson?: boolean; commit?: string };
+
+// Árvore vazia do git: `src/` do `HEAD` sempre difere dela, e não depende do histórico do clone.
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 let environment: Environment;
 let commit: string;
@@ -128,13 +131,14 @@ function makeHome({
   dirty = false,
   folder = VERSION,
   claudeJson = true,
+  commit: installedCommit = commit,
 }: HomeOptions = {}): string {
   const home = createTempDir('home');
   const versionDir = path.join(home, '.local/lib/hexlog', folder);
   fs.mkdirSync(versionDir, { recursive: true });
   fs.writeFileSync(
     path.join(versionDir, 'manifest.json'),
-    JSON.stringify({ version: folder, commit, dirty }),
+    JSON.stringify({ version: folder, commit: installedCommit, dirty }),
   );
   if (claudeJson) {
     fs.writeFileSync(
@@ -147,11 +151,19 @@ function makeHome({
   return home;
 }
 
-function runReanchor(args: string[], xdg: string, home = makeHome()) {
+function runReanchor(args: string[], xdg: string, home = makeHome(), env: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [reanchorPath, ...args], {
     encoding: 'utf8',
-    env: { ...process.env, XDG_DATA_HOME: xdg, HOME: home },
+    env: { ...process.env, XDG_DATA_HOME: xdg, HOME: home, ...env },
   });
+}
+
+/** Pasta de objetos de um repositório temporário com a árvore vazia, que o git do script lê como alternativa. */
+function emptyTreeObjects(): string {
+  const repo = createTempDir('empty-tree');
+  spawnSync('git', ['init', '-q', repo]);
+  spawnSync('git', ['-C', repo, 'hash-object', '-t', 'tree', '-w', '--stdin'], { input: '' });
+  return path.join(repo, '.git/objects');
 }
 
 function runGate(slug: string, xdg: string) {
@@ -334,6 +346,14 @@ describe('scripts/flow/reanchor.ts', () => {
     });
   });
 
+  it('should print one warning per install problem on a dry-run', () => {
+    const home = makeHome({ dirty: true, folder: '0.0.1' });
+
+    const result = runReanchor(['--to', 'directives-2'], copyToXdg(environment.dataDir), home);
+
+    expect(result.stderr.match(/^warning: /gm)).toHaveLength(2);
+  }, 30_000);
+
   it('should say there is nothing to reanchor when no decision is anchored in an older generation', async () => {
     await withEnvironment(['directives-1', 'directives-2', 'feat-empty'], (empty) => {
       const result = runReanchor(['--to', 'directives-2'], copyToXdg(empty.dataDir));
@@ -382,7 +402,7 @@ describe('scripts/flow/reanchor.ts', () => {
   });
 
   describe('with --apply', () => {
-    it('should be idempotent', () => {
+    it('should write nothing on a second --apply over the same data', () => {
       const xdg = copyToXdg(environment.dataDir);
       const first = runReanchor(['--to', 'directives-2', '--apply'], xdg);
       const written = snapshot(xdg);
@@ -439,6 +459,20 @@ describe('scripts/flow/reanchor.ts', () => {
       });
     }, 60_000);
 
+    it('should refuse before writing when src/ differs from the installed commit', () => {
+      const xdg = copyToXdg(environment.dataDir);
+      const before = snapshot(xdg);
+      const home = makeHome({ commit: EMPTY_TREE });
+
+      const result = runReanchor(['--to', 'directives-2', '--apply'], xdg, home, {
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: emptyTreeObjects(),
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/src\/ differs from the installed commit/);
+      expect(snapshot(xdg)).toEqual(before);
+    }, 30_000);
+
     it.each([
       ['a dirty build', { dirty: true }, /dirty tree/],
       ['a missing ~/.claude.json', { claudeJson: false }, /not registered in ~\/\.claude\.json/],
@@ -460,31 +494,33 @@ describe('scripts/flow/reanchor.ts', () => {
   });
 
   describe('with --apply and a batch the register refuses', () => {
-    let refused: Environment;
+    let refused: Environment | undefined;
     let key: string;
     let before: ReturnType<typeof currentDecision>;
     let xdg: string;
     let result: ReturnType<typeof runReanchor>;
 
     beforeAll(async () => {
-      refused = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-c', 'feat-d']);
-      const { g1 } = await seedRule(refused);
+      const opened = await createFlowEnvironment([
+        'directives-1',
+        'directives-2',
+        'feat-c',
+        'feat-d',
+      ]);
+      refused = opened;
+      const { g1 } = await seedRule(opened);
       for (const slug of ['feat-c', 'feat-d']) {
-        await registerFlowRecord(
-          refused,
-          slug,
-          decision(`${slug}.decision.same`, [anchoredIn(g1)]),
-        );
+        await registerFlowRecord(opened, slug, decision(`${slug}.decision.same`, [anchoredIn(g1)]));
       }
-      key = await poisonBatchKey(refused, 'feat-d');
-      xdg = copyToXdg(refused.dataDir);
+      key = await poisonBatchKey(opened, 'feat-d');
+      xdg = copyToXdg(opened.dataDir);
       before = currentDecision(xdg, 'feat-d', 'feat-d.decision.same');
 
       result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
     }, 120_000);
 
     afterAll(async () => {
-      await refused.close();
+      await refused?.close();
     });
 
     it('should exit 1 and report the refused batch', () => {
@@ -502,36 +538,45 @@ describe('scripts/flow/reanchor.ts', () => {
     it('should leave the refused process untouched', () => {
       expect(currentDecision(xdg, 'feat-d', 'feat-d.decision.same')).toEqual(before);
     });
+
+    it('should exit 1 on a second --apply, refusing the same batch and rewriting nothing more', () => {
+      const again = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+
+      expect(again.status).toBe(1);
+      expect(again.stderr).toContain(`batch refused: feat-d ${key}`);
+      expect(again.stdout).toContain('rewrote 0 of 1 decisions');
+    }, 30_000);
   });
 
   describe('with --apply on a process of 51 decisions (batches of 50 and 1)', () => {
     const COUNT = 51;
-    let many: Environment;
+    let many: Environment | undefined;
     let written: { xdg: string; result: ReturnType<typeof runReanchor> };
     let poisoned: { key: string; result: ReturnType<typeof runReanchor> };
 
     beforeAll(async () => {
-      many = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-e']);
-      const { g1 } = await seedRule(many);
+      const opened = await createFlowEnvironment(['directives-1', 'directives-2', 'feat-e']);
+      many = opened;
+      const { g1 } = await seedRule(opened);
       for (let n = 1; n <= COUNT; n++) {
         await registerFlowRecord(
-          many,
+          opened,
           'feat-e',
           decision(`feat-e.decision.d${n}`, [anchoredIn(g1)]),
         );
       }
-      const xdg = copyToXdg(many.dataDir);
+      const xdg = copyToXdg(opened.dataDir);
       written = { xdg, result: runReanchor(['--to', 'directives-2', '--apply'], xdg) };
       // o lote conflitante só entra depois da cópia do apply limpo
-      const key = await poisonBatchKey(many, 'feat-e', 1);
+      const key = await poisonBatchKey(opened, 'feat-e', 1);
       poisoned = {
         key,
-        result: runReanchor(['--to', 'directives-2', '--apply'], copyToXdg(many.dataDir)),
+        result: runReanchor(['--to', 'directives-2', '--apply'], copyToXdg(opened.dataDir)),
       };
     }, 240_000);
 
     afterAll(async () => {
-      await many.close();
+      await many?.close();
     });
 
     it('should write both batches and count every decision', () => {
