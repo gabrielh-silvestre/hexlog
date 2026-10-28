@@ -67,6 +67,28 @@ describe('checkInstalled', () => {
     ]);
   });
 
+  it('should report both a version folder and a src/ that differ, the version first', () => {
+    const claudeJsonText = claudeJson('/home/dev/.local/lib/hexlog/1.1.0/server.mjs');
+
+    const problems = checkInstalled(installed({ claudeJsonText, gitDiffQuiet: () => 'differs' }));
+
+    expect(problems).toEqual([
+      'installed server is not version 1.2.0 (/home/dev/.local/lib/hexlog/1.1.0): run node scripts/install.ts',
+      `src/ differs from the installed commit ${COMMIT}: run node scripts/install.ts`,
+    ]);
+  });
+
+  it('should report both an invalid manifest and a version folder that differs, the manifest first', () => {
+    const claudeJsonText = claudeJson('/home/dev/.local/lib/hexlog/1.1.0/server.mjs');
+
+    const problems = checkInstalled(installed({ claudeJsonText, readManifest: () => null }));
+
+    expect(problems).toEqual([
+      'manifest.json missing or invalid in /home/dev/.local/lib/hexlog/1.1.0: run node scripts/install.ts',
+      'installed server is not version 1.2.0 (/home/dev/.local/lib/hexlog/1.1.0): run node scripts/install.ts',
+    ]);
+  });
+
   it('should report a manifest whose version differs from the repository version', () => {
     const problems = checkInstalled(
       installed({ readManifest: () => manifestText({ version: '1.1.0' }) }),
@@ -211,7 +233,7 @@ describe('gitDiffQuiet', () => {
   }, 30_000);
 
   it.each(['--help', '-p', 'HEAD; echo', ''])(
-    'should return error for %p without running git',
+    'should return error for the malformed commit %p',
     (commit) => {
       const { root } = shared;
 
@@ -392,24 +414,37 @@ describe('openWriter', () => {
 
   describe('with a batch that is invalid', () => {
     const INVALID_BATCHES = [
-      ['a key that is empty', { key: '' }],
-      ['a key above 200 characters', { key: 'k'.repeat(201) }],
-      ['a process name that is not a name', { process: 'Not A Name' }],
+      { title: 'a key that is empty', patch: { key: '' }, issueCode: 'too_small' },
+      {
+        title: 'a key above 200 characters',
+        patch: { key: 'k'.repeat(201) },
+        issueCode: 'too_big',
+      },
+      {
+        title: 'a process name that is not a name',
+        patch: { process: 'Not A Name' },
+        issueCode: 'invalid_format',
+      },
     ] as const;
 
     it.each(INVALID_BATCHES)(
-      'should reject %s',
-      async (_title, patch) => {
+      'should reject $title',
+      async ({ patch, issueCode }) => {
         const invalid = { ...batch, ...patch };
 
-        await expect(open().write(invalid)).rejects.toThrow(ZodError);
+        const error = await open()
+          .write(invalid)
+          .catch((thrown: unknown) => thrown);
+
+        expect(error).toBeInstanceOf(ZodError);
+        expect(error).toMatchObject({ issues: [{ code: issueCode }] });
       },
       30_000,
     );
 
     it.each(INVALID_BATCHES)(
-      'should write nothing for %s',
-      async (_title, patch) => {
+      'should write nothing for $title',
+      async ({ patch }) => {
         const before = snapshot(environment.dataDir);
         const invalid = { ...batch, ...patch };
 
