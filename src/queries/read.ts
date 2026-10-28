@@ -6,6 +6,7 @@ import {
   mapDetails,
   markerProcessNotFound,
   projectNotFound,
+  withPath,
 } from '../errors.ts';
 import type { ProcessReader, ProcessRef } from '../ports.ts';
 import { loadVerified, type VerifiedProcess } from '../shared/loader.ts';
@@ -90,7 +91,7 @@ export function readScope(
     return readCut(store, target, marker);
   } catch (error) {
     if (!(error instanceof HexlogError) || error.code !== 'MARKER_NOT_FOUND') throw error;
-    throw mapDetails(error, (detail) => ({ ...detail, path: markerPath }));
+    throw withPath(error, markerPath);
   }
 }
 
