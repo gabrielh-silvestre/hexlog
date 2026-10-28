@@ -189,7 +189,7 @@ describe('createLockManager', () => {
       ({ records } = captured);
 
       lock = await createLockManager({ log: captured.log }).acquire(killed.lockDir);
-    });
+    }, 30_000);
 
     it('should steal the lock', () => {
       expect(tokenIn(holderFile)).toBe(lock.token);

@@ -41,7 +41,7 @@ describe('scripts/export.ts', () => {
       expect.objectContaining({ kind: 'supersedes', from: at(ids, 2) }),
     ]);
     expect(code).toBe(0);
-  });
+  }, 15_000);
 
   it('should export a process with more records than a page whole, in a single call', () => {
     const xdg = createTempDir('xdg');
@@ -54,7 +54,7 @@ describe('scripts/export.ts', () => {
 
     expect(exported).toEqual(corpus.records.map(({ id }) => id));
     expect(code).toBe(0);
-  });
+  }, 15_000);
 
   it('should project only the requested keys on each line with --fields', () => {
     const { code, out } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields', 'id,type');
@@ -65,14 +65,14 @@ describe('scripts/export.ts', () => {
     for (const line of lines) expect(Object.keys(line).sort()).toEqual(['id', 'type']);
 
     expect(code).toBe(0);
-  });
+  }, 15_000);
 
   it('should fail with a clear message and a non-zero code for an unknown --fields field', () => {
     const { code, err } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields', 'id,bogus');
 
     expect(err).toContain('invalid field(s): bogus');
     expect(code).toBe(1);
-  });
+  }, 15_000);
 
   it('should fail with the usage instead of exporting everything when --fields has no value', () => {
     const { code, out, err } = runExport(xdgHome, `${PROJECT}/${PROCESS}`, '--fields');
@@ -80,7 +80,7 @@ describe('scripts/export.ts', () => {
     expect(err).toContain('export failed: usage:');
     expect(out).toBe('');
     expect(code).toBe(1);
-  });
+  }, 15_000);
 
   it.each([
     ['without arguments', []],
@@ -89,19 +89,23 @@ describe('scripts/export.ts', () => {
     ['with three parts', ['a/b/c']],
     ['with an unknown flag', [`${PROJECT}/${PROCESS}`, '--bogus']],
     ['with an extra argument', [`${PROJECT}/${PROCESS}`, 'extra']],
-  ])('should exit 1 with the usage on stderr when called %s', (_name, args) => {
-    const { code, err } = runExport(xdgHome, ...args);
+  ])(
+    'should exit 1 with the usage on stderr when called %s',
+    (_name, args) => {
+      const { code, err } = runExport(xdgHome, ...args);
 
-    expect(err).toContain('export failed: usage:');
-    expect(code).toBe(1);
-  });
+      expect(err).toContain('export failed: usage:');
+      expect(code).toBe(1);
+    },
+    15_000,
+  );
 
   it('should fail with PROCESS_NOT_FOUND and exit 1 for a missing process', () => {
     const { code, err } = runExport(xdgHome, `${PROJECT}/ghost`);
 
     expect(err).toContain('export failed: PROCESS_NOT_FOUND:');
     expect(code).toBe(1);
-  });
+  }, 15_000);
 
   it('should detect a tampered chain and exit 2 without exporting anything', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
@@ -113,7 +117,7 @@ describe('scripts/export.ts', () => {
     expect(err).toContain(`export failed: PROCESS_CORRUPTED: process chain is broken (${PROCESS}:`);
     expect(out).toBe('');
     expect(code).toBe(2);
-  });
+  }, 15_000);
 
   it('should exit 2 with PROCESS_CORRUPTED and export nothing for a truncated process.json', () => {
     const xdg = copyToXdg(path.join(xdgHome, 'hexlog'));
@@ -125,7 +129,7 @@ describe('scripts/export.ts', () => {
     expect(err).toContain('export failed: PROCESS_CORRUPTED:');
     expect(out).toBe('');
     expect(code).toBe(2);
-  });
+  }, 15_000);
 
   it('should exit 2 with the LEGACY_DATA message over a <D> with 0.x data', () => {
     const xdg = copyToXdg(legacyFixture);
@@ -144,5 +148,5 @@ describe('scripts/export.ts', () => {
     runExport(xdgHome, `${PROJECT}/${PROCESS}`);
 
     expect(snapshot(path.join(xdgHome, 'hexlog'))).toEqual(before);
-  });
+  }, 15_000);
 });

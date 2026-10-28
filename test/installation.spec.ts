@@ -227,7 +227,7 @@ describe('installArtifact', () => {
     {
       name: 'the prepared hook does not deny',
       overrides: (): Partial<InstallArgs> => ({ runHook: () => ({ status: 0 }) }),
-      message: 'prepared hook does not deny access to the data directory',
+      message: expect.stringContaining('prepared hook does not deny access to the data directory'),
     },
     {
       name: 'the server bundle has a dynamic require',
@@ -240,14 +240,14 @@ describe('installArtifact', () => {
           hook: realBundles.hook,
         },
       }),
-      message: 'Dynamic require of',
+      message: expect.stringContaining('Dynamic require of'),
     },
     {
       name: 'the prepared server does not list every tool',
       overrides: (): Partial<InstallArgs> => ({
         verifyServer: () => Promise.resolve(TOOLS_COUNT - 1),
       }),
-      message: `${TOOLS_COUNT - 1} tools`,
+      message: expect.stringContaining(`${TOOLS_COUNT - 1} tools`),
     },
     {
       name: 'the prepared hook denies but does not allow a harmless command',
@@ -272,7 +272,7 @@ describe('installArtifact', () => {
 
       await expect(installArtifact(installArgs(home, overrides()))).rejects.toMatchObject({
         code: 'INTERNAL',
-        message: expect.stringContaining(message),
+        message,
         details: [],
       });
       expect(fs.existsSync(versionDirOf(home, '0.1.0'))).toBe(false);

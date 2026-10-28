@@ -77,6 +77,7 @@ describe('.husky/pre-push', () => {
     () => {
       const result = push(`refs/tags/v1.0.0 ${SHA} refs/tags/v1.0.0 ${ZERO}`);
 
+      expect(result.status).toBe(0);
       expect(result.calls).toEqual([]);
     },
     PUSH_TIMEOUT,

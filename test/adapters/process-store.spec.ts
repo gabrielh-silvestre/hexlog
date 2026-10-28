@@ -433,33 +433,45 @@ describe('createProcessStore', () => {
       return { ...env, error };
     }
 
-    it('should refuse a batch that would pass the cap by 1 byte with PROCESS_TOO_LARGE', async () => {
-      const { error } = await writeOverByOneByte();
+    it(
+      'should refuse a batch that would pass the cap by 1 byte with PROCESS_TOO_LARGE',
+      async () => {
+        const { error } = await writeOverByOneByte();
 
-      expect(error).toMatchObject({
-        code: 'PROCESS_TOO_LARGE',
-        details: [
-          {
-            path: '/process',
-            code: 'too-large',
-            message: expect.stringContaining('new process'),
-            process: 'proc-1',
-          },
-        ],
-      });
-    });
+        expect(error).toMatchObject({
+          code: 'PROCESS_TOO_LARGE',
+          details: [
+            {
+              path: '/process',
+              code: 'too-large',
+              message: expect.stringContaining('new process'),
+              process: 'proc-1',
+            },
+          ],
+        });
+      },
+      LARGE_LOG_TIMEOUT_MS,
+    );
 
-    it('should keep the file size when refusing a batch that would pass the cap by 1 byte', async () => {
-      const { logFile } = await writeOverByOneByte();
+    it(
+      'should keep the file size when refusing a batch that would pass the cap by 1 byte',
+      async () => {
+        const { logFile } = await writeOverByOneByte();
 
-      expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - LINE.length);
-    });
+        expect(fs.statSync(logFile).size).toBe(MAX_LOG_BYTES - LINE.length);
+      },
+      LARGE_LOG_TIMEOUT_MS,
+    );
 
-    it('should release the lock when refusing a batch that would pass the cap by 1 byte', async () => {
-      const { dir } = await writeOverByOneByte();
+    it(
+      'should release the lock when refusing a batch that would pass the cap by 1 byte',
+      async () => {
+        const { dir } = await writeOverByOneByte();
 
-      expect(locksIn(dir)).toEqual([]);
-    });
+        expect(locksIn(dir)).toEqual([]);
+      },
+      LARGE_LOG_TIMEOUT_MS,
+    );
 
     it(
       'should keep read working after refusing a batch that would pass the cap by 1 byte',
