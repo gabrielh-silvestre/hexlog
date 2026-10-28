@@ -257,8 +257,30 @@ describe('expandedSize', () => {
       'a $ref that points back to itself',
       { $defs: { a: { $ref: '#/$defs/a' } }, $ref: '#/$defs/a' },
     ],
+    [
+      'a nested $id',
+      {
+        properties: {
+          x: {
+            $id: 'http://x.test/n.json',
+            $defs: { a: { type: 'string' } },
+            allOf: [{ $ref: '#/$defs/a' }],
+          },
+        },
+      },
+    ],
   ])('should assume the worst for %s', (_label, schema) => {
     expect(expandedSize(schema)).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it('should keep measuring a schema whose $id is on the root', () => {
+    const schema = {
+      $id: 'http://x.test/root.json',
+      $defs: { a: {} },
+      properties: { x: { $ref: '#/$defs/a' } },
+    };
+
+    expect(expandedSize(schema)).toBe(3);
   });
 });
 

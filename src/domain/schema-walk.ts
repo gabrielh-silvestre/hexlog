@@ -101,8 +101,8 @@ const SATURATED = Number.MAX_SAFE_INTEGER;
  * Tamanho expandido do schema: quantos subschemas uma validação pode visitar num valor só, contando
  * cada `$ref` pelo tamanho do destino (`$defs` só entra por quem o cita). Memoiza o destino de cada
  * `$ref`, então o custo é linear no documento mesmo quando as referências dobram a cada nível.
- * `$ref` que não é ponteiro local (`#/...`), `$dynamicRef` e ciclo valem `SATURATED`: sem como
- * medir aqui, assume-se o pior.
+ * `$ref` que não é ponteiro local (`#/...`), `$dynamicRef`, ciclo e `$id` em subschema que não é a
+ * raiz valem `SATURATED`: sem como medir aqui, assume-se o pior.
  */
 export function expandedSize(root: unknown): number {
   const refSizes = new Map<string, number>();
@@ -119,8 +119,10 @@ export function expandedSize(root: unknown): number {
     return size;
   };
 
-  const sizeOf = (node: unknown): number => {
+  const sizeOf = (node: unknown, isRoot = false): number => {
     if (!isPlainObject(node)) return 0;
+    // `$id` aninhado muda o recurso contra o qual o ajv resolve `#/...`: o destino medido aqui seria outro
+    if (!isRoot && typeof node.$id === 'string') return SATURATED;
     let total = 1;
     if ('$dynamicRef' in node) total = SATURATED;
     if (typeof node.$ref === 'string') total += refSize(node.$ref);
@@ -137,7 +139,7 @@ export function expandedSize(root: unknown): number {
     return Math.min(total, SATURATED);
   };
 
-  return sizeOf(root);
+  return sizeOf(root, true);
 }
 
 /**
