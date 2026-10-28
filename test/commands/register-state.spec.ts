@@ -386,6 +386,47 @@ describe('register', () => {
       ]);
     });
 
+    it('should stop the old record being current once a record at another target revokes it', async () => {
+      const harness = setup();
+      const previous = await seed(harness, ORIGIN, 'e');
+      await harness.register([
+        note('moved', {
+          target: 'run.other',
+          relations: [
+            { to: previous, kind: 'revokes' },
+            { to: previous, kind: 'derivesFrom' },
+          ],
+        }),
+      ]);
+
+      const error = await refusal(harness.register([relating(previous, 'supports')]));
+
+      expect(error).toMatchObject({
+        code: 'INVALID_RECORD',
+        details: [{ path: '/records/0/relations/0', code: 'stale-destination' }],
+      });
+    });
+
+    it('should keep the record at the new target current after it revokes the old one', async () => {
+      const harness = setup();
+      const previous = await seed(harness, ORIGIN, 'e');
+      const moved = await harness.register([
+        note('moved', {
+          target: 'run.other',
+          relations: [
+            { to: previous, kind: 'revokes' },
+            { to: previous, kind: 'derivesFrom' },
+          ],
+        }),
+      ]);
+
+      await harness.register([relating(at(moved.records, 0).id, 'supports')]);
+
+      expect(verifiedOf(harness.processes).records[2]?.relations).toEqual([
+        { kind: 'supports', to: at(moved.records, 0).id },
+      ]);
+    });
+
     it.each([
       ['supports and contradicts', ['supports', 'contradicts'], 'supports-and-contradicts'],
       ['supersedes and revokes', ['supersedes', 'revokes'], 'supersedes-and-revokes'],
