@@ -329,7 +329,8 @@ describe('register', () => {
           {
             path: '/records/0/relations/0',
             code: 'target-mismatch',
-            message: expect.stringMatching(/revoke.*derivesFrom/),
+            message:
+              'supersedes only targets a record of the same target; to move a fact to another target, register one record at the right target with revokes and derivesFrom to the old one',
           },
         ],
       });
