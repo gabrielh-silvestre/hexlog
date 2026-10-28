@@ -7,6 +7,8 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 ### Adicionado
 
 - O `details[]` do `kind-mismatch` do `register` ganha o campo opcional `kind`, com o `kind` do nome de relação fixado, e a mensagem diz para enviar só `as` ou esse `kind` (#300).
+- O `hexlog-setup` configura um repositório de destino: aprende o fluxo do projeto por descoberta no repositório ou por entrevista, registra tipos, relações e gate, e gera ali uma skill do projeto e um modelo declarativo (`hexlog-model.json`). A camada C do plug no Spec Kit é a única ativa (#321).
+- A `hexlog-flow` traz o ciclo de vida da unidade de trabalho em `references/unit-lifecycle.md` (#321).
 
 ### Alterado
 
@@ -14,10 +16,16 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - O `register` junta no mesmo `INVALID_RECORD` as recusas de relação que só dependem da entrada (`unknown-relation-name`, `kind-mismatch` e `cross-process-currency`, com `path` `/records/<i>/relations/<n>`), depois das violações de schema e sob o mesmo teto de 50 `details`: um `max-length` não esconde mais um `kind-mismatch` do mesmo registro (#300).
 - A descrição do `register`, o `docs/tools.md` e a skill `hexlog-flow` passam a ensinar que `as` sozinho basta numa relação, e as mensagens de `kind` fora da lista e de relação sem `kind` nem `as` dizem como corrigir (#300).
 - `engines.node` passa de `>=24.18.1` para `^24.18.1`: o Node 25 e o 26 deixam de ser suportados, porque o `randomUUIDv7` só é estável a partir do 26.1.0 e o `eslint-plugin-n` 18.5.0 passou a recusá-lo na faixa aberta (#311).
+- A `hexlog-flow` recebe projeto, processo e gate da skill do projeto, e deixa de ler o `.hexlog/flow.md` (#321).
+
+### Removido
+
+- O mapa por repositório (`.hexlog/flow.md`), o campo `editedSkills` e a edição de skills globais pelo `hexlog-setup` (#321).
 
 ### Migração
 
 - O `INVALID_RECORD` de dado lista as violações de cada registro (todas até o limite de custo), e a `message` de limite de tamanho ganha o sufixo `(got N)`: quem comparava a `message` por igualdade passa a comparar o `code` (`max-length`, `min-length`, `maximum`, `minimum`), e o laço de correção pode tratar todos os `details` de uma vez, inclusive os de relação estática, que antes vinham sozinhos numa segunda rodada. As mensagens do `custom` de `data` (teto de 16.000 caracteres), de `kind` fora da lista e de relação sem `kind` nem `as` também mudaram: confira pelo `code`, não pelo texto (#300).
+- Um `.hexlog/flow.md` antigo é ignorado: rode o `hexlog-setup` no repositório para gerar a skill do projeto e o modelo (#321).
 
 ## [1.2.2] - 2026-10-24
 
