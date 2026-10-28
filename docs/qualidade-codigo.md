@@ -30,7 +30,7 @@ fonte antes de adotar qualquer item.
 
 ## Agora
 
-> **Instalada em 2026-09-28** (branch `chore/code-quality-agora`). Desvios do
+> **Instalada em 2026-09-28.** Desvios do
 > plano: `--ci` ficou de fora (o repo não tem snapshots);
 > `consistent-type-definitions` padroniza em `type`; cobertura roda só via
 > `npm run test:coverage`, sem `coverageThreshold`; `jest/expect-expect`
@@ -143,6 +143,13 @@ mutante estático mata de verdade, ao preço de rodar a suíte inteira para cada
 O `typescript-checker` fica no padrão `prioritizePerformanceOverAccuracy: true`,
 por tempo: o score absoluto é aproximado, e a comparação entre rodadas vale porque a
 config é a mesma. Mudar qualquer uma das três pede rodada-base nova.
+
+Limites da medição. O escopo são os 18 arquivos de `mutate`, e `mutate` e `testMatch` são
+mantidos à mão: arquivo novo no escopo entra nos dois. `hook/bash-guard.ts`, `src/guard.ts` e
+`src/installation.ts` ficam fora porque seus specs sobem processo filho ou o bundle
+([qualidade-e-testes.md](directives/qualidade-e-testes.md), seção "Bundle e processo filho"), e a
+rodada só roda os specs unitários. `thresholds.break` fica no padrão `null`: a rodada é uma
+medição pontual e não reprova, e o piso de 80% por arquivo é conferido à mão no relatório.
 
 ## Depois
 
