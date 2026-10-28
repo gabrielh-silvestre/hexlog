@@ -256,11 +256,14 @@ describe('planReanchor', () => {
     ]);
   });
 
-  it('should ignore anchors to the target generation or later and decisions without old anchors', () => {
-    const result = plan([
-      decision({ out: [anchoredIn(NEW_DIRECTIVE.id), anchoredIn(id(5, 1))] }),
-      decision({ id: own('work-a', 2), out: [restsOn(own('work-a', 60))] }),
-    ]);
+  it('should ignore anchors to the target generation or later', () => {
+    const result = plan([decision({ out: [anchoredIn(NEW_DIRECTIVE.id), anchoredIn(id(5, 1))] })]);
+
+    expect(result).toEqual({ rewrites: [], owner: [] });
+  });
+
+  it('should ignore a decision without old anchors', () => {
+    const result = plan([decision({ out: [restsOn(own('work-a', 60))] })]);
 
     expect(result).toEqual({ rewrites: [], owner: [] });
   });
@@ -325,14 +328,17 @@ describe('planReanchor', () => {
     expect(result.owner).toEqual([]);
   });
 
-  it('should ignore a non-current incoming supports and other incoming edges', () => {
+  it('should ignore a non-current incoming supports', () => {
     const result = plan([
-      decision({
-        in: [
-          { kind: 'supports', from: own('work-a', 80), current: false },
-          { kind: 'derivesFrom', from: own('work-a', 81), current: true },
-        ],
-      }),
+      decision({ in: [{ kind: 'supports', from: own('work-a', 80), current: false }] }),
+    ]);
+
+    expect(result.rewrites).toHaveLength(1);
+  });
+
+  it('should ignore an incoming edge that is not supports', () => {
+    const result = plan([
+      decision({ in: [{ kind: 'derivesFrom', from: own('work-a', 81), current: true }] }),
     ]);
 
     expect(result.rewrites).toHaveLength(1);
@@ -358,6 +364,15 @@ describe('planReanchor', () => {
       'work-a.decision.x',
       'work-a.decision.y',
       'work-b.decision.x',
+    ]);
+  });
+
+  it('should order decisions of the same process and target by id', () => {
+    const result = plan([decision({ id: own('work-a', 2) }), decision({ id: own('work-a', 1) })]);
+
+    expect(result.rewrites.map(({ id: rewritten }) => rewritten)).toEqual([
+      own('work-a', 1),
+      own('work-a', 2),
     ]);
   });
 });
@@ -486,6 +501,15 @@ describe('verifyReanchor', () => {
     ]);
   });
 
+  it('should report a replacement revoked by a later record as not current', () => {
+    const revoked = newRow({ in: [{ kind: 'revokes', from: own('work-a', 3), current: true }] });
+
+    expect(verifyReanchor(plannedRewrites(), [oldRow()], [superseded(), revoked])).toContainEqual({
+      id: OLD,
+      problem: 'new-not-current',
+    });
+  });
+
   it('should report a missing relation', () => {
     const [rewrite] = plannedRewrites();
     const out = (rewrite?.item.relations ?? []).slice(0, -1);
@@ -574,6 +598,30 @@ describe('formatPlan', () => {
     expect(text).toContain(
       `  work-a\twork-a.decision.x\t${own('work-a', 1)}\tanchored-in ${OLD_DIRECTIVE.id} (directives.a.rule): same; rests-on ${OLD_PREMISE.id} (directives.estrategia.p): gone`,
     );
+  });
+
+  it.each([
+    [
+      'an anchor whose cited record is unknown',
+      decision({ out: [anchoredIn(id(3, 99))] }),
+      `anchored-in ${id(3, 99)}: stale`,
+    ],
+    [
+      'an outgoing relation outside the copied ones',
+      decision({
+        out: [anchoredIn(OLD_DIRECTIVE.id), { kind: 'supports', to: own('work-a', 70) }],
+      }),
+      `other-relation supports->${own('work-a', 70)}`,
+    ],
+    [
+      'a current incoming supports',
+      decision({ in: [{ kind: 'supports', from: own('work-a', 80), current: true }] }),
+      'supported',
+    ],
+  ])('should describe %s in the owner list', (_label, owned, reason) => {
+    const text = formatPlan(plan([owned]), options);
+
+    expect(text).toContain(`  work-a\twork-a.decision.x\t${own('work-a', 1)}\t${reason}`);
   });
 
   it('should cap the owner list at 100 lines and say how many it cut', () => {
