@@ -146,6 +146,14 @@ describe('register', () => {
     ]);
   });
 
+  it('should accept an opening whose sync is pending', async () => {
+    const { records } = await register(WORK, [
+      workRecord('opening', 'main', { ...opening(), sync: 'pending' }),
+    ]);
+
+    expect(records).toHaveLength(1);
+  });
+
   it('should refuse a doc with an empty path with INVALID_RECORD', async () => {
     const source = await attachText('v1');
 

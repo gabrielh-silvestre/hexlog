@@ -1,8 +1,54 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { fingerprint, sha256hex } from '../../src/domain/chain.ts';
+import type { RecordType } from '../../src/domain/definitions.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
-import { AUTHOR, ORIGIN, PROJECT, ghostId, note, refusal, setup, verifiedOf } from './fakes.ts';
+import {
+  AUTHOR,
+  ORIGIN,
+  PROJECT,
+  ghostId,
+  manifestOf,
+  note,
+  refusal,
+  setup,
+  verifiedOf,
+} from './fakes.ts';
+
+const LIMITED: RecordType = {
+  type: 'object',
+  properties: { name: { type: 'string', maxLength: 3 }, count: { type: 'integer', minimum: 1 } },
+  required: ['name', 'count'],
+};
+
+const LISTED: RecordType = {
+  type: 'object',
+  properties: { items: { type: 'array', items: { type: 'string' } } },
+  required: ['items'],
+};
+
+const COSTLY: RecordType = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: { allOf: Array.from({ length: 900 }, () => ({ type: 'string' })) },
+    },
+  },
+  required: ['items'],
+};
+
+const costly = (): BatchItem => ({
+  type: 'costly',
+  target: 'run.step',
+  data: { items: Array.from({ length: 40 }, () => 1) },
+});
+
+const numbers = (length: number): BatchItem => ({
+  type: 'listed',
+  target: 'run.step',
+  data: { items: Array.from({ length }, () => 1) },
+});
 
 const supersedesElsewhere = (): BatchItem =>
   note('x', { relations: [{ to: ghostId('other'), kind: 'supersedes' }] });
@@ -261,7 +307,19 @@ describe('register', () => {
       expect(processes.counters.writes).toBe(0);
     });
 
-    it('should give only the first violation of each record when two records of the batch are invalid', async () => {
+    it('should return every violation of a record with several, with the record path', async () => {
+      const { register } = setup();
+
+      const error = await refusal(register([{ ...note(), data: { other: 1, extra: 2 } }]));
+
+      expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual([
+        { path: '/records/0/data/text', code: 'required' },
+        { path: '/records/0/data/other', code: 'additional-properties' },
+        { path: '/records/0/data/extra', code: 'additional-properties' },
+      ]);
+    });
+
+    it('should give every violation of each record when two records of the batch are invalid', async () => {
       const { register, processes } = setup();
 
       const error = await refusal(
@@ -272,12 +330,110 @@ describe('register', () => {
         ]),
       );
 
-      expect(error.details).toMatchObject([
-        { path: expect.stringMatching(/^\/records\/0\/data/) },
-        { path: expect.stringMatching(/^\/records\/2\/data/) },
+      expect(error.details.map(({ path }) => path).sort()).toEqual([
+        '/records/0/data/extra',
+        '/records/0/data/other',
+        '/records/0/data/text',
+        '/records/2/data/other',
+        '/records/2/data/text',
       ]);
       expect(processes.counters.writes).toBe(0);
     });
+
+    it('should count in the last detail every violation a record left out past the 50', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { listed: LISTED }));
+
+      const error = await refusal(register([numbers(5_000)]));
+
+      expect(error.details).toHaveLength(51);
+      expect(error.details.at(-1)).toEqual({
+        path: '',
+        code: 'too-many-errors',
+        message: '4950 more errors omitted',
+      });
+    }, 15_000);
+
+    it('should count the violations of every record in the last detail when two records overflow', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { listed: LISTED }));
+
+      const error = await refusal(register([numbers(3_000), numbers(3_000)]));
+
+      expect(error.details).toHaveLength(51);
+      expect(error.details.at(-1)).toEqual({
+        path: '',
+        code: 'too-many-errors',
+        message: '5950 more errors omitted',
+      });
+    }, 15_000);
+
+    it('should report the measured value of a size limit next to another violation of the same record', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { limited: LIMITED }));
+
+      const error = await refusal(
+        register([{ type: 'limited', target: 'run.step', data: { name: 'abcdef', count: 0 } }]),
+      );
+
+      expect(error.details).toEqual([
+        {
+          path: '/records/0/data/name',
+          code: 'max-length',
+          message: 'must NOT have more than 3 characters (got 6)',
+        },
+        {
+          path: '/records/0/data/count',
+          code: 'minimum',
+          message: 'must be >= 1 (got 0)',
+        },
+      ]);
+    });
+
+    it('should point to describe_type with the type name when the cost ceiling cut the violations of a record', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { costly: COSTLY }));
+
+      const error = await refusal(register([costly()]));
+
+      expect(error.details).toEqual([
+        { path: '/records/0/data/items/0', code: 'type', message: 'must be string' },
+        {
+          path: '/records/0/data',
+          code: 'violations-capped',
+          message: expect.stringContaining("type 'costly' is too costly"),
+        },
+      ]);
+    });
+
+    it('should add the violations-capped detail only to the records the ceiling cut', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { costly: COSTLY, listed: LISTED }));
+
+      const error = await refusal(register([numbers(3), costly(), costly()]));
+
+      expect(
+        error.details.filter(({ code }) => code === 'violations-capped').map(({ path }) => path),
+      ).toEqual(['/records/1/data', '/records/2/data']);
+    });
+
+    it('should keep the violations-capped detail of every record inside the 50 of a cut batch', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { costly: COSTLY, listed: LISTED }));
+
+      const error = await refusal(register([numbers(5_000), costly()]));
+
+      expect(error.details).toHaveLength(51);
+      expect(error.details.at(-2)).toMatchObject({
+        path: '/records/1/data',
+        code: 'violations-capped',
+      });
+      expect(error.details.at(-1)).toEqual({
+        path: '',
+        code: 'too-many-errors',
+        message: '4952 more errors omitted',
+      });
+    }, 15_000);
 
     it('should refuse with the TYPE_NOT_PINNED of a record over the INVALID_RECORD data refusal of an earlier one', async () => {
       const { register, validate } = setup();
@@ -322,6 +478,35 @@ describe('register', () => {
       },
     );
 
+    it('should return the kind of the pinned name in the detail of a kind-mismatch', async () => {
+      const { register } = setup();
+      const relation = { to: ghostId(ORIGIN), as: 'approves', kind: 'answers' } as const;
+
+      const error = await refusal(register([note('a', { relations: [relation] })]));
+
+      expect(error.details).toEqual([
+        {
+          path: '/records/0/relations/0',
+          code: 'kind-mismatch',
+          message: expect.stringContaining('kind "supports"'),
+          kind: 'supports',
+        },
+      ]);
+    });
+
+    it('should accept an as with a kind equal to the pinned one and write the resolved kind', async () => {
+      const { register, processes } = setup();
+
+      const result = await register([
+        note('a', { alias: 'base' }),
+        note('b', { relations: [{ to: '@base', as: 'approves', kind: 'supports' }] }),
+      ]);
+
+      expect(verifiedOf(processes).records[1]?.relations).toEqual([
+        { kind: 'supports', to: result.records[0]?.id, as: 'approves' },
+      ]);
+    });
+
     it.each([
       ['an explicit kind', { to: ghostId('other'), kind: 'supersedes' }],
       ['a kind that comes from as', { to: ghostId('other'), as: 'replaces' }],
@@ -341,21 +526,52 @@ describe('register', () => {
       },
     );
 
-    it('should check the passes in the order schema, as to kind and cross-process-currency, not in the order of the items', async () => {
+    it('should list the schema violations first and then the relation violations by record and relation', async () => {
       const { register } = setup();
       const unknownAs = note('a', { relations: [{ to: ghostId(ORIGIN), as: 'nope' }] });
 
-      const bySchema = await refusal(
-        register([supersedesElsewhere(), unknownAs, { ...note(), data: {} }]),
+      const error = await refusal(
+        register([supersedesElsewhere(), unknownAs, { ...note(), data: { text: 5 } }]),
       );
-      const byName = await refusal(register([supersedesElsewhere(), unknownAs]));
-      const byScope = await refusal(register([supersedesElsewhere()]));
 
-      expect(bySchema.details[0]).toMatchObject({
-        path: expect.stringMatching(/^\/records\/2\/data/),
+      expect(error.details.map(({ path, code }) => [path, code])).toEqual([
+        ['/records/2/data/text', expect.any(String)],
+        ['/records/0/relations/0', 'cross-process-currency'],
+        ['/records/1/relations/0', 'unknown-relation-name'],
+      ]);
+    });
+
+    it('should join a kind-mismatch with the schema violation of the same record', async () => {
+      const { register, processes } = setup();
+      const relation = { to: ghostId(ORIGIN), as: 'approves', kind: 'answers' } as const;
+
+      const error = await refusal(
+        register([{ ...note('a', { relations: [relation] }), data: { text: 5 } }]),
+      );
+
+      expect(error.details.map(({ path, code }) => [path, code])).toEqual([
+        ['/records/0/data/text', expect.any(String)],
+        ['/records/0/relations/0', 'kind-mismatch'],
+      ]);
+      expect(processes.counters.reads).toEqual([]);
+    });
+
+    it('should count the relation violations in the cap of the details', async () => {
+      const { register } = setup();
+      const relation = { to: ghostId(ORIGIN), as: 'nope' } as const;
+
+      const error = await refusal(
+        register(
+          Array.from({ length: BATCH_MAX }, () => note('a', { relations: [relation, relation] })),
+        ),
+      );
+
+      expect(error.details).toHaveLength(51);
+      expect(error.details.at(-1)).toEqual({
+        path: '',
+        code: 'too-many-errors',
+        message: `${BATCH_MAX * 2 - 50} more errors omitted`,
       });
-      expect(byName.details[0]).toMatchObject({ code: 'unknown-relation-name' });
-      expect(byScope.details[0]).toMatchObject({ code: 'cross-process-currency' });
     });
 
     it('should accept a supersedes whose destination is in the own process', async () => {

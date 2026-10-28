@@ -86,6 +86,24 @@ describe('register', () => {
     expect(verified('run-1').chain).toMatchObject({ ok: true, totalRecords: 0 });
   });
 
+  it('should refuse a batch with invalid records with every violation of each one', async () => {
+    const { register } = realSetup();
+
+    const error = await refusal(
+      register('run-1', [
+        note('ok'),
+        { ...note('a'), data: { text: 5 } },
+        { ...note('b'), data: { other: 1 } },
+      ]),
+    );
+
+    expect(error.details.map(({ path, code }) => ({ path, code }))).toEqual([
+      { path: '/records/1/data/text', code: 'type' },
+      { path: '/records/2/data/text', code: 'required' },
+      { path: '/records/2/data/other', code: 'additional-properties' },
+    ]);
+  });
+
   describe('with a batch of 30 records that each give 2 errors', () => {
     /** Tipo com `anyOf` de 3 ramos, que gera 2 details por registro (60 em 30 registros): passa do teto de 50. */
     async function refuseThirtyPicks() {

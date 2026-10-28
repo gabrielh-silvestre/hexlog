@@ -49,15 +49,16 @@
   "permissions": {
     "allow": [
       "Bash(node scripts/flow/flow.ts slug *)",
-      "Bash(node scripts/flow/flow.ts sync-plan *)",
       "Bash(node scripts/flow/mark.ts *)",
+      "Bash(node scripts/flow/sync-cli.ts check *)",
       "Bash(node scripts/flow/gate.ts *)",
       "Bash(node scripts/flow/report.ts *)",
       "Bash(node scripts/flow/critic.ts *)"
     ],
     "ask": [
       "Bash(node *scripts/install.ts*)",
-      "Bash(node *scripts/flow/reanchor.ts*--apply*)"
+      "Bash(node *scripts/flow/reanchor.ts*--apply*)",
+      "Bash(node *scripts/flow/sync-cli.ts*--apply*)"
     ]
   }
 }

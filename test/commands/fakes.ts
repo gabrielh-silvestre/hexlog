@@ -57,9 +57,12 @@ const DEFAULT_RELATIONS: RelationName[] = [
   { name: 'only-tasks', kind: 'supports', from: ['task'] },
 ];
 
-export function manifestOf(process: Name): Manifest {
+export function manifestOf(
+  process: Name,
+  types: Manifest['fixed']['types'] = { note: NOTE, task: NOTE, doc: DOC },
+): Manifest {
   const fixed = {
-    types: { note: NOTE, task: NOTE, doc: DOC },
+    types,
     relations: Object.fromEntries(DEFAULT_RELATIONS.map((relation) => [relation.name, relation])),
     gates: {},
   };

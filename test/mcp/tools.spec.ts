@@ -151,6 +151,17 @@ describe('tools/list', () => {
     expect(description).toMatch(/read the current id with query/);
   });
 
+  it('should tell register that as alone is enough and that every schema violation is reported', () => {
+    const description = descriptionOf('register');
+
+    expect(description).toMatch(/as alone is enough/);
+    expect(description).toMatch(/kind must equal the pinned one \(else kind-mismatch\)/);
+    expect(description).toMatch(/reports every schema violation of each record \(at most 50/);
+    expect(description).toMatch(
+      /a very costly schema ends the list with a violations-capped detail pointing to describe_type/,
+    );
+  });
+
   it('should warn in the define_type description that pattern is refused and point to the catalog', () => {
     const description = descriptionOf('define_type');
 

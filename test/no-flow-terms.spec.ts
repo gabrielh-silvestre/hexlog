@@ -6,7 +6,7 @@ import { listFiles } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const SCANNED_DIRS = ['src', 'hook', 'scripts'];
-// `scripts/flow/` é código do fluxo por definição (`sync-plan`, `planSync` e `SyncPlan` usam `plan`).
+// `scripts/flow/` é código do fluxo por definição (`planSync` e `SyncPlan` usam `plan`).
 const FLOW_SCRIPTS_DIR = path.join('scripts', 'flow') + path.sep;
 
 // Arquivos que a varredura tem de achar, senão um filtro quebrado a faria passar sem olhar nada.

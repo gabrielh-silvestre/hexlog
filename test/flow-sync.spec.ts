@@ -1,7 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
-import { omit } from 'es-toolkit';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { parsePremises, planSync, type SyncInput, type SyncPlan } from '../scripts/flow/sync.ts';
 import { sha256hex } from '../src/domain/chain.ts';
 import {
@@ -25,8 +22,7 @@ import {
   staleBatch,
   writeBatch,
 } from './flow-helpers.ts';
-import { flowPath, repoRoot, runNode } from './flow-repo.ts';
-import { at, createTempDir } from './helpers.ts';
+import { at } from './helpers.ts';
 import { expectError } from './mcp/environment.ts';
 
 const REFUSED = { upToDate: false, batches: [], warnings: [], error: 'invalid-path' };
@@ -726,122 +722,6 @@ describe('planSync', () => {
 
       expect(plan).toEqual(UP_TO_DATE);
     });
-  });
-});
-
-describe('scripts/flow/flow.ts sync-plan on estrategia.md', () => {
-  const estrategiaPath = docPath(STRATEGY);
-
-  /** O mesmo caminho da skill: o CLI lê o documento em `input.path`, extrai as premissas e planeja. */
-  const runFlow = (input: Omit<SyncInput, 'extracted'>, cwd = repoRoot, script = flowPath) =>
-    runNode(script, ['sync-plan'], { cwd, input: JSON.stringify(input) });
-
-  const flowPlan = (input: Omit<SyncInput, 'extracted'>): SyncPlan => {
-    const result = runFlow(input);
-
-    expect(result.stderr).toBe('');
-    expect(result.status).toBe(0);
-
-    return JSON.parse(result.stdout) as SyncPlan;
-  };
-
-  const inputForFile = (file: string): Omit<SyncInput, 'extracted'> => ({
-    docSlug: STRATEGY,
-    path: file,
-    hash: '',
-    current: null,
-    vigent: [],
-  });
-
-  // conta os bullets `- \`slug\`:` por regex, sem o parser do alvo
-  const premiseCountOf = (text: string): number => text.match(/^- `[a-z0-9-]+`:/gm)?.length ?? 0;
-
-  describe('with the real document registered in a hexlog', () => {
-    beforeEach(openEnvironment);
-    afterEach(closeEnvironment);
-
-    const realText = (): string => fs.readFileSync(path.join(repoRoot, estrategiaPath), 'utf8');
-    const realInput = async () =>
-      omit(await inputFor(DIRECTIVES, STRATEGY, realText(), []), ['extracted']);
-
-    it('should turn the real estrategia.md into one batch of premises plus the doc', async () => {
-      const count = premiseCountOf(realText());
-
-      const plan = flowPlan(await realInput());
-
-      expect(plan.batches).toHaveLength(1);
-      expect(at(plan.batches, 0).records.map(({ type }) => type)).toEqual([
-        ...Array.from({ length: count }, () => 'premise'),
-        'doc',
-      ]);
-    }, 30_000);
-
-    it('should be up to date on the second run once the batch is registered', async () => {
-      const batch = at(flowPlan(await realInput()).batches, 0);
-      await attachText(realText());
-      await register(DIRECTIVES, batch.records, batch.key);
-
-      const again = flowPlan(await realInput());
-
-      expect(again).toEqual(UP_TO_DATE);
-    }, 30_000);
-  });
-
-  it('should resolve a relative path from the repository root, with the cwd in another directory', () => {
-    const result = runFlow(inputForFile(estrategiaPath), createTempDir('other-cwd'));
-
-    expect(result.stderr).toBe('');
-    expect(result.status).toBe(0);
-    expect((JSON.parse(result.stdout) as SyncPlan).batches).toHaveLength(1);
-  }, 15_000);
-
-  describe('with a malformed document in a temporary repository', () => {
-    const flowDir = path.join(repoRoot, 'scripts/flow');
-    let root: string;
-
-    // o `REPO_ROOT` do CLI é o repositório temporário, então o `path` relativo vale ali
-    beforeAll(() => {
-      root = createTempDir('strategy');
-      fs.mkdirSync(path.join(root, 'scripts/flow'), { recursive: true });
-      for (const file of fs.readdirSync(flowDir).filter((f) => f.endsWith('.ts'))) {
-        fs.copyFileSync(path.join(flowDir, file), path.join(root, 'scripts/flow', file));
-      }
-      fs.mkdirSync(path.join(root, 'docs/directives'), { recursive: true });
-    }, 15_000);
-
-    it.each([
-      {
-        name: 'a malformed line',
-        lines: ['- sem crase: linha ruim'],
-        reason: /- sem crase: linha ruim/,
-      },
-      {
-        name: 'a repeated slug',
-        lines: ['- `a`: Um. Ver: [x](x.md)', '- `a`: Dois. Ver: [x](x.md)'],
-        reason: /duplicate slug "a"/,
-      },
-      {
-        name: 'a statement of 256 code points',
-        lines: [`- \`a\`: ${'𝒳'.repeat(256)}`],
-        reason: /"a" has 256 code points/,
-      },
-    ])(
-      'should exit with 2 and the reason on stderr for $name',
-      ({ lines, reason }) => {
-        fs.writeFileSync(path.join(root, estrategiaPath), ['## Tema', ...lines].join('\n'));
-
-        const result = runFlow(
-          inputForFile(estrategiaPath),
-          root,
-          path.join(root, 'scripts/flow/flow.ts'),
-        );
-
-        expect(result.status).toBe(2);
-        expect(result.stdout).toBe('');
-        expect(result.stderr).toMatch(reason);
-      },
-      15_000,
-    );
   });
 });
 

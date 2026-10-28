@@ -188,8 +188,12 @@ export type Validator = {
   /**
    * Pressupõe um schema que já passou em `checkSchema`: com schema que não compila lança `Error` cru
    * (vira `INTERNAL` na borda, `mcp/kernel.ts#execute`). O `path` dos detalhes é relativo a `data`.
-   * Devolve um erro por subschema avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames`
-   * saem os dos ramos). `pattern` e `patternProperties` de um tipo fixado antes da recusa não são
+   * Devolve todas as violações do dado, não só a primeira (em `anyOf`/`oneOf`/`propertyNames`
+   * saem os dos ramos), até o teto de 50 com o aviso `too-many-errors`; `maxLength`, `minLength`,
+   * `maximum` e `minimum` trazem o valor medido na `message` (`... (got N)`, com N em pontos de
+   * código no comprimento). Com schema e dado de custo estimado alto devolve só a violação que o
+   * primeiro passe achou, mais um `Detail` `violations-capped` (`path` vazio) que avisa que a lista
+   * está incompleta (`errors.ts#violationsCapped`). `pattern` e `patternProperties` de um tipo fixado antes da recusa não são
    * aplicados: nenhum regex vindo do schema é construído nem executado.
    */
   validate(schema: RecordType, data: HexRecord['data']): Detail[];

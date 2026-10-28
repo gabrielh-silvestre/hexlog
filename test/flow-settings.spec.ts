@@ -85,8 +85,8 @@ describe('.claude/settings.json', () => {
   it('should allow the commands of the flow scripts', () => {
     expect(settings.permissions.allow).toEqual([
       'Bash(node scripts/flow/flow.ts slug *)',
-      'Bash(node scripts/flow/flow.ts sync-plan *)',
       'Bash(node scripts/flow/mark.ts *)',
+      'Bash(node scripts/flow/sync-cli.ts check *)',
       'Bash(node scripts/flow/gate.ts *)',
       'Bash(node scripts/flow/report.ts *)',
       'Bash(node scripts/flow/critic.ts *)',
@@ -135,5 +135,23 @@ describe('.claude/settings.json', () => {
     expect(matcher.test('node scripts/flow/reanchor.ts --apply --to directives-4')).toBe(true);
     expect(matcher.test('node ./scripts/flow/reanchor.ts --apply')).toBe(true);
     expect(matcher.test('node scripts/flow/reanchor.ts --to directives-4')).toBe(false);
+  });
+
+  it('should ask before sync-cli.ts --apply and allow no sync-cli.ts call but check', () => {
+    const pattern = 'Bash(node *scripts/flow/sync-cli.ts*--apply*)';
+    const matcher = permissionMatcher(pattern);
+
+    expect(settings.permissions.ask).toContain(pattern);
+    expect(settings.permissions.allow.filter((entry) => entry.includes('sync-cli.ts'))).toEqual([
+      'Bash(node scripts/flow/sync-cli.ts check *)',
+    ]);
+    expect(matcher.test('node scripts/flow/sync-cli.ts plan --process directives-4 --apply')).toBe(
+      true,
+    );
+    expect(
+      matcher.test('node ./scripts/flow/sync-cli.ts plan --apply --process directives-4'),
+    ).toBe(true);
+    expect(matcher.test('node scripts/flow/sync-cli.ts plan --process directives-4')).toBe(false);
+    expect(matcher.test('node scripts/flow/sync-cli.ts check --process directives-4')).toBe(false);
   });
 });

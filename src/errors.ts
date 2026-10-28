@@ -1,4 +1,4 @@
-import { isUndefined, omitBy, uniqBy } from 'es-toolkit';
+import { isUndefined, omitBy, partition, uniqBy } from 'es-toolkit';
 import type { z } from 'zod';
 import type { Name, RecordId } from './domain/ids.ts';
 
@@ -7,7 +7,7 @@ import type { Name, RecordId } from './domain/ids.ts';
  * JSON Pointer.
  * `current`, `process` e `pid` são da 1.0 (D-26): versão vigente da linhagem (`null` se revogada),
  * processo citado e pid do detentor do lock. `versions` é das definições: as versões que existem
- * quando a pedida não existe.
+ * quando a pedida não existe. `kind` é o `kind` do nome de relação fixado, em `kind-mismatch`.
  */
 export type Detail = {
   path: string;
@@ -17,6 +17,7 @@ export type Detail = {
   process?: string;
   pid?: number;
   versions?: string[];
+  kind?: string;
 };
 
 /** Catálogo de códigos de erro de domínio (ADR 0009 item 7): a união literal única. */
@@ -64,7 +65,7 @@ export class HexlogError extends Error {
 }
 
 /** Campos opcionais de um `Detail` que só alguns erros trazem. */
-type DetailExtra = Pick<Detail, 'current' | 'process' | 'pid' | 'versions'>;
+type DetailExtra = Pick<Detail, 'current' | 'process' | 'pid' | 'versions' | 'kind'>;
 
 /**
  * Erro com um único `Detail`; `message` é a do erro e a do `Detail`. As chaves `undefined` de `extra`
@@ -127,20 +128,51 @@ export function pointer(path: PropertyKey[]): string {
 /** Alinhado a `BATCH_MAX` (`docs/tetos-dominio-v1.md`); sem medição por trás. */
 const MAX_DETAILS = 50;
 
+const TOO_MANY_CODE = 'too-many-errors';
+const OMITTED_MESSAGE = /^(\d+) more errors omitted$/;
+export const VIOLATIONS_CAPPED_CODE = 'violations-capped';
+
+/**
+ * Aviso de que a lista de violações de UM registro está incompleta: o schema do tipo é caro demais
+ * para validar por inteiro (acima de `COST_CEILING`). Sem `type` a `message` é a do validador, que
+ * não conhece o registro; o serviço a refaz com o nome do tipo. É `code` de detail, não `ErrorCode`.
+ */
+export function violationsCapped(path: string, type?: Name): Detail {
+  const subject = isUndefined(type) ? 'its type' : `type '${type}'`;
+  return {
+    path,
+    code: VIOLATIONS_CAPPED_CODE,
+    message: `Only the first violations of this record are listed because ${subject} is too costly to validate in full; read its full contract with describe_type`,
+  };
+}
+
+const detailKey = ({ path, code, message }: Detail) => `${path}\0${code}\0${message}`;
+
 /**
  * Deduplica por path+code+message (o ajv repete o mesmo erro, pois o metaschema é revisitado por
- * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora.
+ * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora. O
+ * aviso que já vem na lista (o do corte de cada registro de um lote) não conta como erro: o que ele
+ * omitiu soma ao total do aviso novo. O `violations-capped` também não é erro: ocupa vaga dos 50,
+ * fica depois dos erros e antes do aviso de corte e nunca é cortado, para o ponteiro de cada
+ * registro incompleto chegar a quem lê.
  */
 export function capDetails(details: Detail[]): Detail[] {
-  const unique = uniqBy(details, (d) => `${d.path}\0${d.code}\0${d.message}`);
-  if (unique.length <= MAX_DETAILS) return unique;
+  const [capped, others] = partition(details, ({ code }) => code === VIOLATIONS_CAPPED_CODE);
+  let carried = 0;
+  const errors = others.filter(({ code, message }) => {
+    const previous = code === TOO_MANY_CODE ? OMITTED_MESSAGE.exec(message) : null;
+    carried += Number(previous?.[1] ?? 0);
+    return previous === null;
+  });
+  const unique = uniqBy(errors, detailKey);
+  const hints = uniqBy(capped, detailKey);
+  const budget = Math.max(MAX_DETAILS - hints.length, 0);
+  const omitted = Math.max(unique.length - budget, 0) + carried;
+  if (omitted === 0) return [...unique, ...hints];
   return [
-    ...unique.slice(0, MAX_DETAILS),
-    {
-      path: '',
-      code: 'too-many-errors',
-      message: `${unique.length - MAX_DETAILS} more errors omitted`,
-    },
+    ...unique.slice(0, budget),
+    ...hints,
+    { path: '', code: TOO_MANY_CODE, message: `${omitted} more errors omitted` },
   ];
 }
 

@@ -1,4 +1,4 @@
-import { isPlainObject } from 'es-toolkit';
+import { isPlainObject, isUndefined } from 'es-toolkit';
 import { pointer as jsonPointer } from '../errors.ts';
 import type { RecordType } from './definitions.ts';
 
@@ -27,6 +27,9 @@ const SUBSCHEMA_MAP_KEYWORDS = [
   'dependentSchemas',
   'dependencies', // legada, mas o ajv 2020 estrito a aceita e aplica
 ];
+
+/** Só guardam definições: contam pelo `$ref` que as cita, não pela presença (ver `expandedSize`). */
+const DEFINITION_KEYWORDS = ['$defs', 'definitions'];
 
 type Subschema = Record<string, unknown>;
 
@@ -74,12 +77,83 @@ export function withoutFreePatterns(schema: RecordType): RecordType {
  * Serve para o `path` só apontar o que existe no documento do agente.
  */
 export function hasKeywordAt(schema: unknown, location: string, keyword: string): boolean {
+  const node = valueAt(schema, location);
+  return isPlainObject(node) && Object.hasOwn(node, keyword);
+}
+
+/** O que o ponteiro RFC 6901 `location` alcança em `schema`; `undefined` quando não resolve. */
+function valueAt(schema: unknown, location: string): unknown {
   const segments = location === '' ? [] : location.split('/').slice(1);
   let node = schema;
   for (const raw of segments) {
     const segment = raw.replace(/~1/g, '/').replace(/~0/g, '~');
-    if (typeof node !== 'object' || node === null || !Object.hasOwn(node, segment)) return false;
+    if (typeof node !== 'object' || node === null || !Object.hasOwn(node, segment))
+      return undefined;
     node = (node as Record<string, unknown>)[segment];
   }
-  return isPlainObject(node) && Object.hasOwn(node, keyword);
+  return node;
+}
+
+/** Teto das contagens abaixo: a soma satura aqui em vez de crescer sem limite. */
+const SATURATED = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Tamanho expandido do schema: quantos subschemas uma validação pode visitar num valor só, contando
+ * cada `$ref` pelo tamanho do destino (`$defs` só entra por quem o cita). Memoiza o destino de cada
+ * `$ref`, então o custo é linear no documento mesmo quando as referências dobram a cada nível.
+ * `$ref` que não é ponteiro local (`#/...`), `$dynamicRef`, ciclo e `$id` em subschema que não é a
+ * raiz valem `SATURATED`: sem como medir aqui, assume-se o pior.
+ */
+export function expandedSize(root: unknown): number {
+  const refSizes = new Map<string, number>();
+  const resolving = new Set<string>();
+
+  const refSize = (ref: string): number => {
+    if (!ref.startsWith('#/') || resolving.has(ref)) return SATURATED;
+    const known = refSizes.get(ref);
+    if (!isUndefined(known)) return known;
+    resolving.add(ref);
+    const size = sizeOf(valueAt(root, decodeURIComponent(ref.slice(1))));
+    resolving.delete(ref);
+    refSizes.set(ref, size);
+    return size;
+  };
+
+  const sizeOf = (node: unknown, isRoot = false): number => {
+    if (!isPlainObject(node)) return 0;
+    // `$id` aninhado muda o recurso contra o qual o ajv resolve `#/...`: o destino medido aqui seria outro
+    if (!isRoot && typeof node.$id === 'string') return SATURATED;
+    let total = 1;
+    if ('$dynamicRef' in node) total = SATURATED;
+    if (typeof node.$ref === 'string') total += refSize(node.$ref);
+    for (const key of SUBSCHEMA_KEYWORDS) total += sizeOf(node[key]);
+    for (const key of SUBSCHEMA_LIST_KEYWORDS) {
+      const list: unknown = node[key];
+      if (Array.isArray(list)) for (const item of list) total += sizeOf(item);
+    }
+    for (const key of SUBSCHEMA_MAP_KEYWORDS) {
+      const map: unknown = node[key];
+      if (DEFINITION_KEYWORDS.includes(key) || !isPlainObject(map)) continue;
+      for (const child of Object.values(map)) total += sizeOf(child);
+    }
+    return Math.min(total, SATURATED);
+  };
+
+  return sizeOf(root, true);
+}
+
+/**
+ * Quantos valores (objetos, arrays e escalares) o dado tem, contados sem recursão; a contagem para
+ * ao passar de `limit`, então um dado enorme não custa mais que o teto que o chamador compara.
+ */
+export function countNodes(value: unknown, limit: number): number {
+  const pending = [value];
+  let count = 0;
+  while (pending.length > 0 && count <= limit) {
+    const node = pending.pop();
+    count++;
+    if (Array.isArray(node)) for (const item of node) pending.push(item);
+    else if (isPlainObject(node)) for (const item of Object.values(node)) pending.push(item);
+  }
+  return count;
 }

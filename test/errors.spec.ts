@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { z } from 'zod';
+import { ruleRefusal } from '../src/commands/register/errors.ts';
 import {
   HexlogError,
   brokenChain,
@@ -16,6 +17,7 @@ import {
   mapDetails,
   pointer,
   reservedName,
+  violationsCapped,
   withPath,
   type Detail,
 } from '../src/errors.ts';
@@ -108,6 +110,16 @@ describe('domainError', () => {
 
     expect(error.details).toStrictEqual([
       { path: '/process', code: 'lock-busy', message: 'lock is busy' },
+    ]);
+  });
+
+  it('should carry the kind when given', () => {
+    const error = domainError('INVALID_RECORD', '/records/0/relations/0', 'kind-mismatch', 'm', {
+      kind: 'supports',
+    });
+
+    expect(error.details).toStrictEqual([
+      { path: '/records/0/relations/0', code: 'kind-mismatch', message: 'm', kind: 'supports' },
     ]);
   });
 
@@ -281,6 +293,93 @@ describe('capDetails', () => {
 
     expect(capDetails(repeated)).toEqual(makeDetails(50));
   });
+
+  describe('with violations-capped details in the list', () => {
+    const capped = (record: number): Detail => violationsCapped(`/records/${record}/data`, 'note');
+
+    it('should keep the violations-capped detail after the errors and before the cut notice', () => {
+      const details = [capped(0), ...makeDetails(60)];
+
+      const result = capDetails(details);
+
+      expect(result.slice(-2)).toEqual([
+        capped(0),
+        { path: '', code: 'too-many-errors', message: '11 more errors omitted' },
+      ]);
+    });
+
+    it('should keep every violations-capped detail inside the 50 of the budget', () => {
+      const details = [...makeDetails(60), capped(0), capped(1)];
+
+      expect(capDetails(details)).toEqual([
+        ...makeDetails(48),
+        capped(0),
+        capped(1),
+        { path: '', code: 'too-many-errors', message: '12 more errors omitted' },
+      ]);
+    });
+
+    it('should not count a violations-capped detail as an error to omit', () => {
+      const details = [...makeDetails(49), capped(0)];
+
+      expect(capDetails(details)).toEqual(details);
+    });
+
+    it('should put a violations-capped detail after the errors even when it comes first', () => {
+      expect(capDetails([capped(0), ...makeDetails(2)])).toEqual([...makeDetails(2), capped(0)]);
+    });
+
+    it('should drop a repeated violations-capped detail', () => {
+      expect(capDetails([capped(0), capped(0)])).toEqual([capped(0)]);
+    });
+
+    it('should add the omitted count of an earlier cut to the notice of a cut with hints', () => {
+      const earlier = { path: '', code: 'too-many-errors', message: '7 more errors omitted' };
+
+      const result = capDetails([...makeDetails(50), earlier, capped(0)]);
+
+      expect(result.at(-1)).toEqual({ ...earlier, message: '8 more errors omitted' });
+    });
+  });
+
+  describe('with a too-many-errors detail already in the list', () => {
+    const omitted = (count: number): Detail => ({
+      path: '',
+      code: 'too-many-errors',
+      message: `${count} more errors omitted`,
+    });
+
+    it('should add the omitted count of the earlier cut to the ones it cuts itself', () => {
+      const details = [...makeDetails(50), omitted(100), ...makeDetails(60).slice(50)];
+
+      expect(capDetails(details).at(-1)).toEqual(omitted(110));
+    });
+
+    it('should keep the earlier cut notice when nothing else is cut', () => {
+      expect(capDetails([...makeDetails(3), omitted(7)])).toEqual([...makeDetails(3), omitted(7)]);
+    });
+
+    it('should sum the notices of several earlier cuts', () => {
+      const details = [omitted(4), ...makeDetails(2), omitted(6)];
+
+      expect(capDetails(details)).toEqual([...makeDetails(2), omitted(10)]);
+    });
+  });
+});
+
+describe('violationsCapped', () => {
+  it('should name the type and point to describe_type when the type is known', () => {
+    expect(violationsCapped('/records/1/data', 'note')).toEqual({
+      path: '/records/1/data',
+      code: 'violations-capped',
+      message:
+        "Only the first violations of this record are listed because type 'note' is too costly to validate in full; read its full contract with describe_type",
+    });
+  });
+
+  it('should say its type when the type is unknown', () => {
+    expect(violationsCapped('').message).toMatch(/because its type is too costly/);
+  });
 });
 
 describe('issueDetails', () => {
@@ -449,5 +548,38 @@ describe('withPath', () => {
     expect(
       (withPath(internalError('boom'), '/records/0', 'p') as HexlogError).details,
     ).toStrictEqual([]);
+  });
+});
+
+describe('ruleRefusal', () => {
+  const path = '/records/0/relations/0';
+
+  it('should name the right kind in the detail and in the message on kind-mismatch', () => {
+    const error = ruleRefusal(path, { code: 'kind-mismatch', kind: 'supports' });
+
+    expect(error).toMatchObject({
+      code: 'INVALID_RECORD',
+      details: [
+        {
+          path,
+          code: 'kind-mismatch',
+          message:
+            'kind does not match the kind of the pinned relation name; send as alone, or kind "supports"',
+          kind: 'supports',
+        },
+      ],
+    });
+  });
+
+  it('should keep the generic message and no kind when the violation has no kind', () => {
+    const error = ruleRefusal(path, { code: 'kind-mismatch' });
+
+    expect(error.details).toStrictEqual([
+      {
+        path,
+        code: 'kind-mismatch',
+        message: 'kind does not match the kind of the pinned relation name',
+      },
+    ]);
   });
 });

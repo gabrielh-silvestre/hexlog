@@ -49,10 +49,22 @@ describe('withCanonicalLimit', () => {
     expect(schema.safeParse(undefined).success).toBe(true);
   });
 
-  it('should name what was limited and the ceiling when the value exceeds it', () => {
+  it('should name what was limited, the ceiling and the measured size when the value exceeds it', () => {
     const schema = withCanonicalLimit(z.string(), 3, 'name');
 
     const result = schema.safeParse('abcd');
+
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        message: 'name exceeds 3 canonical characters or is not canonicalizable (got 6)',
+      }),
+    ]);
+  });
+
+  it('should leave the measured size out when the value is not canonicalizable', () => {
+    const schema = withCanonicalLimit(z.string(), 3, 'name');
+
+    const result = schema.safeParse('\ud800');
 
     expect(result.error?.issues).toEqual([
       expect.objectContaining({
@@ -152,7 +164,22 @@ describe('RelationInput', () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.issues).toEqual([
-      expect.objectContaining({ path: ['kind'], message: 'relation needs kind or as' }),
+      expect.objectContaining({
+        path: ['kind'],
+        message: expect.stringContaining('or as (a relation name pinned in the process)'),
+      }),
+    ]);
+  });
+
+  it('should list the eight kinds and point relation names to as when kind is not one of them', () => {
+    const result = RelationInput.safeParse({ to: id(), kind: 'approves' });
+
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        code: 'invalid_value',
+        path: ['kind'],
+        message: `kind must be one of ${RelationKind.options.join(', ')}; a relation name goes in as`,
+      }),
     ]);
   });
 
@@ -197,7 +224,7 @@ describe('BatchItem', () => {
     expect(result.error?.issues).toEqual([
       expect.objectContaining({
         path: ['data'],
-        message: 'data exceeds 16000 canonical characters or is not canonicalizable',
+        message: `data exceeds 16000 canonical characters or is not canonicalizable (got ${DATA_MAX_CHARS + 1})`,
       }),
     ]);
   });
