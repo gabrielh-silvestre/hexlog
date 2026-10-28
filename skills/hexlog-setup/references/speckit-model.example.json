@@ -15,7 +15,7 @@
   "phases": [
     {
       "name": "specify",
-      "command": "/speckit.specify",
+      "command": "/speckit-specify",
       "type": "spec",
       "target": "spec",
       "artifact": "spec.md",
@@ -23,7 +23,7 @@
     },
     {
       "name": "plan",
-      "command": "/speckit.plan",
+      "command": "/speckit-plan",
       "type": "plan",
       "target": "plan",
       "artifact": "plan.md",
@@ -31,7 +31,7 @@
     },
     {
       "name": "tasks",
-      "command": "/speckit.tasks",
+      "command": "/speckit-tasks",
       "type": "tasks",
       "target": "tasks",
       "artifact": "tasks.md",

@@ -6,8 +6,8 @@ ativa: ela só escreve arquivos do próprio hexlog e nunca depende de disparo do
 ## Camada C (sempre)
 
 1. A skill do projeto (`.claude/skills/<projeto>-hexlog/SKILL.md`), cuja `description`
-   nomeia os comandos das fases do Spec Kit (`/speckit.specify`, `/speckit.plan`,
-   `/speckit.tasks`), porque o gatilho por descrição é probabilístico.
+   nomeia os comandos das fases do Spec Kit (`/speckit-specify`, `/speckit-plan`,
+   `/speckit-tasks`), porque o gatilho por descrição é probabilístico.
 2. O **bloco no `AGENTS.md`** do destino: ponteiro imperativo de até 8 linhas, com
    título fixo, dizendo que, depois dos comandos das fases, se usa a skill do projeto.
    O `AGENTS.md` é lido pelo Claude Code por import do `CLAUDE.md`; o setup só mexe no
