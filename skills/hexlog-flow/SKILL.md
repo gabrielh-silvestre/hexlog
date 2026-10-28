@@ -6,8 +6,10 @@ description: "Use to register hexlog records and cross-reference them against wh
 # hexlog-flow
 
 Registra no hexlog e cruza informação contra o que já foi registrado. Esta skill
-é a mecânica das tools: não define fase, processo, tipo, relação nem gate. O
-modelo (registro, vigência, processo, anexo) está na skill hexlog.
+é a mecânica das tools: não define fase, tipo, relação nem gate, e só abre o
+processo da unidade de trabalho, quando o ciclo de vida manda
+(`references/unit-lifecycle.md`). O modelo (registro, vigência, processo, anexo)
+está na skill hexlog.
 
 ## Antes de qualquer chamada: de onde vêm projeto, processo e gate
 
@@ -232,7 +234,7 @@ processo num gate com pergunta de projeto lê os demais processos como vazios.
 | Cancelamento ou tempo estourado no `register`, e o reenvio com `key` dá `ATTACHMENT_NOT_FOUND` | **Não prova que o lote ficou fora.** A chamada original pode ainda esperar o lock e grava se o anexo for guardado antes de ela pegá-lo. Guarde o anexo (`attach`, idempotente) e reenvie com a mesma `key`: devolve `replayed: true` (a original gravou) ou grava |
 | `PROCESS_CORRUPTED` com `broken-chain` | Não grave nem tente reparar. Avise o usuário; `verify_chain` mostra onde a cadeia quebrou |
 | `PROCESS_CORRUPTED` com `unreadable-manifest` | Não grave nem tente reparar. Avise o usuário: `verify_chain` falha do mesmo jeito |
-| `PROCESS_TOO_LARGE` | O log de um processo passou do teto; `details[0].process` diz qual, e pode ser o de um destino de relação, não o seu. Pare e peça ao usuário um processo novo e a atualização do modelo do projeto: esta skill não cria processo (a linhagem não atravessa; ver acima) |
+| `PROCESS_TOO_LARGE` | O log de um processo passou do teto; `details[0].process` diz qual, e pode ser o de um destino de relação, não o seu. Pare e avise o usuário; a saída é abrir a unidade em processo novo, com o próximo sufixo (`references/unit-lifecycle.md`, passo 3; o anterior fica aposentado e a linhagem não atravessa; ver acima) |
 
 ## Anexos
 

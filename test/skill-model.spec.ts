@@ -17,6 +17,13 @@ type Schema = {
   required?: string[];
 };
 
+type GateQuestion = {
+  kind: string;
+  select?: { type: string };
+  pending?: { type: string };
+  resolvedBy?: { kind: string; from: string[] };
+};
+
 type Model = {
   project: string;
   unit: { examples: { path: string; process: string }[] };
@@ -29,7 +36,7 @@ type Model = {
   plug: { layer: string };
   types: { name: string; schema: Schema }[];
   relations: { name: string; kind: string; from: string[]; to: string[] }[];
-  gate: { name: string; questions: object[] };
+  gate: { name: string; questions: GateQuestion[] };
 };
 
 // Chaves de topo documentadas em `model-schema.md`: as obrigatórias e a única opcional.
@@ -115,31 +122,33 @@ async function setUp(model: Model) {
 
 /**
  * Registra um registro por fase, ligados pelas relações do modelo; `skipLinksOf` deixa de fora as
- * relações da fase nomeada.
+ * relações da fase nomeada e `omit` deixa de fora a fase nomeada (só vale para fase sem sucessora).
  */
-function registerPhases(model: Model, skipLinksOf?: string) {
+function registerPhases(model: Model, skipLinksOf?: string, omit?: string) {
   return environment.ok<RegisterResult>('register', {
     project: model.project,
     process: processOf(model),
     agent: 'test-engineer',
-    records: model.phases.map(({ name, type, target, links }) => ({
-      alias: name,
-      type,
-      target: `${processOf(model)}.${target}`,
-      data: { unit: at(model.unit.examples, 0).path, summary: `the ${name} phase` },
-      relations:
-        name === skipLinksOf
-          ? []
-          : links.map(({ relation, to }) => ({
-              to: `@${
-                at(
-                  model.phases.filter((phase) => phase.type === to),
-                  0,
-                ).name
-              }`,
-              as: relation,
-            })),
-    })),
+    records: model.phases
+      .filter(({ name }) => name !== omit)
+      .map(({ name, type, target, links }) => ({
+        alias: name,
+        type,
+        target: `${processOf(model)}.${target}`,
+        data: { unit: at(model.unit.examples, 0).path, summary: `the ${name} phase` },
+        relations:
+          name === skipLinksOf
+            ? []
+            : links.map(({ relation, to }) => ({
+                to: `@${
+                  at(
+                    model.phases.filter((phase) => phase.type === to),
+                    0,
+                  ).name
+                }`,
+                as: relation,
+              })),
+      })),
   });
 }
 
@@ -172,6 +181,40 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
 
     expect(required.sort()).toEqual([...REQUIRED_MODEL_KEYS].sort());
   });
+
+  it.each(EXAMPLES)(
+    'should ask the gate for an occurrence of every phase type in $file',
+    ({ model }) => {
+      const phaseTypes = model.phases.map(({ type }) => type);
+
+      const questions = model.gate.questions.filter(({ kind }) => kind === 'occurred');
+
+      expect(questions.map(({ select }) => select?.type)).toEqual(
+        expect.arrayContaining(phaseTypes),
+      );
+    },
+  );
+
+  it.each(EXAMPLES)(
+    'should ask the gate for a no_pending of every phase with a successor in $file',
+    ({ model }) => {
+      const expected = model.phases.flatMap(({ type, links }) =>
+        links.map(({ relation, to }) => ({
+          kind: 'no_pending',
+          pending: { type: to },
+          resolvedBy: {
+            kind: at(
+              model.relations.filter(({ name }) => name === relation),
+              0,
+            ).kind,
+            from: [type],
+          },
+        })),
+      );
+
+      expect(model.gate.questions).toEqual(expect.arrayContaining(expected));
+    },
+  );
 
   it.each(PHASE_TYPES)('should require a unit field with maxLength in $label', ({ schema }) => {
     expect(schema.required).toContain('unit');
@@ -359,6 +402,35 @@ describe('evaluate_gate', () => {
         passed: false,
         evidence: expect.objectContaining({ unresolved: [planId] }),
       }),
+    );
+  });
+
+  it('should fail the gate when plan is not linked to spec', async () => {
+    await setUp(SPECKIT);
+    const { records } = await registerPhases(SPECKIT, 'plan');
+    const specId = at(records, 0).id;
+
+    const result = await evaluate(SPECKIT, 'full');
+
+    expect(result.passed).toBe(false);
+    expect(result.questions).toContainEqual(
+      expect.objectContaining({
+        kind: 'no_pending',
+        passed: false,
+        evidence: expect.objectContaining({ unresolved: [specId] }),
+      }),
+    );
+  });
+
+  it('should fail the gate when a phase has no record', async () => {
+    await setUp(SPECKIT);
+    await registerPhases(SPECKIT, undefined, 'tasks');
+
+    const result = await evaluate(SPECKIT, 'full');
+
+    expect(result.passed).toBe(false);
+    expect(result.questions).toContainEqual(
+      expect.objectContaining({ kind: 'occurred', passed: false }),
     );
   });
 
