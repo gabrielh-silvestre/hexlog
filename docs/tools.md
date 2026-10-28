@@ -159,7 +159,21 @@ nome fixado, e só vale mandar `kind` se for igual ao dele. Até 100 relações 
   revogado, é `FORK_REJECTED`, com `current` apontando a versão atual da linhagem.
 - `supersedes` exige o mesmo tipo (`type-mismatch`) e o mesmo target (`target-mismatch`).
   Para mudar um fato de target, grave um registro só no target certo, com `revokes` e
-  `derivesFrom` para o antigo; `revokes` entre targets é aceito.
+  `derivesFrom` para o antigo; `revokes` entre targets é aceito. Exemplo, com `<id>` o
+  id vigente do registro antigo:
+
+  ```json
+  {
+    "type": "note",
+    "target": "run.novo-target",
+    "data": { "text": "o mesmo fato, no target certo" },
+    "relations": [
+      { "to": "<id>", "kind": "revokes" },
+      { "to": "<id>", "kind": "derivesFrom" }
+    ]
+  }
+  ```
+
 - `supports` só aceita destino vigente (`stale-destination`); pode cruzar processos.
 - Um registro não pode apoiar e contradizer, nem superar e revogar, o mesmo destino.
 - Relação para si mesmo, `as` que não existe fixado no processo, `kind` que não bate com
