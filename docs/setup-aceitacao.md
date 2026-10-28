@@ -1,7 +1,7 @@
 # Aceite do setup
 
-Roteiro manual para provar que a skill `hexlog-setup` leva um repositório de destino do zero ao
-gate verde. O jest prova a forma dos exemplos, o gate e as varreduras dos textos; o comportamento do
+Roteiro manual para provar que a skill `hexlog-setup` prepara um repositório de destino e que o
+ciclo de uma unidade chega ao gate verde. O jest prova a forma dos exemplos, o gate e as varreduras dos textos; o comportamento do
 agente (entrevista, descoberta, adesão à skill gerada) só este roteiro prova. A evidência fica no
 hexlog, anexada ao processo do trabalho que roda o aceite.
 
@@ -23,14 +23,16 @@ Cada ação abaixo é pedida ao dono no momento em que for executada.
 
 - **Instalar as skills da branch** (exige aprovação do dono): `node scripts/install.ts` escreve em
   `~/.claude/settings.json`, `~/.claude.json` e `~/.local/lib/hexlog/`. Depois, `diff -r` de
-  `skills/hexlog-setup` contra `~/.claude/skills/hexlog-setup` prova que a instalação está
-  atualizada, porque a verificação do instalador só confere a presença do `SKILL.md`.
+  cada uma das três pastas (`skills/hexlog`, `skills/hexlog-flow` e `skills/hexlog-setup`) contra
+  `~/.claude/skills/<nome>` prova que a instalação está atualizada, porque a verificação do
+  instalador só confere a presença do `SKILL.md`.
 - **Baixar o Spec Kit** (exige aprovação do dono): `specify init` na versão 1.2.4, num diretório
   temporário, baixa e executa código de terceiros. O comando exato vem da documentação oficial
-  **durante o aceite** e é colado neste roteiro antes de qualquer marcador de pré-PR.
-- **Projetos descartáveis ficam permanentes**: cada execução cria um projeto hexlog em `<D>`. Se o
-  dono quiser limpar, o caminho é o procedimento manual de quarentena de [dados.md](dados.md), num
-  terminal fora do Claude Code, por decisão dele.
+  **durante o aceite** e é conferido contra a documentação do Spec Kit antes de rodar (para a versão 1.2.4, `uvx --from git+https://github.com/github/spec-kit.git@v1.2.4 specify init <projeto> --integration claude`).
+- **Projetos descartáveis ficam permanentes**: cada execução cria um projeto hexlog em `<D>`. Os
+  projetos descartáveis permanecem em `<D>`. Se o dono quiser limpar, o ponto de partida é o
+  procedimento manual de [dados.md](dados.md) (seção "Recuperar um processo corrompido"), adaptado
+  ao diretório do projeto, num terminal fora do Claude Code e por decisão dele.
 
 ## Passo a passo
 
@@ -41,7 +43,11 @@ Cada ação abaixo é pedida ao dono no momento em que for executada.
    commit-base a este commit, **antes** do ciclo `specify`, `plan` e `tasks`: o próprio Spec Kit pode
    reescrever esses arquivos no ciclo, e o que ele escrever é anotado, não imputado ao setup.
 4. Rode o ciclo `specify`, `plan` e `tasks` numa unidade de exemplo, sem lembrar o agente de registrar.
-   Confira que há um registro por fase no processo da unidade e que o gate passa.
+   Confira que há um registro por fase no processo da unidade e que o gate passa. Confira também que
+   o agente fechou a unidade sozinho (consultou um registro por fase ao fim de `tasks`) e que a skill
+   do projeto e o bloco do `AGENTS.md` foram aplicados na sessão sem pedido seu.
+   Repita o ciclo em mais duas unidades novas, cada uma em sessão nova (três rodadas no total), e
+   anote, por rodada, quantas das três fases o agente registrou sem lembrete.
 5. Rode o setup de novo no mesmo diretório. Confira que não houve entrevista, nem registro duplicado,
    nem diferença no `git diff`.
 6. Apague o bloco da camada C do `AGENTS.md` e rode o setup de novo: o bloco volta.
@@ -52,7 +58,8 @@ Cada ação abaixo é pedida ao dono no momento em que for executada.
 9. Em um diretório vazio, sem Spec Kit, e com o segundo nome descartável, escolha a **entrevista
    direta**: os mesmos artefatos têm de sair.
 10. Repositórios que ainda têm o mapa antigo: confira só que o setup não cria nenhum arquivo de mapa
-    em `.hexlog/` do destino.
+    em `.hexlog/` do destino (rode o setup num diretório de teste que tenha o arquivo do mapa antigo
+    em `.hexlog/` e confira que ele continua como estava).
 
 O clone do destino, com o modelo, para um `<D>` sem o projeto não é testado neste roteiro; a
 cobertura é só pela instrução do `SKILL.md`.
@@ -93,6 +100,8 @@ Marque cada item com a evidência (saída do comando, trecho do `git diff` ou o 
   depois).
 - [ ] O setup confere o projeto por `list` antes da primeira chamada `define_*` e, com projeto já
   existente, para e mostra as definições vigentes.
+- [ ] Com o arquivo do mapa antigo em `.hexlog/` no destino, o setup o deixa como estava e não cria
+  nenhum arquivo de mapa.
 
 ## Anexar a evidência
 

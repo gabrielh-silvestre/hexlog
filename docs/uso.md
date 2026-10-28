@@ -24,12 +24,12 @@ fechar uma unidade de trabalho, com projeto, processo e gate vindos da skill do 
 
 ## Configurar um repositório novo
 
-A skill `hexlog-setup` leva um repositório de destino do zero ao gate verde, sem edição de arquivo à
-mão. Pedimos ao agente, por exemplo, "configura o hexlog nesse repositório". O fluxo:
+A skill `hexlog-setup` prepara um repositório de destino para registrar o fluxo no hexlog, sem edição de arquivo à
+mão: depois dela, o ciclo de cada unidade de trabalho pode chegar ao gate verde. Pedimos ao agente, por exemplo, "configura o hexlog nesse repositório". O fluxo:
 
 1. escolhemos entre **descoberta** (o agente lê o repositório, só leitura) e **entrevista direta**;
 2. o agente pergunta o nome do projeto hexlog e confere por `list` antes de qualquer `define_*`; se o
-   projeto já existe, para e mostra as definições vigentes;
+   projeto já existe e o repositório não tem modelo local, para e mostra as definições vigentes;
 3. uma pergunta por turno levanta a unidade de trabalho, as fases, o que se registra em cada uma, o
    comando que dispara a fase e o artefato de saída;
 4. o agente mostra o plano de chamadas e só registra tipos, relações e gate depois do "aprovado";
@@ -39,8 +39,8 @@ mão. Pedimos ao agente, por exemplo, "configura o hexlog nesse repositório". O
 
 Cada unidade de trabalho vira um processo hexlog, criado pela skill gerada na primeira fase dela. O
 setup pode rodar de novo: com o modelo local, compara com o hexlog em vez de reperguntar. O Spec Kit
-tem exemplo pronto, e hoje só a camada C do plug está ativa (arquivos do próprio hexlog, sem editar
-arquivo de terceiros). O roteiro de aceite, com os passos de verificação, está em
+tem exemplo pronto, e hoje só a camada C do plug está ativa (a skill do projeto, o modelo e um bloco no
+`AGENTS.md` do destino, sem editar outro arquivo de terceiros). O roteiro de aceite, com os passos de verificação, está em
 [setup-aceitacao.md](setup-aceitacao.md).
 
 ## Exemplo completo

@@ -7,21 +7,14 @@ hexlog por unidade. A skill do projeto traz só os dados (a tabela de fases, o
 valem para qualquer projeto e chegam a todos pela reinstalação, sem regerar a
 skill do projeto. Carregue este arquivo ao abrir, continuar ou fechar uma unidade.
 
-## 0b. Projeto sem definições
-
-`create_process` com `TYPE_NOT_FOUND` (`errors.ts#noDefinitions`) quer dizer que o
-projeto ainda não tem nenhuma definição: o modelo não foi aplicado neste hexlog
-(clone em outra máquina, dado novo). Pare e mande rodar a hexlog-setup, que
-reaplica o modelo que está no repositório sem nova entrevista.
-
-## 0. Versão do modelo
+## 1. Versão do modelo
 
 O modelo do projeto declara `schema`, um inteiro. A mecânica deste arquivo entende
 só `schema` igual a `1`. Valor desconhecido: pare e peça ao desenvolvedor que rode
 a hexlog-setup de novo. O modelo fica congelado no repositório de destino e esta
 mecânica evolui por reinstalação, então os dois podem se descolar.
 
-## 1. Resolver o processo da unidade
+## 2. Resolver o processo da unidade
 
 Todo tipo de fase carrega o campo `unit`, o caminho canônico da unidade (relativo à
 raiz do repositório, separador `/`, sem barra final e sem `./`). Ache o processo
@@ -38,13 +31,14 @@ diferentes. Agrupe os acertos pelo prefixo do `id` antes de `:`
 
 - um processo: é ele, siga;
 - mais de um: pare e pergunte ao desenvolvedor qual vale;
-- nenhum acerto: passo 2.
+- nenhum acerto: passo 3.
 
-`PROCESS_CORRUPTED` na consulta significa cadeia quebrada em algum processo do
+`PROJECT_NOT_FOUND` ou `TYPE_NOT_FOUND` na consulta ou no `create_process` significam que o
+modelo ainda não foi aplicado neste hexlog: siga o passo 7. `PROCESS_CORRUPTED` na consulta significa cadeia quebrada em algum processo do
 projeto. Relate ao desenvolvedor, sugira `verify_chain` por processo e **não caia
 no nome calculado**: ele poderia colidir com o processo quebrado.
 
-## 2. Sem acerto: calcular o nome e criar
+## 3. Sem acerto: calcular o nome e criar
 
 Calcule o nome do processo a partir da unidade, no formato de `domain/ids.ts#Name`:
 
@@ -63,9 +57,9 @@ confirme com o desenvolvedor. Chame `create_process`:
   sufixo e repita.
 
 O sufixo escolhido fica persistido pelos próprios registros (campo `unit`), então as
-fases seguintes acham o processo pelo passo 1.
+fases seguintes acham o processo pelo passo 2.
 
-## 3. `stale` e `TYPE_NOT_PINNED`
+## 4. `stale` e `TYPE_NOT_PINNED`
 
 A cada fase, chame `create_process` (é idempotente) e leia `stale`. O processo fixou
 as versões do projeto quando nasceu: definição criada depois não vale para ele.
@@ -75,13 +69,13 @@ tipo exigido pela próxima fase está em `stale` ou ausente do que o processo
 fixou**. Então proponha fechar a unidade ou abrir outra, nunca fixar de novo. Registrar
 num tipo não fixado dá `TYPE_NOT_PINNED`: pare e avise.
 
-## 4. Registrar uma fase
+## 5. Registrar uma fase
 
 Use `target` no formato `<processo>.<fase>`, o `unit` em `data`, as relações que a
 tabela de fases do modelo declara e uma `key` estável, conforme a árvore de decisão
 do `SKILL.md`. Campo de anexo exige `attach` antes (ver "Anexos" no `SKILL.md`).
 
-## 5. Fechar a unidade
+## 6. Fechar a unidade
 
 1. `evaluate_gate` com o gate do modelo e o processo da unidade.
 2. `query` do processo, conferindo que há um registro vigente por fase da tabela.
@@ -91,3 +85,11 @@ do `SKILL.md`. Campo de anexo exige `attach` antes (ver "Anexos" no `SKILL.md`).
 
 Nunca altere o arquivo do modelo nem o campo `plug.layer` por causa de uma fase
 faltante: o modelo descreve a configuração e só a hexlog-setup o muda.
+
+## 7. Projeto sem definições
+
+`PROJECT_NOT_FOUND` na consulta do passo 2, ou `create_process` com `TYPE_NOT_FOUND`
+(`errors.ts#noDefinitions`), quer dizer que o projeto não existe neste hexlog ou ainda não
+tem nenhuma definição: o modelo não foi aplicado aqui (clone em outra máquina, dado novo).
+Pare e mande rodar a hexlog-setup, que reaplica o modelo que está no repositório sem nova
+entrevista.

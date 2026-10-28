@@ -1,15 +1,17 @@
 # Plug no Spec Kit
 
 Como o hexlog se liga a um repositório que usa o Spec Kit. Só a **camada C** está
-ativa: ela só escreve arquivos do próprio hexlog e nunca depende de disparo do Spec Kit.
+ativa: ela escreve a skill do projeto, o modelo e um bloco delimitado no `AGENTS.md` do
+destino, e nunca depende de disparo do Spec Kit.
 
 ## Camada C (sempre)
 
 1. A skill do projeto (`.claude/skills/<projeto>-hexlog/SKILL.md`), cuja `description`
    nomeia os comandos das fases do Spec Kit (`/speckit-specify`, `/speckit-plan`,
    `/speckit-tasks`), porque o gatilho por descrição é probabilístico.
-2. O **bloco no `AGENTS.md`** do destino: ponteiro imperativo de até 8 linhas, com
-   título fixo, dizendo que, depois dos comandos das fases, se usa a skill do projeto.
+2. O **bloco no `AGENTS.md`** do destino, copiado de `agents-block.template.md`: ponteiro
+   imperativo de até 8 linhas, com o título fixo `## hexlog`, dizendo que, depois dos
+   comandos das fases, se usa a skill do projeto.
    O `AGENTS.md` é lido pelo Claude Code por import do `CLAUDE.md`; o setup só mexe no
    `CLAUDE.md` com opt-in do dev e, quando mexe, escreve no fim do arquivo, **fora de
    qualquer região que o Spec Kit gerencia** (marcadores observados no aceite). A mesma

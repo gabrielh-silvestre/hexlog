@@ -17,6 +17,7 @@ Skill que configura o hexlog num repositório de destino. Dispara quando o pedid
 | `references/project-skill.template.md` | Template da skill do projeto gerada no destino |
 | `references/speckit-model.example.json` | Modelo de exemplo com as fases do Spec Kit |
 | `references/minimal-model.example.json` | Modelo de exemplo sem fluxo reconhecível |
+| `references/agents-block.template.md` | Texto literal do bloco da camada C no `AGENTS.md` do destino |
 | `references/plug-speckit.md` | Camada C do plug no Spec Kit e a tabela de versões provadas |
 
 ## Subdirectories

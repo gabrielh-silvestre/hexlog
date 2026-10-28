@@ -4,7 +4,7 @@
 
 **Data:** 2026-10-28
 
-**Deciders:** Gabriel Baldino (aprovação do plano e do aceite), com o plano de consenso entre planner, architect e critic
+**Deciders:** Gabriel Baldino (aprovação do plano e do aceite)
 
 ---
 
@@ -32,12 +32,12 @@ Restrições que moldam a decisão:
 4. **Gate de cobertura e encadeamento.** O gate proposto tem um `occurred` por tipo de fase e um `no_pending` por fase com sucessora, resolvido por `derivesFrom`.
 5. **Projeto hexlog conferido antes de definir.** O setup pergunta o nome do projeto e confere por `list` antes de qualquer `define_*`; projeto existente sem modelo local para e mostra as definições vigentes.
 6. **Plug no Spec Kit em camadas.** **C** sempre: skill do projeto mais um bloco de até 8 linhas no `AGENTS.md`, com o processo resolvido pelo diretório da unidade, nunca por `.specify/feature.json`. **B** (extension ou preset com hooks) só em versão provada por uma sonda que o dono roda. **A** (edição das skills do Spec Kit) só por opt-in com aviso.
-7. **Sem hooks do Claude Code e sem terceiros.** O setup não instala hooks no destino e não altera arquivo de terceiros por padrão; o import no `CLAUDE.md` exige opt-in do dev e vai no fim do arquivo, fora de região gerenciada.
+7. **Sem hooks do Claude Code e com uma exceção deliberada em arquivo de terceiros.** O setup não instala hooks no destino e só escreve a skill do projeto e o modelo; a exceção é o bloco da camada C no `AGENTS.md` do destino, criado se faltar e escrito fora de região gerenciada. O import no `CLAUDE.md` exige opt-in do dev e vai no fim do arquivo.
 8. **Saída em inglês.** O que o setup diz ao dev e grava no destino sai em inglês; o corpo das skills do produto segue pt-BR.
 
 ## Drivers
 
-Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferramentas-fixas`, `definicao-fixada-por-processo` e `libs-em-faixa-caret`; a premissa da entrega "nada de terceiros alterado por padrão"; a confiança baixa do júri no plug; a testabilidade do que for determinístico.
+Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferramentas-fixas`, `definicao-fixada-por-processo` e `libs-em-faixa-caret`. Mais três critérios desta decisão: nada de arquivo de terceiros alterado por padrão, a menos da exceção do item 7; incerteza alta sobre o disparo de hooks do Spec Kit, que mantém B e A atrás de prova ou consentimento; e testabilidade do que for determinístico, deixando só o comportamento do agente para o roteiro de aceite.
 
 ## Alternatives considered
 
@@ -52,7 +52,7 @@ Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferra
 
 ## Why chosen
 
-É a menor mudança que cumpre o objetivo sem tocar o servidor nem o instalador. A camada C é segura e autossuficiente: só escreve arquivos do próprio hexlog e a adesão foi medida no aceite. B e A entram com prova ou consentimento. O JSON é validável em jest, e a mecânica versionada chega a todos os destinos pela reinstalação.
+É a menor mudança que cumpre o objetivo sem tocar o servidor nem o instalador. A camada C é segura e autossuficiente: escreve a skill do projeto, o modelo e um bloco delimitado no `AGENTS.md` do destino, e a adesão foi medida no aceite. B e A entram com prova ou consentimento. O JSON é validável em jest, e a mecânica versionada chega a todos os destinos pela reinstalação.
 
 ## Consequences
 

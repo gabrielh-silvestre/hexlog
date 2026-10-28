@@ -26,6 +26,7 @@ type Model = {
     target: string;
     links: { relation: string; to: string }[];
   }[];
+  plug: { layer: string };
   types: { name: string; schema: Schema }[];
   relations: { name: string; kind: string; from: string[]; to: string[] }[];
   gate: { name: string; questions: object[] };
@@ -45,6 +46,16 @@ const REQUIRED_MODEL_KEYS = [
   'plug',
 ];
 const OPTIONAL_MODEL_KEYS = ['targetPattern'];
+
+// Chaves exatas dos objetos aninhados, como `model-schema.md` as documenta (sem opcionais).
+const UNIT_KEYS = ['kind', 'location', 'processName', 'examples'];
+const PHASE_KEYS = ['name', 'command', 'type', 'target', 'artifact', 'links'];
+const PLUG_KEYS = ['flow', 'flowVersion', 'layer'];
+const LINK_KEYS = ['relation', 'to'];
+// Camadas do plug documentadas em `model-schema.md`.
+const PLUG_LAYERS = ['C', 'B', 'A'];
+
+const sortedKeys = (value: object) => Object.keys(value).sort();
 
 const exampleFiles = fs
   .readdirSync(referencesDir)
@@ -169,6 +180,52 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
     expect(schema.properties?.unit?.maxLength).toEqual(expect.any(Number));
   });
 
+  it.each(EXAMPLES)('should carry exactly the documented unit keys in $file', ({ model }) => {
+    expect(sortedKeys(model.unit)).toEqual([...UNIT_KEYS].sort());
+  });
+
+  it.each(EXAMPLES)('should carry exactly the documented phase keys in $file', ({ model }) => {
+    expect(model.phases.map(sortedKeys)).toEqual(model.phases.map(() => [...PHASE_KEYS].sort()));
+  });
+
+  it.each(EXAMPLES)('should carry exactly the documented plug keys in $file', ({ model }) => {
+    expect(sortedKeys(model.plug)).toEqual([...PLUG_KEYS].sort());
+  });
+
+  it.each(EXAMPLES)('should carry exactly the documented link keys in $file', ({ model }) => {
+    const links = model.phases.flatMap((phase) => phase.links);
+
+    expect(links.map(sortedKeys)).toEqual(links.map(() => [...LINK_KEYS].sort()));
+  });
+
+  it.each(EXAMPLES)('should declare a type for every phase type in $file', ({ model }) => {
+    const typeNames = model.types.map(({ name }) => name);
+
+    expect(
+      model.phases.map(({ type }) => type).filter((type) => !typeNames.includes(type)),
+    ).toEqual([]);
+  });
+
+  it.each(EXAMPLES)('should declare a relation for every link in $file', ({ model }) => {
+    const relationNames = model.relations.map(({ name }) => name);
+    const links = model.phases.flatMap((phase) => phase.links);
+
+    expect(
+      links.map(({ relation }) => relation).filter((relation) => !relationNames.includes(relation)),
+    ).toEqual([]);
+  });
+
+  it.each(EXAMPLES)('should point every link to a phase type in $file', ({ model }) => {
+    const phaseTypes = model.phases.map(({ type }) => type);
+    const links = model.phases.flatMap((phase) => phase.links);
+
+    expect(links.map(({ to }) => to).filter((to) => !phaseTypes.includes(to))).toEqual([]);
+  });
+
+  it.each(EXAMPLES)('should use a documented plug layer in $file', ({ model }) => {
+    expect(PLUG_LAYERS).toContain(model.plug.layer);
+  });
+
   it.each(EXAMPLES)('should not use pattern or patternProperties in $file', ({ model }) => {
     expect(JSON.stringify(model.types)).not.toMatch(/"pattern(Properties)?"\s*:/);
   });
@@ -202,6 +259,14 @@ describe('define_type', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
+  it('should replay every type of the Spec Kit example as unchanged', async () => {
+    await setUp(SPECKIT);
+
+    const results = await defineTypes(SPECKIT);
+
+    expect(results.map(({ created }) => created)).toEqual(SPECKIT.types.map(() => false));
+  });
+
   it('should accept every type of the Spec Kit example', async () => {
     const results = await defineTypes(SPECKIT);
 
@@ -214,6 +279,14 @@ describe('define_type', () => {
 describe('define_relation', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
+
+  it('should replay every relation of the Spec Kit example as unchanged', async () => {
+    await setUp(SPECKIT);
+
+    const results = await defineRelations(SPECKIT);
+
+    expect(results.map(({ created }) => created)).toEqual(SPECKIT.relations.map(() => false));
+  });
 
   it('should accept every relation of the Spec Kit example', async () => {
     await defineTypes(SPECKIT);
@@ -230,6 +303,14 @@ describe('define_gate', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
+  it('should replay the gate of the Spec Kit example as unchanged', async () => {
+    await setUp(SPECKIT);
+
+    const result = await defineGate(SPECKIT);
+
+    expect(result.created).toBe(false);
+  });
+
   it('should accept the gate of the Spec Kit example', async () => {
     const result = await defineGate(SPECKIT);
 
@@ -241,21 +322,15 @@ describe('create_process', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should replay every define call and the process as unchanged', async () => {
+  it('should replay the process as unchanged', async () => {
     await setUp(SPECKIT);
 
-    const replayed = [
-      ...(await defineTypes(SPECKIT)),
-      ...(await defineRelations(SPECKIT)),
-      await defineGate(SPECKIT),
-    ];
-    const process = await environment.ok<{ created: boolean }>('create_process', {
+    const result = await environment.ok<{ created: boolean }>('create_process', {
       project: SPECKIT.project,
       process: processOf(SPECKIT),
     });
 
-    expect(replayed.map(({ created }) => created)).not.toContain(true);
-    expect(process.created).toBe(false);
+    expect(result.created).toBe(false);
   });
 });
 
@@ -346,14 +421,33 @@ describe('skills/**/*.md', () => {
   });
 
   it('should check the project with list before the first define call in hexlog-setup', () => {
-    const setup = body('hexlog-setup');
+    const row =
+      body('hexlog-setup')
+        .split('\n')
+        .find((line) => /^\|\s*\d+\s*\|\s*Projeto hexlog\s*\|/.test(line)) ?? '';
 
-    const listAt = setup.search(/`list`/);
-    const defineAt = setup.search(/`define_[^`]*`/);
+    const listAt = row.search(/`list`/);
+    const defineAt = row.search(/`define_[^`]*`/);
 
     expect(listAt).toBeGreaterThanOrEqual(0);
     expect(defineAt).toBeGreaterThanOrEqual(0);
     expect(listAt).toBeLessThan(defineAt);
+  });
+});
+
+describe('skills/hexlog-setup/references/agents-block.template.md', () => {
+  const content = fs.readFileSync(path.join(referencesDir, 'agents-block.template.md'), 'utf8');
+  const lines = (/```markdown\n([\s\S]*?)\n```/.exec(content)?.[1] ?? '')
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+
+  it('should open the block with the exact hexlog heading', () => {
+    expect(lines[0]).toBe('## hexlog');
+  });
+
+  it('should keep the block between 1 and 8 non-empty lines', () => {
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBeLessThanOrEqual(8);
   });
 });
 
@@ -370,6 +464,7 @@ describe('skills/hexlog-setup/references/plug-speckit.md', () => {
     const evidenceOf = (row: string) => row.split('|').map((cell) => cell.trim())[2];
 
     expect(section).toBeDefined();
+
     expect(header).toBe(PROVEN_VERSIONS_HEADER);
     expect(rows.every((row) => (evidenceOf(row) ?? '') !== '')).toBe(true);
   });
@@ -377,14 +472,17 @@ describe('skills/hexlog-setup/references/plug-speckit.md', () => {
 
 describe('docs/setup-aceitacao.md', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'docs', 'setup-aceitacao.md'), 'utf8');
-  // Conservadora: decisões D1 a D6 (com sufixo opcional), A1, AC e PR-1/PR-2.
+  // Rótulos de trabalho que não valem no repositório; a lista é conservadora.
   const PLAN_LABEL = /\b(?:D[1-6](?:-\d+)?|A1|AC\d*|PR-[12])\b/;
   const checklist = content.split(/^## /m).find((part) => part.startsWith('Checklist')) ?? '';
   const sections = checklist.split(/^### /m).slice(1);
 
   it('should have at least one checklist item in every checklist section', () => {
     expect(sections.length).toBeGreaterThan(0);
-    expect(sections.filter((section) => !/^- \[ \]/m.test(section))).toEqual([]);
+
+    const withoutItems = sections.filter((section) => !/^- \[ \]/m.test(section));
+
+    expect(withoutItems).toEqual([]);
   });
 
   it('should not carry plan labels', () => {

@@ -2,12 +2,12 @@
 
 Três regras de cruzamento. Nenhuma delas precisa de tool
 nova — todas são combinações de `register`, `query`, `evaluate_gate` e
-`verify_chain`, guiadas pelo modelo do projeto (fases, processos e gate), que vem da skill do projeto.
+`verify_chain`, guiadas pelo modelo do projeto (tipos de fase, unidade e gate), que vem da skill do projeto.
 
-## 1. Mesma fase — conflito ou superado
+## 1. Mesma unidade — conflito ou superado
 
-Dois registros da mesma fase (mesmo `process`, já que fase e processo são 1:1)
-podem entrar em conflito: uma decisão nova invalida ou refina uma anterior sobre o
+Dois registros da mesma unidade (mesmo `process`: as fases de uma unidade são tipos e
+targets do mesmo processo) podem entrar em conflito: uma decisão nova invalida ou refina uma anterior sobre o
 mesmo alvo. Registre o novo com relação `supersedes` apontando para o `id` que ele
 substitui (o novo é do **mesmo tipo** do antigo) ou `revokes`, para anular sem
 sucessor. O substituído deixa de ser vigente; a `query` só o devolve com
@@ -32,32 +32,35 @@ O `supersedes` exige também o **mesmo target** (`target-mismatch`): para mudar 
 de target, grave um registro só no target certo, com `revokes` e `derivesFrom` para o
 antigo.
 
-## 2. Entre fases — leitura com o alcance certo
+## 2. Entre fases e entre unidades — leitura com o alcance certo
 
-Cruzar informação entre fases diferentes não é uma tool especial: é uma leitura
-que enxerga mais de um processo.
+As fases de uma unidade vivem no mesmo processo, então cruzar fases da **mesma
+unidade** é uma `query` comum do `process` dela, filtrada por `type` ou `targetPrefix`.
+Só cruzar **unidades** diferentes exige uma leitura que enxergue mais de um processo;
+não é uma tool especial.
 
-- Para ler **uma** fase, `query` com o `process` dela (o modelo do projeto traduz "fase X"
-  para o nome do processo) — nunca o `process` da fase corrente por padrão.
-- Para ler **várias** de uma vez, `query` com `scope: "project"`: lê e verifica todos
+- Para ler **uma** fase da mesma unidade, `query` com o `process` da unidade e o `type`
+  (ou o `targetPrefix`) da fase.
+- Para ler **várias** unidades de uma vez, `query` com `scope: "project"`: lê e verifica todos
   os processos do projeto, e `in` (ou `inCounts` e `nonCurrentInCounts`), `out.current` e `needsReview` passam a ver as
   relações entre processos. O alcance padrão (`process`) não vê relação vinda de
   outro processo e **não avisa**.
-- Para **ligar** um registro a outro de outra fase, use qualquer relação menos
+- Para **ligar** um registro a outro de outra unidade, use qualquer relação menos
   `supersedes` e `revokes`: `supports`, `contradicts`, `answers`, `derivesFrom`,
   `complements`, `reopens` aceitam o `id` de outro processo. `supports` exige que o
   destino seja **vigente**; para citar um registro histórico, `derivesFrom` ou
   `complements`.
 
-Exemplo: a fase de revisão quer saber se a de planejamento já decidiu algo sobre um
-alvo. Chame `query({project, process: <processo da fase de planejamento>,
-targetPrefix})`, ou `scope: "project"` com o mesmo `targetPrefix`. Um gate cuja
-evidência vem de outra fase declara `scope: "project"` na pergunta.
+Exemplo: a fase de revisão quer saber se a de planejamento da mesma unidade já decidiu
+algo sobre um alvo. Chame `query({project, process: <processo da unidade>, type:
+<tipo de planejamento>, targetPrefix})`. Para uma decisão de outra unidade, use
+`scope: "project"` com o mesmo `targetPrefix`. Um gate cuja evidência vem de outra
+unidade declara `scope: "project"` na pergunta.
 
-## 3. Lacunas — gate por fase
+## 3. Lacunas — gate da unidade
 
 Uma lacuna é um critério que o processo não prova sozinho: sem gate, nada barra um
-plano sem aprovação ou um desvio sem resposta. Se uma fase do modelo do projeto declara um
+plano sem aprovação ou um desvio sem resposta. Se o modelo do projeto declara um
 gate, essa é a forma combinada de fechar a lacuna: o gate é
 definido por `define_gate` (feito pela `hexlog-setup`, não por esta skill) como uma
 lista de perguntas sobre os registros **vigentes**, e se avalia com `evaluate_gate`
@@ -82,5 +85,5 @@ resposta da pergunta reprovada traz esses ids; a aprovada traz só `counts: {...
 resolução herdados da versão superada (processo com herança); a lista `inherited` da
 evidência mostra o que conta só assim.
 
-Sem gate declarado para a fase, não invente um cruzamento — a lacuna fica sem
+Sem gate declarado no modelo, não invente um cruzamento — a lacuna fica sem
 prova formal, e isso é uma decisão aceita, não um bug.

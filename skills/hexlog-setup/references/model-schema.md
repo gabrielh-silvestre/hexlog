@@ -61,5 +61,6 @@ pontas; até 63 caracteres; vazio ou nome reservado leva um sufixo confirmado co
 ## Gate
 
 Cobertura: um `occurred` por tipo de fase. Encadeamento: um `no_pending` por fase que
-tem sucessora, com `resolvedBy` pela relação que liga a sucessora. Evidência vinda de
-outra fase pede `scope: "project"` na pergunta.
+tem sucessora, resolvido pela relação que liga a sucessora. As fases de uma unidade vivem
+no mesmo processo, então o gate lê o processo da unidade sem `scope`; `scope: "project"` só
+entra para cruzar unidades diferentes.

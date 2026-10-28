@@ -89,7 +89,7 @@ As skills do fluxo ficam em `.claude/skills/` e valem só neste repositório, o 
 - [docs/desenvolvimento.md](docs/desenvolvimento.md): scripts de leitura e testes;
 - [docs/feedback-loops.md](docs/feedback-loops.md): o que o commit e o pré-PR conferem;
 - [docs/directives/](docs/directives/AGENTS.md): regras vivas do repositório, do fluxo às convenções;
-- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md) e [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md), [0013 setup em repositório de destino](docs/directives/adr-0013-setup-em-repositorio-de-destino.md).
+- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md), [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md) e [0013 setup em repositório de destino](docs/directives/adr-0013-setup-em-repositorio-de-destino.md).
 
 ## Desenvolvimento
 

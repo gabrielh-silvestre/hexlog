@@ -17,16 +17,18 @@ A unit of work is one {{unit_kind}} under `{{unit_location}}`.
 |---|---|---|---|---|---|
 | {{phase}} | {{command}} | {{type}} | {{target}} | {{artifact}} | {{links}} |
 
-Repeat the row once per phase of the model, in order.
+Repeat the row once per phase of the model, in order. The Links column reads `<relation name> -> <target record type>`.
 
 ## What to do
 
 1. Open or continue the unit: follow `references/unit-lifecycle.md` in the
    `hexlog-flow` skill (find the process by the unit path, or create it).
 2. After each command in the table, register one record of the phase type with the
-   target `<process>.<suffix>`, the unit path in `unit`, a short `summary` and, when the
-   artifact is long, its attachment hash in `document`. Add the links listed in the
-   table.
+   target `<process>.<suffix>`, the unit path in `unit` and the other fields that the
+   phase type declares in `hexlog-model.json` (for example a short `summary`, and the
+   attachment hash in the attachment field when the artifact is long). For each link in
+   the table, query the process for the current record of the target type and add the
+   named relation pointing to that record id.
 3. When the last phase is done, close the unit: evaluate the gate `{{gate}}`, then query
    one record per phase. If a phase has no record, tell the developer, list the missing
    phases and offer a retroactive record built from the phase artifact. Never edit
