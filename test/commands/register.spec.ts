@@ -27,6 +27,23 @@ const LISTED: RecordType = {
   required: ['items'],
 };
 
+const COSTLY: RecordType = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: { allOf: Array.from({ length: 900 }, () => ({ type: 'string' })) },
+    },
+  },
+  required: ['items'],
+};
+
+const costly = (): BatchItem => ({
+  type: 'costly',
+  target: 'run.step',
+  data: { items: Array.from({ length: 40 }, () => 1) },
+});
+
 const numbers = (length: number): BatchItem => ({
   type: 'listed',
   target: 'run.step',
@@ -372,6 +389,51 @@ describe('register', () => {
         },
       ]);
     });
+
+    it('should point to describe_type with the type name when the cost ceiling cut the violations of a record', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { costly: COSTLY }));
+
+      const error = await refusal(register([costly()]));
+
+      expect(error.details).toEqual([
+        { path: '/records/0/data/items/0', code: 'type', message: 'must be string' },
+        {
+          path: '/records/0/data',
+          code: 'violations-capped',
+          message: expect.stringContaining("type 'costly' is too costly"),
+        },
+      ]);
+    });
+
+    it('should add the violations-capped detail only to the records the ceiling cut', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { costly: COSTLY, listed: LISTED }));
+
+      const error = await refusal(register([numbers(3), costly(), costly()]));
+
+      expect(
+        error.details.filter(({ code }) => code === 'violations-capped').map(({ path }) => path),
+      ).toEqual(['/records/1/data', '/records/2/data']);
+    });
+
+    it('should keep the violations-capped detail of every record inside the 50 of a cut batch', async () => {
+      const { register, processes } = setup();
+      processes.setManifest(ORIGIN, manifestOf(ORIGIN, { costly: COSTLY, listed: LISTED }));
+
+      const error = await refusal(register([numbers(5_000), costly()]));
+
+      expect(error.details).toHaveLength(51);
+      expect(error.details.at(-2)).toMatchObject({
+        path: '/records/1/data',
+        code: 'violations-capped',
+      });
+      expect(error.details.at(-1)).toEqual({
+        path: '',
+        code: 'too-many-errors',
+        message: '4952 more errors omitted',
+      });
+    }, 15_000);
 
     it('should refuse with the TYPE_NOT_PINNED of a record over the INVALID_RECORD data refusal of an earlier one', async () => {
       const { register, validate } = setup();

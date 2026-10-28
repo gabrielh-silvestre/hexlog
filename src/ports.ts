@@ -192,7 +192,8 @@ export type Validator = {
    * saem os dos ramos), até o teto de 50 com o aviso `too-many-errors`; `maxLength`, `minLength`,
    * `maximum` e `minimum` trazem o valor medido na `message` (`... (got N)`, com N em pontos de
    * código no comprimento). Com schema e dado de custo estimado alto devolve só a violação que o
-   * primeiro passe achou. `pattern` e `patternProperties` de um tipo fixado antes da recusa não são
+   * primeiro passe achou, mais um `Detail` `violations-capped` (`path` vazio) que avisa que a lista
+   * está incompleta (`errors.ts#violationsCapped`). `pattern` e `patternProperties` de um tipo fixado antes da recusa não são
    * aplicados: nenhum regex vindo do schema é construído nem executado.
    */
   validate(schema: RecordType, data: HexRecord['data']): Detail[];

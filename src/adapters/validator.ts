@@ -11,7 +11,7 @@ import {
   hasKeywordAt,
   walkSubschemas,
 } from '../domain/schema-walk.ts';
-import { capDetails, pointer as jsonPointer, type Detail } from '../errors.ts';
+import { capDetails, pointer as jsonPointer, violationsCapped, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
 
 /** Propriedade que o ajv só cita em `params`: o `instancePath` do erro aponta para o objeto pai. */
@@ -226,7 +226,8 @@ function messageOf(error: unknown): string {
  * cabe em `COST_CEILING`, um segundo `allErrors: true` compilado sob demanda; os dois com
  * `verbose: true`. O segundo devolve uma violação por erro do ajv, com o valor medido (`(got N)`) em
  * `maxLength`, `minLength`, `maximum` e `minimum` (em `anyOf`/`oneOf`/`propertyNames` saem os dos
- * ramos); acima do teto sai o que o primeiro achou. Dado válido nunca roda o segundo passe.
+ * ramos); acima do teto sai o que o primeiro achou mais um `violations-capped` (`path` vazio), que
+ * avisa que a lista está incompleta. Dado válido nunca roda o segundo passe.
  * `checker` e `validate` são neutros: ignoram `pattern` e `patternProperties` e nunca constroem
  * regex do schema (`createCompiler`). O `meta` também não constrói: `validateSchema` do ajv não
  * executa o regex do schema.
@@ -300,7 +301,9 @@ export function createValidator(): Validator {
       const { first, size, full } = prepared(schema);
       if (first(data)) return [];
       const firstErrors = first.errors ?? [];
-      if (size * countNodes(data, COST_CEILING) > COST_CEILING) return toDetails(firstErrors);
+      if (size * countNodes(data, COST_CEILING) > COST_CEILING) {
+        return capDetails([...toDetails(firstErrors), violationsCapped('')]);
+      }
       const all = full();
       all(data);
       return toDetails(all.errors ?? []);

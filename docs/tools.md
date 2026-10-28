@@ -178,11 +178,11 @@ nome fixado, e só vale mandar `kind` se for igual ao dele. Até 100 relações 
 no schema, o `register` junta num só `INVALID_RECORD` as violações de schema de **cada**
 registro inválido do lote, cada uma com `path` `/records/<i>/data/...`: o agente corrige tudo e
 reenvia uma vez. Acima de um limite de custo (schema grande contra dado grande) o registro traz
-só uma violação por subschema; corrija e reenvie. Continua tudo-ou-nada: nada é gravado. Vale para a violação de **schema**; as
+só uma violação por subschema, mais um `violations-capped` (`path` `/records/<i>/data`, com o nome do tipo) que manda ler o contrato com `describe_type`; corrija e reenvie. Continua tudo-ou-nada: nada é gravado. Vale para a violação de **schema**; as
 outras recusas (`unmarked-attachment`, as de relação e o resto da lista acima) continuam
 parando na primeira. O que o agente deve saber:
 
-- O teto é de 50 `details` por resposta, com um só `too-many-errors` no fim quando corta; a `message` dele traz o total omitido no lote inteiro.
+- O teto é de 50 `details` por resposta, com um só `too-many-errors` no fim quando corta; a `message` dele traz o total omitido no lote inteiro. O `violations-capped` ocupa vaga dentro dos 50 e sai antes do `too-many-errors`.
 - Em `max-length`, `min-length`, `maximum` e `minimum` a `message` termina com o valor medido,
   em inglês: `must NOT have more than 300 characters (got 312)`. O comprimento conta pontos de
   código (um emoji vale 1). O teto de 16.000 caracteres de `data` continua `INVALID_INPUT` e

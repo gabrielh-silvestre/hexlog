@@ -660,6 +660,12 @@ describe('validate', () => {
       },
     });
 
+    const capped = {
+      path: '',
+      code: 'violations-capped',
+      message: expect.stringContaining('describe_type'),
+    };
+
     afterEach(() => {
       jest.restoreAllMocks();
     });
@@ -667,7 +673,7 @@ describe('validate', () => {
     it('should finish fast with one violation for $defs that double 26 times over failing data', () => {
       const details = validator.validate(chained(26), { x: 1 });
 
-      expect(details).toEqual([{ path: '/x', code: 'type', message: 'must be string' }]);
+      expect(details).toEqual([{ path: '/x', code: 'type', message: 'must be string' }, capped]);
     }, 15_000);
 
     it('should finish fast with one violation for 900 checks over thousands of failing items', () => {
@@ -675,7 +681,7 @@ describe('validate', () => {
 
       const details = validator.validate(manyChecks(900), data);
 
-      expect(details).toEqual([{ path: '/a/0', code: 'type', message: 'must be string' }]);
+      expect(details).toEqual([{ path: '/a/0', code: 'type', message: 'must be string' }, capped]);
     }, 15_000);
 
     it('should keep the measured value of the violation it reports above the ceiling', () => {
@@ -689,6 +695,7 @@ describe('validate', () => {
           code: 'max-length',
           message: 'must NOT have more than 3 characters (got 6)',
         },
+        capped,
       ]);
     });
 
@@ -698,6 +705,20 @@ describe('validate', () => {
       const details = validator.validate(manyChecks(2), data);
 
       expect(details).toHaveLength(40);
+    });
+
+    it('should not add the violations-capped detail below the ceiling', () => {
+      const data = { a: Array.from({ length: 40 }, () => 1) };
+
+      const details = validator.validate(manyChecks(2), data);
+
+      expect(details.map(({ code }) => code)).not.toContain('violations-capped');
+    });
+
+    it('should not add the violations-capped detail for valid data of a costly schema', () => {
+      const data = { a: Array.from({ length: 40 }, () => 's') };
+
+      expect(validator.validate(manyChecks(900), data)).toEqual([]);
     });
 
     it.each([

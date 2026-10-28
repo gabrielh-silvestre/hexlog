@@ -14,6 +14,8 @@ import {
   invalidInput,
   invalidRecord,
   typeNotPinned,
+  VIOLATIONS_CAPPED_CODE,
+  violationsCapped,
   type Detail,
 } from '../../errors.ts';
 import type { Validator } from '../../ports.ts';
@@ -75,7 +77,8 @@ function pinnedSchema(manifest: Manifest, item: BatchItem, index: number): Recor
 /**
  * Violações de schema de UM registro, com o `path` refeito para `/records/<i>/data/...`. O
  * `validate` devolve todas as violações do registro (em `anyOf`/`oneOf`/`propertyNames` saem as dos
- * ramos), cada uma com o valor medido quando é de tamanho.
+ * ramos), cada uma com o valor medido quando é de tamanho. O aviso `violations-capped` do
+ * validador, que não conhece o registro, é refeito aqui com o nome do tipo.
  */
 function checkData(
   validator: Validator,
@@ -83,9 +86,14 @@ function checkData(
   item: BatchItem,
   index: number,
 ): Detail[] {
+  const at = `/records/${index}/data`;
   return validator
     .validate(schema, item.data)
-    .map((detail) => ({ ...detail, path: `/records/${index}/data${detail.path}` }));
+    .map((detail) =>
+      detail.code === VIOLATIONS_CAPPED_CODE
+        ? violationsCapped(at + detail.path, item.type)
+        : { ...detail, path: at + detail.path },
+    );
 }
 
 function resolveRelations(

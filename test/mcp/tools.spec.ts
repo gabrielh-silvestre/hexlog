@@ -157,7 +157,9 @@ describe('tools/list', () => {
     expect(description).toMatch(/as alone is enough/);
     expect(description).toMatch(/kind must equal the pinned one \(else kind-mismatch\)/);
     expect(description).toMatch(/reports every schema violation of each record \(at most 50/);
-    expect(description).toMatch(/only one over a very costly schema/);
+    expect(description).toMatch(
+      /a very costly schema ends the list with a violations-capped detail pointing to describe_type/,
+    );
   });
 
   it('should warn in the define_type description that pattern is refused and point to the catalog', () => {

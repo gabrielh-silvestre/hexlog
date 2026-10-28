@@ -17,6 +17,7 @@ import {
   mapDetails,
   pointer,
   reservedName,
+  violationsCapped,
   withPath,
   type Detail,
 } from '../src/errors.ts';
@@ -293,6 +294,54 @@ describe('capDetails', () => {
     expect(capDetails(repeated)).toEqual(makeDetails(50));
   });
 
+  describe('with violations-capped details in the list', () => {
+    const capped = (record: number): Detail => violationsCapped(`/records/${record}/data`, 'note');
+
+    it('should keep the violations-capped detail after the errors and before the cut notice', () => {
+      const details = [capped(0), ...makeDetails(60)];
+
+      const result = capDetails(details);
+
+      expect(result.slice(-2)).toEqual([
+        capped(0),
+        { path: '', code: 'too-many-errors', message: '11 more errors omitted' },
+      ]);
+    });
+
+    it('should keep every violations-capped detail inside the 50 of the budget', () => {
+      const details = [...makeDetails(60), capped(0), capped(1)];
+
+      expect(capDetails(details)).toEqual([
+        ...makeDetails(48),
+        capped(0),
+        capped(1),
+        { path: '', code: 'too-many-errors', message: '12 more errors omitted' },
+      ]);
+    });
+
+    it('should not count a violations-capped detail as an error to omit', () => {
+      const details = [...makeDetails(49), capped(0)];
+
+      expect(capDetails(details)).toEqual(details);
+    });
+
+    it('should put a violations-capped detail after the errors even when it comes first', () => {
+      expect(capDetails([capped(0), ...makeDetails(2)])).toEqual([...makeDetails(2), capped(0)]);
+    });
+
+    it('should drop a repeated violations-capped detail', () => {
+      expect(capDetails([capped(0), capped(0)])).toEqual([capped(0)]);
+    });
+
+    it('should add the omitted count of an earlier cut to the notice of a cut with hints', () => {
+      const earlier = { path: '', code: 'too-many-errors', message: '7 more errors omitted' };
+
+      const result = capDetails([...makeDetails(50), earlier, capped(0)]);
+
+      expect(result.at(-1)).toEqual({ ...earlier, message: '8 more errors omitted' });
+    });
+  });
+
   describe('with a too-many-errors detail already in the list', () => {
     const omitted = (count: number): Detail => ({
       path: '',
@@ -315,6 +364,21 @@ describe('capDetails', () => {
 
       expect(capDetails(details)).toEqual([...makeDetails(2), omitted(10)]);
     });
+  });
+});
+
+describe('violationsCapped', () => {
+  it('should name the type and point to describe_type when the type is known', () => {
+    expect(violationsCapped('/records/1/data', 'note')).toEqual({
+      path: '/records/1/data',
+      code: 'violations-capped',
+      message:
+        "Only the first violations of this record are listed because type 'note' is too costly to validate in full; read its full contract with describe_type",
+    });
+  });
+
+  it('should say its type when the type is unknown', () => {
+    expect(violationsCapped('').message).toMatch(/because its type is too costly/);
   });
 });
 
