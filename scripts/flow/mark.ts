@@ -6,7 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { HexlogError } from '../../src/errors.ts';
-import { formatCliError, openReadOnly } from '../cli-error.ts';
+import { openReadOnly, reportCliError } from '../cli-error.ts';
 import { describeFailures, gateFailures } from './gate.ts';
 import { currentBranch, git, markerPath, slugOf } from './marker.ts';
 
@@ -27,11 +27,7 @@ function main(argv: string[]): number {
     mark(argv[0]);
     return 0;
   } catch (error) {
-    if (error instanceof HexlogError) {
-      const { text, exitCode } = formatCliError('hexlog flow mark', error);
-      process.stderr.write(`${text}\n`);
-      return exitCode;
-    }
+    if (error instanceof HexlogError) return reportCliError('hexlog flow mark', error);
     process.stderr.write(
       `hexlog flow: ${error instanceof Error ? error.message : String(error)}\n`,
     );
