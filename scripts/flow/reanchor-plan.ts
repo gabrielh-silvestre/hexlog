@@ -12,7 +12,7 @@ const GENERATION = /^directives-(\d+)(?::|$)/;
 const ANCHOR_NAMES = new Set(['anchored-in', 'rests-on']);
 // Relações que a regravação copia, a lista de `directives.fluxo-hexlog.rewrite-divergent-decision`;
 // `ownerReasons` manda ao dono a decisão com qualquer outra (menos `supersedes`).
-const COPIED_NAMES = new Set([
+export const COPIED_NAMES = new Set([
   'anchored-in',
   'about-gap',
   'rests-on',

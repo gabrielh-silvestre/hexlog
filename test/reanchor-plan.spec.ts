@@ -1,6 +1,9 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 import { ZodError } from 'zod';
 import {
+  COPIED_NAMES,
   type DecisionRow,
   type LogRow,
   type PlannedItem,
@@ -490,6 +493,17 @@ describe('verifyReanchor', () => {
     expect(verifyReanchor(plannedRewrites(), [oldRow()], [superseded(), newRow({ out })])).toEqual([
       { id: OLD, problem: 'relations-differ' },
     ]);
+  });
+});
+
+describe('COPIED_NAMES', () => {
+  it('should list the relations fluxo-hexlog.md says a rewritten decision keeps', () => {
+    const doc = fs.readFileSync(path.join(__dirname, '../docs/directives/fluxo-hexlog.md'), 'utf8');
+    const section = doc.split('## Verificação e achados')[1] ?? '';
+    const [, list = ''] = /as mesmas relações \(([^)]*)\)/.exec(section) ?? [];
+    const documented = (list.match(/`[^`]+`/g) ?? []).map((quoted) => quoted.slice(1, -1));
+
+    expect([...COPIED_NAMES].sort()).toEqual(documented.sort());
   });
 });
 
