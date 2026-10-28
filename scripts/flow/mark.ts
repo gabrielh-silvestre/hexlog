@@ -1,6 +1,6 @@
 // Grava o marcador do pré-PR de um trabalho: `node scripts/flow/mark.ts <slug>`. Só grava com os
 // gates `pre-pr` e `gaps` verdes (`gate.ts`), então precisa de `node_modules`, ao contrário do hook.
-// Quem chama é a skill `flow-run`. Recusa sem gravar nada: exit 1, ou 2 quando o dado do hexlog está
+// Quem chama são as skills `flow-run` e `flow-gaps`. Recusa sem gravar nada: exit 1, ou 2 quando o dado do hexlog está
 // ilegível (`LEGACY_DATA`, `PROCESS_CORRUPTED`; `cli-error.ts#formatCliError`). Só age como CLI:
 // importar o módulo não grava nada (guard `import.meta.main`, como o `gate.ts`).
 import * as fs from 'node:fs';

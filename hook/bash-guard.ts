@@ -304,8 +304,8 @@ function tokenReachesDirectory(token: string, cwd: string, dataDir: string): boo
   if (isInsideDirectory(resolvedPath, dataDir)) return true;
 
   // Segmento com `**` ou uma chave `{a/b,c}` com barra dentro: o `path.matchesGlob` não expande
-  // `**` até a profundidade de D, e o truncamento por `sep` corta a chave no meio (R-6,
-  // Critic iter2-1) — por isso o prefixo literal decide.
+  // `**` até a profundidade de D, e o truncamento por `sep` corta a chave no meio —
+  // por isso o prefixo literal decide.
   if (token.includes('**') || hasSlashInBraces(token)) {
     // prefixo literal: os segmentos até o primeiro com caractere de glob (todos, se nenhum)
     const prefix = takeWhile(
@@ -464,7 +464,7 @@ if (isExecutedDirectly()) {
   try {
     run();
   } catch {
-    // R-1: falha aberto só para entrada que não é um comando Bash (stdin vazio, JSON
+    // Falha aberto só para entrada que não é um comando Bash (stdin vazio, JSON
     // inválido, `tool_name` diferente de `Bash`) ou Node ausente. Os tetos de custo negam em
     // `decide`; parse ou casamento que lança libera.
   }

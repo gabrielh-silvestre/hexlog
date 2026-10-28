@@ -1,5 +1,5 @@
 // CLI do fluxo autônomo guiado por diretrizes (modo `slug`). Só builtins do Node, para rodar na
-// abertura do trabalho, inclusive em worktree sem `node_modules`. Chamado pela skill `flow-run`; o
+// abertura do trabalho, inclusive em worktree sem `node_modules`. Chamado pelas skills `flow-run` e `flow-gaps`; o
 // algoritmo do slug mora em `marker.ts`. O sync das diretrizes é o `sync-cli.ts`.
 import { slugOf } from './marker.ts';
 

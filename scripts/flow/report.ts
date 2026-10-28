@@ -9,8 +9,8 @@
 // O `git` roda em `process.cwd()`, não na raiz do script, e o log vem de `openReadOnly`, também por
 // cwd e `XDG_DATA_HOME`: o spec aponta os dois para um repositório e um diretório de dados
 // temporários, e trocar o cwd quebraria o spec.
-// As regex `SLUG` e `BASE` só validam o argv, que o shell já expandiu: protegem o script e nada
-// executa o argv; o que sobra cai em `hooks-sao-freios` (`docs/directives/estrategia.md`).
+// As regex `SLUG` e `BASE` e a recusa de `base` iniciada por `-` só validam o argv, que o shell já
+// expandiu: protegem o script e nada executa o argv; o que sobra cai em `hooks-sao-freios` (`docs/directives/estrategia.md`).
 import { spawnSync } from 'node:child_process';
 import { Name, RecordId } from '../../src/domain/ids.ts';
 import { HexlogError } from '../../src/errors.ts';
@@ -138,7 +138,11 @@ function uncitedReason(
   return `only-${label.join('+')}: uncited=${shown}${rest}`;
 }
 
-/** Alterações em `docs/directives/` contra o merge-base com `base`; `undefined` se o git falhar. */
+/**
+ * Arquivos alterados contra o merge-base com `base` (de qualquer pasta; o filtro de
+ * `docs/directives/` está em `docOf` e `amendedReasons`) e a data do último commit de cada um;
+ * `undefined` se o git falhar.
+ */
 function amendments(base: string): Amendments | undefined {
   const mergeBase = tryGit(process.cwd(), ['merge-base', 'HEAD', base]);
   // Saída vazia do merge-base é falha, nunca "diff vazio".

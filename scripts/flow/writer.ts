@@ -28,7 +28,7 @@ export type DiffResult = 'same' | 'differs' | 'error';
 type InstalledCheck = {
   /** `VERSION` de `src/version.ts`: a versão do repositório em que o script roda. */
   version: string;
-  /** Texto de `~/.claude.json`, ou `null` quando o arquivo não existe. */
+  /** Texto de `~/.claude.json`, ou `null` quando o arquivo não existe ou não pôde ser lido. */
   claudeJsonText: string | null;
   /** Texto do `manifest.json` da pasta da versão instalada, ou `null` quando ausente. */
   readManifest: (versionDir: string) => string | null;

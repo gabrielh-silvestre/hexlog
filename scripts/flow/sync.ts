@@ -43,8 +43,8 @@ export type VigentRule = {
 
 /**
  * Regra extraída do documento. `closes` são os ids das lacunas (`gap`) que a regra fecha: viram
- * relações `closes-gap` no registro planejado. `interpreted` só alimenta a revisão da carga e não
- * vai ao registro.
+ * relações `closes-gap` no registro planejado. `interpreted` marca regra de redação própria; o script o
+ * aceita, mas nada o lê e ele não vai ao registro.
  */
 export type ExtractedRule = {
   slug: string;

@@ -1,6 +1,6 @@
 // Instalador versionado do hexlog. Entrypoint real: liga `build`
 // (esbuild), `Client`/`StdioClientTransport` (devDependency) e `claude mcp` às
-// funções puras de `src/installation.ts` e `src/guard.ts`. Os testes
+// funções de `src/installation.ts` e `src/guard.ts`, que recebem a execução externa por parâmetro. Os testes
 // (`test/installation.spec.ts`, describes `installArtifact` e
 // `verifyInstallation`) chamam essas funções direto com `HOME` temporário, e
 // `test/install-script.spec.ts` roda este script como processo real, nunca com

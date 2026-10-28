@@ -6,7 +6,7 @@ export type PrCommand = { kind: 'create' | 'ready'; args: string[] };
 
 export type PrMatch = {
   commands: PrCommand[];
-  /** Aspa sem par que o tokenizador não fechou e que ainda casa `gh ... pr create|ready` solto. */
+  /** Aspa, crase ou `$(` sem fecho que o tokenizador não fechou e que ainda casa `gh ... pr create|ready` solto. */
   unclosedMatch: boolean;
 };
 
@@ -46,7 +46,8 @@ function scanList(src: string, pos: number, inSubshell: boolean, state: ScanStat
     word = (word ?? '') + text;
   };
 
-  // Lê `$(`...`)` ou crases a partir de `i` e devolve a posição depois do fechamento.
+  // Lê `$(...)` ou crases a partir de `at` e devolve a posição depois do fechamento; sem fecho,
+  // marca `unterminated`.
   const scanSubstitution = (at: number): number => {
     if (src[at] === '`') {
       const end = src.indexOf('`', at + 1);
