@@ -9,6 +9,7 @@ import {
   generationOf,
   isLatestGeneration,
   planReanchor,
+  summarizeApply,
   toBatches,
   verifyReanchor,
 } from '../scripts/flow/reanchor-plan.ts';
@@ -409,60 +410,63 @@ describe('toBatches', () => {
   });
 });
 
-describe('verifyReanchor', () => {
-  const planned = (): ReturnType<typeof plan>['rewrites'] => plan([decision()]).rewrites;
-  const OLD = own('work-a', 1);
-  const NEW = own('work-a', 2);
+const OLD = own('work-a', 1);
+const NEW = own('work-a', 2);
 
-  const oldRow = (extra: Partial<LogRow> = {}): LogRow => ({
-    id: OLD,
+const plannedRewrites = (): ReturnType<typeof plan>['rewrites'] => plan([decision()]).rewrites;
+const oldRow = (extra: Partial<LogRow> = {}): LogRow => ({
+  id: OLD,
+  target: 'work-a.decision.x',
+  data: { choice: 'A' },
+  out: [anchoredIn(OLD_DIRECTIVE.id), restsOn(OLD_PREMISE.id)],
+  in: [],
+  ...extra,
+});
+const newRow = (extra: Partial<LogRow> = {}): LogRow => {
+  const [rewrite] = plannedRewrites();
+  return {
+    id: NEW,
     target: 'work-a.decision.x',
     data: { choice: 'A' },
-    out: [anchoredIn(OLD_DIRECTIVE.id), restsOn(OLD_PREMISE.id)],
+    out: rewrite?.item.relations ?? [],
     in: [],
     ...extra,
-  });
-  const newRow = (extra: Partial<LogRow> = {}): LogRow => {
-    const [rewrite] = planned();
-    return {
-      id: NEW,
-      target: 'work-a.decision.x',
-      data: { choice: 'A' },
-      out: rewrite?.item.relations ?? [],
-      in: [],
-      ...extra,
-    };
   };
-  const superseded = (): LogRow =>
-    oldRow({ in: [{ kind: 'supersedes', from: NEW, current: true }] });
+};
+const superseded = (): LogRow => oldRow({ in: [{ kind: 'supersedes', from: NEW, current: true }] });
 
+describe('verifyReanchor', () => {
   it('should pass when the replacement is current with the same data and relations', () => {
-    expect(verifyReanchor(planned(), [oldRow()], [superseded(), newRow()])).toEqual([]);
+    expect(verifyReanchor(plannedRewrites(), [oldRow()], [superseded(), newRow()])).toEqual([]);
   });
 
   it('should pass in a process that already had two current decisions on the target', () => {
     const sibling: LogRow = { ...oldRow(), id: own('work-a', 9) };
 
     expect(
-      verifyReanchor(planned(), [oldRow(), sibling], [superseded(), sibling, newRow()]),
+      verifyReanchor(plannedRewrites(), [oldRow(), sibling], [superseded(), sibling, newRow()]),
     ).toEqual([]);
   });
 
   it('should report different data', () => {
     expect(
-      verifyReanchor(planned(), [oldRow()], [superseded(), newRow({ data: { choice: 'B' } })]),
+      verifyReanchor(
+        plannedRewrites(),
+        [oldRow()],
+        [superseded(), newRow({ data: { choice: 'B' } })],
+      ),
     ).toEqual([{ id: OLD, problem: 'data-differs' }]);
   });
 
   it('should report an old record that is still current, with the count of current records changed', () => {
-    expect(verifyReanchor(planned(), [oldRow()], [oldRow(), newRow()])).toEqual([
+    expect(verifyReanchor(plannedRewrites(), [oldRow()], [oldRow(), newRow()])).toEqual([
       { id: OLD, problem: 'old-still-current' },
       { id: OLD, problem: 'current-count-changed' },
     ]);
   });
 
   it('should report a missing replacement, with the old record still current', () => {
-    expect(verifyReanchor(planned(), [oldRow()], [oldRow()])).toEqual([
+    expect(verifyReanchor(plannedRewrites(), [oldRow()], [oldRow()])).toEqual([
       { id: OLD, problem: 'new-missing' },
       { id: OLD, problem: 'old-still-current' },
     ]);
@@ -473,19 +477,61 @@ describe('verifyReanchor', () => {
       in: [{ kind: 'supersedes', from: own('work-a', 3), current: true }],
     });
 
-    expect(verifyReanchor(planned(), [oldRow()], [superseded(), replaced])).toEqual([
+    expect(verifyReanchor(plannedRewrites(), [oldRow()], [superseded(), replaced])).toEqual([
       { id: OLD, problem: 'new-not-current' },
       { id: OLD, problem: 'current-count-changed' },
     ]);
   });
 
   it('should report a missing relation', () => {
-    const [rewrite] = planned();
+    const [rewrite] = plannedRewrites();
     const out = (rewrite?.item.relations ?? []).slice(0, -1);
 
-    expect(verifyReanchor(planned(), [oldRow()], [superseded(), newRow({ out })])).toEqual([
+    expect(verifyReanchor(plannedRewrites(), [oldRow()], [superseded(), newRow({ out })])).toEqual([
       { id: OLD, problem: 'relations-differ' },
     ]);
+  });
+});
+
+describe('summarizeApply', () => {
+  it('should count every written decision and exit 0 when the reread log matches the plan', () => {
+    const summary = summarizeApply({
+      written: plannedRewrites(),
+      planned: 1,
+      refused: false,
+      before: [oldRow()],
+      after: [superseded(), newRow()],
+    });
+
+    expect(summary).toEqual({ out: ['rewrote 1 of 1 decisions'], err: [], code: 0 });
+  });
+
+  it('should exit 1 and print a verify failed line for each divergence of the reread log', () => {
+    const summary = summarizeApply({
+      written: plannedRewrites(),
+      planned: 1,
+      refused: false,
+      before: [oldRow()],
+      after: [superseded(), newRow({ data: { choice: 'B' } })],
+    });
+
+    expect(summary).toEqual({
+      out: ['rewrote 1 of 1 decisions'],
+      err: [`verify failed: ${OLD}: data-differs`],
+      code: 1,
+    });
+  });
+
+  it('should exit 1 without a verify failed line when a batch was refused and nothing diverged', () => {
+    const summary = summarizeApply({
+      written: [],
+      planned: 1,
+      refused: true,
+      before: [oldRow()],
+      after: [oldRow()],
+    });
+
+    expect(summary).toEqual({ out: ['rewrote 0 of 1 decisions'], err: [], code: 1 });
   });
 });
 

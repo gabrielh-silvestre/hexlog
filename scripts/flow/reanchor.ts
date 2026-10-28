@@ -14,8 +14,8 @@ import {
   generationOf,
   isLatestGeneration,
   planReanchor,
+  summarizeApply,
   toBatches,
-  verifyReanchor,
   type DecisionRow,
   type LogRow,
   type Source,
@@ -179,10 +179,16 @@ async function run(to: string, apply: boolean): Promise<number> {
   const after = [...new Set(written.map(({ process }) => process))].flatMap((process) =>
     readRows(freshReader, process, { type: 'decision', includeNonCurrent: true }),
   );
-  const divergences = verifyReanchor(written, before, after);
-  console.log(`rewrote ${written.length} of ${plan.rewrites.length} decisions`);
-  for (const { id, problem } of divergences) console.error(`verify failed: ${id}: ${problem}`);
-  return refused || divergences.length > 0 ? 1 : 0;
+  const summary = summarizeApply({
+    written,
+    planned: plan.rewrites.length,
+    refused,
+    before,
+    after,
+  });
+  for (const line of summary.out) console.log(line);
+  for (const line of summary.err) console.error(line);
+  return summary.code;
 }
 
 async function main(argv: string[]): Promise<number> {

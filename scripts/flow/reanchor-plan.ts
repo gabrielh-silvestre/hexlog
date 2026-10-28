@@ -277,6 +277,31 @@ export function verifyReanchor(
   return divergences;
 }
 
+/**
+ * Resumo do `--apply`: as linhas de stdout e de stderr e o exit code. Sai 1 com lote recusado
+ * (`refused`) ou com divergência do log relido (`after`) contra o gravado (`written`).
+ */
+export function summarizeApply({
+  written,
+  planned,
+  refused,
+  before,
+  after,
+}: {
+  written: readonly Rewrite[];
+  planned: number;
+  refused: boolean;
+  before: readonly LogRow[];
+  after: readonly LogRow[];
+}): { out: string[]; err: string[]; code: 0 | 1 } {
+  const divergences = verifyReanchor(written, before, after);
+  return {
+    out: [`rewrote ${written.length} of ${planned} decisions`],
+    err: divergences.map(({ id, problem }) => `verify failed: ${id}: ${problem}`),
+    code: refused || divergences.length > 0 ? 1 : 0,
+  };
+}
+
 function describeReason(reason: OwnerReason): string {
   if (reason.code === 'supported') return 'supported';
   if (reason.code === 'other-relation') return `other-relation ${reason.name}->${reason.to}`;
