@@ -33,32 +33,19 @@ type Model = {
     target: string;
     links: { relation: string; to: string }[];
   }[];
-  plug: { layer: string };
   types: { name: string; schema: Schema }[];
   relations: { name: string; kind: string; from: string[]; to: string[] }[];
   gate: { name: string; questions: GateQuestion[] };
 };
 
 // Chaves de topo documentadas em `model-schema.md`: as obrigatórias e a única opcional.
-const REQUIRED_MODEL_KEYS = [
-  'schema',
-  'project',
-  'unit',
-  'phases',
-  'types',
-  'relations',
-  'gate',
-  'plug',
-];
+const REQUIRED_MODEL_KEYS = ['schema', 'project', 'unit', 'phases', 'types', 'relations', 'gate'];
 const OPTIONAL_MODEL_KEYS = ['targetPattern'];
 
 // Chaves exatas dos objetos aninhados, como `model-schema.md` as documenta (sem opcionais).
 const UNIT_KEYS = ['kind', 'location', 'examples'];
 const PHASE_KEYS = ['name', 'command', 'type', 'target', 'artifact', 'links'];
-const PLUG_KEYS = ['layer'];
 const LINK_KEYS = ['relation', 'to'];
-// Camadas do plug documentadas em `model-schema.md`.
-const PLUG_LAYERS = ['C'];
 
 const sortedKeys = (value: object) => Object.keys(value).sort();
 
@@ -70,7 +57,7 @@ const exampleFiles = fs
 const readModel = (file: string): Model =>
   JSON.parse(fs.readFileSync(path.join(referencesDir, file), 'utf8')) as Model;
 
-const SPECKIT = readModel('speckit-model.example.json');
+const THREE_PHASE = readModel('three-phase-model.example.json');
 const MINIMAL = readModel('minimal-model.example.json');
 
 const EXAMPLES = exampleFiles.map((file) => ({ file, model: readModel(file) }));
@@ -229,10 +216,6 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
     expect(model.phases.map(sortedKeys)).toEqual(model.phases.map(() => [...PHASE_KEYS].sort()));
   });
 
-  it.each(EXAMPLES)('should carry exactly the documented plug keys in $file', ({ model }) => {
-    expect(sortedKeys(model.plug)).toEqual([...PLUG_KEYS].sort());
-  });
-
   it.each(EXAMPLES)('should carry exactly the documented link keys in $file', ({ model }) => {
     const links = model.phases.flatMap((phase) => phase.links);
 
@@ -261,10 +244,6 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
     const links = model.phases.flatMap((phase) => phase.links);
 
     expect(links.map(({ to }) => to).filter((to) => !phaseTypes.includes(to))).toEqual([]);
-  });
-
-  it.each(EXAMPLES)('should use a documented plug layer in $file', ({ model }) => {
-    expect(PLUG_LAYERS).toContain(model.plug.layer);
   });
 
   it.each(EXAMPLES)('should not use pattern or patternProperties in $file', ({ model }) => {
@@ -300,19 +279,19 @@ describe('define_type', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should replay every type of the Spec Kit example as unchanged', async () => {
-    await setUp(SPECKIT);
+  it('should replay every type of the three-phase example as unchanged', async () => {
+    await setUp(THREE_PHASE);
 
-    const results = await defineTypes(SPECKIT);
+    const results = await defineTypes(THREE_PHASE);
 
-    expect(results.map(({ created }) => created)).toEqual(SPECKIT.types.map(() => false));
+    expect(results.map(({ created }) => created)).toEqual(THREE_PHASE.types.map(() => false));
   });
 
-  it('should accept every type of the Spec Kit example', async () => {
-    const results = await defineTypes(SPECKIT);
+  it('should accept every type of the three-phase example', async () => {
+    const results = await defineTypes(THREE_PHASE);
 
     expect(results.map(({ name, created }) => ({ name, created }))).toEqual(
-      SPECKIT.types.map(({ name }) => ({ name, created: true })),
+      THREE_PHASE.types.map(({ name }) => ({ name, created: true })),
     );
   });
 });
@@ -321,21 +300,21 @@ describe('define_relation', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should replay every relation of the Spec Kit example as unchanged', async () => {
-    await setUp(SPECKIT);
+  it('should replay every relation of the three-phase example as unchanged', async () => {
+    await setUp(THREE_PHASE);
 
-    const results = await defineRelations(SPECKIT);
+    const results = await defineRelations(THREE_PHASE);
 
-    expect(results.map(({ created }) => created)).toEqual(SPECKIT.relations.map(() => false));
+    expect(results.map(({ created }) => created)).toEqual(THREE_PHASE.relations.map(() => false));
   });
 
-  it('should accept every relation of the Spec Kit example', async () => {
-    await defineTypes(SPECKIT);
+  it('should accept every relation of the three-phase example', async () => {
+    await defineTypes(THREE_PHASE);
 
-    const results = await defineRelations(SPECKIT);
+    const results = await defineRelations(THREE_PHASE);
 
     expect(results.map(({ name, created }) => ({ name, created }))).toEqual(
-      SPECKIT.relations.map(({ name }) => ({ name, created: true })),
+      THREE_PHASE.relations.map(({ name }) => ({ name, created: true })),
     );
   });
 });
@@ -344,18 +323,18 @@ describe('define_gate', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should replay the gate of the Spec Kit example as unchanged', async () => {
-    await setUp(SPECKIT);
+  it('should replay the gate of the three-phase example as unchanged', async () => {
+    await setUp(THREE_PHASE);
 
-    const result = await defineGate(SPECKIT);
+    const result = await defineGate(THREE_PHASE);
 
     expect(result.created).toBe(false);
   });
 
-  it('should accept the gate of the Spec Kit example', async () => {
-    const result = await defineGate(SPECKIT);
+  it('should accept the gate of the three-phase example', async () => {
+    const result = await defineGate(THREE_PHASE);
 
-    expect(result).toMatchObject({ name: SPECKIT.gate.name, created: true });
+    expect(result).toMatchObject({ name: THREE_PHASE.gate.name, created: true });
   });
 });
 
@@ -364,11 +343,11 @@ describe('create_process', () => {
   afterEach(closeEnvironment);
 
   it('should replay the process as unchanged', async () => {
-    await setUp(SPECKIT);
+    await setUp(THREE_PHASE);
 
     const result = await environment.ok<{ created: boolean }>('create_process', {
-      project: SPECKIT.project,
-      process: processOf(SPECKIT),
+      project: THREE_PHASE.project,
+      process: processOf(THREE_PHASE),
     });
 
     expect(result.created).toBe(false);
@@ -379,54 +358,54 @@ describe('evaluate_gate', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should pass the gate when plan derives from spec and tasks from plan', async () => {
-    await setUp(SPECKIT);
-    await registerPhases(SPECKIT);
+  it('should pass the gate when build derives from design and check from build', async () => {
+    await setUp(THREE_PHASE);
+    await registerPhases(THREE_PHASE);
 
-    const result = await evaluate(SPECKIT);
+    const result = await evaluate(THREE_PHASE);
 
     expect(result.passed).toBe(true);
   });
 
-  it('should fail the gate when tasks is not linked to plan', async () => {
-    await setUp(SPECKIT);
-    const { records } = await registerPhases(SPECKIT, 'tasks');
-    const planId = at(records, 1).id;
+  it('should fail the gate when check is not linked to build', async () => {
+    await setUp(THREE_PHASE);
+    const { records } = await registerPhases(THREE_PHASE, 'check');
+    const buildId = at(records, 1).id;
 
-    const result = await evaluate(SPECKIT, 'full');
+    const result = await evaluate(THREE_PHASE, 'full');
 
     expect(result.passed).toBe(false);
     expect(result.questions).toContainEqual(
       expect.objectContaining({
         kind: 'no_pending',
         passed: false,
-        evidence: expect.objectContaining({ unresolved: [planId] }),
+        evidence: expect.objectContaining({ unresolved: [buildId] }),
       }),
     );
   });
 
-  it('should fail the gate when plan is not linked to spec', async () => {
-    await setUp(SPECKIT);
-    const { records } = await registerPhases(SPECKIT, 'plan');
-    const specId = at(records, 0).id;
+  it('should fail the gate when build is not linked to design', async () => {
+    await setUp(THREE_PHASE);
+    const { records } = await registerPhases(THREE_PHASE, 'build');
+    const designId = at(records, 0).id;
 
-    const result = await evaluate(SPECKIT, 'full');
+    const result = await evaluate(THREE_PHASE, 'full');
 
     expect(result.passed).toBe(false);
     expect(result.questions).toContainEqual(
       expect.objectContaining({
         kind: 'no_pending',
         passed: false,
-        evidence: expect.objectContaining({ unresolved: [specId] }),
+        evidence: expect.objectContaining({ unresolved: [designId] }),
       }),
     );
   });
 
   it('should fail the gate when a phase has no record', async () => {
-    await setUp(SPECKIT);
-    await registerPhases(SPECKIT, undefined, 'tasks');
+    await setUp(THREE_PHASE);
+    await registerPhases(THREE_PHASE, undefined, 'check');
 
-    const result = await evaluate(SPECKIT, 'full');
+    const result = await evaluate(THREE_PHASE, 'full');
 
     expect(result.passed).toBe(false);
     expect(result.questions).toContainEqual(
@@ -518,25 +497,6 @@ describe('skills/hexlog-setup/references/agents-block.template.md', () => {
   it('should keep the block between 1 and 8 non-empty lines', () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.length).toBeLessThanOrEqual(8);
-  });
-});
-
-describe('skills/hexlog-setup/references/plug-speckit.md', () => {
-  const PROVEN_VERSIONS_HEADER = '| Versão | Evidência no hexlog | Fases que disparam |';
-  const content = fs.readFileSync(path.join(referencesDir, 'plug-speckit.md'), 'utf8');
-  const section = content
-    .split(/^## /m)
-    .find((part) => part.startsWith('Versões do Spec Kit provadas'));
-  const tableLines = (section ?? '').split('\n').filter((line) => line.startsWith('|'));
-
-  it('should keep the proven-versions table well formed', () => {
-    const [header, , ...rows] = tableLines;
-    const evidenceOf = (row: string) => row.split('|').map((cell) => cell.trim())[2];
-
-    expect(section).toBeDefined();
-
-    expect(header).toBe(PROVEN_VERSIONS_HEADER);
-    expect(rows.every((row) => (evidenceOf(row) ?? '') !== '')).toBe(true);
   });
 });
 

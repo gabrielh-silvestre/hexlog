@@ -11,14 +11,13 @@ Skill que configura o hexlog num repositório de destino. Dispara quando o pedid
 
 | File | Description |
 |------|-------------|
-| `SKILL.md` | Os dez passos do fluxo (caminho, setup anterior, descoberta, projeto hexlog, entrevista, plano, registro, geração, ponteiro e camada ativa) e a conferência de anexo |
+| `SKILL.md` | Os dez passos do fluxo (caminho, setup anterior, descoberta, projeto hexlog, entrevista, plano, registro, geração, ponteiro e alcance do bloco) e a conferência de anexo |
 | `references/interview-guide.md` | Perguntas-modelo da entrevista e dos dois caminhos, em inglês |
 | `references/model-schema.md` | Campos do `hexlog-model.json` |
 | `references/project-skill.template.md` | Template da skill do projeto gerada no destino |
-| `references/speckit-model.example.json` | Modelo de exemplo com as fases do Spec Kit |
+| `references/three-phase-model.example.json` | Modelo de exemplo de um fluxo de três fases encadeadas |
 | `references/minimal-model.example.json` | Modelo de exemplo sem fluxo reconhecível |
-| `references/agents-block.template.md` | Texto literal do bloco da camada C no `AGENTS.md` do destino |
-| `references/plug-speckit.md` | Camada C do plug no Spec Kit e a tabela de versões provadas |
+| `references/agents-block.template.md` | Texto literal do bloco do hexlog no `AGENTS.md` do destino |
 
 ## Subdirectories
 

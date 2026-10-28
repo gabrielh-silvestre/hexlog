@@ -49,7 +49,7 @@ Use `target` no formato `<processo>.<target da tabela de fases>` (a coluna de ta
 
 **Relações da fase.** Para cada `links` da fase, faça `query` do processo pelo registro vigente do tipo de destino e grave a relação nomeada apontando para o id dele.
 
-**Fase com registro vigente** (a fase foi reexecutada, por exemplo um segundo `/speckit-plan`). Antes de gravar, faça `query` do processo pelo target da fase. Se há registro vigente, grave o novo no mesmo target com `supersedes` do id vigente e regrave as relações do antigo. Cada registro vigente de fase sucessora que tinha `derivesFrom` (ou a relação da tabela) apontando para o antigo é regravado do mesmo modo: `supersedes` dele, mesmos dados e a relação apontando para o novo. Sem isso o `no_pending` do gate reprova a unidade, porque a sucessora aponta para um registro superado.
+**Fase com registro vigente** (a fase foi reexecutada, por exemplo um segundo `/build`). Antes de gravar, faça `query` do processo pelo target da fase. Se há registro vigente, grave o novo no mesmo target com `supersedes` do id vigente e regrave as relações do antigo. Cada registro vigente de fase sucessora que tinha `derivesFrom` (ou a relação da tabela) apontando para o antigo é regravado do mesmo modo: `supersedes` dele, mesmos dados e a relação apontando para o novo. Sem isso o `no_pending` do gate reprova a unidade, porque a sucessora aponta para um registro superado.
 
 **`key`.** Ela identifica a intenção do lote, não a fase (regra geral na seção "`key`" do `SKILL.md`). O reenvio do mesmo lote (erro incerto) repete a `key`; a reexecução da fase é lote diferente e leva `key` nova (por exemplo `<target>:abertura` na primeira vez e `<target>:reexecucao-2` na seguinte), porque a mesma `key` com lote diferente é `IDEMPOTENCY_CONFLICT`.
 
@@ -59,7 +59,7 @@ Use `target` no formato `<processo>.<target da tabela de fases>` (a coluna de ta
 2. `query` do processo, conferindo que há um registro vigente por fase da tabela.
 3. Fase sem registro: avise o desenvolvedor, liste as fases faltantes e ofereça o **registro retroativo**, montado a partir do `artifact` que a tabela declara para cada fase.
 
-Diante de uma fase faltante, deixe o arquivo do modelo e o campo `plug.layer` como estão: o modelo descreve a configuração, e só a hexlog-setup o muda.
+Diante de uma fase faltante, deixe o arquivo do modelo como está: o modelo descreve a configuração, e só a hexlog-setup o muda.
 
 ## 7. Projeto sem definições
 

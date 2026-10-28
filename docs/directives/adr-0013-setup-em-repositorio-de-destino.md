@@ -75,3 +75,12 @@ Emenda datada aos achados da review do PR #321, aplicada por decisão do dono, G
 - **Correção do Context sobre `specify integration upgrade`.** A documentação oficial (`docs/integrations/cli.md` do Spec Kit, versão 1.2.4) diz que o upgrade bloqueia quando há arquivo gerado modificado e que `--force` sobrescreve; a preservação por padrão é do `uninstall` e do `switch`. A alternativa 2 segue rejeitada, porque o `--force` desfaz a camada A nos dois casos.
 - **Leitura do `AGENTS.md` pelo Claude Code.** Sem `CLAUDE.md`, o Claude Code lê o `AGENTS.md` direto (v2.1.277 ou mais nova). O que deixa o bloco da camada C inerte é um `CLAUDE.md` sem o import `@AGENTS.md`, ou um Claude Code mais antigo. A adesão medida no aceite foi com o import presente, não no caminho padrão sem opt-in. O item 7 vale como está.
 - **Exceção do item 7 mantida.** O dono manteve, em 2026-10-28, a escrita do bloco no `AGENTS.md` sem opt-in. A premissa que registra essa exceção substitui `no-third-party-edit`.
+
+## Emenda 2026-10-28 (Spec Kit fora do produto)
+
+Emenda datada, aplicada por decisão do dono, Gabriel Baldino. Decision e Consequences acima não mudam, e a emenda anterior segue vigente no que não conflita com esta.
+
+- **O Spec Kit não faz parte do produto.** Foi só o harness que testou o fluxo novo do setup. Saem do escopo o plug no Spec Kit, as camadas C, B e A, a tabela de versões provadas, a sonda e o segundo PR citado em Follow-ups.
+- **O histórico acima fica, e esta emenda o supera.** As menções ao Spec Kit e à camada C no Context, nas Decisions (item 6), nos Drivers, nas Alternatives considered, no Why chosen, nas Consequences e na emenda anterior ficam como histórico. Quando uma delas conflitar com esta emenda, vale esta.
+- **O bloco do `AGENTS.md` do destino continua.** O item 7 vale como está: o setup escreve a skill do projeto, o modelo e um bloco de até 8 linhas no `AGENTS.md` do destino, agora sem o nome de camada. O roteiro de aceite usa um fluxo neutro de três fases (`design`, `build` e `check`).
+- **A entrega sai em um PR.**

@@ -38,9 +38,9 @@ mão: depois dela, o ciclo de cada unidade de trabalho pode chegar ao gate verde
    depois dos comandos das fases.
 
 Cada unidade de trabalho vira um processo hexlog, criado pela skill gerada na primeira fase dela. O
-setup pode rodar de novo: com o modelo local, compara com o hexlog em vez de reperguntar. O Spec Kit
-tem exemplo pronto, e hoje só a camada C do plug está ativa (a skill do projeto, o modelo e um bloco no
-`AGENTS.md` do destino, sem editar outro arquivo de terceiros). O roteiro de aceite, com os passos de verificação, está em
+setup pode rodar de novo: com o modelo local, compara com o hexlog em vez de reperguntar. O setup só
+escreve a skill do projeto, o modelo e o bloco no `AGENTS.md` do destino, sem editar outro arquivo de
+terceiros. O roteiro de aceite, com os passos de verificação, está em
 [setup-aceitacao.md](setup-aceitacao.md).
 
 ## Exemplo completo

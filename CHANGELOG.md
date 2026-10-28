@@ -7,7 +7,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 ### Adicionado
 
 - O `details[]` do `kind-mismatch` do `register` ganha o campo opcional `kind`, com o `kind` do nome de relação fixado, e a mensagem diz para enviar só `as` ou esse `kind` (#300).
-- O `hexlog-setup` configura um repositório de destino: aprende o fluxo do projeto por descoberta no repositório ou por entrevista, registra tipos, relações e gate, e gera ali uma skill do projeto e um modelo declarativo (`hexlog-model.json`). A camada C do plug no Spec Kit é a única ativa (#321).
+- O `hexlog-setup` configura um repositório de destino: aprende o fluxo do projeto por descoberta no repositório ou por entrevista, registra tipos, relações e gate, e gera ali uma skill do projeto e um modelo declarativo (`hexlog-model.json`) (#321).
 - A `hexlog-flow` traz o ciclo de vida da unidade de trabalho em `references/unit-lifecycle.md` (#321).
 
 ### Alterado

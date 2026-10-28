@@ -167,7 +167,3 @@ _Avoid_: mapa, configuração
 **Unidade de trabalho** (`unit`):
 O que recebe um **Processo** no repositório de destino, como uma pasta de feature; identificada pelo caminho canônico.
 _Avoid_: trabalho (o glossário do fluxo usa o termo para as entregas deste repositório), tarefa
-
-**Camada de plug** (`layer`):
-O grau em que o hexlog se liga a um fluxo externo: C escreve a skill do projeto, o modelo e um bloco no `AGENTS.md` do destino; B e A dependem de prova e de consentimento.
-_Avoid_: nível, integração

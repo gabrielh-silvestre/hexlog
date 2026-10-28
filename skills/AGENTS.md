@@ -19,10 +19,9 @@ As três skills do Claude Code que acompanham o hexlog. Cada pasta tem um `SKILL
 | `hexlog-setup/references/interview-guide.md` | Roteiro de perguntas-modelo da entrevista, com os caminhos de descoberta e de entrevista direta |
 | `hexlog-setup/references/model-schema.md` | Campos do `hexlog-model.json` gerado no destino |
 | `hexlog-setup/references/project-skill.template.md` | Template da skill do projeto gerada no destino |
-| `hexlog-setup/references/speckit-model.example.json` | Modelo de exemplo com as fases do Spec Kit |
+| `hexlog-setup/references/three-phase-model.example.json` | Modelo de exemplo de um fluxo de três fases encadeadas |
 | `hexlog-setup/references/minimal-model.example.json` | Modelo de exemplo para um projeto sem fluxo reconhecível |
-| `hexlog-setup/references/agents-block.template.md` | Texto literal do bloco da camada C no `AGENTS.md` do destino, com o título fixo |
-| `hexlog-setup/references/plug-speckit.md` | Camada C do plug no Spec Kit e a tabela de versões provadas |
+| `hexlog-setup/references/agents-block.template.md` | Texto literal do bloco do hexlog no `AGENTS.md` do destino, com o título fixo |
 
 ## Subdirectories
 
