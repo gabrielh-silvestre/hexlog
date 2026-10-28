@@ -303,7 +303,7 @@ describe('registerQueryTools', () => {
     it.each([
       'GATE_NOT_FOUND',
       'one result per question',
-      'failing (default with target)',
+      'failing (default without targets)',
       'counts (default with targets)',
       'approved has of',
       'no_open_contradiction',
