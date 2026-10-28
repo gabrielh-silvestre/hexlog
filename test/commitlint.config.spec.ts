@@ -69,6 +69,22 @@ describe('commitlint.config.js', () => {
   );
 
   it(
+    'should accept a Git merge message',
+    () => {
+      expect(lint("Merge branch 'feat/x' into develop").status).toBe(0);
+    },
+    CLI_TIMEOUT,
+  );
+
+  it(
+    'should accept a Git revert message',
+    () => {
+      expect(lint('Revert "fix(hook): deny the glob escape"').status).toBe(0);
+    },
+    CLI_TIMEOUT,
+  );
+
+  it(
     'should accept the Dependabot commit identified by its Signed-off-by footer',
     () => {
       const message = [
