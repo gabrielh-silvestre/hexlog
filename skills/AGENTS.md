@@ -22,6 +22,9 @@ As três skills do Claude Code que acompanham o hexlog. Cada pasta tem um `SKILL
 | `hexlog-setup/references/three-phase-model.example.json` | Modelo de exemplo de um fluxo de três fases encadeadas |
 | `hexlog-setup/references/minimal-model.example.json` | Modelo de exemplo para um projeto sem fluxo reconhecível |
 | `hexlog-setup/references/agents-block.template.md` | Texto literal do bloco do hexlog no `AGENTS.md` do destino, com o título fixo |
+| `hexlog-setup/references/owner-seat.md` | Procedimento do ramo opcional da cadeira do dono no setup: opt-in, colisão de nomes, reaplicação e `ownerSeat` no modelo |
+| `hexlog-setup/references/owner-seat/` | Pacote de definições da cadeira (4 tipos, 2 relações, 1 gate), um JSON por definição |
+| `hexlog-setup/references/owner-seat-criteria.template.md`, `owner-seat-contract.template.md`, `owner-seat-recipe-claude.template.md` e `owner-seat-recipe-agy.template.md` | Templates do documento de critérios, do contrato neutro e das receitas Claude e `agy` que o setup escreve na pasta da skill do projeto |
 
 ## Subdirectories
 
@@ -29,7 +32,7 @@ As três skills do Claude Code que acompanham o hexlog. Cada pasta tem um `SKILL
 |-----------|---------|
 | `hexlog/` | Bootstrap de um projeto no hexlog e diagnóstico de saúde do servidor (see `hexlog/AGENTS.md`) |
 | `hexlog-flow/` | Mecânica do registro e da consulta, com projeto, processo e gate vindos da skill do projeto (see `hexlog-flow/AGENTS.md`) |
-| `hexlog-setup/` | Configuração do hexlog em um repositório de destino, que pode rodar de novo: gera a skill do projeto e o modelo (see `hexlog-setup/AGENTS.md`) |
+| `hexlog-setup/` | Configuração do hexlog em um repositório de destino, que pode rodar de novo: gera a skill do projeto e o modelo e, com opt-in, a cadeira do dono (see `hexlog-setup/AGENTS.md`) |
 
 ## Dependencies
 

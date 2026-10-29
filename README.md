@@ -60,7 +60,7 @@ O instalador copia as skills de `skills/` para `~/.claude/skills/`. Elas guiam o
 | Skill | Quando usar |
 |---|---|
 | `hexlog` | Subir um projeto novo (tipos, relações, gates e processo) ou diagnosticar se o servidor instalado está saudável |
-| `hexlog-setup` | Configurar um repositório de destino: aprende o fluxo do projeto (descoberta ou entrevista), registra tipos, relações e gate e gera a skill do projeto com o modelo declarativo. Pode rodar de novo |
+| `hexlog-setup` | Configurar um repositório de destino: aprende o fluxo do projeto (descoberta ou entrevista), registra tipos, relações e gate e gera a skill do projeto com o modelo declarativo. Com opt-in, também a cadeira do dono: um ocupante responde as lacunas por critérios do projeto e o humano audita depois. Pode rodar de novo |
 | `hexlog-flow` | Dia a dia: registra, consulta, avalia gates, anexa texto, audita um target e conduz o ciclo de vida da unidade de trabalho, com projeto, processo e gate vindos da skill do projeto |
 
 ## Como funciona
@@ -89,7 +89,7 @@ As skills do fluxo ficam em `.claude/skills/` e valem só neste repositório, o 
 - [docs/desenvolvimento.md](docs/desenvolvimento.md): scripts de leitura e testes;
 - [docs/feedback-loops.md](docs/feedback-loops.md): o que o commit e o pré-PR conferem;
 - [docs/directives/](docs/directives/AGENTS.md): regras vivas do repositório, do fluxo às convenções;
-- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md), [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md) e [0013 setup em repositório de destino](docs/directives/adr-0013-setup-em-repositorio-de-destino.md).
+- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md), [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md) [0013 setup em repositório de destino](docs/directives/adr-0013-setup-em-repositorio-de-destino.md) e [0014 cadeira do dono como pacote de dados](docs/directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md).
 
 ## Desenvolvimento
 

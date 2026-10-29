@@ -9,6 +9,8 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - O `details[]` do `kind-mismatch` do `register` ganha o campo opcional `kind`, com o `kind` do nome de relação fixado, e a mensagem diz para enviar só `as` ou esse `kind` (#300).
 - O `hexlog-setup` configura um repositório de destino: aprende o fluxo do projeto por descoberta no repositório ou por entrevista, registra tipos, relações e gate, e gera ali uma skill do projeto e um modelo declarativo (`hexlog-model.json`) (#321).
 - A `hexlog-flow` traz o ciclo de vida da unidade de trabalho em `references/unit-lifecycle.md` (#321).
+- O `hexlog-setup` oferece a cadeira do dono, opt-in: um pacote de definições (lacuna, resposta, evidência, aval, relações e gate), um documento de critérios do projeto, um contrato do ocupante e receitas para Claude e `agy` na pasta da skill do projeto. Um modelo responde as lacunas do executor, a resposta sem base nos critérios sai marcada como "sem critério", e o humano audita depois.
+- O `scripts/seat-report.ts` lista as respostas da cadeira do dono pelo que já foi auditado, sem escrever no diretório de dados.
 
 ### Alterado
 

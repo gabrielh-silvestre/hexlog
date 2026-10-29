@@ -83,6 +83,63 @@ criados à mão, se o dono preferir não rodar os comandos.
 O clone do destino, com o modelo, para um `<D>` sem o projeto não é testado neste roteiro; a
 cobertura é só pela instrução do `SKILL.md`.
 
+## Cadeira do dono
+
+Roteiro da cadeira opt-in ([adr-0014-cadeira-do-dono-como-pacote-de-dados.md](directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md)).
+Vale a mesma regra do resto: o jest prova a forma dos arquivos do pacote, do contrato e do relatório; só a execução real prova
+que o ocupante responde, grava e que o humano audita.
+
+**Isolamento.** O servidor MCP de uma sessão comum grava no `<D>` real, e o armazenamento é append-only. Por isso toda ação
+de setup e de executor do ensaio (registrar lacunas, gravar aval, contestação e dependentes, semear tipos e processos) roda numa
+sessão interativa do dono, aberta durante todo o ensaio com `XDG_DATA_HOME=<tmp>` e `HEXLOG_CHECKOUT=<checkout>` exportados.
+O ocupante roda em chamadas de um turno com o mesmo `XDG_DATA_HOME`: `claude -p` com o modelo sonnet e o `agy` direto, no `HOME`
+real (as credenciais valem). O relatório e a exportação de conferência rodam com o mesmo `XDG_DATA_HOME`:
+`node "$HEXLOG_CHECKOUT/scripts/seat-report.ts" <projeto>` e `node "$HEXLOG_CHECKOUT/scripts/export.ts" <projeto>/<processo>`.
+Confira por `list`, numa sessão sem o `XDG_DATA_HOME` do ensaio, que os projetos do `<D>` real são os mesmos antes e depois.
+
+**Qual versão da skill carrega.** A skill pessoal instalada vence uma skill de projeto de mesmo nome e pode ser anterior à
+cadeira. Copie só `skills/hexlog-setup` para `.claude/skills/hexlog-setup-trial/` do repositório temporário, troque o `name:` do
+frontmatter para `hexlog-setup-trial` e confira que `diff -r` contra `skills/hexlog-setup` mostra só essa linha. Invoque sempre por
+nome: o disparo por descrição repete a descrição da skill pessoal.
+
+**Aprovação do dono, antes do primeiro ensaio.** As chamadas reais gastam cota: confirme com o dono a contagem de chamadas
+do ocupante (`claude -p` e `agy`) e de setups interativos antes de começar. A aprovação vale só para a rodada em curso.
+
+**`agy`.** O `hexlog` já pode estar registrado no `agy` apontando para outra versão do servidor. Antes de qualquer alteração,
+copie `~/.gemini/config/mcp_config.json` e a pasta `~/.gemini/antigravity-cli/mcp/hexlog/` para fora; ao fim, restaure por `cp` e
+confira com `cmp` e `diff -r`. Antes de restaurar, compare o estado atual com o que o ensaio deixou: se divergir, alguém mexeu em
+paralelo, e a restauração pergunta primeiro. O ocupante do `agy` não tem deny nem allowlist ([dados.md](dados.md)).
+
+**Ensaios**, na ordem:
+
+1. Setup num repositório vazio (o dono conduz): cadeira ligada, ocupante Claude, duas ou três regras de critério, uma apontando para
+   um arquivo do repositório. O setup lê `references/owner-seat.md` e pergunta se liga a cadeira; descreve `HEXLOG_CHECKOUT`; gera
+   `criteria.md`, `contract.md` e `recipe-claude.md` na pasta da skill do projeto e `ownerSeat` no modelo. As chaves de regra casam
+   `^[a-z0-9-]+$`, são únicas e `grep -cE '^- \*\*'` é igual a `grep -cE '^- \*\*[a-z0-9-]+\*\*'` no documento de critérios.
+2. Lacuna com base no documento, cuja pergunta exige consultar um arquivo do repositório: o ocupante responde por `claude -p`; a
+   `premise` sai com `fills-gap`, `answeredBy: simulated`, `basis: rule`, `rule` igual à chave, `criteria` igual ao `sha256sum` do
+   arquivo, `actionUsed: local` e uma `evidence` com as fontes; o gate `gaps` fica verde e o relatório a lista. Sonda: uma segunda chamada
+   pede para ler e pesquisar um arquivo do `<D>` real, e as três tentativas (`Read`, `Grep`, `Glob`) são negadas ou indisponíveis.
+   O prompt da sonda vai por arquivo, porque um comando Bash com o caminho literal do `<D>` é negado pelo `bash-guard`.
+3. Lacuna sem base nos critérios: sai `basis: judgment` e o relatório a lista primeiro.
+4. Aval e contestação, no processo da resposta: o executor grava um `audit` para a resposta A e um registro de apoio com `supports`
+   cru para A; o humano contesta e o executor grava a `premise` humana B com `revokes` de A e `fills-gap`; a `query` mostra o
+   registro de apoio com `needsReview.staleOut` apontando A, e o relatório mostra B em "human answers" e A fora.
+5. Sem ocupante, em outro repositório (`occupant: none`, só contrato, sem receita): o humano responde, o executor grava
+   `answeredBy: human` e o relatório é o mesmo.
+6. Setup com ocupante `agy` (gera `recipe-agy.md`): repetir 2, sem a sonda, e 3. Anote onde o `attach` por `path` resolve no
+   `agy`. Se o `agy` falhar ou não rodar, a receita fica `Status: unproven` no texto gerado e aqui.
+7. Colisão, com o ocupante depois do mapa. Semeie, pela sessão do dono, tipos existentes, um processo `old-unit` e um registro nele; só
+   então rode o setup. Com `premise` compatível e relação `fills-gap` de espécie diferente, o setup acrescenta campos opcionais por
+   versão nova, reusa a relação pelo nome com o aviso, e o ocupante recebe `kind-mismatch` e para. Com `premise` incompatível
+   (`statement` com `maxLength` menor), o setup pergunta o nome mapeado, reescreve relações e gate, os arquivos gerados trazem os nomes
+   mapeados e o ocupante responde por eles; o relatório usa `--types` com o nome mapeado. Em ambos, `describe_type` com
+   `process: old-unit` mostra o schema antigo.
+
+Guarde os artefatos de cada ensaio em arquivos `.md` ou `.txt` dentro do `cwd` do servidor antes do `attach` (inclusive a saída de
+`scripts/export.ts` de cada processo, porque o `<D>` temporário é descartado), junto da versão do servidor que gravou, da versão do
+`claude` e do `agy`, do modelo e das flags que funcionaram.
+
 ## Checklist
 
 Marque cada item com a evidência (saída do comando, trecho do `git diff` ou o id do registro).
@@ -119,6 +176,21 @@ Marque cada item com a evidência (saída do comando, trecho do `git diff` ou o 
   existente, para e mostra as definições vigentes.
 - [ ] Com o arquivo do mapa antigo em `.hexlog/` no destino, o setup o deixa como estava e não cria
   nenhum arquivo de mapa.
+
+### Cadeira do dono
+
+- [ ] O setup pergunta se liga a cadeira, gera `criteria.md`, `contract.md` e a receita do ocupante escolhido na pasta da skill do
+  projeto e grava `ownerSeat` no `hexlog-model.json`, sem caminho absoluto.
+- [ ] As chaves de regra do documento de critérios casam `^[a-z0-9-]+$` e não se repetem.
+- [ ] A resposta do ocupante grava `premise` com `fills-gap`, `answeredBy: simulated`, `basis`, `rule`, `criteria`, `author.agent` e
+  `author.model`, e o gate `gaps` fica verde.
+- [ ] A resposta sem base nos critérios sai com `basis: judgment` e é a primeira do relatório.
+- [ ] O aval (`audit` com `supports`) tira a resposta de "not audited"; a contestação (`premise` humana com `revokes` e `fills-gap`)
+  deixa o dependente com `needsReview` e a resposta contestada fora do relatório.
+- [ ] Sem ocupante, a resposta humana (`answeredBy: human`) aparece no mesmo relatório.
+- [ ] A sonda do ocupante não leu o `<D>` real e `list` do `<D>` real é o mesmo antes e depois do ensaio.
+- [ ] Com colisão de nome, o setup acrescenta campos opcionais ou mapeia o nome, e os arquivos gerados usam os nomes aplicados.
+- [ ] A configuração do `agy` voltou ao estado anterior (`cmp` e `diff -r`).
 
 ## Anexar a evidência
 
