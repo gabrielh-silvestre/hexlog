@@ -4,7 +4,12 @@
 // arestas pela espécie (`answers`, `supports`) e por `current`, então sobrevive ao mapeamento de nomes
 // de `--types`. Aval é a aresta `supports` vigente que chega de um registro do tipo `audit`; o `audit`
 // de retirada (carregador do `revokes`, sem essa aresta) não conta. Seções exclusivas, na ordem de
-// precedência: cada registro aparece numa só. A saída escapa os controles de terminal (`escapeControls`).
+// precedência: cada registro aparece numa só. A saída escapa os controles de terminal (`escapeControls`),
+// e todo valor controlado pelo agente (agent, model, rule, criteria, action, question) sai entre aspas
+// por `JSON.stringify`, para não introduzir quebra de linha, TAB nem marca falsa de seção ou de aval.
+// Limites reais: a resposta a uma lacuna superada some das seis seções, porque a aresta `answers` deixa
+// de ser vigente; com `--process` só se enxergam as arestas do próprio processo, então a lacuna
+// respondida a partir de outro processo aparece como aberta (o escopo projeto não tem o problema).
 // Uso: node scripts/seat-report.ts <project> [--process <name>] [--types gap=<t>,premise=<t>,audit=<t>]
 // Saída: 0 íntegro (com os achados listados); 2 dado 0.x ou log quebrado; 1 uso incorreto ou erro.
 import { isNil, isUndefined } from 'es-toolkit';
@@ -65,8 +70,12 @@ function textOf(record: QueryRecord, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function quoted(value: string | undefined): string {
+  return isUndefined(value) ? '-' : JSON.stringify(value);
+}
+
 function whoOf({ author }: QueryRecord): string {
-  return `agent=${author.agent}  model=${author.model ?? '-'}`;
+  return `agent=${quoted(author.agent)}  model=${quoted(author.model)}`;
 }
 
 /** Os motivos de a resposta simulada não ter critério, lidos só do registro. */
@@ -93,9 +102,9 @@ function answerLine(answer: QueryRecord, audit: QueryRecord | undefined): string
     groupOf(answer, !isUndefined(audit)) === 'withoutCriteria' ? missingCriteria(answer) : [];
   return [
     `${answer.id}  ${answer.target}  ${whoOf(answer)}`,
-    `rule=${textOf(answer, 'rule') ?? '-'}`,
-    `criteria=${textOf(answer, 'criteria')?.slice(0, ABBREVIATED_HASH) ?? '-'}`,
-    `action=${textOf(answer, 'actionUsed') ?? '-'}`,
+    `rule=${quoted(textOf(answer, 'rule'))}`,
+    `criteria=${quoted(textOf(answer, 'criteria')?.slice(0, ABBREVIATED_HASH))}`,
+    `action=${quoted(textOf(answer, 'actionUsed'))}`,
     ...(reasons.length > 0 ? [`(no criteria: ${reasons.join(', ')})`] : []),
     ...(isUndefined(audit) ? [] : [`[audited by ${whoOf(audit)} ${audit.id}]`]),
   ].join('  ');
