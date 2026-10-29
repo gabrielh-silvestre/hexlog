@@ -1,6 +1,6 @@
 # Owner seat recipe: Claude Code
 
-Status: unproven
+Status: proven
 
 Runs the occupant of the owner seat with `claude -p`, one turn per gap. The status line
 above says whether this recipe was run end to end: `proven` only for the environment where
@@ -107,16 +107,16 @@ confined. Add `Read(./**)` to `--allowedTools`.
 
 With this fallback `web` is not available.
 
-## Unverified points
+## What the first run settled
 
-This recipe has not been run yet. These points are decided by the first real run, and this
-section is removed or rewritten when they are:
+Run end to end on one machine, with the flags above and no fallback:
 
-- whether the hexlog server keeps working under `--restricted` with `--strict-mcp-config`
-  (otherwise use the fallback above);
-- whether read access inside the repository needs entries in `--allowedTools` under
-  `dontAsk`, and which;
-- whether the final `result` event of `stream-json` lists `permission_denials`;
-- whether the hexlog server started by Claude Code inherits `XDG_DATA_HOME` from the
-  environment of the command;
-- whether `--append-system-prompt-file` is accepted as written.
+- The hexlog server keeps working under `--restricted` with `--strict-mcp-config`.
+- Under `dontAsk`, reading files inside the repository needs no entry in `--allowedTools`.
+  Reading outside it is refused with "outside the working directory".
+- The final `result` event of `stream-json` carries `permission_denials`; it was empty in
+  every normal run.
+- The server started by Claude Code inherits `XDG_DATA_HOME` from the environment of the
+  command.
+- `--append-system-prompt-file` is accepted as written, and the occupant follows the
+  contract.

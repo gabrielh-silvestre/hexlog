@@ -1,6 +1,6 @@
 # Owner seat recipe: agy
 
-Status: unproven
+Status: proven
 
 Runs the occupant of the owner seat with `agy -p`, one turn per gap. The status line above
 says whether this recipe was run end to end: `proven` only for the environment where it was
@@ -69,7 +69,7 @@ TASK="Close gap $GAP_ID of project $PROJECT, process $PROCESS. Model id: $MODEL.
 
 agy -p "$(cat "$SEAT_DIR/contract.md"; printf '\n\n%s\n' "$TASK")" \
   --model "$MODEL" \
-  --mode auto \
+  --dangerously-skip-permissions \
   --disable-slash-commands
 ```
 
@@ -83,20 +83,24 @@ inspect a run, add `--output-format stream-json`.
 
 - There is no `jury` and no subagent: the occupant researches with its own tools. The
   `local` and `web` actions are whatever `agy` provides natively.
-- There is no tool allowlist. Which of `--mode`, `--sandbox` and
-  `--dangerously-skip-permissions` is needed, and the most restrictive one that still lets
-  the occupant write to hexlog, is decided by the first real run.
+- There is no tool allowlist. In print mode the `mcp` permission is denied without a prompt
+  ("a tool required the mcp permission that headless mode cannot prompt for"), so the recipe
+  needs `--dangerously-skip-permissions`. `--mode auto` is refused on some accounts ("not
+  available for this account") and then leaves that denial in place. The risk above is the
+  price of this flag.
 
-## Unverified points
+## What the first run settled
 
-This recipe has not been run yet. These points are decided by the first real run, and this
-section is removed or rewritten when they are:
+Run end to end on one machine, with two gaps (one answered by a rule, one by judgment):
 
-- which permission flag lets the occupant call the hexlog tools in print mode: `--mode auto`
-  as written, `--sandbox`, or `--dangerously-skip-permissions`;
-- whether `agy mcp list` shows the server arguments, which the version check above relies on;
-- whether the hexlog server started by `agy` inherits `XDG_DATA_HOME` from the environment
-  of the command (otherwise register it with `agy mcp add --env XDG_DATA_HOME=...`);
-- the working directory of the hexlog server started by `agy`, which decides whether
-  `attach` by `path` resolves relative to the repository root;
-- whether the model id given to `--model` is accepted as listed by `agy models`.
+- `agy mcp list` shows the server arguments, so the version check above works.
+- The server started by `agy` runs in the repository root, so `attach` by `path` resolves
+  relative to it, as the criteria path expects.
+- `--model` accepts the id as `agy models` lists it.
+
+## Still unverified
+
+- Whether the hexlog server started by `agy` inherits `XDG_DATA_HOME` from the environment
+  of the command. The run registered the server with `agy mcp add --env XDG_DATA_HOME=...`
+  and did not test the inheritance. Register it that way if you use a data directory other
+  than the default.

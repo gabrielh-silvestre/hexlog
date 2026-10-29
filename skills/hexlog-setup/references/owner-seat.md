@@ -81,7 +81,7 @@ Os templates têm dois tipos de placeholder:
 
 O arquivo gerado só leva os de execução. Os nomes mapeados chegam, assim, ao contrato e às receitas.
 
-A linha `Status:` das receitas copia o valor do template (`unproven` até alguém rodar a receita) e vale para o ambiente em que ela foi rodada. O setup nunca a muda para `proven`.
+A linha `Status:` das receitas copia o valor do template. Hoje o valor é `proven` nas duas receitas, e vale só para o ambiente em que o ensaio da entrega as rodou; na máquina do dev elas seguem não conferidas até ele rodar uma. O setup nunca muda o valor.
 
 ## O que dizer ao dev
 
