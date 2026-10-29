@@ -1,10 +1,10 @@
 # ADR 0014: Cadeira do dono como pacote de dados no setup
 
-**Status:** Proposto
+**Status:** Aceito
 
 **Data:** 2026-10-29
 
-**Deciders:** a preencher com o aceite do dono antes do merge (só o cabeçalho muda: Status passa a Aceito e Deciders inclui quem aprovou)
+**Deciders:** Gabriel Baldino (aceite do ADR)
 
 ---
 

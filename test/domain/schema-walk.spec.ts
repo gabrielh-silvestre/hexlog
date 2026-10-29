@@ -242,6 +242,19 @@ describe('expandedSize', () => {
     expect(expandedSize(schema)).toBe(1 + 2 * (1 + 1));
   });
 
+  it.each([
+    ['a percent-encoded space', '$defs', 'a b', '#/$defs/a%20b'],
+    ['an escaped slash', '$defs', 'a/b', '#/$defs/a~1b'],
+    ['an escaped tilde', '$defs', 'a~b', '#/$defs/a~0b'],
+    ['the definitions container', 'definitions', 'a', '#/definitions/a'],
+  ])('should resolve the target of a $ref with %s', (_label, container, key, ref) => {
+    const target = { allOf: [{}, {}, {}] };
+    const schema = { [container]: { [key]: target }, properties: { x: { $ref: ref } } };
+    const plain = { $defs: { a: target }, properties: { x: { $ref: '#/$defs/a' } } };
+
+    expect(expandedSize(schema)).toBe(expandedSize(plain));
+  });
+
   it('should measure references that double at each level in linear time', () => {
     expect(expandedSize(doubling(40))).toBeGreaterThan(2 ** 40);
   });
