@@ -49,7 +49,7 @@ Audit report, to run when the developer asks for it and also when you close the 
 node "$HEXLOG_CHECKOUT/scripts/seat-report.ts" {{project}} --types gap={{type_gap}},premise={{type_premise}},audit={{type_audit}}
 ```
 
-Before running it, check that `$HEXLOG_CHECKOUT/scripts/seat-report.ts` and `$HEXLOG_CHECKOUT/node_modules` exist and that `node --version` is 24.18.1 or newer. If the variable is unset or a check fails, ask the developer; do not guess a path.
+Before running it, check that `$HEXLOG_CHECKOUT/scripts/seat-report.ts` and `$HEXLOG_CHECKOUT/node_modules` exist and that `node --version` satisfies `^24.18.1` (24.x series, 24.18.1 or newer; Node 25 and later are out of range). If the variable is unset or a check fails, ask the developer; do not guess a path.
 
 When you close a unit, evaluate the gate `{{gate_gaps}}` in addition to the unit gate `{{gate}}`: it fails while a gap has no answer.
 

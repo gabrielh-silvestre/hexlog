@@ -6,7 +6,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [1.2.3] - 2026-10-29
 
-Aviso de versão: esta versão traz recursos novos (o `hexlog-setup` reconstruído, a cadeira do dono e o `seat-report`) e muda as mensagens e os `details` do `INVALID_RECORD` do `register`, e, pela regra de [documentacao.md](docs/directives/documentacao.md), sairia como minor. Por decisão do dono saiu como patch, sem emendar a regra; a Migração abaixo diz como se adaptar.
+Aviso de versão: esta versão traz recursos novos (o `hexlog-setup` reconstruído, a cadeira do dono e o `seat-report`) e muda as mensagens e os `details` do `INVALID_RECORD` do `register`; a Migração abaixo diz como se adaptar.
 
 ### Adicionado
 
@@ -22,7 +22,7 @@ Aviso de versão: esta versão traz recursos novos (o `hexlog-setup` reconstruí
 - O `register` devolve no `INVALID_RECORD` de dado todas as violações de schema de cada registro do lote até um limite de custo (schema grande contra dado grande), e uma por subschema acima dele, não só a primeira, com um `detail` `violations-capped` (`path` `/records/<i>/data`) que avisa que a lista está incompleta e manda ler o tipo com `describe_type`; no máximo 50 `details`, e a `message` de `max-length`, `min-length`, `maximum` e `minimum` termina com o valor medido, como `(got 312)`. O teto de 16.000 caracteres de `data` segue `INVALID_INPUT` e também traz o tamanho (#300).
 - O `register` junta no mesmo `INVALID_RECORD` as recusas de relação que só dependem da entrada (`unknown-relation-name`, `kind-mismatch` e `cross-process-currency`, com `path` `/records/<i>/relations/<n>`), depois das violações de schema e sob o mesmo teto de 50 `details`: um `max-length` não esconde mais um `kind-mismatch` do mesmo registro (#300).
 - A descrição do `register`, o `docs/tools.md` e a skill `hexlog-flow` passam a ensinar que `as` sozinho basta numa relação, e as mensagens de `kind` fora da lista e de relação sem `kind` nem `as` dizem como corrigir (#300).
-- `engines.node` passa de `>=24.18.1` para `^24.18.1`: o Node 25 e o 26 deixam de ser suportados, porque o `randomUUIDv7` só é estável a partir do 26.1.0 e o `eslint-plugin-n` 18.5.0 passou a recusá-lo na faixa aberta (#311).
+- `engines.node` passa de `>=24.18.1` para `^24.18.1`: o Node 25 e o 26 deixam de ser suportados, porque o `randomUUIDv7` não existe no Node 25 nem no 26.0.x (só entra no 24.16.0 e no 26.1.0) e o `eslint-plugin-n` 18.5.0 passou a recusar a faixa aberta `>=24.18.1`, que admite essas versões (#311).
 - A `hexlog-flow` recebe projeto, processo e gate da skill do projeto, e deixa de ler o `.hexlog/flow.md` (#321).
 
 ### Removido
