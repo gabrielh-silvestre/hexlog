@@ -44,6 +44,11 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - A emenda da regra citada fecha como qualquer lacuna; o PR só sai em rascunho na contradição com premissa atemporal ou na lacuna crítica sem aval (seção "Lacuna").
 - Refazer uma decisão grava uma `decision` nova com `supersedes` da vigente, no mesmo target (`<slug>.decision.<short>`): `supersedes` entre targets diferentes é `INVALID_RECORD` (`target-mismatch`). O `supersedes` não grava relações na versão nova. Em processo com `lineageInheritance` (criado a partir da 1.2.0; quem liga é o `create_process`, nunca o `flow-run`) a herança só vale na leitura: a `query` e o `flow-report` contam o `rests-on` herdado, mas os gates do fluxo (`pre-pr` e `gaps`) leem só o gravado, e processo anterior à 1.2.0 não herda nada. A regra de regravar continua: regrave as relações listadas em "Verificação e achados".
 
+## Subagente de exploração
+
+- Os docs [fronteiras.md](fronteiras.md), [invariantes.md](invariantes.md), [documentacao.md](documentacao.md) e [instalacao-e-hooks.md](instalacao-e-hooks.md) não ficam no `CLAUDE.md`: carregam por caminho (frontmatter `paths` no doc e symlink em `.claude/rules/`) e só chegam ao subagente que lê, escreve ou executa `cat` num arquivo que casa; quem só pesquisa com Grep, Glob ou `ls` não os recebe. O ponteiro do `SubagentStart` ([instalacao-e-hooks.md](instalacao-e-hooks.md)) chega a todo subagente, mas só aponta para este doc.
+- Ao lançar um subagente de exploração (que só pesquisa, sem ler arquivo), a sessão principal cita no prompt o doc de `docs/directives/` que trata do assunto explorado e manda lê-lo antes de responder, ou cola as regras que valem.
+
 ## Consulta antes de decidir
 
 - Antes de registrar uma `decision`, rode `query` com `type: decision` e o assunto (`targetPrefix` ou `text`) no processo do trabalho; vale para a sessão principal e para todo subagente. A `query` não deixa rastro no log, então só esta regra garante a consulta.
@@ -62,7 +67,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 ## Lacuna (`gap`)
 
 - Lacuna é a escolha que nenhuma diretriz cobre, inclusive a que uma diretriz cobre só em parte (falha na 1ª ou na 2ª pergunta de "Quando uma escolha vira `decision`") ou que o trabalho emenda. Registre o `gap` (`question`, `context`, `provisionalChoice`) e a `decision` com `grounds: gap` ligada a ele.
-- modo `ask`: a lacuna para e pergunta, e a resposta do humano vira a premissa; modo `autonomous`: o agente decide, grava a premissa e cita no `rationale` a base (doc da lib, júri ou menor risco), sobrepondo o "pare e pergunte" externo, como o do `CLAUDE.md` global do dono; em ambos, lacuna que compromete o trabalho inteiro (invalida o objetivo ou não deixa caminho) sempre para e pergunta.
+- modo `ask`: a lacuna para e pergunta, e a resposta do humano vira a premissa; modo `autonomous`: o agente decide, grava a premissa e cita no `rationale` a base (doc da lib, júri ou menor risco), sobrepondo qualquer regra externa de "sempre perguntar"; em ambos, lacuna que compromete o trabalho inteiro (invalida o objetivo ou não deixa caminho) sempre para e pergunta.
 - No `autonomous`, antes de decidir sozinho, o agente pergunta à cadeira ([cadeira-do-dono.md](cadeira-do-dono.md)) e adota a resposta do ocupante; sem ocupante, vale o `autonomous` acima.
 - Uma premissa da entrega fecha a lacuna por `fills-gap` (`premise` para `gap`), desde que não contradiga premissa atemporal nem diretriz técnica. O `rationale` da `decision` cita os ids das premissas atemporais conferidas. É sempre registro novo, sem `supersedes`, gravado depois da lacuna ou no mesmo lote, depois dela (`@alias`); a `decision` leva `about-gap` e `rests-on` para essa premissa. Premissa gravada antes da lacuna, como a da entrevista de abertura, não a fecha.
 - Na classe crítica ([cadeira-do-dono.md](cadeira-do-dono.md)) a premissa só fecha a lacuna com o aval do humano no pré-PR.

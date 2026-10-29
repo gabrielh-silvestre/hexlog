@@ -1,3 +1,11 @@
+---
+paths:
+  - 'src/**'
+  - 'scripts/**'
+  - 'hook/**'
+  - 'eslint*.js'
+---
+
 # Fronteiras
 
 Mapa de camadas (`src/`): `domain/` (puro) e `shared/` (carregador do log) na base; `ports.ts` declara as portas; `commands/` (escrita) e `queries/` (leitura) são serviços sobre as portas; `adapters/` implementa as portas (disco, validador, busca); `mcp/` expõe os serviços como tools; `compose.ts` é a única raiz de composição. Ficam fora do mapa os arquivos de raiz: `errors.ts` (importado por todas as camadas), `directory.ts`, `version.ts`, `server.ts` e `installation.ts`, `archive.ts` e `guard.ts`, que só o instalador usa. O porquê das decisões da frente de serviços está em [ADR 0008](adr-0008-servicos.md).

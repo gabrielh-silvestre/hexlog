@@ -1,3 +1,12 @@
+---
+paths:
+  - 'hook/**'
+  - 'scripts/install.ts'
+  - 'scripts/flow/**'
+  - '.claude/**'
+  - 'src/installation.ts'
+---
+
 # Instalação e hooks
 
 ## Instalador

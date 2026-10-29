@@ -38,7 +38,7 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `CHANGELOG.md` | Mudanças visíveis por versão, no Keep a Changelog em pt-BR, desde a 1.0.0; `test/changelog.spec.ts` exige a seção da versão do `package.json` |
 | `cliff.toml` | Config do `git-cliff`: mapeia os Conventional Commits para as seções do changelog e descarta os tipos internos; o cabeçalho avisa que o filtro dos commits é o mesmo de `changelog-line.yml` |
 | `README.md` | Porta de entrada enxuta: o que é, instalação, exemplo mínimo, como funciona e índice de `docs/` (a referência de tools, dados, migração e instalação avançada mora em `docs/`) |
-| `CLAUDE.md` | Importa este `AGENTS.md` e as diretrizes de `docs/directives/` para toda sessão e todo subagente |
+| `CLAUDE.md` | Importa as diretrizes fixas de `docs/directives/` para toda sessão e todo subagente; as quatro condicionais chegam por `.claude/rules/` (symlinks com `paths`) |
 | `CONTEXT-MAP.md` | Mapa dos glossários: liga o contexto do produto (`CONTEXT.md`) ao do fluxo de desenvolvimento (`.claude/CONTEXT.md`) e descreve a relação entre eles |
 | `CONTEXT.md` | Glossário do produto: o log append-only de registros que o servidor MCP grava, encadeia e consulta; termo canônico em pt-BR com o identificador do código ou da tool ao lado |
 | `LICENSE` | Licença MIT |
@@ -84,7 +84,7 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 
 ## Diretrizes
 
-Regras que valem para o repositório todo, importadas pelo `CLAUDE.md`:
+Regras que valem para o repositório todo, importadas pelo `CLAUDE.md` ou carregadas por caminho (`.claude/rules/`):
 
 - [fluxo-hexlog.md](docs/directives/fluxo-hexlog.md): processos e targets, premissas, `decision`, lacunas, verificação e gates do PR
 - [convencoes.md](docs/directives/convencoes.md): idioma, núcleo e bordas, dependências, hash, escrita em disco, imports

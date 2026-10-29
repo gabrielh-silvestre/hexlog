@@ -1,3 +1,9 @@
+---
+paths:
+  - 'src/**'
+  - 'hook/**'
+---
+
 # Invariantes
 
 O que o código garante e nenhuma mudança pode quebrar. Onde um ADR cobre a regra, a linha só aponta o ADR e o item.
