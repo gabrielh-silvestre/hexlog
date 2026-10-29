@@ -44,6 +44,11 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - A emenda da regra citada fecha como qualquer lacuna; o PR só sai em rascunho na contradição com premissa atemporal ou na lacuna crítica sem aval (seção "Lacuna").
 - Refazer uma decisão grava uma `decision` nova com `supersedes` da vigente, no mesmo target (`<slug>.decision.<short>`): `supersedes` entre targets diferentes é `INVALID_RECORD` (`target-mismatch`). O `supersedes` não grava relações na versão nova. Em processo com `lineageInheritance` (criado a partir da 1.2.0; quem liga é o `create_process`, nunca o `flow-run`) a herança só vale na leitura: a `query` e o `flow-report` contam o `rests-on` herdado, mas os gates do fluxo (`pre-pr` e `gaps`) leem só o gravado, e processo anterior à 1.2.0 não herda nada. A regra de regravar continua: regrave as relações listadas em "Verificação e achados".
 
+## Subagente de exploração
+
+- Diretriz carregada por caminho (frontmatter `paths` em `.claude/rules/`) só chega ao subagente que lê, escreve ou executa `cat` num arquivo que casa; quem só pesquisa com Grep, Glob ou `ls` não a recebe. O ponteiro do `SubagentStart` ([instalacao-e-hooks.md](instalacao-e-hooks.md)) chega a todo subagente, mas só aponta para este doc.
+- Ao lançar um subagente de exploração (que só pesquisa, sem ler arquivo), a sessão principal cita no prompt o doc de `docs/directives/` que trata do assunto explorado e manda lê-lo antes de responder, ou cola as regras que valem.
+
 ## Consulta antes de decidir
 
 - Antes de registrar uma `decision`, rode `query` com `type: decision` e o assunto (`targetPrefix` ou `text`) no processo do trabalho; vale para a sessão principal e para todo subagente. A `query` não deixa rastro no log, então só esta regra garante a consulta.
