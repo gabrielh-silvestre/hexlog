@@ -38,9 +38,9 @@ type Model = {
   gate: { name: string; questions: GateQuestion[] };
 };
 
-// Chaves de topo documentadas em `model-schema.md`: as obrigatórias e a única opcional.
+// Chaves de topo documentadas em `model-schema.md`: as obrigatórias e as opcionais.
 const REQUIRED_MODEL_KEYS = ['schema', 'project', 'unit', 'phases', 'types', 'relations', 'gate'];
-const OPTIONAL_MODEL_KEYS = ['targetPattern'];
+const OPTIONAL_MODEL_KEYS = ['targetPattern', 'ownerSeat'];
 
 // Chaves exatas dos objetos aninhados, como `model-schema.md` as documenta (sem opcionais).
 const UNIT_KEYS = ['kind', 'location', 'examples'];
@@ -497,6 +497,67 @@ describe('skills/hexlog-setup/references/agents-block.template.md', () => {
   it('should keep the block between 1 and 8 non-empty lines', () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.length).toBeLessThanOrEqual(8);
+  });
+});
+
+describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
+  const templates = readDocuments(
+    fs
+      .readdirSync(referencesDir)
+      .filter((file) => /^owner-seat.*\.template\.md$/.test(file))
+      .sort()
+      .map((file) => path.join(referencesDir, file)),
+  );
+  const recipes = templates.filter(({ file }) => file.includes('owner-seat-recipe-'));
+  const criteria = at(
+    templates.filter(({ file }) => file.endsWith('owner-seat-criteria.template.md')),
+    0,
+  ).content;
+
+  const ruleKeys = () =>
+    [...criteria.matchAll(/^- \*\*([^*]+)\*\*:/gm)].map(([, key]) => key ?? '');
+
+  it('should not mention the development flow tooling', () => {
+    expect(occurrencesIn(templates, /\bOMC\b|herdr|scripts\/flow|critic|\.omc/gi)).toEqual({});
+  });
+
+  it.each(recipes)('should declare exactly one Status line in $file', ({ content }) => {
+    expect(content.match(/^Status:.*$/gm)).toHaveLength(1);
+  });
+
+  it.each(recipes)('should declare Status as proven or unproven in $file', ({ content }) => {
+    expect(content).toMatch(/^Status: (?:proven|unproven)$/m);
+  });
+
+  it('should key every criteria rule with lowercase letters, digits and hyphens', () => {
+    const keys = ruleKeys();
+
+    expect(keys.filter((key) => !/^[a-z0-9-]+$/.test(key))).toEqual([]);
+  });
+
+  it('should not repeat a criteria rule key', () => {
+    const keys = ruleKeys();
+
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('skills/hexlog-setup/references/model-schema.md', () => {
+  const content = fs.readFileSync(path.join(referencesDir, 'model-schema.md'), 'utf8');
+  const section = content.split(/^## /m).find((part) => part.startsWith('`ownerSeat`')) ?? '';
+  const rows = section.split('\n').filter((line) => line.startsWith('|'));
+  const fields = rows.slice(2).map((row) => /^\|\s*`([^`]+)`/.exec(row)?.[1] ?? '');
+
+  it('should document at least one ownerSeat field', () => {
+    expect(fields.length).toBeGreaterThan(0);
+  });
+
+  it('should not document an ownerSeat field that holds a path', () => {
+    expect(fields.filter((field) => /path|dir|file|location|checkout/i.test(field))).toEqual([]);
+  });
+
+  it('should not put an absolute, tilde or HOME path in the ownerSeat table', () => {
+    expect(rows.join('\n')).not.toMatch(/~|\$HOME|`\/[^`]+`/);
   });
 });
 

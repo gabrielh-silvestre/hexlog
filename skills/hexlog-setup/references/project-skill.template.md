@@ -31,6 +31,28 @@ skill and read the file when you open a unit, register a phase or close the unit
    "Fechar a unidade". Treat `hexlog-model.json` as read-only data; change it by running
    the `hexlog-setup` skill again.
 
+## Owner seat
+
+Render this section only when the model has the `ownerSeat` key; otherwise leave it out. Resolve the generation placeholders from `ownerSeat.names`. The roles, the answer format and the audit are in `owner-seat/contract.md`, next to this file.
+
+When you hit a gap you cannot close alone (a question no rule of the project answers):
+
+1. Record the gap: type `{{type_gap}}`, target `<process>.gap.<short>`.
+2. Check the seat precondition: the process must carry the trace fields (`describe_type` with `process` for `{{type_premise}}` shows `answeredBy`). A process opened before the owner seat was set up does not have them, and then nobody sits: go to step 5.
+3. Run the recipe in `owner-seat/` (`recipe-claude.md` or `recipe-agy.md`, whichever exists) with `<gap-id> <project> <process>`.
+4. Read the answer back with `query` (`relatedTo` the gap id) before going on.
+5. If the recipe fails, if there is no recipe or if nobody sits, ask the developer and record the answer with `answeredBy: human`, as `owner-seat/contract.md` says.
+
+Audit report, to run when the developer asks for it (needs the `HEXLOG_CHECKOUT` variable, set once per developer to the hexlog checkout):
+
+```text
+node "$HEXLOG_CHECKOUT/scripts/seat-report.ts" {{project}} --types gap={{type_gap}},premise={{type_premise}},audit={{type_audit}}
+```
+
+Before running it, check that `$HEXLOG_CHECKOUT/scripts/seat-report.ts` and `$HEXLOG_CHECKOUT/node_modules` exist and that `node --version` is 24.18.1 or newer. If the variable is unset or a check fails, ask the developer; do not guess a path.
+
+When you close a unit, evaluate the gate `{{gate_gaps}}` in addition to the unit gate `{{gate}}`: it fails while a gap has no answer.
+
 ## If something fails
 
 - The process or project is missing in hexlog (the model may be out of date or applied to
