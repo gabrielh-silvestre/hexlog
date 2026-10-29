@@ -4,6 +4,36 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ## [Não lançado]
 
+## [1.2.3] - 2026-10-29
+
+Aviso de versão: esta versão traz recursos novos (o `hexlog-setup` reconstruído, a cadeira do dono e o `seat-report`) e muda as mensagens e os `details` do `INVALID_RECORD` do `register`; a Migração abaixo diz como se adaptar.
+
+### Adicionado
+
+- O `details[]` do `kind-mismatch` do `register` ganha o campo opcional `kind`, com o `kind` do nome de relação fixado, e a mensagem diz para enviar só `as` ou esse `kind` (#300).
+- O `hexlog-setup` configura um repositório de destino: aprende o fluxo do projeto por descoberta no repositório ou por entrevista, registra tipos, relações e gate, e gera ali uma skill do projeto e um modelo declarativo (`hexlog-model.json`) (#321).
+- A `hexlog-flow` traz o ciclo de vida da unidade de trabalho em `references/unit-lifecycle.md` (#321).
+- O `hexlog-setup` oferece a cadeira do dono, opt-in: um pacote de definições (lacuna, resposta, evidência, aval, relações e gate), um documento de critérios do projeto, um contrato do ocupante e receitas para Claude e `agy` na pasta da skill do projeto. Um modelo responde as lacunas do executor, a resposta sem base nos critérios sai marcada como "sem critério", e o humano audita depois (#327).
+- O `scripts/seat-report.ts` lista as respostas da cadeira do dono pelo que já foi auditado, sem escrever no diretório de dados; roda a partir do checkout do hexlog (`HEXLOG_CHECKOUT`) (#327).
+
+### Alterado
+
+- As descrições das tools `evaluate_gate` e `query` passam a dizer o padrão real: `failing` sempre que `targets` não vem e `counts` com `targets`, e o corte de página que mantém ao menos um registro (#325).
+- O `register` devolve no `INVALID_RECORD` de dado todas as violações de schema de cada registro do lote até um limite de custo (schema grande contra dado grande), e uma por subschema acima dele, não só a primeira, com um `detail` `violations-capped` (`path` `/records/<i>/data`) que avisa que a lista está incompleta e manda ler o tipo com `describe_type`; no máximo 50 `details`, e a `message` de `max-length`, `min-length`, `maximum` e `minimum` termina com o valor medido, como `(got 312)`. O teto de 16.000 caracteres de `data` segue `INVALID_INPUT` e também traz o tamanho (#300).
+- O `register` junta no mesmo `INVALID_RECORD` as recusas de relação que só dependem da entrada (`unknown-relation-name`, `kind-mismatch` e `cross-process-currency`, com `path` `/records/<i>/relations/<n>`), depois das violações de schema e sob o mesmo teto de 50 `details`: um `max-length` não esconde mais um `kind-mismatch` do mesmo registro (#300).
+- A descrição do `register`, o `docs/tools.md` e a skill `hexlog-flow` passam a ensinar que `as` sozinho basta numa relação, e as mensagens de `kind` fora da lista e de relação sem `kind` nem `as` dizem como corrigir (#300).
+- `engines.node` passa de `>=24.18.1` para `^24.18.1`: o Node 25 e o 26 deixam de ser suportados, porque o `randomUUIDv7` não existe no Node 25 nem no 26.0.x (só entra no 24.16.0 e no 26.1.0) e o `eslint-plugin-n` 18.5.0 passou a recusar a faixa aberta `>=24.18.1`, que admite essas versões (#311).
+- A `hexlog-flow` recebe projeto, processo e gate da skill do projeto, e deixa de ler o `.hexlog/flow.md` (#321).
+
+### Removido
+
+- O mapa por repositório (`.hexlog/flow.md`), o campo `editedSkills` e a edição de skills globais pelo `hexlog-setup` (#321).
+
+### Migração
+
+- O `INVALID_RECORD` de dado lista as violações de cada registro (todas até o limite de custo), e a `message` de limite de tamanho ganha o sufixo `(got N)`: quem comparava a `message` por igualdade passa a comparar o `code` (`max-length`, `min-length`, `maximum`, `minimum`), e o laço de correção pode tratar todos os `details` de uma vez, inclusive os de relação estática, que antes vinham sozinhos numa segunda rodada. As mensagens do `custom` de `data` (teto de 16.000 caracteres), de `kind` fora da lista e de relação sem `kind` nem `as` também mudaram: confira pelo `code`, não pelo texto (#300).
+- Um `.hexlog/flow.md` antigo é ignorado: rode o `hexlog-setup` no repositório para gerar a skill do projeto e o modelo (#321).
+
 ## [1.2.2] - 2026-10-24
 
 Aviso de versão: esta versão muda o formato padrão da `query` em `counts` (`inCounts` e `outCounts` deixam de contar a aresta não vigente) e, pela regra de [documentacao.md](docs/directives/documentacao.md), sairia como minor. Por decisão do dono saiu como patch, sem emendar a regra; a Migração abaixo diz como recuperar a soma antiga.
@@ -150,7 +180,8 @@ Esta versão quebra o contrato em três pontos e sai como minor: o formato padr�
 - Tools, erros e formato em disco mudam, e não há migração do dado: o instalador arquiva o dado 0.x num `.tar` verificado (`node scripts/install.ts --archive-0x`). Até lá, as tools respondem `LEGACY_DATA`.
 - Feche todas as sessões do Claude Code antes de instalar e reinicie depois.
 
-[Não lançado]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.2...HEAD
+[Não lançado]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/gabrielh-silvestre/hexlog/compare/v1.1.2...v1.2.0

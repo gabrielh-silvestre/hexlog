@@ -1,13 +1,13 @@
 // Instalação versionada do artefato: copia os bundles para
-// `~/.local/lib/hexlog/<versão>/`, registra o guard em `settings.json` e decide
-// se o MCP precisa ser (re)registrado. Puro e testável: toda execução externa
+// `~/.local/lib/hexlog/<versão>/`, registra o guard em `settings.json`.
+// Puro e testável: toda execução externa
 // (hook, servidor, relógio) é injetada — nada aqui chama `claude` nem builda.
 // Não é importado pelo servidor nem pelo hook, só por `scripts/install.ts`.
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 // import default (não `* as fs`): sob esModuleInterop, `* as` copia o módulo com getters
 // não configuráveis, o que impede `jest.spyOn(fs, 'renameSync')` de interceptar esta chamada
-// a partir do teste (mesmo motivo documentado no comentário do `import fs` de src/adapters/fs/process-store.ts).
+// a partir do teste (mesmo motivo de `docs/directives/convencoes.md`, seção "Import padrão de fs").
 import fs, { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 import { isError, isNil, isUndefined } from 'es-toolkit';
@@ -414,7 +414,7 @@ function registeredHookVersion(settingsData: unknown, home: string): string | un
   return isNil(found) ? undefined : path.basename(path.dirname(found.file));
 }
 
-/** `install.ts --check` (QN4): mesmo `verifyGuard` de I5-I7, mais o aviso de artefato desatualizado. */
+/** `install.ts --check`: mesmo `verifyGuard`, mais o aviso de artefato desatualizado. */
 export function verifyInstallation(args: {
   home: string;
   version: string;

@@ -5,5 +5,5 @@ export type LogRecord = {
   [field: string]: unknown;
 };
 
-/** D-22: o único tipo de logger da árvore nova; quem compõe decide para onde a linha vai. */
+/** D-22: o único tipo de logger; quem compõe decide para onde a linha vai. */
 export type Logger = (record: LogRecord) => void;

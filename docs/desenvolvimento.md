@@ -29,13 +29,13 @@ sobra estão em [qualidade-e-testes.md](directives/qualidade-e-testes.md).
 
 ## Scripts de leitura
 
-`scripts/insights.ts`, `scripts/export.ts` e `scripts/timeline.ts` são CLIs
+`scripts/insights.ts`, `scripts/export.ts`, `scripts/timeline.ts` e `scripts/seat-report.ts` são CLIs
 read-only, sem tool MCP correspondente: rodam direto com `node`, leem
 `XDG_DATA_HOME` como as tools, não recebem o caminho do diretório de dados na
 linha de comando e leem só por `src/compose.ts#composeReader`, o lado de leitura de
 `compose`, que verifica a cadeia na leitura e não tem serviço de escrita. Nunca
 importam `src/adapters/**` nem `src/mcp/**` e nunca escrevem no diretório de dados. A
-tabela de exit codes dos três está em `scripts/AGENTS.md`; a regra é uma só: `2` é dado
+tabela de exit codes dos quatro está em `scripts/AGENTS.md`; a regra é uma só: `2` é dado
 quebrado (dado 0.x em `<D>`, `PROCESS_CORRUPTED` com cadeia adulterada ou `process.json`
 ilegível, e anexo ausente ou adulterado em `timeline` e `insights`), `1` é o resto
 (uso incorreto, erro, filtro sem resultado) e `0` é íntegro. Argumento desconhecido,
@@ -59,7 +59,35 @@ memória (o teto de 64 MiB por processo limita o tamanho). Erro de uso (inclusiv
 `--fields` sem valor e flag desconhecida), processo inexistente e campo desconhecido
 saem com `export failed: ...` em `stderr` e código `1`. A saída não escapa controles de
 terminal (o `JSON.stringify` deixa C1 e bidi crus): é feita para pipe de máquina, e o
-`timeline` é o script que escapa.
+`timeline` e o `seat-report` escapam.
+
+## `scripts/seat-report.ts`
+
+Relatório de auditoria da cadeira do dono, o recurso opt-in que o `hexlog-setup` configura
+no repositório de destino ([adr-0014-cadeira-do-dono-como-pacote-de-dados.md](directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md)).
+Mostra o que o ocupante respondeu e o que o humano já auditou.
+
+```sh
+node scripts/seat-report.ts <project> [--process <name>] [--types gap=<t>,premise=<t>,audit=<t>]
+```
+
+Lê os registros vigentes dos três papéis (lacuna, resposta e aval) e imprime oito seções
+exclusivas, na ordem de precedência: respostas simuladas sem critério, lacunas abertas,
+respostas simuladas não auditadas, respostas auditadas, respostas humanas, respostas sem
+`answeredBy`, respostas com `answeredBy` não reconhecido (ex.: `simulated-approved`, que não conta
+como humano) e respostas a uma lacuna não vigente. Cada linha traz id, target, `author.agent`,
+`author.model`, `author.client`, a chave da regra citada, o hash curto do documento de critérios
+e a ação usada, e todo valor que o agente grava sai entre aspas. Sem `--process` lê o projeto
+inteiro; `--types` informa os nomes dos tipos quando o setup mapeou algum por colisão (o
+padrão é o nome do papel). A resposta sem critério sai do próprio registro (`basis`
+`judgment`, ou ausente ou desconhecido, ou `rule` sem chave, ou `rule` sem `criteria`): o script não lê anexo e não confere a
+regra citada contra o texto do documento. Aval é o `audit` com relação `supports` vigente
+para a resposta; o `audit` de retirada não conta. A saída escapa controles de terminal, mas
+traz campos que o ocupante grava (`rule`, `author.agent`, `author.model`): quem a repassa a um
+modelo ou a uma tela a cola em bloco de código. Códigos de saída: `0` íntegro, com os achados listados; `2` dado 0.x ou log quebrado; `1`
+uso incorreto, papel sem registro cujo tipo não existe no projeto (`INVALID_INPUT`) ou erro
+(`seat-report failed: CODE: msg`). O produto não exige o relatório: o
+servidor segue sem termo de fluxo, e quem não liga a cadeira não o usa.
 
 ## `scripts/timeline.ts`
 

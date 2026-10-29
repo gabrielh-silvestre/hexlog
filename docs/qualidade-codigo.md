@@ -30,7 +30,7 @@ fonte antes de adotar qualquer item.
 
 ## Agora
 
-> **Instalada em 2026-09-28** (branch `chore/code-quality-agora`). Desvios do
+> **Instalada em 2026-09-28.** Desvios do
 > plano: `--ci` ficou de fora (o repo não tem snapshots);
 > `consistent-type-definitions` padroniza em `type`; cobertura roda só via
 > `npm run test:coverage`, sem `coverageThreshold`; `jest/expect-expect`
@@ -51,7 +51,7 @@ Baixo custo, zero conta externa, todos tocam arquivos que o repo já tem
 | `noUncheckedIndexedAccess` + `noImplicitOverride` no tsconfig | ~20–40 min | Undefined explícito em acesso a índice; as classes do repo (`HexlogError`, `ArchiveError`) ficam protegidas contra override silencioso | [tsconfig noUncheckedIndexedAccess](https://www.typescriptlang.org/tsconfig/#noUncheckedIndexedAccess), [noImplicitOverride](https://www.typescriptlang.org/tsconfig/#noImplicitOverride) |
 | `tseslint.configs.stylisticTypeChecked` | ~15 min | Regras de estilo type-aware, maioria autofixável por `eslint --fix` | [typescript-eslint shared configs](https://typescript-eslint.io/users/configs/) |
 | `eslint-plugin-n` (`flat/recommended-module`) | ~15–20 min | Barra API deprecada/não suportada no piso de Node declarado em `engines` (`package.json`, `engines.node`) | [eslint-plugin-n README](https://github.com/eslint-community/eslint-plugin-n) |
-| `eslint-plugin-jest` (`flat/recommended`, escopado a `test/**`) | ~10 min | Pega `no-conditional-expect`, `no-disabled-tests`, `valid-expect` numa suíte com specs de até 1.646 linhas (`test/guard.spec.ts`) | [eslint-plugin-jest README](https://github.com/jest-community/eslint-plugin-jest) |
+| `eslint-plugin-jest` (`flat/recommended`, escopado a `test/**`) | ~10 min | Pega `no-conditional-expect`, `no-disabled-tests`, `valid-expect` numa suíte com specs grandes | [eslint-plugin-jest README](https://github.com/jest-community/eslint-plugin-jest) |
 | jest hardening (`test:coverage` e `--errorOnDeprecated`; `--ci` ficou de fora; o piso de 90 veio depois) | ~10 min | Visibilidade de cobertura sem travar PR; erro cedo em API deprecada | [jest configuration](https://jestjs.io/docs/configuration), [jest CLI](https://jestjs.io/docs/cli) |
 
 ### `noUncheckedIndexedAccess` + `noImplicitOverride`
@@ -144,6 +144,14 @@ O `typescript-checker` fica no padrão `prioritizePerformanceOverAccuracy: true`
 por tempo: o score absoluto é aproximado, e a comparação entre rodadas vale porque a
 config é a mesma. Mudar qualquer uma das três pede rodada-base nova.
 
+Limites da medição. O escopo são os 18 arquivos de `mutate`, e `mutate` e `testMatch` são
+mantidos à mão: arquivo novo no escopo entra nos dois. `hook/bash-guard.ts`, `src/guard.ts` e
+`src/installation.ts` ficam fora porque seus specs sobem processo filho ou o bundle
+([qualidade-e-testes.md](directives/qualidade-e-testes.md), seção "Bundle e processo filho", que
+nomeia só `bash-guard`, `stdio.e2e` e `guard`; `test/installation.spec.ts` também sobe os bundles e
+processos filhos reais), e a rodada só roda os specs unitários. `thresholds.break` fica no padrão `null`: a rodada é uma
+medição pontual e não reprova, e o piso de 80% por arquivo é conferido à mão no relatório.
+
 ## Depois
 
 Valor real, mas custo maior (triagem de regras, calibração, ou infra nova).
@@ -164,7 +172,7 @@ Linhas `Nunca` revalidadas em 2026-10-03 contra a árvore 1.0: os arquivos citad
 |---|---|---|
 | `exactOptionalPropertyTypes` | Atrito medido em 2026-10-04 na árvore 1.0 (`npx tsc --noEmit --exactOptionalPropertyTypes`): ligar a flag dá 20 erros de tipo em 13 arquivos, 9 deles nas tools MCP (`src/mcp/tools/`, campos opcionais Zod repassados aos serviços); o resto fica em `src/adapters/search.ts`, `src/archive.ts`, `src/commands/process.ts`, `src/domain/gate.ts`, `src/queries/query-service.ts`, `scripts/insights.ts` e em três specs (`test/`); `src/domain/chain.ts` (`hashLink`, `omit`) não quebra. Custo de migração maior que o valor no tamanho atual do projeto | [tsconfig exactOptionalPropertyTypes](https://www.typescriptlang.org/tsconfig/#exactOptionalPropertyTypes) |
 | `noPropertyAccessFromIndexSignature` | Ganho é só estilístico (obriga colchete em vez de ponto em index signature); único uso real hoje é `env.XDG_DATA_HOME` em `src/directory.ts` (`dataDir`) | [tsconfig noPropertyAccessFromIndexSignature](https://www.typescriptlang.org/tsconfig/#noPropertyAccessFromIndexSignature) |
-| Matriz de versões de Node no CI | `ci.yml` (`node-version`) fixa Node exatamente em `24.18.1` (`package.json` (`engines.node`) só declara o piso `>=24.18.1`); `src/node-types.d.ts` documenta que o código depende de uma API de `node:crypto` (`randomUUIDv7`) ainda não coberta por `@types/node` 24.8.1 — testar contra versão mais antiga falharia de propósito | — (evidência local, `src/node-types.d.ts`) |
+| Matriz de versões de Node no CI | `ci.yml` (`node-version`) fixa Node exatamente em `24.18.1` (`package.json` (`engines.node`) declara a faixa `^24.18.1`, que cobre só a série 24.x e deixa de fora o Node 25 e o 26); o `engines` (`^24.18.1`) fixa o piso e o teto; o código usa `randomUUIDv7` de `node:crypto` (disponível desde o Node 24.16.0, coberto pelo piso do `engines`) | [Node: crypto.randomUUIDv7](https://nodejs.org/docs/latest-v24.x/api/crypto.html) ("Added in: v24.16.0"); evidência local, `package.json` (`engines.node`) |
 | `type-coverage` | Mede % de código tipado vs. `any`, mas `strict: true` (`tsconfig.json` (`strict`)) + `recommendedTypeChecked` (`eslint.config.js`) já cobrem a mesma preocupação de forma mais acionável — erro no arquivo exato, não um número agregado num projeto pequeno | [type-coverage no npm](https://www.npmjs.com/package/type-coverage) |
 | `publint` / `arethetypeswrong` | Checam resolução de `exports`/tipos para quem instala via npm; hexlog é `"private": true` (`package.json` (`private`)) e nunca é publicado num registry — é instalado como bundle esbuild versionado em `~/.local/lib/hexlog/<versão>/` (`scripts/install.ts`). Irrelevante enquanto isso não mudar | — (evidência local, `package.json` (`private`), `scripts/install.ts`) |
 

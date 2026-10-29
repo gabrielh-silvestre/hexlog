@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "statement": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "answeredBy": { "type": "string", "enum": ["human", "simulated"] },
+    "actionUsed": { "type": "string", "enum": ["local", "web"] },
+    "basis": { "type": "string", "enum": ["rule", "judgment"] },
+    "rule": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "criteria": { "type": "string", "format": "attachment" }
+  },
+  "required": ["statement"],
+  "additionalProperties": false
+}

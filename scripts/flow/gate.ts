@@ -1,5 +1,6 @@
 // Confere os gates `pre-pr` e `gaps` de um trabalho: `node scripts/flow/gate.ts pre-pr <slug>`.
-// Sai 0 com os dois verdes e 1 listando as perguntas reprovadas. Lê o log só pelo `composeReader`
+// Sai 0 com os dois verdes, 1 listando as perguntas reprovadas e 2 com dado 0.x ou log quebrado
+// (`LEGACY_DATA`, `PROCESS_CORRUPTED`; `cli-error.ts#formatCliError`). Lê o log só pelo `composeReader`
 // (`scripts/cli-error.ts#openReadOnly`), nunca o diretório de dados; por isso precisa de
 // `node_modules`, ao contrário do hook `flow-hooks.ts`. O `mark.ts` chama `gateFailures`.
 // Uso do CLI: conferir os gates à mão antes do `mark.ts`, sem gravar o marcador; nenhuma skill o
@@ -17,7 +18,7 @@ export type GateFailure = { gate: string; kind: string; ids: string[] };
 
 /**
  * Perguntas reprovadas de `pre-pr` e `gaps`, com os ids que as explicam. Avalia o gate fixado no
- * processo `slug`, com `target` igual a `slug`, como o passo do `evaluate_gate` da skill `flow-run`.
+ * processo `slug`, com `target` igual a `slug` e `evidence: 'failing'`, pelo `evaluateGate` do serviço.
  */
 export function gateFailures(
   reader: ReturnType<typeof composeReader>,
@@ -68,5 +69,5 @@ function main(argv: string[]): number {
   }
 }
 
-// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine >=24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
+// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine ^24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
 if (import.meta.main) process.exitCode = main(process.argv.slice(2));

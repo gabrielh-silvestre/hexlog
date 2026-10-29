@@ -14,7 +14,7 @@ import { BATCH_MAX } from '../domain/record.ts';
 import { markerNotFound } from '../errors.ts';
 import type { ProcessReader, ProcessRef, RawProcess } from '../ports.ts';
 
-// Tetos de saída da verificação de cadeia, como no 0.x.
+// Tetos de saída da verificação de cadeia.
 export const MAX_BREAKS = 100;
 const MAX_REPAIRED = 100;
 
@@ -48,7 +48,7 @@ function after(link: Link): Expected {
 export type LineCheck =
   | { status: 'valid'; links: Link[]; next: Expected }
   | { status: 'torn' }
-  // `next` só existe quando todos os elos têm forma de `Link`: a cadeia segue dali, como em 0.x.
+  // `next` só existe quando todos os elos têm forma de `Link`: a cadeia segue dali.
   | { status: 'rejected'; reasons: LinkRejection[]; next?: Expected };
 
 function checkLinks(values: readonly unknown[], start: Expected): LineCheck {
@@ -76,7 +76,7 @@ function checkLinks(values: readonly unknown[], start: Expected): LineCheck {
 /**
  * D-05, o predicado único de leitura e escrita: `segment` parseia como `{ links }`, cada elo passa
  * por `isValidLink`, o primeiro ocupa `expected` e os seguintes continuam o hash e o `seq` do
- * anterior. O único `JSON.parse` da linha mora aqui (SL2).
+ * anterior. O único `JSON.parse` da linha mora aqui.
  */
 export function isValidLine(segment: string, expected: Expected): LineCheck {
   let value: unknown;
@@ -194,7 +194,7 @@ function indexBatches(lines: readonly ParsedLine[]): Map<string, BatchEntry> {
 }
 
 /**
- * Puro: `parseLog` uma vez sobre o log cru (SL2), e com `marker` corta no registro marcado
+ * Puro: `parseLog` uma vez sobre o log cru, e com `marker` corta no registro marcado
  * (`null` lê o processo como vazio; id ausente dá `MARKER_NOT_FOUND`). A cadeia devolvida só
  * conta o que fica antes do corte.
  */
@@ -256,7 +256,7 @@ export function checkExpectedHead(
   };
 }
 
-/** `verifyProcess` sobre a leitura crua de `store`: o único carregador de processo da árvore nova. */
+/** `verifyProcess` sobre a leitura crua de `store`: o único carregador de processo. */
 export function loadVerified(
   store: ProcessReader,
   ref: ProcessRef,

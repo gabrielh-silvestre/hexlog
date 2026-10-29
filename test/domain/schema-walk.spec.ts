@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import {
+  countNodes,
+  expandedSize,
   FREE_PATTERN_KEYWORDS,
   hasKeywordAt,
   walkSubschemas,
@@ -14,9 +16,9 @@ function pointersOf(schema: unknown): string[] {
 }
 
 describe('walkSubschemas', () => {
-  it('should visit the subschema keywords with an RFC 6901 pointer', () => {
+  it('should visit the single subschemas, then the lists, then the maps, nested ones in place', () => {
     const schema = {
-      properties: { 'a/b': { items: { type: 'string' } }, 'c~d': {} },
+      properties: { a: { items: { type: 'string' } }, b: {} },
       allOf: [{}, { not: {} }],
       $defs: { x: {} },
       propertyNames: {},
@@ -28,11 +30,17 @@ describe('walkSubschemas', () => {
       '/allOf/0',
       '/allOf/1',
       '/allOf/1/not',
-      '/properties/a~1b',
-      '/properties/a~1b/items',
-      '/properties/c~0d',
+      '/properties/a',
+      '/properties/a/items',
+      '/properties/b',
       '/$defs/x',
     ]);
+  });
+
+  it('should escape ~ and / in the RFC 6901 pointer', () => {
+    const schema = { properties: { 'a/b': {}, 'c~d': {} } };
+
+    expect(pointersOf(schema)).toEqual(['', '/properties/a~1b', '/properties/c~0d']);
   });
 
   it.each([
@@ -75,22 +83,6 @@ describe('walkSubschemas', () => {
     expect(pointersOf(schema)).toEqual(['', `/${keyword}/a`, `/${keyword}/b`]);
   });
 
-  it('should descend into the patternProperties values', () => {
-    const schema = { patternProperties: { '^a': { items: {} } } };
-
-    expect(pointersOf(schema)).toEqual([
-      '',
-      '/patternProperties/^a',
-      '/patternProperties/^a/items',
-    ]);
-  });
-
-  it('should descend into contentSchema', () => {
-    const schema = { type: 'string', contentSchema: { type: 'string', pattern: '^a+$' } };
-
-    expect(pointersOf(schema)).toEqual(['', '/contentSchema']);
-  });
-
   it('should ignore a dependencies value that is an array', () => {
     const schema = { dependencies: { a: ['b'], c: { required: ['d'] } } };
 
@@ -131,7 +123,7 @@ describe('FREE_PATTERN_KEYWORDS', () => {
 });
 
 describe('withoutFreePatterns', () => {
-  it('should remove pattern and patternProperties from each subschema without descending into what it removed', () => {
+  it('should remove the free patterns from each subschema without descending into what it removed', () => {
     const schema: RecordType = {
       type: 'object',
       properties: {
@@ -202,21 +194,120 @@ describe('hasKeywordAt', () => {
     nothing: null,
   };
 
+  it.each(['', '/properties/a~1b~0c', '/examples/0'])(
+    'should resolve %j and find pattern',
+    (location) => {
+      expect(hasKeywordAt(schema, location, 'pattern')).toBe(true);
+    },
+  );
+
   it.each([
-    ['', 'pattern'],
-    ['/properties/a~1b~0c', 'pattern'],
-    ['/examples/0', 'pattern'],
-  ])('should resolve %j and find %s', (location, keyword) => {
-    expect(hasKeywordAt(schema, location, keyword)).toBe(true);
+    ['a missing pointer', '/properties/ghost'],
+    ['a pointer with an index out of the array', '/examples/1'],
+    ['a keyword absent from the object', '/properties'],
+    ['a target that is not an object', '/examples/0/pattern'],
+    ['a pointer that goes through null', '/nothing/pattern'],
+  ])('should return false for %s', (_label, location) => {
+    expect(hasKeywordAt(schema, location, 'pattern')).toBe(false);
+  });
+});
+
+const doubling = (levels: number): RecordType => {
+  const defs: RecordType = { [`d${levels}`]: { type: 'string' } };
+  for (let i = 0; i < levels; i++) {
+    defs[`d${i}`] = { allOf: [{ $ref: `#/$defs/d${i + 1}` }, { $ref: `#/$defs/d${i + 1}` }] };
+  }
+  return { $defs: defs, properties: { x: { $ref: '#/$defs/d0' } } };
+};
+
+describe('expandedSize', () => {
+  it.each<[string, unknown, number]>([
+    ['a schema that is not an object', true, 0],
+    ['a leaf schema', { type: 'string' }, 1],
+    ['the properties of an object', { properties: { a: {}, b: {} } }, 3],
+    ['the branches of an allOf', { allOf: [{}, {}] }, 3],
+    [
+      'a $ref by the size of its target',
+      { $defs: { a: {} }, properties: { x: { $ref: '#/$defs/a' } } },
+      3,
+    ],
+    ['a $defs entry that nothing cites as zero', { $defs: { a: { allOf: [{}, {}] } } }, 1],
+  ])('should count %s', (_label, schema, expected) => {
+    expect(expandedSize(schema)).toBe(expected);
+  });
+
+  it('should count a $ref cited twice twice', () => {
+    const schema = { $defs: { a: {} }, allOf: [{ $ref: '#/$defs/a' }, { $ref: '#/$defs/a' }] };
+
+    expect(expandedSize(schema)).toBe(1 + 2 * (1 + 1));
   });
 
   it.each([
-    ['a missing pointer', '/properties/ghost', 'pattern'],
-    ['a pointer with an index out of the array', '/examples/1', 'pattern'],
-    ['a keyword absent from the object', '/properties', 'pattern'],
-    ['a target that is not an object', '/examples/0/pattern', 'pattern'],
-    ['a pointer that goes through null', '/nothing/pattern', 'pattern'],
-  ])('should return false for %s', (_label, location, keyword) => {
-    expect(hasKeywordAt(schema, location, keyword)).toBe(false);
+    ['a percent-encoded space', '$defs', 'a b', '#/$defs/a%20b'],
+    ['an escaped slash', '$defs', 'a/b', '#/$defs/a~1b'],
+    ['an escaped tilde', '$defs', 'a~b', '#/$defs/a~0b'],
+    ['the definitions container', 'definitions', 'a', '#/definitions/a'],
+  ])('should resolve the target of a $ref with %s', (_label, container, key, ref) => {
+    const target = { allOf: [{}, {}, {}] };
+    const schema = { [container]: { [key]: target }, properties: { x: { $ref: ref } } };
+    const plain = { $defs: { a: target }, properties: { x: { $ref: '#/$defs/a' } } };
+
+    expect(expandedSize(schema)).toBe(expandedSize(plain));
+  });
+
+  it('should measure references that double at each level in linear time', () => {
+    expect(expandedSize(doubling(40))).toBeGreaterThan(2 ** 40);
+  });
+
+  it('should saturate instead of growing without bound', () => {
+    expect(expandedSize(doubling(80))).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it.each([
+    ['a $ref that is not a local pointer', { $ref: 'https://example.com/other' }],
+    ['a $dynamicRef', { $dynamicRef: '#meta' }],
+    [
+      'a $ref that points back to itself',
+      { $defs: { a: { $ref: '#/$defs/a' } }, $ref: '#/$defs/a' },
+    ],
+    [
+      'a nested $id',
+      {
+        properties: {
+          x: {
+            $id: 'http://x.test/n.json',
+            $defs: { a: { type: 'string' } },
+            allOf: [{ $ref: '#/$defs/a' }],
+          },
+        },
+      },
+    ],
+  ])('should assume the worst for %s', (_label, schema) => {
+    expect(expandedSize(schema)).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it('should keep measuring a schema whose $id is on the root', () => {
+    const schema = {
+      $id: 'http://x.test/root.json',
+      $defs: { a: {} },
+      properties: { x: { $ref: '#/$defs/a' } },
+    };
+
+    expect(expandedSize(schema)).toBe(3);
+  });
+});
+
+describe('countNodes', () => {
+  it('should count every object, array and scalar of the value', () => {
+    expect(countNodes({ a: [1, 2], b: 'x' }, 100)).toBe(5);
+  });
+
+  it('should stop counting once the limit is passed', () => {
+    expect(
+      countNodes(
+        Array.from({ length: 1_000 }, () => 1),
+        10,
+      ),
+    ).toBe(11);
   });
 });

@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "source": { "type": "string", "format": "attachment" }
+  },
+  "required": ["summary", "source"],
+  "additionalProperties": false
+}

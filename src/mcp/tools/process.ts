@@ -50,7 +50,8 @@ const REGISTER_DESCRIPTION =
   'names), data (validated by the type schema, at most 16000 canonical characters), an optional alias ' +
   'and optional relations. A relation points at an existing record id or at "@alias" of an earlier ' +
   'item in the same batch, and carries kind (supersedes, revokes, supports, contradicts, answers, ' +
-  'derivesFrom, complements, reopens), as (a relation name pinned in the process) or both. supersedes and revokes only reach records of ' +
+  'derivesFrom, complements, reopens), as (a relation name pinned in the process) or both. as alone is enough; ' +
+  'kind must equal the pinned one (else kind-mismatch). supersedes and revokes only reach records of ' +
   'the same process and need a current target (else FORK_REJECTED); supersedes also needs the same ' +
   'type and target, else INVALID_RECORD (target-mismatch); to move a fact to another target, register ' +
   'one record there with revokes and derivesFrom to the old one; supports needs a current target. An attachment hash is accepted only in a field declared ' +
@@ -58,11 +59,13 @@ const REGISTER_DESCRIPTION =
   'records as stored with replayed=true and the current head as marker; with a different batch it ' +
   'fails with IDEMPOTENCY_CONFLICT. After ' +
   'IO_ERROR the outcome is uncertain: resend with the same key. Returns the ids in input order and ' +
-  'the marker (head of the process) to read from afterwards. A marker covers exactly the processes ' +
-  'it names; in project scope, any process it does not name is read as empty. Before registering data ' +
-  'of a type you do not know, read its schema with describe_type; INVALID_RECORD reports the first ' +
-  'schema violation of each record. Before supersedes or revokes, read the current id with query (a ' +
-  'wrong id of the same type, target and process that is still current is accepted and forks the lineage).';
+  'the marker (head of the process) to read from afterwards. A marker covers only the processes it ' +
+  'names. Before registering data ' +
+  'of a type you do not know, read its schema with describe_type; INVALID_RECORD reports every ' +
+  'schema violation of each record (at most 50, with the measured size of an exceeded limit), but ' +
+  'a very costly schema ends the list with a violations-capped detail pointing to describe_type. ' +
+  'Before supersedes or revokes, read the current id with query (a wrong current id of the same ' +
+  'type and target is accepted and forks the lineage).';
 
 /** `create_process` e `register`: cada uma só repassa a entrada validada ao serviço de processo. */
 export function registerProcessTools(server: McpServer, deps: ToolDeps): void {

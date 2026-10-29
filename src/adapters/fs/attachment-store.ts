@@ -172,7 +172,7 @@ function readFileWithin(options: AttachmentStoreOptions, candidate: string): Buf
     if (stat.size > ATTACHMENT_MAX_BYTES) throw tooBigFile(ATTACHMENT_MAX_BYTES);
 
     const bytes = readBounded(fd, stat.size);
-    if (bytes.length > stat.size) throw tooBigFile(ATTACHMENT_MAX_BYTES, true);
+    if (bytes.length > stat.size) throw tooBigFile();
     return bytes;
   } finally {
     fs.closeSync(fd);
@@ -183,7 +183,7 @@ function readFileWithin(options: AttachmentStoreOptions, candidate: string): Buf
  * `AttachmentStore` sobre `<D>/.v1/<projeto>/attachments/<sha256>` (D-02): blob imutável, endereçado
  * pelo sha256 dos bytes UTF-8, publicado por `link` exclusivo e nunca sobrescrito. Só recusa o que
  * depende de disco ou de caminho; texto vazio e surrogate solto em `putText` são regras puras do
- * serviço `commands/attachment.ts` (F4), conferidas antes de qualquer I/O (D-15).
+ * serviço `commands/attachment.ts`, conferidas antes de qualquer I/O (D-15).
  */
 export function createAttachmentStore(options: AttachmentStoreOptions): AttachmentStore {
   const verified = new Map<string, string>();

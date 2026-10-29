@@ -25,6 +25,9 @@ const TREE: Record<string, string> = {
   'beta/main/process.json': '{"project":"beta"}\n',
 };
 
+/** Os casos que sobem processo filho (`spawnLegacyServer`, `deadPid`) rodam mais devagar sob carga. */
+const SPAWN_TIMEOUT_MS = 15_000;
+
 let dataDir: string;
 let libDir: string;
 let options: ArchiveOptions;
@@ -75,6 +78,22 @@ function archivedResult(): Extract<ArchiveResult, { archived: true }> {
   return result;
 }
 
+/** `archiveLegacy` que tem de lançar: devolve a mensagem do erro e `<D>` antes e depois da chamada. */
+function refusal(opts: ArchiveOptions = options): {
+  message: string | undefined;
+  before: Record<string, string | null>;
+  after: Record<string, string | null>;
+} {
+  const before = snapshot(dataDir);
+  let message: string | undefined;
+  try {
+    archiveLegacy(dataDir, opts);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  return { message, before, after: snapshot(dataDir) };
+}
+
 /** Planta `<D>/archive/<name>` com o formato de `tar` que o arquivador gera, variando o que ele contém. */
 function plantTar(kind: 'complete' | 'other-sha' | 'partial' | 'garbage', name: string): void {
   const archiveDir = path.join(dataDir, 'archive');
@@ -109,15 +128,30 @@ function packages(): string[] {
   return fs.readdirSync(path.join(dataDir, 'archive')).sort();
 }
 
-/** Troca `fs[method]` por um spy: `hook` recebe os argumentos de cada chamada e `real()`, que roda a original. */
-function spyOnce<
+/** Troca `fs[method]` por um spy: `hook` recebe os argumentos de cada chamada e `real()`, que roda a original. Devolve o restore. */
+function spyOnFs<
   K extends 'renameSync' | 'unlinkSync' | 'readdirSync' | 'fsyncSync' | 'readFileSync',
->(method: K, hook: (args: unknown[], real: () => unknown) => unknown): void {
+>(method: K, hook: (args: unknown[], real: () => unknown) => unknown): () => void {
   const original = fs[method] as (...args: unknown[]) => unknown;
-  jest
+  const spy = jest
     .spyOn(fs, method)
     .mockImplementation(((...args: unknown[]) =>
       hook(args, () => original.apply(fs, args))) as never);
+  return () => spy.mockRestore();
+}
+
+/** Deixa a remoção do `<D>` no meio: roda `interrupt` depois do `nth`-ésimo `unlinkSync` real. Devolve o restore. */
+function interruptRemoval(nth: number, interrupt: () => void): () => void {
+  let unlinks = 0;
+  return spyOnFs('unlinkSync', (args, real) => {
+    const result = real();
+    if (++unlinks === nth) interrupt();
+    return result;
+  });
+}
+
+function crashDuringRemoval(): never {
+  throw new Error('crash during removal');
 }
 
 describe('inspectLegacy', () => {
@@ -183,7 +217,7 @@ describe('archiveLegacy', () => {
     for (const child of children.splice(0)) child.kill('SIGKILL');
   });
 
-  it('should generate the .tar, check the sha256 and only then delete', () => {
+  it('should report the .tar path and the counts of files and directories', () => {
     plant();
     const inventory = inspectLegacy(dataDir);
 
@@ -195,8 +229,15 @@ describe('archiveLegacy', () => {
       files: Object.keys(TREE).length,
       dirs: inventory.dirs.length,
     });
+    expect(packages()).toEqual(['hexlog-0x-20261003T120000Z.tar']);
+  });
 
+  it('should package every file with the sha256 listed before the archiving', () => {
+    plant();
+    const inventory = inspectLegacy(dataDir);
+    const result = archivedResult();
     const packaged: Record<string, string> = {};
+
     tar.list({
       file: result.tarPath!,
       sync: true,
@@ -212,8 +253,21 @@ describe('archiveLegacy', () => {
     expect(packaged).toEqual(
       Object.fromEntries(inventory.files.map((file) => [file.path, file.sha256])),
     );
+  });
+
+  it('should leave no 0.x data in <D> after packaging', () => {
+    plant();
+
+    archivedResult();
+
     expect(detectLegacy(dataDir)).toEqual([]);
-    expect(packages()).toEqual(['hexlog-0x-20261003T120000Z.tar']);
+  });
+
+  it('should create the .tar with mode 0600 and archive/ with mode 0700', () => {
+    plant();
+
+    const result = archivedResult();
+
     expect(fs.statSync(result.tarPath!).mode & 0o777).toBe(0o600);
     expect(fs.statSync(path.dirname(result.tarPath!)).mode & 0o777).toBe(0o700);
   });
@@ -253,7 +307,7 @@ describe('archiveLegacy', () => {
     plant();
     const before = snapshot(dataDir);
     const archiveDir = path.join(dataDir, 'archive');
-    spyOnce('fsyncSync', (args, real) => {
+    const restore = spyOnFs('fsyncSync', (args, real) => {
       const partial = fs.readdirSync(archiveDir).find((name) => name.endsWith('.partial'));
       if (partial !== undefined) {
         const fd = fs.openSync(path.join(archiveDir, partial), 'r+');
@@ -265,7 +319,7 @@ describe('archiveLegacy', () => {
 
     expect(() => archiveLegacy(dataDir, options)).toThrow(/does not match the listed files/);
 
-    jest.restoreAllMocks();
+    restore();
 
     expect(packages()).toEqual([]);
     expect(withoutArchive(snapshot(dataDir))).toEqual(withoutArchive(before));
@@ -273,7 +327,7 @@ describe('archiveLegacy', () => {
 
   it('should abort keeping the .tar when a file changes between the listing and the removal', () => {
     plant();
-    spyOnce('renameSync', (args, real) => {
+    const restore = spyOnFs('renameSync', (args, real) => {
       if (String(args[0]).endsWith('.partial')) {
         fs.appendFileSync(path.join(dataDir, 'alpha/main/events.jsonl'), '{"seq":3}\n');
       }
@@ -282,7 +336,7 @@ describe('archiveLegacy', () => {
 
     expect(() => archiveLegacy(dataDir, options)).toThrow(/changed while archiving/);
 
-    jest.restoreAllMocks();
+    restore();
 
     expect(packages()).toEqual(['hexlog-0x-20261003T120000Z.tar']);
     expect(fs.readFileSync(path.join(dataDir, 'alpha/main/events.jsonl'), 'utf8')).toContain(
@@ -293,7 +347,7 @@ describe('archiveLegacy', () => {
 
   it('should abort and never delete a file created before the removal', () => {
     plant();
-    spyOnce('renameSync', (args, real) => {
+    const restore = spyOnFs('renameSync', (args, real) => {
       if (String(args[0]).endsWith('.partial')) {
         fs.writeFileSync(path.join(dataDir, 'beta/main/late.json'), 'late');
       }
@@ -302,7 +356,7 @@ describe('archiveLegacy', () => {
 
     expect(() => archiveLegacy(dataDir, options)).toThrow(ArchiveError);
 
-    jest.restoreAllMocks();
+    restore();
 
     expect(fs.readFileSync(path.join(dataDir, 'beta/main/late.json'), 'utf8')).toBe('late');
     expect(fs.existsSync(path.join(dataDir, 'alpha/main/process.json'))).toBe(true);
@@ -310,15 +364,13 @@ describe('archiveLegacy', () => {
 
   it('should never delete a file that appears during the removal', () => {
     plant();
-    let unlinks = 0;
-    spyOnce('unlinkSync', (args, real) => {
-      real();
-      if (++unlinks === 1) fs.writeFileSync(path.join(dataDir, 'alpha', 'appeared.txt'), 'new');
-    });
+    const restore = interruptRemoval(1, () =>
+      fs.writeFileSync(path.join(dataDir, 'alpha', 'appeared.txt'), 'new'),
+    );
 
     expect(() => archiveLegacy(dataDir, options)).toThrow(/did not empty.*alpha/);
 
-    jest.restoreAllMocks();
+    restore();
 
     expect(fs.readFileSync(path.join(dataDir, 'alpha', 'appeared.txt'), 'utf8')).toBe('new');
     expect(packages()).toHaveLength(1);
@@ -326,18 +378,13 @@ describe('archiveLegacy', () => {
 
   it('should archive what was left on the next run after a file appears during the removal', () => {
     plant();
-    let unlinks = 0;
-    spyOnce('unlinkSync', (args, real) => {
-      real();
-      if (++unlinks === 1) fs.writeFileSync(path.join(dataDir, 'alpha', 'appeared.txt'), 'new');
-    });
+    const restore = interruptRemoval(1, () =>
+      fs.writeFileSync(path.join(dataDir, 'alpha', 'appeared.txt'), 'new'),
+    );
 
-    try {
-      archiveLegacy(dataDir, options);
-    } catch {
-      // a 1ª execução termina interrompida pelo arquivo novo; é o estado que o caso prepara
-    }
-    jest.restoreAllMocks();
+    expect(() => archiveLegacy(dataDir, options)).toThrow();
+
+    restore();
 
     const result = archiveLegacy(dataDir, options);
 
@@ -347,15 +394,11 @@ describe('archiveLegacy', () => {
 
   it('should reuse the .tar and go through the re-hash when resuming after a partial removal', () => {
     plant();
-    let unlinks = 0;
-    spyOnce('unlinkSync', (args, real) => {
-      if (++unlinks > 2) throw new Error('crash during removal');
-      return real();
-    });
+    const restore = interruptRemoval(2, crashDuringRemoval);
 
     expect(() => archiveLegacy(dataDir, options)).toThrow('crash during removal');
 
-    jest.restoreAllMocks();
+    restore();
     const [original] = packages();
 
     const resumed = archivedResult();
@@ -366,7 +409,7 @@ describe('archiveLegacy', () => {
     expect(detectLegacy(dataDir)).toEqual([]);
   });
 
-  describe('when an old .tar does not cover the files', () => {
+  describe('with an old .tar in archive/', () => {
     const OLD_TAR = 'hexlog-0x-29990101T000000Z.tar';
 
     it.each(['other-sha', 'partial', 'garbage'] as const)(
@@ -384,22 +427,30 @@ describe('archiveLegacy', () => {
         expect(detectLegacy(dataDir)).toEqual([]);
       },
     );
+
+    it('should reuse the newest valid .tar and leave the others alone when resuming', () => {
+      plant();
+      plantTar('complete', 'hexlog-0x-20200101T000000Z.tar');
+      plantTar('complete', OLD_TAR);
+
+      const result = archivedResult();
+
+      expect(result.tarPath).toBe(path.join(dataDir, 'archive', OLD_TAR));
+      expect(packages()).toHaveLength(2);
+      expect(detectLegacy(dataDir)).toEqual([]);
+    });
   });
 
   it('should check the originals again and abort if one changed when resuming', () => {
     plant();
-    let unlinks = 0;
-    spyOnce('unlinkSync', (args, real) => {
-      if (++unlinks > 2) throw new Error('crash during removal');
-      return real();
-    });
+    const restoreCrash = interruptRemoval(2, crashDuringRemoval);
 
     expect(() => archiveLegacy(dataDir, options)).toThrow('crash during removal');
 
-    jest.restoreAllMocks();
+    restoreCrash();
     const archiveDir = path.join(dataDir, 'archive');
     const remaining = inspectLegacy(dataDir).files[0]!.path;
-    spyOnce('readdirSync', (args, real) => {
+    const restore = spyOnFs('readdirSync', (args, real) => {
       const result = real();
       if (args[0] === archiveDir) fs.appendFileSync(path.join(dataDir, remaining), 'changed');
       return result;
@@ -407,7 +458,7 @@ describe('archiveLegacy', () => {
 
     expect(() => archiveLegacy(dataDir, options)).toThrow(/changed while archiving/);
 
-    jest.restoreAllMocks();
+    restore();
 
     expect(fs.readFileSync(path.join(dataDir, remaining), 'utf8')).toContain('changed');
   });
@@ -438,18 +489,6 @@ describe('archiveLegacy', () => {
     expect(result).toEqual({ archived: false, files: 0 });
   });
 
-  it('should reuse the newest valid .tar and leave the others alone when resuming', () => {
-    plant();
-    plantTar('complete', 'hexlog-0x-20200101T000000Z.tar');
-    plantTar('complete', 'hexlog-0x-29990101T000000Z.tar');
-
-    const result = archivedResult();
-
-    expect(result.tarPath).toBe(path.join(dataDir, 'archive', 'hexlog-0x-29990101T000000Z.tar'));
-    expect(packages()).toHaveLength(2);
-    expect(detectLegacy(dataDir)).toEqual([]);
-  });
-
   it('should put a 0-byte file in the .tar and remove it from <D>', () => {
     plant({ 'alpha/main/events.jsonl': '' });
 
@@ -471,15 +510,13 @@ describe('archiveLegacy', () => {
     plant();
     const calls: string[] = [];
     for (const method of ['renameSync', 'fsyncSync', 'unlinkSync'] as const) {
-      spyOnce(method, (args, real) => {
+      spyOnFs(method, (args, real) => {
         calls.push(method);
         return real();
       });
     }
 
     archiveLegacy(dataDir, options);
-
-    jest.restoreAllMocks();
 
     expect(calls.slice(calls.indexOf('renameSync'), calls.indexOf('unlinkSync'))).toEqual([
       'renameSync',
@@ -493,20 +530,18 @@ describe('archiveLegacy', () => {
       path.join(dataDir, 'alpha/main/events.jsonl'),
       path.join(dataDir, 'alpha/main/events.link'),
     );
-    const before = snapshot(dataDir);
 
-    expect(() => archiveLegacy(dataDir, options)).toThrow(
-      /hard link\): alpha\/main\/events\.jsonl/,
-    );
+    const { message, before, after } = refusal();
 
-    expect(snapshot(dataDir)).toEqual(before);
+    expect(message).toMatch(/hard link\): alpha\/main\/events\.jsonl/);
+    expect(after).toEqual(before);
   });
 
   it('should abort citing the path and keep the .tar when a file vanishes between the listing and the re-read', () => {
     plant();
     const events = path.join(dataDir, 'alpha/main/events.jsonl');
     let reads = 0;
-    spyOnce('readFileSync', (args, real) => {
+    const restore = spyOnFs('readFileSync', (args, real) => {
       if (args[0] === events && ++reads === 2) {
         throw Object.assign(new Error('ENOENT: no such file or directory'), {
           code: 'ENOENT',
@@ -520,7 +555,7 @@ describe('archiveLegacy', () => {
       /vanished while archiving: .*events\.jsonl; rerun to resume/,
     );
 
-    jest.restoreAllMocks();
+    restore();
 
     expect(packages()).toHaveLength(1);
     expect(inspectLegacy(dataDir).files).toHaveLength(Object.keys(TREE).length);
@@ -529,19 +564,15 @@ describe('archiveLegacy', () => {
   it('should abort citing the errno and delete nothing when archive is a regular file', () => {
     plant();
     fs.writeFileSync(path.join(dataDir, 'archive'), 'not a dir');
-    const before = snapshot(dataDir);
 
-    expect(() => archiveLegacy(dataDir, options)).toThrow(
-      /0\.x archiving failed \(ENOTDIR\): .*archive/,
-    );
+    const { message, before, after } = refusal();
 
-    expect(snapshot(dataDir)).toEqual(before);
+    expect(message).toMatch(/0\.x archiving failed \(ENOTDIR\): .*archive/);
+    expect(after).toEqual(before);
   });
 
   it('should delete an old .partial', () => {
     plant();
-    fs.mkdirSync(path.join(dataDir, '.v1', 'alpha'), { recursive: true });
-    fs.writeFileSync(path.join(dataDir, '.v1', 'alpha', 'records.jsonl'), 'v1 data');
     fs.mkdirSync(path.join(dataDir, 'archive'));
     fs.writeFileSync(
       path.join(dataDir, 'archive', 'hexlog-0x-20200101T000000Z.tar.partial'),
@@ -557,11 +588,6 @@ describe('archiveLegacy', () => {
     plant();
     fs.mkdirSync(path.join(dataDir, '.v1', 'alpha'), { recursive: true });
     fs.writeFileSync(path.join(dataDir, '.v1', 'alpha', 'records.jsonl'), 'v1 data');
-    fs.mkdirSync(path.join(dataDir, 'archive'));
-    fs.writeFileSync(
-      path.join(dataDir, 'archive', 'hexlog-0x-20200101T000000Z.tar.partial'),
-      'junk',
-    );
 
     archiveLegacy(dataDir, options);
 
@@ -574,95 +600,103 @@ describe('archiveLegacy', () => {
     it('should abort without deleting when the lock pid is a running process', () => {
       plant();
       plantLock('alpha', `${process.pid}-deadbeef`);
-      const before = snapshot(dataDir);
 
-      expect(() => archiveLegacy(dataDir, options)).toThrow(
+      const { message, before, after } = refusal();
+
+      expect(message).toMatch(
         /lock is held by a live process.*pid was reused: remove .*events\.jsonl\.lock by hand/,
       );
-
-      expect(snapshot(dataDir)).toEqual(before);
+      expect(after).toEqual(before);
     });
 
-    it('should abort without deleting when the lock holder is unreadable', () => {
-      plant();
-      plantLock('alpha', 'not-a-token');
+    it.each([
+      ['a holder that is not a token', 'not-a-token'],
+      ['a pid outside int32', '99999999999-deadbeef'],
+    ])(
+      'should abort without deleting, as an unreadable holder, when the lock has %s',
+      (_name, holder) => {
+        plant();
+        plantLock('alpha', holder);
 
-      expect(() => archiveLegacy(dataDir, options)).toThrow(
-        /unreadable holder.*remove .*events\.jsonl\.lock by hand/,
-      );
-      expect(fs.existsSync(path.join(dataDir, 'alpha/main/process.json'))).toBe(true);
-    });
+        const { message, before, after } = refusal();
 
-    it('should abort as an unreadable holder, not as a live process, when the lock pid is outside int32', () => {
-      plant();
-      plantLock('alpha', '99999999999-deadbeef');
+        expect(message).toMatch(/unreadable holder.*remove .*events\.jsonl\.lock by hand/);
+        expect(after).toEqual(before);
+      },
+    );
 
-      expect(() => archiveLegacy(dataDir, options)).toThrow(/unreadable holder/);
-      expect(fs.existsSync(path.join(dataDir, 'alpha/main/process.json'))).toBe(true);
-    });
+    it.each([
+      ['an empty holder file', () => ''],
+      ['a pid that already exited', () => `${deadPid()}-deadbeef`],
+    ])(
+      'should not block the archiving when the lock has %s',
+      (_name, holder) => {
+        plant();
+        plantLock('alpha', holder());
 
-    it('should not block the archiving when the lock holder has 0 bytes, counting it as dead', () => {
-      plant();
-      plantLock('alpha', '');
+        const result = archiveLegacy(dataDir, options);
 
-      const result = archiveLegacy(dataDir, options);
+        expect(result).toMatchObject({ archived: true });
+        expect(detectLegacy(dataDir)).toEqual([]);
+      },
+      SPAWN_TIMEOUT_MS,
+    );
 
-      expect(result).toMatchObject({ archived: true });
-      expect(detectLegacy(dataDir)).toEqual([]);
-    });
+    it(
+      'should abort at the second check when a live lock appears while the package is generated',
+      () => {
+        plant();
+        plantLock('alpha', `${deadPid()}-deadbeef`);
+        // Plantar o holder no meio mudaria a lista e abortaria antes; o que muda é o pid passar a estar vivo.
+        let packaged = false;
+        const realKill = process.kill.bind(process);
+        jest
+          .spyOn(process, 'kill')
+          .mockImplementation((pid: number, signal?: string | number) =>
+            packaged ? true : realKill(pid, signal),
+          );
+        const restore = spyOnFs('renameSync', (args, real) => {
+          if (String(args[0]).endsWith('.partial')) packaged = true;
+          return real();
+        });
 
-    it('should not block the archiving when the lock pid already exited', () => {
-      plant();
-      plantLock('alpha', `${deadPid()}-deadbeef`);
+        expect(() => archiveLegacy(dataDir, options)).toThrow(/lock is held by a live process/);
 
-      const result = archiveLegacy(dataDir, options);
+        restore();
 
-      expect(result).toMatchObject({ archived: true });
-      expect(detectLegacy(dataDir)).toEqual([]);
-    });
-
-    it('should abort at the second check when a live lock appears while the package is generated', () => {
-      plant();
-      plantLock('alpha', `${deadPid()}-deadbeef`);
-      // Plantar o holder no meio mudaria a lista e abortaria antes; o que muda é o pid passar a estar vivo.
-      let packaged = false;
-      const realKill = process.kill.bind(process);
-      jest
-        .spyOn(process, 'kill')
-        .mockImplementation((pid: number, signal?: string | number) =>
-          packaged ? true : realKill(pid, signal),
-        );
-      spyOnce('renameSync', (args, real) => {
-        if (String(args[0]).endsWith('.partial')) packaged = true;
-        return real();
-      });
-
-      expect(() => archiveLegacy(dataDir, options)).toThrow(/lock is held by a live process/);
-
-      jest.restoreAllMocks();
-
-      expect(packages()).toHaveLength(1);
-      expect(inspectLegacy(dataDir).files).toHaveLength(Object.keys(TREE).length + 1);
-    });
+        expect(packages()).toHaveLength(1);
+        // + o `holder` do lock, que também é um arquivo do dado 0.x
+        expect(inspectLegacy(dataDir).files).toHaveLength(Object.keys(TREE).length + 1);
+      },
+      SPAWN_TIMEOUT_MS,
+    );
   });
 
   describe('with a 0.x server', () => {
-    it('should abort without deleting when a live process runs <libDir>/0.4.0/server.mjs', () => {
-      plant();
-      const child = spawnLegacyServer();
-      const before = snapshot(dataDir);
+    it(
+      'should abort without deleting when a live process runs <libDir>/0.4.0/server.mjs',
+      () => {
+        plant();
+        const child = spawnLegacyServer();
 
-      expect(() => archiveLegacy(dataDir, options)).toThrow(`pid ${child.pid}`);
+        const { message, before, after } = refusal();
 
-      expect(snapshot(dataDir)).toEqual(before);
-    });
+        expect(message).toContain(`pid ${child.pid}`);
+        expect(after).toEqual(before);
+      },
+      SPAWN_TIMEOUT_MS,
+    );
 
-    it('should not block the archiving with a live server of another libDir', () => {
-      plant();
-      spawnLegacyServer(path.join(createTempDir('archive-other-lib'), '0.4.0', 'server.mjs'));
+    it(
+      'should not block the archiving with a live server of another libDir',
+      () => {
+        plant();
+        spawnLegacyServer(path.join(createTempDir('archive-other-lib'), '0.4.0', 'server.mjs'));
 
-      expect(archiveLegacy(dataDir, options)).toMatchObject({ archived: true });
-    });
+        expect(archiveLegacy(dataDir, options)).toMatchObject({ archived: true });
+      },
+      SPAWN_TIMEOUT_MS,
+    );
 
     it.each(['1.0.0/server.mjs', '0.4.0/bash-guard.mjs'])(
       'should not block the archiving with a live process at <libDir>/%s',
@@ -672,18 +706,23 @@ describe('archiveLegacy', () => {
 
         expect(archiveLegacy(dataDir, options)).toMatchObject({ archived: true });
       },
+      SPAWN_TIMEOUT_MS,
     );
 
-    it('should find the live server through the libDir symlink when the cmdline uses the real path', () => {
-      plant();
-      const link = path.join(createTempDir('archive-link'), 'lib');
-      fs.symlinkSync(libDir, link);
-      spawnLegacyServer();
+    it(
+      'should find the live server through the libDir symlink when the cmdline uses the real path',
+      () => {
+        plant();
+        const link = path.join(createTempDir('archive-link'), 'lib');
+        fs.symlinkSync(libDir, link);
+        spawnLegacyServer();
 
-      expect(() => archiveLegacy(dataDir, { ...options, libDir: link })).toThrow(
-        /a 0\.x server is running/,
-      );
-    });
+        expect(() => archiveLegacy(dataDir, { ...options, libDir: link })).toThrow(
+          /a 0\.x server is running/,
+        );
+      },
+      SPAWN_TIMEOUT_MS,
+    );
 
     it('should not break the live-server check when the libDir does not exist', () => {
       plant();
@@ -693,46 +732,39 @@ describe('archiveLegacy', () => {
       ).toMatchObject({ archived: true });
     });
 
-    it('should abort without deleting when the live server cannot be confirmed without /proc', () => {
-      plant();
-      const before = snapshot(dataDir);
-
-      expect(() =>
-        archiveLegacy(dataDir, { ...options, procDir: path.join(dataDir, '..', 'no-proc') }),
-      ).toThrow(/cannot confirm/);
-
-      expect(snapshot(dataDir)).toEqual(before);
-    });
-
-    it('should abort without deleting when the live server cannot be confirmed with a /proc that has no pid', () => {
-      plant();
-      const before = snapshot(dataDir);
-
-      expect(() =>
-        archiveLegacy(dataDir, { ...options, procDir: createTempDir('archive-proc') }),
-      ).toThrow(/cannot confirm/);
-
-      expect(snapshot(dataDir)).toEqual(before);
-    });
-
-    it('should abort without deleting when the cmdline is unreadable by an errno that is not a permission one', () => {
-      plant();
-      const procDir = createTempDir('archive-proc');
-      fs.mkdirSync(path.join(procDir, '123', 'cmdline'), { recursive: true });
-      const before = snapshot(dataDir);
-
-      expect(() => archiveLegacy(dataDir, { ...options, procDir })).toThrow(
+    it.each([
+      [
+        'a /proc that does not exist',
+        () => path.join(createTempDir('archive-no-proc'), 'proc'),
+        /cannot confirm/,
+      ],
+      ['a /proc that has no pid', () => createTempDir('archive-proc'), /cannot confirm/],
+      [
+        'a cmdline unreadable by an errno that is not a permission one',
+        () => {
+          const procDir = createTempDir('archive-proc');
+          fs.mkdirSync(path.join(procDir, '123', 'cmdline'), { recursive: true });
+          return procDir;
+        },
         /cannot confirm.*cannot read .*cmdline \(EISDIR\)/,
-      );
+      ],
+    ])(
+      'should abort without deleting when the live server cannot be confirmed with %s',
+      (_name, makeProcDir, pattern) => {
+        plant();
 
-      expect(snapshot(dataDir)).toEqual(before);
-    });
+        const { message, before, after } = refusal({ ...options, procDir: makeProcDir() });
+
+        expect(message).toMatch(pattern);
+        expect(after).toEqual(before);
+      },
+    );
 
     it.each(['ENOENT', 'ESRCH', 'EACCES', 'EPERM'])(
       'should not block the archiving when the cmdline read is denied with %s',
       (code) => {
         plant();
-        spyOnce('readFileSync', (args, real) => {
+        spyOnFs('readFileSync', (args, real) => {
           if (String(args[0]).endsWith('/cmdline')) throw Object.assign(new Error(code), { code });
           return real();
         });
@@ -741,19 +773,23 @@ describe('archiveLegacy', () => {
       },
     );
 
-    it('should abort at the second check when a live server appears while the package is generated', () => {
-      plant();
-      spyOnce('renameSync', (args, real) => {
-        if (String(args[0]).endsWith('.partial')) spawnLegacyServer();
-        return real();
-      });
+    it(
+      'should abort at the second check when a live server appears while the package is generated',
+      () => {
+        plant();
+        const restore = spyOnFs('renameSync', (args, real) => {
+          if (String(args[0]).endsWith('.partial')) spawnLegacyServer();
+          return real();
+        });
 
-      expect(() => archiveLegacy(dataDir, options)).toThrow(/a 0\.x server is running/);
+        expect(() => archiveLegacy(dataDir, options)).toThrow(/a 0\.x server is running/);
 
-      jest.restoreAllMocks();
+        restore();
 
-      expect(packages()).toHaveLength(1);
-      expect(inspectLegacy(dataDir).files).toHaveLength(Object.keys(TREE).length);
-    });
+        expect(packages()).toHaveLength(1);
+        expect(inspectLegacy(dataDir).files).toHaveLength(Object.keys(TREE).length);
+      },
+      SPAWN_TIMEOUT_MS,
+    );
   });
 });

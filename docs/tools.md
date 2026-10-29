@@ -151,18 +151,34 @@ que ainda é vigente, é aceito e bifurca a linhagem.
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
 mesmo lote, e leva `kind` (`supersedes`, `revokes`, `supports`, `contradicts`,
 `answers`, `derivesFrom`, `complements`, `reopens`), `as` (um nome de relação fixado
-no processo, não só definido no projeto) ou os dois. Até 100 relações por registro. As regras:
+no processo, não só definido no projeto) ou os dois. `as` sozinho basta: o `kind` sai do
+nome fixado, e só vale mandar `kind` se for igual ao dele. Até 100 relações por registro. As regras:
 
 - `supersedes` e `revokes` só alcançam registros **do mesmo processo**
   (`cross-process-currency`), e só o vigente: sobre um destino que já foi superado ou
   revogado, é `FORK_REJECTED`, com `current` apontando a versão atual da linhagem.
 - `supersedes` exige o mesmo tipo (`type-mismatch`) e o mesmo target (`target-mismatch`).
   Para mudar um fato de target, grave um registro só no target certo, com `revokes` e
-  `derivesFrom` para o antigo; `revokes` entre targets é aceito.
+  `derivesFrom` para o antigo; `revokes` entre targets é aceito. Exemplo de item de
+  `records`, com `<id>` o id vigente do registro antigo:
+
+  ```json
+  {
+    "type": "note",
+    "target": "run.novo-target",
+    "data": { "text": "o mesmo fato, no target certo" },
+    "relations": [
+      { "to": "<id>", "kind": "revokes" },
+      { "to": "<id>", "kind": "derivesFrom" }
+    ]
+  }
+  ```
+
 - `supports` só aceita destino vigente (`stale-destination`); pode cruzar processos.
 - Um registro não pode apoiar e contradizer, nem superar e revogar, o mesmo destino.
 - Relação para si mesmo, `as` que não existe fixado no processo, `kind` que não bate com
-  o do nome e tipo de uma ponta fora do `from`/`to` do nome de relação (`endpoint-type`)
+  o do nome (`kind-mismatch`: o `details[]` traz o campo opcional `kind` com o do nome, e a
+  `message` manda enviar só `as` ou esse `kind`) e tipo de uma ponta fora do `from`/`to` do nome de relação (`endpoint-type`)
   são `INVALID_RECORD`; ciclo é `CYCLE_REJECTED`; destino inexistente é
   `RELATION_NOT_FOUND`.
 - Só `supersedes`, `revokes` e `supports` conferem a vigência do destino. `contradicts`
@@ -172,14 +188,22 @@ no processo, não só definido no projeto) ou os dois. Até 100 relações por r
   guardado e íntegro (`ATTACHMENT_NOT_FOUND`, `ATTACHMENT_CORRUPTED`); um hash de anexo
   guardado num campo sem a marca é recusado (`unmarked-attachment`).
 
-**`INVALID_RECORD` de dado: a primeira violação de cada registro.** Quando `data` não passa
-no schema, o `register` junta num só `INVALID_RECORD` a primeira violação de schema de **cada**
-registro inválido do lote, cada uma com `path` `/records/<i>/data/...`. Um registro com várias
-violações mostra só a primeira: o agente corrige, reenvia e vê a próxima. Continua tudo-ou-nada:
-nada é gravado. Vale para a violação de **schema**; as outras recusas (`unmarked-attachment`, as
-de relação e o resto da lista acima) continuam parando na primeira. O que o agente deve saber:
+**`INVALID_RECORD` de dado: as violações de cada registro.** Quando `data` não passa
+no schema, o `register` junta num só `INVALID_RECORD` as violações de schema de **cada**
+registro inválido do lote, cada uma com `path` `/records/<i>/data/...`: o agente corrige tudo e
+reenvia uma vez. Acima de um limite de custo (schema grande contra dado grande) o registro traz
+só uma violação por subschema, mais um `violations-capped` (`path` `/records/<i>/data`, com o nome do tipo) que manda ler o contrato com `describe_type`; corrija e reenvie. Continua tudo-ou-nada: nada é gravado. Vale para a violação de **schema** e para as recusas de relação que só dependem da entrada
+(`unknown-relation-name`, `kind-mismatch` e `cross-process-currency`, cada uma com `path`
+`/records/<i>/relations/<n>`, listadas depois das de schema); as outras recusas
+(`unmarked-attachment`, as de relação que dependem do estado, como `not-current`, e o resto da
+lista acima) continuam parando na primeira. O que o agente deve saber:
 
-- O teto é de 50 `details` por resposta, com um só `too-many-errors` no fim quando corta.
+- O teto é de 50 `details` por resposta, com um só `too-many-errors` no fim quando corta; a `message` dele traz o total omitido no lote inteiro. O `violations-capped` ocupa vaga dentro dos 50 e sai antes do `too-many-errors`.
+- Em `max-length`, `min-length`, `maximum` e `minimum` a `message` termina com o valor medido,
+  em inglês: `must NOT have more than 300 characters (got 312)`. O comprimento conta pontos de
+  código (um emoji vale 1). O teto de 16.000 caracteres de `data` continua `INVALID_INPUT` e
+  também traz o tamanho medido (`(got N)`), exceto quando o valor não tem forma canônica; esse
+  tamanho conta unidades UTF-16 do JSON canônico (um emoji vale 2).
 - Em `anyOf`, `oneOf` e `propertyNames` saem os erros dos ramos avaliados, não só um por campo.
 - O tipo fixado de **todos** os registros é conferido antes de qualquer dado: um lote com um
   registro de dado inválido e outro de tipo não fixado recebe `TYPE_NOT_PINNED`, não
@@ -317,8 +341,8 @@ até 100 ids, com `omitted` contando o resto; um `select` ou `where` mais estrei
 o resto. Gate não fixado no processo é `GATE_NOT_FOUND`.
 
 - **Detalhe da evidência:** `evidence` escolhe o quanto cada pergunta traz.
-  - `failing` (o padrão da tool com `target`) devolve `counts`, o tamanho de cada lista da pergunta
-    (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
+  - `failing` (o padrão da tool sempre que `targets` não vem) devolve `counts`, o tamanho de cada
+    lista da pergunta (`{<lista>: n}`), e, só na pergunta reprovada, `evidence` com as listas que explicam a
     reprovação e não estão vazias: `unsupported` e `contradictions` em `approved`, `found`
     em `occurred`, `unresolved` em `no_pending`, `conflicting` em `no_open_contradiction`.
     Pergunta aprovada, ou reprovada sem lista de diagnóstico (um `approved` sem nenhum

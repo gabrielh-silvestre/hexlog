@@ -30,7 +30,7 @@ import { defineTool, MarkerRecord, READ_ANNOTATIONS, type ToolDeps } from '../ke
  */
 const LIMIT_MAX = 200;
 
-/** Itens de `changes.entered` e de `changes.left` que cabem no envelope da tool (M4 da herança do PR-5). */
+/** Itens de `changes.entered` e de `changes.left` que cabem no envelope da tool. */
 export const CHANGES_ITEMS_CAP = 100;
 
 /** Ids por lista de `evidence` de uma pergunta de `evaluate_gate`; corte igual ao de `changes`, também palpite. */
@@ -125,7 +125,7 @@ const DescribeTypeInput = z.strictObject({
   version: z.string().optional(),
 });
 
-// Saídas enxutas (TM7): só a forma que o cliente precisa checar; o miolo variável fica solto.
+// Saídas enxutas: só a forma que o cliente precisa checar; o miolo variável fica solto.
 const QueryOutput = z.object({
   records: z.array(
     z.looseObject({
@@ -183,7 +183,7 @@ const EvaluateGateOutput = z.object({
   marker: MarkerRecord,
 });
 
-// N10: schema congelado; `ok` exige `breaks` e `attachmentBreaks` vazias.
+// Schema congelado; `ok` exige `breaks` e `attachmentBreaks` vazias.
 const VerifyChainOutput = z.object({
   ok: z.boolean(),
   totalRecords: z.number(),
@@ -209,8 +209,8 @@ const DescribeTypeOutput = z.object({
 
 const QUERY_DESCRIPTION =
   'Read the current records of a process (scope "process", default, needs process) or of the ' +
-  'project (scope "project"). Filters: type, targetPrefix, where (equality on top-level scalar ' +
-  'data fields), text (by relevance, at most 200 characters), ids, relatedTo ' +
+  'project (scope "project"). Filters: type, targetPrefix, where (equality on top-level scalar data fields), ' +
+  'text (by relevance, at most 200 characters), ids, relatedTo ' +
   '(linked to an id) and includeNonCurrent (also superseded or revoked). ' +
   'targetPrefix matches whole "."-separated segments (unit-1 does not match unit-10); a near miss ' +
   'in an empty answer carries a hint. ' +
@@ -223,9 +223,9 @@ const QUERY_DESCRIPTION =
   'contradicts between lineages cuts it. Process scope sees only its own relations; use ' +
   'project for cross-process ones. fields (at most ' +
   `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
-  'annotations stay, filters see the whole data and the size cap counts the projected page. ' +
-  'A page holds at most limit records (default 50, max 200), fewer at a size cap (at least one record); ' +
-  'the cursor continues. marker is the head of every ' +
+  'annotations stay, filters see the whole data and the size cap counts the projection. ' +
+  'A page holds at most limit records (default 50, max 200) and stops at a size cap, ' +
+  'keeping at least one record; the cursor continues. marker is the head of every ' +
   'process read, and any record id of the process works as its entry: pass it back as changesSince ' +
   'to get changes (entered, left with reason), on the first page only; add limit 0 ' +
   'for changes only. Resend it with the cursor. ' +
@@ -238,7 +238,7 @@ const QUERY_DESCRIPTION =
 const EVALUATE_GATE_DESCRIPTION =
   'Evaluate a gate pinned in a process (GATE_NOT_FOUND otherwise), without writing anything. Returns ' +
   'passed and one result per question (index, kind, passed) plus the marker of what was read. ' +
-  'evidence sets the detail: failing (default with target) gives counts (size of each evidence list) and, for a ' +
+  'evidence sets the detail: failing (default without targets) gives counts (size of each evidence list) and, for a ' +
   'failed question, the ids that explain it; counts (default with targets) gives only counts; full gives every list of ids ' +
   '(approved has of, supports, contradictions and unsupported; occurred has found; no_pending has ' +
   'unresolved; no_open_contradiction has conflicting). A question of approved or no_pending with ' +
@@ -281,7 +281,7 @@ const DESCRIBE_TYPE_DESCRIPTION =
 
 type PagedChanges = Changes & { omitted?: { entered: number; left: number } };
 
-/** M4: corta `entered` e `left` em `CHANGES_ITEMS_CAP` e conta o que ficou de fora em `omitted`. */
+/** Corta `entered` e `left` em `CHANGES_ITEMS_CAP` e conta o que ficou de fora em `omitted`. */
 function capChanges(changes: Changes): PagedChanges {
   const entered = changes.entered.length - CHANGES_ITEMS_CAP;
   const left = changes.left.length - CHANGES_ITEMS_CAP;

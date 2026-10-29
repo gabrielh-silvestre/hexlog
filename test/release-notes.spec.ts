@@ -6,6 +6,7 @@ import { releaseNotes } from '../scripts/release-notes.ts';
 import { VERSION } from '../src/version.ts';
 import { createTempDir } from './helpers.ts';
 
+const repoRoot = path.resolve(__dirname, '..');
 const PR = { number: 7, url: 'https://github.com/o/r/pull/7' };
 const PR_LINE = 'PR da release: [#7](https://github.com/o/r/pull/7)';
 
@@ -59,43 +60,44 @@ const sectionWithFence = (open: string, close: string) =>
   ].join('\n');
 
 describe('releaseNotes', () => {
-  it('should put the opening paragraph before the PR line', () => {
+  describe('with an opening paragraph and subsections', () => {
     const body = releaseNotes(CHANGELOG, '2.0.0', PR);
 
-    expect(body.indexOf('Summary of 2.0.0.')).toBeLessThan(body.indexOf(PR_LINE));
-  });
+    it('should put the opening paragraph before the PR line', () => {
+      expect(body.indexOf('Summary of 2.0.0.')).toBeLessThan(body.indexOf(PR_LINE));
+    });
 
-  it('should put the PR line before the subsections', () => {
-    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+    it('should put the PR line before the subsections', () => {
+      expect(body.indexOf(PR_LINE)).toBeLessThan(body.indexOf('## Added'));
+    });
 
-    expect(body.indexOf(PR_LINE)).toBeLessThan(body.indexOf('## Added'));
-  });
+    it('should put the subsections before the install block', () => {
+      expect(body.indexOf('## Migration')).toBeLessThan(body.indexOf('## Instalação'));
+    });
 
-  it('should put the subsections before the install block', () => {
-    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+    it('should end with the install block', () => {
+      expect(body.lastIndexOf('\n## ')).toBe(body.indexOf('\n## Instalação'));
+    });
 
-    expect(body.indexOf('## Migration')).toBeLessThan(body.indexOf('## Instalação'));
-  });
+    it('should carry the install check command', () => {
+      expect(body).toContain('node scripts/install.ts --check');
+    });
 
-  it('should end with the install block', () => {
-    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+    it('should demote ### to ## outside code fences', () => {
+      expect(body).not.toMatch(/^### (Added|Migration)/m);
+    });
 
-    expect(body).toContain('node scripts/install.ts --check');
-    expect(body.endsWith('e `docs/`.\n')).toBe(true);
-  });
+    it('should keep ### inside code fences', () => {
+      expect(body).toContain('\n### not a heading\n');
+    });
 
-  it('should demote ### to ## outside code fences only', () => {
-    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
+    it('should not include the next version section', () => {
+      expect(body).not.toContain('Old thing');
+    });
 
-    expect(body).not.toMatch(/^### (Added|Migration)/m);
-    expect(body).toContain('\n### not a heading\n');
-  });
-
-  it('should stop at the next version section', () => {
-    const body = releaseNotes(CHANGELOG, '2.0.0', PR);
-
-    expect(body).not.toContain('Old thing');
-    expect(body).not.toContain('Unreleased');
+    it('should not include the Unreleased section', () => {
+      expect(body).not.toContain('Unreleased');
+    });
   });
 
   it('should put only the PR line before the subsections when there is no opening paragraph', () => {
@@ -103,10 +105,11 @@ describe('releaseNotes', () => {
   });
 
   it('should omit the PR line when there is no PR', () => {
-    const withoutPr = releaseNotes(CHANGELOG, '2.0.0');
+    expect(releaseNotes(CHANGELOG, '2.0.0')).not.toContain('PR da release');
+  });
 
-    expect(withoutPr).not.toContain('PR da release');
-    expect(withoutPr.startsWith('Summary of 2.0.0.\n\n## Added')).toBe(true);
+  it('should start with the opening paragraph when there is no PR', () => {
+    expect(releaseNotes(CHANGELOG, '2.0.0').startsWith('Summary of 2.0.0.\n\n## Added')).toBe(true);
   });
 
   it('should keep the paragraph of a section with an opening paragraph and no subsection', () => {
@@ -171,6 +174,22 @@ describe('releaseNotes', () => {
       expect(releaseNotes(changelog, '6.0.0')).toContain('\n## Added\n');
     });
 
+    it('should keep the rest of the changelog in the section when a fence is never closed', () => {
+      const changelog = [
+        '## [6.0.0] - 2027-03-01',
+        '',
+        'Summary.',
+        '',
+        '```sh',
+        '## [5.0.0] - 2027-02-01',
+        '- Older thing.',
+      ].join('\n');
+
+      const notes = releaseNotes(changelog, '6.0.0');
+
+      expect(notes).toContain('## [5.0.0] - 2027-02-01\n- Older thing.');
+    });
+
     it('should take a fence indented by four spaces as indented code, not a fence', () => {
       const changelog = [
         '## [6.0.0] - 2027-03-01',
@@ -189,7 +208,7 @@ describe('releaseNotes', () => {
 
 describe('scripts/release-notes-cli.ts', () => {
   const CLI_TIMEOUT = 15_000;
-  const cli = path.resolve(__dirname, '..', 'scripts', 'release-notes-cli.ts');
+  const cli = path.join(repoRoot, 'scripts', 'release-notes-cli.ts');
   const run = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: CLI_TIMEOUT });
 
@@ -212,15 +231,9 @@ describe('scripts/release-notes-cli.ts', () => {
       const root = createTempDir('release-notes-bare');
       fs.mkdirSync(path.join(root, 'scripts'));
       for (const file of ['release-notes.ts', 'release-notes-cli.ts']) {
-        fs.copyFileSync(
-          path.resolve(__dirname, '..', 'scripts', file),
-          path.join(root, 'scripts', file),
-        );
+        fs.copyFileSync(path.join(repoRoot, 'scripts', file), path.join(root, 'scripts', file));
       }
-      fs.copyFileSync(
-        path.resolve(__dirname, '..', 'CHANGELOG.md'),
-        path.join(root, 'CHANGELOG.md'),
-      );
+      fs.copyFileSync(path.join(repoRoot, 'CHANGELOG.md'), path.join(root, 'CHANGELOG.md'));
 
       const result = spawnSync(
         process.execPath,

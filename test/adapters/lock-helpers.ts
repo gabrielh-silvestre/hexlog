@@ -19,6 +19,12 @@ export function killChildren(): void {
   for (const child of children.splice(0)) child.kill('SIGKILL');
 }
 
+/** Registra um filho criado fora destes helpers para o `killChildren` o matar. */
+export const trackChild = (child: ChildProcess): ChildProcess => {
+  children.push(child);
+  return child;
+};
+
 export function runFixture<Mode extends keyof LockHolderArgs>(
   mode: Mode,
   args: LockHolderArgs[Mode],
@@ -64,6 +70,14 @@ export function startChild<Mode extends keyof LockHolderArgs>(
 /** Filho real que adquire o lock e fica vivo; devolve quando ele já é o dono. */
 export const startHolder = (lockDir: string) => startChild('hold', { lockDir });
 
+/** Filho real que adquiriu o lock e morreu por `SIGKILL`: o lock fica plantado, com o dono morto. */
+export async function startKilledHolder(lockDir: string) {
+  const holder = await startHolder(lockDir);
+  holder.child.kill('SIGKILL');
+  await once(holder.child, 'exit');
+  return holder;
+}
+
 /** Pid de um filho real e vivo, que não é este processo: o "outro dono vivo" sem emprestar `process.ppid` nem o pid 1 do ambiente. */
 export async function liveForeignPid(): Promise<number> {
   const { pid } = await startHolder(path.join(createTempDir('lock-foreign'), 'lock'));
@@ -84,9 +98,7 @@ export function createProcess() {
 export async function runWriteStress() {
   const created = createProcess();
   const { dataDir, ref, lockDir } = created;
-  const dead = await startHolder(lockDir);
-  dead.child.kill('SIGKILL');
-  await once(dead.child, 'exit');
+  await startKilledHolder(lockDir);
   expect(fs.existsSync(lockDir)).toBe(true);
   const barrier = createTempDir('lock-barrier');
   const args = {

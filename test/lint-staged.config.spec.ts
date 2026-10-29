@@ -17,6 +17,9 @@ const patternsOf = (command: string | string[]): RegExp[] => {
 };
 const matchesAny = (patterns: RegExp[], file: string): boolean =>
   patterns.some((pattern) => pattern.test(abs(file)));
+/** Se o comando para o arquivo em stage `file` roda o `spec`. */
+const stagedMatches = (file: string, spec: string): boolean =>
+  matchesAny(patternsOf(staged(file)), spec);
 
 describe('lint-staged config', () => {
   it('should fix, format, typecheck and run the staged specs in sequence for .ts', () => {
@@ -62,9 +65,12 @@ describe('lint-staged config', () => {
     expect(matchesAny(patterns, 'test/flowXhooks.spec.ts')).toBe(false);
   });
 
-  it('should run a staged spec itself and no spec of its own for a staged helper', () => {
-    expect(matchesAny(patternsOf(staged('test/export.spec.ts')), 'test/export.spec.ts')).toBe(true);
-    expect(matchesAny(patternsOf(staged('test/helpers.ts')), 'test/helpers.spec.ts')).toBe(false);
+  it('should run a staged spec itself', () => {
+    expect(stagedMatches('test/export.spec.ts', 'test/export.spec.ts')).toBe(true);
+  });
+
+  it('should run no spec of its own for a staged helper', () => {
+    expect(stagedMatches('test/helpers.ts', 'test/helpers.spec.ts')).toBe(false);
   });
 
   it('should always run the core, even for a file without a spec', () => {

@@ -32,11 +32,11 @@ const SCHEMAS: { [K in DefinitionKind]: ZodType<DefinitionOf[K]> } = {
   gates: Gate,
 };
 
-const NOT_FOUND: Record<DefinitionKind, ErrorCode> = {
+const NOT_FOUND = {
   types: 'TYPE_NOT_FOUND',
   relations: 'RELATION_NOT_FOUND',
   gates: 'GATE_NOT_FOUND',
-};
+} as const satisfies Record<DefinitionKind, ErrorCode>;
 
 /** A versão vira nome de arquivo, então passa por aqui antes de qualquer I/O. */
 function safeVersion(version: string): string {

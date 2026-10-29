@@ -97,8 +97,10 @@ export function buildInheritance(
   vigency: Vigency,
   isActive?: (process: Name) => boolean,
 ): Inheritance {
-  if (isUndefined(isActive)) return NO_INHERITANCE;
-  if (!records.some(({ relations }) => relations.some(({ kind }) => kind === 'supersedes')))
+  if (
+    isUndefined(isActive) ||
+    !records.some(({ relations }) => relations.some(({ kind }) => kind === 'supersedes'))
+  )
     return NO_INHERITANCE;
 
   const lineageRoot = lineageRootOf(records);

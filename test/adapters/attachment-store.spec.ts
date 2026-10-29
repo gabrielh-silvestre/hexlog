@@ -24,6 +24,8 @@ const PROJECT = 'alpha';
 const PLAN = '.omc/plans/x.md';
 // mtime inteiro em segundos: `utimes` com sub-milissegundo perderia precisão e o teste não reproduziria o mtime.
 const FIXED_TIME = new Date('2026-01-01T00:00:00.000Z');
+// acima de 64 KiB, com acento, travessão, CRLF e BOM: prova bytes UTF-8 exatos num arquivo grande
+const LONG_TEXT = 'Decisão longa — ação\r\n\uFEFF'.repeat(11_000);
 
 let base: string;
 let dataDir: string;
@@ -105,6 +107,60 @@ const SAMPLES: [string, string][] = [
   ['NUL', 'antes\u0000depois'],
 ];
 
+const CORRUPTED_READ = {
+  code: 'ATTACHMENT_CORRUPTED',
+  details: [{ path: '/hash', code: 'corrupted', message: expect.any(String) }],
+};
+
+/** Estados do blob que `status` e `read` tratam em par: `prepare` monta o estado e devolve o hash. */
+const BLOB_STATES = [
+  {
+    name: 'a tampered blob',
+    prepare: () => {
+      const { hash } = store.putText(PROJECT, 'content');
+      fs.writeFileSync(blobPath(hash), 'contenT');
+      return hash;
+    },
+    status: 'corrupted',
+    refusal: CORRUPTED_READ,
+  },
+  {
+    name: 'a symlink with the right content',
+    prepare: () => {
+      const hash = sha256hex('content');
+      fs.mkdirSync(attachmentsDir(), { recursive: true });
+      fs.writeFileSync(path.join(outside, 'target'), 'content');
+      fs.symlinkSync(path.join(outside, 'target'), blobPath(hash));
+      return hash;
+    },
+    status: 'corrupted',
+    refusal: CORRUPTED_READ,
+  },
+  {
+    name: 'a blob that grows between the fstat and the read, even with the right sha256 of the bytes',
+    prepare: () => {
+      // blob legítimo de 11 bytes; o `fstat` diz 10: a releitura vê 11 e recusa, embora o hash bata
+      const bytes = Buffer.alloc(11, 0x61);
+      const hash = sha256hex(bytes);
+      fs.mkdirSync(attachmentsDir(), { recursive: true });
+      fs.writeFileSync(blobPath(hash), bytes);
+      understateSize(10);
+      return hash;
+    },
+    status: 'corrupted',
+    refusal: CORRUPTED_READ,
+  },
+  {
+    name: 'an absent blob',
+    prepare: () => 'b'.repeat(64),
+    status: 'missing',
+    refusal: {
+      code: 'ATTACHMENT_NOT_FOUND',
+      details: [{ path: '/hash', code: 'not-found', message: expect.any(String) }],
+    },
+  },
+];
+
 describe('createAttachmentStore', () => {
   beforeEach(() => {
     base = createTempDir('attachment-store');
@@ -138,105 +194,121 @@ describe('createAttachmentStore', () => {
   });
 
   it('should write the blob with mode 0o600 and the folder with 0o700, leaving no temporary file', () => {
-    const { hash } = store.putText(PROJECT, 'modo');
+    const { hash } = store.putText(PROJECT, 'mode');
 
     expect(fs.statSync(blobPath(hash)).mode & 0o777).toBe(0o600);
     expect(fs.statSync(attachmentsDir()).mode & 0o777).toBe(0o700);
     expect(fs.readdirSync(attachmentsDir())).toEqual([hash]);
   });
 
-  it('should give the same hash and leave the blob untouched when putText gets the same text again (dedupe)', () => {
-    const first = store.putText(PROJECT, 'igual');
-    fs.utimesSync(blobPath(first.hash), FIXED_TIME, FIXED_TIME);
-    const before = fs.statSync(blobPath(first.hash));
+  it('should give the same hash when putText gets the same text again (dedupe)', () => {
+    const first = store.putText(PROJECT, 'same');
 
-    const second = store.putText(PROJECT, 'igual');
-    const after = fs.statSync(blobPath(first.hash));
+    const second = store.putText(PROJECT, 'same');
 
     expect(first.deduplicated).toBe(false);
     expect(second).toEqual({ ...first, deduplicated: true });
+  });
+
+  it('should leave the blob untouched when putText gets the same text again (dedupe)', () => {
+    const first = store.putText(PROJECT, 'same');
+    fs.utimesSync(blobPath(first.hash), FIXED_TIME, FIXED_TIME);
+    const before = fs.statSync(blobPath(first.hash));
+
+    store.putText(PROJECT, 'same');
+    const after = fs.statSync(blobPath(first.hash));
+
     expect(fs.readdirSync(attachmentsDir())).toEqual([first.hash]);
     expect([after.ino, after.mtimeMs]).toEqual([before.ino, before.mtimeMs]);
   });
 
   it('should refuse with ATTACHMENT_CORRUPTED, without overwriting, when putText gets the same text over a tampered blob', () => {
     const { hash } = store.putText(PROJECT, 'original');
-    fs.writeFileSync(blobPath(hash), 'adulterado');
+    fs.writeFileSync(blobPath(hash), 'tampered');
 
-    expect(captureError(() => store.putText(PROJECT, 'original')).code).toBe(
-      'ATTACHMENT_CORRUPTED',
-    );
-    expect(fs.readFileSync(blobPath(hash), 'utf8')).toBe('adulterado');
+    const error = captureError(() => store.putText(PROJECT, 'original'));
+
+    expect(error.code).toBe('ATTACHMENT_CORRUPTED');
+    expect(fs.readFileSync(blobPath(hash), 'utf8')).toBe('tampered');
     expect(fs.readdirSync(attachmentsDir())).toEqual([hash]);
   });
 
-  it('should accept a text up to the ceiling counted in bytes, not in characters', () => {
-    const atCeiling = 'a'.repeat(ATTACHMENT_MAX_BYTES);
-
-    expect(store.putText(PROJECT, atCeiling).bytes).toBe(ATTACHMENT_MAX_BYTES);
+  it.each([
+    { name: 'ASCII', text: 'a'.repeat(ATTACHMENT_MAX_BYTES) },
     // 2 bytes por caractere: metade do teto em caracteres cabe, exatamente, em bytes
-    expect(store.putText(PROJECT, 'ã'.repeat(ATTACHMENT_MAX_BYTES / 2)).bytes).toBe(
-      ATTACHMENT_MAX_BYTES,
-    );
-  });
+    { name: 'multibyte', text: 'ã'.repeat(ATTACHMENT_MAX_BYTES / 2) },
+  ])(
+    'should accept a $name text up to the ceiling counted in bytes, not in characters',
+    ({ text }) => {
+      const result = store.putText(PROJECT, text);
 
-  it('should refuse with too-big a text above the ceiling counted in bytes, not in characters', () => {
-    const atCeiling = 'a'.repeat(ATTACHMENT_MAX_BYTES);
+      expect(result.bytes).toBe(ATTACHMENT_MAX_BYTES);
+    },
+  );
 
-    expect(captureError(() => store.putText(PROJECT, `${atCeiling}a`))).toMatchObject(
-      invalid('/text', 'too-big'),
-    );
+  it.each([
+    { name: 'ASCII', text: 'a'.repeat(ATTACHMENT_MAX_BYTES + 1) },
     // metade do teto em caracteres, mas acima dele em bytes
-    expect(
-      captureError(() => store.putText(PROJECT, 'ã'.repeat(ATTACHMENT_MAX_BYTES / 2 + 1))),
-    ).toMatchObject(invalid('/text', 'too-big'));
-  });
+    { name: 'multibyte', text: 'ã'.repeat(ATTACHMENT_MAX_BYTES / 2 + 1) },
+  ])(
+    'should refuse with too-big a $name text above the ceiling counted in bytes, not in characters',
+    ({ text }) => {
+      const error = captureError(() => store.putText(PROJECT, text));
 
-  it('should refuse an invalid project name in putText before reaching the disk', () => {
-    expect(captureError(() => store.putText('../fora', 'x'))).toMatchObject(
-      invalid('/project', 'invalid-name'),
-    );
-    expect(fs.existsSync(dataDir)).toBe(false);
-  });
+      expect(error).toMatchObject(invalid('/text', 'too-big'));
+    },
+  );
 
-  it('should refuse an invalid hash in status before reaching the disk', () => {
-    expect(captureError(() => store.status(PROJECT, '../x'))).toMatchObject(
-      invalid('/hash', 'invalid-hash'),
-    );
-    expect(fs.existsSync(dataDir)).toBe(false);
-  });
+  it.each([
+    {
+      name: 'project name in putText',
+      call: () => store.putText('../outside', 'x'),
+      pointer: '/project',
+      code: 'invalid-name',
+    },
+    {
+      name: 'hash in status',
+      call: () => store.status(PROJECT, '../x'),
+      pointer: '/hash',
+      code: 'invalid-hash',
+    },
+    {
+      name: 'hash in read',
+      call: () => store.read(PROJECT, 'A'.repeat(64)),
+      pointer: '/hash',
+      code: 'invalid-hash',
+    },
+  ])('should refuse an invalid $name before reaching the disk', ({ call, pointer, code }) => {
+    const error = captureError(call);
 
-  it('should refuse an invalid hash in read before reaching the disk', () => {
-    expect(captureError(() => store.read(PROJECT, 'A'.repeat(64)))).toMatchObject(
-      invalid('/hash', 'invalid-hash'),
-    );
+    expect(error).toMatchObject(invalid(pointer, code));
     expect(fs.existsSync(dataDir)).toBe(false);
   });
 
   it('should fsync the file and the directory after the link', () => {
     const fsyncs = countFsyncs();
 
-    store.putText(PROJECT, 'durável');
+    store.putText(PROJECT, 'durable');
 
     expect(fsyncs()).toEqual({ files: 1, directories: 1 });
   });
 
   it('should not fsync on a deduplicated put', () => {
     const fsyncs = countFsyncs();
-    store.putText(PROJECT, 'durável');
+    store.putText(PROJECT, 'durable');
 
     // o `lstat` acha o blob antes de criar o temporário, então não há o que sincronizar
-    const result = store.putText(PROJECT, 'durável');
+    const result = store.putText(PROJECT, 'durable');
 
     expect(result.deduplicated).toBe(true);
     expect(fsyncs()).toEqual({ files: 1, directories: 1 });
   });
 
   it('should only open the blob, to reread it, on a deduplicated put, creating no temporary file', () => {
-    const { hash } = store.putText(PROJECT, 'repetido');
+    const { hash } = store.putText(PROJECT, 'repeated');
     const opens = jest.spyOn(fs, 'openSync');
 
-    const result = store.putText(PROJECT, 'repetido');
+    const result = store.putText(PROJECT, 'repeated');
 
     expect(result.deduplicated).toBe(true);
     expect(opens).toHaveBeenCalledTimes(1);
@@ -265,16 +337,16 @@ describe('createAttachmentStore', () => {
     const realLink = fs.linkSync.bind(fs);
     let rivalResult: AttachmentPut | undefined;
     jest.spyOn(fs, 'linkSync').mockImplementationOnce((existing, target) => {
-      rivalResult = rival.putText(PROJECT, 'corrida');
+      rivalResult = rival.putText(PROJECT, 'race');
       realLink(existing, target);
     });
 
-    const result = store.putText(PROJECT, 'corrida');
+    const result = store.putText(PROJECT, 'race');
 
     expect(rivalResult?.deduplicated).toBe(false);
     expect(result).toEqual({ ...rivalResult, deduplicated: true });
     expect(fs.readdirSync(attachmentsDir())).toEqual([result.hash]);
-    expect(store.read(PROJECT, result.hash)).toBe('corrida');
+    expect(store.read(PROJECT, result.hash)).toBe('race');
   });
 
   it('should refuse with ATTACHMENT_CORRUPTED when the link hits EEXIST but the blob vanished before the reread', () => {
@@ -282,47 +354,33 @@ describe('createAttachmentStore', () => {
       throw fsError('EEXIST', attachmentsDir());
     });
 
-    expect(captureError(() => store.putText(PROJECT, 'sumiu')).code).toBe('ATTACHMENT_CORRUPTED');
+    const error = captureError(() => store.putText(PROJECT, 'vanished'));
+
+    expect(error.code).toBe('ATTACHMENT_CORRUPTED');
     // nada publicado e o temporário foi removido
     expect(fs.readdirSync(attachmentsDir())).toEqual([]);
   });
 
   it('should return ok from status for an intact blob', () => {
-    const { hash } = store.putText(PROJECT, 'conteúdo');
+    const { hash } = store.putText(PROJECT, 'content');
 
     expect(store.status(PROJECT, hash)).toBe('ok');
   });
 
-  it('should return missing from status for an absent blob', () => {
-    const absent = 'b'.repeat(64);
+  it.each(BLOB_STATES)('should return $status from status for $name', ({ prepare, status }) => {
+    const hash = prepare();
 
-    expect(store.status(PROJECT, absent)).toBe('missing');
+    const result = store.status(PROJECT, hash);
+
+    expect(result).toBe(status);
   });
 
-  it('should refuse read of an absent blob with ATTACHMENT_NOT_FOUND', () => {
-    const absent = 'b'.repeat(64);
+  it.each(BLOB_STATES)('should refuse read of $name with $refusal.code', ({ prepare, refusal }) => {
+    const hash = prepare();
 
-    expect(captureError(() => store.read(PROJECT, absent))).toMatchObject({
-      code: 'ATTACHMENT_NOT_FOUND',
-      details: [{ path: '/hash', code: 'not-found', message: expect.any(String) }],
-    });
-  });
+    const error = captureError(() => store.read(PROJECT, hash));
 
-  it('should return corrupted from status for a tampered blob', () => {
-    const { hash } = store.putText(PROJECT, 'conteúdo');
-    fs.writeFileSync(blobPath(hash), 'conteúdA');
-
-    expect(store.status(PROJECT, hash)).toBe('corrupted');
-  });
-
-  it('should refuse read of a tampered blob with ATTACHMENT_CORRUPTED', () => {
-    const { hash } = store.putText(PROJECT, 'conteúdo');
-    fs.writeFileSync(blobPath(hash), 'conteúdA');
-
-    expect(captureError(() => store.read(PROJECT, hash))).toMatchObject({
-      code: 'ATTACHMENT_CORRUPTED',
-      details: [{ path: '/hash', code: 'corrupted', message: expect.any(String) }],
-    });
+    expect(error).toMatchObject(refusal);
   });
 
   it('should refuse read with ATTACHMENT_CORRUPTED for intact bytes that are not UTF-8', () => {
@@ -331,25 +389,9 @@ describe('createAttachmentStore', () => {
     fs.mkdirSync(attachmentsDir(), { recursive: true });
     fs.writeFileSync(blobPath(hash), bytes);
 
-    expect(captureError(() => store.read(PROJECT, hash)).code).toBe('ATTACHMENT_CORRUPTED');
-  });
+    const error = captureError(() => store.read(PROJECT, hash));
 
-  it('should return corrupted from status for a symlink with the right content', () => {
-    const hash = sha256hex('conteudo');
-    fs.mkdirSync(attachmentsDir(), { recursive: true });
-    fs.writeFileSync(path.join(outside, 'alvo'), 'conteudo');
-    fs.symlinkSync(path.join(outside, 'alvo'), blobPath(hash));
-
-    expect(store.status(PROJECT, hash)).toBe('corrupted');
-  });
-
-  it('should refuse read of a symlink with the right content with ATTACHMENT_CORRUPTED', () => {
-    const hash = sha256hex('conteudo');
-    fs.mkdirSync(attachmentsDir(), { recursive: true });
-    fs.writeFileSync(path.join(outside, 'alvo'), 'conteudo');
-    fs.symlinkSync(path.join(outside, 'alvo'), blobPath(hash));
-
-    expect(captureError(() => store.read(PROJECT, hash)).code).toBe('ATTACHMENT_CORRUPTED');
+    expect(error.code).toBe('ATTACHMENT_CORRUPTED');
   });
 
   it('should return corrupted from status, without hanging, for a FIFO in place of the blob', () => {
@@ -357,14 +399,16 @@ describe('createAttachmentStore', () => {
     fs.mkdirSync(attachmentsDir(), { recursive: true });
     execFileSync('mkfifo', [blobPath(fifo)]);
 
-    expect(probe({ call: 'status', hash: fifo })).toEqual({ result: 'corrupted' });
-  });
+    const outcome = probe({ call: 'status', hash: fifo });
+
+    expect(outcome).toEqual({ result: 'corrupted' });
+  }, 15_000);
 
   it.each([
-    ['a directory', 'diretório', (file: string) => fs.mkdirSync(file)],
+    ['a directory', 'directory', (file: string) => fs.mkdirSync(file)],
     [
       'a file above 1 MiB',
-      'grande',
+      'big',
       (file: string) => fs.writeFileSync(file, Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61)),
     ],
   ])(
@@ -374,31 +418,11 @@ describe('createAttachmentStore', () => {
       fs.mkdirSync(attachmentsDir(), { recursive: true });
       occupy(blobPath(hash));
 
-      expect(store.status(PROJECT, hash)).toBe('corrupted');
+      const result = store.status(PROJECT, hash);
+
+      expect(result).toBe('corrupted');
     },
   );
-
-  it('should return corrupted from status for a blob that grows between the fstat and the read, even with the right sha256 of the bytes', () => {
-    // blob legítimo de 11 bytes; o `fstat` diz 10: a releitura vê 11 e recusa, embora o hash bata
-    const bytes = Buffer.alloc(11, 0x61);
-    const hash = sha256hex(bytes);
-    fs.mkdirSync(attachmentsDir(), { recursive: true });
-    fs.writeFileSync(blobPath(hash), bytes);
-    understateSize(10);
-
-    expect(store.status(PROJECT, hash)).toBe('corrupted');
-  });
-
-  it('should refuse read with ATTACHMENT_CORRUPTED for a blob that grows between the fstat and the read, even with the right sha256 of the bytes', () => {
-    // blob legítimo de 11 bytes; o `fstat` diz 10: a releitura vê 11 e recusa, embora o hash bata
-    const bytes = Buffer.alloc(11, 0x61);
-    const hash = sha256hex(bytes);
-    fs.mkdirSync(attachmentsDir(), { recursive: true });
-    fs.writeFileSync(blobPath(hash), bytes);
-    understateSize(10);
-
-    expect(captureError(() => store.read(PROJECT, hash)).code).toBe('ATTACHMENT_CORRUPTED');
-  });
 
   it('should turn a blob read error into IO_ERROR with only the errno and no absolute path', () => {
     const { hash } = store.putText(PROJECT, 'io');
@@ -455,11 +479,12 @@ describe('createAttachmentStore', () => {
     restoreTimesUntilCtimeChanges(blobPath(hash), before.ctimeMs);
     const after = fs.statSync(blobPath(hash));
 
-    const status = store.status(PROJECT, hash);
-
     expect(memoized).toBe('ok');
     expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
     expect(after.ctimeMs).not.toBe(before.ctimeMs);
+
+    const status = store.status(PROJECT, hash);
+
     expect(status).toBe('corrupted');
   });
 
@@ -468,26 +493,25 @@ describe('createAttachmentStore', () => {
     const memoized = store.status(PROJECT, hash);
     fs.rmSync(blobPath(hash));
 
+    expect(memoized).toBe('ok');
+
     const status = store.status(PROJECT, hash);
 
-    expect(memoized).toBe('ok');
     expect(status).toBe('missing');
   });
 
   it('should store the exact bytes of a file in a dot folder by relative path', () => {
-    const text = 'Decisão longa — ação\r\n\uFEFF'.repeat(11_000);
-    writeInCwd(PLAN, text);
+    writeInCwd(PLAN, LONG_TEXT);
 
     const relative = store.putPath(PROJECT, PLAN);
 
-    expect(relative.bytes).toBe(Buffer.byteLength(text));
-    expect(fs.readFileSync(blobPath(relative.hash))).toEqual(Buffer.from(text, 'utf8'));
-    expect(relative.hash).toBe(sha256hex(Buffer.from(text, 'utf8')));
+    expect(relative.bytes).toBe(Buffer.byteLength(LONG_TEXT));
+    expect(fs.readFileSync(blobPath(relative.hash))).toEqual(Buffer.from(LONG_TEXT, 'utf8'));
+    expect(relative.hash).toBe(sha256hex(Buffer.from(LONG_TEXT, 'utf8')));
   });
 
   it('should store the same blob, deduplicated, by absolute path', () => {
-    const text = 'Decisão longa — ação\r\n\uFEFF'.repeat(11_000);
-    const file = writeInCwd(PLAN, text);
+    const file = writeInCwd(PLAN, LONG_TEXT);
     const relative = store.putPath(PROJECT, PLAN);
 
     const absolute = store.putPath(PROJECT, file);
@@ -496,56 +520,61 @@ describe('createAttachmentStore', () => {
   });
 
   it('should read from any folder of the cwd, the cwd itself included, not only from .omc/plans', () => {
-    writeInCwd('docs/fundo/notas.txt', 'subpasta');
-    writeInCwd('raiz.md', 'raiz');
+    writeInCwd('docs/deep/notes.txt', 'subfolder');
+    writeInCwd('root.md', 'root');
 
-    expect(store.putPath(PROJECT, 'docs/fundo/notas.txt').hash).toBe(sha256hex('subpasta'));
-    expect(store.putPath(PROJECT, 'raiz.md').hash).toBe(sha256hex('raiz'));
+    expect(store.putPath(PROJECT, 'docs/deep/notes.txt').hash).toBe(sha256hex('subfolder'));
+    expect(store.putPath(PROJECT, 'root.md').hash).toBe(sha256hex('root'));
   });
 
   it('should accept a file of exactly 1 MiB', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES, 0x61));
 
-    expect(store.putPath(PROJECT, PLAN).bytes).toBe(ATTACHMENT_MAX_BYTES);
+    const result = store.putPath(PROJECT, PLAN);
+
+    expect(result.bytes).toBe(ATTACHMENT_MAX_BYTES);
   });
 
   it('should land on the same blob, deduplicated, when the same content comes by path and by text', () => {
-    writeInCwd(PLAN, 'mesmo conteúdo');
+    writeInCwd(PLAN, 'same content');
     const byPath = store.putPath(PROJECT, PLAN);
 
-    const byText = store.putText(PROJECT, 'mesmo conteúdo');
+    const byText = store.putText(PROJECT, 'same content');
 
     expect(byText).toEqual({ ...byPath, deduplicated: true });
     expect(fs.readdirSync(attachmentsDir())).toEqual([byPath.hash]);
   });
 
-  it('should refuse paths outside the cwd, relative or absolute, with outside-allowed-root, storing nothing', () => {
-    fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
+  it.each([
+    { name: 'relative', target: () => '../outside/x.md' },
+    { name: 'absolute', target: () => path.join(outside, 'x.md') },
+  ])(
+    'should refuse a $name path outside the cwd with outside-allowed-root, storing nothing',
+    ({ target }) => {
+      fs.writeFileSync(path.join(outside, 'x.md'), 'out');
 
-    expect(captureError(() => store.putPath(PROJECT, '../outside/x.md'))).toMatchObject(
-      invalid('/path', 'outside-allowed-root'),
-    );
-    expect(captureError(() => store.putPath(PROJECT, path.join(outside, 'x.md')))).toMatchObject(
-      invalid('/path', 'outside-allowed-root'),
-    );
+      const error = captureError(() => store.putPath(PROJECT, target()));
 
-    expectNothingStored();
-  });
+      expect(error).toMatchObject(invalid('/path', 'outside-allowed-root'));
+
+      expectNothingStored();
+    },
+  );
 
   it('should refuse a directory symlink pointing outside the cwd with outside-allowed-root, storing nothing', () => {
-    fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
-    fs.symlinkSync(outside, path.join(cwd, 'atalho'));
+    fs.writeFileSync(path.join(outside, 'x.md'), 'out');
+    fs.symlinkSync(outside, path.join(cwd, 'shortcut'));
 
-    expect(captureError(() => store.putPath(PROJECT, 'atalho/x.md'))).toMatchObject(
-      invalid('/path', 'outside-allowed-root'),
-    );
+    const error = captureError(() => store.putPath(PROJECT, 'shortcut/x.md'));
+
+    expect(error).toMatchObject(invalid('/path', 'outside-allowed-root'));
 
     expectNothingStored();
   });
 
   it.each([
-    ['a missing directory', () => cwd, 'nao/existe/x.md'],
-    ['a missing cwd', () => path.join(base, 'nao-existe'), PLAN],
+    ['a missing directory', () => cwd, 'missing/dir/x.md'],
+    ['a missing cwd', () => path.join(base, 'missing-cwd'), PLAN],
   ] as const)(
     'should refuse %s with outside-allowed-root, leaking neither errno nor path',
     (_name, cwdOf, target) => {
@@ -567,97 +596,101 @@ describe('createAttachmentStore', () => {
     writeInCwd(PLAN, 'via symlink');
     const linked = createAttachmentStore({ dataDir, cwd: linkedCwd });
 
-    expect(linked.putPath(PROJECT, PLAN).hash).toBe(sha256hex('via symlink'));
+    const result = linked.putPath(PROJECT, PLAN);
+
+    expect(result.hash).toBe(sha256hex('via symlink'));
   });
 
   it('should keep refusing outside a cwd that is a symlink', () => {
     const linkedCwd = path.join(base, 'cwd-link');
     fs.symlinkSync(cwd, linkedCwd);
-    fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
+    fs.writeFileSync(path.join(outside, 'x.md'), 'out');
     const linked = createAttachmentStore({ dataDir, cwd: linkedCwd });
 
-    expect(captureError(() => linked.putPath(PROJECT, path.join(outside, 'x.md')))).toMatchObject(
-      invalid('/path', 'outside-allowed-root'),
-    );
+    const error = captureError(() => linked.putPath(PROJECT, path.join(outside, 'x.md')));
+
+    expect(error).toMatchObject(invalid('/path', 'outside-allowed-root'));
   });
 
   it('should refuse a file in the target of a dataDir symlink pointing inside the cwd with inside-data-dir', () => {
-    const real = path.join(cwd, 'dados');
-    const linkedDataDir = path.join(base, 'dados-link');
+    const real = path.join(cwd, 'data');
+    const linkedDataDir = path.join(base, 'data-link');
     fs.mkdirSync(real);
     fs.symlinkSync(real, linkedDataDir);
-    fs.writeFileSync(path.join(real, 'x.md'), 'dentro');
+    fs.writeFileSync(path.join(real, 'x.md'), 'inside');
     const linked = createAttachmentStore({ dataDir: linkedDataDir, cwd });
 
-    expect(captureError(() => linked.putPath(PROJECT, 'dados/x.md'))).toMatchObject(
-      invalid('/path', 'inside-data-dir'),
-    );
+    const error = captureError(() => linked.putPath(PROJECT, 'data/x.md'));
+
+    expect(error).toMatchObject(invalid('/path', 'inside-data-dir'));
     expect(fs.existsSync(attachmentsDir(real))).toBe(false);
   });
 
   describe('with the dataDir inside the cwd', () => {
     beforeEach(() => {
-      dataDir = path.join(cwd, 'dados');
+      dataDir = path.join(cwd, 'data');
       store = createAttachmentStore({ dataDir, cwd });
     });
 
     it('should refuse a file inside the dataDir with inside-data-dir, storing nothing', () => {
       const inside = path.join(dataRoot(dataDir), PROJECT, 'x.md');
       fs.mkdirSync(path.dirname(inside), { recursive: true });
-      fs.writeFileSync(inside, 'dentro');
+      fs.writeFileSync(inside, 'inside');
 
-      expect(captureError(() => store.putPath(PROJECT, inside))).toMatchObject(
-        invalid('/path', 'inside-data-dir'),
-      );
+      const error = captureError(() => store.putPath(PROJECT, inside));
+
+      expect(error).toMatchObject(invalid('/path', 'inside-data-dir'));
       expect(fs.existsSync(attachmentsDir())).toBe(false);
     });
 
     it('should refuse a directory symlink pointing inside the dataDir with inside-data-dir, after the realpath', () => {
       const inside = path.join(dataRoot(dataDir), PROJECT);
       fs.mkdirSync(inside, { recursive: true });
-      fs.writeFileSync(path.join(inside, 'x.md'), 'dentro');
-      fs.symlinkSync(inside, path.join(cwd, 'atalho'));
+      fs.writeFileSync(path.join(inside, 'x.md'), 'inside');
+      fs.symlinkSync(inside, path.join(cwd, 'shortcut'));
 
-      expect(captureError(() => store.putPath(PROJECT, 'atalho/x.md'))).toMatchObject(
-        invalid('/path', 'inside-data-dir'),
-      );
+      const error = captureError(() => store.putPath(PROJECT, 'shortcut/x.md'));
+
+      expect(error).toMatchObject(invalid('/path', 'inside-data-dir'));
       expect(fs.existsSync(attachmentsDir())).toBe(false);
     });
 
     it('should refuse with inside-data-dir before not-found', () => {
       fs.mkdirSync(dataDir);
 
-      expect(captureError(() => store.putPath(PROJECT, 'dados/nao-existe.md'))).toMatchObject(
-        invalid('/path', 'inside-data-dir'),
-      );
+      const error = captureError(() => store.putPath(PROJECT, 'data/missing.md'));
+
+      expect(error).toMatchObject(invalid('/path', 'inside-data-dir'));
     });
 
     it('should keep putting a file outside the dataDir normally', () => {
       fs.mkdirSync(dataDir);
-      writeInCwd(PLAN, 'fora do dataDir');
+      writeInCwd(PLAN, 'outside the dataDir');
 
-      expect(store.putPath(PROJECT, PLAN).hash).toBe(sha256hex('fora do dataDir'));
+      const result = store.putPath(PROJECT, PLAN);
+
+      expect(result.hash).toBe(sha256hex('outside the dataDir'));
     });
   });
 
   it('should put normally when the dataDir does not exist, as there is nothing to refuse', () => {
-    writeInCwd(PLAN, 'sem dataDir');
-    const dataDirExisted = fs.existsSync(dataDir);
+    writeInCwd(PLAN, 'without dataDir');
+
+    expect(fs.existsSync(dataDir)).toBe(false);
 
     const result = store.putPath(PROJECT, PLAN);
 
-    expect(dataDirExisted).toBe(false);
-    expect(result.hash).toBe(sha256hex('sem dataDir'));
+    expect(result.hash).toBe(sha256hex('without dataDir'));
   });
 
   it('should refuse with outside-allowed-root before not-found', () => {
-    expect(
-      captureError(() => store.putPath(PROJECT, path.join(outside, 'nao-existe.md'))),
-    ).toMatchObject(invalid('/path', 'outside-allowed-root'));
+    const error = captureError(() => store.putPath(PROJECT, path.join(outside, 'missing.md')));
+
+    expect(error).toMatchObject(invalid('/path', 'outside-allowed-root'));
   });
 
   it('should refuse a missing file with not-found, leaking neither errno nor path', () => {
-    const error = captureError(() => store.putPath(PROJECT, '.omc/plans/nao-existe.md'));
+    const error = captureError(() => store.putPath(PROJECT, '.omc/plans/missing.md'));
 
     expect(error.code).toBe('INVALID_INPUT');
     expect(error.details.map((detail) => detail.code)).toEqual(['not-found']);
@@ -672,49 +705,53 @@ describe('createAttachmentStore', () => {
     [
       'a symlink as the final component, even when pointing inside the cwd',
       () => {
-        writeInCwd('alvo.md', 'alvo');
-        fs.symlinkSync(path.join(cwd, 'alvo.md'), path.join(cwd, '.omc', 'plans', 'link.md'));
+        writeInCwd('target.md', 'target');
+        fs.symlinkSync(path.join(cwd, 'target.md'), path.join(cwd, '.omc', 'plans', 'link.md'));
         return '.omc/plans/link.md';
       },
     ],
     [
       'a directory named *.md',
       () => {
-        fs.mkdirSync(path.join(cwd, 'pasta.md'));
-        return 'pasta.md';
+        fs.mkdirSync(path.join(cwd, 'folder.md'));
+        return 'folder.md';
       },
     ],
     [
       'a FIFO named *.md',
       () => {
-        execFileSync('mkfifo', [path.join(cwd, 'fila.md')]);
-        return 'fila.md';
+        execFileSync('mkfifo', [path.join(cwd, 'queue.md')]);
+        return 'queue.md';
       },
     ],
     [
       'a hardlink (nlink > 1)',
       () => {
-        writeInCwd('segredo.md', 'segredo');
-        fs.linkSync(path.join(cwd, 'segredo.md'), path.join(cwd, '.omc', 'plans', 'link.md'));
+        writeInCwd('secret.md', 'secret');
+        fs.linkSync(path.join(cwd, 'secret.md'), path.join(cwd, '.omc', 'plans', 'link.md'));
         return '.omc/plans/link.md';
       },
     ],
-  ])('should refuse %s with not-regular, storing nothing', (_name, prepare) => {
-    const candidate = prepare();
+  ])(
+    'should refuse %s with not-regular, storing nothing',
+    (_name, prepare) => {
+      const candidate = prepare();
 
-    expect(probe({ call: 'putPath', path: candidate })).toEqual({
-      error: invalid('/path', 'not-regular'),
-    });
+      const outcome = probe({ call: 'putPath', path: candidate });
 
-    expectNothingStored();
-  });
+      expect(outcome).toEqual({ error: invalid('/path', 'not-regular') });
+
+      expectNothingStored();
+    },
+    15_000,
+  );
 
   it('should refuse a file above 1 MiB with too-big, storing nothing', () => {
     writeInCwd(PLAN, Buffer.alloc(ATTACHMENT_MAX_BYTES + 1, 0x61));
 
-    expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
-      invalid('/path', 'too-big'),
-    );
+    const error = captureError(() => store.putPath(PROJECT, PLAN));
+
+    expect(error).toMatchObject(invalid('/path', 'too-big'));
 
     expectNothingStored();
   });
@@ -730,27 +767,27 @@ describe('createAttachmentStore', () => {
   });
 
   it('should refuse an empty file with bad-args, storing nothing', () => {
-    writeInCwd('vazio.md', '');
+    writeInCwd('empty.md', '');
 
-    expect(captureError(() => store.putPath(PROJECT, 'vazio.md'))).toMatchObject(
-      invalid('/path', 'bad-args'),
-    );
+    const error = captureError(() => store.putPath(PROJECT, 'empty.md'));
+
+    expect(error).toMatchObject(invalid('/path', 'bad-args'));
 
     expectNothingStored();
   });
 
   it('should refuse bytes that are not UTF-8 with invalid-utf8, storing nothing', () => {
-    writeInCwd('binario.md', Buffer.from([0x61, 0xff, 0xfe]));
+    writeInCwd('binary.md', Buffer.from([0x61, 0xff, 0xfe]));
 
-    expect(captureError(() => store.putPath(PROJECT, 'binario.md'))).toMatchObject(
-      invalid('/path', 'invalid-utf8'),
-    );
+    const error = captureError(() => store.putPath(PROJECT, 'binary.md'));
+
+    expect(error).toMatchObject(invalid('/path', 'invalid-utf8'));
 
     expectNothingStored();
   });
 
   it('should turn a file read error into IO_ERROR with only the errno and no absolute path', () => {
-    const file = writeInCwd(PLAN, 'conteúdo');
+    const file = writeInCwd(PLAN, 'content');
     jest.spyOn(fs, 'readSync').mockImplementation(() => {
       throw fsError('EIO', file);
     });
@@ -765,8 +802,8 @@ describe('createAttachmentStore', () => {
 
   describe('with a directory swapped for a symlink between the realpath and the open', () => {
     beforeEach(() => {
-      fs.writeFileSync(path.join(outside, 'x.md'), 'fora');
-      writeInCwd(PLAN, 'dentro');
+      fs.writeFileSync(path.join(outside, 'x.md'), 'out');
+      writeInCwd(PLAN, 'inside');
     });
 
     /** Na 1ª chamada de `openSync` (a do arquivo) troca `.omc/plans` por um symlink para `outside`. */
@@ -792,31 +829,33 @@ describe('createAttachmentStore', () => {
       });
     }
 
-    it('should refuse the swap with outside-allowed-root, storing nothing, with /proc', () => {
+    it('should refuse the swap with outside-allowed-root, storing nothing', () => {
       swapDirectoryOnOpen();
 
-      expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
-        invalid('/path', 'outside-allowed-root'),
-      );
+      const error = captureError(() => store.putPath(PROJECT, PLAN));
+
+      expect(error).toMatchObject(invalid('/path', 'outside-allowed-root'));
 
       expectNothingStored();
     });
 
-    it('should refuse the swap too without /proc (macOS)', () => {
+    it('should refuse the swap too when /proc is unavailable', () => {
       withoutProc();
       swapDirectoryOnOpen();
 
-      expect(captureError(() => store.putPath(PROJECT, PLAN))).toMatchObject(
-        invalid('/path', 'outside-allowed-root'),
-      );
+      const error = captureError(() => store.putPath(PROJECT, PLAN));
+
+      expect(error).toMatchObject(invalid('/path', 'outside-allowed-root'));
 
       expectNothingStored();
     });
 
-    it('should put normally without /proc and without a swap', () => {
+    it('should put normally when /proc is unavailable and nothing is swapped', () => {
       withoutProc();
 
-      expect(store.putPath(PROJECT, PLAN).hash).toBe(sha256hex('dentro'));
+      const result = store.putPath(PROJECT, PLAN);
+
+      expect(result.hash).toBe(sha256hex('inside'));
     });
   });
 });

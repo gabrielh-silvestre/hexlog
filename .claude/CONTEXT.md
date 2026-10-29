@@ -36,6 +36,14 @@ _Avoid_: oráculo, aprovador
 Quem senta na cadeira: o humano no `ask`; no `autonomous`, um `critic` durável, só se o `premise` do processo fixa `answeredBy`.
 _Avoid_: respondente, revisor
 
+**Ação**:
+O modo de o critic juntar contexto antes de responder: `local`, `web` ou `jury`, com custo crescente e degradação júri, web, local ([cadeira-do-dono.md](../docs/directives/cadeira-do-dono.md), seção "Catálogo de ações").
+_Avoid_: ferramenta, passo de contexto
+
+**Natureza da dúvida**:
+O tipo de pergunta da lacuna, que decide a ação por classe: `repo-fact`, `external-fact` ou `choice`; vai no `context` da lacuna depois de `Class:`.
+_Avoid_: categoria, tipo da lacuna
+
 **Aval**:
 A confirmação do humano, no pré-PR, da premissa `simulated` de uma lacuna crítica; grava `simulated-approved`.
 _Avoid_: aprovação, ok

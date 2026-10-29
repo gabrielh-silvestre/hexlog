@@ -1,9 +1,11 @@
-import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { ZodError } from 'zod';
 import { checkInstalled, gitDiffQuiet, openWriter } from '../scripts/flow/writer.ts';
 import { createFlowEnvironment } from './flow-data.ts';
+import { git } from './flow-repo.ts';
 import { createTempDir, snapshot } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
 
@@ -65,6 +67,28 @@ describe('checkInstalled', () => {
     ]);
   });
 
+  it('should report both a version folder and a src/ that differ, the version first', () => {
+    const claudeJsonText = claudeJson('/home/dev/.local/lib/hexlog/1.1.0/server.mjs');
+
+    const problems = checkInstalled(installed({ claudeJsonText, gitDiffQuiet: () => 'differs' }));
+
+    expect(problems).toEqual([
+      'installed server is not version 1.2.0 (/home/dev/.local/lib/hexlog/1.1.0): run node scripts/install.ts',
+      `src/ differs from the installed commit ${COMMIT}: run node scripts/install.ts`,
+    ]);
+  });
+
+  it('should report both an invalid manifest and a version folder that differs, the manifest first', () => {
+    const claudeJsonText = claudeJson('/home/dev/.local/lib/hexlog/1.1.0/server.mjs');
+
+    const problems = checkInstalled(installed({ claudeJsonText, readManifest: () => null }));
+
+    expect(problems).toEqual([
+      'manifest.json missing or invalid in /home/dev/.local/lib/hexlog/1.1.0: run node scripts/install.ts',
+      'installed server is not version 1.2.0 (/home/dev/.local/lib/hexlog/1.1.0): run node scripts/install.ts',
+    ]);
+  });
+
   it('should report a manifest whose version differs from the repository version', () => {
     const problems = checkInstalled(
       installed({ readManifest: () => manifestText({ version: '1.1.0' }) }),
@@ -75,59 +99,49 @@ describe('checkInstalled', () => {
     ]);
   });
 
-  describe('with a manifest that is invalid', () => {
-    const INVALID_MANIFESTS = [
-      ['an absent file', null],
-      ['invalid JSON', '{'],
-      ['an array', '[]'],
-      ['a numeric version', manifestText({ version: 1 })],
-      ['a numeric commit', manifestText({ commit: 1 })],
-      ['a string dirty', manifestText({ dirty: 'false' })],
-      ['a missing dirty', JSON.stringify({ version: VERSION, commit: COMMIT })],
-    ] as const;
+  const INVALID_MANIFESTS = [
+    ['an absent file', null],
+    ['invalid JSON', '{'],
+    ['an array', '[]'],
+    ['a numeric version', manifestText({ version: 1 })],
+    ['a numeric commit', manifestText({ commit: 1 })],
+    ['a string dirty', manifestText({ dirty: 'false' })],
+    ['a missing dirty', JSON.stringify({ version: VERSION, commit: COMMIT })],
+  ] as const;
+  const UNTRUSTED_BUILDS = [
+    ['a dirty tree', manifestText({ dirty: true })],
+    ['an unknown commit', manifestText({ commit: null })],
+  ] as const;
 
-    it.each(INVALID_MANIFESTS)('should report the manifest as invalid with %s', (_title, text) => {
+  it.each(INVALID_MANIFESTS)('should report the manifest as invalid with %s', (_title, text) => {
+    const problems = checkInstalled(installed({ readManifest: () => text }));
+
+    expect(problems).toContain(
+      `manifest.json missing or invalid in ${VERSION_DIR}: run node scripts/install.ts`,
+    );
+  });
+
+  it.each(UNTRUSTED_BUILDS)(
+    'should ask to move the version folder aside and reinstall with %s',
+    (_title, text) => {
       const problems = checkInstalled(installed({ readManifest: () => text }));
 
-      expect(problems).toContain(
-        `manifest.json missing or invalid in ${VERSION_DIR}: run node scripts/install.ts`,
-      );
-    });
+      expect(problems).toEqual([
+        `installed build has a dirty tree or an unknown commit: with a clean tree at the wanted commit, move ${VERSION_DIR} aside and run node scripts/install.ts`,
+      ]);
+    },
+  );
 
-    it.each(INVALID_MANIFESTS)('should skip the src/ comparison with %s', (_title, text) => {
+  it.each([...INVALID_MANIFESTS, ...UNTRUSTED_BUILDS])(
+    'should skip the src/ comparison with %s',
+    (_title, text) => {
       const gitDiffQuietSpy = jest.fn(() => 'same' as const);
 
       checkInstalled(installed({ readManifest: () => text, gitDiffQuiet: gitDiffQuietSpy }));
 
       expect(gitDiffQuietSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('with a build that is dirty or has an unknown commit', () => {
-    const UNTRUSTED_BUILDS = [
-      ['a dirty tree', manifestText({ dirty: true })],
-      ['an unknown commit', manifestText({ commit: null })],
-    ] as const;
-
-    it.each(UNTRUSTED_BUILDS)(
-      'should ask to move the version folder aside and reinstall with %s',
-      (_title, text) => {
-        const problems = checkInstalled(installed({ readManifest: () => text }));
-
-        expect(problems).toEqual([
-          `installed build has a dirty tree or an unknown commit: with a clean tree at the wanted commit, move ${VERSION_DIR} aside and run node scripts/install.ts`,
-        ]);
-      },
-    );
-
-    it.each(UNTRUSTED_BUILDS)('should skip the src/ comparison with %s', (_title, text) => {
-      const gitDiffQuietSpy = jest.fn(() => 'same' as const);
-
-      checkInstalled(installed({ readManifest: () => text, gitDiffQuiet: gitDiffQuietSpy }));
-
-      expect(gitDiffQuietSpy).not.toHaveBeenCalled();
-    });
-  });
+    },
+  );
 
   it('should compare src/ with the installed commit', () => {
     const gitDiffQuietSpy = jest.fn<(commit: string) => 'same'>(() => 'same');
@@ -155,21 +169,13 @@ describe('checkInstalled', () => {
 });
 
 describe('gitDiffQuiet', () => {
-  const GIT_IDENTITY = ['-c', 'user.name=Test', '-c', 'user.email=test@example.com'];
-
-  function git(cwd: string, ...args: string[]): string {
-    const result = spawnSync('git', [...GIT_IDENTITY, '-c', 'commit.gpgsign=false', ...args], {
-      cwd,
-      encoding: 'utf8',
-    });
-    if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
-    return result.stdout.trim();
-  }
-
   /** Repositório com `src/a.ts` e `scripts/b.ts` no commit `first`; `second` só muda `src/a.ts`. */
   function repoWithTwoCommits() {
     const root = createTempDir('writer-git');
     git(root, 'init', '-q', '-b', 'main');
+    git(root, 'config', 'user.name', 'Test');
+    git(root, 'config', 'user.email', 'test@example.com');
+    git(root, 'config', 'commit.gpgsign', 'false');
     fs.mkdirSync(path.join(root, 'src'));
     fs.mkdirSync(path.join(root, 'scripts'));
     fs.writeFileSync(path.join(root, 'src', 'a.ts'), 'export const a = 1;\n');
@@ -193,14 +199,21 @@ describe('gitDiffQuiet', () => {
     }
   }
 
+  // os casos que só leem compartilham o repositório; o que commita de novo cria o seu
+  let shared: ReturnType<typeof repoWithTwoCommits>;
+
+  beforeAll(() => {
+    shared = repoWithTwoCommits();
+  }, 30_000);
+
   it('should return same for the HEAD commit', () => {
-    const { root, second } = repoWithTwoCommits();
+    const { root, second } = shared;
 
     expect(gitDiffQuiet(root)(second)).toBe('same');
   }, 30_000);
 
   it('should return differs for an older commit', () => {
-    const { root, first } = repoWithTwoCommits();
+    const { root, first } = shared;
 
     expect(gitDiffQuiet(root)(first)).toBe('differs');
   }, 30_000);
@@ -214,15 +227,15 @@ describe('gitDiffQuiet', () => {
   }, 30_000);
 
   it('should return error for an unknown commit', () => {
-    const { root } = repoWithTwoCommits();
+    const { root } = shared;
 
     expect(gitDiffQuiet(root)('deadbeef')).toBe('error');
   }, 30_000);
 
   it.each(['--help', '-p', 'HEAD; echo', ''])(
-    'should return error for %p without running git',
+    'should return error for the malformed commit %p',
     (commit) => {
-      const { root } = repoWithTwoCommits();
+      const { root } = shared;
 
       expect(gitDiffQuiet(root)(commit)).toBe('error');
     },
@@ -230,7 +243,7 @@ describe('gitDiffQuiet', () => {
   );
 
   it('should return error when the root is not a repository', () => {
-    const { first } = repoWithTwoCommits();
+    const { first } = shared;
 
     expect(gitDiffQuiet(createTempDir('writer-not-git'))(first)).toBe('error');
   }, 30_000);
@@ -241,7 +254,7 @@ describe('gitDiffQuiet', () => {
   ])(
     'should give the same answer from $place',
     ({ cwdOf }) => {
-      const { root, first, second } = repoWithTwoCommits();
+      const { root, first, second } = shared;
       const cwd = cwdOf(root);
 
       expect(withCwd(cwd, () => gitDiffQuiet(root)(first))).toBe('differs');
@@ -337,34 +350,105 @@ describe('openWriter', () => {
     expect(() => open()).toThrow(expect.objectContaining({ code: 'LEGACY_DATA' }));
   });
 
+  describe('when attaching a file', () => {
+    const NOTE = 'Rule text\n';
+    const NOTE_HASH = createHash('sha256').update(NOTE).digest('hex');
+
+    /** Pasta de trabalho do writer com `note.md` e `data.json`. */
+    function workDir() {
+      const dir = createTempDir('writer-attach');
+      fs.writeFileSync(path.join(dir, 'note.md'), NOTE);
+      fs.writeFileSync(path.join(dir, 'data.json'), '{}');
+      return dir;
+    }
+
+    it('should return the sha256 of the bytes of the file', () => {
+      const writer = open({ cwd: workDir() });
+
+      expect(writer.attach('note.md')).toBe(NOTE_HASH);
+    });
+
+    it('should store the blob under the attachments folder of the project', () => {
+      const writer = open({ cwd: workDir() });
+
+      writer.attach('note.md');
+
+      expect(
+        fs.readFileSync(
+          path.join(environment.dataDir, '.v1', 'hexlog', 'attachments', NOTE_HASH),
+          'utf8',
+        ),
+      ).toBe(NOTE);
+    });
+
+    it('should return the same hash for a repeated file', () => {
+      const writer = open({ cwd: workDir() });
+      const first = writer.attach('note.md');
+
+      const second = writer.attach('note.md');
+
+      expect(second).toBe(first);
+    });
+
+    it('should refuse a file that is not .md or .txt', () => {
+      const writer = open({ cwd: workDir() });
+
+      expect(() => writer.attach('data.json')).toThrow(
+        expect.objectContaining({ code: 'INVALID_INPUT' }),
+      );
+    });
+
+    it('should refuse a file outside the cwd of the writer', () => {
+      const writer = open({ cwd: workDir() });
+      const outside = path.join(workDir(), 'note.md');
+
+      expect(() => writer.attach(outside)).toThrow(
+        expect.objectContaining({ code: 'INVALID_INPUT' }),
+      );
+    });
+  });
+
   it('should refuse an invalid author', () => {
-    expect(() => open({ author: { agent: '', client: 'c' } })).toThrow();
+    expect(() => open({ author: { agent: '', client: 'c' } })).toThrow(ZodError);
   });
 
   describe('with a batch that is invalid', () => {
     const INVALID_BATCHES = [
-      ['a key that is empty', { key: '' }],
-      ['a key above 200 characters', { key: 'k'.repeat(201) }],
-      ['a process name that is not a name', { process: 'Not A Name' }],
+      { title: 'a key that is empty', patch: { key: '' }, issueCode: 'too_small' },
+      {
+        title: 'a key above 200 characters',
+        patch: { key: 'k'.repeat(201) },
+        issueCode: 'too_big',
+      },
+      {
+        title: 'a process name that is not a name',
+        patch: { process: 'Not A Name' },
+        issueCode: 'invalid_format',
+      },
     ] as const;
 
     it.each(INVALID_BATCHES)(
-      'should reject %s',
-      async (_title, patch) => {
+      'should reject $title',
+      async ({ patch, issueCode }) => {
         const invalid = { ...batch, ...patch };
 
-        await expect(open().write(invalid)).rejects.toThrow();
+        const error = await open()
+          .write(invalid)
+          .catch((thrown: unknown) => thrown);
+
+        expect(error).toBeInstanceOf(ZodError);
+        expect(error).toMatchObject({ issues: [{ code: issueCode }] });
       },
       30_000,
     );
 
     it.each(INVALID_BATCHES)(
-      'should write nothing for %s',
-      async (_title, patch) => {
+      'should write nothing for $title',
+      async ({ patch }) => {
         const before = snapshot(environment.dataDir);
         const invalid = { ...batch, ...patch };
 
-        await expect(open().write(invalid)).rejects.toThrow();
+        await expect(open().write(invalid)).rejects.toThrow(ZodError);
 
         expect(snapshot(environment.dataDir)).toEqual(before);
       },

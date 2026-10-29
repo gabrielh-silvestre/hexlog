@@ -214,6 +214,7 @@ o teste automatizado as marque como "passa":
 | `cd` seguido de caminho relativo | `cd ~/.local/share && cat hexlog/.v1/p/r/records.jsonl` |
 | `grep -r` no diretório pai | `grep -r foo ~/.local/share/` |
 | Subprocessos | `node -e …`, `python -c …` |
+| `bash -c` e `eval` | `bash -c 'cat ~/.local/share/hexlog/.v1/p/r/records.jsonl'`, `eval 'cat $HOME/.local/share/hexlog/.v1/x'`: o hook não re-parseia o argumento, que chega como um token só começando em `cat`; o `~` e o `$HOME` no meio dele não se expandem (`hook/bash-guard.ts#expandTilde`) e o glob dentro dele não é casado (`hook/bash-guard.ts#toCandidates`), então só a menção literal de `<D>` nega. Fechar a brecha muda o hook; por ora é limite aceito |
 | Glob só entre aspas acima dos tetos, expandido por um re-parseador | `bash -c 'cat $0' '<glob grande>'`, `eval '…'`: o hook não casa como glob o token só entre aspas acima dos tetos, só o confere como caminho literal e pelo prefixo literal; um glob relativo cujo prefixo não alcança `<D>` passa. É a mesma lacuna de `bash -c 'cat /home/g*/…/*'`, que já passa sem enchimento |
 | Par de aspas que cruza a quebra de linha depois de um `#` | `echo a#b "a⏎b" ; cat ~/.local/share/hexlog/.v1/… "⏎"`: o hook relê o trecho depois do `#` linha a linha e lê o `cat ~/…` como texto entre aspas, sem expandir o `~`; com o caminho absoluto de `<D>`, a menção literal nega |
 | `~usuário` no lugar de `~` | `cat ~gabriel/.local/share/hexlog/.v1/…`: o hook só expande o `~` seguido de `/` (e o `$HOME`), então `~nome` fica literal e o token nunca vira o caminho de `<D>` |
@@ -231,6 +232,7 @@ o teste automatizado as marque como "passa":
 | Alteração do artefato instalado por Bash/subprocesso | `cp x ~/.local/lib/hexlog/1.1.0/bash-guard.mjs`, `node -e "fs.writeFileSync(...)"`: o deny de `Edit` só cobre as tools Edit/Write/NotebookEdit, não Bash |
 | Desligar o guard editando a configuração | Editar `~/.claude/settings.json` à mão para remover deny ou hook |
 | Reinstalar a partir de código alterado | Editar `hook/bash-guard.ts` na working tree e rodar o instalador |
+| Ocupante da cadeira do dono no `agy` | A receita do `agy` (gerada pelo `hexlog-setup` quando a cadeira é ligada com esse ocupante) roda o `agy` direto, com `--dangerously-skip-permissions`, sem nenhuma regra de deny nem o `bash-guard`: ele pode ler o diretório de dados e escrever no hexlog por qualquer caminho que o `agy` alcance, e o ocupante `agy` executa comandos, escreve arquivos e usa a rede com o ambiente do dev. A contenção é só o texto do contrato, e o escopo do contrato é instrução, não barreira. Risco aceito, com o dono como responsável ([adr-0014-cadeira-do-dono-como-pacote-de-dados.md](directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md)) |
 
 As duas últimas linhas sobre o artefato instalado são detectadas e reparadas
 pelo próprio instalador e pelo `--check` (`artifact-modified`), como descrito

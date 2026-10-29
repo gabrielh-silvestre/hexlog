@@ -35,7 +35,7 @@ export function build({
   });
 }
 
-// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine >=24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
+// eslint-disable-next-line n/no-unsupported-features/node-builtins -- engine ^24.18.1 já suporta import.meta.main, plugin n ainda marca como experimental
 if (import.meta.main) {
   const flagIndex = process.argv.indexOf('--outdir');
   const outdir = flagIndex !== -1 ? process.argv[flagIndex + 1] : undefined;

@@ -7,19 +7,16 @@ import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process
 import { createProcessService } from '../../src/commands/process.ts';
 import { sha256hex } from '../../src/domain/chain.ts';
 import { RESERVED_PROCESS_NAMES, type Name } from '../../src/domain/ids.ts';
-import type { Manifest } from '../../src/domain/manifest.ts';
 import { HexlogError, type Detail, type ErrorCode } from '../../src/errors.ts';
-import type {
-  DefinitionKind,
-  DefinitionOf,
-  DefinitionStore,
-  ProcessStore,
-} from '../../src/ports.ts';
+import type { DefinitionKind, DefinitionOf } from '../../src/ports.ts';
 import { captureError, createTempDir } from '../helpers.ts';
-import { refuse, UNUSED_REGISTER_PORTS } from './register-fakes.ts';
-
-const PROJECT = 'alpha';
-const NOW = new Date('2026-10-02T12:00:00.000Z');
+import {
+  NOW,
+  PROJECT,
+  UNUSED_REGISTER_PORTS,
+  fakeDefinitionStore,
+  fakeProcessStore,
+} from './fakes.ts';
 
 const NOTE_1_0: DefinitionOf['types'] = { type: 'object' };
 const NOTE_1_1: DefinitionOf['types'] = {
@@ -37,68 +34,9 @@ const GATE_2: DefinitionOf['gates'] = {
   questions: [...GATE.questions, ...GATE.questions],
 };
 
-type Versions = Record<string, Record<string, unknown>>;
-
-/** `DefinitionStore` em memória: só leitura, e `add` planta uma versão (a ordem de inserção é a numérica). */
-function fakeDefinitions() {
-  // Sem protótipo: um nome como `constructor` não pode ler `Object.prototype`.
-  const data: Record<DefinitionKind, Versions> = {
-    types: Object.create(null) as Versions,
-    relations: Object.create(null) as Versions,
-    gates: Object.create(null) as Versions,
-  };
-  const reads: string[] = [];
-  const store: DefinitionStore = {
-    names: (_project, kind) => Object.keys(data[kind]),
-    versions: (_project, kind, name) => Object.keys(data[kind][name] ?? {}),
-    read: <K extends DefinitionKind>(_project: Name, kind: K, name: Name, version: string) => {
-      reads.push(`${kind}/${name}@${version}`);
-      return data[kind][name]?.[version] as DefinitionOf[K];
-    },
-    write: refuse,
-  };
-  const slot = (kind: DefinitionKind, name: Name) => (data[kind][name] ??= {});
-  const add = <K extends DefinitionKind>(
-    kind: K,
-    name: Name,
-    version: string,
-    definition: DefinitionOf[K],
-  ) => {
-    slot(kind, name)[version] = definition;
-  };
-  const addEmptyName = (kind: DefinitionKind, name: Name) => {
-    slot(kind, name);
-  };
-  return { store, add, addEmptyName, reads };
-}
-
-/** `ProcessStore` em memória: só `create` e `readManifest`, que é o que `createProcess` usa. */
-function fakeProcesses() {
-  const manifests = new Map<string, Manifest>();
-  const creates: Manifest[] = [];
-  const store: ProcessStore = {
-    create: (ref, manifest) => {
-      creates.push(manifest);
-      if (manifests.has(ref.process)) return false;
-      manifests.set(ref.process, manifest);
-      return true;
-    },
-    readManifest: (ref) => {
-      const manifest = manifests.get(ref.process);
-      if (manifest === undefined) throw new Error(`sem processo ${ref.process}`);
-      return manifest;
-    },
-    read: refuse,
-    list: refuse,
-    listProjects: refuse,
-    write: refuse,
-  };
-  return { store, manifests, creates };
-}
-
 function setup() {
-  const definitions = fakeDefinitions();
-  const processes = fakeProcesses();
+  const definitions = fakeDefinitionStore();
+  const processes = fakeProcessStore();
   const service = createProcessService({
     store: processes.store,
     definitions: definitions.store,
@@ -129,7 +67,7 @@ describe('createProcess', () => {
         lineageInheritance: true,
         pinned: { types: ['note'], relations: ['based-on'], gates: ['ready'] },
       });
-      expect(processes.manifests.get('run-1')).toEqual({
+      expect(processes.manifestStored('run-1')).toEqual({
         project: PROJECT,
         process: 'run-1',
         createdAt: NOW.toISOString(),
@@ -180,7 +118,7 @@ describe('createProcess', () => {
 
       create(service);
 
-      expect(Object.keys(processes.manifests.get('run-1')?.fixed.types ?? {})).toEqual(['note']);
+      expect(Object.keys(processes.manifestStored('run-1')?.fixed.types ?? {})).toEqual(['note']);
     });
   });
 
@@ -198,7 +136,7 @@ describe('createProcess', () => {
           details: [{ path: '/process', code: 'reserved-name' }],
         });
         expect(definitions.reads).toEqual([]);
-        expect(processes.creates).toEqual([]);
+        expect(processes.counters.creates).toEqual([]);
       },
     );
 
@@ -237,7 +175,7 @@ describe('createProcess', () => {
         message: expect.stringContaining('call define_type first'),
         details: [{ path: '/project', code: 'unknown-name' }],
       });
-      expect(processes.creates).toEqual([]);
+      expect(processes.counters.creates).toEqual([]);
     });
 
     it('should refuse a project left without definitions with TYPE_NOT_FOUND even with the process already created, instead of created: false', () => {
@@ -252,7 +190,7 @@ describe('createProcess', () => {
         code: 'TYPE_NOT_FOUND',
         details: [{ path: '/project', code: 'unknown-name' }],
       });
-      expect(processes.creates).toHaveLength(1);
+      expect(processes.counters.creates).toHaveLength(1);
     });
 
     it('should not count a name folder without a version as a registered definition', () => {
@@ -262,7 +200,7 @@ describe('createProcess', () => {
       const error = captureError(() => create(service));
 
       expect(error).toMatchObject({ code: 'TYPE_NOT_FOUND' });
-      expect(processes.creates).toEqual([]);
+      expect(processes.counters.creates).toEqual([]);
     });
 
     it.each<[ErrorCode, string, Detail]>([
@@ -294,7 +232,7 @@ describe('createProcess', () => {
         const error = captureError(() => create(service));
 
         expect(error).toBe(failing);
-        expect(processes.creates).toEqual([]);
+        expect(processes.counters.creates).toEqual([]);
       },
     );
   });
@@ -307,7 +245,7 @@ describe('createProcess', () => {
       const legacy = omit(processes.store.readManifest({ project: PROJECT, process: 'run-1' }), [
         'lineageInheritance',
       ]);
-      processes.manifests.set('run-1', legacy);
+      processes.setManifest('run-1', legacy);
 
       const result = create(service);
 
@@ -318,14 +256,14 @@ describe('createProcess', () => {
         pinned: { types: ['note'], relations: [], gates: [] },
       });
       expect(result).not.toHaveProperty('lineageInheritance');
-      expect(processes.manifests.get('run-1')).toBe(legacy);
+      expect(processes.manifestStored('run-1')).toBe(legacy);
     });
 
     it('should return created false, no stale and the manifest untouched when the definitions are the same', () => {
       const { service, definitions, processes } = setup();
       definitions.add('types', 'note', '1.0', NOTE_1_0);
       create(service);
-      const first = processes.manifests.get('run-1');
+      const first = processes.manifestStored('run-1');
 
       const result = create(service);
 
@@ -336,7 +274,7 @@ describe('createProcess', () => {
         lineageInheritance: true,
         pinned: { types: ['note'], relations: [], gates: [] },
       });
-      expect(processes.manifests.get('run-1')).toBe(first);
+      expect(processes.manifestStored('run-1')).toBe(first);
     });
 
     it('should return created false and stale with the current version of each when a type, relation and gate have a new version', () => {

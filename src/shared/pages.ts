@@ -6,7 +6,7 @@ export function isHighSurrogate(code: number): boolean {
 /**
  * Corta `text` em `[offset, offset + limit)` sem partir um par surrogate: se o corte cair depois
  * de um high surrogate, recua 1 (ou avança 1, se recuar deixaria a página vazia). Puro: usado pela
- * leitura paginada de anexos e pelo teto de texto por entrada da timeline.
+ * leitura paginada de anexos (`queries/read-attachment.ts`).
  */
 export function sliceChars(
   text: string,

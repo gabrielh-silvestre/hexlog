@@ -27,7 +27,7 @@ export type Decision<T> = { line?: string; result: T };
  * lock dorme com `setTimeout`. Toda regra de negócio fica em `decide`; o adaptador só sabe de bytes, lock e
  * prefixo `\n`.
  *
- * Erros comuns às quatro portas de armazenamento: falha de disco sai como `IO_ERROR`
+ * Erros comuns às três portas de armazenamento: falha de disco sai como `IO_ERROR`
  * (`adapters/fs/io.ts#toHexlogError`), com o errno em minúsculas em `details[0].code`; nome inválido
  * (projeto, processo, definição) sai como `INVALID_INPUT` com `invalid-name`. Os `details[].path`
  * (`/project`, `/process`, `/name`, `/version`, `/hash`, `/path`, `/text`) apontam o campo da tool
@@ -146,7 +146,7 @@ export type AttachmentReader = {
  * Lado de escrita de `AttachmentReader`: grava blobs, nunca sobrescreve.
  * D-15: `putPath` só lê arquivo dentro da raiz configurada na construção do adaptador e fora do
  * `dataDir`; as regras de extensão e de "exatamente um de `text`/`path`", além de texto vazio e
- * surrogate solto em `putText`, são do serviço (`commands/attachment.ts`, F4).
+ * surrogate solto em `putText`, são do serviço (`commands/attachment.ts`).
  * D-25: operação síncrona, como as demais portas (só `ProcessStore.write` é `async`).
  * `invalid-name` (`INVALID_INPUT`) vale para as quatro operações; `invalid-hash`, só para `status` e
  * `read`.
@@ -188,8 +188,12 @@ export type Validator = {
   /**
    * Pressupõe um schema que já passou em `checkSchema`: com schema que não compila lança `Error` cru
    * (vira `INTERNAL` na borda, `mcp/kernel.ts#execute`). O `path` dos detalhes é relativo a `data`.
-   * Devolve um erro por subschema avaliado, não um por campo (em `anyOf`/`oneOf`/`propertyNames`
-   * saem os dos ramos). `pattern` e `patternProperties` de um tipo fixado antes da recusa não são
+   * Devolve todas as violações do dado, não só a primeira (em `anyOf`/`oneOf`/`propertyNames`
+   * saem os dos ramos), até o teto de 50 com o aviso `too-many-errors`; `maxLength`, `minLength`,
+   * `maximum` e `minimum` trazem o valor medido na `message` (`... (got N)`, com N em pontos de
+   * código no comprimento). Com schema e dado de custo estimado alto devolve só a violação que o
+   * primeiro passe achou, mais um `Detail` `violations-capped` (`path` vazio) que avisa que a lista
+   * está incompleta (`errors.ts#violationsCapped`). `pattern` e `patternProperties` de um tipo fixado antes da recusa não são
    * aplicados: nenhum regex vindo do schema é construído nem executado.
    */
   validate(schema: RecordType, data: HexRecord['data']): Detail[];

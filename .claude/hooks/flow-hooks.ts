@@ -1,5 +1,5 @@
 // Hook do fluxo autônomo guiado por diretrizes (modos `pre-pr` e `subagent-start`). O hook só
-// importa builtins e `scripts/flow/marker.ts`, para rodar em worktree sem `node_modules`. Não lê o
+// importa builtins, `scripts/flow/marker.ts` e `./flow-command.ts`, para rodar em worktree sem `node_modules`. Não lê o
 // log do hexlog: a decisão de PR olha só o git e o marcador.
 import * as fs from 'node:fs';
 import { currentBranch, git, markerPath, slugOf, tryGit } from '../../scripts/flow/marker.ts';

@@ -1,6 +1,6 @@
 // Guard de instalação: regras de deny + hook PreToolUse em
 // `settings.json`, e verificação de que o guard está de fato ativo e
-// funcionando (I5, I6, I7). Puro e testável; não é importado pelo servidor
+// funcionando. Puro e testável; não é importado pelo servidor
 // nem pelo hook — só pelo instalador (`scripts/install.ts`).
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -49,7 +49,7 @@ const DENY_RULES = [
   { key: 'denyEditLib', item: 'deny-edit-lib' },
 ] as const satisfies readonly { key: keyof ExpectedRules; item: MissingItem }[];
 
-/** Pasta das versões instaladas (`~/.local/lib/hexlog`); `archive.ts` e o instalador também a usam. */
+/** Pasta das versões instaladas (`~/.local/lib/hexlog`); o instalador e `scripts/install.ts` (que a passa ao arquivador) também a usam. */
 export function libDirOf(home: string): string {
   return path.join(home, '.local', 'lib', 'hexlog');
 }
@@ -64,7 +64,7 @@ export function skillFileOf(home: string, name: string): string {
   return path.join(home, '.claude', 'skills', name, 'SKILL.md');
 }
 
-/** As 4 regras de deny e os caminhos do hook/servidor instalados para uma versão (QN4). */
+/** As 4 regras de deny e os caminhos do hook/servidor instalados para uma versão. */
 export function expectedRules(
   D: string,
   home: string,
@@ -196,7 +196,7 @@ function tryParseCommand(command: string): [string, string] | undefined {
   } catch {
     return undefined;
   }
-  // Exatamente 2 strings (Critic iter3-7): nada de `command.split(' ')`.
+  // Exatamente 2 strings: nada de `command.split(' ')`.
   if (tokens.length !== 2 || !tokens.every(isString)) return undefined;
   return [tokens[0], tokens[1]] as [string, string];
 }
@@ -239,7 +239,7 @@ export function findHookEntry(settingsData: unknown, libDir: string): FoundHookE
  * Insere ou corrige (sem duplicar) a entrada do hook do hexlog em `hooks.PreToolUse`. Regrava no
  * lugar só o campo errado (`command`, `matcher` ou `type`). A exceção é o `matcher` errado numa
  * entrada que divide `hooks` com hooks alheios: o `matcher` é da entrada inteira, então o hook do
- * hexlog sai para uma entrada própria `^Bash$` e a original, com os outros hooks, fica como estava.
+ * hexlog sai para uma entrada própria `^Bash$` e a original fica só com os outros hooks.
  */
 function applyHook(settingsText: string, expected: ExpectedRules): string {
   const found = findHookEntry(parse(settingsText), expected.libDir);
@@ -282,7 +282,7 @@ function applyHook(settingsText: string, expected: ExpectedRules): string {
 
 /**
  * Aplica as 4 regras de deny e o hook faltantes e remove o deny de um `<D>` antigo, sem tocar em mais
- * nada (I5). `removed` lista as regras de deny que saíram (ver `staleDenyRules`).
+ * nada. `removed` lista as regras de deny que saíram (ver `staleDenyRules`).
  */
 export function applyGuard(
   settingsText: string,
@@ -328,7 +328,7 @@ type VerifyGuardArgs = {
   artifactModified: boolean;
 };
 
-/** Único mecanismo de detecção de guard ausente, alterado ou quebrado (R-1); usado por `install.ts --check`. */
+/** Único mecanismo de detecção de guard ausente, alterado ou quebrado; usado por `install.ts --check`. */
 export function verifyGuard(args: VerifyGuardArgs): {
   ok: boolean;
   missing: MissingItem[];
@@ -364,7 +364,7 @@ export function verifyGuard(args: VerifyGuardArgs): {
 export function runRealHook(exec: string, file: string, stdin: string): { status: number | null } {
   // `env: process.env` explícito (em vez de deixar o spawnSync herdar por
   // omissão): equivalente em produção, mas lê o `process.env` atual — sem
-  // isso, o teste que simula um `HOME` diferente (I7) não convence o filho,
+  // isso, o teste que simula um `HOME` diferente não convence o filho,
   // porque o sandbox do Jest desacopla o `process.env` mutável do ambiente
   // nativo que o `child_process` usaria por omissão.
   const result = spawnSync(exec, [file], { input: stdin, timeout: 10_000, env: process.env });

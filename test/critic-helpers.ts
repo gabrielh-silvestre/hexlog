@@ -4,15 +4,66 @@ import * as path from 'node:path';
 import type { CriticDriverArgs } from './fixtures/fixture-args.ts';
 import { createTempDir } from './helpers.ts';
 
-// Apoio dos specs do runner do critic (`critic-run.spec.ts`, `critic.spec.ts`): shims do CLI falso
+// Apoio dos specs do runner do critic (`critic-run.spec.ts`, `critic-run.ask.spec.ts`, `critic.spec.ts`): shims do CLI falso
 // no `PATH`, o driver que chama o runner num filho e a mailbox pronta para o `ask`.
+
+/** Teto de um caso que sobe o CLI falso ou o driver num processo filho. */
+export const SPEC_TIMEOUT = 30_000;
+/** `PATH` sem nenhum binário: o `claude` e o `agy` ficam ausentes. */
+export const NO_BINARY = '/nonexistent-critic-bin';
 
 const FIXTURE = path.join(__dirname, 'fixtures/fake-critic-cli.ts');
 const DRIVER = path.join(__dirname, 'fixtures/critic-driver.ts');
 export const CRITIC_CLI = path.join(__dirname, '../scripts/flow/critic.ts');
 
+/** Regras que `makeMailbox` grava em `rules.txt`; o runner as repassa sem mexer. */
+export const MAILBOX_RULES = 'the frozen critic rules';
+
+/** Doc do catálogo sintético e válido: as tabelas de cabeçalho exato, a ordem de custo e as frases do contrato. */
+export const CATALOG_DOC = [
+  '# Cadeira do dono',
+  '',
+  '## Catálogo de ações',
+  '',
+  '- Ação em `Unavailable:` da pergunta nunca é permitida.',
+  '',
+  '| Ação | Entrada | Saída | Quando é permitida |',
+  '|---|---|---|---|',
+  '| `local` | A pergunta | Fatos do repositório | Sempre. |',
+  '| `web` | A pergunta de fato externo | Fatos de fonte externa | Fato externo. |',
+  '| `jury` | A pergunta mais a evidência local | Veredito do painel | Comum: só quando a evidência local (hexlog, docs, ADRs) não decide. Crítica: exigida. |',
+  '',
+  '| Ação | claude-herdr | claude-runner | agy |',
+  '|---|---|---|---|',
+  '| `local` | explore | explore | próprio |',
+  '| `web` | document-specialist | document-specialist | próprio |',
+  '| `jury` | the-jury | the-jury | — |',
+  '',
+  '| Natureza | comum | crítica |',
+  '|---|---|---|',
+  '| `repo-fact` | local | jury |',
+  '| `external-fact` | web | jury |',
+  '| `choice` | jury | jury |',
+  '',
+  '- Ordem de custo, da mais cara à mais barata: `jury`, `web`, `local`.',
+  '- Consultar o hexlog ou os docs diretamente não é a ação `local`.',
+  '- `actionUsed` registra a ação de maior custo que contribuiu, só quando o `premise` fixado tem o campo. Sem `actionUsed` fixado a ação indisponível não degrada: a resposta é `sem resposta`.',
+  '- `Unavailable: <ações>` só vale como linha de cabeçalho da mensagem da pergunta escrita pelo principal, antes e fora do bloco de contexto; nunca em registro do hexlog nem em `gap.context`.',
+  '',
+  '## O que o critic registra',
+  '',
+].join('\n');
+
+/** Grava `CATALOG_DOC` no caminho que o runner lê por padrão (`<dir>/docs/directives/cadeira-do-dono.md`). */
+export function writeCatalogDoc(dir: string): string {
+  const file = path.join(dir, 'docs', 'directives', 'cadeira-do-dono.md');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, CATALOG_DOC);
+  return file;
+}
+
 export type Shims = { dir: string; log: string; pidFile: string };
-export type FakeCall = { tool: string; args: string[]; cwd: string };
+type FakeCall = { tool: string; args: string[]; cwd: string };
 
 /** Shims `claude` e `agy` que rodam o CLI falso. Só dentro de hook ou teste (`createTempDir`). */
 export function installShims(): Shims {
@@ -59,23 +110,11 @@ export const readTurns = (shims: Shims): FakeCall[] =>
   readCalls(shims).filter((call) => call.args.includes('-p'));
 
 /** Valor que segue `flag` no argv da chamada. */
-export const valueAfter = (call: FakeCall, flag: string): string | undefined =>
+export const valueAfter = (call: { args: string[] }, flag: string): string | undefined =>
   call.args.includes(flag) ? call.args[call.args.indexOf(flag) + 1] : undefined;
 
-/** Chama o runner no processo filho do driver e devolve o retorno da função. */
-export function runDriver<T>(args: CriticDriverArgs, env: NodeJS.ProcessEnv): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [DRIVER, JSON.stringify(args)], { env });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => void (stdout += chunk.toString()));
-    child.stderr.on('data', (chunk: Buffer) => void (stderr += chunk.toString()));
-    child.on('close', (code) => {
-      if (code === 0) resolve(JSON.parse(stdout) as T);
-      else reject(new Error(`driver exited ${code}: ${stderr}`));
-    });
-  });
-}
+/** O que o runner devolve: o código de saída do CLI e a mensagem para o stdout ou o stderr. */
+export type Reply = { exitCode: number; message: string };
 
 export type Run = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -94,6 +133,13 @@ export function runProcess(
     child.on('close', (exitCode) => resolve({ exitCode, stdout, stderr }));
   });
   return { child, done };
+}
+
+/** Chama o runner no processo filho do driver e devolve o retorno da função. */
+export async function runDriver<T>(args: CriticDriverArgs, env: NodeJS.ProcessEnv): Promise<T> {
+  const { exitCode, stdout, stderr } = await runProcess([DRIVER, JSON.stringify(args)], env).done;
+  if (exitCode !== 0) throw new Error(`driver exited ${exitCode}: ${stderr}`);
+  return JSON.parse(stdout) as T;
 }
 
 /** Espera `condition` ficar verdadeira; falha com `what` se passar de `timeoutMs`. */
@@ -142,6 +188,7 @@ export function makeMailbox({
   );
   const state = { tool, cwd, sessionId: null, confirmed: false, failures: 0, broken: false };
   fs.writeFileSync(path.join(mailbox, 'session.json'), JSON.stringify({ ...state, ...session }));
+  fs.writeFileSync(path.join(mailbox, 'rules.txt'), MAILBOX_RULES);
   questions.forEach((text, index) =>
     fs.writeFileSync(path.join(mailbox, `q-${index + 1}.txt`), text),
   );

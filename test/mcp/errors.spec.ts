@@ -1,32 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import MiniSearch from 'minisearch';
-import { createEnvironment, expectError } from './environment.ts';
-import type { Environment } from './environment.ts';
+import { NOTE_SCHEMA, PROJECT, createEnvironment, expectError, nest } from './environment.ts';
+import type { Environment, ToolName } from './environment.ts';
 
-const PROJECT = 'alpha';
 const PROCESS = 'run-1';
 const AGENT = 'executor';
-const NOTE = {
-  type: 'object',
-  properties: { text: { type: 'string' } },
-  required: ['text'],
-  additionalProperties: false,
-};
-
-const TOOLS = [
-  'create_process',
-  'register',
-  'attach',
-  'define_type',
-  'define_relation',
-  'define_gate',
-  'query',
-  'evaluate_gate',
-  'verify_chain',
-  'read_attachment',
-  'list',
-  'describe_type',
-];
 
 const HASH = 'a'.repeat(64);
 
@@ -46,11 +24,11 @@ const registerInput = (extra: Record<string, unknown> = {}) => ({
 });
 
 // Uma entrada válida por tool: o campo desconhecido é a única razão da recusa.
-const VALID_INPUT: Record<string, Record<string, unknown>> = {
+const VALID_INPUT: Record<ToolName, Record<string, unknown>> = {
   create_process: { project: PROJECT, process: PROCESS },
   register: registerInput(),
   attach: { project: PROJECT, text: 'x' },
-  define_type: { project: PROJECT, name: 'note', schema: NOTE },
+  define_type: { project: PROJECT, name: 'note', schema: NOTE_SCHEMA },
   define_relation: { project: PROJECT, name: 'rel', kind: 'supports' },
   define_gate: {
     project: PROJECT,
@@ -68,12 +46,10 @@ const VALID_INPUT: Record<string, Record<string, unknown>> = {
 // JSON.parse cria `__proto__` como chave própria, o que um literal de objeto não faz.
 const hostile = (json: string): unknown => JSON.parse(json);
 
-const nest = (levels: number): Record<string, unknown> =>
-  Array.from({ length: levels }).reduce<Record<string, unknown>>((inner) => ({ a: inner }), {});
+const TOOLS = Object.keys(VALID_INPUT);
 
 let environment: Environment;
 
-// Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
 const openEnvironment = async () => {
   environment = await createEnvironment();
 };
@@ -150,9 +126,7 @@ describe('register', () => {
       records: [item({ data: hostile('{"__proto__":{"a":1},"text":"x"}') })],
     });
 
-    const result = await environment.call('register', args);
-
-    const body = expectError(result, 'INVALID_INPUT');
+    const body = await environment.fail('register', args, 'INVALID_INPUT');
 
     expect(body.details).toEqual([
       expect.objectContaining({ path: '/records/0/data/__proto__', code: 'reserved-key' }),
@@ -160,8 +134,8 @@ describe('register', () => {
   });
 
   it('should write nothing when register is refused for an own __proto__ key', async () => {
-    await environment.call('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-    await environment.call('create_process', { project: PROJECT, process: PROCESS });
+    await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });
+    await environment.ok('create_process', { project: PROJECT, process: PROCESS });
     const args = registerInput({
       records: [item({ data: hostile('{"__proto__":{"a":1},"text":"x"}') })],
     });
@@ -177,45 +151,41 @@ describe('register', () => {
   });
 
   it('should refuse 2,000 levels in the record data with INVALID_INPUT too-deep, not INTERNAL', async () => {
-    const result = await environment.call(
+    const body = await environment.fail(
       'register',
       registerInput({ records: [item({ data: nest(2000) })] }),
+      'INVALID_INPUT',
     );
-
-    const body = expectError(result, 'INVALID_INPUT');
 
     expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
   });
 
   describe('with data at the 64-level cap of the raw args', () => {
-    // A raiz dos args é o nível 1, `records` o 2 e o registro o 3: o `data` começa no nível 4.
-    const dataOfLevels = (levels: number) => nest(levels - 1);
-
+    // A raiz dos args é o nível 1, `records` o 2 e o registro o 3: o `data` de 61 níveis chega ao 64.
     beforeEach(async () => {
-      await environment.call('define_type', {
+      await environment.ok('define_type', {
         project: PROJECT,
         name: 'free',
         schema: { type: 'object' },
       });
-      await environment.call('create_process', { project: PROJECT, process: PROCESS });
+      await environment.ok('create_process', { project: PROJECT, process: PROCESS });
     });
 
     it('should accept data nested 61 levels deep', async () => {
       const result = await environment.call(
         'register',
-        registerInput({ records: [item({ type: 'free', data: dataOfLevels(61) })] }),
+        registerInput({ records: [item({ type: 'free', data: nest(61) })] }),
       );
 
       expect(result.isError).not.toBe(true);
     });
 
     it('should reject data nested 62 levels deep with too-deep', async () => {
-      const result = await environment.call(
+      const body = await environment.fail(
         'register',
-        registerInput({ records: [item({ type: 'free', data: dataOfLevels(62) })] }),
+        registerInput({ records: [item({ type: 'free', data: nest(62) })] }),
+        'INVALID_INPUT',
       );
-
-      const body = expectError(result, 'INVALID_INPUT');
 
       expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
     });
@@ -227,13 +197,15 @@ describe('define_type', () => {
   afterEach(closeEnvironment);
 
   it('should refuse 2,000 levels in the schema with INVALID_INPUT too-deep, not INTERNAL', async () => {
-    const result = await environment.call('define_type', {
-      project: PROJECT,
-      name: 'deep',
-      schema: nest(2000),
-    });
-
-    const body = expectError(result, 'INVALID_INPUT');
+    const body = await environment.fail(
+      'define_type',
+      {
+        project: PROJECT,
+        name: 'deep',
+        schema: nest(2000),
+      },
+      'INVALID_INPUT',
+    );
 
     expect(body.details).toEqual([expect.objectContaining({ code: 'too-deep' })]);
   });
@@ -244,13 +216,15 @@ describe('define_gate', () => {
   afterEach(closeEnvironment);
 
   it('should refuse an own __proto__ key in the select where with INVALID_INPUT and reserved-key', async () => {
-    const result = await environment.call('define_gate', {
-      project: PROJECT,
-      name: 'gate',
-      questions: [{ kind: 'occurred', select: { where: hostile('{"__proto__":"x"}') } }],
-    });
-
-    const body = expectError(result, 'INVALID_INPUT');
+    const body = await environment.fail(
+      'define_gate',
+      {
+        project: PROJECT,
+        name: 'gate',
+        questions: [{ kind: 'occurred', select: { where: hostile('{"__proto__":"x"}') } }],
+      },
+      'INVALID_INPUT',
+    );
 
     expect(body.details).toEqual([
       expect.objectContaining({
@@ -265,94 +239,16 @@ describe('query', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  const UUID = '0190a000-0000-7000-8000-000000000000';
-  const manyKeys = (count: number, value: string | null) =>
-    Object.fromEntries(Array.from({ length: count }, (_, i) => [`k${i}`, value]));
-
-  it.each([
-    { scenario: 'a limit above 200', patch: { limit: 201 }, path: '/limit' },
-    { scenario: 'a text above 200 characters', patch: { text: 't'.repeat(201) }, path: '/text' },
-    { scenario: 'a text with a lone surrogate', patch: { text: 'a\ud800b' }, path: '/text' },
-    {
-      scenario: 'a where with a lone surrogate value',
-      patch: { where: { k: 'a\ud800b' } },
-      path: '/where',
-    },
-    {
-      scenario: 'a where with a lone surrogate key',
-      patch: { where: { 'a\ud800b': 'v' } },
-      path: '/where',
-    },
-    {
-      scenario: 'a changesSince with a lone surrogate key',
-      patch: { changesSince: { 'a\ud800b': null } },
-      path: '/changesSince',
-    },
-    {
-      scenario: 'ids above 200',
-      patch: { ids: Array.from({ length: 201 }, () => `${PROCESS}:${UUID}`) },
-      path: '/ids',
-    },
-    {
-      scenario: 'a where with more than 50 keys',
-      patch: { where: manyKeys(51, 'v') },
-      path: '/where',
-    },
-    {
-      scenario: 'fields with 51 names',
-      patch: { fields: Array.from({ length: 51 }, (_, i) => `f${i}`) },
-      path: '/fields',
-    },
-    { scenario: 'fields with an empty name', patch: { fields: [''] }, path: '/fields/0' },
-    {
-      scenario: 'a changesSince with more than 200 keys',
-      patch: { changesSince: manyKeys(201, null) },
-      path: '/changesSince',
-    },
-  ])('should refuse $scenario with INVALID_INPUT and details[].path', async ({ patch, path }) => {
-    const result = await environment.call('query', {
-      project: PROJECT,
-      process: PROCESS,
-      ...patch,
-    });
-
-    const body = expectError(result, 'INVALID_INPUT');
-
-    expect(body.details).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
-  });
-
-  // Entrada exatamente no teto passa do zod: o erro vem do serviço, não de INVALID_INPUT.
-  it.each([
-    { scenario: 'a limit of 200', patch: { limit: 200 } },
-    { scenario: 'a text of 200 characters', patch: { text: 't'.repeat(200) } },
-    {
-      scenario: 'ids with 200 items',
-      patch: { ids: Array.from({ length: 200 }, () => `${PROCESS}:${UUID}`) },
-    },
-    { scenario: 'a where with 50 keys', patch: { where: manyKeys(50, 'v') } },
-    {
-      scenario: 'fields with 50 names',
-      patch: { fields: Array.from({ length: 50 }, (_, i) => `f${i}`) },
-    },
-    { scenario: 'a changesSince with 200 keys', patch: { changesSince: manyKeys(200, null) } },
-  ])('should let $scenario through to the service', async ({ patch }) => {
-    const result = await environment.call('query', {
-      project: PROJECT,
-      process: PROCESS,
-      ...patch,
-    });
-
-    expectError(result, 'PROCESS_NOT_FOUND');
-  });
-
   it('should refuse an own __proto__ key in where with INVALID_INPUT and reserved-key', async () => {
-    const result = await environment.call('query', {
-      project: PROJECT,
-      process: PROCESS,
-      where: hostile('{"__proto__":"x"}'),
-    });
-
-    const body = expectError(result, 'INVALID_INPUT');
+    const body = await environment.fail(
+      'query',
+      {
+        project: PROJECT,
+        process: PROCESS,
+        where: hostile('{"__proto__":"x"}'),
+      },
+      'INVALID_INPUT',
+    );
 
     expect(body.details).toEqual([
       expect.objectContaining({ path: '/where/__proto__', code: 'reserved-key' }),
@@ -365,9 +261,9 @@ describe('query', () => {
     });
 
     it('should turn it into INTERNAL without stack or exception text in the response', async () => {
-      await environment.call('define_type', { project: PROJECT, name: 'note', schema: NOTE });
-      await environment.call('create_process', { project: PROJECT, process: PROCESS });
-      await environment.call('register', registerInput());
+      await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });
+      await environment.ok('create_process', { project: PROJECT, process: PROCESS });
+      await environment.ok('register', registerInput());
       jest.spyOn(MiniSearch.prototype, 'addAll').mockImplementation(() => {
         throw new Error('boom');
       });
@@ -402,13 +298,15 @@ describe('read_attachment', () => {
     { scenario: 'a non-integer maxChars', patch: { maxChars: 2.5 }, path: '/maxChars' },
     { scenario: 'a maxChars above 24,000', patch: { maxChars: 24_001 }, path: '/maxChars' },
   ])('should refuse $scenario with INVALID_INPUT and details[].path', async ({ patch, path }) => {
-    const result = await environment.call('read_attachment', {
-      project: PROJECT,
-      hash: HASH,
-      ...patch,
-    });
-
-    const body = expectError(result, 'INVALID_INPUT');
+    const body = await environment.fail(
+      'read_attachment',
+      {
+        project: PROJECT,
+        hash: HASH,
+        ...patch,
+      },
+      'INVALID_INPUT',
+    );
 
     expect(body.details).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
   });

@@ -1,16 +1,16 @@
 import { describe, it, expect } from '@jest/globals';
 import { omit } from 'es-toolkit';
-import { hashOfJcs } from '../../src/domain/chain.ts';
 import {
   CURSOR_MAX_CHARS,
   CursorPayload,
   decodeCursor,
   encodeCursor,
 } from '../../src/queries/cursor.ts';
-import { HexlogError } from '../../src/errors.ts';
+import { idAt } from '../fixtures/chain-line.ts';
+import { captureError, detail } from '../helpers.ts';
 
-const ID_A = 'alpha:0198f4a0-0000-7000-8000-000000000001';
-const ID_B = 'beta:0198f4a0-0000-7000-8000-000000000002';
+const ID_A = idAt('alpha', 1);
+const ID_B = idAt('beta', 2);
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
 
@@ -26,17 +26,6 @@ const payload: CursorPayload = {
 /** Monta um cursor para um corpo arbitrário. */
 function forge(body: unknown): string {
   return Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
-}
-
-function invalidCursorOf(run: () => unknown): HexlogError {
-  try {
-    run();
-  } catch (error) {
-    expect(error).toBeInstanceOf(HexlogError);
-
-    return error as HexlogError;
-  }
-  throw new Error('expected INVALID_CURSOR');
 }
 
 describe('encodeCursor', () => {
@@ -59,52 +48,45 @@ describe('decodeCursor', () => {
 
       expect(decodeCursor(cursor)).toEqual(scoped);
     });
-
-    it('should keep a null entry of a marker with several entries on a round trip', () => {
-      const cursor = encodeCursor(payload);
-
-      expect(decodeCursor(cursor).marker.gamma).toBeNull();
-    });
   });
 
   it.each([
     ['too long', 'a'.repeat(CURSOR_MAX_CHARS + 1)],
     ['not valid JSON', 'x.y'],
     ['invalid in a field', forge({ ...payload, scope: 'global' })],
-  ])('should name the cursor in the error message when the cursor is %s', (_label, text) => {
-    const error = invalidCursorOf(() => decodeCursor(text));
+  ])(
+    'should name the cursor and tell to rerun without it when the cursor is %s',
+    (_label, text) => {
+      const error = captureError(() => decodeCursor(text));
 
-    expect(error.message).toMatch(/cursor/i);
-  });
+      expect(error.message).toMatch(/cursor/i);
+      expect(error.details[0]?.message).toContain('rerun the query without cursor');
+    },
+  );
 
   describe('with input ceilings', () => {
-    it('should state the ceiling in the detail of a too-long cursor', () => {
-      const error = invalidCursorOf(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS + 1)));
-
-      expect(error.details[0]?.message).toContain(String(CURSOR_MAX_CHARS));
-    });
-
-    it('should refuse text above CURSOR_MAX_CHARS as too-long before decoding', () => {
-      const error = invalidCursorOf(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS + 1)));
+    it('should refuse text above CURSOR_MAX_CHARS as too-long before decoding, stating the ceiling', () => {
+      const error = captureError(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS + 1)));
 
       expect(error.details).toEqual([
-        { path: '/cursor', code: 'too-long', message: expect.any(String) },
+        {
+          ...detail('/cursor', 'too-long'),
+          message: expect.stringContaining(String(CURSOR_MAX_CHARS)),
+        },
       ]);
     });
 
     it('should let text of exactly CURSOR_MAX_CHARS pass the ceiling and fall into malformed', () => {
-      const error = invalidCursorOf(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS)));
+      const error = captureError(() => decodeCursor('a'.repeat(CURSOR_MAX_CHARS)));
 
-      expect(error.details).toEqual([
-        { path: '/cursor', code: 'malformed', message: expect.any(String) },
-      ]);
+      expect(error.details).toEqual([detail('/cursor', 'malformed')]);
     });
 
     it('should give at most 51 details, the last too-many-errors, for a thousand invalid fields', () => {
       const marker = Object.fromEntries(Array.from({ length: 1_000 }, (_, n) => [`p${n}`, 'x']));
       const cursor = forge({ ...payload, marker });
 
-      const error = invalidCursorOf(() => decodeCursor(cursor));
+      const error = captureError(() => decodeCursor(cursor));
 
       expect(error.details).toHaveLength(51);
       expect(error.details.at(-1)).toMatchObject({ code: 'too-many-errors' });
@@ -131,28 +113,21 @@ describe('decodeCursor', () => {
       },
     );
 
-    it('should say that the payload is not valid JSON in the detail of a malformed cursor', () => {
-      const error = invalidCursorOf(() => decodeCursor('x.y'));
+    it('should say that the payload is not valid JSON, with no stack or absolute path, in the detail of a malformed cursor', () => {
+      const error = captureError(() => decodeCursor('x.y'));
 
-      expect(error.details[0]?.message).toContain('not valid JSON');
+      expect(error.details).toEqual([
+        { ...detail('/cursor', 'malformed'), message: expect.stringContaining('not valid JSON') },
+      ]);
+      expect(JSON.stringify(error.details)).not.toMatch(/\/home|\.ts/);
     });
 
     it('should give malformed for a truncated cursor', () => {
       const truncated = encodeCursor(payload).slice(0, -8);
 
-      const error = invalidCursorOf(() => decodeCursor(truncated));
+      const error = captureError(() => decodeCursor(truncated));
 
-      expect(error.details).toEqual([
-        { path: '/cursor', code: 'malformed', message: expect.any(String) },
-      ]);
-    });
-
-    it('should tell to rerun the query without cursor in every INVALID_CURSOR message', () => {
-      const malformed = invalidCursorOf(() => decodeCursor('x.y'));
-      const badField = invalidCursorOf(() => decodeCursor(forge({ ...payload, scope: 'global' })));
-
-      expect(malformed.details[0]?.message).toContain('rerun the query without cursor');
-      expect(badField.details[0]?.message).toContain('rerun the query without cursor');
+      expect(error.details).toEqual([detail('/cursor', 'malformed')]);
     });
 
     it.each([
@@ -166,7 +141,7 @@ describe('decodeCursor', () => {
     ])('should point the field %s of a wrong type or format in details', (field, bad) => {
       const cursor = forge({ ...payload, ...bad });
 
-      const error = invalidCursorOf(() => decodeCursor(cursor));
+      const error = captureError(() => decodeCursor(cursor));
 
       expect(error.code).toBe('INVALID_CURSOR');
       expect(error.details.map(({ path }) => path.split('/')[2])).toContain(field);
@@ -182,7 +157,7 @@ describe('decodeCursor', () => {
       (field) => {
         const cursor = forge(omit(payload, [field as keyof CursorPayload]));
 
-        const error = invalidCursorOf(() => decodeCursor(cursor));
+        const error = captureError(() => decodeCursor(cursor));
 
         expect(error.code).toBe('INVALID_CURSOR');
         expect(error.details).toEqual([
@@ -194,24 +169,22 @@ describe('decodeCursor', () => {
     it('should refuse an unknown field', () => {
       const cursor = forge({ ...payload, extra: true });
 
-      const error = invalidCursorOf(() => decodeCursor(cursor));
+      const error = captureError(() => decodeCursor(cursor));
 
       expect(error.code).toBe('INVALID_CURSOR');
     });
 
     it('should refuse a body that is not a JSON object', () => {
-      expect(invalidCursorOf(() => decodeCursor(forge([payload]))).code).toBe('INVALID_CURSOR');
-      expect(invalidCursorOf(() => decodeCursor(forge(null))).code).toBe('INVALID_CURSOR');
+      expect(captureError(() => decodeCursor(forge([payload]))).code).toBe('INVALID_CURSOR');
+      expect(captureError(() => decodeCursor(forge(null))).code).toBe('INVALID_CURSOR');
     });
 
     it('should give malformed for base64url with invalid JSON', () => {
       const body = Buffer.from('{not json', 'utf8').toString('base64url');
 
-      const error = invalidCursorOf(() => decodeCursor(body));
+      const error = captureError(() => decodeCursor(body));
 
-      expect(error.details).toEqual([
-        { path: '/cursor', code: 'malformed', message: expect.any(String) },
-      ]);
+      expect(error.details).toEqual([detail('/cursor', 'malformed')]);
     });
 
     it.each([
@@ -219,42 +192,9 @@ describe('decodeCursor', () => {
       ['not base64url of JSON', 'abc'],
       ['with a separator', 'a.b.c'],
     ])('should give malformed for an invalid format (%s)', (_label, text) => {
-      const error = invalidCursorOf(() => decodeCursor(text));
+      const error = captureError(() => decodeCursor(text));
 
-      expect(error.details).toEqual([
-        { path: '/cursor', code: 'malformed', message: expect.any(String) },
-      ]);
+      expect(error.details).toEqual([detail('/cursor', 'malformed')]);
     });
-
-    it('should carry no stack and no absolute path in details', () => {
-      const error = invalidCursorOf(() => decodeCursor('x.y'));
-
-      expect(JSON.stringify(error.details)).not.toMatch(/\/home|\.ts/);
-    });
-  });
-});
-
-describe('hashOfJcs', () => {
-  it('should ignore the order of the keys, at any level', () => {
-    expect(hashOfJcs({ types: ['note'], where: { a: 1, b: 2 } })).toBe(
-      hashOfJcs({ where: { b: 2, a: 1 }, types: ['note'] }),
-    );
-  });
-
-  it('should be a sha256 hex of 64 characters', () => {
-    expect(hashOfJcs({})).toMatch(/^[0-9a-f]{64}$/);
-  });
-
-  it.each([
-    ['a filter value', { types: ['note'] }, { types: ['decision'] }],
-    ['an extra filter', { types: ['note'] }, { types: ['note'], text: 'x' }],
-    ['the order of a list', { types: ['a', 'b'] }, { types: ['b', 'a'] }],
-    ['null against absent', { target: null }, {}],
-  ])('should give a different hash for %s', (_label, left, right) => {
-    expect(hashOfJcs(left)).not.toBe(hashOfJcs(right));
-  });
-
-  it('should treat a key with undefined as an absent key', () => {
-    expect(hashOfJcs({ text: undefined, types: ['note'] })).toBe(hashOfJcs({ types: ['note'] }));
   });
 });

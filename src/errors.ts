@@ -1,4 +1,4 @@
-import { isUndefined, omitBy, uniqBy } from 'es-toolkit';
+import { isUndefined, omitBy, partition, uniqBy } from 'es-toolkit';
 import type { z } from 'zod';
 import type { Name, RecordId } from './domain/ids.ts';
 
@@ -7,7 +7,7 @@ import type { Name, RecordId } from './domain/ids.ts';
  * JSON Pointer.
  * `current`, `process` e `pid` são da 1.0 (D-26): versão vigente da linhagem (`null` se revogada),
  * processo citado e pid do detentor do lock. `versions` é das definições: as versões que existem
- * quando a pedida não existe.
+ * quando a pedida não existe. `kind` é o `kind` do nome de relação fixado, em `kind-mismatch`.
  */
 export type Detail = {
   path: string;
@@ -17,6 +17,7 @@ export type Detail = {
   process?: string;
   pid?: number;
   versions?: string[];
+  kind?: string;
 };
 
 /** Catálogo de códigos de erro de domínio (ADR 0009 item 7): a união literal única. */
@@ -64,7 +65,7 @@ export class HexlogError extends Error {
 }
 
 /** Campos opcionais de um `Detail` que só alguns erros trazem. */
-type DetailExtra = Pick<Detail, 'current' | 'process' | 'pid' | 'versions'>;
+type DetailExtra = Pick<Detail, 'current' | 'process' | 'pid' | 'versions' | 'kind'>;
 
 /**
  * Erro com um único `Detail`; `message` é a do erro e a do `Detail`. As chaves `undefined` de `extra`
@@ -110,7 +111,7 @@ export function reservedName(): HexlogError {
 /** Comando de arquivamento que `LEGACY_DATA` devolve em `details` (D-13): sem caminho absoluto. */
 const ARCHIVE_COMMAND = 'node scripts/install.ts --archive-0x (from the hexlog repository)';
 
-/** Recusa de dado 0.x em `<D>` (D-13): a mesma para o kernel MCP e para os scripts de leitura (P11). */
+/** Recusa de dado 0.x em `<D>` (D-13): a mesma para o kernel MCP e para os scripts de leitura. */
 export function legacyDataError(): HexlogError {
   return new HexlogError('LEGACY_DATA', 'legacy 0.x data found; archive it first', [
     { path: '', code: 'run', message: ARCHIVE_COMMAND },
@@ -127,20 +128,51 @@ export function pointer(path: PropertyKey[]): string {
 /** Alinhado a `BATCH_MAX` (`docs/tetos-dominio-v1.md`); sem medição por trás. */
 const MAX_DETAILS = 50;
 
+const TOO_MANY_CODE = 'too-many-errors';
+const OMITTED_MESSAGE = /^(\d+) more errors omitted$/;
+export const VIOLATIONS_CAPPED_CODE = 'violations-capped';
+
+/**
+ * Aviso de que a lista de violações de UM registro está incompleta: o schema do tipo é caro demais
+ * para validar por inteiro (acima de `COST_CEILING`). Sem `type` a `message` é a do validador, que
+ * não conhece o registro; o serviço a refaz com o nome do tipo. É `code` de detail, não `ErrorCode`.
+ */
+export function violationsCapped(path: string, type?: Name): Detail {
+  const subject = isUndefined(type) ? 'its type' : `type '${type}'`;
+  return {
+    path,
+    code: VIOLATIONS_CAPPED_CODE,
+    message: `Only the first violations of this record are listed because ${subject} is too costly to validate in full; read its full contract with describe_type`,
+  };
+}
+
+const detailKey = ({ path, code, message }: Detail) => `${path}\0${code}\0${message}`;
+
 /**
  * Deduplica por path+code+message (o ajv repete o mesmo erro, pois o metaschema é revisitado por
- * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora.
+ * `$dynamicRef`) e corta em `MAX_DETAILS`, avisando no último `Detail` quantos ficaram de fora. O
+ * aviso que já vem na lista (o do corte de cada registro de um lote) não conta como erro: o que ele
+ * omitiu soma ao total do aviso novo. O `violations-capped` também não é erro: ocupa vaga dos 50,
+ * fica depois dos erros e antes do aviso de corte e nunca é cortado, para o ponteiro de cada
+ * registro incompleto chegar a quem lê.
  */
 export function capDetails(details: Detail[]): Detail[] {
-  const unique = uniqBy(details, (d) => `${d.path}\0${d.code}\0${d.message}`);
-  if (unique.length <= MAX_DETAILS) return unique;
+  const [capped, others] = partition(details, ({ code }) => code === VIOLATIONS_CAPPED_CODE);
+  let carried = 0;
+  const errors = others.filter(({ code, message }) => {
+    const previous = code === TOO_MANY_CODE ? OMITTED_MESSAGE.exec(message) : null;
+    carried += Number(previous?.[1] ?? 0);
+    return previous === null;
+  });
+  const unique = uniqBy(errors, detailKey);
+  const hints = uniqBy(capped, detailKey);
+  const budget = Math.max(MAX_DETAILS - hints.length, 0);
+  const omitted = Math.max(unique.length - budget, 0) + carried;
+  if (omitted === 0) return [...unique, ...hints];
   return [
-    ...unique.slice(0, MAX_DETAILS),
-    {
-      path: '',
-      code: 'too-many-errors',
-      message: `${unique.length - MAX_DETAILS} more errors omitted`,
-    },
+    ...unique.slice(0, budget),
+    ...hints,
+    { path: '', code: TOO_MANY_CODE, message: `${omitted} more errors omitted` },
   ];
 }
 
@@ -223,6 +255,7 @@ export function attachmentNotFound(path: string, hash: string): HexlogError {
   return domainError('ATTACHMENT_NOT_FOUND', path, 'not-found', `attachment '${hash}' not found`);
 }
 
+/** `ATTACHMENT_CORRUPTED`: o blob em disco não bate com o hash que o endereça; `path` como em `attachmentNotFound`. */
 export function attachmentCorrupted(path: string, hash: string): HexlogError {
   return domainError(
     'ATTACHMENT_CORRUPTED',
@@ -232,24 +265,26 @@ export function attachmentCorrupted(path: string, hash: string): HexlogError {
   );
 }
 
+/** `INVALID_INPUT` em `/path`: o arquivo a anexar resolve para fora da raiz permitida ou dentro do diretório de dados. */
 export function outsideAllowedRoot(): HexlogError {
   return invalidInput('/path', 'outside-allowed-root', 'path is outside the allowed root');
 }
 
-/** `grewWhileReading`: o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
-export function tooBigFile(maxBytes: number, grewWhileReading = false): HexlogError {
-  const message = grewWhileReading
-    ? 'file changed while being read'
-    : `file exceeds ${maxBytes} bytes`;
+/** Sem `maxBytes`, o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
+export function tooBigFile(maxBytes?: number): HexlogError {
+  const message =
+    maxBytes === undefined ? 'file changed while being read' : `file exceeds ${maxBytes} bytes`;
   return invalidInput('/path', 'too-big', message);
 }
 
+/** `PROCESS_NOT_FOUND` em `/process`, com o nome do processo ausente em `process`. */
 export function processNotFound(process: Name): HexlogError {
   return domainError('PROCESS_NOT_FOUND', '/process', 'not-found', 'process not found', {
     process,
   });
 }
 
+/** `PROCESS_CORRUPTED` em `/process`: o manifesto do processo não pôde ser lido. */
 export function unreadableManifest(process: Name): HexlogError {
   return domainError(
     'PROCESS_CORRUPTED',
@@ -272,7 +307,10 @@ export function processTooLarge(process: Name, limitBytes: number, advice = fals
  * ou vazia: `unknown-name`); com versões, o nome existe e a pedida não (`unknown-version`,
  * listando as que existem, nunca vazia). `code` é o `*_NOT_FOUND` do tipo de definição.
  */
-export function definitionNotFound(code: ErrorCode, existing: string[]): HexlogError {
+export function definitionNotFound(
+  code: Extract<ErrorCode, 'TYPE_NOT_FOUND' | 'RELATION_NOT_FOUND' | 'GATE_NOT_FOUND'>,
+  existing: string[],
+): HexlogError {
   if (existing.length === 0) {
     return domainError(code, '/name', 'unknown-name', 'definition name not found');
   }
@@ -281,6 +319,7 @@ export function definitionNotFound(code: ErrorCode, existing: string[]): HexlogE
   });
 }
 
+/** `INTERNAL` em `/version`: o arquivo de uma versão de definição existe e não pôde ser lido. */
 export function unreadableDefinition(): HexlogError {
   return domainError(
     'INTERNAL',
@@ -300,6 +339,7 @@ export function invalidDefinition(): HexlogError {
   );
 }
 
+/** `PROJECT_NOT_FOUND` em `/project`: o projeto citado não existe. */
 export function projectNotFound(): HexlogError {
   return domainError('PROJECT_NOT_FOUND', '/project', 'unknown-project', 'project not found');
 }
@@ -309,6 +349,7 @@ export function typeNotFound(): HexlogError {
   return domainError('TYPE_NOT_FOUND', '/type', 'unknown-name', 'type not found in the project');
 }
 
+/** `GATE_NOT_FOUND` em `/gate`: o gate pedido não está fixado no manifesto do processo. */
 export function gateNotFound(): HexlogError {
   return domainError(
     'GATE_NOT_FOUND',
@@ -333,6 +374,7 @@ export function typeNotPinned(type: string, path = '/type'): HexlogError {
   );
 }
 
+/** `MARKER_NOT_FOUND` em `/marker`: o registro marcador citado não existe no processo. */
 export function markerNotFound(): HexlogError {
   return domainError(
     'MARKER_NOT_FOUND',
@@ -342,6 +384,7 @@ export function markerNotFound(): HexlogError {
   );
 }
 
+/** `MARKER_NOT_FOUND` em `/marker`: o marcador cita um processo que não existe; `message` troca a frase padrão. */
 export function markerProcessNotFound(
   process: Name,
   message = 'marker names a process that does not exist',
@@ -370,6 +413,7 @@ export function invalidCursorPayload(issues: z.core.$ZodIssue[]): HexlogError {
   );
 }
 
+/** `RELATION_NOT_FOUND` em `path`: `missing` quando o destino não existe, `destination-corrupted` quando existe e está corrompido. */
 export function relationNotFound(
   path: string,
   code: 'missing' | 'destination-corrupted',
@@ -380,6 +424,7 @@ export function relationNotFound(
   return domainError('RELATION_NOT_FOUND', path, code, message, { process });
 }
 
+/** `CYCLE_REJECTED` na raiz: o lote fecharia um ciclo de `supersedes`. */
 export function cycleRejected(): HexlogError {
   return domainError('CYCLE_REJECTED', '', 'cycle', 'batch would create a supersedes cycle');
 }

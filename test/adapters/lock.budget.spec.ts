@@ -1,13 +1,12 @@
-import { afterEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeAll, describe, expect, it } from '@jest/globals';
 import { sumBy } from 'es-toolkit';
-import { once } from 'node:events';
 import * as path from 'node:path';
 import { LOCK_DIR } from '../../src/adapters/fs/data-format.ts';
 import { createLockManager } from '../../src/adapters/fs/lock.ts';
 import { verifyProcess } from '../../src/shared/loader.ts';
 import { chainLine } from '../fixtures/chain-line.ts';
 import { createTempDir } from '../helpers.ts';
-import { createProcess, killChildren, runWriteStress, startHolder } from './lock-helpers.ts';
+import { createProcess, killChildren, runWriteStress, startKilledHolder } from './lock-helpers.ts';
 
 // Medição para o ADR 0009, não contrato: repete o estresse de `lock.spec.ts` (8 filhos x 25
 // gravações, com lock de dono morto pré-plantado) e imprime, por rodada, as taxas de `lock-lost`
@@ -37,7 +36,7 @@ const EXPECTED_RECORDS = 200;
 describe('createProcessStore', () => {
   afterEach(killChildren);
 
-  it(`should print lock-lost and lock-busy over ${ROUNDS} rounds of the 8 children x 25 writes stress`, async () => {
+  describe(`with ${ROUNDS} rounds of the 8 children x 25 writes stress`, () => {
     const samples: {
       round: number;
       lockLost: number;
@@ -46,46 +45,51 @@ describe('createProcessStore', () => {
       records: number;
     }[] = [];
 
-    for (let round = 1; round <= ROUNDS; round++) {
-      const { store, ref, results } = await runWriteStress();
-      const succeeded = results.filter(({ status }) => status === 0);
-      const lockLost = sumBy(
-        succeeded,
-        ({ stdout }) => (JSON.parse(stdout) as { retries: number }).retries,
-      );
-      const failedChildren = results.length - succeeded.length;
-      const { ok: chainOk, totalRecords: records } = verifyProcess(store.read(ref)).chain;
-      samples.push({ round, lockLost, failedChildren, chainOk, records });
+    beforeAll(async () => {
+      for (let round = 1; round <= ROUNDS; round++) {
+        const { store, ref, results } = await runWriteStress();
+        const succeeded = results.filter(({ status }) => status === 0);
+        const lockLost = sumBy(
+          succeeded,
+          ({ stdout }) => (JSON.parse(stdout) as { retries: number }).retries,
+        );
+        const failedChildren = results.length - succeeded.length;
+        const { ok: chainOk, totalRecords: records } = verifyProcess(store.read(ref)).chain;
+        samples.push({ round, lockLost, failedChildren, chainOk, records });
+        process.stdout.write(
+          `round=${round} lock-lost=${lockLost} lock-busy=${failedChildren} chain-ok=${chainOk} records=${records}\n`,
+        );
+      }
+
+      const lockLostRounds = samples.filter(({ lockLost }) => lockLost > 0).length;
+      const failedRounds = samples.filter(({ failedChildren }) => failedChildren > 0).length;
       process.stdout.write(
-        `round=${round} lock-lost=${lockLost} lock-busy=${failedChildren} chain-ok=${chainOk} records=${records}\n`,
+        `summary rounds=${ROUNDS} rounds-with-lock-lost=${lockLostRounds} rounds-with-child-failure=${failedRounds}\n`,
       );
-    }
+    }, 900_000);
 
-    const lockLostRounds = samples.filter(({ lockLost }) => lockLost > 0).length;
-    const failedRounds = samples.filter(({ failedChildren }) => failedChildren > 0).length;
-    process.stdout.write(
-      `summary rounds=${ROUNDS} rounds-with-lock-lost=${lockLostRounds} rounds-with-child-failure=${failedRounds}\n`,
-    );
+    it('should keep the chain intact in every round', () => {
+      expect(samples.filter(({ chainOk }) => !chainOk)).toEqual([]);
+    });
 
-    expect(samples.filter(({ chainOk }) => !chainOk)).toEqual([]);
-    expect(
-      samples.filter(
-        ({ failedChildren, records }) => failedChildren === 0 && records !== EXPECTED_RECORDS,
-      ),
-    ).toEqual([]);
-  }, 900_000);
+    it('should write every record in the rounds without a failed child', () => {
+      expect(
+        samples.filter(
+          ({ failedChildren, records }) => failedChildren === 0 && records !== EXPECTED_RECORDS,
+        ),
+      ).toEqual([]);
+    });
+  });
 
   it('should enter store.write in under 1 s after the owner is killed with kill -9', async () => {
     const { store, ref, lockDir } = createProcess();
-    const { child } = await startHolder(lockDir);
-    child.kill('SIGKILL');
-    await once(child, 'exit');
+    await startKilledHolder(lockDir);
 
     const started = performance.now();
     await store.write(ref, (raw) => ({
       line: chainLine(ref.process, verifyProcess(raw).end, 1, {
         agent: 'lock-spec',
-        text: () => 'depois do kill',
+        text: () => 'after the kill',
       }),
       result: undefined,
     }));
@@ -99,9 +103,7 @@ describe('createLockManager', () => {
 
   it('should steal the lock of an owner killed with kill -9 in under 1 s', async () => {
     const lockDir = path.join(createTempDir('lock'), LOCK_DIR);
-    const { child } = await startHolder(lockDir);
-    child.kill('SIGKILL');
-    await once(child, 'exit');
+    await startKilledHolder(lockDir);
     const manager = createLockManager({ log: () => undefined });
 
     const started = performance.now();

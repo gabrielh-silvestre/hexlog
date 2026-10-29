@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "project": "notes-app",
+  "unit": {
+    "kind": "change request",
+    "location": "changes/<id>",
+    "examples": [
+      {
+        "path": "changes/cr-101",
+        "process": "changes-cr-101"
+      },
+      {
+        "path": "changes/cr-102",
+        "process": "changes-cr-102"
+      }
+    ]
+  },
+  "phases": [
+    {
+      "name": "review",
+      "command": "run the review checklist",
+      "type": "review",
+      "target": "review",
+      "artifact": "review.md",
+      "links": []
+    }
+  ],
+  "types": [
+    {
+      "name": "review",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "document": {
+            "type": "string",
+            "format": "attachment"
+          }
+        },
+        "required": ["unit", "summary"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "relations": [],
+  "gate": {
+    "name": "unit-complete",
+    "questions": [
+      {
+        "kind": "occurred",
+        "select": {
+          "type": "review"
+        }
+      }
+    ]
+  }
+}

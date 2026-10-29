@@ -1,0 +1,1 @@
+../../docs/directives/instalacao-e-hooks.md

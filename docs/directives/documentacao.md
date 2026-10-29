@@ -1,3 +1,10 @@
+---
+paths:
+  - '**/*.md'
+  - 'CHANGELOG.md'
+  - 'docs/**'
+---
+
 # Documentação
 
 ## Dois tipos de documento

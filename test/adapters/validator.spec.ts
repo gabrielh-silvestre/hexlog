@@ -21,6 +21,10 @@ const METASCHEMA_IDS = [
   'https://json-schema.org/draft/2020-12/meta/validation',
 ];
 
+/** Compila com o ajv estrito sem o `createValidator`: o controle que prova o que o validador evita. */
+const compileWithPlainAjv = (schema: object) =>
+  new Ajv2020.default({ strict: true, logger: false }).compile(schema);
+
 const gitShaSchema = {
   type: 'object',
   properties: { commit: { type: 'string', format: 'git-sha' } },
@@ -33,15 +37,21 @@ describe('checkSchema', () => {
       'a schema with the attachment format',
       { type: 'object', properties: { file: { type: 'string', format: 'attachment' } } },
     ],
-  ])('should accept %s', (_name, schema) => {
-    expect(validator.checkSchema(schema)).toEqual([]);
-  });
+  ])(
+    'should find no problem in %s, which the metaschema and the format catalog allow',
+    (_name, schema) => {
+      expect(validator.checkSchema(schema)).toEqual([]);
+    },
+  );
 
   it('should refuse a keyword value that violates the metaschema, with the path of the point', () => {
     const details = validator.checkSchema({ type: 'object', properties: { a: { type: 5 } } });
 
-    expect(details.length).toBeGreaterThan(0);
-    expect(details.map((detail) => detail.path)).toEqual(details.map(() => '/properties/a/type'));
+    expect(details.map(({ path, code }) => ({ path, code }))).toEqual([
+      { path: '/properties/a/type', code: 'enum' },
+      { path: '/properties/a/type', code: 'type' },
+      { path: '/properties/a/type', code: 'any-of' },
+    ]);
   });
 
   it.each([
@@ -92,7 +102,9 @@ describe('checkSchema', () => {
   it('should refuse a schema with an $id and an unresolvable $ref with a single detail', () => {
     const $id = 'https://example.com/unresolvable';
 
-    expect(validator.checkSchema({ $id, $ref: 'https://nowhere/x' })).toHaveLength(1);
+    expect(validator.checkSchema({ $id, $ref: 'https://nowhere/x' })).toEqual([
+      { path: '', code: 'invalid-schema', message: expect.stringContaining('nowhere') },
+    ]);
   });
 
   it('should accept a repeated $id after a compilation that threw', () => {
@@ -113,7 +125,9 @@ describe('checkSchema', () => {
   });
 
   it('should list the short metaschema errors without repeats', () => {
-    expect(validator.checkSchema({ items: [{ type: 'string' }] })).toHaveLength(1);
+    expect(validator.checkSchema({ items: [{ type: 'string' }] })).toEqual([
+      { path: '/items', code: 'type', message: expect.any(String) },
+    ]);
   });
 
   it('should cut at 50 details and report in the last one how many were left out', () => {
@@ -400,10 +414,6 @@ describe('checkSchema', () => {
     expect(validator.checkSchema(withFormat('not-a-format'))).toEqual(invalidSchema(''));
   });
 
-  it('should accept the git-sha catalog format', () => {
-    expect(validator.checkSchema(gitShaSchema)).toEqual([]);
-  });
-
   // O pattern que um `$ref` alcança dentro de dado não é subschema para a varredura; quem o grava
   // é o compilador neutro, sem construir o regex.
   describe('with a pattern reached through a $ref to data', () => {
@@ -426,43 +436,49 @@ describe('checkSchema', () => {
       },
     );
 
-    it('should return fast without touching the regex for a hostile patternProperties, direct and through a $ref', () => {
-      const schema = {
-        type: 'object',
-        properties: { k: { type: 'string' } },
-        patternProperties: { [hostile]: { type: 'integer' } },
-        additionalProperties: false,
-      };
-      const startedAt = Date.now();
-      const direct = withRegExpSpy(SENTINEL, () => createValidator().checkSchema(schema));
+    // Guarda de complexidade, não orçamento: o teto de 5 s tem margem larga sobre o custo real
+    // (milissegundos), e só um regex executado sobre o padrão hostil o estoura.
+    it.each<[string, (schema: RecordType) => RecordType, string]>([
+      ['direct', (schema) => schema, '/patternProperties'],
+      [
+        'through a $ref',
+        (schema) => ({ $ref: '#/examples/0', examples: [schema] }),
+        '/examples/0/patternProperties',
+      ],
+    ])(
+      'should return fast without touching the regex for a hostile patternProperties, %s',
+      (_how, wrap, path) => {
+        const schema = wrap({
+          type: 'object',
+          properties: { k: { type: 'string' } },
+          patternProperties: { [hostile]: { type: 'integer' } },
+          additionalProperties: false,
+        });
+        const startedAt = Date.now();
 
-      const viaRef = withRegExpSpy(SENTINEL, () =>
-        createValidator().checkSchema({ $ref: '#/examples/0', examples: [schema] }),
-      );
-      const elapsedMs = Date.now() - startedAt;
+        const usage = withRegExpSpy(SENTINEL, () => createValidator().checkSchema(schema));
+        const elapsedMs = Date.now() - startedAt;
 
-      expect(direct).toEqual({
-        result: notAllowed('/patternProperties'),
-        constructions: 0,
-        executions: 0,
-      });
-      expect(viaRef).toEqual({
-        result: notAllowed('/examples/0/patternProperties'),
-        constructions: 0,
-        executions: 0,
-      });
-      expect(elapsedMs).toBeLessThan(5_000);
-    });
+        expect(usage).toEqual({ result: notAllowed(path), constructions: 0, executions: 0 });
+        expect(elapsedMs).toBeLessThan(5_000);
+      },
+    );
 
     it.each([
       ['pattern', { type: 'string', pattern: '(' }],
       ['key of patternProperties', { type: 'object', patternProperties: { '(': {} } }],
     ])('should not throw on a $ref to a %s that does not compile as a regex', (_name, schema) => {
-      expect(() => new Ajv2020.default({ strict: true, logger: false }).compile(schema)).toThrow(
-        /Invalid regular expression/,
-      );
+      expect(() => compileWithPlainAjv(schema)).toThrow(/Invalid regular expression/);
 
-      expect(validator.checkSchema({ $ref: '#/examples/0', examples: [schema] })).toHaveLength(1);
+      const details = validator.checkSchema({ $ref: '#/examples/0', examples: [schema] });
+
+      expect(details).toEqual([
+        {
+          path: expect.stringMatching(/^\/examples\/0\//),
+          code: 'pattern-not-allowed',
+          message: expect.any(String),
+        },
+      ]);
     });
 
     it('should not refuse a $ref to the metaschema of JSON Schema', () => {
@@ -515,12 +531,45 @@ describe('validate', () => {
     ]);
   });
 
-  it('should return one error per evaluated subschema, not one per field', () => {
-    expect(validator.validate(noteSchema, { text: 1, count: 'x' })).toHaveLength(1);
+  it('should return every violation of an object in a single call', () => {
+    const details = validator.validate(noteSchema, { text: 1, count: 'x', extra: true });
+
+    expect(details).toHaveLength(3);
+    expect(details).toEqual(
+      expect.arrayContaining([
+        { path: '/text', code: 'type', message: expect.any(String) },
+        { path: '/count', code: 'type', message: expect.any(String) },
+        { path: '/extra', code: 'additional-properties', message: expect.any(String) },
+      ]),
+    );
+  });
+
+  it.each<[string, RecordType, unknown, string, string]>([
+    ['maxLength', { type: 'string', maxLength: 300 }, 'a'.repeat(312), 'max-length', 'got 312'],
+    ['minLength', { type: 'string', minLength: 5 }, 'abc', 'min-length', 'got 3'],
+    ['maximum', { type: 'number', maximum: 10 }, 12.5, 'maximum', 'got 12.5'],
+    ['minimum', { type: 'integer', minimum: 10 }, 3, 'minimum', 'got 3'],
+  ])('should report the measured value of a %s violation', (_keyword, schema, data, code, got) => {
+    expect(validator.validate(schema, data as never)).toEqual([
+      { path: '', code, message: expect.stringContaining(`(${got})`) },
+    ]);
+  });
+
+  it('should count an emoji as a single code point in the measured length', () => {
+    const schema: RecordType = { type: 'string', maxLength: 3 };
+
+    expect(validator.validate(schema, '😀😀😀😀' as never)).toEqual([
+      { path: '', code: 'max-length', message: expect.stringContaining('(got 4)') },
+    ]);
+  });
+
+  it('should keep the ajv message of a violation without a measured value', () => {
+    const [detail] = validator.validate(noteSchema, { count: 1 });
+
+    expect(detail?.message).toBe("must have required property 'text'");
   });
 
   it('should return the error of each branch of an anyOf, plus the one of the anyOf', () => {
-    // O allErrors: false do ajv para no primeiro erro de CADA ramo, não no primeiro da chamada.
     const schema: RecordType = {
       anyOf: [
         { type: 'string', maxLength: 10 },
@@ -550,21 +599,221 @@ describe('validate', () => {
     ]);
   });
 
-  it('should return one error per call even with 7 thousand invalid items', () => {
+  it('should cut at 50 details and count the rest with 7 thousand invalid items', () => {
     const schema = {
       type: 'object',
       properties: { items: { type: 'array', items: { type: 'string' } } },
     };
+    const data = { items: Array.from({ length: 7_000 }, (_, i) => i) };
 
-    const details = validator.validate(schema, {
-      items: Array.from({ length: 7_000 }, (_, i) => i),
+    const details = validator.validate(schema, data);
+
+    expect(details).toHaveLength(51);
+    expect(details.at(-1)).toEqual({
+      path: '',
+      code: 'too-many-errors',
+      message: expect.stringContaining('6950'),
+    });
+  }, 15_000);
+
+  it('should count a lone surrogate as one code point in the measured length', () => {
+    const schema: RecordType = { type: 'string', maxLength: 1 };
+
+    expect(validator.validate(schema, '😀a\ud83d' as never)).toEqual([
+      { path: '', code: 'max-length', message: expect.stringContaining('(got 3)') },
+    ]);
+  });
+
+  it('should cut at 50 and count the rest with a long string that fails 600 maxLength limits', () => {
+    const schema: RecordType = {
+      type: 'string',
+      allOf: Array.from({ length: 600 }, (_, i) => ({ maxLength: i + 1 })),
+    };
+
+    const details = validator.validate(schema, 'a'.repeat(16_000) as never);
+
+    expect(details).toHaveLength(51);
+    expect(details[0]?.message).toContain('(got 16000)');
+    expect(details.at(-1)).toEqual({
+      path: '',
+      code: 'too-many-errors',
+      message: '550 more errors omitted',
+    });
+  }, 15_000);
+
+  describe('with a schema and data of high estimated cost', () => {
+    const compileSpy = () => jest.spyOn(Ajv2020.default.prototype, 'compile');
+    const chained = (levels: number): RecordType => {
+      const defs: RecordType = { [`d${levels}`]: { type: 'string' } };
+      for (let i = 0; i < levels; i++) {
+        defs[`d${i}`] = { allOf: [{ $ref: `#/$defs/d${i + 1}` }, { $ref: `#/$defs/d${i + 1}` }] };
+      }
+      return { type: 'object', $defs: defs, properties: { x: { $ref: '#/$defs/d0' } } };
+    };
+    const manyChecks = (checks: number, itemLimit: Record<string, unknown> = {}): RecordType => ({
+      type: 'object',
+      properties: {
+        a: {
+          type: 'array',
+          items: {
+            ...itemLimit,
+            allOf: Array.from({ length: checks }, () => ({ type: 'string' })),
+          },
+        },
+      },
     });
 
-    expect(details).toEqual([{ path: '/items/0', code: 'type', message: expect.any(String) }]);
+    const capped = {
+      path: '',
+      code: 'violations-capped',
+      message: expect.stringContaining('describe_type'),
+    };
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should finish fast with one violation for $defs that double 26 times over failing data', () => {
+      const details = validator.validate(chained(26), { x: 1 });
+
+      expect(details).toEqual([{ path: '/x', code: 'type', message: 'must be string' }, capped]);
+    }, 15_000);
+
+    it('should finish fast with one violation for 900 checks over thousands of failing items', () => {
+      const data = { a: Array.from({ length: 8_000 }, () => 1) };
+
+      const details = validator.validate(manyChecks(900), data);
+
+      expect(details).toEqual([{ path: '/a/0', code: 'type', message: 'must be string' }, capped]);
+    }, 15_000);
+
+    // O custo de `{type:'string'}` sobre n itens é 1 × (n + 1) nós do dado, então n = 24_999 dá
+    // exatamente o teto, que ainda faz o passe completo (o limite é `>`, não `>=`).
+    it.each([
+      { cost: 'just below the ceiling', items: 24_998, isCapped: false },
+      { cost: 'exactly the ceiling', items: 24_999, isCapped: false },
+      { cost: 'just above the ceiling', items: 25_000, isCapped: true },
+    ])(
+      'should cap the violations only when the cost is above it ($cost)',
+      ({ items, isCapped }) => {
+        const data = Array.from({ length: items }, () => 1);
+
+        const codes = validator.validate({ type: 'string' }, data as never).map(({ code }) => code);
+
+        expect(codes.includes('violations-capped')).toBe(isCapped);
+      },
+      15_000,
+    );
+
+    it('should keep the measured value of the violation it reports above the ceiling', () => {
+      const data = { a: Array.from({ length: 40 }, () => 'abcdef') };
+
+      const details = validator.validate(manyChecks(900, { type: 'string', maxLength: 3 }), data);
+
+      expect(details).toEqual([
+        {
+          path: '/a/0',
+          code: 'max-length',
+          message: 'must NOT have more than 3 characters (got 6)',
+        },
+        capped,
+      ]);
+    });
+
+    it('should return every violation below the ceiling', () => {
+      const data = { a: Array.from({ length: 40 }, () => 1) };
+
+      const details = validator.validate(manyChecks(2), data);
+
+      expect(details).toHaveLength(40);
+    });
+
+    it('should not add the violations-capped detail below the ceiling', () => {
+      const data = { a: Array.from({ length: 40 }, () => 1) };
+
+      const details = validator.validate(manyChecks(2), data);
+
+      expect(details.map(({ code }) => code)).not.toContain('violations-capped');
+    });
+
+    it('should not add the violations-capped detail for valid data of a costly schema', () => {
+      const data = { a: Array.from({ length: 40 }, () => 's') };
+
+      expect(validator.validate(manyChecks(900), data)).toEqual([]);
+    });
+
+    it.each([
+      { name: 'valid data', schema: chained(3), data: { x: 's' }, compiles: 1 },
+      { name: 'invalid data below the ceiling', schema: chained(3), data: { x: 1 }, compiles: 2 },
+      { name: 'invalid data above the ceiling', schema: chained(26), data: { x: 1 }, compiles: 1 },
+    ])('should compile the schema $compiles time(s) for $name', ({ schema, data, compiles }) => {
+      const spy = compileSpy();
+
+      validator.validate(schema, data);
+
+      expect(spy).toHaveBeenCalledTimes(compiles);
+    });
+
+    it('should compile the full pass once for several invalid records of the same schema', () => {
+      const schema = chained(3);
+      const spy = compileSpy();
+
+      validator.validate(schema, { x: 1 });
+      validator.validate(schema, { x: 2 });
+
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('with a string far above maxLength', () => {
+    const hostile = 'a@'.repeat(8_000);
+
+    it.each([
+      'date-time',
+      'time',
+      'date',
+      'duration',
+      'uri',
+      'uri-reference',
+      'uri-template',
+      'url',
+      'email',
+      'hostname',
+      'ipv4',
+      'ipv6',
+      'regex',
+      'uuid',
+      'json-pointer',
+      'relative-json-pointer',
+      'git-sha',
+      'attachment',
+    ])(
+      'should finish fast and report maxLength against the format %s',
+      (format) => {
+        const schema: RecordType = {
+          type: 'object',
+          properties: { text: { type: 'string', maxLength: 10, format } },
+        };
+
+        const details = validator.validate(schema, { text: hostile });
+
+        expect(details).toContainEqual({
+          path: '/text',
+          code: 'max-length',
+          message: expect.stringContaining('(got 16000)'),
+        });
+      },
+      15_000,
+    );
   });
 
   describe('with repeated validation of a schema', () => {
     const compileSpy = () => jest.spyOn(Ajv2020.default.prototype, 'compile');
+    const requiredTextSchema = () => ({
+      type: 'object',
+      properties: { text: {} },
+      required: ['text'],
+    });
 
     afterEach(() => {
       jest.restoreAllMocks();
@@ -594,17 +843,18 @@ describe('validate', () => {
       ['valid data', { text: 'ok' }, []],
       ['invalid data', {}, [{ path: '/text', code: 'required', message: expect.any(String) }]],
     ])('should stay correct on an already compiled schema for %s', (_name, data, expected) => {
-      const schema = { type: 'object', properties: { text: {} }, required: ['text'] };
+      const schema = requiredTextSchema();
       const first = validator.validate(schema, { text: 'ok' });
+
+      expect(first).toEqual([]);
 
       const second = validator.validate(schema, data);
 
-      expect(first).toEqual([]);
       expect(second).toEqual(expected);
     });
 
     it('should accept valid data again after rejecting invalid data on an already compiled schema', () => {
-      const schema = { type: 'object', properties: { text: {} }, required: ['text'] };
+      const schema = requiredTextSchema();
       validator.validate(schema, { text: 'ok' });
       validator.validate(schema, {});
 
@@ -616,16 +866,19 @@ describe('validate', () => {
     it('should keep apart two schemas with the same $id in distinct objects', () => {
       const $id = 'https://example.com/shared-id';
       const open = { $id, type: 'object' };
-      const strict = { $id, type: 'object', properties: { text: {} }, required: ['text'] };
+      const strict = { $id, ...requiredTextSchema() };
       const openFirst = validator.validate(open, {});
       const strictFirst = validator.validate(strict, {});
       const openAgain = validator.validate(open, {});
 
+      expect(openFirst).toEqual([]);
+      expect(strictFirst).toEqual([
+        { path: '/text', code: 'required', message: expect.any(String) },
+      ]);
+      expect(openAgain).toEqual([]);
+
       const strictAgain = validator.validate(strict, { text: 'ok' });
 
-      expect(openFirst).toEqual([]);
-      expect(strictFirst).toHaveLength(1);
-      expect(openAgain).toEqual([]);
       expect(strictAgain).toEqual([]);
     });
   });
@@ -642,12 +895,15 @@ describe('validate', () => {
     const checkedSecond = validator.checkSchema(second);
     const validatedFirst = validator.validate(first, {});
 
-    const validatedSecond = validator.validate(second, {});
-
     expect(checkedFirst).toEqual([]);
     expect(checkedSecond).toEqual([]);
     expect(validatedFirst).toEqual([]);
-    expect(validatedSecond).toHaveLength(1);
+
+    const validatedSecond = validator.validate(second, {});
+
+    expect(validatedSecond).toEqual([
+      { path: '/text', code: 'required', message: expect.any(String) },
+    ]);
   });
 
   it.each(METASCHEMA_IDS)(
@@ -657,9 +913,10 @@ describe('validate', () => {
       validator.checkSchema({ $id: id, type: 'object' });
       const checked = validator.checkSchema(good);
 
+      expect(checked).toEqual([]);
+
       const validated = validator.validate(good, {});
 
-      expect(checked).toEqual([]);
       expect(validated).toEqual([]);
     },
   );
@@ -673,11 +930,12 @@ describe('validate', () => {
       const validatedPlain = fresh.validate({ type: 'object' }, {});
       const checked = fresh.checkSchema(schema);
 
-      const validated = fresh.validate(schema, {});
-
       expect(checkedPlain).toEqual([]);
       expect(validatedPlain).toEqual([]);
       expect(checked).toEqual([]);
+
+      const validated = fresh.validate(schema, {});
+
       expect(validated).toEqual([]);
     },
   );
@@ -751,12 +1009,15 @@ describe('validate', () => {
   });
 
   describe('with the git-sha format', () => {
-    it.each(['abcdef1', 'a'.repeat(40)])('should accept %s', (commit) => {
-      expect(validator.validate(gitShaSchema, { commit })).toEqual([]);
-    });
+    it.each(['abcdef1', 'a'.repeat(40)])(
+      'should accept %s as a git sha of 7 to 40 characters',
+      (commit) => {
+        expect(validator.validate(gitShaSchema, { commit })).toEqual([]);
+      },
+    );
 
-    it.each(['HEAD', 'abcdef', 'a'.repeat(41), 'ABCDEF1', 'abcdef1\n', 'texto livre'])(
-      'should refuse %j with code format',
+    it.each(['HEAD', 'abcdef', 'a'.repeat(41), 'ABCDEF1', 'abcdef1\n', 'free text'])(
+      'should refuse %j as a git sha with code format',
       (commit) => {
         expect(validator.validate(gitShaSchema, { commit })).toEqual([
           { path: '/commit', code: 'format', message: expect.any(String) },
@@ -819,9 +1080,7 @@ describe('validate', () => {
       'should have plain ajv run the regex that validate ignores for %s',
       (_n, schema) => {
         // Controle: sem ele a espia que nunca dispara também daria zero.
-        const usage = withRegExpSpy(SENTINEL, () =>
-          new Ajv2020.default({ strict: true, logger: false }).compile(schema),
-        );
+        const usage = withRegExpSpy(SENTINEL, () => compileWithPlainAjv(schema));
 
         expect(usage.constructions).toBeGreaterThan(0);
       },
@@ -859,9 +1118,7 @@ describe('validate', () => {
     it.each(invalidRegexCases)(
       'should compile an invalid regex without throwing for %s',
       (_name, schema) => {
-        expect(() => new Ajv2020.default({ strict: true, logger: false }).compile(schema)).toThrow(
-          /Invalid regular expression/,
-        );
+        expect(() => compileWithPlainAjv(schema)).toThrow(/Invalid regular expression/);
 
         expect(() => createValidator().validate(schema, { k: 'a' })).not.toThrow();
       },
@@ -900,6 +1157,8 @@ describe('validate', () => {
       },
     );
 
+    // Guarda de complexidade, não orçamento: o regex levaria dezenas de segundos; o teto de 5 s
+    // tem margem larga sobre o custo real (milissegundos).
     it('should finish fast with a hostile patternProperties, where the regex would take tens of seconds', () => {
       const schema = {
         type: 'object',
@@ -912,7 +1171,9 @@ describe('validate', () => {
       const details = validator.validate(schema, { [`${'a'.repeat(40)}!`]: 1 });
       const elapsedMs = Date.now() - startedAt;
 
-      expect(details).toHaveLength(1);
+      expect(details).toEqual([
+        { path: `/${'a'.repeat(40)}!`, code: 'additional-properties', message: expect.any(String) },
+      ]);
       expect(elapsedMs).toBeLessThan(5_000);
     });
 

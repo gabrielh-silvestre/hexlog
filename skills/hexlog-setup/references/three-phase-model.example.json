@@ -1,0 +1,185 @@
+{
+  "schema": 1,
+  "project": "photo-app",
+  "unit": {
+    "kind": "feature",
+    "location": "docs/features/<name>",
+    "examples": [
+      {
+        "path": "docs/features/photo-albums",
+        "process": "docs-features-photo-albums"
+      },
+      {
+        "path": "docs/features/user-login",
+        "process": "docs-features-user-login"
+      }
+    ]
+  },
+  "phases": [
+    {
+      "name": "design",
+      "command": "/design",
+      "type": "design",
+      "target": "design",
+      "artifact": "design.md",
+      "links": []
+    },
+    {
+      "name": "build",
+      "command": "/build",
+      "type": "build",
+      "target": "build",
+      "artifact": "build.md",
+      "links": [
+        {
+          "relation": "build-derives-from-design",
+          "to": "design"
+        }
+      ]
+    },
+    {
+      "name": "check",
+      "command": "/check",
+      "type": "check",
+      "target": "check",
+      "artifact": "check.md",
+      "links": [
+        {
+          "relation": "check-derives-from-build",
+          "to": "build"
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "design",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "document": {
+            "type": "string",
+            "format": "attachment"
+          }
+        },
+        "required": ["unit", "summary"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "build",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "document": {
+            "type": "string",
+            "format": "attachment"
+          }
+        },
+        "required": ["unit", "summary"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "check",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "document": {
+            "type": "string",
+            "format": "attachment"
+          }
+        },
+        "required": ["unit", "summary"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "relations": [
+    {
+      "name": "build-derives-from-design",
+      "kind": "derivesFrom",
+      "from": ["build"],
+      "to": ["design"]
+    },
+    {
+      "name": "check-derives-from-build",
+      "kind": "derivesFrom",
+      "from": ["check"],
+      "to": ["build"]
+    }
+  ],
+  "gate": {
+    "name": "unit-complete",
+    "questions": [
+      {
+        "kind": "occurred",
+        "select": {
+          "type": "design"
+        }
+      },
+      {
+        "kind": "occurred",
+        "select": {
+          "type": "build"
+        }
+      },
+      {
+        "kind": "occurred",
+        "select": {
+          "type": "check"
+        }
+      },
+      {
+        "kind": "no_pending",
+        "pending": {
+          "type": "design"
+        },
+        "resolvedBy": {
+          "kind": "derivesFrom",
+          "from": ["build"]
+        }
+      },
+      {
+        "kind": "no_pending",
+        "pending": {
+          "type": "build"
+        },
+        "resolvedBy": {
+          "kind": "derivesFrom",
+          "from": ["check"]
+        }
+      }
+    ]
+  }
+}

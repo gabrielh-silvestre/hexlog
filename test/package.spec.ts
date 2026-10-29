@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { VERSION } from '../src/version.ts';
-import { at, parseJson } from './helpers.ts';
+import { at, listFiles, parseJson } from './helpers.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const IGNORED_DIRS = new Set(['node_modules', 'dist', '.omc', '.git', 'coverage']);
@@ -17,23 +17,11 @@ const PackageSchema = z.object({
   bin: z.unknown().optional(),
 });
 
-/** Lista recursivamente os arquivos com a extensão dada, pulando diretórios de build/dependências. */
-function listFilesRecursive(dir: string, extension = '.ts'): string[] {
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const filePath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      return IGNORED_DIRS.has(entry.name) ? [] : listFilesRecursive(filePath, extension);
-    }
-    return entry.name.endsWith(extension) ? [filePath] : [];
-  });
-}
-
-/** Lista recursivamente todos os diretórios do repo, pulando node_modules/.git. */
+/** Lista recursivamente todos os diretórios do repo, pulando as pastas de `IGNORED_DIRS`. */
 function listDirectories(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    if (!entry.isDirectory() || entry.name === 'node_modules' || entry.name === '.git') return [];
+    if (!entry.isDirectory() || IGNORED_DIRS.has(entry.name)) return [];
     const dirPath = path.join(dir, entry.name);
     return [dirPath, ...listDirectories(dirPath)];
   });
@@ -78,7 +66,7 @@ const pkg = parseJson(PackageSchema, fs.readFileSync(path.join(repoRoot, 'packag
 describe('{src,hook,scripts,test}/**/*.ts', () => {
   it('should not let any relative or absolute import leave the repo', () => {
     const files = ['src', 'hook', 'scripts', 'test'].flatMap((dir) =>
-      listFilesRecursive(path.join(repoRoot, dir)),
+      listFiles(path.join(repoRoot, dir), '.ts', IGNORED_DIRS),
     );
 
     const violations = files.flatMap((file) =>
@@ -114,7 +102,7 @@ describe('package.json', () => {
     '@types/node',
     'fast-check',
     'esbuild',
-    // Deps de lint/format do plano de quality-tooling (fora do conjunto inicial de dependências).
+    // Lint e formatação do código (eslint.config.js, .prettierrc).
     'eslint',
     '@eslint/js',
     'typescript-eslint',
@@ -162,8 +150,8 @@ describe('package.json', () => {
     expect(outsideCaret(declared)).toEqual([]);
   });
 
-  it('should require node >=24.18.1 in engines', () => {
-    expect(pkg.engines).toEqual({ node: '>=24.18.1' });
+  it('should require node ^24.18.1 in engines', () => {
+    expect(pkg.engines).toEqual({ node: '^24.18.1' });
   });
 
   it('should declare the same version as VERSION in src/version.ts', () => {
@@ -186,18 +174,18 @@ describe('.gitignore', () => {
 describe('src/**/*.ts', () => {
   it('should not import a network server module nor call .listen(', () => {
     // hexlog é stdio-only: proíbe http/https/http2/net e `.listen(`.
-    const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
+    const violations = listFiles(path.join(repoRoot, 'src'), '.ts', IGNORED_DIRS).filter((file) =>
       usesNetworkServerModule(fs.readFileSync(file, 'utf8')),
     );
 
     expect(violations).toEqual([]);
   });
 
-  it('should not use debug console or process.stdout.write in the static check', () => {
+  it('should not use debug console or process.stdout.write', () => {
     const FORBIDDEN_OUTPUT_REGEX =
       /console\.(log|info|debug|dir|table|trace)|process\.stdout\.write/;
 
-    const violations = listFilesRecursive(path.join(repoRoot, 'src')).filter((file) =>
+    const violations = listFiles(path.join(repoRoot, 'src'), '.ts', IGNORED_DIRS).filter((file) =>
       FORBIDDEN_OUTPUT_REGEX.test(fs.readFileSync(file, 'utf8')),
     );
 
@@ -214,7 +202,7 @@ describe('**/cli', () => {
 });
 
 describe('src/directory.ts', () => {
-  it('should import only node:* and es-toolkit, never zod, canonicalize or minisearch, in the partial check', () => {
+  it('should import only node:* and es-toolkit, never zod, canonicalize or minisearch', () => {
     const content = fs.readFileSync(path.join(repoRoot, 'src/directory.ts'), 'utf8');
 
     const violations = extractSpecifiers(content).filter(

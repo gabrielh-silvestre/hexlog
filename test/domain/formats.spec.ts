@@ -3,7 +3,7 @@ import { FORMAT_CATALOG, catalogNames, isGitSha } from '../../src/domain/formats
 
 describe('isGitSha', () => {
   it.each(['abcdef1', '0123456789abcdef0123456789abcdef01234567', 'a'.repeat(40)])(
-    'should accept %s',
+    'should accept %s as a git sha of 7 to 40 lowercase hexadecimal characters',
     (value) => {
       expect(isGitSha(value)).toBe(true);
     },
@@ -23,13 +23,13 @@ describe('isGitSha', () => {
 });
 
 describe('FORMAT_CATALOG', () => {
-  it('should be closed on git-sha', () => {
+  it('should hold only the git-sha format', () => {
     expect(Object.keys(FORMAT_CATALOG)).toEqual(['git-sha']);
   });
 });
 
 describe('catalogNames', () => {
   it('should list the names of the catalog', () => {
-    expect(catalogNames()).toEqual(['git-sha']);
+    expect(catalogNames()).toEqual(Object.keys(FORMAT_CATALOG));
   });
 });

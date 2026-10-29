@@ -42,7 +42,7 @@ describe('.husky/pre-push', () => {
       const result = push(`refs/heads/feat ${SHA} refs/heads/feat ${ZERO}`);
 
       expect(result.status).toBe(0);
-      expect(result.calls).toContain('run test:coverage');
+      expect(result.calls).toEqual(['run test:coverage']);
     },
     PUSH_TIMEOUT,
   );
@@ -55,6 +55,7 @@ describe('.husky/pre-push', () => {
         `refs/heads/b ${SHA} refs/heads/b ${ZERO}`,
       );
 
+      expect(result.status).toBe(0);
       expect(result.calls.filter((call) => call === 'run test:coverage')).toHaveLength(1);
     },
     PUSH_TIMEOUT,
@@ -76,6 +77,7 @@ describe('.husky/pre-push', () => {
     () => {
       const result = push(`refs/tags/v1.0.0 ${SHA} refs/tags/v1.0.0 ${ZERO}`);
 
+      expect(result.status).toBe(0);
       expect(result.calls).toEqual([]);
     },
     PUSH_TIMEOUT,
@@ -86,6 +88,7 @@ describe('.husky/pre-push', () => {
     () => {
       const result = push(`(delete) ${ZERO} refs/heads/feat ${SHA}`);
 
+      expect(result.status).toBe(0);
       expect(result.calls).toEqual([]);
     },
     PUSH_TIMEOUT,
@@ -96,7 +99,7 @@ describe('.husky/pre-push', () => {
     () => {
       const result = push(`refs/heads/feat ${'a'.repeat(64)} refs/heads/feat ${'0'.repeat(64)}`);
 
-      expect(result.calls).toContain('run test:coverage');
+      expect(result.calls).toEqual(['run test:coverage']);
     },
     PUSH_TIMEOUT,
   );

@@ -4,28 +4,24 @@
 // `node_modules`. Sai 0 concluído, 1 recusa, lote recusado ou conferência divergente, e 2 para dado
 // 0.x ou log quebrado. Aqui `import.meta.dirname` dá a raiz do checkout que a trava de código
 // instalado compara com o commit do build.
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { isUndefined } from 'es-toolkit';
 import { dataDir } from '../../src/directory.ts';
-import { Name } from '../../src/domain/ids.ts';
-import { VERSION } from '../../src/version.ts';
+import { Name, processOf } from '../../src/domain/ids.ts';
 import { formatCliError, openReadOnly, parseCliArgs, reportCliError } from '../cli-error.ts';
 import {
   formatPlan,
   generationOf,
-  isCurrent,
   isLatestGeneration,
   planReanchor,
-  processOf,
+  summarizeApply,
   toBatches,
-  verifyReanchor,
   type DecisionRow,
   type LogRow,
   type Source,
 } from './reanchor-plan.ts';
-import { checkInstalled, gitDiffQuiet, openWriter } from './writer.ts';
+import { isCurrent } from './sync.ts';
+import { checkInstalled, openWriter, readInstalled } from './writer.ts';
 
 const PROJECT = Name.parse('hexlog');
 const GENERATION_NAME = /^directives-[0-9]+$/;
@@ -82,28 +78,6 @@ function sourceOf(row: Row): Source {
 const readSources = (reader: Reader, process: string, includeNonCurrent: boolean): Source[] =>
   readRows(reader, process, { fields: ['rule', 'statement'], includeNonCurrent }).map(sourceOf);
 
-function installedCheck() {
-  return {
-    version: VERSION,
-    // Arquivo ausente ou ilegível vira `null`, que `checkInstalled` relata como problema.
-    claudeJsonText: (() => {
-      try {
-        return fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8');
-      } catch {
-        return null;
-      }
-    })(),
-    readManifest: (versionDir: string) => {
-      try {
-        return fs.readFileSync(path.join(versionDir, 'manifest.json'), 'utf8');
-      } catch {
-        return null;
-      }
-    },
-    gitDiffQuiet: gitDiffQuiet(path.resolve(import.meta.dirname, '../..')),
-  };
-}
-
 /** Processos de trabalho com as decisões vigentes e todas as decisões (a base da conferência). */
 function readWork(reader: Reader, names: string[]) {
   const decisions: DecisionRow[] = [];
@@ -118,17 +92,7 @@ function readWork(reader: Reader, names: string[]) {
     const lineage =
       reader.query.list({ project: PROJECT, process: Name.parse(process) }).process
         ?.lineageInheritance === true;
-    decisions.push(
-      ...rows.filter(isCurrent).map(({ id, target, data, out, in: incoming }) => ({
-        process,
-        id,
-        target,
-        data,
-        out,
-        in: incoming,
-        lineage,
-      })),
-    );
+    decisions.push(...rows.filter(isCurrent).map((row) => ({ ...row, process, lineage })));
   }
   return { decisions, before };
 }
@@ -162,20 +126,21 @@ async function run(to: string, apply: boolean): Promise<number> {
   const names = (reader.query.list({ project: PROJECT }).project?.processes ?? []).map(
     ({ name }) => name,
   );
-  if (!isLatestGeneration(to, names)) {
+  const latest = generationOf(to);
+  if (isUndefined(latest) || !isLatestGeneration(to, names)) {
     console.error(`flow reanchor failed: ${to} is not the latest directives generation listed`);
     return 1;
   }
-  const latest = generationOf(to) ?? 0;
-  const generations = names.filter((name) => GENERATION_NAME.test(name));
   const { decisions, before } = readWork(
     reader,
-    names.filter((name) => !GENERATION_NAME.test(name)).sort(),
+    names.filter((name) => isUndefined(generationOf(name))).sort(),
   );
+  const isOlder = (name: string) => {
+    const generation = generationOf(name);
+    return !isUndefined(generation) && generation < latest;
+  };
   const older = Object.fromEntries(
-    generations
-      .filter((name) => (generationOf(name) ?? latest) < latest)
-      .map((name) => [name, readSources(reader, name, true)]),
+    names.filter(isOlder).map((name) => [name, readSources(reader, name, true)]),
   );
   const plan = planReanchor({ to, decisions, older, current: readSources(reader, to, false) });
   const rewritesByProcess = Map.groupBy(plan.rewrites, ({ process }) => process);
@@ -186,7 +151,7 @@ async function run(to: string, apply: boolean): Promise<number> {
     ]),
   );
 
-  const installed = installedCheck();
+  const installed = readInstalled(path.resolve(import.meta.dirname, '../..'));
   const problems = checkInstalled(installed);
   console.log(formatPlan(plan, { to, apply }));
   if (!apply) {
@@ -210,13 +175,20 @@ async function run(to: string, apply: boolean): Promise<number> {
   });
   const { written, refused } = await applyBatches(batchesByProcess, writer.write);
 
+  const freshReader = openReadOnly();
   const after = [...new Set(written.map(({ process }) => process))].flatMap((process) =>
-    readRows(openReadOnly(), process, { type: 'decision', includeNonCurrent: true }),
+    readRows(freshReader, process, { type: 'decision', includeNonCurrent: true }),
   );
-  const divergences = verifyReanchor(written, before, after);
-  console.log(`rewrote ${written.length} of ${plan.rewrites.length} decisions`);
-  for (const { id, problem } of divergences) console.error(`verify failed: ${id}: ${problem}`);
-  return refused || divergences.length > 0 ? 1 : 0;
+  const summary = summarizeApply({
+    written,
+    planned: plan.rewrites.length,
+    refused,
+    before,
+    after,
+  });
+  for (const line of summary.out) console.log(line);
+  for (const line of summary.err) console.error(line);
+  return summary.code;
 }
 
 async function main(argv: string[]): Promise<number> {

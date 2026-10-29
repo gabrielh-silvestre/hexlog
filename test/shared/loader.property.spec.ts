@@ -1,26 +1,14 @@
 import { describe, expect, it } from '@jest/globals';
 import fc from 'fast-check';
-import { anchor, hashLink, type Expected, type Link } from '../../src/domain/chain.ts';
+import { anchor, hashLink, type Link } from '../../src/domain/chain.ts';
 import { checkExpectedHead, formatLine, verifyProcess } from '../../src/shared/loader.ts';
-import { emptyManifest, linkAt } from '../fixtures/chain-line.ts';
+import { chainOf as chainFrom, emptyManifest } from '../fixtures/chain-line.ts';
+import { at } from '../helpers.ts';
 
 const manifest = emptyManifest({ project: 'demo', process: 'proc-1' }, '2026-09-30T12:00:00.000Z');
 
 /** Log de `count` elos encadeados, um por linha, a partir da âncora. */
-function chainOf(count: number): Link[] {
-  const links: Link[] = [];
-  let expected: Expected = { seq: 0, prevHash: anchor(manifest) };
-  for (let seq = 0; seq < count; seq++) {
-    const link = linkAt(expected, {
-      id: `proc-1:0198f4a0-0000-7000-8000-${(seq + 1).toString(16).padStart(12, '0')}`,
-      author: { agent: 'luffy', client: 'claude-code' },
-      data: { text: `registro ${seq}` },
-    });
-    links.push(link);
-    expected = { seq: seq + 1, prevHash: hashLink(link) };
-  }
-  return links;
-}
+const chainOf = (count: number) => chainFrom(manifest, count);
 
 const verifiedOf = (links: readonly Link[]) =>
   verifyProcess({
@@ -51,7 +39,7 @@ describe('checkExpectedHead', () => {
     fc.assert(
       fc.property(cut, ([total, dropped]) => {
         const links = chainOf(total);
-        const headBefore = hashLink(links.at(-1)!);
+        const headBefore = hashLink(at(links, total - 1));
         const kept = verifiedOf(links.slice(0, total - dropped));
 
         const chain = checkExpectedHead(kept, headBefore);
@@ -68,7 +56,7 @@ describe('checkExpectedHead', () => {
         const links = chainOf(total);
         const grown = verifiedOf(links);
 
-        const chain = checkExpectedHead(grown, hashLink(links[prefix - 1]!));
+        const chain = checkExpectedHead(grown, hashLink(at(links, prefix - 1)));
 
         expect(chain).toBe(grown.chain);
       }),

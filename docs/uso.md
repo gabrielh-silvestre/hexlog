@@ -18,8 +18,43 @@ Com o hexlog instalado e as sessões reiniciadas, o caminho de um projeto novo �
 Adotar uma definição nova, ou uma versão nova, exige um processo novo: o manifesto não
 repina, e `create_process` sobre um processo que já existe devolve `created: false` e
 `stale`. As skills instaladas guiam o resto: `hexlog` (instalação e diagnóstico),
-`hexlog-setup` (roda uma vez por repositório, entrevista o fluxo e grava o mapa em
-`.hexlog/flow.md`) e `hexlog-flow` (registra marcos e vereditos contra esse mapa).
+`hexlog-setup` (configura um repositório de destino: aprende o fluxo do projeto e gera uma
+skill do projeto com um modelo declarativo, e, opcionalmente, a cadeira do dono) e `hexlog-flow` (a mecânica de registrar, consultar e
+fechar uma unidade de trabalho, com projeto, processo e gate vindos da skill do projeto).
+
+## Configurar um repositório novo
+
+A skill `hexlog-setup` prepara um repositório de destino para registrar o fluxo no hexlog, sem edição de arquivo à
+mão: depois dela, o ciclo de cada unidade de trabalho pode chegar ao gate verde. Pedimos ao agente, por exemplo, "configura o hexlog nesse repositório". O fluxo:
+
+1. escolhemos entre **descoberta** (o agente lê o repositório, só leitura) e **entrevista direta**;
+2. o agente pergunta o nome do projeto hexlog e confere por `list` antes de qualquer `define_*`; se o
+   projeto já existe e o repositório não tem modelo local, para e mostra as definições vigentes;
+3. uma pergunta por turno levanta a unidade de trabalho, as fases, o que se registra em cada uma, o
+   comando que dispara a fase e o artefato de saída;
+4. o agente mostra o plano de chamadas e só registra tipos, relações e gate depois do "aprovado";
+5. o destino ganha `.claude/skills/<projeto>-hexlog/SKILL.md` (curta, em inglês), o
+   `hexlog-model.json` ao lado dela e um bloco de até 8 linhas no `AGENTS.md` que manda usar a skill
+   depois dos comandos das fases.
+
+Cada unidade de trabalho vira um processo hexlog, criado pela skill gerada na primeira fase dela. O
+setup pode rodar de novo: com o modelo local, compara com o hexlog em vez de reperguntar. O setup só
+escreve a skill do projeto, o modelo e o bloco no `AGENTS.md` do destino (mais, com a cadeira ligada, os
+arquivos de apoio dela dentro da pasta da skill), sem editar outro arquivo de terceiros. O roteiro de aceite, com os passos de verificação, está em
+[setup-aceitacao.md](setup-aceitacao.md).
+
+O setup oferece também a **cadeira do dono**, opt-in: com ela ligada, um modelo (o ocupante, Claude
+ou `agy`) responde as lacunas do executor com base em critérios do projeto, grava a resposta no hexlog
+e o humano audita depois; sem ocupante, o humano responde, com os mesmos registros. Para isso o setup
+registra as definições do pacote (`gap`, `premise`, `evidence`, `audit`, as relações `fills-gap` e `audits` e
+o gate `gaps`; tipo existente compatível ganha campos opcionais por versão nova, e nome em
+colisão é mapeado com a sua escolha) e escreve, dentro da pasta da skill do projeto, o documento de
+critérios (do dev: o setup nunca o sobrescreve), o contrato do ocupante e a receita da ferramenta. A resposta sem
+base nos critérios sai marcada como "sem critério". Unidades abertas antes não enxergam os campos
+novos, e o ocupante não responde nelas. O relatório
+`node scripts/seat-report.ts <project>` (de um checkout do hexlog, apontado por `HEXLOG_CHECKOUT`) lista o que está
+por auditar. O executor cola a saída do relatório em bloco de código, porque ela traz campos que o ocupante grava; ver [desenvolvimento.md](desenvolvimento.md#scriptsseat-reportts) e
+[adr-0014-cadeira-do-dono-como-pacote-de-dados.md](directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md).
 
 ## Exemplo completo
 

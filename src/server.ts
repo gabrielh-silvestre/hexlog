@@ -1,5 +1,6 @@
 // Entry do bundle do servidor MCP: compõe os adaptadores reais (compose.ts) e serve o `createServer`
-// 1.0 por stdio. É a única ponta que escolhe o relógio, o cwd e o destino do log.
+// 1.0 por stdio. Escolhe o relógio, o cwd e o destino do log do servidor; os scripts compõem por
+// `openReadOnly` e `openWriter`.
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { compose } from './compose.ts';
 import { dataDir } from './directory.ts';

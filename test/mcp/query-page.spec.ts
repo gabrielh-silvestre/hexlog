@@ -20,11 +20,10 @@ import {
   type QueryResult,
   type QueryService,
 } from '../../src/queries/query-service.ts';
+import { idAt } from '../fixtures/chain-line.ts';
 
-const idOf = (n: number) => `run-1:00000000-0000-7000-8000-${n.toString(16).padStart(12, '0')}`;
-
-const idsOf = (count: number, offset = 0) =>
-  Array.from({ length: count }, (_, i) => idOf(offset + i));
+const makeIds = (count: number, offset = 0) =>
+  Array.from({ length: count }, (_, i) => idAt('run-1', offset + i));
 
 const recordOf = (count: number, value: string | null) =>
   Object.fromEntries(Array.from({ length: count }, (_, i) => [`k${i}`, value]));
@@ -105,7 +104,7 @@ const QUERY_ARGS = { project: 'p', process: 'run-1' };
 const GATE_ARGS = { project: 'p', process: 'run-1', gate: 'pre-pr' };
 
 const record = {
-  id: idOf(1),
+  id: idAt('run-1', 1),
   type: 'note',
   at: '2026-10-17T00:00:00.000Z',
   target: 'unit-1',
@@ -119,16 +118,16 @@ const record = {
 };
 
 const changes = {
-  entered: [idOf(1)],
-  left: [{ id: idOf(2), reason: 'superseded' }],
-  marker: { 'run-1': idOf(2) },
+  entered: [idAt('run-1', 1)],
+  left: [{ id: idAt('run-1', 2), reason: 'superseded' }],
+  marker: { 'run-1': idAt('run-1', 2) },
   omitted: { entered: 1, left: 2 },
 };
 
 const queryOutput = {
   records: [record],
   cursor: 'next',
-  marker: { 'run-1': idOf(1) },
+  marker: { 'run-1': idAt('run-1', 1) },
   hint: 'a near miss',
   changes,
 };
@@ -138,7 +137,7 @@ const gateQuestion = {
   kind: 'approved',
   passed: false,
   counts: { of: 1 },
-  evidence: { of: [idOf(1)] },
+  evidence: { of: [idAt('run-1', 1)] },
   omitted: { of: 2 },
 };
 
@@ -148,7 +147,7 @@ const evaluateGateOutput = {
   passed: false,
   questions: [gateQuestion],
   results: [gateResult],
-  marker: { 'run-1': idOf(1) },
+  marker: { 'run-1': idAt('run-1', 1) },
 };
 
 const verifyChainOutput = {
@@ -157,7 +156,7 @@ const verifyChainOutput = {
   head: 'a'.repeat(64),
   breaks: [{ index: 1, reason: 'hash-mismatch' }],
   totalBreaks: 1,
-  attachmentBreaks: [{ id: idOf(1), hash: 'b'.repeat(64), reason: 'attachment-missing' }],
+  attachmentBreaks: [{ id: idAt('run-1', 1), hash: 'b'.repeat(64), reason: 'attachment-missing' }],
   totalAttachmentBreaks: 1,
   repairedLines: [2],
 };
@@ -223,9 +222,9 @@ describe('queryPage', () => {
   ])(
     'should cap each changes list and report omitted when %s',
     (_title, enteredCount, leftCount, omitted) => {
-      const entered = Array.from({ length: enteredCount }, (_, i) => idOf(i));
+      const entered = Array.from({ length: enteredCount }, (_, i) => idAt('run-1', i));
       const left = Array.from({ length: leftCount }, (_, i) => ({
-        id: idOf(1_000 + i),
+        id: idAt('run-1', 1_000 + i),
         reason: 'superseded' as const,
       }));
       const { query } = queryWith({ ...emptyPage, changes: { entered, left, marker: {} } });
@@ -265,101 +264,103 @@ describe('registerQueryTools', () => {
   });
 
   describe('when describing the tools', () => {
-    it('should state the contract of query in its description', () => {
+    it.each([
+      'scope "process"',
+      'scope "project"',
+      `at most ${QUERY_TEXT_MAX_CHARS}`,
+      'includeNonCurrent (also',
+      'whole "."-separated segments',
+      'unit-1 does not match unit-10',
+      'hint',
+      'attachmentStatus',
+      'relations: counts (default)',
+      'nonCurrentInCounts and nonCurrentOutCounts',
+      'none gives neither',
+      'inheritedIn and inheritedOut',
+      'inheritedInCounts',
+      'Process scope sees only',
+      'fields (at most 50)',
+      'empty list omits data',
+      'top-level names',
+      'filters see',
+      'default 50, max 200',
+      'at least one record',
+      'any record id of the process works as its entry',
+      'add limit 0',
+      'Resend it',
+      `at most ${CHANGES_ITEMS_CAP} ids`,
+      'never reappear',
+      'must not be reused',
+      'reread everything',
+      'others are read as empty',
+      'MARKER_NOT_FOUND or INVALID_CURSOR',
+    ])('should state "%s" in the description of query', (fragment) => {
       const { descriptionOf } = registerQuery();
 
-      const description = descriptionOf('query');
-
-      expect(description).toContain('scope "process"');
-      expect(description).toContain('scope "project"');
-      expect(description).toContain(`at most ${QUERY_TEXT_MAX_CHARS}`);
-      expect(description).toContain('includeNonCurrent (also');
-      expect(description).toContain('whole "."-separated segments');
-      expect(description).toContain('hint');
-      expect(description).toContain('attachmentStatus');
-      expect(description).toContain('relations: counts (default)');
-      expect(description).toContain('nonCurrentInCounts and nonCurrentOutCounts');
-      expect(description).toContain('none gives neither');
-      expect(description).toContain('inheritedIn and inheritedOut');
-      expect(description).toContain('inheritedInCounts');
-      expect(description).toContain('Process scope sees only');
-      expect(description).toContain('fields (at most');
-      expect(description).toContain('top-level names');
-      expect(description).toContain('filters see');
-      expect(description).toContain('default 50, max 200');
-      expect(description).toContain('at least one record');
-      expect(description).toContain('any record id');
-      expect(description).toContain('add limit 0');
-      expect(description).toContain('Resend it');
-      expect(description).toContain(`at most ${CHANGES_ITEMS_CAP} ids`);
-      expect(description).toContain('never reappear');
-      expect(description).toContain('reread everything');
-      expect(description).toContain('others are read as empty');
-      expect(description).toContain('MARKER_NOT_FOUND or INVALID_CURSOR');
+      expect(descriptionOf('query')).toContain(fragment);
     });
 
-    it('should state the contract of evaluate_gate in its description', () => {
+    it.each([
+      'GATE_NOT_FOUND',
+      'one result per question',
+      'failing (default without targets)',
+      'counts (default with targets)',
+      'approved has of',
+      'no_open_contradiction',
+      'inherit: true',
+      'adds the list inherited',
+      'inherited by selectors',
+      'targets (1 to 50',
+      '{target, passed, questions}',
+      'batch marker',
+      'replay the evaluation',
+      'covers exactly',
+      'project-scope questions',
+      `holds at most ${EVIDENCE_ITEMS_CAP} ids`,
+      'narrower select or where',
+    ])('should state "%s" in the description of evaluate_gate', (fragment) => {
       const { descriptionOf } = registerQuery();
 
-      const description = descriptionOf('evaluate_gate');
-
-      expect(description).toContain('GATE_NOT_FOUND');
-      expect(description).toContain('one result per question');
-      expect(description).toContain('failing (default with target)');
-      expect(description).toContain('counts (default with targets)');
-      expect(description).toContain('approved has of');
-      expect(description).toContain('no_open_contradiction');
-      expect(description).toContain('inherit: true');
-      expect(description).toContain('adds the list inherited');
-      expect(description).toContain('inherited by selectors');
-      expect(description).toContain('targets (1 to 50');
-      expect(description).toContain('{target, passed, questions}');
-      expect(description).toContain('batch marker');
-      expect(description).toContain('replay the evaluation');
-      expect(description).toContain('covers exactly');
-      expect(description).toContain('project-scope questions');
-      expect(description).toContain(`holds at most ${EVIDENCE_ITEMS_CAP} ids`);
-      expect(description).toContain('narrower select or where');
+      expect(descriptionOf('evaluate_gate')).toContain(fragment);
     });
 
-    it('should state the contract of verify_chain in its description', () => {
+    it.each([
+      'hash chain of its log',
+      'ok (true only when',
+      'totalBreaks',
+      'is a result, not an error',
+      'expectedHead',
+      'head-not-found',
+    ])('should state "%s" in the description of verify_chain', (fragment) => {
       const { descriptionOf } = registerQuery();
 
-      const description = descriptionOf('verify_chain');
-
-      expect(description).toContain('hash chain of its log');
-      expect(description).toContain('ok (true only when');
-      expect(description).toContain('totalBreaks');
-      expect(description).toContain('is a result, not an error');
-      expect(description).toContain('expectedHead');
-      expect(description).toContain('head-not-found');
+      expect(descriptionOf('verify_chain')).toContain(fragment);
     });
 
-    it('should state the contract of list in its description', () => {
+    it.each(['Discover what exists', 'relation names and gates', 'definition hashes'])(
+      'should state "%s" in the description of list',
+      (fragment) => {
+        const { descriptionOf } = registerQuery();
+
+        expect(descriptionOf('list')).toContain(fragment);
+      },
+    );
+
+    it.each([
+      'JSON Schema',
+      'name and schema without version',
+      'TYPE_NOT_PINNED',
+      'asked by version',
+      'PROJECT_NOT_FOUND',
+      'no such type or version',
+      'patternProperties',
+      'breaking: true',
+      '<major>.<minor>',
+      'INVALID_INPUT',
+    ])('should state "%s" in the description of describe_type', (fragment) => {
       const { descriptionOf } = registerQuery();
 
-      const description = descriptionOf('list');
-
-      expect(description).toContain('Discover what exists');
-      expect(description).toContain('relation names and gates');
-      expect(description).toContain('definition hashes');
-    });
-
-    it('should state the contract of describe_type in its description', () => {
-      const { descriptionOf } = registerQuery();
-
-      const description = descriptionOf('describe_type');
-
-      expect(description).toContain('JSON Schema');
-      expect(description).toContain('name and schema without version');
-      expect(description).toContain('TYPE_NOT_PINNED');
-      expect(description).toContain('asked by version');
-      expect(description).toContain('PROJECT_NOT_FOUND');
-      expect(description).toContain('no such type or version');
-      expect(description).toContain('patternProperties');
-      expect(description).toContain('breaking: true');
-      expect(description).toContain('<major>.<minor>');
-      expect(description).toContain('INVALID_INPUT');
+      expect(descriptionOf('describe_type')).toContain(fragment);
     });
   });
 
@@ -420,82 +421,65 @@ describe('registerQueryTools', () => {
   });
 
   describe('when validating the input', () => {
-    it('should cap where at 50 keys', async () => {
-      const { detailsOf } = registerQuery();
-
-      expect(await detailsOf('query', { ...QUERY_ARGS, where: recordOf(50, 'v') })).toEqual([]);
-      expect(await detailsOf('query', { ...QUERY_ARGS, where: recordOf(51, 'v') })).toEqual([
-        { path: '/where', code: 'custom', message: 'has too many keys' },
-      ]);
+    const names = (count: number) => Array.from({ length: count }, (_, i) => `field${i}`);
+    const tooManyKeys = (field: string) => ({
+      path: `/${field}`,
+      code: 'custom',
+      message: 'has too many keys',
     });
+    const tooBig = (field: string) =>
+      expect.objectContaining({ path: `/${field}`, code: 'too_big' });
 
     it.each([
-      ['query', 'changesSince', QUERY_ARGS],
-      ['evaluate_gate', 'marker', GATE_ARGS],
-    ])('should cap the marker field of %s (%s) at 200 keys', async (tool, field, base) => {
+      ['query', 'where', QUERY_ARGS, recordOf(50, 'v'), recordOf(51, 'v'), tooManyKeys('where')],
+      [
+        'query',
+        'changesSince',
+        QUERY_ARGS,
+        recordOf(200, null),
+        recordOf(201, null),
+        tooManyKeys('changesSince'),
+      ],
+      [
+        'evaluate_gate',
+        'marker',
+        GATE_ARGS,
+        recordOf(200, null),
+        recordOf(201, null),
+        tooManyKeys('marker'),
+      ],
+      [
+        'query',
+        'text',
+        QUERY_ARGS,
+        'a'.repeat(QUERY_TEXT_MAX_CHARS),
+        'a'.repeat(QUERY_TEXT_MAX_CHARS + 1),
+        tooBig('text'),
+      ],
+      ['query', 'ids', QUERY_ARGS, makeIds(200), makeIds(201), tooBig('ids')],
+      ['query', 'fields', QUERY_ARGS, names(50), names(51), tooBig('fields')],
+      ['query', 'limit', QUERY_ARGS, 200, 201, tooBig('limit')],
+    ])(
+      'should accept %s with %s at the cap and refuse it above',
+      async (tool, field, base, atCap, above, refusal) => {
+        const { detailsOf } = registerQuery();
+
+        expect(await detailsOf(tool, { ...base, [field]: atCap })).toEqual([]);
+        expect(await detailsOf(tool, { ...base, [field]: above })).toEqual([refusal]);
+      },
+    );
+
+    it.each([
+      ['where value', 'where', { a: '😀', b: 1, c: true }, { a: 'ok', b: 'x\uD800' }],
+      ['where key', 'where', { a: 'ok' }, { a: 'ok', 'b\uD800': 'x' }],
+      ['text', 'text', 'ok 😀', 'ok \uD800'],
+      ['changesSince key', 'changesSince', { a: null }, { 'b\uD800': null }],
+    ])('should refuse a lone surrogate in the %s', async (_name, field, valid, lone) => {
       const { detailsOf } = registerQuery();
 
-      expect(await detailsOf(tool, { ...base, [field]: recordOf(200, null) })).toEqual([]);
-      expect(await detailsOf(tool, { ...base, [field]: recordOf(201, null) })).toEqual([
-        { path: `/${field}`, code: 'custom', message: 'has too many keys' },
-      ]);
-    });
-
-    it('should refuse a lone surrogate in a where value', async () => {
-      const { detailsOf } = registerQuery();
-
-      expect(
-        await detailsOf('query', { ...QUERY_ARGS, where: { a: '😀', b: 1, c: true } }),
-      ).toEqual([]);
-      expect(await detailsOf('query', { ...QUERY_ARGS, where: { a: 'ok', b: 'x\uD800' } })).toEqual(
-        [{ path: '/where', code: 'custom', message: 'must not contain a lone surrogate' }],
-      );
-    });
-
-    it('should refuse a lone surrogate in a where key', async () => {
-      const { detailsOf } = registerQuery();
-
-      expect(
-        await detailsOf('query', { ...QUERY_ARGS, where: { a: 'ok', 'b\uD800': 'x' } }),
-      ).toEqual([{ path: '/where', code: 'custom', message: 'must not contain a lone surrogate' }]);
-    });
-
-    it('should cap text at the query text limit', async () => {
-      const { detailsOf } = registerQuery();
-
-      expect(
-        await detailsOf('query', { ...QUERY_ARGS, text: 'a'.repeat(QUERY_TEXT_MAX_CHARS) }),
-      ).toEqual([]);
-      expect(
-        await detailsOf('query', { ...QUERY_ARGS, text: 'a'.repeat(QUERY_TEXT_MAX_CHARS + 1) }),
-      ).toEqual([expect.objectContaining({ path: '/text', code: 'too_big' })]);
-    });
-
-    it('should refuse a lone surrogate in text', async () => {
-      const { detailsOf } = registerQuery();
-
-      expect(await detailsOf('query', { ...QUERY_ARGS, text: 'ok 😀' })).toEqual([]);
-      expect(await detailsOf('query', { ...QUERY_ARGS, text: 'ok \uD800' })).toEqual([
-        { path: '/text', code: 'custom', message: 'must not contain a lone surrogate' },
-      ]);
-    });
-
-    it('should cap ids at 200 entries', async () => {
-      const { detailsOf } = registerQuery();
-
-      expect(await detailsOf('query', { ...QUERY_ARGS, ids: idsOf(200) })).toEqual([]);
-      expect(await detailsOf('query', { ...QUERY_ARGS, ids: idsOf(201) })).toEqual([
-        expect.objectContaining({ path: '/ids', code: 'too_big' }),
-      ]);
-    });
-
-    it('should cap fields at 50 names', async () => {
-      const { detailsOf } = registerQuery();
-      const names = (count: number) => Array.from({ length: count }, (_, i) => `field${i}`);
-
-      expect(await detailsOf('query', { ...QUERY_ARGS, fields: names(50) })).toEqual([]);
-      expect(await detailsOf('query', { ...QUERY_ARGS, fields: names(51) })).toEqual([
-        expect.objectContaining({ path: '/fields', code: 'too_big' }),
+      expect(await detailsOf('query', { ...QUERY_ARGS, [field]: valid })).toEqual([]);
+      expect(await detailsOf('query', { ...QUERY_ARGS, [field]: lone })).toEqual([
+        { path: `/${field}`, code: 'custom', message: 'must not contain a lone surrogate' },
       ]);
     });
 
@@ -504,15 +488,6 @@ describe('registerQueryTools', () => {
 
       expect(await detailsOf('query', { ...QUERY_ARGS, fields: ['ref', ''] })).toEqual([
         expect.objectContaining({ path: '/fields/1', code: 'too_small' }),
-      ]);
-    });
-
-    it('should cap limit at 200', async () => {
-      const { detailsOf } = registerQuery();
-
-      expect(await detailsOf('query', { ...QUERY_ARGS, limit: 200 })).toEqual([]);
-      expect(await detailsOf('query', { ...QUERY_ARGS, limit: 201 })).toEqual([
-        expect.objectContaining({ path: '/limit', code: 'too_big' }),
       ]);
     });
 
@@ -543,11 +518,12 @@ describe('registerQueryTools', () => {
     it('should point a since key to changesSince', async () => {
       const { detailsOf } = registerQuery();
 
-      const [detail] = await detailsOf('query', { ...QUERY_ARGS, since: 'x', other: 1 });
+      const details = await detailsOf('query', { ...QUERY_ARGS, since: 'x', other: 1 });
 
-      expect(detail).toMatchObject({ path: '', code: 'unrecognized_keys' });
-      expect(detail?.message).toContain('"since", "other"');
-      expect(detail?.message).toContain('use changesSince');
+      expect(details).toEqual([expect.objectContaining({ path: '', code: 'unrecognized_keys' })]);
+      expect(details[0]?.message).toContain('"since"');
+      expect(details[0]?.message).toContain('"other"');
+      expect(details[0]?.message).toContain('changesSince');
     });
 
     it('should leave the default message for an unknown key other than since', async () => {
@@ -594,7 +570,7 @@ describe('registerQueryTools', () => {
       [
         'query',
         'the reason of a left entry',
-        { ...queryOutput, changes: { ...changes, left: [{ id: idOf(2), reason: 1 }] } },
+        { ...queryOutput, changes: { ...changes, left: [{ id: idAt('run-1', 2), reason: 1 }] } },
       ],
       [
         'evaluate_gate',
@@ -626,15 +602,20 @@ describe('registerQueryTools', () => {
   });
 
   describe('when capping the evidence of evaluate_gate', () => {
-    const overCap = idsOf(EVIDENCE_ITEMS_CAP + 3);
-    const atCap = idsOf(EVIDENCE_ITEMS_CAP, 500);
-    const few = idsOf(2, 900);
+    const overCap = makeIds(EVIDENCE_ITEMS_CAP + 3);
+    const atCap = makeIds(EVIDENCE_ITEMS_CAP, 500);
+    const few = makeIds(2, 900);
     const wide = {
       index: 0,
       kind: 'approved',
       passed: false,
       counts: { of: overCap.length, supports: atCap.length, unsupported: few.length },
       evidence: { of: overCap, supports: atCap, unsupported: few },
+    };
+    const cutWide = {
+      ...wide,
+      evidence: { of: overCap.slice(0, EVIDENCE_ITEMS_CAP), supports: atCap, unsupported: few },
+      omitted: { of: 3 },
     };
     const narrow = {
       index: 1,
@@ -656,17 +637,7 @@ describe('registerQueryTools', () => {
 
       expect(output).toEqual({
         passed: false,
-        questions: [
-          {
-            ...wide,
-            evidence: {
-              of: overCap.slice(0, EVIDENCE_ITEMS_CAP),
-              supports: atCap,
-              unsupported: few,
-            },
-            omitted: { of: 3 },
-          },
-        ],
+        questions: [cutWide],
         marker: { 'run-1': null },
       });
     });
@@ -703,17 +674,7 @@ describe('registerQueryTools', () => {
           {
             target: 'unit-1',
             passed: false,
-            questions: [
-              {
-                ...wide,
-                evidence: {
-                  of: overCap.slice(0, EVIDENCE_ITEMS_CAP),
-                  supports: atCap,
-                  unsupported: few,
-                },
-                omitted: { of: 3 },
-              },
-            ],
+            questions: [cutWide],
           },
           { target: 'unit-2', passed: true, questions: [narrow] },
         ],

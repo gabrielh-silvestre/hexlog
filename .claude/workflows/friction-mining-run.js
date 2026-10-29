@@ -16,11 +16,11 @@ const A = typeof args === 'string' ? JSON.parse(args) : args
 const MISSING = ['projectDir', 'projectSlug', 'from', 'to', 'repoRoot', 'skillDir', 'out', 'reportPath', 'draftsDir']
   .filter(k => !A || !A[k])
 if (MISSING.length) return { error: `launch via /friction-mining; missing args: ${MISSING.join(', ')}` }
-// Regra global do usuário: subagentes em sonnet/haiku, salvo liberação explícita.
+// Subagentes em sonnet/haiku, salvo liberação explícita.
 const MODEL = 'sonnet'
 const TOOL_ORDER = ['register', 'evaluate_gate', 'query', 'list']
 const CONF_ORDER = { high: 0, medium: 1, low: 2 }
-const MAX_PARALLEL = 12 // regra global do usuário: no máximo 12 subagentes por lote
+const MAX_PARALLEL = 12 // no máximo 12 subagentes por lote
 
 const CONTEXT = `Contexto da rodada:
 - projeto-fonte: ${A.projectDir} (slug ${A.projectSlug}), janela ${A.from} a ${A.to}

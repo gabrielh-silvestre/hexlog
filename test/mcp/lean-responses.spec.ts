@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { compose } from '../../src/compose.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import type { RegisterResult } from '../../src/commands/process.ts';
 import { EVIDENCE_ITEMS_CAP } from '../../src/mcp/tools/query.ts';
@@ -8,23 +7,35 @@ import type {
   GateEvaluation,
   QueryResult,
 } from '../../src/queries/query-service.ts';
-import { type Environment, createEnvironment, expectError } from './environment.ts';
+import { at } from '../helpers.ts';
+import {
+  type Environment,
+  NOTE_SCHEMA,
+  PROJECT,
+  createEnvironment,
+  registerBulk,
+  registerNote,
+  servicesOver,
+} from './environment.ts';
 
-const PROJECT = 'alpha';
 const PROCESS = 'run-1';
-const NOTE = {
-  type: 'object',
-  properties: { text: { type: 'string' } },
-  required: ['text'],
-  additionalProperties: false,
+const UNIT_GATE = {
+  name: 'unit-approved',
+  questions: [
+    {
+      kind: 'approved',
+      of: { targetPrefix: 'run.unit' },
+      by: { targetPrefix: 'run.ev' },
+      inherit: true,
+    },
+  ],
 };
 
 let environment: Environment;
 
-// Cada describe de topo liga estas funções aos hooks: `jest/require-top-level-describe` barra hook fora de describe.
 const openEnvironment = async () => {
   environment = await createEnvironment();
-  await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE });
+  await environment.ok('define_type', { project: PROJECT, name: 'note', schema: NOTE_SCHEMA });
   await environment.ok('define_gate', {
     project: PROJECT,
     name: 'has-note',
@@ -35,6 +46,7 @@ const openEnvironment = async () => {
     name: 'proposed-approved',
     questions: [{ kind: 'approved', of: { type: 'note', where: { text: 'proposta' } } }],
   });
+  await environment.ok('define_gate', { project: PROJECT, ...UNIT_GATE });
   await environment.ok('create_process', { project: PROJECT, process: PROCESS });
 };
 
@@ -50,8 +62,24 @@ const registerNotes = (texts: string[], target = 'run.step') =>
     records: texts.map((text) => ({ type: 'note', target, data: { text } })),
   });
 
+const PROPOSED_TOTAL = BATCH_MAX * 3;
+
+/** Três lotes cheios de notas `proposta`, o bastante para estourar `EVIDENCE_ITEMS_CAP`. */
+const registerProposed = () =>
+  registerBulk(environment, PROPOSED_TOTAL, { process: PROCESS, text: 'proposta' });
+
 const evaluate = <T = GateEvaluation>(args: Record<string, unknown>) =>
   environment.ok<T>('evaluate_gate', { project: PROJECT, process: PROCESS, ...args });
+
+/** A evidência apoia a unidade, que é superada por uma versão sem relações. */
+async function registerLineage() {
+  const idOf = async (target: string, relations?: object[]) =>
+    at((await registerNote(environment, { process: PROCESS, target, relations })).records, 0).id;
+  const unit = await idOf('run.unit');
+  const evidence = await idOf('run.ev', [{ to: unit, kind: 'supports' }]);
+  const revised = await idOf('run.unit', [{ to: unit, kind: 'supersedes' }]);
+  return { unit, evidence, revised };
+}
 
 describe('evaluate_gate', () => {
   beforeEach(openEnvironment);
@@ -89,12 +117,7 @@ describe('evaluate_gate', () => {
   it('should match the service default byte for byte with evidence full', async () => {
     await registerNotes(['proposta']);
     const input = { project: PROJECT, process: PROCESS, gate: 'proposed-approved' } as const;
-    const viaService = compose({
-      dataDir: environment.dataDir,
-      cwd: process.cwd(),
-      clock: () => new Date('2026-01-01T00:00:00.000Z'),
-      logger: () => undefined,
-    }).services.query.evaluateGate(input);
+    const viaService = servicesOver(environment).query.evaluateGate(input);
 
     const viaTool = await evaluate({ gate: input.gate, evidence: 'full' });
 
@@ -176,14 +199,13 @@ describe('evaluate_gate', () => {
       targets: ['a'],
     });
     await registerNotes(['proposta'], 'a.step');
+    const proposed = records.map(({ id }) => id);
 
     const replay = await evaluate({
       gate: 'proposed-approved',
       target: 'a',
       marker: batch.marker,
     });
-
-    const proposed = records.map(({ id }) => id);
 
     expect(replay.questions).toEqual([
       expect.objectContaining({ evidence: { unsupported: proposed } }),
@@ -231,23 +253,22 @@ describe('evaluate_gate', () => {
       expected: { path: '/evidence', code: 'full-with-targets' },
     },
   ])('should refuse $scenario with INVALID_INPUT', async ({ patch, expected }) => {
-    const result = await environment.call('evaluate_gate', {
-      project: PROJECT,
-      process: PROCESS,
-      gate: 'has-note',
-      ...patch,
-    });
-
-    const body = expectError(result, 'INVALID_INPUT');
+    const body = await environment.fail(
+      'evaluate_gate',
+      {
+        project: PROJECT,
+        process: PROCESS,
+        gate: 'has-note',
+        ...patch,
+      },
+      'INVALID_INPUT',
+    );
 
     expect(body.details).toEqual([expect.objectContaining(expected)]);
   });
 
   it('should cap a failing evidence list at EVIDENCE_ITEMS_CAP and report omitted', async () => {
-    const total = BATCH_MAX * 3;
-    for (let batch = 0; batch < 3; batch += 1) {
-      await registerNotes(Array.from({ length: BATCH_MAX }, () => 'proposta'));
-    }
+    await registerProposed();
 
     const result = await evaluate<GateEvaluation & { questions: { omitted?: unknown }[] }>({
       gate: 'proposed-approved',
@@ -257,17 +278,14 @@ describe('evaluate_gate', () => {
 
     expect(question).toMatchObject({
       passed: false,
-      counts: { of: total, unsupported: total },
-      omitted: { unsupported: total - EVIDENCE_ITEMS_CAP },
+      counts: { of: PROPOSED_TOTAL, unsupported: PROPOSED_TOTAL },
+      omitted: { unsupported: PROPOSED_TOTAL - EVIDENCE_ITEMS_CAP },
     });
     expect(question?.evidence).toHaveProperty('unsupported.length', EVIDENCE_ITEMS_CAP);
   });
 
   it('should cap every list of a full evidence at EVIDENCE_ITEMS_CAP and report omitted', async () => {
-    const total = BATCH_MAX * 3;
-    for (let batch = 0; batch < 3; batch += 1) {
-      await registerNotes(Array.from({ length: BATCH_MAX }, () => 'proposta'));
-    }
+    await registerProposed();
 
     const result = await evaluate<GateEvaluation & { questions: { omitted?: unknown }[] }>({
       gate: 'proposed-approved',
@@ -278,7 +296,10 @@ describe('evaluate_gate', () => {
 
     expect(question).toMatchObject({
       passed: false,
-      omitted: { of: total - EVIDENCE_ITEMS_CAP, unsupported: total - EVIDENCE_ITEMS_CAP },
+      omitted: {
+        of: PROPOSED_TOTAL - EVIDENCE_ITEMS_CAP,
+        unsupported: PROPOSED_TOTAL - EVIDENCE_ITEMS_CAP,
+      },
     });
     expect(question?.evidence).toMatchObject({
       of: { length: EVIDENCE_ITEMS_CAP },
@@ -289,10 +310,7 @@ describe('evaluate_gate', () => {
   });
 
   it('should cap each batch target evidence list at EVIDENCE_ITEMS_CAP and report omitted', async () => {
-    const total = BATCH_MAX * 3;
-    for (let batch = 0; batch < 3; batch += 1) {
-      await registerNotes(Array.from({ length: BATCH_MAX }, () => 'proposta'));
-    }
+    await registerProposed();
 
     const result = await evaluate<GateBatchEvaluation>({
       gate: 'proposed-approved',
@@ -305,8 +323,37 @@ describe('evaluate_gate', () => {
       evidence?: { unsupported: unknown[] };
     }[];
 
-    expect(question).toMatchObject({ omitted: { unsupported: total - EVIDENCE_ITEMS_CAP } });
+    expect(question).toMatchObject({
+      omitted: { unsupported: PROPOSED_TOTAL - EVIDENCE_ITEMS_CAP },
+    });
     expect(question?.evidence?.unsupported).toHaveLength(EVIDENCE_ITEMS_CAP);
+  });
+
+  describe('with inherited relations', () => {
+    let evidence: string;
+
+    beforeEach(async () => {
+      ({ evidence } = await registerLineage());
+    });
+
+    it('should count the inherited supporter with evidence counts', async () => {
+      const counts = await evaluate<GateEvaluation<{ counts?: Record<string, number> }>>({
+        gate: UNIT_GATE.name,
+        evidence: 'counts',
+      });
+
+      expect(counts.passed).toBe(true);
+      expect(at(counts.questions, 0).counts).toMatchObject({ inherited: 1 });
+    });
+
+    it('should list the inherited supporter with evidence full', async () => {
+      const full = await evaluate<{ questions: { evidence?: { inherited?: string[] } }[] }>({
+        gate: UNIT_GATE.name,
+        evidence: 'full',
+      });
+
+      expect(at(full.questions, 0).evidence?.inherited).toEqual([evidence]);
+    });
   });
 });
 
@@ -321,19 +368,11 @@ describe('query', () => {
   async function registerDerived(count: number) {
     const { records } = await registerNotes(['alvo']);
     const targetId = records[0]!.id;
-    for (let done = 0; done < count; done += BATCH_MAX) {
-      await environment.ok('register', {
-        project: PROJECT,
-        process: PROCESS,
-        agent: 'executor',
-        records: Array.from({ length: Math.min(BATCH_MAX, count - done) }, () => ({
-          type: 'note',
-          target: 'run.derived',
-          data: { text: 'x' },
-          relations: [{ to: targetId, kind: 'derivesFrom' }],
-        })),
-      });
-    }
+    await registerBulk(environment, count, {
+      process: PROCESS,
+      target: 'run.derived',
+      relations: [{ to: targetId, kind: 'derivesFrom' }],
+    });
     return targetId;
   }
 
@@ -355,12 +394,10 @@ describe('query', () => {
 
   it('should match the service default byte for byte with relations full', async () => {
     await registerDerived(2);
-    const viaService = compose({
-      dataDir: environment.dataDir,
-      cwd: process.cwd(),
-      clock: () => new Date('2026-01-01T00:00:00.000Z'),
-      logger: () => undefined,
-    }).services.query.queryRecords({ project: PROJECT, process: PROCESS });
+    const viaService = servicesOver(environment).query.queryRecords({
+      project: PROJECT,
+      process: PROCESS,
+    });
 
     const viaTool = await query({ relations: 'full' });
 
@@ -398,14 +435,51 @@ describe('query', () => {
   });
 
   it('should refuse an unknown relations value with INVALID_INPUT', async () => {
-    const result = await environment.call('query', {
-      project: PROJECT,
-      process: PROCESS,
-      relations: 'all',
-    });
-
-    const body = expectError(result, 'INVALID_INPUT');
+    const body = await environment.fail(
+      'query',
+      {
+        project: PROJECT,
+        process: PROCESS,
+        relations: 'all',
+      },
+      'INVALID_INPUT',
+    );
 
     expect(body.details).toEqual([expect.objectContaining({ path: '/relations' })]);
+  });
+
+  describe('with inherited relations', () => {
+    let unit: string;
+    let evidence: string;
+    let revised: string;
+
+    beforeEach(async () => {
+      ({ unit, evidence, revised } = await registerLineage());
+    });
+
+    const revisedOnly = (args: Record<string, unknown>) => query({ ids: [revised], ...args });
+
+    it('should count the inherited edges in the default mode', async () => {
+      const page = await revisedOnly({});
+
+      expect(at(page.records, 0)).toMatchObject({ inheritedInCounts: { supports: 1 } });
+      expect(at(page.records, 0)).not.toHaveProperty('inheritedIn');
+    });
+
+    it('should list the inherited edges with the stored edge as origin in full mode', async () => {
+      const full = await revisedOnly({ relations: 'full' });
+
+      expect(at(full.records, 0)).toMatchObject({
+        inheritedIn: [{ kind: 'supports', from: evidence, origin: { from: evidence, to: unit } }],
+      });
+    });
+
+    it('should bring no inherited fields in none mode', async () => {
+      const none = await revisedOnly({ relations: 'none' });
+
+      expect(Object.keys(at(none.records, 0)).filter((key) => key.startsWith('inherited'))).toEqual(
+        [],
+      );
+    });
   });
 });

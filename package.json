@@ -1,11 +1,11 @@
 {
   "name": "hexlog",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=24.18.1"
+    "node": "^24.18.1"
   },
   "scripts": {
     "test": "jest --errorOnDeprecated",
@@ -94,22 +94,22 @@
     "@types/node": "^24.19.2",
     "cspell": "^10.4.0",
     "esbuild": "^0.28.2",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-jest": "^29.17.0",
-    "eslint-plugin-n": "^18.4.1",
+    "eslint-plugin-n": "^18.5.0",
     "fast-check": "^4.10.2",
     "git-cliff": "^2.14.2",
     "husky": "^9.1.7",
     "jest": "^30.5.2",
-    "knip": "^6.41.0",
+    "knip": "^6.42.1",
     "lint-staged": "^17.6.0",
     "markdownlint-cli2": "^0.24.0",
     "prettier": "^3.9.10",
     "tar": "^7.5.22",
-    "ts-jest": "^29.4.14",
+    "ts-jest": "^29.4.15",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.71.2"
+    "typescript-eslint": "^8.72.0"
   },
   "allowScripts": {
     "@parcel/watcher@2.6.0": true,

@@ -1,5 +1,5 @@
 // CLI falso do critic: faz o papel de `claude` e de `agy` nos specs do runner (`critic-run.spec.ts`,
-// `critic.spec.ts`). Roda como processo filho, nunca importado pelo jest. O spec monta dois shims
+// `critic-run.ask.spec.ts`, `critic.spec.ts`). Roda como processo filho, nunca importado pelo jest. O spec monta dois shims
 // `claude` e `agy` num diretório no início do `PATH` que fazem `exec node <este arquivo> <tool> "$@"`.
 //
 // argv: `<tool> <args da CLI real...>` com `tool` em `claude | agy`. Reconhece os comandos que o
@@ -70,6 +70,14 @@ const previous: Call[] = fs.existsSync(logFile)
 fs.appendFileSync(logFile, `${JSON.stringify({ tool, args, cwd: process.cwd() })}\n`);
 
 function claudeDialect(id: string): Dialect {
+  const init = () =>
+    out({
+      type: 'system',
+      subtype: 'init',
+      session_id: id,
+      model: 'opus',
+      mcp_servers: mcpServers,
+    });
   return {
     begin: () => {
       out({
@@ -80,25 +88,12 @@ function claudeDialect(id: string): Dialect {
       });
       process.stdout.write('global hook noise that is not json\n');
     },
-    init: () =>
-      out({
-        type: 'system',
-        subtype: 'init',
-        session_id: id,
-        model: 'opus',
-        mcp_servers: mcpServers,
-      }),
+    init,
     progress: () => out({ type: 'assistant', session_id: id, message: { role: 'assistant' } }),
     answer: (text) =>
       out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: id }),
     failure: (text) => {
-      out({
-        type: 'system',
-        subtype: 'init',
-        session_id: id,
-        model: 'opus',
-        mcp_servers: mcpServers,
-      });
+      init();
       out({ type: 'result', subtype: 'success', is_error: true, result: text, session_id: id });
     },
   };

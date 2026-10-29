@@ -7,6 +7,7 @@
 - Workflow e script de CI: log e anotação (`echo`, `::error::`, `::warning::`) em **inglês**; o texto que o workflow ou o script publica para um leitor (corpo de PR, comentário, corpo do Release) segue o idioma da documentação, **pt-BR**.
 - Comentários de código (incl. JSDoc) e documentação `.md` — **pt-BR**.
 - Nomes de arquivo de documentação (`AGENTS.md`, `docs/directives/adr-*.md`, `docs/pesquisa/**`) não são traduzidos.
+- Exceção: o texto que o setup escreve no destino (o conteúdo dos `*.template.md`, o bloco do `AGENTS.md` incluído, e os `*.example.json` de `skills/hexlog-setup/references/`) é **inglês**; a prosa em volta, que instrui o agente, segue pt-BR. Ver o item 8 do [ADR 0013](adr-0013-setup-em-repositorio-de-destino.md).
 
 ## Escrita dos testes
 

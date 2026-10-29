@@ -12,15 +12,11 @@ Descreve só o papel da cadeira do dono, sem conhecer quem a ocupa. As regras da
 - **Entrada:** a pergunta, o contexto que a cerca e a classe da pergunta.
 - **Saída:** a resposta, quem respondeu, a classe efetiva (`common` ou `critical`) e o ponteiro do veredito.
 
-## Ações de contexto
+## Catálogo de ações
 
-Use só as que a pergunta pedir, da mais barata para a mais cara:
+As ações para juntar contexto, a ordem de custo, a escolha por natureza da dúvida e quando cada uma é permitida estão na seção "Catálogo de ações" de `docs/directives/cadeira-do-dono.md`. O catálogo manda; esta skill não o repete.
 
-1. **Busca local:** `oh-my-claudecode:explore` com `model: "haiku"`.
-2. **Pesquisa web:** `oh-my-claudecode:document-specialist` com `model: "sonnet"`.
-3. **Júri:** skill `the-jury`, jurados em `sonnet`, só quando a evidência local não decide.
-
-Todo subagente aninhado leva `model` explícito, `name` do pool de `AGENT-NAMES.md` (config global do dono, em `~/.claude/`; sem ele, só `{tipo}-{slug}`) no padrão `{nome}-{tipo}-{slug}` e o pedido de uma mensagem de conclusão com o resumo. Quem o lança espera essa mensagem antes de seguir: o retorno pode chegar pela caixa de mensagens, não inline. Depois dela, encerra o subagente por `TaskStop`, nunca antes.
+Todo subagente aninhado leva `model` explícito, `name` único e descritivo (o endereço para retomá-lo) e o pedido de uma mensagem de conclusão com o resumo. Quem o lança espera essa mensagem antes de seguir: o retorno pode chegar pela caixa de mensagens, não inline. Depois dela, encerra o subagente por `TaskStop`, nunca antes.
 
 ## Crivo do júri
 
@@ -35,5 +31,3 @@ Consulte nesta ordem:
 3. Memória nativa do projeto.
 4. `docs/directives/`, os ADRs e os `AGENTS.md`.
 5. Web e retorno de subagente.
-
-O `CLAUDE.md` global não é fonte: é instrução já injetada na sessão.

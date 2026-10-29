@@ -4,8 +4,14 @@ import { isUndefined, kebabCase, memoize, type MemoizeCache } from 'es-toolkit';
 import { ATTACHMENT_FORMAT } from '../domain/definitions.ts';
 import { catalogNames, FORMAT_CATALOG } from '../domain/formats.ts';
 import { Hash } from '../domain/ids.ts';
-import { FREE_PATTERN_KEYWORDS, hasKeywordAt, walkSubschemas } from '../domain/schema-walk.ts';
-import { capDetails, pointer as jsonPointer, type Detail } from '../errors.ts';
+import {
+  countNodes,
+  expandedSize,
+  FREE_PATTERN_KEYWORDS,
+  hasKeywordAt,
+  walkSubschemas,
+} from '../domain/schema-walk.ts';
+import { capDetails, pointer as jsonPointer, violationsCapped, type Detail } from '../errors.ts';
 import type { Validator } from '../ports.ts';
 
 /** Propriedade que o ajv só cita em `params`: o `instancePath` do erro aponta para o objeto pai. */
@@ -20,6 +26,32 @@ function offendingProperty(error: ErrorObject): string | undefined {
   return typeof name === 'string' ? name : undefined;
 }
 
+/** Pontos de código da string, como o ajv: um par substituto vale 1. Sem copiar a string. */
+function codePointLength(text: string): number {
+  let length = text.length;
+  for (let i = 0; i + 1 < text.length; i++) {
+    const high = text.charCodeAt(i);
+    const low = text.charCodeAt(i + 1);
+    if (high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff) {
+      length--;
+      i++;
+    }
+  }
+  return length;
+}
+
+/**
+ * Valor que reprovou o teto ou o piso, só quando o ajv devolve o dado do erro (`verbose`, ligado só
+ * nos compiladores do `validate`).
+ */
+function measuredValue(error: ErrorObject): number | undefined {
+  const { keyword, data } = error;
+  if ((keyword === 'maxLength' || keyword === 'minLength') && typeof data === 'string')
+    return codePointLength(data);
+  if ((keyword === 'maximum' || keyword === 'minimum') && typeof data === 'number') return data;
+  return undefined;
+}
+
 function toDetail(error: ErrorObject): Detail {
   const property = offendingProperty(error);
   return {
@@ -29,7 +61,25 @@ function toDetail(error: ErrorObject): Detail {
   };
 }
 
-const toDetails = (errors: ErrorObject[]): Detail[] => capDetails(errors.map(toDetail));
+/**
+ * Mede só os erros que sobram do dedupe e do corte de `capDetails`: o `(got N)` não muda a chave de
+ * dedupe (o mesmo path e a mesma mensagem têm o mesmo dado), então medir antes só gastaria tempo.
+ */
+function toDetails(errors: ErrorObject[]): Detail[] {
+  const sources = new Map<Detail, ErrorObject>();
+  const details = errors.map((error) => {
+    const detail = toDetail(error);
+    sources.set(detail, error);
+    return detail;
+  });
+  return capDetails(details).map((detail) => {
+    const source = sources.get(detail);
+    const measured = isUndefined(source) ? undefined : measuredValue(source);
+    return isUndefined(measured)
+      ? detail
+      : { ...detail, message: `${detail.message} (got ${measured})` };
+  });
+}
 
 /** As duas posições em que `attachmentFields` reconhece a marca: o campo e os itens dele. */
 const ATTACHMENT_MARK_POSITION = /^\/properties\/[^/]+(\/items)?$/;
@@ -95,10 +145,24 @@ function createAjv(options: ConstructorParameters<typeof Ajv2020.default>[0]) {
  * não basta, porque `additionalProperties` lê `patternProperties` direto e o executa. O ajv não
  * revalida o schema (`validateSchema: false`): quem o confere é a instância `meta`. Com `sink`, as
  * duas palavras-chave gravam cada ocorrência no documento compilado, inclusive a que um `$ref`
- * alcança dentro de dado, sem construir o regex.
+ * alcança dentro de dado, sem construir o regex. Com `verbose`, cada erro guarda o dado que o
+ * reprovou (referências a `schema`, `parentSchema` e `data`), de onde sai o valor medido.
  */
-function createCompiler(allErrors: boolean, sink?: FreePatternSink) {
-  const ajv = createAjv({ allErrors, code: { regExp: INERT_ENGINE }, validateSchema: false });
+function createCompiler({
+  allErrors,
+  sink,
+  verbose = false,
+}: {
+  allErrors: boolean;
+  sink?: FreePatternSink;
+  verbose?: boolean;
+}) {
+  const ajv = createAjv({
+    allErrors,
+    verbose,
+    code: { regExp: INERT_ENGINE },
+    validateSchema: false,
+  });
   let root: unknown;
   for (const keyword of FREE_PATTERN_KEYWORDS) {
     ajv.removeKeyword(keyword);
@@ -135,6 +199,15 @@ function createCompiler(allErrors: boolean, sink?: FreePatternSink) {
   return { compile };
 }
 
+/**
+ * Teto do custo estimado (`expandedSize` do schema vezes `countNodes` do dado) para o passe que
+ * junta todas as violações. Acima dele, a recusa traz só o que o primeiro passe achou. A estimativa
+ * é do pior caso (cada subschema contra cada valor). Medido com `allOf` repetido sobre uma lista que
+ * reprova em tudo: cerca de 2 µs por unidade, então no teto o passe custa ~50 ms e ~10 MB; um
+ * `$defs` que dobra a cada nível sobe o tamanho do schema, não o número de erros distintos.
+ */
+const COST_CEILING = 25_000;
+
 /** O ajv estoura a pilha ao compilar `$ref` cíclico (`a` aponta `b`, `b` aponta `a`): `RangeError` cru não ajuda o agente. */
 function messageOf(error: unknown): string {
   if (error instanceof RangeError) return 'schema has a cyclic $ref or is nested too deeply';
@@ -147,12 +220,17 @@ function messageOf(error: unknown): string {
  * por objeto de schema e esquece o `$id`, então duas versões de um tipo com o mesmo `$id` em objetos
  * distintos não colidem.
  *
- * Três instâncias do ajv: `meta` só confere o schema contra o metaschema (`allErrors: true`, erros
+ * Quatro instâncias do ajv: `meta` só confere o schema contra o metaschema (`allErrors: true`, erros
  * estruturados); `checker` compila para `checkSchema` e devolve todos os erros (`allErrors: true`);
- * `validate` usa `allErrors: false` e devolve um erro por subschema avaliado, não um por campo (em
- * `anyOf`/`oneOf`/`propertyNames` saem os dos ramos). `checker` e `validate` são neutros: ignoram
- * `pattern` e `patternProperties` e nunca constroem regex do schema (`createCompiler`). O `meta`
- * também não constrói: `validateSchema` do ajv não executa o regex do schema.
+ * `validate` roda primeiro um passe `allErrors: false` e, só se o dado reprova e o custo estimado
+ * cabe em `COST_CEILING`, um segundo `allErrors: true` compilado sob demanda; os dois com
+ * `verbose: true`. O segundo devolve uma violação por erro do ajv, com o valor medido (`(got N)`) em
+ * `maxLength`, `minLength`, `maximum` e `minimum` (em `anyOf`/`oneOf`/`propertyNames` saem os dos
+ * ramos); acima do teto sai o que o primeiro achou mais um `violations-capped` (`path` vazio), que
+ * avisa que a lista está incompleta. Dado válido nunca roda o segundo passe.
+ * `checker` e `validate` são neutros: ignoram `pattern` e `patternProperties` e nunca constroem
+ * regex do schema (`createCompiler`). O `meta` não vê regex do schema porque `ruleDetails` recusa
+ * `pattern` e `patternProperties` antes de `validateSchema`.
  *
  * O `path` de `checkSchema` é sempre relativo ao documento do schema (raiz = `''`), inclusive nos
  * erros de compilação, que saem com `path` vazio; quem expõe o erro (o serviço de definição)
@@ -175,17 +253,24 @@ function messageOf(error: unknown): string {
 export function createValidator(): Validator {
   const meta = createAjv({ allErrors: true });
   const freePatterns: { keyword: string; location: string }[] = [];
-  const checker = createCompiler(true, (keyword, location) =>
-    freePatterns.push({ keyword, location }),
-  );
+  const checker = createCompiler({
+    allErrors: true,
+    sink: (keyword, location) => freePatterns.push({ keyword, location }),
+  });
+  const firstPass = createCompiler({ allErrors: false, verbose: true });
+  const fullPass = createCompiler({ allErrors: true, verbose: true });
   // Chave por identidade do objeto: o lote de um `register` repete o mesmo schema e recompilar
   // custava 200 a 300 ms por lote de 50. Escopo da instância e coletável: o `WeakMap` não tem
   // `size`, que `MemoizeCache` exige no tipo mas o `memoize` nunca lê, então o cast é necessário.
-  const compiledBy = (compiler: ReturnType<typeof createCompiler>) =>
-    memoize((schema: Record<string, unknown>) => compiler.compile(schema), {
-      cache: new WeakMap() as unknown as MemoizeCache<object, ReturnType<typeof compiler.compile>>,
-    });
-  const compiled = compiledBy(createCompiler(false));
+  // O `fullPass` só compila quando o primeiro passe reprova e o custo cabe em `COST_CEILING`.
+  const prepare = (schema: Record<string, unknown>) => {
+    const first = firstPass.compile(schema);
+    let full: typeof first | undefined;
+    return { first, size: expandedSize(schema), full: () => (full ??= fullPass.compile(schema)) };
+  };
+  const prepared = memoize(prepare, {
+    cache: new WeakMap() as unknown as MemoizeCache<object, ReturnType<typeof prepare>>,
+  });
 
   return {
     checkSchema(schema) {
@@ -213,8 +298,15 @@ export function createValidator(): Validator {
       }
     },
     validate(schema, data) {
-      const validate = compiled(schema);
-      return validate(data) ? [] : toDetails(validate.errors ?? []);
+      const { first, size, full } = prepared(schema);
+      if (first(data)) return [];
+      const firstErrors = first.errors ?? [];
+      if (size * countNodes(data, COST_CEILING) > COST_CEILING) {
+        return capDetails([...toDetails(firstErrors), violationsCapped('')]);
+      }
+      const all = full();
+      all(data);
+      return toDetails(all.errors ?? []);
     },
   };
 }
