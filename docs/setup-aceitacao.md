@@ -119,7 +119,9 @@ paralelo, e a restauração pergunta primeiro. O ocupante do `agy` não tem deny
 2. Lacuna com base no documento, cuja pergunta exige consultar um arquivo do repositório: o ocupante responde por `claude -p`; a
    `premise` sai com `fills-gap`, `answeredBy: simulated`, `basis: rule`, `rule` igual à chave, `criteria` igual ao `sha256sum` do
    arquivo, `actionUsed: local` e uma `evidence` com as fontes; o gate `gaps` fica verde e o relatório a lista. Sonda: uma segunda chamada
-   pede para ler e pesquisar um arquivo do `<D>` real, e as três tentativas (`Read`, `Grep`, `Glob`) são negadas ou indisponíveis.
+   pede para ler e pesquisar um arquivo do `<D>` real, e as três tentativas (`Read`, `Grep`, `Glob`) voltam com a mensagem
+   `permission denied` ou `outside the working directory`; `tool not found` (ferramenta ausente) não conta como negada. O `claude`
+   precisa ter `--restricted` em `claude --help`; a receita foi provada na versão 2.1.312 e as anteriores não foram testadas.
    O prompt da sonda vai por arquivo, porque um comando Bash com o caminho literal do `<D>` é negado pelo `bash-guard`.
 3. Lacuna sem base nos critérios: sai `basis: judgment` e o relatório a lista primeiro.
 4. Aval e contestação, no processo da resposta: o executor grava um `audit` para a resposta A e um registro de apoio com `supports`
@@ -128,7 +130,7 @@ paralelo, e a restauração pergunta primeiro. O ocupante do `agy` não tem deny
 5. Sem ocupante, em outro repositório (`occupant: none`, só contrato, sem receita): o humano responde, o executor grava
    `answeredBy: human` e o relatório é o mesmo.
 6. Setup com ocupante `agy` (gera `recipe-agy.md`): repetir 2, sem a sonda, e 3. Anote onde o `attach` por `path` resolve no
-   `agy`. Se o `agy` falhar ou não rodar, a receita fica `Status: unproven` no texto gerado e aqui.
+   `agy`. Se o `agy` falhar ou não rodar, registre o resultado do ensaio aqui e no anexo de evidência.
 7. Colisão, com o ocupante depois do mapa. Semeie, pela sessão do dono, tipos existentes, um processo `old-unit` e um registro nele; só
    então rode o setup. Com `premise` compatível e relação `fills-gap` de espécie diferente, o setup acrescenta campos opcionais por
    versão nova, reusa a relação pelo nome com o aviso, e o ocupante recebe `kind-mismatch` e para. Com `premise` incompatível
@@ -180,7 +182,9 @@ Marque cada item com a evidência (saída do comando, trecho do `git diff` ou o 
 ### Cadeira do dono
 
 - [ ] O setup pergunta se liga a cadeira, gera `criteria.md`, `contract.md` e a receita do ocupante escolhido na pasta da skill do
-  projeto e grava `ownerSeat` no `hexlog-model.json`, sem caminho absoluto.
+  projeto e grava `ownerSeat` no `hexlog-model.json`, sem caminho absoluto. Sem evidência neste item: os setups da prova rodaram por
+  turnos `claude -p` retomados com respostas antecipadas, e o ramo da pergunta "liga a cadeira?" não foi observado; segue
+  desmarcado até um setup interativo do dono.
 - [ ] As chaves de regra do documento de critérios casam `^[a-z0-9-]+$` e não se repetem.
 - [ ] A resposta do ocupante grava `premise` com `fills-gap`, `answeredBy: simulated`, `basis`, `rule`, `criteria`, `author.agent` e
   `author.model`, e o gate `gaps` fica verde.
@@ -188,7 +192,8 @@ Marque cada item com a evidência (saída do comando, trecho do `git diff` ou o 
 - [ ] O aval (`audit` com `supports`) tira a resposta de "not audited"; a contestação (`premise` humana com `revokes` e `fills-gap`)
   deixa o dependente com `needsReview` e a resposta contestada fora do relatório.
 - [ ] Sem ocupante, a resposta humana (`answeredBy: human`) aparece no mesmo relatório.
-- [ ] A sonda do ocupante não leu o `<D>` real e `list` do `<D>` real é o mesmo antes e depois do ensaio.
+- [ ] A sonda do ocupante não leu o `<D>` real (`Read`, `Grep` e `Glob` voltaram com `permission denied` ou `outside the working
+  directory`, nunca `tool not found`) e `list` do `<D>` real é o mesmo antes e depois do ensaio.
 - [ ] Com colisão de nome, o setup acrescenta campos opcionais ou mapeia o nome, e os arquivos gerados usam os nomes aplicados.
 - [ ] A configuração do `agy` voltou ao estado anterior (`cmp` e `diff -r`).
 

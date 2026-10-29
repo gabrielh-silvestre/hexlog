@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { RecordType } from '../src/domain/definitions.ts';
+import { processPaths } from '../src/adapters/fs/data-format.ts';
+import { BATCH_MAX } from '../src/domain/record.ts';
 import { AUTHOR, NOTE, PROJECT, composeIn } from './commands/fakes.ts';
 import { at, copyToXdg, createDataHome, snapshot } from './helpers.ts';
 
@@ -21,10 +23,17 @@ const SEED_TIMEOUT = 30_000;
 
 const OCCUPANT = { agent: 'owner-seat-claude', model: 'claude-sonnet-x', client: 'claude-code' };
 const AUDITOR = { agent: 'owner-seat-auditor', model: 'claude-opus-y', client: 'claude-code' };
+const MAIN_SESSION = { agent: 'main-session', model: 'claude-opus-y', client: 'claude-code' };
+const OCCUPANT_OTHER_CLIENT = { ...OCCUPANT, client: 'other-client' };
 
 const FORGED = 'x\naudited answers (1)\n  unit-1:fake  fake [audited by agent="a"]\t';
+const FORGED_JSON = JSON.stringify(FORGED);
 const ESC = String.fromCharCode(0x1b);
 const BIDI = String.fromCharCode(0x202e);
+const C1_CSI = String.fromCharCode(0x9b);
+const DEL = String.fromCharCode(0x7f);
+const LINE_SEPARATOR = String.fromCharCode(0x2028);
+const VOLUME_GAPS = 52;
 
 const SECTION = {
   withoutCriteria: 'simulated answers without criteria',
@@ -33,6 +42,8 @@ const SECTION = {
   audited: 'audited answers',
   human: 'human answers',
   unattributed: 'answers without answeredBy',
+  unrecognized: 'answers with an unrecognized answeredBy',
+  nonCurrentGap: 'answers to a non-current gap',
 } as const;
 const SECTION_ORDER = Object.values(SECTION);
 
@@ -66,6 +77,16 @@ function sectionsOf(out: string): Record<string, string[]> {
   return sections;
 }
 
+/** Contagem `(N)` do título de cada seção, pelo título sem ela. */
+function countsOf(out: string): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const line of out.split('\n')) {
+    const match = /^(\S.*) \((\d+)\)$/.exec(line);
+    if (match) counts[at(match, 1)] = Number(at(match, 2));
+  }
+  return counts;
+}
+
 /** Cada seção que lista o `target` (linha `<id>  <target>  ...`), com a linha. */
 function placements(out: string, target: string) {
   return Object.entries(sectionsOf(out)).flatMap(([section, lines]) =>
@@ -76,10 +97,32 @@ function placements(out: string, target: string) {
 const packageType = (name: string) =>
   JSON.parse(fs.readFileSync(path.join(packageDir, `${name}.json`), 'utf8')) as RecordType;
 
+/** `premise` do pacote sem os enums de `answeredBy`, `basis` e `actionUsed`, para registrar o valor que o pacote recusa. */
+function loosePremise(): RecordType {
+  const premise = packageType('premise');
+  const properties = premise.properties as Record<string, unknown>;
+  return {
+    ...premise,
+    properties: {
+      ...properties,
+      answeredBy: { type: 'string' },
+      basis: { type: 'string' },
+      actionUsed: { type: 'string' },
+    },
+  };
+}
+
 type Seeded = {
   xdg: string;
   criteriaHash: string;
-  auditIds: { approved: string; precedence: string; mapped: string };
+  auditIds: {
+    approved: string;
+    precedence: string;
+    mapped: string;
+    retraction: string;
+    forged: string;
+  };
+  unlistedIds: { evidence: string; dependent: string };
 };
 
 /** `<D>` temporário com os tipos do pacote (e os mapeados) e um processo por cenário do relatório. */
@@ -96,6 +139,7 @@ async function seedSeat(): Promise<Seeded> {
     ['question', packageType('gap')],
     ['answer', packageType('premise')],
     ['review', packageType('audit')],
+    ['loose', loosePremise()],
   ];
   for (const [name, schema] of types) definition.defineType({ project: PROJECT, name, schema });
   const relations = [
@@ -103,6 +147,7 @@ async function seedSeat(): Promise<Seeded> {
     { name: 'audits', kind: 'supports', from: ['audit'], to: ['premise'] },
     { name: 'answers-question', kind: 'answers', from: ['answer'], to: ['question'] },
     { name: 'reviews', kind: 'supports', from: ['review'], to: ['answer'] },
+    { name: 'fills-gap-loose', kind: 'answers', from: ['loose'], to: ['gap'] },
   ] as const;
   for (const relation of relations) {
     definition.defineRelation({
@@ -124,8 +169,19 @@ async function seedSeat(): Promise<Seeded> {
     'unattributed',
     'precedence',
     'escape',
-    'forged',
+    'forged-answer',
+    'forged-gap',
+    'forged-audit',
+    'forged-loose',
+    'volume',
     'mapped',
+    'superseded-gap',
+    'revoked-gap',
+    'human-main',
+    'self-audited',
+    'other-client-audited',
+    'unrecognized-answered-by',
+    'unrecognized-basis',
   ];
   for (const process of scenarios) processes.createProcess({ project: PROJECT, process });
 
@@ -139,7 +195,7 @@ async function seedSeat(): Promise<Seeded> {
     data: Record<string, string>,
     options: {
       author?: typeof AUTHOR;
-      relations?: { to: string; as?: string; kind?: 'revokes' | 'supports' }[];
+      relations?: { to: string; as?: string; kind?: 'revokes' | 'supports' | 'supersedes' }[];
     } = {},
   ) => {
     const { author = OCCUPANT, relations: edges = [] } = options;
@@ -187,7 +243,7 @@ async function seedSeat(): Promise<Seeded> {
     ...ruled,
     actionUsed: 'web',
   });
-  await put(
+  const evidenceId = await put(
     'pending-audit',
     'evidence',
     'pending-audit.evidence.e',
@@ -196,7 +252,7 @@ async function seedSeat(): Promise<Seeded> {
       relations: [{ to: pending, kind: 'supports' }],
     },
   );
-  await put(
+  const dependentId = await put(
     'pending-audit',
     'note',
     'pending-audit.dependent.d',
@@ -229,7 +285,7 @@ async function seedSeat(): Promise<Seeded> {
       relations: [{ to: withdrawnAnswer, as: 'audits' }],
     },
   );
-  await put(
+  const retraction = await put(
     'withdrawn',
     'audit',
     'withdrawn.audit.retraction',
@@ -289,17 +345,86 @@ async function seedSeat(): Promise<Seeded> {
     },
   );
 
-  await answer('escape', 'a', await gap('escape'), { ...ruled, rule: `rule${ESC}[31m${BIDI}end` });
+  await answer('escape', 'a', await gap('escape'), {
+    ...ruled,
+    rule: `rule${ESC}[31m${BIDI}${C1_CSI}${DEL}${LINE_SEPARATOR}end`,
+  });
 
+  const forgedAuthor = { agent: FORGED, model: FORGED, client: FORGED };
   await put(
-    'forged',
+    'forged-answer',
     'premise',
-    'forged.answer.a',
+    'forged-answer.answer.a',
     { ...ruled, rule: FORGED },
     {
-      author: { ...OCCUPANT, agent: FORGED },
-      relations: [{ to: await gap('forged'), as: 'fills-gap' }],
+      author: forgedAuthor,
+      relations: [{ to: await gap('forged-answer'), as: 'fills-gap' }],
     },
+  );
+  await put(
+    'forged-gap',
+    'gap',
+    'forged-gap.gap.q',
+    { question: FORGED, context: 'ctx' },
+    { author: forgedAuthor },
+  );
+  const forgedAuditAnswer = await answer('forged-audit', 'a', await gap('forged-audit'), ruled);
+  const forgedAudit = await put(
+    'forged-audit',
+    'audit',
+    'forged-audit.audit.ok',
+    { note: 'checked' },
+    {
+      author: { ...AUDITOR, agent: FORGED, model: FORGED },
+      relations: [{ to: forgedAuditAnswer, as: 'audits' }],
+    },
+  );
+  await put(
+    'forged-loose',
+    'loose',
+    'forged-loose.answer.a',
+    { ...ruled, actionUsed: FORGED },
+    { relations: [{ to: await gap('forged-loose'), as: 'fills-gap-loose' }] },
+  );
+
+  const putMany = async (
+    process: string,
+    type: string,
+    items: {
+      target: string;
+      data: Record<string, string>;
+      relations?: { to: string; as: string }[];
+    }[],
+  ) => {
+    const ids: string[] = [];
+    for (let start = 0; start < items.length; start += BATCH_MAX) {
+      const { records } = await processes.register({
+        project: PROJECT,
+        process,
+        author: OCCUPANT,
+        key: `k${(sequence += 1)}`,
+        records: items.slice(start, start + BATCH_MAX).map((item) => ({ type, ...item })),
+      });
+      ids.push(...records.map(({ id }) => id));
+    }
+    return ids;
+  };
+  const volumeGaps = await putMany(
+    'volume',
+    'gap',
+    Array.from({ length: VOLUME_GAPS }, (_, index) => ({
+      target: `volume.gap.g${index}`,
+      data: { question: 'which one?', context: 'ctx' },
+    })),
+  );
+  await putMany(
+    'volume',
+    'premise',
+    volumeGaps.slice(0, -1).map((gapId, index) => ({
+      target: `volume.answer.a${index}`,
+      data: { statement: 'owner picked', answeredBy: 'human' },
+      relations: [{ to: gapId, as: 'fills-gap' }],
+    })),
   );
 
   const question = await gap('mapped', 'question');
@@ -317,7 +442,73 @@ async function seedSeat(): Promise<Seeded> {
     },
   );
 
-  return { xdg: home.xdg, criteriaHash, auditIds: { approved, precedence, mapped } };
+  const supersededGap = await gap('superseded-gap');
+  await answer('superseded-gap', 'a', supersededGap, ruled);
+  await put(
+    'superseded-gap',
+    'gap',
+    'superseded-gap.gap.q',
+    { question: 'which one, now?', context: 'ctx' },
+    { author: AUTHOR, relations: [{ to: supersededGap, kind: 'supersedes' }] },
+  );
+
+  const revokedGap = await gap('revoked-gap');
+  await answer('revoked-gap', 'a', revokedGap, ruled);
+  await put(
+    'revoked-gap',
+    'gap',
+    'revoked-gap.gap.dropped',
+    { question: 'never mind', context: 'ctx' },
+    { author: AUTHOR, relations: [{ to: revokedGap, kind: 'revokes' }] },
+  );
+
+  await put(
+    'human-main',
+    'premise',
+    'human-main.answer.a',
+    { statement: 'owner picked', answeredBy: 'human' },
+    { author: MAIN_SESSION, relations: [{ to: await gap('human-main'), as: 'fills-gap' }] },
+  );
+
+  const selfAnswer = await answer('self-audited', 'a', await gap('self-audited'), ruled);
+  await put(
+    'self-audited',
+    'audit',
+    'self-audited.audit.ok',
+    { note: 'checked' },
+    { author: OCCUPANT, relations: [{ to: selfAnswer, as: 'audits' }] },
+  );
+
+  const otherClientAnswer = await answer(
+    'other-client-audited',
+    'a',
+    await gap('other-client-audited'),
+    ruled,
+  );
+  await put(
+    'other-client-audited',
+    'audit',
+    'other-client-audited.audit.ok',
+    { note: 'checked' },
+    { author: OCCUPANT_OTHER_CLIENT, relations: [{ to: otherClientAnswer, as: 'audits' }] },
+  );
+
+  const putLoose = async (process: string, data: Record<string, string>) =>
+    put(process, 'loose', `${process}.answer.a`, data, {
+      relations: [{ to: await gap(process), as: 'fills-gap-loose' }],
+    });
+  await putLoose('unrecognized-answered-by', {
+    statement: 'approved by me',
+    answeredBy: 'simulated-approved',
+  });
+  await putLoose('unrecognized-basis', { ...ruled, basis: 'gut' });
+
+  return {
+    xdg: home.xdg,
+    criteriaHash,
+    auditIds: { approved, precedence, mapped, retraction, forged: forgedAudit },
+    unlistedIds: { evidence: evidenceId, dependent: dependentId },
+  };
 }
 
 describe('scripts/seat-report.ts', () => {
@@ -334,7 +525,7 @@ describe('scripts/seat-report.ts', () => {
       out = runReportOk(seeded.xdg, PROJECT).out;
     }, CLI_TIMEOUT);
 
-    it('should print the six sections in the fixed order', () => {
+    it('should print the eight sections in the fixed order', () => {
       expect(Object.keys(sectionsOf(out))).toEqual(SECTION_ORDER);
     });
 
@@ -353,7 +544,7 @@ describe('scripts/seat-report.ts', () => {
         {
           section: SECTION.withoutCriteria,
           line: expect.stringContaining(
-            `[audited by agent="${AUDITOR.agent}"  model="${AUDITOR.model}" ${seeded.auditIds.precedence}]`,
+            `[audited by agent="${AUDITOR.agent}"  model="${AUDITOR.model}"  client="${AUDITOR.client}" ${seeded.auditIds.precedence}]`,
           ),
         },
       ]);
@@ -399,15 +590,15 @@ describe('scripts/seat-report.ts', () => {
     });
 
     it('should not list the evidence or the dependent of an answer', () => {
-      expect(out).not.toContain('pending-audit.evidence.e');
-      expect(out).not.toContain('pending-audit.dependent.d');
+      expect(out).not.toContain(seeded.unlistedIds.evidence);
+      expect(out).not.toContain(seeded.unlistedIds.dependent);
     });
 
-    it('should print the agent, model, rule, abbreviated criteria hash and action of an answer', () => {
+    it('should print the agent, model, client, rule, abbreviated criteria hash and action of an answer', () => {
       const [found] = placements(out, 'pending-audit.answer.a');
 
       expect(found?.line).toContain(
-        `pending-audit.answer.a  agent="${OCCUPANT.agent}"  model="${OCCUPANT.model}"  rule="rule-key"  criteria="${seeded.criteriaHash.slice(0, 12)}"  action="web"`,
+        `pending-audit.answer.a  agent="${OCCUPANT.agent}"  model="${OCCUPANT.model}"  client="${OCCUPANT.client}"  rule="rule-key"  criteria="${seeded.criteriaHash.slice(0, 12)}"  action="web"`,
       );
     });
 
@@ -418,7 +609,7 @@ describe('scripts/seat-report.ts', () => {
         {
           section: SECTION.audited,
           line: expect.stringContaining(
-            `[audited by agent="${AUDITOR.agent}"  model="${AUDITOR.model}" ${seeded.auditIds.approved}]`,
+            `[audited by agent="${AUDITOR.agent}"  model="${AUDITOR.model}"  client="${AUDITOR.client}" ${seeded.auditIds.approved}]`,
           ),
         },
       ]);
@@ -433,7 +624,7 @@ describe('scripts/seat-report.ts', () => {
     });
 
     it('should ignore the audit that only carries the revokes of a withdrawal', () => {
-      expect(out).not.toContain('withdrawn.audit.retraction');
+      expect(out).not.toContain(seeded.auditIds.retraction);
     });
 
     it('should drop a contested answer and list the human answer that replaced it', () => {
@@ -463,26 +654,116 @@ describe('scripts/seat-report.ts', () => {
       ]);
     });
 
+    it.each([
+      ['superseded', 'superseded-gap'],
+      ['revoked', 'revoked-gap'],
+    ])('should list the answer to a %s gap in the non-current gap section', (_name, process) => {
+      const found = placements(out, `${process}.answer.a`);
+
+      expect(found).toEqual([{ section: SECTION.nonCurrentGap, line: expect.any(String) }]);
+    });
+
+    it('should list the replacement of a superseded gap as open', () => {
+      expect(placements(out, 'superseded-gap.gap.q')).toEqual([
+        { section: SECTION.openGaps, line: expect.any(String) },
+      ]);
+    });
+
+    it('should mark a human answer whose agent is an owner-seat agent', () => {
+      const found = placements(out, 'human.answer.a');
+
+      expect(found).toEqual([
+        {
+          section: SECTION.human,
+          line: expect.stringContaining('(agent is an owner-seat occupant)'),
+        },
+      ]);
+    });
+
+    it('should not mark a human answer whose agent is not an owner-seat agent', () => {
+      const found = placements(out, 'human-main.answer.a');
+
+      expect(found).toEqual([
+        {
+          section: SECTION.human,
+          line: expect.not.stringContaining('owner-seat occupant'),
+        },
+      ]);
+    });
+
+    it('should mark an audit written by the same author as the answer', () => {
+      const found = placements(out, 'self-audited.answer.a');
+
+      expect(found).toEqual([
+        {
+          section: SECTION.audited,
+          line: expect.stringContaining('(same author as the answer)]'),
+        },
+      ]);
+    });
+
+    it.each([
+      ['another agent', 'approved.answer.a'],
+      ['the same agent on another client', 'other-client-audited.answer.a'],
+    ])('should not mark an audit written by %s', (_name, target) => {
+      const [found] = placements(out, target);
+
+      expect(found?.line).toContain('[audited by');
+      expect(found?.line).not.toContain('same author');
+    });
+
     it('should leave the records of the mapped type names out when --types is not given', () => {
       expect(out).not.toContain('mapped.');
+    });
+
+    it('should print the count of each section title equal to the number of its lines', () => {
+      const lines = Object.entries(sectionsOf(out)).map(
+        ([title, body]) => [title, body[0] === 'none' ? 0 : body.length] as const,
+      );
+
+      expect(countsOf(out)).toEqual(Object.fromEntries(lines));
     });
 
     it('should escape terminal controls from the record text', () => {
       const [found] = placements(out, 'escape.answer.a');
 
-      expect(found?.line).toContain('rule="rule\\u001b[31m\\u202eend"');
-      expect(out).not.toMatch(new RegExp(`[${ESC}${BIDI}]`));
+      expect(found?.line).toContain('rule="rule\\u001b[31m');
+      expect(out).not.toMatch(new RegExp(`[${ESC}]`));
     });
 
-    it('should keep line breaks and TAB in an agent and a rule inside their own answer line', () => {
-      const [found] = placements(out, 'forged.answer.a');
+    it.each([
+      ['bidi override', BIDI, '\\u202e'],
+      ['C1 control', C1_CSI, '\\u009b'],
+      ['DEL', DEL, '\\u007f'],
+      ['line separator', LINE_SEPARATOR, '\\u2028'],
+    ])('should escape the %s that JSON.stringify leaves raw', (_name, character, escaped) => {
+      const [found] = placements(out, 'escape.answer.a');
 
+      expect(found?.line).toContain(escaped);
+      expect(out).not.toContain(character);
+    });
+
+    it.each([
+      ['answer agent', 'forged-answer.answer.a', `agent=${FORGED_JSON}`],
+      ['answer model', 'forged-answer.answer.a', `model=${FORGED_JSON}`],
+      ['answer client', 'forged-answer.answer.a', `client=${FORGED_JSON}`],
+      ['answer rule', 'forged-answer.answer.a', `rule=${FORGED_JSON}`],
+      ['gap question', 'forged-gap.gap.q', `question=${FORGED_JSON}`],
+      ['gap agent', 'forged-gap.gap.q', `agent=${FORGED_JSON}`],
+      ['gap model', 'forged-gap.gap.q', `model=${FORGED_JSON}`],
+      ['audit agent', 'forged-audit.answer.a', `[audited by agent=${FORGED_JSON}`],
+      ['audit model', 'forged-audit.answer.a', `model=${FORGED_JSON}  client="claude-code" `],
+    ])('should keep the %s with line breaks and TAB inside its own line', (_name, target, text) => {
+      const [found] = placements(out, target);
+
+      expect(found?.line).toContain(text);
+    });
+
+    it('should not let a forged value start a section header', () => {
       const headers = out
         .split('\n')
         .filter((line) => SECTION_ORDER.some((title) => line.startsWith(`${title} (`)));
 
-      expect(found?.line).toContain(`agent=${JSON.stringify(FORGED)}`);
-      expect(found?.line).toContain(`rule=${JSON.stringify(FORGED)}`);
       expect(headers.map((line) => line.replace(/ \(\d+\)$/, ''))).toEqual(SECTION_ORDER);
     });
   });
@@ -505,6 +786,74 @@ describe('scripts/seat-report.ts', () => {
 
       expect(sections[SECTION.openGaps]).toEqual(['none']);
       expect(sections[SECTION.human]).toEqual(['none']);
+    });
+
+    it.each([
+      ['approved', 'open gaps (0)'],
+      ['approved', 'audited answers (1)'],
+      ['open', 'open gaps (1)'],
+    ])(
+      'should print the title with the count when --process is %s: %s',
+      (process, title) => {
+        const report = runReportOk(seeded.xdg, PROJECT, '--process', process).out;
+
+        expect(report.split('\n')).toContain(title);
+      },
+      CLI_TIMEOUT,
+    );
+  });
+
+  describe('with more records of a role than the service page size', () => {
+    let out: string;
+
+    beforeAll(() => {
+      out = runReportOk(seeded.xdg, PROJECT, '--process', 'volume').out;
+    }, CLI_TIMEOUT);
+
+    it('should count every answer past the first service page', () => {
+      expect(countsOf(out)[SECTION.human]).toBe(VOLUME_GAPS - 1);
+    });
+
+    it('should list the open gap past the first service page', () => {
+      const found = placements(out, `volume.gap.g${VOLUME_GAPS - 1}`);
+
+      expect(found).toEqual([{ section: SECTION.openGaps, line: expect.any(String) }]);
+    });
+  });
+
+  describe('with an answer the package types would refuse', () => {
+    let out: string;
+
+    beforeAll(() => {
+      out = runReportOk(seeded.xdg, PROJECT, '--types', 'premise=loose').out;
+    }, CLI_TIMEOUT);
+
+    it('should list an unrecognized answeredBy in its own section with the value quoted', () => {
+      const found = placements(out, 'unrecognized-answered-by.answer.a');
+
+      expect(found).toEqual([
+        {
+          section: SECTION.unrecognized,
+          line: expect.stringContaining('answeredBy="simulated-approved"'),
+        },
+      ]);
+    });
+
+    it('should flag an unrecognized basis apart from a missing one', () => {
+      const found = placements(out, 'unrecognized-basis.answer.a');
+
+      expect(found).toEqual([
+        {
+          section: SECTION.withoutCriteria,
+          line: expect.stringContaining('(no criteria: basis unrecognized "gut")'),
+        },
+      ]);
+    });
+
+    it('should keep the action with line breaks and TAB inside its own line', () => {
+      const [found] = placements(out, 'forged-loose.answer.a');
+
+      expect(found?.line).toContain(`action=${FORGED_JSON}`);
     });
   });
 
@@ -565,6 +914,27 @@ describe('scripts/seat-report.ts', () => {
   );
 
   it(
+    'should exit 2 with PROCESS_CORRUPTED and no report over a tampered chain',
+    () => {
+      const xdg = copyToXdg(path.join(seeded.xdg, 'hexlog'));
+      const { log } = processPaths(path.join(xdg, 'hexlog'), {
+        project: PROJECT,
+        process: 'approved',
+      });
+      fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace('"which one?"', '"tampered"'));
+
+      const { code, out, err } = runReport(xdg, PROJECT);
+
+      expect(err).toContain(
+        'seat-report failed: PROCESS_CORRUPTED: process chain is broken (approved:',
+      );
+      expect(out).toBe('');
+      expect(code).toBe(2);
+    },
+    CLI_TIMEOUT,
+  );
+
+  it(
     'should exit 2 with the LEGACY_DATA message over a <D> with 0.x data',
     () => {
       const xdg = copyToXdg(legacyFixture);
@@ -611,6 +981,60 @@ describe('scripts/seat-report.ts', () => {
     },
     CLI_TIMEOUT,
   );
+
+  describe('with a role that has no records', () => {
+    let xdg: string;
+
+    beforeAll(() => {
+      const home = createDataHome();
+      const { definition, process: processes } = composeIn(home);
+      definition.defineType({ project: 'nopkg', name: 'note', schema: NOTE });
+      processes.createProcess({ project: 'nopkg', process: 'w' });
+      for (const name of ['gap', 'premise', 'audit']) {
+        definition.defineType({ project: 'bare', name, schema: packageType(name) });
+      }
+      processes.createProcess({ project: 'bare', process: 'w' });
+      xdg = home.xdg;
+    }, SEED_TIMEOUT);
+
+    it(
+      'should exit 1 naming every role whose type the project does not define',
+      () => {
+        const { code, out, err } = runReport(xdg, 'nopkg');
+
+        expect(err).toContain(
+          'seat-report failed: INVALID_INPUT: type not defined in the project: gap=gap, premise=premise, audit=audit',
+        );
+        expect(out).toBe('');
+        expect(code).toBe(1);
+      },
+      CLI_TIMEOUT,
+    );
+
+    it(
+      'should exit 1 for a mistyped --types name even when the other roles have records',
+      () => {
+        const { code, out, err } = runReport(seeded.xdg, PROJECT, '--types', 'gap=gapp');
+
+        expect(err).toContain('type not defined in the project: gap=gapp');
+        expect(out).toBe('');
+        expect(code).toBe(1);
+      },
+      CLI_TIMEOUT,
+    );
+
+    it(
+      'should print none under every section without a warning when the types exist',
+      () => {
+        const { code, out, err } = runReport(xdg, 'bare');
+
+        expect(Object.values(sectionsOf(out)).every((lines) => lines.join() === 'none')).toBe(true);
+        expect(err).toBe('');
+        expect(code).toBe(0);
+      },
+      CLI_TIMEOUT,
+    );
+  });
 
   it(
     'should exit 1 with PROJECT_NOT_FOUND for a missing project',

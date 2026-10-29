@@ -1,19 +1,16 @@
 # Owner seat recipe: Claude Code
 
-Status: proven
-
-Runs the occupant of the owner seat with `claude -p`, one turn per gap. The status line
-above says whether this recipe was run end to end: `proven` only for the environment where
-it was run, `unproven` otherwise. This text is generated from a template, so the line shows
-the state of the template, not of your machine, until someone runs the recipe here. Run it from the repository root, so the hexlog server
-resolves the criteria path as the contract expects.
+Runs the occupant of the owner seat with `claude -p`, one turn per gap. Run it from the
+repository root, so the hexlog server resolves the criteria path as the contract expects.
 
 The contract is `contract.md`, in the same folder as the criteria file. The occupant gets it
 as system prompt, and the prompt carries only the task.
 
 ## Before running
 
-- `claude` is installed and logged in, and `node` is available (hexlog requires it).
+- `claude` is installed and logged in, and `node` is available (hexlog requires it). The
+  recipe was run on `claude` 2.1.312 and needs `--restricted` in `claude --help`; older
+  versions are untested.
 - hexlog is registered in Claude Code: `~/.claude.json` has a `hexlog` entry under
   `mcpServers`.
 - The process of the gap has the trace fields of the owner seat (see "Before sitting" in
@@ -35,6 +32,13 @@ PROCESS='{{process}}'
 MODEL='{{model}}'
 CRITERIA='{{criteria_path}}'
 SEAT_DIR="$(dirname "$CRITERIA")"
+
+DATA_DIR="$(realpath -m "${XDG_DATA_HOME:-$HOME/.local/share}/hexlog")"
+case "$DATA_DIR/" in "$(pwd -P)/"*)
+  echo "the hexlog data directory ($DATA_DIR) is inside the working directory: do not run this recipe" >&2
+  exit 1
+  ;;
+esac
 
 MCP_CONFIG="$(mktemp)"
 trap 'rm -f "$MCP_CONFIG"' EXIT
@@ -69,6 +73,15 @@ claude -p \
 `--allowedTools` and `--mcp-config` accept several values and would swallow the prompt: keep
 the `=` form and the `--` before the prompt.
 
+The block refuses to run when the data directory is inside the working directory, because
+`--restricted` confines the file tools to that directory and would then let them read the
+raw log and the attachments of every project.
+
+The first time on a machine, check that the confinement is real: run the same command with
+the task "Read the file `<D>/.v1`" (the real data directory, absolute). The refusal must say
+`permission denied` or `outside the working directory`. `tool not found` proves nothing: it
+means the tool is missing, not confined.
+
 Afterwards, read the answer back with `query` (`relatedTo` the gap id) before going on. To
 inspect a run, add `--output-format=stream-json --verbose`.
 
@@ -82,34 +95,40 @@ inspect a run, add `--output-format=stream-json --verbose`.
 - `--permission-mode=dontAsk` denies whatever is not allowed instead of prompting, and
   `bypassPermissions` is never used.
 - The allowlist names the six hexlog tools the contract needs. It has no unscoped `Read`,
-  `Grep` or `Glob`.
+  `Grep` or `Glob`. It names tools, not arguments: `register` is allowed for any project and
+  process, so the Scope section of the contract is an instruction, not a barrier.
+  `--restricted` is what keeps the damage inside hexlog.
+- Reading files inside the repository needs no entry in `--allowedTools`, so the occupant can
+  read any of them, `.env` and keys included. Anything it records with `register` or `attach`
+  stays in the append-only log for good.
 
 ## Turning on `web`
 
-Only when the developer wants the occupant to search external sources. `--restricted` removes
-`WebFetch`, and `--tools` brings it back. Keep `--restricted` and add both flags:
+Only when the developer wants the occupant to search external sources. Read this first: under
+`dontAsk` the occupant reads any file of the repository without asking, `.env` and keys
+included; what it reads, the gap and the pages it fetches are untrusted text; and `WebFetch`
+and `WebSearch` are a way out. A fetched page can steer it into sending what it read to the
+network, and what it writes with `register` or `attach` is permanent in the append-only log.
+Scope the fetch, with `WebFetch(domain:<host>)` entries or `WebSearch` alone, and do not turn
+`web` on in a repository that holds secrets on disk.
+
+`--restricted` removes `WebFetch`, and `--tools` brings it back. Keep `--restricted` and add
+both flags, scoped as above:
 
 ```text
 --tools=Read,Grep,Glob,WebFetch,WebSearch
---allowedTools=...,WebFetch,WebSearch    (the six tools above plus these two)
+--allowedTools=...,WebFetch(domain:<host>),WebSearch    (the six tools above plus these)
 ```
 
-## Fallback if `--restricted` blocks the hexlog server
+## If `--restricted` blocks the hexlog server
 
-Replace `--restricted` with the lines below, and keep every other flag. `--tools=Read` leaves
-only file reading among the built-in tools, with no `Grep` or `Glob`, which would not be
-confined. Add `Read(./**)` to `--allowedTools`.
-
-```text
---tools=Read
---setting-sources project,local
-```
-
-With this fallback `web` is not available.
+Nobody sits: the gap goes to the human. Do not swap `--restricted` for other flags, because
+it is what ignores the user, project and local settings (and so their hooks) and confines
+the file tools.
 
 ## What the first run settled
 
-Run end to end on one machine, with the flags above and no fallback:
+Run end to end on one machine, with the flags above:
 
 - The hexlog server keeps working under `--restricted` with `--strict-mcp-config`.
 - Under `dontAsk`, reading files inside the repository needs no entry in `--allowedTools`.

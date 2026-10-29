@@ -7,15 +7,23 @@
 // precedência: cada registro aparece numa só. A saída escapa os controles de terminal (`escapeControls`),
 // e todo valor controlado pelo agente (agent, model, rule, criteria, action, question) sai entre aspas
 // por `JSON.stringify`, para não introduzir quebra de linha, TAB nem marca falsa de seção ou de aval.
-// Limites reais: a resposta a uma lacuna superada some das seis seções, porque a aresta `answers` deixa
-// de ser vigente; com `--process` só se enxergam as arestas do próprio processo, então a lacuna
-// respondida a partir de outro processo aparece como aberta (o escopo projeto não tem o problema).
+// A resposta a uma lacuna superada ou revogada (aresta `answers` sem destino vigente) sai na última
+// seção, para não sumir. `answeredBy` fora de `human` e `simulated` (ex.: `simulated-approved`) tem
+// seção própria, com o valor entre aspas na linha, e nunca conta como humano; `basis` fora de `rule`
+// e `judgment` é motivo de "sem critério" distinto de `basis` ausente. Papel sem nenhum registro
+// cujo tipo não existe no projeto recusa o relatório
+// (exit 1): pacote ausente ou tipo errado em `--types` não passa por "nada a auditar". O autor é
+// autodeclarado: a linha traz `client` e marca a resposta `human` cujo `agent` é de ocupante e o aval
+// do mesmo autor da resposta, mas a conferência continua manual. Limite real: com `--process` só se
+// enxergam as arestas do próprio processo, então a lacuna respondida a partir de outro processo
+// aparece como aberta (o escopo projeto não tem o problema).
 // Uso: node scripts/seat-report.ts <project> [--process <name>] [--types gap=<t>,premise=<t>,audit=<t>]
 // Saída: 0 íntegro (com os achados listados); 2 dado 0.x ou log quebrado; 1 uso incorreto ou erro.
 import { isNil, isUndefined } from 'es-toolkit';
 import { openReadOnly, parseCliArgs, reportCliError } from './cli-error.ts';
 import { escapeControls } from './escape-controls.ts';
 import { Name } from '../src/domain/ids.ts';
+import { invalidInput } from '../src/errors.ts';
 import type { QueryRecord, QueryService } from '../src/queries/query-service.ts';
 
 const USAGE =
@@ -32,10 +40,13 @@ const GROUPS = {
   audited: 'audited answers',
   human: 'human answers',
   unattributed: 'answers without answeredBy',
+  unrecognized: 'answers with an unrecognized answeredBy',
+  nonCurrentGap: 'answers to a non-current gap',
 } as const;
 type Group = keyof typeof GROUPS;
 
 const ABBREVIATED_HASH = 12;
+const OCCUPANT_AGENT_PREFIX = 'owner-seat-';
 
 /** `gap=a,premise=b,audit=c`: cada papel não citado fica com o próprio nome; `undefined` quando não vale. */
 function parseTypes(raw: string | undefined): Types | undefined {
@@ -65,6 +76,23 @@ function recordsOf(
   }).records;
 }
 
+/** Papel sem registro só vale como "nada a auditar" se o tipo existe no projeto; senão recusa. */
+function assertTypesDefined(
+  query: QueryService,
+  project: Name,
+  types: Types,
+  emptyRoles: Role[],
+): void {
+  const defined = new Set(query.list({ project }).project?.types.map(({ name }) => name));
+  const missing = emptyRoles.filter((role) => !defined.has(types[role]));
+  if (missing.length === 0) return;
+  throw invalidInput(
+    '/types',
+    'unknown-type',
+    `type not defined in the project: ${missing.map((role) => `${role}=${types[role]}`).join(', ')}`,
+  );
+}
+
 function textOf(record: QueryRecord, key: string): string | undefined {
   const value = record.data?.[key];
   return typeof value === 'string' ? value : undefined;
@@ -75,7 +103,11 @@ function quoted(value: string | undefined): string {
 }
 
 function whoOf({ author }: QueryRecord): string {
-  return `agent=${quoted(author.agent)}  model=${quoted(author.model)}`;
+  return `agent=${quoted(author.agent)}  model=${quoted(author.model)}  client=${quoted(author.client)}`;
+}
+
+function sameAuthor(a: QueryRecord, b: QueryRecord): boolean {
+  return a.author.agent === b.author.agent && a.author.client === b.author.client;
 }
 
 /** Os motivos de a resposta simulada não ter critério, lidos só do registro. */
@@ -83,6 +115,7 @@ function missingCriteria(answer: QueryRecord): string[] {
   const basis = textOf(answer, 'basis');
   if (basis === 'judgment') return ['basis judgment'];
   if (isUndefined(basis)) return ['basis missing'];
+  if (basis !== 'rule') return [`basis unrecognized ${JSON.stringify(basis)}`];
   return [
     ...(isUndefined(textOf(answer, 'rule')) ? ['rule missing'] : []),
     ...(isUndefined(textOf(answer, 'criteria')) ? ['criteria missing'] : []),
@@ -92,21 +125,30 @@ function missingCriteria(answer: QueryRecord): string[] {
 function groupOf(answer: QueryRecord, isAudited: boolean): Group {
   const answeredBy = textOf(answer, 'answeredBy');
   if (answeredBy === 'human') return 'human';
-  if (answeredBy !== 'simulated') return 'unattributed';
+  if (isUndefined(answeredBy)) return 'unattributed';
+  if (answeredBy !== 'simulated') return 'unrecognized';
   if (missingCriteria(answer).length > 0) return 'withoutCriteria';
   return isAudited ? 'audited' : 'notAudited';
 }
 
 function answerLine(answer: QueryRecord, audit: QueryRecord | undefined): string {
-  const reasons =
-    groupOf(answer, !isUndefined(audit)) === 'withoutCriteria' ? missingCriteria(answer) : [];
+  const group = groupOf(answer, !isUndefined(audit));
+  const reasons = group === 'withoutCriteria' ? missingCriteria(answer) : [];
+  const humanByOccupant =
+    group === 'human' && answer.author.agent.startsWith(OCCUPANT_AGENT_PREFIX);
   return [
     `${answer.id}  ${answer.target}  ${whoOf(answer)}`,
     `rule=${quoted(textOf(answer, 'rule'))}`,
     `criteria=${quoted(textOf(answer, 'criteria')?.slice(0, ABBREVIATED_HASH))}`,
     `action=${quoted(textOf(answer, 'actionUsed'))}`,
+    `answeredBy=${quoted(textOf(answer, 'answeredBy'))}`,
     ...(reasons.length > 0 ? [`(no criteria: ${reasons.join(', ')})`] : []),
-    ...(isUndefined(audit) ? [] : [`[audited by ${whoOf(audit)} ${audit.id}]`]),
+    ...(humanByOccupant ? ['(agent is an owner-seat occupant)'] : []),
+    ...(isUndefined(audit)
+      ? []
+      : [
+          `[audited by ${whoOf(audit)} ${audit.id}${sameAuthor(answer, audit) ? ' (same author as the answer)' : ''}]`,
+        ]),
   ].join('  ');
 }
 
@@ -125,16 +167,20 @@ function buildLines(gaps: QueryRecord[], premises: QueryRecord[], audits: QueryR
     audited: [],
     human: [],
     unattributed: [],
+    unrecognized: [],
+    nonCurrentGap: [],
   };
-  const answers = premises.filter(({ out = [] }) =>
-    out.some((r) => r.kind === 'answers' && r.current !== false),
-  );
+  const answers = premises.filter(({ out = [] }) => out.some((r) => r.kind === 'answers'));
   for (const answer of answers) {
     const edge = (answer.in ?? []).find(
       (r) => r.kind === 'supports' && r.current && auditById.has(r.from),
     );
     const audit = isUndefined(edge) ? undefined : auditById.get(edge.from);
-    lines[groupOf(answer, !isUndefined(audit))].push(answerLine(answer, audit));
+    const answersCurrentGap = (answer.out ?? []).some(
+      (r) => r.kind === 'answers' && r.current !== false,
+    );
+    const group = answersCurrentGap ? groupOf(answer, !isUndefined(audit)) : 'nonCurrentGap';
+    lines[group].push(answerLine(answer, audit));
   }
   return lines;
 }
@@ -147,6 +193,8 @@ function renderReport(lines: Record<Group, string[]>): string {
     'audited',
     'human',
     'unattributed',
+    'unrecognized',
+    'nonCurrentGap',
   ];
   const blocks = order.map((group) => {
     const body = lines[group].length === 0 ? ['  none'] : lines[group].map((line) => `  ${line}`);
@@ -175,9 +223,10 @@ function main(argv: string[]): number {
 
   try {
     const { query } = openReadOnly();
-    const [gaps, premises, audits] = ROLES.map((role) =>
-      recordsOf(query, project.data, scope?.data, types[role]),
-    ) as [QueryRecord[], QueryRecord[], QueryRecord[]];
+    const byRole = ROLES.map((role) => recordsOf(query, project.data, scope?.data, types[role]));
+    const emptyRoles = ROLES.filter((_, index) => byRole[index]?.length === 0);
+    assertTypesDefined(query, project.data, types, emptyRoles);
+    const [gaps, premises, audits] = byRole as [QueryRecord[], QueryRecord[], QueryRecord[]];
     process.stdout.write(escapeControls(renderReport(buildLines(gaps, premises, audits))));
     return 0;
   } catch (error) {

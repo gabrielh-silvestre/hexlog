@@ -101,6 +101,31 @@ const revoke = (process: string, id: string) =>
     relations: [{ to: id, kind: 'revokes' }],
   });
 
+const refuse = (process: string, records: Record<string, unknown>[]) =>
+  environment.fail(
+    'register',
+    { project: PROJECT, process, agent: 'test-engineer', records },
+    'INVALID_RECORD',
+  );
+
+const premiseWith = (data: Record<string, unknown>) => ({
+  type: 'premise',
+  target: 'unit-1.premise.a',
+  data: { statement: 'ok', ...data },
+});
+
+const auditWith = (data: Record<string, unknown>) => ({
+  type: 'audit',
+  target: 'unit-1.audit.a',
+  data,
+});
+
+const noteRecord = () => ({
+  type: 'note',
+  target: 'unit-1.note.a',
+  data: { text: 'a note' },
+});
+
 const recordOf = async (process: string, id: string) =>
   at(
     (await environment.ok<QueryResult>('query', { project: PROJECT, process, ids: [id] })).records,
@@ -434,6 +459,101 @@ describe('register', () => {
     expect(error.details).toMatchObject([
       { path: '/records/0/relations/0', code: 'cross-process-currency' },
     ]);
+  });
+
+  describe('with the package defined', () => {
+    beforeEach(async () => {
+      await definePackage();
+      await createProcess('unit-1');
+    });
+
+    it.each([
+      {
+        label: 'a premise with an answeredBy outside the enum',
+        record: premiseWith({ answeredBy: 'robot' }),
+        path: '/records/0/data/answeredBy',
+      },
+      {
+        label: 'a premise with an actionUsed outside the enum',
+        record: premiseWith({ actionUsed: 'jury' }),
+        path: '/records/0/data/actionUsed',
+      },
+      {
+        label: 'a premise with a basis outside the enum',
+        record: premiseWith({ basis: 'opinion' }),
+        path: '/records/0/data/basis',
+      },
+      {
+        label: 'a premise with a rule of 121 characters',
+        record: premiseWith({ rule: 'x'.repeat(121) }),
+        path: '/records/0/data/rule',
+      },
+      {
+        label: 'a premise with a statement of 256 characters',
+        record: premiseWith({ statement: 'x'.repeat(256) }),
+        path: '/records/0/data/statement',
+      },
+      {
+        label: 'a premise with criteria that is not an attachment hash',
+        record: premiseWith({ criteria: 'not-a-hash' }),
+        path: '/records/0/data/criteria',
+      },
+      {
+        label: 'an audit with a note of 301 characters',
+        record: auditWith({ note: 'x'.repeat(301) }),
+        path: '/records/0/data/note',
+      },
+    ])('should refuse $label at $path', async ({ record, path }) => {
+      const error = await refuse('unit-1', [record]);
+
+      expect(error.details).toContainEqual(expect.objectContaining({ path }));
+    });
+
+    it.each([
+      { label: 'an answeredBy human', record: premiseWith({ answeredBy: 'human' }) },
+      { label: 'an answeredBy simulated', record: premiseWith({ answeredBy: 'simulated' }) },
+      { label: 'an actionUsed local', record: premiseWith({ actionUsed: 'local' }) },
+      { label: 'an actionUsed web', record: premiseWith({ actionUsed: 'web' }) },
+      { label: 'a basis rule', record: premiseWith({ basis: 'rule' }) },
+      { label: 'a basis judgment', record: premiseWith({ basis: 'judgment' }) },
+      { label: 'a rule of 120 characters', record: premiseWith({ rule: 'x'.repeat(120) }) },
+      {
+        label: 'a statement of 255 characters',
+        record: premiseWith({ statement: 'x'.repeat(255) }),
+      },
+      { label: 'an audit note of 300 characters', record: auditWith({ note: 'x'.repeat(300) }) },
+    ])('should accept $label', async ({ record }) => {
+      const { records } = await registerBatch('unit-1', [record]);
+
+      expect(records).toHaveLength(1);
+    });
+
+    it.each([
+      { source: 'note', relation: 'fills-gap', target: 'gap' },
+      { source: 'premise', relation: 'fills-gap', target: 'premise' },
+      { source: 'premise', relation: 'audits', target: 'premise' },
+      { source: 'audit', relation: 'audits', target: 'gap' },
+      { source: 'audit', relation: 'audits', target: 'audit' },
+    ] as const)(
+      'should refuse $relation from a $source to a $target with endpoint-type',
+      async ({ source, relation, target }) => {
+        const ends = {
+          gap: await registerOne('unit-1', gapRecord()),
+          premise: await registerOne('unit-1', premiseWith({})),
+          audit: await registerOne('unit-1', auditWith({})),
+        };
+        const sources = { note: noteRecord(), premise: premiseWith({}), audit: auditWith({}) };
+        const record = {
+          ...sources[source],
+          target: `unit-1.${source}.b`,
+          relations: [{ to: ends[target], as: relation }],
+        };
+
+        const error = await refuse('unit-1', [record]);
+
+        expect(error.details).toEqual([expect.objectContaining({ code: 'endpoint-type' })]);
+      },
+    );
   });
 });
 

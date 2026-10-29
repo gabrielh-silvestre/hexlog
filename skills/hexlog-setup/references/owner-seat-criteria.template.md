@@ -18,7 +18,10 @@ it freely, and keep it in version control, because the setup never overwrites it
 
 - One bullet per rule, in the form `- **<key>**: <text>`.
 - The key is stable: lowercase letters, digits and hyphens only. Never rename a key and never
-  reuse one. Answers already recorded cite the old key, and the audit compares them with it.
+  reuse one. Answers already recorded cite the old key. The key has at most 120 characters,
+  the limit of the `rule` field of the answer; a longer key makes the answer fail.
+- The trace the occupant records is self-declared, and comparing it with the rules is a manual
+  step of the audit.
 - To drop a rule, keep the bullet and end its text with `(retired)`. The occupant ignores
   retired rules.
 - Say what to decide, not how the project works in general. A short, concrete rule is cited

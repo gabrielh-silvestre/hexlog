@@ -28,7 +28,7 @@ Uma pergunta por turno, em inglês:
 
 1. Ligar a cadeira (acima).
 2. Quem é o ocupante: Claude Code, `agy` ou ninguém (o humano responde as lacunas). Outras ferramentas não têm receita.
-3. Com ocupante, os critérios: peça a primeira regra, depois uma por turno até o dev dizer que basta. Cada regra vira uma chave estável em kebab-case (`[a-z0-9-]+`) mais um texto curto; uma regra pode apontar para um arquivo do repositório que o ocupante lê antes de responder. Proponha a chave e confirme com o dev.
+3. Com ocupante, os critérios: peça a primeira regra, depois uma por turno até o dev dizer que basta. Cada regra vira uma chave estável em kebab-case (`[a-z0-9-]+`, até 120 caracteres, o teto do campo `rule`) mais um texto curto; uma regra pode apontar para um arquivo do repositório que o ocupante lê antes de responder. Proponha a chave e confirme com o dev.
 4. Com ocupante, avise que cada dev precisa exportar `HEXLOG_CHECKOUT` apontando para o checkout do hexlog uma vez: o relatório de auditoria roda a partir dele, e nenhum caminho de máquina entra em arquivo versionado.
 
 ## Colisão e reaplicação (passos 2 e 6)
@@ -42,13 +42,13 @@ Cada definição do pacote é classificada antes do plano. Nunca sonde com `defi
 - **compatível**: toda propriedade do pacote ou falta no existente (será acrescentada, opcional) ou o existente aceita tudo o que o contrato grava (mesmo `type`; `enum` superconjunto; `maxLength` maior ou igual; `format: "attachment"` igual), e todo `required` do existente é fornecido pelo contrato (`statement`, `question`, `context`, `summary`, `source`). O setup monta o schema existente mais as propriedades que faltam e o `define_type` sobe um minor. Nunca compare por igualdade com o schema do pacote: um tipo do projeto com limites maiores não é colisão;
 - **colisão**: qualquer outra diferença. Pergunte ao dev o nome mapeado (sugestão `seat-<nome>`), uma pergunta por turno, e reescreva `from` e `to` das relações e `pending.type` e `resolvedBy.from` do gate para o nome mapeado.
 
-**Relação e gate** (o `list` só mostra o nome, sem conteúdo):
+**Relação e gate** (o `list` devolve nome e `version`/`versions`; o conteúdo só se lê para tipo, por `describe_type`):
 
 - nome registrado em `ownerSeat.names` **e** presente no hexlog na versão de `applied`: replay silencioso;
 - nome registrado em `ownerSeat` mas ausente no hexlog (clone em outra máquina, dados vazios): definição nova, não replay;
-- nome que existe sem registro no modelo: reuso pelo nome **com o aviso** do passo 6 do `SKILL.md` (conteúdo sem verificação) e a oferta de mapear para outro nome.
+- nome que existe sem registro no modelo: o conteúdo não se compara, então proponha por padrão o nome mapeado (`seat-fills-gap`, `seat-audits`, `seat-gaps`) e defina a versão do pacote nele. Reuso pelo nome só com a confirmação do dev, e a pergunta cita o risco: relação com outra espécie ou outras pontas falha na primeira resposta (`kind-mismatch`, `endpoint-type`; o contrato manda parar), e um gate `gaps` de outro conteúdo fica **verde para outra coisa**, sem erro nenhum.
 
-**Reaplicação.** Por definição, compare a versão do `list` com `applied`; para tipo, aplique de novo a regra de superconjunto ao `describe_type`. Pacote que passou a pedir campo que o tipo existente não tem: o plano mostra a versão compatível a acrescentar. Relação e gate não têm como comparar versão nem conteúdo, então **evoluir uma relação ou um gate do pacote exige nome novo**. Divergência: pare e peça confirmação, como o passo 2 já faz.
+**Reaplicação.** Por definição, compare a versão do `list` com `applied`; para tipo, aplique de novo a regra de superconjunto ao `describe_type`. Pacote que passou a pedir campo que o tipo existente não tem: o plano mostra a versão compatível a acrescentar. Em relação e gate a versão se compara, o conteúdo não (`describe_type` só lê tipo), então **evoluir uma relação ou um gate do pacote exige nome novo**. Divergência: pare e peça confirmação, como o passo 2 já faz.
 
 **Processos já criados não mudam.** Cada processo fixa as definições da época: unidade aberta antes do pacote não enxerga os campos novos, e o ocupante não senta nela (a pergunta vai ao humano). Diga isso ao dev no plano.
 
@@ -81,11 +81,12 @@ Os templates têm dois tipos de placeholder:
 
 O arquivo gerado só leva os de execução. Os nomes mapeados chegam, assim, ao contrato e às receitas.
 
-A linha `Status:` das receitas copia o valor do template. Hoje o valor é `proven` nas duas receitas, e vale só para o ambiente em que o ensaio da entrega as rodou; na máquina do dev elas seguem não conferidas até ele rodar uma. O setup nunca muda o valor.
+As receitas não levam rótulo de prova: o que o ensaio da entrega confirmou está em "What the first run settled" de cada uma, e na máquina do dev elas seguem não conferidas até ele rodar uma.
 
 ## O que dizer ao dev
 
 - O doc de critérios vive na pasta da skill do projeto: se a pasta for removida ele some junto, então o dev o mantém no git.
-- A receita do ocupante `agy` roda sem lista de ferramentas permitidas e sem nenhuma regra de bloqueio do instalador do hexlog; o dono do projeto assume esse risco (a receita traz o aviso).
-- Cada dev exporta `HEXLOG_CHECKOUT` uma vez (entrevista, item 4).
+- A receita do ocupante `agy` roda sem lista de ferramentas permitidas e sem nenhuma regra de bloqueio do instalador do hexlog, com `--dangerously-skip-permissions`: o ocupante também executa comandos, escreve arquivos e usa a rede, e a contenção é só o texto do contrato, que é instrução e não barreira. O dono do projeto assume esse risco (a receita traz o aviso) e o executor só roda a receita depois do ok dele.
+- Cada dev exporta `HEXLOG_CHECKOUT` uma vez (entrevista, item 4). A auditoria exige esse checkout com `node_modules` (`npm ci`).
+- O ocupante `agy` exige o Claude Code instalado com o hexlog registrado: a receita lê o `~/.claude.json`.
 - Unidades abertas antes do pacote não usam os campos novos (acima).

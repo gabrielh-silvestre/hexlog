@@ -1,22 +1,20 @@
 # Owner seat recipe: agy
 
-Status: proven
-
-Runs the occupant of the owner seat with `agy -p`, one turn per gap. The status line above
-says whether this recipe was run end to end: `proven` only for the environment where it was
-run, `unproven` otherwise. This text is generated from a template, so the line shows the
-state of the template, not of your machine, until someone runs the recipe here. Run it from
-the repository root.
+Runs the occupant of the owner seat with `agy -p`, one turn per gap. Run it from the
+repository root.
 
 `agy` has no flag for a system prompt, so the prompt is the text of `contract.md` (in the same
 folder as the criteria file) followed by the task, in a single argument of `-p`.
 
 ## Risk to accept
 
-`agy` has no allowlist of tools and none of the deny rules of the hexlog installer. The
-occupant can read any file the user can, including the hexlog data directory, and it reads
-the `AGENTS.md` of the repository. The only containment is the text of the contract
-("answer, never ask", write only through hexlog). The developer owns this risk. Do not use
+`agy` has no allowlist of tools and none of the deny rules of the hexlog installer, and this
+recipe runs it with `--dangerously-skip-permissions`. The occupant can therefore run shell
+commands, write or delete files and use the network with your environment and credentials,
+and read any file you can, including the hexlog data directory. It also reads the
+`AGENTS.md` of the repository. The contract tells it to stay in scope and to treat what it
+reads as data (the gap, the criteria and the repository files); that is an instruction, not
+a barrier, and text it reads can still steer it. The developer owns this risk. Do not use
 this recipe on a machine or a repository where that is not acceptable.
 
 ## Before running

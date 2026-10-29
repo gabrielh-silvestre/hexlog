@@ -53,7 +53,7 @@ critérios (do dev: o setup nunca o sobrescreve), o contrato do ocupante e a rec
 base nos critérios sai marcada como "sem critério". Unidades abertas antes não enxergam os campos
 novos, e o ocupante não responde nelas. O relatório
 `node scripts/seat-report.ts <project>` (de um checkout do hexlog, apontado por `HEXLOG_CHECKOUT`) lista o que está
-por auditar; ver [desenvolvimento.md](desenvolvimento.md#scriptsseat-reportts) e
+por auditar. O executor cola a saída do relatório em bloco de código, porque ela traz campos que o ocupante grava; ver [desenvolvimento.md](desenvolvimento.md#scriptsseat-reportts) e
 [adr-0014-cadeira-do-dono-como-pacote-de-dados.md](directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md).
 
 ## Exemplo completo

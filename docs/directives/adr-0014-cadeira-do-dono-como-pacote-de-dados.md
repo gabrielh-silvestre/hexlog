@@ -10,7 +10,7 @@
 
 ## Context
 
-A cadeira do dono do [ADR 0012](adr-0012-cadeira-do-dono.md) vale só para o fluxo deste repositório: depende do Herdr, do OMC, do júri e de um `critic` em Opus. O dono quer a cadeira como recurso opt-in do produto, para qualquer repositório de destino e sem amarra a provedor de modelo: um modelo (o ocupante) responde as lacunas do executor com base em critérios do projeto, grava a resposta no hexlog, e o humano audita depois. Sem ocupante, o humano responde, com os mesmos tipos e o mesmo relatório.
+A cadeira do dono do [ADR 0012](adr-0012-cadeira-do-dono.md) vale só para o fluxo deste repositório: depende do Herdr, do OMC, do júri e de um `critic` em Opus. O dono quer a cadeira como recurso opt-in do produto, para qualquer repositório de destino e sem amarra a um modelo ou provedor específico (o ocupante `agy` ainda depende do Claude Code com o hexlog registrado, porque a receita lê `~/.claude.json`): um modelo (o ocupante) responde as lacunas do executor com base em critérios do projeto, grava a resposta no hexlog, e o humano audita depois. Sem ocupante, o humano responde, com os mesmos tipos e o mesmo relatório.
 
 Restrições que moldam a decisão:
 
@@ -28,12 +28,12 @@ Restrições que moldam a decisão:
 4. **Colisão de nomes.** O setup decide por regra mecânica: tipo igual ou compatível (superconjunto do que o contrato grava) vira versão minor com campos opcionais; tipo incompatível pede ao dev um nome mapeado. O resultado fica em `ownerSeat` no `hexlog-model.json`, com `names`, `applied` e `occupant`; relação e gate evoluem por nome novo.
 5. **Relatório read-only.** `scripts/seat-report.ts` lê os papéis `gap`, `premise` e `audit` e separa as respostas pelo que já foi auditado. Fica fora de `src/`, lê só por `composeReader`, não lê anexo e identifica as arestas pela espécie, então sobrevive ao mapeamento de nomes. A skill do projeto chama o script por `$HEXLOG_CHECKOUT`, e nenhum caminho de máquina é versionado; é por isso que o template da skill do projeto cita o relatório e os quatro `owner-seat-*.template.md` não citam caminho do repositório do hexlog.
 6. **"Skill do projeto" é a pasta.** A leitura que o ADR declara: "skill do projeto", no item 7 do ADR 0013, inclui a pasta inteira com os arquivos de apoio da cadeira. O dono avalizou emendar o item 7; a [emenda de 2026-10-29](adr-0013-setup-em-repositorio-de-destino.md) registra isso no ADR 0013.
-7. **Leitura de `nucleo-sem-termo-de-fluxo`.** A premissa vale para o servidor (`src/`), que segue sem termo de fluxo, e o relatório em `scripts/` é ferramenta opcional fora do núcleo. O dono avalizou essa leitura, sem emenda de `estrategia.md` neste ponto. A trava mecânica continua sendo `test/no-flow-terms.spec.ts`, que varre `scripts/` fora de `flow/`.
+7. **Leitura de `nucleo-sem-termo-de-fluxo`.** A premissa vale para o servidor (`src/`), que segue sem termo de fluxo, e o relatório em `scripts/` é ferramenta opcional fora do núcleo. O dono avalizou essa leitura, sem emenda de `estrategia.md` neste ponto. A trava mecânica continua sendo `test/no-flow-terms.spec.ts`, que varre `scripts/` fora de `flow/`, mas só confere a lista fixa `FLOW_TERMS`: ela não pega o vocabulário próprio de `scripts/seat-report.ts` (`answeredBy`, `basis`, `simulated`, `human`, `audit`), que fica sob essa leitura sem trava mecânica.
 8. **Auditoria humana posterior.** O produto não tem aval prévio nem classe crítica: o modo autônomo opera com cadeira simulada e auditoria humana posterior. A premissa `dois-modos-de-uso` de [estrategia.md](estrategia.md) é emendada pelo dono, que a muda de "aval humano no que é crítico" para "auditoria humana posterior"; o agente nunca edita esse arquivo.
 
 ## Drivers
 
-Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferramentas-fixas`, `definicao-fixada-por-processo`, `log-so-acrescenta`, `audita-decisoes-de-agentes` e `dois-modos-de-uso` (emendada). Mais dois critérios desta decisão: funcionar em repositório vazio sem o checkout do hexlog e não acoplar o pacote ao fluxo do repositório.
+Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferramentas-fixas`, `definicao-fixada-por-processo`, `log-so-acrescenta`, `audita-decisoes-de-agentes` e `dois-modos-de-uso` (emendada). Mais dois critérios desta decisão: registrar em repositório vazio sem o checkout do hexlog (o pacote e as instruções vivem em `skills/`), auditar com o checkout (o relatório é a única peça que o exige) e não acoplar o pacote ao fluxo do repositório.
 
 ## Alternatives considered
 
@@ -46,6 +46,9 @@ Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferra
 7. Arquivo único de pacote: rejeitado, sem molde de teste e confundiria a varredura dos `*.example.json` de `references/`.
 8. Caminho do checkout no modelo: rejeitado, `HEXLOG_CHECKOUT` evita versionar caminho de máquina.
 9. Emenda ao ADR 0012 em vez de ADR novo: rejeitada, o 0012 é a cadeira do fluxo deste repositório e segue válido; o trade-off aqui é outro (pacote de dados contra servidor) e [documentacao.md](documentacao.md) manda ADR aceito só receber emenda ou ADR seguinte.
+10. Gate informativo de auditoria: um gate com a pergunta `approved` ([ADR 0007](adr-0007-dominio.md), item 18) sobre as respostas do ocupante, consultado pelo relatório sem bloquear: rejeitado, a auditoria é posterior por premissa (`dois-modos-de-uso`), então um gate que não bloqueia não muda nenhum fluxo e só repetiria, em formato pior, o que o relatório já separa; um gate que bloqueia reintroduz o aval prévio que a premissa emendada tirou. Tampouco haveria quem o consultasse sem o relatório.
+11. Auditoria por `query` com `relations: full`, guiada só pela skill e sem script: rejeitada, a separação em oito seções (precedência, espécie da aresta sob nomes mapeados, `audit` de retirada que não conta) é lógica que o modelo teria de reproduzir a cada rodada, sem teste e sem saída estável, e a `query` pagina por teto de caracteres; o script é determinístico e ensaiado. O custo aceito é a dependência do checkout.
+12. Relatório dentro do bundle `server`: rejeitado, o servidor não tem CLI e o único canal para ele é uma tool, o que quebra `ferramentas-fixas`; também poria termo de fluxo em `src/`, contra `nucleo-sem-termo-de-fluxo`. Um terceiro bundle também fica de fora, pelo motivo já dito em Consequences.
 
 ## Why chosen
 
@@ -53,14 +56,19 @@ Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferra
 
 ## Consequences
 
-- "Agnóstico de provedor" vale para o ocupante: o executor segue sendo o Claude Code, como no ADR 0013.
+- A cadeira não amarra o ocupante a um provedor, mas o executor segue sendo o Claude Code, como no ADR 0013, e o ocupante `agy` depende do Claude Code com o hexlog registrado (a receita lê `~/.claude.json`). Não é provedor-agnóstico de ponta a ponta.
 - O relatório é a primeira capacidade instalada que depende do checkout do hexlog. Não há terceiro bundle, para não tocar `installation.ts#Bundles`.
 - O ocupante e o rastro (`answeredBy`, `basis`, `rule`, `actionUsed`) são autodeclarados; a regra citada não é conferida contra o anexo.
 - Unidades abertas antes do pacote não usam os campos novos, e o ocupante não senta nelas: a pergunta vai ao humano.
-- O ocupante do `agy` não tem deny nem allowlist e pode ler o diretório de dados; risco aceito, com o dono como responsável ([dados.md](../dados.md)).
+- O ocupante do `agy` roda com `--dangerously-skip-permissions`, sem deny nem allowlist: lê o diretório de dados e também executa comandos, escreve arquivos e usa a rede com o ambiente e as credenciais do dev. O escopo que o contrato lhe dá é instrução, não barreira; risco aceito, com o dono como responsável ([dados.md](../dados.md)).
 - O fluxo deste repositório (`cadeira-do-dono.md`, `fluxo-hexlog.md`, ADR 0012) mantém o aval prévio na classe crítica e fica em tensão com a premissa `dois-modos-de-uso` emendada até a migração do fluxo para o pacote. A tensão é conhecida e aceita pelo dono; a regra vigente do repositório continua sendo a dos docs vivos.
 - "Cadeira" e "ocupante" existem em dois glossários, com a distinção explícita em `CONTEXT-MAP.md`.
 - O `supports` cru dos dependentes tem semântica invertida em relação à intuição (aqui só serve para o hexlog marcar o dependente quando a resposta for revogada); o contrato gerado explica.
+
+## Limites da prova
+
+- As duas receitas passaram por execução real, mas os setups da prova rodaram por turnos `claude -p` retomados com respostas antecipadas, não numa sessão interativa conduzida pelo dono.
+- O ramo da entrevista em que o setup pergunta se liga a cadeira não foi observado; o item de aceite correspondente em [setup-aceitacao.md](../setup-aceitacao.md) segue desmarcado até um setup interativo.
 
 ## Follow-ups
 

@@ -500,8 +500,6 @@ describe('skills/hexlog-setup/references/agents-block.template.md', () => {
   });
 });
 
-const RULE_KEY = /^[a-z0-9-]+$/;
-
 const ruleKeys = (text: string) =>
   [...text.matchAll(/^- \*\*([^*]+)\*\*:/gm)].map(([, key]) => key ?? '');
 
@@ -523,13 +521,16 @@ describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
     expect(occurrencesIn(templates, /\bOMC\b|herdr|scripts\/flow|critic|\.omc/gi)).toEqual({});
   });
 
-  it.each(recipes)('should declare exactly one Status line in $file', ({ content }) => {
-    expect(content.match(/^Status:.*$/gm)).toHaveLength(1);
+  it.each(recipes)('should not declare a Status line in $file', ({ content }) => {
+    expect(content).not.toMatch(/^Status:/m);
   });
 
-  it.each(recipes)('should declare Status as proven or unproven in $file', ({ content }) => {
-    expect(content).toMatch(/^Status: (?:proven|unproven)$/m);
-  });
+  it.each(recipes)(
+    'should not carry a fallback that swaps --restricted in $file',
+    ({ content }) => {
+      expect(content).not.toMatch(/--setting-sources/);
+    },
+  );
 
   it('should end the criteria template with the Rules heading', () => {
     const headings = criteria.match(/^#{1,6} .*$/gm) ?? [];
@@ -541,28 +542,32 @@ describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
     expect(ruleKeys(criteria)).toEqual([]);
   });
 
-  describe('with a criteria text', () => {
-    const sample = [
-      '## Rules',
-      '',
-      '- **keep-it-small**: a',
-      '- **Foo Bar**: b',
-      '- **keep-it-small**: c',
-    ].join('\n');
+  it('should state the 120 character limit of the rule key in the criteria template', () => {
+    expect(criteria).toMatch(/at most 120 characters/);
+  });
 
-    it('should read the key of every rule bullet', () => {
-      expect(ruleKeys(sample)).toEqual(['keep-it-small', 'Foo Bar', 'keep-it-small']);
+  describe('with the contract template', () => {
+    const contract = at(
+      templates.filter(({ file }) => file.endsWith('owner-seat-contract.template.md')),
+      0,
+    ).content;
+    const scope = /^## Scope\n([\s\S]*?)(?=^## )/m.exec(contract)?.[1] ?? '';
+
+    it('should carry a Scope section that forbids the writes outside the answer', () => {
+      expect(scope).toMatch(/`revokes`.*`supersedes`.*`create_process`.*`define_\*`/s);
     });
 
-    it('should flag a key outside lowercase letters, digits and hyphens', () => {
-      expect(ruleKeys(sample).filter((key) => !RULE_KEY.test(key))).toEqual(['Foo Bar']);
+    it('should state that the Scope is an instruction and not a barrier', () => {
+      expect(scope).toMatch(/instruction, not a barrier/);
     });
+  });
+});
 
-    it('should flag a repeated key', () => {
-      const keys = ruleKeys(sample);
+describe('skills/hexlog-setup/references/project-skill.template.md', () => {
+  const content = fs.readFileSync(path.join(referencesDir, 'project-skill.template.md'), 'utf8');
 
-      expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual(['keep-it-small']);
-    });
+  it('should ask the developer for an ok before the agy recipe runs', () => {
+    expect(content).toMatch(/`recipe-agy\.md`.*wait for the developer's ok/s);
   });
 });
 
