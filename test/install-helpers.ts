@@ -7,8 +7,7 @@ import { createTempDir, parseJson } from './helpers.ts';
 export const repoRoot = path.resolve(__dirname, '..');
 const installScript = path.join(repoRoot, 'scripts/install.ts');
 
-// Equivalente mínimo de `own-harness/boot/settings.template.json`
-// renderizado: uma reinstalação do zero, sem nada do hexlog nem do rtk.
+// Settings mínimos de uma reinstalação do zero, sem nada do hexlog.
 export function buildSettingsTemplate(home: string): string {
   return `{
   "permissions": {

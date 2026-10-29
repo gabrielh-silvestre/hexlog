@@ -12,8 +12,8 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 - O `critic` durável lançado pela cadeira do dono no `flow-run`, inclusive nas sondas de verificação do fluxo (`sonda-<n>`, ver [fluxo-hexlog.md](fluxo-hexlog.md)), roda em `opus` (o tier é o contrato, não a versão); é um só por trabalho, vive até o fim dele e é continuado por `SendMessage` no Herdr com Claude, por `herdr agent prompt` no Herdr com `agy` e por retomada de sessão no runner.
 - O `opus` vale só para o critic Claude. O critic `agy`, que só entra por pedido explícito, roda fixado em `gemini-4-argon-high` (lista do dono por `agy models`); o nome pode mudar entre versões do `agy`.
 - O `critic` é encerrado só no fim do trabalho; os subagentes e jurados dele seguem em `sonnet` ou `haiku` e nascem e morrem por pergunta.
-- Exceção autorizada pelo dono ao CLAUDE.md global (Subagents: sonnet/haiku); vale só neste repositório.
-- Segunda exceção ao CLAUDE.md global, também só neste repositório e só no critic: o runner e o `herdr agent start --kind agy` chamam o `agy` direto, e o global manda o `agy` só por `omc ask`. O único gate é o pedido explícito (`--critic agy` ou `HEXLOG_CRITIC_CLI=agy`).
+- O `opus` do critic é a única exceção de modelo do fluxo: os demais subagentes rodam em `sonnet` ou `haiku`.
+- O `agy` é chamado direto, pelo runner e por `herdr agent start --kind agy`, e só por pedido explícito (`--critic agy` ou `HEXLOG_CRITIC_CLI=agy`): esse pedido é o único gate.
 
 ## Ocupante
 

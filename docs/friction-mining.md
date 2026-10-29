@@ -37,7 +37,7 @@ O workflow não tem acesso a filesystem nem a Node; tudo que toca disco (rodar o
 - Achado que bate com issue aberta vira comentário nela; item de prior art sem issue só reforça no relatório.
 - Relatório agrupado por tool e, dentro dela, por confiança.
 - Lanes fixas por tool (puladas quando a tool não teve chamada), lanes de descoberta para bucket sem dono e uma lane de harness sempre, em lotes de no máximo 12 agentes.
-- Subagentes em `sonnet` (constante `MODEL` no workflow), pela regra global do usuário.
+- Subagentes em `sonnet` (constante `MODEL` no workflow), como o resto do fluxo.
 
 ## Armadilhas que o método já trata
 
