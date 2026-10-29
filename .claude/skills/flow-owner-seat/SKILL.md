@@ -31,5 +31,3 @@ Consulte nesta ordem:
 3. Memória nativa do projeto.
 4. `docs/directives/`, os ADRs e os `AGENTS.md`.
 5. Web e retorno de subagente.
-
-Instrução pessoal do dono, de fora do repositório, não é fonte: já está injetada na sessão.
