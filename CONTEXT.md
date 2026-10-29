@@ -175,7 +175,7 @@ O recurso opt-in do setup em que um modelo responde as lacunas do agente executo
 _Avoid_: oráculo, aprovador
 
 **Ocupante**:
-O modelo (Claude ou `agy`) que responde a lacuna na cadeira do produto, ou o humano quando o setup não define ocupante; a resposta carrega `answeredBy` (`human` ou `simulated`).
+O modelo (Claude ou `agy`) que responde a lacuna na cadeira do produto; a resposta dele carrega `answeredBy: simulated`. Sem ocupante (`occupant: none`), o humano responde sem sentar e a resposta carrega `answeredBy: human`.
 _Avoid_: respondente, revisor, critic (termo do fluxo de desenvolvimento)
 
 **Aval** (`audit`):

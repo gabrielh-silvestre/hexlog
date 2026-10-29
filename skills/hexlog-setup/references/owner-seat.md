@@ -63,11 +63,11 @@ O "aprovado" cobre tudo. O registro (passo 7) aplica o pacote, confere o anexo d
 
 ## Geração (passo 8)
 
-Os templates são `owner-seat-criteria.template.md`, `owner-seat-contract.template.md`, `owner-seat-recipe-claude.template.md` e `owner-seat-recipe-agy.template.md`, todos em `references/`. O texto gerado é inglês e não leva nenhum caminho interno do repositório do hexlog.
+Os templates são `owner-seat-criteria.template.md`, `owner-seat-contract.template.md`, `owner-seat-recipe-claude.template.md` e `owner-seat-recipe-agy.template.md`, todos em `references/`. O texto gerado é inglês e os quatro `owner-seat-*.template.md` não levam nenhum caminho interno do repositório do hexlog. O `project-skill.template.md` é a exceção deliberada: cita o relatório por `$HEXLOG_CHECKOUT/scripts/seat-report.ts` (ADR 0014, item 5).
 
 | Arquivo gerado | Template | Regra |
 |---|---|---|
-| `owner-seat/criteria.md` | critérios | Gerado **uma vez**: o setup acrescenta, depois do título `## Rules` (o último do template), um bullet `- **<chave>**: <texto>` por regra da entrevista, com chaves únicas. O arquivo é do dev: o setup **nunca o sobrescreve**; se já existe, mostra o diff do que mudaria e pergunta |
+| `owner-seat/criteria.md` | critérios | Gerado **uma vez**: o setup acrescenta, depois do título `## Rules` (o último do template), um bullet `- **<chave>**: <texto>` por regra da entrevista, com chaves únicas. O arquivo é do dev: o setup **nunca o sobrescreve**; se já existe, não o gera de novo e só mostra a diferença para o dev decidir |
 | `owner-seat/contract.md` | contrato | Regenerado a cada reaplicação |
 | `owner-seat/recipe-claude.md` | receita Claude | Só com `occupant: claude`; regenerado a cada reaplicação |
 | `owner-seat/recipe-agy.md` | receita `agy` | Só com `occupant: agy`; regenerado a cada reaplicação |

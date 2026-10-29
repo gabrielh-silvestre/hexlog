@@ -38,8 +38,8 @@ Render this section only when the model has the `ownerSeat` key; otherwise leave
 When you hit a gap you cannot close alone (a question no rule of the project answers):
 
 1. Record the gap: type `{{type_gap}}`, target `<process>.gap.<short>`.
-2. Check the seat precondition: the process must carry the trace fields (`describe_type` with `process` for `{{type_premise}}` shows `answeredBy`). A process opened before the owner seat was set up does not have them, and then nobody sits: go to step 5.
-3. Run the recipe in `owner-seat/` (`recipe-claude.md` or `recipe-agy.md`, whichever exists) with `<gap-id> <project> <process>`.
+2. Check the seat precondition as `owner-seat/contract.md` says in "Before sitting" (the trace fields of `{{type_premise}}` in the process). A process opened before the owner seat was set up does not have them, and then nobody sits: go to step 5.
+3. Run the recipe in `owner-seat/` (`recipe-claude.md` or `recipe-agy.md`, whichever exists) after filling in its variables (`GAP_ID`, `PROJECT`, `PROCESS`, `MODEL`, `CRITERIA`) in the block.
 4. Read the answer back with `query` (`relatedTo` the gap id) before going on.
 5. If the recipe fails, if there is no recipe or if nobody sits, ask the developer and record the answer with `answeredBy: human`, as `owner-seat/contract.md` says.
 

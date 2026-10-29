@@ -19,7 +19,7 @@ Adotar uma definição nova, ou uma versão nova, exige um processo novo: o mani
 repina, e `create_process` sobre um processo que já existe devolve `created: false` e
 `stale`. As skills instaladas guiam o resto: `hexlog` (instalação e diagnóstico),
 `hexlog-setup` (configura um repositório de destino: aprende o fluxo do projeto e gera uma
-skill do projeto com um modelo declarativo, e, se pedirmos, a cadeira do dono) e `hexlog-flow` (a mecânica de registrar, consultar e
+skill do projeto com um modelo declarativo, e, opcionalmente, a cadeira do dono) e `hexlog-flow` (a mecânica de registrar, consultar e
 fechar uma unidade de trabalho, com projeto, processo e gate vindos da skill do projeto).
 
 ## Configurar um repositório novo
@@ -49,7 +49,7 @@ e o humano audita depois; sem ocupante, o humano responde, com os mesmos registr
 registra as definições do pacote (`gap`, `premise`, `evidence`, `audit`, as relações `fills-gap` e `audits` e
 o gate `gaps`; tipo existente compatível ganha campos opcionais por versão nova, e nome em
 colisão é mapeado com a sua escolha) e escreve, dentro da pasta da skill do projeto, o documento de
-critérios (nosso, nunca sobrescrito), o contrato do ocupante e a receita da ferramenta. A resposta sem
+critérios (do dev: o setup nunca o sobrescreve), o contrato do ocupante e a receita da ferramenta. A resposta sem
 base nos critérios sai marcada como "sem critério". Unidades abertas antes não enxergam os campos
 novos, e o ocupante não responde nelas. O relatório
 `node scripts/seat-report.ts <project>` (de um checkout do hexlog, apontado por `HEXLOG_CHECKOUT`) lista o que está

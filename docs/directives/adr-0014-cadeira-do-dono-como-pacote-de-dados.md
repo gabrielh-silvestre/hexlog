@@ -23,12 +23,12 @@ Restrições que moldam a decisão:
 ## Decision
 
 1. **Pacote de definições como dado.** Sete definições (4 tipos, 2 relações, 1 gate) em `skills/hexlog-setup/references/owner-seat/{types,relations,gates}/<nome>.json`, um arquivo por definição, no layout de `.hexlog/`: os tipos `gap`, `premise`, `evidence` e `audit`, as relações nomeadas `fills-gap` (espécie `answers`) e `audits` (espécie `supports`) e o gate `gaps`. Os campos novos são opcionais; quem não liga a cadeira não os preenche.
-2. **Instruções geradas pelo setup.** Um documento de critérios com regras de chave estável (do dev, nunca sobrescrito), um contrato neutro e receitas por ferramenta (Claude e `agy`, por CLI direto) vão para a pasta da skill do projeto, a partir de templates em `skills/hexlog-setup/references/`. A receita do Claude libera ao ocupante seis tools do hexlog, duas delas só de leitura (`describe_type` e `list`).
+2. **Instruções geradas pelo setup.** Um documento de critérios com regras de chave estável (do dev: o setup nunca o sobrescreve), um contrato neutro e receitas por ferramenta (Claude e `agy`, por CLI direto) vão para a pasta da skill do projeto, a partir de templates em `skills/hexlog-setup/references/`. A receita do Claude libera ao ocupante seis tools do hexlog, quatro delas só de leitura (`query`, `read_attachment`, `describe_type` e `list`).
 3. **Resposta, ausência de critério e auditoria.** O ocupante fecha a lacuna com uma `premise` (`fills-gap`, `answeredBy: simulated`). A resposta sem base sai com `basis: judgment`, a marca "sem critério". O humano audita depois: `audit` com relação `audits` avaliza; uma `premise` humana nova com `revokes` da resposta e `fills-gap` contesta. Aval e contestação vão para o processo da resposta, nunca `supersedes`.
 4. **Colisão de nomes.** O setup decide por regra mecânica: tipo igual ou compatível (superconjunto do que o contrato grava) vira versão minor com campos opcionais; tipo incompatível pede ao dev um nome mapeado. O resultado fica em `ownerSeat` no `hexlog-model.json`, com `names`, `applied` e `occupant`; relação e gate evoluem por nome novo.
-5. **Relatório read-only.** `scripts/seat-report.ts` lê os papéis `gap`, `premise` e `audit` e separa as respostas pelo que já foi auditado. Fica fora de `src/`, lê só por `composeReader`, não lê anexo e identifica as arestas pela espécie, então sobrevive ao mapeamento de nomes. A skill do projeto chama o script por `$HEXLOG_CHECKOUT`, e nenhum caminho de máquina é versionado.
+5. **Relatório read-only.** `scripts/seat-report.ts` lê os papéis `gap`, `premise` e `audit` e separa as respostas pelo que já foi auditado. Fica fora de `src/`, lê só por `composeReader`, não lê anexo e identifica as arestas pela espécie, então sobrevive ao mapeamento de nomes. A skill do projeto chama o script por `$HEXLOG_CHECKOUT`, e nenhum caminho de máquina é versionado; é por isso que o template da skill do projeto cita o relatório e os quatro `owner-seat-*.template.md` não citam caminho do repositório do hexlog.
 6. **"Skill do projeto" é a pasta.** A leitura que o ADR declara: "skill do projeto", no item 7 do ADR 0013, inclui a pasta inteira com os arquivos de apoio da cadeira. O dono avalizou emendar o item 7; a [emenda de 2026-10-29](adr-0013-setup-em-repositorio-de-destino.md) registra isso no ADR 0013.
-7. **Leitura de `nucleo-sem-termo-de-fluxo`.** A premissa vale para o servidor (`src/`), que segue sem termo de fluxo, e o relatório em `scripts/` é ferramenta opcional fora do núcleo, por decisão do dono no spec. O dono avalizou essa leitura, sem emenda de `estrategia.md` neste ponto. A trava mecânica continua sendo `test/no-flow-terms.spec.ts`, que varre `scripts/` fora de `flow/`.
+7. **Leitura de `nucleo-sem-termo-de-fluxo`.** A premissa vale para o servidor (`src/`), que segue sem termo de fluxo, e o relatório em `scripts/` é ferramenta opcional fora do núcleo. O dono avalizou essa leitura, sem emenda de `estrategia.md` neste ponto. A trava mecânica continua sendo `test/no-flow-terms.spec.ts`, que varre `scripts/` fora de `flow/`.
 8. **Auditoria humana posterior.** O produto não tem aval prévio nem classe crítica: o modo autônomo opera com cadeira simulada e auditoria humana posterior. A premissa `dois-modos-de-uso` de [estrategia.md](estrategia.md) é emendada pelo dono, que a muda de "aval humano no que é crítico" para "auditoria humana posterior"; o agente nunca edita esse arquivo.
 
 ## Drivers
@@ -39,12 +39,13 @@ Premissas de [estrategia.md](estrategia.md): `nucleo-sem-termo-de-fluxo`, `ferra
 
 1. Embutir a cadeira no servidor ou criar tool nova: rejeitada, viola `ferramentas-fixas` e não há canal servidor para cliente para disparar o modelo.
 2. Fonte única do pacote em `.hexlog/`: rejeitada, o instalador não a copia e o produto passaria a depender do fluxo deste repositório.
-3. Aval como premissa derivada (o `simulated-approved` do ADR 0012): rejeitada, mistura resposta e veredito e faz duas premissas fecharem a mesma lacuna. `audits` de espécie `derivesFrom`: rejeitada, o `needsReview` do hexlog só marca `supports`, e a gravação perderia a recusa de destino não vigente.
-4. Júri e classe crítica no pacote: rejeitados, o júri exige OMC (fora do produto) e a classe crítica com aval prévio contraria "sem humano no meio".
-5. Confiança no pacote: rejeitada, as instruções variam por projeto e cada um define as suas.
-6. Arquivo único de pacote: rejeitado, sem molde de teste e confundiria a varredura dos `*.example.json` de `references/`.
-7. Caminho do checkout no modelo: rejeitado, `HEXLOG_CHECKOUT` evita versionar caminho de máquina.
-8. Emenda ao ADR 0012 em vez de ADR novo: rejeitada, o 0012 é a cadeira do fluxo deste repositório e segue válido; o trade-off aqui é outro (pacote de dados contra servidor) e [documentacao.md](documentacao.md) manda ADR aceito só receber emenda ou ADR seguinte.
+3. Aval como premissa derivada (o `simulated-approved` do ADR 0012): rejeitada, mistura resposta e veredito e faz duas premissas fecharem a mesma lacuna.
+4. `audits` de espécie `derivesFrom`: rejeitada, o `needsReview` do hexlog só marca `supports`, e a gravação perderia a recusa de destino não vigente.
+5. Júri e classe crítica no pacote: rejeitados, o júri exige OMC (fora do produto) e a classe crítica com aval prévio contraria "sem humano no meio".
+6. Confiança no pacote: rejeitada, as instruções variam por projeto e cada um define as suas.
+7. Arquivo único de pacote: rejeitado, sem molde de teste e confundiria a varredura dos `*.example.json` de `references/`.
+8. Caminho do checkout no modelo: rejeitado, `HEXLOG_CHECKOUT` evita versionar caminho de máquina.
+9. Emenda ao ADR 0012 em vez de ADR novo: rejeitada, o 0012 é a cadeira do fluxo deste repositório e segue válido; o trade-off aqui é outro (pacote de dados contra servidor) e [documentacao.md](documentacao.md) manda ADR aceito só receber emenda ou ADR seguinte.
 
 ## Why chosen
 

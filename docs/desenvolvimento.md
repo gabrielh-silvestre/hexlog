@@ -78,7 +78,7 @@ respostas simuladas não auditadas, respostas auditadas, respostas humanas e res
 citada, o hash curto do documento de critérios e a ação usada. Sem `--process` lê o projeto
 inteiro; `--types` informa os nomes dos tipos quando o setup mapeou algum por colisão (o
 padrão é o nome do papel). A resposta sem critério sai do próprio registro (`basis`
-`judgment`, ou ausente, ou `rule` sem chave): o script não lê anexo e não confere a
+`judgment`, ou ausente, ou `rule` sem chave, ou `rule` sem `criteria`): o script não lê anexo e não confere a
 regra citada contra o texto do documento. Aval é o `audit` com relação `supports` vigente
 para a resposta; o `audit` de retirada não conta. A saída escapa controles de terminal.
 Códigos de saída: `0` íntegro, com os achados listados; `2` dado 0.x ou log quebrado; `1`
