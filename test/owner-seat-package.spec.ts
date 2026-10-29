@@ -234,7 +234,7 @@ describe('describe_type', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should show the optional fields of the package premise', async () => {
+  it('should show every property of the package premise', async () => {
     await definePackageFile('types', 'premise');
 
     const described = await environment.ok<DescribeTypeResult>('describe_type', {
@@ -446,7 +446,7 @@ describe('classifyTypeChange', () => {
     expect(classifyTypeChange(statementOnly(500), packageType('premise'))).toBe('breaking');
   });
 
-  it('should classify a premise whose enum is narrower than the package enum as compatible', () => {
+  it('should classify a package that widens an enum as compatible', () => {
     const narrower: RecordType = {
       ...STATEMENT_ONLY,
       properties: {

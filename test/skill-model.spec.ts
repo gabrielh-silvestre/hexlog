@@ -500,6 +500,11 @@ describe('skills/hexlog-setup/references/agents-block.template.md', () => {
   });
 });
 
+const RULE_KEY = /^[a-z0-9-]+$/;
+
+const ruleKeys = (text: string) =>
+  [...text.matchAll(/^- \*\*([^*]+)\*\*:/gm)].map(([, key]) => key ?? '');
+
 describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
   const templates = readDocuments(
     fs
@@ -514,9 +519,6 @@ describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
     0,
   ).content;
 
-  const ruleKeys = () =>
-    [...criteria.matchAll(/^- \*\*([^*]+)\*\*:/gm)].map(([, key]) => key ?? '');
-
   it('should not mention the development flow tooling', () => {
     expect(occurrencesIn(templates, /\bOMC\b|herdr|scripts\/flow|critic|\.omc/gi)).toEqual({});
   });
@@ -529,16 +531,38 @@ describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
     expect(content).toMatch(/^Status: (?:proven|unproven)$/m);
   });
 
-  it('should key every criteria rule with lowercase letters, digits and hyphens', () => {
-    const keys = ruleKeys();
+  it('should end the criteria template with the Rules heading', () => {
+    const headings = criteria.match(/^#{1,6} .*$/gm) ?? [];
 
-    expect(keys.filter((key) => !/^[a-z0-9-]+$/.test(key))).toEqual([]);
+    expect(headings.at(-1)).toBe('## Rules');
   });
 
-  it('should not repeat a criteria rule key', () => {
-    const keys = ruleKeys();
+  it('should ship the criteria template without rule bullets', () => {
+    expect(ruleKeys(criteria)).toEqual([]);
+  });
 
-    expect(new Set(keys).size).toBe(keys.length);
+  describe('with a criteria text', () => {
+    const sample = [
+      '## Rules',
+      '',
+      '- **keep-it-small**: a',
+      '- **Foo Bar**: b',
+      '- **keep-it-small**: c',
+    ].join('\n');
+
+    it('should read the key of every rule bullet', () => {
+      expect(ruleKeys(sample)).toEqual(['keep-it-small', 'Foo Bar', 'keep-it-small']);
+    });
+
+    it('should flag a key outside lowercase letters, digits and hyphens', () => {
+      expect(ruleKeys(sample).filter((key) => !RULE_KEY.test(key))).toEqual(['Foo Bar']);
+    });
+
+    it('should flag a repeated key', () => {
+      const keys = ruleKeys(sample);
+
+      expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual(['keep-it-small']);
+    });
   });
 });
 
