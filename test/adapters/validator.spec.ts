@@ -693,13 +693,17 @@ describe('validate', () => {
       { cost: 'just below the ceiling', items: 24_998, isCapped: false },
       { cost: 'exactly the ceiling', items: 24_999, isCapped: false },
       { cost: 'just above the ceiling', items: 25_000, isCapped: true },
-    ])('should cap the violations only when the cost is above it ($cost)', ({ items, isCapped }) => {
-      const data = Array.from({ length: items }, () => 1);
+    ])(
+      'should cap the violations only when the cost is above it ($cost)',
+      ({ items, isCapped }) => {
+        const data = Array.from({ length: items }, () => 1);
 
-      const codes = validator.validate({ type: 'string' }, data as never).map(({ code }) => code);
+        const codes = validator.validate({ type: 'string' }, data as never).map(({ code }) => code);
 
-      expect(codes.includes('violations-capped')).toBe(isCapped);
-    }, 15_000);
+        expect(codes.includes('violations-capped')).toBe(isCapped);
+      },
+      15_000,
+    );
 
     it('should keep the measured value of the violation it reports above the ceiling', () => {
       const data = { a: Array.from({ length: 40 }, () => 'abcdef') };
