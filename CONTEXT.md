@@ -167,3 +167,17 @@ _Avoid_: mapa, configuração
 **Unidade de trabalho** (`unit`):
 O que recebe um **Processo** no repositório de destino, como uma pasta de feature; identificada pelo caminho canônico.
 _Avoid_: trabalho (o glossário do fluxo usa o termo para as entregas deste repositório), tarefa
+
+### Cadeira do dono no produto
+
+**Cadeira do dono**:
+O recurso opt-in do setup em que um modelo responde as lacunas do agente executor com base em critérios do projeto, grava a resposta no hexlog e deixa o humano auditar depois. Não é a cadeira do fluxo de desenvolvimento deste repositório, que exige aval prévio na classe crítica ([adr-0014-cadeira-do-dono-como-pacote-de-dados.md](docs/directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md)).
+_Avoid_: oráculo, aprovador
+
+**Ocupante**:
+O modelo (Claude ou `agy`) que responde a lacuna na cadeira do produto; a resposta dele carrega `answeredBy: simulated`. Sem ocupante (`occupant: none`), o humano responde sem sentar e a resposta carrega `answeredBy: human`.
+_Avoid_: respondente, revisor, critic (termo do fluxo de desenvolvimento)
+
+**Aval** (`audit`):
+O registro com que o humano confere uma resposta do ocupante, ligado a ela pela relação `audits`; contestar é gravar uma resposta humana nova com `revokes` da anterior.
+_Avoid_: aprovação, veredito

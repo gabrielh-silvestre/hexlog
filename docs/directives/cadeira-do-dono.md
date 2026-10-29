@@ -83,6 +83,7 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 
 ## Aval e trava
 
+- O aval prévio da classe crítica vale neste repositório até a migração do fluxo: a premissa atemporal `dois-modos-de-uso`, emendada para auditoria humana posterior, descreve o produto, e as regras deste doc divergem dela até lá, como declara o [ADR 0014](adr-0014-cadeira-do-dono-como-pacote-de-dados.md). Em caso de dúvida, vale a regra deste doc.
 - Na crítica o agente executa sobre a resposta do critic e emenda a regra tocada no mesmo trabalho. A lacuna segue aberta: o gate `gaps` falha e o relatório acusa `critical-gap` até o aval. É freio, não barreira.
 - Recolher um aval é `revokes` da `simulated-approved` vigente; gravar outro aval sem esse `revokes` deixa o antigo vigente e não limpa o `doc amended after the approval`.
 - Aval no pré-PR, uma lacuna por turno: avalizou grava `simulated-approved` com `fills-gap` e `derivesFrom` cru para a `simulated`; decidiu outra coisa grava `human` com `revokes` da `simulated`; recusou revoga a `simulated`, refaz o dependente e devolve a recusa ao critic como dado (só no `flow-run`; no `flow-gaps` o assento é humano); sem resposta nada se revoga e o PR fica em rascunho.

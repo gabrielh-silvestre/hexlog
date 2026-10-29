@@ -84,3 +84,11 @@ Emenda datada, aplicada por decisão do dono, Gabriel Baldino. Decision e Conseq
 - **O histórico acima fica, e esta emenda o supera.** As menções ao Spec Kit e à camada C no Context, nas Decisions (item 6), nos Drivers, nas Alternatives considered, no Why chosen, nas Consequences e na emenda anterior ficam como histórico. Quando uma delas conflitar com esta emenda, vale esta.
 - **O bloco do `AGENTS.md` do destino continua.** O item 7 vale como está: o setup escreve a skill do projeto, o modelo e um bloco de até 8 linhas no `AGENTS.md` do destino, agora sem o nome de camada. O roteiro de aceite usa um fluxo neutro de três fases (`design`, `build` e `check`).
 - **A entrega sai em um PR.**
+
+## Emenda 2026-10-29
+
+Emenda datada ao item 7, aplicada por decisão do dono, Gabriel Baldino. Decision e Consequences acima não mudam, e as emendas anteriores seguem vigentes no que não conflita com esta.
+
+- **Item 7, escrita do setup.** "Só escreve a skill do projeto e o modelo" passa a incluir, quando o dev liga a cadeira do dono (opt-in), os arquivos de apoio dela dentro da pasta da skill do projeto: o documento de critérios, o contrato do ocupante e a receita da ferramenta. "Skill do projeto" é lida como a pasta inteira, com os arquivos de apoio que a skill carrega. Sem a cadeira, nada muda: o setup segue escrevendo só a skill, o modelo e o bloco do `AGENTS.md`.
+- **O documento de critérios é do dev.** A pasta da skill do projeto é regenerada pelo setup, mas o documento de critérios, uma vez escrito, nunca é sobrescrito; o contrato e a receita são regenerados.
+- **Motivo e decisão completa.** O pacote de definições da cadeira, o relatório e o trade-off estão no [ADR 0014](adr-0014-cadeira-do-dono-como-pacote-de-dados.md).

@@ -23,22 +23,22 @@ const DEFINE_TOOL: Record<Kind, string> = {
   gates: 'define_gate',
 };
 
-export const namesIn = (kind: Kind): string[] =>
+export const namesIn = (kind: Kind, dir = hexlogDir): string[] =>
   fs
-    .readdirSync(path.join(hexlogDir, kind))
+    .readdirSync(path.join(dir, kind))
     .filter((file) => file.endsWith('.json'))
     .map((file) => file.replace(/\.json$/, ''))
     .sort();
 
-const fileBody = (kind: Kind, name: string): Record<string, unknown> =>
+const fileBody = (kind: Kind, name: string, dir: string): Record<string, unknown> =>
   parseJson(
     z.record(z.string(), z.json()),
-    fs.readFileSync(path.join(hexlogDir, kind, `${name}.json`), 'utf8'),
+    fs.readFileSync(path.join(dir, kind, `${name}.json`), 'utf8'),
   );
 
 /** Corpo que a chamada `define_*` recebe a partir do arquivo: o tipo é o schema; as demais levam o nome. */
-export const definitionOf = (kind: Kind, name: string): Record<string, unknown> =>
-  kind === 'types' ? fileBody(kind, name) : { name, ...fileBody(kind, name) };
+export const definitionOf = (kind: Kind, name: string, dir = hexlogDir): Record<string, unknown> =>
+  kind === 'types' ? fileBody(kind, name, dir) : { name, ...fileBody(kind, name, dir) };
 
 /** Entrada da tool `define_*` para o arquivo: o tipo leva o schema (`schema` o troca); as demais, o corpo com o nome. */
 export const defineArgs = (

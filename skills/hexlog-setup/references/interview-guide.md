@@ -44,3 +44,12 @@ Pergunte quando os rótulos do projeto ficam fora da sintaxe padrão (segmentos 
 ## 8. Ponteiro no destino
 
 "Does your `CLAUDE.md` already import `AGENTS.md`? If not, may I add the import at the end of the file, outside any region managed by another tool?" O arquivo muda só com resposta afirmativa.
+
+## 9. Cadeira do dono (opt-in)
+
+Última pergunta da entrevista, e só ela: sem resposta afirmativa, nenhuma das abaixo é feita e o modelo fica sem a chave `ownerSeat`. Procedimento completo em `owner-seat.md`. Uma pergunta por turno, esperando a resposta:
+
+1. "Do you want to turn on the owner seat? A model answers the gaps the working agent cannot close, from criteria you write, and you audit the answers afterwards."
+2. "Who should sit in the owner seat: Claude Code, `agy`, or nobody (you answer the gaps yourself)?" Vira `occupant` (`claude`, `agy` ou `none`). Outra ferramenta não tem receita: diga isso e ofereça `none`.
+3. Só com ocupante: "What is the first rule the occupant should follow when it answers a gap?" Depois, uma regra por turno: "Another rule, or is that enough?". Proponha uma chave estável em kebab-case (`[a-z0-9-]+`) para cada regra e confirme com o dev; a regra pode apontar para um arquivo do repositório.
+4. Só com ocupante, como aviso e sem pergunta: "Each developer must export `HEXLOG_CHECKOUT` once, pointing at their hexlog checkout. The audit report runs from there, and no machine path goes into a versioned file."

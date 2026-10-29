@@ -38,9 +38,9 @@ type Model = {
   gate: { name: string; questions: GateQuestion[] };
 };
 
-// Chaves de topo documentadas em `model-schema.md`: as obrigatórias e a única opcional.
+// Chaves de topo documentadas em `model-schema.md`: as obrigatórias e as opcionais.
 const REQUIRED_MODEL_KEYS = ['schema', 'project', 'unit', 'phases', 'types', 'relations', 'gate'];
-const OPTIONAL_MODEL_KEYS = ['targetPattern'];
+const OPTIONAL_MODEL_KEYS = ['targetPattern', 'ownerSeat'];
 
 // Chaves exatas dos objetos aninhados, como `model-schema.md` as documenta (sem opcionais).
 const UNIT_KEYS = ['kind', 'location', 'examples'];
@@ -497,6 +497,96 @@ describe('skills/hexlog-setup/references/agents-block.template.md', () => {
   it('should keep the block between 1 and 8 non-empty lines', () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.length).toBeLessThanOrEqual(8);
+  });
+});
+
+const ruleKeys = (text: string) =>
+  [...text.matchAll(/^- \*\*([^*]+)\*\*:/gm)].map(([, key]) => key ?? '');
+
+describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
+  const templates = readDocuments(
+    fs
+      .readdirSync(referencesDir)
+      .filter((file) => /^owner-seat.*\.template\.md$/.test(file))
+      .sort()
+      .map((file) => path.join(referencesDir, file)),
+  );
+  const recipes = templates.filter(({ file }) => file.includes('owner-seat-recipe-'));
+  const criteria = at(
+    templates.filter(({ file }) => file.endsWith('owner-seat-criteria.template.md')),
+    0,
+  ).content;
+
+  it('should not mention the development flow tooling', () => {
+    expect(occurrencesIn(templates, /\bOMC\b|herdr|scripts\/flow|critic|\.omc/gi)).toEqual({});
+  });
+
+  it.each(recipes)('should not declare a Status line in $file', ({ content }) => {
+    expect(content).not.toMatch(/^Status:/m);
+  });
+
+  it.each(recipes)(
+    'should not carry a fallback that swaps --restricted in $file',
+    ({ content }) => {
+      expect(content).not.toMatch(/--setting-sources/);
+    },
+  );
+
+  it('should end the criteria template with the Rules heading', () => {
+    const headings = criteria.match(/^#{1,6} .*$/gm) ?? [];
+
+    expect(headings.at(-1)).toBe('## Rules');
+  });
+
+  it('should ship the criteria template without rule bullets', () => {
+    expect(ruleKeys(criteria)).toEqual([]);
+  });
+
+  it('should state the 120 character limit of the rule key in the criteria template', () => {
+    expect(criteria).toMatch(/at most 120 characters/);
+  });
+
+  describe('with the contract template', () => {
+    const contract = at(
+      templates.filter(({ file }) => file.endsWith('owner-seat-contract.template.md')),
+      0,
+    ).content;
+    const scope = /^## Scope\n([\s\S]*?)(?=^## )/m.exec(contract)?.[1] ?? '';
+
+    it('should carry a Scope section that forbids the writes outside the answer', () => {
+      expect(scope).toMatch(/`revokes`.*`supersedes`.*`create_process`.*`define_\*`/s);
+    });
+
+    it('should state that the Scope is an instruction and not a barrier', () => {
+      expect(scope).toMatch(/instruction, not a barrier/);
+    });
+  });
+});
+
+describe('skills/hexlog-setup/references/project-skill.template.md', () => {
+  const content = fs.readFileSync(path.join(referencesDir, 'project-skill.template.md'), 'utf8');
+
+  it('should ask the developer for an ok before the agy recipe runs', () => {
+    expect(content).toMatch(/`recipe-agy\.md`.*wait for the developer's ok/s);
+  });
+});
+
+describe('skills/hexlog-setup/references/model-schema.md', () => {
+  const content = fs.readFileSync(path.join(referencesDir, 'model-schema.md'), 'utf8');
+  const section = content.split(/^## /m).find((part) => part.startsWith('`ownerSeat`')) ?? '';
+  const rows = section.split('\n').filter((line) => line.startsWith('|'));
+  const fields = rows.slice(2).map((row) => /^\|\s*`([^`]+)`/.exec(row)?.[1] ?? '');
+
+  it('should document at least one ownerSeat field', () => {
+    expect(fields.length).toBeGreaterThan(0);
+  });
+
+  it('should not document an ownerSeat field that holds a path', () => {
+    expect(fields.filter((field) => /path|dir|file|location|checkout/i.test(field))).toEqual([]);
+  });
+
+  it('should not put an absolute, tilde or HOME path in the ownerSeat table', () => {
+    expect(rows.join('\n')).not.toMatch(/~|\$HOME|`\/[^`]+`/);
   });
 });
 

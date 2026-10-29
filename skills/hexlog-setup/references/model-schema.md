@@ -14,6 +14,7 @@ O modelo é o dado do setup: o que o hexlog precisa saber do fluxo de um projeto
 | `relations` | lista | Um `{ name, kind, from, to }` por nome de relação, com a forma de `define_relation` |
 | `gate` | objeto | `{ name, questions }`, com a forma de `define_gate` |
 | `targetPattern` | texto, opcional | Formato fixo de rótulo do projeto, quando a sintaxe padrão de target não serve |
+| `ownerSeat` | objeto, opcional | A cadeira do dono (abaixo). Ausente = cadeira desligada |
 
 ## `unit`
 
@@ -26,6 +27,18 @@ O modelo é o dado do setup: o que o hexlog precisa saber do fluxo de um projeto
 **Forma canônica do caminho da unidade.** Caminho relativo à raiz do repositório, separador POSIX (`/`), do primeiro ao último segmento (por exemplo `docs/features/photo-albums`). É a única forma gravada e comparada no campo `unit` dos registros: o sufixo de colisão ou de reabertura vive só no nome do processo.
 
 **Nome do processo.** Minúsculas; cada sequência de caracteres fora de `[a-z0-9]` vira um único `-`; `-` só entre caracteres, inclusive depois de truncar em 63 caracteres; vazio, nome reservado ou colisão com outra unidade leva um sufixo confirmado com o dev (a mecânica está em `hexlog-flow`, `references/unit-lifecycle.md`).
+
+## `ownerSeat`
+
+Presente só quando o dev ligou a cadeira do dono (procedimento em `owner-seat.md`). As definições do pacote dela **não** entram em `types`, `relations` nem `gate`: o gate `gaps` não cabe no campo `gate`, que é singular, e o pacote tem registro próprio aqui.
+
+| Campo | O que é |
+|---|---|
+| `names` | Objeto: o nome **aplicado** de cada definição do pacote, com as chaves `type_gap`, `type_premise`, `type_evidence`, `type_audit`, `relation_fills_gap`, `relation_audits` e `gate_gaps` (as mesmas dos placeholders de geração dos templates). O valor é o nome padrão ou o nome mapeado numa colisão |
+| `applied` | Objeto com as mesmas chaves de `names`: a versão de cada definição, lida do `list` depois do registro. É o único lugar em que a versão do pacote vive |
+| `occupant` | `claude`, `agy` ou `none` (cadeira ligada, sem ocupante) |
+
+**Sem caminho absoluto, `~` nem `$HOME`**, em nenhum campo: o doc de critérios fica num lugar fixo da pasta da skill do projeto (`owner-seat/criteria.md`), então não precisa de campo, e o caminho do checkout do hexlog vem da variável `HEXLOG_CHECKOUT` de cada dev, nunca de arquivo versionado.
 
 ## `phases[]`
 
