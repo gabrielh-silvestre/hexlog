@@ -46,7 +46,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Subagente de exploração
 
-- Diretriz carregada por caminho (frontmatter `paths` em `.claude/rules/`) só chega ao subagente que lê, escreve ou executa `cat` num arquivo que casa; quem só pesquisa com Grep, Glob ou `ls` não a recebe. O ponteiro do `SubagentStart` ([instalacao-e-hooks.md](instalacao-e-hooks.md)) chega a todo subagente, mas só aponta para este doc.
+- Os docs [fronteiras.md](fronteiras.md), [invariantes.md](invariantes.md), [documentacao.md](documentacao.md) e [instalacao-e-hooks.md](instalacao-e-hooks.md) não ficam no `CLAUDE.md`: carregam por caminho (frontmatter `paths` no doc e symlink em `.claude/rules/`) e só chegam ao subagente que lê, escreve ou executa `cat` num arquivo que casa; quem só pesquisa com Grep, Glob ou `ls` não os recebe. O ponteiro do `SubagentStart` ([instalacao-e-hooks.md](instalacao-e-hooks.md)) chega a todo subagente, mas só aponta para este doc.
 - Ao lançar um subagente de exploração (que só pesquisa, sem ler arquivo), a sessão principal cita no prompt o doc de `docs/directives/` que trata do assunto explorado e manda lê-lo antes de responder, ou cola as regras que valem.
 
 ## Consulta antes de decidir

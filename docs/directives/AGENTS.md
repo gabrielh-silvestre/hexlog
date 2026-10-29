@@ -4,7 +4,7 @@
 **Generated:** 2026-10-06 · **Updated:** 2026-10-17
 
 ## Purpose
-Diretrizes do hexlog: os docs vivos de regras, importados pelo `CLAUDE.md`, e os ADRs da 1.0. As regras de ADR (só emenda, nunca reescrita) e de doc vivo estão em `documentacao.md`.
+Diretrizes do hexlog: os docs vivos de regras, importados pelo `CLAUDE.md` ou carregados por caminho (`.claude/rules/`: `fronteiras`, `invariantes`, `documentacao` e `instalacao-e-hooks`), e os ADRs da 1.0. As regras de ADR (só emenda, nunca reescrita) e de doc vivo estão em `documentacao.md`.
 
 ## Key Files
 | File | Description |

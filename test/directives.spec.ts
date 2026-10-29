@@ -15,6 +15,8 @@ const directivesDir = path.join(repoRoot, 'docs/directives');
 // Tetos de contexto: o que o `CLAUDE.md` importa chega a toda sessão e a todo subagente.
 const LIVING_DOC_MAX_LINES = 150;
 const IMPORTED_MAX_LINES = 1000;
+// Medido em 59.025 bytes (~26k tokens) com o `CLAUDE.md` sem o `AGENTS.md` e com 4 docs por caminho; teto = medido + 10%.
+const IMPORTED_MAX_BYTES = 65_000;
 
 // Títulos que a extração tirou dos `AGENTS.md`: a regra mora nos docs vivos de `docs/directives/`.
 const EXTRACTED_HEADINGS = [
@@ -75,6 +77,19 @@ function atImportsFrom(content: string): string[] {
   return [...stripFencedCodeBlocks(content).matchAll(/^@(\S+)$/gm)].map((m) => at(m, 1));
 }
 
+/** Globs entre aspas do frontmatter `paths:` (sem aspas o YAML lê `*` como alias), ou vazio sem frontmatter ou sem `paths`. */
+function pathsFrontmatterFrom(content: string): string[] {
+  const block = /^---\n([\s\S]*?)\n---\n/.exec(content)?.[1] ?? '';
+  const afterPaths = /^paths:\n((?:[ \t]+- .+\n?)+)/m.exec(`${block}\n`)?.[1] ?? '';
+  return [...afterPaths.matchAll(/^[ \t]+- (['"])(.+?)\1\s*$/gm)].map((m) => at(m, 2));
+}
+
+/** `@caminho` em prosa (fora de bloco cercado e de crase): o Claude Code o expande como import. */
+function proseAtMentionsFrom(content: string): string[] {
+  const prose = stripFencedCodeBlocks(content).replace(/`[^`\n]*`/g, '');
+  return [...prose.matchAll(/(?:^|\s)@[\w./~-]+/g)].map((m) => m[0].trim());
+}
+
 /** Citações `` `caminho.md#título` `` entre crase simples, já separadas em caminho e título. */
 function headingCitationsFrom(content: string): { file: string; title: string }[] {
   return [...stripFencedCodeBlocks(content).matchAll(/`([^`\s#]+\.md)#([^`]+)`/g)].map((m) => ({
@@ -106,6 +121,11 @@ function manualMarkerOffsetFrom(content: string): number {
 const claudeMdPath = path.join(repoRoot, 'CLAUDE.md');
 
 const claudeMdImports = (): string[] => atImportsFrom(fs.readFileSync(claudeMdPath, 'utf8'));
+
+const rulesDir = path.join(repoRoot, '.claude/rules');
+
+/** Nomes dos symlinks de `.claude/rules/`: cada um carrega o doc de mesmo nome por caminho. */
+const ruleNames = (): string[] => fs.readdirSync(rulesDir).filter((name) => name.endsWith('.md'));
 
 /** Docs vivos: o que sobra em `docs/directives/` sem o `AGENTS.md` (só navegação) e sem os ADRs. */
 const livingDocs = fs
@@ -361,10 +381,13 @@ describe('CLAUDE.md', () => {
   const importedLivingDocs = (): string[] =>
     claudeMdImports().filter((target) => livingDocs.includes(path.basename(target)));
 
-  it('should import every living doc', () => {
-    expect(importedLivingDocs()).toEqual(
-      expect.arrayContaining(livingDocs.map((name) => `docs/directives/${name}`)),
-    );
+  it('should cover every living doc with its imports plus the path rules', () => {
+    const covered = [
+      ...importedLivingDocs().map((target) => path.basename(target)),
+      ...ruleNames(),
+    ];
+
+    expect(covered.sort()).toEqual([...livingDocs].sort());
   });
 
   it('should import fluxo-hexlog.md first and convencoes.md next among the living docs', () => {
@@ -383,6 +406,15 @@ describe('CLAUDE.md', () => {
     expect(total).toBeLessThanOrEqual(IMPORTED_MAX_LINES);
   });
 
+  it('should keep what it imports within the byte ceiling in total', () => {
+    const total = claudeMdImports().reduce(
+      (sum, target) => sum + fs.statSync(path.join(repoRoot, target)).size,
+      0,
+    );
+
+    expect(total).toBeLessThanOrEqual(IMPORTED_MAX_BYTES);
+  });
+
   it('should import estrategia.md after convencoes.md', () => {
     const imports = claudeMdImports();
 
@@ -391,16 +423,80 @@ describe('CLAUDE.md', () => {
     );
   });
 
-  it('should import no doc that matches the selection terms', () => {
+  it('should load no doc that matches the selection terms, by import or by rule', () => {
     const imported = claudeMdImports();
+    const loaded = [...imported, ...ruleNames().map((name) => `docs/directives/${name}`)];
 
     expect(imported).toContain(FLOW_DOC);
 
     expect(
-      imported.filter((target) =>
+      loaded.filter((target) =>
         SELECTION_TERMS.test(fs.readFileSync(path.join(repoRoot, target), 'utf8')),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('.claude/rules/*.md', () => {
+  // Sanidade: sem ela a trava passaria lendo uma pasta vazia.
+  it('should find the four path-loaded docs', () => {
+    expect(ruleNames().sort()).toEqual([
+      'documentacao.md',
+      'fronteiras.md',
+      'instalacao-e-hooks.md',
+      'invariantes.md',
+    ]);
+  });
+
+  it('should link every rule to the doc of the same name in docs/directives/', () => {
+    const notLinked = ruleNames().filter((name) => {
+      const link = path.join(rulesDir, name);
+      try {
+        return (
+          !fs.lstatSync(link).isSymbolicLink() ||
+          fs.realpathSync(link) !== path.join(fs.realpathSync(directivesDir), name)
+        );
+      } catch {
+        return true;
+      }
+    });
+
+    expect(notLinked).toEqual([]);
+  });
+
+  it('should give every living doc that CLAUDE.md does not import a `paths` frontmatter', () => {
+    const imported = claudeMdImports().map((target) => path.basename(target));
+    const conditional = livingDocs.filter((name) => !imported.includes(name));
+
+    expect(conditional.length).toBeGreaterThan(0);
+
+    expect(
+      conditional.filter((name) => pathsFrontmatterFrom(directive(name)).length === 0),
+    ).toEqual([]);
+  });
+
+  it('should keep every `@path` out of the prose of the path-loaded docs', () => {
+    expect(ruleNames().flatMap((name) => proseAtMentionsFrom(directive(name)))).toEqual([]);
+  });
+});
+
+describe('pathsFrontmatterFrom', () => {
+  it('should read the quoted globs of the `paths` list and skip an unquoted one', () => {
+    const content = '---\npaths:\n  - \'src/**\'\n  - "hook/**"\n  - **/*.md\n---\n\n# Titulo\n';
+
+    expect(pathsFrontmatterFrom(content)).toEqual(['src/**', 'hook/**']);
+  });
+
+  it('should return nothing for a doc without frontmatter', () => {
+    expect(pathsFrontmatterFrom('# Titulo\n\n- paths:\n  - x\n')).toEqual([]);
+  });
+});
+
+describe('proseAtMentionsFrom', () => {
+  it('should flag a `@path` in prose and ignore one in code', () => {
+    const content = ['veja @docs/x.md e `@docs/y.md`', '```', '@docs/z.md', '```'].join('\n');
+
+    expect(proseAtMentionsFrom(content)).toEqual(['@docs/x.md']);
   });
 });
 
