@@ -26,6 +26,11 @@ jobs:
           const fs = require("node:fs");
           const crypto = require("node:crypto");
 
+          if (!process.env.OPENBOT_WEBHOOK_URL || !process.env.OPENBOT_WEBHOOK_SECRET) {
+            console.log("::error::OPENBOT_WEBHOOK_URL or OPENBOT_WEBHOOK_SECRET is not set.");
+            process.exit(1);
+          }
+
           const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
           const issue = event.issue;
           const MAX_BYTES = 60000;
@@ -77,18 +82,19 @@ jobs:
                     "X-OpenBot-Signature": `sha256=${signature}`,
                   },
                   body,
+                  signal: AbortSignal.timeout(15000),
                 });
                 if (response.status === 200 || response.status === 202) {
                   console.log(`OpenBot accepted issue #${issue.number} (${response.status}).`);
                   return;
                 }
-                if (response.status !== 429 && response.status !== 503) {
+                if (response.status !== 408 && response.status !== 429 && response.status < 500) {
                   console.error(`OpenBot rejected issue #${issue.number}: HTTP ${response.status}.`);
                   process.exit(1);
                 }
-                console.log(`HTTP ${response.status}; retrying.`);
+                console.log(`HTTP ${response.status}.`);
               } catch (error) {
-                console.log(`Network failure (${error.message}); retrying.`);
+                console.log(`Network failure (${error.message}).`);
               }
             }
             console.log(`::warning::OpenBot unavailable for issue #${issue.number}. The scheduled run will pick it up.`);

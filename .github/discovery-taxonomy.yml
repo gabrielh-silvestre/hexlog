@@ -1,7 +1,8 @@
 # Taxonomia fechada do fluxo de discovery do OpenBot: o Triador classifica cada
 # issue só com estas frentes (`fronts`, label `frente:<slug>`) e funcionalidades
 # (`features`, label `func:<slug>`). Ninguém inventa funcionalidade: o que não
-# couber sai com func nula e uma sugestão, e o dono decide.
+# couber sai com func nula e uma sugestão, e o dono decide. Caminho que cabe em
+# mais de uma funcionalidade fica com a de caminho mais específico.
 # Lida pelos agentes em
 # repos/gabrielh-silvestre/hexlog/contents/.github/discovery-taxonomy.yml?ref=develop.
 
@@ -41,6 +42,7 @@ features:
       - src/domain/inheritance.ts
       - src/domain/schema-walk.ts
       - src/domain/formats.ts
+      - src/shared/latest.ts
       - src/commands/definition.ts
       - src/adapters/validator.ts
   - slug: register
@@ -65,6 +67,8 @@ features:
       - src/compose.ts
       - src/ports.ts
       - src/errors.ts
+      - src/shared/logger.ts
+      - src/version.ts
   - slug: installer
     description: Bundle build, installer, Claude Code settings wiring and 0.x data archiving.
     paths:
@@ -86,6 +90,8 @@ features:
       - scripts/export.ts
       - scripts/timeline.ts
       - scripts/seat-report.ts
+      - scripts/cli-error.ts
+      - scripts/escape-controls.ts
   - slug: skills-product
     description: Skills shipped with the product (hexlog, hexlog-setup, hexlog-flow).
     paths:
@@ -95,6 +101,8 @@ features:
     paths:
       - scripts/flow/
       - .claude/hooks/
+      - .claude/settings.json
+      - .claude/rules/
       - .claude/skills/flow-run/
       - .claude/skills/flow-gaps/
       - .claude/skills/flow-audit/
