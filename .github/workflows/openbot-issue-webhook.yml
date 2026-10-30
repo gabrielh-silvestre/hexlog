@@ -1,0 +1,96 @@
+name: openbot-issue-webhook
+
+# Avisa a routine W1 do OpenBot (discovery) a cada issue aberta. Reenvio usa o
+# mesmo delivery id (issue-N-opened), então o OpenBot não processa duas vezes;
+# com o OpenBot fora do ar o job termina com aviso e a routine W2 recupera a issue.
+
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  notify:
+    # Ignora o que o próprio fluxo cria (guarda-chuvas) para não gerar laço.
+    if: ${{ github.event.sender.login != 'openbotgit' && github.event.sender.login != 'openbotgit[bot]' && !contains(github.event.issue.labels.*.name, 'umbrella') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send the new issue to OpenBot
+        env:
+          OPENBOT_WEBHOOK_URL: ${{ secrets.OPENBOT_WEBHOOK_URL }}
+          OPENBOT_WEBHOOK_SECRET: ${{ secrets.OPENBOT_WEBHOOK_SECRET }}
+        run: |
+          node - <<'EOF'
+          const fs = require("node:fs");
+          const crypto = require("node:crypto");
+
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+          const issue = event.issue;
+          const MAX_BYTES = 60000;
+
+          function buildBody(bodyLength) {
+            return JSON.stringify({
+              type: "issues.opened",
+              occurredAt: issue.created_at,
+              data: {
+                repo: process.env.GITHUB_REPOSITORY,
+                issue: {
+                  number: issue.number,
+                  title: issue.title,
+                  body: (issue.body ?? "").slice(0, bodyLength),
+                  labels: issue.labels.map((l) => l.name),
+                  author: issue.user.login,
+                  url: issue.html_url,
+                  createdAt: issue.created_at,
+                },
+              },
+            });
+          }
+
+          let length = 20000;
+          let body = buildBody(length);
+          while (Buffer.byteLength(body, "utf8") > MAX_BYTES && length > 0) {
+            length = Math.floor(length / 2);
+            body = buildBody(length);
+          }
+
+          const deliveryId = `issue-${issue.number}-opened`;
+          const delays = [0, 5000, 15000];
+
+          (async () => {
+            for (let attempt = 0; attempt < delays.length; attempt++) {
+              if (delays[attempt] > 0) await new Promise((r) => setTimeout(r, delays[attempt]));
+              const timestamp = String(Math.floor(Date.now() / 1000));
+              const signature = crypto
+                .createHmac("sha256", process.env.OPENBOT_WEBHOOK_SECRET)
+                .update(`${timestamp}.${deliveryId}.${body}`)
+                .digest("hex");
+              try {
+                const response = await fetch(process.env.OPENBOT_WEBHOOK_URL, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-OpenBot-Timestamp": timestamp,
+                    "X-OpenBot-Delivery-Id": deliveryId,
+                    "X-OpenBot-Signature": `sha256=${signature}`,
+                  },
+                  body,
+                });
+                if (response.status === 200 || response.status === 202) {
+                  console.log(`OpenBot accepted issue #${issue.number} (${response.status}).`);
+                  return;
+                }
+                if (response.status !== 429 && response.status !== 503) {
+                  console.error(`OpenBot rejected issue #${issue.number}: HTTP ${response.status}.`);
+                  process.exit(1);
+                }
+                console.log(`HTTP ${response.status}; retrying.`);
+              } catch (error) {
+                console.log(`Network failure (${error.message}); retrying.`);
+              }
+            }
+            console.log(`::warning::OpenBot unavailable for issue #${issue.number}. The scheduled run will pick it up.`);
+          })();
+          EOF
