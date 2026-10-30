@@ -1,0 +1,189 @@
+# Taxonomia fechada do fluxo de discovery do OpenBot: o Triador classifica cada
+# issue só com estas frentes (`fronts`, label `frente:<slug>`) e funcionalidades
+# (`features`, label `func:<slug>`). Ninguém inventa funcionalidade: o que não
+# couber sai com func nula e uma sugestão, e o dono decide. Caminho que cabe em
+# mais de uma funcionalidade fica com a de caminho mais específico.
+# Lida pelos agentes em
+# repos/gabrielh-silvestre/hexlog/contents/.github/discovery-taxonomy.yml?ref=develop.
+
+fronts:
+  - slug: feature
+    description: New user-visible capability.
+    commit_types: [feat]
+  - slug: bug
+    description: Wrong behavior that already shipped.
+    commit_types: [fix]
+  - slug: refactor
+    description: Internal restructuring with no behavior change.
+    commit_types: [refactor, perf]
+  - slug: docs
+    description: Documentation only.
+    commit_types: [docs]
+  - slug: test
+    description: Tests only.
+    commit_types: [test]
+  - slug: chore
+    description: Maintenance, CI, build and repository configuration.
+    commit_types: [chore, ci, build, style, revert]
+
+features:
+  - slug: log-store
+    description: Append-only JSONL log, hash chain, lock, atomic writes and attachment storage.
+    paths:
+      - src/adapters/fs/
+      - src/domain/chain.ts
+      - src/shared/loader.ts
+  - slug: rules
+    description: Definitions (types, relations, gates), schema validation, gate evaluation and lineage inheritance.
+    paths:
+      - src/domain/definitions.ts
+      - src/domain/relations.ts
+      - src/domain/gate.ts
+      - src/domain/inheritance.ts
+      - src/domain/schema-walk.ts
+      - src/domain/formats.ts
+      - src/shared/latest.ts
+      - src/commands/definition.ts
+      - src/adapters/validator.ts
+  - slug: register
+    description: The register, attach and create_process commands and the record model.
+    paths:
+      - src/commands/register/
+      - src/commands/attachment.ts
+      - src/commands/process.ts
+      - src/domain/record.ts
+      - src/domain/ids.ts
+  - slug: query
+    description: Read side (query, list, describe_type, read_attachment), cursors, pagination and text search.
+    paths:
+      - src/queries/
+      - src/adapters/search.ts
+      - src/shared/pages.ts
+  - slug: mcp-contract
+    description: The MCP server, the fixed tool set, input schemas and structured error codes.
+    paths:
+      - src/mcp/
+      - src/server.ts
+      - src/compose.ts
+      - src/ports.ts
+      - src/errors.ts
+      - src/shared/logger.ts
+      - src/version.ts
+  - slug: installer
+    description: Bundle build, installer, Claude Code settings wiring and 0.x data archiving.
+    paths:
+      - scripts/install.ts
+      - scripts/build.ts
+      - src/installation.ts
+      - src/archive.ts
+      - src/guard.ts
+      - src/directory.ts
+      - src/domain/manifest.ts
+  - slug: bash-guard
+    description: PreToolUse hook that blocks Bash access to the data directory.
+    paths:
+      - hook/
+  - slug: reports
+    description: Read-only report scripts (insights, export, timeline, seat report).
+    paths:
+      - scripts/insights.ts
+      - scripts/export.ts
+      - scripts/timeline.ts
+      - scripts/seat-report.ts
+      - scripts/cli-error.ts
+      - scripts/escape-controls.ts
+  - slug: skills-product
+    description: Skills shipped with the product (hexlog, hexlog-setup, hexlog-flow).
+    paths:
+      - skills/
+  - slug: flow
+    description: This repository's directive-driven development flow (flow-run, flow-gaps, flow-audit, sync, mark, gate, report, reanchor, PR hooks).
+    paths:
+      - scripts/flow/
+      - .claude/hooks/
+      - .claude/settings.json
+      - .claude/rules/
+      - .claude/skills/flow-run/
+      - .claude/skills/flow-gaps/
+      - .claude/skills/flow-audit/
+      - .hexlog/
+      - docs/directives/fluxo-hexlog.md
+  - slug: owner-seat
+    description: The owner-seat critic, its action catalog and its runner.
+    paths:
+      - scripts/flow/critic.ts
+      - scripts/flow/critic-catalog.ts
+      - scripts/flow/critic-run.ts
+      - scripts/flow/critic-tools.ts
+      - .claude/skills/flow-owner-seat/
+      - docs/directives/cadeira-do-dono.md
+  - slug: friction-mining
+    description: Mining of session friction into issues.
+    paths:
+      - .claude/skills/friction-mining/
+      - .claude/workflows/
+  - slug: tooling
+    description: Lint, types, formatting, git hooks, CI workflows, Dependabot and release automation.
+    paths:
+      - package.json
+      - tsconfig.json
+      - eslint.config.js
+      - eslint.boundaries.js
+      - knip.json
+      - stryker.config.json
+      - lint-staged.config.ts
+      - commitlint.config.js
+      - cspell.json
+      - .markdownlint-cli2.jsonc
+      - cliff.toml
+      - .husky/
+      - .github/
+      - scripts/release-notes.ts
+      - scripts/release-notes-cli.ts
+  - slug: test-suite
+    description: Test infrastructure, helpers, fixtures and suite-wide test changes.
+    paths:
+      - test/
+  - slug: docs-repo
+    description: Repository documentation (README, CHANGELOG, AGENTS.md, glossaries, guides, ADRs).
+    paths:
+      - docs/
+      - README.md
+      - CHANGELOG.md
+      - AGENTS.md
+      - CONTEXT.md
+      - CONTEXT-MAP.md
+      - SECURITY.md
+  - slug: codebase-wide
+    description: Sweeps by layer that cross several features, such as issues 273 to 279.
+    paths: []
+
+# Label antiga -> label nova; null = label que o script de labels apaga.
+legacy_labels:
+  bug: frente:bug
+  enhancement: frente:feature
+  refactor: frente:refactor
+  docs: frente:docs
+  tests: frente:test
+  critic: func:owner-seat
+  polish: origem:review-minima
+  mining: origem:mining
+  origin:work: origem:work
+  core: null
+  cycle:maintenance: null
+  documentation: null
+  accessibility: null
+  good first issue: null
+  help wanted: null
+  question: null
+
+# Labels de processo: fora da taxonomia, mantidas como estão.
+process_labels:
+  - origem:review-minima
+  - origem:mining
+  - origem:work
+  - confidence:high
+  - confidence:medium
+  - confidence:low
+  - umbrella
+  - discovery:done

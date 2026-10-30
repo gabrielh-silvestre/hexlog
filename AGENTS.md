@@ -32,6 +32,8 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `.github/workflows/dependabot-auto-merge.yml` | Job `dependabot-auto-merge` em PR do `dependabot[bot]`: liga o auto-merge nos PRs de `npm` minor e patch; regra em `docs/directives/qualidade-e-testes.md`, pré-condição e risco aceito no cabeçalho do workflow |
 | `.github/workflows/scorecard.yml` | Job `scorecard` do OpenSSF Scorecard, medidor e não gate, com SARIF na aba Security; limitações no cabeçalho do workflow |
 | `.github/workflows/release.yml` | Job `release` no `push` em `main`: cria a tag `vX.Y.Z`, o GitHub Release e o PR de back-merge para `develop`; fluxo em `docs/directives/documentacao.md`, o resto no workflow |
+| `.github/workflows/openbot-issue-webhook.yml` | Job `notify` em issue aberta: manda a issue, assinada por `HMAC-SHA256`, ao webhook da routine W1 do OpenBot (segredos `OPENBOT_WEBHOOK_URL` e `OPENBOT_WEBHOOK_SECRET`); pula issue com `umbrella` e evento do `openbotgit` |
+| `.github/discovery-taxonomy.yml` | Taxonomia fechada do discovery do OpenBot: frentes (`frente:*`), funcionalidades com caminhos (`func:*`), mapa das labels antigas e labels de processo; os agentes a leem na `develop` |
 | `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`, version updates semanais em `develop`; regra em `docs/directives/qualidade-e-testes.md`, security updates e `ignore` no cabeçalho do arquivo |
 | `.github/pull_request_template.md` | Template de PR só com os vínculos: `Closes #N`, linha do `CHANGELOG.md` em `[Não lançado]`, PR relacionado, versão ou tag |
 | `SECURITY.md` | Política de segurança: só a versão mais recente recebe correção; o relato é privado, pelo formulário de reporte privado do GitHub (aba Security) |
