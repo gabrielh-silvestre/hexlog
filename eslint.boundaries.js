@@ -29,11 +29,27 @@ const COMPOSE_ONLY_ROOT = {
   message: 'Só server.ts, scripts e testes importam compose.ts.',
 };
 
+// O padrão `@opentelemetry/*` já cobre subcaminhos, mas `/**` torna a intenção explícita.
+const OTEL_ONLY_TELEMETRY = {
+  group: ['@opentelemetry/*', '@opentelemetry/*/**'],
+  message: 'Só adapters/telemetry conhece o SDK do OpenTelemetry.',
+};
+
+// A telemetria vale só para mcp/ e adapters/ (capabilities-scope): os três tipos saem das camadas
+// de serviço e do núcleo.
+const TELEMETRY_PORTS_ONLY_MCP_ADAPTERS = {
+  group: ['**/ports.ts'],
+  importNames: ['Telemetry', 'CallProbe', 'LoadReport'],
+  message: 'Só mcp/ e adapters/ conhecem os tipos de telemetria de ports.ts.',
+};
+
 const FORBIDDEN_GROUPS = [
   INFRA_SUBPATHS,
   { group: ['@modelcontextprotocol/*'], message: 'Só mcp/ conhece o SDK do MCP.' },
   { group: ['**/adapters/**'], message: 'Esta camada depende de portas, nunca de adapters.' },
   COMPOSE_ONLY_ROOT,
+  OTEL_ONLY_TELEMETRY,
+  TELEMETRY_PORTS_ONLY_MCP_ADAPTERS,
 ];
 
 // `no-restricted-imports` não enxerga `import('...')`, então o import dinâmico é barrado por sintaxe.
@@ -89,6 +105,18 @@ const mcpBlock = (files, extraGroups = []) => ({
         patterns: [
           { group: ['**/adapters/**'], message: 'mcp chama serviços, nunca adapters.' },
           COMPOSE_ONLY_ROOT,
+          OTEL_ONLY_TELEMETRY,
+          // Lista fechada de capacidades (capabilities-contract): de shared/ só o logger; de
+          // ports.ts só os tipos de telemetria usados pelo kernel.
+          {
+            group: ['**/shared/**', '!**/shared/logger.ts'],
+            message: 'mcp só importa shared/logger.ts.',
+          },
+          {
+            group: ['**/ports.ts'],
+            allowImportNames: ['Telemetry', 'CallProbe'],
+            message: 'mcp só importa de ports.ts os tipos Telemetry e CallProbe.',
+          },
           ...extraGroups,
         ],
       },
@@ -99,18 +127,31 @@ const mcpBlock = (files, extraGroups = []) => ({
 
 // adapters implementam portas: nunca importam a camada de serviços nem a MCP. Sem as travas de
 // builtin, de infra e de SDK das outras camadas: é aqui que o I/O mora.
+const ADAPTER_LAYER_PATTERNS = ['commands', 'queries', 'mcp'].map((layer) => ({
+  group: [`**/${layer}/**`],
+  message: `adapters implementam portas, nunca importam ${layer}.`,
+}));
+
+// Só adapters/telemetry importa o SDK do OpenTelemetry: o bloco dele repete os padrões de camada
+// sem o SDK. O adaptersBlock o exclui por `ignores`, em vez de um bloco `src/**` posterior que
+// descartaria a trava (o último bloco que casa vence).
+const TELEMETRY_FILES = ['src/adapters/telemetry/**'];
+
 const adaptersBlock = {
   files: ['src/adapters/**/*.ts'],
+  ignores: TELEMETRY_FILES,
   rules: {
     'no-restricted-imports': [
       'error',
-      {
-        patterns: ['commands', 'queries', 'mcp'].map((layer) => ({
-          group: [`**/${layer}/**`],
-          message: `adapters implementam portas, nunca importam ${layer}.`,
-        })),
-      },
+      { patterns: [...ADAPTER_LAYER_PATTERNS, OTEL_ONLY_TELEMETRY] },
     ],
+  },
+};
+
+const telemetryBlock = {
+  files: TELEMETRY_FILES,
+  rules: {
+    'no-restricted-imports': ['error', { patterns: ADAPTER_LAYER_PATTERNS }],
   },
 };
 
@@ -162,6 +203,7 @@ export const boundaryBlocks = [
     extraRules: MAX_LINES,
   }),
   adaptersBlock,
+  telemetryBlock,
   mcpBlock(['src/mcp/**/*.ts']),
   mcpBlock(
     ['src/mcp/kernel.ts'],

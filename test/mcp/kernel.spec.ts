@@ -1,7 +1,9 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { noopTelemetry } from '../../src/adapters/telemetry/noop.ts';
 import { HexlogError } from '../../src/errors.ts';
+import type { CallProbe, Telemetry } from '../../src/ports.ts';
 import { PAGE_CHARS_CAP } from '../../src/queries/query-service.ts';
 import {
   advertise,
@@ -15,7 +17,11 @@ import { errorBodyOf, nest } from './environment.ts';
 
 const Input = z.strictObject({ project: z.string().min(1), count: z.number().int() });
 
-function makeDeps({ isLegacy = false, throwingLogger = false } = {}) {
+function makeDeps({
+  isLegacy = false,
+  throwingLogger = false,
+  telemetry = noopTelemetry,
+}: { isLegacy?: boolean; throwingLogger?: boolean; telemetry?: Telemetry } = {}) {
   const logger = jest.fn<ToolDeps['logger']>();
   if (throwingLogger) {
     logger.mockImplementation(() => {
@@ -26,9 +32,29 @@ function makeDeps({ isLegacy = false, throwingLogger = false } = {}) {
     services: {} as ToolDeps['services'],
     isLegacy: () => isLegacy,
     logger,
+    telemetry,
   };
   return { deps, logger };
 }
+
+/** Telemetria falsa e ligada: `trace` chama `run` com uma sonda que guarda cada `end`. */
+function fakeTelemetry(overrides: Partial<Telemetry> = {}) {
+  const ends: Parameters<CallProbe['end']>[0][] = [];
+  const probe: CallProbe = { end: (outcome) => void ends.push(outcome) };
+  const telemetry: Telemetry = {
+    enabled: true,
+    trace: (_tool, run) => run(probe),
+    recordLoad: () => undefined,
+    degraded: () => undefined,
+    shutdown: () => Promise.resolve(),
+    ...overrides,
+  };
+  return { telemetry, probe, ends };
+}
+
+/** Os registros de log de um evento. */
+const eventsOf = (logger: jest.Mock<ToolDeps['logger']>, event: string) =>
+  logger.mock.calls.map(([record]) => record).filter((record) => record.event === event);
 
 const ctxOf = (envelope?: Record<string, unknown>): CallContext => ({ mcpReq: { envelope } });
 
@@ -354,6 +380,239 @@ describe('execute', () => {
       const result = await clientOf(ctx);
 
       expect(result).toMatchObject({ structuredContent: { client: 'unknown' } });
+    });
+  });
+
+  describe('with a telemetry that misbehaves', () => {
+    const OVER_CAP = 2 * PAGE_CHARS_CAP;
+    const never = () => new Promise<never>(() => undefined);
+
+    // Cada linha: como o `trace` falha e quantas vezes a sonda deve receber `end`.
+    it.each([
+      {
+        scenario: 'rejects after calling run and before it resolves',
+        ends: 1,
+        trace: (probe: CallProbe): Telemetry['trace'] => {
+          return (_tool, run) => {
+            void run(probe);
+            return Promise.reject(new Error('exporter down'));
+          };
+        },
+      },
+      {
+        scenario: 'calls run twice',
+        ends: 1,
+        trace: (probe: CallProbe): Telemetry['trace'] => {
+          return async (_tool, run) => {
+            const [first] = await Promise.all([run(probe), run(probe)]);
+            return first;
+          };
+        },
+      },
+      {
+        scenario: 'throws before the callback',
+        ends: 0,
+        trace: (): Telemetry['trace'] => () => {
+          throw new Error('sdk broke');
+        },
+      },
+      { scenario: 'never resolves and never calls run', ends: 0, trace: () => never },
+      {
+        scenario: 'never resolves after calling run',
+        ends: 1,
+        trace: (probe: CallProbe): Telemetry['trace'] => {
+          return (_tool, run) => {
+            void run(probe);
+            return never();
+          };
+        },
+      },
+    ])(
+      'should run the call once, log it once and answer without waiting when trace $scenario',
+      async ({ trace, ends }) => {
+        const fake = fakeTelemetry();
+        const { deps, logger } = makeDeps({
+          telemetry: { ...fake.telemetry, trace: trace(fake.probe) },
+        });
+        const run = jest.fn(() => ({ t: 'x'.repeat(OVER_CAP) }));
+        const startedAt = Date.now();
+
+        const result = await execute(deps, validCall(), run);
+
+        expect(Date.now() - startedAt).toBeLessThan(250);
+        expect(result).toMatchObject({ structuredContent: { t: 'x'.repeat(OVER_CAP) } });
+        expect(run).toHaveBeenCalledTimes(1);
+        expect(eventsOf(logger, 'tool')).toHaveLength(1);
+        expect(eventsOf(logger, 'tool-over-cap')).toHaveLength(1);
+        expect(fake.ends).toHaveLength(ends);
+      },
+    );
+
+    it('should keep the result and the tool record when degraded throws', async () => {
+      const fake = fakeTelemetry({
+        degraded: () => {
+          throw new Error('state broke');
+        },
+      });
+      const { deps, logger } = makeDeps({ telemetry: fake.telemetry });
+
+      const result = await execute(deps, validCall(), () => ({ ok: true }));
+
+      expect(result).toMatchObject({ structuredContent: { ok: true } });
+      expect(eventsOf(logger, 'tool')).toHaveLength(1);
+      expect(eventsOf(logger, 'telemetry-degraded')).toHaveLength(0);
+    });
+
+    it('should still emit the degraded warning and the tool record when probe.end throws', async () => {
+      const fake = fakeTelemetry({ degraded: () => 'probe' });
+      fake.probe.end = () => {
+        throw new Error('span broke');
+      };
+      const { deps, logger } = makeDeps({ telemetry: fake.telemetry });
+
+      const result = await execute(deps, validCall(), () => ({ ok: true }));
+
+      expect(result).toMatchObject({ structuredContent: { ok: true } });
+      expect(eventsOf(logger, 'tool')).toHaveLength(1);
+      expect(eventsOf(logger, 'telemetry-degraded')).toHaveLength(1);
+    });
+  });
+
+  describe('with a call probe', () => {
+    it('should name the tool in trace', async () => {
+      const fake = fakeTelemetry();
+      const trace = jest.spyOn(fake.telemetry, 'trace');
+      const { deps } = makeDeps({ telemetry: fake.telemetry });
+
+      await execute(deps, validCall(), () => ({}));
+
+      expect(trace).toHaveBeenCalledWith('demo', expect.any(Function));
+    });
+
+    it('should end the probe once with ms and no code on success', async () => {
+      const fake = fakeTelemetry();
+      const { deps } = makeDeps({ telemetry: fake.telemetry });
+
+      await execute(deps, validCall(), () => ({}));
+
+      expect(fake.ends).toEqual([{ ms: expect.any(Number), detailCodes: [] }]);
+    });
+
+    it.each([
+      {
+        scenario: 'a reserved key',
+        args: JSON.parse('{"project":"p","count":1,"deep":{"__proto__":1}}') as unknown,
+        run: () => ({}),
+        outcome: { code: 'INVALID_INPUT', detailCodes: ['reserved-key'] },
+      },
+      {
+        scenario: 'input outside the schema',
+        args: { project: '', count: 'x' },
+        run: () => ({}),
+        outcome: { code: 'INVALID_INPUT', detailCodes: ['too_small', 'invalid_type'] },
+      },
+      {
+        scenario: 'a domain error with repeated detail codes',
+        args: { project: 'p', count: 1 },
+        run: () => {
+          throw new HexlogError('PROJECT_NOT_FOUND', 'project not found', [
+            { path: '/a', code: 'unknown-name', message: 'a' },
+            { path: '/b', code: 'unknown-name', message: 'b' },
+            { path: '/c', code: 'other', message: 'c' },
+          ]);
+        },
+        outcome: { code: 'PROJECT_NOT_FOUND', detailCodes: ['unknown-name', 'other'] },
+      },
+      {
+        scenario: 'an unexpected exception',
+        args: { project: 'p', count: 1 },
+        run: () => Promise.reject(new TypeError('boom')),
+        outcome: { code: 'INTERNAL', detailCodes: [] },
+      },
+    ])('should end the probe once with the code and the detail codes for $scenario', async (c) => {
+      const fake = fakeTelemetry();
+      const { deps } = makeDeps({ telemetry: fake.telemetry });
+
+      await execute(deps, callOf(c.args), c.run);
+
+      expect(fake.ends).toEqual([{ ms: expect.any(Number), ...c.outcome }]);
+    });
+
+    it('should end the probe with LEGACY_DATA when the data is 0.x', async () => {
+      const fake = fakeTelemetry();
+      const { deps } = makeDeps({ isLegacy: true, telemetry: fake.telemetry });
+
+      await execute(deps, validCall(), () => ({}));
+
+      expect(fake.ends).toEqual([
+        { ms: expect.any(Number), code: 'LEGACY_DATA', detailCodes: ['run'] },
+      ]);
+    });
+  });
+
+  describe('with a degraded telemetry', () => {
+    it.each(['probe', 'export'] as const)(
+      'should warn once per call with reason %s',
+      async (reason) => {
+        const fake = fakeTelemetry({ degraded: () => reason });
+        const { deps, logger } = makeDeps({ telemetry: fake.telemetry });
+
+        await execute(deps, validCall(), () => ({}));
+        await execute(deps, validCall(), () => ({}));
+
+        expect(eventsOf(logger, 'telemetry-degraded')).toEqual([
+          { level: 'warn', event: 'telemetry-degraded', reason },
+          { level: 'warn', event: 'telemetry-degraded', reason },
+        ]);
+      },
+    );
+
+    it('should not warn when the telemetry is healthy', async () => {
+      const fake = fakeTelemetry();
+      const { deps, logger } = makeDeps({ telemetry: fake.telemetry });
+
+      await execute(deps, validCall(), () => ({}));
+
+      expect(eventsOf(logger, 'telemetry-degraded')).toEqual([]);
+    });
+  });
+
+  describe('with sentinels in project and process', () => {
+    const PrivateInput = z.strictObject({ project: z.string(), process: z.string() });
+    const privateCall = (args: unknown) => ({
+      name: 'demo',
+      schema: PrivateInput,
+      args,
+      ctx: ctxOf(),
+    });
+    const SECRETS = ['secret-project', 'secret-process'];
+    const REFUSAL = 'must not use the key __proto__';
+
+    it('should keep them and the error messages out of the log and out of the probe', async () => {
+      const fake = fakeTelemetry({ degraded: () => 'export' });
+      const { deps, logger } = makeDeps({ telemetry: fake.telemetry });
+      const args = { project: SECRETS[0], process: SECRETS[1] };
+      const hostile: unknown = JSON.parse(
+        `{"project":"${SECRETS[0]}","process":"${SECRETS[1]}","x":{"__proto__":1}}`,
+      );
+
+      await execute(deps, privateCall(args), () => ({ t: 'x'.repeat(2 * PAGE_CHARS_CAP) }));
+      await execute(deps, privateCall(hostile), () => ({}));
+      await execute(deps, privateCall(args), () => {
+        throw new HexlogError('PROCESS_TOO_LARGE', `process ${SECRETS[1]} is too large`, [
+          { path: '/process', code: 'too-large', message: `${SECRETS[0]} ${SECRETS[1]}` },
+        ]);
+      });
+
+      const surfaces = JSON.stringify([logger.mock.calls, fake.ends]);
+
+      expect(surfaces).not.toContain(SECRETS[0]);
+      expect(surfaces).not.toContain(SECRETS[1]);
+      expect(surfaces).not.toContain(REFUSAL);
+      expect(new Set(logger.mock.calls.map(([record]) => record.event))).toEqual(
+        new Set(['tool', 'tool-over-cap', 'telemetry-degraded']),
+      );
+      expect(fake.ends).toHaveLength(3);
     });
   });
 });

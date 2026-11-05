@@ -11,9 +11,14 @@ import * as path from 'node:path';
  * partir de uma worktree vinculada as exporta, e os specs que rodam `git` num repositório temporário
  * passariam a operar no repositório real. Aqui, e não no `.husky/`, porque o lint-staged precisa do
  * `GIT_INDEX_FILE` do commit parcial; os workers herdam o ambiente já limpo.
+ *
+ * Apaga também `HEXLOG_OTEL_ENDPOINT` e `HEXLOG_OTEL_HEADERS`, que ligariam a telemetria em todo
+ * servidor que os specs sobem: o caso de telemetria passa a chave ao filho.
  */
 export default function setup(): void {
   process.env.TMPDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hexlog-suite-'));
   const names = spawnSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' });
   for (const name of (names.stdout ?? '').split('\n')) delete process.env[name];
+  delete process.env.HEXLOG_OTEL_ENDPOINT;
+  delete process.env.HEXLOG_OTEL_HEADERS;
 }

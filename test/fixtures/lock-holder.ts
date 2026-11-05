@@ -1,4 +1,4 @@
-// Processo filho do lock por pid e do `register` concorrente, com cinco modos.
+// Processo filho do lock por pid e do `register` concorrente, com seis modos.
 // Uso: `lock-holder.ts <modo> <json>`, com um único argumento JSON por modo (formato em
 // `fixture-args.ts#LockHolderArgs`):
 //  - `rounds`: espera os `total` irmãos na barreira e faz `rounds` rodadas de adquirir, criar
@@ -12,6 +12,9 @@
 //  - `write-gated`: grava 1 elo pelo `ProcessStore`; com o lock na mão e o lote montado, imprime
 //    `{ pid }` e espera (bloqueado, sem devolver ao laço de eventos) até `goFile` existir. O pai
 //    pausa o filho nesse ponto com SIGSTOP e depois o libera.
+//  - `write-exit`: grava 1 elo pelo `ProcessStore` real e sai (`process.exit()`, status 0) ao liberar
+//    o lock, com a linha já em disco: deixa o lock órfão, como um encerramento que corta um
+//    `register` entre a escrita e a liberação. Imprime `{ pid }` antes de sair.
 //  - `register`: espera os `total` irmãos na barreira e faz um `register` pelo `compose` real com
 //    `input` (`{ key?, records }`). Imprime uma linha com o registro de log `lock-wait` quando espera
 //    o lock de outro dono e, por último, `{ ok: true, replayed }` ou, se o domínio recusar,
@@ -30,7 +33,9 @@ import type { LockHolderArgs } from './fixture-args.ts';
 
 const [, , mode, argsJson] = process.argv;
 if (mode === undefined || argsJson === undefined) {
-  throw new Error('usage: lock-holder.ts <rounds|hold|write|write-gated|register> <json>');
+  throw new Error(
+    'usage: lock-holder.ts <rounds|hold|write|write-gated|write-exit|register> <json>',
+  );
 }
 
 // IMPORTANT: o orçamento padrão do lock (15 s) e a barreira abaixo (10 s) usam relógio real. Com
@@ -152,6 +157,29 @@ async function runGatedWrite({
   });
 }
 
+async function runExitBeforeRelease({
+  dataDir,
+  project,
+  process: processName,
+}: LockHolderArgs['write-exit']) {
+  const ref: ProcessRef = { project, process: processName };
+  const store = createProcessStore({ dataDir, log: () => undefined });
+  const realRename = fs.renameSync;
+  // só a liberação move o lock para `.released-`; aquisição e roubo usam outros destinos
+  fs.renameSync = (from, to) => {
+    if (String(to).includes('.released-')) {
+      process.stdout.write(`${JSON.stringify({ pid: process.pid })}\n`);
+      // eslint-disable-next-line n/no-process-exit -- o caso reproduz o `proc.exit()` do encerramento que deixa o lock órfão
+      process.exit();
+    }
+    realRename(from, to);
+  };
+  await store.write(ref, (raw) => ({
+    line: singleLinkLine(raw, `exit-${process.pid}`),
+    result: undefined,
+  }));
+}
+
 async function runRegister({
   dataDir,
   project,
@@ -197,6 +225,9 @@ switch (mode) {
     break;
   case 'write-gated':
     await runGatedWrite(args as LockHolderArgs['write-gated']);
+    break;
+  case 'write-exit':
+    await runExitBeforeRelease(args as LockHolderArgs['write-exit']);
     break;
   case 'register':
     await runRegister(args as LockHolderArgs['register']);

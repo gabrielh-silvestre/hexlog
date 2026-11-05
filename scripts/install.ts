@@ -17,7 +17,14 @@ import { detectLegacy } from '../src/adapters/fs/data-format.ts';
 import { readIfPresent } from '../src/adapters/fs/io.ts';
 import { archiveLegacy, inspectLegacy } from '../src/archive.ts';
 import { dataDir } from '../src/directory.ts';
-import { expectedRules, libDirOf, mcpRegistered, runRealHook } from '../src/guard.ts';
+import {
+  expectedRules,
+  libDirOf,
+  mcpAddArgs,
+  mcpEnvOf,
+  mcpRegistered,
+  runRealHook,
+} from '../src/guard.ts';
 import {
   installArtifact,
   registerGuard,
@@ -90,22 +97,27 @@ async function countTools(serverFile: string): Promise<number> {
 }
 
 /** `claude mcp remove`+`add`; substituível por `HEXLOG_REGISTER_MCP=<script>` nos testes (sem depender do binário `claude`). */
-function registerMcp(execPath: string, serverFile: string): void {
+function registerMcp(execPath: string, serverFile: string, env: Record<string, string>): void {
   const testScript = process.env.HEXLOG_REGISTER_MCP;
-  if (testScript) {
-    execFileSync(process.execPath, [testScript, execPath, serverFile], {
-      stdio: 'inherit',
-    });
-    return;
-  }
   try {
-    execFileSync('claude', ['mcp', 'remove', 'hexlog', '-s', 'user'], { stdio: 'ignore' });
-  } catch {
-    // Sem entrada prévia: nada a remover, segue direto pro add.
+    if (testScript) {
+      execFileSync(process.execPath, [testScript, execPath, serverFile, JSON.stringify(env)], {
+        stdio: 'inherit',
+      });
+      return;
+    }
+    try {
+      execFileSync('claude', ['mcp', 'remove', 'hexlog', '-s', 'user'], { stdio: 'ignore' });
+    } catch {
+      // Sem entrada prévia: nada a remover, segue direto pro add.
+    }
+    execFileSync('claude', mcpAddArgs(execPath, serverFile, env), { stdio: 'inherit' });
+  } catch (error) {
+    // A `message` do `execFileSync` traz o argv inteiro, com o valor dos headers OTLP: não a repassa.
+    const status = (error as { status?: number | null }).status;
+    // eslint-disable-next-line preserve-caught-error -- o erro original carrega o argv com o segredo
+    throw new Error(`claude mcp add failed (exit ${status ?? 'unknown'})`);
   }
-  execFileSync('claude', ['mcp', 'add', '--scope', 'user', 'hexlog', '--', execPath, serverFile], {
-    stdio: 'inherit',
-  });
 }
 
 async function install(D: string): Promise<void> {
@@ -134,8 +146,10 @@ async function install(D: string): Promise<void> {
   const { changed, removed } = registerGuard({ settingsPath, expected });
 
   const claudeJsonText = readIfPresent(path.join(home, '.claude.json')) ?? null;
-  if (!mcpRegistered(claudeJsonText, expected)) {
-    registerMcp(process.execPath, expected.serverFile);
+  const mcpEnv = mcpEnvOf(claudeJsonText);
+  const mcpReregistered = !mcpRegistered(claudeJsonText, expected);
+  if (mcpReregistered) {
+    registerMcp(process.execPath, expected.serverFile, mcpEnv);
   }
 
   const summary =
@@ -146,6 +160,10 @@ async function install(D: string): Promise<void> {
   console.log(`  settings.json: ${changed ? 'updated' : 'already correct'}`);
   for (const rule of removed) console.log(`  removed deny rule: ${rule}`);
   for (const warning of result.warnings) console.log(`  warning: ${warning}`);
+  // Só os nomes: o valor do `env` pode ser credencial.
+  if (mcpReregistered && Object.keys(mcpEnv).length > 0) {
+    console.log(`  mcp env preserved: ${Object.keys(mcpEnv).join(', ')}`);
+  }
 }
 
 async function check(D: string): Promise<void> {

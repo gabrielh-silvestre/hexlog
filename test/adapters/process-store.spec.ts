@@ -14,7 +14,7 @@ import { createProcessStore, MAX_LOG_BYTES } from '../../src/adapters/fs/process
 import { anchor } from '../../src/domain/chain.ts';
 import { HexlogError } from '../../src/errors.ts';
 import type { Manifest } from '../../src/domain/manifest.ts';
-import type { ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
+import type { LoadReport, ProcessRef, ProcessStore, RawProcess } from '../../src/ports.ts';
 import { parseLog, verifyProcess } from '../../src/shared/loader.ts';
 import { chainLine, emptyManifest } from '../fixtures/chain-line.ts';
 import type { CrashWriterArgs } from '../fixtures/fixture-args.ts';
@@ -30,7 +30,7 @@ import {
 } from '../helpers.ts';
 import { spyOnOpen } from './fs-spies.ts';
 import { countFsyncs, countFsyncsOf, spyOnFsync } from './fsync-spy.ts';
-import { killChildren, liveForeignPid, trackChild } from './lock-helpers.ts';
+import { killChildren, liveForeignPid, runFixture, trackChild } from './lock-helpers.ts';
 
 const CRASH_WRITER = path.join(__dirname, '..', 'fixtures', 'crash-writer.ts');
 const BOOT = 'boot-a';
@@ -1052,6 +1052,29 @@ describe('createProcessStore', () => {
     });
   });
 
+  describe('when the writer exits after the line is on disk and before the lock is released', () => {
+    afterAll(killChildren);
+
+    it('should recover from a writer that exited before releasing the lock', async () => {
+      const { dataDir, store, ref, records, lockDir } = setup();
+      const { status, stdout } = await runFixture('write-exit', {
+        dataDir,
+        project: ref.project,
+        process: ref.process,
+      });
+      const { pid } = JSON.parse(stdout) as { pid: number };
+
+      expect(status).toBe(0);
+      expect(fs.existsSync(lockDir)).toBe(true);
+      expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 1 });
+
+      await append(store, ref, 1);
+
+      expect(records).toContainEqual({ level: 'warn', event: 'lock-orphan-removed', pid });
+      expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 2 });
+    }, 30_000);
+  });
+
   describe('with a log torn at every byte offset', () => {
     /** Os cortes cujo resultado diverge do esperado, com o corte no texto. */
     const mismatch = (cut: number, got: unknown, want: unknown): string[] =>
@@ -1305,6 +1328,139 @@ describe('createProcessStore', () => {
       await append(store, ref, 1);
 
       expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 4 });
+    });
+  });
+
+  describe('with onLoad', () => {
+    /** Outro store, com `onLoad`, sobre o processo que o `setup` já criou (o `create` dele não é relatado). */
+    function setupWithOnLoad(onLoad: (load: LoadReport) => void = () => undefined) {
+      const env = setup();
+      const spy = jest.fn(onLoad);
+      const store = createProcessStore({
+        dataDir: env.dataDir,
+        log: captureLog().log,
+        bootId: BOOT,
+        onLoad: spy,
+      });
+      return { ...env, store, onLoad: spy };
+    }
+
+    const linesIn = (file: string) => fs.readFileSync(file, 'utf8').split('\n').length - 1;
+
+    /** Log esparso do tamanho pedido: o teto se testa sem gravar 64 MiB de verdade. */
+    const sparseLog = (logFile: string, size: number) => fs.truncateSync(logFile, size);
+
+    it('should report a read as role read with the stat size and the number of newlines', async () => {
+      const { store, ref, logFile, onLoad } = setupWithOnLoad();
+      await append(store, ref, 3);
+      onLoad.mockClear();
+
+      store.read(ref);
+
+      expect(onLoad).toHaveBeenCalledTimes(1);
+      expect(onLoad).toHaveBeenCalledWith({
+        ref,
+        role: 'read',
+        bytes: fs.statSync(logFile).size,
+        lines: linesIn(logFile),
+      });
+    });
+
+    it('should report a write as role target with the log as it was before the batch', async () => {
+      const { store, ref, logFile, onLoad } = setupWithOnLoad();
+      await append(store, ref, 3);
+      onLoad.mockClear();
+      const before = { bytes: fs.statSync(logFile).size, lines: linesIn(logFile) };
+
+      await append(store, ref, 2);
+
+      expect(onLoad).toHaveBeenCalledTimes(1);
+      expect(onLoad).toHaveBeenCalledWith({ ref, role: 'target', ...before });
+    });
+
+    it('should report the size without lines when read refuses a log above the cap', () => {
+      const { store, ref, logFile, onLoad } = setupWithOnLoad();
+      sparseLog(logFile, MAX_LOG_BYTES + 1);
+
+      captureError(() => store.read(ref));
+
+      expect(onLoad.mock.calls).toEqual([[{ ref, role: 'read', bytes: MAX_LOG_BYTES + 1 }]]);
+    });
+
+    it('should report the size and the lines read when the batch would pass the cap', async () => {
+      const { store, ref, logFile, dataDir, onLoad } = setupWithOnLoad();
+      sparseLog(logFile, MAX_LOG_BYTES - LINE.length);
+
+      await rejectionOf(
+        store.write(ref, () => ({ line: LINE, result: undefined })),
+        dataDir,
+      );
+
+      expect(onLoad.mock.calls).toEqual([
+        [{ ref, role: 'target', bytes: MAX_LOG_BYTES - LINE.length, lines: 0 }],
+      ]);
+    }, 30_000);
+
+    it('should report a write refused before reading the log as size without lines', async () => {
+      const { store, ref, logFile, dataDir, onLoad } = setupWithOnLoad();
+      sparseLog(logFile, MAX_LOG_BYTES + 1);
+
+      await rejectionOf(
+        store.write(ref, () => ({ result: undefined })),
+        dataDir,
+      );
+
+      expect(onLoad.mock.calls).toEqual([[{ ref, role: 'target', bytes: MAX_LOG_BYTES + 1 }]]);
+    });
+
+    it('should not turn an onLoad that throws into an I/O error on read or write', async () => {
+      const { store, ref } = setupWithOnLoad(() => {
+        throw new Error('exporter down');
+      });
+
+      await append(store, ref, 1);
+
+      expect(verifyProcess(store.read(ref)).chain).toMatchObject({ ok: true, totalRecords: 1 });
+    });
+
+    it('should report create and readManifest without bytes or lines', () => {
+      const { store, onLoad } = setupWithOnLoad();
+      const fresh: ProcessRef = { project: 'demo', process: 'proc-2' };
+
+      store.create(fresh, emptyManifest(fresh));
+      store.readManifest(fresh);
+
+      expect(onLoad.mock.calls).toEqual([
+        [{ ref: fresh, role: 'target' }],
+        [{ ref: fresh, role: 'read' }],
+      ]);
+    });
+
+    it('should report a second create of the same process as target', () => {
+      const { store, ref, manifest, onLoad } = setupWithOnLoad();
+
+      const created = store.create(ref, manifest);
+
+      expect(created).toBe(false);
+      expect(onLoad.mock.calls).toEqual([[{ ref, role: 'target' }]]);
+    });
+
+    it('should not report a process that does not exist', () => {
+      const { store, onLoad } = setupWithOnLoad();
+      const missing: ProcessRef = { project: 'demo', process: 'ghost' };
+
+      captureError(() => store.readManifest(missing));
+      captureError(() => store.read(missing));
+
+      expect(onLoad).not.toHaveBeenCalled();
+    });
+
+    it('should return the same process with and without onLoad', async () => {
+      const { store, ref, dataDir } = setupWithOnLoad();
+      await append(store, ref, 3);
+      const plain = createProcessStore({ dataDir, log: captureLog().log, bootId: BOOT });
+
+      expect(plain.read(ref)).toEqual(store.read(ref));
     });
   });
 });

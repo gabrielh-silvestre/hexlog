@@ -230,3 +230,32 @@ export type SearchIndex = {
    */
   terms(text: string): string[];
 };
+
+/** Sonda de uma chamada de tool: `end` fecha a medição uma vez, com o desfecho observado. */
+export type CallProbe = {
+  end(outcome: { ms: number; code?: string; detailCodes?: readonly string[] }): void;
+};
+
+/**
+ * Leitura de um processo, reportada pelo `ProcessStore` via `onLoad`. `bytes` e `lines` ficam
+ * ausentes quando só o manifesto foi lido.
+ */
+export type LoadReport = {
+  ref: ProcessRef;
+  role: 'target' | 'read';
+  bytes?: number;
+  lines?: number;
+};
+
+/**
+ * Capacidade transversal de telemetria, só para `mcp/` e `adapters/`. `trace` chama `run` na mesma
+ * pilha, sem `await` antes; `degraded` diz por que o envio está falhando; `shutdown` nunca passa de
+ * `timeoutMs`.
+ */
+export type Telemetry = {
+  readonly enabled: boolean;
+  trace<T>(tool: string, run: (probe: CallProbe) => Promise<T>): Promise<T>;
+  recordLoad(load: LoadReport): void;
+  degraded(): 'probe' | 'export' | undefined;
+  shutdown(timeoutMs: number): Promise<void>;
+};

@@ -3,7 +3,7 @@ import type { askQuestion, runTurn, startSession } from '../../scripts/flow/crit
 import type { Command, Tool } from '../../scripts/flow/critic-tools.ts';
 
 // Contrato de `argv` dos processos filhos de `lock-holder.ts`, `crash-writer.ts`,
-// `attachment-probe.ts` e `critic-driver.ts`: cada um recebe um
+// `attachment-probe.ts`, `critic-driver.ts` e `otel-sender.ts`: cada um recebe um
 // único argumento JSON com o formato abaixo. Só tipos: o pai (`adapters/lock-helpers.ts`, os specs) e
 // o filho importam o mesmo contrato, e o `import type` some na execução, então nenhum filho roda
 // dentro do jest.
@@ -31,6 +31,8 @@ export type LockHolderArgs = {
   };
   /** Grava 1 elo e, com o lock na mão, espera (bloqueado) até `goFile` existir. */
   'write-gated': { dataDir: string; project: string; process: string; goFile: string };
+  /** Grava 1 elo e sai (`process.exit()`) ao liberar o lock: a linha fica em disco e o lock, órfão. */
+  'write-exit': { dataDir: string; project: string; process: string };
   /** Espera os `total` irmãos na barreira e faz um `register` pelo `compose` real com `input`. */
   register: {
     dataDir: string;
@@ -72,3 +74,6 @@ export type CriticDriverArgs =
       startTimes?: Record<number, number>;
     }
   | { call: 'closeMailbox'; mailbox: string };
+
+/** Argumento JSON de `otel-sender.ts`: o endpoint, os headers e quantas chamadas de tool o filho envia. */
+export type OtelSenderArgs = { endpoint: string; headers: Record<string, string>; calls: number };

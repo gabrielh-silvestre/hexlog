@@ -12,6 +12,8 @@ import {
   expectedRules,
   applyGuard,
   verifyGuard,
+  mcpAddArgs,
+  mcpEnvOf,
   runRealHook,
   type ExpectedRules,
   type MissingItem,
@@ -706,6 +708,77 @@ describe('verifyGuard', () => {
       },
       15_000,
     );
+  });
+});
+
+describe('mcpEnvOf', () => {
+  it('should return the string entries of mcpServers.hexlog.env', () => {
+    const env = { HEXLOG_OTEL_HEADERS: 'k=v', HEXLOG_OTEL_ENDPOINT: 'http://x' };
+    const text = JSON.stringify({ mcpServers: { hexlog: { env } } });
+
+    expect(mcpEnvOf(text)).toEqual(env);
+  });
+
+  it.each([
+    ['no hexlog entry', JSON.stringify({ mcpServers: {} })],
+    ['no env', JSON.stringify({ mcpServers: { hexlog: { command: 'node' } } })],
+    ['an env that is not an object', JSON.stringify({ mcpServers: { hexlog: { env: 'x' } } })],
+    ['invalid JSON', 'not json'],
+    ['a missing file', null],
+  ])('should return an empty env with %s', (_label, text) => {
+    expect(mcpEnvOf(text)).toEqual({});
+  });
+
+  it.each([
+    ['an option-like name', '--scope'],
+    ['a name with an equals sign', 'A=B'],
+    ['a name that starts with a digit', '1A'],
+    ['an empty name', ''],
+  ])('should drop the entry with %s as the key', (_label, key) => {
+    const text = JSON.stringify({ mcpServers: { hexlog: { env: { [key]: 'x', KEPT: 'a' } } } });
+
+    expect(mcpEnvOf(text)).toEqual({ KEPT: 'a' });
+  });
+
+  it('should ignore the entries whose value is not a string', () => {
+    const env = { KEPT: 'a', NUMBER: 1, NULLED: null, NESTED: { a: 'b' } };
+    const text = JSON.stringify({ mcpServers: { hexlog: { env } } });
+
+    expect(mcpEnvOf(text)).toEqual({ KEPT: 'a' });
+  });
+});
+
+describe('mcpAddArgs', () => {
+  it('should keep a value with = intact in one -e argument', () => {
+    const args = mcpAddArgs('/usr/bin/node', '/lib/server.mjs', { HEADERS: 'a=b,c=d' });
+
+    expect(args).toContain('HEADERS=a=b,c=d');
+    expect(args.indexOf('-e') + 1).toBe(args.indexOf('HEADERS=a=b,c=d'));
+  });
+
+  it('should add no -e argument for an empty env', () => {
+    const args = mcpAddArgs('/usr/bin/node', '/lib/server.mjs', {});
+
+    expect(args).toEqual([
+      'mcp',
+      'add',
+      '--scope',
+      'user',
+      'hexlog',
+      '--',
+      '/usr/bin/node',
+      '/lib/server.mjs',
+    ]);
+  });
+
+  it('should put every -e argument before the -- separator', () => {
+    const args = mcpAddArgs('/usr/bin/node', '/lib/server.mjs', { A: '1', B: '2' });
+
+    const separator = args.indexOf('--');
+    const flags = args.flatMap((arg, index) => (arg === '-e' ? [index] : []));
+
+    expect(flags).toHaveLength(2);
+    expect(flags.every((index) => index < separator)).toBe(true);
   });
 });
 

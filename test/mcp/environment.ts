@@ -3,11 +3,13 @@ import * as path from 'node:path';
 import { expect } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
 import { CLIENT_INFO_META_KEY, InMemoryTransport } from '@modelcontextprotocol/server';
+import { noopTelemetry } from '../../src/adapters/telemetry/noop.ts';
 import type { RegisterResult } from '../../src/commands/process.ts';
 import { compose } from '../../src/compose.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import type { Detail, ErrorCode } from '../../src/errors.ts';
 import { createServer } from '../../src/mcp/server.ts';
+import type { Telemetry } from '../../src/ports.ts';
 import type { LogRecord } from '../../src/shared/logger.ts';
 import { createTempDir } from '../helpers.ts';
 
@@ -76,6 +78,8 @@ export function expectError(result: CallResult, code: ErrorCode): ErrorBody {
 export type Environment = {
   /** `<D>`: a área de dados do servidor sob teste. */
   dataDir: string;
+  /** Os registros que o servidor sob teste mandou ao logger, na ordem. */
+  logs: LogRecord[];
   client: Client;
   call: (name: string, args?: Record<string, unknown>) => Promise<CallResult>;
   /** Chama a tool, afirma sucesso e devolve o `structuredContent` tipado. */
@@ -92,6 +96,8 @@ type EnvironmentOptions = {
   cwd?: string;
   /** Sem ela as chamadas vão sem envelope de cliente (o servidor grava `unknown`). */
   clientInfo?: ClientInfo;
+  /** Telemetria do servidor sob teste (`compose` e `createServer`); sem ela vale `noopTelemetry`. */
+  telemetry?: Telemetry;
 };
 
 /**
@@ -103,13 +109,17 @@ export async function createEnvironment(options: EnvironmentOptions = {}): Promi
   const dataDir = createTempDir('mcp');
   const logs: LogRecord[] = [];
 
+  const telemetry = options.telemetry ?? noopTelemetry;
+  const logger = (record: LogRecord) => void logs.push(record);
+
   const { services, isLegacy } = compose({
     dataDir,
     cwd: options.cwd ?? process.cwd(),
     clock: () => FIXED_NOW,
-    logger: (record) => void logs.push(record),
+    logger,
+    telemetry,
   });
-  const server = createServer({ services, isLegacy, logger: (record) => void logs.push(record) });
+  const server = createServer({ services, isLegacy, logger, telemetry });
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'hexlog-test', version: '0.0.0' });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -131,6 +141,7 @@ export async function createEnvironment(options: EnvironmentOptions = {}): Promi
 
   return {
     dataDir,
+    logs,
     client,
     call,
     ok: async <T>(name: string, args?: Record<string, unknown>) => {
