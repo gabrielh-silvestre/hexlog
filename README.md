@@ -88,8 +88,9 @@ As skills do fluxo ficam em `.claude/skills/` e valem só neste repositório, o 
 - [docs/dados.md](docs/dados.md): layout em disco, erros, lock e lacunas de isolamento;
 - [docs/desenvolvimento.md](docs/desenvolvimento.md): scripts de leitura e testes;
 - [docs/feedback-loops.md](docs/feedback-loops.md): o que o commit e o pré-PR conferem;
+- [docs/telemetria.md](docs/telemetria.md): telemetria opcional por OpenTelemetry, variáveis, atributos, aviso e exemplo com OpenObserve;
 - [docs/directives/](docs/directives/AGENTS.md): regras vivas do repositório, do fluxo às convenções;
-- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md), [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md), [0013 setup em repositório de destino](docs/directives/adr-0013-setup-em-repositorio-de-destino.md) e [0014 cadeira do dono como pacote de dados](docs/directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md).
+- ADRs: [0007 domínio](docs/directives/adr-0007-dominio.md), [0008 serviços](docs/directives/adr-0008-servicos.md), [0009 ferramental](docs/directives/adr-0009-ferramental.md), [0010 camada sobre o OMC](docs/directives/adr-0010-camada-sobre-omc.md), [0011 camada estratégica](docs/directives/adr-0011-camada-estrategica.md), [0012 cadeira do dono](docs/directives/adr-0012-cadeira-do-dono.md), [0013 setup em repositório de destino](docs/directives/adr-0013-setup-em-repositorio-de-destino.md), [0014 cadeira do dono como pacote de dados](docs/directives/adr-0014-cadeira-do-dono-como-pacote-de-dados.md) e [0015 telemetria opcional por OpenTelemetry](docs/directives/adr-0015-telemetria-opentelemetry.md).
 
 ## Desenvolvimento
 

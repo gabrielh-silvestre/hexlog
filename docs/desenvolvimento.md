@@ -145,5 +145,5 @@ partir do bundle já construído (`.mjs`), para cobrir o artefato que as
 sessões de fato executam. Os testes do instalador substituem as execuções
 externas (hook, servidor, `claude mcp`) por injeção, incluindo
 `HEXLOG_REGISTER_MCP=<script>` para trocar `claude mcp add`/`remove` por um
-script de teste sem depender do binário `claude` nem tocar no
-`~/.claude.json` real.
+script de teste (que recebe o `env` a preservar como terceiro argumento, em
+JSON) sem depender do binário `claude` nem tocar no `~/.claude.json` real.
