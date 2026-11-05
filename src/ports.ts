@@ -248,7 +248,8 @@ export type LoadReport = {
 };
 
 /**
- * Capacidade transversal de telemetria, só para `mcp/` e `adapters/`. `trace` chama `run` na mesma
+ * Capacidade transversal de telemetria, para `commands/`, `queries/`, `mcp/` e `adapters/` (o
+ * núcleo, `domain/` e `shared/`, fica de fora). `trace` chama `run` na mesma
  * pilha, sem `await` antes; `degraded` diz por que o envio está falhando; `shutdown` nunca passa de
  * `timeoutMs`.
  */

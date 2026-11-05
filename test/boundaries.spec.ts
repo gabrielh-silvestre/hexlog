@@ -357,7 +357,7 @@ describe('boundaryBlocks', () => {
     });
 
     it.each(
-      ['domain', 'shared', 'commands', 'queries'].flatMap((layer) =>
+      ['domain', 'shared'].flatMap((layer) =>
         TELEMETRY_TYPES.map((name) => [layer, name] as const),
       ),
     )('should forbid %s from importing the type %s from ports.ts', async (layer, name) => {
@@ -366,7 +366,7 @@ describe('boundaryBlocks', () => {
       expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual(['no-restricted-imports']);
     });
 
-    it.each(['domain', 'shared', 'commands', 'queries'])(
+    it.each(['domain', 'shared'])(
       'should forbid %s from a mixed import of ProcessStore and Telemetry',
       async (layer) => {
         const code = `import type { ProcessStore, Telemetry } from '../ports.ts';\nexport type A = [ProcessStore, Telemetry];\n`;
@@ -374,6 +374,15 @@ describe('boundaryBlocks', () => {
         expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual([
           'no-restricted-imports',
         ]);
+      },
+    );
+
+    it.each(['commands', 'queries'])(
+      'should allow %s to import the telemetry types from ports.ts',
+      async (layer) => {
+        const code = `import type { Telemetry, CallProbe, LoadReport } from '../ports.ts';\nexport type A = [Telemetry, CallProbe, LoadReport];\n`;
+
+        expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual([]);
       },
     );
 

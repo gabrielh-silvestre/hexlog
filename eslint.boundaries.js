@@ -35,12 +35,12 @@ const OTEL_ONLY_TELEMETRY = {
   message: 'Só adapters/telemetry conhece o SDK do OpenTelemetry.',
 };
 
-// A telemetria vale só para mcp/ e adapters/ (capabilities-scope): os três tipos saem das camadas
-// de serviço e do núcleo.
-const TELEMETRY_PORTS_ONLY_MCP_ADAPTERS = {
+// A telemetria vale para commands/, queries/, mcp/ e adapters/ (capabilities-scope), então os três
+// tipos saem só do núcleo, que é puro (convencoes.md, "Núcleo e bordas").
+const TELEMETRY_PORTS_NOT_IN_CORE = {
   group: ['**/ports.ts'],
   importNames: ['Telemetry', 'CallProbe', 'LoadReport'],
-  message: 'Só mcp/ e adapters/ conhecem os tipos de telemetria de ports.ts.',
+  message: 'O núcleo (domain/, shared/) é puro: não recebe os tipos de telemetria de ports.ts.',
 };
 
 const FORBIDDEN_GROUPS = [
@@ -49,7 +49,6 @@ const FORBIDDEN_GROUPS = [
   { group: ['**/adapters/**'], message: 'Esta camada depende de portas, nunca de adapters.' },
   COMPOSE_ONLY_ROOT,
   OTEL_ONLY_TELEMETRY,
-  TELEMETRY_PORTS_ONLY_MCP_ADAPTERS,
 ];
 
 // `no-restricted-imports` não enxerga `import('...')`, então o import dinâmico é barrado por sintaxe.
@@ -176,13 +175,19 @@ const scriptsBlock = {
 
 export const boundaryBlocks = [
   restrictImports(['src/domain/**/*.ts'], {
-    extraGroups: forbidLayers(
-      ['commands', 'queries', 'mcp', 'shared'],
-      'domain não importa camadas de fora do núcleo.',
-    ),
+    extraGroups: [
+      ...forbidLayers(
+        ['commands', 'queries', 'mcp', 'shared'],
+        'domain não importa camadas de fora do núcleo.',
+      ),
+      TELEMETRY_PORTS_NOT_IN_CORE,
+    ],
   }),
   restrictImports(['src/shared/**/*.ts'], {
-    extraGroups: forbidLayers(['commands', 'queries', 'mcp'], ABOVE_MESSAGE),
+    extraGroups: [
+      ...forbidLayers(['commands', 'queries', 'mcp'], ABOVE_MESSAGE),
+      TELEMETRY_PORTS_NOT_IN_CORE,
+    ],
   }),
   // `ports.ts` está na raiz de `src/`, fora de qualquer glob de camada: só declara contratos.
   restrictImports(['src/ports.ts'], {
