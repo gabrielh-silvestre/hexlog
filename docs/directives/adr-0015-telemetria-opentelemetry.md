@@ -1,10 +1,10 @@
 # ADR 0015: Telemetria opcional por OpenTelemetry
 
-**Status:** Proposto
+**Status:** Aceito
 
 **Data:** 2026-11-05
 
-**Deciders:** a preencher na aprovação
+**Deciders:** Gabriel Baldino (aceite do ADR)
 
 ---
 
