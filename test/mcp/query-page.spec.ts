@@ -1,6 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import type { McpServer, StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 import { isUndefined } from 'es-toolkit';
+import { noopTelemetry } from '../../src/adapters/telemetry/noop.ts';
 import type { Detail } from '../../src/errors.ts';
 import {
   type CallContext,
@@ -68,6 +69,7 @@ function depsOf(query: Partial<Record<keyof QueryService, unknown>> = {}): ToolD
     services: { query } as unknown as ToolDeps['services'],
     isLegacy: () => false,
     logger: jest.fn(),
+    telemetry: noopTelemetry,
   };
 }
 

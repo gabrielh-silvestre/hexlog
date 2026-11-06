@@ -11,7 +11,7 @@ import {
   reservedName,
   unreadableManifest,
 } from '../../errors.ts';
-import type { Decision, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
+import type { Decision, LoadReport, ProcessRef, ProcessStore, RawProcess } from '../../ports.ts';
 import { errnoCode, writeFileAtomic } from './atomic.ts';
 import { dataRoot, MANIFEST_FILE, processPaths } from './data-format.ts';
 import {
@@ -27,6 +27,11 @@ import { createLockManager, type Lock, type LockOptions } from './lock.ts';
 export type ProcessStoreOptions = LockOptions & {
   /** `<D>`; com nomes validados por `safeName`, o store grava só em `<D>/.v1/` (D-02). */
   dataDir: string;
+  /**
+   * Telemetria: recebe cada leitura de processo (`LoadReport`). Se lançar, a leitura não falha; a
+   * contagem de linhas só roda quando a opção existe.
+   */
+  onLoad?: (load: LoadReport) => void;
 };
 
 /**
@@ -42,13 +47,30 @@ function logSize(file: string): number {
 }
 
 /**
- * Lê o `records.jsonl` (arquivo inexistente vale log vazio). O tamanho é conferido com `stat` antes
- * de ler, então um log acima de `MAX_LOG_BYTES` nunca vira string. Como `write` lê pelo mesmo
+ * Lê o `records.jsonl` (arquivo inexistente vale log vazio) e devolve também o tamanho medido. O
+ * tamanho é conferido com `stat` antes de ler, então um log acima de `MAX_LOG_BYTES` nunca vira string
+ * (`onOversize` recebe o tamanho antes da recusa). Como `write` lê pelo mesmo
  * `createProcessStore#readProcess`, escrever sobre processo acima do teto recusa sem gravar.
  */
-function readLogText(file: string, ref: ProcessRef, advice: boolean): string {
-  if (logSize(file) > MAX_LOG_BYTES) throw processTooLarge(ref.process, MAX_LOG_BYTES, advice);
-  return readIfPresent(file) ?? '';
+function readLogText(
+  file: string,
+  ref: ProcessRef,
+  advice: boolean,
+  onOversize: (bytes: number) => void,
+): { text: string; bytes: number } {
+  const bytes = logSize(file);
+  if (bytes > MAX_LOG_BYTES) {
+    onOversize(bytes);
+    throw processTooLarge(ref.process, MAX_LOG_BYTES, advice);
+  }
+  return { text: readIfPresent(file) ?? '', bytes };
+}
+
+/** Número de quebras de linha do texto, sem copiá-lo nem interpretar os registros. */
+function countLines(text: string): number {
+  let lines = 0;
+  for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1)) lines += 1;
+  return lines;
 }
 
 function parseManifest(ref: ProcessRef, text: string): Manifest {
@@ -78,9 +100,22 @@ function appendAndSync(file: string, text: string | undefined): void {
 }
 
 /** D-25: `ProcessStore` sobre `<D>/.v1/<project>/<process>/{process.json,records.jsonl}` (D-02). */
-export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOptions): ProcessStore {
+export function createProcessStore({
+  dataDir,
+  onLoad,
+  ...lockOptions
+}: ProcessStoreOptions): ProcessStore {
   const root = dataRoot(dataDir);
   const locks = createLockManager(lockOptions);
+
+  /** O `onLoad` que lança não vira erro de I/O: a leitura já deu certo. */
+  function report(load: LoadReport): void {
+    try {
+      onLoad?.(load);
+    } catch {
+      // Telemetria nunca derruba a leitura.
+    }
+  }
 
   const projectDir = (project: Name) => path.join(root, safeName(project, '/project'));
   const pathsOf = (ref: ProcessRef) =>
@@ -95,9 +130,12 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     return parseManifest(ref, manifestText);
   }
 
-  function readProcess(ref: ProcessRef, advice = false): RawProcess {
+  function readProcess(ref: ProcessRef, role: LoadReport['role'], advice = false): RawProcess {
     const manifest = readManifest(ref);
-    const text = readLogText(pathsOf(ref).log, ref, advice);
+    const { text, bytes } = readLogText(pathsOf(ref).log, ref, advice, (oversize) =>
+      report({ ref, role, bytes: oversize }),
+    );
+    if (!isUndefined(onLoad)) report({ ref, role, bytes, lines: countLines(text) });
     return { manifest, text, endsWithNewline: text === '' || text.endsWith('\n') };
   }
 
@@ -110,7 +148,7 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
     const lock = await locks.acquire(paths.lock);
     let result: T;
     try {
-      const raw = readProcess(ref, true);
+      const raw = readProcess(ref, 'target', true);
       const decision = decide(raw);
       const text = isUndefined(decision.line)
         ? undefined
@@ -141,9 +179,14 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
   }
 
   return {
-    read: (ref) => mapIo(() => readProcess(ref)),
+    read: (ref) => mapIo(() => readProcess(ref, 'read')),
 
-    readManifest: (ref) => mapIo(() => readManifest(ref)),
+    readManifest: (ref) =>
+      mapIo(() => {
+        const manifest = readManifest(ref);
+        report({ ref, role: 'read' });
+        return manifest;
+      }),
 
     list: (project) =>
       mapIo(() => {
@@ -166,16 +209,18 @@ export function createProcessStore({ dataDir, ...lockOptions }: ProcessStoreOpti
         fs.mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
         // O log nasce antes do manifesto: o `fsyncDir` dele torna as duas entradas duráveis juntas.
         fs.closeSync(fs.openSync(paths.log, 'a', 0o600));
+        let created = true;
         try {
           writeFileAtomic(paths.manifest, JSON.stringify(manifest), {
             exclusive: true,
             fsyncDir: true,
           });
-          return true;
         } catch (error) {
-          if (errnoCode(error) === 'EEXIST') return false;
-          throw error;
+          if (errnoCode(error) !== 'EEXIST') throw error;
+          created = false;
         }
+        report({ ref, role: 'target' });
+        return created;
       }),
 
     write: async (ref, decide) => {

@@ -97,9 +97,9 @@ type SettingsData = {
   permissions?: { deny?: unknown };
 };
 
-/** Forma mínima de `~/.claude.json` usada por `mcpRegistered` — `parse` devolve `any`. */
+/** Forma mínima de `~/.claude.json` usada por `mcpRegistered` e `mcpEnvOf` — `parse` devolve `any`. */
 type ClaudeJsonData = {
-  mcpServers?: { hexlog?: { command?: unknown; args?: unknown } };
+  mcpServers?: { hexlog?: { command?: unknown; args?: unknown; env?: unknown } };
 };
 
 /** `permissions.deny` de um `settings.json` já parseado (`parse` do jsonc-parser devolve `any`). */
@@ -308,6 +308,31 @@ export function mcpRegistered(claudeJsonText: string | null, expected: ExpectedR
   const server = data?.mcpServers?.hexlog;
   if (isNil(server)) return false;
   return server.command === expected.execPath && isEqual(server.args, [expected.serverFile]);
+}
+
+const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * O `env` de `mcpServers.hexlog` em `~/.claude.json`, só as entradas de valor string e chave de
+ * variável de ambiente (a chave vira argumento de `claude mcp add -e`); ausente ou ilegível dá `{}`.
+ */
+export function mcpEnvOf(claudeJsonText: string | null): Record<string, string> {
+  if (isNil(claudeJsonText)) return {};
+  const env = (parse(claudeJsonText) as ClaudeJsonData | undefined)?.mcpServers?.hexlog?.env;
+  if (!isPlainObject(env)) return {};
+  return Object.fromEntries(
+    Object.entries(env).filter(([key, value]) => ENV_KEY.test(key) && isString(value)),
+  );
+}
+
+/** Argumentos do `claude mcp add` que refaz a entrada do hexlog levando o `env` junto (todo `-e` antes do `--`). */
+export function mcpAddArgs(
+  execPath: string,
+  serverFile: string,
+  env: Record<string, string>,
+): string[] {
+  const envFlags = Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
+  return ['mcp', 'add', '--scope', 'user', 'hexlog', ...envFlags, '--', execPath, serverFile];
 }
 
 /** As duas entradas de sonda que provam o hook vivo: nega o diretório de dados `D`, permite o resto. */

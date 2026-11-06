@@ -2,7 +2,7 @@
 // 1.0 por stdio. Escolhe o relógio, o cwd e o destino do log do servidor; os scripts compõem por
 // `openReadOnly` e `openWriter`.
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { compose } from './compose.ts';
+import { compose, composeShutdown, composeTelemetry } from './compose.ts';
 import { dataDir } from './directory.ts';
 import { createServer } from './mcp/server.ts';
 import type { LogRecord } from './shared/logger.ts';
@@ -13,17 +13,21 @@ const logger = (record: LogRecord): void => {
 };
 
 const dir = dataDir(process.env);
+// Antes do `compose`: o `onLoad` do store já precisa receber a telemetria montada (o probe do
+// backend também dispara aqui, na construção).
+const telemetry = composeTelemetry(process.env, logger);
 const { services, isLegacy } = compose({
   dataDir: dir,
   cwd: process.cwd(),
   clock: () => new Date(),
   logger,
+  telemetry,
 });
 
 logger({ level: 'info', event: 'start', dataDir: dir, version: VERSION });
 // O SDK encerra o servidor sem resposta quando uma linha passa do teto do buffer (10 MiB): o
 // `onerror` é o único rastro da causa. Só relata, não muda o que vai ao fio.
-serveStdio(() => createServer({ services, isLegacy, logger }), {
+const handle = serveStdio(() => createServer({ services, isLegacy, logger, telemetry }), {
   // O `message` de um ZodError (envelope JSON-RPC inválido) lista as chaves extras e cresce com o
   // payload: o getter monta a string inteira, então só não lê-lo mantém o stderr e o RSS baixos.
   onerror: (error) =>
@@ -36,3 +40,4 @@ serveStdio(() => createServer({ services, isLegacy, logger }), {
         : { message: error.message }),
     }),
 });
+composeShutdown({ telemetry, proc: process, closeTransport: () => handle.close() });

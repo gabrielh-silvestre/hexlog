@@ -18,6 +18,7 @@ C4Component
 
     Person(agent, "Agente de IA")
     System_Ext(fs, "Sistema de arquivos")
+    System_Ext(otlp, "Backend OTLP")
 
     Container_Boundary(server, "Hexlog MCP Server") {
         Component(serverTs, "server.ts", "Entry point")
@@ -29,6 +30,7 @@ C4Component
         Component(ports, "ports.ts", "Portas")
         Component(domain, "domain/", "Dominio puro")
         Component(adapters, "adapters/", "I/O")
+        Component(telemetry, "adapters/telemetry/", "Telemetria opcional")
         Component(errors, "errors.ts", "Erros")
         Component(config, "directory.ts e version.ts", "Config")
     }
@@ -43,6 +45,8 @@ C4Component
     Rel(mcp, shared, "usa")
     Rel(mcp, config, "usa")
     Rel(compose, adapters, "liga")
+    Rel(compose, telemetry, "liga")
+    Rel(mcp, ports, "usa tipos de telemetria")
     Rel(compose, commands, "cria")
     Rel(compose, queries, "cria")
     Rel(compose, shared, "usa")
@@ -61,7 +65,9 @@ C4Component
     Rel(adapters, ports, "implementa")
     Rel(adapters, domain, "usa")
     Rel(ports, domain, "usa")
+    Rel(telemetry, ports, "implementa")
     Rel(adapters, fs, "grava jsonl e json")
+    Rel(telemetry, otlp, "envia spans e metricas")
 ```
 
 Toda camada importa `errors.ts`; as arestas ficam fora do desenho para não
@@ -78,9 +84,10 @@ estourar o limite de PNG. `domain/` não importa camada nenhuma acima, só
 | `commands/` | `createProcessService` (`createProcess`, `register`), `createDefinitionService` (`defineType`, `defineRelation`, `defineGate`) e `createAttachmentService` (`attach`); as etapas do `register` ficam em `commands/register/` |
 | `queries/` | `createQueryService` (`queryRecords`, `evaluateGate`, `verifyChain`, `list`, `readAttachment`, `describeType`), com `list`, `readAttachment` e `describeType` em `list.ts`, `read-attachment.ts` e `describe-type.ts`, mais `select.ts`, `read.ts` e `cursor.ts#encodeCursor` |
 | `shared/` | `loader.ts` (`parseLog`, `verifyProcess`, `loadVerified`), `logger.ts` (`Logger`) e `pages.ts` (`sliceChars`, `isHighSurrogate`) |
-| `ports.ts` | As portas do núcleo: `ProcessStore`, `DefinitionStore`, `AttachmentStore`, `Validator` e `SearchIndex` |
+| `ports.ts` | As portas do núcleo: `ProcessStore`, `DefinitionStore`, `AttachmentStore`, `Validator` e `SearchIndex`, mais os tipos `Telemetry`, `CallProbe` e `LoadReport`, dos quais `mcp/` importa só os dois primeiros |
 | `domain/` | Núcleo puro: `ids.ts`, `record.ts`, `chain.ts` (`hashLink`, `anchor`, `isValidLink`), `relations.ts` (`checkRelation`), `definitions.ts`, `gate.ts` (`evaluateGate`) e `manifest.ts` |
 | `adapters/fs/` | Stores de processo, definição e anexo, lock, gravação atômica, formato em disco (`<D>/.v1`) e helpers de I/O; um módulo por linha em [`src/AGENTS.md`](../src/AGENTS.md) |
+| `adapters/telemetry/` | Telemetria opcional por OTLP/HTTP (`createOtelTelemetry`, `noopTelemetry`, `bindShutdown`): implementa `Telemetry` de `ports.ts`, é o único lugar que importa `@opentelemetry/*` e só `compose.ts` o importa; sem `HEXLOG_OTEL_ENDPOINT` não há rede nem handler de processo |
 | `adapters/validator.ts`, `adapters/search.ts` | `createValidator` (ajv, `ajv-formats` e o catálogo de formatos de `domain/formats.ts`) e `createSearchIndex` (MiniSearch cacheado por processo) |
 | `errors.ts` | `HexlogError`, `ErrorCode`, `issueDetails` e as fábricas de erro (`domainError`, `internalError` e uma por fato do contrato), o único lugar que constrói `HexlogError` |
 | `directory.ts` | `dataDir(env)`: resolve `$XDG_DATA_HOME/hexlog` (fallback `~/.local/share/hexlog`) |

@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Implementações das portas declaradas em `src/ports.ts`: disco (`fs/`), validação de JSON Schema e busca textual. É a única camada que toca I/O ou biblioteca de infraestrutura; as regras de negócio ficam em `domain/` e nos serviços.
+Implementações das portas declaradas em `src/ports.ts`: disco (`fs/`), validação de JSON Schema, busca textual e telemetria opcional. É a única camada que toca I/O ou biblioteca de infraestrutura; as regras de negócio ficam em `domain/` e nos serviços.
 
 ## Key Files
 
@@ -18,6 +18,7 @@ Implementações das portas declaradas em `src/ports.ts`: disco (`fs/`), valida�
 
 | Directory | Purpose |
 |-----------|---------|
+| `telemetry/` | Telemetria opcional por OTLP/HTTP e seu encerramento (see `telemetry/AGENTS.md`) |
 | `fs/` | Adaptadores de disco: stores de processo, definição e anexo, lock por processo, gravação atômica e formato em disco (see `fs/AGENTS.md`) |
 
 ## Dependencies
@@ -34,6 +35,7 @@ Implementações das portas declaradas em `src/ports.ts`: disco (`fs/`), valida�
 - `minisearch`: `search.ts`
 - `es-toolkit`: helpers em todos os arquivos
 - `zod`: `fs/definition-store.ts` e `fs/lock.ts`
+- `@opentelemetry/*`: só `telemetry/` (sete pacotes diretos)
 
 ## Manual Notes
 

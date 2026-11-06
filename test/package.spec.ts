@@ -92,6 +92,14 @@ describe('package.json', () => {
     'jsonc-parser',
     'es-toolkit',
     'minisearch',
+    // Telemetria opcional (HEXLOG_OTEL_ENDPOINT): só `adapters/telemetry/` os importa.
+    '@opentelemetry/api',
+    '@opentelemetry/sdk-trace',
+    '@opentelemetry/sdk-metrics',
+    '@opentelemetry/resources',
+    '@opentelemetry/core',
+    '@opentelemetry/exporter-trace-otlp-http',
+    '@opentelemetry/exporter-metrics-otlp-http',
   ];
   const EXPECTED_DEV_DEPENDENCIES = [
     '@modelcontextprotocol/client',
@@ -160,6 +168,35 @@ describe('package.json', () => {
 
   it('should not declare bin', () => {
     expect(pkg.bin).toBeUndefined();
+  });
+
+  // Os exporters do OpenTelemetry pinam a versão exata da família: uma faixa `^` que resolva além
+  // dela duplica o pacote no lock e o bundle carrega duas cópias.
+  describe('with the @opentelemetry packages of the lock', () => {
+    const versionsByName = (): Map<string, Set<string>> => {
+      const lock = parseJson(
+        z.object({ packages: z.record(z.string(), z.object({ version: z.string().optional() })) }),
+        fs.readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8'),
+      );
+      const found = new Map<string, Set<string>>();
+      for (const [location, entry] of Object.entries(lock.packages)) {
+        if (!location.includes('node_modules/')) continue;
+        const name = location.slice(location.lastIndexOf('node_modules/') + 'node_modules/'.length);
+        if (!name.startsWith('@opentelemetry/')) continue;
+        found.set(name, (found.get(name) ?? new Set()).add(entry.version ?? ''));
+      }
+      return found;
+    };
+
+    it('should resolve a single version of each package', () => {
+      const duplicated = [...versionsByName()].filter(([, versions]) => versions.size > 1);
+
+      expect(duplicated).toEqual([]);
+    });
+
+    it('should find at least 7 packages, so the check above is not vacuous', () => {
+      expect(versionsByName().size).toBeGreaterThanOrEqual(7);
+    });
   });
 });
 

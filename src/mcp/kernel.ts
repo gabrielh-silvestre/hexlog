@@ -4,7 +4,7 @@ import type {
   StandardSchemaWithJSON,
   ToolAnnotations,
 } from '@modelcontextprotocol/server';
-import { isUndefined } from 'es-toolkit';
+import { isUndefined, uniq } from 'es-toolkit';
 import { z } from 'zod';
 import type { AttachmentService } from '../commands/attachment.ts';
 import type { DefinitionService } from '../commands/definition.ts';
@@ -20,6 +20,7 @@ import {
   legacyDataError,
   pointer,
 } from '../errors.ts';
+import type { CallProbe, Telemetry } from '../ports.ts';
 import { PAGE_CHARS_CAP, type QueryService } from '../queries/query-service.ts';
 import type { Logger, LogRecord } from '../shared/logger.ts';
 
@@ -61,6 +62,8 @@ export type ToolDeps = {
   services: Services;
   isLegacy: () => boolean;
   logger: Logger;
+  /** Capacidade transversal injetada (ADR 0015); sem telemetria ligada chega a `noopTelemetry`. */
+  telemetry: Telemetry;
 };
 
 /** O que o kernel lê do `ServerContext` do SDK: só o envelope da requisição. */
@@ -180,6 +183,52 @@ function clientOf(ctx: CallContext): string {
   return parsed.success ? parsed.data.name : 'unknown';
 }
 
+/** O desfecho de uma chamada, já medido: o que `finish` leva ao log, ao aviso e à sonda de telemetria. */
+type Settled<Output> = {
+  result: ToolResult<Output>;
+  code?: string;
+  detailCodes: string[];
+  ms: number;
+  /** Tamanho do texto de um sucesso; ausente no erro. */
+  chars?: number;
+};
+
+/** Valida e roda a chamada; nunca lança. `start` é anterior a qualquer espera de `execute`. */
+async function settle<Input, Output>(
+  deps: ToolDeps,
+  call: ToolCall<Input>,
+  run: (input: Input, client: string) => Output | Promise<Output>,
+  start: number,
+): Promise<Settled<Output>> {
+  try {
+    if (deps.isLegacy()) throw legacyDataError();
+    const rawDetails = rawArgsDetails(call.args);
+    if (rawDetails.length > 0) throw invalidArgs(rawDetails);
+    const parsed = call.schema.safeParse(call.args ?? {});
+    if (!parsed.success) {
+      throw invalidArgs(issueDetails(parsed.error.issues, ''));
+    }
+    const output = await run(parsed.data, clientOf(call.ctx));
+    const ms = Date.now() - start;
+    const text = JSON.stringify(output);
+    return {
+      result: { structuredContent: output, content: [{ type: 'text', text }] },
+      detailCodes: [],
+      ms,
+      chars: text.length,
+    };
+  } catch (e) {
+    const error = toHexlogError(e, deps.logger);
+    const body = { code: error.code, message: error.message, details: error.details };
+    return {
+      result: { isError: true, content: [{ type: 'text', text: JSON.stringify(body) }] },
+      code: error.code,
+      detailCodes: uniq(error.details.map(({ code }) => code)),
+      ms: Date.now() - start,
+    };
+  }
+}
+
 /**
  * Toda tool passa por aqui e `execute` nunca lança para o SDK. Ordem: `isLegacy()` antes de qualquer
  * outra coisa (`LEGACY_DATA` com o comando de arquivamento em `details`), recusa a chave `__proto__`
@@ -189,6 +238,10 @@ function clientOf(ctx: CallContext): string {
  * `HexlogError` vira `{code, message, details}`; qualquer outra exceção vira `INTERNAL`, sem stack.
  * Emite um log `tool` com `name`, `ms` e `code?`, nunca o conteúdo da entrada. Um sucesso cujo texto
  * passa de `OVER_CAP_CHARS` emite também o log `tool-over-cap` (`name` e `chars`); a resposta não é cortada.
+ *
+ * Telemetria: a chamada roda uma vez (`once`), mesmo que `trace` falhe, chame o callback duas vezes ou
+ * nunca o chame, e a resposta não espera o `trace`. `finish` fecha o log, o aviso `telemetry-degraded`
+ * (um por chamada, com o `reason`) e a sonda, cada etapa no próprio `try`, uma única vez.
  */
 export async function execute<Input, Output>(
   deps: ToolDeps,
@@ -196,42 +249,62 @@ export async function execute<Input, Output>(
   run: (input: Input, client: string) => Output | Promise<Output>,
 ): Promise<ToolResult<Output>> {
   const start = Date.now();
-  const log = (level: 'info' | 'error', code?: string) => {
+  let pending: Promise<Settled<Output>> | undefined;
+  const once = () => (pending ??= settle(deps, call, run, start));
+
+  let finished = false;
+  const finish = (probe: CallProbe | undefined, s: Settled<Output>): void => {
+    if (finished) return;
+    finished = true;
     logSafely(deps.logger, {
-      level,
+      level: isUndefined(s.code) ? 'info' : 'error',
       event: 'tool',
       name: call.name,
-      ms: Date.now() - start,
-      ...(isUndefined(code) ? {} : { code }),
+      ms: s.ms,
+      ...(isUndefined(s.code) ? {} : { code: s.code }),
     });
-  };
-
-  try {
-    if (deps.isLegacy()) throw legacyDataError();
-    const rawDetails = rawArgsDetails(call.args);
-    if (rawDetails.length > 0) throw invalidArgs(rawDetails);
-    const parsed = call.schema.safeParse(call.args ?? {});
-    if (!parsed.success) {
-      throw invalidArgs(issueDetails(parsed.error.issues, ''));
-    }
-    const result = await run(parsed.data, clientOf(call.ctx));
-    log('info');
-    const text = JSON.stringify(result);
-    if (text.length > OVER_CAP_CHARS) {
+    if (!isUndefined(s.chars) && s.chars > OVER_CAP_CHARS) {
       logSafely(deps.logger, {
         level: 'warn',
         event: 'tool-over-cap',
         name: call.name,
-        chars: text.length,
+        chars: s.chars,
       });
     }
-    return { structuredContent: result, content: [{ type: 'text', text }] };
-  } catch (e) {
-    const error = toHexlogError(e, deps.logger);
-    const body = { code: error.code, message: error.message, details: error.details };
-    log('error', error.code);
-    return { isError: true, content: [{ type: 'text', text: JSON.stringify(body) }] };
+    try {
+      const reason = deps.telemetry.degraded();
+      if (!isUndefined(reason)) {
+        logSafely(deps.logger, { level: 'warn', event: 'telemetry-degraded', reason });
+      }
+    } catch {
+      // A telemetria nunca muda o resultado da chamada.
+    }
+    try {
+      probe?.end({
+        ms: s.ms,
+        ...(isUndefined(s.code) ? {} : { code: s.code }),
+        detailCodes: s.detailCodes,
+      });
+    } catch {
+      // Idem: a sonda que lança não derruba a chamada.
+    }
+  };
+
+  try {
+    deps.telemetry
+      .trace(call.name, async (probe) => {
+        const s = await once();
+        finish(probe, s);
+        return s;
+      })
+      .catch(() => undefined);
+  } catch {
+    // `trace` que lança antes do callback: segue sem sonda, a chamada roda abaixo.
   }
+
+  const s = await once();
+  finish(undefined, s);
+  return s.result;
 }
 
 /** O que cada tool declara além de `name` e `schema`: a config do `registerTool`, sem o `inputSchema`. */

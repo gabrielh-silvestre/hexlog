@@ -5,7 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { CLIENT_INFO_META_KEY } from '@modelcontextprotocol/server';
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { createServer as createHttpServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isUndefined, omitBy } from 'es-toolkit';
@@ -14,6 +16,7 @@ import { TOOLS_COUNT } from '../src/installation.ts';
 import { VERSION } from '../src/version.ts';
 import { at, copyToXdg, createTempDir } from './helpers.ts';
 import { errorBodyOf } from './mcp/environment.ts';
+import { delay, listen, type Hit, type OtlpBody, type Receiver } from './otlp-receiver.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const LEGACY_FIXTURE = path.join(repoRoot, 'test/fixtures/legacy-0x');
@@ -133,6 +136,163 @@ function runBundleWithStdin(input: string | Buffer): SpawnSyncReturns<string> {
     cwd: bundleDir,
     timeout: 25_000,
   });
+}
+
+const OTEL_PROJECT = 'sentinel-project-e2e';
+const OTEL_PROCESS = 'sentinel-process-e2e';
+const NOTE_BODY = { type: 'object', additionalProperties: true };
+
+/** A mesma sequência determinística de cada filho de telemetria; o filho sem a chave é a referência. */
+const OTEL_SEQUENCE: [string, Record<string, unknown>][] = [
+  ['define_type', { project: OTEL_PROJECT, name: 'note', schema: NOTE_BODY }],
+  ['define_type', { project: OTEL_PROJECT, name: 'note', schema: NOTE_BODY }],
+  ['list', { project: OTEL_PROJECT }],
+  ['describe_type', { project: OTEL_PROJECT, type: 'note' }],
+  ['create_process', { project: OTEL_PROJECT, process: OTEL_PROCESS }],
+  ['query', { project: OTEL_PROJECT, process: OTEL_PROCESS }],
+  ['query', { project: OTEL_PROJECT, process: OTEL_PROCESS, x: JSON.parse('{"__proto__":1}') }],
+  ['query', { project: OTEL_PROJECT, process: 'missing-process' }],
+];
+
+type ChildExit = { code: number | null; signal: NodeJS.Signals | null; at: number };
+type RpcMessage = { jsonrpc?: string; id?: number; result?: unknown };
+type TimedCall = { ms: number; result: CallResult };
+
+/**
+ * Filho do bundle por `spawn` direto, com stdio em pipe e um cliente JSON-RPC mínimo: o
+ * `StdioClientTransport` mede o `SIGTERM` do cliente de referência, não o EOF do stdin.
+ * O ambiente do filho é o do jest mais `extraEnv`, com `HOME` e `XDG_DATA_HOME` próprios.
+ */
+async function spawnServer(extraEnv: Record<string, string>) {
+  const child = spawn(process.execPath, [path.join(bundleDir, 'server.mjs')], {
+    cwd: bundleDir,
+    env: {
+      ...(omitBy(process.env, isUndefined) as Record<string, string>),
+      HOME: createTempDir('e2e-home'),
+      XDG_DATA_HOME: createTempDir('e2e-xdg'),
+      ...extraEnv,
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const bootedAt = performance.now();
+  const pending = new Map<number, (message: RpcMessage) => void>();
+  const strayLines: string[] = [];
+  let buffered = '';
+  let stderr = '';
+  let nextId = 1;
+
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+    buffered += chunk;
+    for (let end = buffered.indexOf('\n'); end >= 0; end = buffered.indexOf('\n')) {
+      const line = buffered.slice(0, end);
+      buffered = buffered.slice(end + 1);
+      if (line === '') continue;
+      let message: RpcMessage | undefined;
+      try {
+        message = JSON.parse(line) as RpcMessage;
+      } catch {
+        message = undefined;
+      }
+      if (message?.jsonrpc !== '2.0') strayLines.push(line);
+      else if (!isUndefined(message.id)) pending.get(message.id)?.(message);
+    }
+  });
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+
+  let exitedAt = 0;
+  const exited = new Promise<ChildExit>((resolve) => {
+    child.on('exit', () => {
+      exitedAt = performance.now();
+    });
+    child.on('close', (code, signal) => resolve({ code, signal, at: exitedAt }));
+  });
+
+  const send = (message: Record<string, unknown>) =>
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
+  const request = (method: string, params: unknown) =>
+    new Promise<RpcMessage>((resolve) => {
+      const id = nextId++;
+      pending.set(id, resolve);
+      send({ id, method, params });
+    });
+
+  await request('initialize', {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: { name: 'hexlog-e2e', version: '0.0.0' },
+  });
+  send({ method: 'notifications/initialized' });
+
+  const call = async (name: string, args: Record<string, unknown>): Promise<TimedCall> => {
+    const start = performance.now();
+    const response = await request('tools/call', { name, arguments: args });
+    return { ms: performance.now() - start, result: response.result as CallResult };
+  };
+
+  return { child, bootedAt, strayLines, stderr: () => stderr, exited, call };
+}
+
+type OtelServer = Awaited<ReturnType<typeof spawnServer>>;
+
+async function runSequence(server: OtelServer): Promise<TimedCall[]> {
+  const calls: TimedCall[] = [];
+  for (const [name, args] of OTEL_SEQUENCE) calls.push(await server.call(name, args));
+  return calls;
+}
+
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/g;
+const ISO_PATTERN = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g;
+
+/** O resultado comparável de uma chamada: ids e datas mascarados, e o `code` no erro. */
+function shapeOf({ result }: TimedCall): unknown {
+  if (result.isError === true) return { isError: true, code: errorBodyOf(result).code };
+  const masked = JSON.stringify(result.structuredContent)
+    .replace(UUID_PATTERN, '<id>')
+    .replace(ISO_PATTERN, '<date>');
+  return { structuredContent: JSON.parse(masked) as unknown };
+}
+
+let referenceRun: Promise<{ shapes: unknown[]; exit: ChildExit }> | undefined;
+
+/** Filho F1: sem a chave, a execução de referência; morre por `SIGTERM` e roda uma vez só. */
+function reference() {
+  referenceRun ??= (async () => {
+    const server = await spawnServer({});
+    const shapes = (await runSequence(server)).map(shapeOf);
+    server.child.kill('SIGTERM');
+    return { shapes, exit: await server.exited };
+  })();
+  return referenceRun;
+}
+
+/** Uma porta em que ninguém escuta: abre, anota e fecha. */
+async function closedPort(): Promise<number> {
+  const server = createHttpServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+const postsTo = (receiver: Receiver, endpoint: string) =>
+  receiver.hits.filter((hit) => hit.method === 'POST' && hit.url?.endsWith(endpoint));
+const bodiesOf = (hits: Hit[]) => hits.map((hit) => JSON.parse(hit.body) as OtlpBody);
+
+/**
+ * Quantos `telemetry-degraded` cada chamada escreveu, na ordem dos registros `tool` do stderr. Um
+ * aviso anterior ao primeiro `tool` (a sonda pode falhar antes da primeira chamada) não é de chamada.
+ */
+function degradedPerCall(stderr: string): number[] {
+  const counts: number[] = [];
+  for (const { event } of stderrRecords(stderr)) {
+    if (event === 'tool') counts.push(0);
+    else if (event === 'telemetry-degraded' && counts.length > 0) {
+      counts[counts.length - 1] = (counts.at(-1) ?? 0) + 1;
+    }
+  }
+  return counts;
 }
 
 describe('dist/server.mjs over stdio', () => {
@@ -405,4 +565,238 @@ describe('dist/server.mjs over stdio', () => {
     );
     expect(JSON.parse(line)).not.toHaveProperty('message');
   }, 30_000);
+
+  describe('with no HEXLOG_OTEL_ENDPOINT', () => {
+    it('should die by the SIGTERM signal, with no exit code, because no handler was installed', async () => {
+      const { exit } = await reference();
+
+      expect(exit).toMatchObject({ code: null, signal: 'SIGTERM' });
+    }, 30_000);
+  });
+
+  describe('with HEXLOG_OTEL_ENDPOINT and hostile OTEL_* variables', () => {
+    let own: Receiver;
+    let other: Receiver;
+    let exit: ChildExit;
+    let strayLines: string[];
+    let stderr: string;
+
+    beforeAll(async () => {
+      own = await listen('ok');
+      other = await listen('ok');
+      const server = await spawnServer({
+        HEXLOG_OTEL_ENDPOINT: `${own.origin}/api/default/`,
+        HEXLOG_OTEL_HEADERS: 'Authorization=Basic YWJj==,x-own=1',
+        OTEL_EXPORTER_OTLP_ENDPOINT: other.origin,
+        OTEL_EXPORTER_OTLP_HEADERS: 'x-leak=1',
+        OTEL_EXPORTER_OTLP_TRACES_HEADERS: 'x-leak=2',
+        OTEL_EXPORTER_OTLP_METRICS_HEADERS: 'x-leak=3',
+        OTEL_EXPORTER_OTLP_COMPRESSION: 'gzip',
+        OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: 'delta',
+      });
+      await runSequence(server);
+      server.child.stdin.end();
+      exit = await server.exited;
+      strayLines = server.strayLines;
+      stderr = server.stderr();
+    }, 30_000);
+
+    afterAll(async () => {
+      await Promise.all([own.close(), other.close()]);
+    });
+
+    it('should post traces and metrics to the own endpoint after the EOF', () => {
+      const urls = new Set(
+        own.hits.filter(({ method }) => method === 'POST').map(({ url }) => url),
+      );
+
+      expect(urls).toEqual(new Set(['/api/default/v1/traces', '/api/default/v1/metrics']));
+    });
+
+    it('should send only the own headers, uncompressed', () => {
+      const posts = own.hits.filter(({ method }) => method === 'POST');
+
+      expect(posts.length).toBeGreaterThan(0);
+
+      for (const { headers } of posts) {
+        expect(headers).toMatchObject({ authorization: 'Basic YWJj==', 'x-own': '1' });
+        expect(headers).not.toHaveProperty('content-encoding');
+        expect(Object.keys(headers).filter((name) => name.startsWith('x-leak'))).toEqual([]);
+      }
+    });
+
+    it('should send nothing to the endpoint of the OTEL_* variables', () => {
+      expect(other.hits).toEqual([]);
+    });
+
+    it('should deliver one span per call of the session', () => {
+      const names = bodiesOf(postsTo(own, '/v1/traces'))
+        .flatMap(({ resourceSpans = [] }) => resourceSpans)
+        .flatMap(({ scopeSpans }) => scopeSpans)
+        .flatMap(({ spans }) => spans.map(({ name }) => name));
+
+      expect(names.sort()).toEqual(OTEL_SEQUENCE.map(([tool]) => `tool ${tool}`).sort());
+    });
+
+    it('should deliver cumulative call counts that add up to the calls of the session', () => {
+      const [last] = bodiesOf(postsTo(own, '/v1/metrics')).slice(-1);
+      const calls = (last?.resourceMetrics ?? [])
+        .flatMap(({ scopeMetrics }) => scopeMetrics)
+        .flatMap(({ metrics }) => metrics)
+        .find(({ name }) => name === 'hexlog.tool.calls');
+      const total = (calls?.sum?.dataPoints ?? []).reduce(
+        (sum, point) => sum + Number(point.asDouble ?? point.asInt),
+        0,
+      );
+
+      expect(calls?.sum?.aggregationTemporality).toBe(2);
+      expect(total).toBe(OTEL_SEQUENCE.length);
+    });
+
+    it('should carry the project and process on the spans', () => {
+      const payload = postsTo(own, '/v1/traces')
+        .map(({ body }) => body)
+        .join('');
+
+      expect(payload).toContain(OTEL_PROJECT);
+      expect(payload).toContain(OTEL_PROCESS);
+    });
+
+    it('should keep the project and process out of the metrics', () => {
+      const payload = postsTo(own, '/v1/metrics')
+        .map(({ body }) => body)
+        .join('');
+
+      expect(payload.length).toBeGreaterThan(0);
+      expect(payload).not.toMatch(new RegExp(`${OTEL_PROJECT}|${OTEL_PROCESS}`));
+    });
+
+    it('should keep the project and process out of the stderr', () => {
+      expect(stderrRecords(stderr).some(({ event }) => event === 'tool')).toBe(true);
+      expect(stderr).not.toMatch(new RegExp(`${OTEL_PROJECT}|${OTEL_PROCESS}`));
+    });
+
+    it('should keep stdout as JSON-RPC only', () => {
+      expect(strayLines).toEqual([]);
+    });
+
+    it('should exit with code 0 after the EOF', () => {
+      expect(exit).toMatchObject({ code: 0, signal: null });
+    });
+  });
+
+  describe('with HEXLOG_OTEL_ENDPOINT on a closed port', () => {
+    let calls: TimedCall[];
+    let stderr: string;
+    let probed: boolean;
+
+    beforeAll(async () => {
+      const server = await spawnServer({
+        HEXLOG_OTEL_ENDPOINT: `http://127.0.0.1:${await closedPort()}`,
+      });
+      const deadline = performance.now() + 2_000;
+      while (!server.stderr().includes('telemetry-degraded') && performance.now() < deadline) {
+        await server.call('list', {});
+        await delay(25);
+      }
+      probed = server.stderr().includes('telemetry-degraded');
+      calls = await runSequence(server);
+      server.child.stdin.end();
+      await server.exited;
+      stderr = server.stderr();
+    }, 30_000);
+
+    it('should write the first telemetry-degraded within 2 s of probing', () => {
+      expect(probed).toBe(true);
+    });
+
+    it('should write exactly one telemetry-degraded per call from the first one on', () => {
+      const counts = degradedPerCall(stderr);
+      const first = counts.findIndex((count) => count > 0);
+
+      expect(first).toBeGreaterThanOrEqual(0);
+      expect(counts.slice(first)).toEqual(Array<number>(counts.length - first).fill(1));
+    });
+
+    it('should give the reason probe or export', () => {
+      const reasons = stderrRecords(stderr)
+        .filter(({ event }) => event === 'telemetry-degraded')
+        .map(({ reason }) => reason);
+
+      expect(reasons.length).toBeGreaterThan(0);
+      expect(reasons.every((reason) => reason === 'probe' || reason === 'export')).toBe(true);
+    });
+
+    it('should answer the sequence like the run without telemetry', async () => {
+      const { shapes } = await reference();
+
+      expect(calls.map(shapeOf)).toEqual(shapes);
+    }, 30_000);
+  });
+
+  describe('with HEXLOG_OTEL_ENDPOINT on a receiver that never answers', () => {
+    let mute: Receiver;
+    let calls: TimedCall[];
+    let eofAt: number;
+    let exit: ChildExit;
+
+    beforeAll(async () => {
+      mute = await listen('mute');
+      const server = await spawnServer({ HEXLOG_OTEL_ENDPOINT: mute.origin });
+      calls = await runSequence(server);
+      eofAt = performance.now();
+      if (eofAt - server.bootedAt >= 3_000) throw new Error('the EOF came 3 s after the boot');
+      server.child.stdin.end();
+      exit = await server.exited;
+    }, 30_000);
+
+    afterAll(async () => {
+      await mute.close();
+    });
+
+    it('should answer every call in under 1000 ms', () => {
+      expect(Math.max(...calls.map(({ ms }) => ms))).toBeLessThan(1_000);
+    });
+
+    it('should answer the sequence like the run without telemetry', async () => {
+      const { shapes } = await reference();
+
+      expect(calls.map(shapeOf)).toEqual(shapes);
+    }, 30_000);
+
+    it('should exit with code 0 and no signal within 3000 ms of the EOF', () => {
+      expect(exit).toMatchObject({ code: 0, signal: null });
+      expect(exit.at - eofAt).toBeLessThan(3_000);
+    });
+  });
+
+  describe('with HEXLOG_OTEL_ENDPOINT and a SIGTERM', () => {
+    let ok: Receiver;
+    let exit: ChildExit;
+
+    beforeAll(async () => {
+      ok = await listen('ok');
+      const server = await spawnServer({ HEXLOG_OTEL_ENDPOINT: ok.origin });
+      await server.call('list', {});
+      server.child.kill('SIGTERM');
+      exit = await server.exited;
+    }, 30_000);
+
+    afterAll(async () => {
+      await ok.close();
+    });
+
+    it('should exit with code 143', () => {
+      expect(exit).toMatchObject({ code: 143, signal: null });
+    });
+
+    it('should deliver the span of the call before exiting', () => {
+      const names = bodiesOf(postsTo(ok, '/v1/traces'))
+        .flatMap(({ resourceSpans = [] }) => resourceSpans)
+        .flatMap(({ scopeSpans }) => scopeSpans)
+        .flatMap(({ spans }) => spans.map(({ name }) => name));
+
+      expect(names).toContain('tool list');
+    });
+  });
 });

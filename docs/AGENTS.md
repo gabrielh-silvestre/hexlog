@@ -4,7 +4,7 @@
 **Generated:** 2026-09-17 · **Updated:** 2026-10-17
 
 ## Purpose
-Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0014, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
+Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e ADRs 0007 a 0015, da 1.0), os guias de uso, instalação e dados, os estudos de apoio e a pesquisa de libs/padrões que fundamentou as decisões originais do 0.x.
 
 ## Key Files
 | File | Description |
@@ -18,6 +18,7 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 | `dados.md` | Layout de dados em `<D>`, erros e avisos, tetos do lock, destravamento manual, recuperação de `PROCESS_CORRUPTED` e lacunas de isolamento. |
 | `desenvolvimento.md` | Comandos de desenvolvimento, scripts de leitura (`insights`, `export`, `timeline`, `seat-report`) e como os testes se organizam. |
 | `feedback-loops.md` | Onde o erro é pego antes do CI: o que o `pre-commit`, o `commit-msg`, o `pre-push`, o pré-PR do agente (`flow-run`, `mark`) e o hook de PR conferem, o que bloqueia, quanto leva e como rodar na mão. |
+| `telemetria.md` | Telemetria opcional por OpenTelemetry: variáveis, atributos do span e das métricas, aviso `telemetry-degraded`, riscos residuais, privacidade, exemplo com OpenObserve, edição do `env` da entrada MCP e Collector local opcional. |
 | `friction-mining.md` | Como a skill `friction-mining` minera transcripts do Claude Code atrás de atrito no uso de uma tool MCP, e como portá-la a outro projeto. |
 | `qualidade-ci.md` | Estudo de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17; o que está instalado vive no `AGENTS.md` da raiz e em `directives/qualidade-e-testes.md`. |
 | `qualidade-codigo.md` | Estudo de qualidade de código e teste — TypeScript, ESLint, jest, property-based testing, mutação — consultado em 2026-09-17; o tier "Agora" e o Stryker (mutação dos unitários) já estão instalados, o resto é estudo. |
@@ -27,13 +28,13 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 ## Subdirectories
 | Directory | Purpose |
 |---|---|
-| `directives/` | Docs vivos de regras (convenções, fronteiras, invariantes, qualidade e testes, documentação, instalação e hooks, fluxo, estratégia e cadeira do dono) e ADRs 0007 a 0014 (see `directives/AGENTS.md`) |
+| `directives/` | Docs vivos de regras (convenções, fronteiras, invariantes, qualidade e testes, documentação, instalação e hooks, fluxo, estratégia e cadeira do dono) e ADRs 0007 a 0015 (see `directives/AGENTS.md`) |
 | `pesquisa/` | Pesquisa de libs e padrões (17 frentes) que embasou as decisões do 0.x (see `pesquisa/AGENTS.md`) |
 
 ## Dependencies
 
 ### Internal
-Os ADRs de `directives/` registram as decisões da arquitetura de `src/` (domínio, serviços, ferramental), a camada sobre o OMC e a camada estratégica de premissas (ADR 0011 e `directives/estrategia.md`), a cadeira do dono que a emenda (ADR 0012 e `directives/cadeira-do-dono.md`), o setup em repositório de destino (ADR 0013), a cadeira do dono como pacote de dados desse setup (ADR 0014), e o formato do log. A fonte da verdade do estado atual é o código.
+Os ADRs de `directives/` registram as decisões da arquitetura de `src/` (domínio, serviços, ferramental), a camada sobre o OMC e a camada estratégica de premissas (ADR 0011 e `directives/estrategia.md`), a cadeira do dono que a emenda (ADR 0012 e `directives/cadeira-do-dono.md`), o setup em repositório de destino (ADR 0013), a cadeira do dono como pacote de dados desse setup (ADR 0014), a telemetria opcional por OpenTelemetry (ADR 0015), e o formato do log. A fonte da verdade do estado atual é o código.
 
 ## Manual Notes
 

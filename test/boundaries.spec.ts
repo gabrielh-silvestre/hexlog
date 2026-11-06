@@ -300,4 +300,136 @@ describe('boundaryBlocks', () => {
 
     expect(await ruleIdsOfText(file, code)).toEqual(expected);
   });
+
+  describe('with the telemetry capability', () => {
+    const OTEL_SPECIFIERS = [
+      '@opentelemetry/api',
+      '@opentelemetry/sdk-trace',
+      '@opentelemetry/otlp-exporter-base/node-http',
+      '@opentelemetry/sdk-trace/build/src/index.js',
+    ];
+    const OTEL_FORBIDDEN_FILES = [
+      'src/domain/probe.ts',
+      'src/shared/probe.ts',
+      'src/ports.ts',
+      'src/commands/probe.ts',
+      'src/queries/probe.ts',
+      'src/mcp/kernel.ts',
+      'src/mcp/server.ts',
+      'src/mcp/tools/probe.ts',
+      'src/adapters/probe.ts',
+      'src/adapters/fs/probe.ts',
+    ];
+    const TELEMETRY_TYPES = ['Telemetry', 'CallProbe', 'LoadReport'];
+
+    it.each(
+      OTEL_FORBIDDEN_FILES.flatMap((file) =>
+        OTEL_SPECIFIERS.map((specifier) => [file, specifier] as const),
+      ),
+    )('should forbid %s from importing %s', async (file, specifier) => {
+      expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
+    });
+
+    it.each(['src/adapters/telemetry/otel.ts', 'src/adapters/telemetry/sub/exporter.ts'])(
+      'should allow %s to import the whole SDK, subpaths included',
+      async (file) => {
+        const code = OTEL_SPECIFIERS.map((specifier) => `import '${specifier}';\n`).join('');
+
+        expect(await ruleIdsOfText(file, code)).toEqual([]);
+      },
+    );
+
+    it.each(['commands', 'queries', 'mcp'])(
+      'should forbid adapters/telemetry from importing %s',
+      async (layer) => {
+        expect(
+          await ruleIdsOfText('src/adapters/telemetry/otel.ts', importing(`../../${layer}/x.ts`)),
+        ).toEqual(['no-restricted-imports']);
+      },
+    );
+
+    it('should allow adapters/telemetry to import domain, ports and errors', async () => {
+      const code = ['../../domain/ids.ts', '../../ports.ts', '../../errors.ts']
+        .map((specifier) => `import '${specifier}';\n`)
+        .join('');
+
+      expect(await ruleIdsOfText('src/adapters/telemetry/otel.ts', code)).toEqual([]);
+    });
+
+    it.each(
+      ['domain', 'shared'].flatMap((layer) =>
+        TELEMETRY_TYPES.map((name) => [layer, name] as const),
+      ),
+    )('should forbid %s from importing the type %s from ports.ts', async (layer, name) => {
+      const code = `import type { ${name} } from '../ports.ts';\nexport type Alias = ${name};\n`;
+
+      expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual(['no-restricted-imports']);
+    });
+
+    it.each(['domain', 'shared'])(
+      'should forbid %s from a mixed import of ProcessStore and Telemetry',
+      async (layer) => {
+        const code = `import type { ProcessStore, Telemetry } from '../ports.ts';\nexport type A = [ProcessStore, Telemetry];\n`;
+
+        expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual([
+          'no-restricted-imports',
+        ]);
+      },
+    );
+
+    it.each(['commands', 'queries'])(
+      'should allow %s to import the telemetry types from ports.ts',
+      async (layer) => {
+        const code = `import type { Telemetry, CallProbe, LoadReport } from '../ports.ts';\nexport type A = [Telemetry, CallProbe, LoadReport];\n`;
+
+        expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual([]);
+      },
+    );
+
+    it.each(['shared', 'commands', 'queries'])(
+      'should allow %s to import ProcessStore from ports.ts',
+      async (layer) => {
+        const code = `import type { ProcessStore } from '../ports.ts';\nexport type A = ProcessStore;\n`;
+
+        expect(await ruleIdsOfText(`src/${layer}/probe.ts`, code)).toEqual([]);
+      },
+    );
+
+    it.each(['src/adapters/fs/probe.ts', 'src/adapters/telemetry/otel.ts'])(
+      'should allow %s to import the telemetry types from ports.ts',
+      async (file) => {
+        const ports = '../../ports.ts';
+        const code = `import type { Telemetry, CallProbe, LoadReport } from '${ports}';\nexport type A = [Telemetry, CallProbe, LoadReport];\n`;
+
+        expect(await ruleIdsOfText(file, code)).toEqual([]);
+      },
+    );
+
+    it.each(['src/mcp/kernel.ts', 'src/mcp/server.ts', 'src/mcp/tools/probe.ts'])(
+      'should allow %s to import shared/logger.ts and the types Telemetry and CallProbe',
+      async (file) => {
+        const up = file.split('/').length > 3 ? '../..' : '..';
+        const code = [
+          `import type { Logger } from '${up}/shared/logger.ts';`,
+          `import type { Telemetry, CallProbe } from '${up}/ports.ts';`,
+          'export type A = [Logger, Telemetry, CallProbe];',
+        ].join('\n');
+
+        expect(await ruleIdsOfText(file, code)).toEqual([]);
+      },
+    );
+
+    it.each([
+      ['../shared/loader.ts', 'import type { VerifiedProcess } from "../shared/loader.ts";'],
+      ['../shared/pages.ts', 'import { sliceChars } from "../shared/pages.ts";'],
+      ['ProcessStore', 'import type { ProcessStore } from "../ports.ts";'],
+      ['PROJECT_INDEX', 'import { PROJECT_INDEX } from "../ports.ts";'],
+      ['LoadReport', 'import type { LoadReport } from "../ports.ts";'],
+      ['a mixed import', 'import type { Telemetry, ProcessStore } from "../ports.ts";'],
+    ])('should forbid mcp/kernel.ts from importing %s', async (_label, code) => {
+      expect(await ruleIdsOfText('src/mcp/kernel.ts', `${code}\n`)).toEqual([
+        'no-restricted-imports',
+      ]);
+    });
+  });
 });

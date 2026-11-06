@@ -6,7 +6,10 @@ name: Dependabot auto-merge
 # check. Minor e patch de produção e de 0.x, inclusive o `esbuild` do grupo, entram em `develop` sem
 # revisão humana, risco aceito pelo dono: o gate é `quality` (que roda `npm audit signatures`) e
 # `dependency-review`, e o `cooldown` do dependabot.yml não cobre security update. Major nunca
-# entra, e `github-actions` fica com merge manual. Roda em `pull_request`, nunca em
+# entra, e `github-actions` fica com merge manual. O conjunto `@opentelemetry/*` também fica com
+# merge manual, porque os exporters pinam versões exatas da família: o filtro lê `dependency-names`,
+# que pega o PR agrupado e o security update por pacote, e valor vazio não liga. Custo aceito: o
+# security update do OpenTelemetry espera merge manual. Roda em `pull_request`, nunca em
 # `pull_request_target`.
 # Pré-condição: o ruleset de `develop` já exige `quality` antes de `allow_auto_merge` ficar ligado;
 # com a flag ligada e o ruleset sem esse check, `gh pr merge --auto` mergeia o PR do bot na hora,
@@ -39,6 +42,8 @@ jobs:
       - name: Enable auto-merge for npm minor and patch
         if: >-
           steps.metadata.outputs.package-ecosystem == 'npm_and_yarn' &&
+          steps.metadata.outputs.dependency-names != '' &&
+          !contains(steps.metadata.outputs.dependency-names, '@opentelemetry/') &&
           (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
           steps.metadata.outputs.update-type == 'version-update:semver-patch')
         env:

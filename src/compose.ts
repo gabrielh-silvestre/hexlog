@@ -1,4 +1,5 @@
 import { randomUUIDv7 } from 'node:crypto';
+import { isUndefined } from 'es-toolkit';
 import { createAttachmentStore } from './adapters/fs/attachment-store.ts';
 import { createDefinitionStore } from './adapters/fs/definition-store.ts';
 import { detectLegacy } from './adapters/fs/data-format.ts';
@@ -12,7 +13,11 @@ import type { Name } from './domain/ids.ts';
 import { createQueryService } from './queries/query-service.ts';
 import { loadVerified } from './shared/loader.ts';
 import type { Logger } from './shared/logger.ts';
-import type { ProcessRef } from './ports.ts';
+import type { LoadReport, ProcessRef, Telemetry } from './ports.ts';
+import { noopTelemetry } from './adapters/telemetry/noop.ts';
+import { createOtelTelemetry } from './adapters/telemetry/otel.ts';
+import { readTelemetrySettings } from './adapters/telemetry/settings.ts';
+import { bindShutdown, type ShutdownBinding } from './adapters/telemetry/shutdown.ts';
 
 export type ComposeOptions = {
   /** `<D>`: a área de dados, que o `path` do `attach` nunca alcança (D-15). */
@@ -21,15 +26,17 @@ export type ComposeOptions = {
   cwd: string;
   clock: () => Date;
   logger: Logger;
+  /** Telemetria injetada; sem ela vale `noopTelemetry`. Só `compose` a recebe, nunca `composeReader`. */
+  telemetry?: Telemetry;
 };
 
-export type ComposeReaderOptions = Omit<ComposeOptions, 'clock'>;
+export type ComposeReaderOptions = Omit<ComposeOptions, 'clock' | 'telemetry'>;
 
 /** Adaptadores de disco e o lado de leitura que `compose` e `composeReader` compartilham. */
-function wire({ dataDir, cwd, logger }: ComposeReaderOptions) {
+function wire({ dataDir, cwd, logger }: ComposeReaderOptions, onLoad?: (load: LoadReport) => void) {
   const definitions = createDefinitionStore({ dataDir });
   const attachments = createAttachmentStore({ dataDir, cwd });
-  const processes = createProcessStore({ dataDir, log: logger });
+  const processes = createProcessStore({ dataDir, log: logger, onLoad });
 
   const reader = {
     query: createQueryService({
@@ -57,8 +64,11 @@ function wire({ dataDir, cwd, logger }: ComposeReaderOptions) {
  * testes só recebem o que sai daqui.
  */
 export function compose(options: ComposeOptions) {
-  const { clock, logger } = options;
-  const { definitions, attachments, processes, reader } = wire(options);
+  const { clock, logger, telemetry = noopTelemetry } = options;
+  const { definitions, attachments, processes, reader } = wire(
+    options,
+    telemetry.enabled ? (load) => telemetry.recordLoad(load) : undefined,
+  );
   const validator = createValidator();
 
   return {
@@ -87,4 +97,21 @@ export function compose(options: ComposeOptions) {
  */
 export function composeReader(options: ComposeReaderOptions) {
   return wire(options).reader;
+}
+
+/**
+ * Telemetria do processo: `noopTelemetry` sem `HEXLOG_OTEL_ENDPOINT`, o adaptador OTLP com ele. O único
+ * ponto que importa `adapters/telemetry/`; chamada antes do `compose`, que repassa a telemetria já
+ * montada ao `onLoad` do store. O scrub de `OTEL_*` vale só durante a construção do SDK e o ambiente
+ * é restaurado em seguida.
+ */
+export function composeTelemetry(env: NodeJS.ProcessEnv, logger: Logger): Telemetry {
+  const settings = readTelemetrySettings(env);
+  return isUndefined(settings) ? noopTelemetry : createOtelTelemetry({ settings, logger });
+}
+
+/** Liga o encerramento do processo à telemetria; com ela desligada não instala nenhum handler. */
+export function composeShutdown(options: ShutdownBinding): void {
+  if (!options.telemetry.enabled) return;
+  bindShutdown(options);
 }

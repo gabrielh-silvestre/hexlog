@@ -82,6 +82,15 @@ mudado não reinstala o artefato, não reescreve `settings.json` nem registra o 
 vez; só as skills são recopiadas. Argumento desconhecido é recusado com exit 1 antes
 de qualquer escrita; os aceitos são `--check` e `--archive-0x`.
 
+### Variáveis de ambiente da entrada MCP
+
+Ao refazer a entrada `mcpServers.hexlog`, o instalador lê o `env` dela e o
+repassa a `claude mcp add --scope user hexlog -e K=V ... -- <node> <servidor>`,
+então a telemetria opcional ([telemetria.md](telemetria.md)) sobrevive à
+atualização. A saída lista só os nomes (`mcp env preserved: <chaves>`), nunca os
+valores. O `claude mcp get hexlog` imprime o `env` em claro: um segredo em
+`HEXLOG_OTEL_HEADERS` fica legível no `~/.claude.json` e na saída desse comando.
+
 ### Instalação concorrente
 
 Se dois processos de instalação rodarem ao mesmo tempo, um deles pode

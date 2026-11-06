@@ -29,11 +29,26 @@ const COMPOSE_ONLY_ROOT = {
   message: 'Só server.ts, scripts e testes importam compose.ts.',
 };
 
+// O padrão `@opentelemetry/*` já cobre subcaminhos, mas `/**` torna a intenção explícita.
+const OTEL_ONLY_TELEMETRY = {
+  group: ['@opentelemetry/*', '@opentelemetry/*/**'],
+  message: 'Só adapters/telemetry conhece o SDK do OpenTelemetry.',
+};
+
+// A telemetria vale para commands/, queries/, mcp/ e adapters/ (capabilities-scope), então os três
+// tipos saem só do núcleo, que é puro (convencoes.md, "Núcleo e bordas").
+const TELEMETRY_PORTS_NOT_IN_CORE = {
+  group: ['**/ports.ts'],
+  importNames: ['Telemetry', 'CallProbe', 'LoadReport'],
+  message: 'O núcleo (domain/, shared/) é puro: não recebe os tipos de telemetria de ports.ts.',
+};
+
 const FORBIDDEN_GROUPS = [
   INFRA_SUBPATHS,
   { group: ['@modelcontextprotocol/*'], message: 'Só mcp/ conhece o SDK do MCP.' },
   { group: ['**/adapters/**'], message: 'Esta camada depende de portas, nunca de adapters.' },
   COMPOSE_ONLY_ROOT,
+  OTEL_ONLY_TELEMETRY,
 ];
 
 // `no-restricted-imports` não enxerga `import('...')`, então o import dinâmico é barrado por sintaxe.
@@ -89,6 +104,18 @@ const mcpBlock = (files, extraGroups = []) => ({
         patterns: [
           { group: ['**/adapters/**'], message: 'mcp chama serviços, nunca adapters.' },
           COMPOSE_ONLY_ROOT,
+          OTEL_ONLY_TELEMETRY,
+          // Lista fechada de capacidades (capabilities-contract): de shared/ só o logger; de
+          // ports.ts só os tipos de telemetria usados pelo kernel.
+          {
+            group: ['**/shared/**', '!**/shared/logger.ts'],
+            message: 'mcp só importa shared/logger.ts.',
+          },
+          {
+            group: ['**/ports.ts'],
+            allowImportNames: ['Telemetry', 'CallProbe'],
+            message: 'mcp só importa de ports.ts os tipos Telemetry e CallProbe.',
+          },
           ...extraGroups,
         ],
       },
@@ -99,18 +126,31 @@ const mcpBlock = (files, extraGroups = []) => ({
 
 // adapters implementam portas: nunca importam a camada de serviços nem a MCP. Sem as travas de
 // builtin, de infra e de SDK das outras camadas: é aqui que o I/O mora.
+const ADAPTER_LAYER_PATTERNS = ['commands', 'queries', 'mcp'].map((layer) => ({
+  group: [`**/${layer}/**`],
+  message: `adapters implementam portas, nunca importam ${layer}.`,
+}));
+
+// Só adapters/telemetry importa o SDK do OpenTelemetry: o bloco dele repete os padrões de camada
+// sem o SDK. O adaptersBlock o exclui por `ignores`, em vez de um bloco `src/**` posterior que
+// descartaria a trava (o último bloco que casa vence).
+const TELEMETRY_FILES = ['src/adapters/telemetry/**'];
+
 const adaptersBlock = {
   files: ['src/adapters/**/*.ts'],
+  ignores: TELEMETRY_FILES,
   rules: {
     'no-restricted-imports': [
       'error',
-      {
-        patterns: ['commands', 'queries', 'mcp'].map((layer) => ({
-          group: [`**/${layer}/**`],
-          message: `adapters implementam portas, nunca importam ${layer}.`,
-        })),
-      },
+      { patterns: [...ADAPTER_LAYER_PATTERNS, OTEL_ONLY_TELEMETRY] },
     ],
+  },
+};
+
+const telemetryBlock = {
+  files: TELEMETRY_FILES,
+  rules: {
+    'no-restricted-imports': ['error', { patterns: ADAPTER_LAYER_PATTERNS }],
   },
 };
 
@@ -135,13 +175,19 @@ const scriptsBlock = {
 
 export const boundaryBlocks = [
   restrictImports(['src/domain/**/*.ts'], {
-    extraGroups: forbidLayers(
-      ['commands', 'queries', 'mcp', 'shared'],
-      'domain não importa camadas de fora do núcleo.',
-    ),
+    extraGroups: [
+      ...forbidLayers(
+        ['commands', 'queries', 'mcp', 'shared'],
+        'domain não importa camadas de fora do núcleo.',
+      ),
+      TELEMETRY_PORTS_NOT_IN_CORE,
+    ],
   }),
   restrictImports(['src/shared/**/*.ts'], {
-    extraGroups: forbidLayers(['commands', 'queries', 'mcp'], ABOVE_MESSAGE),
+    extraGroups: [
+      ...forbidLayers(['commands', 'queries', 'mcp'], ABOVE_MESSAGE),
+      TELEMETRY_PORTS_NOT_IN_CORE,
+    ],
   }),
   // `ports.ts` está na raiz de `src/`, fora de qualquer glob de camada: só declara contratos.
   restrictImports(['src/ports.ts'], {
@@ -162,6 +208,7 @@ export const boundaryBlocks = [
     extraRules: MAX_LINES,
   }),
   adaptersBlock,
+  telemetryBlock,
   mcpBlock(['src/mcp/**/*.ts']),
   mcpBlock(
     ['src/mcp/kernel.ts'],

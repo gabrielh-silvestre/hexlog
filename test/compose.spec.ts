@@ -2,8 +2,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import MiniSearch from 'minisearch';
-import { compose, composeReader } from '../src/compose.ts';
+import { noopTelemetry } from '../src/adapters/telemetry/noop.ts';
+import { compose, composeReader, composeShutdown, composeTelemetry } from '../src/compose.ts';
 import { processPaths } from '../src/adapters/fs/data-format.ts';
+import type { Telemetry } from '../src/ports.ts';
 import type { Logger } from '../src/shared/logger.ts';
 import { captureError, createTempDir } from './helpers.ts';
 import { AUTHOR, NOTE, NOW, PROJECT, note } from './commands/fakes.ts';
@@ -101,6 +103,51 @@ describe('compose', () => {
 
     expect(isLegacy()).toBe(true);
   });
+
+  describe('with a telemetry', () => {
+    const recordLoad = jest.fn<Telemetry['recordLoad']>();
+    const telemetryOf = (enabled: boolean): Telemetry => ({
+      ...noopTelemetry,
+      enabled,
+      recordLoad,
+    });
+
+    /** Cria o processo e lê o log vazio por uma tool de leitura, sobre a composição com `telemetry`. */
+    function createAndRead(telemetry: Telemetry) {
+      const cwd = createTempDir('compose');
+      const dataDir = path.join(cwd, 'data');
+      fs.mkdirSync(dataDir);
+      const { services } = compose({
+        dataDir,
+        cwd,
+        clock: () => NOW,
+        logger: () => undefined,
+        telemetry,
+      });
+      services.definition.defineType({ project: PROJECT, name: 'note', schema: NOTE });
+      services.process.createProcess(REF);
+      services.query.queryRecords(REF);
+    }
+
+    afterEach(() => {
+      recordLoad.mockClear();
+    });
+
+    it('should hand the store an onLoad that reaches recordLoad when the telemetry is enabled', () => {
+      createAndRead(telemetryOf(true));
+
+      expect(recordLoad.mock.calls).toEqual([
+        [{ ref: REF, role: 'target' }],
+        [{ ref: REF, role: 'read', bytes: 0, lines: 0 }],
+      ]);
+    });
+
+    it('should not call recordLoad after a read when the telemetry is disabled', () => {
+      createAndRead(telemetryOf(false));
+
+      expect(recordLoad).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('composeReader', () => {
@@ -147,6 +194,13 @@ describe('composeReader', () => {
     expect(read(reader)).toEqual(expected(records));
   });
 
+  it('should reject a telemetry option at the type level', () => {
+    const options = { cwd: '', dataDir: '', logger: () => undefined };
+
+    // @ts-expect-error o lado de leitura não leva telemetria
+    expect(() => composeReader({ ...options, telemetry: noopTelemetry })).not.toThrow();
+  });
+
   it('should list a process with an unreadable process.json', async () => {
     const { reader, dataDir } = await seeded();
     fs.writeFileSync(processPaths(dataDir, REF).manifest, '{');
@@ -161,5 +215,83 @@ describe('composeReader', () => {
     expect(captureError(() => reader.query.list({ project: PROJECT }))).toMatchObject({
       code: 'PROCESS_CORRUPTED',
     });
+  });
+});
+
+describe('composeTelemetry', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it.each([
+    { scenario: 'no key', env: {} },
+    { scenario: 'an empty key', env: { HEXLOG_OTEL_ENDPOINT: '' } },
+    { scenario: 'a blank key', env: { HEXLOG_OTEL_ENDPOINT: '   ' } },
+    {
+      scenario: 'only the standard OTLP variables',
+      env: {
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'http://127.0.0.1:1',
+        OTEL_EXPORTER_OTLP_HEADERS: 'authorization=x',
+      },
+    },
+  ])('should return noopTelemetry without calling fetch for $scenario', ({ env }) => {
+    const fetch = jest.spyOn(globalThis, 'fetch');
+
+    const telemetry = composeTelemetry(env, () => undefined);
+
+    expect(telemetry).toBe(noopTelemetry);
+    expect(telemetry.enabled).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should return an enabled telemetry when the key is set', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }));
+
+    const telemetry = composeTelemetry(
+      { HEXLOG_OTEL_ENDPOINT: 'http://127.0.0.1:1' },
+      () => undefined,
+    );
+
+    expect(telemetry.enabled).toBe(true);
+
+    await telemetry.shutdown(500);
+  });
+});
+
+describe('composeShutdown', () => {
+  function fakeProcess() {
+    return {
+      stdin: { readableEnded: false, destroyed: false, on: jest.fn() },
+      on: jest.fn(),
+      once: jest.fn(),
+      exit: jest.fn(),
+    };
+  }
+
+  it('should not install any handler when the telemetry is disabled', () => {
+    const proc = fakeProcess();
+
+    composeShutdown({
+      telemetry: noopTelemetry,
+      proc,
+      closeTransport: () => Promise.resolve(),
+    });
+
+    expect(proc.on).not.toHaveBeenCalled();
+    expect(proc.once).not.toHaveBeenCalled();
+    expect(proc.stdin.on).not.toHaveBeenCalled();
+  });
+
+  it('should bind the process events when the telemetry is enabled', () => {
+    const proc = fakeProcess();
+
+    composeShutdown({
+      telemetry: { ...noopTelemetry, enabled: true },
+      proc,
+      closeTransport: () => Promise.resolve(),
+    });
+
+    expect(proc.on).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+    expect(proc.stdin.on).toHaveBeenCalledWith('end', expect.any(Function));
   });
 });

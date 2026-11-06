@@ -13,6 +13,10 @@ version: 2
 # dependabot-auto-merge.yml e só vale com `allow_auto_merge` ligado no repositório; sem a flag, e
 # para github-actions e major, o merge é manual.
 # O prefixo mantém o título como Conventional Commit (o cliff.toml descarta os demais).
+# O conjunto `@opentelemetry/*` sobe num PR agrupado próprio (`opentelemetry`), fora do
+# `minor-and-patch`, e o merge é manual: os exporters pinam versões exatas da família, o `api` tem
+# peer estrito e um exporter 0.x sobe por minor, então o PR pode chegar quebrado e o lock e a
+# revisão humana o pegam. O security update de um pacote do OpenTelemetry também espera merge manual.
 # Major de npm nunca vem pelo Dependabot como version update (`ignore`). Se o `ignore` alcançar a
 # security update, o alerta cuja correção só existe numa major fica sem PR automático (segue aberto
 # na aba Security) e entra por PR manual; senão, o PR abre e o auto-merge o ignora por ser major.
@@ -29,9 +33,17 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      opentelemetry:
+        patterns:
+          - '@opentelemetry/*'
+        update-types:
+          - minor
+          - patch
       minor-and-patch:
         patterns:
           - '*'
+        exclude-patterns:
+          - '@opentelemetry/*'
         update-types:
           - minor
           - patch

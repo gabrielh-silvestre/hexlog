@@ -29,12 +29,12 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `.github/workflows/commitlint.yml` | Job `commitlint` em todo PR, qualquer base: confere as mensagens de `base.sha..head.sha` com `commitlint.config.js`; `chore/back-merge-*` pula o job só quando `head.repo.full_name` é o próprio repositório (PR de fork com esse nome passa pelo job) |
 | `.github/workflows/docs.yml` | Job `docs` em todo PR, qualquer base: `npm run lint:md` e `npm run spell` sobre o repositório todo |
 | `.github/workflows/dependency-review.yml` | Job `dependency-review` em todo PR: a `dependency-review-action` (tag exata `v5.0.0`, sem major publicada) falha em dependência nova com advisory `high` ou acima, sem filtro de licença |
-| `.github/workflows/dependabot-auto-merge.yml` | Job `dependabot-auto-merge` em PR do `dependabot[bot]`: liga o auto-merge nos PRs de `npm` minor e patch; regra em `docs/directives/qualidade-e-testes.md`, pré-condição e risco aceito no cabeçalho do workflow |
+| `.github/workflows/dependabot-auto-merge.yml` | Job `dependabot-auto-merge` em PR do `dependabot[bot]`: liga o auto-merge nos PRs de `npm` minor e patch, exceto os que atualizam `@opentelemetry/*` (merge manual, fail-closed com `dependency-names` vazio); regra em `docs/directives/qualidade-e-testes.md`, pré-condição e risco aceito no cabeçalho do workflow |
 | `.github/workflows/scorecard.yml` | Job `scorecard` do OpenSSF Scorecard, medidor e não gate, com SARIF na aba Security; limitações no cabeçalho do workflow |
 | `.github/workflows/release.yml` | Job `release` no `push` em `main`: cria a tag `vX.Y.Z`, o GitHub Release e o PR de back-merge para `develop`; fluxo em `docs/directives/documentacao.md`, o resto no workflow |
 | `.github/workflows/openbot-issue-webhook.yml` | Job `notify` em issue aberta: manda a issue, assinada por `HMAC-SHA256`, ao webhook da routine W1 do OpenBot (segredos `OPENBOT_WEBHOOK_URL` e `OPENBOT_WEBHOOK_SECRET`); pula issue com `umbrella` e evento do `openbotgit` |
 | `.github/discovery-taxonomy.yml` | Taxonomia fechada do discovery do OpenBot: frentes (`frente:*`), funcionalidades com caminhos (`func:*`), mapa das labels antigas e labels de processo; os agentes a leem na `develop` |
-| `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`, version updates semanais em `develop`; regra em `docs/directives/qualidade-e-testes.md`, security updates e `ignore` no cabeçalho do arquivo |
+| `.github/dependabot.yml` | Dependabot em `npm` e `github-actions`, version updates semanais em `develop`, com o grupo `opentelemetry` (`@opentelemetry/*`) fora do `minor-and-patch`; regra em `docs/directives/qualidade-e-testes.md`, security updates e `ignore` no cabeçalho do arquivo |
 | `.github/pull_request_template.md` | Template de PR só com os vínculos: `Closes #N`, linha do `CHANGELOG.md` em `[Não lançado]`, PR relacionado, versão ou tag |
 | `SECURITY.md` | Política de segurança: só a versão mais recente recebe correção; o relato é privado, pelo formulário de reporte privado do GitHub (aba Security) |
 | `CHANGELOG.md` | Mudanças visíveis por versão, no Keep a Changelog em pt-BR, desde a 1.0.0; `test/changelog.spec.ts` exige a seção da versão do `package.json` |
@@ -55,7 +55,7 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `hook/` | Hook PreToolUse que bloqueia acesso via Bash ao diretório de dados (see `hook/AGENTS.md`) |
 | `scripts/` | Build esbuild, instalador e scripts read-only de insights, export, timeline e `seat-report` (relatório da cadeira do dono); `release-notes.ts` e `release-notes-cli.ts` só usam builtins do Node e leem apenas o `CHANGELOG.md`, porque o `release.yml` os roda sem `npm ci` (see `scripts/AGENTS.md`) |
 | `test/` | Specs unit, property, MCP em memória, e2e stdio sobre o bundle real e pacote (see `test/AGENTS.md`) |
-| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0014) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
+| `docs/` | Guias, estudos de apoio, as diretrizes em `docs/directives/` (docs vivos de regras e ADRs 0007 a 0015) e a pesquisa que fundamenta as decisões (see `docs/AGENTS.md`) |
 | `skills/` | As skills de `skills/`, cada uma instalada pelo instalador em `~/.claude/skills/<nome>/SKILL.md`: `hexlog` (bootstrap/diagnóstico), `hexlog-setup` (configura um repositório de destino: gera a skill do projeto e o modelo declarativo, e, se o dev ligar, a cadeira do dono opt-in) e `hexlog-flow` (mecânica de registro, consulta e ciclo de vida da unidade, com projeto, processo e gate vindos da skill do projeto) (see `skills/AGENTS.md`) |
 
 ## Dependencies
@@ -69,6 +69,7 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 - `jsonc-parser`: edição preservando formatação de `~/.claude/settings.json` (instalação e guard)
 - `minisearch`: busca textual no filtro `text` de `query`
 - `shell-quote`: tokenização de comandos no hook
+- `@opentelemetry/*` (sete pacotes: `api`, `sdk-trace`, `sdk-metrics`, `resources`, `core` e os exporters OTLP/HTTP de traces e métricas): telemetria opcional, só em `src/adapters/telemetry/`
 
 ### Dev (`devDependencies`)
 - `esbuild`: build dos dois bundles

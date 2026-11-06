@@ -1,11 +1,13 @@
 import { beforeAll, describe, expect, it } from '@jest/globals';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { z } from 'zod';
 import { detectLegacy } from '../src/adapters/fs/data-format.ts';
 import { expectedRules } from '../src/guard.ts';
 import { versionDirOf } from '../src/installation.ts';
-import { at, createTempDir } from './helpers.ts';
+import { at, createTempDir, parseJson } from './helpers.ts';
 import {
   buildSettingsTemplate,
   createInstallHome,
@@ -65,6 +67,118 @@ describe('scripts/install.ts', () => {
     expect(result.stderr).toContain('unknown argument: --archive0x');
     expect(fs.readdirSync(disposableHome)).toEqual([]);
   }, 30_000);
+
+  describe('with the mcp env', () => {
+    const env = {
+      HEXLOG_OTEL_ENDPOINT: 'http://collector.example:4318',
+      HEXLOG_OTEL_HEADERS: 'authorization=Bearer secret-token',
+    };
+    const ClaudeJsonSchema = z.looseObject({
+      mcpServers: z.looseObject({
+        hexlog: z.looseObject({ env: z.record(z.string(), z.string()) }),
+      }),
+    });
+    let withEnv: ReturnType<typeof runInstaller>;
+    let withEnvJson: string;
+    let withoutEnvJson: string;
+    let addRefused: ReturnType<typeof runInstaller>;
+    let binaryMissing: ReturnType<typeof runInstaller>;
+
+    function installOver(
+      prefix: string,
+      hexlog: Record<string, unknown>,
+      extraEnv: NodeJS.ProcessEnv = {},
+    ) {
+      const { home, D } = createInstallHome(prefix);
+      const file = path.join(home, '.claude.json');
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.claude', 'settings.json'), buildSettingsTemplate(home));
+      fs.writeFileSync(file, JSON.stringify({ mcpServers: { hexlog } }));
+      const result = runInstaller(home, D, [], repoRoot, extraEnv);
+      return { result, claudeJson: fs.readFileSync(file, 'utf8') };
+    }
+
+    // `PATH` só com o `git` do instalador e, se houver script, um `claude` que roda o script.
+    function pathWith(prefix: string, claudeScript?: string): NodeJS.ProcessEnv {
+      const bin = createTempDir(prefix);
+      fs.symlinkSync(execFileSync('which', ['git'], { encoding: 'utf8' }).trim(), `${bin}/git`);
+      if (claudeScript !== undefined) {
+        fs.writeFileSync(`${bin}/claude`, claudeScript, { mode: 0o755 });
+      }
+      return { PATH: bin, HEXLOG_REGISTER_MCP: undefined };
+    }
+
+    // Caminho antigo do servidor: o instalador precisa refazer a entrada.
+    beforeAll(() => {
+      const old = { command: process.execPath, args: ['/old/server.mjs'] };
+      const first = installOver('install-mcp-env', { ...old, env });
+      withEnv = first.result;
+      withEnvJson = first.claudeJson;
+      withoutEnvJson = installOver('install-mcp-no-env', old).claudeJson;
+      // O `remove` sai 0 e o `add` sai 1, como o `claude` que apaga a entrada e recusa a nova.
+      const refuseAdd = '#!/bin/sh\n[ "$2" = remove ] && exit 0\nexit 1\n';
+      const claudeRefusesAdd = pathWith('install-mcp-bin-refuse', refuseAdd);
+      addRefused = installOver('install-mcp-add-refused', { ...old, env }, claudeRefusesAdd).result;
+      binaryMissing = installOver(
+        'install-mcp-no-claude',
+        { ...old, env },
+        pathWith('install-mcp-bin-none'),
+      ).result;
+    }, 120_000);
+
+    it('should keep the whole env when the server path changes', () => {
+      const parsed = parseJson(ClaudeJsonSchema, withEnvJson);
+
+      expect(withEnv.status).toBe(0);
+      expect(parsed.mcpServers.hexlog.env).toEqual(env);
+    });
+
+    it('should list only the names of the preserved env keys', () => {
+      expect(withEnv.stdout).toContain(
+        'mcp env preserved: HEXLOG_OTEL_ENDPOINT, HEXLOG_OTEL_HEADERS',
+      );
+      expect(withEnv.stdout).not.toContain('secret-token');
+      expect(withEnv.stdout).not.toContain('collector.example');
+    });
+
+    it('should fail without printing the header value when the registration fails', () => {
+      process.env.HEXLOG_FAKE_MCP_FAIL = '1';
+      let failed: ReturnType<typeof runInstaller>;
+      try {
+        failed = installOver('install-mcp-fail', {
+          command: process.execPath,
+          args: ['/old/server.mjs'],
+          env,
+        }).result;
+      } finally {
+        delete process.env.HEXLOG_FAKE_MCP_FAIL;
+      }
+
+      expect(failed.status).toBe(1);
+      expect(failed.stderr).toContain('claude mcp add failed (exit 1)');
+      expect(`${failed.stdout}${failed.stderr}`).not.toContain('secret-token');
+    }, 60_000);
+
+    it('should name the lost env keys, without the values, when the add fails after the remove', () => {
+      expect(addRefused.status).toBe(1);
+      expect(addRefused.stderr).toContain(
+        'mcp env lost, set again: HEXLOG_OTEL_ENDPOINT, HEXLOG_OTEL_HEADERS',
+      );
+      expect(`${addRefused.stdout}${addRefused.stderr}`).not.toContain('secret-token');
+    });
+
+    it('should report the missing binary without the env warning when claude is not on PATH', () => {
+      expect(binaryMissing.status).toBe(1);
+      expect(binaryMissing.stderr).toContain('claude binary not found on PATH');
+      expect(binaryMissing.stderr).not.toContain('mcp env lost');
+    });
+
+    it('should register an empty env when there was none before', () => {
+      const parsed = parseJson(ClaudeJsonSchema, withoutEnvJson);
+
+      expect(parsed.mcpServers.hexlog.env).toEqual({});
+    });
+  });
 
   describe('with --check', () => {
     let home: string;
