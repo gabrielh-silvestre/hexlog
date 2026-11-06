@@ -1,6 +1,6 @@
 import { isUndefined, omitBy } from 'es-toolkit';
 import type { RuleCode, Violation } from '../../domain/relations.ts';
-import { domainError, type Detail, type HexlogError, invalidRecord } from '../../errors.ts';
+import { type Detail, fromDetails, type HexlogError, invalidRecord } from '../../errors.ts';
 
 const RULE_MESSAGES: Record<RuleCode, string> = {
   'self-relation': 'a record cannot relate to itself',
@@ -33,10 +33,7 @@ export function ruleDetail(path: string, { code, current, kind }: Violation): De
 /** A recusa de uma violação de regra: `not-current` é `FORK_REJECTED`; as demais, `INVALID_RECORD`. */
 export function ruleRefusal(path: string, violation: Violation): HexlogError {
   const detail = ruleDetail(path, violation);
-  if (violation.code === 'not-current') {
-    return domainError('FORK_REJECTED', path, detail.code, detail.message, {
-      current: violation.current,
-    });
-  }
-  return invalidRecord([detail]);
+  return violation.code === 'not-current'
+    ? fromDetails('FORK_REJECTED', detail.message, [detail])
+    : invalidRecord([detail]);
 }
