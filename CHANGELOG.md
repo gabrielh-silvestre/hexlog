@@ -12,6 +12,14 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 - A descrição da `query` volta a dizer que `changesSince` traz as mudanças desde o marcador devolvido (#372).
 
+### Corrigido
+
+- O `timeline` e o `seat-report` escapam os seletores de variação U+E0100 a U+E01EF, que um modelo lê sem decodificador; `--raw` segue imprimindo o byte exato (#376).
+
+### Migração
+
+- Corrige a Migração da 1.2.3, que omitiu este passo do #311: quem roda Node 25 ou 26 deve passar para Node 24.x (`^24.18.1`) (#376).
+
 ## [1.2.3] - 2026-10-29
 
 Aviso de versão: esta versão traz recursos novos (o `hexlog-setup` reconstruído, a cadeira do dono e o `seat-report`) e muda as mensagens e os `details` do `INVALID_RECORD` do `register`; a Migração abaixo diz como se adaptar.
