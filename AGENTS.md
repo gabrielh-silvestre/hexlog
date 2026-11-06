@@ -18,7 +18,6 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `.husky/pre-commit` | Roda `lint-staged --concurrent false` (`lint-staged.config.ts`): as chaves `*.ts` e `*.md` rodam em série |
 | `lint-staged.config.ts` | Config do `lint-staged`: nos `*.ts` em stage roda `eslint --fix`, `prettier --write`, `npm run typecheck` e os specs (o núcleo fixo `test/domain/`, `test/shared/`, `register.spec.ts` e `register-state.spec.ts`, mais o spec de mesmo nome em qualquer pasta de `test/`: `y.ts` casa `y.spec.ts` e `y.<x>.spec.ts`); nos `*.md`, `markdownlint-cli2`, `cspell`, `directives.spec.ts` e `skill-coherence.spec.ts` |
 | `.markdownlint-cli2.jsonc`, `cspell.json` | Lint e ortografia dos `.md` (`npm run lint:md`, `npm run spell`): `docs/pesquisa/**` fora dos dois e o template de PR fora do lint, MD013 e as regras que outros `.md` também violam desligadas no repositório todo, as sete que só o `AGENTS.md` gerado e os ADRs violam desligadas só neles por `overrides`, dicionário pt-BR (`@cspell/dict-pt-br`), `words` do projeto e nome de arquivo `.md` fora da conferência |
-| `.husky/pre-push` | No 1º push de uma branch (sha remoto zerado) roda `npm run test:coverage`; tag, remoção e pushes seguintes pulam |
 | `.husky/commit-msg` | Roda o `commitlint` na mensagem do commit (`commitlint.config.js`) |
 | `commitlint.config.js` | Config do `commitlint`: `config-conventional`, header até 80 caracteres, corpo vazio; `Merge` e `Revert` do Git passam pelos ignores padrão e o commit do Dependabot pelo rodapé `Signed-off-by: dependabot[bot]` |
 | `.github/workflows/ci.yml` | CI: `npm audit signatures`, `typecheck`, `lint`, `knip`, `format:check`, `test:coverage` (piso de 90%) e `test:budget` (Node 24.18.1) |
@@ -46,7 +45,7 @@ Servidor MCP stdio (TypeScript, Node ^24.18.1) para agentes registrarem o própr
 | `LICENSE` | Licença MIT |
 | `.gitignore` | Arquivos ignorados |
 | `.claude/` | Config do Claude Code do projeto: `settings.json` com os hooks do fluxo, `hooks/` (só `flow-hooks.ts` e `flow-command.ts`, os hooks; `slug`, `sync-cli`, `mark`, `gate`, `report`, `reanchor` e `critic` vivem em `scripts/flow/`, que o Claude Code não dispara), as skills locais em `skills/` e `workflows/` (`friction-mining-run.js`) e `CONTEXT.md`, o glossário do fluxo de desenvolvimento. Fica fora do bundle do produto |
-| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: 8 tipos (`types/*.json`, JSON Schema cru), 6 relações (`relations/*.json`, `{kind, from, to}`) e 2 gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. O fluxo deste repositório não mora num mapa: o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
+| `.hexlog/` | Fonte versionada do `define_*` do fluxo guiado por diretrizes: tipos (`types/*.json`, JSON Schema cru), relações (`relations/*.json`, `{kind, from, to}`) e gates (`gates/*.json`, `{questions}`), com o nome do arquivo como nome da definição; `test/flow-definitions.spec.ts` as ensaia em memória. O fluxo deste repositório não mora num mapa: o papel é de `docs/directives/fluxo-hexlog.md` e das skills locais |
 
 ## Subdirectories
 | Directory | Purpose |

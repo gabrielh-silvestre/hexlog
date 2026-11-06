@@ -1,6 +1,6 @@
 # Feedback loops do commit e do pré-PR
 
-Onde o erro é pego antes de chegar ao CI. Dois pontos: o **commit** (rápido, a cada commit) e o **pré-PR** (pesado, uma vez por branch, mais o freio que o agente cumpre antes de abrir o PR). O que o CI repete depois está em [qualidade-e-testes.md](directives/qualidade-e-testes.md).
+Onde o erro é pego antes de chegar ao CI. Dois pontos: o **commit** (rápido, a cada commit) e o **pré-PR** (pesado, uma vez por branch, mais o freio que o agente cumpre antes de abrir o PR). O que roda no CI está em [qualidade-e-testes.md](directives/qualidade-e-testes.md).
 
 ## Mapa rápido
 
@@ -15,12 +15,10 @@ flowchart TB
     end
 
     subgraph PREPR["Pré-PR"]
-        G["pré-PR do agente<br/>decisões, review, flow-report"] --> E(["git push<br/>1º da branch"])
-        E --> F["pre-push<br/>cobertura 90%"]
-        F -->|passa| H["mark<br/>gates pre-pr e gaps"]
+        G["pré-PR do agente<br/>decisões, review, flow-report"] --> E(["git push"])
+        E --> H["mark<br/>gates pre-pr e gaps"]
         H -->|verdes| I{"hook de PR<br/>marcador bate<br/>com a ponta?"}
         I -->|sim| K(["PR aberto"])
-        F -.->|falha| X2["push bloqueado"]
         H -.->|reprovado| X3["marcador não gravado<br/>lista gate e ids"]
         I -.->|não| X4["PR bloqueado<br/>pede o pré-PR"]
     end
@@ -29,7 +27,7 @@ flowchart TB
 
     classDef block fill:#fde2e2,stroke:#c0392b,color:#7b1d1d
     classDef ok fill:#e0f5e4,stroke:#2e8b57,color:#14532d
-    class X1,X2,X3,X4 block
+    class X1,X3,X4 block
     class D,K ok
 ```
 
@@ -37,9 +35,8 @@ Linha pontilhada = bloqueio: corrija e repita o passo. A tabela abaixo detalha c
 
 | Ponto | Gatilho | O que roda | Bloqueia quando | Tempo |
 | --- | --- | --- | --- | --- |
-| `pre-commit` | `git commit` | `eslint --fix`, `prettier --write`, `typecheck` e specs (`.ts`); `markdownlint`, `cspell` e dois specs de doc (`.md`) | lint sem correção automática, erro de tipo, spec vermelho, `.md` fora da regra | ~5 s de núcleo, mais o spec espelho |
+| `pre-commit` | `git commit` | `eslint --fix`, `prettier --write`, `typecheck` e specs (`.ts`); `markdownlint`, `cspell` e os specs de doc (`.md`) | lint sem correção automática, erro de tipo, spec vermelho, `.md` fora da regra | segundos: o núcleo fixo e o spec espelho |
 | `commit-msg` | `git commit` | `commitlint` na mensagem | fora do Conventional Commits, header acima de 80 caracteres, corpo preenchido | instantâneo |
-| `pre-push` | 1º push de uma branch | `npm run test:coverage` | spec vermelho (inclusive os de bundle, que constroem o artefato), cobertura abaixo de 90% | 3 a 5 min |
 | Pré-PR do agente | "faz o pré-PR" (skill `flow-run`) | texto das decisões, review, `flow-report`, `mark` | `finding` URGENT sem `decision`, `gap` sem fechador | minutos, depende da review |
 | Hook de PR | abrir o PR (MCP ou `gh`) | confere o marcador do `mark` | sem marcador válido para a ponta da branch | instantâneo |
 
@@ -52,7 +49,7 @@ Roda em todo `git commit`. Se qualquer etapa falhar, o commit não é criado.
      1. `eslint --fix`
      2. `prettier --write`
      3. `typecheck` do projeto inteiro
-     4. Specs: o núcleo fixo (~5 s) e o spec de mesmo nome de cada arquivo
+     4. Specs: o núcleo fixo e o spec de mesmo nome de cada arquivo
    - Com `.md` em stage:
      1. `markdownlint`
      2. `cspell` (pt-BR)
@@ -67,7 +64,7 @@ Roda em todo `git commit`. Se qualquer etapa falhar, o commit não é criado.
 
 - ESLint e Prettier rodam só em `.ts`: `.json`, `.yml` e `.js` só são conferidos no CI (`format:check`, e ESLint em `.js`).
 - `.claude/settings.json` não é conferido por nenhum dos dois.
-- Regressão de teste em quem importa o arquivo editado só aparece no `pre-push` e no CI; erro de tipo aparece no commit.
+- Regressão de teste em quem importa o arquivo editado só aparece no CI; erro de tipo aparece no commit.
 - `--no-verify` e `HUSKY=0` pulam todos os hooks.
 - Worktree nova sem `npm ci` fica sem hooks.
 
@@ -84,8 +81,7 @@ Da última decisão até o PR aberto, nesta ordem:
    3. Rodar o `flow-report`
       - Só aponta decisões com base fraca; nunca bloqueia
    4. Fazer o `git push`
-      - No **1º push da branch** o `pre-push` roda `test:coverage` (piso de 90%), de 3 a 5 min
-      - Falhou: o push é bloqueado
+      - O push não roda teste: a cobertura (piso de 90%) fica com o CI
    5. Rodar o `mark`
       - Confere dois gates
         - `pre-pr`: todo URGENT tem uma `decision` que o resolve
@@ -120,8 +116,8 @@ Da última decisão até o PR aberto, nesta ordem:
 | Regressão em arquivo com spec de mesmo nome | `pre-commit` (espelho) | No commit |
 | `.md` com ortografia, link ou lint quebrado | `pre-commit` | No commit |
 | Mensagem de commit fora do padrão | `commit-msg` | No commit |
-| Regressão em quem importa o arquivo, e specs de bundle | `pre-push` | 1º push |
-| Cobertura abaixo de 90% | `pre-push` | 1º push |
+| Regressão em quem importa o arquivo, e specs de bundle | CI | Depois do push |
+| Cobertura abaixo de 90% | CI | Depois do push |
 | Decisão com texto diferente do diff | passo 1 do pré-PR | Antes do PR |
 | URGENT sem decisão, lacuna sem fechador | `mark` | Antes do PR |
 | PR aberto sem passar pelo pré-PR | hook de PR | Ao abrir |
@@ -132,7 +128,7 @@ Da última decisão até o PR aberto, nesta ordem:
 ```sh
 npm run typecheck && npm run lint && npm run knip && npm run format:check
 npm run lint:md && npm run spell
-npm run test:coverage            # o mesmo do pre-push
+npm run test:coverage            # o mesmo do CI
 npx jest test/domain test/shared # o núcleo do pre-commit
 node scripts/flow/gate.ts pre-pr <slug>   # os gates, sem gravar o marcador
 node scripts/flow/report.ts <slug>        # o relatório de decisões

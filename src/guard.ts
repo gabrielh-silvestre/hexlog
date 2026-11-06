@@ -1,7 +1,7 @@
 // Guard de instalação: regras de deny + hook PreToolUse em
 // `settings.json`, e verificação de que o guard está de fato ativo e
-// funcionando. Puro e testável; não é importado pelo servidor
-// nem pelo hook — só pelo instalador (`scripts/install.ts`).
+// funcionando. Puro, exceto `runRealHook`, o único `spawn`; não é importado
+// pelo servidor nem pelo hook, só por `installation.ts` e `scripts/install.ts`.
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parse, modify, applyEdits, type ModificationOptions } from 'jsonc-parser';

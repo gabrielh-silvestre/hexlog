@@ -144,7 +144,7 @@ O `typescript-checker` fica no padrão `prioritizePerformanceOverAccuracy: true`
 por tempo: o score absoluto é aproximado, e a comparação entre rodadas vale porque a
 config é a mesma. Mudar qualquer uma das três pede rodada-base nova.
 
-Limites da medição. O escopo são os 18 arquivos de `mutate`, e `mutate` e `testMatch` são
+Limites da medição. O escopo são os arquivos de `mutate`, e `mutate` e `testMatch` são
 mantidos à mão: arquivo novo no escopo entra nos dois. `hook/bash-guard.ts`, `src/guard.ts` e
 `src/installation.ts` ficam fora porque seus specs sobem processo filho ou o bundle
 ([qualidade-e-testes.md](directives/qualidade-e-testes.md), seção "Bundle e processo filho", que

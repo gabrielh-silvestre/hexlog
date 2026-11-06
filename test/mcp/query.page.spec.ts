@@ -288,6 +288,7 @@ describe('registerQueryTools', () => {
       'default 50, max 200',
       'at least one record',
       'any record id of the process works as its entry',
+      'changes since then',
       'add limit 0',
       'Resend it',
       `at most ${CHANGES_ITEMS_CAP} ids`,
