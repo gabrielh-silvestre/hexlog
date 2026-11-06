@@ -47,7 +47,13 @@ export function packageVersion(): string {
 }
 
 /** Roda `scripts/install.ts` como processo real, com `HOME` e `<D>` (via `XDG_DATA_HOME`) descartáveis. */
-export function runInstaller(home: string, D: string, args: string[], cwd = repoRoot) {
+export function runInstaller(
+  home: string,
+  D: string,
+  args: string[],
+  cwd = repoRoot,
+  extraEnv: NodeJS.ProcessEnv = {},
+) {
   return spawnSync(process.execPath, [installScript, ...args], {
     cwd,
     encoding: 'utf8',
@@ -56,6 +62,7 @@ export function runInstaller(home: string, D: string, args: string[], cwd = repo
       HOME: home,
       XDG_DATA_HOME: path.dirname(D),
       HEXLOG_REGISTER_MCP: path.join(repoRoot, 'test/fixtures/fake-mcp-install.ts'),
+      ...extraEnv,
     },
   });
 }

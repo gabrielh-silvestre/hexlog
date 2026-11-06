@@ -99,6 +99,7 @@ async function countTools(serverFile: string): Promise<number> {
 /** `claude mcp remove`+`add`; substituível por `HEXLOG_REGISTER_MCP=<script>` nos testes (sem depender do binário `claude`). */
 function registerMcp(execPath: string, serverFile: string, env: Record<string, string>): void {
   const testScript = process.env.HEXLOG_REGISTER_MCP;
+  let removed = false;
   try {
     if (testScript) {
       execFileSync(process.execPath, [testScript, execPath, serverFile, JSON.stringify(env)], {
@@ -108,15 +109,25 @@ function registerMcp(execPath: string, serverFile: string, env: Record<string, s
     }
     try {
       execFileSync('claude', ['mcp', 'remove', 'hexlog', '-s', 'user'], { stdio: 'ignore' });
+      removed = true;
     } catch {
       // Sem entrada prévia: nada a remover, segue direto pro add.
     }
     execFileSync('claude', mcpAddArgs(execPath, serverFile, env), { stdio: 'inherit' });
   } catch (error) {
     // A `message` do `execFileSync` traz o argv inteiro, com o valor dos headers OTLP: não a repassa.
-    const status = (error as { status?: number | null }).status;
+    const { code, status } = error as { code?: string; status?: number | null };
+    const envNames = Object.keys(env);
+    // O `remove` já apagou a entrada: o `env` (com o segredo) só existe agora na memória do usuário.
+    if (removed && envNames.length > 0) {
+      console.error(`mcp env lost, set again: ${envNames.join(', ')}`);
+    }
     // eslint-disable-next-line preserve-caught-error -- o erro original carrega o argv com o segredo
-    throw new Error(`claude mcp add failed (exit ${status ?? 'unknown'})`);
+    throw new Error(
+      code === 'ENOENT'
+        ? 'claude binary not found on PATH'
+        : `claude mcp add failed (exit ${status ?? 'unknown'})`,
+    );
   }
 }
 
