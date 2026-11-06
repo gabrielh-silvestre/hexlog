@@ -79,7 +79,7 @@ Todas as definições entram **antes** do `create_process`.
 
 O `target` do `plan`, do `review` e do `deviation` do mesmo item é o do plano ou uma subárvore dele (`<alvo>.revisao`): o `evaluate_gate` herda o `target` nos seletores sem `targetPrefix`, e só um `review` dentro dessa subárvore conta como aprovador (`domain/gate.ts#evaluateGate`); fora dela o gate volta `passed: false`.
 
-Se o modelo do projeto usa um processo por fase, o `deviation` tem dois casos. O de planejamento (o loop que desistiu, `escalated`) fica no processo de planejamento, e o gate o vê sem `scope`. O de execução vive no processo da fase de execução, e só entra num gate de outro processo se a pergunta `no_pending` declara `scope: "project"` (o alcance processo deixa a relação de outro processo invisível, sem aviso).
+Quando planejamento e execução são unidades diferentes, cada uma com o próprio processo, o `deviation` tem dois casos. O de planejamento (o loop que desistiu, `escalated`) fica no processo de planejamento, e o gate o vê sem `scope`. O de execução vive no processo da execução, e só entra num gate de outro processo se a pergunta `no_pending` declara `scope: "project"` (o alcance processo deixa a relação de outro processo invisível, sem aviso).
 
 ## Ordem das chamadas: `attach` antes de `register`
 

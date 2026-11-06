@@ -33,11 +33,11 @@ mão: depois dela, o ciclo de cada unidade de trabalho pode chegar ao gate verde
 3. uma pergunta por turno levanta a unidade de trabalho, as fases, o que se registra em cada uma, o
    comando que dispara a fase e o artefato de saída;
 4. o agente mostra o plano de chamadas e só registra tipos, relações e gate depois do "aprovado";
-5. o destino ganha `.claude/skills/<projeto>-hexlog/SKILL.md` (curta, em inglês), o
+5. o destino ganha `.claude/skills/<nome da skill>/SKILL.md`, em geral `<projeto>-hexlog` (curta, em inglês), o
    `hexlog-model.json` ao lado dela e um bloco de até 8 linhas no `AGENTS.md` que manda usar a skill
    depois dos comandos das fases.
 
-Cada unidade de trabalho vira um processo hexlog, criado pela skill gerada na primeira fase dela. O
+Cada unidade de trabalho vira um processo hexlog, criado pela skill do projeto na primeira fase dela. O
 setup pode rodar de novo: com o modelo local, compara com o hexlog em vez de reperguntar. O setup só
 escreve a skill do projeto, o modelo e o bloco no `AGENTS.md` do destino (mais, com a cadeira ligada, os
 arquivos de apoio dela dentro da pasta da skill), sem editar outro arquivo de terceiros. O roteiro de aceite, com os passos de verificação, está em

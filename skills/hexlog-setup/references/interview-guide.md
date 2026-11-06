@@ -9,11 +9,11 @@ Dois caminhos, escolhidos no início. Os dois terminam nas mesmas perguntas de u
 "Do you want me to discover how this project works by reading the repository first (read-only), or should I just interview you?"
 
 - **Descoberta**: leia em modo leitura e deduza a ferramenta de orquestração do que o repositório mostra. Resuma ao dev o que achou (pastas de specs, comandos de fase, convenções de nome) e use o resumo para propor respostas às perguntas 3 a 6, que o dev confirma ou corrige.
-- **Entrevista direta**: faça as perguntas 3 a 6 sem proposta prévia.
+- **Entrevista direta**: faça as perguntas 3 a 5 sem proposta prévia; a 6 propõe o gate nos dois caminhos.
 
 ## 1. Nome do projeto hexlog
 
-"What should the hexlog project be called? Use `[a-z0-9-]`, start with a letter or a digit, up to 63 characters." Confira por `list` antes de qualquer `define_*`.
+"What should the hexlog project be called? Use `[a-z0-9-]`, start with a letter or a digit, up to 57 characters, because the skill is named `<project>-hexlog` and a skill name stops at 64." Confira por `list` antes de qualquer `define_*`.
 
 ## 2. Projeto já existente
 
@@ -25,7 +25,7 @@ Quando o `list` mostra o projeto e o setup está sem modelo local (passo 2 do `S
 
 ## 4. Fases
 
-"Which phases does a unit go through, in order?" Uma fase vira um tipo de registro. Depois, uma fase por turno: "What command or action starts the {phase} phase, and what file or artifact does it produce?" Vira `command` e `artifact`.
+"Which phases does a unit go through, in order?" Uma fase vira um tipo de registro. Depois, uma fase por turno: "What command or action starts the {phase} phase, and what file or artifact does it produce?" Vira `command` e `artifact`. Uma ação entra no `command` no gerúndio em inglês (`running the review checklist`), na forma de `model-schema.md`, e aparece assim no plano.
 
 ## 5. O que se registra em cada fase
 
@@ -35,7 +35,13 @@ Se o registro de uma fase se liga ao de outra (deriva, aprova, substitui), pergu
 
 ## 6. Gate
 
-"What makes a unit complete? For example: every phase has a record and each phase record is linked to the previous one." Vira o gate (cobertura e encadeamento, em `model-schema.md`). Se a evidência vem de registro de outra fase, a pergunta declara `scope: "project"`.
+Proponha o gate da seção "Gate" de `model-schema.md`, sem perguntar em aberto: "I propose this gate: every phase has a record, and each phase stays pending until the next phase's record derives from it. Do you want to refuse that second part, the chaining?"
+
+- **Encadeamento aceito**: cada sucessora se liga à antecessora por uma relação de espécie `derivesFrom`, senão o `no_pending` nunca resolve e o gate reprova sempre. Se a pergunta 5 trouxe outra espécie, diga isso ao dev e acerte a relação; o plano do passo 6 a mostra.
+- **Encadeamento recusado**: o gate fica só com a cobertura, e os `links` ficam como o dev disse.
+- **Uma fase só**: não há sucessora, então proponha só a cobertura e siga sem a pergunta do encadeamento.
+
+Se a evidência vem de registro de outra unidade, a pergunta declara `scope: "project"`.
 
 ## 7. Padrão do target
 

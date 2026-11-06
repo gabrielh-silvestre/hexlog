@@ -5,8 +5,9 @@ import type { Configuration } from 'lint-staged';
 // Regex (para `jest --testPathPatterns`) do spec de cada `.ts` em stage, pelo nome e em qualquer
 // pasta de `test/`: `src/adapters/fs/lock.ts` casa `test/adapters/lock.spec.ts` e
 // `lock.property.spec.ts`, porque a pasta do spec nem sempre espelha a do código. Spec em stage
-// roda a si mesmo; helper e fixture de `test/` não rodam nada.
-const namePatterns = (files: readonly string[]): string[] =>
+// roda a si mesmo; helper e fixture de `test/` não rodam nada. `test/spec-naming.spec.ts` usa o
+// mesmo padrão para travar que todo arquivo fora da lista de exceções tem spec.
+export const namePatterns = (files: readonly string[]): string[] =>
   files.flatMap((file) => {
     const { dir, name, base } = path.parse(path.relative(process.cwd(), file));
     if (dir === 'test' || dir.startsWith('test/')) {
@@ -31,7 +32,7 @@ const config = {
   // Dentro da chave `*.ts` a ordem importa: o `tsc` e o jest têm de ler os arquivos já corrigidos
   // por `eslint --fix` e `prettier --write`.
   //
-  // As duas chaves (`*.ts` e `*.md`) rodam em série por `--concurrent false` em `.husky/pre-commit`:
+  // As chaves `*.ts`, `*.md` e `*.example.json` rodam em série por `--concurrent false` em `.husky/pre-commit`:
   // o arquivo de config não tem essa opção, e o spec de doc lê `src/**/*.ts`, que a outra chave
   // ainda pode estar reescrevendo.
   //
@@ -43,8 +44,10 @@ const config = {
   '*.md': [
     'markdownlint-cli2',
     'cspell --no-progress --no-must-find-files',
-    () => 'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts',
+    () =>
+      'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts test/skill-model.spec.ts',
   ],
+  '*.example.json': [() => 'npm test -- test/skill-model.spec.ts'],
 } satisfies Configuration;
 
 export default config;

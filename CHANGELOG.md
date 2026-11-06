@@ -14,10 +14,13 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ### Corrigido
 
+- As skills `hexlog-setup` e `hexlog-flow` corrigem o que o agente lê: o `command` do modelo aceita comando ou ação no gerúndio, para o bloco do `AGENTS.md` não sair torto; a entrevista propõe o gate; há regra para mais de um modelo local e para `PROCESS_TOO_LARGE` conforme o processo cheio (#373).
+- O `hexlog-setup` e a `hexlog-flow` ganham regra para o que o agente improvisava: pasta de skill sem modelo, nome de skill acima de 64 caracteres (projeto novo com até 57), valor que quebraria o frontmatter, link simbólico no caminho do plano e caminho de unidade acima de 200 caracteres; o nome do processo passa a tirar `-` das pontas antes de truncar (#374).
 - O `timeline` e o `seat-report` escapam os seletores de variação U+E0100 a U+E01EF, que um modelo lê sem decodificador; `--raw` segue imprimindo o byte exato (#376).
 
 ### Migração
 
+- A 1.2.3 omitiu este aviso no #321: em projeto que já existe no hexlog e sem `hexlog-model.json` local, o `hexlog-setup` para, mostra as definições vigentes e só segue com a confirmação do dev. Tipo de fase sem o campo `unit` obrigatório vira versão nova com `breaking: true`, que o plano mostra antes de gravar; ela só vale para processo criado depois, e o processo já aberto mantém as definições que fixou (#374).
 - Corrige a Migração da 1.2.3, que omitiu este passo do #311: quem roda Node 25 ou 26 deve passar para Node 24.x (`^24.18.1`) (#376).
 
 ## [1.2.3] - 2026-10-29

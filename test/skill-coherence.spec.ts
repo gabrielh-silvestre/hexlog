@@ -389,7 +389,7 @@ const referenceCases: SkillCase[] = [
     file: 'skills/hexlog-flow/references/unit-lifecycle.md',
     citationExpectations: {
       'domain/ids.ts#Name': ['Name'],
-      'domain/ids.ts#RecordId': ['RecordId'],
+      'domain/ids.ts#processOf': ['processOf'],
       'commands/process.ts#staleOf': ['stale'],
       'errors.ts#noDefinitions': ['TYPE_NOT_FOUND'],
     },

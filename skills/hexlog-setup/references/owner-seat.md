@@ -57,7 +57,7 @@ Cada definição do pacote é classificada antes do plano. Nunca sonde com `defi
 O plano lista, além do que o setup já lista:
 
 - as `define_*` do pacote (tipos compatíveis com a versão minor a acrescentar, tipos mapeados, relações e gate reusados ou novos);
-- os arquivos da cadeira, com o texto renderizado: `owner-seat/criteria.md` (só se não existir), `owner-seat/contract.md` e, com ocupante, `owner-seat/recipe-claude.md` ou `owner-seat/recipe-agy.md`. Todos dentro da pasta da skill do projeto (`.claude/skills/<projeto>-hexlog/owner-seat/`).
+- os arquivos da cadeira, com o texto renderizado: `owner-seat/criteria.md` (só se não existir), `owner-seat/contract.md` e, com ocupante, `owner-seat/recipe-claude.md` ou `owner-seat/recipe-agy.md`. Todos dentro da pasta da skill do projeto (`.claude/skills/<nome da skill>/owner-seat/`).
 
 O "aprovado" cobre tudo. O registro (passo 7) aplica o pacote, confere o anexo dos tipos (`criteria` e `source` levam `format: "attachment"` desde a primeira versão) e, ao fim, o setup lê o `list` para preencher `applied`.
 

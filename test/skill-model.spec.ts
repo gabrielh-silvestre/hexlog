@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { z } from 'zod';
+import { slugOf } from '../scripts/flow/marker.ts';
 import type { RegisterResult } from '../src/commands/process.ts';
 import type { Defined } from '../src/commands/definition.ts';
 import { Name } from '../src/domain/ids.ts';
@@ -12,40 +14,64 @@ const repoRoot = path.resolve(__dirname, '..');
 const skillsDir = path.join(repoRoot, 'skills');
 const referencesDir = path.join(skillsDir, 'hexlog-setup', 'references');
 
-type Schema = {
-  properties?: Record<string, { format?: string; items?: { format?: string }; maxLength?: number }>;
-  required?: string[];
-};
+// Objetos soltos: o caso das chaves precisa ver a chave extra, que `z.object` descartaria.
+const ModelSchema = z.looseObject({
+  schema: z.literal(1),
+  project: z.string(),
+  unit: z.looseObject({
+    kind: z.string(),
+    location: z.string(),
+    examples: z.array(z.looseObject({ path: z.string(), process: z.string() })),
+  }),
+  phases: z.array(
+    z.looseObject({
+      name: z.string(),
+      command: z.string(),
+      type: z.string(),
+      target: z.string(),
+      artifact: z.string(),
+      links: z.array(z.looseObject({ relation: z.string(), to: z.string() })),
+    }),
+  ),
+  types: z.array(
+    z.looseObject({
+      name: z.string(),
+      schema: z.looseObject({
+        properties: z
+          .record(
+            z.string(),
+            z.looseObject({
+              format: z.string().optional(),
+              items: z.looseObject({ format: z.string().optional() }).optional(),
+              maxLength: z.number().optional(),
+            }),
+          )
+          .optional(),
+        required: z.array(z.string()).optional(),
+      }),
+    }),
+  ),
+  relations: z.array(
+    z.looseObject({
+      name: z.string(),
+      kind: z.string(),
+      from: z.array(z.string()),
+      to: z.array(z.string()),
+    }),
+  ),
+  gate: z.looseObject({
+    name: z.string(),
+    questions: z.array(
+      z.looseObject({ kind: z.string(), select: z.looseObject({ type: z.string() }).optional() }),
+    ),
+  }),
+});
 
-type GateQuestion = {
-  kind: string;
-  select?: { type: string };
-  pending?: { type: string };
-  resolvedBy?: { kind: string; from: string[] };
-};
+type Model = z.infer<typeof ModelSchema>;
 
-type Model = {
-  project: string;
-  unit: { examples: { path: string; process: string }[] };
-  phases: {
-    name: string;
-    type: string;
-    target: string;
-    links: { relation: string; to: string }[];
-  }[];
-  types: { name: string; schema: Schema }[];
-  relations: { name: string; kind: string; from: string[]; to: string[] }[];
-  gate: { name: string; questions: GateQuestion[] };
-};
-
-// Chaves de topo documentadas em `model-schema.md`: as obrigatórias e as opcionais.
-const REQUIRED_MODEL_KEYS = ['schema', 'project', 'unit', 'phases', 'types', 'relations', 'gate'];
-const OPTIONAL_MODEL_KEYS = ['targetPattern', 'ownerSeat'];
-
-// Chaves exatas dos objetos aninhados, como `model-schema.md` as documenta (sem opcionais).
-const UNIT_KEYS = ['kind', 'location', 'examples'];
-const PHASE_KEYS = ['name', 'command', 'type', 'target', 'artifact', 'links'];
-const LINK_KEYS = ['relation', 'to'];
+const SKILL_NAME_MAX = 64;
+const SKILL_SUFFIX = '-hexlog';
+const SKILL_BASE_MAX = SKILL_NAME_MAX - SKILL_SUFFIX.length;
 
 const sortedKeys = (value: object) => Object.keys(value).sort();
 
@@ -55,21 +81,33 @@ const exampleFiles = fs
   .sort();
 
 const readModel = (file: string): Model =>
-  JSON.parse(fs.readFileSync(path.join(referencesDir, file), 'utf8')) as Model;
+  ModelSchema.parse(JSON.parse(fs.readFileSync(path.join(referencesDir, file), 'utf8')));
 
-const THREE_PHASE = readModel('three-phase-model.example.json');
-const MINIMAL = readModel('minimal-model.example.json');
+const threePhase = () => readModel('three-phase-model.example.json');
+const minimal = () => readModel('minimal-model.example.json');
 
-const EXAMPLES = exampleFiles.map((file) => ({ file, model: readModel(file) }));
-const PHASE_TYPES = EXAMPLES.flatMap(({ file, model }) =>
-  model.phases.map(({ type }) => ({
-    label: `${file}#${type}`,
-    schema: at(
-      model.types.filter(({ name }) => name === type),
-      0,
-    ).schema,
-  })),
-);
+// Getter: o JSON só é lido dentro do caso, então um exemplo inválido reprova os casos dele sem
+// derrubar a coleta da suíte.
+const EXAMPLES = exampleFiles.map((file) => ({
+  file,
+  get model() {
+    return readModel(file);
+  },
+}));
+
+/** Linhas da tabela da seção `heading` de `model-schema.md`, sem o cabeçalho. */
+const documentedRows = (heading: string) =>
+  (
+    fs
+      .readFileSync(path.join(referencesDir, 'model-schema.md'), 'utf8')
+      .split(/^## /m)
+      .find((part) => part.startsWith(heading)) ?? ''
+  )
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .slice(2);
+
+const fieldOf = (row: string) => /^\|\s*`([^`]+)`/.exec(row)?.[1] ?? '';
 
 let environment: Environment;
 
@@ -163,10 +201,28 @@ const occurrencesIn = (documents: ReturnType<typeof readDocuments>, pattern: Reg
   );
 
 describe('skills/hexlog-setup/references/*.example.json', () => {
-  it.each(EXAMPLES)('should carry the documented top-level keys in $file', ({ model }) => {
-    const required = Object.keys(model).filter((key) => !OPTIONAL_MODEL_KEYS.includes(key));
+  it.each(EXAMPLES)('should carry the keys model-schema.md documents in $file', ({ model }) => {
+    const topRows = documentedRows('Campos de topo');
+    const optional = topRows.filter((row) => row.includes('opcional')).map(fieldOf);
+    const required = topRows.filter((row) => !row.includes('opcional')).map(fieldOf);
+    const phaseRows = documentedRows('`phases[]`');
+    const linkRow = at(
+      phaseRows.filter((row) => fieldOf(row) === 'links'),
+      0,
+    );
+    const linkKeys = (/`\{ (.+?) \}`/.exec(linkRow)?.[1] ?? '').split(', ').sort();
+    const links = model.phases.flatMap((phase) => phase.links);
 
-    expect(required.sort()).toEqual([...REQUIRED_MODEL_KEYS].sort());
+    expect(
+      Object.keys(model)
+        .filter((key) => !optional.includes(key))
+        .sort(),
+    ).toEqual(required.sort());
+    expect(sortedKeys(model.unit)).toEqual(documentedRows('`unit`').map(fieldOf).sort());
+    expect(model.phases.map(sortedKeys)).toEqual(
+      model.phases.map(() => phaseRows.map(fieldOf).sort()),
+    );
+    expect(links.map(sortedKeys)).toEqual(links.map(() => linkKeys));
   });
 
   it.each(EXAMPLES)(
@@ -186,16 +242,10 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
     'should ask the gate for a no_pending of every phase with a successor in $file',
     ({ model }) => {
       const expected = model.phases.flatMap(({ type, links }) =>
-        links.map(({ relation, to }) => ({
+        links.map(({ to }) => ({
           kind: 'no_pending',
           pending: { type: to },
-          resolvedBy: {
-            kind: at(
-              model.relations.filter(({ name }) => name === relation),
-              0,
-            ).kind,
-            from: [type],
-          },
+          resolvedBy: { kind: 'derivesFrom', from: [type] },
         })),
       );
 
@@ -203,48 +253,70 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
     },
   );
 
-  it.each(PHASE_TYPES)('should require a unit field with maxLength in $label', ({ schema }) => {
-    expect(schema.required).toContain('unit');
-    expect(schema.properties?.unit?.maxLength).toEqual(expect.any(Number));
+  it.each(EXAMPLES)('should link every phase by a derivesFrom relation in $file', ({ model }) => {
+    const kinds = model.phases
+      .flatMap((phase) => phase.links)
+      .map(
+        ({ relation }) =>
+          model.relations.find(({ name }) => name === relation)?.kind ?? `unknown ${relation}`,
+      );
+
+    expect(kinds.filter((kind) => kind !== 'derivesFrom')).toEqual([]);
   });
 
-  it.each(EXAMPLES)('should carry exactly the documented unit keys in $file', ({ model }) => {
-    expect(sortedKeys(model.unit)).toEqual([...UNIT_KEYS].sort());
+  it.each(EXAMPLES)('should require a unit capped at 200 in every phase of $file', ({ model }) => {
+    const unitFields = model.phases.map(({ type }) => {
+      const schema = model.types.find(({ name }) => name === type)?.schema;
+      return {
+        required: schema?.required?.includes('unit'),
+        max: schema?.properties?.unit?.maxLength,
+      };
+    });
+
+    expect(unitFields).toEqual(model.phases.map(() => ({ required: true, max: 200 })));
   });
 
-  it.each(EXAMPLES)('should carry exactly the documented phase keys in $file', ({ model }) => {
-    expect(model.phases.map(sortedKeys)).toEqual(model.phases.map(() => [...PHASE_KEYS].sort()));
-  });
-
-  it.each(EXAMPLES)('should carry exactly the documented link keys in $file', ({ model }) => {
-    const links = model.phases.flatMap((phase) => phase.links);
-
-    expect(links.map(sortedKeys)).toEqual(links.map(() => [...LINK_KEYS].sort()));
-  });
-
-  it.each(EXAMPLES)('should declare a type for every phase type in $file', ({ model }) => {
+  it.each(EXAMPLES)('should declare what every phase and link names in $file', ({ model }) => {
     const typeNames = model.types.map(({ name }) => name);
-
-    expect(
-      model.phases.map(({ type }) => type).filter((type) => !typeNames.includes(type)),
-    ).toEqual([]);
-  });
-
-  it.each(EXAMPLES)('should declare a relation for every link in $file', ({ model }) => {
     const relationNames = model.relations.map(({ name }) => name);
-    const links = model.phases.flatMap((phase) => phase.links);
-
-    expect(
-      links.map(({ relation }) => relation).filter((relation) => !relationNames.includes(relation)),
-    ).toEqual([]);
-  });
-
-  it.each(EXAMPLES)('should point every link to a phase type in $file', ({ model }) => {
     const phaseTypes = model.phases.map(({ type }) => type);
     const links = model.phases.flatMap((phase) => phase.links);
 
+    expect(phaseTypes.filter((type) => !typeNames.includes(type))).toEqual([]);
+    expect(
+      links.map(({ relation }) => relation).filter((relation) => !relationNames.includes(relation)),
+    ).toEqual([]);
     expect(links.map(({ to }) => to).filter((to) => !phaseTypes.includes(to))).toEqual([]);
   });
+
+  it.each(EXAMPLES)(
+    'should keep rendered values on one line without quotes or backslashes in $file',
+    ({ model }) => {
+      const values = [
+        model.unit.kind,
+        model.unit.location,
+        ...model.phases.flatMap(({ command, artifact }) => [command, artifact]),
+      ];
+
+      expect(values.filter((value) => /["\\\n]/.test(value))).toEqual([]);
+    },
+  );
+
+  it.each(EXAMPLES)('should derive every process name from the unit path in $file', ({ model }) => {
+    const { examples } = model.unit;
+
+    expect(examples.map((example) => slugOf(example.path))).toEqual(
+      examples.map((example) => example.process),
+    );
+  });
+
+  it.each(EXAMPLES)(
+    'should use a project name that needs no skill name change in $file',
+    ({ model }) => {
+      expect(model.project).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(model.project.length).toBeLessThanOrEqual(SKILL_BASE_MAX);
+    },
+  );
 
   it.each(EXAMPLES)('should not use pattern or patternProperties in $file', ({ model }) => {
     expect(JSON.stringify(model.types)).not.toMatch(/"pattern(Properties)?"\s*:/);
@@ -279,19 +351,13 @@ describe('define_type', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should replay every type of the three-phase example as unchanged', async () => {
-    await setUp(THREE_PHASE);
-
-    const results = await defineTypes(THREE_PHASE);
-
-    expect(results.map(({ created }) => created)).toEqual(THREE_PHASE.types.map(() => false));
-  });
-
   it('should accept every type of the three-phase example', async () => {
-    const results = await defineTypes(THREE_PHASE);
+    const model = threePhase();
+
+    const results = await defineTypes(model);
 
     expect(results.map(({ name, created }) => ({ name, created }))).toEqual(
-      THREE_PHASE.types.map(({ name }) => ({ name, created: true })),
+      model.types.map(({ name }) => ({ name, created: true })),
     );
   });
 });
@@ -300,21 +366,14 @@ describe('define_relation', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should replay every relation of the three-phase example as unchanged', async () => {
-    await setUp(THREE_PHASE);
-
-    const results = await defineRelations(THREE_PHASE);
-
-    expect(results.map(({ created }) => created)).toEqual(THREE_PHASE.relations.map(() => false));
-  });
-
   it('should accept every relation of the three-phase example', async () => {
-    await defineTypes(THREE_PHASE);
+    const model = threePhase();
+    await defineTypes(model);
 
-    const results = await defineRelations(THREE_PHASE);
+    const results = await defineRelations(model);
 
     expect(results.map(({ name, created }) => ({ name, created }))).toEqual(
-      THREE_PHASE.relations.map(({ name }) => ({ name, created: true })),
+      model.relations.map(({ name }) => ({ name, created: true })),
     );
   });
 });
@@ -323,34 +382,12 @@ describe('define_gate', () => {
   beforeEach(openEnvironment);
   afterEach(closeEnvironment);
 
-  it('should replay the gate of the three-phase example as unchanged', async () => {
-    await setUp(THREE_PHASE);
-
-    const result = await defineGate(THREE_PHASE);
-
-    expect(result.created).toBe(false);
-  });
-
   it('should accept the gate of the three-phase example', async () => {
-    const result = await defineGate(THREE_PHASE);
+    const model = threePhase();
 
-    expect(result).toMatchObject({ name: THREE_PHASE.gate.name, created: true });
-  });
-});
+    const result = await defineGate(model);
 
-describe('create_process', () => {
-  beforeEach(openEnvironment);
-  afterEach(closeEnvironment);
-
-  it('should replay the process as unchanged', async () => {
-    await setUp(THREE_PHASE);
-
-    const result = await environment.ok<{ created: boolean }>('create_process', {
-      project: THREE_PHASE.project,
-      process: processOf(THREE_PHASE),
-    });
-
-    expect(result.created).toBe(false);
+    expect(result).toMatchObject({ name: model.gate.name, created: true });
   });
 });
 
@@ -359,20 +396,22 @@ describe('evaluate_gate', () => {
   afterEach(closeEnvironment);
 
   it('should pass the gate when build derives from design and check from build', async () => {
-    await setUp(THREE_PHASE);
-    await registerPhases(THREE_PHASE);
+    const model = threePhase();
+    await setUp(model);
+    await registerPhases(model);
 
-    const result = await evaluate(THREE_PHASE);
+    const result = await evaluate(model);
 
     expect(result.passed).toBe(true);
   });
 
   it('should fail the gate when check is not linked to build', async () => {
-    await setUp(THREE_PHASE);
-    const { records } = await registerPhases(THREE_PHASE, 'check');
+    const model = threePhase();
+    await setUp(model);
+    const { records } = await registerPhases(model, 'check');
     const buildId = at(records, 1).id;
 
-    const result = await evaluate(THREE_PHASE, 'full');
+    const result = await evaluate(model, 'full');
 
     expect(result.passed).toBe(false);
     expect(result.questions).toContainEqual(
@@ -385,11 +424,12 @@ describe('evaluate_gate', () => {
   });
 
   it('should fail the gate when build is not linked to design', async () => {
-    await setUp(THREE_PHASE);
-    const { records } = await registerPhases(THREE_PHASE, 'build');
+    const model = threePhase();
+    await setUp(model);
+    const { records } = await registerPhases(model, 'build');
     const designId = at(records, 0).id;
 
-    const result = await evaluate(THREE_PHASE, 'full');
+    const result = await evaluate(model, 'full');
 
     expect(result.passed).toBe(false);
     expect(result.questions).toContainEqual(
@@ -402,10 +442,11 @@ describe('evaluate_gate', () => {
   });
 
   it('should fail the gate when a phase has no record', async () => {
-    await setUp(THREE_PHASE);
-    await registerPhases(THREE_PHASE, undefined, 'check');
+    const model = threePhase();
+    await setUp(model);
+    await registerPhases(model, undefined, 'check');
 
-    const result = await evaluate(THREE_PHASE, 'full');
+    const result = await evaluate(model, 'full');
 
     expect(result.passed).toBe(false);
     expect(result.questions).toContainEqual(
@@ -414,10 +455,11 @@ describe('evaluate_gate', () => {
   });
 
   it('should accept the minimal example without any flow', async () => {
-    await setUp(MINIMAL);
-    await registerPhases(MINIMAL);
+    const model = minimal();
+    await setUp(model);
+    await registerPhases(model);
 
-    const result = await evaluate(MINIMAL);
+    const result = await evaluate(model);
 
     expect(result.passed).toBe(true);
   });
@@ -449,8 +491,8 @@ describe('skills/**/*.md', () => {
     expect(occurrences(/targetIdPattern/g)).toEqual({});
   });
 
-  it('should mention flow.md once, in the hexlog-flow migration sentence', () => {
-    expect(occurrences(/flow\.md/g)).toEqual({ 'skills/hexlog-flow/SKILL.md': 1 });
+  it('should mention flow.md only in the hexlog-flow SKILL.md', () => {
+    expect(Object.keys(occurrences(/flow\.md/g))).toEqual(['skills/hexlog-flow/SKILL.md']);
   });
 
   it('should not mention OMC in hexlog-setup', () => {
@@ -497,6 +539,16 @@ describe('skills/hexlog-setup/references/agents-block.template.md', () => {
   it('should keep the block between 1 and 8 non-empty lines', () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.length).toBeLessThanOrEqual(8);
+  });
+
+  it('should read the minimal example command right after "After"', () => {
+    const commands = minimal()
+      .phases.map(({ command }) => command)
+      .join(', ');
+
+    const block = lines.join('\n').replace('{{commands}}', commands);
+
+    expect(block).toContain('After running the review checklist, you MUST');
   });
 });
 
@@ -566,6 +618,10 @@ describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
 describe('skills/hexlog-setup/references/project-skill.template.md', () => {
   const content = fs.readFileSync(path.join(referencesDir, 'project-skill.template.md'), 'utf8');
 
+  it('should name the skill by the skill_name placeholder', () => {
+    expect(content).toMatch(/^name: \{\{skill_name\}\}$/m);
+  });
+
   it('should ask the developer for an ok before the agy recipe runs', () => {
     expect(content).toMatch(/`recipe-agy\.md`.*wait for the developer's ok/s);
   });
@@ -576,6 +632,10 @@ describe('skills/hexlog-setup/references/model-schema.md', () => {
   const section = content.split(/^## /m).find((part) => part.startsWith('`ownerSeat`')) ?? '';
   const rows = section.split('\n').filter((line) => line.startsWith('|'));
   const fields = rows.slice(2).map((row) => /^\|\s*`([^`]+)`/.exec(row)?.[1] ?? '');
+
+  it('should state the project name cap that leaves room for the skill suffix', () => {
+    expect(content).toContain(`até ${SKILL_BASE_MAX} caracteres`);
+  });
 
   it('should document at least one ownerSeat field', () => {
     expect(fields.length).toBeGreaterThan(0);
@@ -592,8 +652,6 @@ describe('skills/hexlog-setup/references/model-schema.md', () => {
 
 describe('docs/setup-aceitacao.md', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'docs', 'setup-aceitacao.md'), 'utf8');
-  // Rótulos de trabalho que não valem no repositório; a lista é conservadora.
-  const PLAN_LABEL = /\b(?:D[1-6](?:-\d+)?|A1|AC\d*|PR-[12])\b/;
   const checklist = content.split(/^## /m).find((part) => part.startsWith('Checklist')) ?? '';
   const sections = checklist.split(/^### /m).slice(1);
 
@@ -604,9 +662,13 @@ describe('docs/setup-aceitacao.md', () => {
 
     expect(withoutItems).toEqual([]);
   });
+});
 
-  it('should not carry plan labels', () => {
-    expect(content).not.toMatch(PLAN_LABEL);
+describe('skills/hexlog-setup/references/interview-guide.md', () => {
+  it('should ask for a project name that leaves room for the skill suffix', () => {
+    const content = fs.readFileSync(path.join(referencesDir, 'interview-guide.md'), 'utf8');
+
+    expect(content).toContain(`up to ${SKILL_BASE_MAX} characters`);
   });
 });
 

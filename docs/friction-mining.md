@@ -41,7 +41,7 @@ O workflow não tem acesso a filesystem nem a Node; tudo que toca disco (rodar o
 
 ## Armadilhas que o método já trata
 
-- **Regex em `tool_result` superestima erro ~13x**: códigos de domínio gravados no payload e `"warnings":[]` vazio parecem erro. O script classifica só pelo JSON estruturado.
+- **Regex em `tool_result` superestima erro**: códigos de domínio gravados no payload e `"warnings":[]` vazio parecem erro. O script classifica só pelo JSON estruturado.
 - **Resposta grande some do parse**: acima do limite do Claude Code, o transcript guarda só `Error: result (N characters) exceeds maximum allowed tokens. Output has been saved to <arquivo>`. O script lê o tamanho do aviso e o conteúdo do arquivo, se ainda existir, e marca `persisted`.
 - **Subagente fork duplica mensagens**: dedupe por `uuid`.
 - **Atribuição inflada**: "última skill invocada" sem reset atribui chamadas a skills que só passaram pelo fluxo. O script zera a skill do turno a cada mensagem real do usuário e separa continuação, subagente e pedido direto.
