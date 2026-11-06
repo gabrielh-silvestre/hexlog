@@ -207,7 +207,12 @@ describe('.claude/hooks/flow-hooks.ts pre-pr', () => {
       15_000,
     );
 
-    it.each(['gh pr create --title "x', "echo 'gh pr create", 'echo $(gh pr create'])(
+    it.each([
+      'gh pr create --title "x',
+      "echo 'gh pr create",
+      'echo $(gh pr create',
+      'echo `gh pr create',
+    ])(
       'should deny a command with an unpaired quote that mentions gh pr create: %s',
       (command) => {
         expectDenied(bash(command), UNPARSABLE);
