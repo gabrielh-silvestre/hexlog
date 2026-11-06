@@ -43,8 +43,10 @@ const config = {
   '*.md': [
     'markdownlint-cli2',
     'cspell --no-progress --no-must-find-files',
-    () => 'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts',
+    () =>
+      'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts test/skill-model.spec.ts',
   ],
+  '*.example.json': [() => 'npm test -- test/skill-model.spec.ts'],
 } satisfies Configuration;
 
 export default config;
