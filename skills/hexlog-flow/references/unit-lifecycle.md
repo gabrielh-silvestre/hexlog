@@ -21,7 +21,7 @@ Cada fase registrada dá um acerto, então `limit: 1` esconderia a diferença en
 - mais de um (a unidade foi reaberta, passo 4): vale o de maior sufixo numérico no nome, sendo o nome sem sufixo o de número 1; os anteriores estão aposentados e ficam sem registro novo. Se os nomes fogem desse padrão de sufixo, pare e pergunte ao desenvolvedor qual vale;
 - nenhum acerto: passo 3.
 
-`PROJECT_NOT_FOUND` ou `TYPE_NOT_FOUND` na consulta ou no `create_process` significam que o modelo ainda não foi aplicado neste hexlog: siga o passo 7. `PROCESS_CORRUPTED` na consulta significa cadeia quebrada em algum processo do projeto. Relate ao desenvolvedor, sugira `verify_chain` por processo e **pare**: o nome calculado do passo 3 poderia colidir com o processo quebrado.
+`PROJECT_NOT_FOUND` ou `TYPE_NOT_FOUND` na consulta ou no `create_process` significam que o modelo ainda não foi aplicado neste hexlog: siga o passo 7. `PROCESS_CORRUPTED` na consulta significa cadeia quebrada em algum processo do projeto. Relate ao desenvolvedor, sugira `verify_chain` por processo e **pare**: o nome calculado do passo 3 poderia colidir com o processo quebrado. `PROCESS_TOO_LARGE` na consulta significa um log acima do teto em algum processo do projeto. Relate ao desenvolvedor e **pare**, sem reabrir: com a consulta de alcance projeto recusada, este passo também não acharia o processo novo (tabela de erros do `SKILL.md`).
 
 ## 3. Sem acerto: calcular o nome e criar
 
@@ -37,7 +37,7 @@ Nome vazio ou igual a um valor de `RESERVED_PROCESS_NAMES`: acrescente um sufixo
 - `created: true`: siga.
 - `created: false`: o nome já existe. Faça `query` do processo (`process`, `limit: 1`, `fields: ["unit"]`). Sem registro, adote o processo (sobra vazia). Registro com outra `unit` é colisão de nomes de unidades diferentes: peça ao desenvolvedor um sufixo e repita.
 
-O sufixo vive só no **nome do processo**: o campo `unit` guarda sempre o caminho canônico, sem sufixo. As fases seguintes acham o processo pelo `unit` (passo 2), e o nome com sufixo vem do id dos acertos. Ao reabrir uma unidade (passo 4), o processo novo leva o próximo sufixo numérico (`-2`, `-3`, ...), truncando a base para o nome caber em 63 caracteres; o anterior fica aposentado, e o passo 2 elege o novo pelo maior sufixo.
+O sufixo vive só no **nome do processo**: o campo `unit` guarda sempre o caminho canônico, sem sufixo. As fases seguintes acham o processo pelo `unit` (passo 2), e o nome com sufixo vem do id dos acertos. Ao reabrir uma unidade (passo 4, ou processo cheio no passo 5), o processo novo leva o próximo sufixo numérico (`-2`, `-3`, ...), truncando a base para o nome caber em 63 caracteres; o anterior fica aposentado, e o passo 2 elege o novo pelo maior sufixo.
 
 ## 4. `stale` e `TYPE_NOT_PINNED`
 
@@ -52,6 +52,8 @@ Use `target` no formato `<processo>.<target da tabela de fases>` (a coluna de ta
 **Fase com registro vigente** (a fase foi reexecutada, por exemplo um segundo `/build`). Antes de gravar, faça `query` do processo pelo target da fase. Se há registro vigente, grave o novo no mesmo target com `supersedes` do id vigente e regrave as relações do antigo. Cada registro vigente de fase sucessora que tinha `derivesFrom` (ou a relação da tabela) apontando para o antigo é regravado do mesmo modo: `supersedes` dele, mesmos dados e a relação apontando para o novo. Sem isso o `no_pending` do gate reprova a unidade, porque a sucessora aponta para um registro superado.
 
 **`key`.** Ela identifica a intenção do lote, não a fase (regra geral na seção "`key`" do `SKILL.md`). O reenvio do mesmo lote (erro incerto) repete a `key`; a reexecução da fase é lote diferente e leva `key` nova (por exemplo `<target>:abertura` na primeira vez e `<target>:reexecucao-2` na seguinte), porque a mesma `key` com lote diferente é `IDEMPOTENCY_CONFLICT`.
+
+**Processo cheio.** `register` recusado com `PROCESS_TOO_LARGE`: pare e avise o desenvolvedor, e siga a tabela de erros do `SKILL.md`. Só o processo da unidade cheio se resolve reabrindo a unidade; destino de relação cheio fica sem reabrir.
 
 ## 6. Fechar a unidade
 

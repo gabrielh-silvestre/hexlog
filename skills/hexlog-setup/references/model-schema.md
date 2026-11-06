@@ -45,7 +45,7 @@ Presente só quando o dev ligou a cadeira do dono (procedimento em `owner-seat.m
 | Campo | O que é |
 |---|---|
 | `name` | Nome da fase |
-| `command` | Comando ou ação que dispara a fase |
+| `command` | O que dispara a fase: comando de barra ou de shell, ou ação no gerúndio em inglês (`running the review checklist`), em uma linha e sem aspas duplas. O bloco do `AGENTS.md` e a descrição da skill do projeto o leem depois de "after" |
 | `type` | Nome do tipo de registro da fase (um de `types`) |
 | `target` | Sufixo do target: o registro vai para `<processo>.<target>`, o mesmo formato da mecânica da `hexlog-flow` |
 | `artifact` | Arquivo que a fase produz |

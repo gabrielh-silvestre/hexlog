@@ -1,6 +1,6 @@
 # Bloco do hexlog no AGENTS.md
 
-Fonte única do bloco: texto literal que o setup escreve no `AGENTS.md` do destino, em inglês, com até 8 linhas, e as regras de posição, comparação e reaplicação. O título `## hexlog` é fixo: a reaplicação procura esse título e compara o texto do bloco. Substitua `{{commands}}` pelos comandos das fases do modelo, separados por vírgula, e `{{skill_name}}` pelo nome da skill do projeto.
+Fonte única do bloco: texto literal que o setup escreve no `AGENTS.md` do destino, em inglês, com até 8 linhas, e as regras de posição, comparação e reaplicação. O título `## hexlog` é fixo: a reaplicação procura esse título e compara o texto do bloco. Substitua `{{commands}}` pelos `command` das fases do modelo, separados por vírgula, e `{{skill_name}}` pelo nome da skill do projeto. O `command` segue a forma de `model-schema.md`, para a frase ler certo: `After /design, /build, /check, ...` ou `After running the review checklist, ...`.
 
 ```markdown
 ## hexlog

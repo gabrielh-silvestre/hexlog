@@ -18,7 +18,7 @@
   "phases": [
     {
       "name": "review",
-      "command": "run the review checklist",
+      "command": "running the review checklist",
       "type": "review",
       "target": "review",
       "artifact": "review.md",

@@ -37,7 +37,7 @@ mão: depois dela, o ciclo de cada unidade de trabalho pode chegar ao gate verde
    `hexlog-model.json` ao lado dela e um bloco de até 8 linhas no `AGENTS.md` que manda usar a skill
    depois dos comandos das fases.
 
-Cada unidade de trabalho vira um processo hexlog, criado pela skill gerada na primeira fase dela. O
+Cada unidade de trabalho vira um processo hexlog, criado pela skill do projeto na primeira fase dela. O
 setup pode rodar de novo: com o modelo local, compara com o hexlog em vez de reperguntar. O setup só
 escreve a skill do projeto, o modelo e o bloco no `AGENTS.md` do destino (mais, com a cadeira ligada, os
 arquivos de apoio dela dentro da pasta da skill), sem editar outro arquivo de terceiros. O roteiro de aceite, com os passos de verificação, está em

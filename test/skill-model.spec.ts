@@ -29,6 +29,7 @@ type Model = {
   unit: { examples: { path: string; process: string }[] };
   phases: {
     name: string;
+    command: string;
     type: string;
     target: string;
     links: { relation: string; to: string }[];
@@ -497,6 +498,14 @@ describe('skills/hexlog-setup/references/agents-block.template.md', () => {
   it('should keep the block between 1 and 8 non-empty lines', () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.length).toBeLessThanOrEqual(8);
+  });
+
+  it('should read the minimal example command right after "After"', () => {
+    const commands = MINIMAL.phases.map(({ command }) => command).join(', ');
+
+    const block = lines.join('\n').replace('{{commands}}', commands);
+
+    expect(block).toContain('After running the review checklist, you MUST');
   });
 });
 
