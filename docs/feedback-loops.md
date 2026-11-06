@@ -156,5 +156,3 @@ Roteiro manual, fora do CI, que gasta Opus e a cota do `agy`: só com pedido exp
 O `agy` no runner usa o mesmo código e a mesma coluna que no Herdr; o canal do Herdr é o que b2 prova. Se a sonda mostrar que o Herdr ou o `agy` não alcançam a web, a célula `web` da tabela do doc volta para `—` no mesmo commit.
 
 Regras completas e o que o CI repete: [qualidade-e-testes.md](directives/qualidade-e-testes.md), [instalacao-e-hooks.md](directives/instalacao-e-hooks.md) e [fluxo-hexlog.md](directives/fluxo-hexlog.md).
-
-Este documento descreve os ciclos de retorno do repositório.
