@@ -3,7 +3,7 @@
 // funções de `src/installation.ts` e `src/guard.ts`, que recebem a execução externa por parâmetro. Os testes
 // (`test/installation.spec.ts`, describes `installArtifact` e
 // `verifyInstallation`) chamam essas funções direto com `HOME` temporário, e
-// `test/install-script.spec.ts` roda este script como processo real, nunca com
+// `test/install.spec.ts` roda este script como processo real, nunca com
 // o `HOME` real.
 import * as fs from 'node:fs';
 import * as os from 'node:os';

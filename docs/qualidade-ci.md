@@ -9,8 +9,8 @@ agrupados num PR por ecossistema, sem major em `npm` (major de `github-actions` 
 `test:coverage` com piso de 90% e `test:budget`), o `commitlint`, o job `docs`
 (`lint:md` e `spell`), o `workflow-lint`, o `dependency-review`, o
 `changelog-line`, o auto-merge do Dependabot, o `release` e o OpenSSF Scorecard
-(medidor, não gate). Os hooks locais são `pre-commit`, `commit-msg` e
-`pre-push`. Toda action dos workflows vem pela tag (a major quando a action
+(medidor, não gate). Os hooks locais são `pre-commit` e `commit-msg`.
+Toda action dos workflows vem pela tag (a major quando a action
 publica uma, a tag exata quando não), nunca pelo SHA do commit.
 
 Fontes consultadas em **2026-09-17**. Preço e plano mudam; reconfira a fonte

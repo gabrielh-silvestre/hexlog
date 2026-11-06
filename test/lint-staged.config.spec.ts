@@ -82,7 +82,7 @@ describe('lint-staged config', () => {
   });
 
   it('should always run the core, even for a file without a spec', () => {
-    const patterns = patternsOf(staged('scripts/timeline.ts'));
+    const patterns = patternsOf(staged('src/version.ts'));
 
     expect(matchesAny(patterns, 'test/domain/chain.spec.ts')).toBe(true);
     expect(matchesAny(patterns, 'test/shared/loader.spec.ts')).toBe(true);

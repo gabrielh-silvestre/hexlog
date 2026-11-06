@@ -17,7 +17,7 @@ Documentação do hexlog: as diretrizes em `directives/` (docs vivos de regras e
 | `migracao.md` | Arquivamento do dado 0.x (`--archive-0x`), releitura da trilha arquivada, volta ao 0.x e migração 0.x para 1.0. |
 | `dados.md` | Layout de dados em `<D>`, erros e avisos, tetos do lock, destravamento manual, recuperação de `PROCESS_CORRUPTED` e lacunas de isolamento. |
 | `desenvolvimento.md` | Comandos de desenvolvimento, scripts de leitura (`insights`, `export`, `timeline`, `seat-report`) e como os testes se organizam. |
-| `feedback-loops.md` | Onde o erro é pego antes do CI: o que o `pre-commit`, o `commit-msg`, o `pre-push`, o pré-PR do agente (`flow-run`, `mark`) e o hook de PR conferem, o que bloqueia, quanto leva e como rodar na mão. |
+| `feedback-loops.md` | Onde o erro é pego antes do CI: o que o `pre-commit`, o `commit-msg`, o pré-PR do agente (`flow-run`, `mark`) e o hook de PR conferem, o que bloqueia, quanto leva e como rodar na mão. |
 | `telemetria.md` | Telemetria opcional por OpenTelemetry: variáveis, atributos do span e das métricas, aviso `telemetry-degraded`, riscos residuais, privacidade, exemplo com OpenObserve, edição do `env` da entrada MCP e Collector local opcional. |
 | `friction-mining.md` | Como a skill `friction-mining` minera transcripts do Claude Code atrás de atrito no uso de uma tool MCP, e como portá-la a outro projeto. |
 | `qualidade-ci.md` | Estudo de plataformas de qualidade para CI/CD quando o repo for público: camadas agora/depois/nunca, esforço, custo e fonte de cada ferramenta, consultadas em 2026-09-17; o que está instalado vive no `AGENTS.md` da raiz e em `directives/qualidade-e-testes.md`. |
