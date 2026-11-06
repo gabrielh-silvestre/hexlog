@@ -18,7 +18,7 @@
         "<rootDir>/test/domain/relations.spec.ts",
         "<rootDir>/test/domain/schema-walk.spec.ts",
         "<rootDir>/test/domain/vigency.property.spec.ts",
-        "<rootDir>/test/mcp/query-page.spec.ts",
+        "<rootDir>/test/mcp/query.page.spec.ts",
         "<rootDir>/test/queries/cursor.spec.ts",
         "<rootDir>/test/queries/read-only.spec.ts",
         "<rootDir>/test/shared/loader.property.spec.ts",
