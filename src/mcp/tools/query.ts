@@ -227,9 +227,9 @@ const QUERY_DESCRIPTION =
   'A page holds at most limit records (default 50, max 200) and stops at a size cap, ' +
   'keeping at least one record; the cursor continues. marker is the head of every ' +
   'process read, and any record id of the process works as its entry: pass it back as changesSince ' +
-  'to get changes (entered, left with reason), on the first page only; add limit 0 ' +
+  'to get changes since then (entered, left with reason), on the first page only; add limit 0 ' +
   'for changes only. Resend it with the cursor. ' +
-  `changes lists at most ${CHANGES_ITEMS_CAP} ids in entered and left; changes.omitted means they ` +
+  `changes has at most ${CHANGES_ITEMS_CAP} ids per list; changes.omitted means they ` +
   'are partial, omitted ids never reappear and that marker must not be reused as changesSince: ' +
   'reread everything (cursor; left with includeNonCurrent). A marker covers only the ' +
   'processes it names; in project scope others are read as empty. A mismatched ' +
