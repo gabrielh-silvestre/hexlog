@@ -21,7 +21,7 @@ Cada fase registrada dá um acerto, então `limit: 1` esconderia a diferença en
 - mais de um (a unidade foi reaberta, passo 4): vale o de maior sufixo numérico no nome, sendo o nome sem sufixo o de número 1; os anteriores estão aposentados e ficam sem registro novo. Se os nomes fogem desse padrão de sufixo, pare e pergunte ao desenvolvedor qual vale;
 - nenhum acerto: passo 3.
 
-`PROJECT_NOT_FOUND` ou `TYPE_NOT_FOUND` na consulta ou no `create_process` significam que o modelo ainda não foi aplicado neste hexlog: siga o passo 7. `PROCESS_CORRUPTED` na consulta significa cadeia quebrada em algum processo do projeto. Relate ao desenvolvedor, sugira `verify_chain` por processo e **pare**: o nome calculado do passo 3 poderia colidir com o processo quebrado. `PROCESS_TOO_LARGE` na consulta significa um log acima do teto em algum processo do projeto. Relate ao desenvolvedor e **pare**, sem reabrir: com a consulta de alcance projeto recusada, este passo também não acharia o processo novo (tabela de erros do `SKILL.md`).
+`PROJECT_NOT_FOUND` ou `TYPE_NOT_FOUND` na consulta ou no `create_process` significam que o modelo ainda não foi aplicado neste hexlog: siga o passo 7. `PROCESS_CORRUPTED` na consulta significa cadeia quebrada em algum processo do projeto. Relate ao desenvolvedor, sugira `verify_chain` por processo e **pare**: o nome calculado do passo 3 poderia colidir com o processo quebrado. `PROCESS_TOO_LARGE` na consulta significa um log acima do teto em algum processo do projeto. Relate ao desenvolvedor e **pare**, sem reabrir: com a consulta de alcance projeto recusada, este passo também não acharia o processo novo (seção "Erros e reenvio" do `SKILL.md`).
 
 ## 3. Sem acerto: calcular o nome e criar
 
@@ -53,7 +53,7 @@ Use `target` no formato `<processo>.<target da tabela de fases>` (a coluna de ta
 
 **`key`.** Ela identifica a intenção do lote, não a fase (regra geral na seção "`key`" do `SKILL.md`). O reenvio do mesmo lote (erro incerto) repete a `key`; a reexecução da fase é lote diferente e leva `key` nova (por exemplo `<target>:abertura` na primeira vez e `<target>:reexecucao-2` na seguinte), porque a mesma `key` com lote diferente é `IDEMPOTENCY_CONFLICT`.
 
-**Processo cheio.** `register` recusado com `PROCESS_TOO_LARGE`: pare e avise o desenvolvedor, e siga a tabela de erros do `SKILL.md`. Só o processo da unidade cheio se resolve reabrindo a unidade; destino de relação cheio fica sem reabrir.
+**Processo cheio.** `register` recusado com `PROCESS_TOO_LARGE`: pare e avise o desenvolvedor, e siga a seção "Erros e reenvio" do `SKILL.md`. Só o processo da unidade cheio se resolve reabrindo a unidade; destino de relação cheio fica sem reabrir.
 
 ## 6. Fechar a unidade
 
