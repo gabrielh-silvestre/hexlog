@@ -18,12 +18,21 @@ describe('escapeControls', () => {
     ['tag character at the start of the range', '\u{E0000}', '\\udb40\\udc00'],
     ['tag character in the range', '\u{E0041}', '\\udb40\\udc41'],
     ['tag character at the end of the range', '\u{E007F}', '\\udb40\\udc7f'],
+    ['variation selector at the start of the range', '\u{E0100}', '\\udb40\\udd00'],
+    ['variation selector in the range', '\u{E0141}', '\\udb40\\udd41'],
+    ['variation selector at the end of the range', '\u{E01EF}', '\\udb40\\uddef'],
   ])('should replace %s with its visible escape', (_name, control, escaped) => {
     expect(escapeControls(`a${control}b`)).toBe(`a${escaped}b`);
   });
 
   it('should leave LF, TAB, accents, emoji, ZWJ, BOM and the code point after the tag range intact', () => {
     const text = 'linha\n\tDecisão — ação 😀 👨\u200d👩 \ufeff \u{E0080}';
+
+    expect(escapeControls(text)).toBe(text);
+  });
+
+  it('should leave the accepted-risk format characters and the neighbors of the variation selector range intact', () => {
+    const text = '\u200b\u200c\u2060\u180e\u00ad\ufe00\ufe0f \u{E00FF}\u{E01F0}';
 
     expect(escapeControls(text)).toBe(text);
   });
