@@ -5,8 +5,9 @@
 
 ## Purpose
 Entrypoints reais de build, instalação e relatório do hexlog. `build.ts` e
-`install.ts` ligam as funções puras de `src/guard.ts` e `src/installation.ts`
-a I/O de verdade: `esbuild`, `fs`, `child_process` e o cliente MCP.
+`install.ts` ligam as funções de `src/guard.ts` e `src/installation.ts`, que
+recebem a execução externa por parâmetro, à I/O de verdade: `esbuild`, `fs`,
+`child_process` e o cliente MCP.
 `insights.ts` lê os logs já gravados e imprime um relatório, sem escrever
 nada; `export.ts` despeja o log de um processo em JSONL, também sem escrever;
 `timeline.ts` cruza os processos de um projeto por prefixo de target e imprime a
@@ -63,9 +64,10 @@ Regra única da tabela: 2 é dado quebrado (o operador resolve no dado, não no 
 - A lógica de negócio dos dois scripts vive em `src/guard.ts`
   (`expectedRules`, `applyGuard`, `verifyGuard`, `hookProbes`,
   `mcpRegistered`) e `src/installation.ts` (`installArtifact`, `registerGuard`,
-  `verifyInstallation`) — esses módulos são puros e
-  testáveis (exceto `runRealHook`, de `src/guard.ts`, o único `spawn`), sem chamar `esbuild`/`claude` de verdade (`src/installation.ts`
-  já chama `fs` real: é quem grava os arquivos instalados). `install.ts` é só
+  `verifyInstallation`) — esses módulos recebem a execução externa por parâmetro
+  e são testáveis sem chamar `esbuild`/`claude` de verdade (`runRealHook`, de
+  `src/guard.ts`, é o único `spawn`, e `src/installation.ts` chama `fs` real: é
+  quem grava os arquivos instalados). `install.ts` é só
   a fiação: injeta `runRealHook`, `countTools` (sobe o servidor num
   `HOME` descartável e conta `tools.length`) e `registerMcp` (`claude mcp
   remove`+`add`, substituível por `HEXLOG_REGISTER_MCP=<script>` nos testes).
