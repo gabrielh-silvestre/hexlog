@@ -26,6 +26,8 @@ const VER_SEPARATOR = ' Ver: ';
 export const RULE_MAX_CODE_POINTS = 400;
 export const SECTION_MAX_CODE_POINTS = 120;
 export const STATEMENT_MAX_CODE_POINTS = 255;
+// Repete `NAME_SRC` de `src/domain/ids.ts`, como `PREMISE_LINE`: `ids.ts` importa zod, e este módulo
+// só usa builtins, para rodar em worktree sem `node_modules`.
 const SLUG_FORMAT = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const SLUG_MAX = 63;
 

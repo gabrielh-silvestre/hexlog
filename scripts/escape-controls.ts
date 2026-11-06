@@ -1,10 +1,12 @@
 // Escape de terminal do `timeline`: o texto sai do log de agentes e quem o lê é o dono, num terminal.
 // C0 (menos LF e TAB), DEL e C1 (`\p{Cc}`) mais os controles bidi que invertem a ordem visual
 // (ALM, LRM, RLM, LRE a RLO, LRI a PDI); ESC, CSI, OSC e U+009B/U+009D entram aqui. Entram também os
-// separadores Unicode de linha (U+2028/U+2029, que um consumidor divide como quebra) e os tag
-// characters (U+E0000 a U+E007F), invisíveis ao humano e legíveis a um modelo. BOM e ZWJ passam
-// (emoji composto usa o ZWJ).
-const TERMINAL_CONTROLS = /(?![\t\n])[\p{Cc}؜‎‏‪-‮⁦-⁩\u2028\u2029\u{E0000}-\u{E007F}]/gu;
+// separadores Unicode de linha (U+2028/U+2029, que um consumidor divide como quebra), os tag
+// characters (U+E0000 a U+E007F) e os seletores de variação U+E0100 a U+E01EF, invisíveis ao humano
+// e legíveis a um modelo. BOM e ZWJ passam (emoji composto usa o ZWJ), e os demais caracteres de
+// formato invisíveis também, como risco aceito (ADR 0009, emenda de 2026-11-06).
+const TERMINAL_CONTROLS =
+  /(?![\t\n])[\p{Cc}\u{E0100}-\u{E01EF}؜‎‏‪-‮⁦-⁩\u2028\u2029\u{E0000}-\u{E007F}]/gu;
 
 /**
  * Troca cada controle por `\uXXXX` visível (minúsculo, como o `JSON.stringify`); o resto passa intacto.

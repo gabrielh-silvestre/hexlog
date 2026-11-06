@@ -159,13 +159,15 @@ describe('createLockManager', () => {
 
     it('should keep the chain intact, with no raw failure, across 8 children x 25 writes on the same process with a pre-planted dead-owner lock', async () => {
       const { store, ref, dir, results } = await runWriteStress();
-      const counts = results.map(
-        ({ stdout }) => JSON.parse(stdout) as { rounds: number; retries: number },
-      );
 
       expect(results.map(({ status, stderr }) => ({ status, stderr }))).toEqual(
         Array.from({ length: 8 }, () => ({ status: 0, stderr: '' })),
       );
+
+      const counts = results.map(
+        ({ stdout }) => JSON.parse(stdout) as { rounds: number; retries: number },
+      );
+
       expect(counts.map(({ rounds }) => rounds)).toEqual(Array(8).fill(25));
       // só o órfão pré-plantado gera roubo com leitura velha, e cada um dos outros 7 filhos o lê
       // no máximo uma vez

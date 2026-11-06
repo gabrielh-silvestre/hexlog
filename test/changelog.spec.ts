@@ -39,4 +39,15 @@ describe('CHANGELOG.md', () => {
 
     expect(missing).toEqual([]);
   });
+
+  // O caso acima só confere que o link existe; colado da versão anterior, ele abre o diff errado.
+  it('should link the latest dated section to the compare range from the previous version', () => {
+    const [latest = '', previous = ''] = [...bySection.keys()].filter(
+      (title) => title !== 'Não lançado',
+    );
+
+    expect(changelog).toContain(
+      `[${latest}]: https://github.com/gabrielh-silvestre/hexlog/compare/v${previous}...v${latest}\n`,
+    );
+  });
 });
