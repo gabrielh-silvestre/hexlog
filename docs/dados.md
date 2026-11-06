@@ -103,7 +103,8 @@ dono vivo por até 15 s e então recebe `LOCK_TIMEOUT` `lock-busy`, com o `pid` 
   recuperação manual abaixo. Exige dois ladrões sobre o mesmo órfão.
 - **Lock devolvido a um dono que desistiu** e cuja sessão nunca mais grava nesse
   processo fica preso até a sessão fechar; a próxima gravação dela cura o caso.
-- **`lock-lost` e `lock-busy` raros:** medidos sob 2x de CPU, 2 de 20 rodadas deram
+- **`lock-lost` e `lock-busy` raros:** medidos em 2026-10-03 sob 2x de CPU
+  ([ADR 0009](directives/adr-0009-ferramental.md), item 3), 2 de 20 rodadas deram
   `lock-lost` e 1 de 20 deu `lock-busy`. A cadeia segue íntegra e o erro é retentável
   com a mesma `key`.
 

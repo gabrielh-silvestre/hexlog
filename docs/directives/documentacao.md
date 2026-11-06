@@ -12,6 +12,7 @@ paths:
 - **ADR** (`docs/directives/adr-*.md`): registra uma decisão com trade-off real. É imutável depois de Aceito.
 - **Doc vivo** (os demais `.md` de `docs/directives/`): regra de trabalho, editável como código. Lacuna de regra vira linha num doc vivo; só trade-off real vira ADR.
 - `AGENTS.md` de cada pasta é navegação (Purpose, Key Files, Subdirectories, Dependencies e fatos de como o código é). Regra não mora nele: ele só liga, em `## Diretrizes`, aos docs vivos. Essa seção e todo texto manual ficam **abaixo** do título `## Manual Notes`, porque a regeneração (`/deepinit`) reescreve o que está acima. A linha `**Parent context:**` e as datas de geração ficam em prosa visível, nunca em comentário HTML, que o Claude Code descarta antes de o agente ler.
+- **Dado volátil.** Doc vivo, guia de `docs/`, `AGENTS.md` e skill não carregam contagem nem duração medida que nenhum teste, config ou tipo trava: citam a regra, o arquivo ou o comando que produz o dado. Medição que vale como evidência fica com a data e o link da fonte. ADR, estudo datado, `docs/pesquisa/` e `CHANGELOG.md` ficam de fora. A conferência é de review.
 
 ## ADR
 

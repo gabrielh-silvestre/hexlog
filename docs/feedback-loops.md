@@ -37,9 +37,9 @@ Linha pontilhada = bloqueio: corrija e repita o passo. A tabela abaixo detalha c
 
 | Ponto | Gatilho | O que roda | Bloqueia quando | Tempo |
 | --- | --- | --- | --- | --- |
-| `pre-commit` | `git commit` | `eslint --fix`, `prettier --write`, `typecheck` e specs (`.ts`); `markdownlint`, `cspell` e dois specs de doc (`.md`) | lint sem correção automática, erro de tipo, spec vermelho, `.md` fora da regra | ~5 s de núcleo, mais o spec espelho |
+| `pre-commit` | `git commit` | `eslint --fix`, `prettier --write`, `typecheck` e specs (`.ts`); `markdownlint`, `cspell` e os specs de doc (`.md`) | lint sem correção automática, erro de tipo, spec vermelho, `.md` fora da regra | segundos: o núcleo fixo e o spec espelho |
 | `commit-msg` | `git commit` | `commitlint` na mensagem | fora do Conventional Commits, header acima de 80 caracteres, corpo preenchido | instantâneo |
-| `pre-push` | 1º push de uma branch | `npm run test:coverage` | spec vermelho (inclusive os de bundle, que constroem o artefato), cobertura abaixo de 90% | 3 a 5 min |
+| `pre-push` | 1º push de uma branch | `npm run test:coverage` | spec vermelho (inclusive os de bundle, que constroem o artefato), cobertura abaixo de 90% | minutos |
 | Pré-PR do agente | "faz o pré-PR" (skill `flow-run`) | texto das decisões, review, `flow-report`, `mark` | `finding` URGENT sem `decision`, `gap` sem fechador | minutos, depende da review |
 | Hook de PR | abrir o PR (MCP ou `gh`) | confere o marcador do `mark` | sem marcador válido para a ponta da branch | instantâneo |
 
@@ -52,7 +52,7 @@ Roda em todo `git commit`. Se qualquer etapa falhar, o commit não é criado.
      1. `eslint --fix`
      2. `prettier --write`
      3. `typecheck` do projeto inteiro
-     4. Specs: o núcleo fixo (~5 s) e o spec de mesmo nome de cada arquivo
+     4. Specs: o núcleo fixo e o spec de mesmo nome de cada arquivo
    - Com `.md` em stage:
      1. `markdownlint`
      2. `cspell` (pt-BR)
@@ -84,7 +84,7 @@ Da última decisão até o PR aberto, nesta ordem:
    3. Rodar o `flow-report`
       - Só aponta decisões com base fraca; nunca bloqueia
    4. Fazer o `git push`
-      - No **1º push da branch** o `pre-push` roda `test:coverage` (piso de 90%), de 3 a 5 min
+      - No **1º push da branch** o `pre-push` roda `test:coverage` (piso de 90%)
       - Falhou: o push é bloqueado
    5. Rodar o `mark`
       - Confere dois gates
