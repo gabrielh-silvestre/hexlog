@@ -37,8 +37,16 @@ describe('lint-staged config', () => {
       'cspell --no-progress --no-must-find-files',
     ]);
     expect((tasks[2] as () => string)()).toBe(
-      'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts',
+      'npm test -- test/directives.spec.ts test/skill-coherence.spec.ts test/skill-model.spec.ts',
     );
+  });
+
+  it('should run the model spec for a staged example model', () => {
+    const tasks = config['*.example.json'] as Task[];
+
+    expect(tasks.map((task) => (task as () => string)())).toEqual([
+      'npm test -- test/skill-model.spec.ts',
+    ]);
   });
 
   it('should map src/x/y.ts to the spec and the property spec of the same name', () => {

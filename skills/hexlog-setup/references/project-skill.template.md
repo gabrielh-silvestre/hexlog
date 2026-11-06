@@ -1,9 +1,9 @@
 ---
-name: {{project}}-hexlog
+name: {{skill_name}}
 description: "Use right after {{commands}} in this repository: record the phase in hexlog, link it to the previous phase and, when the last phase ends, check that the unit is complete. Also use to continue or close a unit of work ({{unit_kind}}) that hexlog already tracks."
 ---
 
-# {{project}}-hexlog
+# {{skill_name}}
 
 hexlog project: `{{project}}`. Gate: `{{gate}}`. Model: `hexlog-model.json`, next to this
 file. Mechanics of every call (register, query, evaluate the gate) live in the
@@ -17,7 +17,7 @@ A unit of work is one {{unit_kind}} under `{{unit_location}}`.
 |---|---|---|---|---|---|
 | {{phase}} | {{command}} | {{type}} | {{target}} | {{artifact}} | {{links}} |
 
-Repeat the row once per phase of the model, in order. The Links column reads `<relation name> -> <target record type>`.
+Repeat the row once per phase of the model, in order. The Links column reads `<relation name> -> <target record type>`. Inside a cell, write `|` as `\|`.
 
 ## What to do
 
