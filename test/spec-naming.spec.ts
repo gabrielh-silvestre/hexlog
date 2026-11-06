@@ -14,8 +14,9 @@ const EXCEPTIONS: Readonly<Record<string, Reason>> = {
   'src/mcp/server.ts': 'entrypoint',
   'src/server.ts': 'entrypoint',
 
-  // `mark.ts` e `marker.ts` são o marcador do gate de PR: cobertos por `flow-scripts.spec.ts`,
-  // como `flow.ts` e `flow-command.ts`, que o pré-commit não roda ao editá-los.
+  // `mark.ts`, `flow.ts`: `flow-scripts.spec.ts`. `marker.ts` e `flow-command.ts`: lá só o teste de
+  // imports; a lógica passa por `flow-hooks.spec.ts`. `mark.ts` e `marker.ts` são o marcador do
+  // gate de PR, e o pré-commit não roda esses specs ao editá-los.
   '.claude/hooks/flow-command.ts': 'shared-spec',
   'scripts/flow/flow.ts': 'shared-spec',
   'scripts/flow/mark.ts': 'shared-spec',
@@ -29,13 +30,14 @@ const EXCEPTIONS: Readonly<Record<string, Reason>> = {
   'src/commands/register/attachments.ts': 'internal',
   'src/commands/register/state.ts': 'internal',
   'src/commands/register/static.ts': 'internal',
-  'src/domain/manifest.ts': 'internal',
+  'src/queries/read.ts': 'internal',
+  'src/shared/latest.ts': 'internal',
+  // Adaptadores de tool: a prova é a integração de `test/mcp/`, não o spec do serviço de mesmo nome.
   'src/mcp/tools/attachment.ts': 'internal',
   'src/mcp/tools/definition.ts': 'internal',
   'src/mcp/tools/process.ts': 'internal',
-  'src/queries/read.ts': 'internal',
-  'src/shared/latest.ts': 'internal',
 
+  'src/domain/manifest.ts': 'no-logic',
   'src/ports.ts': 'no-logic',
   'src/shared/logger.ts': 'no-logic',
   'src/version.ts': 'no-logic',
@@ -58,7 +60,8 @@ const isRepeated = (file: string): boolean =>
 // O nome casa pelo mesmo padrão do pré-commit. Em nome repetido na produção, só conta o spec que
 // cita o caminho do arquivo.
 // shortcut: nome único só confere o nome, então `src/mcp/tools/query.ts` também casa
-// `test/queries/query.spec.ts`, que prova o serviço; conferir o import pede analisar cada spec.
+// `test/queries/query.spec.ts`, que prova o serviço, e `foo.e2e.spec.ts` passa por unitário de
+// `foo.ts`; conferir o que o spec exercita pede analisar cada um.
 const ownSpecs = (file: string): string[] => {
   const pattern = new RegExp(at(namePatterns([file]), 0));
   const named = specs.filter((spec) => pattern.test(spec));
@@ -67,7 +70,7 @@ const ownSpecs = (file: string): string[] => {
     : named;
 };
 
-describe('src, scripts, hook and .claude/hooks', () => {
+describe('{src,scripts,hook,.claude/hooks}/**/*.ts', () => {
   it('should find a spec of the same name for every production file outside the exceptions', () => {
     const missing = production.filter(
       (file) => !Object.hasOwn(EXCEPTIONS, file) && ownSpecs(file).length === 0,
@@ -86,6 +89,9 @@ describe('src, scripts, hook and .claude/hooks', () => {
 
   it('should not count a spec that only shares the name of a repeated production file', () => {
     expect(ownSpecs('src/mcp/tools/process.ts')).toEqual([]);
+  });
+
+  it('should count the spec that cites the path of a repeated production file', () => {
     expect(ownSpecs('src/commands/process.ts')).toEqual(['test/commands/process.spec.ts']);
   });
 });
