@@ -78,6 +78,7 @@ describe('bindShutdown', () => {
     await settle();
 
     expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(shutdown).toHaveBeenCalledWith(250);
     expect(fake.exit).toHaveBeenCalledWith(code);
   });
 
@@ -147,7 +148,7 @@ describe('bindShutdown', () => {
     expect(fake.exit).toHaveBeenCalledWith(undefined);
   });
 
-  it('should exit after 1,500 ms when closing the transport is instant and the shutdown never ends', async () => {
+  it('should exit after 1,500 ms on the EOF when closing the transport is instant and the shutdown never ends', async () => {
     const fake = createFakeProc();
     bind(fake, { shutdown: NEVER });
 
@@ -160,7 +161,7 @@ describe('bindShutdown', () => {
     expect(fake.exit).toHaveBeenCalledTimes(1);
   });
 
-  it('should exit after 1,750 ms when neither step ever ends', async () => {
+  it('should exit after 1,750 ms on the EOF when neither step ever ends', async () => {
     const fake = createFakeProc();
     bind(fake, { closeTransport: NEVER, shutdown: NEVER });
 
@@ -173,11 +174,84 @@ describe('bindShutdown', () => {
     expect(fake.exit).toHaveBeenCalledTimes(1);
   });
 
+  it('should exit after 250 ms on a signal when closing the transport is instant and the shutdown never ends', async () => {
+    const fake = createFakeProc();
+    bind(fake, { shutdown: NEVER });
+
+    fake.emit('SIGTERM');
+    await settle(249);
+    const exitedEarly = fake.exit.mock.calls.length;
+    await settle(1);
+
+    expect(exitedEarly).toBe(0);
+    expect(fake.exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('should exit after 350 ms on a signal when neither step ever ends', async () => {
+    const fake = createFakeProc();
+    bind(fake, { closeTransport: NEVER, shutdown: NEVER });
+
+    fake.emit('SIGINT');
+    await settle(349);
+    const exitedEarly = fake.exit.mock.calls.length;
+    await settle(1);
+
+    expect(exitedEarly).toBe(0);
+    expect(fake.exit).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['SIGTERM', 143],
     ['SIGINT', 130],
   ])(
-    'should exit at once with %s code %i when it arrives during a pending shutdown',
+    'should wait for the pending shutdown and then exit with %s code %i on a second one',
+    async (signal, code) => {
+      const fake = createFakeProc();
+      const { shutdown } = bind(fake, { shutdown: NEVER });
+      fake.emit(signal);
+      await settle(100);
+
+      fake.emit(signal);
+      const exitedEarly = fake.exit.mock.calls.length;
+      await settle(250);
+
+      expect(exitedEarly).toBe(0);
+      expect(fake.exit).toHaveBeenCalledTimes(1);
+      expect(fake.exit).toHaveBeenCalledWith(code);
+      expect(shutdown).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('should deliver the final export when SIGTERM arrives 100 ms after SIGINT and the shutdown takes 200 ms', async () => {
+    const fake = createFakeProc();
+    let delivered = false;
+    const slowShutdown = () =>
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          delivered = true;
+          resolve();
+        }, 200);
+      });
+    const { shutdown } = bind(fake, { shutdown: slowShutdown });
+
+    fake.emit('SIGINT');
+    await settle(100);
+    fake.emit('SIGTERM');
+    const exitedEarly = fake.exit.mock.calls.length;
+    await settle(100);
+
+    expect(exitedEarly).toBe(0);
+    expect(delivered).toBe(true);
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(fake.exit).toHaveBeenCalledTimes(1);
+    expect(fake.exit).toHaveBeenCalledWith(130);
+  });
+
+  it.each([
+    ['SIGTERM', 143],
+    ['SIGINT', 130],
+  ])(
+    'should keep the EOF budget and exit with %s code %i when it arrives during a pending EOF shutdown',
     async (signal, code) => {
       const fake = createFakeProc();
       const { shutdown } = bind(fake, { shutdown: NEVER });
@@ -185,26 +259,14 @@ describe('bindShutdown', () => {
       await settle(100);
 
       fake.emit(signal);
+      await settle(1_399);
+      const exitedEarly = fake.exit.mock.calls.length;
+      await settle(1);
 
-      expect(fake.exit).toHaveBeenCalledTimes(1);
-      expect(fake.exit).toHaveBeenCalledWith(code);
+      expect(exitedEarly).toBe(0);
       expect(shutdown).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it.each([
-    ['SIGTERM', 143],
-    ['SIGINT', 130],
-  ])(
-    'should exit at once on a second %s while the first is shutting down',
-    async (signal, code) => {
-      const fake = createFakeProc();
-      bind(fake, { shutdown: NEVER });
-      fake.emit(signal);
-      await settle(100);
-
-      fake.emit(signal);
-
+      expect(shutdown).toHaveBeenCalledWith(1_500);
+      expect(fake.exit).toHaveBeenCalledTimes(1);
       expect(fake.exit).toHaveBeenCalledWith(code);
     },
   );

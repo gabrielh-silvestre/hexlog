@@ -789,5 +789,14 @@ describe('dist/server.mjs over stdio', () => {
     it('should exit with code 143', () => {
       expect(exit).toMatchObject({ code: 143, signal: null });
     });
+
+    it('should deliver the span of the call before exiting', () => {
+      const names = bodiesOf(postsTo(ok, '/v1/traces'))
+        .flatMap(({ resourceSpans = [] }) => resourceSpans)
+        .flatMap(({ scopeSpans }) => scopeSpans)
+        .flatMap(({ spans }) => spans.map(({ name }) => name));
+
+      expect(names).toContain('tool list');
+    });
   });
 });
