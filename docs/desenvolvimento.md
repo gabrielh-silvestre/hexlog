@@ -116,9 +116,12 @@ msg`).
 vêm de agentes e não são confiáveis, e um agente com prompt injetado grava o próprio
 log, então a vítima é quem lê o terminal (a cadeia segue íntegra). Na string final, no
 modo texto e no `--json`, `scripts/escape-controls.ts#escapeControls` troca C0 (menos LF
-e TAB), DEL, C1 e os controles bidi por `\uXXXX` visível: ESC, CSI, OSC (por exemplo o
-OSC 0 de título), U+009B e U+009D não chegam crus ao terminal, e o `JSON.parse` do
-`--json` devolve o texto original. `--raw` imprime o byte exato (com `--full --raw` o
+e TAB), DEL, C1, os controles bidi, U+2028, U+2029 e os tag characters por `\uXXXX`
+visível: ESC, CSI, OSC (por exemplo o OSC 0 de título), U+009B e U+009D não chegam crus
+ao terminal, e o `JSON.parse` do `--json` devolve o texto original. Os caracteres de
+formato invisíveis sem valor ASCII (U+200B, U+2060, U+180E, os seletores de variação,
+BOM e ZWJ) passam, como risco aceito ([ADR 0009](directives/adr-0009-ferramental.md),
+emenda de 2026-11-06). `--raw` imprime o byte exato (com `--full --raw` o
 texto do anexo entre os delimitadores é idêntico ao anexo) e deixa o risco com quem lê.
 Um anexo com a linha `----- end -----` ainda forja o delimitador no modo texto.
 
