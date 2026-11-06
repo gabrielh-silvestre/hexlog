@@ -14,7 +14,7 @@ npm run test:coverage  # npm test com cobertura de src/ e piso de 90%
 npm run build       # esbuild, gera os bundles .mjs (equivalente ao passo 1 do instalador)
 ```
 
-O CI, os hooks locais (`pre-commit`, `commit-msg` e `pre-push`) e o que cada
+O CI, os hooks locais (`pre-commit` e `commit-msg`) e o que cada
 um roda estão em [qualidade-e-testes.md](directives/qualidade-e-testes.md); o
 estudo de plataformas está em [qualidade-ci.md](qualidade-ci.md).
 
