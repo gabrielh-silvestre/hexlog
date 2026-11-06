@@ -24,7 +24,7 @@ import {
   withPath,
   type Detail,
 } from '../src/errors.ts';
-import { ARCHIVE_COMMAND, at } from './helpers.ts';
+import { ARCHIVE_COMMAND, at, recordId } from './helpers.ts';
 
 const makeDetails = (count: number): Detail[] =>
   Array.from({ length: count }, (_, n) => ({
@@ -636,5 +636,18 @@ describe('ruleRefusal', () => {
         message: 'kind does not match the kind of the pinned relation name',
       },
     ]);
+  });
+
+  it.each([
+    ['the current version', recordId('alpha', 2)],
+    ['null when the lineage was revoked', null],
+  ])('should refuse not-current as FORK_REJECTED with %s in the detail', (_case, current) => {
+    const message = 'destination is not current; supersede or revoke the current version';
+
+    const error = ruleRefusal(path, { code: 'not-current', current });
+
+    expect(error.code).toBe('FORK_REJECTED');
+    expect(error.message).toBe(message);
+    expect(error.details).toStrictEqual([{ path, code: 'not-current', message, current }]);
   });
 });

@@ -5,8 +5,9 @@ import type { Configuration } from 'lint-staged';
 // Regex (para `jest --testPathPatterns`) do spec de cada `.ts` em stage, pelo nome e em qualquer
 // pasta de `test/`: `src/adapters/fs/lock.ts` casa `test/adapters/lock.spec.ts` e
 // `lock.property.spec.ts`, porque a pasta do spec nem sempre espelha a do código. Spec em stage
-// roda a si mesmo; helper e fixture de `test/` não rodam nada.
-const namePatterns = (files: readonly string[]): string[] =>
+// roda a si mesmo; helper e fixture de `test/` não rodam nada. `test/spec-naming.spec.ts` usa o
+// mesmo padrão para travar que todo arquivo fora da lista de exceções tem spec.
+export const namePatterns = (files: readonly string[]): string[] =>
   files.flatMap((file) => {
     const { dir, name, base } = path.parse(path.relative(process.cwd(), file));
     if (dir === 'test' || dir.startsWith('test/')) {
