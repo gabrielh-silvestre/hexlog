@@ -1,7 +1,7 @@
 // Instalação versionada do artefato: copia os bundles para
 // `~/.local/lib/hexlog/<versão>/`, registra o guard em `settings.json`.
-// Puro e testável: toda execução externa
-// (hook, servidor, relógio) é injetada — nada aqui chama `claude` nem builda.
+// Grava em disco (arquivos instalados e `settings.json`), mas toda execução externa
+// (hook, servidor, relógio) é injetada: nada aqui chama `claude` nem builda.
 // Não é importado pelo servidor nem pelo hook, só por `scripts/install.ts`.
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';

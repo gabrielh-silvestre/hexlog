@@ -5,8 +5,9 @@
 
 ## Purpose
 Entrypoints reais de build, instalação e relatório do hexlog. `build.ts` e
-`install.ts` ligam as funções puras de `src/guard.ts` e `src/installation.ts`
-a I/O de verdade: `esbuild`, `fs`, `child_process` e o cliente MCP.
+`install.ts` ligam as funções de `src/guard.ts` e `src/installation.ts`, que
+recebem a execução externa por parâmetro, a I/O de verdade: `esbuild`, `fs`,
+`child_process` e o cliente MCP.
 `insights.ts` lê os logs já gravados e imprime um relatório, sem escrever
 nada; `export.ts` despeja o log de um processo em JSONL, também sem escrever;
 `timeline.ts` cruza os processos de um projeto por prefixo de target e imprime a
