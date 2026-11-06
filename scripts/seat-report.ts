@@ -33,6 +33,7 @@ const ROLES = ['gap', 'premise', 'audit'] as const;
 type Role = (typeof ROLES)[number];
 type Types = Record<Role, Name>;
 
+// A ordem das chaves é a ordem das seções do relatório.
 const GROUPS = {
   withoutCriteria: 'simulated answers without criteria',
   openGaps: 'open gaps',
@@ -186,17 +187,7 @@ function buildLines(gaps: QueryRecord[], premises: QueryRecord[], audits: QueryR
 }
 
 function renderReport(lines: Record<Group, string[]>): string {
-  const order: Group[] = [
-    'withoutCriteria',
-    'openGaps',
-    'notAudited',
-    'audited',
-    'human',
-    'unattributed',
-    'unrecognized',
-    'nonCurrentGap',
-  ];
-  const blocks = order.map((group) => {
+  const blocks = (Object.keys(GROUPS) as Group[]).map((group) => {
     const body = lines[group].length === 0 ? ['  none'] : lines[group].map((line) => `  ${line}`);
     return [`${GROUPS[group]} (${lines[group].length})`, ...body].join('\n');
   });

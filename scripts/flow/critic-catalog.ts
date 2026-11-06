@@ -120,8 +120,10 @@ export function parseCatalog(text: string) {
   return { actions, availability, order, choice, section };
 }
 
+type Catalog = ReturnType<typeof parseCatalog>;
+
 /** A seção literal mais a linha das ações que a coluna (transporte) alcança, da mais cara à mais barata. */
-export function renderActions(catalog: ReturnType<typeof parseCatalog>, column: Column): string {
+export function renderActions(catalog: Catalog, column: Column): string {
   const available = catalog.order.filter(
     (action) => (catalog.availability[action]?.[column] ?? UNAVAILABLE) !== UNAVAILABLE,
   );
