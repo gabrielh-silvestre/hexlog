@@ -81,6 +81,12 @@ function createCapture(initial: Mode = 'ok') {
   return { capture, spanExporter, metricExporter };
 }
 
+/** Resolve `'timeout'` depois de `ms`, sem segurar o processo de teste vivo (o timer é `unref`). */
+const timeoutAfter = (ms: number): Promise<'timeout'> =>
+  new Promise((resolve) => {
+    AbortSignal.timeout(ms).addEventListener('abort', () => resolve('timeout'));
+  });
+
 const SETTINGS = { endpoint: 'http://127.0.0.1:9', headers: {} };
 const opened: OtelTelemetry[] = [];
 
@@ -445,6 +451,38 @@ describe('createOtelTelemetry', () => {
     });
   });
 
+  describe('with the exported resource', () => {
+    const traceOnce = (telemetry: OtelTelemetry) =>
+      telemetry.trace('query', (probe) => {
+        probe.end({ ms: 1 });
+        return Promise.resolve();
+      });
+
+    it('should carry service.instance.id on the spans and on the metrics', async () => {
+      const { telemetry, capture } = openTelemetry();
+      await traceOnce(telemetry);
+      await telemetry.flush();
+
+      const spanId = at(capture.spans, 0).resource.attributes['service.instance.id'];
+      const metricId = at(capture.metrics, 0).resource.attributes['service.instance.id'];
+
+      expect(spanId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(metricId).toBe(spanId);
+    });
+
+    it('should give each boot its own service.instance.id', async () => {
+      const first = openTelemetry();
+      const second = openTelemetry();
+      await Promise.all([traceOnce(first.telemetry), traceOnce(second.telemetry)]);
+      await Promise.all([first.telemetry.flush(), second.telemetry.flush()]);
+
+      const idOf = (capture: ReturnType<typeof createCapture>['capture']) =>
+        at(capture.metrics, 0).resource.attributes['service.instance.id'];
+
+      expect(idOf(first.capture)).not.toBe(idOf(second.capture));
+    });
+  });
+
   describe('with the call lifecycle', () => {
     it('should call run in the same stack, with no await before it', async () => {
       const { telemetry } = openTelemetry();
@@ -468,18 +506,30 @@ describe('createOtelTelemetry', () => {
       expect(result).toEqual({ ok: true });
     });
 
-    it('should resolve in under 250 ms when the exporters never answer', async () => {
+    it('should resolve without waiting for a pending send when the exporters never answer', async () => {
       const { capture, spanExporter, metricExporter } = createCapture('silent');
-      const { telemetry } = openTelemetry({ spanExporter, metricExporter });
-      const started = Date.now();
-
+      const { telemetry } = openTelemetry({
+        spanExporter,
+        metricExporter,
+        exportTimeoutMs: 60_000,
+      });
       await telemetry.trace('query', (probe) => {
         probe.end({ ms: 1 });
         return Promise.resolve();
       });
+      void telemetry.flush();
+      await delay(50);
 
-      expect(Date.now() - started).toBeLessThan(250);
-      expect(capture.spans).toHaveLength(0);
+      const outcome = await Promise.race([
+        telemetry.trace('query', () => Promise.resolve('done')),
+        timeoutAfter(2_000),
+      ]);
+      // Libera os envios presos e os do shutdown: o SDK mantém um timer de 60 s por envio pendente.
+      capture.mode = 'ok';
+      for (const done of capture.late) done({ code: ExportResultCode.SUCCESS });
+
+      expect(capture.late.length).toBeGreaterThan(0);
+      expect(outcome).toBe('done');
     });
 
     it('should neither change the result nor call run twice when the SDK throws', async () => {
@@ -667,6 +717,11 @@ describe('createOtelTelemetry', () => {
       'ftp://host/x',
       'http://user:pass@127.0.0.1:1/',
       'http://user@127.0.0.1:1/',
+      'http://127.0.0.1:1/api/default?org=acme',
+      'http://127.0.0.1:1/api/default/?org=acme',
+      'http://127.0.0.1:1/api/default#frag',
+      'http://127.0.0.1:1/?',
+      'http://127.0.0.1:1/#',
     ])('should return the noop and log one init failure for the endpoint %s', (endpoint) => {
       const logs: LogRecord[] = [];
 
@@ -728,6 +783,17 @@ describe('createOtelTelemetry', () => {
 
       expect(Date.now() - started).toBeLessThan(1_000);
       expect(capture.spans.map((span) => span.name)).toContain('tool query');
+    });
+
+    it('should return as soon as a call in flight finishes within the drain and send its span', async () => {
+      const { telemetry, capture } = openTelemetry({ drainTimeoutMs: 500 });
+      void telemetry.trace('register', () => delay(20));
+      const started = Date.now();
+
+      await telemetry.shutdown(1_000);
+
+      expect(capture.spans.map((span) => span.name)).toContain('tool register');
+      expect(Date.now() - started).toBeLessThan(400);
     });
 
     it('should not exceed its timeout and not reject when an exporter never shuts down', async () => {
@@ -1259,14 +1325,26 @@ describe('execute', () => {
   });
 
   describe('with exporters that never answer', () => {
-    it('should resolve a call in under 250 ms', async () => {
-      const { spanExporter, metricExporter } = createCapture('silent');
-      await start({ spanExporter, metricExporter });
-      const started = Date.now();
+    it('should resolve a call without waiting for a pending send', async () => {
+      const silent = createCapture('silent');
+      await start({
+        spanExporter: silent.spanExporter,
+        metricExporter: silent.metricExporter,
+        exportTimeoutMs: 60_000,
+      });
+      void telemetry.flush();
+      await delay(50);
 
-      await environment.ok('list', { project: PROJECT });
+      const outcome = await Promise.race([
+        environment.ok('list', { project: PROJECT }).then(() => 'done'),
+        timeoutAfter(2_000),
+      ]);
+      // Libera os envios presos e os do shutdown: o SDK mantém um timer de 60 s por envio pendente.
+      silent.capture.mode = 'ok';
+      for (const done of silent.capture.late) done({ code: ExportResultCode.SUCCESS });
 
-      expect(Date.now() - started).toBeLessThan(250);
+      expect(silent.capture.late.length).toBeGreaterThan(0);
+      expect(outcome).toBe('done');
     });
   });
 });

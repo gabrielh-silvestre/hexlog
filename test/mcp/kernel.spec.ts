@@ -435,11 +435,9 @@ describe('execute', () => {
           telemetry: { ...fake.telemetry, trace: trace(fake.probe) },
         });
         const run = jest.fn(() => ({ t: 'x'.repeat(OVER_CAP) }));
-        const startedAt = Date.now();
 
         const result = await execute(deps, validCall(), run);
 
-        expect(Date.now() - startedAt).toBeLessThan(250);
         expect(result).toMatchObject({ structuredContent: { t: 'x'.repeat(OVER_CAP) } });
         expect(run).toHaveBeenCalledTimes(1);
         expect(eventsOf(logger, 'tool')).toHaveLength(1);

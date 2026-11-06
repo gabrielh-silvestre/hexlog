@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import { SpanStatusCode, type Attributes, type Span } from '@opentelemetry/api';
 import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
 import {
@@ -172,8 +173,16 @@ export function createOtelTelemetry(options: OtelTelemetryOptions): OtelTelemetr
 
   try {
     const { protocol, username, password } = new URL(settings.endpoint);
-    // Credencial na URL viraria Basic auth no exporter; o probe já a recusa.
-    if ((protocol !== 'http:' && protocol !== 'https:') || username !== '' || password !== '') {
+    // Credencial na URL viraria Basic auth no exporter (o probe já a recusa); query e fragmento
+    // engoliriam o sufixo `/v1/...` ao montar a URL de envio. O caractere cru vale também no fim
+    // (`http://h/?`), em que `URL#search` e `URL#hash` vêm vazios.
+    if (
+      (protocol !== 'http:' && protocol !== 'https:') ||
+      username !== '' ||
+      password !== '' ||
+      settings.endpoint.includes('?') ||
+      settings.endpoint.includes('#')
+    ) {
       return initFailed('invalid-endpoint');
     }
   } catch {
@@ -190,6 +199,8 @@ export function createOtelTelemetry(options: OtelTelemetryOptions): OtelTelemetr
     const resource = resourceFromAttributes({
       'service.name': 'hexlog',
       'service.version': VERSION,
+      // Cada processo é uma série cumulativa própria; sem o id, sessões concorrentes colidem.
+      'service.instance.id': randomUUID(),
     });
     const spanExporter =
       options.spanExporter ??
