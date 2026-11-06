@@ -8,6 +8,10 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 - Telemetria OpenTelemetry opcional por OTLP/HTTP, ligada só por `HEXLOG_OTEL_ENDPOINT` (e `HEXLOG_OTEL_HEADERS` para credencial): um span por chamada de tool, com projeto, processo, tamanho do log lido e código de erro, e três métricas por tool; sem a variável o servidor não abre conexão nem instala handler, e as tools respondem como antes. O instalador passa a preservar o `env` da entrada MCP `hexlog` ao refazê-la. Detalhe em `docs/telemetria.md` (#363).
 
+### Corrigido
+
+- As skills `hexlog-setup` e `hexlog-flow` corrigem o que o agente lê: o `command` do modelo aceita comando ou ação no gerúndio, para o bloco do `AGENTS.md` não sair torto; a entrevista propõe o gate; há regra para mais de um modelo local e para `PROCESS_TOO_LARGE` conforme o processo cheio (#373).
+
 ## [1.2.3] - 2026-10-29
 
 Aviso de versão: esta versão traz recursos novos (o `hexlog-setup` reconstruído, a cadeira do dono e o `seat-report`) e muda as mensagens e os `details` do `INVALID_RECORD` do `register`; a Migração abaixo diz como se adaptar.
