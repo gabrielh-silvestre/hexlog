@@ -2,7 +2,7 @@
 
 Roteiro manual para provar que a skill `hexlog-setup` prepara um repositório de destino e que o
 ciclo de uma unidade chega ao gate verde. O jest prova a forma dos exemplos, o gate e as varreduras dos textos; o comportamento do
-agente (entrevista, descoberta, adesão à skill gerada) só este roteiro prova. A evidência fica no
+agente (entrevista, descoberta, adesão à skill do projeto) só este roteiro prova. A evidência fica no
 hexlog, anexada ao processo do trabalho que roda o aceite.
 
 ## Pré-condições
