@@ -33,7 +33,7 @@ mão: depois dela, o ciclo de cada unidade de trabalho pode chegar ao gate verde
 3. uma pergunta por turno levanta a unidade de trabalho, as fases, o que se registra em cada uma, o
    comando que dispara a fase e o artefato de saída;
 4. o agente mostra o plano de chamadas e só registra tipos, relações e gate depois do "aprovado";
-5. o destino ganha `.claude/skills/<projeto>-hexlog/SKILL.md` (curta, em inglês), o
+5. o destino ganha `.claude/skills/<nome da skill>/SKILL.md`, em geral `<projeto>-hexlog` (curta, em inglês), o
    `hexlog-model.json` ao lado dela e um bloco de até 8 linhas no `AGENTS.md` que manda usar a skill
    depois dos comandos das fases.
 
