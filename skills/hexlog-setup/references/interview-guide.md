@@ -13,7 +13,7 @@ Dois caminhos, escolhidos no início. Os dois terminam nas mesmas perguntas de u
 
 ## 1. Nome do projeto hexlog
 
-"What should the hexlog project be called? Use `[a-z0-9-]`, start with a letter or a digit, up to 63 characters." Confira por `list` antes de qualquer `define_*`.
+"What should the hexlog project be called? Use `[a-z0-9-]`, start with a letter or a digit, up to 57 characters, because the skill is named `<project>-hexlog` and a skill name stops at 64." Confira por `list` antes de qualquer `define_*`.
 
 ## 2. Projeto já existente
 

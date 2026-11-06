@@ -8,29 +8,32 @@ O modelo do projeto declara `schema`, um inteiro. A mecânica deste arquivo ente
 
 ## 2. Resolver o processo da unidade
 
-Todo tipo de fase carrega o campo `unit`, o caminho canônico da unidade (relativo à raiz do repositório, separador `/`, sem barra final e sem `./`). Ache o processo pelos registros:
+Todo tipo de fase carrega o campo `unit`, o caminho canônico da unidade (relativo à raiz do repositório, separador `/`, do primeiro ao último segmento, sem barra final e sem `./`, como `docs/features/photo-albums`), a única forma gravada e comparada nesse campo. Ache o processo pelos registros:
 
 ```text
 query({ project, scope: "project", where: { unit: "<caminho da unidade>" },
         fields: ["unit"], limit: 50 })
 ```
 
-Cada fase registrada dá um acerto, então `limit: 1` esconderia a diferença entre processos. Agrupe os acertos pelo prefixo do `id` antes de `:` (`domain/ids.ts#RecordId`, que é o nome do processo):
+Cada fase registrada dá um acerto, então `limit: 1` esconderia a diferença entre processos. Agrupe os acertos pelo prefixo do `id` antes de `:` (`domain/ids.ts#processOf`, que é o nome do processo):
 
 - um processo: é ele, siga;
 - mais de um (a unidade foi reaberta, passo 4): vale o de maior sufixo numérico no nome, sendo o nome sem sufixo o de número 1; os anteriores estão aposentados e ficam sem registro novo. Se os nomes fogem desse padrão de sufixo, pare e pergunte ao desenvolvedor qual vale;
 - nenhum acerto: passo 3.
 
-`PROJECT_NOT_FOUND` ou `TYPE_NOT_FOUND` na consulta ou no `create_process` significam que o modelo ainda não foi aplicado neste hexlog: siga o passo 7. `PROCESS_CORRUPTED` na consulta significa cadeia quebrada em algum processo do projeto. Relate ao desenvolvedor, sugira `verify_chain` por processo e **pare**: o nome calculado do passo 3 poderia colidir com o processo quebrado. `PROCESS_TOO_LARGE` na consulta significa um log acima do teto em algum processo do projeto. Relate ao desenvolvedor e **pare**, sem reabrir: com a consulta de alcance projeto recusada, este passo também não acharia o processo novo (seção "Erros e reenvio" do `SKILL.md`).
+`PROJECT_NOT_FOUND` na consulta ou `TYPE_NOT_FOUND` no `create_process` significam que o modelo ainda não foi aplicado neste hexlog: siga o passo 7. `PROCESS_CORRUPTED` na consulta significa cadeia quebrada em algum processo do projeto. Relate ao desenvolvedor, sugira `verify_chain` por processo e **pare**: o nome calculado do passo 3 poderia colidir com o processo quebrado. `PROCESS_TOO_LARGE` na consulta significa um log acima do teto em algum processo do projeto. Relate ao desenvolvedor e **pare**, sem reabrir: com a consulta de alcance projeto recusada, este passo também não acharia o processo novo (seção "Erros e reenvio" do `SKILL.md`).
 
 ## 3. Sem acerto: calcular o nome e criar
+
+Caminho da unidade acima de 200 caracteres, o teto do campo `unit`: pare antes do `create_process` e pergunte ao desenvolvedor. Nunca trunque o `unit`, porque ele é a identidade da unidade.
 
 Calcule o nome do processo a partir da unidade, no formato de `domain/ids.ts#Name`:
 
 1. minúsculas;
 2. cada sequência de caracteres fora de `[a-z0-9]` vira um único `-`;
-3. trunque em 63 caracteres;
-4. tire `-` das pontas (depois de truncar, para o nome terminar sem `-`).
+3. tire `-` das pontas;
+4. trunque em 63 caracteres;
+5. tire `-` do fim de novo, porque o corte pode deixar um.
 
 Nome vazio ou igual a um valor de `RESERVED_PROCESS_NAMES`: acrescente um sufixo e confirme com o desenvolvedor. Chame `create_process`:
 
