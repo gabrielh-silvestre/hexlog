@@ -5,10 +5,10 @@ OpenTelemetry local, por OTLP/HTTP. Serve para ranquear o uso das tools, medir e
 por `code` e achar a chamada lenta. É opcional e vem desligada: sem
 `HEXLOG_OTEL_ENDPOINT` o servidor não abre conexão, não instala handler de processo e
 as tools respondem como antes. O SDK do OpenTelemetry é importado de forma estática:
-ele carrega em todo boot, ligada ou não (cerca de 230 KB no bundle e dezenas de ms no
-boot) e em cada script do fonte que importa `compose.ts` (cerca de 0,14 s medidos). A
-decisão e os limites aceitos estão no
-[ADR 0015](directives/adr-0015-telemetria-opentelemetry.md).
+ele carrega em todo boot, ligada ou não, e em cada script do fonte que importa
+`compose.ts`. Medido em 2026-11-05: cerca de 230 KB a mais no bundle, cerca de 12 ms no
+boot do bundle e cerca de 0,14 s no script do fonte. A medição, a decisão e os limites
+aceitos estão no [ADR 0015](directives/adr-0015-telemetria-opentelemetry.md).
 
 - [Variáveis](#variáveis)
 - [O que o span e as métricas levam](#o-que-o-span-e-as-métricas-levam)
@@ -135,7 +135,8 @@ processo sai quando o transporte fecha, e a resposta da tool em voo também se p
   sinal: se o backend responde devagar (a partir de ~250 ms sob `SIGINT` ou `SIGTERM`), o
   último lote pode não sair, e uma sessão curta pode não enviar nada.
 - **Timer atrasado por trabalho síncrono.** Contar as linhas de um log grande ocupa o
-  laço de eventos: de 6 a 15 ms por processo de 64 MiB. Numa consulta de projeto o custo
+  laço de eventos: de 6 a 15 ms por processo de 64 MiB, medidos em 2026-11-05
+  ([ADR 0015](directives/adr-0015-telemetria-opentelemetry.md)). Numa consulta de projeto o custo
   soma por processo, e um envio agendado pode atrasar esse tempo.
 - **Reenvio de métricas ocioso.** Depois da primeira chamada, cada servidor ocioso reenvia
   o mesmo ponto cumulativo a cada 15 s: cerca de 240 envios por hora por processo, uma
