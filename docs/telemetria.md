@@ -4,7 +4,10 @@ O servidor pode mandar um span por chamada de tool e três métricas a um backen
 OpenTelemetry local, por OTLP/HTTP. Serve para ranquear o uso das tools, medir erro
 por `code` e achar a chamada lenta. É opcional e vem desligada: sem
 `HEXLOG_OTEL_ENDPOINT` o servidor não abre conexão, não instala handler de processo e
-se comporta como antes. A decisão e os limites aceitos estão no
+as tools respondem como antes. O SDK do OpenTelemetry é importado de forma estática:
+ele carrega em todo boot, ligada ou não (cerca de 230 KB no bundle e dezenas de ms no
+boot) e em cada script do fonte que importa `compose.ts` (cerca de 0,14 s medidos). A
+decisão e os limites aceitos estão no
 [ADR 0015](directives/adr-0015-telemetria-opentelemetry.md).
 
 - [Variáveis](#variáveis)
@@ -25,11 +28,13 @@ se comporta como antes. A decisão e os limites aceitos estão no
 | `HEXLOG_OTEL_ENDPOINT` | Liga a telemetria. É a base do OTLP/HTTP, sem `/v1/...`: o servidor acrescenta `/v1/traces` e `/v1/metrics` (a barra final é removida). Ausente ou vazia, a telemetria fica desligada. |
 | `HEXLOG_OTEL_HEADERS` | Cabeçalhos dos envios, pares `chave=valor` separados por vírgula. O valor é dividido no primeiro `=` e chave e valor são decodificados como URL: um espaço vira `%20`, por exemplo `Authorization=Basic%20<base64>`. Par malformado, nome que não é token HTTP ou valor com CR, LF ou NUL é ignorado. |
 
-Nenhuma variável `OTEL_*` liga nem configura a telemetria do hexlog. O Claude Code usa
-`OTEL_EXPORTER_OTLP_ENDPOINT` para a própria telemetria e os processos MCP a herdam, então
-o servidor constrói os exporters com todas as `OTEL_*` fora de `process.env` e com
-`url`, cabeçalhos e temporalidade cumulativa explícitos. A compressão e o prazo de envio
-também não vêm do ambiente.
+Nenhuma variável `OTEL_*` liga nem configura a telemetria do hexlog. Outros clientes MCP,
+o `env` da entrada e o shell podem trazer `OTEL_*`, e o SDK do OpenTelemetry as lê por
+baixo da configuração explícita (cabeçalhos e compressão), então o servidor constrói os
+exporters com todas as `OTEL_*` fora de `process.env` e com `url`, cabeçalhos e
+temporalidade cumulativa explícitos. A compressão e o prazo de envio também não vêm do
+ambiente. O Claude Code não repassa `OTEL_*` aos subprocessos que ele sobe, servidores MCP
+incluídos (documentação oficial de monitoramento do Claude Code).
 
 ## O que o span e as métricas levam
 
@@ -98,18 +103,25 @@ muda por causa dele.
 
 Se a construção do adaptador falha (URL inválida, por exemplo), o servidor volta à
 telemetria desligada e escreve uma vez `telemetry-init-failed` com o `reason` `invalid-endpoint` (o endpoint não é uma URL
-`http:` ou `https:`) ou `sdk-init-failed` (o SDK falhou ao subir), nunca a mensagem da exceção.
+`http:` ou `https:`, ou leva usuário, senha, query ou fragmento) ou `sdk-init-failed` (o SDK falhou ao subir), nunca a mensagem da exceção.
 
 ## Encerramento
 
 Com a telemetria ligada, o servidor entrega o que está em fila antes de sair. Gatilhos: o
 fim do stdin (o cliente fechou), `beforeExit`, `SIGTERM` (saída 143) e `SIGINT` (130).
-Um sinal recebido com o encerramento já em curso sai na hora.
+O primeiro gatilho decide o orçamento. Um sinal recebido com o encerramento já em curso não
+sai na hora: espera esse mesmo encerramento e sai com o código do sinal.
 
 O orçamento do fim do stdin é de 1.750 ms no pior caso: 250 ms para fechar o transporte e
 1.500 ms de `shutdown` da telemetria, dentro dos quais as chamadas em voo esperam até
-500 ms. Sai antes do `SIGTERM` que o cliente de referência manda 2.000 ms depois do fim
-do stdin. O `shutdown` dos provedores faz o envio final; não há `forceFlush` à parte.
+500 ms. Sai antes do `SIGTERM` que um cliente que fecha o stdin manda 2.000 ms depois. O
+`shutdown` dos provedores faz o envio final; não há `forceFlush` à parte.
+
+O orçamento do caminho de sinal é de 350 ms: 100 ms para fechar o transporte e 250 ms de
+`shutdown` da telemetria. O Claude Code 2.1.318 no Linux não fecha o stdin: manda `SIGINT`,
+`SIGTERM` 100 ms depois e `SIGKILL` aos 500 ms, então o envio final precisa terminar antes
+disso. Se o fim do stdin decidiu o orçamento de 1.750 ms e um sinal chega depois, o
+`SIGKILL` do cliente corta a espera.
 
 Consequência: uma tool que ainda roda depois do fim do stdin pode não terminar de gravar
 (300 ms grava, 800 ms não), porque o processo sai ao fim do orçamento. A escrita do log é
@@ -119,11 +131,16 @@ processo sai quando o transporte fecha, e a resposta da tool em voo também se p
 ## Riscos residuais
 
 - **Lote final perdido com backend lento.** O prazo de envio (3.000 ms) é maior que o que
-  sobra do orçamento do fim do stdin (a partir de 1.000 ms): se o backend responde
-  devagar, o último lote pode não sair.
+  sobra do orçamento do fim do stdin (a partir de 1.000 ms) e que os 250 ms do caminho de
+  sinal: se o backend responde devagar (a partir de ~250 ms sob `SIGINT` ou `SIGTERM`), o
+  último lote pode não sair, e uma sessão curta pode não enviar nada.
 - **Timer atrasado por trabalho síncrono.** Contar as linhas de um log grande ocupa o
   laço de eventos: de 6 a 15 ms por processo de 64 MiB. Numa consulta de projeto o custo
   soma por processo, e um envio agendado pode atrasar esse tempo.
+- **Reenvio de métricas ocioso.** Depois da primeira chamada, cada servidor ocioso reenvia
+  o mesmo ponto cumulativo a cada 15 s: cerca de 240 envios por hora por processo, uma
+  linha por envio e por série. Agregue com `max(value)` por série e por instância
+  (`service_instance_id`) e some as instâncias, como nas consultas do exemplo abaixo.
 - **`kill -9`.** Não há como entregar o que estava em fila.
 - **Estado de envio atrasado.** Descrito acima: uma falha de um só sinal pode ficar
   mascarada, e o aviso pode reaparecer por um lote.
@@ -141,8 +158,8 @@ O destino deve ser um backend local ou de confiança: o servidor não confere o 
 
 - Um endpoint `http:` fora de loopback manda o valor de `HEXLOG_OTEL_HEADERS` em claro pela rede: use loopback ou `https:`.
 - O `claude mcp add -e K=V` que o instalador roda deixa o valor de `HEXLOG_OTEL_HEADERS` no argv, visível em `/proc/<pid>/cmdline` e no `ps` enquanto o comando roda. Risco aceito. Se o comando falha, o instalador não repete o argv na mensagem de erro.
-- O `fetch` do probe e o exporter só seguem `HTTP_PROXY` e `HTTPS_PROXY` com `NODE_USE_ENV_PROXY=1` no ambiente do servidor. Esse caminho não foi testado.
-- Uma URL com usuário ou senha em `HEXLOG_OTEL_ENDPOINT` é recusada como `invalid-endpoint`: a credencial vai em `HEXLOG_OTEL_HEADERS`.
+- Só o `fetch` do probe segue `HTTP_PROXY` e `HTTPS_PROXY`, e só com `NODE_USE_ENV_PROXY=1` no ambiente do servidor. O exporter OTLP conecta direto ao destino, sem proxy. Atrás de um proxy obrigatório o probe e o envio podem divergir, então `telemetry-degraded` com motivo `probe` não prova que o envio falha.
+- Uma URL com usuário ou senha em `HEXLOG_OTEL_ENDPOINT` é recusada como `invalid-endpoint`: a credencial vai em `HEXLOG_OTEL_HEADERS`. Query (`?org=acme`) e fragmento (`#x`) também são recusados, porque o servidor acrescenta `/v1/traces` ao fim da base e o resultado cairia no lugar errado.
 
 A regra completa é `telemetry-surfaces`, em [invariantes.md](directives/invariantes.md).
 
@@ -167,7 +184,12 @@ sem o cabeçalho (401). Particularidades do armazenamento:
 - Cada métrica é um stream. O histograma vira cinco: `_bucket` (com a coluna `le`),
   `_count`, `_sum`, `_min` e `_max`.
 - Os contadores e o histograma são cumulativos e reexportados a cada intervalo, o que gera
-  uma linha por envio: agregue com `max(value)` por série, nunca com `sum`.
+  uma linha por envio, e cada sessão do Claude Code sobe um servidor próprio com a mesma
+  série. Cada servidor leva um `service.instance.id` novo por boot, que vira a coluna
+  `service_instance_id` (o mapeamento no OpenObserve ainda não foi conferido numa sessão
+  real). Agregue com `max(value)` por série e por instância e depois com `sum` entre as
+  instâncias; `max(value)` direto, sem a instância, devolve só a maior e subconta as
+  chamadas de quem tem mais de um servidor.
 
 Consultas nos traces (stream `default`, tipo `traces`):
 
@@ -201,8 +223,14 @@ from "default" where hexlog_process is not null group by hexlog_process
 Consultas nas métricas (tipo `metrics`):
 
 ```sql
-select hexlog_tool, max(value) as calls from "hexlog_tool_calls" group by hexlog_tool order by calls desc
-select hexlog_tool, hexlog_error_code, max(value) as n from "hexlog_tool_errors"
+select hexlog_tool, sum(calls) as calls from (
+  select hexlog_tool, service_instance_id, max(value) as calls from "hexlog_tool_calls"
+  group by hexlog_tool, service_instance_id)
+group by hexlog_tool order by calls desc
+
+select hexlog_tool, hexlog_error_code, sum(n) as n from (
+  select hexlog_tool, hexlog_error_code, service_instance_id, max(value) as n from "hexlog_tool_errors"
+  group by hexlog_tool, hexlog_error_code, service_instance_id)
 group by hexlog_tool, hexlog_error_code order by n desc
 ```
 

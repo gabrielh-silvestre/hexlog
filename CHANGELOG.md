@@ -6,7 +6,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ### Adicionado
 
-- Telemetria OpenTelemetry opcional por OTLP/HTTP, ligada só por `HEXLOG_OTEL_ENDPOINT` (e `HEXLOG_OTEL_HEADERS` para credencial): um span por chamada de tool, com projeto, processo, tamanho do log lido e código de erro, e três métricas por tool; sem a variável nada muda. O instalador passa a preservar o `env` da entrada MCP `hexlog` ao refazê-la. Detalhe em `docs/telemetria.md` (#363).
+- Telemetria OpenTelemetry opcional por OTLP/HTTP, ligada só por `HEXLOG_OTEL_ENDPOINT` (e `HEXLOG_OTEL_HEADERS` para credencial): um span por chamada de tool, com projeto, processo, tamanho do log lido e código de erro, e três métricas por tool; sem a variável o servidor não abre conexão nem instala handler, e as tools respondem como antes. O instalador passa a preservar o `env` da entrada MCP `hexlog` ao refazê-la. Detalhe em `docs/telemetria.md` (#363).
 
 ## [1.2.3] - 2026-10-29
 
