@@ -31,7 +31,7 @@ const config = {
   // Dentro da chave `*.ts` a ordem importa: o `tsc` e o jest têm de ler os arquivos já corrigidos
   // por `eslint --fix` e `prettier --write`.
   //
-  // As duas chaves (`*.ts` e `*.md`) rodam em série por `--concurrent false` em `.husky/pre-commit`:
+  // As chaves `*.ts`, `*.md` e `*.example.json` rodam em série por `--concurrent false` em `.husky/pre-commit`:
   // o arquivo de config não tem essa opção, e o spec de doc lê `src/**/*.ts`, que a outra chave
   // ainda pode estar reescrevendo.
   //

@@ -73,10 +73,6 @@ const SKILL_NAME_MAX = 64;
 const SKILL_SUFFIX = '-hexlog';
 const SKILL_BASE_MAX = SKILL_NAME_MAX - SKILL_SUFFIX.length;
 
-/** A regra da seção "Nome da skill do projeto" de `model-schema.md`. */
-const skillNameOf = (project: string) =>
-  `${project.replace(/-{2,}/g, '-').slice(0, SKILL_BASE_MAX).replace(/-+$/, '')}${SKILL_SUFFIX}`;
-
 const sortedKeys = (value: object) => Object.keys(value).sort();
 
 const exampleFiles = fs
@@ -268,7 +264,7 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
     expect(kinds.filter((kind) => kind !== 'derivesFrom')).toEqual([]);
   });
 
-  it.each(EXAMPLES)('should require a unit of at most 200 in every phase of $file', ({ model }) => {
+  it.each(EXAMPLES)('should require a unit capped at 200 in every phase of $file', ({ model }) => {
     const unitFields = model.phases.map(({ type }) => {
       const schema = model.types.find(({ name }) => name === type)?.schema;
       return {
@@ -293,15 +289,18 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
     expect(links.map(({ to }) => to).filter((to) => !phaseTypes.includes(to))).toEqual([]);
   });
 
-  it.each(EXAMPLES)('should keep the rendered values on one line in $file', ({ model }) => {
-    const values = [
-      model.unit.kind,
-      model.unit.location,
-      ...model.phases.flatMap(({ command, artifact }) => [command, artifact]),
-    ];
+  it.each(EXAMPLES)(
+    'should keep rendered values on one line without quotes or backslashes in $file',
+    ({ model }) => {
+      const values = [
+        model.unit.kind,
+        model.unit.location,
+        ...model.phases.flatMap(({ command, artifact }) => [command, artifact]),
+      ];
 
-    expect(values.filter((value) => /["\\\n]/.test(value))).toEqual([]);
-  });
+      expect(values.filter((value) => /["\\\n]/.test(value))).toEqual([]);
+    },
+  );
 
   it.each(EXAMPLES)('should derive every process name from the unit path in $file', ({ model }) => {
     const { examples } = model.unit;
@@ -311,12 +310,13 @@ describe('skills/hexlog-setup/references/*.example.json', () => {
     );
   });
 
-  it.each(EXAMPLES)('should fit the project skill name within the limit in $file', ({ model }) => {
-    const name = skillNameOf(model.project);
-
-    expect(name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
-    expect(name.length).toBeLessThanOrEqual(SKILL_NAME_MAX);
-  });
+  it.each(EXAMPLES)(
+    'should use a project name that needs no skill name change in $file',
+    ({ model }) => {
+      expect(model.project).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(model.project.length).toBeLessThanOrEqual(SKILL_BASE_MAX);
+    },
+  );
 
   it.each(EXAMPLES)('should not use pattern or patternProperties in $file', ({ model }) => {
     expect(JSON.stringify(model.types)).not.toMatch(/"pattern(Properties)?"\s*:/);
@@ -632,6 +632,10 @@ describe('skills/hexlog-setup/references/model-schema.md', () => {
   const section = content.split(/^## /m).find((part) => part.startsWith('`ownerSeat`')) ?? '';
   const rows = section.split('\n').filter((line) => line.startsWith('|'));
   const fields = rows.slice(2).map((row) => /^\|\s*`([^`]+)`/.exec(row)?.[1] ?? '');
+
+  it('should state the project name cap that leaves room for the skill suffix', () => {
+    expect(content).toContain(`até ${SKILL_BASE_MAX} caracteres`);
+  });
 
   it('should document at least one ownerSeat field', () => {
     expect(fields.length).toBeGreaterThan(0);
