@@ -118,8 +118,8 @@ const DESCENDING_KEYWORDS = new Set([
 /**
  * Tamanho expandido do schema: quantos subschemas uma validação pode visitar num valor só, contando
  * cada `$ref` pelo tamanho do destino (`$defs` só entra por quem o cita). Memoiza o destino de cada
- * `$ref` que não passa por ciclo, então o custo é linear no documento mesmo quando as referências
- * dobram a cada nível. `$ref` que não é ponteiro local (`#` ou `#/...`), `$dynamicRef` e `$id` em
+ * `$ref` (com `unfold`, só o que não passa por ciclo), então o custo é linear no documento mesmo
+ * quando as referências dobram a cada nível. `$ref` que não é ponteiro local (`#` ou `#/...`), `$dynamicRef` e `$id` em
  * subschema que não é a raiz valem `SATURATED`: sem como medir aqui, assume-se o pior.
  *
  * Sem `unfold`, o ciclo também vale `SATURATED`. Com `unfold`, o ciclo se desdobra até a
@@ -149,10 +149,12 @@ export function expandedSize(root: unknown, unfold?: { depth: number; budget: nu
     const known = refSizes.get(ref);
     if (!isUndefined(known)) return known;
     inProgress.push({ ref, depth });
-    const size = sizeOf(valueAt(root, decodeURIComponent(ref.slice(1))), depth);
+    // `#` volta à raiz, onde o `$id` não muda o recurso
+    const size = sizeOf(valueAt(root, decodeURIComponent(ref.slice(1))), depth, ref === '#');
     inProgress.pop();
-    // Quem passou por um ciclo depende do nível e do que está em curso: não se guarda
-    if (reentries === reentriesBefore) refSizes.set(ref, size);
+    // Com `unfold`, quem passou por um ciclo depende do nível e do que está em curso: não se guarda.
+    // Sem `unfold`, o ciclo sempre satura, então guardar mantém o custo linear.
+    if (isUndefined(unfold) || reentries === reentriesBefore) refSizes.set(ref, size);
     return size;
   };
 

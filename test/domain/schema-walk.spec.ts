@@ -220,6 +220,13 @@ const doubling = (levels: number): RecordType => {
   return { $defs: defs, properties: { x: { $ref: '#/$defs/d0' } } };
 };
 
+// Referências que dobram a cada nível e terminam num ciclo de volta à raiz.
+const doublingToCycle = (levels: number): RecordType => {
+  const schema = doubling(levels);
+  (schema.$defs as RecordType)[`d${levels}`] = { properties: { y: { $ref: '#' } } };
+  return schema;
+};
+
 describe('expandedSize', () => {
   it.each<[string, unknown, number]>([
     ['a schema that is not an object', true, 0],
@@ -257,6 +264,10 @@ describe('expandedSize', () => {
 
   it('should measure references that double at each level in linear time', () => {
     expect(expandedSize(doubling(40))).toBeGreaterThan(2 ** 40);
+  });
+
+  it('should saturate references that double into a cycle in linear time', () => {
+    expect(expandedSize(doublingToCycle(40))).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('should saturate instead of growing without bound', () => {
@@ -319,6 +330,14 @@ describe('expandedSize', () => {
       [2, 9],
     ])('should unfold a tree schema over data of depth %i to %i', (depth, expected) => {
       expect(expandedSize(tree, unfold(depth))).toBe(expected);
+    });
+
+    it('should unfold a $ref to a root that carries an $id like one without it', () => {
+      expect(expandedSize({ $id: 'https://example.com/tree', ...tree }, unfold(2))).toBe(9);
+    });
+
+    it('should stop at the budget for references that double into a cycle', () => {
+      expect(expandedSize(doublingToCycle(40), unfold(5, 1_000))).toBe(Number.MAX_SAFE_INTEGER);
     });
 
     // O ciclo desce por `keyword` e gasta um nível: 2 subschemas por nível, em 4 níveis

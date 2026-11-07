@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
+import { isUndefined } from 'es-toolkit';
 import { createValidator } from '../../src/adapters/validator.ts';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import type { HexRecord } from '../../src/domain/record.ts';
@@ -63,7 +64,7 @@ const VARIANTS: {
 
 const batch = Array.from({ length: RECORDS }, (_, i) => {
   const variant = VARIANTS[i % VARIANTS.length];
-  if (variant === undefined) throw new Error('batch without variant');
+  if (isUndefined(variant)) throw new Error('batch without variant');
   const { schema, data, base } = variant;
   const depth = 7 + (i % 3);
   let value = base;
