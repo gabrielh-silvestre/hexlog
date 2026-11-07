@@ -255,7 +255,10 @@ export function attachmentNotFound(path: string, hash: string): HexlogError {
   return domainError('ATTACHMENT_NOT_FOUND', path, 'not-found', `attachment '${hash}' not found`);
 }
 
-/** `ATTACHMENT_CORRUPTED`: o blob em disco não bate com o hash que o endereça; `path` como em `attachmentNotFound`. */
+/**
+ * `ATTACHMENT_CORRUPTED`: o blob em disco não bate com o hash que o endereça; `path` como em
+ * `attachmentNotFound`.
+ */
 export function attachmentCorrupted(path: string, hash: string): HexlogError {
   return domainError(
     'ATTACHMENT_CORRUPTED',
@@ -265,16 +268,22 @@ export function attachmentCorrupted(path: string, hash: string): HexlogError {
   );
 }
 
-/** `INVALID_INPUT` em `/path`: o arquivo a anexar resolve para fora da raiz permitida ou dentro do diretório de dados. */
+/**
+ * `INVALID_INPUT` em `/path`: o arquivo a anexar resolve para fora da raiz permitida ou dentro do
+ * diretório de dados.
+ */
 export function outsideAllowedRoot(): HexlogError {
   return invalidInput('/path', 'outside-allowed-root', 'path is outside the allowed root');
 }
 
-/** Sem `maxBytes`, o arquivo cresceu depois do `fstat`; o código segue `too-big`, só a mensagem muda. */
-export function tooBigFile(maxBytes?: number): HexlogError {
-  const message =
-    maxBytes === undefined ? 'file changed while being read' : `file exceeds ${maxBytes} bytes`;
-  return invalidInput('/path', 'too-big', message);
+/** `INVALID_INPUT` em `/path`: o arquivo a anexar passa de `maxBytes`. */
+export function tooBigFile(maxBytes: number): HexlogError {
+  return invalidInput('/path', 'too-big', `file exceeds ${maxBytes} bytes`);
+}
+
+/** Código `too-big` como em `tooBigFile`: o arquivo cresceu depois do `fstat`; muda a mensagem. */
+export function fileGrewWhileReading(): HexlogError {
+  return invalidInput('/path', 'too-big', 'file changed while being read');
 }
 
 /** `PROCESS_NOT_FOUND` em `/process`, com o nome do processo ausente em `process`. */
@@ -384,7 +393,10 @@ export function markerNotFound(): HexlogError {
   );
 }
 
-/** `MARKER_NOT_FOUND` em `/marker`: o marcador cita um processo que não existe; `message` troca a frase padrão. */
+/**
+ * `MARKER_NOT_FOUND` em `/marker`: o marcador cita um processo que não existe; `message` troca a
+ * frase padrão.
+ */
 export function markerProcessNotFound(
   process: Name,
   message = 'marker names a process that does not exist',
@@ -413,7 +425,10 @@ export function invalidCursorPayload(issues: z.core.$ZodIssue[]): HexlogError {
   );
 }
 
-/** `RELATION_NOT_FOUND` em `path`: `missing` quando o destino não existe, `destination-corrupted` quando existe e está corrompido. */
+/**
+ * `RELATION_NOT_FOUND` em `path`: `missing` quando o destino não existe, `destination-corrupted`
+ * quando existe e está corrompido.
+ */
 export function relationNotFound(
   path: string,
   code: 'missing' | 'destination-corrupted',
