@@ -1,10 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import {
-  countNodes,
   expandedSize,
   FREE_PATTERN_KEYWORDS,
   hasKeywordAt,
+  measureData,
   walkSubschemas,
   withoutFreePatterns,
 } from '../../src/domain/schema-walk.ts';
@@ -220,6 +220,13 @@ const doubling = (levels: number): RecordType => {
   return { $defs: defs, properties: { x: { $ref: '#/$defs/d0' } } };
 };
 
+// Referências que dobram a cada nível e terminam num ciclo de volta à raiz.
+const doublingToCycle = (levels: number): RecordType => {
+  const schema = doubling(levels);
+  (schema.$defs as RecordType)[`d${levels}`] = { properties: { y: { $ref: '#' } } };
+  return schema;
+};
+
 describe('expandedSize', () => {
   it.each<[string, unknown, number]>([
     ['a schema that is not an object', true, 0],
@@ -259,6 +266,10 @@ describe('expandedSize', () => {
     expect(expandedSize(doubling(40))).toBeGreaterThan(2 ** 40);
   });
 
+  it('should saturate references that double into a cycle in linear time', () => {
+    expect(expandedSize(doublingToCycle(40))).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
   it('should saturate instead of growing without bound', () => {
     expect(expandedSize(doubling(80))).toBe(Number.MAX_SAFE_INTEGER);
   });
@@ -295,19 +306,156 @@ describe('expandedSize', () => {
 
     expect(expandedSize(schema)).toBe(3);
   });
+
+  it('should saturate a schema nested too deeply for the stack', () => {
+    let schema: Record<string, unknown> = { type: 'string' };
+    for (let i = 0; i < 100_000; i++) schema = { not: schema };
+
+    expect(expandedSize(schema)).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  describe('with the cycle unfolded to the data depth', () => {
+    const unfold = (depth: number, budget = 25_000) => ({ depth, budget });
+    const recursiveUnder = (levels: number): unknown => {
+      let inner: Record<string, unknown> = { $ref: '#' };
+      for (let i = 0; i < levels; i++) inner = { not: inner };
+      return { properties: { a: inner } };
+    };
+    // Árvore: raiz, `child` e o item do allOf valem 3 por nível; o último nível corta a citação.
+    const tree = { type: 'object', properties: { child: { allOf: [{ $ref: '#' }] } } };
+
+    it.each([
+      [0, 3],
+      [1, 6],
+      [2, 9],
+    ])('should unfold a tree schema over data of depth %i to %i', (depth, expected) => {
+      expect(expandedSize(tree, unfold(depth))).toBe(expected);
+    });
+
+    it('should unfold a $ref to a root that carries an $id like one without it', () => {
+      expect(expandedSize({ $id: 'https://example.com/tree', ...tree }, unfold(2))).toBe(9);
+    });
+
+    it('should stop at the budget for references that double into a cycle', () => {
+      expect(expandedSize(doublingToCycle(40), unfold(5, 1_000))).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    // O ciclo desce por `keyword` e gasta um nível: 2 subschemas por nível, em 4 níveis
+    it.each<[string, unknown]>([
+      ['properties', { properties: { a: { $ref: '#' } } }],
+      ['patternProperties', { patternProperties: { x: { $ref: '#' } } }],
+      ['additionalProperties', { additionalProperties: { $ref: '#' } }],
+      ['items', { items: { $ref: '#' } }],
+      ['prefixItems', { prefixItems: [{ $ref: '#' }] }],
+      ['contains', { contains: { $ref: '#' } }],
+      ['propertyNames', { propertyNames: { $ref: '#' } }],
+      ['unevaluatedItems', { unevaluatedItems: { $ref: '#' } }],
+      ['unevaluatedProperties', { unevaluatedProperties: { $ref: '#' } }],
+    ])('should spend a data level on the keyword %s', (_keyword, schema) => {
+      expect(expandedSize(schema, unfold(3))).toBe(8);
+    });
+
+    // O ciclo desce por `properties` e volta por `keyword`, que não gasta nível: 3 por nível, em 4
+    it.each<[string, unknown]>([
+      ['allOf', { properties: { a: { allOf: [{ $ref: '#' }] } } }],
+      ['anyOf', { properties: { a: { anyOf: [{ $ref: '#' }] } } }],
+      ['oneOf', { properties: { a: { oneOf: [{ $ref: '#' }] } } }],
+      ['not', { properties: { a: { not: { $ref: '#' } } } }],
+      ['if', { properties: { a: { if: { $ref: '#' } } } }],
+      ['then', { properties: { a: { then: { $ref: '#' } } } }],
+      ['else', { properties: { a: { else: { $ref: '#' } } } }],
+      ['dependentSchemas', { properties: { a: { dependentSchemas: { b: { $ref: '#' } } } } }],
+      ['dependencies', { properties: { a: { dependencies: { b: { $ref: '#' } } } } }],
+      ['contentSchema', { properties: { a: { contentSchema: { $ref: '#' } } } }],
+    ])('should keep the data level on the keyword %s', (_keyword, schema) => {
+      expect(expandedSize(schema, unfold(3))).toBe(12);
+    });
+
+    it('should unfold a cycle through $defs, counting the cited target at each level', () => {
+      const schema = {
+        $defs: { a: { properties: { x: { $ref: '#/$defs/a' } } } },
+        $ref: '#/$defs/a',
+      };
+
+      expect(expandedSize(schema, unfold(2))).toBe(1 + 2 * (2 + 1));
+    });
+
+    it('should not reuse the size of a target that was cut by a cycle in progress', () => {
+      const schema = {
+        $defs: {
+          a: { properties: { x: { $ref: '#/$defs/b' } } },
+          b: { properties: { y: { $ref: '#/$defs/a' } } },
+        },
+        allOf: [{ $ref: '#/$defs/a' }, { $ref: '#/$defs/b' }],
+      };
+
+      expect(expandedSize(schema, unfold(1))).toBe(11);
+    });
+
+    it('should measure an acyclic schema as without unfold, also for a budget that just fits', () => {
+      const schema = { $defs: { a: {} }, allOf: [{ $ref: '#/$defs/a' }, { $ref: '#/$defs/a' }] };
+
+      expect(expandedSize(schema, unfold(7, 4))).toBe(1 + 2 * (1 + 1));
+    });
+
+    it('should keep the linear time of references that double with an unfold', () => {
+      expect(expandedSize(doubling(40), unfold(5, 1_000))).toBeGreaterThan(2 ** 40);
+    });
+
+    it('should measure when the steps equal the budget and saturate one step below', () => {
+      const sizes = [9, 8].map((budget) => expandedSize(tree, unfold(2, budget)));
+
+      expect(sizes).toEqual([9, Number.MAX_SAFE_INTEGER]);
+    });
+
+    it.each<[string, unknown]>([
+      ['a $ref to the root that does not spend a level', { $ref: '#' }],
+      ['a root cycle through allOf', { allOf: [{ $ref: '#' }] }],
+      [
+        'a cycle through $defs that does not spend a level',
+        { $defs: { a: { $ref: '#/$defs/a' } }, $ref: '#/$defs/a' },
+      ],
+      ['a $ref that is not a local pointer', { $ref: 'https://example.com/other' }],
+      ['a $ref to an anchor', { properties: { a: { $ref: '#node' } } }],
+      ['a $dynamicRef', { $dynamicRef: '#meta' }],
+    ])('should still assume the worst for %s', (_label, schema) => {
+      expect(expandedSize(schema, unfold(5))).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it.each([
+      { copies: 100, depth: 60 },
+      { copies: 800, depth: 8 },
+    ])(
+      'should not throw for $copies nested not under a cycle of data depth $depth',
+      ({ copies, depth }) => {
+        expect(() => expandedSize(recursiveUnder(copies), unfold(depth))).not.toThrow();
+      },
+    );
+  });
 });
 
-describe('countNodes', () => {
+describe('measureData', () => {
   it('should count every object, array and scalar of the value', () => {
-    expect(countNodes({ a: [1, 2], b: 'x' }, 100)).toBe(5);
+    expect(measureData({ a: [1, 2], b: 'x' }, 100).nodes).toBe(5);
   });
 
   it('should stop counting once the limit is passed', () => {
     expect(
-      countNodes(
+      measureData(
         Array.from({ length: 1_000 }, () => 1),
         10,
-      ),
+      ).nodes,
     ).toBe(11);
+  });
+
+  it.each<[string, unknown, number]>([
+    ['a scalar at the root', 'x', 0],
+    ['an empty object', {}, 0],
+    ['the fields of an object', { a: 1, b: 2 }, 1],
+    ['objects nested in objects', { a: 1, b: { c: { d: 1 } } }, 3],
+    ['an array of objects', [{ a: 1 }, {}], 2],
+    ['an array nested in an array', [[1]], 2],
+  ])('should measure the depth of %s', (_label, value, expected) => {
+    expect(measureData(value, 100).depth).toBe(expected);
   });
 });

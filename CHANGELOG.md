@@ -17,6 +17,7 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 - As skills `hexlog-setup` e `hexlog-flow` corrigem o que o agente lê: o `command` do modelo aceita comando ou ação no gerúndio, para o bloco do `AGENTS.md` não sair torto; a entrevista propõe o gate; há regra para mais de um modelo local e para `PROCESS_TOO_LARGE` conforme o processo cheio (#373).
 - O `hexlog-setup` e a `hexlog-flow` ganham regra para o que o agente improvisava: pasta de skill sem modelo, nome de skill acima de 64 caracteres (projeto novo com até 57), valor que quebraria o frontmatter, link simbólico no caminho do plano e caminho de unidade acima de 200 caracteres; o nome do processo passa a tirar `-` das pontas antes de truncar (#374).
 - O `timeline` e o `seat-report` escapam os seletores de variação U+E0100 a U+E01EF, que um modelo lê sem decodificador; `--raw` segue imprimindo o byte exato (#376).
+- Tipo com schema recursivo (um `$ref` local que volta à raiz ou a um ancestral) passa a receber do `register` a lista inteira de violações quando o dado é pequeno, em vez da resposta cortada por custo (#380).
 
 ### Migração
 
