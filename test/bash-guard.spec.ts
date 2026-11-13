@@ -714,8 +714,8 @@ describe('hook/bash-guard.ts', () => {
       15_000,
     );
 
-    it('should deny a glob reaching D after 300 thousand line breaks inside a comment', () => {
-      const result = runHook({ command: `echo hi #${'\n'.repeat(300_000)}cat ${globToD}` });
+    it('should deny a glob reaching D after 900 thousand line breaks inside a comment', () => {
+      const result = runHook({ command: `echo hi #${'\n'.repeat(900_000)}cat ${globToD}` });
 
       expectDenied(result, reachesMessage);
     }, 15_000);
