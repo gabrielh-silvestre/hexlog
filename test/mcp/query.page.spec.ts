@@ -524,9 +524,8 @@ describe('registerQueryTools', () => {
       const details = await detailsOf('query', { ...QUERY_ARGS, since: 'x', other: 1 });
 
       expect(details).toEqual([expect.objectContaining({ path: '', code: 'unrecognized_keys' })]);
-      expect(details[0]?.message).toContain('"since"');
-      expect(details[0]?.message).toContain('"other"');
-      expect(details[0]?.message).toContain('changesSince');
+      expect(details[0]?.message).toContain('"since", "other"');
+      expect(details[0]?.message).toContain('use changesSince');
     });
 
     it('should leave the default message for an unknown key other than since', async () => {

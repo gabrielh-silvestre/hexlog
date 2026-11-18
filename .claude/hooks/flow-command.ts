@@ -6,7 +6,10 @@ export type PrCommand = { kind: 'create' | 'ready'; args: string[] };
 
 export type PrMatch = {
   commands: PrCommand[];
-  /** Aspa, crase ou `$(` sem fecho que o tokenizador não fechou e que ainda casa `gh ... pr create|ready` solto. */
+  /**
+   * Aspa, crase ou `$(` sem fecho que o tokenizador não fechou e que ainda casa
+   * `gh ... pr create|ready` solto.
+   */
   unclosedMatch: boolean;
 };
 
