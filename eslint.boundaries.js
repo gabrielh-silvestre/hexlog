@@ -156,16 +156,36 @@ const telemetryBlock = {
 
 // Scripts de leitura passam por compose.ts (D-25): nunca importam adapters nem a camada MCP.
 // install.ts (arquivamento e instalação) e build.ts (bundle) são a exceção.
+const SCRIPT_PATTERNS = [
+  { group: ['**/adapters/**'], message: 'Scripts de leitura passam por compose.ts.' },
+  { group: ['**/mcp/**'], message: 'Scripts de leitura não importam a camada MCP.' },
+];
+
 const scriptsBlock = {
   files: ['scripts/**/*.ts'],
   ignores: ['scripts/install.ts', 'scripts/build.ts'],
+  rules: {
+    'no-restricted-imports': ['error', { patterns: SCRIPT_PATTERNS }],
+    'no-restricted-syntax': NO_DYNAMIC_IMPORT,
+  },
+};
+
+// Só o writer grava por `compose()`: os demais scripts usam `composeReader`. Vem depois do
+// scriptsBlock (o último bloco que casa vence), então repete a lista inteira dele.
+const composeBlock = {
+  files: ['scripts/**/*.ts'],
+  ignores: ['scripts/install.ts', 'scripts/build.ts', 'scripts/flow/writer.ts'],
   rules: {
     'no-restricted-imports': [
       'error',
       {
         patterns: [
-          { group: ['**/adapters/**'], message: 'Scripts de leitura passam por compose.ts.' },
-          { group: ['**/mcp/**'], message: 'Scripts de leitura não importam a camada MCP.' },
+          ...SCRIPT_PATTERNS,
+          {
+            group: ['**/compose.ts'],
+            importNames: ['compose'],
+            message: 'Só scripts/flow/writer.ts grava por compose(): os demais usam composeReader.',
+          },
         ],
       },
     ],
@@ -215,4 +235,5 @@ export const boundaryBlocks = [
     [{ group: ['**/tools/**'], message: 'O kernel MCP não importa tools.' }],
   ),
   scriptsBlock,
+  composeBlock,
 ];

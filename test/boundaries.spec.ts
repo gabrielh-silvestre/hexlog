@@ -278,18 +278,51 @@ describe('boundaryBlocks', () => {
   it.each([
     ['scripts/probe.ts', '../src/adapters/fs/process-store.ts'],
     ['scripts/probe.ts', '../src/mcp/kernel.ts'],
+    ['scripts/flow/writer.ts', '../src/adapters/fs/process-store.ts'],
+    ['scripts/flow/writer.ts', '../src/mcp/kernel.ts'],
   ])('should forbid %s from importing %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual(['no-restricted-imports']);
   });
 
   it.each([
-    ['scripts/probe.ts', '../src/compose.ts'],
     ['scripts/probe.ts', '../src/errors.ts'],
     ['scripts/probe.ts', '../src/directory.ts'],
     ['scripts/install.ts', '../src/adapters/fs/data-format.ts'],
     ['scripts/build.ts', '../src/mcp/server.ts'],
   ])('should allow %s to import %s', async (file, specifier) => {
     expect(await ruleIdsOfText(file, importing(specifier))).toEqual([]);
+  });
+
+  it.each(['scripts/probe.ts', 'scripts/flow/probe.ts'])(
+    'should allow %s to import composeReader',
+    async (file) => {
+      const code = `import { composeReader } from '../src/compose.ts';\nexport { composeReader };\n`;
+
+      expect(await ruleIdsOfText(file, code)).toEqual([]);
+    },
+  );
+
+  it.each(['scripts/install.ts', 'scripts/build.ts', 'scripts/flow/writer.ts'])(
+    'should allow %s to import compose',
+    async (file) => {
+      const code = `import { compose } from '../src/compose.ts';\nexport { compose };\n`;
+
+      expect(await ruleIdsOfText(file, code)).toEqual([]);
+    },
+  );
+
+  describe.each(['scripts/probe.ts', 'scripts/flow/probe.ts'])('with %s', (file) => {
+    it.each([
+      ['import { compose }', `import { compose } from '../src/compose.ts';\nexport { compose };\n`],
+      [
+        'import type { compose }',
+        `import type { compose } from '../src/compose.ts';\nexport type { compose };\n`,
+      ],
+      ['import * as', `import * as x from '../src/compose.ts';\nexport default x;\n`],
+      ['export { compose } from', `export { compose } from '../src/compose.ts';\n`],
+    ])('should forbid %s of compose', async (_form, code) => {
+      expect(await ruleIdsOfText(file, code)).toEqual(['no-restricted-imports']);
+    });
   });
 
   it.each([
