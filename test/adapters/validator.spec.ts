@@ -765,6 +765,47 @@ describe('validate', () => {
     });
   });
 
+  describe('with a recursive schema', () => {
+    const shortName = { type: 'string', maxLength: 2 };
+    const tree: RecordType = {
+      type: 'object',
+      properties: { name: shortName, child: { $ref: '#' } },
+    };
+    const fanOut: RecordType = {
+      type: 'object',
+      properties: { name: shortName, left: { $ref: '#' }, right: { $ref: '#' } },
+    };
+    const chain = (field: string, levels: number): RecordType => {
+      let node: RecordType = { name: 'abcdef' };
+      for (let i = 0; i < levels; i++) node = { name: 'abcdef', [field]: node };
+      return node;
+    };
+
+    it('should return every violation of a shallow value of a tree schema', () => {
+      const details = validator.validate(tree, chain('child', 2));
+
+      expect(details).toEqual([
+        { path: '/name', code: 'max-length', message: expect.stringContaining('(got 6)') },
+        { path: '/child/name', code: 'max-length', message: expect.stringContaining('(got 6)') },
+        {
+          path: '/child/child/name',
+          code: 'max-length',
+          message: expect.stringContaining('(got 6)'),
+        },
+      ]);
+    }, 15_000);
+
+    it('should cap the violations of a fan-out schema over a deep value', () => {
+      const details = validator.validate(fanOut, chain('left', 10));
+
+      expect(details.at(-1)).toEqual({
+        path: '',
+        code: 'violations-capped',
+        message: expect.stringContaining('describe_type'),
+      });
+    }, 15_000);
+  });
+
   describe('with a string far above maxLength', () => {
     const hostile = 'a@'.repeat(8_000);
 
