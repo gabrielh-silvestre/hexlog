@@ -317,6 +317,39 @@ describe('verifyProcess', () => {
     return { first, second, third, verified };
   }
 
+  // Linha gravada pelo 1.2.3 (commit instalado 92078b041f80), sem `decidedBy`, para o `manifest` acima.
+  const LEGACY_LINE =
+    '{"links":[{"seq":0,"id":"proc-1:0198f4a0-0000-7000-8000-000000000001","type":"note","at":"2026-09-30T12:00:00.000Z","target":"repo.feature","author":{"agent":"luffy","client":"claude-code"},"data":{"text":"first"},"relations":[],"prevHash":"aa9c5c270457658ee71c290f4182d5586331e4069fea0dbf59bef9cf499601e7","batch":{"fingerprint":"12506e6cd0dccf3a3e953762cc96bdb90f80a42f32ac14c4225380cd29ef69d4","key":"old-batch"}},{"seq":1,"id":"proc-1:0198f4a0-0000-7000-8000-000000000002","type":"note","at":"2026-09-30T12:00:00.000Z","target":"repo.feature","author":{"agent":"luffy","client":"claude-code"},"data":{"text":"second"},"relations":[],"prevHash":"4126490b64b51644ad191dbf188989cda7e16221f71a0e8f986de6fd8116481b"}]}\n';
+  const LEGACY_HEAD = '3e8f63e58afdf346eeb6b17a4a682b2c0b89f933e0c554ba4cf203dba72abe23';
+
+  it('should verify a log written before decidedBy existed', () => {
+    const verified = verifyProcess(rawOf(LEGACY_LINE));
+
+    expect(verified.chain).toEqual({
+      ok: true,
+      totalRecords: 2,
+      head: LEGACY_HEAD,
+      breaks: [],
+      totalBreaks: 0,
+      repairedLines: [],
+    });
+  });
+
+  it('should verify a log whose old links are followed by a new one', () => {
+    const newLink = linkAt(
+      { seq: 2, prevHash: LEGACY_HEAD },
+      { id: idAt('proc-1', 3), decidedBy: 'agent' },
+    );
+
+    const verified = verifyProcess(rawOf(`${LEGACY_LINE}${lineOf(newLink)}`));
+
+    expect(verified.chain).toMatchObject({
+      ok: true,
+      totalRecords: 3,
+      head: hashLink(newLink),
+    });
+  });
+
   it('should return the manifest of the process as read', () => {
     const { verified } = verifiedThreeLinks();
 

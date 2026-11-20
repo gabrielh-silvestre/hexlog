@@ -205,7 +205,10 @@ async function applyBatches(
         await write({
           process: generation,
           key: batch.key,
-          records: batch.records.map((record) => BatchItem.parse(record)),
+          // A regra vem do documento: o sync só a aplica, não a escolhe.
+          records: batch.records.map((record) =>
+            BatchItem.parse({ ...record, decidedBy: 'third-party' }),
+          ),
         });
       } catch (error) {
         console.error(

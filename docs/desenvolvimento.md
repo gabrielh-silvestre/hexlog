@@ -29,7 +29,7 @@ sobra estão em [qualidade-e-testes.md](directives/qualidade-e-testes.md).
 
 ## Scripts de leitura
 
-`scripts/insights.ts`, `scripts/export.ts`, `scripts/timeline.ts` e `scripts/seat-report.ts` são CLIs
+`scripts/insights.ts`, `scripts/export.ts`, `scripts/timeline.ts`, `scripts/seat-report.ts` e `scripts/authorship-report.ts` são CLIs
 read-only, sem tool MCP correspondente: rodam direto com `node`, leem
 `XDG_DATA_HOME` como as tools, não recebem o caminho do diretório de dados na
 linha de comando e leem só por `src/compose.ts#composeReader`, o lado de leitura de
@@ -59,7 +59,7 @@ memória (o teto de 64 MiB por processo limita o tamanho). Erro de uso (inclusiv
 `--fields` sem valor e flag desconhecida), processo inexistente e campo desconhecido
 saem com `export failed: ...` em `stderr` e código `1`. A saída não escapa controles de
 terminal (o `JSON.stringify` deixa C1 e bidi crus): é feita para pipe de máquina, e o
-`timeline` e o `seat-report` escapam.
+`timeline`, o `seat-report` e o `authorship-report` escapam.
 
 ## `scripts/seat-report.ts`
 
@@ -88,6 +88,27 @@ modelo ou a uma tela a cola em bloco de código. Códigos de saída: `0` íntegr
 uso incorreto, papel sem registro cujo tipo não existe no projeto (`INVALID_INPUT`) ou erro
 (`seat-report failed: CODE: msg`). O produto não exige o relatório: o
 servidor segue sem termo de fluxo, e quem não liga a cadeira não o usa.
+
+## `scripts/authorship-report.ts`
+
+Relatório de autoria da decisão: conta as decisões vigentes pelo `decidedBy` do registro e acusa as que
+um humano ou uma fonte externa escolheu e que não têm a base ligada. Só serve a projeto que adotou o
+pacote de autoria do `hexlog-setup` (`skills/hexlog-setup/references/decision-authorship.md`).
+
+```sh
+node scripts/authorship-report.ts <project> [--process <name>] [--types decision=<t>,own-judgment=<t>,external-team=<t>,doc-author=<t>,convergence=<t>,approval=<t>]
+```
+
+Por processo, imprime a contagem por papel (`agent` declarado, `agent` sem o campo, `human`, `third-party`; o
+registro anterior ao campo sai separado) e as decisões `human` e `third-party` sem base: aresta de
+espécie `supports` vigente que chega de um tipo de evidência, direta ou herdada pela linhagem; o relatório
+identifica pela espécie e não pelo nome da relação, então vale com o nome mapeado no setup. A aresta que chega
+do tipo de aprovação não é base e só põe uma marca. Vigência e herança vêm da `query`, e o `decidedBy` dos elos crus. Lê por processo, então evidência
+gravada em outro processo não é vista, e a saída diz isso. Processo que não fixou nenhum tipo de evidência sai
+como `not applicable`. Cada lista corta em 100 e mostra o total. `--types` informa os nomes quando o setup
+mapeou algum; um tipo citado e ausente do projeto recusa. Códigos de saída: `0` íntegro, `2` dado 0.x ou log
+quebrado, `1` uso incorreto ou erro (`authorship-report failed: CODE: msg`). O relatório acusa e nunca recusa
+registro, e o `decidedBy` é autodeclarado: rastro, não prova.
 
 ## `scripts/timeline.ts`
 

@@ -16,6 +16,8 @@ const RegisterInput = z.strictObject({
   agent: Author.shape.agent,
   model: Author.shape.model,
   key: BatchKey.refine((key) => key.isWellFormed(), WELL_FORMED).optional(),
+  // O padrão do lote só pode ser `agent`; `human` e `third-party` entram por item (`BatchItem`).
+  decidedBy: z.literal('agent').optional(),
   records: z.array(BatchItem).min(1).max(BATCH_MAX),
 });
 
@@ -44,28 +46,29 @@ const CREATE_PROCESS_DESCRIPTION =
   'listing the definitions that changed since the pin. Refuses a project with nothing defined (TYPE_NOT_FOUND) and reserved names.';
 
 const REGISTER_DESCRIPTION =
-  'Append a batch of 1 to 50 records to a process, atomically: all are written or none. agent is the ' +
-  'agent or skill making the call, model is optional and self-declared, and the server fills client ' +
-  'from the MCP client info. Each item has type (a type pinned in the process), target (dot-separated ' +
-  'names), data (validated by the type schema, at most 16000 canonical characters), an optional alias ' +
-  'and optional relations. A relation points at an existing record id or at "@alias" of an earlier ' +
-  'item in the same batch, and carries kind (supersedes, revokes, supports, contradicts, answers, ' +
-  'derivesFrom, complements, reopens), as (a relation name pinned in the process) or both. as alone is enough; ' +
-  'kind must equal the pinned one (else kind-mismatch). supersedes and revokes only reach records of ' +
-  'the same process and need a current target (else FORK_REJECTED); supersedes also needs the same ' +
-  'type and target, else INVALID_RECORD (target-mismatch); to move a fact to another target, register ' +
-  'one record there with revokes and derivesFrom to the old one; supports needs a current target. An attachment hash is accepted only in a field declared ' +
-  'format "attachment". Pass key to make a retry safe: the same key with the same batch returns the ' +
-  'records as stored with replayed=true and the current head as marker; with a different batch it ' +
-  'fails with IDEMPOTENCY_CONFLICT. After ' +
-  'IO_ERROR the outcome is uncertain: resend with the same key. Returns the ids in input order and ' +
-  'the marker (head of the process) to read from afterwards. A marker covers only the processes it ' +
-  'names. Before registering data ' +
-  'of a type you do not know, read its schema with describe_type; INVALID_RECORD reports every ' +
-  'schema violation of each record (at most 50, with the measured size of an exceeded limit), but ' +
-  'a very costly schema ends the list with a violations-capped detail pointing to describe_type. ' +
-  'Before supersedes or revokes, read the current id with query (a wrong current id of the same ' +
-  'type and target is accepted and forks the lineage).';
+  'Append a batch of 1 to 50 records to a process, all or none. agent is the agent or skill making ' +
+  'the call, model is optional, the server fills client. Each item has type ' +
+  '(pinned in the process), target, data (validated by the type schema, at most 16000 canonical ' +
+  'characters), an optional alias and optional relations. A relation points at an existing record id ' +
+  'or at "@alias" of an earlier item in the same batch, and carries kind, as (a relation name pinned ' +
+  'in the process) or both. as alone is enough; kind must equal the pinned one (else kind-mismatch). ' +
+  'supersedes and revokes only reach records of the same process and need a current target (else ' +
+  'FORK_REJECTED); supersedes also needs the same type and target, else INVALID_RECORD ' +
+  '(target-mismatch); to move a fact to another target, register one record there with revokes and ' +
+  'derivesFrom to the old one; supports needs a current target. An attachment hash only goes ' +
+  'in a field declared format "attachment". Pass key to make a retry safe: the same key with the same ' +
+  'batch returns the stored records with replayed=true; a different batch fails with ' +
+  'IDEMPOTENCY_CONFLICT. After IO_ERROR the outcome is uncertain: resend with the same key. Returns ' +
+  'the ids in input order and the marker. Before ' +
+  'registering data of a type you do not know, read its schema with describe_type; INVALID_RECORD ' +
+  'reports every schema violation of each record (at most 50), but a very costly schema ends the ' +
+  'list with a violations-capped detail pointing to describe_type. Before supersedes or revokes, read ' +
+  'the current id with query (a wrong current id is accepted and forks the lineage). ' +
+  'decidedBy says who made the choice, not who wrote the record (author). Send "agent" on the ' +
+  'batch when you chose; on an item, "human" when the developer chose and you only recorded it, ' +
+  '"third-party" when another source decided and you only applied it. The batch default is only ' +
+  'agent; for a record that is no choice, agent means you produced it. With no role on the batch ' +
+  'or the item, register refuses with DECIDED_BY_REQUIRED.';
 
 /** `create_process` e `register`: cada uma só repassa a entrada validada ao serviço de processo. */
 export function registerProcessTools(server: McpServer, deps: ToolDeps): void {

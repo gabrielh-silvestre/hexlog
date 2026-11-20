@@ -203,6 +203,7 @@ async function runRegister({
     const { replayed } = await services.process.register({
       ...ref,
       author: { agent: 'lock-holder', model: 'test', client: 'test' },
+      decidedBy: 'agent',
       ...input,
     });
     process.stdout.write(JSON.stringify({ ok: true, replayed }));

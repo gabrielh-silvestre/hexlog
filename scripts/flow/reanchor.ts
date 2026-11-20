@@ -89,10 +89,17 @@ function readWork(reader: Reader, names: string[]) {
   for (const process of names) {
     const rows = rowsByProcess.get(process) ?? [];
     before.push(...rows);
-    const lineage =
-      reader.query.list({ project: PROJECT, process: Name.parse(process) }).process
-        ?.lineageInheritance === true;
-    decisions.push(...rows.filter(isCurrent).map((row) => ({ ...row, process, lineage })));
+    const ref = { project: PROJECT, process: Name.parse(process) };
+    const lineage = reader.query.list(ref).process?.lineageInheritance === true;
+    // A `query` não traz o papel: ele sai do elo cru, por id.
+    const roles = new Map(
+      reader.loadProcess(ref).records.map(({ id, decidedBy }) => [id, decidedBy]),
+    );
+    decisions.push(
+      ...rows
+        .filter(isCurrent)
+        .map((row) => ({ ...row, process, lineage, decidedBy: roles.get(row.id) })),
+    );
   }
   return { decisions, before };
 }

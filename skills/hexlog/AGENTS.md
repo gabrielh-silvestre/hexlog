@@ -11,7 +11,7 @@ Skill de entrada do hexlog. Dispara quando o agente precisa montar um projeto no
 
 | File | Description |
 |------|-------------|
-| `SKILL.md` | Modelo mental em uma tela, ordem obrigatória de bootstrap (`define_*`, `create_process`, `register`, `evaluate_gate`), regra de versão de definição e `breaking`, armadilhas, exemplo mínimo do zero a um `register` e um `evaluate_gate` e o diagnóstico de saúde (só Linux). O sinal de que o servidor está vivo é `list` sem parâmetros; `node scripts/install.ts --check` não prova isso. Lista o que só o humano faz (arquivar dado 0.x, destravar `LOCK_TIMEOUT`, reiniciar a sessão) |
+| `SKILL.md` | Modelo mental em uma tela, ordem obrigatória de bootstrap (`define_*`, `create_process`, `register`, `evaluate_gate`), regra de versão de definição e `breaking`, armadilhas (inclui `DECIDED_BY_REQUIRED`), exemplo mínimo do zero a um `register` e um `evaluate_gate` e o diagnóstico de saúde (só Linux). O sinal de que o servidor está vivo é `list` sem parâmetros; `node scripts/install.ts --check` não prova isso. Lista o que só o humano faz (arquivar dado 0.x, destravar `LOCK_TIMEOUT`, reiniciar a sessão) |
 
 ## Dependencies
 

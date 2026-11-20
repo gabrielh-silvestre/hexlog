@@ -14,7 +14,7 @@ import type {
 import { latestVersions } from '../shared/latest.ts';
 import type { Logger } from '../shared/logger.ts';
 import { createDecide, type RegisterInput, type RegisterResult } from './register/state.ts';
-import { checkBatchShape, prepareBatch, relationNames } from './register/static.ts';
+import { checkBatchShape, checkDecidedBy, prepareBatch, relationNames } from './register/static.ts';
 
 export type { RegisterInput, RegisterResult } from './register/state.ts';
 
@@ -54,7 +54,9 @@ export type ProcessService = {
   createProcess(input: CreateProcessInput): CreateProcessResult;
   /**
    * D-06: grava o lote numa única linha do log de `process`, sob o lock só da origem. Ordem de
-   * recusa, a primeira que falha responde: (1) forma do lote, (2) `PROCESS_NOT_FOUND` e
+   * recusa, a primeira que falha responde: (1) forma do lote (`INVALID_INPUT`) e, depois dela, o
+   * papel (`INVALID_INPUT` se o padrão do lote não é `agent`, `DECIDED_BY_REQUIRED` se algum item
+   * fica sem papel), (2) `PROCESS_NOT_FOUND` e
    * `unreadable-manifest`, (3) recusas estáticas (tipo fixado e schema, `as`→`kind`,
    * `cross-process-currency`), (4) `broken-chain`, (5) `key`: `replayed` ou `IDEMPOTENCY_CONFLICT`,
    * (6) destinos, anexos e regras de D-10. `PROCESS_TOO_LARGE` sai do adaptador ao ler o log sob o
@@ -189,8 +191,9 @@ export function createProcessService(deps: {
     // verificar só os bytes novos a partir do marcador lido; ou um orçamento em bytes lidos (um
     // teto por contagem de destinos não protege onde importa). Reabrir no primeiro `lock-timeout`
     // real em `register` com relação cruzada, ou com processo real acima de ~10 MiB.
-    async register({ project, process, author, key, records }) {
+    async register({ project, process, author, decidedBy, key, records }) {
       checkBatchShape(records);
+      checkDecidedBy(records, decidedBy);
       const origin = { project, process };
       const manifest = store.readManifest(origin);
       const names = relationNames(manifest);
@@ -201,7 +204,9 @@ export function createProcessService(deps: {
           project,
           process,
           author,
+          decidedBy,
           key,
+          // Sobre a entrada como chega: o padrão do lote fica de fora, o `decidedBy` de item entra.
           fingerprint: fingerprint(records),
           items,
           names,

@@ -1,7 +1,14 @@
 import { invert, isUndefined, memoize, omitBy, once } from 'es-toolkit';
 import { hashLink, type Batch, type Link } from '../../domain/chain.ts';
 import { processOf, type Hash, type Marker, type Name, type RecordId } from '../../domain/ids.ts';
-import type { Author, BatchItem, Relation, RelationInput } from '../../domain/record.ts';
+import {
+  resolveDecidedBy,
+  type Author,
+  type BatchItem,
+  type DecidedBy,
+  type Relation,
+  type RelationInput,
+} from '../../domain/record.ts';
 import {
   buildVigency,
   checkRelation,
@@ -52,6 +59,8 @@ export type RegisterInput = {
   process: Name;
   /** D-21: `author.client` chega do adaptador, o serviço nunca o descobre sozinho. */
   author: Author;
+  /** Padrão do lote: só `agent` (a recusa é de `checkDecidedBy`); o `decidedBy` do item vence. */
+  decidedBy?: DecidedBy;
   /** Idempotência (D-06): mesma `key` com a mesma impressão devolve o lote já gravado. */
   key?: string;
   records: readonly BatchItem[];
@@ -74,7 +83,7 @@ type DecideDeps = {
 };
 
 /** O que `decide` sabe da chamada, já com o que as checagens estáticas resolveram. */
-type DecideCall = Pick<RegisterInput, 'project' | 'process' | 'author' | 'key'> & {
+type DecideCall = Pick<RegisterInput, 'project' | 'process' | 'author' | 'decidedBy' | 'key'> & {
   fingerprint: Hash;
   items: readonly PreparedItem[];
   names: ReadonlyMap<Name, NamedRelation>;
@@ -260,7 +269,7 @@ function linkItems(
   aliases: Drafted['aliases'],
   at: string,
 ): Link[] {
-  const { author, key, fingerprint } = call;
+  const { author, decidedBy, key, fingerprint } = call;
   const batch: Batch = {
     fingerprint,
     ...omitBy({ key }, isUndefined),
@@ -280,6 +289,7 @@ function linkItems(
       at,
       target: item.target,
       author: stored,
+      ...omitBy({ decidedBy: resolveDecidedBy(item, decidedBy) }, isUndefined),
       data: item.data,
       relations: relations.map((relation) => relation.stored),
       prevHash,

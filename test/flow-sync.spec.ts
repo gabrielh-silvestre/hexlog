@@ -151,6 +151,12 @@ describe('planSync', () => {
       ]);
     });
 
+    it('should keep the sync batch key of an unchanged rule set', () => {
+      const plan = planSync(inputWith('fronteiras', docPath('fronteiras'), rulesOf(2)));
+
+      expect(at(plan.batches, 0).key).toBe('sync-fronteiras-3bfc269594ef-6078d58fbe80');
+    });
+
     it('should derive a different key for each batch', () => {
       const plan = planSync(inputWith('fronteiras', docPath('fronteiras'), rulesOf(60)));
 

@@ -108,7 +108,56 @@ describe('anchor', () => {
   );
 });
 
+// Elos e hashes do formato 1.2.3, calculados uma vez com o `src` do commit instalado (92078b041f80)
+// e colados aqui: provam que o formato em disco anterior ao `decidedBy` continua com o mesmo hash.
+const LEGACY_AT = '2026-09-30T12:00:00.000Z';
+const LEGACY_ANCHOR = 'aa9c5c270457658ee71c290f4182d5586331e4069fea0dbf59bef9cf499601e7';
+const LEGACY_FIRST_HASH = '4126490b64b51644ad191dbf188989cda7e16221f71a0e8f986de6fd8116481b';
+const LEGACY_FIRST: Link = {
+  seq: 0,
+  id: 'proc-1:0198f4a0-0000-7000-8000-000000000001',
+  type: 'note',
+  at: LEGACY_AT,
+  target: 'repo.feature',
+  author: { agent: 'luffy', client: 'claude-code' },
+  data: { text: 'first' },
+  relations: [],
+  prevHash: LEGACY_ANCHOR,
+  batch: {
+    fingerprint: '12506e6cd0dccf3a3e953762cc96bdb90f80a42f32ac14c4225380cd29ef69d4',
+    key: 'old-batch',
+  },
+};
+const LEGACY_SECOND: Link = {
+  seq: 1,
+  id: 'proc-1:0198f4a0-0000-7000-8000-000000000002',
+  type: 'note',
+  at: LEGACY_AT,
+  target: 'repo.feature',
+  author: { agent: 'luffy', client: 'claude-code' },
+  data: { text: 'second' },
+  relations: [],
+  prevHash: LEGACY_FIRST_HASH,
+};
+
 describe('hashLink', () => {
+  it('should keep the hash of a link written without decidedBy', () => {
+    expect(hashLink(LEGACY_FIRST)).toBe(LEGACY_FIRST_HASH);
+    expect(hashLink(LEGACY_SECOND)).toBe(
+      '3e8f63e58afdf346eeb6b17a4a682b2c0b89f933e0c554ba4cf203dba72abe23',
+    );
+  });
+
+  it('should include decidedBy in the hash of a new link', () => {
+    expect(hashLink({ ...LEGACY_FIRST, decidedBy: 'agent' })).not.toBe(LEGACY_FIRST_HASH);
+  });
+
+  it('should give a different hash to two links that differ only in decidedBy', () => {
+    expect(hashLink({ ...LEGACY_FIRST, decidedBy: 'human' })).not.toBe(
+      hashLink({ ...LEGACY_FIRST, decidedBy: 'agent' }),
+    );
+  });
+
   const golden = link({
     id: idAt('p', 1),
     prevHash: '0'.repeat(64),
@@ -172,6 +221,17 @@ describe('fingerprint', () => {
 
   it('should give a different fingerprint to different content', () => {
     expect(fingerprint([{ ...item, data: { a: 1 } }])).not.toBe(fingerprint(items));
+  });
+
+  it('should keep the fingerprint of a batch written before decidedBy existed', () => {
+    const legacy = [
+      { type: 'note', target: 'repo.feature', data: { text: 'first' } },
+      { type: 'note', target: 'repo.feature', data: { text: 'second' } },
+    ];
+
+    expect(fingerprint(legacy)).toBe(
+      '12506e6cd0dccf3a3e953762cc96bdb90f80a42f32ac14c4225380cd29ef69d4',
+    );
   });
 
   it('should match the fixed vector with the whole item, including alias and relations', () => {

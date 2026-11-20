@@ -11,7 +11,14 @@ import {
   registerFlowRecord,
   type FlowRecord,
 } from './flow-data.ts';
-import { anchoredIn, copyToXdg, createTempDir, restsOn, snapshot } from './helpers.ts';
+import {
+  anchoredIn,
+  copyToXdg,
+  createTempDir,
+  rawRolesOfCurrent,
+  restsOn,
+  snapshot,
+} from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -415,6 +422,29 @@ describe('scripts/flow/reanchor.ts', () => {
       expect(again.stdout).toContain('rewritable: 0');
       expect(again.stdout).toContain('for the owner: 1');
       expect(snapshot(xdg)).toEqual(written);
+    }, 60_000);
+
+    it('should keep the decidedBy of each rewritten decision', async () => {
+      await withEnvironment(['directives-1', 'directives-2', 'feat-r'], async (roles) => {
+        const { g1 } = await seedRule(roles);
+        await registerFlowRecord(roles, 'feat-r', {
+          ...decision('feat-r.decision.human', [anchoredIn(g1)]),
+          decidedBy: 'human',
+        });
+        await registerFlowRecord(roles, 'feat-r', {
+          ...decision('feat-r.decision.agent', [anchoredIn(g1)]),
+          decidedBy: 'agent',
+        });
+        const xdg = copyToXdg(roles.dataDir);
+
+        const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+
+        expect(result.status).toBe(0);
+        expect(rawRolesOfCurrent(path.join(xdg, 'hexlog'), 'feat-r', 'decision')).toEqual({
+          'feat-r.decision.human': 'human',
+          'feat-r.decision.agent': 'agent',
+        });
+      });
     }, 60_000);
 
     it('should keep the pre-pr gate result for a resolved URGENT finding and a closed gap', () => {

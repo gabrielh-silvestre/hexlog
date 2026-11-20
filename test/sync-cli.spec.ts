@@ -7,7 +7,7 @@ import { composeReader } from '../src/compose.ts';
 import { Name } from '../src/domain/ids.ts';
 import { VERSION } from '../src/version.ts';
 import { createFlowEnvironment, registerFlowRecord } from './flow-data.ts';
-import { copyToXdg, createTempDir, snapshot } from './helpers.ts';
+import { copyToXdg, createTempDir, rawRolesOfCurrent, snapshot } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -518,6 +518,15 @@ describe('scripts/flow/sync-cli.ts', () => {
         'directives.beta.b1': 'Beta rule',
         'directives.uptodate.u1': 'Up to date rule',
       });
+    });
+
+    it('should register the synced records as third-party', () => {
+      const roles = rawRolesOfCurrent(path.join(xdg, 'hexlog'), PROCESS, 'directive');
+
+      expect([roles['directives.alpha.r1'], roles['directives.beta.b1']]).toEqual([
+        'third-party',
+        'third-party',
+      ]);
     });
 
     it('should store the attached document under the attachments folder', () => {

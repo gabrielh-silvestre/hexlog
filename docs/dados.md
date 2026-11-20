@@ -31,7 +31,10 @@ POSIX (`rename` e `link` atômicos).
   O sha256 do JCS dele, com o campo quando existe, é a âncora da cadeia.
 - **`records.jsonl`** é append-only. Cada linha é um lote `{"links":[...]}` de 1 a 50 elos,
   um por registro; cada elo é o registro mais `seq` (contíguo, por processo) e `prevHash`, e só
-  o primeiro elo do lote carrega `batch` (impressão do lote, `key` e apelidos). O hash de um
+  o primeiro elo do lote carrega `batch` (impressão do lote, `key` e apelidos). O elo traz
+  `decidedBy` (`agent`, `human` ou `third-party`: quem fez a escolha, não quem gravou) como
+  campo irmão de `author`; o elo gravado antes dele existir não o tem e é lido como `agent`,
+  com o mesmo hash de sempre. O hash de um
   elo é `sha256(prevHash + JCS(elo sem prevHash))` (JCS, RFC 8785;
   `src/domain/chain.ts#hashLink`), e o `prevHash` do primeiro elo é a âncora. A linha é
   enquadrada por `src/shared/loader.ts#formatLine`. Não existe tool nem função que
@@ -65,6 +68,7 @@ entrada, vazio quando o erro é da chamada toda). O catálogo completo é
 | `PROJECT_NOT_FOUND` / `PROCESS_NOT_FOUND` | projeto ou processo inexistente |
 | `TYPE_NOT_FOUND` / `GATE_NOT_FOUND` / `RELATION_NOT_FOUND` | `TYPE_NOT_FOUND`: `create_process` em projeto sem nenhuma definição (`/project`, `unknown-name`). `GATE_NOT_FOUND`: gate não fixado no processo (`/gate`). `RELATION_NOT_FOUND`: destino de relação que não existe (`missing`) ou de processo com cadeia quebrada ou manifesto ilegível (`destination-corrupted`, com `process`). Nenhuma tool recebe versão, então `unknown-version` não sai por tool |
 | `TYPE_NOT_PINNED` | tipo que o processo não fixou |
+| `DECIDED_BY_REQUIRED` | `register` sem `decidedBy` no lote nem no item, depois das recusas de forma e de valor do `decidedBy` (que são `INVALID_INPUT`) e antes de `PROCESS_NOT_FOUND` e `TYPE_NOT_PINNED`. `details` traz um item por registro sem papel (`path` `/records/<i>/decidedBy`, `code` `missing`), e a `message` diz o remédio: `decidedBy: "agent"` no lote, ou `human`/`third-party` no item. Nada é gravado |
 | `INVALID_RECORD` | `data` reprovado pelo schema, ou relação que viola uma regra (item, relação e regra no `path`) |
 | `FORK_REJECTED` | `supersedes` ou `revokes` sobre registro que já não é vigente (`current` traz a versão atual, ou `null`) |
 | `CYCLE_REJECTED` | relação que fecharia um ciclo |
@@ -157,6 +161,20 @@ falham fechado nomeando o processo em `details[0].process`. O alcance processo d
 outros processos segue funcionando. `verify_chain` no processo diagnostica onde a
 cadeia quebra (`breaks`), e o `process.json` ilegível aparece como
 `unreadable-manifest`. Não há tool de reparo: o log é append-only.
+
+**Antes de recuperar, descarte a causa de versão.** `PROCESS_CORRUPTED` com `broken-chain`
+(no `register` e no `verify_chain`) ou `invalid-line` (em `breaks`) num processo que tem elo
+com `decidedBy` lido por uma sessão aberta antes da atualização não é corrupção: o bundle
+antigo não conhece o campo do elo. Não aplique a quarentena. Reinstale com
+`node scripts/install.ts` (a partir do repositório hexlog), reinicie toda sessão, inclusive as do
+critic e o servidor do `agy`, e leia de novo. Vale também para o alcance projeto, que falha
+inteiro por causa de um processo. Isso foi sondado contra o código do commit instalado (92078b041f80),
+com um elo novo no log: `verify_chain` devolve `ok: false` com `invalid-line` em `breaks`, no índice do elo
+novo; `query` (inclusive no alcance projeto) e `register` do processo devolvem `PROCESS_CORRUPTED` com
+`broken-chain` e o processo em `details[0].process`, e os outros processos seguem legíveis no alcance
+processo. A sonda leu pelo código do commit com as bibliotecas do repositório, não pelo bundle instalado, e
+não cobriu `evaluate_gate`, `list` com `process` nem os scripts de relatório: o que eles fazem com esse log
+segue não verificado.
 
 A recuperação é manual, num terminal fora do Claude Code (ADR 0009):
 

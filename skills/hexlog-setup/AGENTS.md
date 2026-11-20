@@ -20,6 +20,8 @@ Skill que configura o hexlog num repositório de destino. Dispara quando o pedid
 | `references/agents-block.template.md` | Texto literal do bloco do hexlog no `AGENTS.md` do destino |
 | `references/owner-seat.md` | Procedimento do ramo opcional da cadeira do dono (pt-BR): quando entra, perguntas, regra de colisão de nomes e de reaplicação, pré-condição de assento, `ownerSeat` no modelo e placeholders de geração e de execução; o `SKILL.md` o aponta nos passos 2, 5, 6, 7 e 8 |
 | `references/owner-seat/` | Pacote de definições da cadeira, um JSON por definição no layout de `.hexlog/`: `types/` (`gap`, `premise`, `evidence`, `audit`), `relations/` (`fills-gap`, `audits`) e `gates/` (`gaps`); ensaiado em memória por `test/owner-seat-package.spec.ts` |
+| `references/decision-authorship.md` | Procedimento do ramo opcional da autoria da decisão (pt-BR): opt-in sem chave no modelo, pacote de tipos de evidência e relações, regra de atribuição de `decidedBy` (pesou, aplicou, escolheu), cobrança de base e aprovação humana |
+| `references/decision-authorship/` | Pacote de definições da autoria (`types/`: `own-judgment`, `external-team`, `doc-author`, `convergence`, `approval`; `relations/`: `backs`, `approves`), só JSON em inglês, sem gate |
 | `references/owner-seat-criteria.template.md` | Template do documento de critérios do dev (regras com chave estável), escrito uma vez e nunca sobrescrito |
 | `references/owner-seat-contract.template.md` | Template do contrato neutro do ocupante, com os nomes aplicados e as regras de gravação |
 | `references/owner-seat-recipe-claude.template.md` | Template da receita do ocupante Claude (`claude -p`, seis tools do hexlog liberadas) |
@@ -31,6 +33,7 @@ Skill que configura o hexlog num repositório de destino. Dispara quando o pedid
 |-----------|---------|
 | `references/` | Carregado sob demanda, sem `AGENTS.md` próprio |
 | `references/owner-seat/` | Pacote de definições da cadeira do dono (`types/`, `relations/`, `gates/`), só JSON |
+| `references/decision-authorship/` | Pacote de definições da autoria da decisão (`types/`, `relations/`), só JSON, sem `gates/` |
 
 ## Dependencies
 

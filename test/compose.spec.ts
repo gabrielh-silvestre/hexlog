@@ -19,7 +19,7 @@ function composed(logger: Logger = () => undefined) {
 }
 
 const REF = { project: PROJECT, process: 'run-1' };
-const INPUT = { ...REF, author: AUTHOR, key: 'k1', records: [note()] };
+const INPUT = { ...REF, author: AUTHOR, decidedBy: 'agent' as const, key: 'k1', records: [note()] };
 
 /** `composed()` com o tipo `note` definido e o processo `run-1` criado. */
 function composedWithNote(logger?: Logger) {

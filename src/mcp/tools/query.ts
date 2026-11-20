@@ -10,7 +10,7 @@ import {
   Where,
 } from '../../domain/gate.ts';
 import { Hash, Name, RecordId, Target } from '../../domain/ids.ts';
-import { WELL_FORMED } from '../../domain/record.ts';
+import { DecidedBy, WELL_FORMED } from '../../domain/record.ts';
 import {
   type Changes,
   type GateBatchEvaluation,
@@ -89,6 +89,7 @@ const QueryInput = z.strictObject(
     ids: z.array(RecordId).max(IDS_MAX).optional(),
     fields: z.array(z.string().min(1)).max(FIELDS_MAX).optional(),
     relatedTo: RecordId.optional(),
+    decidedBy: DecidedBy.optional(),
     relations: z.enum(RELATION_MODES).optional(),
     // 0 só com `changesSince` e sem `cursor`: quem confere é o serviço, com o path de `/limit`.
     limit: z.number().int().min(0).max(LIMIT_MAX).optional(),
@@ -211,19 +212,20 @@ const QUERY_DESCRIPTION =
   'Read the current records of a process (scope "process", default, needs process) or of the ' +
   'project (scope "project"). Filters: type, targetPrefix, where (equality on top-level scalar data fields), ' +
   'text (by relevance, at most 200 characters), ids, relatedTo ' +
-  '(linked to an id) and includeNonCurrent (also superseded or revoked). ' +
+  '(linked to an id), decidedBy (the effective role: an old record counts as agent) and ' +
+  'includeNonCurrent (also superseded or revoked). ' +
   'targetPrefix matches whole "."-separated segments (unit-1 does not match unit-10); a near miss ' +
   'in an empty answer carries a hint. ' +
-  'Records carry needsReview (dead support) and attachmentStatus. ' +
+  'Records carry needsReview and attachmentStatus. ' +
   'relations: counts (default) gives inCounts and outCounts ({name: n} per edge whose other end ' +
-  'is current) and nonCurrentInCounts and nonCurrentOutCounts (the rest); empty maps omitted; ' +
+  'is current) and nonCurrentInCounts and nonCurrentOutCounts (the rest); ' +
   'full gives in and out; none gives neither. With lineage inheritance, relations ' +
   'of a superseded version also hold for the current one: inheritedIn and inheritedOut (full), ' +
   'inheritedInCounts and inheritedOutCounts (counts); origin {from, to} is the stored edge; a ' +
   'contradicts between lineages cuts it. Process scope sees only its own relations; use ' +
   'project for cross-process ones. fields (at most ' +
-  `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, relations and ` +
-  'annotations stay, filters see the whole data and the size cap counts the projection. ' +
+  `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, ` +
+  'filters see the whole data and the size cap counts the projection. ' +
   'A page holds at most limit records (default 50, max 200) and stops at a size cap, ' +
   'keeping at least one record; the cursor continues. marker is the head of every ' +
   'process read, and any record id of the process works as its entry: pass it back as changesSince ' +

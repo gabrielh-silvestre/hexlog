@@ -77,7 +77,13 @@ export function querySetup({ defaults = true } = {}) {
   /** Grava `records` em `process` no instante `minutes` e devolve os ids, na ordem do lote. */
   async function register(process: string, records: BatchItem[], minutes = 0): Promise<RecordId[]> {
     now = instant(minutes);
-    const result = await writer.register({ project: PROJECT, process, author: AUTHOR, records });
+    const result = await writer.register({
+      project: PROJECT,
+      process,
+      author: AUTHOR,
+      decidedBy: 'agent',
+      records,
+    });
     return result.records.map(({ id }) => id);
   }
 

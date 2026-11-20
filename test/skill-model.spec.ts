@@ -609,6 +609,16 @@ describe('skills/hexlog-setup/references/owner-seat*.template.md', () => {
       expect(scope).toMatch(/`revokes`.*`supersedes`.*`create_process`.*`define_\*`/s);
     });
 
+    it('should send decidedBy on register only when the register schema lists it', () => {
+      expect(contract.replaceAll('`', '')).toContain(
+        'Send decidedBy on register only if the register tool schema lists decidedBy',
+      );
+    });
+
+    it('should not tell the owner seat to run node scripts/install.ts', () => {
+      expect(contract).not.toContain('node scripts/install.ts');
+    });
+
     it('should state that the Scope is an instruction and not a barrier', () => {
       expect(scope).toMatch(/instruction, not a barrier/);
     });

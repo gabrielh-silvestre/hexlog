@@ -79,6 +79,7 @@ describe('scripts/insights.ts', () => {
     ];
     for (const batch of batches) {
       await services.process.register({
+        decidedBy: 'agent',
         project: PROJECT,
         process: 'run-1',
         author: AUTHOR,
@@ -88,6 +89,7 @@ describe('scripts/insights.ts', () => {
     }
     attachmentHash = services.attachment.attach({ project: PROJECT, text: ATTACHMENT_TEXT }).hash;
     await services.process.register({
+      decidedBy: 'agent',
       project: PROJECT,
       process: 'run-3',
       author: AUTHOR,
@@ -95,6 +97,7 @@ describe('scripts/insights.ts', () => {
       records: [note('m1'), note('m2')],
     });
     await services.process.register({
+      decidedBy: 'agent',
       project: PROJECT,
       process: 'run-3',
       author: AUTHOR,
@@ -198,6 +201,7 @@ describe('scripts/insights.ts', () => {
       for (const [index, offset] of OFFSETS.entries()) {
         now = first + offset;
         await services.process.register({
+          decidedBy: 'agent',
           project: PROJECT,
           process: 'run-t',
           author: AUTHOR,
@@ -296,6 +300,7 @@ describe('scripts/insights.ts', () => {
     async () => {
       const { xdg, dataDir, services } = seedNotes(['run-b'], () => new Date(START));
       await services.process.register({
+        decidedBy: 'agent',
         project: PROJECT,
         process: 'run-b',
         author: AUTHOR,

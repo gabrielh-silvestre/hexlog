@@ -25,6 +25,7 @@ Regras da cadeira do dono: quem responde a lacuna no lugar do humano, com que mo
 - Headless e sem `AskUserQuestion` não tiram o ocupante: o critic responde e o aval fica pendente no pré-PR.
 - Se o critic cai no meio de uma resposta, a guarda que procura a `simulated` vigente da lacuna evita gravar outra.
 - Origem, quando o `premise` fixado tem o campo (senão grava sem ele): `human` é gravada pelo principal quando o humano responde, `simulated` pelo critic e `simulated-approved` pelo principal no aval. O campo é autodeclarado: rastro, não prova.
+- O `decidedBy` do envelope do `register` (critic `agent`, resposta do dono e `simulated-approved` `human`) segue [fluxo-hexlog.md](fluxo-hexlog.md), seção "Papel de quem escolheu".
 
 ## Classe da pergunta
 

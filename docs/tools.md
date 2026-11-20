@@ -137,16 +137,48 @@ valesse também para a atual, sem regravar nada; a tabela por espécie está em 
 Grava um lote de 1 a 50 registros numa **única linha** do log (`{"links":[...]}`, um elo
 por registro), atômico: ou todos entram ou nenhum. A entrada traz `project`, `process`,
 `agent` (1 a 100 caracteres: o agente ou a skill que chama), `model` (opcional,
-autodeclarado), `key` opcional e `records`; o `client` o servidor preenche (`unknown` quando o cliente não envia o envelope
+autodeclarado), `decidedBy` (o padrão do lote, só `agent`), `key` opcional e `records`; o `client` o servidor preenche (`unknown` quando o cliente não envia o envelope
 `clientInfo`). Cada item traz `type` (um tipo fixado no processo), `target`,
-`data` (validado pelo schema do tipo, até 16.000 caracteres canônicos), `alias`
-opcional e `relations` opcionais. Devolve `{records, replayed, marker}`: os ids na
+`data` (validado pelo schema do tipo, até 16.000 caracteres canônicos), `decidedBy`
+opcional (`agent`, `human` ou `third-party`), `alias` opcional e `relations` opcionais. Devolve `{records, replayed, marker}`: os ids na
 ordem de entrada (com o `alias` de cada um, quando houver) e o marcador, a cabeça do
 processo, para ler dali em diante. O marcador cobre exatamente os processos que nomeia:
 no alcance projeto, o que ele não nomeia é lido como vazio. A descrição da tool manda ler o
 schema com `describe_type` antes de registrar num tipo que o agente não conhece, e o id
 vigente com `query` antes de `supersedes` ou `revokes`: um id errado, do mesmo tipo, target e processo,
 que ainda é vigente, é aceito e bifurca a linhagem.
+
+**`decidedBy`: quem fez a escolha.** O campo é do envelope do registro, irmão de `author`
+(que diz quem gravou), e vale para todo registro, não só para decisão. Sem papel no lote nem
+no item, o `register` recusa com `DECIDED_BY_REQUIRED`, com um item em `details` por registro
+sem papel (`path` `/records/<i>/decidedBy`, `code` `missing`); a `message` traz o remédio e
+nada é gravado. O padrão do lote só pode ser `agent`; o item vence o padrão:
+
+| Situação | `decidedBy` |
+|---|---|
+| Você pesou alternativas e escolheu | `agent`, no lote |
+| O dev escolheu e você só registrou | `human`, no item |
+| Outra fonte decidiu (outra equipe, documento, sistema externo) e você aplicou o que ela mandou | `third-party`, no item |
+| O registro não é uma escolha (`evidence`, `finding`) | `agent`: quer dizer que você o produziu |
+
+Valor fora do enum, ou padrão do lote `human` ou `third-party`, é `INVALID_INPUT`
+(`/decidedBy` ou `/records/<i>/decidedBy`), e vem antes do `DECIDED_BY_REQUIRED`. O `code` do
+detalhe depende do caminho: pela tool, o schema recusa antes do serviço, com `invalid_value` (padrão
+do lote que não é `agent` e valor fora do enum no item); `invalid-batch-default` só vem quando o
+serviço é chamado direto, sem o schema da tool. No disco o
+campo é opcional: o registro gravado antes dele existir é lido como `agent`, e o hash dele não
+muda. Um lote antigo reenviado com a mesma `key` e o padrão `agent` devolve `replayed`;
+reenviar nomeando `decidedBy` em itens que antes o omitiam muda a impressão do lote e dá
+`IDEMPOTENCY_CONFLICT`. Para `human` e `third-party`, projeto que adotou o pacote de autoria do
+`hexlog-setup` liga uma evidência que diga a base por `backs`; `scripts/authorship-report.ts`
+acusa a que não tem e nunca recusa o registro. A aprovação do dev a uma decisão do agente é a
+relação `approves` e não conta como base. O papel é autodeclarado: rastro de auditoria, não
+prova. A saída da `query` não traz o campo; só o filtro `decidedBy` o usa.
+
+Servidor instalado anterior ao campo recusa `decidedBy` com `INVALID_INPUT` (`details[].code`
+`unrecognized_keys`, e a `message` cita `decidedBy`): mande o campo só se o schema da tool
+`register` que o agente vê o listar. A regra completa e o texto de recuperação por `code`
+estão na seção "Papel de quem escolheu" de `docs/directives/fluxo-hexlog.md`.
 
 Uma relação aponta para um id existente ou para `@alias` de um item **anterior** do
 mesmo lote, e leva `kind` (`supersedes`, `revokes`, `supports`, `contradicts`,
@@ -219,7 +251,7 @@ um cancelamento só um `ATTACHMENT_NOT_FOUND` no reenvio não prova a ausência 
 guarde o anexo e reenvie com a mesma `key` (ADR 0009).
 
 A ordem das recusas é fixa, e responde a primeira que falha: forma do lote
-(`INVALID_INPUT`); processo inexistente ou manifesto ilegível; recusas estáticas
+(`INVALID_INPUT`) e depois o papel (`INVALID_INPUT` de valor, `DECIDED_BY_REQUIRED` de item sem papel); processo inexistente ou manifesto ilegível; recusas estáticas
 (tipo fixado de todos os registros, schema de todos, `as`, `cross-process-currency`); cadeia quebrada
 (`PROCESS_CORRUPTED`); `key`; checagens de estado e regras de relação (ADR 0008).
 
@@ -237,7 +269,10 @@ processo em `details[0].process`.
 - **Filtros:** `type`, `targetPrefix`, `where` (igualdade em campos de primeiro nível
   de `data`, valor escalar, até 50 chaves), `text` (busca textual, até 200
   caracteres, por relevância), `ids` (até 200), `relatedTo` (os vizinhos diretos de um id,
-  por qualquer relação, de entrada ou de saída, sem o próprio id) e `includeNonCurrent`
+  por qualquer relação, de entrada ou de saída, sem o próprio id), `decidedBy` (`agent`, `human` ou
+  `third-party`; casa o papel **efetivo**, então o registro gravado antes do campo existir conta
+  como `agent`, e o filtro por `agent` não separa o declarado do ausente: quem separa é o
+  `scripts/authorship-report.ts`) e `includeNonCurrent`
   (traz também os superados e revogados). O `targetPrefix` casa por segmento, na fronteira de
   `.`: `a.b` casa `a.b` e `a.b.c`, não `a.b-2` nem `a.bc` (`unit-1` não casa `unit-10`). A
   resposta vazia em que nenhum target lido casa, mas algum começa pela string sem a fronteira,
@@ -247,7 +282,7 @@ processo em `details[0].process`.
   busca por `text` usa um índice que o servidor guarda em cache por processo: a primeira
   busca o monta, e o alcance projeto o monta a cada busca.
 - **Projeção:** `fields` (até 50 nomes de campos de primeiro nível de `data`) recorta
-  o `data` só na saída. `fields: []` devolve o registro sem `data`. Com ao menos um
+  o `data` só na saída. `fields: []` devolve o registro sem `data`; as relações e as anotações permanecem. Com ao menos um
   nome, o `data` sempre vem: o campo que o registro não tem some sem erro, e o `data`
   é `{}` quando nenhum dos nomes existe (o alcance projeto mistura tipos). Os filtros
   (`where`, `text` e os demais) veem o `data` inteiro, e o teto de página conta o JSON
@@ -297,7 +332,7 @@ processo em `details[0].process`.
     projeto vê. Quem ativa é o `process.json` do processo da linhagem que sobe.
   - **`needsReview`:** o `supports` herdado conta como apoio vivo, então some o `staleOut`;
     cortado, volta a marcar.
-- **Cada registro** traz `id`, `type`, `at`, `target`, `author`, `data` (inteiro, ou só
+- **Cada registro** traz `id`, `type`, `at`, `target`, `author` (sem o `decidedBy`), `data` (inteiro, ou só
   os `fields` pedidos), as relações no formato de `relations` (`inCounts` e `outCounts` com
   `nonCurrentInCounts` e `nonCurrentOutCounts`, `in` e `out`, ou nenhuma), `needsReview`
   (registro vigente cujo apoio morreu: `staleIn` e `staleOut`) e `attachmentStatus` (`ok`,

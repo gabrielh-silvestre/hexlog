@@ -58,6 +58,7 @@ Cada `define_*` grava uma versão `major.minor` imutável. A mesma definição d
 | Qualquer tool com nome fora da regex `Name`, campo desconhecido, ou relação que omite `kind` e `as` | `INVALID_INPUT`: corrija o campo de `details[].path` e reenvie | a validação de entrada de cada tool |
 | `define_type` com schema que é JSON Schema inválido, de raiz diferente de `"type": "object"`, ou com `$async`; `pattern` ou `patternProperties` em qualquer subschema (`pattern-not-allowed`: valide o formato com `format: "git-sha"` ou com `minLength`/`maxLength`); mais de 16.000 caracteres canônicos; `format: "attachment"` fora do primeiro nível | `INVALID_SCHEMA` | `commands/definition.ts#typeRule` |
 | `define_*` com mudança que quebra e sem `breaking: true` | `BREAKING_CHANGE` | `errors.ts#breakingChange` |
+| `register` sem `decidedBy` no lote nem no item (servidor com o campo) | `DECIDED_BY_REQUIRED`, com um item de `details` por registro sem papel (`/records/<i>/decidedBy`) | `errors.ts#decidedByRequired` |
 | `register` com `type` fora do que o processo fixou (definido depois ou ausente do projeto) | `TYPE_NOT_PINNED` | `errors.ts#typeNotPinned` |
 | `register` com `data` fora do schema fixado | `INVALID_RECORD`, com o `path` das violações de schema de cada registro do lote em `details` (`/records/<i>/data/...`; leia o schema antes com `describe_type`) | `commands/register/static.ts#checkData` |
 | `evaluate_gate` com gate fora do conjunto que o processo fixou | `GATE_NOT_FOUND` | `errors.ts#gateNotFound` |
@@ -71,6 +72,8 @@ Notas:
 - Os registros e as definições vivem em `<D>/.v1/`, com `<D>` = `$XDG_DATA_HOME/hexlog`. O hook de isolamento nega Bash que alcance `<D>`: leia só pelas tools.
 
 ## Exemplo mínimo: do zero a um `register` e um `evaluate_gate` verdes
+
+No passo 4 do exemplo abaixo, `decidedBy` diz quem fez a escolha (`agent` no lote; `human` ou `third-party` por item quando o dev ou outra fonte decidiu; a regra completa está na seção "Papel de quem escolheu" da hexlog-flow). Send `decidedBy` on `register` only if the `register` tool schema lists `decidedBy`; if it does not, the installed server is older and would refuse the field. Read the error by the `code` in `details`: `INVALID_INPUT` with code `unrecognized_keys` and a `message` naming `decidedBy` means an older server, so resend without the field and tell the owner to reinstall hexlog and restart the sessions; `INVALID_INPUT` with any other code on `decidedBy` means a wrong value, so fix the value; `DECIDED_BY_REQUIRED` means a newer server, so send the role on the items listed in `details` (its `message` states the fix).
 
 ```text
 1. define_type({
@@ -92,7 +95,7 @@ Notas:
 
 4. register({
      project: "myproj", process: "onboarding", agent: "setup-agent",
-     key: "onboarding-first-note",
+     decidedBy: "agent", key: "onboarding-first-note",
      records: [{ type: "note", target: "onboarding.step-1", data: { text: "done" } }]
    })
    → { records: [{ id: "onboarding:<uuid v7>" }], replayed: false,

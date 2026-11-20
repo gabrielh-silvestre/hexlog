@@ -99,6 +99,8 @@ same batch with the same key is safe.
      `<process>.evidence.<short>`. Data: `summary` and `source` (the hash of step 3). Relation
      to the answer: `to` the alias of the answer in the same batch, `kind: supports`.
 
+Send `decidedBy` on `register` only if the `register` tool schema lists `decidedBy`; if it does not, the installed server is older and would refuse the field. Read the error by the `code` in `details`: `INVALID_INPUT` with code `unrecognized_keys` and a `message` naming `decidedBy` means an older server, so resend without the field and tell the owner to reinstall hexlog and restart the sessions; `INVALID_INPUT` with any other code on `decidedBy` means a wrong value, so fix the value; `DECIDED_BY_REQUIRED` means a newer server, so send the role on the items listed in `details` (its `message` states the fix). When you send it, put `decidedBy: "agent"` on the batch.
+
 `basis` is `rule` when a rule of the criteria covers the question, and `rule` then holds its
 key exactly as written. It is `judgment` when none does, and `rule` is left out.
 

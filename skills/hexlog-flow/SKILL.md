@@ -17,7 +17,7 @@ Sem skill do projeto, pergunte ao usuário o `project`, o `process` e o `gate`, 
 
 | O que está acontecendo | Tool | Observação |
 |---|---|---|
-| Gravar um ou mais registros (fase, decisão, desvio, plano) | `register` | Lote de 1 a 50 registros, tudo ou nada. `agent` = o nome da skill que disparou (a skill do projeto que chamou a hexlog-flow, ou hexlog-flow se disparada direto). `key` onde a duplicata custa caro (seção "`key`") |
+| Gravar um ou mais registros (fase, decisão, desvio, plano) | `register` | Lote de 1 a 50 registros, tudo ou nada. `agent` = o nome da skill que disparou (a skill do projeto que chamou a hexlog-flow, ou hexlog-flow se disparada direto). `key` onde a duplicata custa caro (seção "`key`"). `decidedBy` diz quem escolheu (seção "Papel de quem escolheu") |
 | Achar um registro, ou os de um target | `query` | Filtros `type`, `targetPrefix`, `where`, `text`, `ids`; devolve o `id` de cada um |
 | Substituir ou revogar um registro (`supersedes`/`revokes`) | `query` com `type` + `targetPrefix` + `fields: []`, depois `register` com o `id` devolvido | Leia o vigente antes e use o `id` dessa resposta (seção "Busca, id e relações") |
 | Seguir as relações de um registro | `query` com `relatedTo` = o `id`, ou `relations: "full"` e ler `in`/`out` do próprio registro | Seção "Busca, id e relações" |
@@ -42,7 +42,8 @@ Registro se acha por busca e se liga por id:
 
 ```text
 query({ project, process, type: "<tipo>", targetPrefix: "<target>", fields: [] })   // devolve o id do vigente
-register({ project, process, agent: "hexlog-flow", key: "<target>:reexecucao-2",
+// decidedBy only if the register tool schema lists it (section "Papel de quem escolheu")
+register({ project, process, agent: "hexlog-flow", decidedBy: "agent", key: "<target>:reexecucao-2",
   records: [{ type: "<tipo>", target: "<target>", data: { … },
               relations: [{ to: "<id devolvido>", kind: "supersedes" }] }] })
 ```
@@ -116,11 +117,36 @@ Toda leitura devolve `marker` (a cabeça de cada processo lido). Passe-o como `c
 
 A lista de novidades vem só na primeira página (`limit: 0` devolve só ela, sem registros); nas seguintes, reenvie o mesmo `changesSince` junto do `cursor`, ou vem `INVALID_CURSOR`. Se a resposta traz `changes.omitted`, as listas são parciais: descarte esse marcador e releia tudo (`cursor`, e `includeNonCurrent` para o que saiu). Cursor, marcador ou `changesSince` que divergem do dado dão `INVALID_CURSOR` ou `MARKER_NOT_FOUND`. O marcador só vale para o alcance que o emitiu: o de um projeto que nomeia outros processos, num gate só de processo, dá `MARKER_NOT_FOUND`, e o de um processo num gate com pergunta de projeto lê os demais processos como vazios.
 
+## Papel de quem escolheu
+
+`decidedBy` é campo do envelope do `register`, irmão de `author`: diz **quem fez a escolha**, não quem gravou o registro, e vale para todo registro. A pergunta é quem pesou:
+
+| Situação | `decidedBy` |
+|---|---|
+| Você pesou alternativas e escolheu | `agent`, no lote |
+| O dev escolheu e você só registrou | `human`, no item |
+| Outra fonte decidiu (outra equipe, documento, sistema externo) e você aplicou o que ela mandou | `third-party`, no item |
+| O registro não é uma escolha (evidência, achado) | `agent`: quer dizer que você o produziu |
+
+O padrão do lote só pode ser `agent`; `human` e `third-party` vão sempre por item, e o item vence o padrão. Regravar uma decisão (`supersedes`) mantém o papel do registro superado, salvo se a escolha mudou de mão. O campo é autodeclarado: rastro de auditoria, não prova. Não confunda com o campo de dado `decidedBy` do tipo de parada (`audit-types.md`).
+
+Send `decidedBy` on `register` only if the `register` tool schema lists `decidedBy`; if it does not, the installed server is older and would refuse the field. Read the error by the `code` in `details`: `INVALID_INPUT` with code `unrecognized_keys` and a `message` naming `decidedBy` means an older server, so resend without the field and tell the owner to reinstall hexlog and restart the sessions; `INVALID_INPUT` with any other code on `decidedBy` means a wrong value, so fix the value; `DECIDED_BY_REQUIRED` means a newer server, so send the role on the items listed in `details` (its `message` states the fix).
+
+```text
+register({ project, process, agent: "hexlog-flow", decidedBy: "agent",
+  records: [{ type: "<tipo>", target: "<target>", data: { … } },
+            { type: "<tipo>", target: "<target>", decidedBy: "human", data: { … } }] })
+```
+
+Se o projeto adotou o pacote de autoria do hexlog-setup, a decisão `human` ou `third-party` aponta a base por uma evidência (`own-judgment`, `external-team`, `doc-author` ou `convergence`) ligada por `backs`; o relatório de autoria (`scripts/authorship-report.ts`, no checkout do hexlog) acusa a que não tem e **não recusa** o registro. Aprovação do dev a uma decisão do agente é `approves` e não conta como base.
+
 ## Erros e reenvio
 
 | Situação | O que fazer |
 |---|---|
 | `IO_ERROR` no `register` (`details[0].code` = o errno em minúsculas, como no ENOSPC) | **Resultado incerto**: o lote pode ter ficado inteiro no disco. Reenvie com a **mesma** `key`: devolve `replayed: true` ou grava. Sem `key`, o reenvio pode duplicar. Um `replayed` depois de um fsync que falhou deixa em aberto se o lote chegou ao disco, e o servidor deixa esse caso como está |
+| `DECIDED_BY_REQUIRED` no `register` | Servidor com o campo: item sem papel e lote sem padrão. `details` lista cada item (`/records/<i>/decidedBy`) e a `message` diz o remédio: mande `decidedBy: "agent"` no lote, ou `human`/`third-party` no item. Nada foi gravado |
+| `INVALID_INPUT` no `register` com `details[].code` `unrecognized_keys` e `message` citando `decidedBy` | Servidor anterior ao campo: reenvie sem `decidedBy` e avise o usuário para reinstalar o hexlog e reiniciar as sessões (seção "Papel de quem escolheu"). Outro `code` sobre `decidedBy` é valor errado: corrija o valor |
 | `LOCK_TIMEOUT` com `lock-busy` ou `lock-lost` (`errors.ts#lockTimeout`) | Retentável com a mesma `key`. `lock-busy`: um dono vivo segurou o processo além da espera (15 s). `lock-lost`: o lote ficou sem gravar |
 | `LOCK_TIMEOUT` com `holder-unreadable` | **Só o usuário resolve**: o dono do lock está ilegível. Pare e peça ao usuário que remova o lock |
 | `INTERNAL` no `register` | Resultado incerto: reenvie com a **mesma** `key` |

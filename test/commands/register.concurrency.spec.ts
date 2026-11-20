@@ -74,6 +74,7 @@ describe('register', () => {
           const process = `run-${round}`;
           services.process.createProcess({ project: PROJECT, process });
           const target = await services.process.register({
+            decidedBy: 'agent',
             project: PROJECT,
             process,
             author: AUTHOR,
@@ -168,6 +169,7 @@ describe('register', () => {
         services.process.createProcess({ project: PROJECT, process: 'run-a' });
         services.process.createProcess({ project: PROJECT, process: 'run-b' });
         const target = await services.process.register({
+          decidedBy: 'agent',
           project: PROJECT,
           process: 'run-b',
           author: AUTHOR,
@@ -184,6 +186,7 @@ describe('register', () => {
 
         // Com o dono vivo em B (lock na mão, sem soltar), o `register` em A não pode esperar por ele.
         const result = await services.process.register({
+          decidedBy: 'agent',
           project: PROJECT,
           process: 'run-a',
           author: AUTHOR,

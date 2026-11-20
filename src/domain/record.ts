@@ -68,6 +68,16 @@ export const Author = z.strictObject({
 });
 export type Author = z.infer<typeof Author>;
 
+/**
+ * Papel de quem fez a escolha que o registro guarda, não de quem o escreveu (isso é o `author`):
+ * `agent` pesou e escolheu, `human` escolheu e o agente só registrou, `third-party` é de outra fonte
+ * (outra equipe, um documento, um sistema externo) e o agente só aplicou. O campo vale para qualquer
+ * registro: onde não há escolha, `agent` diz que o agente o produziu. Opcional no
+ * disco, sem `.default()`: elo gravado antes dele fica sem a chave e mantém o mesmo hash.
+ */
+export const DecidedBy = z.enum(['agent', 'human', 'third-party']);
+export type DecidedBy = z.infer<typeof DecidedBy>;
+
 /** Relação gravada: `kind` sempre resolvido, `to` sempre um id (D-10). */
 export const Relation = z.strictObject({
   kind: RelationKind,
@@ -113,6 +123,7 @@ export const HexRecord = z.strictObject({
   at: Instant,
   target: Target,
   author: Author,
+  decidedBy: DecidedBy.optional(),
   data: Data,
   relations: z.array(Relation).max(RELATIONS_MAX),
 });
@@ -122,7 +133,16 @@ export const BatchItem = z.strictObject({
   alias: alias.optional(),
   type: Name,
   target: Target,
+  decidedBy: DecidedBy.optional(),
   data: Data,
   relations: z.array(RelationInput).max(RELATIONS_MAX).optional(),
 });
 export type BatchItem = z.infer<typeof BatchItem>;
+
+/** O papel do item vence o padrão do lote (que só pode ser `agent`); sem nenhum dos dois, `undefined`. */
+export function resolveDecidedBy(
+  item: Pick<BatchItem, 'decidedBy'>,
+  batchDefault?: DecidedBy,
+): DecidedBy | undefined {
+  return item.decidedBy ?? batchDefault;
+}

@@ -200,6 +200,7 @@ async function seedSeat(): Promise<Seeded> {
   ) => {
     const { author = OCCUPANT, relations: edges = [] } = options;
     const { records } = await processes.register({
+      decidedBy: 'agent',
       project: PROJECT,
       process,
       author,
@@ -399,6 +400,7 @@ async function seedSeat(): Promise<Seeded> {
     const ids: string[] = [];
     for (let start = 0; start < items.length; start += BATCH_MAX) {
       const { records } = await processes.register({
+        decidedBy: 'agent',
         project: PROJECT,
         process,
         author: OCCUPANT,

@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
+import { processPaths } from '../../src/adapters/fs/data-format.ts';
+import { anchor, hashLink } from '../../src/domain/chain.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
+import { formatLine } from '../../src/shared/loader.ts';
+import { idAt, linkAt } from '../fixtures/chain-line.ts';
 import { CHANGES_ITEMS_CAP, EVIDENCE_ITEMS_CAP } from '../../src/mcp/tools/query.ts';
 import type { Defined } from '../../src/commands/definition.ts';
 import type { CreateProcessResult, RegisterResult } from '../../src/commands/process.ts';
@@ -150,6 +154,10 @@ describe('tools/list', () => {
     expect(description).toMatch(/read the current id with query/);
   });
 
+  it('should state in the query description that the decidedBy filter matches the effective role', () => {
+    expect(descriptionOf('query')).toMatch(/decidedBy \(the effective role/);
+  });
+
   it('should tell register that as alone is enough and that every schema violation is reported', () => {
     const description = descriptionOf('register');
 
@@ -165,6 +173,32 @@ describe('tools/list', () => {
     expect(descriptionOf('register')).toMatch(
       /supersedes also needs the same type and target, else INVALID_RECORD \(target-mismatch\); to move a fact to another target, register one record there with revokes and derivesFrom to the old one/,
     );
+  });
+
+  it('should advertise decidedBy as the literal agent at the batch level', () => {
+    const properties = toolOf('register')?.inputSchema.properties;
+
+    expect(properties?.decidedBy).toMatchObject({ const: 'agent' });
+  });
+
+  it('should tell register that a missing decidedBy is refused with DECIDED_BY_REQUIRED', () => {
+    expect(descriptionOf('register')).toMatch(/decidedBy says who made the choice/);
+    expect(descriptionOf('register')).toMatch(/refuses with DECIDED_BY_REQUIRED/);
+  });
+
+  it('should not mention evidence or the reference-package names in the register description', () => {
+    expect(descriptionOf('register')).not.toMatch(
+      /evidence|own-judgment|external-team|doc-author|convergence|approval/,
+    );
+  });
+
+  it('should not mention supports in the decidedBy paragraph of the register description', () => {
+    const description = descriptionOf('register') ?? '';
+
+    const paragraph = description.slice(description.indexOf('decidedBy says who made the choice'));
+
+    expect(paragraph).toMatch(/^decidedBy says/);
+    expect(paragraph).not.toMatch(/supports/);
   });
 
   it('should warn in the define_type description that pattern is refused and point to the catalog', () => {
@@ -319,6 +353,44 @@ describe('register', () => {
     expect(result.marker).toEqual({ 'run-1': saved?.id });
   });
 
+  // Lote e fingerprint do 1.2.3 (commit instalado 92078b041f80), calculados uma vez com o `src` de então.
+  const LEGACY_ITEMS = [
+    { type: 'note', target: 'repo.feature', data: { text: 'first' } },
+    { type: 'note', target: 'repo.feature', data: { text: 'second' } },
+  ];
+  const LEGACY_FINGERPRINT = '12506e6cd0dccf3a3e953762cc96bdb90f80a42f32ac14c4225380cd29ef69d4';
+
+  it('should return replayed when a batch written before decidedBy existed is resent through the tool under the default agent', async () => {
+    await prepareProcess();
+    const ref = { project: PROJECT, process: 'run-1' };
+    const { manifest, log } = processPaths(environment.dataDir, ref);
+    const first = linkAt(
+      { seq: 0, prevHash: anchor(JSON.parse(fs.readFileSync(manifest, 'utf8'))) },
+      {
+        id: idAt('run-1', 1),
+        target: 'repo.feature',
+        data: { text: 'first' },
+        batch: { fingerprint: LEGACY_FINGERPRINT, key: 'old-batch' },
+      },
+    );
+    const second = linkAt(
+      { seq: 1, prevHash: hashLink(first) },
+      { id: idAt('run-1', 2), target: 'repo.feature', data: { text: 'second' } },
+    );
+    fs.appendFileSync(log, formatLine([first, second]));
+
+    const result = await environment.ok<RegisterResult>('register', {
+      ...ref,
+      agent: 'executor',
+      decidedBy: 'agent',
+      key: 'old-batch',
+      records: LEGACY_ITEMS,
+    });
+
+    expect(result.replayed).toBe(true);
+    expect(result.records.map(({ id }) => id)).toEqual([first.id, second.id]);
+  });
+
   it('should write the author with the envelope client and no model when none is given', async () => {
     const author = await authorWithEnvelope({});
 
@@ -419,6 +491,48 @@ describe('query', () => {
     await prepareProcess();
     await registerBulk(environment, 41, { process: 'run-1', text: 'x'.repeat(700) });
   }
+
+  describe('with records of two roles', () => {
+    let agentId: string;
+    let humanId: string;
+
+    beforeEach(async () => {
+      await prepareProcess();
+      agentId = (await registerNote(environment, { process: 'run-1', text: 'by agent' }))
+        .records[0]!.id;
+      const human = await environment.ok<RegisterResult>('register', {
+        project: PROJECT,
+        process: 'run-1',
+        agent: 'executor',
+        records: [
+          { type: 'note', target: 'run.step', data: { text: 'by human' }, decidedBy: 'human' },
+        ],
+      });
+      humanId = human.records[0]!.id;
+    });
+
+    it('should pass the decidedBy filter through the query tool', async () => {
+      const page = await environment.ok<QueryResult>('query', {
+        project: PROJECT,
+        process: 'run-1',
+        decidedBy: 'human',
+      });
+
+      expect(page.records.map(({ id }) => id)).toEqual([humanId]);
+    });
+
+    it('should not add decidedBy to the records of the query output', async () => {
+      const page = await environment.ok<QueryResult>('query', {
+        project: PROJECT,
+        process: 'run-1',
+      });
+
+      expect(page.records.map(({ id }) => id)).toEqual([agentId, humanId]);
+      expect(page.records.map((record) => Object.keys(record))).not.toContainEqual(
+        expect.arrayContaining(['decidedBy']),
+      );
+    });
+  });
 
   it('should lose the cut ids when the marker of a cut changes is reused', async () => {
     const { first } = await registerCutChangesAndCheckCut();

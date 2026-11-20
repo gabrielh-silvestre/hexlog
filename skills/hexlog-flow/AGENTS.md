@@ -11,7 +11,7 @@ Skill de uso diário: a mecânica das tools. Recebe projeto, processo e gate da 
 
 | File | Description |
 |------|-------------|
-| `SKILL.md` | De onde vêm projeto, processo e gate, árvore de decisão de tool, busca e id, leitura enxuta (`fields`, `relations`, `changesSince` com `limit: 0`, gate em lote), `key` contra duplicata, regras de relação que o servidor impõe, alcance de leitura (`scope`), marcador e cursor, erros e reenvio após erro incerto, anexos (com o ponteiro do `unmarked-attachment`) e mudança de gate |
+| `SKILL.md` | De onde vêm projeto, processo e gate, árvore de decisão de tool, busca e id, leitura enxuta (`fields`, `relations`, `changesSince` com `limit: 0`, gate em lote), `key` contra duplicata, regras de relação que o servidor impõe, alcance de leitura (`scope`), marcador e cursor, papel de quem escolheu (`decidedBy`, com o texto condicionado ao schema da tool), erros e reenvio após erro incerto, anexos (com o ponteiro do `unmarked-attachment`) e mudança de gate |
 
 ## Subdirectories
 

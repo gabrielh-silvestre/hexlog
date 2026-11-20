@@ -130,7 +130,7 @@ O resumo da notificação de ociosidade (idle_notification), o recap final e o t
 
 **Granularidade.** Uma ocorrência = sintoma → tentativas → desfecho, registrada quando termina (resolvida ou terminal), com as tentativas em ordem em `attempts`. Um registro por ocorrência.
 
-**Causa e desfecho.** `trigger` diz a causa; `status`, como acabou; `decidedBy` diz quem decidiu (`executor`, `lead` do team, `orchestrator` ou `user`):
+**Causa e desfecho.** `trigger` diz a causa; `status`, como acabou; `decidedBy` diz quem decidiu (`executor`, `lead` do team, `orchestrator` ou `user`). Esse `decidedBy` é campo de `data` do tipo de parada e não é o `decidedBy` do envelope do `register` (`agent`, `human` ou `third-party`, seção "Papel de quem escolheu" do `SKILL.md`): o mesmo `register` pode levar os dois, com vocabulários diferentes:
 
 | Situação | `trigger` | `status` |
 |---|---|---|

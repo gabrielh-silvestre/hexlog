@@ -127,9 +127,38 @@ describe('planReanchor', () => {
             { kind: 'derivesFrom', as: 'resolves-finding', to: own('work-a', 52) },
             { kind: 'derivesFrom', to: own('work-a', 53) },
           ],
+          decidedBy: 'agent',
         },
       },
     ]);
+  });
+
+  it.each(['human', 'third-party'] as const)(
+    'should copy decidedBy %s from the raw link of the source decision',
+    (decidedBy) => {
+      const row = decision({ decidedBy });
+
+      const { item } = firstRewrite([row]);
+
+      expect(item.decidedBy).toBe(decidedBy);
+    },
+  );
+
+  it('should register agent for a source decision written without the field', () => {
+    const row = decision();
+
+    const { item } = firstRewrite([row]);
+
+    expect(item.decidedBy).toBe('agent');
+  });
+
+  it('should keep the batch key stable for the same plan', () => {
+    const rows = [decision({ decidedBy: 'human' })];
+
+    const [first] = toBatches('work-a', 'directives-4', plan(rows).rewrites);
+    const [again] = toBatches('work-a', 'directives-4', plan(rows).rewrites);
+
+    expect(first?.key).toBe(again?.key);
   });
 
   it('should keep the sentinel premise as an ordinary same anchor', () => {

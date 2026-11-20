@@ -84,7 +84,10 @@ export async function createFlowEnvironment(slugs: readonly string[]): Promise<E
  * Abre `slug` sem `lineageInheritance`, como um processo anterior à herança: `create_process` sempre a liga,
  * então o processo nasce pelo serviço com o campo tirado do manifesto.
  */
-export function createLegacyLineageProcess(environment: Environment, slug: string): void {
+export function createLegacyLineageProcess(
+  environment: Pick<Environment, 'dataDir'>,
+  slug: string,
+): void {
   const stores = diskStores(environment.dataDir);
   createProcessService({
     ...stores,
@@ -104,6 +107,8 @@ export type FlowRecord = {
   target: string;
   data: Record<string, unknown>;
   relations?: Record<string, unknown>[];
+  /** Papel do item; sem ele vale o padrão `agent` do lote. */
+  decidedBy?: string;
 };
 
 /** Registra um registro em `process` e devolve o id. */

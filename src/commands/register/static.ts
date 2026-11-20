@@ -5,12 +5,15 @@ import type { Manifest } from '../../domain/manifest.ts';
 import {
   BATCH_MAX,
   type BatchItem,
+  type DecidedBy,
   type RelationInput,
   type RelationKind,
+  resolveDecidedBy,
 } from '../../domain/record.ts';
 import { endsVigency, resolveKind, type NamedRelation } from '../../domain/relations.ts';
 import {
   capDetails,
+  decidedByRequired,
   invalidInput,
   invalidRecord,
   typeNotPinned,
@@ -30,8 +33,8 @@ export type PreparedItem = { item: BatchItem; schema: RecordType; relations: Pre
 export const isAliasRef = (to: string): boolean => to.startsWith('@');
 
 /**
- * D-06 nível 1: forma do lote (`INVALID_INPUT`): de 1 a 50 itens, apelidos únicos e `@alias` só para
- * item anterior. Só olha a entrada.
+ * D-06 nível 1, primeira parte: forma do lote (`INVALID_INPUT`): de 1 a 50 itens, apelidos únicos e
+ * `@alias` só para item anterior. Só olha a entrada. A segunda parte é `checkDecidedBy`.
  */
 export function checkBatchShape(records: readonly BatchItem[]): void {
   if (records.length < 1 || records.length > BATCH_MAX) {
@@ -60,6 +63,20 @@ export function checkBatchShape(records: readonly BatchItem[]): void {
       }
     }
   }
+}
+
+/**
+ * D-06 nível 1, depois de `checkBatchShape`: o papel de cada item. O padrão do lote só pode ser
+ * `agent` (`INVALID_INPUT`); só então os itens sem papel nenhum saem juntos num `DECIDED_BY_REQUIRED`.
+ */
+export function checkDecidedBy(records: readonly BatchItem[], batchDefault?: DecidedBy): void {
+  if (!isUndefined(batchDefault) && batchDefault !== 'agent') {
+    throw invalidInput('/decidedBy', 'invalid-batch-default', 'batch decidedBy can only be agent');
+  }
+  const missing = records.flatMap((item, index) =>
+    isUndefined(resolveDecidedBy(item, batchDefault)) ? [index] : [],
+  );
+  if (missing.length > 0) throw decidedByRequired(missing);
 }
 
 /** Nomes de relação fixados no processo, no formato que `domain/relations.ts` espera. */

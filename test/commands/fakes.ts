@@ -333,7 +333,14 @@ export function setup(newUuid: () => string = createUuids()) {
     validate,
     setNow: (date: Date) => void (now = date),
     register: (records: BatchItem[], extra: Partial<RegisterInput> = {}, process: Name = ORIGIN) =>
-      service.register({ project: PROJECT, process, author: AUTHOR, records, ...extra }),
+      service.register({
+        project: PROJECT,
+        process,
+        author: AUTHOR,
+        decidedBy: 'agent',
+        records,
+        ...extra,
+      }),
   };
 }
 
@@ -376,6 +383,7 @@ export function seedNoteProcess(ref: ProcessRef = { project: PROJECT, process: O
     const { records } = await services.process.register({
       ...ref,
       author: AUTHOR,
+      decidedBy: 'agent',
       key,
       records: [item],
     });

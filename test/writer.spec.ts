@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { omit } from 'es-toolkit';
 import { ZodError } from 'zod';
 import { checkInstalled, gitDiffQuiet, openWriter } from '../scripts/flow/writer.ts';
 import { createFlowEnvironment } from './flow-data.ts';
 import { git } from './flow-repo.ts';
-import { createTempDir, snapshot } from './helpers.ts';
+import { createTempDir, rawRolesOfCurrent, snapshot } from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
 
 const VERSION = '1.2.0';
@@ -298,7 +299,7 @@ describe('openWriter', () => {
     return records;
   };
 
-  const batch = { process: SLUG, key: 'k1', records: [premise('a')] };
+  const batch = { process: SLUG, key: 'k1', decidedBy: 'agent' as const, records: [premise('a')] };
 
   it('should write a batch through the real register, with the given author', async () => {
     const result = await open().write(batch);
@@ -310,6 +311,28 @@ describe('openWriter', () => {
         author: expect.objectContaining(AUTHOR),
       }),
     ]);
+  }, 30_000);
+
+  it('should pass the batch decidedBy through to the register service', async () => {
+    await open().write(batch);
+
+    expect(rawRolesOfCurrent(environment.dataDir, SLUG, 'premise')).toEqual({
+      [`${SLUG}.premise.a`]: 'agent',
+    });
+  }, 30_000);
+
+  it('should keep the decidedBy of an item over the batch decidedBy', async () => {
+    await open().write({ ...batch, records: [{ ...premise('a'), decidedBy: 'human' }] });
+
+    expect(rawRolesOfCurrent(environment.dataDir, SLUG, 'premise')).toEqual({
+      [`${SLUG}.premise.a`]: 'human',
+    });
+  }, 30_000);
+
+  it('should refuse an item without decidedBy when the batch has none', async () => {
+    await expect(open().write(omit(batch, ['decidedBy']))).rejects.toMatchObject({
+      code: 'DECIDED_BY_REQUIRED',
+    });
   }, 30_000);
 
   it('should replay a repeated key', async () => {

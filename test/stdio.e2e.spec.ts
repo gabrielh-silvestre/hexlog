@@ -59,9 +59,12 @@ async function connect(options: ConnectOptions = {}) {
   const _meta = options.noEnvelope
     ? undefined
     : { [CLIENT_INFO_META_KEY]: { name: clientName, version: '0.0.0' } };
-  const call = async (name: string, args: Record<string, unknown> = {}) =>
+  const callRaw = async (name: string, args: Record<string, unknown> = {}) =>
     (await client.callTool({ name, arguments: args, _meta })) as CallResult;
-  return { client, call, stderr: () => stderr, transportErrors };
+  // Em `register` sem `decidedBy` no topo injeta `agent`; os casos da recusa usam `callRaw`.
+  const call = (name: string, args: Record<string, unknown> = {}) =>
+    callRaw(name, name === 'register' ? { decidedBy: 'agent', ...args } : args);
+  return { client, call, callRaw, stderr: () => stderr, transportErrors };
 }
 
 type Session = Awaited<ReturnType<typeof connect>>;
@@ -334,6 +337,41 @@ describe('dist/server.mjs over stdio', () => {
 
     expect(body.code).toBe('LEGACY_DATA');
     expect(body.details).toEqual([expect.objectContaining({ code: 'run' })]);
+  }, 20_000);
+
+  /** Define `note`, cria o processo e chama o `register` cru: um lote de uma nota com `extra` por cima. */
+  async function registerNoteRaw({ call, callRaw }: Session, extra: Record<string, unknown>) {
+    await call('define_type', {
+      project: PROJECT,
+      name: 'note',
+      schema: { type: 'object', additionalProperties: true },
+    });
+    await call('create_process', { project: PROJECT, process: PROCESS });
+    return callRaw('register', {
+      project: PROJECT,
+      process: PROCESS,
+      agent: 'e2e-agent',
+      records: [{ type: 'note', target: 'run.step', data: { text: 'x' } }],
+      ...extra,
+    });
+  }
+
+  it('should register with decidedBy over the bundle', async () => {
+    const { result } = await withClient({}, (session) =>
+      registerNoteRaw(session, { decidedBy: 'agent' }),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ replayed: false });
+  }, 20_000);
+
+  it('should refuse a register without decidedBy over the bundle', async () => {
+    const { result: body } = await withClient({}, async (session) =>
+      errorBodyOf(await registerNoteRaw(session, {})),
+    );
+
+    expect(body.code).toBe('DECIDED_BY_REQUIRED');
+    expect(body.details).toEqual([expect.objectContaining({ path: '/records/0/decidedBy' })]);
   }, 20_000);
 
   it('should answer a structured INVALID_INPUT without INTERNAL on stderr for input outside the schema', async () => {
