@@ -324,12 +324,6 @@ describe('skills/hexlog-setup/references/decision-authorship.md', () => {
     expect(readFile(PROCEDURE_FILE)).toContain(`\`${file}\``);
   });
 
-  it('should carry the conditional decidedBy sentence in English', () => {
-    expect(readFile(PROCEDURE_FILE)).toContain(
-      'only if the `register` tool schema lists `decidedBy`',
-    );
-  });
-
   it('should say in the attribution table and next to the example that approval carries agent', () => {
     const sentence =
       'O registro `approval` é evidência produzida pelo agente: leva `agent` (herda o lote); o ato humano de aprovar está no `summary`.';

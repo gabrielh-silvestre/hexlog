@@ -56,9 +56,8 @@ export type ProcessService = {
    * D-06: grava o lote numa única linha do log de `process`, sob o lock só da origem. Ordem de
    * recusa, a primeira que falha responde: (1) forma do lote (`INVALID_INPUT`) e, depois dela, o
    * papel (`INVALID_INPUT` se o padrão do lote não é `agent`, `DECIDED_BY_REQUIRED` se algum item
-   * fica sem papel), (2) `PROCESS_NOT_FOUND` e
-   * `unreadable-manifest`, (3) recusas estáticas (tipo fixado e schema, `as`→`kind`,
-   * `cross-process-currency`), (4) `broken-chain`, (5) `key`: `replayed` ou `IDEMPOTENCY_CONFLICT`,
+   * fica sem papel), (2) `PROCESS_NOT_FOUND` e `unreadable-manifest`, (3) recusas estáticas (tipo
+   * fixado e schema, `as`→`kind`, `cross-process-currency`), (4) `broken-chain`, (5) `key`: `replayed` ou `IDEMPOTENCY_CONFLICT`,
    * (6) destinos, anexos e regras de D-10. `PROCESS_TOO_LARGE` sai do adaptador ao ler o log sob o
    * lock (o nível 2 lê só o manifesto, então as recusas estáticas vencem) e ao gravar uma linha que
    * passaria do teto (depois do nível 6). Qualquer recusa sai antes de gravar.

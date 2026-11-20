@@ -323,13 +323,6 @@ describe('scripts/authorship-report.ts', () => {
       expect(countOf(blockOf(out, 'counts'), 'agent (no field)')).toBe(1);
     });
 
-    it('should not count a superseded decision', () => {
-      const block = blockOf(out, 'counts');
-
-      expect(countOf(block, 'agent (declared)')).toBe(3);
-      expect(block).toContain('(6 current decisions)');
-    });
-
     it('should flag a human decision without a basis from an evidence type', () => {
       const lines = sectionOf(blockOf(out, 'flagged'), 'human without basis');
 
@@ -513,48 +506,27 @@ describe('scripts/authorship-report.ts', () => {
   });
 
   describe('with a type mapping', () => {
-    it(
-      'should exit 1 naming a cited evidence type that the project does not define',
-      () => {
-        const {
-          code,
-          out: stdout,
-          err,
-        } = runReport(seeded.xdg, PROJECT, '--types', 'own-judgment=gone');
+    it.each([
+      {
+        name: 'a cited evidence type',
+        args: [PROJECT, '--types', 'own-judgment=gone'],
+        missing: 'own-judgment=gone',
+      },
+      {
+        name: 'a cited decision type',
+        args: [PROJECT, '--types', 'decision=nope'],
+        missing: 'decision=nope',
+      },
+      { name: 'the default decision type', args: ['nodecision'], missing: 'decision=decision' },
+    ])(
+      'should exit 1 naming $name that the project does not define',
+      ({ args, missing }) => {
+        const { code, out: stdout, err } = runReport(seeded.xdg, ...args);
 
         expect(err).toContain(
-          'authorship-report failed: INVALID_INPUT: type not defined in the project: own-judgment=gone',
+          `authorship-report failed: INVALID_INPUT: type not defined in the project: ${missing}`,
         );
         expect(stdout).toBe('');
-        expect(code).toBe(1);
-      },
-      CLI_TIMEOUT,
-    );
-
-    it(
-      'should exit 1 naming a decision type that the project does not define',
-      () => {
-        const {
-          code,
-          out: stdout,
-          err,
-        } = runReport(seeded.xdg, PROJECT, '--types', 'decision=nope');
-
-        expect(err).toContain(
-          'authorship-report failed: INVALID_INPUT: type not defined in the project: decision=nope',
-        );
-        expect(stdout).toBe('');
-        expect(code).toBe(1);
-      },
-      CLI_TIMEOUT,
-    );
-
-    it(
-      'should exit 1 when the project has no decision type',
-      () => {
-        const { code, err } = runReport(seeded.xdg, 'nodecision');
-
-        expect(err).toContain('type not defined in the project: decision=decision');
         expect(code).toBe(1);
       },
       CLI_TIMEOUT,

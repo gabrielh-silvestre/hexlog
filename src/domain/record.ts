@@ -72,8 +72,8 @@ export type Author = z.infer<typeof Author>;
  * Papel de quem fez a escolha que o registro guarda, não de quem o escreveu (isso é o `author`):
  * `agent` pesou e escolheu, `human` escolheu e o agente só registrou, `third-party` é de outra fonte
  * (outra equipe, um documento, um sistema externo) e o agente só aplicou. O campo vale para qualquer
- * registro: onde não há escolha, `agent` diz que o agente o produziu. Opcional no
- * disco, sem `.default()`: elo gravado antes dele fica sem a chave e mantém o mesmo hash.
+ * registro: onde não há escolha, `agent` diz que o agente o produziu. Opcional no disco, sem
+ * `.default()`: elo gravado antes dele fica sem a chave e mantém o mesmo hash.
  */
 export const DecidedBy = z.enum(['agent', 'human', 'third-party']);
 export type DecidedBy = z.infer<typeof DecidedBy>;

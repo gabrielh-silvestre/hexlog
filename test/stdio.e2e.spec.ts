@@ -339,7 +339,6 @@ describe('dist/server.mjs over stdio', () => {
     expect(body.details).toEqual([expect.objectContaining({ code: 'run' })]);
   }, 20_000);
 
-  /** Define `note`, cria o processo e chama o `register` cru: um lote de uma nota com `extra` por cima. */
   async function registerNoteRaw({ call, callRaw }: Session, extra: Record<string, unknown>) {
     await call('define_type', {
       project: PROJECT,
