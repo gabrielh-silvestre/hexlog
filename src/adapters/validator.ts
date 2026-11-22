@@ -5,10 +5,11 @@ import { ATTACHMENT_FORMAT } from '../domain/definitions.ts';
 import { catalogNames, FORMAT_CATALOG } from '../domain/formats.ts';
 import { Hash } from '../domain/ids.ts';
 import {
-  countNodes,
   expandedSize,
   FREE_PATTERN_KEYWORDS,
   hasKeywordAt,
+  measureData,
+  SATURATED,
   walkSubschemas,
 } from '../domain/schema-walk.ts';
 import { capDetails, pointer as jsonPointer, violationsCapped, type Detail } from '../errors.ts';
@@ -200,13 +201,24 @@ function createCompiler({
 }
 
 /**
- * Teto do custo estimado (`expandedSize` do schema vezes `countNodes` do dado) para o passe que
- * junta todas as violações. Acima dele, a recusa traz só o que o primeiro passe achou. A estimativa
- * é do pior caso (cada subschema contra cada valor). Medido com `allOf` repetido sobre uma lista que
- * reprova em tudo: cerca de 2 µs por unidade, então no teto o passe custa ~50 ms e ~10 MB; um
- * `$defs` que dobra a cada nível sobe o tamanho do schema, não o número de erros distintos.
+ * Teto do custo estimado (`expandedSize` do schema vezes os nós do dado, de `measureData`) para o
+ * passe que junta todas as violações. Acima dele, a recusa traz só o que o primeiro passe achou. A
+ * estimativa é do pior caso (cada subschema contra cada valor). Medido com `allOf` repetido sobre uma
+ * lista que reprova em tudo: cerca de 2 µs por unidade, então no teto o passe custa ~50 ms e ~10 MB;
+ * um `$defs` que dobra a cada nível sobe o tamanho do schema, não o número de erros distintos.
  */
 const COST_CEILING = 25_000;
+
+/**
+ * Custo estimado de `validate` para o dado. `size` é o tamanho do schema sem desdobrar ciclo: se
+ * saturou (ciclo, `$ref` não local...), o schema é medido de novo com o ciclo desdobrado até a
+ * profundidade do dado, dentro de um orçamento que não deixa o próprio cálculo custar mais que o teto.
+ */
+function estimatedCost(schema: Record<string, unknown>, size: number, data: unknown): number {
+  const { nodes, depth } = measureData(data, COST_CEILING);
+  if (size < SATURATED) return size * nodes;
+  return expandedSize(schema, { depth, budget: Math.floor(COST_CEILING / nodes) }) * nodes;
+}
 
 /** O ajv estoura a pilha ao compilar `$ref` cíclico (`a` aponta `b`, `b` aponta `a`): `RangeError` cru não ajuda o agente. */
 function messageOf(error: unknown): string {
@@ -301,7 +313,7 @@ export function createValidator(): Validator {
       const { first, size, full } = prepared(schema);
       if (first(data)) return [];
       const firstErrors = first.errors ?? [];
-      if (size * countNodes(data, COST_CEILING) > COST_CEILING) {
+      if (estimatedCost(schema, size, data) > COST_CEILING) {
         return capDetails([...toDetails(firstErrors), violationsCapped('')]);
       }
       const all = full();

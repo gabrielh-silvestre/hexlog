@@ -39,6 +39,7 @@ const USAGE =
   'usage: node scripts/flow/sync-cli.ts check --process directives-<N> | plan --process directives-<N> [--apply]';
 const AUTHOR = { agent: 'flow-sync', client: 'hexlog-flow-sync' };
 const DOCS_DIR = 'docs/directives';
+const SCRIPT_ROOT = path.resolve(import.meta.dirname, '../..');
 // O nome em minúsculas também deixa de fora o `AGENTS.md`, que não é diretriz.
 const DOC_FILE = /^([a-z0-9-]+)\.md$/;
 
@@ -282,7 +283,7 @@ async function plan(reader: Reader, generation: string, apply: boolean): Promise
     return 1;
   }
 
-  const installed = readInstalled(path.resolve(import.meta.dirname, '../..'));
+  const installed = readInstalled(SCRIPT_ROOT);
   const installProblems = checkInstalled(installed);
   console.log(formatPlan(plans, apply ? 'apply' : 'dry-run'));
   if (!apply) {
@@ -296,6 +297,16 @@ async function plan(reader: Reader, generation: string, apply: boolean): Promise
     );
     return 1;
   }
+  return writePlans(plans, generation, root, installed);
+}
+
+/** Anexa os documentos, grava os lotes e confere o log relido; 1 se algo recusou ou divergiu. */
+async function writePlans(
+  plans: Planned[],
+  generation: string,
+  root: string,
+  installed: ReturnType<typeof readInstalled>,
+): Promise<number> {
   const total = plans.reduce((sum, { plan: planned }) => sum + planned.batches.length, 0);
   if (total === 0) return 0;
 
@@ -328,9 +339,8 @@ async function plan(reader: Reader, generation: string, apply: boolean): Promise
 /** O código instalado é conferido contra o checkout do script e os documentos vêm do cwd: têm de ser o mesmo. */
 function checkoutProblem(): string | undefined {
   const root = process.cwd();
-  const scriptRoot = path.resolve(import.meta.dirname, '../..');
-  if (fs.realpathSync(root) !== fs.realpathSync(scriptRoot)) {
-    return `cwd ${root} is not the checkout of this script (${scriptRoot}): run from the repository root`;
+  if (fs.realpathSync(root) !== fs.realpathSync(SCRIPT_ROOT)) {
+    return `cwd ${root} is not the checkout of this script (${SCRIPT_ROOT}): run from the repository root`;
   }
   return fs.existsSync(path.join(root, DOCS_DIR))
     ? undefined
@@ -339,7 +349,7 @@ function checkoutProblem(): string | undefined {
 
 async function run(mode: string, generation: string, apply: boolean): Promise<number> {
   const wrongCheckout = checkoutProblem();
-  if (wrongCheckout !== undefined) {
+  if (!isUndefined(wrongCheckout)) {
     console.error(`flow sync failed: ${wrongCheckout}`);
     return 1;
   }
