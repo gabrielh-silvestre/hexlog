@@ -138,7 +138,13 @@ export function readInstalled(root: string): InstalledCheck {
   };
 }
 
-type WriteBatch = { process: string; key: string; records: readonly BatchItem[] };
+type WriteBatch = {
+  process: string;
+  key: string;
+  /** Padrão do lote (só `agent`); o `decidedBy` de cada item vence. */
+  decidedBy?: 'agent';
+  records: readonly BatchItem[];
+};
 
 /**
  * Gravador do log pelo `register` do `compose()`: o mesmo caminho do servidor (lock, cadeia, `key`).
@@ -172,11 +178,12 @@ export function openWriter({
   const project = Name.parse('hexlog');
 
   return {
-    write: async ({ process, key, records }: WriteBatch) =>
+    write: async ({ process, key, decidedBy, records }: WriteBatch) =>
       services.process.register({
         project,
         process: Name.parse(process),
         author: checkedAuthor,
+        decidedBy,
         key: BatchKey.parse(key),
         records,
       }),

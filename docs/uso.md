@@ -80,12 +80,12 @@ Com as definições no projeto, `create_process` cria o processo e fixa a versã
 { "project": "alpha", "process": "run-1" }
 
 // register
-{ "project": "alpha", "process": "run-1", "agent": "executor",
+{ "project": "alpha", "process": "run-1", "agent": "executor", "decidedBy": "agent",
   "key": "run-1-nota-inicial",
   "records": [{ "type": "note", "target": "run.step", "data": { "text": "primeira nota" } }] }
 ```
 
-O `register` devolve os ids dos registros (`run-1:<uuid v7>`) e o `marker`, a cabeça do processo. Repetir a chamada com a mesma `key` devolve o mesmo resultado com `replayed: true`, sem gravar de novo. Para ler e checar:
+O `decidedBy` do exemplo diz quem fez a escolha (`agent` no lote) e o `register` o exige; um servidor instalado antes do campo o recusa, e o texto de recuperação por `code` está na seção "Papel de quem escolheu" de [fluxo-hexlog.md](directives/fluxo-hexlog.md). O `register` devolve os ids dos registros (`run-1:<uuid v7>`) e o `marker`, a cabeça do processo. Repetir a chamada com a mesma `key` devolve o mesmo resultado com `replayed: true`, sem gravar de novo. Para ler e checar:
 
 ```json
 // query: registros vigentes do processo
@@ -125,6 +125,8 @@ Um `target` são nomes separados por `.`, com até 200 caracteres
 `a.b` casa `a.b` e `a.b.c`, não `a.bc`. O id de um registro é `<processo>:<uuid v7>`
 e só o servidor o atribui. `author` sai do envelope da chamada: `agent` e `model`
 vêm do agente, `client` vem do cliente MCP (`unknown` quando o cliente não envia o envelope `clientInfo`).
+`author` diz quem gravou; quem fez a escolha é outro campo, `decidedBy` (`agent` no lote; `human` ou
+`third-party` por item), que o `register` exige: sem ele, `DECIDED_BY_REQUIRED` (ver [tools.md](tools.md)).
 
 Toda entrada é estrita: chave desconhecida é `INVALID_INPUT` com
 `unrecognized_keys`. Os tetos de tamanho estão em

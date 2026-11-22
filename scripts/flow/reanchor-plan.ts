@@ -5,7 +5,7 @@
 import { chunk, isEqual, isUndefined, sortBy } from 'es-toolkit';
 import { fingerprint } from '../../src/domain/chain.ts';
 import { processOf } from '../../src/domain/ids.ts';
-import { BATCH_MAX, BatchItem } from '../../src/domain/record.ts';
+import { BATCH_MAX, BatchItem, type DecidedBy } from '../../src/domain/record.ts';
 import { isCurrent } from './sync.ts';
 
 const GENERATION = /^directives-(\d+)(?::|$)/;
@@ -35,6 +35,8 @@ export type DecisionRow = {
   out: OutEdge[];
   in: InEdge[];
   lineage: boolean;
+  /** Papel do elo cru; ausente no elo gravado antes do campo, que a regravação lê como `agent`. */
+  decidedBy?: DecidedBy;
 };
 
 /** `directive` ou `premise` de uma geração; `text` é o `rule` ou o `statement`, ausente nos outros tipos. */
@@ -63,6 +65,7 @@ export type PlannedItem = {
   target: string;
   data: Data;
   relations: OutEdge[];
+  decidedBy?: DecidedBy;
 };
 
 type Rewrite = { process: string; id: string; item: PlannedItem };
@@ -89,6 +92,8 @@ export type LogRow = {
   data: Data;
   out: OutEdge[];
   in: InEdge[];
+  /** Papel do elo cru; a `query` não o traz, então quem lê o preenche por id. */
+  decidedBy?: DecidedBy;
 };
 
 type Divergence = {
@@ -98,6 +103,7 @@ type Divergence = {
     | 'new-not-current'
     | 'data-differs'
     | 'relations-differ'
+    | 'role-differs'
     | 'old-still-current'
     | 'current-count-changed';
 };
@@ -199,6 +205,7 @@ export function planReanchor({ to, decisions, older, current }: PlanInput): Plan
         target: row.target,
         data: row.data,
         relations: [{ kind: 'supersedes', to: row.id }, ...copied],
+        decidedBy: row.decidedBy ?? 'agent',
       },
     });
   }
@@ -262,6 +269,9 @@ export function verifyReanchor(
       if (!isEqual(replacement.data, item.data)) divergences.push({ id, problem: 'data-differs' });
       if (!isEqual(edgeKeys(replacement.out), edgeKeys(item.relations))) {
         divergences.push({ id, problem: 'relations-differ' });
+      }
+      if ((replacement.decidedBy ?? 'agent') !== (item.decidedBy ?? 'agent')) {
+        divergences.push({ id, problem: 'role-differs' });
       }
     }
     if (stillCurrent.has(id)) divergences.push({ id, problem: 'old-still-current' });

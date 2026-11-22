@@ -322,6 +322,7 @@ const FILTER_FLAGS = {
   text: 0,
   ids: 0,
   relatedTo: 0,
+  decidedBy: 0,
 } satisfies Record<keyof Filters, 0>;
 const FILTER_KEYS = Object.keys(FILTER_FLAGS) as (keyof Filters)[];
 

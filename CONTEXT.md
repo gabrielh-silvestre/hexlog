@@ -44,6 +44,10 @@ _Avoid_: alvo, assunto
 Quem gravou o registro: o agente, o modelo declarado e o cliente MCP.
 _Avoid_: usuário, owner
 
+**Papel de quem escolheu** (`decidedBy`):
+Quem fez a escolha que o registro guarda, não quem o gravou: `agent`, `human` ou `third-party`. O registro gravado antes do campo existir é lido como `agent`.
+_Avoid_: autor, owner, decisor
+
 **Anexo** (`attachment`):
 Texto guardado à parte, endereçado pelo próprio hash e citado por um campo do registro.
 _Avoid_: arquivo, blob (na prosa)

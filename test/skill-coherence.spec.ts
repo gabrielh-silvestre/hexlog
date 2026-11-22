@@ -130,8 +130,8 @@ describe('LINE_PROSE_CITATION', () => {
 /** A 1.0 expõe exatamente 12 tools. */
 const EXPECTED_TOOL_COUNT = 12;
 
-/** 35 códigos da transição menos os 8 legados e os 2 sem uso (`INVALID_ID`, `UNKNOWN_ID`). */
-const EXPECTED_ERROR_CODE_COUNT = 25;
+/** 35 códigos da transição menos os 8 legados e os 2 sem uso (`INVALID_ID`, `UNKNOWN_ID`), mais `DECIDED_BY_REQUIRED`. */
+const EXPECTED_ERROR_CODE_COUNT = 26;
 
 const toolsDir = path.join(srcDir, 'mcp/tools');
 
@@ -310,6 +310,10 @@ const FIELD_NAME_ALLOWLIST = new Set([
   'file',
   'plan-legacy',
   'evidence-file',
+  // papel de quem escolheu (`decidedBy`): valores do envelope e campo do erro de servidor antigo;
+  // `human` e `message`, genéricos, ficam só nas skills que os citam (`SKILL_FIELD_ALLOWLIST`)
+  'third-party',
+  'unrecognized_keys',
 ]);
 
 /**
@@ -317,8 +321,19 @@ const FIELD_NAME_ALLOWLIST = new Set([
  * `FIELD_NAME_ALLOWLIST`.
  */
 const SKILL_FIELD_ALLOWLIST: Record<string, readonly string[]> = {
+  'skills/hexlog/SKILL.md': ['human', 'message'],
+  'skills/hexlog-flow/references/audit-types.md': ['human'],
   'skills/hexlog-setup/SKILL.md': ['hexlog', 'hexlog-flow', 'unit', 'targetPattern'],
   'skills/hexlog-flow/SKILL.md': [
+    // valores do envelope e campo do erro de servidor antigo (`decidedBy`)
+    'human',
+    'message',
+    // tipos de evidência e relação do pacote de autoria da decisão, só da `hexlog-flow`
+    'own-judgment',
+    'external-team',
+    'doc-author',
+    'convergence',
+    'backs',
     'targetPattern',
     'counts',
     'origin',
@@ -354,6 +369,7 @@ const skillCases: SkillCase[] = [
       'errors.ts#typeNotPinned': ['TYPE_NOT_PINNED'],
       'commands/register/static.ts#checkData': ['checkData'],
       'errors.ts#gateNotFound': ['GATE_NOT_FOUND'],
+      'errors.ts#decidedByRequired': ['DECIDED_BY_REQUIRED'],
       'installation.ts#verifyPreparedArtifact': ['verifyPreparedArtifact'],
       'installation.ts#installArtifact': ['verifyPreparedArtifact'],
     },
@@ -546,4 +562,79 @@ describe('skills/**/*.md, docs/**/*.md, .claude/skills/**/*.md, README.md and **
 
     expect(hits).toEqual([]);
   });
+});
+
+// ---- trava: skill instalada que mostra `decidedBy` não manda rodar o instalador ----
+
+/** Seções (título ATX até o próximo título) de `content` que citam `decidedBy`. */
+function sectionsCitingDecidedBy(content: string): string[] {
+  return content.split(/^(?=#{1,6} )/m).filter((section) => section.includes('decidedBy'));
+}
+
+// `AGENTS.md` não é instalado; o resto de `skills/` (SKILL.md, references, templates) vai para `~/.claude/skills`.
+const installedSkillFiles = listFiles(path.join(repoRoot, 'skills'), '.md').filter(
+  (file) => path.basename(file) !== 'AGENTS.md',
+);
+
+describe('skills/**/*.md (installed files)', () => {
+  it('should find installed files whose sections cite decidedBy', () => {
+    const citing = installedSkillFiles.filter(
+      (file) => sectionsCitingDecidedBy(fs.readFileSync(file, 'utf8')).length > 0,
+    );
+
+    expect(citing.length).toBeGreaterThan(0);
+  });
+
+  it('should not send the agent to node scripts/install.ts in a section that cites decidedBy', () => {
+    const hits = installedSkillFiles.flatMap((file) =>
+      sectionsCitingDecidedBy(fs.readFileSync(file, 'utf8'))
+        .filter((section) => section.includes('node scripts/install.ts'))
+        .map((section) => `${path.relative(repoRoot, file)} → ${section.split('\n')[0]}`),
+    );
+
+    expect(hits).toEqual([]);
+  });
+});
+
+// ---- trava: todo arquivo que mostra `decidedBy` num exemplo de `register` leva a frase condicionada ----
+
+const CONDITIONAL_PT = 'só quando o schema da tool register';
+const SECTION_NAME = 'Papel de quem escolheu';
+
+/** Texto sem crases e com o espaço colapsado, para comparar a frase sem depender do realce. */
+const plain = (file: string) =>
+  fs.readFileSync(path.join(repoRoot, file), 'utf8').replaceAll('`', '').replace(/\s+/g, ' ');
+
+const INSTALLED_REGISTER_EXAMPLES = [
+  'skills/hexlog/SKILL.md',
+  'skills/hexlog-flow/SKILL.md',
+  'skills/hexlog-setup/references/decision-authorship.md',
+];
+
+const REPO_REGISTER_EXAMPLES = [
+  '.claude/skills/flow-run/SKILL.md',
+  '.claude/skills/flow-gaps/SKILL.md',
+  '.claude/skills/flow-owner-seat/SKILL.md',
+  '.claude/skills/flow-audit/SKILL.md',
+  'docs/directives/fluxo-hexlog.md',
+  'docs/directives/cadeira-do-dono.md',
+  'docs/uso.md',
+];
+
+describe('files that show decidedBy in a register example', () => {
+  it.each(INSTALLED_REGISTER_EXAMPLES)(
+    'should carry the conditional decidedBy sentence in %s',
+    (file) => {
+      expect(plain(file)).toContain(CONDITIONAL_PT);
+    },
+  );
+
+  it.each(REPO_REGISTER_EXAMPLES)(
+    'should carry the conditional decidedBy sentence or the canonical section name in %s',
+    (file) => {
+      const text = plain(file);
+
+      expect(text.includes(CONDITIONAL_PT) || text.includes(SECTION_NAME)).toBe(true);
+    },
+  );
 });

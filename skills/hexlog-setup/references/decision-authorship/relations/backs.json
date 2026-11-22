@@ -1,0 +1,5 @@
+{
+  "kind": "supports",
+  "from": ["own-judgment", "external-team", "doc-author", "convergence"],
+  "to": ["decision"]
+}

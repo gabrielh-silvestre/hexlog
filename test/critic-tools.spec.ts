@@ -631,6 +631,32 @@ describe('buildRules', () => {
     expect(rules).toContain(fragment);
   });
 
+  describe('with the decidedBy rule', () => {
+    // as crases dos identificadores saem da comparação, como no template do owner-seat
+    const plain = rules.replaceAll('`', '');
+
+    it('should tell the critic to register with decidedBy agent only when the register schema lists it', () => {
+      expect(plain).toContain(
+        'Send decidedBy on register only if the register tool schema lists decidedBy',
+      );
+      expect(plain).toContain('put decidedBy: "agent" on the batch');
+    });
+
+    it('should tell the critic that an unrecognized_keys error naming decidedBy means an older server', () => {
+      expect(plain).toContain(
+        'INVALID_INPUT with code unrecognized_keys and a message naming decidedBy means an older server',
+      );
+    });
+
+    it('should tell the critic that DECIDED_BY_REQUIRED means a newer server', () => {
+      expect(plain).toContain('DECIDED_BY_REQUIRED means a newer server');
+    });
+
+    it('should not tell the critic to run node scripts/install.ts', () => {
+      expect(rules).not.toContain('node scripts/install.ts');
+    });
+  });
+
   it('should not answer sem resposta for agy on the critical class anymore', () => {
     expect(rulesFor('agy')).not.toContain(
       'also answer `sem resposta` for a gap of the critical class',

@@ -6,6 +6,7 @@ import {
   brokenChain,
   capDetails,
   cycleRejected,
+  decidedByRequired,
   domainError,
   fromDetails,
   fromIssues,
@@ -272,6 +273,35 @@ describe('fixed-code error factories', () => {
       expect(build().details).toStrictEqual(expected);
     },
   );
+});
+
+describe('decidedByRequired', () => {
+  it('should build DECIDED_BY_REQUIRED with one detail per item', () => {
+    const error = decidedByRequired([0, 3]);
+
+    expect(error).toMatchObject({
+      code: 'DECIDED_BY_REQUIRED',
+      details: [
+        { path: '/records/0/decidedBy', code: 'missing', message: 'decidedBy is required' },
+        { path: '/records/3/decidedBy', code: 'missing', message: 'decidedBy is required' },
+      ],
+    });
+  });
+
+  it('should name the remedy in the DECIDED_BY_REQUIRED message', () => {
+    const { message } = decidedByRequired([0]);
+
+    expect(message).toBe(
+      'decidedBy is missing on the listed items; send decidedBy "agent" on the batch, or "human" or "third-party" on each item',
+    );
+  });
+
+  it('should list all 50 items without a too-many-errors detail', () => {
+    const { details } = decidedByRequired(Array.from({ length: 50 }, (_, index) => index));
+
+    expect(details).toHaveLength(50);
+    expect(details.map(({ code }) => code)).toEqual(Array.from({ length: 50 }, () => 'missing'));
+  });
 });
 
 describe('pointer', () => {

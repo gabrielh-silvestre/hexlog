@@ -4,15 +4,25 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { composeReader } from '../src/compose.ts';
 import { Name } from '../src/domain/ids.ts';
+import { formatLine, verifyProcess } from '../src/shared/loader.ts';
 import { VERSION } from '../src/version.ts';
+import { idAt, linkAt } from './fixtures/chain-line.ts';
 import {
   createFlowEnvironment,
   createLegacyLineageProcess,
   registerFlowRecord,
   type FlowRecord,
 } from './flow-data.ts';
-import { anchoredIn, copyToXdg, createTempDir, restsOn, snapshot } from './helpers.ts';
+import {
+  anchoredIn,
+  copyToXdg,
+  createTempDir,
+  rawRolesOfCurrent,
+  restsOn,
+  snapshot,
+} from './helpers.ts';
 import type { Environment } from './mcp/environment.ts';
+import { diskStores } from './queries/query-setup.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const reanchorPath = path.join(repoRoot, 'scripts/flow/reanchor.ts');
@@ -415,6 +425,63 @@ describe('scripts/flow/reanchor.ts', () => {
       expect(again.stdout).toContain('rewritable: 0');
       expect(again.stdout).toContain('for the owner: 1');
       expect(snapshot(xdg)).toEqual(written);
+    }, 60_000);
+
+    it('should keep the decidedBy of each rewritten decision', async () => {
+      await withEnvironment(['directives-1', 'directives-2', 'feat-r'], async (roles) => {
+        const { g1 } = await seedRule(roles);
+        await registerFlowRecord(roles, 'feat-r', {
+          ...decision('feat-r.decision.human', [anchoredIn(g1)]),
+          decidedBy: 'human',
+        });
+        await registerFlowRecord(roles, 'feat-r', {
+          ...decision('feat-r.decision.agent', [anchoredIn(g1)]),
+          decidedBy: 'agent',
+        });
+        const xdg = copyToXdg(roles.dataDir);
+
+        const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+
+        expect(result.status).toBe(0);
+        expect(rawRolesOfCurrent(path.join(xdg, 'hexlog'), 'feat-r', 'decision')).toEqual({
+          'feat-r.decision.human': 'human',
+          'feat-r.decision.agent': 'agent',
+        });
+      });
+    }, 60_000);
+
+    it('should rewrite as agent a decision whose raw link was written without decidedBy', async () => {
+      await withEnvironment(['directives-1', 'directives-2', 'feat-l'], async (legacy) => {
+        const { g1 } = await seedRule(legacy);
+        await diskStores(legacy.dataDir).store.write(
+          { project: PROJECT, process: Name.parse('feat-l') },
+          (raw) => {
+            const { end } = verifyProcess(raw);
+            const link = linkAt(end, {
+              id: idAt('feat-l', end.seq),
+              type: 'decision',
+              target: 'feat-l.decision.legacy',
+              data: {
+                choice: 'Choice legacy',
+                alternatives: [{ option: 'Other', reason: 'Not needed' }],
+                rationale: 'Because',
+                grounds: 'directive',
+                confidence: 'high',
+              },
+              relations: [{ kind: 'derivesFrom', as: 'anchored-in', to: g1 }],
+            });
+            return { line: formatLine([link]), result: undefined };
+          },
+        );
+        const xdg = copyToXdg(legacy.dataDir);
+
+        const result = runReanchor(['--to', 'directives-2', '--apply'], xdg);
+
+        expect(result.status).toBe(0);
+        expect(rawRolesOfCurrent(path.join(xdg, 'hexlog'), 'feat-l', 'decision')).toEqual({
+          'feat-l.decision.legacy': 'agent',
+        });
+      });
     }, 60_000);
 
     it('should keep the pre-pr gate result for a resolved URGENT finding and a closed gap', () => {

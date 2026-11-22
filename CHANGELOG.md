@@ -7,9 +7,12 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 ### Adicionado
 
 - Telemetria OpenTelemetry opcional por OTLP/HTTP, ligada só por `HEXLOG_OTEL_ENDPOINT` (e `HEXLOG_OTEL_HEADERS` para credencial): um span por chamada de tool, com projeto, processo, tamanho do log lido e código de erro, e três métricas por tool; sem a variável o servidor não abre conexão nem instala handler, e as tools respondem como antes. O instalador passa a preservar o `env` da entrada MCP `hexlog` ao refazê-la. Detalhe em `docs/telemetria.md` (#363).
+- Papel de quem escolheu: todo registro ganha o campo `decidedBy` (`agent`, `human` ou `third-party`), irmão de `author`, que diz quem fez a escolha e não quem gravou. A `query` ganha o filtro `decidedBy`, só na entrada, que casa o papel efetivo (o registro gravado antes do campo conta como `agent`); a saída da `query`, do `export` e do `timeline` não muda. O script `scripts/authorship-report.ts` conta as decisões por papel e acusa a `human` ou `third-party` sem base, sem recusar registro, e o `hexlog-setup` ganha o pacote opcional de autoria (tipos de evidência `own-judgment`, `external-team`, `doc-author` e `convergence`, o tipo `approval` e as relações `backs` e `approves`). A regra de uso está na `hexlog-flow` e em `docs/tools.md` (#388).
 
 ### Alterado
 
+- O `register` passa a exigir o papel de quem escolheu: sem `decidedBy` no lote nem no item, recusa com o código novo `DECIDED_BY_REQUIRED` (o catálogo passa a 26 códigos), com um item em `details` por registro sem papel. O padrão do lote só pode ser `agent`, e `human` e `third-party` vão por item (#388).
+- As descrições das tools `register` e `query` ficaram mais curtas para caber no orçamento de 2048 caracteres por descrição (o limite do Claude Code anterior à 2.1.296); o detalhe saiu para `docs/tools.md` (#388).
 - A descrição da `query` volta a dizer que `changesSince` traz as mudanças desde o marcador devolvido (#372).
 
 ### Corrigido
@@ -21,6 +24,14 @@ Mudanças visíveis a quem usa o hexlog, por versão. O formato segue o [Keep a 
 
 ### Migração
 
+- O `register` passa a exigir `decidedBy`; sem ele, recusa com `DECIDED_BY_REQUIRED`. Depois do primeiro `register` da versão nova, não há volta para a 1.2.3, e isso vale para todo processo existente, não só para os novos, por decisão: um sinal no manifesto, como o da herança de linhagem, não alcançaria os processos que já existem (#388).
+  1. Reinstale com `node scripts/install.ts` logo depois de atualizar o repositório e reinicie toda sessão, inclusive as do critic e o servidor do `agy`: sessão aberta continua com o bundle antigo até reiniciar.
+  2. Entre atualizar e instalar, o servidor antigo recusa o campo `decidedBy` (`INVALID_INPUT` com `unrecognized_keys`, dois detalhes quando o campo vai no topo e no item), e `sync-cli` e `reanchor` com `--apply` recusam por `checkInstalled`. Depois de instalar, a sessão antiga que lê um processo com elo novo vê `verify_chain` com `ok: false` e `invalid-line`, e `query` e `register` do processo falham por cadeia quebrada (`PROCESS_CORRUPTED` com `broken-chain`); no alcance projeto, a consulta falha inteira por causa de um processo. Isso foi sondado contra o código do commit instalado (92078b041f80), não contra o bundle instalado, e a sonda não cobriu `evaluate_gate`, `list` com `process`, os scripts de relatório nem a recusa por `checkInstalled`. O sintoma não é corrupção: não aplique a quarentena de `docs/dados.md`, reinstale e reinicie as sessões. O mesmo sintoma aparece se `node scripts/install.ts` rodar a partir de um checkout anterior ao #388 (worktree antigo, `main` num hotfix): a pasta da 1.2.3 é a mesma, e o instalador troca o bundle novo pelo antigo, com o aviso `reinstalled with different content`. Não é corrupção nem perda de dado: reinstale a partir do checkout que tem o #388 e reinicie as sessões. Não há rollback para a 1.2.3 depois do primeiro `register` da versão nova.
+  3. Mande `decidedBy: "agent"` no topo do `register`, e `human` ou `third-party` por item quando o dev ou outra fonte escolheu.
+  4. Trate `DECIDED_BY_REQUIRED` como erro de entrada: o `details` lista os itens sem papel.
+  5. A `query` ganha o filtro `decidedBy` (papel efetivo: o registro antigo, sem o campo, casa como `agent`); a saída por registro não muda.
+  6. Lote gravado pela 1.2.3 e reenviado idêntico, com a mesma `key` e o padrão `agent`, devolve `replayed`. Reenviar nomeando `decidedBy` em itens que antes o omitiam muda a impressão e dá `IDEMPOTENCY_CONFLICT`: reenvie idêntico. Reenviar o lote antigo sem `decidedBy` em lugar nenhum, mesmo com a mesma `key` (inclusive o que ficou em `IO_ERROR` na sessão antiga), recusa com `DECIDED_BY_REQUIRED`, porque o papel é conferido antes da `key`: reenvie com `decidedBy: "agent"` no topo.
+  7. Quem mantém skills ou scripts que chamam `register` atualiza a chamada.
 - A 1.2.3 omitiu este aviso no #321: em projeto que já existe no hexlog e sem `hexlog-model.json` local, o `hexlog-setup` para, mostra as definições vigentes e só segue com a confirmação do dev. Tipo de fase sem o campo `unit` obrigatório vira versão nova com `breaking: true`, que o plano mostra antes de gravar; ela só vale para processo criado depois, e o processo já aberto mantém as definições que fixou (#374).
 - Corrige a Migração da 1.2.3, que omitiu este passo do #311: quem roda Node 25 ou 26 deve passar para Node 24.x (`^24.18.1`) (#376).
 

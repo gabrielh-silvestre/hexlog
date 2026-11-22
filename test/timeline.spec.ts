@@ -67,6 +67,7 @@ async function registerDoc(
 ) {
   const { target = TARGET, relations = [], author = AUTHOR } = options;
   const { records } = await services.process.register({
+    decidedBy: 'agent',
     project: PROJECT,
     process,
     author,
@@ -261,6 +262,7 @@ describe('scripts/timeline.ts', () => {
       const { xdg, services } = seedDoc(['many']);
       const registerBatch = (key: string) =>
         services.process.register({
+          decidedBy: 'agent',
           project: PROJECT,
           process: 'many',
           author: AUTHOR,
@@ -283,6 +285,20 @@ describe('scripts/timeline.ts', () => {
     },
     CLI_TIMEOUT,
   );
+
+  describe('with --json and a log written with decidedBy', () => {
+    it(
+      'should not add decidedBy to the printed records',
+      () => {
+        const { out } = runTimelineOk(xdgHome, PROJECT, TARGET, '--json');
+
+        for (const line of jsonLines<Record<string, unknown>>(out)) {
+          expect(Object.keys(line)).not.toContain('decidedBy');
+        }
+      },
+      CLI_TIMEOUT,
+    );
+  });
 
   describe('with --full --json', () => {
     let lines: JsonRecord[];

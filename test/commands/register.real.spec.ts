@@ -24,6 +24,7 @@ function realSetup() {
   services.process.createProcess({ project: PROJECT, process: 'run-1' });
   const register = (process: string, records: BatchItem[], key?: string) =>
     services.process.register({
+      decidedBy: 'agent',
       project: PROJECT,
       process,
       author: AUTHOR,

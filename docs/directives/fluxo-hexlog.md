@@ -85,6 +85,30 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 - **Achado URGENT é corrigido.** Aceitar sem corrigir exige justificativa em `rationale`. A `decision` que o resolve usa `resolves-finding`, `grounds: directive`, `confidence: high`, `anchored-in` na regra desta seção e `rests-on` (ou a exceção de trabalho anterior a `directives-2`, em "Premissas").
 - Achado URGENT se corrige e se reavalia; pare só se não conseguir.
 
+## Papel de quem escolheu
+
+Seção canônica do `decidedBy` do `register`: os demais arquivos de `docs/directives/` e `.claude/skills/` a citam por link e não a repetem; o que é instalado não alcança este doc: as skills (`skills/`) levam o bloco em pt-BR; só os templates do owner-seat e `scripts/flow/critic-tools.ts#buildRules` o levam em inglês. Regra nova: não altera nenhuma acima.
+
+- `decidedBy` diz quem fez a escolha, não quem gravou o registro (isso é `author`). Vale para todo registro, não só para `decision`.
+
+| Situação | `decidedBy` |
+|---|---|
+| Você pesou alternativas e escolheu | `agent`, no lote |
+| O dev escolheu e você só registrou | `human`, no item |
+| Outra fonte decidiu (outra equipe, documento, sistema externo) e você aplicou o que ela mandou | `third-party`, no item |
+| O registro não é uma escolha (`evidence`, `finding`) | `agent`: quer dizer que você o produziu |
+
+- O padrão do lote só pode ser `agent`; `human` e `third-party` vão sempre por item, e o item vence o padrão. Sem papel no lote nem no item, o `register` recusa com `DECIDED_BY_REQUIRED`.
+- Quem grava por script ou subagente: o `sync-cli` grava cada regra como `third-party`; o `reanchor` copia o papel do elo cru da decisão de origem (`agent` se o elo não o traz); o critic da cadeira ([cadeira-do-dono.md](cadeira-do-dono.md)) grava com o padrão `agent`; a sessão principal grava por item como `human` a premissa com a resposta do dono e a `simulated-approved` do aval. `answeredBy` segue dizendo a origem da resposta e `decidedBy` quem fez a escolha daquele registro; os dois são autodeclarados, e a coerência entre eles é convenção, não conferência.
+- Regravar uma decisão (`supersedes`) mantém o `decidedBy` do registro superado, salvo se a escolha mudou de mão.
+- O registro `approval` é evidência produzida pelo agente: leva `agent` (herda o lote); o ato humano de aprovar está no `summary`.
+- Nos projetos que adotaram o pacote `decision-authorship` do `hexlog-setup`, a decisão `human` ou `third-party` aponta a base por uma evidência (`own-judgment`, `external-team`, `doc-author` ou `convergence`) ligada à decisão pela relação `backs`. `scripts/authorship-report.ts` acusa a decisão sem base e nunca recusa o registro. A aprovação do dev a uma decisão do agente é a relação `approves` e não conta como base. Aqui o processo não fixa esses tipos: o relatório diz `not applicable`, e a evidência segue a regra de "Premissas".
+- O papel é autodeclarado: rastro, não prova.
+
+**Texto condicionado ao schema.** O servidor instalado pode ser anterior ao campo, então toda instrução que manda `decidedBy` segue esta forma (templates do owner-seat e `buildRules` levam o equivalente em inglês: "Send `decidedBy` on `register` only if the `register` tool schema lists `decidedBy`"; as skills usam este texto):
+
+> Mande `decidedBy` no `register` só quando o schema da tool `register` que você vê o listar; se não listar, o servidor instalado é anterior e o campo seria recusado. Leia o erro pelo `code` de `details`: `INVALID_INPUT` com `code` `unrecognized_keys` e `message` citando `decidedBy` (o `path` é o pai: vazio no topo, `/records/<i>` no item) é servidor anterior, então reenvie sem o campo e avise o dono para reinstalar o hexlog (`node scripts/install.ts`, neste repositório) e reiniciar as sessões; `INVALID_INPUT` com outro `code` sobre `decidedBy` é valor errado, então corrija o valor; `DECIDED_BY_REQUIRED` é servidor novo, então mande o papel nos itens listados em `details`, cuja `message` já diz o remédio.
+
 ## Gates e PR
 
 - `pre-pr`: todo `finding` URGENT tem `decision` que o resolve. Comandos de verificação (tipos, lint, testes) ficam com o husky, o commitlint e o CI, não com o log.

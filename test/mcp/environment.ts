@@ -81,7 +81,10 @@ export type Environment = {
   /** Os registros que o servidor sob teste mandou ao logger, na ordem. */
   logs: LogRecord[];
   client: Client;
+  /** Chama a tool; em `register` sem `decidedBy` no topo injeta `agent` (os specs de recusa usam `callRaw`). */
   call: (name: string, args?: Record<string, unknown>) => Promise<CallResult>;
+  /** Como `call`, sem injetar `decidedBy`: a entrada chega ao servidor exatamente como escrita. */
+  callRaw: (name: string, args?: Record<string, unknown>) => Promise<CallResult>;
   /** Chama a tool, afirma sucesso e devolve o `structuredContent` tipado. */
   ok: <T>(name: string, args?: Record<string, unknown>) => Promise<T>;
   /** Chama a tool, afirma erro de domínio (com `code`, esse código) e devolve o corpo `{ code, message, details }` de `content[0].text`. */
@@ -127,7 +130,7 @@ export async function createEnvironment(options: EnvironmentOptions = {}): Promi
   // O envelope vai por `_meta` em cada chamada: o transporte em memória fica na era 2025, sem envelope automático.
   const _meta = options.clientInfo && { [CLIENT_INFO_META_KEY]: options.clientInfo };
 
-  async function call(name: string, args: Record<string, unknown> = {}): Promise<CallResult> {
+  async function callRaw(name: string, args: Record<string, unknown> = {}): Promise<CallResult> {
     const logged = logs.length;
     const result = (await client.callTool({ name, arguments: args, _meta })) as CallResult;
     // Erro de forma de saída só nasce de bug no handler; nenhuma chamada da suíte pode devolvê-lo.
@@ -139,11 +142,15 @@ export async function createEnvironment(options: EnvironmentOptions = {}): Promi
     return result;
   }
 
+  const call = (name: string, args: Record<string, unknown> = {}) =>
+    callRaw(name, name === 'register' ? { decidedBy: 'agent', ...args } : args);
+
   return {
     dataDir,
     logs,
     client,
     call,
+    callRaw,
     ok: async <T>(name: string, args?: Record<string, unknown>) => {
       const result = await call(name, args);
       expect(result.isError).not.toBe(true);

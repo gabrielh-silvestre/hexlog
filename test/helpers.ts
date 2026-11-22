@@ -6,7 +6,8 @@ import * as path from 'node:path';
 import { expect, jest } from '@jest/globals';
 import { parse as parseRawJson } from 'jsonc-parser';
 import { z } from 'zod';
-import type { RecordId } from '../src/domain/ids.ts';
+import { composeReader } from '../src/compose.ts';
+import { Name, type RecordId } from '../src/domain/ids.ts';
 import { HexlogError } from '../src/errors.ts';
 import type { QueryInput, QueryResult } from '../src/queries/query-service.ts';
 import type { Logger, LogRecord } from '../src/shared/logger.ts';
@@ -177,6 +178,26 @@ export function createDataHome(): { xdg: string; dataDir: string } {
   const dataDir = path.join(xdg, 'hexlog');
   fs.mkdirSync(dataDir);
   return { xdg, dataDir };
+}
+
+/**
+ * `decidedBy` cru do elo (`undefined` quando o elo foi gravado sem o campo) dos registros vigentes de
+ * `type` em `process`, por target: a `query` não devolve o papel, então ele sai do log.
+ */
+export function rawRolesOfCurrent(
+  dataDir: string,
+  processName: string,
+  type: string,
+): Record<string, string | undefined> {
+  const ref = { project: Name.parse('hexlog'), process: Name.parse(processName) };
+  const reader = composeReader({ dataDir, cwd: process.cwd(), logger: () => undefined });
+  const { records } = reader.query.queryRecords({
+    ...ref,
+    type: Name.parse(type),
+    limit: Number.MAX_SAFE_INTEGER,
+  });
+  const roles = new Map(reader.loadProcess(ref).records.map((link) => [link.id, link.decidedBy]));
+  return Object.fromEntries(records.map(({ id, target }) => [target, roles.get(id)]));
 }
 
 /** `<xdg>/hexlog` é o `<D>` que o script resolve; `source` vira o conteúdo dele. */

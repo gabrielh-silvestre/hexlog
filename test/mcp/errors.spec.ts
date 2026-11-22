@@ -121,6 +121,52 @@ describe('register', () => {
     },
   );
 
+  it.each(['human', 'third-party'])('should refuse %s as the batch default', async (role) => {
+    const result = await environment.callRaw('register', registerInput({ decidedBy: role }));
+
+    const body = expectError(result, 'INVALID_INPUT');
+
+    expect(body.details).toEqual([expect.objectContaining({ path: '/decidedBy' })]);
+  });
+
+  it('should refuse a register with no decidedBy on the batch or on the items with DECIDED_BY_REQUIRED', async () => {
+    const args = registerInput({ records: [item(), item({ decidedBy: 'human' }), item()] });
+
+    const result = await environment.callRaw('register', args);
+
+    const body = expectError(result, 'DECIDED_BY_REQUIRED');
+
+    expect(body.details).toEqual([
+      expect.objectContaining({ path: '/records/0/decidedBy', code: 'missing' }),
+      expect.objectContaining({ path: '/records/2/decidedBy', code: 'missing' }),
+    ]);
+  });
+
+  it('should refuse an out-of-enum decidedBy with INVALID_INPUT before DECIDED_BY_REQUIRED', async () => {
+    const args = registerInput({ records: [item({ decidedBy: 'robot' }), item()] });
+
+    const result = await environment.callRaw('register', args);
+
+    const body = expectError(result, 'INVALID_INPUT');
+
+    expect(body.details).toEqual([expect.objectContaining({ path: '/records/0/decidedBy' })]);
+  });
+
+  it('should answer DECIDED_BY_REQUIRED before PROCESS_NOT_FOUND', async () => {
+    const result = await environment.callRaw('register', registerInput({ process: 'ghost' }));
+
+    expectError(result, 'DECIDED_BY_REQUIRED');
+  });
+
+  it('should answer DECIDED_BY_REQUIRED before TYPE_NOT_PINNED', async () => {
+    await environment.ok('define_type', { project: PROJECT, name: 'other', schema: NOTE_SCHEMA });
+    await environment.ok('create_process', { project: PROJECT, process: PROCESS });
+
+    const result = await environment.callRaw('register', registerInput());
+
+    expectError(result, 'DECIDED_BY_REQUIRED');
+  });
+
   it('should refuse an own __proto__ key in the record data with INVALID_INPUT and reserved-key', async () => {
     const args = registerInput({
       records: [item({ data: hostile('{"__proto__":{"a":1},"text":"x"}') })],
@@ -253,6 +299,18 @@ describe('query', () => {
     expect(body.details).toEqual([
       expect.objectContaining({ path: '/where/__proto__', code: 'reserved-key' }),
     ]);
+  });
+
+  it('should refuse a decidedBy outside the enum in query with INVALID_INPUT', async () => {
+    const result = await environment.call('query', {
+      project: PROJECT,
+      process: PROCESS,
+      decidedBy: 'robot',
+    });
+
+    const body = expectError(result, 'INVALID_INPUT');
+
+    expect(body.details).toEqual([expect.objectContaining({ path: '/decidedBy' })]);
   });
 
   describe('with an exception that is not a HexlogError', () => {

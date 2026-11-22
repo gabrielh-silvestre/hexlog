@@ -46,7 +46,8 @@ export type ErrorCode =
   | 'MARKER_NOT_FOUND'
   | 'FORK_REJECTED'
   | 'CYCLE_REJECTED'
-  | 'RELATION_NOT_FOUND';
+  | 'RELATION_NOT_FOUND'
+  | 'DECIDED_BY_REQUIRED';
 
 /**
  * Erro de domínio do hexlog: todo handler MCP captura este tipo e devolve `{code, message, details}`
@@ -380,6 +381,25 @@ export function typeNotPinned(type: string, path = '/type'): HexlogError {
     path,
     'not-pinned',
     `type '${type}' is not pinned in the process`,
+  );
+}
+
+/**
+ * `DECIDED_BY_REQUIRED`: itens do lote sem `decidedBy` e sem padrão no lote. Um `Detail` por item
+ * (`/records/<i>/decidedBy`, `missing`); a `message` traz o remédio, para o agente se recuperar só
+ * com o erro.
+ */
+export function decidedByRequired(indexes: readonly number[]): HexlogError {
+  return new HexlogError(
+    'DECIDED_BY_REQUIRED',
+    'decidedBy is missing on the listed items; send decidedBy "agent" on the batch, or "human" or "third-party" on each item',
+    capDetails(
+      indexes.map((index) => ({
+        path: `/records/${index}/decidedBy`,
+        code: 'missing',
+        message: 'decidedBy is required',
+      })),
+    ),
   );
 }
 

@@ -24,6 +24,8 @@ As três skills do Claude Code que acompanham o hexlog. Cada pasta tem um `SKILL
 | `hexlog-setup/references/agents-block.template.md` | Texto literal do bloco do hexlog no `AGENTS.md` do destino, com o título fixo |
 | `hexlog-setup/references/owner-seat.md` | Procedimento do ramo opcional da cadeira do dono no setup: opt-in, colisão de nomes, reaplicação e `ownerSeat` no modelo |
 | `hexlog-setup/references/owner-seat/` | Pacote de definições da cadeira, um JSON por definição |
+| `hexlog-setup/references/decision-authorship.md` | Procedimento do ramo opcional da autoria da decisão no setup: opt-in sem chave no modelo, regra de atribuição de `decidedBy`, cobrança de base e aprovação humana |
+| `hexlog-setup/references/decision-authorship/` | Pacote de definições da autoria (tipos de evidência e `approval`, relações `backs` e `approves`), um JSON por definição |
 | `hexlog-setup/references/owner-seat-criteria.template.md`, `owner-seat-contract.template.md`, `owner-seat-recipe-claude.template.md` e `owner-seat-recipe-agy.template.md` | Templates do documento de critérios, do contrato neutro e das receitas Claude e `agy` que o setup escreve na pasta da skill do projeto |
 
 ## Subdirectories

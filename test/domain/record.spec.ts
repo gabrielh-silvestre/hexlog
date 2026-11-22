@@ -12,6 +12,7 @@ import {
   Relation,
   RelationInput,
   RelationKind,
+  resolveDecidedBy,
   withCanonicalLimit,
 } from '../../src/domain/record.ts';
 
@@ -90,6 +91,10 @@ describe('RelationKind', () => {
 });
 
 describe('Author', () => {
+  it('should keep author strict so decidedBy never enters it', () => {
+    expect(Author.safeParse({ ...author, decidedBy: 'agent' }).success).toBe(false);
+  });
+
   it.each([
     ['without model', author],
     ['with model', { ...author, model: 'opus' }],
@@ -232,6 +237,17 @@ describe('BatchItem', () => {
     ]);
   });
 
+  it.each(['agent', 'human', 'third-party'])('should accept an item with decidedBy %s', (role) => {
+    expect(BatchItem.safeParse({ ...item, decidedBy: role }).success).toBe(true);
+  });
+
+  it.each(['robot', '', 'Agent', 1, null])(
+    'should reject a decidedBy outside agent, human and third-party: %j',
+    (role) => {
+      expect(BatchItem.safeParse({ ...item, decidedBy: role }).success).toBe(false);
+    },
+  );
+
   it('should accept data at the canonical ceiling', () => {
     const atCap = dataWithCanonicalLength(DATA_MAX_CHARS);
 
@@ -286,6 +302,20 @@ describe('HexRecord', () => {
     expect(HexRecord.safeParse(record).success).toBe(true);
   });
 
+  it('should accept a record without decidedBy and parse it without adding the key', () => {
+    const result = HexRecord.safeParse(record);
+
+    expect(result.data).not.toHaveProperty('decidedBy');
+  });
+
+  it('should accept a record with decidedBy human', () => {
+    expect(HexRecord.safeParse({ ...record, decidedBy: 'human' }).success).toBe(true);
+  });
+
+  it('should reject a record with decidedBy outside the enum', () => {
+    expect(HexRecord.safeParse({ ...record, decidedBy: 'robot' }).success).toBe(false);
+  });
+
   it.each([
     { count: RELATIONS_MAX, accepted: true },
     { count: RELATIONS_MAX + 1, accepted: false },
@@ -300,5 +330,19 @@ describe('HexRecord', () => {
     { ...record, seq: 1 },
   ])('should reject %j', (value) => {
     expect(HexRecord.safeParse(value).success).toBe(false);
+  });
+});
+
+describe('resolveDecidedBy', () => {
+  it('should return the role of the item over the batch default', () => {
+    expect(resolveDecidedBy({ decidedBy: 'human' }, 'agent')).toBe('human');
+  });
+
+  it('should return the batch default when the item has no role', () => {
+    expect(resolveDecidedBy({}, 'agent')).toBe('agent');
+  });
+
+  it('should return undefined when neither the item nor the batch names a role', () => {
+    expect(resolveDecidedBy({})).toBeUndefined();
   });
 });

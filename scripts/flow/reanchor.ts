@@ -78,6 +78,14 @@ function sourceOf(row: Row): Source {
 const readSources = (reader: Reader, process: string, includeNonCurrent: boolean): Source[] =>
   readRows(reader, process, { fields: ['rule', 'statement'], includeNonCurrent }).map(sourceOf);
 
+/** Papel de cada registro de `process`, por id; a `query` não o traz, ele sai do elo cru. */
+const rolesOf = (reader: Reader, process: string) =>
+  new Map(
+    reader
+      .loadProcess({ project: PROJECT, process: Name.parse(process) })
+      .records.map(({ id, decidedBy }) => [id, decidedBy]),
+  );
+
 /** Processos de trabalho com as decisões vigentes e todas as decisões (a base da conferência). */
 function readWork(reader: Reader, names: string[]) {
   const decisions: DecisionRow[] = [];
@@ -89,10 +97,14 @@ function readWork(reader: Reader, names: string[]) {
   for (const process of names) {
     const rows = rowsByProcess.get(process) ?? [];
     before.push(...rows);
-    const lineage =
-      reader.query.list({ project: PROJECT, process: Name.parse(process) }).process
-        ?.lineageInheritance === true;
-    decisions.push(...rows.filter(isCurrent).map((row) => ({ ...row, process, lineage })));
+    const ref = { project: PROJECT, process: Name.parse(process) };
+    const lineage = reader.query.list(ref).process?.lineageInheritance === true;
+    const roles = rolesOf(reader, process);
+    decisions.push(
+      ...rows
+        .filter(isCurrent)
+        .map((row) => ({ ...row, process, lineage, decidedBy: roles.get(row.id) })),
+    );
   }
   return { decisions, before };
 }
@@ -176,9 +188,12 @@ async function run(to: string, apply: boolean): Promise<number> {
   const { written, refused } = await applyBatches(batchesByProcess, writer.write);
 
   const freshReader = openReadOnly();
-  const after = [...new Set(written.map(({ process }) => process))].flatMap((process) =>
-    readRows(freshReader, process, { type: 'decision', includeNonCurrent: true }),
-  );
+  const after = [...new Set(written.map(({ process }) => process))].flatMap((process) => {
+    const roles = rolesOf(freshReader, process);
+    return readRows(freshReader, process, { type: 'decision', includeNonCurrent: true }).map(
+      (row) => ({ ...row, decidedBy: roles.get(row.id) }),
+    );
+  });
   const summary = summarizeApply({
     written,
     planned: plan.rewrites.length,

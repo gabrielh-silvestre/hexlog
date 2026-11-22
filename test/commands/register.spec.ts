@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
-import { fingerprint, sha256hex } from '../../src/domain/chain.ts';
+import { anchor, fingerprint, hashLink, sha256hex } from '../../src/domain/chain.ts';
 import type { RecordType } from '../../src/domain/definitions.ts';
 import { BATCH_MAX } from '../../src/domain/record.ts';
 import type { BatchItem } from '../../src/domain/record.ts';
+import { formatLine } from '../../src/shared/loader.ts';
+import { idAt, linkAt } from '../fixtures/chain-line.ts';
 import {
   AUTHOR,
   ORIGIN,
@@ -816,6 +818,193 @@ describe('register', () => {
       const again = await register(batch, { key: 'k' });
 
       expect(again.replayed).toBe(true);
+    });
+  });
+
+  describe('with decidedBy', () => {
+    const noDefault = { decidedBy: undefined };
+    const missingAt = (...indexes: number[]) =>
+      indexes.map((index) => ({ path: `/records/${index}/decidedBy`, code: 'missing' }));
+
+    // Fingerprint calculado uma vez com o `src` do 1.2.3 (commit 92078b041f80) sobre estes itens.
+    const LEGACY_ITEMS = [
+      { type: 'note', target: 'repo.feature', data: { text: 'first' } },
+      { type: 'note', target: 'repo.feature', data: { text: 'second' } },
+    ];
+    const LEGACY_FINGERPRINT = '12506e6cd0dccf3a3e953762cc96bdb90f80a42f32ac14c4225380cd29ef69d4';
+
+    /** O log que o 1.2.3 gravou para `LEGACY_ITEMS` com a `key` `old-batch`: elos sem `decidedBy`. */
+    function writeLegacyLog(processes: ReturnType<typeof setup>['processes']) {
+      const first = linkAt(
+        { seq: 0, prevHash: anchor(processes.manifestStored(ORIGIN)!) },
+        {
+          id: idAt(ORIGIN, 1),
+          target: 'repo.feature',
+          data: { text: 'first' },
+          batch: { fingerprint: LEGACY_FINGERPRINT, key: 'old-batch' },
+        },
+      );
+      const second = linkAt(
+        { seq: 1, prevHash: hashLink(first) },
+        { id: idAt(ORIGIN, 2), target: 'repo.feature', data: { text: 'second' } },
+      );
+      processes.setText(ORIGIN, formatLine([first, second]));
+      return [first.id, second.id];
+    }
+
+    it.each(['human', 'third-party'] as const)(
+      'should store the item decidedBy %s over the batch default',
+      async (role) => {
+        const { register, processes } = setup();
+
+        await register([note('a', { decidedBy: role })]);
+
+        expect(verifiedOf(processes).records[0]?.decidedBy).toBe(role);
+      },
+    );
+
+    it('should store agent when the item omits decidedBy under the batch default', async () => {
+      const { register, processes } = setup();
+
+      await register([note('a')]);
+
+      expect(verifiedOf(processes).records[0]?.decidedBy).toBe('agent');
+    });
+
+    it('should refuse the batch with DECIDED_BY_REQUIRED when an item has no decidedBy and the batch has no default', async () => {
+      const { register } = setup();
+
+      const error = await refusal(register([note('a')], noDefault));
+
+      expect(error.code).toBe('DECIDED_BY_REQUIRED');
+    });
+
+    it('should list every item without decidedBy in the details', async () => {
+      const { register } = setup();
+
+      const error = await refusal(
+        register([note('a'), note('b', { decidedBy: 'human' }), note('c')], noDefault),
+      );
+
+      expect(error.details).toMatchObject(missingAt(0, 2));
+    });
+
+    it('should list all 50 items without decidedBy and no too-many-errors detail', async () => {
+      const { register } = setup();
+
+      const error = await refusal(register(notes(BATCH_MAX), noDefault));
+
+      expect(error.details).toHaveLength(BATCH_MAX);
+      expect(error.details).toMatchObject(
+        missingAt(...Array.from({ length: BATCH_MAX }, (_, index) => index)),
+      );
+    });
+
+    it('should write nothing when one item lacks decidedBy', async () => {
+      const { register, processes } = setup();
+
+      await refusal(register([note('a', { decidedBy: 'human' }), note('b')], noDefault));
+
+      expect(processes.textOf(ORIGIN)).toBe('');
+      expect(processes.counters.appends).toBe(0);
+    });
+
+    it('should replay the same batch resent unchanged with decidedBy named in every item', async () => {
+      const { register, processes } = setup();
+      const batch = [note('a', { decidedBy: 'human' }), note('b', { decidedBy: 'third-party' })];
+      const original = await register(batch, { key: 'k' });
+
+      const again = await register(batch, { key: 'k' });
+
+      expect(again).toEqual({ ...original, replayed: true });
+      expect(processes.counters.appends).toBe(1);
+    });
+
+    it('should replay a batch written before decidedBy existed when resent under the default agent', async () => {
+      const { register, processes } = setup();
+      const ids = writeLegacyLog(processes);
+
+      const again = await register(LEGACY_ITEMS, { key: 'old-batch' });
+
+      expect(again.replayed).toBe(true);
+      expect(again.records.map(({ id }) => id)).toEqual(ids);
+      expect(processes.counters.appends).toBe(0);
+    });
+
+    it('should refuse with DECIDED_BY_REQUIRED a batch written before decidedBy existed resent with its key and no role', async () => {
+      const { register, processes } = setup();
+      writeLegacyLog(processes);
+
+      const error = await refusal(register(LEGACY_ITEMS, { key: 'old-batch', ...noDefault }));
+
+      expect(error.code).toBe('DECIDED_BY_REQUIRED');
+      expect(processes.counters.appends).toBe(0);
+    });
+
+    it('should answer IDEMPOTENCY_CONFLICT when the same key is resent naming decidedBy in an item that omitted it before', async () => {
+      const { register } = setup();
+      await register([note('a')], { key: 'k' });
+
+      const error = await refusal(register([note('a', { decidedBy: 'agent' })], { key: 'k' }));
+
+      expect(error.code).toBe('IDEMPOTENCY_CONFLICT');
+    });
+
+    it.each(['human', 'third-party'] as const)(
+      'should refuse %s as the batch default when called through the service',
+      async (role) => {
+        const { register, processes } = setup();
+
+        const error = await refusal(register([note('a')], { decidedBy: role }));
+
+        expect(error).toMatchObject({
+          code: 'INVALID_INPUT',
+          details: [{ path: '/decidedBy', code: 'invalid-batch-default' }],
+        });
+        expect(processes.counters.reads).toEqual([]);
+      },
+    );
+
+    it('should keep INVALID_INPUT for a batch with a duplicate alias and a missing decidedBy', async () => {
+      const { register } = setup();
+
+      const error = await refusal(
+        register([note('a', { alias: 'dup' }), note('b', { alias: 'dup' })], noDefault),
+      );
+
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        details: [{ path: '/records/1/alias', code: 'duplicate-alias' }],
+      });
+    });
+
+    it('should answer INVALID_INPUT for batch size before DECIDED_BY_REQUIRED', async () => {
+      const { register } = setup();
+
+      const error = await refusal(register(notes(BATCH_MAX + 1), noDefault));
+
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        details: [{ path: '/records', code: 'batch-size' }],
+      });
+    });
+
+    it('should answer DECIDED_BY_REQUIRED before PROCESS_NOT_FOUND', async () => {
+      const { register } = setup();
+
+      const error = await refusal(register([note('a')], noDefault, 'ghost'));
+
+      expect(error.code).toBe('DECIDED_BY_REQUIRED');
+    });
+
+    it('should answer DECIDED_BY_REQUIRED before TYPE_NOT_PINNED', async () => {
+      const { register } = setup();
+
+      const error = await refusal(
+        register([{ type: 'nobody', target: 'a', data: {}, relations: [] }], noDefault),
+      );
+
+      expect(error.code).toBe('DECIDED_BY_REQUIRED');
     });
   });
 

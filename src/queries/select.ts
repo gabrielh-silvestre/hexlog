@@ -3,7 +3,7 @@ import type { Link } from '../domain/chain.ts';
 import { matchesSelector, matchesTargetPrefix, type Selector } from '../domain/gate.ts';
 import { processOf, type Name, type RecordId, type Target } from '../domain/ids.ts';
 import { buildInheritance, type Inheritance } from '../domain/inheritance.ts';
-import type { RelationKind } from '../domain/record.ts';
+import type { DecidedBy, RelationKind } from '../domain/record.ts';
 import { buildVigency, incomingOf, type Incoming, type Vigency } from '../domain/relations.ts';
 import { PROJECT_INDEX, type ProcessRef, type SearchIndex } from '../ports.ts';
 import type { Reading, ReadTarget } from './read.ts';
@@ -14,6 +14,8 @@ export type Filters = Selector & {
   text?: string;
   ids?: readonly RecordId[];
   relatedTo?: RecordId;
+  /** Papel efetivo: o registro gravado sem o campo conta como `agent`. */
+  decidedBy?: DecidedBy;
 };
 
 /** Tudo que se deriva de uma leitura: registros na ordem de saída, vigência, relações de entrada e herança. */
@@ -100,13 +102,14 @@ export function select(
   search: SearchIndex,
   target: ReadTarget,
 ): Link[] {
-  const { includeNonCurrent = false, text, ids, relatedTo: anchor } = filters;
+  const { includeNonCurrent = false, text, ids, relatedTo: anchor, decidedBy } = filters;
   const wanted = isUndefined(ids) ? undefined : new Set(ids);
   const related = isUndefined(anchor) ? undefined : relatedTo(view, anchor);
   const matching = view.records.filter(
     (link) =>
       (includeNonCurrent || view.vigency.isCurrent(link.id)) &&
       matchesSelector(link, filters) &&
+      (isUndefined(decidedBy) || (link.decidedBy ?? 'agent') === decidedBy) &&
       (wanted?.has(link.id) ?? true) &&
       (related?.has(link.id) ?? true),
   );

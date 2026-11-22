@@ -55,7 +55,7 @@ O resultado vai numa seção "Indicadores" do relatório, com o valor da rodada 
 
 ## Evidência tardia
 
-Quando a auditoria ou o dono pede base para uma decisão: pesquise, grave o texto por `attach`, registre `evidence` (`summary` de 1 a 300 caracteres, `source` o hash do anexo) com `supports` para a `decision` vigente. O target é `<slug>.evidence.<short>` e o registro vai no processo do trabalho atual, que fixa `evidence`; se a `decision` é de outro processo, o `supports` cruza para ela (só `supersedes` e `revokes` ficam presos ao próprio processo). O `supports` recusa destino não vigente (`stale-destination`): decisão superada se registra de novo na vigente.
+Quando a auditoria ou o dono pede base para uma decisão: pesquise, grave o texto por `attach`, registre `evidence` (`summary` de 1 a 300 caracteres, `source` o hash do anexo) com `supports` para a `decision` vigente. O `decidedBy` da `evidence` é `agent` (você a produziu), só quando o schema da tool `register` que você vê o listar, conforme a seção "Papel de quem escolheu" de `docs/directives/fluxo-hexlog.md`. O target é `<slug>.evidence.<short>` e o registro vai no processo do trabalho atual, que fixa `evidence`; se a `decision` é de outro processo, o `supports` cruza para ela (só `supersedes` e `revokes` ficam presos ao próprio processo). O `supports` recusa destino não vigente (`stale-destination`): decisão superada se registra de novo na vigente.
 
 ## Passos
 

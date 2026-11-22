@@ -42,6 +42,14 @@ describe('scripts/export.ts', () => {
     expect(code).toBe(0);
   }, 15_000);
 
+  it('should not add decidedBy to the exported lines', () => {
+    const { out } = runExport(xdgHome, `${PROJECT}/${PROCESS}`);
+
+    for (const line of jsonLines<Record<string, unknown>>(out)) {
+      expect(Object.keys(line)).not.toContain('decidedBy');
+    }
+  }, 15_000);
+
   it('should export a process with more records than a page whole, in a single call', () => {
     const xdg = createTempDir('xdg');
     const corpus = writeRecordsCorpus(path.join(xdg, 'hexlog'), { recordsPerProcess: 120 });
