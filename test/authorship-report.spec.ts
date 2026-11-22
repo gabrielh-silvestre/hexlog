@@ -90,7 +90,7 @@ function sectionOf(block: string, title: string): string[] {
 
 /** Valor da linha `  <label>: N` do bloco. */
 function countOf(block: string, label: string): number {
-  const match = new RegExp(`^  ${label.replace(/[()]/g, '\\$&')}: (\\d+)$`, 'm').exec(block);
+  const match = new RegExp(`^  ${label.replace(/[()\\]/g, '\\$&')}: (\\d+)$`, 'm').exec(block);
   if (match === null) throw new Error(`no count line for ${label}`);
   return Number(at(match, 1));
 }
