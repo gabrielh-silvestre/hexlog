@@ -169,7 +169,8 @@ serviço é chamado direto, sem o schema da tool. No disco o
 campo é opcional: o registro gravado antes dele existir é lido como `agent`, e o hash dele não
 muda. Um lote antigo reenviado com a mesma `key` e o padrão `agent` devolve `replayed`;
 reenviar nomeando `decidedBy` em itens que antes o omitiam muda a impressão do lote e dá
-`IDEMPOTENCY_CONFLICT`. Para `human` e `third-party`, projeto que adotou o pacote de autoria do
+`IDEMPOTENCY_CONFLICT`. Sem `decidedBy` em lugar nenhum, o reenvio recusa com
+`DECIDED_BY_REQUIRED`, mesmo com a mesma `key`, porque o papel é conferido antes da `key`. Para `human` e `third-party`, projeto que adotou o pacote de autoria do
 `hexlog-setup` liga uma evidência que diga a base por `backs`; `scripts/authorship-report.ts`
 acusa a que não tem e nunca recusa o registro. A aprovação do dev a uma decisão do agente é a
 relação `approves` e não conta como base. O papel é autodeclarado: rastro de auditoria, não

@@ -598,7 +598,6 @@ describe('skills/**/*.md (installed files)', () => {
 
 // ---- trava: todo arquivo que mostra `decidedBy` num exemplo de `register` leva a frase condicionada ----
 
-const CONDITIONAL_EN = 'only if the register tool schema lists decidedBy';
 const CONDITIONAL_PT = 'só quando o schema da tool register';
 const SECTION_NAME = 'Papel de quem escolheu';
 
@@ -624,9 +623,9 @@ const REPO_REGISTER_EXAMPLES = [
 
 describe('files that show decidedBy in a register example', () => {
   it.each(INSTALLED_REGISTER_EXAMPLES)(
-    'should carry the English conditional decidedBy sentence in %s',
+    'should carry the conditional decidedBy sentence in %s',
     (file) => {
-      expect(plain(file)).toContain(CONDITIONAL_EN);
+      expect(plain(file)).toContain(CONDITIONAL_PT);
     },
   );
 

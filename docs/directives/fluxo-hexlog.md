@@ -87,7 +87,7 @@ As skills `flow-run` e `flow-gaps` executam estas regras; os hooks do projeto co
 
 ## Papel de quem escolheu
 
-Seção canônica do `decidedBy` do `register`: os demais arquivos de `docs/directives/` e `.claude/skills/` a citam por link e não a repetem; o que é instalado (`skills/`, templates do owner-seat, `scripts/flow/critic-tools.ts#buildRules`) não alcança este doc e leva o bloco curto em inglês. Regra nova: não altera nenhuma acima.
+Seção canônica do `decidedBy` do `register`: os demais arquivos de `docs/directives/` e `.claude/skills/` a citam por link e não a repetem; o que é instalado não alcança este doc: as skills (`skills/`) levam o bloco em pt-BR; só os templates do owner-seat e `scripts/flow/critic-tools.ts#buildRules` o levam em inglês. Regra nova: não altera nenhuma acima.
 
 - `decidedBy` diz quem fez a escolha, não quem gravou o registro (isso é `author`). Vale para todo registro, não só para `decision`.
 
@@ -105,7 +105,7 @@ Seção canônica do `decidedBy` do `register`: os demais arquivos de `docs/dire
 - Nos projetos que adotaram o pacote `decision-authorship` do `hexlog-setup`, a decisão `human` ou `third-party` aponta a base por uma evidência (`own-judgment`, `external-team`, `doc-author` ou `convergence`) ligada à decisão pela relação `backs`. `scripts/authorship-report.ts` acusa a decisão sem base e nunca recusa o registro. A aprovação do dev a uma decisão do agente é a relação `approves` e não conta como base. Aqui o processo não fixa esses tipos: o relatório diz `not applicable`, e a evidência segue a regra de "Premissas".
 - O papel é autodeclarado: rastro, não prova.
 
-**Texto condicionado ao schema.** O servidor instalado pode ser anterior ao campo, então toda instrução que manda `decidedBy` segue esta forma (as skills instaladas e `buildRules` levam o equivalente em inglês: "Send `decidedBy` on `register` only if the `register` tool schema lists `decidedBy`"):
+**Texto condicionado ao schema.** O servidor instalado pode ser anterior ao campo, então toda instrução que manda `decidedBy` segue esta forma (templates do owner-seat e `buildRules` levam o equivalente em inglês: "Send `decidedBy` on `register` only if the `register` tool schema lists `decidedBy`"; as skills usam este texto):
 
 > Mande `decidedBy` no `register` só quando o schema da tool `register` que você vê o listar; se não listar, o servidor instalado é anterior e o campo seria recusado. Leia o erro pelo `code` de `details`: `INVALID_INPUT` com `code` `unrecognized_keys` e `message` citando `decidedBy` (o `path` é o pai: vazio no topo, `/records/<i>` no item) é servidor anterior, então reenvie sem o campo e avise o dono para reinstalar o hexlog (`node scripts/install.ts`, neste repositório) e reiniciar as sessões; `INVALID_INPUT` com outro `code` sobre `decidedBy` é valor errado, então corrija o valor; `DECIDED_BY_REQUIRED` é servidor novo, então mande o papel nos itens listados em `details`, cuja `message` já diz o remédio.
 

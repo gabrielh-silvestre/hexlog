@@ -166,7 +166,8 @@ cadeia quebra (`breaks`), e o `process.json` ilegível aparece como
 (no `register` e no `verify_chain`) ou `invalid-line` (em `breaks`) num processo que tem elo
 com `decidedBy` lido por uma sessão aberta antes da atualização não é corrupção: o bundle
 antigo não conhece o campo do elo. Não aplique a quarentena. Reinstale com
-`node scripts/install.ts` (a partir do repositório hexlog), reinicie toda sessão, inclusive as do
+`node scripts/install.ts` (a partir de um checkout que já tem o campo `decidedBy`: instalar de um
+checkout anterior desfaz a atualização e dá o mesmo sintoma), reinicie toda sessão, inclusive as do
 critic e o servidor do `agy`, e leia de novo. Vale também para o alcance projeto, que falha
 inteiro por causa de um processo. Isso foi sondado contra o código do commit instalado (92078b041f80),
 com um elo novo no log: `verify_chain` devolve `ok: false` com `invalid-line` em `breaks`, no índice do elo

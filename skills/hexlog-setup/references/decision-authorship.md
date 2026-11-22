@@ -56,7 +56,7 @@ Convenção genérica, válida em qualquer projeto que adotou o pacote: quando o
 
 ## Exemplos de `register`
 
-Send `decidedBy` on `register` only if the `register` tool schema lists `decidedBy`; if it does not, the installed server is older and would refuse the field. Read the error by the `code` in `details`: `INVALID_INPUT` with code `unrecognized_keys` and a `message` naming `decidedBy` means an older server, so resend without the field and tell the owner to reinstall hexlog and restart the sessions; `INVALID_INPUT` with any other code on `decidedBy` means a wrong value, so fix the value; `DECIDED_BY_REQUIRED` means a newer server, so send the role on the items listed in `details` (its `message` states the fix).
+Mande `decidedBy` no `register` só quando o schema da tool `register` que você vê o listar; se não listar, o servidor instalado é anterior e o campo seria recusado. Leia o erro pelo `code` de `details`: `INVALID_INPUT` com `code` `unrecognized_keys` e `message` citando `decidedBy` é servidor anterior, então reenvie sem o campo e avise o dono para reinstalar o hexlog e reiniciar as sessões; `INVALID_INPUT` com outro `code` sobre `decidedBy` é valor errado, então corrija o valor; `DECIDED_BY_REQUIRED` é servidor novo, então mande o papel nos itens listados em `details`, cuja `message` já diz o remédio.
 
 Os campos de `data` da decisão são os do tipo do projeto; os exemplos mostram só o que o pacote acrescenta.
 
