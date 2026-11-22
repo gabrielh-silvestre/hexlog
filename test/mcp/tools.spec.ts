@@ -25,6 +25,7 @@ import {
   PROJECT,
   TOOL_NAMES,
   createEnvironment,
+  expectError,
   registerBulk,
   registerNote,
   servicesOver,
@@ -46,7 +47,8 @@ const PROPERTY_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
 const JSON_SCHEMA_DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 const ROOT_COMBINATORS = ['anyOf', 'oneOf', 'allOf'];
 
-// Limites do plano: descrição por tool e soma dos `outputSchema` anunciados.
+// Orçamentos internos: 2048 por descrição é o piso do Claude Code anterior à v2.1.296 (depois,
+// 4096 de início e 16384 via tool search, https://code.claude.com/docs/en/mcp); soma dos `outputSchema` anunciados.
 const DESCRIPTION_MAX_CHARS = 2_048;
 const OUTPUT_SCHEMA_TOTAL_MAX_CHARS = 24_280;
 
@@ -156,6 +158,10 @@ describe('tools/list', () => {
 
   it('should state in the query description that the decidedBy filter matches the effective role', () => {
     expect(descriptionOf('query')).toMatch(/decidedBy \(the effective role/);
+  });
+
+  it('should keep the dead support gloss on needsReview in the query description', () => {
+    expect(descriptionOf('query')).toMatch(/needsReview \(dead support\)/);
   });
 
   it('should tell register that as alone is enough and that every schema violation is reported', () => {
@@ -389,6 +395,34 @@ describe('register', () => {
 
     expect(result.replayed).toBe(true);
     expect(result.records.map(({ id }) => id)).toEqual([first.id, second.id]);
+  });
+
+  it('should refuse with DECIDED_BY_REQUIRED a batch written before decidedBy existed resent with its key and no role', async () => {
+    await prepareProcess();
+    const ref = { project: PROJECT, process: 'run-1' };
+    const { manifest, log } = processPaths(environment.dataDir, ref);
+    const first = linkAt(
+      { seq: 0, prevHash: anchor(JSON.parse(fs.readFileSync(manifest, 'utf8'))) },
+      {
+        id: idAt('run-1', 1),
+        target: 'repo.feature',
+        data: { text: 'first' },
+        batch: { fingerprint: LEGACY_FINGERPRINT, key: 'old-batch' },
+      },
+    );
+    fs.appendFileSync(log, formatLine([first]));
+    const logBefore = fs.readFileSync(log, 'utf8');
+
+    const result = await environment.callRaw('register', {
+      ...ref,
+      agent: 'executor',
+      key: 'old-batch',
+      records: LEGACY_ITEMS,
+    });
+
+    expectError(result, 'DECIDED_BY_REQUIRED');
+
+    expect(fs.readFileSync(log, 'utf8')).toBe(logBefore);
   });
 
   it('should write the author with the envelope client and no model when none is given', async () => {

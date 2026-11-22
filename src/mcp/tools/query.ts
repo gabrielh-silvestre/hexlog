@@ -216,15 +216,15 @@ const QUERY_DESCRIPTION =
   'includeNonCurrent (also superseded or revoked). ' +
   'targetPrefix matches whole "."-separated segments (unit-1 does not match unit-10); a near miss ' +
   'in an empty answer carries a hint. ' +
-  'Records carry needsReview and attachmentStatus. ' +
+  'Records carry needsReview (dead support) and attachmentStatus. ' +
   'relations: counts (default) gives inCounts and outCounts ({name: n} per edge whose other end ' +
   'is current) and nonCurrentInCounts and nonCurrentOutCounts (the rest); ' +
   'full gives in and out; none gives neither. With lineage inheritance, relations ' +
   'of a superseded version also hold for the current one: inheritedIn and inheritedOut (full), ' +
   'inheritedInCounts and inheritedOutCounts (counts); origin {from, to} is the stored edge; a ' +
-  'contradicts between lineages cuts it. Process scope sees only its own relations; use ' +
-  'project for cross-process ones. fields (at most ' +
-  `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data, ` +
+  'contradicts between lineages cuts it. Process scope sees only its own relations; ' +
+  'project sees across. fields (at most ' +
+  `${FIELDS_MAX}) keeps only those top-level names of data; an empty list omits data; ` +
   'filters see the whole data and the size cap counts the projection. ' +
   'A page holds at most limit records (default 50, max 200) and stops at a size cap, ' +
   'keeping at least one record; the cursor continues. marker is the head of every ' +

@@ -931,6 +931,16 @@ describe('register', () => {
       expect(processes.counters.appends).toBe(0);
     });
 
+    it('should refuse with DECIDED_BY_REQUIRED a batch written before decidedBy existed resent with its key and no role', async () => {
+      const { register, processes } = setup();
+      writeLegacyLog(processes);
+
+      const error = await refusal(register(LEGACY_ITEMS, { key: 'old-batch', ...noDefault }));
+
+      expect(error.code).toBe('DECIDED_BY_REQUIRED');
+      expect(processes.counters.appends).toBe(0);
+    });
+
     it('should answer IDEMPOTENCY_CONFLICT when the same key is resent naming decidedBy in an item that omitted it before', async () => {
       const { register } = setup();
       await register([note('a')], { key: 'k' });
