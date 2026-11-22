@@ -539,6 +539,22 @@ describe('verifyReanchor', () => {
     });
   });
 
+  it('should report a replacement that carries another role than the planned one', () => {
+    const rewrites = plan([decision({ decidedBy: 'human' })]).rewrites;
+
+    expect(
+      verifyReanchor(rewrites, [oldRow()], [superseded(), newRow({ decidedBy: 'agent' })]),
+    ).toEqual([{ id: OLD, problem: 'role-differs' }]);
+  });
+
+  it('should pass when the replacement carries the planned role', () => {
+    const rewrites = plan([decision({ decidedBy: 'human' })]).rewrites;
+
+    expect(
+      verifyReanchor(rewrites, [oldRow()], [superseded(), newRow({ decidedBy: 'human' })]),
+    ).toEqual([]);
+  });
+
   it('should report a missing relation', () => {
     const [rewrite] = plannedRewrites();
     const out = (rewrite?.item.relations ?? []).slice(0, -1);

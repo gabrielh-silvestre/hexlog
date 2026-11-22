@@ -78,6 +78,14 @@ function sourceOf(row: Row): Source {
 const readSources = (reader: Reader, process: string, includeNonCurrent: boolean): Source[] =>
   readRows(reader, process, { fields: ['rule', 'statement'], includeNonCurrent }).map(sourceOf);
 
+/** Papel de cada registro de `process`, por id; a `query` não o traz, ele sai do elo cru. */
+const rolesOf = (reader: Reader, process: string) =>
+  new Map(
+    reader
+      .loadProcess({ project: PROJECT, process: Name.parse(process) })
+      .records.map(({ id, decidedBy }) => [id, decidedBy]),
+  );
+
 /** Processos de trabalho com as decisões vigentes e todas as decisões (a base da conferência). */
 function readWork(reader: Reader, names: string[]) {
   const decisions: DecisionRow[] = [];
@@ -91,10 +99,7 @@ function readWork(reader: Reader, names: string[]) {
     before.push(...rows);
     const ref = { project: PROJECT, process: Name.parse(process) };
     const lineage = reader.query.list(ref).process?.lineageInheritance === true;
-    // A `query` não traz o papel: ele sai do elo cru, por id.
-    const roles = new Map(
-      reader.loadProcess(ref).records.map(({ id, decidedBy }) => [id, decidedBy]),
-    );
+    const roles = rolesOf(reader, process);
     decisions.push(
       ...rows
         .filter(isCurrent)
@@ -183,9 +188,12 @@ async function run(to: string, apply: boolean): Promise<number> {
   const { written, refused } = await applyBatches(batchesByProcess, writer.write);
 
   const freshReader = openReadOnly();
-  const after = [...new Set(written.map(({ process }) => process))].flatMap((process) =>
-    readRows(freshReader, process, { type: 'decision', includeNonCurrent: true }),
-  );
+  const after = [...new Set(written.map(({ process }) => process))].flatMap((process) => {
+    const roles = rolesOf(freshReader, process);
+    return readRows(freshReader, process, { type: 'decision', includeNonCurrent: true }).map(
+      (row) => ({ ...row, decidedBy: roles.get(row.id) }),
+    );
+  });
   const summary = summarizeApply({
     written,
     planned: plan.rewrites.length,

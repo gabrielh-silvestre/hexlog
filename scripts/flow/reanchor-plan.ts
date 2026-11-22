@@ -92,6 +92,8 @@ export type LogRow = {
   data: Data;
   out: OutEdge[];
   in: InEdge[];
+  /** Papel do elo cru; a `query` não o traz, então quem lê o preenche por id. */
+  decidedBy?: DecidedBy;
 };
 
 type Divergence = {
@@ -101,6 +103,7 @@ type Divergence = {
     | 'new-not-current'
     | 'data-differs'
     | 'relations-differ'
+    | 'role-differs'
     | 'old-still-current'
     | 'current-count-changed';
 };
@@ -266,6 +269,9 @@ export function verifyReanchor(
       if (!isEqual(replacement.data, item.data)) divergences.push({ id, problem: 'data-differs' });
       if (!isEqual(edgeKeys(replacement.out), edgeKeys(item.relations))) {
         divergences.push({ id, problem: 'relations-differ' });
+      }
+      if ((replacement.decidedBy ?? 'agent') !== (item.decidedBy ?? 'agent')) {
+        divergences.push({ id, problem: 'role-differs' });
       }
     }
     if (stillCurrent.has(id)) divergences.push({ id, problem: 'old-still-current' });
